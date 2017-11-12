@@ -1,0 +1,32 @@
+# vim: set noexpandtab tabstop=4  :
+
+[user]
+	email = mark@aur.ll.to
+	name = aki.
+
+[core]
+	autocrlf = false
+
+[credential]
+	helper = store
+
+[color]
+	ui = auto
+
+[diff]
+	tool = vimdiff
+
+[difftool]
+	prompt = false
+
+[push]
+	default = simple
+
+[pull]
+	rebase = preserve
+
+[alias]
+	ci = commit
+	co = checkout
+	st = status
+
