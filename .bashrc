@@ -118,5 +118,5 @@ fi
 
 
 function cd() {
-    builtin cd "$@" && ls -la
+    builtin cd "$@" && ll
 }
