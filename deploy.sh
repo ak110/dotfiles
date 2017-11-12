@@ -10,7 +10,7 @@ for f in .??*
 do
     [[ "$f" == ".git" ]] && continue
 
-    if [ -f "~/$f" ] ; then mv "~/$f" ~/.dotfiles.bk/ ; fi 
+    if [ -f ~/$f -a ! -L ~/$f ] ; then mv ~/$f ~/.dotfiles.bk/ ; fi
     ln -snfv $DOT_DIR/$f ~/$f
 done
 
