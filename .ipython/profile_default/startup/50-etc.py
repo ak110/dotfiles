@@ -33,10 +33,13 @@ b2 = np.array([[3, 4, 5], [4, 5, 6]])
 a3 = np.array([[[.75, .1, .15], [2, 3, 4]], [[3, 4, 5], [4, 5, 6]]])
 b3 = np.array([[[2, 3, 4], [4, 5, 6]], [[3, 4, 5], [1, 2, 3]]])
 
-work_dir = pathlib.Path(os.environ['USERPROFILE']).joinpath('Desktop')
-if not p.exists():
-    work_dir = pathlib.Path(os.environ['HOE'])
-if p.exists():
+if 'USERPROFILE' in os.environ:
+    work_dir = pathlib.Path(os.environ['USERPROFILE']).joinpath('Desktop')
+elif 'HOME' in os.environ:
+    work_dir = pathlib.Path(os.environ['HOME'])
+else:
+    work_dir = None
+if work_dir is not None:
     os.chdir(str(work_dir))
 
 def softmax(x):
