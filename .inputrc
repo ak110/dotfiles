@@ -1,0 +1,26 @@
+
+# deleteキー？
+$if term=rxvt
+    DEL: delete-char
+$endif
+$if term=linux
+    DEL: delete-char
+$endif
+
+# 日本語関係
+#set kanji-code utf-8
+set meta-flag on
+set input-meta on
+set convert-meta off
+set output-meta on
+
+# ビープオフ
+set bell-style none
+
+# 補完関係の設定色々
+set show-all-if-ambiguous on
+set visible-stats on
+set print-completions-horizontally on
+set completion-query-items 3000
+#set mark-symlinked-directories on
+
