@@ -6,6 +6,11 @@ if [ ! -d ~/.dotfiles.bk ] ; then
     mkdir ~/.dotfiles.bk
 fi
 
+# chmod
+chmod 700 $DOT_DIR/.ssh
+chmod 600 $DOT_DIR/.ssh/*
+
+# deploy
 for f in .??*
 do
     [[ "$f" == ".git" ]] && continue
