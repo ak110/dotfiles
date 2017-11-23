@@ -116,6 +116,9 @@ if ! shopt -oq posix; then
   fi
 fi
 
+if [ -d $HOME/bin ] ; then
+    export PATH=${PATH}:$HOME/bin
+fi
 
 function cd() {
     builtin cd "$@" && ll
