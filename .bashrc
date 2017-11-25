@@ -116,10 +116,15 @@ if ! shopt -oq posix; then
   fi
 fi
 
-if [ -d $HOME/bin ] ; then
-    export PATH=$HOME/bin:${PATH}
-fi
+
+test -d /usr/local/cuda/bin && export PATH=/usr/local/cuda/bin:$PATH
+test -d $HOME/anaconda3/bin && export PATH=$HOME/anaconda3/bin:$PATH
+test -d $HOME/bin && export PATH=$HOME/bin:$PATH
+export PYTHONDONTWRITEBYTECODE=1
 
 function cd() {
     builtin cd "$@" && ll
 }
+alias ..='cd ..'
+alias reload-shell='exec $SHELL'
+
