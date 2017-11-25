@@ -1,2 +1,9 @@
 .ipython/
 !.ipython/profile_default/startup/50-etc.py
+
+.ssh/id_rsa
+.ssh/id_rsa.pub
+.ssh/known_hosts
+
+.vim/.netrwhist
+
