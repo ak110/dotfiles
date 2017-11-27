@@ -128,3 +128,23 @@ function cd() {
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
 
+function _show_status() {
+    local status=${PIPESTATUS[@]}
+    local color=""  # 白
+    local s
+    for s in $status ; do
+        if [ ${s} -gt 100 ]; then
+            color="\\033[1;31m"  # 赤
+            break
+        elif [ ${s} -gt 0 ]; then
+            color="\\033[1;33m"  # 黄
+        fi
+    done
+    if [ -n "${color}" ] ; then
+        echo -en ${color}
+        echo "Exit code: ${status}"
+        echo -en "\\033[0;39m"
+    fi
+}
+PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
+
