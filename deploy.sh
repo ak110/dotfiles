@@ -14,6 +14,7 @@ chmod 600 $DOT_DIR/.ssh/*
 for f in .??*
 do
     [[ "$f" == ".git" ]] && continue
+    [[ "$f" == ".gitignore" ]] && continue
 
     if [ -e ~/$f -a ! -L ~/$f ] ; then mv ~/$f ~/.dotfiles.bk/ ; fi
     ln -snfv $DOT_DIR/$f ~/$f
