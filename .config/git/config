@@ -8,7 +8,6 @@
 	autocrlf = false
 	quotepath = false
 	editor = vim
-	excludesfile = ~/.gitignore_global
 
 [credential]
 	helper = store
