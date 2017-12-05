@@ -122,6 +122,7 @@ function cd() {
 }
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
+alias cls='echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"'
 
 # 終了コード表示
 function _show_status() {
