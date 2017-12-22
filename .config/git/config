@@ -28,9 +28,12 @@
 	rebase = preserve
 
 [alias]
+	aa = add -A
 	ci = commit
 	co = checkout
 	st = status
+	cp = cherry-pick
+	unadd = reset HEAD
 
 [filter "lfs"]
 	process = git-lfs filter-process
