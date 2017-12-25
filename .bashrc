@@ -116,13 +116,19 @@ if ! shopt -oq posix; then
   fi
 fi
 
+# 環境変数
+if [ -e $HOME/dotfiles/bin ] ; then export PATH=$HOME/dotfiles/bin:$PATH ; fi
+
 # エイリアス
+alias rm='rm -i'
+alias mv='mv -i'
+alias cp='cp -i'
 function cd() {
     builtin cd "$@" && ll
 }
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
-alias cls='echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"'
+alias c='echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"'
 
 # 終了コード表示
 function _show_status() {

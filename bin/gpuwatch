@@ -1,0 +1,4 @@
+#!/bin/bash -eux
+
+watch 'top -b | head ; nvidia-smi'
+
