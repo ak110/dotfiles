@@ -129,6 +129,7 @@ function cd() {
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
 alias c='echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"'
+alias gpuwatch="watch 'top -b | head ; nvidia-smi'"
 
 # 終了コード表示
 function _show_status() {
