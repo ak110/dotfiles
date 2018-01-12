@@ -1,4 +1,5 @@
-#!/bin/bash -eu
+#!/bin/bash
+set -eu
 DOT_DIR=~/dotfiles
 
 # 元から入っていたものを退避するディレクトリ (diffりやすいようにdotfilesと同じ階層にする)

@@ -154,6 +154,8 @@ PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
-    . ~/.localbashrc
+    set -x
+    source ~/.localbashrc
+    set +x
 fi
 

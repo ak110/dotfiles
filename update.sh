@@ -1,4 +1,5 @@
-#!/bin/bash -eux
+#!/bin/bash
+set -eux
 DOT_DIR=~/dotfiles
 
 cd $DOT_DIR
