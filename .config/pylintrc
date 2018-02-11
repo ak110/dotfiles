@@ -5,7 +5,8 @@ extension-pkg-whitelist=numpy,hyperopt
 [MESSAGES CONTROL]
 # C0103:Invalid attribute name
 # W0125:Using a conditional statement with a constant value
-disable=C0103,W0125
+# W1202:Use % formatting in logging functions and pass the % parameters as arguments
+disable=C0103,W0125,W1202
     ,locally-disabled
     ,too-many-instance-attributes
     ,too-many-arguments
@@ -19,5 +20,5 @@ disable=C0103,W0125
 max-line-length=256
 
 [TYPECHECK]
-ignored-modules=__init__,numpy,matplotlib.cm
+ignored-modules=__init__,cv2,numpy,matplotlib.cm
 ignored-classes=pathlib.PurePath,Empty
