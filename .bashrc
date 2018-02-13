@@ -119,6 +119,7 @@ fi
 # 環境変数
 if [ -e $HOME/dotfiles/bin ] ; then export PATH=$HOME/dotfiles/bin:$PATH ; fi
 if [ -e $HOME/bin ] ; then export PATH=$HOME/bin:$PATH ; fi
+export EDITOR=vim
 
 # エイリアス
 alias rm='rm -i'
