@@ -29,5 +29,6 @@ root: ~/
 
 windows:
   - gpu: gpuwatch
-  - ~: cd /data
-  - ~: cd /data
+  - ~:
+  - ~:
+  - ~:
