@@ -1,0 +1,9 @@
+#!/bin/bash
+set -eux
+
+cat ~/.ssh/conf.d/*.conf > ~/.ssh/config
+
+if [ -e ~/.ssh/localconfig ] ; then
+    cat  ~/.ssh/localconfig >> ~/.ssh/config
+fi
+
