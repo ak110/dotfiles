@@ -156,6 +156,3 @@ if [ -e ~/.localbashrc ] ; then
     set +x
 fi
 
-# ssh config
-update-ssh-config
-

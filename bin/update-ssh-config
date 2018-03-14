@@ -1,9 +1,10 @@
 #!/bin/bash
 set -eux
+DOT_DIR=~/dotfiles
 
-cat ~/.ssh/conf.d/*.conf > ~/.ssh/config
+cat $DOT_DIR/.ssh/conf.d/*.conf > $DOT_DIR/.ssh/config
 
-if [ -e ~/.ssh/localconfig ] ; then
-    cat  ~/.ssh/localconfig >> ~/.ssh/config
+if [ -e $DOT_DIR/.ssh/localconfig ] ; then
+    cat  $DOT_DIR/.ssh/localconfig >> ~/.ssh/config
 fi
 

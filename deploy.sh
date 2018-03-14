@@ -8,8 +8,8 @@ if [ ! -d ~/.dotfiles.bk ] ; then
 fi
 
 # chmod
-chmod 700 $DOT_DIR/.ssh
 chmod 600 $DOT_DIR/.ssh/*
+chmod 700 $DOT_DIR/.ssh $DOT_DIR/.ssh/conf.d
 
 # deploy
 for f in .??*
@@ -20,4 +20,7 @@ do
     if [ -e ~/$f -a ! -L ~/$f ] ; then mv ~/$f ~/.dotfiles.bk/ ; fi
     ln -snfv $DOT_DIR/$f ~/$f
 done
+
+# ~/.ssh/config
+$DOT_DIR/bin/update-ssh-config
 
