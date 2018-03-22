@@ -3,10 +3,11 @@
 .ipython/
 !.ipython/profile_default/startup/50-etc.py
 
+.ssh/config
 .ssh/id_rsa
 .ssh/id_rsa.pub
 .ssh/known_hosts
-.ssh/config
+.ssh/known_hosts.old
 .ssh/localconfig
 
 .vim/.netrwhist

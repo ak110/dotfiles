@@ -30,9 +30,10 @@
 [alias]
 	aa = add -A
 	ci = commit
+	cloner = clone --recursive
 	co = checkout
-	st = status
 	cp = cherry-pick
+	st = status
 	unadd = reset HEAD
 
 [filter "lfs"]
