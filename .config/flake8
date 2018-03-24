@@ -7,6 +7,7 @@
 # D212 Multi-line docstring summary should start at the first line
 # D213 Multi-line docstring summary should start at the second line
 # D400 First line should end with a period
+# D401 First line should be in imperative mood; try rephrasing
 # D404 First word of the docstring should not be This
 # E722 do not use bare except
 # G001 Logging statement uses string.format()
@@ -17,7 +18,7 @@
 # I201 Missing newline between sections or imports.
 # N803 argument name should be lowercase
 # N806 variable in function should be lowercase
-ignore = D102,D104,D105,D107,D203,D213,D400,E722,G001,H201,H301,H304,I201,N803,N806
+ignore = D102,D104,D105,D107,D203,D213,D400,D401,E722,G001,H201,H301,H304,I201,N803,N806
 max-line-length = 256
 exclude = .git,__pycache__,tests,tests_strict,__init__.py
 ignore-names = X,X_train,X_val,X_test

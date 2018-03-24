@@ -9,6 +9,7 @@ export ENV=$HOME/.bashrc
 export HISTCONTROL="ignoredups"  # ignorespace, ignoredups or ignoreboth
 export EDITOR=vim
 export PYTHONDONTWRITEBYTECODE=1
+export MPLBACKEND=Agg
 
 # .bashrc
 test -f ~/.bashrc && . ~/.bashrc
