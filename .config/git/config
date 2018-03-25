@@ -21,11 +21,19 @@
 [difftool]
 	prompt = false
 
+[fetch]
+	prune = true
+	recurseSubmodules = true
+
 [push]
 	default = simple
+	recurseSubmodules = check
 
 [pull]
 	rebase = preserve
+
+[submodule]
+	recurse = true
 
 [alias]
 	aa = add -A
@@ -35,6 +43,10 @@
 	cp = cherry-pick
 	st = status
 	unadd = reset HEAD
+	configv = config --list --show-origin
+	pullr = --recurse-submodules
+	pullm = !git checkout master && git pull
+	pulls = submodule update --recursive --remote
 
 [filter "lfs"]
 	process = git-lfs filter-process
