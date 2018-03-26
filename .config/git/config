@@ -44,7 +44,7 @@
 	st = status
 	unadd = reset HEAD
 	configv = config --list --show-origin
-	pullr = --recurse-submodules
+	pullr = pull --recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
 
