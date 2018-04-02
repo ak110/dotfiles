@@ -47,6 +47,7 @@
 	pullr = pull --recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
+	pushfwl = push --force-with-lease
 
 [filter "lfs"]
 	process = git-lfs filter-process
