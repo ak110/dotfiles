@@ -25,4 +25,4 @@ max-line-length=256
 
 [TYPECHECK]
 ignored-modules=__init__,numpy,matplotlib.cm,pygments.lexers,pygments.formatters
-ignored-classes=Empty,pathlib.PurePath,h5py.File,ConfigProto,SQLAlchemy,scoped_session
+ignored-classes=LookupDict,jinja_env,tuple,Empty,pathlib.PurePath,h5py.File,ConfigProto,SQLAlchemy,scoped_session
