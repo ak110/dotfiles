@@ -38,16 +38,17 @@
 [alias]
 	aa = add -A
 	ci = commit
-	cloner = clone --recursive
 	co = checkout
 	cp = cherry-pick
 	st = status
+	ri = rebase -i origin/master
 	unadd = reset HEAD
 	configv = config --list --show-origin
+	cloner = clone --recursive
 	pullr = pull --recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
-	pushfwl = push --force-with-lease
+	pushf = push --force-with-lease
 
 [filter "lfs"]
 	process = git-lfs filter-process
