@@ -45,7 +45,7 @@
 	unadd = reset HEAD
 	configv = config --list --show-origin
 	cloner = clone --recursive
-	pullr = pull --recurse-submodules
+	pullnr = pull --no-recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
 	pushf = push --force-with-lease
