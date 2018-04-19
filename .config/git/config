@@ -48,7 +48,7 @@
 	pullnr = pull --no-recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
-	pulla = !git submodule foreach git checkout master && git submodule foreach git pull && git pull --no-recurse-submodules
+	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git checkout master && git pull'
 	pushf = push --force-with-lease
 
 [filter "lfs"]
