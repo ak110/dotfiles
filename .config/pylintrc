@@ -1,6 +1,6 @@
 [MASTER]
 ignore=tests,tests_strict
-extension-pkg-whitelist=numpy,cv2,hyperopt
+extension-pkg-whitelist=numpy,cv2,hyperopt,mpi4py.MPI
 
 [MESSAGES CONTROL]
 # C0103:Invalid attribute name
@@ -24,5 +24,5 @@ disable=C0103,C0111,W0125,W0511,W0603,W1202
 max-line-length=256
 
 [TYPECHECK]
-ignored-modules=__init__,numpy,matplotlib.cm,pygments.lexers,pygments.formatters
+ignored-modules=__init__,numpy,matplotlib.cm,pygments.lexers,pygments.formatters,mpi4py
 ignored-classes=LookupDict,jinja_env,tuple,Empty,pathlib.PurePath,h5py.File,ConfigProto,SQLAlchemy,scoped_session
