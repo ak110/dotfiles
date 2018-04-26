@@ -32,9 +32,6 @@
 [pull]
 	rebase = preserve
 
-[submodule]
-	recurse = true
-
 [alias]
 	aa = add -A
 	ci = commit
@@ -42,13 +39,14 @@
 	cp = cherry-pick
 	st = status
 	ri = rebase -i origin/master
+	ff = pull --ff-only
 	unadd = reset HEAD
 	configv = config --list --show-origin
 	cloner = clone --recursive
 	pullnr = pull --no-recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
-	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git checkout master && git pull'
+	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git pull'
 	pushf = push --force-with-lease
 
 [filter "lfs"]
