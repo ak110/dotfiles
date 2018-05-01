@@ -43,10 +43,9 @@
 	unadd = reset HEAD
 	configv = config --list --show-origin
 	cloner = clone --recursive
-	pullnr = pull --no-recurse-submodules
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
-	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git pull'
+	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git pull' && git status
 	pushf = push --force-with-lease
 
 [filter "lfs"]
