@@ -27,13 +27,14 @@
 
 [push]
 	default = simple
-	recurseSubmodules = check
+	recurseSubmodules = on-demand
 
 [pull]
 	rebase = preserve
 
 [alias]
 	aa = add -A
+	b = branch
 	ci = commit
 	co = checkout
 	cp = cherry-pick
