@@ -41,12 +41,16 @@
 	st = status
 	ri = rebase -i origin/master
 	ff = pull --ff-only
+	am = commit --amend
+	sst = submodule foreach git status
+	saa = submodule foreach git add -A
+	sci = submodule foreach git commit
 	unadd = reset HEAD
 	configv = config --list --show-origin
 	cloner = clone --recursive
 	pullm = !git checkout master && git pull
 	pulls = submodule update --recursive --remote
-	pulla = !git pull --no-recurse-submodules && git submodule foreach 'git pull' && git status
+	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	pushf = push --force-with-lease
 
 [filter "lfs"]
