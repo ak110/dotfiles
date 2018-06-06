@@ -4,6 +4,7 @@
 .config/QtProject.conf
 .config/Slack/
 .config/autostart/
+.config/configstore/
 .config/dconf/
 .config/enchant/
 .config/evolution/
@@ -19,8 +20,9 @@
 .config/libreoffice/
 .config/menus/
 .config/mimeapps.list
-.config/nautilus/search-metadata
+.config/nautilus/
 .config/pulse/
+.config/sqlitebrowser/
 .config/user-dirs.dirs
 .config/user-dirs.locale
 .config/wireshark/

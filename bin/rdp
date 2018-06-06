@@ -1,0 +1,23 @@
+#!/bin/bash -eux
+
+# Ctrl + Alt + Enterでフルスクリーン切り替え
+
+nohup xfreerdp \
+  +compression \
+  +fonts \
+  +wallpaper \
+  +theme \
+  +aero \
+  +window-drag \
+  +home-drive \
+  +clipboard \
+  -smart-sizing \
+  +async-input \
+  /f \
+  /size:1366x768 \
+  /u:aki \
+  /v:tqzh.tk:51883 | tee ~/rdp.log 2>&1
+
+# /t:"-" \
+# /sound \
+
