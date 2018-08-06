@@ -59,6 +59,7 @@
 	pulls = submodule update --recursive --remote
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	pushf = push --force-with-lease
+	logt = log --oneline --graph --all --decorate=full
 
 [filter "lfs"]
 	process = git-lfs filter-process
