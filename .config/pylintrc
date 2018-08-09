@@ -10,15 +10,20 @@ extension-pkg-whitelist=numpy,cv2,hyperopt,mpi4py.MPI
 # W0603:Using the global statement
 # W1202:Use % formatting in logging functions and pass the % parameters as arguments
 disable=C0103,C0111,W0125,W0511,W0603,W1202
-    ,missing-docstring
-    ,locally-disabled
-    ,too-many-instance-attributes
-    ,too-many-arguments
-    ,too-many-locals
-    ,too-few-public-methods
-    ,len-as-condition
     ,bare-except
+    ,len-as-condition
+    ,locally-disabled
+    ,missing-docstring
     ,no-else-return
+    ,no-self-use
+    ,too-few-public-methods
+    ,too-many-arguments
+    ,too-many-branches
+    ,too-many-instance-attributes
+    ,too-many-locals
+    ,too-many-nested-blocks
+    ,too-many-return-statements
+    ,too-many-statements
 
 [FORMAT]
 max-line-length=256
