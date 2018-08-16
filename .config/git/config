@@ -33,15 +33,16 @@
 	rebase = preserve
 
 [alias]
-	aa = add -A
+	aa = add --all --verbose
 	b = branch
+	ba = branch --all
 	ci = commit
 	co = checkout
 	cp = cherry-pick
 	st = status
 	ri = rebase -i origin/master
 	ff = pull --ff-only
-	am = commit --amend
+	graph = log --oneline --graph --all --decorate=full
 	sb = submodule foreach git branch
 	sci = submodule foreach git commit
 	sco = submodule foreach git checkout
@@ -59,7 +60,13 @@
 	pulls = submodule update --recursive --remote
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	pushf = push --force-with-lease
-	logt = log --oneline --graph --all --decorate=full
+	r = remote
+	ra = remote --verbose
+	unstage = reset -q HEAD --
+	discard = checkout --
+	uncommit = reset --mixed HEAD~
+	amend = commit --amend
+	precommit = diff --cached --diff-algorithm=minimal -w
 
 [filter "lfs"]
 	process = git-lfs filter-process
