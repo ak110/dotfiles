@@ -28,6 +28,7 @@
 [push]
 	default = simple
 	recurseSubmodules = on-demand
+	followTags = true
 
 [pull]
 	rebase = preserve
