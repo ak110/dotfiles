@@ -14,6 +14,7 @@ disable=C0103,C0111,C0200,W0125,W0511,W0603,W1202
     ,bare-except
     ,len-as-condition
     ,locally-disabled
+    ,logging-fstring-interpolation
     ,missing-docstring
     ,no-else-return
     ,no-self-use
