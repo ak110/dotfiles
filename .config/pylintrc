@@ -26,6 +26,7 @@ disable=C0103,C0111,C0200,W0125,W0511,W0603,W1202
     ,too-many-nested-blocks
     ,too-many-return-statements
     ,too-many-statements
+    ,useless-import-alias
 
 [FORMAT]
 max-line-length=256
