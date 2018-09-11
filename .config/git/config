@@ -43,22 +43,10 @@
 	st = status
 	ri = rebase -i origin/master
 	ff = pull --ff-only
+	logp = log --patch
 	graph = log --oneline --graph --all --decorate=full
-	sb = submodule foreach git branch
-	sci = submodule foreach git commit
-	sco = submodule foreach git checkout
-	scp = submodule foreach git cherry-pick
-	sst = submodule foreach git status
-	sri = submodule foreach git rebase -i origin/master
-	saa = submodule foreach git add -A
-	sff = submodule foreach git pull --ff-only
-	sam = submodule foreach git commit --amend
-	spush = submodule foreach git push
-	spull = submodule foreach git pull
-	configv = config --list --show-origin
 	cloner = clone --recursive
 	pullm = !git checkout master && git pull
-	pulls = submodule update --recursive --remote
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	pushf = push --force-with-lease
 	r = remote
