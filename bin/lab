@@ -1,2 +1,4 @@
 #!/bin/bash -eux
-nohup jupyter lab ~ > ~/jupyterlab.log 2>&1 &
+nohup jupyter lab --ip=$HOSTNAME ~ > ~/jupyterlab.log 2>&1 &
+sleep 3
+cat ~/jupyterlab.log
