@@ -1,8 +1,10 @@
-
 Thumbs.db
 *~
 *.swp
+
+__pycache__/
 .vscode/
+.ipynb_checkpoints/
 
 *___*
 cmd.bat
