@@ -27,8 +27,10 @@
 .config/user-dirs.locale
 .config/wireshark/
 
-.ipython/
-!.ipython/profile_default/startup/50-etc.py
+.ipython/extensions
+.ipython/nbextensions
+.ipython/profile_*/db/
+.ipython/profile_*/*.sqlite
 
 .ssh/config
 .ssh/id_rsa
