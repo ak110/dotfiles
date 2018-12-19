@@ -1,0 +1,2 @@
+#!/bin/bash -eux
+watch 'top -b | head ; vmstat --unit M ; nvidia-smi'

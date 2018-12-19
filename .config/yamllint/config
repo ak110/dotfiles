@@ -1,0 +1,16 @@
+---
+extends: default
+
+rules:
+  braces:
+    max-spaces-inside: 1
+    level: warning
+
+  brackets:
+    max-spaces-inside: 1
+    level: warning
+
+  comments:
+    require-starting-space: true
+    ignore-shebangs: true
+    min-spaces-from-content: 1

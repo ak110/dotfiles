@@ -1,0 +1,10 @@
+[flake8]
+max-line-length = 128
+extend-ignore = E203
+exclude =
+    .git,
+    .ipynb_checkpoints,
+    .mypy_cache,
+    __init__.py,
+    __pycache__,
+    data,

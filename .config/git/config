@@ -3,36 +3,61 @@
 [user]
 	email = mark@aur.ll.to
 	name = aki.
-
 [core]
 	autocrlf = false
 	quotepath = false
+	#editor = code --wait フォーカス移動的に使いづらい
 	editor = vim
-
+[feature]
+	experimental = true
 [credential]
 	helper = store
-
 [color]
 	ui = auto
-
+[pager]
+	grep = false
+	ls-files = false
+[init]
+	defaultBranch = master
+[status]
+	showStash = true
+[log]
+	date = iso-local
+[grep]
+	lineNumber = true
+	patternType = perl
 [diff]
 	tool = vimdiff
-
+	noprefix = true
+	renames = true
+	colorMoved = true
+	algorithm = histogram
 [difftool]
 	prompt = false
-
 [fetch]
 	prune = true
-	recurseSubmodules = true
-
+	recurseSubmodules = false
+	pruneTags = true
+	all = true
 [push]
 	default = simple
 	recurseSubmodules = on-demand
 	followTags = true
-
+	autoSetupRemote = true
 [pull]
-	rebase = preserve
-
+	rebase = true
+[submodule]
+	recurse = true
+#[merge]
+#	conflictstyle = zdiff3
+[rebase]
+	autosquash = true
+	autostash = true
+	updateRefs = true
+[commit]
+	verbose = true
+[branch]
+	sort = committerdate
 [alias]
 	aa = add --all --verbose
 	b = branch
@@ -41,22 +66,41 @@
 	co = checkout
 	cp = cherry-pick
 	st = status
-	ri = rebase -i origin/master
-	ff = pull --ff-only
+	show-st = show --summary --name-status
+	ri = rebase --interactive
+	ff = merge --ff-only
+	logn = log --name-status
 	logp = log --patch
+	logf = log --pretty=fuller
 	graph = log --oneline --graph --all --decorate=full
 	cloner = clone --recursive
-	pullm = !git checkout master && git pull
+	sync = !git pull && git push
+	pullm = !git switch master && git pull
+	pullmf = !git switch master && git restore . && git pull
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
-	pushf = push --force-with-lease
+	spull = !git submodule foreach git pull
+	spullm = !git submodule foreach git pullm
+	spullmf = !git submodule foreach git pullmf
+	pushf = push --force-with-lease --force-if-includes
+	push-no-ci = push --push-option=ci.skip
 	r = remote
 	ra = remote --verbose
+	track = switch --track
 	unstage = reset -q HEAD --
 	discard = checkout --
 	uncommit = reset --mixed HEAD~
-	amend = commit --amend
-	precommit = diff --cached --diff-algorithm=minimal -w
-
+	amend = commit --amend --no-edit
+	amende = commit --amend
+	amend-date = commit --amend --no-edit --date=now
+	aaamend = !git aa && git amend
+	rebase-date = rebase --ignore-date
+	ri-date = rebase --interactive --ignore-date
+	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
+	diffn = diff --ignore-all-space --ignore-blank-lines
+	fixup = commit --fixup
+	ff-dev = !git fetch origin develop && git merge --ff-only origin/develop
+	aci = !git status && git add --all --verbose && git commit --message=.
+	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f

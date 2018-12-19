@@ -2,22 +2,36 @@
 
 # Ctrl + Alt + Enterでフルスクリーン切り替え
 
-nohup xfreerdp \
-  +compression \
+xfreerdp $* \
   +fonts \
   +wallpaper \
-  +theme \
   +aero \
   +window-drag \
-  +home-drive \
   +clipboard \
   -smart-sizing \
-  +async-input \
+  -sound \
+  +auto-reconnect \
+  /gfx-h264 \
+  +gfx-thin-client \
   /f \
-  /size:1366x768 \
   /u:aki \
-  /v:tqzh.tk:51883 | tee ~/rdp.log 2>&1
+  /v:tqzh.tk:51883
+
 
 # /t:"-" \
 # /sound \
+#  +theme \
+#  +home-drive \
+#  +compression \
 
+#  /rfx \
+#  /jpeg \
+#  /jpeg-quality:50 \
+#  /gdi:hw \
+#  /multimedia \
+#  +async-input \
+#  +async-update \
+#  +async-channels \
+#  +async-transport \
+#  /gfx-h264:AVC444 \
+#  /size:1366x768 \

@@ -1,0 +1,44 @@
+[MAIN]
+extension-pkg-allow-list=numpy
+
+[MESSAGES CONTROL]
+disable=
+    #bad-continuation,  # obsoleted?
+    #no-self-use,  # obsolated?
+    broad-except,
+    duplicate-code,
+    fixme,
+    global-statement,
+    import-outside-toplevel,
+    invalid-name,
+    invalid-unary-operand-type,  # for tf.Tensor
+    len-as-condition,
+    logging-format-interpolation,  # for old pylint
+    logging-fstring-interpolation,
+    missing-docstring,
+    no-else-return,
+    no-value-for-parameter,  # TF 2.2 False Positive
+    too-few-public-methods,
+    too-many-ancestors,
+    too-many-arguments,
+    too-many-branches,
+    too-many-instance-attributes,
+    too-many-lines,
+    too-many-locals,
+    too-many-nested-blocks,
+    too-many-return-statements,
+    too-many-statements,
+    unexpected-keyword-arg,  # TF 2.2 False Positive
+    using-constant-test,
+
+[FORMAT]
+max-line-length=256
+
+[TYPECHECK]
+generated-members=cv2.*,pydantic.*,transformers.*,torch.*
+ignored-modules=
+    pygments.formatters,
+    pygments.lexers,
+ignored-classes=
+    SQLAlchemy,
+    scoped_session,

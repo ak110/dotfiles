@@ -1,7 +1,12 @@
 scriptencoding utf-8
 " ↑一番上に書かないとダメっぽい？
 
+unlet! skip_defaults_vim
+source $VIMRUNTIME/defaults.vim
+
 syntax enable
+
+colorscheme h2u_white
 
 set nocompatible
 
@@ -58,6 +63,7 @@ set backspace=indent,eol,start
 "set mouse=nvi
 "set mousemodel=extend
 set mouse=
+set ttymouse=
 
 " 折り返しな行の移動
 nnoremap j gj
@@ -147,7 +153,7 @@ if has('iconv')
 endif
 
 " ucs-bom
-let &fileencoding='ucs-bom,' . &fileencoding
+"let &fileencoding='ucs-bom,' . &fileencoding
 
 " 日本語を含まない場合は fileencoding に encoding を使うようにする
 if has('autocmd')
@@ -159,4 +165,12 @@ if has('autocmd')
     autocmd BufReadPost * call AU_ReCheck_FENC()
 endif
 
+" vimdiffで一致部分を隠さない
+function! SetDiffMode()
+  if &diff
+    setlocal foldmethod=manual
+    setlocal wrap<
+  endif
+endfunction
+autocmd VimEnter,FilterWritePre * call SetDiffMode()
 

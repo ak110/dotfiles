@@ -2,6 +2,16 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# 環境変数(非interactiveでも)
+export PYTHONDONTWRITEBYTECODE=1
+export MPLBACKEND=Agg
+# ~/.envがあれば読み込む
+if [ -e ~/.env ] ; then
+    set -a
+    eval "$(cat ~/.env <(echo) <(declare -x))"
+    set +a
+fi
+
 # If not running interactively, don't do anything
 case $- in
     *i*) ;;
@@ -64,9 +74,11 @@ fi
 unset color_prompt force_color_prompt
 
 # If this is an xterm set the title to user@host:dir
+# => host:dirに変更
 case "$TERM" in
 xterm*|rxvt*)
-    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    #PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\h: \w\a\]$PS1"
     ;;
 *)
     ;;
@@ -80,8 +92,8 @@ if [ -x /usr/bin/dircolors ]; then
     #alias vdir='vdir --color=auto'
 
     alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
+    alias fgrep='grep -F --color=auto'
+    alias egrep='grep -E --color=auto'
 fi
 
 # colored GCC warnings and errors
@@ -118,30 +130,34 @@ fi
 
 # 環境変数
 test -d /usr/local/cuda/bin     && export PATH=/usr/local/cuda/bin:$PATH
+test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
 test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
-test -d $HOME/conda/bin         && export PATH=$HOME/conda/bin:$PATH
 test -d $HOME/dotfiles/bin      && export PATH=$HOME/dotfiles/bin:$PATH
 test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
 export ENV=$HOME/.bashrc
-export HISTCONTROL="ignoredups"  # ignorespace, ignoredups or ignoreboth
 export EDITOR=vim
-export PYTHONDONTWRITEBYTECODE=1
-export MPLBACKEND=Agg
+export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
+export MYPY_CACHE_DIR=$HOME/.cache/mypy
+#export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
 
 # エイリアス
 alias rm='rm -i'
 alias mv='mv -i'
 alias cp='cp -i'
 function cd() {
-    builtin cd "$@" && ll
+    builtin cd "$@" && (
+        ll
+        if [ -e .git ] ; then
+            git status
+        fi
+    )
 }
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
-alias c='echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"'
-alias gpuwatch="watch 'top -b | head ; nvidia-smi'"
 
-# 終了コード表示
+# プロンプトのカスタマイズ
 function _show_status() {
+    # 終了コード表示
     local status=${PIPESTATUS[@]}
     local color=""  # 白
     local s
@@ -158,14 +174,45 @@ function _show_status() {
         echo "Exit code: ${status}"
         echo -en "\\033[0;39m"
     fi
+    # ウィンドウタイトルをホスト名にする(念のため毎回)
+    echo -en "\\e]2;$(hostname)\\a"
 }
-PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
+PROMPT_COMMAND=${PROMPT_COMMAND//history -a;/}
+PROMPT_COMMAND=${PROMPT_COMMAND//_show_status;/}
+PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
+
+# pyenv
+# 手動で有効化
+function enable-pyenv() {
+    if [ ! -d "$HOME/.pyenv" ] ; then
+        curl -sL https://pyenv.run | bash
+    fi
+    export PATH="$HOME/.pyenv/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+    pyenv --version
+    pyenv versions
+}
+# 既に存在したら自動で有効化しちゃうことにしてみる
+# ただし、VIRTUAL_ENVがすでに有効ならスキップ
+if [ -d "$HOME/.pyenv" -a ! -n "$VIRTUAL_ENV" ] ; then
+    enable-pyenv
+fi
+
+# Claude Code
+if [ -e ~/.claude/local/claude ] ; then
+    alias claude=~/.claude/local/claude
+fi
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
-    set -x
     source ~/.localbashrc
-    set +x
 fi
 
+#xonsh_path=$(which xonsh)
+#if [ -x $xonsh_path ] ; then
+#    exec $xonsh_path
+#fi
 
+# exit code: 0
+:

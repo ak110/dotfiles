@@ -1,4 +1,2 @@
 #!/bin/bash -eux
-nohup jupyter lab --ip=$HOSTNAME ~ > ~/jupyterlab.log 2>&1 &
-sleep 3
-cat ~/jupyterlab.log
+nohup jupyter lab --ip=0.0.0.0 --port=8888 --port-retries=0 --no-browser $* ~ 2>&1 | tee ~/jupyterlab.log
