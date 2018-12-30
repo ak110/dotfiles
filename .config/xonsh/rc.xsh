@@ -9,6 +9,7 @@ $XONSH_SHOW_TRACEBACK = False
 
 $PROMPT = "{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN}$ "
 $RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch}"
+$TITLE = '{hostname}'
 
 @events.on_postcommand
 def _on_postcommand(cmd: str, rtn: int, out: str or None, ts: list) -> None:
