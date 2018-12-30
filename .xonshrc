@@ -1,0 +1,12 @@
+
+#$XONSH_COLOR_STYLE = 'native'
+
+$INDENT = "    "
+$COMPLETIONS_CONFIRM = True
+$HISTCONTROL = ('ignoredups')
+$AUTO_CD = True
+$XONSH_SHOW_TRACEBACK = False
+
+$PROMPT = "{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN}$ "
+$RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch}"
+
