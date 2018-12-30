@@ -1,2 +1,2 @@
-#!/bin/bash -eux
+#!/bin/bash -eu
 echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
