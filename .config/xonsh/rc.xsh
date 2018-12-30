@@ -1,4 +1,9 @@
 
+xontrib load \
+    apt_tabcomplete \
+    docker_tabcomplete \
+    readable-traceback
+
 #$XONSH_COLOR_STYLE = 'native'
 
 $INDENT = "    "
@@ -29,15 +34,16 @@ def _on_postcommand(cmd: str, rtn: int, out: str or None, ts: list) -> None:
 
 @events.on_chdir
 def _on_chdir(olddir, newdir, **kwargs):
+    """ディレクトリ移動時にll。"""
     ll
 
-aliases['ls'] = 'ls --color=auto'
 aliases['grep'] = 'grep --color=auto'
 aliases['fgrep'] = 'fgrep --color=auto'
 aliases['egrep'] = 'egrep --color=auto'
-aliases['ll'] = 'ls -l --classify --group-directories-first'
-aliases['la'] = 'ls -l --classify --group-directories-first --all'
-aliases['l'] = 'ls -C --classify --group-directories-first'
+aliases['ls'] = 'ls --color=auto --group-directories-first -v'
+aliases['ll'] = 'ls -l --classify --group-directories-first -v'
+aliases['la'] = 'ls -l --classify --group-directories-first -v --all'
+aliases['l'] = 'ls -C --classify --group-directories-first -v'
 aliases['rm'] = 'rm -i'
 aliases['mv'] = 'mv -i'
 aliases['cp'] = 'cp -i'
