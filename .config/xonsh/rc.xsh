@@ -1,8 +1,5 @@
 
-xontrib load \
-    apt_tabcomplete \
-    docker_tabcomplete \
-    readable-traceback
+#xontrib load apt_tabcomplete docker_tabcomplete readable-traceback
 
 #$XONSH_COLOR_STYLE = 'native'
 
@@ -10,7 +7,7 @@ $INDENT = "    "
 $COMPLETIONS_CONFIRM = True
 $HISTCONTROL = ('ignoredups')
 $AUTO_CD = True
-$XONSH_SHOW_TRACEBACK = False
+$XONSH_SHOW_TRACEBACK = True
 
 $PROMPT = "{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN}$ "
 $RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch}"
