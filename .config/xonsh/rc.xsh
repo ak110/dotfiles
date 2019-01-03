@@ -15,7 +15,6 @@ $TITLE = '{hostname}'
 
 @events.on_postcommand
 def _on_postcommand(cmd: str, rtn: int, out: str or None, ts: list) -> None:
-    """終了コードと実行時間の表示。"""
     outputs = []
 
     if rtn != 0:
@@ -31,7 +30,6 @@ def _on_postcommand(cmd: str, rtn: int, out: str or None, ts: list) -> None:
 
 @events.on_chdir
 def _on_chdir(olddir, newdir, **kwargs):
-    """ディレクトリ移動時にll。"""
     ll
 
 aliases['grep'] = 'grep --color=auto'
