@@ -10,7 +10,7 @@ $AUTO_CD = True
 $XONSH_SHOW_TRACEBACK = True
 
 $PROMPT = "{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN}$ "
-$RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch}"
+$RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch} "
 $TITLE = '{hostname}'
 
 @events.on_postcommand
