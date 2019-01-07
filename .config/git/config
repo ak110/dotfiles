@@ -41,7 +41,7 @@
 	co = checkout
 	cp = cherry-pick
 	st = status
-	ri = rebase -i origin/master
+	ri = rebase -i
 	ff = pull --ff-only
 	logp = log --patch
 	graph = log --oneline --graph --all --decorate=full
