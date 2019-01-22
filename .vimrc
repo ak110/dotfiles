@@ -159,4 +159,12 @@ if has('autocmd')
     autocmd BufReadPost * call AU_ReCheck_FENC()
 endif
 
+" vimdiffで一致部分を隠さない
+function! SetDiffMode()
+  if &diff
+    setlocal foldmethod=manual
+    setlocal wrap<
+  endif
+endfunction
+autocmd VimEnter,FilterWritePre * call SetDiffMode()
 
