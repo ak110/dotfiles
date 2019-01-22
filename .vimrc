@@ -3,6 +3,8 @@ scriptencoding utf-8
 
 syntax enable
 
+colorscheme molokai
+
 set nocompatible
 
 set nobackup
