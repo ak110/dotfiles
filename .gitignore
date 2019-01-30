@@ -41,3 +41,6 @@
 
 .vim/.netrwhist
 
+.tmux/plugins/tmux-better-mouse-mode/
+.tmux/plugins/tmux-sensible/
+

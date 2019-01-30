@@ -1,3 +1,6 @@
 [submodule "molokai"]
 	path = molokai
 	url = https://github.com/tomasr/molokai
+[submodule ".tmux/plugins/tpm"]
+	path = .tmux/plugins/tpm
+	url = https://github.com/tmux-plugins/tpm
