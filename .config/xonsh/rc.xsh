@@ -1,16 +1,19 @@
 
+import datetime
+
 #xontrib load apt_tabcomplete docker_tabcomplete readable-traceback
 
 #$XONSH_COLOR_STYLE = 'native'
 
-$INDENT = "    "
+$INDENT = '    '
 $COMPLETIONS_CONFIRM = True
 $HISTCONTROL = ('ignoredups')
 $AUTO_CD = True
 $XONSH_SHOW_TRACEBACK = True
+$UPDATE_PROMPT_ON_KEYPRESS = False
 
-$PROMPT = "{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN}$ "
-$RIGHT_PROMPT = "* {INTENSE_RED}{curr_branch} "
+$PROMPT = lambda: datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]') + ' {user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN} * {curr_branch} $ '
+$RIGHT_PROMPT = ''
 $TITLE = '{hostname}'
 
 @events.on_postcommand
