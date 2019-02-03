@@ -12,7 +12,15 @@ $AUTO_CD = True
 $XONSH_SHOW_TRACEBACK = True
 $UPDATE_PROMPT_ON_KEYPRESS = False
 
-$PROMPT = lambda: datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]') + ' {user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN} * {curr_branch} $ '
+def _prompt():
+    p = ''
+    p += datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
+    p += ' * {INTENSE_RED}{curr_branch}{NO_COLOR}'
+    p += '\n'
+    p += '{user}@{hostname}:{INTENSE_BLUE}{cwd}{GREEN} $ {NO_COLOR}'
+    return p
+
+$PROMPT = _prompt
 $RIGHT_PROMPT = ''
 $TITLE = '{hostname}'
 
