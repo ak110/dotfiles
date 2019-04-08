@@ -4,6 +4,6 @@ DOT_DIR=~/dotfiles
 
 cd $DOT_DIR
 git pull
-git submodule update --init
+git submodule update --init --recursive
 ./deploy.sh
 
