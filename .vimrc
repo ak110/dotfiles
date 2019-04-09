@@ -3,7 +3,7 @@ scriptencoding utf-8
 
 syntax enable
 
-colorscheme molokai
+colorscheme h2u_white
 
 set nocompatible
 
