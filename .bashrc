@@ -166,8 +166,8 @@ if [ -e ~/.localbashrc ] ; then
     set +x
 fi
 
-xonsh_path=$(which xonsh)
-if [ -x $xonsh_path ] ; then
-    exec $xonsh_path
-fi
+#xonsh_path=$(which xonsh)
+#if [ -x $xonsh_path ] ; then
+#    exec $xonsh_path
+#fi
 
