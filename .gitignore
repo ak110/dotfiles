@@ -7,8 +7,8 @@
 .config/configstore/
 .config/dconf/
 .config/enchant/
-.config/evolution/
 .config/eog/
+.config/evolution/
 .config/freerdp/
 .config/gedit/
 .config/gnome-gmail/
@@ -22,7 +22,9 @@
 .config/mimeapps.list
 .config/nautilus/
 .config/pulse/
+.config/remmina/
 .config/sqlitebrowser/
+.config/teamviewer/
 .config/user-dirs.dirs
 .config/user-dirs.locale
 .config/wireshark/

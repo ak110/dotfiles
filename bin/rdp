@@ -13,7 +13,11 @@ xfreerdp \
   +clipboard \
   -smart-sizing \
   +async-input \
+  +async-update \
+  +async-transport \
+  +async-channels \
   -sound \
+  /gfx:AVC444 \
   /f \
   /size:1366x768 \
   /u:aki \
@@ -22,3 +26,8 @@ xfreerdp \
 # /t:"-" \
 # /sound \
 
+#  /rfx \
+#  /jpeg \
+#  /jpeg-quality:50 \
+#  /gdi:hw \
+#  /multimedia \
