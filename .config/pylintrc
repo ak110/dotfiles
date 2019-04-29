@@ -1,5 +1,5 @@
 [MASTER]
-ignore=tests,tests_strict
+ignore=tests
 extension-pkg-whitelist=numpy,cv2,hyperopt,mpi4py.MPI
 
 [MESSAGES CONTROL]
@@ -33,5 +33,21 @@ disable=C0103,C0111,C0200,R0801,W0125,W0511,W0603,W1202
 max-line-length=256
 
 [TYPECHECK]
-ignored-modules=__init__,numpy,matplotlib.cm,pygments.lexers,pygments.formatters,mpi4py,pydensecrf.densecrf
-ignored-classes=LookupDict,jinja_env,tuple,Empty,pathlib.PurePath,h5py.File,ConfigProto,SQLAlchemy,scoped_session
+ignored-modules=__init__
+    ,matplotlib.cm
+    ,mpi4py
+    ,numpy
+    ,pydensecrf.densecrf
+    ,pygments.formatters
+    ,pygments.lexers
+    ,torch
+ignored-classes=tuple
+    ,ConfigProto
+    ,Empty
+    ,LookupDict
+    ,SQLAlchemy
+    ,h5py.File
+    ,ignite.engine.engine.State
+    ,jinja_env
+    ,pathlib.PurePath
+    ,scoped_session
