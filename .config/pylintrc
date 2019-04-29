@@ -3,16 +3,25 @@ ignore=tests
 extension-pkg-whitelist=numpy,cv2,hyperopt,mpi4py.MPI
 
 [MESSAGES CONTROL]
-# C0103:Invalid attribute name
-# C0111:Missing module docstring
-# C0200:Consider using enumerate instead of iterating with range and len
-# R0801:Similar lines
-# W0125:Using a conditional statement with a constant value
-# W0511:TODO
-# W0603:Using the global statement
-# W1202:Use % formatting in logging functions and pass the % parameters as arguments
-disable=C0103,C0111,C0200,R0801,W0125,W0511,W0603,W1202
+disable=
+    # C0103:Invalid attribute name
+    C0103
+    # C0111:Missing module docstring
+    ,C0111
+    # C0200:Consider using enumerate instead of iterating with range and len
+    ,C0200
+    # R0801:Similar lines
+    ,R0801
+    # W0125:Using a conditional statement with a constant value
+    ,W0125
+    # W0511:TODO
+    ,W0511
+    # W0603:Using the global statement
+    ,W0603
+    # W1202:Use % formatting in logging functions and pass the % parameters as arguments
+    ,W1202
     ,bare-except
+    ,broad-except
     ,len-as-condition
     ,locally-disabled
     ,logging-fstring-interpolation
@@ -33,7 +42,8 @@ disable=C0103,C0111,C0200,R0801,W0125,W0511,W0603,W1202
 max-line-length=256
 
 [TYPECHECK]
-ignored-modules=__init__
+ignored-modules=
+    __init__
     ,matplotlib.cm
     ,mpi4py
     ,numpy
@@ -41,7 +51,8 @@ ignored-modules=__init__
     ,pygments.formatters
     ,pygments.lexers
     ,torch
-ignored-classes=tuple
+ignored-classes=
+    tuple
     ,ConfigProto
     ,Empty
     ,LookupDict
