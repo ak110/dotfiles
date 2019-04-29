@@ -6,5 +6,7 @@ __pycache__/
 .vscode/
 .ipynb_checkpoints/
 
+Untitled*.ipynb
+
 *___*
 cmd.bat

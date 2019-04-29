@@ -5,6 +5,7 @@
 .config/Slack/
 .config/autostart/
 .config/configstore/
+.config/dask/
 .config/dconf/
 .config/enchant/
 .config/eog/
