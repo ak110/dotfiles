@@ -161,9 +161,7 @@ PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
-    set -x
     source ~/.localbashrc
-    set +x
 fi
 
 #xonsh_path=$(which xonsh)
