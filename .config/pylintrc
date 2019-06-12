@@ -1,5 +1,5 @@
 [MASTER]
-ignore=tests
+ignore=docs,tests
 extension-pkg-whitelist=numpy,cv2,hyperopt,mpi4py.MPI
 
 [MESSAGES CONTROL]
@@ -20,6 +20,8 @@ disable=
     ,W0603
     # W1202:Use % formatting in logging functions and pass the % parameters as arguments
     ,W1202
+    # for black
+    ,bad-continuation
     ,bare-except
     ,broad-except
     ,len-as-condition
@@ -32,6 +34,7 @@ disable=
     ,too-many-arguments
     ,too-many-branches
     ,too-many-instance-attributes
+    ,too-many-lines
     ,too-many-locals
     ,too-many-nested-blocks
     ,too-many-return-statements
