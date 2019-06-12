@@ -169,6 +169,10 @@ fi
 #    exec $xonsh_path
 #fi
 
-
 # added by travis gem
-[ -f /home/user/.travis/travis.sh ] && source /home/user/.travis/travis.sh
+if [ -f /home/user/.travis/travis.sh ] ; then
+   source /home/user/.travis/travis.sh
+else
+    true
+fi
+
