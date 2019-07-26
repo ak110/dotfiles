@@ -31,7 +31,7 @@
 	followTags = true
 
 [pull]
-	rebase = preserve
+	rebase = merges
 
 [alias]
 	aa = add --all --verbose
