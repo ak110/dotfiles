@@ -15,14 +15,18 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import pandas as pd
+import scipy
+import sympy
 import sklearn
-import sklearn.externals.joblib
+import sklearn.metrics
 import sklearn.utils
+import joblib
 
 df = pd.DataFrame()
-df['a'] = [1, 2, 3, np.nan]
-df['b'] = [4, 5, 6, np.nan]
-df['c'] = [7, 8, np.nan, np.nan]
+df["a"] = [1, 2, 3, np.nan]
+df["b"] = [4, 5, 6, np.nan]
+df["c"] = [7, 8, np.nan, np.nan]
+df["s"] = [None, "a", "b", "c"]
 
 a1 = np.array([.75, .1, .15])
 b1 = np.array([2, 3, 4])
@@ -33,10 +37,10 @@ b2 = np.array([[3, 4, 5], [4, 5, 6]])
 a3 = np.array([[[.75, .1, .15], [2, 3, 4]], [[3, 4, 5], [4, 5, 6]]])
 b3 = np.array([[[2, 3, 4], [4, 5, 6]], [[3, 4, 5], [1, 2, 3]]])
 
-if 'USERPROFILE' in os.environ:
-    work_dir = pathlib.Path(os.environ['USERPROFILE']).joinpath('Desktop')
-elif 'HOME' in os.environ:
-    work_dir = pathlib.Path(os.environ['HOME'])
+if "USERPROFILE" in os.environ:
+    work_dir = pathlib.Path(os.environ["USERPROFILE"]) / "Desktop"
+elif "HOME" in os.environ:
+    work_dir = pathlib.Path(os.environ["HOME"])
 else:
     work_dir = None
 if work_dir is not None:
@@ -50,3 +54,14 @@ def softmax(x):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+d = {
+    "a": 1,
+    "b": 2,
+    "c": 3,
+    np.nan: "4",
+}
+
+try:
+    import pytoolkit as tk
+except ImportError:
+    pass
