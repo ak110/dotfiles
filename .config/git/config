@@ -43,6 +43,7 @@
 	st = status
 	ri = rebase -i
 	ff = pull --ff-only
+	logn = log --name-status
 	logp = log --patch
 	graph = log --oneline --graph --all --decorate=full
 	cloner = clone --recursive
