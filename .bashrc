@@ -127,6 +127,12 @@ export HISTCONTROL="ignoredups"  # ignorespace, ignoredups or ignoreboth
 export EDITOR=vim
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
+# ~/.envがあれば読み込む
+if [ -e ~/.env ] ; then
+    set -a
+    eval "$(cat ~/.env <(echo) <(declare -x))"
+    set +a
+fi
 
 # エイリアス
 alias rm='rm -i'
