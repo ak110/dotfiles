@@ -2,6 +2,16 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# 環境変数(非interactiveでも)
+export PYTHONDONTWRITEBYTECODE=1
+export MPLBACKEND=Agg
+# ~/.envがあれば読み込む
+if [ -e ~/.env ] ; then
+    set -a
+    eval "$(cat ~/.env <(echo) <(declare -x))"
+    set +a
+fi
+
 # If not running interactively, don't do anything
 case $- in
     *i*) ;;
@@ -125,14 +135,6 @@ test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
 export ENV=$HOME/.bashrc
 export HISTCONTROL="ignoredups"  # ignorespace, ignoredups or ignoreboth
 export EDITOR=vim
-export PYTHONDONTWRITEBYTECODE=1
-export MPLBACKEND=Agg
-# ~/.envがあれば読み込む
-if [ -e ~/.env ] ; then
-    set -a
-    eval "$(cat ~/.env <(echo) <(declare -x))"
-    set +a
-fi
 
 # エイリアス
 alias rm='rm -i'
@@ -174,11 +176,4 @@ fi
 #if [ -x $xonsh_path ] ; then
 #    exec $xonsh_path
 #fi
-
-# added by travis gem
-if [ -f /home/user/.travis/travis.sh ] ; then
-   source /home/user/.travis/travis.sh
-else
-    true
-fi
 
