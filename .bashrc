@@ -177,3 +177,5 @@ fi
 #    exec $xonsh_path
 #fi
 
+# exit code: 0
+:
