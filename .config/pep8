@@ -1,5 +1,0 @@
-[pep8]
-# E722 / do not use bare except'
-ignore = E722
-max-line-length = 256
-exclude = .git,__pycache__,tests,tests_strict,__init__.py
