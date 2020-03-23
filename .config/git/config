@@ -17,6 +17,8 @@
 
 [diff]
 	tool = vimdiff
+	noprefix = true
+	renames = true
 
 [difftool]
 	prompt = false
@@ -32,6 +34,13 @@
 
 [pull]
 	rebase = merges
+
+[pager]
+	ls-files = true
+
+[grep]
+	lineNumber = true
+	patternType = extended
 
 [alias]
 	aa = add --all --verbose
