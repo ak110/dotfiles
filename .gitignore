@@ -3,6 +3,7 @@
 .config/KeePass/
 .config/QtProject.conf
 .config/Slack/
+.config/TabNine/
 .config/autostart/
 .config/configstore/
 .config/dask/
