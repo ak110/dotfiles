@@ -10,7 +10,8 @@ disable=
     import-outside-toplevel,
     invalid-name,
     len-as-condition,
-    logging-format-interpolation,
+    logging-format-interpolation,  # for old pylint
+    logging-fstring-interpolation,
     missing-docstring,
     no-else-return,
     no-self-use,
@@ -25,6 +26,8 @@ disable=
     too-many-return-statements,
     too-many-statements,
     using-constant-test,
+    unexpected-keyword-arg,  # TF 2.2 False Positive
+    no-value-for-parameter,  # TF 2.2 False Positive
 
 [FORMAT]
 max-line-length=256

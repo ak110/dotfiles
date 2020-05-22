@@ -67,6 +67,7 @@
 	discard = checkout --
 	uncommit = reset --mixed HEAD~
 	amend = commit --amend
+	amend-date = !git commit --amend --date=\"$(date -R)\"
 	precommit = diff --cached --diff-algorithm=minimal -w
 
 [filter "lfs"]
