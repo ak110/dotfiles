@@ -148,8 +148,9 @@ function cd() {
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
 
-# 終了コード表示
+# プロンプトのカスタマイズ
 function _show_status() {
+    # 終了コード表示
     local status=${PIPESTATUS[@]}
     local color=""  # 白
     local s
@@ -166,6 +167,8 @@ function _show_status() {
         echo "Exit code: ${status}"
         echo -en "\\033[0;39m"
     fi
+    # ウィンドウタイトルをホスト名にする(念のため毎回)
+    echo -en "\\e]2;$(hostname)\\a"
 }
 PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
 
