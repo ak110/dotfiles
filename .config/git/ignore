@@ -3,13 +3,6 @@ core
 *~
 *.swp
 
-__pycache__/
-.hypothesis/
-.ipynb_checkpoints/
-.mypy_cache/
-.vscode/
-.venv/
-
 Untitled*.ipynb
 
 *___*
