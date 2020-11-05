@@ -49,3 +49,5 @@
 .tmux/plugins/tmux-better-mouse-mode/
 .tmux/plugins/tmux-sensible/
 
+*.sqlite-journal
+
