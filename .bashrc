@@ -176,6 +176,13 @@ if [ -e ~/.localbashrc ] ; then
     source ~/.localbashrc
 fi
 
+# pyenv
+if [ -d "$HOME/.pyenv" ] ; then
+    export PATH="$HOME/.pyenv/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+fi
+
 #xonsh_path=$(which xonsh)
 #if [ -x $xonsh_path ] ; then
 #    exec $xonsh_path
