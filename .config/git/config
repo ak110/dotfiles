@@ -60,6 +60,7 @@
 	pullm = !git checkout master && git pull
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	spull = !git submodule foreach git pull
+	spullm = !git submodule foreach git pullm
 	pushf = push --force-with-lease
 	r = remote
 	ra = remote --verbose
