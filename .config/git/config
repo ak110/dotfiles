@@ -42,6 +42,9 @@
 	lineNumber = true
 	patternType = extended
 
+[log]
+	date = iso-local
+
 [alias]
 	aa = add --all --verbose
 	b = branch
