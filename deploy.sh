@@ -10,6 +10,7 @@ fi
 # chmod
 chmod 600 $DOT_DIR/.ssh/*
 chmod 700 $DOT_DIR/.ssh $DOT_DIR/.ssh/conf.d
+chmod 755 $DOT_DIR
 
 # deploy
 for f in .??*
