@@ -1,10 +1,11 @@
+# 一般
 Thumbs.db
 core
 *~
 *.swp
 
+# 作業用
 Untitled*.ipynb
-
 *___*
 cmd.bat
 

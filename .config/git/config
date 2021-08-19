@@ -81,3 +81,5 @@
 	required = true
 [flake8]
 	strict = true
+[init]
+	defaultBranch = master
