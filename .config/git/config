@@ -33,7 +33,7 @@
 	followTags = true
 
 [pull]
-	rebase = merges
+	rebase = true
 
 [pager]
 	ls-files = true
