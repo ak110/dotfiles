@@ -5,7 +5,9 @@ if "%XDG_CONFIG_HOME%"=="" (
     pause
     exit 1 /B
 )
-
 if exist "%XDG_CONFIG_HOME%" rmdir "%XDG_CONFIG_HOME%"
 mklink /D /J "%XDG_CONFIG_HOME%" "%~dp0.config"
+
+mklink /D /J "%USERPROFILE%\.ipython" "%~dp0.ipython"
+
 pause
