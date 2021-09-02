@@ -64,4 +64,6 @@ d = {
 try:
     import pytoolkit as tk
 except ImportError:
-    pass
+    print("skip: import pytoolkit as tk")
+
+import tensorflow as tf
