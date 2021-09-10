@@ -45,6 +45,7 @@ else:
     work_dir = None
 if work_dir is not None:
     os.chdir(str(work_dir))
+    print(f"chdir: {work_dir}")
 
 def softmax(x):
     # np.exp(x) / np.sum(np.exp(x))
@@ -54,6 +55,14 @@ def softmax(x):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+def logit(x):
+    if x == 1.0:
+        return np.inf
+    if x == 0.0:
+        return -np.inf
+    assert 0.0 < x < 1.0, f"Invalid value: {x}"
+    return np.log(x / (1.0 - x))
+
 d = {
     "a": 1,
     "b": 2,
@@ -61,6 +70,11 @@ d = {
     np.nan: "4",
 }
 
+
+pytoolkit_home = os.environ.get("PYTOOLKIT_HOME")
+if pytoolkit_home is not None and pathlib.Path(pytoolkit_home).exists():
+    sys.path.append(pytoolkit_home)
+    print(f"PYTOOLKIT_HOME: {pytoolkit_home}")
 try:
     import pytoolkit as tk
 except ImportError:
