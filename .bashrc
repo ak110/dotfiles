@@ -136,7 +136,7 @@ test -d $HOME/dotfiles/bin      && export PATH=$HOME/dotfiles/bin:$PATH
 test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
 export ENV=$HOME/.bashrc
 export EDITOR=vim
-export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS"
+export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
 
 # エイリアス
 alias rm='rm -i'
