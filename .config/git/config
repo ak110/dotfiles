@@ -36,7 +36,6 @@
 	rebase = true
 
 [pager]
-	diff = false
 	grep = false
 	ls-files = false
 
