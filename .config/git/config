@@ -36,7 +36,9 @@
 	rebase = true
 
 [pager]
-	ls-files = true
+	diff = false
+	grep = false
+	ls-files = false
 
 [grep]
 	lineNumber = true
