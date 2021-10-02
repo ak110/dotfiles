@@ -10,14 +10,15 @@ logger = logging.getLogger(__name__)
 def _main():
     try:
         import better_exceptions
+
         better_exceptions.hook()
     except BaseException:
         pass
     parser = argparse.ArgumentParser()
-    parser.add_argument('src_dir', type=pathlib.Path)
-    parser.add_argument('dest_dir', type=pathlib.Path)
+    parser.add_argument("src_dir", type=pathlib.Path)
+    parser.add_argument("dest_dir", type=pathlib.Path)
     args = parser.parse_args()
-    logging.basicConfig(format='%(message)s', level='DEBUG')
+    logging.basicConfig(format="%(message)s", level="DEBUG")
     _move_dir(args.src_dir, args.dest_dir)
 
 
@@ -31,10 +32,9 @@ def _move_dir(src_dir, dest_dir):
                 p.rename(dest_dir / p.name)
             logger.info(p)
         except BaseException:
-            logger.warning(f'Error: {p}', exc_info=True)
+            logger.warning(f"Error: {p}", exc_info=True)
     src_dir.rmdir()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     _main()
-
