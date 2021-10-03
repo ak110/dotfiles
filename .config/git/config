@@ -74,7 +74,7 @@
 	amend = commit --amend
 	amend-date = !git commit --amend --date=\"$(date -R)\"
 	precommit = diff --cached --diff-algorithm=minimal -w
-	acp = !git status && bash -c \"read -p 'Press [Enter] key to resume.'\" && git add --all --verbose && git commit --message=. && git push
+	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
 
 [filter "lfs"]
 	clean = git-lfs clean -- %f
