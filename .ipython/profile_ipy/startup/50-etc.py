@@ -62,15 +62,7 @@ def logit(x):
     assert 0.0 < x < 1.0, f"Invalid value: {x}"
     return np.log(x / (1.0 - x))
 
-if "USERPROFILE" in os.environ:
-    work_dir = pathlib.Path(os.environ["USERPROFILE"]) / "Desktop"
-elif "HOME" in os.environ:
-    work_dir = pathlib.Path(os.environ["HOME"])
-else:
-    work_dir = None
-if work_dir is not None:
-    os.chdir(str(work_dir))
-    print(f"chdir: {work_dir}")
+print(f"work_dir: {os.getcwd()}")
 
 df = pd.DataFrame()
 df["a"] = [1, 2, 3, np.nan]
