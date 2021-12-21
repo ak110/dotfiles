@@ -1,9 +1,3 @@
 [submodule "molokai"]
 	path = molokai
 	url = https://github.com/tomasr/molokai
-[submodule ".tmux/plugins/tpm"]
-	path = .tmux/plugins/tpm
-	url = https://github.com/tmux-plugins/tpm
-[submodule "dpkg-licenses"]
-	path = dpkg-licenses
-	url = https://github.com/daald/dpkg-licenses
