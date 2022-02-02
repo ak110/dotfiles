@@ -8,6 +8,7 @@ import os
 import pathlib
 import pickle
 import random
+import re
 import shutil
 import subprocess
 import sys
