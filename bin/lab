@@ -1,3 +1,3 @@
 #!/bin/bash -eux
 #nohup jupyter lab --ip=$HOSTNAME --port=18888 --no-browser ~ 2>&1 | tee ~/jupyterlab.log
-nohup jupyter lab --port=18888 --no-browser ~ 2>&1 | tee ~/jupyterlab.log
+nohup jupyter lab --port=18888 --no-browser $* ~ 2>&1 | tee ~/jupyterlab.log
