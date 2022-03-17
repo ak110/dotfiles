@@ -3,49 +3,44 @@
 [user]
 	email = mark@aur.ll.to
 	name = aki.
-
 [core]
 	autocrlf = false
 	quotepath = false
 	editor = vim
-
 [credential]
 	helper = store
-
 [color]
 	ui = auto
-
+[pager]
+	grep = false
+	ls-files = false
+[init]
+	defaultBranch = master
+[status]
+	submoduleSummary = true
+	showStash = true
+[log]
+	date = iso-local
+[grep]
+	lineNumber = true
+	patternType = extended
 [diff]
 	tool = vimdiff
 	noprefix = true
 	renames = true
-
 [difftool]
 	prompt = false
-
 [fetch]
 	prune = true
 	recurseSubmodules = true
-
 [push]
 	default = simple
 	recurseSubmodules = on-demand
 	followTags = true
-
 [pull]
 	rebase = true
-
-[pager]
-	grep = false
-	ls-files = false
-
-[grep]
-	lineNumber = true
-	patternType = extended
-
-[log]
-	date = iso-local
-
+[submodule]
+	recurse = true
 [alias]
 	aa = add --all --verbose
 	b = branch
@@ -75,13 +70,8 @@
 	amend-date = !git commit --amend --date=\"$(date -R)\"
 	precommit = diff --cached --diff-algorithm=minimal -w
 	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
-
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
 	process = git-lfs filter-process
 	required = true
-[flake8]
-	strict = true
-[init]
-	defaultBranch = master
