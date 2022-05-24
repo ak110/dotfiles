@@ -56,10 +56,12 @@
 	graph = log --oneline --graph --all --decorate=full
 	cloner = clone --recursive
 	sync = !git pull && git push
-	pullm = !git checkout master && git pull
+	pullm = !git switch master && git pull
+	pullmf = !git switch master && git restore . && git pull
 	pulla = !git pull --no-recurse-submodules && git submodule foreach git pull && git status
 	spull = !git submodule foreach git pull
 	spullm = !git submodule foreach git pullm
+	spullmf = !git submodule foreach git pullmf
 	pushf = push --force-with-lease
 	r = remote
 	ra = remote --verbose
