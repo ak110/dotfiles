@@ -17,7 +17,6 @@
 [init]
 	defaultBranch = master
 [status]
-	submoduleSummary = true
 	showStash = true
 [log]
 	date = iso-local
