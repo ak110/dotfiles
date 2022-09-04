@@ -44,8 +44,8 @@ def _on_chdir(olddir, newdir, **kwargs):
     ll
 
 aliases['grep'] = 'grep --color=auto'
-aliases['fgrep'] = 'fgrep --color=auto'
-aliases['egrep'] = 'egrep --color=auto'
+aliases['fgrep'] = 'grep -F --color=auto'
+aliases['egrep'] = 'grep -E --color=auto'
 aliases['ls'] = 'ls --color=auto --group-directories-first -v'
 aliases['ll'] = 'ls -l --classify --group-directories-first -v'
 aliases['la'] = 'ls -l --classify --group-directories-first -v --all'
