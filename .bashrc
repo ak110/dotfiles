@@ -137,6 +137,7 @@ test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
 export ENV=$HOME/.bashrc
 export EDITOR=vim
 export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
+export MYPY_CACHE_DIR=$HOME/.cache/mypy
 
 # エイリアス
 alias rm='rm -i'
