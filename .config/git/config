@@ -61,7 +61,7 @@
 	spull = !git submodule foreach git pull
 	spullm = !git submodule foreach git pullm
 	spullmf = !git submodule foreach git pullmf
-	pushf = push --force-with-lease
+	pushf = push --force-with-lease --force-if-includes
 	r = remote
 	ra = remote --verbose
 	unstage = reset -q HEAD --
