@@ -52,6 +52,7 @@
 	ff = pull --ff-only
 	logn = log --name-status
 	logp = log --patch
+	logfuller = log --pretty=fuller
 	graph = log --oneline --graph --all --decorate=full
 	cloner = clone --recursive
 	sync = !git pull && git push
