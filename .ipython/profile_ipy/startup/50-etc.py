@@ -47,6 +47,7 @@ except ImportError:
     print("skip: import pytoolkit as tk")
 del pytoolkit_home
 
+
 def softmax(x):
     # np.exp(x) / np.sum(np.exp(x))
     e_x = np.exp(x - np.max(x))
@@ -56,6 +57,7 @@ def softmax(x):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+
 def logit(x):
     if x == 1.0:
         return np.inf
@@ -64,21 +66,25 @@ def logit(x):
     assert 0.0 < x < 1.0, f"Invalid value: {x}"
     return np.log(x / (1.0 - x))
 
+
 print(f"work_dir: {os.getcwd()}")
 
-df = pd.DataFrame()
-df["a"] = [1, 2, 3, np.nan]
-df["b"] = [4, 5, 6, np.nan]
-df["c"] = [7, 8, np.nan, np.nan]
-df["s"] = [None, "a", "b", "c"]
+df = pl.DataFrame(
+    {
+        "a": [1, 2, 3, None],
+        "b": [4, 5, 6, None],
+        "c": [7, 8, np.nan, None],
+        "s": [None, "a", "b", "c"],
+    }
+)
 
-a1 = np.array([.75, .1, .15])
+a1 = np.array([0.75, 0.1, 0.15])
 b1 = np.array([2, 3, 4])
 
-a2 = np.array([[.75, .1, .15], [2, 3, 4]])
+a2 = np.array([[0.75, 0.1, 0.15], [2, 3, 4]])
 b2 = np.array([[3, 4, 5], [4, 5, 6]])
 
-a3 = np.array([[[.75, .1, .15], [2, 3, 4]], [[3, 4, 5], [4, 5, 6]]])
+a3 = np.array([[[0.75, 0.1, 0.15], [2, 3, 4]], [[3, 4, 5], [4, 5, 6]]])
 b3 = np.array([[[2, 3, 4], [4, 5, 6]], [[3, 4, 5], [1, 2, 3]]])
 
 d = {
@@ -88,4 +94,4 @@ d = {
     np.nan: "4",
 }
 
-get_ipython().run_line_magic('load_ext', 'autoreload')
+get_ipython().run_line_magic("load_ext", "autoreload")
