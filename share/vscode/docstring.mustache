@@ -2,8 +2,8 @@
 {{summaryPlaceholder}}
 
 {{extendedSummaryPlaceholder}}
-{{#parametersExist}}
 
+{{#parametersExist}}
 Args:
 {{#args}}
     {{var}}: {{descriptionPlaceholder}}
@@ -11,25 +11,27 @@ Args:
 {{#kwargs}}
     {{var}}: {{descriptionPlaceholder}}。(既定値: {{&default}})
 {{/kwargs}}
+
 {{/parametersExist}}
 {{#exceptionsExist}}
-
 Raises:
 {{#exceptions}}
     {{type}}: {{descriptionPlaceholder}}
 {{/exceptions}}
+
 {{/exceptionsExist}}
 {{#returnsExist}}
-
 Returns:
 {{#returns}}
     {{descriptionPlaceholder}}
 {{/returns}}
+
 {{/returnsExist}}
 {{#yieldsExist}}
-
 Yields:
 {{#yields}}
     {{descriptionPlaceholder}}
 {{/yields}}
+
 {{/yieldsExist}}
+
