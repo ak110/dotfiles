@@ -1,39 +1,39 @@
 """ipythonでコード片を軽く動作確認したりするため用の準備コード。"""
-import functools
-import hashlib
-import json
-import math
-import multiprocessing as mp
-import os
-import pathlib
-import pickle
-import random
-import re
-import shutil
-import subprocess
-import sys
-import time
-import traceback
-import xml.etree.ElementTree as ET
+import functools  # noqa
+import hashlib  # noqa
+import json  # noqa
+import math  # noqa
+import multiprocessing as mp  # noqa
+import os  # noqa
+import pathlib  # noqa
+import pickle  # noqa
+import random  # noqa
+import re  # noqa
+import shutil  # noqa
+import subprocess  # noqa
+import sys  # noqa
+import time  # noqa
+import traceback  # noqa
+import xml.etree.ElementTree as ET  # noqa
 
-import numpy as np
-import pandas as pd
-import polars as pl
-import scipy
-import sympy
-import sklearn
-import sklearn.metrics
-import sklearn.utils
-import joblib
+import numpy as np  # noqa
+import pandas as pd  # noqa
+import polars as pl  # noqa
+import scipy  # noqa
+import sympy  # noqa
+import sklearn  # noqa
+import sklearn.metrics  # noqa
+import sklearn.utils  # noqa
+import joblib  # noqa
 
 try:
-    import tensorflow as tf
+    import tensorflow as tf  # noqa
 except ImportError:
     print("skip: import tensorflow as tf")
 
 try:
-    from bashplotlib.scatterplot import plot_scatter
-    from bashplotlib.histogram import plot_hist
+    from bashplotlib.scatterplot import plot_scatter  # noqa
+    from bashplotlib.histogram import plot_hist  # noqa
 except ImportError:
     print("ImportError: bashplotlib")
 
@@ -42,7 +42,7 @@ if pytoolkit_home is not None and pathlib.Path(pytoolkit_home).exists():
     sys.path.append(pytoolkit_home)
     print(f"PYTOOLKIT_HOME: {pytoolkit_home}")
 try:
-    import pytoolkit as tk
+    import pytoolkit as tk  # noqa
 except ImportError:
     print("skip: import pytoolkit as tk")
 del pytoolkit_home
@@ -75,7 +75,20 @@ df = pl.DataFrame(
         "b": [4, 5, 6, None],
         "c": [7, 8, np.nan, None],
         "s": [None, "a", "b", "c"],
+        "d": ["2000/01/01", "2000/01/02", "2000/01/03", "2000/01/04"],
+        "t": ["00:01:00", "00:02:00", "00:03:00", "00:04:00"],
+        "dt": [
+            "2000/01/01 01:00:00",
+            "2000/02/01 02:00:00",
+            "2000/03/01 03:00:00",
+            "2000/04/01 04:00:00",
+        ],
     }
+)
+df = df.with_columns(
+    pl.col("d").str.strptime(pl.Date, r"%Y/%m/%d"),
+    pl.col("t").str.strptime(pl.Time, r"%H:%M:%S"),
+    pl.col("dt").str.strptime(pl.Datetime, r"%Y/%m/%d %H:%M:%S"),
 )
 
 a1 = np.array([0.75, 0.1, 0.15])
