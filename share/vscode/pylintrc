@@ -35,7 +35,7 @@ disable=
 max-line-length=256
 
 [TYPECHECK]
-generated-members=cv2.*
+generated-members=cv2.*,pydantic.*,transformers.*,torch.*
 ignored-modules=
     pygments.formatters,
     pygments.lexers,
