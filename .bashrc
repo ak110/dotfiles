@@ -170,7 +170,9 @@ function _show_status() {
     # ウィンドウタイトルをホスト名にする(念のため毎回)
     echo -en "\\e]2;$(hostname)\\a"
 }
-PROMPT_COMMAND='_show_status;'${PROMPT_COMMAND//_show_status;/}
+PROMPT_COMMAND=${PROMPT_COMMAND//history -a;/}
+PROMPT_COMMAND=${PROMPT_COMMAND//_show_status;/}
+PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
