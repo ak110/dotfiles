@@ -180,11 +180,17 @@ if [ -e ~/.localbashrc ] ; then
 fi
 
 # pyenv
-if [ -d "$HOME/.pyenv" ] ; then
+# 手動で有効化
+function enable-pyenv() {
+    if [ ! -d "$HOME/.pyenv" ] ; then
+        curl https://pyenv.run | bash
+    fi
     export PATH="$HOME/.pyenv/bin:$PATH"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
-fi
+    pyenv --version
+    pyenv versions
+}
 
 #xonsh_path=$(which xonsh)
 #if [ -x $xonsh_path ] ; then
