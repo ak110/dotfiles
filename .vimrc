@@ -149,7 +149,7 @@ if has('iconv')
 endif
 
 " ucs-bom
-let &fileencoding='ucs-bom,' . &fileencoding
+"let &fileencoding='ucs-bom,' . &fileencoding
 
 " 日本語を含まない場合は fileencoding に encoding を使うようにする
 if has('autocmd')
