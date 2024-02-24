@@ -9,6 +9,9 @@ Untitled*.ipynb
 *___*
 cmd.bat
 
+# pyenv
+.python-version
+
 # https://github.com/github/gitignore/blob/master/Global/VisualStudioCode.gitignore
 
 .vscode/*
