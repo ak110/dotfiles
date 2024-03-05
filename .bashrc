@@ -183,7 +183,7 @@ fi
 # 手動で有効化
 function enable-pyenv() {
     if [ ! -d "$HOME/.pyenv" ] ; then
-        curl https://pyenv.run | bash
+        curl -sL https://pyenv.run | bash
     fi
     export PATH="$HOME/.pyenv/bin:$PATH"
     eval "$(pyenv init -)"
