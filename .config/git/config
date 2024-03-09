@@ -52,7 +52,7 @@
 	ff = pull --ff-only
 	logn = log --name-status
 	logp = log --patch
-	logfuller = log --pretty=fuller
+	logf = log --pretty=fuller
 	graph = log --oneline --graph --all --decorate=full
 	cloner = clone --recursive
 	sync = !git pull && git push
@@ -69,7 +69,9 @@
 	discard = checkout --
 	uncommit = reset --mixed HEAD~
 	amend = commit --amend
-	amend-date = !git commit --amend --date=\"$(date -R)\"
+	amend-date = commit --amend --date=now
+	rebase-date = rebase --ignore-date
+	ri-date = rebase -i --ignore-date
 	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
 	diffn = diff --ignore-all-space --ignore-blank-lines
 	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
