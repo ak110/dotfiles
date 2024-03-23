@@ -60,6 +60,7 @@ set backspace=indent,eol,start
 "set mouse=nvi
 "set mousemodel=extend
 set mouse=
+set ttymouse=
 
 " 折り返しな行の移動
 nnoremap j gj
