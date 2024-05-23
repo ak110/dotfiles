@@ -49,7 +49,7 @@
 	cp = cherry-pick
 	st = status
 	ri = rebase -i
-	ff = pull --ff-only
+	ff = merge --ff-only
 	logn = log --name-status
 	logp = log --patch
 	logf = log --pretty=fuller
