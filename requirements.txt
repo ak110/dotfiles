@@ -1,9 +1,11 @@
+beautifulsoup4
 better-exceptions
 ipython
 joblib
 numpy
 pandas
 polars
+requests
 scikit-learn
 scipy
 sympy
