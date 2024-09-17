@@ -1,6 +1,9 @@
 scriptencoding utf-8
 " ↑一番上に書かないとダメっぽい？
 
+unlet! skip_defaults_vim
+source $VIMRUNTIME/defaults.vim
+
 syntax enable
 
 colorscheme h2u_white
