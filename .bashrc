@@ -174,11 +174,6 @@ PROMPT_COMMAND=${PROMPT_COMMAND//history -a;/}
 PROMPT_COMMAND=${PROMPT_COMMAND//_show_status;/}
 PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
 
-# ~/.localbashrc
-if [ -e ~/.localbashrc ] ; then
-    source ~/.localbashrc
-fi
-
 # pyenv
 # 手動で有効化
 function enable-pyenv() {
@@ -191,6 +186,11 @@ function enable-pyenv() {
     pyenv --version
     pyenv versions
 }
+
+# ~/.localbashrc
+if [ -e ~/.localbashrc ] ; then
+    source ~/.localbashrc
+fi
 
 #xonsh_path=$(which xonsh)
 #if [ -x $xonsh_path ] ; then
