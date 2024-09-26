@@ -12,6 +12,7 @@
 .config/eog/
 .config/evolution/
 .config/freerdp/
+.config/gcloud/
 .config/gedit/
 .config/gnome-gmail/
 .config/goa-1.0/
