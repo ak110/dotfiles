@@ -37,6 +37,9 @@ def _main():
     parser.add_argument("end_commit", help="End commit")
     parser.add_argument("start_date", help="Start date (%Y-%m-%d %H:%M:%S)")
     parser.add_argument("end_date", help="End date (%Y-%m-%d %H:%M:%S)")
+    parser.add_argument(
+        "--no-business", action="store_true", help="Ignore business time"
+    )
     args = parser.parse_args()
     start_commit = args.start_commit
     end_commit = args.end_commit
@@ -46,7 +49,7 @@ def _main():
         parser.error("Start date must be earlier than end date")
 
     commits = get_commits(start_commit, end_commit)
-    dates = adjust_dates(start_date, end_date, len(commits))
+    dates = adjust_dates(start_date, end_date, len(commits), args.no_business)
 
     for commit, date in zip(commits, dates, strict=True):
         print(f"Set {commit[:7]} to {date:%Y-%m-%d %H:%M:%S}")
@@ -71,17 +74,30 @@ def get_commits(start_commit, end_commit):
 
 
 def adjust_dates(
-    start_date: datetime.datetime, end_date: datetime.datetime, num_commits: int
+    start_date: datetime.datetime,
+    end_date: datetime.datetime,
+    num_commits: int,
+    no_busines: bool,
 ):
     """日付を均等に分配し、少しランダムにずらす"""
-    span = businesshrs.difference(start_date, end_date)
-    interval_sec = span.timedelta.total_seconds() / num_commits
+    span = (
+        end_date - start_date
+        if no_busines
+        else businesshrs.difference(start_date, end_date).timedelta
+    )
+    interval_sec = span.total_seconds() / num_commits
     rand_range = int(interval_sec / 2)
     return [
         (
             end_date
-            - businesstimedelta.BusinessTimeDelta(
-                businesshrs, seconds=i * interval_sec + random.randrange(rand_range)
+            - (
+                datetime.timedelta(
+                    seconds=i * interval_sec + random.randrange(rand_range)
+                )
+                if no_busines
+                else businesstimedelta.BusinessTimeDelta(
+                    businesshrs, seconds=i * interval_sec + random.randrange(rand_range)
+                )
             )
         )
         for i in range(num_commits)
