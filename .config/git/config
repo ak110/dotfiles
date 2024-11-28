@@ -48,6 +48,7 @@
 	co = checkout
 	cp = cherry-pick
 	st = status
+	show-st = show --summary --name-status
 	ri = rebase -i
 	ff = merge --ff-only
 	logn = log --name-status
