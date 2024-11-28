@@ -186,6 +186,10 @@ function enable-pyenv() {
     pyenv --version
     pyenv versions
 }
+# 既に存在したら自動で有効化しちゃうことにしてみる
+if [ -d "$HOME/.pyenv" ] ; then
+    enable-pyenv
+fi
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
