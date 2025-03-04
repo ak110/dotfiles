@@ -7,6 +7,8 @@
 	autocrlf = false
 	quotepath = false
 	editor = vim
+[feature]
+	experimental = true
 [credential]
 	helper = store
 [color]
@@ -22,24 +24,39 @@
 	date = iso-local
 [grep]
 	lineNumber = true
-	patternType = extended
+	patternType = perl
 [diff]
 	tool = vimdiff
 	noprefix = true
 	renames = true
+	colorMoved = true
+	algorithm = histogram
 [difftool]
 	prompt = false
 [fetch]
 	prune = true
 	recurseSubmodules = true
+	pruneTags = true
+	all = true
 [push]
 	default = simple
 	recurseSubmodules = on-demand
 	followTags = true
+	autoSetupRemote = true
 [pull]
 	rebase = true
 [submodule]
 	recurse = true
+[merge]
+	conflictstyle = zdiff3
+[rebase]
+	autosquash = true
+	autostash = true
+	updateRefs = true
+[commit]
+	verbose = true
+[branch]
+	sort = committerdate
 [alias]
 	aa = add --all --verbose
 	b = branch
@@ -76,3 +93,4 @@
 	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
 	diffn = diff --ignore-all-space --ignore-blank-lines
 	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
+
