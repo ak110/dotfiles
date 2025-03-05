@@ -47,8 +47,8 @@
 	rebase = true
 [submodule]
 	recurse = true
-[merge]
-	conflictstyle = zdiff3
+#[merge]
+#	conflictstyle = zdiff3
 [rebase]
 	autosquash = true
 	autostash = true

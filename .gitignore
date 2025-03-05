@@ -1,5 +1,6 @@
 .config/.mono/
 .config/Code/
+.config/gh/
 .config/KeePass/
 .config/QtProject.conf
 .config/Slack/
@@ -39,6 +40,8 @@
 .ipython/nbextensions
 .ipython/profile_*/db/
 .ipython/profile_*/*.sqlite
+.ipython/profile__*/
+.ipython/profile_sandbox/
 
 .ssh/config
 .ssh/environment
