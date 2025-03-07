@@ -1,6 +1,7 @@
 # 一般
 Thumbs.db
 core
+core.*
 *~
 *.swp
 
