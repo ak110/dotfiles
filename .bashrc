@@ -188,7 +188,8 @@ function enable-pyenv() {
     pyenv versions
 }
 # 既に存在したら自動で有効化しちゃうことにしてみる
-if [ -d "$HOME/.pyenv" ] ; then
+# ただし、VIRTUAL_ENVがすでに有効ならスキップ
+if [ -d "$HOME/.pyenv" -a ! -n "$VIRTUAL_ENV" ] ; then
     enable-pyenv
 fi
 
