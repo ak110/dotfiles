@@ -144,7 +144,12 @@ alias rm='rm -i'
 alias mv='mv -i'
 alias cp='cp -i'
 function cd() {
-    builtin cd "$@" && ll
+    builtin cd "$@" && (
+        ll
+        if [ -e .git ] ; then
+            git status
+        fi
+    )
 }
 alias ..='cd ..'
 alias reload-shell='exec $SHELL'
