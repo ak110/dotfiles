@@ -93,6 +93,5 @@
 	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
 	diffn = diff --ignore-all-space --ignore-blank-lines
 	fixup = commit --fixup
-	autosquash = rebase --interactive --autosquash
 	ff-dev = !git fetch origin develop && git merge --ff-only origin/develop
 	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push

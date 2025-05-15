@@ -6,6 +6,7 @@
 .config/Slack/
 .config/TabNine/
 .config/autostart/
+.config/chromium/
 .config/configstore/
 .config/dask/
 .config/dconf/
