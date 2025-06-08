@@ -25,3 +25,5 @@ cmd.bat
 # Local History for Visual Studio Code
 .history/
 
+
+**/.claude/settings.local.json
