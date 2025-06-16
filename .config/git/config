@@ -6,7 +6,7 @@
 [core]
 	autocrlf = false
 	quotepath = false
-	editor = vim
+	editor = code --wait
 [feature]
 	experimental = true
 [credential]
@@ -95,3 +95,8 @@
 	fixup = commit --fixup
 	ff-dev = !git fetch origin develop && git merge --ff-only origin/develop
 	acp = !git status && bash -c \"read -p 'Press [Enter] key to continue.'\" && git add --all --verbose && git commit --message=. && git push
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
