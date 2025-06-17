@@ -6,7 +6,8 @@
 [core]
 	autocrlf = false
 	quotepath = false
-	editor = code --wait
+	#editor = code --wait フォーカス移動的に使いづらい
+	editor = vim
 [feature]
 	experimental = true
 [credential]
@@ -83,6 +84,7 @@
 	pushf = push --force-with-lease --force-if-includes
 	r = remote
 	ra = remote --verbose
+	track = switch --track
 	unstage = reset -q HEAD --
 	discard = checkout --
 	uncommit = reset --mixed HEAD~
