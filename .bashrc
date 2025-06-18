@@ -137,7 +137,7 @@ export ENV=$HOME/.bashrc
 export EDITOR=vim
 export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
 export MYPY_CACHE_DIR=$HOME/.cache/mypy
-export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
+#export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
 
 # エイリアス
 alias rm='rm -i'
