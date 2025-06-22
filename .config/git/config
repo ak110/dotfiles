@@ -88,8 +88,9 @@
 	unstage = reset -q HEAD --
 	discard = checkout --
 	uncommit = reset --mixed HEAD~
-	amend = commit --amend
-	amend-date = commit --amend --date=now
+	amend = commit --amend --no-edit
+	amende = commit --amend
+	amend-date = commit --amend --no-edit --date=now
 	rebase-date = rebase --ignore-date
 	ri-date = rebase --interactive --ignore-date
 	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
