@@ -130,6 +130,7 @@ fi
 
 # 環境変数
 test -d /usr/local/cuda/bin     && export PATH=/usr/local/cuda/bin:$PATH
+test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
 test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
 test -d $HOME/dotfiles/bin      && export PATH=$HOME/dotfiles/bin:$PATH
 test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
