@@ -91,6 +91,7 @@
 	amend = commit --amend --no-edit
 	amende = commit --amend
 	amend-date = commit --amend --no-edit --date=now
+	aaamend = !git aa && git amend
 	rebase-date = rebase --ignore-date
 	ri-date = rebase --interactive --ignore-date
 	precommit = diff --cached --diff-algorithm=minimal --ignore-all-space --ignore-blank-lines
