@@ -199,6 +199,11 @@ if [ -d "$HOME/.pyenv" -a ! -n "$VIRTUAL_ENV" ] ; then
     enable-pyenv
 fi
 
+# Claude Code
+if [ -e ~/.claude/local/claude ] ; then
+    alias claude=~/.claude/local/claude
+fi
+
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
     source ~/.localbashrc
@@ -211,4 +216,3 @@ fi
 
 # exit code: 0
 :
-
