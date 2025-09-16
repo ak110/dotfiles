@@ -1,3 +1,4 @@
+bashplotlib
 beautifulsoup4
 better-exceptions
 httpx
