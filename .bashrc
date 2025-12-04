@@ -203,6 +203,9 @@ fi
 if [ -e ~/.claude/local/claude ] ; then
     alias claude=~/.claude/local/claude
 fi
+if [ -e ~/.local/bin/env ] ; then
+    . ~/.local/bin/env
+fi
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ] ; then
