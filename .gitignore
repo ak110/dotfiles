@@ -1,5 +1,5 @@
-/.claude/
-/.codex/
+/.claude/*
+/.codex/*
 /.config/.mono/
 /.config/Code/
 /.config/KeePass/
@@ -59,7 +59,7 @@
 /.vim/.netrwhist
 
 !/.claude/CLAUDE.md
-!/.codex/instructions.md
+!/.codex/AGENTS.md
 
 *.sqlite-journal
 cmd.bat
