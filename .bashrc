@@ -134,6 +134,7 @@ test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
 test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
 test -d $HOME/dotfiles/bin      && export PATH=$HOME/dotfiles/bin:$PATH
 test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
+test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
 export EDITOR=vim
 export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
