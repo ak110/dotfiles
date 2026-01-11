@@ -141,6 +141,9 @@ export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
 export MYPY_CACHE_DIR=$HOME/.cache/mypy
 #export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
 
+# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
+export PATH=${PATH//;/:}
+
 # エイリアス
 alias rm='rm -i'
 alias mv='mv -i'
