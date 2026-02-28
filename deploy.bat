@@ -11,4 +11,7 @@ mklink /D /J "%XDG_CONFIG_HOME%" "%~dp0.config"
 if exist "%USERPROFILE%\.ipython" rmdir "%USERPROFILE%\.ipython"
 mklink /D /J "%USERPROFILE%\.ipython" "%~dp0.ipython"
 
+if exist "%USERPROFILE%\.claude" rmdir "%USERPROFILE%\.claude"
+mklink /D /J "%USERPROFILE%\.claude" "%~dp0.claude"
+
 pause
