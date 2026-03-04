@@ -20,6 +20,7 @@
 /.config/gedit/
 /.config/gh/
 /.config/github-copilot
+/.config/glab-cli/
 /.config/gnome-gmail/
 /.config/goa-1.0/
 /.config/google-chrome/
