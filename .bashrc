@@ -203,6 +203,12 @@ if [ -d "$HOME/.pyenv" -a ! -n "$VIRTUAL_ENV" ] ; then
     enable-pyenv
 fi
 
+# VSCode
+if [ -e "$(which code)" ] ; then
+    # EDITORはvimで慣れちゃってるのでVISUALだけ設定してみる
+    export VISUAL="code --wait"
+fi
+
 # Claude Code
 if [ -e ~/.claude/local/claude ] ; then
     alias claude=~/.claude/local/claude
