@@ -16,6 +16,24 @@ curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | 
 winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin"
 ```
 
+### Windows 移行（旧バージョンから）
+
+旧 `deploy.bat` で作成されたディレクトリジャンクションを解除してから移行する。
+
+```cmd
+REM 1. 旧deploy.batが作成したジャンクションを削除
+REM    （rmdir はジャンクションのみ削除し、中身は元の場所に残る）
+rmdir "%XDG_CONFIG_HOME%" 2>nul
+rmdir "%USERPROFILE%\.ipython" 2>nul
+rmdir "%USERPROFILE%\.claude" 2>nul
+
+REM 2. リポジトリを移動
+move <既存のパス>\dotfiles %USERPROFILE%\dotfiles
+
+REM 3. chezmoiインストール＆適用
+winget install twpayne.chezmoi && chezmoi init --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin"
+```
+
 ## 更新
 
 ```bash
