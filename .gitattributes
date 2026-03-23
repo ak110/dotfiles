@@ -1,0 +1,2 @@
+# .cmd files: CRLF line endings (CP932 encoding)
+*.cmd text eol=crlf

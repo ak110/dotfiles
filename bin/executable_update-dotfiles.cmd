@@ -1,4 +1,4 @@
 @echo off
 chezmoi update --source "%USERPROFILE%\dotfiles"
-REM Regenerate config from template (chezmoi update does not do this)
+REM 設定テンプレートの変更を反映（chezmoi updateでは再生成されない）
 chezmoi init --source "%USERPROFILE%\dotfiles"

@@ -13,6 +13,8 @@ jobs:
           path: dotfiles
       - name: ~/dotfilesに配置
         run: mv dotfiles ~/dotfiles
+      - name: .cmdファイルのCP932エンコーディング検証
+        run: ~/dotfiles/bin/executable_check-cmd-encoding ~/dotfiles
       - name: install.sh実行
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
