@@ -1,7 +1,16 @@
 #!/bin/bash
 set -eux
+
+# SSH config: conf.d/*.conf + localconfig → config
 cat ~/.ssh/conf.d/*.conf > ~/.ssh/config
 chmod 600 ~/.ssh/config
 if [ -e ~/.ssh/localconfig ]; then
     cat ~/.ssh/localconfig >> ~/.ssh/config
+fi
+
+# authorized_keys: conf.d/authorized_keys + local_authorized_keys → authorized_keys
+cp ~/.ssh/conf.d/authorized_keys ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+if [ -e ~/.ssh/local_authorized_keys ]; then
+    cat ~/.ssh/local_authorized_keys >> ~/.ssh/authorized_keys
 fi

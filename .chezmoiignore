@@ -1,12 +1,13 @@
+.github/**
 CLAUDE.md
 LICENSE
 README.md
+deploy.sh
+docs/**
+install.sh
 requirements.txt
 share/**
-install.sh
-deploy.sh
 update.sh
-.github/**
 
 # Windows: Linux専用ファイルをスキップ
 {{ if eq .chezmoi.os "windows" }}
@@ -20,6 +21,7 @@ update.sh
 # Linux: Windows専用ファイルをスキップ
 {{ if ne .chezmoi.os "windows" }}
 bin/update-dotfiles.cmd
+bin/update-ssh-config.cmd
 {{ end }}
 
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
