@@ -2,3 +2,13 @@
 /.chezmoi*.yaml
 /.chezmoi*.toml
 !/.chezmoiignore
+
+# Old symlink-era directories (may remain after migration)
+# These must not be interpreted as chezmoi source state
+/.claude/
+/.codex/
+/.config/
+/.ipython/
+/.ssh/
+/.vim/
+/.tmux/
