@@ -1,10 +1,10 @@
-# chezmoi state
+# chezmoiの状態ファイル
 /.chezmoi*.yaml
 /.chezmoi*.toml
 !/.chezmoiignore
 
-# Old symlink-era directories (may remain after migration)
-# These must not be interpreted as chezmoi source state
+# 旧symlink方式の残留ディレクトリ（移行後に残る可能性あり）
+# chezmoiがソースステートとして誤認するのを防ぐ
 /.claude/
 /.codex/
 /.config/

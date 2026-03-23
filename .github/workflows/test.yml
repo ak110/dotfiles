@@ -11,11 +11,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: dotfiles
-      - name: Move to ~/dotfiles
+      - name: ~/dotfilesに配置
         run: mv dotfiles ~/dotfiles
-      - name: Run install.sh
+      - name: install.sh実行
         run: ~/dotfiles/install.sh
-      - name: Verify key files exist
+      - name: 主要ファイルの存在確認
         run: |
           test -f ~/.bashrc
           test -f ~/.vimrc
@@ -28,18 +28,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: dotfiles
-      - name: Move to ~/dotfiles
+      - name: ~/dotfilesに配置
         shell: bash
         run: mv dotfiles ~/dotfiles
-      - name: Install chezmoi
+      - name: chezmoiインストール
         shell: bash
         run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
-      - name: Apply chezmoi
+      - name: chezmoi適用
         shell: bash
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source ~/dotfiles --apply
-      - name: Verify key files exist
+      - name: 主要ファイルの存在確認
         shell: pwsh
         run: |
           if (-not (Test-Path "$HOME\.claude\CLAUDE.md")) { exit 1 }
