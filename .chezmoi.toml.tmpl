@@ -1,1 +1,6 @@
 sourceDir = {{ .chezmoi.sourceDir | quote }}
+{{ if eq .chezmoi.os "windows" -}}
+[interpreters.ps1]
+    command = "powershell"
+    args = ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+{{ end -}}
