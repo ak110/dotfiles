@@ -5,12 +5,31 @@
 # 環境変数(非interactiveでも)
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
+
+# 環境変数
+test -d /usr/local/cuda/bin     && export PATH=/usr/local/cuda/bin:$PATH
+test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
+test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
+test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
+test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+export ENV=$HOME/.bashrc
+export EDITOR=vim
+export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
+export MYPY_CACHE_DIR=$HOME/.cache/mypy
+#export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
+
 # ~/.envがあれば読み込む
 if [ -e ~/.env ] ; then
     set -a
     eval "$(cat ~/.env <(echo) <(declare -x))"
     set +a
 fi
+
+# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
+export PATH=${PATH//;/:}
+
+# ここまで非対話環境でも共通
+########################################################################################
 
 # If not running interactively, don't do anything
 case $- in
@@ -128,20 +147,8 @@ if ! shopt -oq posix; then
   fi
 fi
 
-# 環境変数
-test -d /usr/local/cuda/bin     && export PATH=/usr/local/cuda/bin:$PATH
-test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
-test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
-test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
-test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
-export ENV=$HOME/.bashrc
-export EDITOR=vim
-export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
-export MYPY_CACHE_DIR=$HOME/.cache/mypy
-#export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
-
-# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
-export PATH=${PATH//;/:}
+########################################################################################
+# 対話環境用
 
 # エイリアス
 alias rm='rm -i'
