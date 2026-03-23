@@ -1,0 +1,31 @@
+CLAUDE.md
+LICENSE
+README.md
+requirements.txt
+share/**
+install.sh
+deploy.sh
+update.sh
+.github/**
+
+# Windows: Linux専用ファイルをスキップ
+{{ if eq .chezmoi.os "windows" }}
+.bash_profile
+.bashrc
+.inputrc
+.screenrc
+.tmux.conf
+{{ end }}
+
+# Linux: Windows専用ファイルをスキップ
+{{ if ne .chezmoi.os "windows" }}
+bin/update-dotfiles.cmd
+{{ end }}
+
+# run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
+{{ if eq .chezmoi.os "windows" }}
+ssh-config.sh
+{{ end }}
+{{ if ne .chezmoi.os "windows" }}
+ssh-config-windows.ps1
+{{ end }}

@@ -1,0 +1,2 @@
+# hash: {{ include "private_dot_ssh/conf.d/10_main.conf" | sha256sum }}
+Get-Content "$HOME\.ssh\conf.d\*.conf" | Set-Content "$HOME\.ssh\config"

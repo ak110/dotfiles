@@ -1,0 +1,8 @@
+#!/bin/bash
+set -eu
+# hash: {{ include "private_dot_ssh/conf.d/10_main.conf" | sha256sum }}
+cat ~/.ssh/conf.d/*.conf > ~/.ssh/config
+chmod 600 ~/.ssh/config
+if [ -e ~/.ssh/localconfig ]; then
+    cat ~/.ssh/localconfig >> ~/.ssh/config
+fi

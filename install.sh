@@ -1,8 +1,8 @@
 #!/bin/bash
 set -eux
-DOT_DIR=~/dotfiles
-
-git clone 'https://github.com/ak110/dotfiles.git' $DOT_DIR
-cd $DOT_DIR
-./deploy.sh
-
+sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"
+if [ ! -d ~/dotfiles ]; then
+    git clone https://github.com/ak110/dotfiles.git ~/dotfiles
+fi
+chezmoi init --source ~/dotfiles --apply
