@@ -8,12 +8,12 @@
 
     ```bash
     # initial plan review request
-    PLAN_CONTENT=$(cat "{plan_full_path}") && codex exec --full-auto --sandbox danger-full-access --cd "{project_directory}" "このプランをレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。
+    PLAN_CONTENT=$(cat "{plan_full_path}") && codex exec --dangerously-bypass-approvals-and-sandbox --cd "{project_directory}" "このプランをレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。
 
     ${PLAN_CONTENT}"
 
     # updated plan review request (毎回新規セッション)
-    PLAN_CONTENT=$(cat "{plan_full_path}") && codex exec --full-auto --sandbox danger-full-access --cd "{project_directory}" "プランを更新したからレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。
+    PLAN_CONTENT=$(cat "{plan_full_path}") && codex exec --dangerously-bypass-approvals-and-sandbox --cd "{project_directory}" "プランを更新したからレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。
 
     ${PLAN_CONTENT}"
     ```

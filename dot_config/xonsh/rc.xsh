@@ -55,4 +55,3 @@ aliases['mv'] = 'mv -i'
 aliases['cp'] = 'cp -i'
 aliases['reload-shell'] = 'exec xonsh'
 aliases['gpuwatch'] = 'watch "top -b | head ; nvidia-smi"'
-

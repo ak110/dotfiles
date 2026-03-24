@@ -22,5 +22,3 @@ function RubyLint()
     let result = system( &ft . ' -c ' . bufname(""))
     echo result
 endfunction
-
-

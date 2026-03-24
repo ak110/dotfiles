@@ -173,4 +173,3 @@ function! SetDiffMode()
   endif
 endfunction
 autocmd VimEnter,FilterWritePre * call SetDiffMode()
-

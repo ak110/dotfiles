@@ -118,7 +118,7 @@ function! s:Verify_euc_jp()
     " Checking loop
     let linenum = 1
     while linenum <= rangelast
-      let curline = getline(linenum) 
+      let curline = getline(linenum)
       let charlen = strlen(substitute(substitute(curline,'[\t -~]', '', 'g'), '.', "\1", 'g'))
       let kanalen = strlen(substitute(substitute(curline, s:mx_euc_kana, "\1", 'g'), "[^\1]", '', 'g'))
       if charlen / 2 < kanalen * 3
