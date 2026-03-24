@@ -1,0 +1,4 @@
+#!/bin/bash
+# pyproject.toml hash: {{ include "pyproject.toml" | sha256sum }}
+# chezmoi apply を止めないよう、失敗時は警告のみ
+uv tool install --force --editable ~/dotfiles || echo "WARNING: pytools install failed"

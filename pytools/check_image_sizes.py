@@ -1,5 +1,5 @@
-#!/usr/bin/env -S uv run python
 """指定フォルダ内の画像ファイルのサイズの分布を調べるスクリプト。"""
+
 import argparse
 import logging
 import pathlib
@@ -14,12 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def _main():
-    try:
-        import better_exceptions
-
-        better_exceptions.hook()
-    except BaseException:
-        pass
     parser = argparse.ArgumentParser()
     parser.add_argument("target_dir", type=pathlib.Path)
     args = parser.parse_args()

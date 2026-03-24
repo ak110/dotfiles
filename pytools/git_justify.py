@@ -1,4 +1,3 @@
-#!/usr/bin/env -S uv run python
 """Gitの履歴改変スクリプト。"""
 
 import argparse
@@ -31,12 +30,12 @@ def _main():
     now = datetime.datetime.now()
     parser = argparse.ArgumentParser(
         description="Justify git commits",
-        usage=f"git-justify.py origin/develop develop '{now:%Y-%m-%d} 09:00:00' '{now:%Y-%m-%d %H:%M:%S}'",
+        usage=f"git-justify origin/develop develop '{now:%Y-%m-%d} 09:00:00' '{now:%Y-%m-%d %H:%M:%S}'",
     )
     parser.add_argument("start_commit", help="Start commit")
     parser.add_argument("end_commit", help="End commit")
-    parser.add_argument("start_date", help="Start date (%Y-%m-%d %H:%M:%S)")
-    parser.add_argument("end_date", help="End date (%Y-%m-%d %H:%M:%S)")
+    parser.add_argument("start_date", help="Start date (%%Y-%%m-%%d %%H:%%M:%%S)")
+    parser.add_argument("end_date", help="End date (%%Y-%%m-%%d %%H:%%M:%%S)")
     parser.add_argument(
         "--no-business", action="store_true", help="Ignore business time"
     )
@@ -48,8 +47,8 @@ def _main():
     if start_date > end_date:
         parser.error("Start date must be earlier than end date")
 
-    commits = get_commits(start_commit, end_commit)
-    dates = adjust_dates(start_date, end_date, len(commits), args.no_business)
+    commits = _get_commits(start_commit, end_commit)
+    dates = _adjust_dates(start_date, end_date, len(commits), args.no_business)
 
     for commit, date in zip(commits, dates, strict=True):
         print(f"Set {commit[:7]} to {date:%Y-%m-%d %H:%M:%S}")
@@ -58,10 +57,10 @@ def _main():
         return
 
     for commit, date in zip(commits, dates, strict=True):
-        set_commit_date(commit, date, branch=f"{start_commit}..{end_commit}")
+        _set_commit_date(commit, date, branch=f"{start_commit}..{end_commit}")
 
 
-def get_commits(start_commit, end_commit):
+def _get_commits(start_commit, end_commit):
     """指定された範囲のコミットハッシュを取得する"""
     commits = (
         subprocess.check_output(
@@ -73,16 +72,16 @@ def get_commits(start_commit, end_commit):
     return commits  # 最新から順に過去へ
 
 
-def adjust_dates(
+def _adjust_dates(
     start_date: datetime.datetime,
     end_date: datetime.datetime,
     num_commits: int,
-    no_busines: bool,
+    no_business: bool,
 ):
     """日付を均等に分配し、少しランダムにずらす"""
     span = (
         end_date - start_date
-        if no_busines
+        if no_business
         else businesshrs.difference(start_date, end_date).timedelta
     )
     interval_sec = span.total_seconds() / num_commits
@@ -94,9 +93,10 @@ def adjust_dates(
                 datetime.timedelta(
                     seconds=i * interval_sec + random.randrange(rand_range)
                 )
-                if no_busines
+                if no_business
                 else businesstimedelta.BusinessTimeDelta(
-                    businesshrs, seconds=i * interval_sec + random.randrange(rand_range)
+                    businesshrs,
+                    seconds=i * interval_sec + random.randrange(rand_range),
                 )
             )
         )
@@ -104,7 +104,7 @@ def adjust_dates(
     ]
 
 
-def set_commit_date(commit_hash, new_date: datetime.datetime, branch):
+def _set_commit_date(commit_hash, new_date: datetime.datetime, branch):
     """コミットの日付を変更する"""
     formatted_date = new_date.strftime("%Y-%m-%d %H:%M:%S")
     command = [

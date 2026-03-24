@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | 
 ### Windows (cmd)
 
 ```cmd
-winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin"
+winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"
 ```
 
 ## 更新
@@ -76,6 +76,29 @@ git push
 | `run_onchange_after_*.sh.tmpl` | 変更時に実行されるスクリプト |
 
 詳細: https://www.chezmoi.io/reference/source-state-attributes/
+
+## pytools (Pythonコマンドラインツール群)
+
+`pytools/` ディレクトリに格納されたPythonパッケージ。`chezmoi apply` 時に `uv tool install` で自動インストールされる。
+
+### コマンド一覧
+
+| コマンド | 説明 |
+|---------|------|
+| `py-imageconverter` | 画像変換（リサイズ、フォーマット変換、メタデータ削除） |
+| `py-rename` | 正規表現でファイルリネーム |
+| `py-rmdirs` | 正規表現でディレクトリ削除 |
+| `py-pdf-to-image` | PDFを画像に変換（要Poppler） |
+| `check-image-sizes` | 画像サイズの分布を分析 |
+| `git-justify` | Gitコミット日時を営業時間内に調整 |
+| `mvdir` | ディレクトリをマージ |
+| `update-ssh-config` | SSH config/authorized_keysを生成 |
+
+### 手動インストール
+
+```bash
+uv tool install --editable ~/dotfiles
+```
 
 ## SSH設定管理 (`update-ssh-config`)
 

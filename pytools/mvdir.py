@@ -1,19 +1,13 @@
-#!/usr/bin/env -S uv run python
 """ディレクトリをマージするスクリプト。"""
+
 import argparse
-import pathlib
 import logging
+import pathlib
 
 logger = logging.getLogger(__name__)
 
 
 def _main():
-    try:
-        import better_exceptions
-
-        better_exceptions.hook()
-    except BaseException:
-        pass
     parser = argparse.ArgumentParser()
     parser.add_argument("src_dir", type=pathlib.Path)
     parser.add_argument("dest_dir", type=pathlib.Path)

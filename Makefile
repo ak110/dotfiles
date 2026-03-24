@@ -1,9 +1,10 @@
 help:
 	@cat Makefile
 
-# 開発環境セットアップ（uv tool installでpre-commitをインストールし、git hookを設定）
+# 開発環境セットアップ
 setup:
 	uv tool install pre-commit
+	uv tool install --editable .
 	uvx pre-commit install
 
 # 全チェック実行

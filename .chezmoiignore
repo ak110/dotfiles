@@ -7,6 +7,9 @@ README.md
 deploy.sh
 docs/**
 install.sh
+pyproject.toml
+pytools/**
+uv.lock
 requirements.txt
 share/**
 update.sh
@@ -23,13 +26,14 @@ update.sh
 # Linux: Windows専用ファイルをスキップ
 {{ if ne .chezmoi.os "windows" }}
 bin/update-dotfiles.cmd
-bin/update-ssh-config.cmd
 {{ end }}
 
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
 {{ if eq .chezmoi.os "windows" }}
 ssh-config.sh
+pytools.sh
 {{ end }}
 {{ if ne .chezmoi.os "windows" }}
 ssh-config-windows.ps1
+pytools-windows.ps1
 {{ end }}

@@ -1,0 +1,32 @@
+[project]
+name = "pytools"
+version = "0.1.0"
+description = "Personal command-line tools"
+requires-python = ">=3.11"
+dependencies = [
+    "bashplotlib",
+    "businesstimedelta",
+    "holidays",
+    "natsort",
+    "numpy",
+    "pdf2image",
+    "pillow",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+repack-png = ["wand"]
+
+[project.scripts]
+py-imageconverter = "pytools.imageconverter:_main"
+py-rename = "pytools.rename:_main"
+py-rmdirs = "pytools.rmdirs:_main"
+py-pdf-to-image = "pytools.pdf_to_image:_main"
+check-image-sizes = "pytools.check_image_sizes:_main"
+git-justify = "pytools.git_justify:_main"
+mvdir = "pytools.mvdir:_main"
+update-ssh-config = "pytools.update_ssh_config:_main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

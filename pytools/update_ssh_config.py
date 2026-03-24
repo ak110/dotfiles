@@ -1,4 +1,3 @@
-#!/usr/bin/env -S uv run python
 """SSH config and authorized_keys generator.
 
 - ~/.ssh/config: conf.d/*.conf + localconfig を結合して上書き生成
@@ -19,13 +18,13 @@ from pathlib import Path
 _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})")
 
 
-def main() -> None:
+def _main() -> None:
     ssh_dir = Path.home() / ".ssh"
-    generate_ssh_config(ssh_dir)
-    generate_authorized_keys(ssh_dir)
+    _generate_ssh_config(ssh_dir)
+    _generate_authorized_keys(ssh_dir)
 
 
-def generate_ssh_config(ssh_dir: Path) -> None:
+def _generate_ssh_config(ssh_dir: Path) -> None:
     """conf.d/*.conf + localconfig -> config (上書き)"""
     conf_d = ssh_dir / "conf.d"
     parts: list[str] = []
@@ -44,7 +43,7 @@ def generate_ssh_config(ssh_dir: Path) -> None:
     print(f"Generated {config_path}")
 
 
-def generate_authorized_keys(ssh_dir: Path) -> None:
+def _generate_authorized_keys(ssh_dir: Path) -> None:
     """conf.d/authorized_keys + local_authorized_keys -> authorized_keys (追加のみ)"""
     ak_path = ssh_dir / "authorized_keys"
     # 既存ファイル読み込み
@@ -108,4 +107,4 @@ def _ensure_trailing_newline(text: str) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    _main()
