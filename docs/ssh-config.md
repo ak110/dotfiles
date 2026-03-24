@@ -4,14 +4,14 @@
 
 ## 概要
 
-| 生成対象 | 入力ソース | 動作 |
-|---|---|---|
-| `~/.ssh/config` | `conf.d/*.conf` + `localconfig` | 毎回上書き生成（初回バックアップあり） |
-| `~/.ssh/authorized_keys` | `conf.d/authorized_keys` + `local_authorized_keys` | 既存にない鍵のみ追加（削除しない） |
+| 生成対象                 | 入力ソース                                         | 動作                                   |
+|--------------------------|----------------------------------------------------|----------------------------------------|
+| `~/.ssh/config`          | `conf.d/*.conf` + `localconfig`                    | 毎回上書き生成（初回バックアップあり） |
+| `~/.ssh/authorized_keys` | `conf.d/authorized_keys` + `local_authorized_keys` | 既存にない鍵のみ追加（削除しない）     |
 
 ## ファイル配置
 
-```
+```text
 ~/.ssh/
 ├── conf.d/
 │   ├── 10_main.conf          # SSH config（chezmoi管理）

@@ -89,7 +89,7 @@ git push
 | `bin/executable_foo`           | `~/bin/foo` (実行権限付き)   |
 | `run_onchange_after_*.sh.tmpl` | 変更時に実行されるスクリプト |
 
-詳細: https://www.chezmoi.io/reference/source-state-attributes/
+詳細: <https://www.chezmoi.io/reference/source-state-attributes/>
 
 ## pytools (Pythonコマンドラインツール群)
 
@@ -97,16 +97,16 @@ git push
 
 ### コマンド一覧
 
-| コマンド | 説明 |
-|---------|------|
+| コマンド            | 説明                                                   |
+|---------------------|--------------------------------------------------------|
 | `py-imageconverter` | 画像変換（リサイズ、フォーマット変換、メタデータ削除） |
-| `py-rename` | 正規表現でファイルリネーム |
-| `py-rmdirs` | 正規表現でディレクトリ削除 |
-| `py-pdf-to-image` | PDFを画像に変換（要Poppler） |
-| `check-image-sizes` | 画像サイズの分布を分析 |
-| `git-justify` | Gitコミット日時を営業時間内に調整 |
-| `mvdir` | ディレクトリをマージ |
-| `update-ssh-config` | SSH config/authorized_keysを生成 |
+| `py-rename`         | 正規表現でファイルリネーム                             |
+| `py-rmdirs`         | 正規表現でディレクトリ削除                             |
+| `py-pdf-to-image`   | PDFを画像に変換（要Poppler）                           |
+| `check-image-sizes` | 画像サイズの分布を分析                                 |
+| `git-justify`       | Gitコミット日時を営業時間内に調整                      |
+| `mvdir`             | ディレクトリをマージ                                   |
+| `update-ssh-config` | SSH config/authorized_keysを生成                       |
 
 ### 手動インストール
 
