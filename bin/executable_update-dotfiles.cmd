@@ -1,4 +1,4 @@
 @echo off
-chezmoi update --source "%USERPROFILE%\dotfiles"
-REM İ’èƒeƒ“ƒvƒŒ[ƒg‚Ì•ÏX‚ğ”½‰fichezmoi update‚Å‚ÍÄ¶¬‚³‚ê‚È‚¢j
-chezmoi init --source "%USERPROFILE%\dotfiles"
+chezmoi update --verbose --source "%USERPROFILE%\dotfiles"
+REM ï¿½İ’ï¿½eï¿½ï¿½ï¿½vï¿½ï¿½ï¿½[ï¿½gï¿½Ì•ÏXï¿½ğ”½‰fï¿½ichezmoi updateï¿½Å‚ÍÄï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½j
+chezmoi init --verbose --source "%USERPROFILE%\dotfiles"
