@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """SSH config and authorized_keys generator.
 
 - ~/.ssh/config: conf.d/*.conf + localconfig を結合して上書き生成

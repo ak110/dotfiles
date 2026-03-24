@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """ディレクトリをマージするスクリプト。"""
 import argparse
 import pathlib

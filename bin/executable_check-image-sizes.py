@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """指定フォルダ内の画像ファイルのサイズの分布を調べるスクリプト。"""
 import argparse
 import logging

@@ -1,4 +1,4 @@
 #!/bin/bash
 set -eu
 # conf.d hash: {{ range (joinPath .chezmoi.sourceDir "private_dot_ssh/conf.d/*" | glob) }}{{ include . | sha256sum }} {{ end }}
-exec python3 ~/bin/update-ssh-config.py
+exec uv run python ~/bin/update-ssh-config.py

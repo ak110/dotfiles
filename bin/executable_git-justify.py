@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """Gitの履歴改変スクリプト。"""
 
 import argparse

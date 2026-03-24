@@ -11,4 +11,3 @@ requests
 scikit-learn
 scipy
 sympy
-uv

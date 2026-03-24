@@ -1,2 +1,2 @@
 @echo off
-python "%USERPROFILE%\bin\update-ssh-config.py" %*
+uv run python "%USERPROFILE%\bin\update-ssh-config.py" %*

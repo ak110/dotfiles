@@ -1,2 +1,2 @@
 # conf.d hash: {{ range (joinPath .chezmoi.sourceDir "private_dot_ssh/conf.d/*" | glob) }}{{ include . | sha256sum }} {{ end }}
-python "$HOME\bin\update-ssh-config.py"
+uv run python "$HOME\bin\update-ssh-config.py"

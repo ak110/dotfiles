@@ -7,7 +7,7 @@ errors=0
 
 while IFS= read -r -d '' file; do
     # CP932でデコードできるか検証
-    if ! python3 -c "
+    if ! uv run python -c "
 import sys
 with open(sys.argv[1], 'rb') as f:
     try:

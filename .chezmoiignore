@@ -1,5 +1,7 @@
 .github/**
+.pre-commit-config.yaml
 CLAUDE.md
+Makefile
 LICENSE
 README.md
 deploy.sh

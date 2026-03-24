@@ -1,0 +1,42 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # テキストフォーマット
+      - id: trailing-whitespace
+        exclude: '\.cmd$'
+      - id: end-of-file-fixer
+        exclude: '\.cmd$'
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: '\.cmd$'
+      - id: fix-byte-order-marker
+        exclude: '\.cmd$'
+      # シンタックス検証
+      - id: check-yaml
+        exclude: '\.tmpl$'
+      - id: check-json
+        exclude: '(^|/)modify_|environment\.json$'
+      - id: check-toml
+        exclude: '\.tmpl$'
+      - id: check-ast
+      # セキュリティ
+      - id: detect-private-key
+      # ファイル検証
+      - id: check-added-large-files
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+        exclude: '\.tmpl$'
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      # Python
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: check-cmd-encoding
+        name: Check .cmd files CP932 encoding
+        entry: bin/executable_check-cmd-encoding
+        language: script
+        pass_filenames: false
+        files: '\.cmd$'
