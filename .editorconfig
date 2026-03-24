@@ -8,6 +8,9 @@ indent_size = 4
 trim_trailing_whitespace = true
 insert_final_newline = true
 
+[*.{toml,yaml,json,jsonc,md,html,jinja2,js,ts,css,svg,xml}]
+indent_size = 2
+
 [*.cmd]
 end_of_line = crlf
 charset = latin1

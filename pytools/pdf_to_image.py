@@ -10,9 +10,7 @@ from pdf2image import convert_from_path
 def _main():
     parser = argparse.ArgumentParser(description="PDFを画像に変換する")
     parser.add_argument("pdf_files", nargs="+", type=pathlib.Path, help="変換するPDFファイル")
-    parser.add_argument(
-        "--format", default="png", choices=("png", "jpeg"), help="出力フォーマット"
-    )
+    parser.add_argument("--format", default="png", choices=("png", "jpeg"), help="出力フォーマット")
     args = parser.parse_args()
     for pdf_path in args.pdf_files:
         _convert(pdf_path, args.format)

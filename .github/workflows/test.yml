@@ -4,6 +4,11 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-linux:
     runs-on: ubuntu-latest
@@ -17,7 +22,8 @@ jobs:
       - name: pre-commitによるチェック
         run: |
           cd ~/dotfiles
-          uvx pre-commit run --all-files
+          uv sync --frozen --all-groups
+          SKIP=pyfltr uv run pre-commit run --all-files
       - name: install.sh実行
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
@@ -27,6 +33,7 @@ jobs:
           test -f ~/.claude/CLAUDE.md
           test -f ~/.ssh/config
           test -x ~/bin/update-dotfiles
+
   test-windows:
     runs-on: windows-latest
     steps:
@@ -36,6 +43,7 @@ jobs:
       - name: ~/dotfilesに配置
         shell: bash
         run: mv dotfiles ~/dotfiles
+      - uses: astral-sh/setup-uv@v5
       - name: chezmoiインストール
         shell: bash
         run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
@@ -50,3 +58,20 @@ jobs:
           if (-not (Test-Path "$HOME\.claude\CLAUDE.md")) { exit 1 }
           if (-not (Test-Path "$HOME\.ssh\authorized_keys")) { exit 1 }
           if (-not (Test-Path "$HOME\bin\update-dotfiles.cmd")) { exit 1 }
+
+  python-lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    env:
+      PYTHONDEVMODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run pyfltr pytools/ tests/
+      - run: uv cache prune --ci

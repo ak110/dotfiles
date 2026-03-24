@@ -116,10 +116,18 @@ update-ssh-config
 make setup
 ```
 
-### チェックの手動実行
+### チェックの実行
 
 ```bash
-make check
+make test
+```
+
+### その他のコマンド
+
+```bash
+make fix      # ruff自動修正
+make format   # フォーマットのみ
+make update   # 依存アップグレード＋全チェック
 ```
 
 ## その他

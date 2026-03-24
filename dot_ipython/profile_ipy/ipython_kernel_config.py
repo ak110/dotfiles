@@ -1,8 +1,8 @@
 # Configuration file for ipython-kernel.
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # ConnectionFileMixin(LoggingConfigurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## Mixin for configurable classes that work with connection files
 
 ## JSON file in which to store connection info [default: kernel-<pid>.json]
@@ -43,9 +43,9 @@
 #  Default: 'tcp'
 # c.ConnectionFileMixin.transport = 'tcp'
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # InteractiveShellApp(Configurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## A Mixin for applications that start InteractiveShell instances.
 #
 #  Provides configurables for loading extensions and executing files as part of
@@ -137,9 +137,9 @@
 #  Default: False
 # c.InteractiveShellApp.reraise_ipython_extension_failures = False
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Application(SingletonConfigurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## This is an application.
 
 ## The date format used by logging formatters for %(asctime)s
@@ -163,9 +163,9 @@
 #  Default: False
 # c.Application.show_config_json = False
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # BaseIPythonApplication(Application) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## IPython: an enhanced interactive Python shell.
 
 #  Default: False
@@ -228,9 +228,9 @@
 #  Default: False
 # c.BaseIPythonApplication.verbose_crash = False
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # IPKernelApp(BaseIPythonApplication, InteractiveShellApp, ConnectionFileMixin) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## IPython: an enhanced interactive Python shell.
 
 #  See also: BaseIPythonApplication.add_ipython_dir_to_sys_path
@@ -417,9 +417,9 @@
 #  See also: BaseIPythonApplication.verbose_crash
 # c.IPKernelApp.verbose_crash = False
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Kernel(SingletonConfigurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## Whether to use appnope for compatibility with OS X App Nap.
 #
 #  Only affects OS X >= 10.9.
@@ -443,9 +443,9 @@
 #  Default: 0.1
 # c.Kernel.stop_on_error_timeout = 0.1
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # IPythonKernel(Kernel) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## Whether to use appnope for compatibility with OS X App Nap.
 #  See also: Kernel._darwin_app_nap
 # c.IPythonKernel._darwin_app_nap = True
@@ -468,9 +468,9 @@
 #  Default: True
 # c.IPythonKernel.use_experimental_completions = True
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # InteractiveShell(SingletonConfigurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## An enhanced, interactive shell for Python.
 
 ## 'all', 'last', 'last_expr' or 'none', 'last_expr_or_assign' specifying which
@@ -618,9 +618,9 @@
 #  Default: 'Context'
 # c.InteractiveShell.xmode = 'Context'
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # ZMQInteractiveShell(InteractiveShell) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## A subclass of InteractiveShell for ZMQ.
 
 ##
@@ -740,9 +740,9 @@
 #  See also: InteractiveShell.xmode
 # c.ZMQInteractiveShell.xmode = 'Context'
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # ProfileDir(LoggingConfigurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## An object to manage the profile directory and its resources.
 #
 #  The profile directory is used by all IPython applications, to manage
@@ -756,9 +756,9 @@
 #  Default: ''
 # c.ProfileDir.location = ''
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Session(Configurable) configuration
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 ## Object for handling serialization and sending of messages.
 #
 #  The Session object handles building messages and sending them with ZMQ sockets

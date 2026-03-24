@@ -36,9 +36,7 @@ def _main():
     parser.add_argument("end_commit", help="End commit")
     parser.add_argument("start_date", help="Start date (%%Y-%%m-%%d %%H:%%M:%%S)")
     parser.add_argument("end_date", help="End date (%%Y-%%m-%%d %%H:%%M:%%S)")
-    parser.add_argument(
-        "--no-business", action="store_true", help="Ignore business time"
-    )
+    parser.add_argument("--no-business", action="store_true", help="Ignore business time")
     args = parser.parse_args()
     start_commit = args.start_commit
     end_commit = args.end_commit
@@ -62,13 +60,7 @@ def _main():
 
 def _get_commits(start_commit, end_commit):
     """指定された範囲のコミットハッシュを取得する"""
-    commits = (
-        subprocess.check_output(
-            ["git", "rev-list", "--ancestry-path", f"{start_commit}..{end_commit}"]
-        )
-        .decode()
-        .split()
-    )
+    commits = subprocess.check_output(["git", "rev-list", "--ancestry-path", f"{start_commit}..{end_commit}"]).decode().split()
     return commits  # 最新から順に過去へ
 
 
@@ -79,29 +71,19 @@ def _adjust_dates(
     no_business: bool,
 ):
     """日付を均等に分配し、少しランダムにずらす"""
-    span = (
-        end_date - start_date
-        if no_business
-        else businesshrs.difference(start_date, end_date).timedelta
-    )
+    span = end_date - start_date if no_business else businesshrs.difference(start_date, end_date).timedelta
     interval_sec = span.total_seconds() / num_commits
     rand_range = int(interval_sec / 2)
-    return [
-        (
-            end_date
-            - (
-                datetime.timedelta(
-                    seconds=i * interval_sec + random.randrange(rand_range)
-                )
-                if no_business
-                else businesstimedelta.BusinessTimeDelta(
-                    businesshrs,
-                    seconds=i * interval_sec + random.randrange(rand_range),
-                )
-            )
-        )
-        for i in range(num_commits)
-    ]
+    dates: list[datetime.datetime] = []
+    for i in range(num_commits):
+        offset_sec = int(i * interval_sec + random.randrange(rand_range))
+        if no_business:
+            d: datetime.datetime = end_date - datetime.timedelta(seconds=offset_sec)
+        else:
+            delta = businesstimedelta.BusinessTimeDelta(businesshrs, seconds=offset_sec)
+            d = end_date - delta  # type: ignore[assignment]
+        dates.append(d)
+    return dates
 
 
 def _set_commit_date(commit_hash, new_date: datetime.datetime, branch):

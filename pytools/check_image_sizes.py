@@ -27,17 +27,15 @@ def _do_dir(target_dir: pathlib.Path):
     files = [p for p in target_dir.glob("**/*") if p.is_file()]
     for file in tqdm.tqdm(files, ascii=True, ncols=100):
         try:
-            with PIL.Image.open(file) as img:
+            with PIL.Image.open(file) as img_file:
                 try:
-                    img = PIL.ImageOps.exif_transpose(img)
+                    img = PIL.ImageOps.exif_transpose(img_file)
                 except Exception:
-                    pass
+                    img = img_file.copy()
                 width_list.append(img.width)
                 height_list.append(img.height)
                 with tqdm.tqdm.external_write_mode():
-                    logger.info(
-                        f"{file.relative_to(target_dir)}: width={img.width} height={img.height}"
-                    )
+                    logger.info(f"{file.relative_to(target_dir)}: width={img.width} height={img.height}")
         except Exception:
             logger.info(f"{file.relative_to(target_dir)}: skip")
 

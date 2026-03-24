@@ -1,4 +1,5 @@
 """ipythonでコード片を軽く動作確認したりするため用の準備コード。"""
+
 import datetime  # noqa
 import functools  # noqa
 import hashlib  # noqa

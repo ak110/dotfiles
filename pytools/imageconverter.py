@@ -17,9 +17,7 @@ _TYPE_SUFFIXES = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
 
 def _main():
     parser = argparse.ArgumentParser(description="画像変換")
-    parser.add_argument(
-        "--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?"
-    )
+    parser.add_argument("--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?")
     parser.add_argument("--max-width", default=2048, type=int)
     parser.add_argument("--max-height", default=1536, type=int)
     parser.add_argument("--jpeg-quality", default=90, type=int)
@@ -33,11 +31,7 @@ def _main():
 
 def _convert(args, target_path):
     suffix = _TYPE_SUFFIXES[args.output_type]
-    paths: list[pathlib.Path] = [
-        p
-        for p in target_path.glob("**/*")
-        if p.is_file() and p.suffix not in _IGNORE_SUFFIXES
-    ]
+    paths: list[pathlib.Path] = [p for p in target_path.glob("**/*") if p.is_file() and p.suffix not in _IGNORE_SUFFIXES]
     paths = list(natsort.natsorted(paths))
     for path in tqdm.tqdm(paths, ascii=True, ncols=100):
         try:
@@ -48,11 +42,12 @@ def _convert(args, target_path):
                 path.unlink()
                 temp_png_path.rename(path)
             # 読み込み
-            with PIL.Image.open(path) as img:
+            with PIL.Image.open(path) as img_file:
                 try:
-                    img = PIL.ImageOps.exif_transpose(img)
+                    img = PIL.ImageOps.exif_transpose(img_file)
                 except Exception as e:
                     warnings.warn(f"{type(e).__name__}: {e}", stacklevel=1)
+                    img = img_file.copy()
                 # JPEG向け色変換
                 if args.output_type == "jpeg":
                     if img.mode == "RGBA":
@@ -87,8 +82,8 @@ def _convert(args, target_path):
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """PNGを再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
     try:
-        import wand.color
-        import wand.image
+        import wand.color  # pyright: ignore[reportMissingImports]
+        import wand.image  # pyright: ignore[reportMissingImports]
     except ImportError:
         raise RuntimeError(
             "--repack-png を使用するには wand パッケージと ImageMagick のインストールが必要です。\n"

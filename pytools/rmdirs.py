@@ -41,10 +41,7 @@ def _main():
 
 
 def _match(regex_list: list[re.Pattern], value: str) -> bool:
-    for regex in regex_list:
-        if regex.search(value):
-            return True
-    return False
+    return any(regex.search(value) for regex in regex_list)
 
 
 if __name__ == "__main__":
