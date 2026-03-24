@@ -13,12 +13,12 @@ jobs:
   test-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: dotfiles
       - name: ~/dotfilesに配置
         run: mv dotfiles ~/dotfiles
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - name: pre-commitによるチェック
         run: |
           cd ~/dotfiles
@@ -37,13 +37,13 @@ jobs:
   test-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           path: dotfiles
       - name: ~/dotfilesに配置
         shell: bash
         run: mv dotfiles ~/dotfiles
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
       - name: chezmoiインストール
         shell: bash
         run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
@@ -67,8 +67,8 @@ jobs:
     env:
       PYTHONDEVMODE: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
