@@ -4,8 +4,22 @@
 
 ## 前提条件(要インストール)
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [Git](https://git-scm.com/install/)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+
+### 例(Linux)
+
+```bash
+sudo apt install git
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 例(Windows)
+
+```cmd
+winget install --id Git.Git -e --source winget
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
 ## インストール
 
