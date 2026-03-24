@@ -2,6 +2,11 @@
 
 [chezmoi](https://www.chezmoi.io/) で管理されたdotfiles。
 
+## 前提条件
+
+- Python >= 3.12
+- Git
+
 ## インストール
 
 ### Linux
@@ -71,6 +76,14 @@ git push
 | `run_onchange_after_*.sh.tmpl` | 変更時に実行されるスクリプト |
 
 詳細: https://www.chezmoi.io/reference/source-state-attributes/
+
+## SSH設定管理 (`update-ssh-config`)
+
+SSH configとauthorized_keysを分割ファイルから生成するコマンド。詳細は [docs/ssh-config.md](docs/ssh-config.md) を参照。
+
+```bash
+update-ssh-config
+```
 
 ## その他
 

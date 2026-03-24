@@ -1,5 +1,2 @@
-# hash: {{ include "private_dot_ssh/conf.d/10_main.conf" | sha256sum }}
-Get-Content "$HOME\.ssh\conf.d\*.conf" | Set-Content "$HOME\.ssh\config"
-if (Test-Path "$HOME\.ssh\localconfig") {
-    Get-Content "$HOME\.ssh\localconfig" | Add-Content "$HOME\.ssh\config"
-}
+# conf.d hash: {{ range (joinPath .chezmoi.sourceDir "private_dot_ssh/conf.d/*" | glob) }}{{ include . | sha256sum }} {{ end }}
+python "$HOME\bin\update-ssh-config.py"
