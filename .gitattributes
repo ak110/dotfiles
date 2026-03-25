@@ -1,2 +1,5 @@
+# デフォルト: テキストファイルはLF改行（Windows環境でもCRLFに変換しない）
+* text=auto eol=lf
+
 # .cmd files: CRLF line endings (CP932 encoding)
 *.cmd text eol=crlf
