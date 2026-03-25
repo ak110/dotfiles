@@ -41,9 +41,6 @@ dev = [
     "uv-sort>=0.6.0",
 ]
 
-[tool.uv.sources]
-pyfltr = { git = "https://github.com/ak110/pyfltr.git" }
-
 [tool.pyfltr]
 preset = "latest"
 pyright = true

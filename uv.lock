@@ -645,8 +645,8 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.13.7.dev3+ge32043ffc"
-source = { git = "https://github.com/ak110/pyfltr.git#e32043ffc68ad9ae9330b43b89966c6bc4da031d" }
+version = "1.13.6"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
     { name = "black" },
@@ -663,6 +663,10 @@ dependencies = [
     { name = "pyupgrade" },
     { name = "ruff" },
     { name = "textual" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/de/b46c2e7f19cd12f5d6af4a571f752b05210e284c7b254f759e37b0084c40/pyfltr-1.13.6.tar.gz", hash = "sha256:5841d0e06e8f1ca403a7817c51ce7dfad1b8125a5a8143893074d06cf3d73f57", size = 61421, upload-time = "2026-03-03T10:01:36.694Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/92/ef83e21733420cd0c77a0d4838bf0d3e28115c441379488605ce5939d277/pyfltr-1.13.6-py3-none-any.whl", hash = "sha256:073ac49d5040bf80f475e667802bf76d2bef7890f68aeb7fdef2d8e8861a9d2f", size = 17926, upload-time = "2026-03-03T10:01:35.56Z" },
 ]
 
 [[package]]
@@ -865,7 +869,7 @@ provides-extras = ["repack-png"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pyfltr", git = "https://github.com/ak110/pyfltr.git" },
+    { name = "pyfltr", specifier = ">=1.10.0" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.403" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-xdist", specifier = ">=3.5" },
