@@ -18,6 +18,7 @@ dependencies = [
 repack-png = ["wand"]
 
 [project.scripts]
+claudize = "pytools.claudize:_main"
 py-imageconverter = "pytools.imageconverter:_main"
 py-rename = "pytools.rename:_main"
 py-rmdirs = "pytools.rmdirs:_main"
