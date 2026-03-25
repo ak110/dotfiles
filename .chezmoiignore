@@ -1,6 +1,7 @@
 .github/**
 .pre-commit-config.yaml
 CLAUDE.md
+CLAUDE.base.md
 Makefile
 LICENSE
 README.md
