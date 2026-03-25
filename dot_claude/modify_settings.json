@@ -6,6 +6,9 @@
 {{- end -}}
 {{- $data := fromJson $existing -}}
 
+{{- /* 言語設定 */ -}}
+{{- $_ := set $data "language" "japanese" -}}
+
 {{- /* 管理対象のpermissions */ -}}
 {{- $managedAllow := list "Bash" "Edit" "Glob" "Grep" "MultiEdit" "NotebookEdit" "Read" "Task" "TodoWrite" "WebFetch" "WebSearch" "Write" "mcp__serena" "mcp__plugin_serena_serena" -}}
 {{- $managedDeny := list "Read(*.key)" "Read(*.crt)" "Read(./.env)" -}}
