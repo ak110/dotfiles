@@ -13,6 +13,7 @@ pytools/**
 uv.lock
 requirements.txt
 share/**
+tests/**
 update.sh
 
 # Windows: Linux専用ファイルをスキップ

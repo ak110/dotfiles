@@ -1,0 +1,27 @@
+{
+  "language": "japanese",
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Glob",
+      "Grep",
+      "MultiEdit",
+      "NotebookEdit",
+      "Read",
+      "Task",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch",
+      "Write",
+      "mcp__serena",
+      "mcp__plugin_serena_serena"
+    ],
+    "defaultMode": "plan",
+    "deny": [
+      "Read(*.key)",
+      "Read(*.crt)",
+      "Read(./.env)"
+    ]
+  }
+}

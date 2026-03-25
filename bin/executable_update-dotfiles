@@ -3,6 +3,8 @@ if command -v chezmoi &> /dev/null && chezmoi data &> /dev/null; then
     chezmoi update --verbose --source ~/dotfiles
     # 設定テンプレートの変更を反映（chezmoi updateでは再生成されない）
     chezmoi init --source ~/dotfiles
+    # Claude Code settings.json を管理対象設定とマージ
+    command -v update-claude-settings &> /dev/null && update-claude-settings
 else
     exec ~/dotfiles/update.sh
 fi
