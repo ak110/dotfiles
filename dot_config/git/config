@@ -83,6 +83,7 @@
 	spullmf = !git submodule foreach git pullmf
 	pushf = push --force-with-lease --force-if-includes
 	push-no-ci = push --push-option=ci.skip
+	pushf-no-ci = push --force-with-lease --force-if-includes --push-option=ci.skip
 	r = remote
 	ra = remote --verbose
 	track = switch --track
