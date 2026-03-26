@@ -23,5 +23,6 @@
       "Read(*.crt)",
       "Read(./.env)"
     ]
-  }
+  },
+  "autoMemoryEnabled": false
 }
