@@ -2,6 +2,9 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# パーミッションが644とかになるようにする
+umask 022
+
 # 環境変数(非interactiveでも)
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
