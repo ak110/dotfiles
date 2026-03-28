@@ -1,5 +1,6 @@
 # pyproject.toml hash: {{ include "pyproject.toml" | sha256sum }}
 # claude_settings hash: {{ include "share/claude_settings_managed.json" | sha256sum }}
+# claude_config hash: {{ include "share/claude_config_managed.json" | sha256sum }}
 # NOTE: 対応するLinux版 → run_onchange_after_pytools.sh.tmpl
 # chezmoi apply を止めないよう、失敗時は警告のみ
 try {

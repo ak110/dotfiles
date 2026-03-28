@@ -1,7 +1,11 @@
-"""Claude Code の settings.json を管理対象設定とマージするコマンド。
+"""Claude Code の設定ファイルを管理対象設定とマージするコマンド。
 
-~/dotfiles/share/claude_settings_managed.json の設定を ~/.claude/settings.json に
-マージする。permissions.allow/deny は union マージ、それ以外は managed 側で上書き。
+~/dotfiles/share/ 以下の managed JSON を対応する設定ファイルにマージする。
+dict は再帰マージ、list は union マージ (順序維持・重複排除)、それ以外は上書き。
+
+対象:
+- share/claude_settings_managed.json → ~/.claude/settings.json
+- share/claude_config_managed.json  → ~/.claude.json
 """
 
 import copy
@@ -12,13 +16,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _DOTFILES_DIR = Path.home() / "dotfiles"
-_MANAGED_PATH = _DOTFILES_DIR / "share" / "claude_settings_managed.json"
+_MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+_MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_config_managed.json"
+_CONFIG_PATH = Path.home() / ".claude.json"
 
 
 def _main() -> None:
     logging.basicConfig(format="%(message)s", level="DEBUG")
-    update_claude_settings(_MANAGED_PATH, _SETTINGS_PATH)
+    update_claude_settings(_MANAGED_SETTINGS_PATH, _SETTINGS_PATH)
+    update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
 
 
 def update_claude_settings(managed_path: Path, settings_path: Path) -> None:
@@ -37,18 +44,15 @@ def update_claude_settings(managed_path: Path, settings_path: Path) -> None:
 
 
 def _merge(data: dict, managed: dict) -> None:
-    """Managed の設定を data にマージする。"""
-    managed_perms = managed.pop("permissions", None)
+    """Managed の設定を data に再帰的にマージする。
 
-    # トップレベルキー: managed で上書き
-    data.update(managed)
-
-    # permissions: リストは union マージ、スカラーは上書き
-    if managed_perms is not None:
-        existing_perms = data.setdefault("permissions", {})
-        for key, value in managed_perms.items():
-            if isinstance(value, list):
-                existing_list = existing_perms.get(key, [])
-                existing_perms[key] = list(dict.fromkeys(existing_list + value))
-            else:
-                existing_perms[key] = value
+    dict は再帰マージ、list は union マージ (順序維持・重複排除)、
+    それ以外は managed 側で上書き。
+    """
+    for key, value in managed.items():
+        if key in data and isinstance(data[key], dict) and isinstance(value, dict):
+            _merge(data[key], value)
+        elif key in data and isinstance(data[key], list) and isinstance(value, list):
+            data[key] = list(dict.fromkeys(data[key] + value))
+        else:
+            data[key] = value
