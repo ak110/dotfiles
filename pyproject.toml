@@ -76,5 +76,6 @@ show_error_codes = true
 
 [tool.pytest.ini_options]
 addopts = "--showlocals -p no:cacheprovider --maxfail=5 -n 4"
+asyncio_default_fixture_loop_scope = "function"
 log_level = "DEBUG"
 xfail_strict = true
