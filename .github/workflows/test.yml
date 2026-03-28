@@ -52,12 +52,15 @@ jobs:
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source ~/dotfiles --apply
+      - name: update-claude-settingsの動作確認
+        shell: pwsh
+        run: update-claude-settings
       - name: 主要ファイルの存在確認
         shell: pwsh
         run: |
-          if (-not (Test-Path "$HOME\.claude\CLAUDE.md")) { exit 1 }
-          if (-not (Test-Path "$HOME\.ssh\authorized_keys")) { exit 1 }
-          if (-not (Test-Path "$HOME\bin\update-dotfiles.cmd")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.claude\CLAUDE.md")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\bin\update-dotfiles.cmd")) { exit 1 }
 
   python-lint:
     runs-on: ubuntu-latest

@@ -3,14 +3,15 @@
 # NOTE: 対応するLinux版 → run_onchange_after_pytools.sh.tmpl
 # chezmoi apply を止めないよう、失敗時は警告のみ
 try {
-    uv tool install --force --editable $HOME\dotfiles
+    uv tool install --force --editable "{{ .chezmoi.homeDir }}/dotfiles"
     uv tool update-shell
 } catch {
     Write-Warning "pytools install failed: $_"
 }
 # Claude Code settings.json を管理対象設定とマージ
 # uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
-$toolBin = "$HOME\.local\bin\update-claude-settings.exe"
-if (Test-Path $toolBin) {
-    & $toolBin
+# chezmoi実行環境ではPowerShell変数が不安定なため、テンプレートでパスを直接埋め込む
+{{- $toolBin := joinPath .chezmoi.homeDir ".local/bin/update-claude-settings.exe" }}
+if (Test-Path "{{ $toolBin }}") {
+    & "{{ $toolBin }}"
 }
