@@ -26,6 +26,11 @@ make format   # フォーマットのみ
 | `bin/executable_update-dotfiles`       | `bin/executable_update-dotfiles.cmd`           |
 | `run_onchange_after_pytools.sh.tmpl`   | `run_onchange_after_pytools-windows.ps1.tmpl`  |
 
+### Windows PowerShell スクリプトの注意事項
+
+- chezmoi実行環境のPowerShellでは `$HOME`, `$env:USERPROFILE` 等の環境変数やPowerShell変数が不安定
+- パスには `{{ .chezmoi.homeDir }}` テンプレート変数を使い、リテラル文字列として埋め込むこと
+
 ## ファイル構成
 
 - `CLAUDE.md` -- プロジェクト固有の指示 (このファイル)
