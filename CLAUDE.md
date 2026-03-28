@@ -17,6 +17,15 @@ make format   # フォーマットのみ
 - `pytools/` — Pythonコマンドラインツール群 (uv tool installでインストール)
 - `run_onchange_after_*.sh.tmpl` — chezmoi apply時に実行されるスクリプト
 
+### プラットフォーム対応ファイル
+
+以下のファイルはLinux/Windowsで対になっている。一方を変更する場合はもう一方も確認すること。
+
+| Linux                                  | Windows                                        |
+|----------------------------------------|------------------------------------------------|
+| `bin/executable_update-dotfiles`       | `bin/executable_update-dotfiles.cmd`           |
+| `run_onchange_after_pytools.sh.tmpl`   | `run_onchange_after_pytools-windows.ps1.tmpl`  |
+
 ## ファイル構成
 
 - `CLAUDE.md` -- プロジェクト固有の指示 (このファイル)
