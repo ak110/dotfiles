@@ -1,11 +1,7 @@
 #!/bin/bash -eu
-if command -v chezmoi &> /dev/null && chezmoi data &> /dev/null; then
-    chezmoi update --verbose --source ~/dotfiles
-    # 設定テンプレートの変更を反映（chezmoi updateでは再生成されない）
-    chezmoi init --source ~/dotfiles
-    # Claude Code settings.json を管理対象設定とマージ
-    # NOTE: 対応するWindows版 → bin/executable_update-dotfiles.cmd
-    test -x ~/.local/bin/update-claude-settings && ~/.local/bin/update-claude-settings
-else
-    exec ~/dotfiles/update.sh
-fi
+chezmoi update --verbose --source ~/dotfiles
+# 設定テンプレートの変更を反映（chezmoi updateでは再生成されない）
+chezmoi init --source ~/dotfiles
+# Claude Code settings.json を管理対象設定とマージ
+# NOTE: 対応するWindows版 → bin/executable_update-dotfiles.cmd
+test -x ~/.local/bin/update-claude-settings && ~/.local/bin/update-claude-settings
