@@ -499,6 +499,34 @@ class TestFrontmatterPreservation:
         # frontmatter差分ありのログ
         assert any("frontmatter差分あり" in r.message for r in caplog.records)
 
+    def test_frontmatter_only_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """frontmatterのみ異なりbodyが同一の場合、上書きせず同期済みとして通知。"""
+        caplog.set_level(logging.INFO)
+        template_dir = self._setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        # bodyはテンプレートと同じ、frontmatterのみカスタム
+        (rules_dir / "python.md").write_text(
+            "---\npaths:\n  - 'custom/path'\n---\n# python.md ルール\n",
+            encoding="utf-8",
+        )
+
+        _claudize(target, template_dir)
+
+        result = (rules_dir / "python.md").read_text(encoding="utf-8")
+        # frontmatterはカスタムのまま維持
+        assert "custom/path" in result
+        # bodyも変わらない
+        assert "# python.md ルール" in result
+        # 「同期済み: ... (frontmatter差分あり)」が表示される
+        assert any("同期済み" in r.message and "frontmatter差分あり" in r.message for r in caplog.records)
+        # 「上書き」は表示されない
+        assert not any("上書き" in r.message and "python.md" in r.message for r in caplog.records)
+
     def test_same_frontmatter_no_warning(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
         """frontmatterが同じでbodyのみ異なる場合、差分警告なしで上書き。"""
         caplog.set_level(logging.INFO)

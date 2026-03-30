@@ -239,8 +239,13 @@ def _sync_rule(dst: Path, src: Path) -> None:
         dst_fm, _ = _split_frontmatter(dst_content)
         src_fm, src_body = _split_frontmatter(src_content)
         new_content = (dst_fm if dst_fm is not None else src_fm or "") + src_body
-        if dst_fm is not None and src_fm is not None and dst_fm != src_fm:
-            logger.info("上書き (frontmatter差分あり): %s", dst)
+        fm_diff = dst_fm is not None and src_fm is not None and dst_fm != src_fm
+        if new_content == dst_content:
+            # bodyは同一、frontmatterのみ異なる
+            logger.info("同期済み: %s (frontmatter差分あり)", dst)
+            return
+        if fm_diff:
+            logger.info("上書き: %s (frontmatter差分あり)", dst)
         else:
             logger.info("上書き: %s", dst)
     else:
