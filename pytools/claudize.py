@@ -6,7 +6,7 @@
   .claude/rules/ 内のファイルは Claude Code が自動読み込みするため、
   CLAUDE.md からの明示的な参照は不要。
 - .claude/rules/*.md (言語別): 言語固有のルール。
-  該当言語のファイルが存在し、かつルールが未配置の場合のみ配布する。
+  該当言語のファイルが存在する場合に配布・同期する。
 - CLAUDE.md: プロジェクト固有の指示。プロジェクトごとにカスタマイズする。
 
 運用方針:
@@ -47,12 +47,11 @@ def _main() -> None:
 
 def _claudize(target_dir: Path, template_dir: Path) -> None:
     """本体ロジック。テスト時にパスを差し替え可能にするため分離。"""
-    # テンプレート読み込み
+    # テンプレート存在チェック
     template_path = template_dir / "agent.md"
     if not template_path.exists():
         logger.error("テンプレートが見つかりません: %s", template_path)
         sys.exit(1)
-    template_content = template_path.read_text(encoding="utf-8")
 
     claude_md = target_dir / "CLAUDE.md"
     project_md = target_dir / "CLAUDE.project.md"
@@ -73,16 +72,10 @@ def _claudize(target_dir: Path, template_dir: Path) -> None:
     elif pattern == "D":
         _handle_claude_md_only(claude_md)
 
-    # agent.md をテンプレートで同期
-    agent_md.parent.mkdir(parents=True, exist_ok=True)
-    if agent_md.exists() and agent_md.read_text(encoding="utf-8") == template_content:
-        logger.info("同期済み: %s", agent_md)
-    else:
-        agent_md.write_text(template_content, encoding="utf-8")
-        logger.info("上書き: %s", agent_md)
-
-    # 言語別ルールの配布
-    _sync_lang_rules(target_dir, template_dir)
+    # ルールの同期
+    rules_dir = target_dir / ".claude" / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    _sync_rules(target_dir, template_dir, rules_dir)
 
 
 def _detect_pattern(claude_md: Path, project_md: Path, base_md: Path, agent_md: Path) -> str:
@@ -219,42 +212,32 @@ def _handle_claude_md_only(claude_md: Path) -> None:
         logger.info("参照除去: %s", claude_md)
 
 
-def _sync_lang_rules(target_dir: Path, template_dir: Path) -> None:
-    """言語別ルールを配布する。"""
-    rules_dir = target_dir / ".claude" / "rules"
+def _sync_rules(target_dir: Path, template_dir: Path, rules_dir: Path) -> None:
+    """全ルールをテンプレートから同期する。"""
+    # agent.md + 無条件ルール
+    for rule_name in ["agent.md", *_UNCONDITIONAL_RULES]:
+        _sync_rule(rules_dir / rule_name, template_dir / rule_name)
 
-    # 無条件ルール (既存でなければ配布)
-    for rule_name in _UNCONDITIONAL_RULES:
-        _copy_rule_if_absent(rules_dir / rule_name, template_dir / rule_name)
-
-    # 条件付きルール (該当ファイルが存在し、かつルールが未配置の場合のみ)
+    # 条件付きルール (該当言語のファイルが存在する場合のみ配布)
     for rule_name, globs in _CONDITIONAL_RULES:
         dst = rules_dir / rule_name
-        if dst.exists():
-            # 既存でも差分チェックのためテンプレートと比較
-            _copy_rule_if_absent(dst, template_dir / rule_name)
-            continue
-        if not _has_files(target_dir, globs):
-            continue
-        _copy_rule_if_absent(dst, template_dir / rule_name)
+        if dst.exists() or _has_files(target_dir, globs):
+            _sync_rule(dst, template_dir / rule_name)
 
 
-def _copy_rule_if_absent(dst: Path, src: Path) -> None:
-    """テンプレートからルールをコピーする (既存ならスキップ)。"""
+def _sync_rule(dst: Path, src: Path) -> None:
+    """テンプレートからルールを同期する (常に上書き)。"""
     if not src.exists():
         return
+    src_content = src.read_text(encoding="utf-8")
     if dst.exists():
-        dst_content = dst.read_text(encoding="utf-8")
-        src_content = src.read_text(encoding="utf-8")
-        if dst_content == src_content:
+        if dst.read_text(encoding="utf-8") == src_content:
             logger.info("同期済み: %s", dst)
-        elif dst_content.startswith(src_content):
-            logger.info("先頭一致: %s (code --diff %s %s で確認)", dst, src, dst)
-        else:
-            logger.warning("差分あり: %s (code --diff %s %s で確認)", dst, src, dst)
-        return
-    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    logger.info("配布: %s", dst)
+            return
+        logger.info("上書き: %s", dst)
+    else:
+        logger.info("配布: %s", dst)
+    dst.write_text(src_content, encoding="utf-8")
 
 
 def _has_files(target_dir: Path, globs: list[str]) -> bool:

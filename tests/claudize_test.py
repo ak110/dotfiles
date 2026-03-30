@@ -307,8 +307,9 @@ class TestLangRules:
 
         assert (target / ".claude" / "rules" / "markdown.md").exists()
 
-    def test_skip_existing_rules_with_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """既にルールが存在し差分がある場合、スキップされて差分が通知される。"""
+    def test_overwrite_existing_rules(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """既にルールが存在し差分がある場合、テンプレートで上書きされる。"""
+        caplog.set_level(logging.INFO)
         template_dir = self._setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
@@ -317,17 +318,36 @@ class TestLangRules:
         # テンプレートと異なる内容の既存ルールを配置
         rules_dir = target / ".claude" / "rules"
         rules_dir.mkdir(parents=True)
-        custom_content = "# カスタムルール\n"
-        (rules_dir / "python.md").write_text(custom_content, encoding="utf-8")
+        (rules_dir / "python.md").write_text("# カスタムルール\n", encoding="utf-8")
 
         _claudize(target, template_dir)
 
-        # 既存のカスタムルールが上書きされていない
-        assert (rules_dir / "python.md").read_text(encoding="utf-8") == custom_content
-        # 他のルールは配布される
+        # テンプレートで上書きされている
+        expected = (template_dir / "python.md").read_text(encoding="utf-8")
+        assert (rules_dir / "python.md").read_text(encoding="utf-8") == expected
+        # 他のルールも配布される
         assert (rules_dir / "python-test.md").exists()
-        # 差分ありの警告が出力される
-        assert any("差分あり" in r.message and "python.md" in r.message for r in caplog.records)
+        # 「上書き」ログが出力される
+        assert any("上書き" in r.message and "python.md" in r.message for r in caplog.records)
+
+    def test_overwrite_existing_unconditional_rules(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """無条件ルールも差分がある場合はテンプレートで上書きされる。"""
+        caplog.set_level(logging.INFO)
+        template_dir = self._setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+
+        # テンプレートと異なる内容の既存ルールを配置
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "markdown.md").write_text("# 古いルール\n", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        # テンプレートで上書きされている
+        expected = (template_dir / "markdown.md").read_text(encoding="utf-8")
+        assert (rules_dir / "markdown.md").read_text(encoding="utf-8") == expected
+        assert any("上書き" in r.message and "markdown.md" in r.message for r in caplog.records)
 
     def test_skip_existing_rules_no_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
         """既にルールが存在し差分がない場合、「同期済み」が表示される。"""
@@ -347,33 +367,8 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        # 差分ありの警告が出力されない
-        assert not any("差分あり" in r.message for r in caplog.records)
         # 「同期済み」が表示される
         assert any("同期済み" in r.message and "python.md" in r.message for r in caplog.records)
-
-    def test_prefix_match_rules(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """テンプレート内容が先頭に含まれ追記がある場合、「先頭一致」が表示される。"""
-        caplog.set_level(logging.INFO)
-        template_dir = self._setup_template(tmp_path)
-        target = tmp_path / "project"
-        target.mkdir()
-        (target / "main.py").write_text("", encoding="utf-8")
-
-        # テンプレート + プロジェクト固有の追記
-        rules_dir = target / ".claude" / "rules"
-        rules_dir.mkdir(parents=True)
-        template_content = (template_dir / "python.md").read_text(encoding="utf-8")
-        (rules_dir / "python.md").write_text(
-            template_content + "\n## プロジェクト固有\n\n- 追加ルール\n",
-            encoding="utf-8",
-        )
-
-        _claudize(target, template_dir)
-
-        # 差分ありではなく先頭一致が表示される
-        assert not any("差分あり" in r.message and "python.md" in r.message for r in caplog.records)
-        assert any("先頭一致" in r.message and "python.md" in r.message for r in caplog.records)
 
     def test_skip_no_matching_files(self, tmp_path: Path):
         """該当ファイルがない場合、条件付きルールはスキップされる。"""
