@@ -48,6 +48,8 @@ class TestClaudize:
             "python.md",
             "python-test.md",
             "markdown.md",
+            "rules.md",
+            "skills.md",
             "typescript.md",
             "typescript-test.md",
         ]:
@@ -256,6 +258,8 @@ class TestLangRules:
             "python.md",
             "python-test.md",
             "markdown.md",
+            "rules.md",
+            "skills.md",
             "typescript.md",
             "typescript-test.md",
         ]:

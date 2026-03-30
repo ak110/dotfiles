@@ -35,7 +35,7 @@ _CONDITIONAL_RULES: list[tuple[str, list[str]]] = [
     ("typescript-test.md", ["*.ts", "*.tsx"]),
 ]
 # 無条件で配布するルール
-_UNCONDITIONAL_RULES: list[str] = ["markdown.md"]
+_UNCONDITIONAL_RULES: list[str] = ["markdown.md", "rules.md", "skills.md"]
 
 
 def _main() -> None:

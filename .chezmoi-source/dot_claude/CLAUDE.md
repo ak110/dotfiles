@@ -11,8 +11,7 @@
     codex exec \
       --dangerously-bypass-approvals-and-sandbox \
       --cd "{project_directory}" \
-      "{plan_full_path} このプランをレビューして。\
-    瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
+      "{plan_full_path} このプランをレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
 
     # 2回目以降
     # `exec resume`を使用して前回のレビューから続行する。
@@ -20,8 +19,7 @@
     codex exec resume \
       --dangerously-bypass-approvals-and-sandbox \
       {SESSION_ID} \
-      "@{plan_full_path} プランを更新したからレビューして。\
-    瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
+      "{plan_full_path} プランを更新したからレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
     ```
 
 - レビュー指示の文章は適宜調整してよいが、「瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。」は必ず含めること。
