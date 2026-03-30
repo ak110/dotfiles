@@ -1,20 +1,3 @@
-.github/**
-.pre-commit-config.yaml
-CLAUDE.md
-CLAUDE.base.md
-Makefile
-LICENSE
-README.md
-deploy.sh
-docs/**
-install.sh
-pyproject.toml
-pytools/**
-uv.lock
-requirements.txt
-share/**
-tests/**
-
 *___*
 
 # Windows: Linux専用ファイルをスキップ

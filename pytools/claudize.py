@@ -1,10 +1,13 @@
 """プロジェクトのClaude Code設定を初期化・同期するコマンド。
 
 設計思想:
-- CLAUDE.base.md: 汎用的なエージェント向けの指示。
+- .claude/rules/agent.md: 汎用的なエージェント向けの指示。
   ~/dotfiles で最新版を管理し、claudize コマンドで各プロジェクトへ配布する。
+  .claude/rules/ 内のファイルは Claude Code が自動読み込みするため、
+  CLAUDE.md からの明示的な参照は不要。
+- .claude/rules/*.md (言語別): 言語固有のルール。
+  該当言語のファイルが存在し、かつルールが未配置の場合のみ配布する。
 - CLAUDE.md: プロジェクト固有の指示。プロジェクトごとにカスタマイズする。
-  先頭付近の @CLAUDE.base.md でベース指示を参照する。
 
 運用方針:
 - 適用先は基本的にバージョン管理下にあるため、多少の破壊的変更は許容する。
@@ -19,22 +22,33 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_AGENT_RULE = Path(".claude") / "rules" / "agent.md"
 _SECTION_MARKER = "## 関連ドキュメント"
-_BASE_REF = "@CLAUDE.base.md"
 # 旧形式の移行時に除外する参照パターン
 _LEGACY_EXCLUDE_PATTERNS = {"@CLAUDE.project.md"}
+
+# 条件付き言語別ルール: (ルールファイル名, 検出用glob)
+_CONDITIONAL_RULES: list[tuple[str, list[str]]] = [
+    ("python.md", ["*.py"]),
+    ("python-test.md", ["*.py"]),
+    ("typescript.md", ["*.ts", "*.tsx"]),
+    ("typescript-test.md", ["*.ts", "*.tsx"]),
+]
+# 無条件で配布するルール
+_UNCONDITIONAL_RULES: list[str] = ["markdown.md"]
 
 
 def _main() -> None:
     logging.basicConfig(format="%(message)s", level="DEBUG")
-    template_path = Path.home() / "dotfiles" / "CLAUDE.base.md"
+    template_dir = Path.home() / "dotfiles" / ".claude" / "rules"
     target_dir = Path.cwd()
-    _claudize(target_dir, template_path)
+    _claudize(target_dir, template_dir)
 
 
-def _claudize(target_dir: Path, template_path: Path) -> None:
+def _claudize(target_dir: Path, template_dir: Path) -> None:
     """本体ロジック。テスト時にパスを差し替え可能にするため分離。"""
     # テンプレート読み込み
+    template_path = template_dir / "agent.md"
     if not template_path.exists():
         logger.error("テンプレートが見つかりません: %s", template_path)
         sys.exit(1)
@@ -43,58 +57,82 @@ def _claudize(target_dir: Path, template_path: Path) -> None:
     claude_md = target_dir / "CLAUDE.md"
     project_md = target_dir / "CLAUDE.project.md"
     base_md = target_dir / "CLAUDE.base.md"
+    agent_md = target_dir / _AGENT_RULE
 
-    # パターン判定 (全8状態を明示的に列挙)
-    pattern = _detect_pattern(claude_md, project_md, base_md)
+    # パターン判定
+    pattern = _detect_pattern(claude_md, project_md, base_md, agent_md)
 
     if pattern == "A":
         _handle_initial(claude_md)
     elif pattern == "B":
-        _handle_legacy_migration(claude_md, project_md)
+        _handle_legacy_migration(claude_md, project_md, agent_md)
+    elif pattern == "E":
+        _handle_intermediate_migration(claude_md, base_md, agent_md)
     elif pattern == "C":
         _handle_new_format(claude_md)
     elif pattern == "D":
         _handle_claude_md_only(claude_md)
 
-    # 最後に CLAUDE.base.md をテンプレートで上書き
-    base_md.write_text(template_content, encoding="utf-8")
-    logger.info("上書き: %s", base_md)
+    # agent.md をテンプレートで上書き
+    agent_md.parent.mkdir(parents=True, exist_ok=True)
+    agent_md.write_text(template_content, encoding="utf-8")
+    logger.info("上書き: %s", agent_md)
+
+    # 言語別ルールの配布
+    _sync_lang_rules(target_dir, template_dir)
 
 
-def _detect_pattern(claude_md: Path, project_md: Path, base_md: Path) -> str:
+def _detect_pattern(claude_md: Path, project_md: Path, base_md: Path, agent_md: Path) -> str:
     """ファイル存在状態から処理パターンを判定する。"""
     has_project = project_md.exists()
     has_md = claude_md.exists()
     has_base = base_md.exists()
+    has_agent = agent_md.exists()
+
+    # エラーケース: base と agent が同居
+    if has_base and has_agent:
+        _die("CLAUDE.base.md と .claude/rules/agent.md が同居しています。手動で確認してください。")
 
     if has_project:
+        if has_agent:
+            _die("CLAUDE.project.md と .claude/rules/agent.md が同居しています。")
         if not has_md and not has_base:
             _die("CLAUDE.project.md のみ存在します (欠損状態)。手動で確認してください。")
         if not has_md and has_base:
             _die("CLAUDE.project.md と CLAUDE.base.md が存在しますが CLAUDE.md がありません。")
         if has_md and has_base:
             _die("3ファイル (CLAUDE.md, CLAUDE.project.md, CLAUDE.base.md) が同居しています。")
-        # has_md and not has_base
+        # has_md and not has_base and not has_agent
         return "B"
 
-    if not has_md and not has_base:
-        return "A"
-    if not has_md and has_base:
-        _die("CLAUDE.base.md のみ存在します (CLAUDE.md がありません)。")
-    if has_md and has_base:
+    if has_base:
+        # 中間形式: CLAUDE.base.md → .claude/rules/agent.md への移行
+        return "E"
+
+    if has_agent:
+        # 最新形式
         return "C"
-    # has_md and not has_base
-    return "D"
+
+    if has_md:
+        # CLAUDE.md のみ
+        return "D"
+
+    if not has_md and has_agent:
+        return "C"
+    if not has_md and not has_agent:
+        return "A"
+
+    return "A"
 
 
 def _handle_initial(claude_md: Path) -> None:
     """パターンA: 初回。CLAUDE.md を新規作成。"""
-    content = "# カスタム指示\n\n@CLAUDE.base.md\n"
+    content = "# カスタム指示\n"
     claude_md.write_text(content, encoding="utf-8")
     logger.info("作成: %s", claude_md)
 
 
-def _handle_legacy_migration(claude_md: Path, project_md: Path) -> None:
+def _handle_legacy_migration(claude_md: Path, project_md: Path, agent_md: Path) -> None:
     """パターンB: 旧形式からの移行。"""
     old_md_content = claude_md.read_text(encoding="utf-8")
     project_md_content = project_md.read_text(encoding="utf-8")
@@ -104,17 +142,17 @@ def _handle_legacy_migration(claude_md: Path, project_md: Path) -> None:
 
     # CLAUDE.project.md の内容をベースに新 CLAUDE.md を構築
     new_content = project_md_content
-    new_content = _ensure_base_reference(new_content)
+    new_content = _remove_base_reference(new_content)
     new_content = _remove_legacy_references(new_content)
     if extra_lines:
         new_content = _merge_into_section(new_content, extra_lines)
 
     # git mv でリネームし、履歴を追跡可能にする
-    base_md = claude_md.parent / "CLAUDE.base.md"
     is_git = _is_git_tracked(claude_md)
     if is_git:
-        # 旧 CLAUDE.md → CLAUDE.base.md (テンプレートなので後で上書きされる)
-        _git_mv(claude_md, base_md)
+        # 旧 CLAUDE.md → .claude/rules/agent.md (テンプレートなので後で上書きされる)
+        agent_md.parent.mkdir(parents=True, exist_ok=True)
+        _git_mv(claude_md, agent_md)
         # CLAUDE.project.md → CLAUDE.md
         _git_mv(project_md, claude_md)
     else:
@@ -125,18 +163,43 @@ def _handle_legacy_migration(claude_md: Path, project_md: Path) -> None:
     logger.info("移行完了")
 
 
+def _handle_intermediate_migration(claude_md: Path, base_md: Path, agent_md: Path) -> None:
+    """パターンE: 中間形式からの移行。CLAUDE.base.md → .claude/rules/agent.md"""
+    # .claude/rules/ ディレクトリ作成
+    agent_md.parent.mkdir(parents=True, exist_ok=True)
+
+    # CLAUDE.base.md を移動
+    is_git = _is_git_tracked(base_md)
+    if is_git:
+        _git_mv(base_md, agent_md)
+    else:
+        base_md.rename(agent_md)
+
+    # CLAUDE.md から @CLAUDE.base.md 参照を除去
+    if claude_md.exists():
+        content = claude_md.read_text(encoding="utf-8")
+        updated = _remove_base_reference(content)
+        if updated != content:
+            claude_md.write_text(updated, encoding="utf-8")
+            logger.info("参照除去: %s", claude_md)
+
+    logger.info("移行完了: CLAUDE.base.md → .claude/rules/agent.md")
+
+
 def _handle_new_format(claude_md: Path) -> None:
-    """パターンC: 新形式 (既に移行済み)。"""
+    """パターンC: 最新形式 (既に移行済み)。"""
+    if not claude_md.exists():
+        return
     content = claude_md.read_text(encoding="utf-8")
 
     # チェック: 旧形式の残骸がないか
     _check_not_legacy(content)
 
-    # @CLAUDE.base.md 参照を確認・修復
-    updated = _ensure_base_reference(content)
+    # 残存する @CLAUDE.base.md 参照があれば除去
+    updated = _remove_base_reference(content)
     if updated != content:
         claude_md.write_text(updated, encoding="utf-8")
-        logger.info("参照修復: %s", claude_md)
+        logger.info("参照除去: %s", claude_md)
 
 
 def _handle_claude_md_only(claude_md: Path) -> None:
@@ -146,11 +209,49 @@ def _handle_claude_md_only(claude_md: Path) -> None:
     # チェック: 旧形式の残骸がないか
     _check_not_legacy(content)
 
-    # @CLAUDE.base.md 参照を確認・追加
-    updated = _ensure_base_reference(content)
+    # 残存する @CLAUDE.base.md 参照があれば除去
+    updated = _remove_base_reference(content)
     if updated != content:
         claude_md.write_text(updated, encoding="utf-8")
-        logger.info("参照追加: %s", claude_md)
+        logger.info("参照除去: %s", claude_md)
+
+
+def _sync_lang_rules(target_dir: Path, template_dir: Path) -> None:
+    """言語別ルールを配布する。"""
+    rules_dir = target_dir / ".claude" / "rules"
+
+    # 無条件ルール (既存でなければ配布)
+    for rule_name in _UNCONDITIONAL_RULES:
+        _copy_rule_if_absent(rules_dir / rule_name, template_dir / rule_name)
+
+    # 条件付きルール (該当ファイルが存在し、かつルールが未配置の場合のみ)
+    for rule_name, globs in _CONDITIONAL_RULES:
+        if (rules_dir / rule_name).exists():
+            continue
+        if not _has_files(target_dir, globs):
+            continue
+        _copy_rule_if_absent(rules_dir / rule_name, template_dir / rule_name)
+
+
+def _copy_rule_if_absent(dst: Path, src: Path) -> None:
+    """テンプレートからルールをコピーする (既存ならスキップ)。"""
+    if dst.exists() or not src.exists():
+        return
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    logger.info("配布: %s", dst)
+
+
+def _has_files(target_dir: Path, globs: list[str]) -> bool:
+    """指定globに該当するファイルがtarget_dir内に存在するか判定する。
+
+    `.` で始まるディレクトリ内のファイルは無視する。
+    """
+    for pattern in globs:
+        for path in target_dir.rglob(pattern):
+            parts = path.relative_to(target_dir).parts[:-1]
+            if not any(p.startswith(".") for p in parts):
+                return True
+    return False
 
 
 def _check_not_legacy(content: str) -> None:
@@ -160,67 +261,18 @@ def _check_not_legacy(content: str) -> None:
             _die("CLAUDE.md に @CLAUDE.project.md 参照があります。手動で確認してください。")
 
 
-def _ensure_base_reference(content: str) -> str:
-    """先頭の # 見出し行の直後に @CLAUDE.base.md 参照を確保する。
-
-    期待する形式:
-        # 見出し
-        (空行)
-        @CLAUDE.base.md
-        (空行)
-        ...残りの内容...
-    """
+def _remove_base_reference(content: str) -> str:
+    """CLAUDE.md から @CLAUDE.base.md 参照とその前後の空行を除去する。"""
     lines = content.splitlines(keepends=True)
-
-    # 先頭の # 見出し行を探す
-    heading_idx = None
-    for i, line in enumerate(lines):
-        if line.startswith("# "):
-            heading_idx = i
-            break
-
-    # 既に正しい位置にあるか確認
-    if heading_idx is not None:
-        # 見出し + 空行 + @CLAUDE.base.md のパターンを確認
-        ref_idx = heading_idx + 2  # 見出し行 + 空行の次
-        if (
-            heading_idx + 1 < len(lines)
-            and lines[heading_idx + 1].strip() == ""
-            and ref_idx < len(lines)
-            and lines[ref_idx].strip() == _BASE_REF
-        ):
-            return content  # 既に正しい位置にある
-
-    ref_line = _BASE_REF + "\n"
-
-    # 既存の @CLAUDE.base.md 行とその前後の空行を除去
     filtered: list[str] = []
     for line in lines:
-        if line.strip() == _BASE_REF:
+        if line.strip() == "@CLAUDE.base.md":
             # 参照行の直前の空行も除去
             while filtered and filtered[-1].strip() == "":
                 filtered.pop()
             continue
         filtered.append(line)
-    # 除去後に連続空行ができたら1つに圧縮
-    lines = _collapse_blank_lines(filtered)
-
-    # 見出し行を再探索 (行が除去された可能性があるため)
-    insert_idx = 0
-    for i, line in enumerate(lines):
-        if line.startswith("# "):
-            insert_idx = i + 1
-            break
-
-    # 見出し直後に 空行 + 参照 + 空行 を挿入 (既存の空行があればそれを活用)
-    has_blank_after = insert_idx < len(lines) and lines[insert_idx].strip() == ""
-    if has_blank_after:
-        # 既存の空行の後に参照 + 空行を挿入
-        lines[insert_idx + 1 : insert_idx + 1] = [ref_line, "\n"]
-    else:
-        lines[insert_idx:insert_idx] = ["\n", ref_line, "\n"]
-
-    return "".join(lines)
+    return "".join(_collapse_blank_lines(filtered))
 
 
 def _collapse_blank_lines(lines: list[str]) -> list[str]:
@@ -343,14 +395,23 @@ def _is_git_tracked(path: Path) -> bool:
 
 
 def _git_mv(src: Path, dst: Path) -> None:
-    """Git mv でファイルをリネームする。"""
-    subprocess.run(
-        ["git", "mv", src.name, dst.name],
+    """Git mv でファイルをリネームする。異なるディレクトリ間の移動にも対応。"""
+    # リポジトリルートを取得
+    repo_root = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
         cwd=src.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    root = Path(repo_root)
+    subprocess.run(
+        ["git", "mv", str(src.relative_to(root)), str(dst.relative_to(root))],
+        cwd=repo_root,
         check=True,
         capture_output=True,
     )
-    logger.info("git mv: %s → %s", src.name, dst.name)
+    logger.info("git mv: %s → %s", src.relative_to(root), dst.relative_to(root))
 
 
 def _die(message: str) -> None:

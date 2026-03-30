@@ -43,7 +43,7 @@ update-dotfiles
 
 ## 使い方
 
-ソースディレクトリは `~/dotfiles`。
+リポジトリは `~/dotfiles`、chezmoi のソースディレクトリは `~/dotfiles/.chezmoi-source`（`.chezmoiroot` で指定）。
 
 ### ファイルの追加
 
@@ -58,7 +58,7 @@ chezmoi add ~/.some-config
 # chezmoi経由で編集（エディタが開く）
 chezmoi edit ~/.bashrc
 
-# または ~/dotfiles/dot_bashrc を直接編集してから反映
+# または ~/dotfiles/.chezmoi-source/dot_bashrc を直接編集してから反映
 chezmoi apply
 ```
 
@@ -79,6 +79,8 @@ git push
 ```
 
 ### 命名規則（早見表）
+
+`.chezmoi-source/` 内のファイルは以下の命名規則に従ってデプロイされる。
 
 | ソースステート                 | ターゲット                   |
 |--------------------------------|------------------------------|

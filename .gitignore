@@ -1,11 +1,15 @@
 # chezmoiの状態ファイル
 /.chezmoi*.yaml
 /.chezmoi*.toml
+/.chezmoi-source/.chezmoi*.yaml
+/.chezmoi-source/.chezmoi*.toml
 !/.chezmoiignore
+!/.chezmoi-source/.chezmoiignore
 
 # 旧symlink方式の残留ディレクトリ（移行後に残る可能性あり）
 # chezmoiがソースステートとして誤認するのを防ぐ
-/.claude/
+/.claude/*
+!/.claude/rules/
 /.codex/
 /.config/
 /.ipython/

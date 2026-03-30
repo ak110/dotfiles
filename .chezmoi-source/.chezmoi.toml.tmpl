@@ -1,4 +1,4 @@
-sourceDir = {{ .chezmoi.sourceDir | quote }}
+sourceDir = {{ .chezmoi.workingTree | quote }}
 {{ if eq .chezmoi.os "windows" -}}
 [interpreters.ps1]
     command = "powershell"

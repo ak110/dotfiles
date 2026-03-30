@@ -46,7 +46,7 @@ repos:
     hooks:
       - id: check-cmd-encoding
         name: Check .cmd files CP932 encoding
-        entry: bin/executable_check-cmd-encoding
+        entry: .chezmoi-source/bin/executable_check-cmd-encoding
         language: script
         pass_filenames: false
         files: '\.cmd$'
