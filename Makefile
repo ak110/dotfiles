@@ -21,12 +21,12 @@ fix:
 format:
 	uv sync --frozen --all-groups
 	SKIP=pyfltr uv run pre-commit run --all-files
-	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast pytools/ tests/
+	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast .
 
 # 全チェック実行
 test:
 	uv sync --frozen --all-groups
 	SKIP=pyfltr uv run pre-commit run --all-files
-	uv run pyfltr --exit-zero-even-if-formatted pytools/ tests/
+	uv run pyfltr --exit-zero-even-if-formatted .
 
 .PHONY: help update setup fix format test

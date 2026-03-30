@@ -22,10 +22,10 @@ make format   # フォーマットのみ
 
 以下のファイルはLinux/Windowsで対になっている。一方を変更する場合はもう一方も確認すること。
 
-| Linux                                  | Windows                                        |
-|----------------------------------------|------------------------------------------------|
-| `bin/executable_update-dotfiles`       | `bin/executable_update-dotfiles.cmd`           |
-| `run_onchange_after_pytools.sh.tmpl`   | `run_onchange_after_pytools-windows.ps1.tmpl`  |
+- `bin/executable_update-dotfiles`
+  ↔ `bin/executable_update-dotfiles.cmd`
+- `run_onchange_after_pytools.sh.tmpl`
+  ↔ `run_onchange_after_pytools-windows.ps1.tmpl`
 
 ### Windows PowerShell スクリプトの注意事項
 

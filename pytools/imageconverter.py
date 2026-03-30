@@ -82,8 +82,8 @@ def _convert(args, target_path):
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """PNGを再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
     try:
-        import wand.color  # pyright: ignore[reportMissingImports]
-        import wand.image  # pyright: ignore[reportMissingImports]
+        import wand.color  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
+        import wand.image  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
     except ImportError:
         raise RuntimeError(
             "--repack-png を使用するには wand パッケージと ImageMagick のインストールが必要です。\n"

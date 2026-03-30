@@ -71,10 +71,14 @@ jobs:
       PYTHONDEVMODE: "1"
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+      - uses: pnpm/action-setup@v5
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - run: uv sync --all-groups
-      - run: uv run pyfltr pytools/ tests/
+      - run: uv run pyfltr .
       - run: uv cache prune --ci

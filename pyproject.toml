@@ -36,16 +36,14 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "pyfltr>=1.10.0",
-    "pyright[nodejs]>=1.1.403",
-    "pytest-xdist>=3.5",
-    "pytest>=8.0",
-    "uv-sort>=0.6.0",
+    "pyfltr>=1.15.0",
 ]
 
 [tool.pyfltr]
 preset = "latest"
 pyright = true
+ty = true
+extend-exclude = ["dot_*"]
 
 [tool.ruff]
 line-length = 128
@@ -75,7 +73,7 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.pytest.ini_options]
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 -n 4"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5"
 asyncio_default_fixture_loop_scope = "function"
 log_level = "DEBUG"
 xfail_strict = true

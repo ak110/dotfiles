@@ -1,7 +1,2 @@
 rules:
-  preset-japanese:
-    no-doubled-joshi: false
-    sentence-length: false
-  preset-ja-technical-writing:
-    no-doubled-joshi: false
-    sentence-length: false
+  preset-ja-technical-writing: {}

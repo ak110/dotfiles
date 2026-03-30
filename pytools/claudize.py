@@ -226,16 +226,24 @@ def _sync_lang_rules(target_dir: Path, template_dir: Path) -> None:
 
     # 条件付きルール (該当ファイルが存在し、かつルールが未配置の場合のみ)
     for rule_name, globs in _CONDITIONAL_RULES:
-        if (rules_dir / rule_name).exists():
+        dst = rules_dir / rule_name
+        if dst.exists():
+            # 既存でも差分チェックのためテンプレートと比較
+            _copy_rule_if_absent(dst, template_dir / rule_name)
             continue
         if not _has_files(target_dir, globs):
             continue
-        _copy_rule_if_absent(rules_dir / rule_name, template_dir / rule_name)
+        _copy_rule_if_absent(dst, template_dir / rule_name)
 
 
 def _copy_rule_if_absent(dst: Path, src: Path) -> None:
     """テンプレートからルールをコピーする (既存ならスキップ)。"""
-    if dst.exists() or not src.exists():
+    if not src.exists():
+        return
+    if dst.exists():
+        # 差分がある場合は通知
+        if dst.read_text(encoding="utf-8") != src.read_text(encoding="utf-8"):
+            logger.warning("差分あり: %s (code --diff %s %s で確認)", dst, src, dst)
         return
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     logger.info("配布: %s", dst)
