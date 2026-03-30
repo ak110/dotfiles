@@ -226,18 +226,47 @@ def _sync_rules(target_dir: Path, template_dir: Path, rules_dir: Path) -> None:
 
 
 def _sync_rule(dst: Path, src: Path) -> None:
-    """テンプレートからルールを同期する (常に上書き)。"""
+    """テンプレートからルールを同期する (常に上書き、frontmatterは維持)。"""
     if not src.exists():
         return
     src_content = src.read_text(encoding="utf-8")
     if dst.exists():
-        if dst.read_text(encoding="utf-8") == src_content:
+        dst_content = dst.read_text(encoding="utf-8")
+        if dst_content == src_content:
             logger.info("同期済み: %s", dst)
             return
-        logger.info("上書き: %s", dst)
+        # 既存ファイルのfrontmatterを維持してbody部分のみ上書き
+        dst_fm, _ = _split_frontmatter(dst_content)
+        src_fm, src_body = _split_frontmatter(src_content)
+        new_content = (dst_fm if dst_fm is not None else src_fm or "") + src_body
+        if dst_fm is not None and src_fm is not None and dst_fm != src_fm:
+            logger.info("上書き (frontmatter差分あり): %s", dst)
+        else:
+            logger.info("上書き: %s", dst)
     else:
+        new_content = src_content
         logger.info("配布: %s", dst)
-    dst.write_text(src_content, encoding="utf-8")
+    dst.write_text(new_content, encoding="utf-8")
+
+
+def _split_frontmatter(content: str) -> tuple[str | None, str]:
+    """YAML frontmatter とそれ以降の本文に分割する。
+
+    Returns:
+        (frontmatter, body) のタプル。frontmatterがない場合は (None, content)。
+        frontmatterには開始・終了の`---`行を含む。
+    """
+    if not content.startswith("---"):
+        return None, content
+    # 終了の `---` を探す (開始行の直後から)
+    end_idx = content.find("\n---", 3)
+    if end_idx == -1:
+        return None, content
+    # `---\n` の末尾の改行まで含める
+    fm_end = end_idx + 4  # len("\n---")
+    if fm_end < len(content) and content[fm_end] == "\n":
+        fm_end += 1
+    return content[:fm_end], content[fm_end:]
 
 
 def _has_files(target_dir: Path, globs: list[str]) -> bool:

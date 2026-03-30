@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools.claudize import _claudize, _extract_section_from
+from pytools.claudize import _claudize, _extract_section_from, _split_frontmatter
 
 # テスト用テンプレート (関連ドキュメントセクションなし)
 TEMPLATE = """\
@@ -424,3 +424,98 @@ class TestExtractSectionFrom:
         assert result == "## Real Section\n\n- item\n"
         # コードブロック内の見出しはマッチしない
         assert _extract_section_from(content, "## Not a heading") is None
+
+
+class TestSplitFrontmatter:
+    """_split_frontmatter のテスト。"""
+
+    def test_with_frontmatter(self):
+        content = "---\npaths:\n  - '**/*.py'\n---\n# Body\n"
+        fm, body = _split_frontmatter(content)
+        assert fm == "---\npaths:\n  - '**/*.py'\n---\n"
+        assert body == "# Body\n"
+
+    def test_without_frontmatter(self):
+        content = "# No frontmatter\n\n- item\n"
+        fm, body = _split_frontmatter(content)
+        assert fm is None
+        assert body == content
+
+    def test_unclosed_frontmatter(self):
+        """閉じ`---`がない場合はfrontmatterなしとして扱う。"""
+        content = "---\npaths:\n  - '**/*.py'\n# Body\n"
+        fm, body = _split_frontmatter(content)
+        assert fm is None
+        assert body == content
+
+
+class TestFrontmatterPreservation:
+    """ルール同期時のfrontmatter維持のテスト。"""
+
+    def _setup_template(self, tmp_path: Path) -> Path:
+        template_dir = tmp_path / "dotfiles" / ".claude" / "rules"
+        template_dir.mkdir(parents=True)
+        (template_dir / "agent.md").write_text(TEMPLATE, encoding="utf-8")
+        for name in [
+            "python.md",
+            "python-test.md",
+            "markdown.md",
+            "rules.md",
+            "skills.md",
+            "typescript.md",
+            "typescript-test.md",
+        ]:
+            (template_dir / name).write_text(
+                f"---\npaths:\n  - 'template'\n---\n# {name} ルール\n",
+                encoding="utf-8",
+            )
+        return template_dir
+
+    def test_preserve_custom_frontmatter(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """既存ファイルのカスタムfrontmatterが維持され、bodyのみ上書きされる。"""
+        caplog.set_level(logging.INFO)
+        template_dir = self._setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+
+        # カスタムfrontmatterを持つ既存ルールを配置
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "python.md").write_text(
+            "---\npaths:\n  - 'custom/path'\n---\n# 古いbody\n",
+            encoding="utf-8",
+        )
+
+        _claudize(target, template_dir)
+
+        result = (rules_dir / "python.md").read_text(encoding="utf-8")
+        # frontmatterはカスタムのまま維持
+        assert "custom/path" in result
+        assert "template" not in result
+        # bodyはテンプレートで上書き
+        assert "# python.md ルール" in result
+        assert "古いbody" not in result
+        # frontmatter差分ありのログ
+        assert any("frontmatter差分あり" in r.message for r in caplog.records)
+
+    def test_same_frontmatter_no_warning(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """frontmatterが同じでbodyのみ異なる場合、差分警告なしで上書き。"""
+        caplog.set_level(logging.INFO)
+        template_dir = self._setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "python.md").write_text(
+            "---\npaths:\n  - 'template'\n---\n# 古いbody\n",
+            encoding="utf-8",
+        )
+
+        _claudize(target, template_dir)
+
+        result = (rules_dir / "python.md").read_text(encoding="utf-8")
+        assert "# python.md ルール" in result
+        assert not any("frontmatter差分あり" in r.message for r in caplog.records)
