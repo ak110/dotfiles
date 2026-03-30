@@ -73,10 +73,13 @@ def _claudize(target_dir: Path, template_dir: Path) -> None:
     elif pattern == "D":
         _handle_claude_md_only(claude_md)
 
-    # agent.md をテンプレートで上書き
+    # agent.md をテンプレートで同期
     agent_md.parent.mkdir(parents=True, exist_ok=True)
-    agent_md.write_text(template_content, encoding="utf-8")
-    logger.info("上書き: %s", agent_md)
+    if agent_md.exists() and agent_md.read_text(encoding="utf-8") == template_content:
+        logger.info("同期済み: %s", agent_md)
+    else:
+        agent_md.write_text(template_content, encoding="utf-8")
+        logger.info("上書き: %s", agent_md)
 
     # 言語別ルールの配布
     _sync_lang_rules(target_dir, template_dir)
@@ -241,8 +244,13 @@ def _copy_rule_if_absent(dst: Path, src: Path) -> None:
     if not src.exists():
         return
     if dst.exists():
-        # 差分がある場合は通知
-        if dst.read_text(encoding="utf-8") != src.read_text(encoding="utf-8"):
+        dst_content = dst.read_text(encoding="utf-8")
+        src_content = src.read_text(encoding="utf-8")
+        if dst_content == src_content:
+            logger.info("同期済み: %s", dst)
+        elif dst_content.startswith(src_content):
+            logger.info("先頭一致: %s (code --diff %s %s で確認)", dst, src, dst)
+        else:
             logger.warning("差分あり: %s (code --diff %s %s で確認)", dst, src, dst)
         return
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")

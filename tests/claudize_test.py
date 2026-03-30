@@ -1,5 +1,6 @@
 """claudizeモジュールのテスト。"""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -70,8 +71,9 @@ class TestClaudize:
         assert "@CLAUDE.base.md" not in claude_md
         assert _agent_md(target).read_text(encoding="utf-8") == TEMPLATE
 
-    def test_idempotent(self, tmp_path: Path):
-        """パターンC: 2回実行しても結果が同じ。"""
+    def test_idempotent(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """パターンC: 2回実行しても結果が同じ。差分なしの旨が表示される。"""
+        caplog.set_level(logging.INFO)
         template_dir = self._setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
@@ -79,11 +81,14 @@ class TestClaudize:
         _claudize(target, template_dir)
         md_after_first = (target / "CLAUDE.md").read_text(encoding="utf-8")
 
+        caplog.clear()
         _claudize(target, template_dir)
         md_after_second = (target / "CLAUDE.md").read_text(encoding="utf-8")
 
         assert md_after_first == md_after_second
         assert _agent_md(target).read_text(encoding="utf-8") == TEMPLATE
+        # 2回目は「同期済み」が表示される
+        assert any("同期済み" in r.message for r in caplog.records)
 
     def test_migration_from_legacy(self, tmp_path: Path):
         """パターンB: 旧形式から移行、CLAUDE.project.md削除。"""
@@ -325,7 +330,8 @@ class TestLangRules:
         assert any("差分あり" in r.message and "python.md" in r.message for r in caplog.records)
 
     def test_skip_existing_rules_no_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """既にルールが存在し差分がない場合、警告は出ない。"""
+        """既にルールが存在し差分がない場合、「同期済み」が表示される。"""
+        caplog.set_level(logging.INFO)
         template_dir = self._setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
@@ -343,6 +349,31 @@ class TestLangRules:
 
         # 差分ありの警告が出力されない
         assert not any("差分あり" in r.message for r in caplog.records)
+        # 「同期済み」が表示される
+        assert any("同期済み" in r.message and "python.md" in r.message for r in caplog.records)
+
+    def test_prefix_match_rules(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """テンプレート内容が先頭に含まれ追記がある場合、「先頭一致」が表示される。"""
+        caplog.set_level(logging.INFO)
+        template_dir = self._setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+
+        # テンプレート + プロジェクト固有の追記
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        template_content = (template_dir / "python.md").read_text(encoding="utf-8")
+        (rules_dir / "python.md").write_text(
+            template_content + "\n## プロジェクト固有\n\n- 追加ルール\n",
+            encoding="utf-8",
+        )
+
+        _claudize(target, template_dir)
+
+        # 差分ありではなく先頭一致が表示される
+        assert not any("差分あり" in r.message and "python.md" in r.message for r in caplog.records)
+        assert any("先頭一致" in r.message and "python.md" in r.message for r in caplog.records)
 
     def test_skip_no_matching_files(self, tmp_path: Path):
         """該当ファイルがない場合、条件付きルールはスキップされる。"""
