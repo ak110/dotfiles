@@ -18,8 +18,10 @@ bin/update-dotfiles.cmd
 {{ if eq .chezmoi.os "windows" }}
 ssh-config.sh
 pytools.sh
+supply-chain-npm.sh
 {{ end }}
 {{ if ne .chezmoi.os "windows" }}
 ssh-config-windows.ps1
 pytools-windows.ps1
+supply-chain-npm-windows.ps1
 {{ end }}
