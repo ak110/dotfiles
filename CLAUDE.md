@@ -35,6 +35,7 @@ make format   # フォーマットのみ
 
 - chezmoi実行環境のPowerShellでは `$HOME`, `$env:USERPROFILE` 等の環境変数やPowerShell変数が不安定
 - パスには `{{ .chezmoi.homeDir }}` テンプレート変数を使い、リテラル文字列として埋め込むこと
+- テンプレート展開結果をPowerShell変数に代入しないこと（`$var = "{{ .chezmoi.homeDir }}/..."` は`$null`になりうる）
 
 ### ディレクトリ構造の注意
 

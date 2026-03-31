@@ -1,13 +1,12 @@
 # サプライチェーン攻撃対策: npm/pnpmの公開後24時間(1440分)未満のパッケージを除外
-$npmrc = "{{ .chezmoi.homeDir }}/.npmrc"
-if (Test-Path $npmrc) {
-    $content = Get-Content $npmrc -Raw
+if (Test-Path "{{ .chezmoi.homeDir }}/.npmrc") {
+    $content = Get-Content "{{ .chezmoi.homeDir }}/.npmrc" -Raw
     if ($content -match '(?m)^minimum-release-age=') {
         $content = $content -replace '(?m)^minimum-release-age=.*', 'minimum-release-age=1440'
-        Set-Content $npmrc $content -NoNewline
+        Set-Content "{{ .chezmoi.homeDir }}/.npmrc" $content -NoNewline
     } else {
-        Add-Content $npmrc 'minimum-release-age=1440'
+        Add-Content "{{ .chezmoi.homeDir }}/.npmrc" 'minimum-release-age=1440'
     }
 } else {
-    Set-Content $npmrc 'minimum-release-age=1440'
+    Set-Content "{{ .chezmoi.homeDir }}/.npmrc" 'minimum-release-age=1440'
 }
