@@ -9,7 +9,7 @@ repos:
         exclude: '\.cmd$'
       - id: mixed-line-ending
         args: [--fix=lf]
-        exclude: '\.cmd$'
+        exclude: '\.(cmd|ps1)(\.tmpl)?$'
       - id: fix-byte-order-marker
         exclude: '\.cmd$'
       # シンタックス検証
