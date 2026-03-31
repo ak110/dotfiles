@@ -29,6 +29,8 @@ make format   # フォーマットのみ
 - `run_after_supply-chain-npm.sh.tmpl`
   ↔ `run_after_supply-chain-npm-windows.ps1.tmpl`
 
+新しいOS別 `run_*` スクリプトを追加する場合は `.chezmoiignore` にも除外エントリを追加すること。
+
 ### Windows PowerShell スクリプトの注意事項
 
 - chezmoi実行環境のPowerShellでは `$HOME`, `$env:USERPROFILE` 等の環境変数やPowerShell変数が不安定
