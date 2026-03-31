@@ -12,6 +12,10 @@
 ```bash
 sudo apt install git
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# オプション: nvm, node.js
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+nvm install --lts
 ```
 
 ### 例(Windows)
@@ -147,6 +151,27 @@ make test
 make fix      # ruff自動修正
 make format   # フォーマットのみ
 make update   # 依存アップグレード＋全チェック
+```
+
+## サプライチェーン保護
+
+パッケージマネージャーに対するサプライチェーン攻撃を緩和するため、公開後一定期間未満のパッケージのインストールをブロックする設定を行っている。
+`chezmoi apply` / `update-dotfiles` 実行時に自動適用される。
+
+| ツール | 設定 | スコープ |
+|--------|------|----------|
+| uv (uvx含む) | `exclude-newer = "1 day"` | グローバル (`~/.config/uv/uv.toml`) |
+| npm / pnpm (pnpx含む) | `minimum-release-age=1440` (1日) | グローバル (`~/.npmrc`) |
+
+一時的に無効化したい場合（急ぎで最新版が必要な場合など）:
+
+```bash
+# uv
+uv pip install --exclude-newer 0seconds <package>
+
+# npm / pnpm
+npm install --minimum-release-age=0 <package>
+pnpm install --config.minimum-release-age=0 <package>
 ```
 
 ## その他

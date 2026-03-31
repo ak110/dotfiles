@@ -26,6 +26,8 @@ make format   # フォーマットのみ
   ↔ `bin/executable_update-dotfiles.cmd`
 - `run_onchange_after_pytools.sh.tmpl`
   ↔ `run_onchange_after_pytools-windows.ps1.tmpl`
+- `run_after_supply-chain-npm.sh.tmpl`
+  ↔ `run_after_supply-chain-npm-windows.ps1.tmpl`
 
 ### Windows PowerShell スクリプトの注意事項
 
