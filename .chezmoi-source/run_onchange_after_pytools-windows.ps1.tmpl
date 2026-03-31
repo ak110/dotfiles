@@ -1,3 +1,6 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 # pyproject.toml hash: {{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}
 # claude_settings hash: {{ include (joinPath .chezmoi.workingTree "share/claude_settings_managed.json") | sha256sum }}
 # claude_config hash: {{ include (joinPath .chezmoi.workingTree "share/claude_config_managed.json") | sha256sum }}

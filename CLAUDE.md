@@ -33,9 +33,8 @@ make format   # フォーマットのみ
 
 ### Windows PowerShell スクリプトの注意事項
 
-- chezmoi実行環境のPowerShellでは `$HOME`, `$env:USERPROFILE` 等の環境変数やPowerShell変数が不安定
-- パスには `{{ .chezmoi.homeDir }}` テンプレート変数を使い、リテラル文字列として埋め込むこと
-- テンプレート展開結果をPowerShell変数に代入しないこと（`$var = "{{ .chezmoi.homeDir }}/..."` は`$null`になりうる）
+- `.ps1.tmpl` は `.gitattributes` で `eol=crlf` を指定済み（Windows PowerShell 5.1はLF改行で行解釈が壊れる）
+- 全スクリプト冒頭に `Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` を記述すること
 
 ### ディレクトリ構造の注意
 
