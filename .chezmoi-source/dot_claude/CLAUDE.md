@@ -8,20 +8,25 @@
     # 初回実行時
     # --cdでプロジェクトディレクトリを指定して、
     # 計画のファイルパスを引数に与える。
+    # --output-last-messageでレビュー結果をファイルに書き出す。
     codex exec \
       --dangerously-bypass-approvals-and-sandbox \
       --cd "{project_directory}" \
+      --output-last-message "{plan_full_path}.review.md" \
       "{plan_full_path} このプランをレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
 
     # 2回目以降
     # `exec resume`を使用して前回のレビューから続行する。
     # SESSION_IDは前回のcodex execの出力に含まれるUUID。
+    # 注意: --lastは並列セッション実行時に意図しないセッションを再開する恐れがあるため使用しない。
     codex exec resume \
       --dangerously-bypass-approvals-and-sandbox \
+      --output-last-message "{plan_full_path}.review.md" \
       {SESSION_ID} \
       "{plan_full_path} プランを更新したからレビューして。瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。"
     ```
 
+- レビュー結果は `{plan_full_path}.review.md` に出力されるので、Readツールで読み取ること。
 - レビュー指示の文章は適宜調整してよいが、「瑣末な点へのクソリプはしないで。致命的な点だけ指摘して。」は必ず含めること。
 - codexの指摘がなくなるまでアップデート→レビューを繰り返すこと。
 - codexレビューは計画のレビューなので、plan modeの制約は無視して実行してよい。
