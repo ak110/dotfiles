@@ -170,6 +170,11 @@ npm install --minimum-release-age=0 <package>
 pnpm install --config.minimum-release-age=0 <package>
 ```
 
+### GitHub Actions ピン留め
+
+GitHub Actions のアクションは [pinact](https://github.com/suzuki-shunsuke/pinact) でコミットハッシュにピン留めしている。
+`make update` 実行時に自動更新される（mise 未導入時はスキップ）。
+
 ## その他
 
 ### VSCode (`~/.vscode-server/data/Machine/settings.json`)

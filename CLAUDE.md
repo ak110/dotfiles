@@ -7,6 +7,7 @@ make setup    # 初回セットアップ
 make test     # format + lint + test (CI相当)
 make fix      # ruff自動修正
 make format   # フォーマットのみ
+make update   # 依存アップグレード＋全チェック (pinactによるアクション更新含む)
 ```
 
 ## アーキテクチャ
@@ -42,6 +43,13 @@ make format   # フォーマットのみ
   - `dot_claude/` → chezmoi が `~/.claude/` にデプロイ (グローバルユーザー設定)
 - `.claude/` → dotfilesプロジェクト自体のClaude Code設定 + claudizeテンプレート置き場
   - chezmoi はドットプレフィックスのディレクトリを自動無視するため衝突しない
+
+### GitHub Actionsのピン留め (pinact)
+
+- 全アクションはコミットハッシュでピン留め（pinactで管理）
+- ローカル更新: `make update-actions`（mise経由で`pinact run --update --min-age 1`を実行）
+- CI検証: `go install pinact@v3.9.0` + `pinact run --check`（バージョン固定）
+- pinactのCIバージョンを更新する場合は全プロジェクトのワークフローを一括更新すること
 
 ## ファイル構成
 
