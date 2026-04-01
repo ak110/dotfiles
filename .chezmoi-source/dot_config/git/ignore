@@ -10,6 +10,9 @@ Untitled*.ipynb
 *___*
 cmd.bat
 
+# Claude Code
+CLAUDE.local.md
+
 # https://github.com/github/gitignore/blob/master/Global/VisualStudioCode.gitignore
 
 .vscode/*
