@@ -96,13 +96,48 @@ git push
 
 詳細: <https://www.chezmoi.io/reference/source-state-attributes/>
 
+## Claude Code 設定管理
+
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) の設定ファイルを管理している。
+
+### 管理方針
+
+| ファイル | 管理方法 | 用途 |
+| --- | --- | --- |
+| `CLAUDE.md` | プロジェクトごとに手動管理 (Claude Code の `/init` で作成) | プロジェクト固有の指示 (ビルドコマンド、アーキテクチャ概要など) |
+| `.claude/rules/*.md` | dotfiles で原本管理、`claudize` で各プロジェクトへ配布 | 共通ルール |
+
+### ルールファイル (`.claude/rules/`)
+
+ルールファイルはセッション開始時に自動読み込みされる永続的な指示。
+原本は `~/dotfiles/.claude/rules/` で管理し、`claudize` コマンドで各プロジェクトへ配布する。
+
+ルールファイル自体は他のユーザーと共有される可能性があるため、`claudize` のような個人的なツールへの依存を含めないようにしている。配布元の管理やツール固有の情報はこの README に集約する。
+
+| ファイル | 配布条件 | 狙い |
+| --- | --- | --- |
+| `agent.md` | 無条件 | コード品質の維持と、自動化すべき部分とユーザー確認すべき部分のバランス調整 |
+| `{言語}.md`, `{言語}-test.md` | 該当言語のファイルが存在する場合 | 言語固有のコーディング規約・テスト方針によるコード品質の維持 |
+| `markdown.md` | 無条件 | Markdown記述スタイルの統一 |
+| `rules.md`, `skills.md` | 無条件 | ルール・スキル作成時のガイドライン |
+
+ルールファイルの同期時、既存ファイルの YAML frontmatter（`paths` 等）は維持される。
+
+### claudize の使い方
+
+```bash
+# プロジェクトディレクトリで実行
+cd ~/your-project
+claudize
+```
+
 ## pytools (Pythonコマンドラインツール群)
 
 `pytools/` ディレクトリに格納されたPythonパッケージ。`chezmoi apply` 時に `uv tool install` で自動インストールされる。
 
 ### コマンド一覧
 
-- `claudize` — Claude Code設定を初期化・同期
+- `claudize` — Claude Code設定ファイルの配布・同期
 - `py-imageconverter` — 画像変換（リサイズ、フォーマット変換、メタデータ削除）
 - `py-rename` — 正規表現でファイルリネーム
 - `py-rmdirs` — 正規表現でディレクトリ削除
