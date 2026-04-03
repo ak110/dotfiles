@@ -15,8 +15,7 @@ make test
 ## その他のコマンド
 
 ```bash
-make fix      # ruff自動修正
-make format   # フォーマットのみ
+make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
 make update   # 依存アップグレード＋全チェック
 ```
 

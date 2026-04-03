@@ -4,9 +4,8 @@
 
 ```bash
 make setup    # 初回セットアップ
-make test     # format + lint + test (CI相当)
-make fix      # ruff自動修正
-make format   # フォーマットのみ
+make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
+make test     # 全チェック実行（これが通ればコミットしてOK）
 make update   # 依存アップグレード＋全チェック (pinactによるアクション更新含む)
 ```
 
