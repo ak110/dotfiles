@@ -23,7 +23,7 @@ paths:
 - 日付関連の処理は`datetime`を使う
 - ファイル関連の処理は`pathlib`を使う (`open`関数や`os`モジュールは使わない)
 - テーブルデータの処理には`polars`を使う (`pandas`は使わない)
-- パッケージ管理には`uv`を使う
+- 例外の再送出は `raise` (引数なし) を使い、`raise e` は使わない（スタックトレースが書き換わるため）
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く(lint対策)
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - 単なる長い名前の別名でしかないローカル変数は作らない。例えば `x = cls.foo` と書いて `x` を使うより `cls.foo` を直接使う。
@@ -32,3 +32,16 @@ paths:
   - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使用する。
     `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
 - Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を書ける（フォーマッターが自動整形する場合あり）
+- セキュリティ上の危険パターン
+  - `eval()` / `exec()` / `compile()` はユーザー入力に対して使わない（`ast.literal_eval()` や専用パーサーで代替）
+  - `pickle` / `shelve` は信頼できないデータに使わない（`json` や `msgpack` で代替）
+  - `subprocess` は `shell=True` を避ける（引数はリスト形式で渡す。やむを得ない場合は `shlex.quote()` で引数をエスケープ）
+  - YAML読み込みは `yaml.safe_load()` を使う（`yaml.load()` は任意コード実行の危険あり）
+  - SQLは必ずパラメータ化クエリを使う（f-stringやformat等で組み立てない）
+  - 一時ファイルは `tempfile` モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
+  - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は `secrets` モジュールを使う
+- 他で指定が無い場合のツール推奨:
+  - パッケージマネージャー: `uv`（Rust製で高速、pip互換、Pythonバージョン管理も統合）
+  - pre-commitフック: `pre-commit`（コミット時の自動チェック）
+  - リンター/フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
+    - 詳細: <https://ak110.github.io/pyfltr/llms-full.txt>

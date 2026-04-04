@@ -1,6 +1,6 @@
 # dotfiles
 
-[chezmoi](https://www.chezmoi.io/) で管理されたdotfiles。
+[chezmoi](https://www.chezmoi.io/) で管理された個人用dotfiles。
 
 ## 前提条件(要インストール)
 

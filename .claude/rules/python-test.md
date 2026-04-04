@@ -20,3 +20,10 @@ paths:
 - scope: 可能な限り広いスコープ（session > package > module > function）
 - autouse: モジュール単位は積極的に使用、package/session単位は副作用に注意
 - 型ヒント: 必須、複数値返す場合は型エイリアスを定義
+
+## 非同期テスト
+
+- `pytest-asyncio` を使用する
+  - `asyncio_mode = "strict"` を推奨（マーカーの付け忘れを検出できる）
+  - テスト関数には `@pytest.mark.asyncio` を明示する
+  - 非同期fixtureには `@pytest_asyncio.fixture` を使用する（`@pytest.fixture` + `async def` では動作しない）
