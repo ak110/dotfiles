@@ -1,22 +1,36 @@
 """Claude Code設定ファイルを配布・同期するコマンド。"""
 
 import logging
+import os
 import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_AGENT_RULE = Path(".claude") / "rules" / "agent.md"
-
-# 条件付き言語別ルール: (ルールファイル名, 検出用glob)
-_CONDITIONAL_RULES: list[tuple[str, list[str]]] = [
-    ("python.md", ["*.py"]),
-    ("python-test.md", ["*.py"]),
-    ("typescript.md", ["*.ts", "*.tsx"]),
-    ("typescript-test.md", ["*.ts", "*.tsx"]),
+# 条件付き言語別ルール: (ルールファイル名, 判定に使う拡張子タプル)
+_CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("python.md", (".py",)),
+    ("python-test.md", (".py",)),
+    ("typescript.md", (".ts", ".tsx")),
+    ("typescript-test.md", (".ts", ".tsx")),
 ]
 # 無条件で配布するルール
 _UNCONDITIONAL_RULES: list[str] = ["markdown.md", "rules.md", "skills.md"]
+
+# 走査時に降下しないディレクトリ (生成物・依存物など、プロジェクトが
+# その言語で書かれていることの指標にならないもの)。
+# dot で始まるディレクトリ (.venv, .git 等) は別条件で除外する。
+_PRUNE_DIRS: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        "__pycache__",
+        "venv",
+        "env",
+        "target",
+        "build",
+        "dist",
+    }
+)
 
 
 def _main() -> None:
@@ -46,9 +60,15 @@ def _sync_rules(target_dir: Path, template_dir: Path, rules_dir: Path) -> None:
         _sync_rule(rules_dir / rule_name, template_dir / rule_name)
 
     # 条件付きルール (該当言語のファイルが存在する場合のみ配布)
-    for rule_name, globs in _CONDITIONAL_RULES:
+    # 必要な拡張子を事前に集約し、1パスの走査で検出する
+    wanted_exts: set[str] = set()
+    for _, exts in _CONDITIONAL_RULES:
+        wanted_exts.update(exts)
+    found_exts = _detect_extensions(target_dir, wanted_exts)
+
+    for rule_name, exts in _CONDITIONAL_RULES:
         dst = rules_dir / rule_name
-        if dst.exists() or _has_files(target_dir, globs):
+        if dst.exists() or any(ext in found_exts for ext in exts):
             _sync_rule(dst, template_dir / rule_name)
 
 
@@ -101,17 +121,38 @@ def _split_frontmatter(content: str) -> tuple[str | None, str]:
     return content[:fm_end], content[fm_end:]
 
 
-def _has_files(target_dir: Path, globs: list[str]) -> bool:
-    """指定globに該当するファイルがtarget_dir内に存在するか判定する。
+def _detect_extensions(target_dir: Path, wanted: set[str]) -> set[str]:
+    """target_dir配下で、指定された拡張子のファイルを1パスで検出する。
 
-    `.` で始まるディレクトリ内のファイルは無視する。
+    降下対象から以下を除外する:
+    - 名前が `.` で始まるディレクトリ (`.venv`, `.git` など)
+    - `_PRUNE_DIRS` に含まれる生成物・依存物ディレクトリ
+
+    `wanted` を全て発見した時点で即座に打ち切る。
+
+    Returns:
+        見つかった拡張子の集合 (`wanted` の部分集合)。
     """
-    for pattern in globs:
-        for path in target_dir.rglob(pattern):
-            parts = path.relative_to(target_dir).parts[:-1]
-            if not any(p.startswith(".") for p in parts):
-                return True
-    return False
+    found: set[str] = set()
+    remaining = set(wanted)
+    if not remaining:
+        return found
+
+    for _, dirnames, filenames in os.walk(target_dir):
+        # 降下しないディレクトリを in-place で削除して os.walk を枝刈り
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _PRUNE_DIRS]
+        for name in filenames:
+            # 拡張子比較 (最後の `.` 以降)。`.tsx` など複数候補に対応
+            dot = name.rfind(".")
+            if dot < 0:
+                continue
+            ext = name[dot:]
+            if ext in remaining:
+                found.add(ext)
+                remaining.discard(ext)
+                if not remaining:
+                    return found
+    return found
 
 
 if __name__ == "__main__":

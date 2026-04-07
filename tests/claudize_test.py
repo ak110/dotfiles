@@ -169,6 +169,84 @@ class TestLangRules:
         rules_dir = target / ".claude" / "rules"
         assert not (rules_dir / "python.md").exists()
 
+    def test_venv_dir_ignored(self, tmp_path: Path):
+        """.venv/ 配下の .py は検出対象外。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        venv = target / ".venv"
+        venv.mkdir()
+        (venv / "foo.py").write_text("", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        rules_dir = target / ".claude" / "rules"
+        assert not (rules_dir / "python.md").exists()
+
+    def test_node_modules_ignored(self, tmp_path: Path):
+        """node_modules/ 配下の .ts は検出対象外 (固定除外リスト)。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        nm = target / "node_modules"
+        nm.mkdir()
+        (nm / "foo.ts").write_text("", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        rules_dir = target / ".claude" / "rules"
+        assert not (rules_dir / "typescript.md").exists()
+
+    def test_build_dir_ignored(self, tmp_path: Path):
+        """build/ 配下の .py は検出対象外 (固定除外リスト)。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        build = target / "build"
+        build.mkdir()
+        (build / "generated.py").write_text("", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        rules_dir = target / ".claude" / "rules"
+        assert not (rules_dir / "python.md").exists()
+
+    def test_detect_extensions_single_pass(self, tmp_path: Path):
+        """.py と .ts が両方あれば、両方のルールが配布される (1パス検出の検証)。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+        (target / "main.ts").write_text("", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        rules_dir = target / ".claude" / "rules"
+        assert (rules_dir / "python.md").exists()
+        assert (rules_dir / "python-test.md").exists()
+        assert (rules_dir / "typescript.md").exists()
+        assert (rules_dir / "typescript-test.md").exists()
+
+    def test_existing_rule_kept_even_if_source_only_in_build(self, tmp_path: Path):
+        """既に python.md が配布済みなら、build/ 配下にしか .py がなくても同期される。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        build = target / "build"
+        build.mkdir()
+        (build / "generated.py").write_text("", encoding="utf-8")
+
+        # 既に python.md を配布済みの状態を作る
+        rules_dir = target / ".claude" / "rules"
+        rules_dir.mkdir(parents=True)
+        (rules_dir / "python.md").write_text("# 旧ルール\n", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        # dst.exists() フォールバックにより、build/ のみでも同期継続
+        expected = (template_dir / "python.md").read_text(encoding="utf-8")
+        assert (rules_dir / "python.md").read_text(encoding="utf-8") == expected
+
     def test_no_claude_md_created(self, tmp_path: Path):
         """claudize は CLAUDE.md を作成しない。"""
         template_dir = _setup_template(tmp_path)
