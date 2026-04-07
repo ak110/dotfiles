@@ -22,7 +22,7 @@ LANG_RULE_TEMPLATE = "# テストルール\n"
 
 def _setup_template(tmp_path: Path) -> Path:
     """テンプレートディレクトリを作成し、agent.md と言語別ルールを配置する。"""
-    template_dir = tmp_path / "dotfiles" / ".claude" / "rules"
+    template_dir = tmp_path / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-basics"
     template_dir.mkdir(parents=True)
     (template_dir / "agent.md").write_text(TEMPLATE, encoding="utf-8")
     for name in [
@@ -50,7 +50,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "python.md").exists()
         assert (rules_dir / "python-test.md").exists()
 
@@ -63,7 +63,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "typescript.md").exists()
         assert (rules_dir / "typescript-test.md").exists()
 
@@ -75,7 +75,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "agent.md").exists()
         assert (rules_dir / "markdown.md").exists()
         assert (rules_dir / "rules.md").exists()
@@ -90,7 +90,7 @@ class TestLangRules:
         (target / "main.py").write_text("", encoding="utf-8")
 
         # テンプレートと異なる内容の既存ルールを配置
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         (rules_dir / "python.md").write_text("# カスタムルール\n", encoding="utf-8")
 
@@ -112,7 +112,7 @@ class TestLangRules:
         target.mkdir()
 
         # テンプレートと異なる内容の既存ルールを配置
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         (rules_dir / "markdown.md").write_text("# 古いルール\n", encoding="utf-8")
 
@@ -146,7 +146,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         # agent.md と無条件ルールは存在
         assert (rules_dir / "agent.md").exists()
         assert (rules_dir / "markdown.md").exists()
@@ -166,7 +166,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert not (rules_dir / "python.md").exists()
 
     def test_venv_dir_ignored(self, tmp_path: Path):
@@ -180,7 +180,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert not (rules_dir / "python.md").exists()
 
     def test_node_modules_ignored(self, tmp_path: Path):
@@ -194,7 +194,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert not (rules_dir / "typescript.md").exists()
 
     def test_build_dir_ignored(self, tmp_path: Path):
@@ -208,7 +208,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert not (rules_dir / "python.md").exists()
 
     def test_detect_extensions_single_pass(self, tmp_path: Path):
@@ -221,7 +221,7 @@ class TestLangRules:
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "python.md").exists()
         assert (rules_dir / "python-test.md").exists()
         assert (rules_dir / "typescript.md").exists()
@@ -237,7 +237,7 @@ class TestLangRules:
         (build / "generated.py").write_text("", encoding="utf-8")
 
         # 既に python.md を配布済みの状態を作る
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         (rules_dir / "python.md").write_text("# 旧ルール\n", encoding="utf-8")
 
@@ -264,6 +264,107 @@ class TestLangRules:
 
         with pytest.raises(SystemExit):
             _claudize(target, tmp_path / "nonexistent" / ".claude" / "rules")
+
+
+class TestClean:
+    """--clean オプションのテスト。"""
+
+    def test_clean_removes_distributed_rules(self, tmp_path: Path):
+        """配布済みの全ルールファイルと空のrules/が削除される。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        (target / "main.py").write_text("", encoding="utf-8")
+        (target / "main.ts").write_text("", encoding="utf-8")
+
+        # まず配布
+        _claudize(target, template_dir)
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
+        assert (rules_dir / "agent.md").exists()
+        assert (rules_dir / "python.md").exists()
+
+        # clean 実行
+        _claudize(target, template_dir, clean=True)
+
+        # 配布対象ファイルが全て削除されている
+        assert not (rules_dir / "agent.md").exists()
+        assert not (rules_dir / "markdown.md").exists()
+        assert not (rules_dir / "python.md").exists()
+        assert not (rules_dir / "python-test.md").exists()
+        assert not (rules_dir / "typescript.md").exists()
+        assert not (rules_dir / "typescript-test.md").exists()
+        assert not (rules_dir / "rules.md").exists()
+        assert not (rules_dir / "skills.md").exists()
+        # 空になったディレクトリも削除されている
+        assert not rules_dir.exists()
+
+    def test_clean_preserves_other_files(self, tmp_path: Path):
+        """claudize 管理外のファイルは削除されず、rules/ も残る。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        _claudize(target, template_dir)
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
+        # ユーザーが置いた別ファイル
+        (rules_dir / "custom.md").write_text("# custom\n", encoding="utf-8")
+
+        _claudize(target, template_dir, clean=True)
+
+        assert not (rules_dir / "agent.md").exists()
+        assert (rules_dir / "custom.md").exists()
+        assert rules_dir.exists()
+
+    def test_clean_nonexistent_rules_dir(self, tmp_path: Path):
+        """rules/ が存在しない場合でもエラーにならない。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+
+        _claudize(target, template_dir, clean=True)
+
+        assert not (target / ".claude" / "rules" / "agent-basics").exists()
+
+    def test_clean_removes_legacy_layout(self, tmp_path: Path):
+        """旧レイアウト (.claude/rules/ 直下) の配布ファイルも削除される。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        # 旧レイアウトを再現: .claude/rules/ 直下に配布ファイルを置く
+        legacy_dir = target / ".claude" / "rules"
+        legacy_dir.mkdir(parents=True)
+        for name in [
+            "agent.md",
+            "markdown.md",
+            "rules.md",
+            "skills.md",
+            "python.md",
+            "python-test.md",
+            "typescript.md",
+            "typescript-test.md",
+        ]:
+            (legacy_dir / name).write_text("# legacy\n", encoding="utf-8")
+
+        _claudize(target, template_dir, clean=True)
+
+        # 旧配布ファイルが全削除され、空になった rules/ と .claude/ も消える
+        assert not legacy_dir.exists()
+        assert not (target / ".claude").exists()
+
+    def test_clean_legacy_preserves_other_files(self, tmp_path: Path):
+        """旧レイアウトでも管理外ファイルは残し、ディレクトリも削除しない。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+        legacy_dir = target / ".claude" / "rules"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "agent.md").write_text("# legacy\n", encoding="utf-8")
+        (legacy_dir / "custom.md").write_text("# custom\n", encoding="utf-8")
+
+        _claudize(target, template_dir, clean=True)
+
+        assert not (legacy_dir / "agent.md").exists()
+        assert (legacy_dir / "custom.md").exists()
+        assert legacy_dir.exists()
 
 
 class TestSplitFrontmatter:
@@ -293,7 +394,7 @@ class TestFrontmatterPreservation:
     """ルール同期時のfrontmatter維持のテスト。"""
 
     def _setup_template(self, tmp_path: Path) -> Path:
-        template_dir = tmp_path / "dotfiles" / ".claude" / "rules"
+        template_dir = tmp_path / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-basics"
         template_dir.mkdir(parents=True)
         (template_dir / "agent.md").write_text(TEMPLATE, encoding="utf-8")
         for name in [
@@ -320,7 +421,7 @@ class TestFrontmatterPreservation:
         (target / "main.py").write_text("", encoding="utf-8")
 
         # カスタムfrontmatterを持つ既存ルールを配置
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         (rules_dir / "python.md").write_text(
             "---\npaths:\n  - 'custom/path'\n---\n# 古いbody\n",
@@ -347,7 +448,7 @@ class TestFrontmatterPreservation:
         target.mkdir()
         (target / "main.py").write_text("", encoding="utf-8")
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         # bodyはテンプレートと同じ、frontmatterのみカスタム
         (rules_dir / "python.md").write_text(
@@ -375,7 +476,7 @@ class TestFrontmatterPreservation:
         target.mkdir()
         (target / "main.py").write_text("", encoding="utf-8")
 
-        rules_dir = target / ".claude" / "rules"
+        rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
         (rules_dir / "python.md").write_text(
             "---\npaths:\n  - 'template'\n---\n# 古いbody\n",

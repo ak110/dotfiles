@@ -1,5 +1,6 @@
 """Claude Code設定ファイルを配布・同期するコマンド。"""
 
+import argparse
 import logging
 import os
 import sys
@@ -35,22 +36,69 @@ _PRUNE_DIRS: frozenset[str] = frozenset(
 
 def _main() -> None:
     logging.basicConfig(format="%(message)s", level="DEBUG")
-    template_dir = Path.home() / "dotfiles" / ".claude" / "rules"
+    parser = argparse.ArgumentParser(description="Claude Code設定ファイルを配布・同期する。")
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="配布対象のルールファイルをプロジェクトから削除する。",
+    )
+    args = parser.parse_args()
+    template_dir = Path.home() / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-basics"
     target_dir = Path.cwd()
-    _claudize(target_dir, template_dir)
+    _claudize(target_dir, template_dir, clean=args.clean)
 
 
-def _claudize(target_dir: Path, template_dir: Path) -> None:
+def _claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> None:
     """本体ロジック。テスト時にパスを差し替え可能にするため分離。"""
+    rules_dir = target_dir / ".claude" / "rules" / "agent-basics"
+
+    if clean:
+        # 新レイアウト (`.claude/rules/agent-basics/`) と旧レイアウト
+        # (`.claude/rules/` 直下) の両方からルールを削除する。旧レイアウトの
+        # 残存ファイルを移行するためのフォールバック。
+        legacy_rules_dir = target_dir / ".claude" / "rules"
+        removed = _clean_rules(rules_dir)
+        removed |= _clean_rules(legacy_rules_dir)
+        if not removed:
+            logger.info("削除対象なし: %s", rules_dir)
+        return
+
     template_path = template_dir / "agent.md"
     if not template_path.exists():
         logger.error("テンプレートが見つかりません: %s", template_path)
         sys.exit(1)
 
     # ルールの同期
-    rules_dir = target_dir / ".claude" / "rules"
     rules_dir.mkdir(parents=True, exist_ok=True)
     _sync_rules(target_dir, template_dir, rules_dir)
+
+
+def _clean_rules(rules_dir: Path) -> bool:
+    """配布対象のルールファイルを削除する。空になったディレクトリも削除する。
+
+    Returns:
+        何らかのファイルまたはディレクトリを削除した場合 True。
+    """
+    if not rules_dir.exists():
+        return False
+    removed = False
+    targets = ["agent.md", *_UNCONDITIONAL_RULES, *(name for name, _ in _CONDITIONAL_RULES)]
+    for name in targets:
+        path = rules_dir / name
+        if path.exists():
+            path.unlink()
+            logger.info("削除: %s", path)
+            removed = True
+    # 空になった親ディレクトリ (agent-basics/, rules/, .claude/) を順に掃除
+    for candidate in [rules_dir, rules_dir.parent, rules_dir.parent.parent]:
+        if candidate.name not in {"agent-basics", "rules", ".claude"}:
+            break
+        if not candidate.exists() or any(candidate.iterdir()):
+            break
+        candidate.rmdir()
+        logger.info("削除: %s", candidate)
+        removed = True
+    return removed
 
 
 def _sync_rules(target_dir: Path, template_dir: Path, rules_dir: Path) -> None:
