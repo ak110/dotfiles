@@ -105,32 +105,22 @@ claudize --clean
 
 ### Claude Code plugin (edit-guardrails)
 
-`plugins/edit-guardrails/` に PreToolUse ガードレール plugin を同梱している。
+`plugins/edit-guardrails/` に、危険な編集を PreToolUse 段階で検出する plugin を同梱している。
 配布元は本リポジトリ自身で、`.claude-plugin/marketplace.json` に登録済み。
+`uv` CLI に依存する (hook スクリプトを `uv run --script` 経由で実行するため)。
 
-**個人環境 (dotfiles 導入済み)**:
-`chezmoi apply` 後処理で、`claude` と `uv` の両方が PATH にあり plugin が未導入の場合に自動でインストールされる。
-手動で入れる場合は次の 2 行。
+主なチェック内容は次の通り。
 
-```bash
-claude plugin marketplace add <path/to/dotfiles>
-claude plugin install edit-guardrails@ak110-dotfiles
-```
+- 文字化け (U+FFFD) を含む Write/Edit/MultiEdit をブロック
+- LF 改行のみの `.ps1` / `.ps1.tmpl` への書き込みをブロック (Windows PowerShell 5.1 対策)
+- ロックファイルや `.venv/` / `node_modules/` など自動生成物の手編集をブロック
+- シークレットらしき値の書き込みや、`~` 展開パスのハードコードを警告・ブロック
 
-**他のチームメンバー**:
-次のコマンドを実行してもらう。
-詳細は上記「プロジェクトのセットアップ手順への記述例」を参照。
+最新の一覧と詳細は `plugins/edit-guardrails/scripts/pretooluse.py` を参照。
 
-```bash
-claude plugin marketplace add ak110/dotfiles
-claude plugin install edit-guardrails@ak110-dotfiles
-```
-
-**仕組み**:
-plugin の `hooks/hooks.json` が PreToolUse + `Write|Edit|MultiEdit` matcher を登録する。
-matcher にヒットすると `${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py` が `uv run --script` 経由で起動される。
-1 プロセスで全 check を直列実行し、最初の違反で exit 2 となる。
-チェック追加時は `pretooluse.py` の `_check_*` 関数を増やすだけで済む構造にしてある。
+個人環境 (dotfiles 導入済み) では `chezmoi apply` 後処理で自動インストールされる
+(`claude` と `uv` が PATH にあり未導入の場合のみ)。
+手動インストールや他のチームメンバー向けの配布方法は上記「プロジェクトのセットアップ手順への記述例」を参照。
 
 ## ルールファイル一覧
 

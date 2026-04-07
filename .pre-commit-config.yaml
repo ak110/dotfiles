@@ -11,7 +11,10 @@ repos:
         args: [--fix=lf]
         exclude: '\.(cmd|ps1)(\.tmpl)?$'
       - id: fix-byte-order-marker
-        exclude: '\.cmd$'
+        # Windows PowerShell 5.1 は BOM の無い .ps1 を ANSI (日本語環境では Shift-JIS)
+        # として読んでしまい日本語文字列でパースエラーになるため、.ps1 / .ps1.tmpl の
+        # BOM は削らず保持する。
+        exclude: '\.(cmd|ps1)(\.tmpl)?$'
       # シンタックス検証
       - id: check-yaml
         exclude: '\.tmpl$'

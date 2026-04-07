@@ -16,6 +16,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # オプション: nvm, node.js
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 nvm install --lts
+
+# オプション: mise
+curl https://mise.run | sh
 ```
 
 ### 例(Windows)
@@ -23,6 +26,9 @@ nvm install --lts
 ```cmd
 winget install --id Git.Git -e --source winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+REM オプション: mise
+winget install jdx.mise
 ```
 
 ## インストール
