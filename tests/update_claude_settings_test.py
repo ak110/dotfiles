@@ -3,6 +3,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from pytools import update_claude_settings as mod
 from pytools.update_claude_settings import update_claude_settings
 
 MANAGED_ALLOW = [
@@ -104,6 +107,101 @@ class TestUpdateClaudeConfig:
         assert result["verbose"] is True
 
 
+class TestPlatformOverride:
+    """OS 別オーバーライド JSON が重ねマージされることを検証する。"""
+
+    def test_override_adds_hooks(self, tmp_path: Path):
+        """ベースに無い hooks セクションをオーバーライド経由で追加できる。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        override_path = tmp_path / "override.json"
+        override_path.write_text(
+            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "x"}]}]}}),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+
+        update_claude_settings(managed_path, target_path, overrides=[override_path])
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["language"] == "japanese"
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
+
+    def test_override_replaces_scalar(self, tmp_path: Path):
+        """オーバーライドはベースのスカラー値を上書きする。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "english"}), encoding="utf-8")
+        override_path = tmp_path / "override.json"
+        override_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+
+        update_claude_settings(managed_path, target_path, overrides=[override_path])
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["language"] == "japanese"
+
+    def test_missing_override_is_ignored(self, tmp_path: Path):
+        """存在しないオーバーライドはスキップされる (他 OS を壊さない)。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+
+        # _platform_overrides は実在チェック済みのリストを返すため、そちらを経由
+        # tmp_path 内の managed.json には対応 override が無いため空リストになる
+        overrides = mod._platform_overrides(managed_path)  # pylint: disable=protected-access
+        assert not overrides
+
+        update_claude_settings(managed_path, target_path, overrides=overrides)
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result == {"language": "japanese"}
+
+
+class TestPlatformOverrideSelection:
+    """_platform_overrides のプラットフォーム判定テスト。"""
+
+    def test_posix_selects_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(mod.sys, "platform", "linux")
+        base = tmp_path / "managed.json"
+        base.write_text("{}", encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
+
+        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+
+        assert result == [tmp_path / "managed.posix.json"]
+
+    def test_darwin_selects_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(mod.sys, "platform", "darwin")
+        base = tmp_path / "managed.json"
+        base.write_text("{}", encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
+
+        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+
+        assert result == [tmp_path / "managed.posix.json"]
+
+    def test_win32_selects_win32_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(mod.sys, "platform", "win32")
+        base = tmp_path / "managed.json"
+        base.write_text("{}", encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
+
+        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+
+        assert result == [tmp_path / "managed.win32.json"]
+
+    def test_missing_override_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """override が存在しない場合は空リスト。"""
+        monkeypatch.setattr(mod.sys, "platform", "linux")
+        base = tmp_path / "managed.json"
+        base.write_text("{}", encoding="utf-8")
+
+        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+
+        assert not result
+
+
 class TestMergeRecursive:
     """_merge の再帰マージロジックテスト。"""
 
@@ -118,3 +216,27 @@ class TestMergeRecursive:
         existing = {"items": ["a", "b", "c"]}
         result = _run(tmp_path, {"items": ["b", "d"]}, existing)
         assert result["items"] == ["a", "b", "c", "d"]
+
+    def test_dict_list_union_dedup(self, tmp_path: Path):
+        """dict を要素に持つ list もマージ可能で、同一内容の重複は排除される。
+
+        hooks 配列のように非 hashable な要素を含む list をマージする際の回帰テスト。
+        """
+        hook_entry = {
+            "matcher": "Write|Edit|MultiEdit",
+            "hooks": [{"type": "command", "command": "claude-hook-check-mojibake"}],
+        }
+        existing = {"hooks": {"PreToolUse": [hook_entry]}}
+        managed = {
+            "hooks": {
+                "PreToolUse": [
+                    dict(hook_entry),  # 同一内容 → 重複排除される
+                    {"matcher": "Bash", "hooks": []},
+                ]
+            }
+        }
+        result = _run(tmp_path, managed, existing)
+        pretooluse = result["hooks"]["PreToolUse"]
+        assert len(pretooluse) == 2
+        assert pretooluse[0] == hook_entry
+        assert pretooluse[1]["matcher"] == "Bash"
