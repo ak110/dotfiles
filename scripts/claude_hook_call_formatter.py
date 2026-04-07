@@ -32,7 +32,9 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-_DOTFILES_DIR = pathlib.Path.home() / "dotfiles"
+# 本スクリプトは <repo>/scripts/ 配下にある前提。__file__ から導出することで
+# `~/dotfiles` 以外 (CI の作業ディレクトリ等) にチェックアウトされていても動作する
+_DOTFILES_DIR = pathlib.Path(__file__).resolve().parents[1]
 
 # 拡張子 → フォーマッタ コマンド (file_path が最後尾に追加される)
 _FORMATTERS: dict[str, list[str]] = {
