@@ -1,5 +1,5 @@
 scriptencoding utf-8
-" ↑一番上に書かないとダメっぽい？
+" ↑一番上に書かないとダメ？
 
 unlet! skip_defaults_vim
 source $VIMRUNTIME/defaults.vim

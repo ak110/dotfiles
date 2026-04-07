@@ -41,7 +41,7 @@ class TestRun:
         assert [r.changed for r in results] == [True, False, False, True, False, False]
 
     def test_failing_step_does_not_stop_others(self, monkeypatch: pytest.MonkeyPatch):
-        """途中ステップが例外を投げても後続は走る。"""
+        """途中ステップが例外を投げても後続は実行される。"""
         calls: list[str] = []
 
         def make(name: str):

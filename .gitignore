@@ -6,8 +6,8 @@
 !/.chezmoiignore
 !/.chezmoi-source/.chezmoiignore
 
-# pyfltr の Claude Code hook が使うマーカーと、ローカル上書き設定
-/.claude/.pyfltr-dirty
+# 編集ターン整形用の Claude Code hook マーカーと、ローカル上書き設定
+/.claude/.format-dirty
 /.claude/settings.local.json
 /.codex/
 /.config/

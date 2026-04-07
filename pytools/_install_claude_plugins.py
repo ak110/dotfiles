@@ -20,7 +20,7 @@
      `claude plugin update <name>@<marketplace>` で反映
   (version が一致していれば update コマンドは呼ばずスキップ)
 
-`update-dotfiles` 経由で本モジュールが走るたびに version 乖離が解消されるため、
+`update-dotfiles` 経由で本モジュールが実行されるたびに version 乖離が解消されるため、
 ユーザー環境では marketplace.json の bump が自動で反映される。
 """
 
@@ -188,7 +188,7 @@ def _name_from_entry(entry: dict[object, object]) -> str | None:
 def _read_target_versions(dotfiles_root: Path) -> dict[str, str]:
     """`marketplace.json` から配布側の name → version 辞書を作る。
 
-    読み込み失敗時は空辞書を返す (更新判定をスキップする方向へ倒す)。
+    読み込み失敗時は空辞書を返す (更新判定をスキップする方針とする)。
     """
     manifest = dotfiles_root / ".claude-plugin" / "marketplace.json"
     try:

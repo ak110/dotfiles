@@ -30,7 +30,7 @@ _IS_WINDOWS = os.name == "nt"
 logger = logging.getLogger(__name__)
 
 # `mise` CLI のタイムアウト (秒)。`ls --global --json` は数百 ms、`use --global` は
-# 新規インストールが走ると数十秒かかるため余裕を持たせる。
+# 新規インストールが実行されると数十秒かかるため余裕を持たせる。
 _MISE_TIMEOUT = 120
 
 # Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は
@@ -137,7 +137,7 @@ def _ensure_windows_user_path_has_shims() -> bool:
 def _import_winreg() -> typing.Any:
     """Winreg モジュールを Any 型で読み込む。
 
-    winreg は Windows 専用の標準モジュールで、Linux 上で pyright を走らせると
+    winreg は Windows 専用の標準モジュールで、Linux 上で pyright を実行すると
     全属性アクセスが `reportAttributeAccessIssue` として検出されてしまう。
     本モジュールは Windows でのみ winreg 依存関数を呼ぶ設計のため、型情報を失っても
     害は無く、`Any` 経由でアクセスするのが最も簡潔。

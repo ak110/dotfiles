@@ -86,7 +86,7 @@ class TestRunFlow:
         assert [c for c in calls if c[:3] == ["claude", "plugin", "install"]] == []
 
     def test_already_installed_version_drift_updates(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みでも version が古ければ refresh + update が走る。"""
+        """インストール済みでも version が古ければ refresh + update が実行される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -142,7 +142,7 @@ class TestRunFlow:
         assert any(c[:3] == ["claude", "plugin", "install"] and "edit-guardrails@ak110-dotfiles" in c for c in calls)
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
-        """marketplace が既に登録済みなら add は呼ばず install だけ走る。"""
+        """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001

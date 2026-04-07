@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code plugin edit-guardrails: PreToolUse 統合フック。
 
-Write / Edit / MultiEdit の実行前に以下のチェックを順に走らせる。
+Write / Edit / MultiEdit の実行前に以下のチェックを順に実行する。
 1 プロセスで全 check を直列実行し、最初の block 違反で exit 2 する。
 warn 種別の check は stderr に警告を出しつつ処理を継続する。
 
@@ -34,7 +34,7 @@ exit code 契約:
 - exit 2: block 違反検出 (stderr に理由を出力)
 
 予期せぬ例外は 0 にフォールバックする (plugin の hook が壊れて編集不能になる
-事故を避けるため、安全側に倒している)。
+事故を避けるため、安全側の判定としている)。
 """
 
 import json
@@ -310,6 +310,6 @@ if __name__ == "__main__":
     try:
         sys.exit(_main())
     except Exception:  # noqa: BLE001 -- plugin が壊れて編集不能になる事故を避けるため広く捕捉
-        # 予期せぬ例外は安全側 (通過) に倒す。デバッグのためスタックトレースは stderr に出す
+        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出す
         traceback.print_exc()
         sys.exit(0)

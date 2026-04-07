@@ -38,7 +38,7 @@ Claude Code が `~/.claude/rules/` 配下を再帰的に読み込む仕様のた
 ````markdown
 ## Claude Code ルールのインストール
 
-本プロジェクトでは、共通の Claude Code ルールを `~/.claude/rules/agent-basics/` に配置することを推奨します。
+本プロジェクトでは、共通の Claude Code ルールを `~/.claude/rules/agent-basics/` に配置することを推奨する。
 
 ### Linux / macOS
 
@@ -54,25 +54,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 
 ### ルールの更新・カスタマイズ
 
-ルールファイルは頻繁に更新される可能性があるため、定期的にインストールコマンドを再実行して最新化してください。
+ルールファイルは頻繁に更新される可能性があるため、定期的にインストールコマンドを再実行して最新化すること。
 
-インストール後、`~/.claude/rules/agent-basics/` 配下のファイルを必要に応じて編集できます。
-たとえば `paths` frontmatter を変更すれば、各ルールの適用範囲を限定することができます。
-上記のワンライナーの再実行時は、既存ファイルの frontmatter を維持したまま body のみ更新されるようになっています。
+インストール後、`~/.claude/rules/agent-basics/` 配下のファイルを必要に応じて編集できる。
+たとえば `paths` frontmatter を変更すれば、各ルールの適用範囲を限定できる。
+上記のワンライナーを再実行した場合、既存ファイルの frontmatter は維持され body のみ更新される。
 
-frontmatter 以外 (body 部分) を編集すると、再実行時に上書きされて変更が破棄されてしまいます。
-body をカスタマイズしたい場合は、`paths` frontmatter を存在しない拡張子 (例: `paths: ["**/*.__disabled__"]`) を指定して該当ルールを実質無効化したうえで、
-別ファイルとして独自ルールを管理するのがおすすめです。
+frontmatter 以外 (body 部分) を編集すると、再実行時に上書きされて変更が破棄される。
+body をカスタマイズしたい場合は、`paths` frontmatter に存在しない拡張子 (例: `paths: ["**/*.__disabled__"]`) を指定して該当ルールを実質無効化したうえで、
+別ファイルとして独自ルールを管理する方法を推奨する。
 
-body に差分があった場合、旧ファイルは `~/.claude/rules-backup/agent-basics-<timestamp>/` に退避されます。
-(バックアップ先を `~/.claude/rules/` の外に置いているのは、Claude Code が `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、
-退避先が同じツリー内にあると古いルールが読まれてしまうためです。)
-不要になったバックアップは適宜削除してください。
+body に差分があった場合、旧ファイルは `~/.claude/rules-backup/agent-basics-<timestamp>/` に退避される。
+(バックアップ先を `~/.claude/rules/` の外に置いているのは、Claude Code が `~/.claude/rules/` 配下を再帰的に読み込む仕様のためである。
+退避先が同じツリー内にあると古いルールが読まれてしまう。)
+不要になったバックアップは適宜削除する。
 
 ## edit-guardrails プラグインのインストール
 
-本プロジェクトでは、危険な編集を PreToolUse 段階で検出する Claude Code プラグイン `edit-guardrails` も推奨しています。
-現在のチェック内容:
+本プロジェクトでは、危険な編集を PreToolUse 段階で検出する Claude Code プラグイン `edit-guardrails` も推奨する。
+現在のチェック内容は次の通り。
 
 - 文字化け (U+FFFD) を含む Write/Edit/MultiEdit をブロック
 - LF 改行のみの `.ps1` / `.ps1.tmpl` への書き込みをブロック (Windows PowerShell 5.1 対策)
@@ -82,25 +82,25 @@ claude plugin marketplace add ak110/dotfiles
 claude plugin install edit-guardrails@ak110-dotfiles
 ```
 
-インストール済みか確認するには `claude plugin list` を使います。
-削除は `claude plugin uninstall edit-guardrails` を使います。
-プラグインは `uv` CLI に依存するため、別途 [uv](https://docs.astral.sh/uv/) をインストールしてください。
+インストール済みかを確認するには `claude plugin list` を使う。
+削除には `claude plugin uninstall edit-guardrails` を使う。
+プラグインは `uv` CLI に依存するため、別途 [uv](https://docs.astral.sh/uv/) をインストールすること。
 
 ### プラグインの更新
 
-ローカルの `marketplace.json` にある version 情報を最新化してから `plugin update` を叩きます。
-`marketplace update` を省くと古いメタデータが使われて `既に最新です` と誤判定されることがあります。
+ローカルの `marketplace.json` にある version 情報を最新化してから `plugin update` を実行する。
+`marketplace update` を省くと古いメタデータが使われ `既に最新です` と誤判定されることがある。
 
 ```bash
 claude plugin marketplace update ak110-dotfiles
 claude plugin update edit-guardrails@ak110-dotfiles
 ```
 
-dotfiles を `install.sh` / `install.ps1` 経由でフル導入している場合は、
-`update-dotfiles` が `chezmoi apply` の後処理として上記と同等のコマンドを自動実行します
+dotfiles を `install.sh` / `install.ps1` 経由でフル導入している場合、
+`update-dotfiles` が `chezmoi apply` の後処理として上記と同等のコマンドを自動実行する
 (`pytools/_install_claude_plugins.py`)。
-明示的に `claude plugin update` を打つ必要があるのは、dotfiles を使っていない環境や
-`update-dotfiles` を経由せずにプラグインだけ最新化したい場合です。
+明示的に `claude plugin update` を実行する必要があるのは、dotfiles を使っていない環境や、
+`update-dotfiles` を経由せずにプラグインだけ最新化したい場合である。
 ````
 
 ### プロジェクトローカルへの配布: `claudize`

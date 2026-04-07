@@ -28,7 +28,7 @@ paths:
 - `.claude-plugin/marketplace.json` の `plugins[]` 内 `name == "<plugin-name>"` のエントリ
 
 整合性は各プラグインのテストで検査する。
-`edit-guardrails` の担当は `TestManifestSsot` で、`make test` で自動的に落ちる。
+`edit-guardrails` の担当は `TestManifestSsot` で、`make test` で自動的に失敗する。
 (場所: `plugins/edit-guardrails/tests/pretooluse_test.py`)
 新しいプラグインを追加するときは同等の SSOT テストも追加する。
 
@@ -49,7 +49,7 @@ paths:
 - 入出力が完全に不変なリファクタリング
 - 誤字修正・スタイル調整
 
-判断に迷ったら bump する方向へ倒す (pre-1.0 なら頻繁に MINOR が上がっても構わない)。
+判断に迷ったら bump する方針とする (pre-1.0 なら頻繁に MINOR が上がっても構わない)。
 
 ## bump 指針 (pre-1.0 `0.x.y`)
 

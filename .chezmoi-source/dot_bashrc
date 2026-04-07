@@ -218,7 +218,7 @@ function enable-pyenv() {
     pyenv --version
     pyenv versions
 }
-# 既に存在したら自動で有効化しちゃうことにしてみる
+# 既に存在したら自動で有効化する
 # ただし、VIRTUAL_ENVがすでに有効ならスキップ
 if [ -d "$HOME/.pyenv" -a ! -n "$VIRTUAL_ENV" ] ; then
     enable-pyenv
@@ -226,7 +226,7 @@ fi
 
 # VSCode
 if [ -e "$(which code)" ] ; then
-    # EDITORはvimで慣れちゃってるのでVISUALだけ設定してみる
+    # EDITOR は vim を使用するため、VISUAL のみ設定する
     export VISUAL="code --wait"
 fi
 
