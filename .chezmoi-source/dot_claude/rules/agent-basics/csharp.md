@@ -24,11 +24,13 @@ paths:
   - 分岐にはパターンマッチング (`switch` 式、`is` パターン) を積極的に使う
 - 非同期処理
   - I/O には `async` / `await` を使い、`.Result` / `.Wait()` でブロックしない (デッドロックの原因)
-  - ライブラリコードでは `ConfigureAwait(false)` を付ける
+  - `ConfigureAwait(false)` は UI に依存しない純粋なライブラリ・ユーティリティ層で付ける。WinForms / WPF / Blazor 等の SynchronizationContext に依存するアプリケーション層では付けない (UI スレッドへの戻りが必要なため)
+  - `async void` は使わない (例外が捕捉できないため)。例外として WinForms / WPF のイベントハンドラのみ許容し、その場合はハンドラ内で必ず例外をキャッチする
   - 非同期メソッド名は `Async` サフィックスを付け、`CancellationToken` を末尾引数で受け取り伝播させる
 - 例外処理
   - 例外は例外的状況にのみ使う (通常の制御フローには使わない)
   - `catch (Exception)` で握りつぶさず、具体的な型でキャッチする
+  - 広域キャッチが正当な場面 (フックコールバック、`WndProc`、ワーカースレッドの最終防御層など) では `catch (Exception ex) when (...)` で `when` フィルタを使うか、`#pragma warning disable CA1031` をローカルに付け、コメントで理由を明記する
   - 再スローは `throw;` を使う。`throw ex;` はスタックトレースが失われるため使わない
 - リソース管理
   - `IDisposable` は `using` 宣言 / ステートメントで確実に解放する

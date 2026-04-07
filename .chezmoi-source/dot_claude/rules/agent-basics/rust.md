@@ -14,6 +14,7 @@ paths:
   - ライブラリコードでは `thiserror` で独自エラー型を定義する
   - アプリケーションコードでは `anyhow` で動的なエラーを扱う
   - `unwrap()` / `expect()` はテストか、失敗し得ないことが自明な場合に限定する
+    - レビュー時は `#[cfg(test)]` 内とテスト用ヘルパーモジュール (`test_helpers.rs` 等) を除外して評価する
   - `panic!` は不変条件違反などプログラマエラー用。ユーザー入力や I/O エラーには使わない
   - `?` 演算子での早期リターンを積極的に使う
 - 型について
@@ -22,6 +23,13 @@ paths:
   - インデックス以外の用途に `usize` を使わない
   - 列挙は `enum` で表現し、網羅性は `match` で担保する
 - `unsafe` は極力避ける。使う場合はブロックを最小化し、安全性の根拠を `// SAFETY:` コメントで示す
+  - 例外: Win32 / COM の単純な API 呼び出し (`SendMessageW`, `SetWindowPos`, `OpenClipboard`, COM オブジェクトの通常メソッド呼び出し等) は、安全性の根拠が「Microsoft ドキュメント通りの引数を渡しているだけ」になるため `// SAFETY:` を省略してよい
+  - 以下のケースでは必ず `// SAFETY:` を付ける:
+    - 生ポインタの読み書き、`ptr::read_unaligned`、`from_raw_parts` / `transmute` 系のキャスト
+    - `memmap2::Mmap::map` などライフタイム外の前提に依存する操作
+    - `libloading` 経由の関数呼び出し (シグネチャ一致が安全性の根拠)
+    - `Send` / `Sync` を手で実装している型
+    - COM オブジェクトの非自明な所有権遷移
 - モジュール構成
   - `mod.rs` より `foo.rs` + `foo/` レイアウト (Rust 2018 以降の推奨) を使う
   - `pub use` で公開 API を整理する
@@ -46,3 +54,5 @@ paths:
   - 統合テストはクレートルート直下の `tests/` に置く (詳細は `rust-test.md`)
   - アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使い、浮動小数点は `approx` クレート等で許容誤差付き比較
   - 非同期テストは `#[tokio::test]` を使う
+  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う (sleep ループは flaky の温床)
+  - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` で compile-time に行う (Rust 1.79+)。実行時テストにはしない
