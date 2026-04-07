@@ -60,7 +60,7 @@ paths:
 
 ## 同期先ドキュメント
 
-`docs/claude-code.md` の「Claude Code plugin (...)」セクションに各プラグインのチェック内容要約がある。
+`docs/claude-code-concept.md` の「edit-guardrails プラグイン」セクションに各プラグインのチェック内容要約がある。
 以下の変更をしたときはここも併せて更新する (更新忘れが起きやすいのでここに明記する)。
 
 - 新しい check の追加・既存 check の削除
@@ -70,17 +70,19 @@ paths:
 
 軽微な閾値調整やパターン追加など要約が変わらない範囲なら更新不要。
 
+配布方式自体 (chezmoi 自動インストール / marketplace 経由など) を変えた場合は `docs/claude-code.md` 側の修正も必要。
 `README.md` 本体には各プラグイン固有の記述はないので通常は触らなくてよい。
 
 ## 手順
 
 1. `plugins/<plugin-name>/.claude-plugin/plugin.json` の `version` (必要なら `description`) を更新
 2. `.claude-plugin/marketplace.json` の該当プラグイン エントリを同一文字列に揃える
-3. 必要なら `docs/claude-code.md` のチェック内容リストを更新
+3. 必要なら `docs/claude-code-concept.md` のチェック内容リストを更新
 4. `make test` を実行し、SSOT テストを含む全テストが green であることを確認
 5. 変更をコミット (通常の編集と同じコミットに含めてよい)
 
 ## 参考
 
 - 配布方式と前提: `docs/claude-code.md` の edit-guardrails セクション
+- 利用者向け説明 (チェック内容・更新手順): `docs/claude-code-concept.md`
 - `edit-guardrails` の現行チェック内容: `plugins/edit-guardrails/scripts/pretooluse.py` モジュール docstring

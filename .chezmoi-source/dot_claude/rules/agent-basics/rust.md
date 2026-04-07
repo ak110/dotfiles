@@ -48,7 +48,7 @@ paths:
   - ビルド/依存管理: `cargo`
   - リンター: `cargo clippy` (`-D warnings` で警告ゼロを維持)
   - フォーマッター: `cargo fmt`
-  - MSRV (最小サポート版) は `Cargo.toml` の `rust-version` に明記する
+  - MSRV (最小サポートバージョン) は `Cargo.toml` の `rust-version` に明記する
 - テスト (inline, 最低限)
   - 単体テストは対象モジュール末尾の `#[cfg(test)] mod tests { ... }` に配置する
   - 統合テストはクレートルート直下の `tests/` に置く (詳細は `rust-test.md`)
