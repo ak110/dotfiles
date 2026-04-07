@@ -1,0 +1,13 @@
+{
+  "name": "edit-guardrails",
+  "version": "0.1.0",
+  "description": "PreToolUse guardrails for Write/Edit/MultiEdit: detects mojibake (U+FFFD) and blocks LF-only PowerShell script writes.",
+  "author": {
+    "name": "aki",
+    "url": "https://github.com/ak110"
+  },
+  "homepage": "https://github.com/ak110/dotfiles",
+  "repository": "https://github.com/ak110/dotfiles",
+  "license": "MIT",
+  "keywords": ["hooks", "pretooluse", "guardrails", "safety"]
+}

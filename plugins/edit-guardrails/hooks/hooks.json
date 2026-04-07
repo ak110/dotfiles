@@ -1,0 +1,16 @@
+{
+  "description": "PreToolUse guardrails for Write/Edit/MultiEdit (mojibake + PS1 EOL).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
+          }
+        ]
+      }
+    ]
+  }
+}

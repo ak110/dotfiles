@@ -27,12 +27,13 @@ class TestRun:
         monkeypatch.setattr(post_apply.update_ssh_config, "run", make("ssh"))
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", make("cleanup"))
         monkeypatch.setattr(post_apply.update_npmrc, "run", make("npmrc", True))
+        monkeypatch.setattr(post_apply.install_claude_plugins, "run", make("plugins"))
 
         results = post_apply.run()
 
-        assert calls == ["claude", "ssh", "cleanup", "npmrc"]
+        assert calls == ["claude", "ssh", "cleanup", "npmrc", "plugins"]
         assert all(r.ok for r in results)
-        assert [r.changed for r in results] == [True, False, False, True]
+        assert [r.changed for r in results] == [True, False, False, True, False]
 
     def test_failing_step_does_not_stop_others(self, monkeypatch: pytest.MonkeyPatch):
         """途中ステップが例外を投げても後続は走る。"""
@@ -53,13 +54,14 @@ class TestRun:
         monkeypatch.setattr(post_apply.update_ssh_config, "run", broken)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", make("cleanup"))
         monkeypatch.setattr(post_apply.update_npmrc, "run", make("npmrc"))
+        monkeypatch.setattr(post_apply.install_claude_plugins, "run", make("plugins"))
 
         results = post_apply.run()
 
-        assert calls == ["claude", "broken", "cleanup", "npmrc"]
+        assert calls == ["claude", "broken", "cleanup", "npmrc", "plugins"]
         # ssh のみ失敗
         ok_flags = [r.ok for r in results]
-        assert ok_flags == [True, False, True, True]
+        assert ok_flags == [True, False, True, True, True]
 
     def test_main_exits_1_on_failure(self, monkeypatch: pytest.MonkeyPatch):
         """失敗があれば _main() は SystemExit(1) で終了する。"""
@@ -74,6 +76,7 @@ class TestRun:
         monkeypatch.setattr(post_apply.update_ssh_config, "run", broken)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", ok)
         monkeypatch.setattr(post_apply.update_npmrc, "run", ok)
+        monkeypatch.setattr(post_apply.install_claude_plugins, "run", ok)
 
         with pytest.raises(SystemExit) as exc_info:
             post_apply._main()  # pylint: disable=protected-access
@@ -89,6 +92,7 @@ class TestRun:
         monkeypatch.setattr(post_apply.update_ssh_config, "run", ok)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", ok)
         monkeypatch.setattr(post_apply.update_npmrc, "run", ok)
+        monkeypatch.setattr(post_apply.install_claude_plugins, "run", ok)
 
         # SystemExit が出ないことを確認
         post_apply._main()  # pylint: disable=protected-access

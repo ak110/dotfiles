@@ -1,0 +1,19 @@
+{
+  "name": "ak110-dotfiles",
+  "owner": {
+    "name": "aki"
+  },
+  "metadata": {
+    "description": "Claude Code plugins distributed from ak110/dotfiles."
+  },
+  "plugins": [
+    {
+      "name": "edit-guardrails",
+      "source": "./plugins/edit-guardrails",
+      "description": "PreToolUse guardrails for Write/Edit/MultiEdit: detects mojibake (U+FFFD) and blocks LF-only PowerShell script writes.",
+      "version": "0.1.0",
+      "category": "safety",
+      "keywords": ["hooks", "pretooluse", "guardrails", "safety"]
+    }
+  ]
+}

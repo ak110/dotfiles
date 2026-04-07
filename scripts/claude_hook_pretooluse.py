@@ -3,30 +3,33 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code PreToolUse フック: Write/Edit/MultiEdit 実行前の各種チェックを統合。
+r"""Claude Code PreToolUse フック: dotfiles 個人環境専用チェック集。
 
-複数のチェックを 1 つのサブプロセスで走らせることで、フック起動コストを削減する。
-いずれか 1 つでも違反を検出したら stderr に理由を出して exit 2 でブロックする。
+mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Code plugin
+`edit-guardrails` へ移管した (`plugins/edit-guardrails/scripts/pretooluse.py`)。
+本スクリプトは dotfiles 個人環境でのみ必要な、汎用性の低いチェックをまとめる。
+将来的に個人環境限定のチェックを追加する余地があるためファイル名は維持している。
 
 統合しているチェック:
 
-1. 文字化け (U+FFFD) 検出 — 旧 `claude_hook_check_mojibake.py`
-2. `.ps1` / `.ps1.tmpl` への LF-only 書き込み検出 — 旧 `claude_hook_check_ps1_eol.py`
-   - Windows PowerShell 5.1 は LF 改行の `.ps1` を正しくパースできないため CRLF を強制
-3. `CLAUDE.local.md` 言及検出
+1. `CLAUDE.local.md` 言及検出 (警告のみ / 非ブロック)
    - `CLAUDE.local.md` はリポジトリ管理外のローカルメモであり、
      他のリポジトリ管理ファイルからの参照は厳禁
+   - コミット前に人間の目で気づければ十分なので完全ブロックはせず警告に留める
    - ただし `file_path` 自体が `CLAUDE.local.md` の場合は正当な編集として通す
 
 検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
 `old_string` は既存内容の修正・削除を妨げないため検査しない。
+
+exit code 契約:
+
+- 常に exit 0 (警告のみ・非ブロック)
+- 想定外入力もすべて exit 0 (安全側)
 """
 
 import json
 import sys
 
-# U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
-_REPLACEMENT_CHAR = "\ufffd"
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 
@@ -50,46 +53,18 @@ def _main() -> None:
     file_path_raw = tool_input.get("file_path")
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
 
-    # 1. mojibake
-    for field, value in fields:
-        position = value.find(_REPLACEMENT_CHAR)
-        if position == -1:
-            continue
-        start = max(0, position - 10)
-        end = min(len(value), position + 11)
-        sample = value[start:end]
-        print(
-            f"[pretooluse] {tool_name}.{field} に U+FFFD (文字化け) を検出したためブロックしました。 周辺: {sample!r}",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
-    # 2. PS1 EOL (対象拡張子のみ)
-    if _is_ps1(file_path):
-        for field, value in fields:
-            if "\n" not in value:
-                continue
-            if "\r\n" in value:
-                continue
-            print(
-                f"[pretooluse] {tool_name}.{field} に LF 改行のみの内容を検出したためブロックしました。"
-                f" PowerShell 5.1 は LF 改行の .ps1 を正しくパースできないため CRLF (\\r\\n) にしてください。"
-                f" 対象: {file_path}",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-
-    # 3. CLAUDE.local.md 言及 (対象ファイル自身の編集は除外)
+    # CLAUDE.local.md 言及 (対象ファイル自身の編集は除外)
+    # 警告のみで処理は通過させる (exit 0)
     if not _is_claude_local_md(file_path):
         for field, value in fields:
             if _CLAUDE_LOCAL_MD in value:
                 print(
-                    f"[pretooluse] {tool_name}.{field} に '{_CLAUDE_LOCAL_MD}' への言及を検出したためブロックしました。"
+                    f"[pretooluse][warn] {tool_name}.{field} に '{_CLAUDE_LOCAL_MD}' への言及を検出しました。"
                     f" CLAUDE.local.md はローカル専用ファイルであり、リポジトリ管理されるファイルから"
-                    f" 参照してはいけません。",
+                    f" 参照しないでください (警告のみ・ブロックはしません)。",
                     file=sys.stderr,
                 )
-                sys.exit(2)
+                break  # 警告は 1 度だけ出せば十分
 
     sys.exit(0)
 
@@ -118,12 +93,6 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
                 result.append((f"edits[{index}].new_string", new_string))
         return result
     return None
-
-
-def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
-    lowered = file_path.lower()
-    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
 
 def _is_claude_local_md(file_path: str) -> bool:

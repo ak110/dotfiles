@@ -8,6 +8,7 @@
 2. SSH config / authorized_keys  (update_ssh_config.run)
 3. 配布元から消えた旧ファイルの掃除 (cleanup_paths.cleanup_paths)
 4. npm/pnpm のサプライチェーン対策 (update_npmrc.run)
+5. Claude Code plugin の自動インストール (install_claude_plugins.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -19,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools import cleanup_paths, update_claude_settings, update_npmrc, update_ssh_config
+from pytools import cleanup_paths, install_claude_plugins, update_claude_settings, update_npmrc, update_ssh_config
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def run() -> list[_StepResult]:
         ("SSH config", update_ssh_config.run),
         ("旧配布物の掃除", _cleanup_removed_paths),
         ("npm/pnpm サプライチェーン対策", update_npmrc.run),
+        ("Claude Code plugin のインストール", install_claude_plugins.run),
     ]
     results: list[_StepResult] = []
     total = len(steps)

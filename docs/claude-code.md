@@ -1,8 +1,14 @@
 # Claude Code 設定管理
 
 本リポジトリの Claude Code 関連ファイルは、他のプロジェクトで利用するためのテンプレートも兼ねている。
-配布元は `.chezmoi-source/dot_claude/rules/agent-basics/` 配下のファイル群。
-これらは他のユーザーと共有される可能性があるため、個別ツール (`claudize` など) への依存を含めないようにしている。
+配布元は 2 系統ある。
+
+- ルール: `.chezmoi-source/dot_claude/rules/agent-basics/` 配下のファイル群
+- plugin: `plugins/` 配下の Claude Code plugin (現在は `edit-guardrails` のみ)
+
+ルール群は他のユーザーと共有される可能性があるため、個別ツール (`claudize` など) への依存を含めないようにしている。
+plugin 群は `.claude-plugin/marketplace.json` 経由で配布する。
+
 配布元の管理やツール固有の情報はこの文書に集約する。
 
 ## 配布方式
@@ -62,6 +68,23 @@ body に差分があった場合、旧ファイルは `~/.claude/rules-backup/ag
 (バックアップ先を `~/.claude/rules/` の外に置いているのは、Claude Code が `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、
 退避先が同じツリー内にあると古いルールが読まれてしまうためです。)
 不要になったバックアップは適宜削除してください。
+
+## edit-guardrails プラグインのインストール
+
+本プロジェクトでは、危険な編集を PreToolUse 段階で検出する Claude Code プラグイン `edit-guardrails` も推奨しています。
+現在のチェック内容:
+
+- 文字化け (U+FFFD) を含む Write/Edit/MultiEdit をブロック
+- LF 改行のみの `.ps1` / `.ps1.tmpl` への書き込みをブロック (Windows PowerShell 5.1 対策)
+
+```bash
+claude plugin marketplace add ak110/dotfiles
+claude plugin install edit-guardrails@ak110-dotfiles
+```
+
+インストール済みか確認するには `claude plugin list`、更新は `claude plugin update edit-guardrails`、
+削除は `claude plugin uninstall edit-guardrails` を使います。
+プラグインは `uv` CLI に依存するため、別途 [uv](https://docs.astral.sh/uv/) をインストールしてください。
 ````
 
 ### プロジェクトローカルへの配布: `claudize`
@@ -79,6 +102,35 @@ claudize --clean
 ```
 
 `claudize` は対象プロジェクトに該当言語のファイルが存在する場合のみ言語別ルールを配布する。
+
+### Claude Code plugin (edit-guardrails)
+
+`plugins/edit-guardrails/` に PreToolUse ガードレール plugin を同梱している。
+配布元は本リポジトリ自身で、`.claude-plugin/marketplace.json` に登録済み。
+
+**個人環境 (dotfiles 導入済み)**:
+`chezmoi apply` 後処理で、`claude` と `uv` の両方が PATH にあり plugin が未導入の場合に自動でインストールされる。
+手動で入れる場合は次の 2 行。
+
+```bash
+claude plugin marketplace add <path/to/dotfiles>
+claude plugin install edit-guardrails@ak110-dotfiles
+```
+
+**他のチームメンバー**:
+次のコマンドを実行してもらう。
+詳細は上記「プロジェクトのセットアップ手順への記述例」を参照。
+
+```bash
+claude plugin marketplace add ak110/dotfiles
+claude plugin install edit-guardrails@ak110-dotfiles
+```
+
+**仕組み**:
+plugin の `hooks/hooks.json` が PreToolUse + `Write|Edit|MultiEdit` matcher を登録する。
+matcher にヒットすると `${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py` が `uv run --script` 経由で起動される。
+1 プロセスで全 check を直列実行し、最初の違反で exit 2 となる。
+チェック追加時は `pretooluse.py` の `_check_*` 関数を増やすだけで済む構造にしてある。
 
 ## ルールファイル一覧
 
