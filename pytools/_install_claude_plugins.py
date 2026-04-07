@@ -295,6 +295,12 @@ def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
             text=True,
             check=False,
             timeout=_CLAUDE_TIMEOUT,
+            # Windows では text=True のデフォルトが cp932 になり、claude CLI の
+            # UTF-8 日本語メッセージを読み取る reader thread が UnicodeDecodeError
+            # を出す。明示的に UTF-8 を指定し、万一不正バイトがあっても落ちない
+            # よう errors="replace" で保険をかける。
+            encoding="utf-8",
+            errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.info("  -> `claude %s` 実行に失敗: %s", " ".join(args), e)

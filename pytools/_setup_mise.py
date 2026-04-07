@@ -299,6 +299,11 @@ def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[st
             text=True,
             check=False,
             timeout=_MISE_TIMEOUT,
+            # Windows で text=True のデフォルトが cp932 になり、mise CLI の
+            # UTF-8 出力に日本語や非 ASCII 文字が含まれると reader thread が
+            # UnicodeDecodeError を出す。UTF-8 を明示し、errors="replace" で保険。
+            encoding="utf-8",
+            errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.info("  -> `mise %s` 実行に失敗: %s", " ".join(args), e)
