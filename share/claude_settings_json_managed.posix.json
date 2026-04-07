@@ -14,17 +14,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_call_formatter.py || exit 0'"
-          }
-        ]
-      }
     ]
   }
 }

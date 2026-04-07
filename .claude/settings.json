@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | grep -qE '\\.py$' && mkdir -p \"$CLAUDE_PROJECT_DIR/.claude\" && touch \"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MARKER=\"$CLAUDE_PROJECT_DIR/.claude/.pyfltr-dirty\"; [ -f \"$MARKER\" ] && { (cd \"$CLAUDE_PROJECT_DIR\" && uv run pyfltr --exit-zero-even-if-formatted --commands=fast pytools scripts tests) >&2; rm -f \"$MARKER\"; }; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

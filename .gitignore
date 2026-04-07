@@ -6,10 +6,9 @@
 !/.chezmoiignore
 !/.chezmoi-source/.chezmoiignore
 
-# 旧symlink方式の残留ディレクトリ（移行後に残る可能性あり）
-# chezmoiがソースステートとして誤認するのを防ぐ
-/.claude/*
-!/.claude/rules/
+# pyfltr の Claude Code hook が使うマーカーと、ローカル上書き設定
+/.claude/.pyfltr-dirty
+/.claude/settings.local.json
 /.codex/
 /.config/
 /.ipython/

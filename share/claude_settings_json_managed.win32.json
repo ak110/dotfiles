@@ -14,17 +14,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { try { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_call_formatter.py } catch {}; exit 0 }\""
-          }
-        ]
-      }
     ]
   }
 }

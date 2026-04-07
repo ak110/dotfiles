@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from pytools import update_claude_settings as mod
-from pytools.update_claude_settings import update_claude_settings
+from pytools.update_claude_settings import cleanup_removed_paths, update_claude_settings
 
 MANAGED_ALLOW = [
     "Bash",
@@ -240,3 +240,105 @@ class TestMergeRecursive:
         assert len(pretooluse) == 2
         assert pretooluse[0] == hook_entry
         assert pretooluse[1]["matcher"] == "Bash"
+
+
+class TestStripRemovedHooks:
+    """配布元から削除された hook エントリの自動除去テスト。"""
+
+    def test_removed_hook_is_dropped_from_existing(self, tmp_path: Path):
+        """既存の hooks に旧 command 部分文字列が残っている場合、マージ前に除去される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "new-cmd"}]}]}}),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PostToolUse": [
+                            {
+                                "matcher": "Write|Edit|MultiEdit",
+                                "hooks": [
+                                    {"type": "command", "command": "sh -c 'uv run --script ~/legacy/old_hook.py'"},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_hook_substrings=("old_hook.py",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        # 旧エントリは PostToolUse ごと消える (空になったため)
+        assert "PostToolUse" not in result["hooks"]
+        # 新エントリはマージされて残る
+        assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
+
+    def test_removed_hook_keeps_sibling_in_same_matcher(self, tmp_path: Path):
+        """同じ matcher 内の他の hook は残す。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Write",
+                                "hooks": [
+                                    {"type": "command", "command": "old_hook.py"},
+                                    {"type": "command", "command": "keep_me.py"},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_hook_substrings=("old_hook.py",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        inner = result["hooks"]["PreToolUse"][0]["hooks"]
+        assert len(inner) == 1
+        assert inner[0]["command"] == "keep_me.py"
+
+
+class TestCleanupRemovedPaths:
+    """グローバルに残った旧配布物の削除テスト。"""
+
+    def test_directory_is_removed(self, tmp_path: Path):
+        """指定パスのディレクトリが再帰的に削除される。"""
+        target = tmp_path / "skills" / "old-skill"
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("body", encoding="utf-8")
+
+        cleanup_removed_paths(tmp_path, (Path("skills/old-skill"),))
+
+        assert not target.exists()
+
+    def test_missing_path_is_noop(self, tmp_path: Path):
+        """対象が存在しなくてもエラーにならない。"""
+        cleanup_removed_paths(tmp_path, (Path("skills/missing"),))
+
+    def test_path_outside_base_is_skipped(self, tmp_path: Path):
+        """シンボリックリンク経由で base_dir 外を削除しようとしたらスキップする。"""
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "do_not_delete.txt").write_text("important", encoding="utf-8")
+        base = tmp_path / "claude"
+        base.mkdir()
+        (base / "linked").symlink_to(outside)
+
+        cleanup_removed_paths(base, (Path("linked"),))
+
+        # シンボリックリンク先は base 外なので守られる
+        assert outside.exists()
+        assert (outside / "do_not_delete.txt").exists()

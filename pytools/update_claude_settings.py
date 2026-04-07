@@ -13,11 +13,16 @@ OS 別の差分 (主にフック コマンドの shell/PowerShell ラッパー) 
 対象:
 - share/claude_settings_json_managed.json (+ 現 OS のオーバーライド) → ~/.claude/settings.json
 - share/claude_json_managed.json                                    → ~/.claude.json
+
+加えて、配布元 (dotfiles) から削除されたエントリを ~/.claude/ から後追いで除去するための
+クリーンアップも本コマンドで行う。union マージ方式の都合上、share 側から消した hook が
+ユーザー側に残り続けるのを防ぐため。
 """
 
 import copy
 import json
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -28,6 +33,21 @@ _MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
+_CLAUDE_DIR = Path.home() / ".claude"
+
+# settings.json の hooks 配下から除去したい command 部分文字列。
+# 過去に share/claude_settings_json_managed.* で配布していたが廃止したエントリを書く。
+# union マージは削除を反映しないため、ここで明示的に除去する。
+_REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = ("claude_hook_call_formatter.py",)
+
+# ~/.claude/ 配下から除去したいパス (~/.claude/ からの相対)。
+# 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したため
+# グローバルに残ってしまっているもの。chezmoi は配布元から消えたファイルを自動削除しないため
+# ここで明示的に除去する。
+_REMOVED_CLAUDE_PATHS: tuple[Path, ...] = (
+    Path("skills/sync-platform-pair"),
+    Path("skills/sync-rule-ssot"),
+)
 
 
 def _main() -> None:
@@ -35,6 +55,7 @@ def _main() -> None:
     overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
     update_claude_settings(_MANAGED_SETTINGS_PATH, _SETTINGS_PATH, overrides=overrides)
     update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
+    cleanup_removed_paths(_CLAUDE_DIR, _REMOVED_CLAUDE_PATHS)
 
 
 def _platform_overrides(base_path: Path) -> list[Path]:
@@ -51,10 +72,13 @@ def update_claude_settings(
     managed_path: Path,
     settings_path: Path,
     overrides: list[Path] | None = None,
+    removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
 ) -> None:
     """managed_path の設定を settings_path にマージして書き込む。
 
     overrides が与えられた場合は、managed_path の内容に上乗せしてからマージする。
+    マージ前に settings_path から removed_hook_substrings に該当する hook エントリを
+    除去することで、配布元から消えた hook が残り続けるのを防ぐ。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -63,6 +87,7 @@ def update_claude_settings(
     data = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
+    _strip_removed_hooks(data, removed_hook_substrings)
     _merge(data, managed)
 
     if data == original:
@@ -70,6 +95,71 @@ def update_claude_settings(
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     logger.info("%s を更新しました。", settings_path)
+
+
+def cleanup_removed_paths(base_dir: Path, removed_paths: tuple[Path, ...]) -> None:
+    """base_dir 配下から removed_paths に列挙されたパスを削除する。
+
+    シンボリックリンクを辿って外部を消さないよう、パスは base_dir 配下に正規化される
+    ことを確認してから削除する。
+    """
+    base_resolved = base_dir.resolve()
+    for rel in removed_paths:
+        target = base_dir / rel
+        if not target.exists() and not target.is_symlink():
+            continue
+        # base_dir 配下に収まることを確認 (パストラバーサル対策)
+        try:
+            target.resolve().relative_to(base_resolved)
+        except ValueError:
+            logger.warning("%s は %s 配下ではないためスキップします。", target, base_dir)
+            continue
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        logger.info("%s を削除しました。", target)
+
+
+def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
+    """data["hooks"][event][*]["hooks"] から substrings を含む command を除去する。
+
+    エントリが空になったら matcher エントリ自体も除去する。さらに event 配列ごと空に
+    なったら event キーごと除去する。
+    """
+    if not substrings:
+        return
+    hooks_root = data.get("hooks")
+    if not isinstance(hooks_root, dict):
+        return
+    for event_name in list(hooks_root.keys()):
+        matchers = hooks_root.get(event_name)
+        if not isinstance(matchers, list):
+            continue
+        kept_matchers: list = []
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                kept_matchers.append(matcher)
+                continue
+            inner_hooks = matcher.get("hooks")
+            if not isinstance(inner_hooks, list):
+                kept_matchers.append(matcher)
+                continue
+            kept_inner = [
+                h
+                for h in inner_hooks
+                if not (
+                    isinstance(h, dict) and isinstance(h.get("command"), str) and any(s in h["command"] for s in substrings)
+                )
+            ]
+            if not kept_inner:
+                continue
+            matcher["hooks"] = kept_inner
+            kept_matchers.append(matcher)
+        if kept_matchers:
+            hooks_root[event_name] = kept_matchers
+        else:
+            del hooks_root[event_name]
 
 
 def _merge(data: dict, managed: dict) -> None:

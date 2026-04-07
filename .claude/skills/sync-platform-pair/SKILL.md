@@ -12,7 +12,7 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 ## ペアファイル一覧
 
 | Linux/macOS 側 | Windows 側 | 用途 |
-|---|---|---|
+| --- | --- | --- |
 | `bin/executable_update-dotfiles` | `bin/executable_update-dotfiles.cmd` | dotfiles 更新コマンド |
 | `.chezmoi-source/run_onchange_after_pytools.sh.tmpl` | `.chezmoi-source/run_onchange_after_pytools-windows.ps1.tmpl` | pytools の自動再インストール |
 | `.chezmoi-source/run_after_supply-chain-npm.sh.tmpl` | `.chezmoi-source/run_after_supply-chain-npm-windows.ps1.tmpl` | npm サプライ チェーン保護の適用 |
@@ -36,7 +36,7 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 - **改行は CRLF** — `.gitattributes` で `*.ps1.tmpl` を `eol=crlf` 指定済み。PowerShell 5.1 は LF 改行だと構文解析が壊れる
   - Claude Code の Write ツールは常に LF で書き込むため、エディタで保存後に git 側で CRLF に正規化される想定
   - このフックの `claude_hook_check_ps1_eol` が LF のみのペイロード書き込みを検出してブロックする
-- **ファイル先頭に厳格モード** — 全スクリプト冒頭に以下の 2 行を記述する。
+- **ファイル先頭で厳格モード** — 全スクリプト冒頭に以下の 2 行を記述する。
 
   ```powershell
   Set-StrictMode -Version Latest
@@ -50,7 +50,8 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
   $content | Set-Content -Encoding UTF8 $path
   ```
 
-  加えて、BOM なし UTF-8 で書きたい場合は `System.Text.UTF8Encoding` のインスタンスを使う (既存 `install-claude.ps1` の `$script:utf8NoBom` を参照)。
+  加えて、BOM なし UTF-8 で書きたい場合は `System.Text.UTF8Encoding` のインスタンスを使う。
+  既存 `install-claude.ps1` の `$script:utf8NoBom` を参照。
 
 - **パス区切り** — ハードコードは避け、`Join-Path` や `[IO.Path]::Combine` を使う
 
