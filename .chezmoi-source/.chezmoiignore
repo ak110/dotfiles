@@ -16,12 +16,8 @@ bin/update-dotfiles.cmd
 
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
 {{ if eq .chezmoi.os "windows" }}
-ssh-config.sh
-pytools.sh
-supply-chain-npm.sh
+post-apply.sh
 {{ end }}
 {{ if ne .chezmoi.os "windows" }}
-ssh-config-windows.ps1
-pytools-windows.ps1
-supply-chain-npm-windows.ps1
+post-apply-windows.ps1
 {{ end }}

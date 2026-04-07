@@ -33,7 +33,13 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | bash
 ```
 
-### Windows (cmd)
+### Windows (PowerShell, 推奨)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install.ps1 | iex"
+```
+
+winget を使える/使いたい場合は以下のワンライナーも利用可能。
 
 ```cmd
 winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"

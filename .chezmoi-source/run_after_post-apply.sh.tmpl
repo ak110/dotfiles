@@ -1,0 +1,42 @@
+#!/bin/bash
+# dotfiles 後処理エントリポイント。
+# chezmoi apply 完了後に毎回走る (run_after_* のため無条件実行)。
+# 全ステップは冪等かつ十分高速で、変更なしなら数秒で終わる。
+#
+# NOTE: 対応するWindows版 → run_after_post-apply-windows.ps1.tmpl
+#
+# 1. pytools を editable install する (pyproject.toml ハッシュでキャッシュ)
+# 2. dotfiles-post-apply を実行
+#    (Claude 設定 / SSH config / 旧配布物掃除 / npmrc を順に更新)
+
+set -eu
+
+# pyproject.toml のハッシュをキャッシュと比較し、変化があるときだけ uv tool install
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles"
+hash_file="$cache_dir/pytools.hash"
+current_hash="{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}"
+cached_hash=""
+if [ -f "$hash_file" ]; then
+    cached_hash=$(cat "$hash_file")
+fi
+
+echo "=== dotfiles post-apply ==="
+
+if [ "$current_hash" != "$cached_hash" ]; then
+    echo "[pytools] pyproject.toml に変更あり → 再インストール"
+    if uv tool install --editable "{{ .chezmoi.workingTree }}"; then
+        mkdir -p "$cache_dir"
+        printf '%s' "$current_hash" > "$hash_file"
+    else
+        echo "WARNING: pytools のインストールに失敗しました (後続処理は継続)"
+    fi
+else
+    echo "[pytools] 変更なし (ハッシュキャッシュヒット)"
+fi
+
+post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
+if [ -x "$post_apply_bin" ]; then
+    exec "$post_apply_bin"
+else
+    echo "WARNING: $post_apply_bin が見つかりません。後処理をスキップします。"
+fi

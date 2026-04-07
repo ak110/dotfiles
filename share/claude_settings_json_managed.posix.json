@@ -6,11 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_check_mojibake.py; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
-          },
-          {
-            "type": "command",
-            "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_check_ps1_eol.py; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
+            "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
           }
         ]
       }

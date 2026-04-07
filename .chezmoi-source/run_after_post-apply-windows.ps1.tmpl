@@ -1,0 +1,46 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# dotfiles 後処理エントリポイント (Windows)。
+# chezmoi apply 完了後に毎回走る (run_after_* のため無条件実行)。
+# 全ステップは冪等かつ十分高速で、変更なしなら数秒で終わる。
+#
+# NOTE: 対応するLinux版 → run_after_post-apply.sh.tmpl
+#
+# 1. pytools を editable install する (pyproject.toml ハッシュでキャッシュ)
+# 2. dotfiles-post-apply.exe を実行
+#    (Claude 設定 / SSH config / 旧配布物掃除 / npmrc を順に更新)
+
+$cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
+$hashFile = Join-Path $cacheDir 'pytools.hash'
+$currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}'
+$cachedHash = ''
+if (Test-Path $hashFile) {
+    $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
+}
+
+Write-Host '=== dotfiles post-apply ==='
+
+if ($currentHash -ne $cachedHash) {
+    Write-Host '[pytools] pyproject.toml に変更あり → 再インストール'
+    try {
+        uv tool install --editable "{{ .chezmoi.workingTree }}"
+        uv tool update-shell
+        if (-not (Test-Path $cacheDir)) {
+            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+        }
+        Set-Content -Path $hashFile -Value $currentHash -Encoding UTF8 -NoNewline
+    } catch {
+        Write-Warning "pytools のインストールに失敗しました (後続処理は継続): $_"
+    }
+} else {
+    Write-Host '[pytools] 変更なし (ハッシュキャッシュヒット)'
+}
+
+# uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
+$postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
+if (Test-Path $postApplyBin) {
+    & $postApplyBin
+} else {
+    Write-Warning "$postApplyBin が見つかりません。後処理をスキップします。"
+}

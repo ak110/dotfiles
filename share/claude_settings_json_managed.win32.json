@@ -6,11 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_check_mojibake.py; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }\""
-          },
-          {
-            "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_check_ps1_eol.py; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }\""
           }
         ]
       }

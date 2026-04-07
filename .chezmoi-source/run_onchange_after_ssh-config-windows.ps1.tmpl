@@ -1,5 +1,0 @@
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-
-# conf.d hash: {{ range (joinPath .chezmoi.sourceDir "private_dot_ssh/conf.d/*" | glob) }}{{ include . | sha256sum }} {{ end }}
-uv run --directory "{{ .chezmoi.homeDir }}\dotfiles" update-ssh-config

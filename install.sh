@@ -1,5 +1,18 @@
 #!/bin/bash
-set -eux
+set -eu
+
+# 前提条件チェック (README の「前提条件(要インストール)」セクション参照)
+missing=()
+command -v git >/dev/null 2>&1 || missing+=(git)
+command -v uv >/dev/null 2>&1 || missing+=(uv)
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "Error: 前提条件が未インストールです: ${missing[*]}" >&2
+    echo "README の「前提条件(要インストール)」セクションを参照してインストールしてください:" >&2
+    echo "  https://github.com/ak110/dotfiles#前提条件要インストール" >&2
+    exit 1
+fi
+
+set -x
 # 既に chezmoi が入っていればダウンロードをスキップ (冪等性とテスト用途)
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v chezmoi >/dev/null 2>&1; then

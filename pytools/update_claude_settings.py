@@ -14,15 +14,17 @@ OS 別の差分 (主にフック コマンドの shell/PowerShell ラッパー) 
 - share/claude_settings_json_managed.json (+ 現 OS のオーバーライド) → ~/.claude/settings.json
 - share/claude_json_managed.json                                    → ~/.claude.json
 
-加えて、配布元 (dotfiles) から削除されたエントリを ~/.claude/ から後追いで除去するための
-クリーンアップも本コマンドで行う。union マージ方式の都合上、share 側から消した hook が
-ユーザー側に残り続けるのを防ぐため。
+加えて、配布元から削除された hook エントリ (JSON 内の command 文字列マッチ) を
+settings.json から後追いで除去するクリーンアップも行う。union マージ方式の都合上、
+share 側から消した hook がユーザー側に残り続けるのを防ぐため。
+
+配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools.cleanup_paths と
+pytools.post_apply に分離した (本モジュールは hook 内部の command 文字列マッチのみ担う)。
 """
 
 import copy
 import json
 import logging
-import shutil
 import sys
 from pathlib import Path
 
@@ -33,29 +35,34 @@ _MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
-_CLAUDE_DIR = Path.home() / ".claude"
 
 # settings.json の hooks 配下から除去したい command 部分文字列。
 # 過去に share/claude_settings_json_managed.* で配布していたが廃止したエントリを書く。
 # union マージは削除を反映しないため、ここで明示的に除去する。
-_REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = ("claude_hook_call_formatter.py",)
-
-# ~/.claude/ 配下から除去したいパス (~/.claude/ からの相対)。
-# 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したため
-# グローバルに残ってしまっているもの。chezmoi は配布元から消えたファイルを自動削除しないため
-# ここで明示的に除去する。
-_REMOVED_CLAUDE_PATHS: tuple[Path, ...] = (
-    Path("skills/sync-platform-pair"),
-    Path("skills/sync-rule-ssot"),
+_REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
+    "claude_hook_call_formatter.py",
+    # 2026-04: 統合フック (claude_hook_pretooluse.py) へ移行したため旧エントリを除去
+    "claude_hook_check_mojibake.py",
+    "claude_hook_check_ps1_eol.py",
 )
 
 
 def _main() -> None:
-    logging.basicConfig(format="%(message)s", level="DEBUG")
+    """スタンドアロン実行用エントリポイント。"""
+    logging.basicConfig(format="%(message)s", level="INFO")
+    run()
+
+
+def run() -> bool:
+    """Claude 設定ファイル 2 本をマージ更新する。
+
+    Returns:
+        いずれかのファイルを実際に書き換えたかどうか。呼び出し側がログ集計に使う。
+    """
     overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
-    update_claude_settings(_MANAGED_SETTINGS_PATH, _SETTINGS_PATH, overrides=overrides)
-    update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
-    cleanup_removed_paths(_CLAUDE_DIR, _REMOVED_CLAUDE_PATHS)
+    changed_settings = update_claude_settings(_MANAGED_SETTINGS_PATH, _SETTINGS_PATH, overrides=overrides)
+    changed_config = update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
+    return changed_settings or changed_config
 
 
 def _platform_overrides(base_path: Path) -> list[Path]:
@@ -73,12 +80,15 @@ def update_claude_settings(
     settings_path: Path,
     overrides: list[Path] | None = None,
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
-) -> None:
+) -> bool:
     """managed_path の設定を settings_path にマージして書き込む。
 
     overrides が与えられた場合は、managed_path の内容に上乗せしてからマージする。
     マージ前に settings_path から removed_hook_substrings に該当する hook エントリを
     除去することで、配布元から消えた hook が残り続けるのを防ぐ。
+
+    Returns:
+        実際にファイルを書き換えたかどうか。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -91,34 +101,12 @@ def update_claude_settings(
     _merge(data, managed)
 
     if data == original:
-        return
+        logger.info("%s: 変更なし", settings_path)
+        return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    logger.info("%s を更新しました。", settings_path)
-
-
-def cleanup_removed_paths(base_dir: Path, removed_paths: tuple[Path, ...]) -> None:
-    """base_dir 配下から removed_paths に列挙されたパスを削除する。
-
-    シンボリックリンクを辿って外部を消さないよう、パスは base_dir 配下に正規化される
-    ことを確認してから削除する。
-    """
-    base_resolved = base_dir.resolve()
-    for rel in removed_paths:
-        target = base_dir / rel
-        if not target.exists() and not target.is_symlink():
-            continue
-        # base_dir 配下に収まることを確認 (パストラバーサル対策)
-        try:
-            target.resolve().relative_to(base_resolved)
-        except ValueError:
-            logger.warning("%s は %s 配下ではないためスキップします。", target, base_dir)
-            continue
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
-        logger.info("%s を削除しました。", target)
+    logger.info("%s を更新しました", settings_path)
+    return True
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
@@ -196,3 +184,7 @@ def _union_list(existing: list, managed: list) -> list:
         seen.add(key)
         result.append(item)
     return result
+
+
+if __name__ == "__main__":
+    _main()

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from pytools import update_claude_settings as mod
-from pytools.update_claude_settings import cleanup_removed_paths, update_claude_settings
+from pytools.update_claude_settings import update_claude_settings
 
 MANAGED_ALLOW = [
     "Bash",
@@ -309,36 +309,3 @@ class TestStripRemovedHooks:
         inner = result["hooks"]["PreToolUse"][0]["hooks"]
         assert len(inner) == 1
         assert inner[0]["command"] == "keep_me.py"
-
-
-class TestCleanupRemovedPaths:
-    """グローバルに残った旧配布物の削除テスト。"""
-
-    def test_directory_is_removed(self, tmp_path: Path):
-        """指定パスのディレクトリが再帰的に削除される。"""
-        target = tmp_path / "skills" / "old-skill"
-        target.mkdir(parents=True)
-        (target / "SKILL.md").write_text("body", encoding="utf-8")
-
-        cleanup_removed_paths(tmp_path, (Path("skills/old-skill"),))
-
-        assert not target.exists()
-
-    def test_missing_path_is_noop(self, tmp_path: Path):
-        """対象が存在しなくてもエラーにならない。"""
-        cleanup_removed_paths(tmp_path, (Path("skills/missing"),))
-
-    def test_path_outside_base_is_skipped(self, tmp_path: Path):
-        """シンボリックリンク経由で base_dir 外を削除しようとしたらスキップする。"""
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        (outside / "do_not_delete.txt").write_text("important", encoding="utf-8")
-        base = tmp_path / "claude"
-        base.mkdir()
-        (base / "linked").symlink_to(outside)
-
-        cleanup_removed_paths(base, (Path("linked"),))
-
-        # シンボリックリンク先は base 外なので守られる
-        assert outside.exists()
-        assert (outside / "do_not_delete.txt").exists()
