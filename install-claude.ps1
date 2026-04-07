@@ -23,7 +23,11 @@ $files = @(
     'python.md',
     'python-test.md',
     'typescript.md',
-    'typescript-test.md'
+    'typescript-test.md',
+    'rust.md',
+    'rust-test.md',
+    'csharp.md',
+    'csharp-test.md'
 )
 
 $script:backupDir = $null

@@ -1,0 +1,22 @@
+---
+paths:
+  - "**/*Tests.cs"
+  - "**/*Test.cs"
+---
+
+# C#テストコード記述スタイル
+
+- テストフレームワークは `xUnit` を優先する (.NET のデファクト)
+- テスト関数は `[Fact]` または `[Theory]` で書く
+- パラメータ化は `[Theory]` + `[InlineData]` / `[MemberData]` / `[ClassData]` を使う
+- アサーションは `Assert.Equal` / `Assert.True` など標準 API を使う
+  - より読みやすい記述が必要な場合は `FluentAssertions` を検討する
+- 非同期テストは `async Task` を返す。`async void` は使わない (例外が捕捉できない)
+- セットアップ/ティアダウン
+  - コンストラクタ = 各テスト前、`IDisposable.Dispose` = 各テスト後
+  - クラス単位の共有は `IClassFixture<T>`、コレクション単位は `ICollectionFixture<T>` を使う
+- モック/スタブには `NSubstitute` または `Moq` を使う
+  - 外部依存はインターフェース経由で注入し、テスト時に差し替える
+- 時刻は `TimeProvider` (.NET 8 以降) を注入し、テストでは `FakeTimeProvider` で固定する
+- ファイル I/O のテストには一意な一時ディレクトリ (`Path.GetTempPath()` + `Guid.NewGuid()`) を使い、`try`/`finally` で確実にクリーンアップする
+- テストプロジェクト名は `xxx.Tests` の規約に揃える

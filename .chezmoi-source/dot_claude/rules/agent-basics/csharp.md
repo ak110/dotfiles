@@ -1,0 +1,47 @@
+---
+paths:
+  - "**/*.cs"
+---
+
+# C#記述スタイル
+
+- .NET バージョン
+  - 現行の LTS 以降を前提にする
+  - プロジェクト設定では `<Nullable>enable</Nullable>` と `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` を有効にする
+- 命名規則
+  - `PascalCase`: クラス・メソッド・プロパティ・public フィールド
+  - `camelCase`: ローカル変数・パラメータ
+  - `_camelCase`: private フィールド
+  - インターフェースは `I` プレフィックス (`IFoo`)
+- 型について
+  - `var` はローカル変数の右辺から型が自明な場合に使う
+  - Nullable 参照型 (`string?`) を活用し、null 許容性を型で明示する
+  - null チェックは `is null` / `is not null` を使う (`==` はオーバーロードされる可能性があるため)
+  - 不要な値の破棄は `_` (discard) で表現する
+- データ/制御フロー
+  - 公開フィールドより自動実装プロパティ (`{ get; init; }`) を使う
+  - 不変データは `record` / `record struct` で表現する
+  - 分岐にはパターンマッチング (`switch` 式、`is` パターン) を積極的に使う
+- 非同期処理
+  - I/O には `async` / `await` を使い、`.Result` / `.Wait()` でブロックしない (デッドロックの原因)
+  - ライブラリコードでは `ConfigureAwait(false)` を付ける
+  - 非同期メソッド名は `Async` サフィックスを付け、`CancellationToken` を末尾引数で受け取り伝播させる
+- 例外処理
+  - 例外は例外的状況にのみ使う (通常の制御フローには使わない)
+  - `catch (Exception)` で握りつぶさず、具体的な型でキャッチする
+  - 再スローは `throw;` を使う。`throw ex;` はスタックトレースが失われるため使わない
+- リソース管理
+  - `IDisposable` は `using` 宣言 / ステートメントで確実に解放する
+  - `IAsyncDisposable` には `await using` を使う
+- LINQ は可読性を損なわない範囲で使う。ホットパスでは割り当てコストに注意する
+- ドキュメントコメントは XML ドキュメント (`///`) で書き、公開 API には `<summary>` を必ず記述する
+- セキュリティ上の危険パターン
+  - SQL はパラメータ化クエリを使う (`SqlCommand.Parameters` / Dapper / EF Core のパラメータ)
+  - `Process.Start` は `ProcessStartInfo.ArgumentList` で引数を渡す (文字列結合は避ける)
+  - 信頼できない XML は `XmlResolver = null` で XXE を無効化する
+  - `BinaryFormatter` は使わない (非推奨・安全でない)。`System.Text.Json` や MessagePack で代替
+  - 乱数はセキュリティ用途なら `RandomNumberGenerator`、それ以外は `Random.Shared`
+- 他で指定が無い場合のツール推奨:
+  - ビルド: `dotnet` CLI
+  - フォーマッター: `dotnet format`
+  - アナライザー: Roslyn アナライザー + `Microsoft.CodeAnalysis.NetAnalyzers` (`.editorconfig` で設定)

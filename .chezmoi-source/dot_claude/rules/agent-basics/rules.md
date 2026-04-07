@@ -1,6 +1,7 @@
 ---
 paths:
-  - ".claude/rules/**/*.md"
+  - "**/.claude/rules/**/*.md"
+  - "**/dot_claude/rules/**/*.md"
 ---
 
 # ルールファイル (.claude/rules/) 編集ガイドライン

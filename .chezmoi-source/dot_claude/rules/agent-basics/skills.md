@@ -1,6 +1,7 @@
 ---
 paths:
-  - ".claude/skills/**"
+  - "**/.claude/skills/**"
+  - "**/dot_claude/skills/**"
 ---
 
 # スキル (.claude/skills/, Agent Skills) 編集ガイドライン

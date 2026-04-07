@@ -14,6 +14,10 @@ _CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("python-test.md", (".py",)),
     ("typescript.md", (".ts", ".tsx")),
     ("typescript-test.md", (".ts", ".tsx")),
+    ("rust.md", (".rs",)),
+    ("rust-test.md", (".rs",)),
+    ("csharp.md", (".cs",)),
+    ("csharp-test.md", (".cs",)),
 ]
 # 無条件で配布するルール
 _UNCONDITIONAL_RULES: list[str] = ["markdown.md", "rules.md", "skills.md"]
