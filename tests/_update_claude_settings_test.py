@@ -1,12 +1,12 @@
-"""update_claude_settingsモジュールのテスト。"""
+"""_update_claude_settings モジュールのテスト。"""
 
 import json
 from pathlib import Path
 
 import pytest
 
-from pytools import update_claude_settings as mod
-from pytools.update_claude_settings import update_claude_settings
+from pytools import _update_claude_settings as mod
+from pytools._update_claude_settings import update_claude_settings
 
 MANAGED_ALLOW = [
     "Bash",

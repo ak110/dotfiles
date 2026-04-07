@@ -52,9 +52,9 @@ jobs:
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source ~/dotfiles --apply
-      - name: update-claude-settingsの動作確認
+      - name: dotfiles-post-applyの動作確認
         shell: pwsh
-        run: update-claude-settings
+        run: dotfiles-post-apply
       - name: 主要ファイルの存在確認
         shell: pwsh
         run: |

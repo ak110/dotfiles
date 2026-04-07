@@ -26,9 +26,7 @@ py-pdf-to-image = "pytools.pdf_to_image:_main"
 check-image-sizes = "pytools.check_image_sizes:_main"
 git-justify = "pytools.git_justify:_main"
 mvdir = "pytools.mvdir:_main"
-update-claude-settings = "pytools.update_claude_settings:_main"
 update-ssh-config = "pytools.update_ssh_config:_main"
-update-npmrc = "pytools.update_npmrc:_main"
 dotfiles-post-apply = "pytools.post_apply:_main"
 
 [build-system]

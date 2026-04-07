@@ -4,11 +4,11 @@
 各ステップは独立して動き、途中でエラーが出ても他のステップは継続する
 (最後にサマリで失敗件数を出し、失敗があれば exit 1)。
 
-1. Claude 設定ファイルのマージ  (update_claude_settings.run)
+1. Claude 設定ファイルのマージ  (_update_claude_settings.run)
 2. SSH config / authorized_keys  (update_ssh_config.run)
-3. 配布元から消えた旧ファイルの掃除 (cleanup_paths.cleanup_paths)
-4. npm/pnpm のサプライチェーン対策 (update_npmrc.run)
-5. Claude Code plugin の自動インストール (install_claude_plugins.run)
+3. 配布元から消えた旧ファイルの掃除 (_cleanup_paths.cleanup_paths)
+4. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
+5. Claude Code plugin の自動インストール (_install_claude_plugins.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools import cleanup_paths, install_claude_plugins, update_claude_settings, update_npmrc, update_ssh_config
+from pytools import _cleanup_paths, _install_claude_plugins, _update_claude_settings, _update_npmrc, update_ssh_config
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,11 @@ def _main() -> None:
 def run() -> list[_StepResult]:
     """4 ステップを順に実行し、結果のリストを返す。"""
     steps: list[tuple[str, Callable[[], bool]]] = [
-        ("Claude 設定", update_claude_settings.run),
+        ("Claude 設定", _update_claude_settings.run),
         ("SSH config", update_ssh_config.run),
         ("旧配布物の掃除", _cleanup_removed_paths),
-        ("npm/pnpm サプライチェーン対策", update_npmrc.run),
-        ("Claude Code plugin のインストール", install_claude_plugins.run),
+        ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
+        ("Claude Code plugin のインストール", _install_claude_plugins.run),
     ]
     results: list[_StepResult] = []
     total = len(steps)
@@ -88,7 +88,7 @@ def _cleanup_removed_paths() -> bool:
     """
     total_removed = 0
     for base_dir, relative_paths in _REMOVED_PATHS.items():
-        total_removed += cleanup_paths.cleanup_paths(base_dir, relative_paths)
+        total_removed += _cleanup_paths.cleanup_paths(base_dir, relative_paths)
     if total_removed == 0:
         logger.info("  -> 削除対象なし")
     else:

@@ -1,8 +1,8 @@
-"""pytools.update_npmrc のテスト。"""
+"""pytools._update_npmrc のテスト。"""
 
 from pathlib import Path
 
-from pytools.update_npmrc import run
+from pytools._update_npmrc import run
 
 
 class TestUpdateNpmrc:

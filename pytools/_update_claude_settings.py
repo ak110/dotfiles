@@ -18,7 +18,7 @@ OS 別の差分 (主にフック コマンドの shell/PowerShell ラッパー) 
 settings.json から後追いで除去するクリーンアップも行う。union マージ方式の都合上、
 share 側から消した hook がユーザー側に残り続けるのを防ぐため。
 
-配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools.cleanup_paths と
+配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools._cleanup_paths と
 pytools.post_apply に分離した (本モジュールは hook 内部の command 文字列マッチのみ担う)。
 """
 

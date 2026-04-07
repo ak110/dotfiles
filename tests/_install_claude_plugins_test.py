@@ -1,4 +1,4 @@
-"""pytools.install_claude_plugins のテスト。
+"""pytools._install_claude_plugins のテスト。
 
 subprocess.run / shutil.which をモックして、前提条件分岐・marketplace 登録・
 plugin install の各パスを検証する。
@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from pytools import install_claude_plugins
+from pytools import _install_claude_plugins
 
 
 class _FakeResult:
@@ -24,19 +24,19 @@ class _FakeResult:
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
 class TestPrerequisites:
     """前提条件 (claude / uv の存在) のチェック。"""
 
     def test_missing_claude_skips(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(install_claude_plugins.shutil, "which", lambda name: None if name == "claude" else "/usr/bin/uv")
-        assert install_claude_plugins.run() is False
+        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: None if name == "claude" else "/usr/bin/uv")
+        assert _install_claude_plugins.run() is False
 
     def test_missing_uv_skips(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(install_claude_plugins.shutil, "which", lambda name: None if name == "uv" else "/usr/bin/claude")
-        assert install_claude_plugins.run() is False
+        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: None if name == "uv" else "/usr/bin/claude")
+        assert _install_claude_plugins.run() is False
 
 
 @pytest.mark.usefixtures("fake_which_present")
@@ -57,9 +57,9 @@ class TestRunFlow:
                 )
             return _FakeResult(returncode=1, stderr="should not be called")
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is False
+        assert _install_claude_plugins.run() is False
         # list だけ呼ばれて install は呼ばれないはず
         assert [c for c in calls if "install" in c] == []
 
@@ -79,9 +79,9 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is True
+        assert _install_claude_plugins.run() is True
         # add と install の両方が呼ばれているか
         assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
         assert any(c[:3] == ["claude", "plugin", "install"] and "edit-guardrails@ak110-dotfiles" in c for c in calls)
@@ -99,15 +99,15 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
                 )
             if cmd[:3] == ["claude", "plugin", "install"]:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is True
+        assert _install_claude_plugins.run() is True
         # add は呼ばれていないこと
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
 
@@ -121,9 +121,9 @@ class TestRunFlow:
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=0, stdout="[]")
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is False
+        assert _install_claude_plugins.run() is False
         # list 以外は呼ばれていないこと (失敗で早期 return)
         assert all(c[:3] == ["claude", "plugin", "list"] for c in seen)
 
@@ -141,9 +141,9 @@ class TestRunFlow:
                 return _FakeResult(returncode=1, stderr="install failed")
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is False
+        assert _install_claude_plugins.run() is False
 
     def test_claude_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch):
         """claude CLI のタイムアウトはスキップに丸める (post-apply を落とさない)。"""
@@ -151,9 +151,9 @@ class TestRunFlow:
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             raise subprocess.TimeoutExpired(cmd, timeout=1)
 
-        monkeypatch.setattr(install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
-        assert install_claude_plugins.run() is False
+        assert _install_claude_plugins.run() is False
 
 
 class TestExtractPluginNames:
@@ -188,4 +188,4 @@ class TestExtractPluginNames:
     )
     def test_various_shapes(self, data: object, expected: set[str]):
         # pylint: disable-next=protected-access
-        assert set(install_claude_plugins._extract_plugin_names(data)) == expected
+        assert set(_install_claude_plugins._extract_plugin_names(data)) == expected
