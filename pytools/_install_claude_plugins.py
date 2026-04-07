@@ -1,24 +1,27 @@
-"""dotfiles 同梱の Claude Code plugin を自動インストールする。
+"""dotfiles 同梱の Claude Code plugin を自動インストール/更新する。
 
 本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-必要な前提条件をすべて満たす場合だけ plugin を入れ、満たさない場合は
+必要な前提条件をすべて満たす場合だけ動作し、満たさない場合は
 完全にスキップする (dotfiles apply 全体を落とさないための安全側動作)。
 
 前提条件 (すべて必要):
 
 1. `claude` CLI が PATH にある
 2. `uv` CLI が PATH にある (plugin の hook スクリプトが `uv run --script` で動くため)
-3. 対象 plugin がまだインストールされていない
 
-条件を満たした場合は以下を実行する:
+前提を満たした場合の処理:
 
-1. `claude plugin marketplace add <dotfiles root>` で marketplace を登録
-   (ローカルパスを使うのは、オフライン環境でも動くため。GitHub 経由では
-    ネットワーク依存になる)
-2. `claude plugin install <name>@<marketplace> --scope user` で plugin を導入
+- marketplace 未登録 → `claude plugin marketplace add <dotfiles root>` で登録
+  (ローカルパスを使うのは、オフライン環境でも動くため。GitHub 経由では
+   ネットワーク依存になる)
+- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope user`
+- 対象 plugin がインストール済みで `marketplace.json` と version が乖離
+  → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
+     `claude plugin update <name>@<marketplace>` で反映
+  (version が一致していれば update コマンドは呼ばずスキップ)
 
-既にインストール済みの場合はノータッチ (更新は `claude plugin update` を
-ユーザー自身が打つか、将来的に別ステップとして実装する)。
+`update-dotfiles` 経由で本モジュールが走るたびに version 乖離が解消されるため、
+ユーザー環境では marketplace.json の bump が自動で反映される。
 """
 
 import json
@@ -48,10 +51,10 @@ def _main() -> None:
 
 
 def run() -> bool:
-    """Claude Code plugin を必要ならインストールする。
+    """Claude Code plugin をインストール/更新する。
 
     Returns:
-        何らかの plugin を新たにインストールしたら True。
+        何らかの plugin を新たにインストールまたは更新したら True。
     """
     if not _prerequisites_ok():
         return False
@@ -61,24 +64,36 @@ def run() -> bool:
         logger.info("  -> dotfiles ルート (marketplace.json のあるディレクトリ) が見つからずスキップ")
         return False
 
-    installed = _list_installed_plugins()
+    installed = _list_installed_plugin_versions()
     if installed is None:
         logger.info("  -> インストール済み plugin 一覧の取得に失敗したためスキップ")
-        return False
-
-    missing = [name for name in _PLUGIN_NAMES if name not in installed]
-    if not missing:
-        logger.info("  -> 全 plugin インストール済み")
         return False
 
     if not _ensure_marketplace(dotfiles_root):
         return False
 
-    any_installed = False
-    for name in missing:
-        if _install_plugin(name):
-            any_installed = True
-    return any_installed
+    target_versions = _read_target_versions(dotfiles_root)
+
+    # 既にインストールされている plugin が 1 つでもあるなら marketplace メタデータを
+    # refresh して、ローカルの marketplace.json に入った version bump を取り込む。
+    # 新規 install しかない場合は install コマンドが毎回ファイルを読むため refresh 不要。
+    if any(name in installed for name in _PLUGIN_NAMES):
+        _refresh_marketplace()
+
+    any_change = False
+    for name in _PLUGIN_NAMES:
+        current = installed.get(name)
+        target = target_versions.get(name)
+        if current is None:
+            if _install_plugin(name):
+                any_change = True
+        elif target is not None and current != target:
+            logger.info("  -> plugin %s の更新を検出: %s -> %s", name, current, target)
+            if _update_plugin(name):
+                any_change = True
+        else:
+            logger.info("  -> plugin %s は最新 (%s)", name, current or "不明")
+    return any_change
 
 
 def _prerequisites_ok() -> bool:
@@ -105,8 +120,11 @@ def _find_dotfiles_root() -> Path | None:
     return None
 
 
-def _list_installed_plugins() -> set[str] | None:
-    """インストール済み plugin 名の集合を返す。失敗時は None。"""
+def _list_installed_plugin_versions() -> dict[str, str] | None:
+    """インストール済み plugin 名 → version の辞書を返す。失敗時は None。
+
+    version 不明な要素は空文字列で登録する (呼び出し側で差分判定から除外される)。
+    """
     result = _run_claude(["plugin", "list", "--json"])
     if result is None or result.returncode != 0:
         return None
@@ -116,41 +134,43 @@ def _list_installed_plugins() -> set[str] | None:
         logger.info("  -> `claude plugin list --json` の出力 JSON を解析できませんでした")
         return None
     # Claude Code の出力形式は将来変わる可能性があるため複数形式を許容する
-    return set(_extract_plugin_names(data))
+    return _extract_plugin_version_map(data)
 
 
-def _extract_plugin_names(data: object) -> list[str]:
-    """`claude plugin list --json` の戻り値から plugin 名を抽出する。
+def _extract_plugin_version_map(data: object) -> dict[str, str]:
+    """`claude plugin list --json` の戻り値から name → version の辞書を作る。
 
     実機で確認した形式 (Claude Code 2.x): list[dict] で各要素が以下を持つ。
 
     - `id`: `<plugin>@<marketplace>` 形式 (例: `edit-guardrails@ak110-dotfiles`)
+    - `version`: 例 `"0.1.0"` (無い場合は空文字列として記録)
     - `name`: ない場合あり
 
     知っている全形式:
 
-    - list[dict]: 各要素の `id` (`@` の前を切り出す) または `name` フィールド
-    - dict[str, ...]: キーが plugin 名
+    - list[dict]: 各要素の `id` (`@` の前を切り出す) または `name` フィールドを plugin 名とする
+    - dict[str, ...]: キーが plugin 名 (version は不明として空文字列)
     - dict に `plugins` キーがあり、その中に上記いずれか
 
-    未知の形式では空リストを返す (呼び出し側でスキップ扱いになる)。
+    未知の形式では空辞書を返す (呼び出し側でスキップ扱いになる)。
     """
     if isinstance(data, dict):
         dict_data = cast("dict[object, object]", data)
         if "plugins" in dict_data:
-            return _extract_plugin_names(dict_data["plugins"])
-        return [key for key in dict_data if isinstance(key, str)]
+            return _extract_plugin_version_map(dict_data["plugins"])
+        return {key: "" for key in dict_data if isinstance(key, str)}
     if isinstance(data, list):
         list_data = cast("list[object]", data)
-        names: list[str] = []
+        versions: dict[str, str] = {}
         for item in list_data:
             if isinstance(item, dict):
                 item_dict = cast("dict[object, object]", item)
                 name = _name_from_entry(item_dict)
                 if name is not None:
-                    names.append(name)
-        return names
-    return []
+                    raw_version = item_dict.get("version")
+                    versions[name] = raw_version if isinstance(raw_version, str) else ""
+        return versions
+    return {}
 
 
 def _name_from_entry(entry: dict[object, object]) -> str | None:
@@ -163,6 +183,31 @@ def _name_from_entry(entry: dict[object, object]) -> str | None:
     if isinstance(name, str):
         return name
     return None
+
+
+def _read_target_versions(dotfiles_root: Path) -> dict[str, str]:
+    """`marketplace.json` から配布側の name → version 辞書を作る。
+
+    読み込み失敗時は空辞書を返す (更新判定をスキップする方向へ倒す)。
+    """
+    manifest = dotfiles_root / ".claude-plugin" / "marketplace.json"
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.info("  -> marketplace.json の読み込みに失敗: %s", e)
+        return {}
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    if not isinstance(plugins, list):
+        return {}
+    versions: dict[str, str] = {}
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        version = entry.get("version")
+        if isinstance(name, str) and isinstance(version, str):
+            versions[name] = version
+    return versions
 
 
 def _ensure_marketplace(dotfiles_root: Path) -> bool:
@@ -210,6 +255,31 @@ def _install_plugin(name: str) -> bool:
         logger.info("  -> plugin %s の install に失敗: %s", name, stderr)
         return False
     logger.info("  -> plugin %s をインストールしました", name)
+    return True
+
+
+def _refresh_marketplace() -> bool:
+    """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
+
+    ローカル marketplace.json の version bump を取り込むために必要。
+    失敗しても `plugin update` 側で拾える可能性があるため best-effort 扱い。
+    """
+    result = _run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
+    if result is None or result.returncode != 0:
+        stderr = result.stderr.strip() if result else ""
+        logger.info("  -> marketplace %s の refresh に失敗 (続行): %s", _MARKETPLACE_NAME, stderr)
+        return False
+    return True
+
+
+def _update_plugin(name: str) -> bool:
+    """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
+    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}"])
+    if result is None or result.returncode != 0:
+        stderr = result.stderr.strip() if result else ""
+        logger.info("  -> plugin %s の update に失敗: %s", name, stderr)
+        return False
+    logger.info("  -> plugin %s を更新しました", name)
     return True
 
 

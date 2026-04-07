@@ -82,9 +82,25 @@ claude plugin marketplace add ak110/dotfiles
 claude plugin install edit-guardrails@ak110-dotfiles
 ```
 
-インストール済みか確認するには `claude plugin list`、更新は `claude plugin update edit-guardrails`、
+インストール済みか確認するには `claude plugin list` を使います。
 削除は `claude plugin uninstall edit-guardrails` を使います。
 プラグインは `uv` CLI に依存するため、別途 [uv](https://docs.astral.sh/uv/) をインストールしてください。
+
+### プラグインの更新
+
+ローカルの `marketplace.json` にある version 情報を最新化してから `plugin update` を叩きます。
+`marketplace update` を省くと古いメタデータが使われて `既に最新です` と誤判定されることがあります。
+
+```bash
+claude plugin marketplace update ak110-dotfiles
+claude plugin update edit-guardrails@ak110-dotfiles
+```
+
+dotfiles を `install.sh` / `install.ps1` 経由でフル導入している場合は、
+`update-dotfiles` が `chezmoi apply` の後処理として上記と同等のコマンドを自動実行します
+(`pytools/_install_claude_plugins.py`)。
+明示的に `claude plugin update` を打つ必要があるのは、dotfiles を使っていない環境や
+`update-dotfiles` を経由せずにプラグインだけ最新化したい場合です。
 ````
 
 ### プロジェクトローカルへの配布: `claudize`

@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install.ps1 | iex"
 ```
 
-winget を使える/使いたい場合は以下のワンライナーも利用可能。
+#### 簡易版
 
 ```cmd
 winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"

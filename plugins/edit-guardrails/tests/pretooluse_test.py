@@ -12,6 +12,8 @@ import sys
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
+_PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
+_MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "marketplace.json"
 
 
 def _run(payload: object) -> subprocess.CompletedProcess[str]:
@@ -276,3 +278,29 @@ class TestGeneralBehavior:
         """不正 JSON はフックを無効化 (安全側)。"""
         result = _run("this is not json")
         assert result.returncode == 0
+
+
+class TestManifestSsot:
+    """plugin.json と marketplace.json の SSOT 整合性。
+
+    version / description / name を 2 箇所で重複管理しているため、
+    片方だけ更新して配布されない事故を防ぐためのハード チェック。
+    """
+
+    def test_plugin_manifest_matches_marketplace(self):
+        plugin_manifest = json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+        marketplace = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
+
+        entries = [p for p in marketplace["plugins"] if p["name"] == plugin_manifest["name"]]
+        assert len(entries) == 1, f"marketplace.json に {plugin_manifest['name']} のエントリが 1 件ではない"
+        entry = entries[0]
+
+        # SSOT の 3 フィールドが完全一致することを要求する。
+        # 不一致が出たら .claude/rules/plugins.md を参照して両側を揃えること。
+        assert entry["version"] == plugin_manifest["version"], (
+            f"version 不一致: plugin.json={plugin_manifest['version']} marketplace.json={entry['version']}"
+        )
+        assert entry["description"] == plugin_manifest["description"], (
+            "description 不一致: plugin.json と marketplace.json を揃えること"
+        )
+        assert entry["name"] == plugin_manifest["name"]

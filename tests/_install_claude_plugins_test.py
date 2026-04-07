@@ -1,10 +1,11 @@
 """pytools._install_claude_plugins のテスト。
 
 subprocess.run / shutil.which をモックして、前提条件分岐・marketplace 登録・
-plugin install の各パスを検証する。
+plugin install / update の各パスを検証する。
 """
 
 import json
+import pathlib
 import subprocess
 
 import pytest
@@ -27,6 +28,20 @@ def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
+@pytest.fixture(name="fake_target_versions")
+def _fake_target_versions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """marketplace.json の読み込み結果を固定値に差し替える。
+
+    テストを実際の marketplace.json の内容から切り離すため。
+    `edit-guardrails` の配布 version は `0.2.0` とみなす。
+    """
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_target_versions",
+        lambda _root: {"edit-guardrails": "0.2.0"},
+    )
+
+
 class TestPrerequisites:
     """前提条件 (claude / uv の存在) のチェック。"""
 
@@ -39,29 +54,69 @@ class TestPrerequisites:
         assert _install_claude_plugins.run() is False
 
 
-@pytest.mark.usefixtures("fake_which_present")
+@pytest.mark.usefixtures("fake_which_present", "fake_target_versions")
 class TestRunFlow:
     """メインフローのテスト (前提条件は満たしている状態)。"""
 
-    def test_already_installed_skips(self, monkeypatch: pytest.MonkeyPatch):
-        """対象 plugin が既に入っている場合は何もしない。"""
+    def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
+        """既に配布 version と一致していれば update は呼ばない。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001 -- subprocess.run 互換シグネチャ
             calls.append(cmd)
             if cmd[:3] == ["claude", "plugin", "list"]:
-                # 実機の Claude Code 2.x 出力形式: id が `<name>@<marketplace>`
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps([{"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"}]),
+                    stdout=json.dumps([{"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"}]),
                 )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
+                return _FakeResult(returncode=0)
             return _FakeResult(returncode=1, stderr="should not be called")
 
         monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
-        # list だけ呼ばれて install は呼ばれないはず
-        assert [c for c in calls if "install" in c] == []
+        assert [c for c in calls if c[:3] == ["claude", "plugin", "update"]] == []
+        assert [c for c in calls if c[:3] == ["claude", "plugin", "install"]] == []
+
+    def test_already_installed_version_drift_updates(self, monkeypatch: pytest.MonkeyPatch):
+        """インストール済みでも version が古ければ refresh + update が走る。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=json.dumps([{"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"}]),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
+                return _FakeResult(returncode=0)
+            if cmd[:3] == ["claude", "plugin", "update"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
+        assert any(c[:3] == ["claude", "plugin", "update"] and "edit-guardrails@ak110-dotfiles" in c for c in calls)
+        # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
+        refresh_index = next(i for i, c in enumerate(calls) if c[:4] == ["claude", "plugin", "marketplace", "update"])
+        update_index = next(i for i, c in enumerate(calls) if c[:3] == ["claude", "plugin", "update"])
+        assert refresh_index < update_index
 
     def test_fresh_install_happy_path(self, monkeypatch: pytest.MonkeyPatch):
         """未インストール + marketplace 未登録の場合、add → install の順に呼ぶ。"""
@@ -156,8 +211,8 @@ class TestRunFlow:
         assert _install_claude_plugins.run() is False
 
 
-class TestExtractPluginNames:
-    """_list_installed_plugins の各形式パース。"""
+class TestExtractPluginVersionMap:
+    """`claude plugin list --json` のパース。"""
 
     @pytest.mark.parametrize(
         ("data", "expected"),
@@ -166,26 +221,47 @@ class TestExtractPluginNames:
             (
                 [
                     {"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"},
-                    {"id": "code-review@claude-plugins-official"},
+                    {"id": "code-review@claude-plugins-official", "version": "1.2.3"},
                 ],
-                {"edit-guardrails", "code-review"},
+                {"edit-guardrails": "0.1.0", "code-review": "1.2.3"},
             ),
+            # version 欠落は空文字列扱い
+            ([{"id": "a@x"}], {"a": ""}),
             # 旧来形式: list[dict] で `name` フィールド
-            ([{"name": "a"}, {"name": "b"}], {"a", "b"}),
+            ([{"name": "a", "version": "1.0"}, {"name": "b"}], {"a": "1.0", "b": ""}),
             # `id` と `name` が混在しても両方拾う
-            ([{"id": "a@x"}, {"name": "b"}], {"a", "b"}),
+            ([{"id": "a@x", "version": "1"}, {"name": "b", "version": "2"}], {"a": "1", "b": "2"}),
             # `id` に `@` がない場合はそのまま返す
-            ([{"id": "plain"}], {"plain"}),
+            ([{"id": "plain", "version": "0"}], {"plain": "0"}),
             # dict with "plugins" key
-            ({"plugins": [{"name": "a"}]}, {"a"}),
-            # flat dict
-            ({"a": {}, "b": {}}, {"a", "b"}),
+            ({"plugins": [{"name": "a", "version": "1"}]}, {"a": "1"}),
+            # flat dict (version 不明として空文字列)
+            ({"a": {}, "b": {}}, {"a": "", "b": ""}),
             # empty
-            ([], set()),
-            # 未知の形式 → 空集合
-            (42, set()),
+            ([], {}),
+            # 未知の形式 → 空辞書
+            (42, {}),
         ],
     )
-    def test_various_shapes(self, data: object, expected: set[str]):
+    def test_various_shapes(self, data: object, expected: dict[str, str]):
         # pylint: disable-next=protected-access
-        assert set(_install_claude_plugins._extract_plugin_names(data)) == expected
+        assert _install_claude_plugins._extract_plugin_version_map(data) == expected
+
+
+class TestReadTargetVersions:
+    """marketplace.json から version を読む helper のテスト。"""
+
+    def test_reads_actual_marketplace_json(self):
+        """本リポジトリ配下の marketplace.json を読み取れる。"""
+        # repo ルート = tests/_install_claude_plugins_test.py から 2 つ上
+        repo_root = pathlib.Path(__file__).resolve().parents[1]
+        # pylint: disable-next=protected-access
+        target = _install_claude_plugins._read_target_versions(repo_root)
+        # edit-guardrails は必ず含まれる (SSOT テストが一致を保証している)
+        assert "edit-guardrails" in target
+        assert target["edit-guardrails"]  # 空文字列ではない
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        """marketplace.json がない場合は空辞書。"""
+        # pylint: disable-next=protected-access
+        assert not _install_claude_plugins._read_target_versions(tmp_path)

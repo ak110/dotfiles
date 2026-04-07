@@ -10,8 +10,8 @@
     {
       "name": "edit-guardrails",
       "source": "./plugins/edit-guardrails",
-      "description": "PreToolUse guardrails for Write/Edit/MultiEdit: detects mojibake (U+FFFD) and blocks LF-only PowerShell script writes.",
-      "version": "0.1.0",
+      "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks.",
+      "version": "0.2.0",
       "category": "safety",
       "keywords": ["hooks", "pretooluse", "guardrails", "safety"]
     }
