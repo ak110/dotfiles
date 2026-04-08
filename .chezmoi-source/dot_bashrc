@@ -237,8 +237,21 @@ if [ -e "$(which code)" ] ; then
 fi
 
 # Claude Code
+# 終了時に画面をクリアするラッパー関数。
+# エイリアスではなく関数にしているのは、claude 本体の終了コードを保持しつつ
+# 終了後に clear を走らせる必要があるため。
 if [ -e ~/.claude/local/claude ] ; then
-    alias claude=~/.claude/local/claude
+    claude() {
+        ~/.claude/local/claude "$@"
+        local rc=$?
+        # stdout/stderr が TTY のときだけ clear する。
+        # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが
+        # 出力へ混入するのを防ぐため。
+        if [ -t 1 ] && [ -t 2 ]; then
+            clear
+        fi
+        return $rc
+    }
 fi
 if [ -e ~/.local/bin/env ] ; then
     . ~/.local/bin/env
