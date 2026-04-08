@@ -57,3 +57,17 @@ paths:
   - 非同期テストは `#[tokio::test]` を使う
   - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う (sleep ループは flaky の温床)
   - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` で compile-time に行う (Rust 1.79+)。実行時テストにはしない
+- 新しい Rust バージョンの機能を積極的に使う (LLMの知識は古く、古い書き方で量産しがちなため明記する)
+  - Rust 1.77+: C 文字列リテラル (`c"..."`) で `&'static CStr` を直接生成する
+    (FFI で nul 終端 C 文字列を安全・効率的に渡せるため)
+  - Rust 1.77+: `std::mem::offset_of!` マクロで `#[repr(C)]` 構造体のフィールドオフセットを取得する
+    (unsafe 不要でメモリレイアウト検査ができる)
+  - Rust 1.80+: `std::sync::LazyLock` / `std::cell::LazyCell` で遅延初期化を行う
+    (`lazy_static` / `once_cell` クレートへの依存を排除できる)
+  - Rust 1.82+: `extern` ブロック内の個別関数に `safe` / `unsafe` を付けて FFI 安全性を明示する
+    (呼び出し側で unsafe ブロックが必要かどうかをコンパイラレベルで強制できるため)
+  - Rust 1.82+: `impl Trait + use<...>` で precise capturing を行う
+    (不要な lifetime キャプチャを避けて戻り値型を厳密にできる)
+  - Edition 2024 (Rust 1.85+): let chains (`if let Some(x) = foo && x > 0 { ... }`) でネストを削減する
+  - Edition 2024 (Rust 1.85+): async クロージャ (`async || { ... }`) と `AsyncFn` 系トレイトを使う
+    (単純な非同期処理で `async-trait` クレートへの依存を削減できる)

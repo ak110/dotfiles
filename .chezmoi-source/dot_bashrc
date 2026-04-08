@@ -25,6 +25,11 @@ export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
 export MYPY_CACHE_DIR=$HOME/.cache/mypy
 #export NODE_TLS_REJECT_UNAUTHORIZED=0  # oco用
 
+# poetry
+if [ -d "$HOME/.poetry/bin" ] ; then
+    export PATH="$HOME/.poetry/bin:$PATH"
+fi
+
 # ~/.envがあれば読み込む
 if [ -e ~/.env ] ; then
     set -a

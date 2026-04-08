@@ -142,10 +142,10 @@
   - リトライ回数・タイムアウトはハードコードせず設定可能にする
 - 依存管理: サプライチェーン攻撃対策とセキュリティ維持の観点から運用する
   - 公開直後の新バージョンは一定期間 (目安 1 日) 待ってから導入する。マルウェア混入が検知されるまでの時間的バッファを確保するため
-    - ツール例: uv の `exclude-newer`、npm / pnpm の `minimum-release-age`
+    - ツール例: uv の `exclude-newer`、pnpm の `minimum-release-age` (npm でも同設定が可能だが pnpm を優先する)
     - バージョン固定 (pinning) は管理コスト増大のため原則採用しない。上記の待機設定で代替する
   - SCA (ソフトウェア構成分析) ツールで定期的に脆弱性を確認する
-    - Python: `pip-audit`、TypeScript: `npm audit` / `pnpm audit`、Rust: `cargo-audit`、C#: `dotnet list package --vulnerable`
+    - Python: `pip-audit`、TypeScript: `pnpm audit`、Rust: `cargo-audit`、C#: `dotnet list package --vulnerable`
   - 依存追加時はメンテナンス状況・最終リリース日・代替ライブラリの有無を確認する
   - 使われていない依存は削除する (攻撃対象面の縮小)
 
