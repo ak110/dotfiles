@@ -86,6 +86,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+      - name: サプライチェーン保護設定を ~/.npmrc に配置
+        run: cp .npmrc ~/.npmrc
       - run: uv sync --all-groups
       - run: uv run pyfltr .
       - run: uv cache prune --ci
