@@ -43,11 +43,10 @@ dev = [
 preset = "latest"
 pyright = true
 ty = true
-extend-exclude = ["dot_*"]
+extend-exclude = ["*/profile_ipy/*"]
 
 [tool.ruff]
 line-length = 128
-extend-exclude = ["dot_*"]
 
 [tool.ruff.lint]
 select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I"]
@@ -61,7 +60,6 @@ convention = "google"
 "**/__init__.py" = ["D104"]
 
 [tool.mypy]
-exclude = ["dot_"]
 allow_redefinition = true
 check_untyped_defs = true
 ignore_missing_imports = true
