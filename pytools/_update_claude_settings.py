@@ -153,13 +153,20 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
             del hooks_root[event_name]
 
 
+#: マージ時に無視するトップレベルキー。
+#: `$schema` は配布元 JSON の IDE 補完用メタ情報であり、ユーザー設定に伝播させない。
+_IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
+
+
 def _merge(data: dict, managed: dict) -> None:
     """Managed の設定を data に再帰的にマージする。
 
     dict は再帰マージ、list は union マージ (順序維持・重複排除)、
-    それ以外は managed 側で上書き。
+    それ以外は managed 側で上書き。`_IGNORED_KEYS` はマージ対象外。
     """
     for key, value in managed.items():
+        if key in _IGNORED_KEYS:
+            continue
         if key in data and isinstance(data[key], dict) and isinstance(value, dict):
             _merge(data[key], value)
         elif key in data and isinstance(data[key], list) and isinstance(value, list):

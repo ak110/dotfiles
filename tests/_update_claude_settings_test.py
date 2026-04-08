@@ -217,6 +217,21 @@ class TestMergeRecursive:
         result = _run(tmp_path, {"items": ["b", "d"]}, existing)
         assert result["items"] == ["a", "b", "c", "d"]
 
+    def test_schema_key_is_ignored(self, tmp_path: Path):
+        """`$schema` はマージ対象外で、ユーザー設定に伝播しない。"""
+        existing = {"language": "english"}
+        managed = {"$schema": "https://example.com/schema.json", "language": "japanese"}
+        result = _run(tmp_path, managed, existing)
+        assert "$schema" not in result
+        assert result["language"] == "japanese"
+
+    def test_schema_key_does_not_overwrite_existing(self, tmp_path: Path):
+        """既存の `$schema` があっても managed 側の `$schema` で上書きされない。"""
+        existing = {"$schema": "user-defined"}
+        managed = {"$schema": "managed-defined", "language": "japanese"}
+        result = _run(tmp_path, managed, existing)
+        assert result["$schema"] == "user-defined"
+
     def test_dict_list_union_dedup(self, tmp_path: Path):
         """dict を要素に持つ list もマージ可能で、同一内容の重複は排除される。
 
