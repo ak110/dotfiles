@@ -1,16 +1,13 @@
 # Claude Code 設定管理
 
 本リポジトリの Claude Code 関連ファイルは、他のプロジェクトで利用するためのテンプレートも兼ねている。
-配布元は 2 系統ある。
+配布するものは以下の 2 系統。
 
-- ルール: `.chezmoi-source/dot_claude/rules/agent-basics/` 配下のファイル群
-- plugin: `plugins/` 配下の Claude Code plugin (現在は `edit-guardrails` のみ)
+- ルール (`.chezmoi-source/dot_claude/rules/agent-basics/` 配下) — 全プロジェクトで読み込ませるコーディング規約・運用方針
+- プラグイン (`plugins/` 配下) — 本リポジトリ自体を Claude Code の Plugin Marketplace として登録することで配布する。
 
-ルール群は他のユーザーと共有される可能性があるため、個別ツール (`claudize` など) への依存を含めないようにしている。
-plugin 群は `.claude-plugin/marketplace.json` 経由で配布する。
-
-このドキュメントは dotfiles 管理側の情報 (配布方式・SSOT・他プロジェクトへの組み込み方) に集約している。
-配布されるルールやプラグインの**中身**については [docs/claude-code-concept.md](claude-code-concept.md) を参照。
+このドキュメントには dotfiles 管理側の情報 (配布方式・配布元・他プロジェクトへの組み込み方) のみ記述している。
+配布されるルールやプラグインの内容については [docs/claude-code-concept.md](claude-code-concept.md) を参照。
 
 ## 配布方式
 
@@ -58,8 +55,19 @@ claude plugin marketplace add ak110/dotfiles
 claude plugin install edit-guardrails@ak110-dotfiles
 ```
 
-プラグインは [uv](https://docs.astral.sh/uv/) に依存するため事前にインストールしておくこと。
+### 導入後 (共通)
+
+プラグインはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
+
+1. Claude Code 内で `/plugin` を実行
+2. `Marketplaces` タブで `ak110-dotfiles` を選択
+3. `Enable auto-update` を選択
 ````
+
+[uv](https://docs.astral.sh/uv/) を前提にしていないプロジェクトの場合は、導入手順に uv のインストールも追記するとよい。
+
+- Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### プロジェクトローカルへの配布: `claudize`
 
@@ -76,18 +84,24 @@ claudize --clean
 
 `claudize` は対象プロジェクトに該当言語のファイルが存在する場合のみ言語別ルールを配布する。
 
-### Claude Code plugin (edit-guardrails)
+## 配布元
 
-`plugins/edit-guardrails/` に、危険な編集を `PreToolUse` 段階で検出する plugin を同梱している。
-配布元は本リポジトリ自身で、`.claude-plugin/marketplace.json` に登録済み。
-`uv` CLI に依存する (hook スクリプトを `uv run --script` 経由で実行するため)。
+### ルール
 
-## 配布対象ファイル一覧の SSOT
+配布元: `.chezmoi-source/dot_claude/rules/agent-basics/`
 
-ファイル一覧は以下 3 箇所で重複管理している。
+ファイル一覧は以下 3 箇所で重複管理している。ルールファイルを追加・削除・リネームする際はすべてを更新すること。
 
 - `pytools/claudize.py` — `_UNCONDITIONAL_RULES` / `_CONDITIONAL_RULES`
 - `install-claude.sh` — `FILES` 配列
 - `install-claude.ps1` — `$files` 配列
 
-新しいルールファイルを追加する際は、これら 3 箇所すべてを更新すること。
+ルールファイルは他のユーザーと共有される可能性があるため、個別ツール (`claudize` など) への依存を含めないように注意すること。
+
+### プラグイン
+
+- 配布元: `plugins/` 配下
+- Marketplace 定義: `.claude-plugin/marketplace.json`
+- 依存: `uv` CLI (hook スクリプトを `uv run --script` 経由で実行するため)
+
+プラグインの内容 (チェック内容など) は [docs/claude-code-concept.md](claude-code-concept.md) を参照。
