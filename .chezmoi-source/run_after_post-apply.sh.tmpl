@@ -20,23 +20,22 @@ if [ -f "$hash_file" ]; then
     cached_hash=$(cat "$hash_file")
 fi
 
-echo "=== dotfiles post-apply ==="
-
+# post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if [ "$current_hash" != "$cached_hash" ]; then
-    echo "[pytools] pyproject.toml に変更あり → 再インストール"
+    echo "  [pytools] pyproject.toml に変更あり → 再インストール"
     if uv tool install --editable "{{ .chezmoi.workingTree }}"; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" > "$hash_file"
     else
-        echo "WARNING: pytools のインストールに失敗しました (後続処理は継続)"
+        echo "  [pytools] インストールに失敗しました (後続処理は継続)"
     fi
 else
-    echo "[pytools] 変更なし (ハッシュキャッシュヒット)"
+    echo "  [pytools] 変更なし (ハッシュキャッシュヒット)"
 fi
 
 post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
 if [ -x "$post_apply_bin" ]; then
     exec "$post_apply_bin"
 else
-    echo "WARNING: $post_apply_bin が見つかりません。後処理をスキップします。"
+    echo "  [pytools] $post_apply_bin が見つかりません。後処理をスキップします。"
 fi

@@ -5,6 +5,9 @@
 # パーミッションが644とかになるようにする
 umask 022
 
+# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
+export PATH=${PATH//;/:}
+
 # 環境変数(非interactiveでも)
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
@@ -15,17 +18,6 @@ test -d $HOME/.cargo/bin        && export PATH=$HOME/.cargo/bin:$PATH
 test -d $HOME/.local/bin        && export PATH=$HOME/.local/bin:$PATH
 test -d $HOME/bin               && export PATH=$HOME/bin:$PATH
 
-# mise (https://mise.jdx.dev/)
-# - 対話シェル: `mise activate bash` でフック方式を有効化
-# - 非対話シェル (IDE / スクリプト / ssh exec): `--shims` で shims を PATH に追加
-# 参考: https://mise.jdx.dev/dev-tools/shims.html
-# 非対話のケースはこの直後に return するため、分岐して片方だけ走らせる。
-if command -v mise >/dev/null 2>&1; then
-    case $- in
-        *i*) eval "$(mise activate bash)" ;;
-          *) eval "$(mise activate bash --shims)" ;;
-    esac
-fi
 test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
 export EDITOR=vim
@@ -40,8 +32,17 @@ if [ -e ~/.env ] ; then
     set +a
 fi
 
-# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
-export PATH=${PATH//;/:}
+# mise (https://mise.jdx.dev/)
+# - 対話シェル: `mise activate bash` でフック方式を有効化
+# - 非対話シェル (IDE / スクリプト / ssh exec): `--shims` で shims を PATH に追加
+# 参考: https://mise.jdx.dev/dev-tools/shims.html
+# 非対話のケースはこの直後に return するため、分岐して片方だけ走らせる。
+if command -v mise >/dev/null 2>&1; then
+    case $- in
+        *i*) eval "$(mise activate bash)" ;;
+          *) eval "$(mise activate bash --shims)" ;;
+    esac
+fi
 
 # ここまで非対話環境でも共通
 ########################################################################################

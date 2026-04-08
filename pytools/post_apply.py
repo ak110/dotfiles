@@ -24,6 +24,7 @@ from pathlib import Path
 from pytools import (
     _cleanup_paths,
     _install_claude_plugins,
+    _log_format,
     _setup_mise,
     _update_claude_settings,
     _update_npmrc,
@@ -53,12 +54,17 @@ class _StepResult:
 
 def _main() -> None:
     """エントリポイント。各ステップを順に実行し、サマリ後に exit。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    # 全ログ行に列 2 のインデントを付与する。
+    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位階層であることを
+    # 視覚的に示すため、post-apply 配下の出力はすべて 2 スペース下げる。
+    logging.basicConfig(format="  %(message)s", level="INFO")
     results = run()
     failed = [r for r in results if not r.ok]
     updated = [r for r in results if r.ok and r.changed]
     skipped = [r for r in results if r.ok and not r.changed]
-    logger.info("")
+    # サマリ前の空行は logger.info("") だと format により trailing whitespace が
+    # 入るため、stdout に直接書き込んでクリーンな空行を出す。
+    print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
     if failed:
         logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
@@ -66,7 +72,7 @@ def _main() -> None:
 
 
 def run() -> list[_StepResult]:
-    """4 ステップを順に実行し、結果のリストを返す。"""
+    """全ステップを順に実行し、結果のリストを返す。"""
     steps: list[tuple[str, Callable[[], bool]]] = [
         ("Claude 設定", _update_claude_settings.run),
         ("SSH config", update_ssh_config.run),
@@ -82,7 +88,7 @@ def run() -> list[_StepResult]:
         try:
             changed = func()
         except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
-            logger.exception("  -> 失敗: %s", name)
+            logger.exception("    %s: 失敗", name)
             results.append(_StepResult(name=name, ok=False, changed=False))
             continue
         results.append(_StepResult(name=name, ok=True, changed=changed))
@@ -99,9 +105,9 @@ def _cleanup_removed_paths() -> bool:
     for base_dir, relative_paths in _REMOVED_PATHS.items():
         total_removed += _cleanup_paths.cleanup_paths(base_dir, relative_paths)
     if total_removed == 0:
-        logger.info("  -> 削除対象なし")
+        logger.info(_log_format.format_status("cleanup", "削除対象なし"))
     else:
-        logger.info("  -> %d 件を削除しました", total_removed)
+        logger.info(_log_format.format_status("cleanup", f"{total_removed} 件を削除しました"))
     return total_removed > 0
 
 

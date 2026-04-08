@@ -28,6 +28,8 @@ import logging
 import sys
 from pathlib import Path
 
+from pytools import _log_format
+
 logger = logging.getLogger(__name__)
 
 _DOTFILES_DIR = Path.home() / "dotfiles"
@@ -100,12 +102,13 @@ def update_claude_settings(
     _strip_removed_hooks(data, removed_hook_substrings)
     _merge(data, managed)
 
+    short = _log_format.home_short(settings_path)
     if data == original:
-        logger.info("%s: 変更なし", settings_path)
+        logger.info(_log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    logger.info("%s を更新しました", settings_path)
+    logger.info(_log_format.format_status(short, "更新しました"))
     return True
 
 

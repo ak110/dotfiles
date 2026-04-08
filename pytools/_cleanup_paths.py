@@ -12,6 +12,8 @@ import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
+from pytools import _log_format
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,6 +44,6 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             shutil.rmtree(target)
         else:
             target.unlink()
-        logger.info("旧配布物を削除: %s", target)
+        logger.info(_log_format.format_status(_log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed

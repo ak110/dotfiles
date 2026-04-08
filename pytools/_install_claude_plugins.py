@@ -31,6 +31,8 @@ import subprocess
 from pathlib import Path
 from typing import cast
 
+from pytools import _log_format
+
 logger = logging.getLogger(__name__)
 
 # marketplace.json の `name` と一致させる (.claude-plugin/marketplace.json を参照)
@@ -61,12 +63,12 @@ def run() -> bool:
 
     dotfiles_root = _find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info("  -> dotfiles ルート (marketplace.json のあるディレクトリ) が見つからずスキップ")
+        logger.info(_log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
         return False
 
     installed = _list_installed_plugin_versions()
     if installed is None:
-        logger.info("  -> インストール済み plugin 一覧の取得に失敗したためスキップ")
+        logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
         return False
 
     if not _ensure_marketplace(dotfiles_root):
@@ -88,21 +90,21 @@ def run() -> bool:
             if _install_plugin(name):
                 any_change = True
         elif target is not None and current != target:
-            logger.info("  -> plugin %s の更新を検出: %s -> %s", name, current, target)
+            logger.info(_log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
                 any_change = True
         else:
-            logger.info("  -> plugin %s は最新 (%s)", name, current or "不明")
+            logger.info(_log_format.format_status(name, f"最新 ({current or '不明'})"))
     return any_change
 
 
 def _prerequisites_ok() -> bool:
     """前提条件 (claude と uv の両方が PATH にあるか) を確認する。"""
     if shutil.which("claude") is None:
-        logger.info("  -> claude CLI 未検出のためスキップ")
+        logger.info(_log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
         return False
     if shutil.which("uv") is None:
-        logger.info("  -> uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)")
+        logger.info(_log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
         return False
     return True
 
@@ -131,7 +133,7 @@ def _list_installed_plugin_versions() -> dict[str, str] | None:
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        logger.info("  -> `claude plugin list --json` の出力 JSON を解析できませんでした")
+        logger.info(_log_format.format_status("plugins", "`claude plugin list --json` の出力 JSON を解析できませんでした"))
         return None
     # Claude Code の出力形式は将来変わる可能性があるため複数形式を許容する
     return _extract_plugin_version_map(data)
@@ -194,7 +196,7 @@ def _read_target_versions(dotfiles_root: Path) -> dict[str, str]:
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        logger.info("  -> marketplace.json の読み込みに失敗: %s", e)
+        logger.info(_log_format.format_status("plugins", f"marketplace.json の読み込みに失敗: {e}"))
         return {}
     plugins = data.get("plugins") if isinstance(data, dict) else None
     if not isinstance(plugins, list):
@@ -226,9 +228,9 @@ def _ensure_marketplace(dotfiles_root: Path) -> bool:
     add_result = _run_claude(["plugin", "marketplace", "add", str(dotfiles_root)])
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
-        logger.info("  -> marketplace 登録に失敗したためスキップ: %s", stderr)
+        logger.info(_log_format.format_status("marketplace", f"登録に失敗したためスキップ: {stderr}"))
         return False
-    logger.info("  -> marketplace %s を登録しました", _MARKETPLACE_NAME)
+    logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を登録しました"))
     return True
 
 
@@ -252,9 +254,9 @@ def _install_plugin(name: str) -> bool:
     result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info("  -> plugin %s の install に失敗: %s", name, stderr)
+        logger.info(_log_format.format_status(name, f"install に失敗: {stderr}"))
         return False
-    logger.info("  -> plugin %s をインストールしました", name)
+    logger.info(_log_format.format_status(name, "インストールしました"))
     return True
 
 
@@ -267,7 +269,7 @@ def _refresh_marketplace() -> bool:
     result = _run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info("  -> marketplace %s の refresh に失敗 (続行): %s", _MARKETPLACE_NAME, stderr)
+        logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} の refresh に失敗 (続行): {stderr}"))
         return False
     return True
 
@@ -277,9 +279,9 @@ def _update_plugin(name: str) -> bool:
     result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info("  -> plugin %s の update に失敗: %s", name, stderr)
+        logger.info(_log_format.format_status(name, f"update に失敗: {stderr}"))
         return False
-    logger.info("  -> plugin %s を更新しました", name)
+    logger.info(_log_format.format_status(name, "更新しました"))
     return True
 
 
@@ -303,7 +305,7 @@ def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
             errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
-        logger.info("  -> `claude %s` 実行に失敗: %s", " ".join(args), e)
+        logger.info(_log_format.format_status("claude", f"`{' '.join(args)}` 実行に失敗: {e}"))
         return None
 
 

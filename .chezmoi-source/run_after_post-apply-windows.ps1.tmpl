@@ -19,10 +19,9 @@ if (Test-Path $hashFile) {
     $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
 }
 
-Write-Host '=== dotfiles post-apply ==='
-
+# post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if ($currentHash -ne $cachedHash) {
-    Write-Host '[pytools] pyproject.toml に変更あり → 再インストール'
+    Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
     try {
         uv tool install --editable "{{ .chezmoi.workingTree }}"
         uv tool update-shell
@@ -31,10 +30,10 @@ if ($currentHash -ne $cachedHash) {
         }
         Set-Content -Path $hashFile -Value $currentHash -Encoding UTF8 -NoNewline
     } catch {
-        Write-Warning "pytools のインストールに失敗しました (後続処理は継続): $_"
+        Write-Host "  [pytools] インストールに失敗しました (後続処理は継続): $_"
     }
 } else {
-    Write-Host '[pytools] 変更なし (ハッシュキャッシュヒット)'
+    Write-Host '  [pytools] 変更なし (ハッシュキャッシュヒット)'
 }
 
 # uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
@@ -42,5 +41,5 @@ $postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
 if (Test-Path $postApplyBin) {
     & $postApplyBin
 } else {
-    Write-Warning "$postApplyBin が見つかりません。後処理をスキップします。"
+    Write-Host "  [pytools] $postApplyBin が見つかりません。後処理をスキップします。"
 }

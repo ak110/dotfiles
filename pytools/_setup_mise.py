@@ -21,6 +21,8 @@ import subprocess
 import typing
 from pathlib import Path
 
+from pytools import _log_format
+
 # Pyright の to be narrowed を避けつつ Windows 判定するためのフラグ。
 # `_IS_WINDOWS` を直接使うと非 Windows 環境で条件式が False に評価され、
 # Windows 専用コードが unreachable として警告されてしまうため、実行時参照の `os.name`
@@ -56,7 +58,7 @@ def run() -> bool:
     """
     mise_bin = _find_mise_binary()
     if mise_bin is None:
-        logger.info("  -> mise 未検出のためスキップ")
+        logger.info(_log_format.format_status("mise", "未検出のためスキップ"))
         return False
 
     changed = False
@@ -98,31 +100,31 @@ def _ensure_windows_user_path_has_shims() -> bool:
     """
     localappdata = os.environ.get("LOCALAPPDATA")
     if not localappdata:
-        logger.info("  -> LOCALAPPDATA 環境変数が無いため shims 追加をスキップ")
+        logger.info(_log_format.format_status("mise", "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ"))
         return False
 
     shims_dir = Path(localappdata) / "mise" / "shims"
     if not shims_dir.is_dir():
-        logger.info("  -> %s が無いため shims 追加をスキップ", shims_dir)
+        logger.info(_log_format.format_status("mise", f"{shims_dir} が無いため shims 追加をスキップ"))
         return False
 
     try:
         current_value, value_type = _read_user_path()
     except OSError as e:
-        logger.warning("ユーザー PATH の読み取りに失敗: %s", e)
+        logger.warning(_log_format.format_status("mise", f"ユーザー PATH の読み取りに失敗: {e}"))
         return False
 
     already_registered = _path_contains_shims(current_value, shims_dir)
     if already_registered:
-        logger.info("  -> ユーザー PATH に %s は既に登録済み", _WINDOWS_SHIMS_ENTRY)
+        logger.info(_log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
     else:
         new_value = _append_entry(current_value, _WINDOWS_SHIMS_ENTRY)
         try:
             _write_user_path(new_value, value_type)
         except OSError as e:
-            logger.warning("ユーザー PATH の書き込みに失敗: %s", e)
+            logger.warning(_log_format.format_status("mise", f"ユーザー PATH の書き込みに失敗: {e}"))
             return False
-        logger.info("  -> ユーザー PATH に %s を追加しました", _WINDOWS_SHIMS_ENTRY)
+        logger.info(_log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
         _broadcast_environment_change()
 
     # 現プロセスの PATH にも反映しておく (この直後の mise 呼び出しで shims を使える
@@ -225,7 +227,7 @@ def _broadcast_environment_change() -> None:
             ctypes.byref(result),
         )
     except Exception as e:  # noqa: BLE001 -- 通知失敗は致命ではない
-        logger.info("  -> 環境変数変更のブロードキャストに失敗: %s", e)
+        logger.info(_log_format.format_status("mise", f"環境変数変更のブロードキャストに失敗: {e}"))
 
 
 def _ensure_global_node(mise_bin: Path) -> bool:
@@ -237,26 +239,26 @@ def _ensure_global_node(mise_bin: Path) -> bool:
     result = _run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info("  -> `mise ls --global --json` に失敗したため node 設定をスキップ: %s", stderr)
+        logger.info(_log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
         return False
 
     try:
         data = json.loads(result.stdout) if result.stdout.strip() else {}
     except json.JSONDecodeError as e:
-        logger.info("  -> `mise ls --global --json` の出力 JSON を解析できずスキップ: %s", e)
+        logger.info(_log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
         return False
 
     if _has_global_node(data):
-        logger.info("  -> global Node は既に設定済み")
+        logger.info(_log_format.format_status("mise", "global Node は既に設定済み"))
         return False
 
     install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
         stderr = install_result.stderr.strip() if install_result else ""
-        logger.info("  -> `mise use --global node@lts` に失敗: %s", stderr)
+        logger.info(_log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
         return False
 
-    logger.info("  -> global に node@lts を設定しました")
+    logger.info(_log_format.format_status("mise", "global に node@lts を設定しました"))
     return True
 
 
@@ -306,7 +308,7 @@ def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[st
             errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
-        logger.info("  -> `mise %s` 実行に失敗: %s", " ".join(args), e)
+        logger.info(_log_format.format_status("mise", f"`{' '.join(args)}` 実行に失敗: {e}"))
         return None
 
 
