@@ -16,7 +16,7 @@ set -x
 # 既に chezmoi が入っていればダウンロードをスキップ (冪等性とテスト用途)
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v chezmoi >/dev/null 2>&1; then
-    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+    sh -c "$(curl -fsSL get.chezmoi.io)" -- -b ~/.local/bin
 fi
 if [ ! -d ~/dotfiles ]; then
     git clone https://github.com/ak110/dotfiles.git ~/dotfiles

@@ -11,14 +11,14 @@
 
 ```bash
 sudo apt install git
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -fsSL https://astral.sh/uv/install.sh | sh
 
 # オプション: nvm, node.js
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 nvm install --lts
 
 # オプション: mise
-curl https://mise.run | sh
+curl -fsSL https://mise.run | sh
 ```
 
 ### 例(Windows)

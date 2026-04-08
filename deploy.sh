@@ -6,7 +6,7 @@ DOT_DIR=~/dotfiles
 
 # chezmoiインストール
 if ! command -v chezmoi &> /dev/null; then
-    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin
+    sh -c "$(curl -fsSL get.chezmoi.io)" -- -b ~/.local/bin
     export PATH="$HOME/.local/bin:$PATH"
 fi
 

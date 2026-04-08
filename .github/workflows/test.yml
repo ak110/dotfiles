@@ -46,7 +46,7 @@ jobs:
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
       - name: chezmoiインストール
         shell: bash
-        run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+        run: sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
       - name: chezmoi適用
         shell: bash
         run: |

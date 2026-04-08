@@ -72,7 +72,7 @@ _process_file() {
     dl=$(mktemp)
     new=$(mktemp)
 
-    curl -fsSL --fail "$BASE_URL/$name" -o "$dl"
+    curl -fsSL "$BASE_URL/$name" -o "$dl"
 
     # 既存ファイルに frontmatter があれば維持して body のみ差し替え
     if [ -f "$dst" ] && _has_fm "$dst"; then
