@@ -6,7 +6,7 @@ paths:
 # Python記述スタイル
 
 - importについて
-  - 可能な限り`import xxx`形式で書く (`from xxx import yyy`ではなく) (定義元を追いやすく、名前衝突も避けられるため)
+  - 可能な限り`import xxx`形式で書く (`from xxx import yyy`ではなく) (定義元を特定しやすく、名前衝突も避けられるため)
   - `import xxx as yyy` の別名は`np`などの一般的なものを除き極力使用しない (可読性を損なうため)
   - 可能な限りトップレベルでimportする (循環参照や初期化順による問題を避ける場合に限りブロック内も可)
 - タイプヒントは可能な限り書く (静的解析・IDE補完・リファクタリング耐性を確保するため)
@@ -18,7 +18,7 @@ paths:
 - ログは`logging`を使う
   - `logger = logging.getLogger(__name__)`でモジュールごとに取得
   - `exc_info=True`指定時は例外をメッセージへ含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
-    - 頻出する例外に限り `logger.warning(f"〇〇失敗: {e}")` のように文字列化して出力する
+    - 頻繁に発生する例外に限り `logger.warning(f"〇〇失敗: {e}")` のように文字列化して出力する
   - 一度のエラーで複数回ログが出力されたり、逆に一度もログが出なかったりすることが無いよう注意する
 - 日付関連の処理は`datetime`を使う
 - ファイル関連の処理は`pathlib`を使う (型安全で OS 間の差異を吸収できるため)。`open`関数や`os`モジュールは使わない
@@ -47,7 +47,7 @@ paths:
   - pre-commitフック: `pre-commit`（コミット時の自動チェック）
   - リンター/フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
     - 詳細: <https://ak110.github.io/pyfltr/llms-full.txt>
-- 新しい Python バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が多く書かれる傾向があるため明記する)
+- 新しい Python バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が出現する傾向があるため明記する)
   - Python 3.12+: PEP 695 型パラメータ構文 (`def f[T](x: T) -> T:` / `type Alias[T] = list[T]`) を使う
     (`TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため)
   - Python 3.12+: PEP 701 の f-string 拡張を活用する

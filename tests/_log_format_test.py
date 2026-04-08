@@ -15,7 +15,7 @@ class TestFormatStatus:
         assert _log_format.format_status("target", "state") == "    target: state"
 
     def test_empty_state(self):
-        """state が空でも壊れない。"""
+        """state が空でも例外を送出しない。"""
         assert _log_format.format_status("x", "") == "    x: "
 
 

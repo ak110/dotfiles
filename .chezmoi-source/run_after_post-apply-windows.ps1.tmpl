@@ -2,14 +2,14 @@
 $ErrorActionPreference = 'Stop'
 
 # dotfiles 後処理エントリポイント (Windows)。
-# chezmoi apply 完了後に毎回走る (run_after_* のため無条件実行)。
-# 全ステップは冪等かつ十分高速で、変更なしなら数秒で終わる。
+# chezmoi apply 完了後に毎回実行する (run_after_* のため無条件実行)。
+# 全ステップは冪等かつ十分高速で、変更なしなら数秒で完了する。
 #
 # NOTE: 対応するLinux版 → run_after_post-apply.sh.tmpl
 #
 # 1. pytools を editable install する (pyproject.toml ハッシュでキャッシュ)
-# 2. dotfiles-post-apply.exe を実行
-#    (Claude 設定 / SSH config / 旧配布物掃除 / npmrc を順に更新)
+# 2. dotfiles-post-apply.exe を実行する
+#    (Claude 設定 / SSH config / 旧配布物の削除 / npmrc を順に更新)
 
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'

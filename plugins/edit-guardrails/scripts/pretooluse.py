@@ -41,7 +41,7 @@ exit code 契約:
   Bash auto-allow を出力した場合)
 - exit 2: block 違反検出 (stderr に理由を出力)
 
-予期せぬ例外は 0 にフォールバックする (plugin の hook が壊れて編集不能になる
+予期せぬ例外は 0 にフォールバックする (plugin の hook が破損して編集できなくなる
 事故を避けるため、安全側の判定としている)。
 """
 
@@ -61,7 +61,7 @@ def _main() -> int:
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
-        # 想定外入力ではフックを無効化 (実処理を壊さない安全側)
+        # 想定外入力ではフックを無効化 (実処理の破損を避ける安全側の判定)
         return 0
 
     tool_name = payload.get("tool_name", "")
@@ -150,8 +150,8 @@ def _is_redundant_plans_mkdir(command: str) -> bool:
     - **解決後のパスがランタイムで既存ディレクトリである** (`target.is_dir()`)
 
     最後の存在確認は「配布先の新規環境で plans ディレクトリが未作成の場合」に
-    本フックが無許可で実際の作成を通してしまうのを防ぐため必須。
-    存在する場合のみ許可されるので、許可される呼び出しは常に no-op 相当
+    本フックが無許可で実際の作成を許可してしまうのを避けるため必須。
+    存在する場合のみ許可されるため、許可される呼び出しは常に no-op 相当
     (ファイルシステム変更なし) となる。
     """
     # shell メタ文字を含む場合は拒否 (合成コマンドやサブシェル展開の可能性)
@@ -399,7 +399,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
 if __name__ == "__main__":
     try:
         sys.exit(_main())
-    except Exception:  # noqa: BLE001 -- plugin が壊れて編集不能になる事故を避けるため広く捕捉
+    except Exception:  # noqa: BLE001 -- plugin が破損して編集できなくなる事故を避けるため広範に捕捉
         # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出す
         traceback.print_exc()
         sys.exit(0)

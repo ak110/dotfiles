@@ -1,6 +1,6 @@
 """pytools.post_apply のテスト。
 
-各ステップが順に呼ばれること、途中ステップが例外を投げても他が継続すること、
+各ステップが順に呼ばれること、途中ステップが例外を送出しても他が継続すること、
 失敗時の exit code を検証する。
 """
 
@@ -41,7 +41,7 @@ class TestRun:
         assert [r.changed for r in results] == [True, False, False, True, False, False]
 
     def test_failing_step_does_not_stop_others(self, monkeypatch: pytest.MonkeyPatch):
-        """途中ステップが例外を投げても後続は実行される。"""
+        """途中ステップが例外を送出しても後続は実行される。"""
         calls: list[str] = []
 
         def make(name: str):
@@ -90,7 +90,7 @@ class TestRun:
         assert exc_info.value.code == 1
 
     def test_main_exits_0_on_success(self, monkeypatch: pytest.MonkeyPatch):
-        """全て成功なら _main() は正常終了 (SystemExit を投げない)。"""
+        """全て成功なら _main() は正常終了 (SystemExit を送出しない)。"""
 
         def ok() -> bool:
             return False

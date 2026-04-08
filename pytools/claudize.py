@@ -93,7 +93,7 @@ def _clean_rules(rules_dir: Path) -> bool:
             path.unlink()
             logger.info("削除: %s", path)
             removed = True
-    # 空になった親ディレクトリ (agent-basics/, rules/, .claude/) を順に掃除
+    # 空になった親ディレクトリ (agent-basics/, rules/, .claude/) を順に削除する
     for candidate in [rules_dir, rules_dir.parent, rules_dir.parent.parent]:
         if candidate.name not in {"agent-basics", "rules", ".claude"}:
             break

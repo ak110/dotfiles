@@ -25,7 +25,7 @@ format:
 	SKIP=pyfltr uv run pre-commit run --all-files
 	-uv run pyfltr --exit-zero-even-if-formatted --commands=fast .
 
-# 全チェック実行（これが通ればコミットしてOK）
+# 全チェック実行（これを通過すればコミット可能）
 test:
 	uv sync --frozen --all-groups
 	SKIP=pyfltr uv run pre-commit run --all-files

@@ -2,7 +2,7 @@
 
 本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
 必要な前提条件をすべて満たす場合だけ動作し、満たさない場合は
-完全にスキップする (dotfiles apply 全体を落とさないための安全側動作)。
+完全にスキップする (dotfiles apply 全体を失敗させないための安全側動作)。
 
 前提条件 (すべて必要):
 
@@ -21,7 +21,7 @@
   (version が一致していれば update コマンドは呼ばずスキップ)
 
 `update-dotfiles` 経由で本モジュールが実行されるたびに version 乖離が解消されるため、
-ユーザー環境では marketplace.json の bump が自動で反映される。
+ユーザー環境では marketplace.json の version 更新が自動で反映される。
 """
 
 import json
@@ -77,7 +77,7 @@ def run() -> bool:
     target_versions = _read_target_versions(dotfiles_root)
 
     # 既にインストールされている plugin が 1 つでもあるなら marketplace メタデータを
-    # refresh して、ローカルの marketplace.json に入った version bump を取り込む。
+    # refresh して、ローカルの marketplace.json に入った version 更新を取り込む。
     # 新規 install しかない場合は install コマンドが毎回ファイルを読むため refresh 不要。
     if any(name in installed for name in _PLUGIN_NAMES):
         _refresh_marketplace()
@@ -263,8 +263,8 @@ def _install_plugin(name: str) -> bool:
 def _refresh_marketplace() -> bool:
     """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
 
-    ローカル marketplace.json の version bump を取り込むために必要。
-    失敗しても `plugin update` 側で拾える可能性があるため best-effort 扱い。
+    ローカル marketplace.json の version 更新を取り込むために必要。
+    失敗しても `plugin update` 側で回収できる可能性があるため best-effort 扱い。
     """
     result = _run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
     if result is None or result.returncode != 0:
@@ -298,9 +298,9 @@ def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
             check=False,
             timeout=_CLAUDE_TIMEOUT,
             # Windows では text=True のデフォルトが cp932 になり、claude CLI の
-            # UTF-8 日本語メッセージを読み取る reader thread が UnicodeDecodeError
-            # を出す。明示的に UTF-8 を指定し、万一不正バイトがあっても落ちない
-            # よう errors="replace" で保険をかける。
+            # UTF-8 日本語メッセージを読み取る reader thread で UnicodeDecodeError
+            # が発生する。明示的に UTF-8 を指定し、不正なバイトが混入しても
+            # 例外が発生しないよう errors="replace" を併用する。
             encoding="utf-8",
             errors="replace",
         )

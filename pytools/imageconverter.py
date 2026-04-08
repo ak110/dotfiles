@@ -35,31 +35,31 @@ def _convert(args, target_path):
     paths = list(natsort.natsorted(paths))
     for path in tqdm.tqdm(paths, ascii=True, ncols=100):
         try:
-            # PNGならrepack_png
+            # PNG の場合は repack_png を実行
             if args.repack_png and path.suffix.lower() == ".png":
                 temp_png_path = path.parent / f"{secrets.token_urlsafe(8)}.png"
                 _repack_png(path, temp_png_path)
                 path.unlink()
                 temp_png_path.rename(path)
-            # 読み込み
+            # 画像を読み込む
             with PIL.Image.open(path) as img_file:
                 try:
                     img = PIL.ImageOps.exif_transpose(img_file)
                 except Exception as e:
                     warnings.warn(f"{type(e).__name__}: {e}", stacklevel=1)
                     img = img_file.copy()
-                # JPEG向け色変換
+                # JPEG 出力時の色空間変換
                 if args.output_type == "jpeg":
                     if img.mode == "RGBA":
                         img = img.convert("RGB")
                     elif img.mode == "LA":
                         img = img.convert("L")
-                # 縮小
+                # 指定サイズを超える場合は縮小する
                 if img.width >= args.max_width or img.height >= args.max_height:
                     r = min(args.max_width / img.width, args.max_height / img.height)
                     size = int(img.width * r), int(img.height * r)
                     img = img.resize(size, resample=PIL.Image.Resampling.LANCZOS)
-                # メタデータを消して保存
+                # メタデータを削除して保存する
                 with PIL.Image.fromarray(np.asarray(img)) as img2:
                     temp_path = path.parent / f"{secrets.token_urlsafe(8)}{suffix}"
                     if args.output_type == "jpeg":
@@ -68,11 +68,11 @@ def _convert(args, target_path):
                         img2.save(temp_path)
         except Exception as e:
             tqdm.tqdm.write(f"{path}: convert failed ({e})")
-            # 失敗したものは削除する（バックアップされてる前提）
+            # 失敗したファイルは削除する（バックアップされている前提）
             if not args.no_remove_failed:
                 path.unlink()
             continue
-        # 削除＆リネーム（バックアップされてる前提）
+        # 元ファイルを削除し、リネームする（バックアップされている前提）
         path.unlink()
         save_path = path.with_suffix(suffix)
         temp_path.rename(save_path)

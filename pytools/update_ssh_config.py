@@ -1,8 +1,8 @@
-"""SSH config and authorized_keys generator.
+"""SSH の config および authorized_keys を生成・更新する。
 
-- ~/.ssh/config: conf.d/*.conf + localconfig を結合して上書き生成
+- ~/.ssh/config: conf.d/*.conf + localconfig を結合して上書き生成する
 - ~/.ssh/authorized_keys: conf.d/authorized_keys + local_authorized_keys から
-  既存にない鍵のみ追加（既存の鍵は削除しない）
+  既存にない鍵のみ追加する (既存の鍵は削除しない)
 """
 
 import logging

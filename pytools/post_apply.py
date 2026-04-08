@@ -1,12 +1,12 @@
 """`chezmoi apply` 後の後処理を一本化するエントリポイント。
 
-`chezmoi apply` 完了後に毎回 1 度だけ呼ばれ、以下を順に実行する。
-各ステップは独立して動き、途中でエラーが出ても他のステップは継続する
-(最後にサマリで失敗件数を出し、失敗があれば exit 1)。
+`chezmoi apply` 完了後に毎回 1 回だけ呼ばれ、以下を順に実行する。
+各ステップは独立して動作し、途中でエラーが発生しても他のステップは継続する
+(最後にサマリで失敗件数を出力し、失敗があれば exit 1)。
 
 1. Claude 設定ファイルのマージ  (_update_claude_settings.run)
 2. SSH config / authorized_keys  (update_ssh_config.run)
-3. 配布元から消えた旧ファイルの掃除 (_cleanup_paths.cleanup_paths)
+3. 配布元から削除された旧ファイルの削除 (_cleanup_paths.cleanup_paths)
 4. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
 5. mise セットアップ (_setup_mise.run)
 6. Claude Code plugin の自動インストール (_install_claude_plugins.run)
@@ -33,9 +33,9 @@ from pytools import (
 
 logger = logging.getLogger(__name__)
 
-# 配布元 (dotfiles) から削除されたため destination 側から除去したいパス一覧。
-# chezmoi は配布元から消えたファイルを自動では削除しないため、本テーブルで追跡する。
-# キーは掃除対象のベースディレクトリ、値はそれに対する相対パスのリスト。
+# 配布元 (dotfiles) から削除されたため destination 側から除去するパス一覧。
+# chezmoi は配布元から削除されたファイルを自動で削除しないため、本テーブルで追跡する。
+# キーは削除対象のベースディレクトリ、値はそれに対する相対パスのリスト。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
     Path.home() / ".claude": [
         # 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したもの
@@ -54,16 +54,16 @@ class _StepResult:
 
 def _main() -> None:
     """エントリポイント。各ステップを順に実行し、サマリ後に exit。"""
-    # 全ログ行に列 2 のインデントを付与する。
-    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位階層であることを
+    # 全ログ行に 2 列分のインデントを付与する。
+    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位出力であることを
     # 視覚的に示すため、post-apply 配下の出力はすべて 2 スペース下げる。
     logging.basicConfig(format="  %(message)s", level="INFO")
     results = run()
     failed = [r for r in results if not r.ok]
     updated = [r for r in results if r.ok and r.changed]
     skipped = [r for r in results if r.ok and not r.changed]
-    # サマリ前の空行は logger.info("") だと format により trailing whitespace が
-    # 入るため、stdout に直接書き込んでクリーンな空行を出す。
+    # サマリ前の空行は logger.info("") だと format により末尾空白が
+    # 付与されてしまうため、stdout に直接書き込んで整形された空行を出力する。
     print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
     if failed:
@@ -76,7 +76,7 @@ def run() -> list[_StepResult]:
     steps: list[tuple[str, Callable[[], bool]]] = [
         ("Claude 設定", _update_claude_settings.run),
         ("SSH config", update_ssh_config.run),
-        ("旧配布物の掃除", _cleanup_removed_paths),
+        ("旧配布物の削除", _cleanup_removed_paths),
         ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
         ("mise セットアップ", _setup_mise.run),
         ("Claude Code plugin のインストール", _install_claude_plugins.run),
@@ -96,7 +96,7 @@ def run() -> list[_StepResult]:
 
 
 def _cleanup_removed_paths() -> bool:
-    """`_REMOVED_PATHS` に従って旧配布物を掃除する。
+    """`_REMOVED_PATHS` に従って旧配布物を削除する。
 
     Returns:
         いずれかのパスを実際に削除したかどうか。

@@ -5,7 +5,7 @@
 # パーミッションが644とかになるようにする
 umask 022
 
-# VSCodeが最近Remote SSHでc:\Users\...;みたいなのを入れてしまい壊れるので暫定対処。雑に;を:に置換して無害化
+# VSCode が最近 Remote SSH で `c:\Users\...;` のような値を PATH に混入させる事象への暫定対処。単純に ; を : に置換して無害化する。
 export PATH=${PATH//;/:}
 
 # 環境変数(非interactiveでも)

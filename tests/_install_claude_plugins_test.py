@@ -229,7 +229,7 @@ class TestExtractPluginVersionMap:
             ([{"id": "a@x"}], {"a": ""}),
             # 旧来形式: list[dict] で `name` フィールド
             ([{"name": "a", "version": "1.0"}, {"name": "b"}], {"a": "1.0", "b": ""}),
-            # `id` と `name` が混在しても両方拾う
+            # `id` と `name` が混在しても両方取得する
             ([{"id": "a@x", "version": "1"}, {"name": "b", "version": "2"}], {"a": "1", "b": "2"}),
             # `id` に `@` がない場合はそのまま返す
             ([{"id": "plain", "version": "0"}], {"plain": "0"}),

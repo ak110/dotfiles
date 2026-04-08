@@ -25,10 +25,10 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
    - Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため対象外。
    - LF/CRLF の改行チェックは `edit-guardrails` プラグインが担当する。
 3. `CLAUDE.local.md` 言及検出 (warn / 非ブロック)
-   - `CLAUDE.local.md` はリポジトリ管理外のローカルメモであり、
+   - `CLAUDE.local.md` はリポジトリ管理外のローカルファイルであり、
      他のリポジトリ管理ファイルからの参照は厳禁
-   - コミット前に人間の目で気づければ十分なので完全ブロックはせず警告に留める
-   - ただし `file_path` 自体が `CLAUDE.local.md` の場合は正当な編集として通す
+   - コミット前に人間の目で気づく機会が残るため、完全ブロックはせず警告にとどめる
+   - ただし `file_path` 自体が `CLAUDE.local.md` の場合は正当な編集として許可する
 
 検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
 `old_string` は既存内容の修正・削除を妨げないため検査しない。
@@ -38,7 +38,7 @@ exit code 契約:
 - exit 0: 通過 (違反なし / スキップ対象ツール / 想定外入力 / warn のみ)
 - exit 2: block 違反検出 (stderr に理由を出力)
 
-予期せぬ例外は 0 にフォールバックする (フックが壊れて編集不能になる事故を避けるため)。
+予期せぬ例外は 0 にフォールバックする (フックが破損して編集できなくなる事故を避けるため)。
 """
 
 import json
@@ -55,7 +55,7 @@ def _main() -> int:
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
-        # 想定外入力ではフックを無効化 (実処理を壊さない安全側)
+        # 想定外入力ではフックを無効化 (実処理の破損を避ける安全側の判定)
         return 0
 
     tool_name = payload.get("tool_name", "")
@@ -142,8 +142,8 @@ def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
         # (resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定)
         if not target.is_absolute():
             return False
-        # `.` / `..`・シンボリックリンクを解消して字句比較のすり抜けを防ぐ。
-        # strict=False で存在しないパスでも例外を投げない。
+        # `.` / `..`・シンボリックリンクを解消して字句比較の迂回を防ぐ。
+        # strict=False で存在しないパスでも例外を送出しない。
         target = target.resolve(strict=False)
         home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
     except (ValueError, OSError):
@@ -254,7 +254,7 @@ def _is_claude_local_md(file_path: str) -> bool:
 if __name__ == "__main__":
     try:
         sys.exit(_main())
-    except Exception:  # noqa: BLE001 -- フックが壊れて編集不能になる事故を避けるため広く捕捉
+    except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
         # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出す
         traceback.print_exc()
         sys.exit(0)
