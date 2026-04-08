@@ -6,8 +6,7 @@ paths:
 
 # Markdown記述スタイル
 
-- `**`は強調したい箇所のみとし、箇条書きの見出しなどでの使用は禁止
-  - NG例: `1. **xx機能**: xxをyyする`
+- `**`は強調したい箇所のみとし、箇条書きの見出しなどでの使用は禁止する
 - できるだけmarkdownlintが通るように書く
   - 特に注意するルール:
     - MD022 - Headings should be surrounded by blank lines

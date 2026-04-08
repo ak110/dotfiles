@@ -6,13 +6,8 @@
     "allow": [
       "Bash",
       "Edit",
-      "Glob",
-      "Grep",
       "NotebookEdit",
       "Read",
-      "TaskCreate",
-      "TaskUpdate",
-      "TodoWrite",
       "WebFetch",
       "WebSearch",
       "Write",

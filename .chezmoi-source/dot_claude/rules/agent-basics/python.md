@@ -47,7 +47,7 @@ paths:
   - pre-commitフック: `pre-commit`（コミット時の自動チェック）
   - リンター/フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
     - 詳細: <https://ak110.github.io/pyfltr/llms-full.txt>
-- 新しい Python バージョンの機能を積極的に使う (LLMの知識は古く、古い書き方で量産しがちなため明記する)
+- 新しい Python バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が多く書かれる傾向があるため明記する)
   - Python 3.12+: PEP 695 型パラメータ構文 (`def f[T](x: T) -> T:` / `type Alias[T] = list[T]`) を使う
     (`TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため)
   - Python 3.12+: PEP 701 の f-string 拡張を活用する

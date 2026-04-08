@@ -50,7 +50,7 @@ paths:
   - ビルド: `dotnet` CLI
   - フォーマッター: `dotnet format`
   - アナライザー: Roslyn アナライザー + `Microsoft.CodeAnalysis.NetAnalyzers` (`.editorconfig` で設定)
-- 新しい C# / .NET バージョンの機能を積極的に使う (LLMの知識は古く、古い書き方で量産しがちなため明記する)
+- 新しい C# / .NET バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が多く書かれる傾向があるため明記する)
   - C# 12+: collection expressions (`[1, 2, 3]` / `[..existing, x]`) で配列・リスト・Span を簡潔に初期化する
     (コンテキストに応じて最適な型が選ばれ、中間コレクションの割り当ても削減される)
   - C# 12+: primary constructors を非 record のクラス/構造体でも使う

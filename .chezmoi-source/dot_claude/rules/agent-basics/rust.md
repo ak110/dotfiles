@@ -55,9 +55,9 @@ paths:
   - 統合テストはクレートルート直下の `tests/` に置く (詳細は `rust-test.md`)
   - アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使い、浮動小数点は `approx` クレート等で許容誤差付き比較
   - 非同期テストは `#[tokio::test]` を使う
-  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う (sleep ループは flaky の温床)
+  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う (sleep ループは flaky テストの主要因となるため)
   - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` で compile-time に行う (Rust 1.79+)。実行時テストにはしない
-- 新しい Rust バージョンの機能を積極的に使う (LLMの知識は古く、古い書き方で量産しがちなため明記する)
+- 新しい Rust バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が多く書かれる傾向があるため明記する)
   - Rust 1.77+: C 文字列リテラル (`c"..."`) で `&'static CStr` を直接生成する
     (FFI で nul 終端 C 文字列を安全・効率的に渡せるため)
   - Rust 1.77+: `std::mem::offset_of!` マクロで `#[repr(C)]` 構造体のフィールドオフセットを取得する
