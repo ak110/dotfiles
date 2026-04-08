@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-06T08:49:00.543432183Z"
-exclude-newer-span = "P1D"
+exclude-newer = "2026-04-08T20:02:17.40609625Z"
+exclude-newer-span = "PT0S"
 
 [[package]]
 name = "annotated-types"
@@ -736,7 +736,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.15.2"
+version = "1.16.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
@@ -758,9 +758,9 @@ dependencies = [
     { name = "textual" },
     { name = "ty" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/8e/59780ba6032bf662800dbca139d198cde484433863b34087e256004421e3/pyfltr-1.15.2.tar.gz", hash = "sha256:9e1c7b4af4c6f181827a321e37002d70813bb901f117962dae3f2cc45a530fd9", size = 110386, upload-time = "2026-03-31T12:07:10.501Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/06/5f2f0f96c00d9ffe16118f68b5109e937fc097b5fd6690aeed8a56c7e278/pyfltr-1.16.1.tar.gz", hash = "sha256:0d1487f2e79be33a12c1db2992f2e9765b4fdad021305ae7b4effdc5b4a6edde", size = 115573, upload-time = "2026-04-08T19:45:42.463Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/3b/a3e822fdd2b2d08e1dd5b6e257465ff0e314f92ede5fe754e9f128170cdb/pyfltr-1.15.2-py3-none-any.whl", hash = "sha256:1ae01b4d1e7afeef20e6ac339587112b2f6203615d85b8b8a832a641e43487b7", size = 20620, upload-time = "2026-03-31T12:07:09.56Z" },
+    { url = "https://files.pythonhosted.org/packages/46/6d/c074b893c8d25f5070cf0bc4b8e014551d0553d38cc7e23193229a344e8c/pyfltr-1.16.1-py3-none-any.whl", hash = "sha256:c2b4b86bdebc5e42131f5a6aaf5896703631e1c2562cf7f7bb09aface0be6998", size = 22801, upload-time = "2026-04-08T19:45:41.51Z" },
 ]
 
 [[package]]
@@ -971,7 +971,7 @@ provides-extras = ["repack-png"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pyfltr", specifier = ">=1.15.1" },
+    { name = "pyfltr", specifier = ">=1.16.1" },
 ]
 
 [[package]]

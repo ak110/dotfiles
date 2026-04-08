@@ -86,11 +86,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - name: サプライチェーン保護設定を ~/.npmrc に配置
-        # pnpm dlx は一時ディレクトリへ cwd を切り替えるためリポジトリ配下の .npmrc では効かず、
-        # ランナーのユーザー設定として ~/.npmrc を作成する必要がある。
-        # 将来的に pyfltr 側で textlint 実行前に同等の設定を注入する対策が入る予定。
-        run: echo "minimum-release-age=1440" > ~/.npmrc
       - run: uv sync --all-groups
       - run: uv run pyfltr .
       - run: uv cache prune --ci
