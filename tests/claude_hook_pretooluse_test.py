@@ -1,6 +1,6 @@
 """scripts/claude_hook_pretooluse.py のテスト。
 
-dotfiles 個人環境専用の PreToolUse フック (警告のみ・非ブロック) のテスト。
+dotfiles 個人環境専用の PreToolUse フックのテスト。
 mojibake / PS1 EOL は plugin 側 (plugins/edit-guardrails) に移管済み。
 独立スクリプトなので subprocess で起動し exit code と stderr を検証する。
 """
@@ -11,6 +11,8 @@ import subprocess
 import sys
 
 import pytest
+
+_HOME = pathlib.Path.home()
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook_pretooluse.py"
 
@@ -28,6 +30,160 @@ def _run(payload: object) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+class TestHomeClaudeEditBlock:
+    """`~/.claude/` 配下の直接編集ブロック。"""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "settings.json",
+            "CLAUDE.md",
+            "rules/agent-basics/agent.md",
+            "agents/foo.md",
+            "skills/bar/SKILL.md",
+            "plugins/edit-guardrails/hooks/hooks.json",
+        ],
+    )
+    def test_blocked(self, rel: str):
+        target = str(_HOME / ".claude" / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 2
+        assert ".chezmoi-source/dot_claude/" in result.stderr
+
+    def test_edit_blocked(self):
+        target = str(_HOME / ".claude" / "settings.json")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
+            }
+        )
+        assert result.returncode == 2
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "plans/foo.md",  # plan mode が書き込む
+            "projects/session.jsonl",  # Claude Code セッション
+            "todos/todo.json",
+            "shell-snapshots/foo.sh",
+            "ide/cache.json",
+            "statsig/cache",
+            "settings.local.json",  # ローカル設定 (`.local.` を含む)
+            "CLAUDE.local.md",  # ローカル メモ
+            "rules/agent-basics/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
+        ],
+    )
+    def test_allowed(self, rel: str):
+        target = str(_HOME / ".claude" / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+
+    def test_outside_home_claude_allowed(self):
+        """`~/.claude/` 配下でなければ通す (例: `~/.claudette/foo` は別物)。"""
+        target = str(_HOME / ".claudette" / "foo")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+
+    def test_chezmoi_source_allowed(self):
+        """配布元の `.chezmoi-source/dot_claude/` 配下は通す。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "/tmp/proj/.chezmoi-source/dot_claude/CLAUDE.md",
+                    "content": "x",
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_relative_path_allowed(self):
+        """相対パスは判定不能なため通す (誤検出を避ける)。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": ".claude/settings.json", "content": "x"}})
+        assert result.returncode == 0
+
+
+class TestPs1DirectivesBlock:
+    """PowerShell スクリプトの必須ディレクティブ欠落ブロック。"""
+
+    _OK_HEADER = "Set-StrictMode -Version Latest\r\n$ErrorActionPreference = 'Stop'\r\n"
+
+    @pytest.mark.parametrize("file_path", ["a.ps1", "scripts/foo.ps1.tmpl", "C:/x/setup.ps1"])
+    def test_missing_both_blocks(self, file_path: str):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "Write-Host 'x'\r\n"}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+        assert "ErrorActionPreference" in result.stderr
+
+    def test_missing_only_strict_mode_blocks(self):
+        content = "$ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+
+    def test_missing_only_error_action_blocks(self):
+        content = "Set-StrictMode -Version Latest\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "ErrorActionPreference" in result.stderr
+
+    def test_both_present_at_top_allowed(self):
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": self._OK_HEADER + "Write-Host 'x'\r\n"}}
+        )
+        assert result.returncode == 0
+
+    def test_both_present_after_comment_block_allowed(self):
+        """先頭コメントブロックの後に書かれていても 50 行以内なら許可。"""
+        comments = "\r\n".join(f"# comment {i}" for i in range(20)) + "\r\n"
+        content = comments + self._OK_HEADER + "Write-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 0
+
+    def test_bom_prefixed_template_allowed(self):
+        """chezmoi テンプレートで使われる先頭 BOM は除去してから判定する。"""
+        content = "\ufeff" + self._OK_HEADER + "{{ .chezmoi.homeDir }}\r\n"
+        result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1.tmpl", "old_string": "x", "new_string": "y"}})
+        # Edit/MultiEdit は対象外なので無条件に通る
+        assert result.returncode == 0
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
+        assert result.returncode == 0
+
+    def test_directives_after_50_lines_blocks(self):
+        """先頭 50 行を超えた位置にしかディレクティブが無ければブロック。"""
+        padding = "\r\n".join(f"# pad {i}" for i in range(60)) + "\r\n"
+        content = padding + self._OK_HEADER
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+
+    def test_edit_skipped(self):
+        """Edit はファイル先頭を含まないことが多いため対象外として通す。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "a.ps1", "old_string": "Old", "new_string": "New"},
+            }
+        )
+        assert result.returncode == 0
+
+    def test_multiedit_skipped(self):
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "a.ps1",
+                    "edits": [{"old_string": "a", "new_string": "b"}],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_non_ps1_skipped(self):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.sh", "content": "echo hi\n"}})
+        assert result.returncode == 0
 
 
 class TestLocalMdReferenceWarning:
@@ -143,8 +299,10 @@ class TestGeneralBehavior:
         assert result.returncode == 0
 
     def test_ps1_lf_no_longer_blocks(self):
-        """PS1 EOL チェックは plugin 側に移管されたため dotfiles 側では通す。"""
-        result = _run(
-            {"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": "Set-StrictMode\nWrite-Host 'x'\n"}}
-        )
+        """PS1 EOL チェックは plugin 側に移管されたため dotfiles 側では通す。
+
+        新しい必須ディレクティブ チェックには引っかからないよう両ディレクティブを LF 改行で含めて検証する。
+        """
+        content = "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\nWrite-Host 'x'\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
