@@ -6,6 +6,7 @@ mojibake / PS1 EOL は plugin 側 (plugins/edit-guardrails) に移管済み。
 """
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -21,7 +22,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook
 _LOCAL_MD = "CLAUDE" + ".local.md"
 
 
-def _run(payload: object) -> subprocess.CompletedProcess[str]:
+def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload)
     return subprocess.run(
         [sys.executable, str(_SCRIPT)],
@@ -29,6 +30,7 @@ def _run(payload: object) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -104,6 +106,38 @@ class TestHomeClaudeEditBlock:
         """相対パスは判定不能なため通す (誤検出を避ける)。"""
         result = _run({"tool_name": "Write", "tool_input": {"file_path": ".claude/settings.json", "content": "x"}})
         assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "./.claude/settings.json",  # 冗長な `.` セグメント
+            "foo/../.claude/settings.json",  # `..` で戻る
+            ".claude/./rules/agent-basics/agent.md",  # 途中の `.`
+        ],
+    )
+    def test_blocked_with_non_canonical_segments(self, rel: str):
+        """非正規化パス (`./` や `../`) でも resolve 後にブロックされること (I-1)。"""
+        target = str(_HOME / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 2
+        assert ".chezmoi-source/dot_claude/" in result.stderr
+
+    def test_symlinked_home_claude_blocked(self, tmp_path: pathlib.Path):
+        """`~/.claude` がシンボリックリンクの場合でも resolve 後にブロックされること (I-1)。"""
+        real_claude = tmp_path / "real_claude"
+        real_claude.mkdir()
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        (fake_home / ".claude").symlink_to(real_claude)
+        # Claude Code が resolve 後の実体パスを渡してくるケースを想定。
+        target = str(real_claude / "settings.json")
+        env = {**os.environ, "HOME": str(fake_home)}
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}},
+            env=env,
+        )
+        assert result.returncode == 2
+        assert ".chezmoi-source/dot_claude/" in result.stderr
 
 
 class TestPs1DirectivesBlock:
@@ -183,6 +217,29 @@ class TestPs1DirectivesBlock:
 
     def test_non_ps1_skipped(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.sh", "content": "echo hi\n"}})
+        assert result.returncode == 0
+
+    def test_directive_in_comment_blocks(self):
+        """コメント行内に文字列だけ含まれる PS1 はブロックされること (I-2)。"""
+        content = "# TODO: add Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+        assert "ErrorActionPreference" in result.stderr
+
+    def test_indented_directive_blocks(self):
+        """行頭にインデントされたディレクティブはブロックされること (I-2)。
+
+        関数/条件ブロック内に書かれている可能性があり、スクリプト全体には効かないため。
+        """
+        content = "    " + self._OK_HEADER + "Write-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+
+    def test_directive_with_extra_spaces_allowed(self):
+        """`Set-StrictMode  -Version  Latest` のように空白が複数でも許可されること (`\\s+` パターン確認)。"""
+        content = "Set-StrictMode  -Version  Latest\r\n$ErrorActionPreference  =  'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
 
 

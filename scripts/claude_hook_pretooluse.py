@@ -43,6 +43,7 @@ exit code 契約:
 
 import json
 import pathlib
+import re
 import sys
 import traceback
 
@@ -137,12 +138,16 @@ def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
         return False
     try:
         target = pathlib.Path(file_path).expanduser()
+        # 相対パスでは ~/.claude 配下か判定できないためスキップする
+        # (resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定)
+        if not target.is_absolute():
+            return False
+        # `.` / `..`・シンボリックリンクを解消して字句比較のすり抜けを防ぐ。
+        # strict=False で存在しないパスでも例外を投げない。
+        target = target.resolve(strict=False)
+        home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
     except (ValueError, OSError):
         return False
-    # 相対パスでは ~/.claude 配下か判定できないためスキップする
-    if not target.is_absolute():
-        return False
-    home_claude = pathlib.Path.home() / ".claude"
     try:
         rel = target.relative_to(home_claude)
     except ValueError:
@@ -167,9 +172,17 @@ def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
 # --- PowerShell 必須ディレクティブ check (block) ---
 
 # 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
-_PS1_REQUIRED_DIRECTIVES: tuple[str, ...] = (
-    "Set-StrictMode -Version Latest",
-    "$ErrorActionPreference = 'Stop'",
+# 行頭厳格マッチ (インデント不可) にすることで「コメント内に文字列が含まれるだけ」や
+# 「関数/条件ブロック内に書かれている (= スクリプト全体には効かない)」ケースをブロックする。
+_PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
+        "Set-StrictMode -Version Latest",
+    ),
+    (
+        re.compile(r"^\$ErrorActionPreference\s*=\s*'Stop'", re.MULTILINE),
+        "$ErrorActionPreference = 'Stop'",
+    ),
 )
 
 # 検査する先頭行数 (コメントブロックを許容するため広めに取る)。
@@ -194,13 +207,13 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         # BOM (U+FEFF) は chezmoi テンプレートで使われることがあるため除去してから判定する
         normalized = value.lstrip("\ufeff")
         head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
-        missing = [d for d in _PS1_REQUIRED_DIRECTIVES if d not in head]
+        missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
             print(
                 f"[pretooluse] {tool_name}.{field}: PowerShell スクリプトに必須ディレクティブがありません: "
                 f"{', '.join(missing)}。Windows PowerShell 5.1 互換性確保のため "
                 f"`Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` を冒頭付近"
-                f"(先頭 {_PS1_DIRECTIVES_HEAD_LINES} 行以内)に記述してください。 対象: {file_path}",
+                f"(先頭 {_PS1_DIRECTIVES_HEAD_LINES} 行以内・行頭)に記述してください。 対象: {file_path}",
                 file=sys.stderr,
             )
             return True
