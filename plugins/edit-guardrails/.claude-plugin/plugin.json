@@ -1,7 +1,7 @@
 {
   "name": "edit-guardrails",
-  "version": "0.2.0",
-  "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks.",
+  "version": "0.3.0",
+  "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks. Also auto-allows redundant mkdir -p ~/.claude/plans on Bash to skip plan-mode confirmation.",
   "author": {
     "name": "aki",
     "url": "https://github.com/ak110"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/ak110/dotfiles",
   "repository": "https://github.com/ak110/dotfiles",
   "license": "MIT",
-  "keywords": ["hooks", "pretooluse", "guardrails", "safety"]
+  "keywords": ["hooks", "pretooluse", "guardrails", "safety", "bash"]
 }

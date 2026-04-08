@@ -10,10 +10,10 @@
     {
       "name": "edit-guardrails",
       "source": "./plugins/edit-guardrails",
-      "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks.",
-      "version": "0.2.0",
+      "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks. Also auto-allows redundant mkdir -p ~/.claude/plans on Bash to skip plan-mode confirmation.",
+      "version": "0.3.0",
       "category": "safety",
-      "keywords": ["hooks", "pretooluse", "guardrails", "safety"]
+      "keywords": ["hooks", "pretooluse", "guardrails", "safety", "bash"]
     }
   ]
 }

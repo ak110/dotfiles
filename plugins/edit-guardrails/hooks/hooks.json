@@ -1,9 +1,9 @@
 {
-  "description": "PreToolUse guardrails for Write/Edit/MultiEdit (mojibake + PS1 EOL).",
+  "description": "PreToolUse guardrails for Write/Edit/MultiEdit (mojibake + PS1 EOL + lockfile/secret edits) and auto-allow for redundant ~/.claude/plans mkdir.",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit",
+        "matcher": "Write|Edit|MultiEdit|Bash",
         "hooks": [
           {
             "type": "command",

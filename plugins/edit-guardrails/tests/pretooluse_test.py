@@ -1,10 +1,11 @@
 """plugins/edit-guardrails/scripts/pretooluse.py のテスト。
 
-PreToolUse 統合フック (mojibake / ps1 EOL) のテスト。
-独立スクリプトなので subprocess で起動し exit code と stderr を検証する。
+PreToolUse 統合フック (mojibake / ps1 EOL / Bash mkdir auto-allow 等) のテスト。
+独立スクリプトなので subprocess で起動し exit code・stderr・stdout を検証する。
 """
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -16,14 +17,18 @@ _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "marketplace.json"
 
 
-def _run(payload: object) -> subprocess.CompletedProcess[str]:
+def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload)
+    env = os.environ.copy()
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, str(_SCRIPT)],
         input=text,
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -278,6 +283,104 @@ class TestGeneralBehavior:
         """不正 JSON はフックを無効化 (安全側)。"""
         result = _run("this is not json")
         assert result.returncode == 0
+
+
+class TestBashPlansMkdirAutoAllow:
+    """Bash `mkdir -p ~/.claude/plans` の自動許可 check (allow)。
+
+    許可時は stdout に `hookSpecificOutput.permissionDecision = "allow"` を
+    含む JSON を出力する。許可対象外は stdout 空のまま exit 0 を返す
+    (= フック介入なしで通常の許可判定に戻る)。
+
+    テストでは HOME 環境変数を `tmp_path` に差し替えることでプラグイン配布先の
+    ホーム環境を擬似再現し、plans ディレクトリの存在有無による挙動を検証する。
+    """
+
+    @pytest.fixture(name="fake_home")
+    def _fake_home(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        """HOME を tmp_path に差し替えたフック実行 env を返す fixture。
+
+        ~/.claude ディレクトリは作成するが、plans はサブテストで個別に作る。
+        """
+        (tmp_path / ".claude").mkdir()
+        return {"HOME": str(tmp_path)}
+
+    def _invoke(self, command: str, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        return _run({"tool_name": "Bash", "tool_input": {"command": command}}, env_overrides=env_overrides)
+
+    def _has_allow_decision(self, result: subprocess.CompletedProcess[str]) -> bool:
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        hook_output = data.get("hookSpecificOutput") or {}
+        return hook_output.get("permissionDecision") == "allow"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "mkdir -p ~/.claude/plans",
+            "mkdir --parents ~/.claude/plans",
+            "/usr/bin/mkdir -p ~/.claude/plans",
+        ],
+    )
+    def test_allowed_when_plans_dir_exists(self, fake_home: dict[str, str], tmp_path: pathlib.Path, command: str):
+        """plans ディレクトリが存在する場合の冗長 mkdir は自動許可される。"""
+        (tmp_path / ".claude" / "plans").mkdir()
+        result = self._invoke(command, fake_home)
+        assert result.returncode == 0, result.stderr
+        assert self._has_allow_decision(result), f"allow 判定が出ていない: stdout={result.stdout!r}"
+
+    def test_allowed_with_absolute_home_path(self, fake_home: dict[str, str], tmp_path: pathlib.Path):
+        """絶対パス形式 (tilde 展開後と等価) でも許可される。"""
+        (tmp_path / ".claude" / "plans").mkdir()
+        absolute = str(tmp_path / ".claude" / "plans")
+        result = self._invoke(f"mkdir -p {absolute}", fake_home)
+        assert result.returncode == 0
+        assert self._has_allow_decision(result)
+
+    def test_not_allowed_when_plans_dir_missing(self, fake_home: dict[str, str]):
+        """plans ディレクトリが存在しない場合は許可しない (配布先新規環境の安全性保証)。"""
+        result = self._invoke("mkdir -p ~/.claude/plans", fake_home)
+        assert result.returncode == 0
+        assert not self._has_allow_decision(result), f"plans 未作成でも自動許可してしまった: stdout={result.stdout!r}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # 別パス
+            "mkdir -p /tmp/foo",
+            "mkdir -p ~/.claude/plans/sub",
+            "mkdir -p ~/.claude",
+            # 合成・危険
+            "mkdir -p ~/.claude/plans && rm -rf /",
+            "mkdir -p $(echo ~/.claude/plans)",
+            "mkdir -p ~/.claude/plans; ls",
+            "mkdir -p ~/.claude/plans | cat",
+            "mkdir -p `pwd`",
+            # 形式違反
+            "mkdir ~/.claude/plans",
+            "mkdir -pv ~/.claude/plans",
+            "mkdir -p ~/.claude/plans /tmp/foo",
+            "mkdir -p",
+        ],
+    )
+    def test_not_allowed_patterns(self, fake_home: dict[str, str], tmp_path: pathlib.Path, command: str):
+        """パス違反・合成コマンド・形式違反は全て許可されない。"""
+        (tmp_path / ".claude" / "plans").mkdir()
+        result = self._invoke(command, fake_home)
+        assert result.returncode == 0
+        assert not self._has_allow_decision(result), (
+            f"本来許可されないコマンドが通過した: command={command!r} stdout={result.stdout!r}"
+        )
+
+    def test_unrelated_bash_command_untouched(self, fake_home: dict[str, str]):
+        """mkdir 以外の Bash コマンドはフック介入なしで通す (stdout 空)。"""
+        result = self._invoke("echo hello", fake_home)
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 class TestManifestSsot:
