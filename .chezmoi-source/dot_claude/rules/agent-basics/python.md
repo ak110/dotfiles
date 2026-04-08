@@ -47,14 +47,14 @@ paths:
   - pre-commitフック: `pre-commit`（コミット時の自動チェック）
   - リンター/フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
     - 詳細: <https://ak110.github.io/pyfltr/llms-full.txt>
-- 新しい Python バージョンの機能を積極的に使う (LLM の知識は古く、古い書き方が出現する傾向があるため明記する)
+- 新しい Python バージョンの機能を積極的に使う
   - Python 3.12+: PEP 695 型パラメータ構文 (`def f[T](x: T) -> T:` / `type Alias[T] = list[T]`) を使う
-    (`TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため)
+    - `TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため
   - Python 3.12+: PEP 701 の f-string 拡張を活用する
-    (複数行・ネストクォート・バックスラッシュが使えるようになり可読性が上がる)
+    - 複数行・ネストクォート・バックスラッシュが使えるようになり可読性が上がる
   - Python 3.13+: `typing.TypedDict` の `ReadOnly[...]` で不変フィールドを型レベルで表現する
   - Python 3.13+: `copy.replace(obj, field=value)` で変更コピーを生成する
-    (対応対象は `dataclass` / `namedtuple` / `__replace__()` 定義クラスに限定される点に注意)
+    - 対応対象は `dataclass` / `namedtuple` / `__replace__()` 定義クラスのみに限定される
   - Python 3.14+: PEP 750 テンプレート文字列 (`t"..."`) は構造を保持した `Template` を返す
-    (f-string と異なり生成済み文字列ではないため、対応レンダラと組み合わせた SQL / HTML 生成に使う。
-    `t"..."` 自体が注入対策になるわけではなく、安全性は後段のレンダラ/API 側に依存する)
+    - f-string と異なり生成済み文字列ではないため、対応レンダラと組み合わせた SQL / HTML 生成で使う
+    - `t"..."` 自体は注入対策にならない。安全性は後段のレンダラや API 側に依存する

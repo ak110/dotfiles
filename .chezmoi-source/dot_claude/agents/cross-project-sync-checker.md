@@ -1,6 +1,6 @@
 ---
 name: cross-project-sync-checker
-description: 複数の関連プロジェクト間でツールチェイン (Makefile, pyproject.toml, package.json, CI ワークフロー, docs/development.md 等) が揃っているか確認し、最近加えた変更を他プロジェクトに適用すべきかを判定する。呼び出し時に「変更内容の要約」と「チェック対象プロジェクトの絶対パス一覧」を必ず与えること。一覧が得られない場合はこのエージェントを呼び出さない
+description: 複数の関連プロジェクト間でツールチェイン (Makefile, pyproject.toml, package.json, CI ワークフロー等) が揃っているか確認し、最近の変更を他プロジェクトに適用すべきか判定する。呼び出し時に「変更内容の要約」と「チェック対象プロジェクトの絶対パス一覧」を必ず与えること。一覧が得られない場合は呼び出さない
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -16,7 +16,8 @@ tools: Read, Grep, Glob, Bash
 
 呼び出し側 (メイン Claude) は以下を必ず引数・プロンプトに含める。いずれかが欠けている場合は本エージェントを呼び出さないこと。
 
-1. 変更内容の要約 — 何のファイルにどんな種類の変更を加えたか (例: 「Makefile に `format` ターゲットを追加」「pyproject.toml の ruff 設定を変更」「docs/development.md にセクションを追記」)
+1. 変更内容の要約 — 何のファイルにどんな種類の変更を加えたか。
+   例: 「Makefile に `format` ターゲットを追加」「pyproject.toml の ruff 設定を変更」
 2. チェック対象プロジェクトの絶対パス一覧 — 調べるべきリポジトリのルート ディレクトリ
 
 呼び出し側がこの情報を持たない場合、このエージェントは判定できない。その場合は呼び出さずに終了する。
@@ -28,7 +29,7 @@ tools: Read, Grep, Glob, Bash
 同期を確認する対象は「ツールチェインやドキュメント構成」の範囲。以下の典型パスに変更が及ぶ場合のみ本エージェントを使う。
 
 | カテゴリ | 典型パス |
-|---|---|
+| --- | --- |
 | ビルド/タスク | `Makefile`, `justfile`, `Taskfile.yml` |
 | Python 設定 | `pyproject.toml`, `uv.lock`, `requirements*.txt`, `.python-version` |
 | Node.js 設定 | `package.json`, `pnpm-lock.yaml`, `package-lock.json`, `.nvmrc`, `.node-version` |
@@ -50,7 +51,7 @@ tools: Read, Grep, Glob, Bash
    - 同期済み: 既に同じ変更が入っている
    - 同期要: 同じ変更を入れるべき (理由と具体的な差分を示す)
    - 対象外: そのプロジェクトには該当する設定/仕組みがない
-   - 判断不能: 情報が足りず判断できない (何が足りないかを明示)
+   - 判断不能: 情報不足で判断できない (何の情報が足りないかを明示)
 
 ## 出力フォーマット
 

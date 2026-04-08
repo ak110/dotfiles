@@ -12,7 +12,8 @@ paths:
 - アサーションは `Assert.Equal` / `Assert.True` など標準 API を使う
   - より読みやすい記述が必要な場合は `FluentAssertions` を検討する
 - 非同期テストは `async Task` を返す。`async void` は使わない (例外が捕捉できない)
-- 非同期処理の完了待ちには `ManualResetEventSlim` / `CountdownEvent` / `TaskCompletionSource` などのイベント駆動同期を使う。`Thread.Sleep` / `Task.Delay` の固定待機は避ける
+- 非同期処理の完了待ちは `ManualResetEventSlim` / `CountdownEvent` / `TaskCompletionSource` 等のイベント駆動同期を使う
+  - `Thread.Sleep` / `Task.Delay` による固定待機は避ける
 - セットアップ/ティアダウン
   - コンストラクタ = 各テスト前、`IDisposable.Dispose` = 各テスト後
   - クラス単位の共有は `IClassFixture<T>`、コレクション単位は `ICollectionFixture<T>` を使う
