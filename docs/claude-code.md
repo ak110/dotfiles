@@ -4,7 +4,7 @@
 配布するものは以下の2系統。
 
 - ルール (`.chezmoi-source/dot_claude/rules/agent-basics/` 配下) — 全プロジェクトで読み込ませるコーディング規約・運用方針
-- プラグイン (`plugins/` 配下) — 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する。
+- プラグイン (`plugins/` 配下) — 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する
 
 このドキュメントにはdotfiles管理側の情報 （配布方式・配布元・他プロジェクトへの組み込み方） のみ記述している。
 配布されるルールやプラグインの内容については [docs/claude-code-concept.md](claude-code-concept.md) を参照。
@@ -19,7 +19,7 @@
 更新: `update-dotfiles` (または `chezmoi apply`) で最新化される。
 
 `edit-guardrails` プラグインも個人環境では `chezmoi apply` 後処理で自動インストールされる。
-(`claude` と `uv` がPATHにあり未導入の場合のみ動作する。実装は `pytools/_install_claude_plugins.py`。)
+(`claude` と `uv` がPATHにあり未導入の場合のみ動作する。実装は `pytools/_install_claude_plugins.py`)
 
 ### 他人に配布: `install-claude.sh` / `install-claude.ps1`
 
@@ -29,7 +29,7 @@ dotfiles全体を入れずに `~/.claude/rules/agent-basics/` だけを配置で
 想定用途はチームプロジェクトのセットアップ手順への組み込み。
 再実行時は既存ファイルのfrontmatterを維持したままbodyのみ更新されるため、利用者によるカスタマイズは保持される。
 差分が発生した場合のバックアップは `~/.claude/rules-backup/agent-basics-<timestamp>/` に作成される。
-(Claude Codeが `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、退避ファイルが読まれないよう `rules/` の外に逃がしている。)
+（Claude Codeが `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、退避ファイルが読まれないよう `rules/` の外に逃がしている）
 
 #### プロジェクトのセットアップ手順への記述例
 

@@ -36,14 +36,14 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 - 改行はCRLF — `.gitattributes` で `*.ps1.tmpl` を `eol=crlf` 指定済み。PowerShell 5.1はLF改行のみだと構文解析に失敗する
   - Claude CodeのWriteツールは常にLFで書き込むため、エディター保存後にgit側でCRLFに正規化される前提
   - このフックの `claude_hook_check_ps1_eol` がLFのみのペイロード書き込みを検出してブロックする
-- ファイル先頭で厳格モード — 全スクリプト冒頭に以下の2行を記述する。
+- ファイル先頭で厳格モード — 全スクリプト冒頭に以下の2行を記述する
 
   ```powershell
   Set-StrictMode -Version Latest
   $ErrorActionPreference = 'Stop'
   ```
 
-- UTF-8の明示 — ファイル入出力では必ずエンコーディングを指定する。既定のShift-JISでは日本語が正しく扱えない。
+- UTF-8の明示 — ファイル入出力では必ずエンコーディングを指定する。既定のShift-JISでは日本語が正しく扱えない
 
   ```powershell
   Get-Content -Encoding UTF8 $path
@@ -51,7 +51,7 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
   ```
 
   加えて、BOMなしUTF-8で書き出す場合は `System.Text.UTF8Encoding` のインスタンスを使う。
-  既存 `install-claude.ps1` の `$script:utf8NoBom` を参照。
+  既存 `install-claude.ps1` の `$script:utf8NoBom` を参照
 
 - パス区切り — ハードコードを避け、`Join-Path` や `[IO.Path]::Combine` を使う
 

@@ -17,7 +17,7 @@ paths:
 ## Fixture のコーディングルール
 
 - 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
-- scope: 可能な限り広いスコープ（session > package > module > function）
+- scope: 可能な限り広いスコープ（session → package → module → function）
 - autouse: モジュール単位は積極的に使用、package/session単位は副作用に注意
 - 型ヒント: 必須、複数値返す場合は型エイリアスを定義
 

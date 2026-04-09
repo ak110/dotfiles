@@ -49,7 +49,7 @@ paths:
 
 ## 追加手順
 
-1. 原本ファイルを作成する — `.chezmoi-source/dot_claude/rules/agent-basics/<new-rule>.md` を追加する。frontmatterは上記に従う。
+1. 原本ファイルを作成する — `.chezmoi-source/dot_claude/rules/agent-basics/<new-rule>.md` を追加する。frontmatterは上記に従う
 
 2. `pytools/claudize.py` を更新する — 以下のどちらかに追加する。
 
@@ -63,9 +63,9 @@ paths:
    ]
    ```
 
-3. `install-claude.sh` の `FILES` 配列に追加する — コメント (`pytools/claudize.py の ... と一致させること`) は保持する。
+3. `install-claude.sh` の `FILES` 配列に追加する — コメント (`pytools/claudize.py の ... と一致させること`) は保持する
 
-4. `install-claude.ps1` の `$files` 配列に追加する — シングル クォート + カンマで囲む文字列リテラル。末尾要素のカンマの有無に注意する。
+4. `install-claude.ps1` の `$files` 配列に追加する — シングル クォート + カンマで囲む文字列リテラル。末尾要素のカンマの有無に注意する
 
 5. 検証する。
 
@@ -76,7 +76,7 @@ paths:
    claudize --help
    ```
 
-6. 動作確認する （任意だが推奨） — 本家dotfiles以外の作業ツリーで `claudize` を実行してルールが配布されることを確認する。
+6. 動作確認する （任意だが推奨） — 本家dotfiles以外の作業ツリーで `claudize` を実行してルールが配布されることを確認する
 
 ## 削除手順
 

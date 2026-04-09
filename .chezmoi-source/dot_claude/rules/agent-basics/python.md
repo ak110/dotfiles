@@ -10,7 +10,7 @@ paths:
   - `import xxx as yyy` の別名は`np`などの一般的なものを除き極力使用しない （可読性を損なうため）
   - 可能な限りトップレベルでimportする （循環参照や初期化順による問題を避ける場合に限りブロック内も可）
 - タイプヒントは可能な限り書く （静的解析・IDE補完・リファクタリング耐性を確保するため）
-  - `typing.List`ではなく`list`を使用する。`dict`やその他も同様。
+  - `typing.List`ではなく`list`を使用する。`dict`やその他も同様
   - `typing.Optional`ではなく`| None`を使用する
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使用する
 - docstringはGoogle Style
