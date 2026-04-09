@@ -19,13 +19,27 @@ fail=0
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
+# pre-commit はリポジトリルートから呼び出される前提。
+# .chezmoiroot を読み取り、working-tree と source を明示指定することで
+# chezmoi のデフォルト source (~/.local/share/chezmoi) に依存しない検証を行う
+# (CI など chezmoi init 未実施の環境でも動作させるため)。
+working_tree="$(pwd)"
+if [ -f "$working_tree/.chezmoiroot" ]; then
+    source_dir="$working_tree/$(cat "$working_tree/.chezmoiroot")"
+else
+    source_dir="$working_tree"
+fi
+
 for file in "$@"; do
     base=$(basename "$file")
     rendered="$tmpdir/$base.rendered"
     errfile="$tmpdir/err"
 
     # Step 1: chezmoi template 構文チェック + 展開
-    if ! chezmoi execute-template --init <"$file" >"$rendered" 2>"$errfile"; then
+    if ! chezmoi execute-template --init \
+        --source "$source_dir" \
+        --working-tree "$working_tree" \
+        <"$file" >"$rendered" 2>"$errfile"; then
         echo "FAIL [chezmoi template]: $file" >&2
         cat "$errfile" >&2
         fail=1

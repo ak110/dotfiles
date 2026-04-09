@@ -63,19 +63,25 @@ repos:
     hooks:
       - id: check-cmd-encoding
         name: Check .cmd files CP932 encoding
-        entry: .chezmoi-source/bin/executable_check-cmd-encoding
+        entry: scripts/check-cmd-encoding
         language: script
         pass_filenames: false
         files: '\.cmd$'
       - id: check-templates
         name: chezmoi template check
-        entry: .chezmoi-source/bin/executable_check-templates
+        entry: scripts/check-templates
         language: script
         files: '\.(sh|ps1)\.tmpl$'
         pass_filenames: true
+      - id: require-ps1-bom
+        name: Require UTF-8 BOM on .ps1 files
+        entry: scripts/check-ps1-bom
+        language: script
+        files: '\.ps1(\.tmpl)?$'
+        pass_filenames: true
       - id: powershell-analyzer
         name: PSScriptAnalyzer
-        entry: .chezmoi-source/bin/executable_run-psscriptanalyzer
+        entry: scripts/run-psscriptanalyzer
         language: script
         files: '\.ps1$'
         exclude: '\.tmpl$'

@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # install-claude.ps1 - ~/.claude/rules/ に Claude Code 用の共通ルールファイルを配置する。
@@ -56,7 +56,7 @@ function Split-Frontmatter {
 }
 
 # URL からダウンロードして UTF-8 文字列として返す。CRLF は LF に正規化。
-function Download-String {
+function Get-RemoteString {
     param([string]$url)
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
@@ -87,7 +87,7 @@ function Write-TextLF {
 function Invoke-ProcessFile {
     param([string]$name)
     $dst = Join-Path $targetDir $name
-    $downloaded = Download-String "$baseUrl/$name"
+    $downloaded = Get-RemoteString "$baseUrl/$name"
 
     $newContent = $downloaded
     $existed = Test-Path -LiteralPath $dst -PathType Leaf

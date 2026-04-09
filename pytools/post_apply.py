@@ -42,6 +42,13 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
     ],
+    Path.home() / "bin": [
+        # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない
+        # 開発者向けツールのため scripts/ に移し、配布を停止したもの
+        Path("check-cmd-encoding"),
+        Path("check-templates"),
+        Path("run-psscriptanalyzer"),
+    ],
 }
 
 

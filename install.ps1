@@ -1,4 +1,4 @@
-# install.ps1 - dotfiles を初回インストールする (Windows PowerShell 向け)。
+﻿# install.ps1 - dotfiles を初回インストールする (Windows PowerShell 向け)。
 #
 # install.sh と同等の処理を行う:
 #   1. 前提条件 (git, uv) のチェック
