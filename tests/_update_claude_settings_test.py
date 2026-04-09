@@ -8,6 +8,9 @@ import pytest
 from pytools import _update_claude_settings as mod
 from pytools._update_claude_settings import update_claude_settings
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
+
 MANAGED_ALLOW = [
     "Bash",
     "Edit",
@@ -88,6 +91,22 @@ class TestUpdateClaudeSettings:
 
         # defaultMode が追加される
         assert result["permissions"]["defaultMode"] == "plan"
+
+    def test_env_merge_preserves_existing(self, tmp_path: Path):
+        """env は dict として再帰マージされ、既存キーを壊さない。"""
+        managed = {"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}
+        existing = {"env": {"FOO": "bar"}}
+        result = _run(tmp_path, managed, existing)
+        assert result["env"] == {"FOO": "bar", "CLAUDE_CODE_NO_FLICKER": "1"}
+
+
+class TestProductionManagedSettings:
+    """配布元の share/claude_settings_json_managed.json の内容を検証する。"""
+
+    def test_env_has_no_flicker(self):
+        """Claude Code のちらつき抑制フラグが env に設定されている。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert data["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
 
 class TestUpdateClaudeConfig:
