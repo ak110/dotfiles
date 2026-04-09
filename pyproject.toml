@@ -43,7 +43,21 @@ dev = [
 preset = "latest"
 pyright = true
 ty = true
-extend-exclude = ["*/profile_ipy/*"]
+extend-exclude = ["*/profile_ipy/*", "CLAUDE.local.md"]
+# textlint へ preset-jtf-style と prh を追加 (pnpx 経由でパッケージを解決する)
+textlint-args = [
+    "--package",
+    "textlint",
+    "--package",
+    "textlint-rule-preset-ja-technical-writing",
+    "--package",
+    "textlint-rule-preset-jtf-style",
+    "--package",
+    "textlint-rule-prh",
+    "textlint",
+    "--format",
+    "compact",
+]
 
 [tool.ruff]
 line-length = 128

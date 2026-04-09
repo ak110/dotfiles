@@ -1,0 +1,75 @@
+#!/bin/bash
+# chezmoi template (.sh.tmpl / .ps1.tmpl) の構文検証 + 展開後の言語別チェック。
+#
+# Step 1: chezmoi execute-template --init で template 構文エラーを検出し、展開する
+# Step 2: 展開結果を言語別にチェック
+#   - .sh.tmpl  → bash -n (必須) + shellcheck (WARN、導入済みの場合のみ)
+#   - .ps1.tmpl → pwsh の Parser (導入済みの場合のみ)
+#
+# 未定義変数はダミーに置換されるため、shellcheck / PSScriptAnalyzer の
+# 指摘は参考情報扱いにする。構文エラーのみを確実に検出することが目的。
+set -eu
+
+if ! command -v chezmoi >/dev/null 2>&1; then
+    echo "chezmoi not found, skipping template check" >&2
+    exit 0
+fi
+
+fail=0
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+for file in "$@"; do
+    base=$(basename "$file")
+    rendered="$tmpdir/$base.rendered"
+    errfile="$tmpdir/err"
+
+    # Step 1: chezmoi template 構文チェック + 展開
+    if ! chezmoi execute-template --init <"$file" >"$rendered" 2>"$errfile"; then
+        echo "FAIL [chezmoi template]: $file" >&2
+        cat "$errfile" >&2
+        fail=1
+        continue
+    fi
+
+    # Step 2: 展開後の言語別チェック
+    case "$file" in
+        *.sh.tmpl)
+            if ! bash -n "$rendered" 2>"$errfile"; then
+                echo "FAIL [bash -n]: $file" >&2
+                cat "$errfile" >&2
+                fail=1
+                continue
+            fi
+            if command -v shellcheck >/dev/null 2>&1; then
+                # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
+                if ! shellcheck -S error "$rendered" 2>"$errfile"; then
+                    echo "FAIL [shellcheck on rendered $file]:" >&2
+                    cat "$errfile" >&2
+                    fail=1
+                fi
+            fi
+            ;;
+        *.ps1.tmpl)
+            if command -v pwsh >/dev/null 2>&1; then
+                # pwsh の Parser で構文チェックのみを実施する
+                if ! pwsh -NoProfile -NonInteractive -Command "
+                    \$ErrorActionPreference = 'Stop'
+                    \$tokens = \$null
+                    \$errors = \$null
+                    [System.Management.Automation.Language.Parser]::ParseFile('$rendered', [ref]\$tokens, [ref]\$errors) | Out-Null
+                    if (\$errors) {
+                        \$errors | ForEach-Object { Write-Error \$_.Message }
+                        exit 1
+                    }
+                " 2>"$errfile"; then
+                    echo "FAIL [pwsh parse]: $file" >&2
+                    cat "$errfile" >&2
+                    fail=1
+                fi
+            fi
+            ;;
+    esac
+done
+
+exit $fail

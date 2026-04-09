@@ -2,21 +2,20 @@
 
 # Ctrl + Alt + Enterでフルスクリーン切り替え
 
-xfreerdp $* \
-  +fonts \
-  +wallpaper \
-  +aero \
-  +window-drag \
-  +clipboard \
-  -smart-sizing \
-  -sound \
-  +auto-reconnect \
-  /gfx-h264 \
-  +gfx-thin-client \
-  /f \
-  /u:aki \
-  /v:tqzh.tk:51883
-
+xfreerdp "$@" \
+    +fonts \
+    +wallpaper \
+    +aero \
+    +window-drag \
+    +clipboard \
+    -smart-sizing \
+    -sound \
+    +auto-reconnect \
+    /gfx-h264 \
+    +gfx-thin-client \
+    /f \
+    /u:aki \
+    /v:tqzh.tk:51883
 
 # /t:"-" \
 # /sound \

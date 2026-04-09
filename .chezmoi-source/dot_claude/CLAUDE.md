@@ -18,7 +18,7 @@
       --dangerously-bypass-approvals-and-sandbox \
       --cd "{project_directory}" \
       --output-last-message "{plan_full_path}.review.md" \
-      "{plan_full_path} このプランをレビューすること。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。" \
+      "{plan_full_path} このプランをレビューすること。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること。" \
       > "{plan_full_path}.codex.log" 2>&1 \
       && grep "^session id:" "{plan_full_path}.codex.log"
 
@@ -30,17 +30,17 @@
       --dangerously-bypass-approvals-and-sandbox \
       --output-last-message "{plan_full_path}.review.md" \
       {SESSION_ID} \
-      "{plan_full_path} プランを更新したのでレビューすること。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。"
+      "{plan_full_path} プランを更新したのでレビューすること。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること。"
     ```
 
 - レビュー結果は `{plan_full_path}.review.md` に出力されるので、Readツールで読み取ること。
-- レビュー指示の文章は適宜調整してよいが、「些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。」は必ず含めること。
+- レビュー指示の文章は適宜調整してよいが、「些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること。」は必ず含めること。
 - Windows環境での注意: codexはPowerShell経由でファイルを読み書きする際、デフォルトでShift-JISが使われて日本語が文字化けする。
   - codexへのプロンプトに「ファイルの読み書きはUTF-8エンコーディングを明示すること（例: `Get-Content -Encoding UTF8`）」と追記して対処すること。
-- codex の指摘がなくなるまで更新とレビューを繰り返すこと。
-- 一度 codex の指摘がなくなるまでレビューを実施した後に限り、その後にユーザーからの指摘で軽微な修正を加えただけの場合は再レビューを省略してよい。
+- codexの指摘がなくなるまで更新とレビューを繰り返すこと。
+- 一度codexの指摘がなくなるまでレビューを実施した後に限り、その後にユーザーからの指摘で軽微な修正を加えただけの場合は再レビューを省略してよい。
   - 計画の構造や方針に影響する変更を加えた場合は再レビューすること。
-- SESSION_ID は初回コマンド末尾の `grep "^session id:"` で stdout に抽出される `session id:` 行から取得する。(`{plan_full_path}.review.md` には含まれない)
-  - 抽出に失敗した場合や codex がエラー終了した場合は `{plan_full_path}.codex.log` を参照する。
+- SESSION_IDは初回コマンド末尾の `grep "^session id:"` でstdoutに抽出される `session id:` 行から取得する。（`{plan_full_path}.review.md` には含まれない）
+  - 抽出に失敗した場合やcodexがエラー終了した場合は `{plan_full_path}.codex.log` を参照する。
 - codexレビューは計画のレビューなので、plan modeの制約は無視して実行してよい。
 - 計画作成時は、codexレビューに備えて前提条件・ユーザーの意向などを十分に記述しておくこと。

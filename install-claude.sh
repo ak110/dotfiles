@@ -76,8 +76,8 @@ _process_file() {
 
     # 既存ファイルに frontmatter があれば維持して body のみ差し替え
     if [ -f "$dst" ] && _has_fm "$dst"; then
-        _extract_fm "$dst" > "$new"
-        _extract_body "$dl" >> "$new"
+        _extract_fm "$dst" >"$new"
+        _extract_body "$dl" >>"$new"
     else
         cp "$dl" "$new"
     fi

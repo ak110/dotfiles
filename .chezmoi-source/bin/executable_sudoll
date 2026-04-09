@@ -1,2 +1,2 @@
 #!/bin/bash -eu
-sudo ls -l --classify --group-directories-first $*
+sudo ls -l --classify --group-directories-first "$@"

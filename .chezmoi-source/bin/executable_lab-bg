@@ -1,2 +1,2 @@
 #!/bin/bash -eux
-~/dotfiles/bin/lab > /dev/null &
+~/dotfiles/bin/lab >/dev/null &

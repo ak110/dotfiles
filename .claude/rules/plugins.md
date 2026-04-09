@@ -7,7 +7,7 @@ paths:
 # Claude Code plugin 編集チェックリスト
 
 本リポジトリ配下の `plugins/` と `.claude-plugin/marketplace.json` を編集するときに確認する。
-バージョン更新・SSOT 同期・ドキュメント同期が別の場所に散らばっていて漏れやすいため、
+バージョン更新・SSOT同期・ドキュメント同期が別の場所に散らばっていて漏れやすいため、
 ここに集約している。
 
 ## なぜ必要か
@@ -17,12 +17,12 @@ paths:
 (同じバージョンでは `update` コマンドが「最新です」と返す。)
 過去に `edit-guardrails` で実害があったため、編集のたびにバージョン更新の要否を判定する。
 
-また、バージョン情報は SSOT 違反の状態で 2 ファイルに重複している。
+また、バージョン情報はSSOT違反の状態で2ファイルに重複している。
 片方だけ更新すると配布に失敗するため、必ず両方を同期する。
 
 ## SSOT の 2 ファイル
 
-プラグインごとに以下の 2 箇所で `version` / `description` を完全に同一文字列に保つ。
+プラグインごとに以下の2箇所で `version` / `description` を完全に同一文字列に保つ。
 
 - `plugins/<plugin-name>/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json` の `plugins[]` 内 `name == "<plugin-name>"` のエントリ
@@ -30,47 +30,47 @@ paths:
 整合性は各プラグインのテストで検査する。
 `edit-guardrails` の担当は `TestManifestSsot` で、`make test` で自動的に失敗する。
 (場所: `plugins/edit-guardrails/tests/pretooluse_test.py`)
-新しいプラグインを追加するときは同等の SSOT テストも追加する。
+新しいプラグインを追加するときは同等のSSOTテストも追加する。
 
 ## バージョン更新が必要な変更
 
 ユーザーに届く振る舞いが変わるもの。以下のいずれかに該当する場合は必ずバージョンを更新する。
 
-- プラグインの hook スクリプトや entry point のロジック変更
-- 新しい check / 機能の追加、既存 check の削除
-- `hooks/hooks.json` など設定ファイルの matcher / command 変更
-- 依存や実行環境要件の変更 (`requires-python` / script header の dependencies)
-- ブロック条件の緩和 (false positive 対策で allowlist を増やす等)
+- プラグインのhookスクリプトやentry pointのロジック変更
+- 新しいcheck / 機能の追加、既存checkの削除
+- `hooks/hooks.json` など設定ファイルのmatcher / command変更
+- 依存や実行環境要件の変更 (`requires-python` / script headerのdependencies)
+- ブロック条件の緩和 （false positive対策でallowlistを増やす等）
 
 ## バージョン更新が不要な変更
 
-- コメント・docstring のみの修正
-- `tests/` のみの追加・修正 (SSOT テスト自身の変更を含む)
+- コメント・docstringのみの修正
+- `tests/` のみの追加・修正 （SSOTテスト自身の変更を含む）
 - 入出力が完全に不変なリファクタリング
 - 誤字修正・スタイル調整
 
-判断に迷う場合はバージョンを更新する方針とする (pre-1.0 であれば頻繁に MINOR を更新しても問題ない)。
+判断に迷う場合はバージョンを更新する方針とする （pre-1.0であれば頻繁にMINORを更新しても問題ない）。
 
 ## バージョン更新指針 (pre-1.0 `0.x.y`)
 
-- 機能追加 / 検出範囲拡大 / description が変わる規模の変更 → MINOR (`x` を +1 し、`y` を 0 に戻す)
+- 機能追加 / 検出範囲拡大 / descriptionが変わる規模の変更 → MINOR（`x` を +1し、`y` を0に戻す）
 - 既存挙動のバグ修正 / 検出漏れの修正 → PATCH (`y` を +1)
 
-破壊的変更の概念は 1.0 までは考慮しない。
+破壊的変更の概念は1.0までは考慮しない。
 
 ## 同期先ドキュメント
 
-`docs/claude-code-concept.md` の「edit-guardrails プラグイン」セクションに各プラグインのチェック内容要約がある。
-以下の変更をしたときはここも併せて更新する (更新忘れが起きやすいのでここに明記する)。
+`docs/claude-code-concept.md` の「edit-guardrailsプラグイン」セクションに各プラグインのチェック内容要約がある。
+以下の変更をしたときはここも併せて更新する （更新忘れが起きやすいのでここに明記する）。
 
-- 新しい check の追加・既存 check の削除
-- 検出範囲の大きな変更 (allowlist / blocklist の方針変更)
-- 依存ツールの変更 (`uv` 以外を要求するようになった等)
-- 新しいプラグインを追加した場合 (セクション追加が必要)
+- 新しいcheckの追加・既存checkの削除
+- 検出範囲の大きな変更 （allowlist / blocklistの方針変更）
+- 依存ツールの変更（`uv` 以外を要求するようになった等）
+- 新しいプラグインを追加した場合 （セクション追加が必要）
 
 軽微な閾値調整やパターン追加など要約が変わらない範囲なら更新不要。
 
-配布方式自体 (chezmoi 自動インストール / marketplace 経由など) を変えた場合は `docs/claude-code.md` 側の修正も必要。
+配布方式自体 （chezmoi自動インストール / marketplace経由など） を変えた場合は `docs/claude-code.md` 側の修正も必要。
 `README.md` 本体には各プラグイン固有の記述がないため、通常は修正不要。
 
 ## 手順
@@ -78,11 +78,11 @@ paths:
 1. `plugins/<plugin-name>/.claude-plugin/plugin.json` の `version` (必要なら `description`) を更新
 2. `.claude-plugin/marketplace.json` の該当プラグイン エントリを同一文字列に同期する
 3. 必要なら `docs/claude-code-concept.md` のチェック内容リストを更新
-4. `make test` を実行し、SSOT テストを含む全テストが green であることを確認
-5. 変更をコミット (通常の編集と同じコミットに含めてよい)
+4. `make test` を実行し、SSOTテストを含む全テストがgreenであることを確認
+5. 変更をコミット （通常の編集と同じコミットに含めてよい）
 
 ## 参考
 
-- 配布方式と前提: `docs/claude-code.md` の edit-guardrails セクション
-- 利用者向け説明 (チェック内容・更新手順): `docs/claude-code-concept.md`
-- `edit-guardrails` の現行チェック内容: `plugins/edit-guardrails/scripts/pretooluse.py` モジュール docstring
+- 配布方式と前提: `docs/claude-code.md` のedit-guardrailsセクション
+- 利用者向け説明 （チェック内容・更新手順）: `docs/claude-code-concept.md`
+- `edit-guardrails` の現行チェック内容: `plugins/edit-guardrails/scripts/pretooluse.py` モジュールdocstring

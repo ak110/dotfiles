@@ -40,6 +40,25 @@ repos:
     hooks:
       - id: uv-sort
 
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        # chezmoi 命名規則の都合でサフィックスが無いが実体は shell のファイルを拾う。
+        # .tmpl は chezmoi 展開後でなければ検証できないため除外 (check-templates で別途検証)。
+        files: '(^|/)(dot_bashrc|dot_bash_profile|executable_[^.]*|.*\.(sh|bash))$'
+        exclude: '\.(tmpl|cmd)$'
+        types: [text]
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-1
+    hooks:
+      - id: shfmt
+        args: ["-i", "4", "-ci", "-d"]
+        files: '(^|/)(dot_bashrc|dot_bash_profile|executable_[^.]*|.*\.(sh|bash))$'
+        exclude: '\.(tmpl|cmd)$'
+        types: [text]
+
   - repo: local
     hooks:
       - id: check-cmd-encoding
@@ -48,6 +67,19 @@ repos:
         language: script
         pass_filenames: false
         files: '\.cmd$'
+      - id: check-templates
+        name: chezmoi template check
+        entry: .chezmoi-source/bin/executable_check-templates
+        language: script
+        files: '\.(sh|ps1)\.tmpl$'
+        pass_filenames: true
+      - id: powershell-analyzer
+        name: PSScriptAnalyzer
+        entry: .chezmoi-source/bin/executable_run-psscriptanalyzer
+        language: script
+        files: '\.ps1$'
+        exclude: '\.tmpl$'
+        pass_filenames: true
       - id: pyfltr
         name: pyfltr
         entry: uv run pyfltr --exit-zero-even-if-formatted --commands=fast

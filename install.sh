@@ -25,14 +25,16 @@ fi
 # chezmoi管理対象の既存ファイルをバックアップ
 backup_existing_dotfiles() {
     local source_dir="$1"
-    local backup_dir="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
+    local backup_dir
+    backup_dir="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
     local count=0
 
     while IFS= read -r target; do
         local src="$HOME/$target"
         # ファイルとシンボリックリンクのみ対象（ディレクトリはスキップ）
         [ -f "$src" ] || [ -L "$src" ] || continue
-        local dest_dir="$backup_dir/$(dirname "$target")"
+        local dest_dir
+        dest_dir="$backup_dir/$(dirname "$target")"
         mkdir -p "$dest_dir"
         cp -a "$src" "$dest_dir/"
         count=$((count + 1))

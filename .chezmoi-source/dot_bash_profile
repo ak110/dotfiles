@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck source=/dev/null
 
 # .bashrc
 test -f ~/.bashrc && . ~/.bashrc

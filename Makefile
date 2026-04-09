@@ -18,6 +18,8 @@ setup:
 	uv sync --all-groups
 	uv tool install --editable .
 	uv run pre-commit install
+	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。docs/development.md を参照"
+	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:

@@ -383,6 +383,147 @@ class TestBashPlansMkdirAutoAllow:
         assert result.stdout == ""
 
 
+class TestReadEncodingCheck:
+    """Read 対象ファイルのエンコーディング / 制御文字検査。
+
+    ターミナル破壊バイト (UTF-16/32 BOM, NUL, ESC, 非許可 C0, 非 UTF-8) を含むファイルは
+    Read 前に block する。Claude Code 本体が画像 / PDF / ノートブック専用経路を持つ
+    拡張子はスキャンせず通過させる。
+    """
+
+    @staticmethod
+    def _payload(file_path: pathlib.Path) -> dict:
+        return {"tool_name": "Read", "tool_input": {"file_path": str(file_path)}}
+
+    # --- 通過ケース ---
+
+    def test_utf8_text_passes(self, tmp_path: pathlib.Path):
+        target = tmp_path / "ok.txt"
+        target.write_text("hello world\n", encoding="utf-8")
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    def test_empty_file_passes(self, tmp_path: pathlib.Path):
+        target = tmp_path / "empty.txt"
+        target.write_bytes(b"")
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    def test_tab_lf_cr_only_passes(self, tmp_path: pathlib.Path):
+        target = tmp_path / "ws.txt"
+        target.write_bytes(b"a\tb\nc\r\nd")
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    def test_japanese_utf8_passes(self, tmp_path: pathlib.Path):
+        target = tmp_path / "ja.txt"
+        target.write_text("こんにちは世界\n", encoding="utf-8")
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize("suffix", [".png", ".jpg", ".pdf", ".ipynb", ".webp"])
+    def test_binary_extension_allowlisted(self, tmp_path: pathlib.Path, suffix: str):
+        """画像 / PDF / ノートブック等は Claude 本体の専用経路に乗るため検査スキップ。"""
+        target = tmp_path / f"file{suffix}"
+        # 中身は危険バイトでも block されないことを確認 (allowlist がスキップさせる)
+        target.write_bytes(b"\x00\x1b\xff\xfe garbage")
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    def test_nonexistent_path_passes(self, tmp_path: pathlib.Path):
+        """存在しないパスは Claude 本体のエラー処理に任せる。"""
+        target = tmp_path / "missing.txt"
+        result = _run(self._payload(target))
+        assert result.returncode == 0
+
+    def test_directory_passes(self, tmp_path: pathlib.Path):
+        """ディレクトリ指定は Claude 本体のエラー処理に任せる。"""
+        result = _run(self._payload(tmp_path))
+        assert result.returncode == 0
+
+    def test_other_tool_unaffected(self, tmp_path: pathlib.Path):
+        """Read 以外のツールは Read 検査の影響を受けない。"""
+        target = tmp_path / "ok.txt"
+        target.write_text("hello\n", encoding="utf-8")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target), "content": "hello\n"}})
+        assert result.returncode == 0
+
+    # --- ブロックケース ---
+
+    def test_shift_jis_blocked(self, tmp_path: pathlib.Path):
+        target = tmp_path / "sjis.txt"
+        target.write_bytes("あいうえお".encode("cp932"))
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "invalid UTF-8" in result.stderr
+
+    def test_utf16_le_bom_blocked(self, tmp_path: pathlib.Path):
+        target = tmp_path / "utf16le.txt"
+        target.write_bytes(b"\xff\xfe" + "hello".encode("utf-16-le"))
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "UTF-16 LE BOM" in result.stderr
+
+    def test_utf16_be_bom_blocked(self, tmp_path: pathlib.Path):
+        target = tmp_path / "utf16be.txt"
+        target.write_bytes(b"\xfe\xff" + "hello".encode("utf-16-be"))
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "UTF-16 BE BOM" in result.stderr
+
+    def test_utf32_le_bom_blocked(self, tmp_path: pathlib.Path):
+        target = tmp_path / "utf32le.txt"
+        target.write_bytes(b"\xff\xfe\x00\x00")
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "UTF-32 LE BOM" in result.stderr
+
+    def test_nul_byte_blocked(self, tmp_path: pathlib.Path):
+        target = tmp_path / "nul.bin"
+        target.write_bytes(b"hello\x00world")
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "NUL byte" in result.stderr
+
+    def test_esc_byte_blocked(self, tmp_path: pathlib.Path):
+        """ANSI カラーシーケンス模擬: ESC 1 個でも block する。"""
+        target = tmp_path / "ansi.txt"
+        target.write_bytes(b"plain text \x1b[31mred\x1b[0m")
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "ESC byte" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("byte", "label"),
+        [
+            (b"\x07", "BEL"),
+            (b"\x08", "BS"),
+            (b"\x0b", "VT"),
+            (b"\x0c", "FF"),
+            (b"\x7f", "DEL"),
+        ],
+    )
+    def test_disallowed_c0_blocked(self, tmp_path: pathlib.Path, byte: bytes, label: str):
+        del label  # ラベルはケース識別用
+        target = tmp_path / "c0.txt"
+        target.write_bytes(b"hello" + byte + b"world")
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "disallowed control char" in result.stderr
+
+    def test_esc_beyond_first_chunk_blocked(self, tmp_path: pathlib.Path):
+        """16 KiB 境界より後ろにある危険バイトも検出する (チャンク境界回帰防止)。
+
+        先頭だけスキャンする実装に退行すると本テストが失敗する。
+        """
+        target = tmp_path / "late_esc.txt"
+        # 32 KiB の安全テキストの後に ESC を配置 (1 MiB チャンク内には収まる)
+        target.write_bytes(b"a" * (32 * 1024) + b"\x1b" + b"b" * 16)
+        result = _run(self._payload(target))
+        assert result.returncode == 2
+        assert "ESC byte" in result.stderr
+
+
 class TestManifestSsot:
     """plugin.json と marketplace.json の SSOT 整合性。
 

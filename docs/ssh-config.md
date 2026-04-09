@@ -1,6 +1,6 @@
 # SSH設定管理 (`update-ssh-config`)
 
-`update-ssh-config` は SSH config と authorized_keys を分割ファイルから生成するコマンド。
+`update-ssh-config` はSSH configとauthorized_keysを分割ファイルから生成するコマンド。
 
 ## 概要
 
@@ -31,8 +31,8 @@
 `~/.ssh/localconfig` があれば末尾に追加して
 `~/.ssh/config` を生成する。
 
-- 初回実行時（`~/.ssh/config.bk` が存在しない場合）、既存の config をバックアップする
-- 毎回上書きされるため、config の直接編集は localconfig を使うこと
+- 初回実行時（`~/.ssh/config.bk` が存在しない場合）、既存のconfigをバックアップする
+- 毎回上書きされるため、configの直接編集はlocalconfigを使うこと
 
 ## authorized_keys生成
 
@@ -45,7 +45,7 @@
 
 ## 自動実行
 
-chezmoi apply 時、`conf.d/` 内のファイルが変更されると
+chezmoi apply時、`conf.d/` 内のファイルが変更されると
 自動的に `update-ssh-config` が実行される
 （`run_onchange` テンプレート）。
 

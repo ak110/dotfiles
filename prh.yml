@@ -1,0 +1,35 @@
+version: 1
+# 外来語の語尾長音ルール辞書 (JIS Z 8301:2019 参考)。
+# textlint-rule-prh から読み込む。
+# 誤検出を避けるため、後続に長音符がある場合や派生複合語を含めた例外は
+# 先読み表明で個別に除外する。
+rules:
+  - expected: ユーザー
+    patterns:
+      - /ユーザ(?![ー名ID])/
+  - expected: サーバー
+    patterns:
+      - /サーバ(?![ーレ])/
+  - expected: コンピューター
+    pattern: /コンピュータ(?!ー)/
+  - expected: パラメーター
+    pattern: /パラメータ(?!ー)/
+  - expected: メモリー
+    pattern: /メモリ(?!ー)/
+  - expected: エディター
+    pattern: /エディタ(?!ー)/
+  - expected: マネージャー
+    pattern: /マネージャ(?!ー)/
+  - expected: プロセッサー
+    pattern: /プロセッサ(?!ー)/
+  - expected: ドライバー
+    pattern: /ドライバ(?!ー)/
+  - expected: フォルダー
+    pattern: /フォルダ(?!ー)/
+  - expected: インターフェース
+    patterns:
+      - /インタフェース/
+  - expected: アダプター
+    pattern: /アダプタ(?!ー)/
+  - expected: コンテナー
+    pattern: /コンテナ(?!ー)/
