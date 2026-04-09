@@ -33,12 +33,13 @@ def _fake_target_versions(monkeypatch: pytest.MonkeyPatch) -> None:
     """marketplace.json の読み込み結果を固定値に差し替える。
 
     テストを実際の marketplace.json の内容から切り離すため。
-    `edit-guardrails` の配布 version は `0.2.0` とみなす。
+    対象プラグインはハードコードではなく marketplace.json 由来で決まるため、
+    複数プラグインが正しくループで処理されることを検証できるよう 2 件返す。
     """
     monkeypatch.setattr(
         _install_claude_plugins,
         "_read_target_versions",
-        lambda _root: {"edit-guardrails": "0.2.0"},
+        lambda _root: {"edit-guardrails": "0.2.0", "sample-plugin": "1.0.0"},
     )
 
 
@@ -59,7 +60,7 @@ class TestRunFlow:
     """メインフローのテスト (前提条件は満たしている状態)。"""
 
     def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
-        """既に配布 version と一致していれば update は呼ばない。"""
+        """既に配布 version と一致していれば全プラグインについて update は呼ばない。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001 -- subprocess.run 互換シグネチャ
@@ -67,7 +68,12 @@ class TestRunFlow:
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps([{"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"}]),
+                    stdout=json.dumps(
+                        [
+                            {"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"},
+                            {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0"},
+                        ]
+                    ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
                 return _FakeResult(
@@ -86,7 +92,11 @@ class TestRunFlow:
         assert [c for c in calls if c[:3] == ["claude", "plugin", "install"]] == []
 
     def test_already_installed_version_drift_updates(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みでも version が古ければ refresh + update が実行される。"""
+        """インストール済みでも version が古ければ refresh + update が実行される。
+
+        片方のプラグインだけ version が古いケース。もう片方は最新のため
+        update 呼び出しは古い側にのみ発行されることも併せて検証する。
+        """
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -94,7 +104,12 @@ class TestRunFlow:
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps([{"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"}]),
+                    stdout=json.dumps(
+                        [
+                            {"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"},
+                            {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0"},
+                        ]
+                    ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
                 return _FakeResult(
@@ -112,14 +127,17 @@ class TestRunFlow:
 
         assert _install_claude_plugins.run() is True
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
-        assert any(c[:3] == ["claude", "plugin", "update"] and "edit-guardrails@ak110-dotfiles" in c for c in calls)
+        update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
+        assert any("edit-guardrails@ak110-dotfiles" in c for c in update_calls)
+        # 最新である sample-plugin に対しては update を発行しない
+        assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
         # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
         refresh_index = next(i for i, c in enumerate(calls) if c[:4] == ["claude", "plugin", "marketplace", "update"])
         update_index = next(i for i, c in enumerate(calls) if c[:3] == ["claude", "plugin", "update"])
         assert refresh_index < update_index
 
     def test_fresh_install_happy_path(self, monkeypatch: pytest.MonkeyPatch):
-        """未インストール + marketplace 未登録の場合、add → install の順に呼ぶ。"""
+        """未インストール + marketplace 未登録の場合、add → 全プラグイン install の順に呼ぶ。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -137,9 +155,11 @@ class TestRunFlow:
         monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
-        # add と install の両方が呼ばれているか
+        # add が呼ばれ、かつ marketplace.json 由来の全プラグインに対し install が呼ばれていること
         assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
-        assert any(c[:3] == ["claude", "plugin", "install"] and "edit-guardrails@ak110-dotfiles" in c for c in calls)
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
@@ -165,6 +185,60 @@ class TestRunFlow:
         assert _install_claude_plugins.run() is True
         # add は呼ばれていないこと
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
+        # 対象プラグインは全て install されていること
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
+
+    def test_mixed_installed_and_missing(self, monkeypatch: pytest.MonkeyPatch):
+        """片方だけインストール済みの混在状態では、未インストール側のみ install される。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=json.dumps(
+                        [{"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"}],
+                    ),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
+                return _FakeResult(returncode=0)
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # 既にインストール済みの edit-guardrails は install されない
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert not any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        # 未インストールの sample-plugin は install される
+        assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
+        # 既にインストール済みの plugin が最新であれば update は呼ばれない
+        assert [c for c in calls if c[:3] == ["claude", "plugin", "update"]] == []
+
+    def test_empty_target_versions_skips(self, monkeypatch: pytest.MonkeyPatch):
+        """marketplace.json に対象 plugin が無ければ claude コマンドを一切呼ばずにスキップする。"""
+        monkeypatch.setattr(_install_claude_plugins, "_read_target_versions", lambda _root: {})
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            return _FakeResult(returncode=0)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is False
+        assert not calls
 
     def test_plugin_list_failure_skips(self, monkeypatch: pytest.MonkeyPatch):
         """list が失敗したら後続は何もしない。"""

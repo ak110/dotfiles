@@ -9,6 +9,10 @@
 1. `claude` CLI が PATH にある
 2. `uv` CLI が PATH にある (plugin の hook スクリプトが `uv run --script` で動くため)
 
+対象プラグインは `.claude-plugin/marketplace.json` の `plugins[]` 全件。
+このファイルを SSOT として扱うため、`plugins/` 配下に新しいプラグインを追加して
+`marketplace.json` に登録するだけで、本モジュールの対象に自動で追加される。
+
 前提を満たした場合の処理:
 
 - marketplace 未登録 → `claude plugin marketplace add <dotfiles root>` で登録
@@ -38,9 +42,6 @@ logger = logging.getLogger(__name__)
 # marketplace.json の `name` と一致させる (.claude-plugin/marketplace.json を参照)
 _MARKETPLACE_NAME = "ak110-dotfiles"
 
-# インストール対象 plugin 名 (plugins/<name>/.claude-plugin/plugin.json を参照)
-_PLUGIN_NAMES = ("edit-guardrails",)
-
 # `claude plugin` コマンドのタイムアウト (秒)
 # ローカルパスからの install は通常 1-2 秒で終わるが、念のため余裕を持たせる
 _CLAUDE_TIMEOUT = 30
@@ -66,6 +67,13 @@ def run() -> bool:
         logger.info(_log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
         return False
 
+    # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
+    # 空 dict の場合 (ファイル欠損 / 解析失敗 / plugins[] が空) は何もしない。
+    target_versions = _read_target_versions(dotfiles_root)
+    if not target_versions:
+        logger.info(_log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
+        return False
+
     installed = _list_installed_plugin_versions()
     if installed is None:
         logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
@@ -74,22 +82,19 @@ def run() -> bool:
     if not _ensure_marketplace(dotfiles_root):
         return False
 
-    target_versions = _read_target_versions(dotfiles_root)
-
-    # 既にインストールされている plugin が 1 つでもあるなら marketplace メタデータを
+    # 既にインストールされている対象 plugin が 1 つでもあるなら marketplace メタデータを
     # refresh して、ローカルの marketplace.json に入った version 更新を取り込む。
     # 新規 install しかない場合は install コマンドが毎回ファイルを読むため refresh 不要。
-    if any(name in installed for name in _PLUGIN_NAMES):
+    if any(name in installed for name in target_versions):
         _refresh_marketplace()
 
     any_change = False
-    for name in _PLUGIN_NAMES:
+    for name, target in target_versions.items():
         current = installed.get(name)
-        target = target_versions.get(name)
         if current is None:
             if _install_plugin(name):
                 any_change = True
-        elif target is not None and current != target:
+        elif target and current != target:
             logger.info(_log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
                 any_change = True
