@@ -263,6 +263,13 @@ fi
 # 両方に対応するため、ガードでは OR で判定し、本体では公式版があればそれを優先する。
 if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
     claude() {
+        # 引数なしの対話セッションのみ clear 対象とする。
+        # 引数付き呼び出し (claude update / claude -p ... / claude mcp ... など) では
+        # 実行結果を残したいので clear しない。
+        local no_args=0
+        if [ $# -eq 0 ]; then
+            no_args=1
+        fi
         if [ -x ~/.claude/local/claude ]; then
             ~/.claude/local/claude "$@"
         else
@@ -273,7 +280,7 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         # stdout/stderr が TTY のときだけ clear する。
         # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが
         # 出力へ混入するのを防ぐため。
-        if [ -t 1 ] && [ -t 2 ]; then
+        if [ "$no_args" -eq 1 ] && [ -t 1 ] && [ -t 2 ]; then
             clear
         fi
         return $rc
