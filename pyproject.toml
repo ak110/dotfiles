@@ -36,27 +36,19 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "pyfltr>=1.16.1",
+    "pyfltr>=1.17.1",
 ]
 
 [tool.pyfltr]
 preset = "latest"
 pyright = true
 ty = true
-extend-exclude = ["*/profile_ipy/*", "CLAUDE.local.md"]
-# textlint へ preset-jtf-style と prh を追加 (pnpx 経由でパッケージを解決する)
-textlint-args = [
-    "--package",
-    "textlint",
-    "--package",
+extend-exclude = ["*/profile_ipy/*"]
+textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
-    "--package",
     "textlint-rule-preset-jtf-style",
-    "--package",
+    "textlint-rule-ja-no-abusage",
     "textlint-rule-prh",
-    "textlint",
-    "--format",
-    "compact",
 ]
 
 [tool.ruff]
