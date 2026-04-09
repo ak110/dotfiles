@@ -40,16 +40,16 @@ paths:
 - 新しいcheck / 機能の追加、既存checkの削除
 - `hooks/hooks.json` など設定ファイルのmatcher / command変更
 - 依存や実行環境要件の変更 (`requires-python` / script headerのdependencies)
-- ブロック条件の緩和 （false positive対策でallowlistを増やす等）
+- ブロック条件の緩和（false positive対策でallowlistを増やす等）
 
 ## バージョン更新が不要な変更
 
 - コメント・docstringのみの修正
-- `tests/` のみの追加・修正 （SSOTテスト自身の変更を含む）
+- `tests/` のみの追加・修正（SSOTテスト自身の変更を含む）
 - 入出力が完全に不変なリファクタリング
 - 誤字修正・スタイル調整
 
-判断に迷う場合はバージョンを更新する方針とする （pre-1.0であれば頻繁にMINORを更新しても問題ない）。
+判断に迷う場合はバージョンを更新する方針とする（pre-1.0であれば頻繁にMINORを更新しても問題ない）。
 
 ## バージョン更新指針 (pre-1.0 `0.x.y`)
 
@@ -61,16 +61,16 @@ paths:
 ## 同期先ドキュメント
 
 `docs/claude-code-concept.md` の「edit-guardrailsプラグイン」セクションに各プラグインのチェック内容要約がある。
-以下の変更をしたときはここも併せて更新する （更新忘れが起きやすいのでここに明記する）。
+以下の変更をしたときはここも併せて更新する（更新忘れが起きやすいのでここに明記する）。
 
 - 新しいcheckの追加・既存checkの削除
-- 検出範囲の大きな変更 （allowlist / blocklistの方針変更）
+- 検出範囲の大きな変更（allowlist / blocklistの方針変更）
 - 依存ツールの変更（`uv` 以外を要求するようになった等）
-- 新しいプラグインを追加した場合 （セクション追加が必要）
+- 新しいプラグインを追加した場合（セクション追加が必要）
 
 軽微な閾値調整やパターン追加など要約が変わらない範囲なら更新不要。
 
-配布方式自体 （chezmoi自動インストール / marketplace経由など） を変えた場合は `docs/claude-code.md` 側の修正も必要。
+配布方式自体（chezmoi自動インストール / marketplace経由など）を変えた場合は `docs/claude-code.md` 側の修正も必要。
 `README.md` 本体には各プラグイン固有の記述がないため、通常は修正不要。
 
 ## 手順
@@ -79,10 +79,10 @@ paths:
 2. `.claude-plugin/marketplace.json` の該当プラグイン エントリを同一文字列に同期する
 3. 必要なら `docs/claude-code-concept.md` のチェック内容リストを更新
 4. `make test` を実行し、SSOTテストを含む全テストがgreenであることを確認
-5. 変更をコミット （通常の編集と同じコミットに含めてよい）
+5. 変更をコミット（通常の編集と同じコミットに含めてよい）
 
 ## 参考
 
 - 配布方式と前提: `docs/claude-code.md` のedit-guardrailsセクション
-- 利用者向け説明 （チェック内容・更新手順）: `docs/claude-code-concept.md`
+- 利用者向け説明（チェック内容・更新手順）: `docs/claude-code-concept.md`
 - `edit-guardrails` の現行チェック内容: `plugins/edit-guardrails/scripts/pretooluse.py` モジュールdocstring

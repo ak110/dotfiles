@@ -44,7 +44,7 @@ git push
 - `dot_config/git/config` → `~/.config/git/config`
 - `private_dot_ssh/` → `~/.ssh/` (mode 700)
 - `private_authorized_keys` → `authorized_keys` (mode 600)
-- `bin/executable_foo` → `~/bin/foo` （実行権限付き）
+- `bin/executable_foo` → `~/bin/foo`（実行権限付き）
 - `run_onchange_after_*.sh.tmpl` → 変更時に実行されるスクリプト
 
 詳細: <https://www.chezmoi.io/reference/source-state-attributes/>

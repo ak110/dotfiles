@@ -6,7 +6,7 @@
 - ルール (`.chezmoi-source/dot_claude/rules/agent-basics/` 配下) — 全プロジェクトで読み込ませるコーディング規約・運用方針
 - プラグイン (`plugins/` 配下) — 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する
 
-このドキュメントにはdotfiles管理側の情報 （配布方式・配布元・他プロジェクトへの組み込み方） のみ記述している。
+このドキュメントにはdotfiles管理側の情報（配布方式・配布元・他プロジェクトへの組み込み方）のみ記述している。
 配布されるルールやプラグインの内容については [docs/claude-code-concept.md](claude-code-concept.md) を参照。
 
 ## 配布方式
@@ -104,4 +104,4 @@ claudize --clean
 - Marketplace定義: `.claude-plugin/marketplace.json`
 - 依存: `uv` CLI（hookスクリプトを `uv run --script` 経由で実行するため）
 
-プラグインの内容 （チェック内容など） は [docs/claude-code-concept.md](claude-code-concept.md) を参照。
+プラグインの内容（チェック内容など）は [docs/claude-code-concept.md](claude-code-concept.md) を参照。

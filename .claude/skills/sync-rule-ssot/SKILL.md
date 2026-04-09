@@ -15,12 +15,12 @@ user-invocable: false
 - `install-claude.ps1` の `$files` 配列
 
 新規追加・削除・リネーム時にこの3箇所の同期を怠ると、配布に失敗する。
-プロジェクト ローカル配布 （claudize） またはリモート インストーラー経由の配布 (install-claude.sh/.ps1) のどちらかが機能しなくなる。
+プロジェクト ローカル配布（claudize）またはリモート インストーラー経由の配布 (install-claude.sh/.ps1) のどちらかが機能しなくなる。
 このスキルは追加・削除・リネーム手順を標準化する。
 
 ## 前提確認
 
-作業を始める前に、編集するリポジトリが `~/dotfiles` （または同等の本家dotfilesチェックアウト） であるか確認する。他プロジェクトの `.claude/rules/` は配布先であり、原本ではない。
+作業を始める前に、編集するリポジトリが `~/dotfiles`（または同等の本家dotfilesチェックアウト）であるか確認する。他プロジェクトの `.claude/rules/` は配布先であり、原本ではない。
 
 原本ディレクトリ: `.chezmoi-source/dot_claude/rules/agent-basics/`
 
@@ -30,9 +30,9 @@ user-invocable: false
 
 - 無条件ルール: セッション開始時に常に読み込まれる。`paths` frontmatterを持たない。
   - 例: `agent.md`, `markdown.md`, `rules.md`, `skills.md`
-  - `agent.md` は特別扱いで、`claudize.py` の既定配布リストに直接記載されている （配布対象一覧に加える必要はない）
+  - `agent.md` は特別扱いで、`claudize.py` の既定配布リストに直接記載されている（配布対象一覧に加える必要はない）
   - それ以外の無条件ルールは `_UNCONDITIONAL_RULES` に追加する
-- 条件付きルール （言語別）: 特定の拡張子のファイルを編集したときだけ読み込まれる。`paths` frontmatterで対象を絞る。
+- 条件付きルール（言語別）: 特定の拡張子のファイルを編集したときだけ読み込まれる。`paths` frontmatterで対象を絞る。
   - 例: `python.md` / `python-test.md` (`.py`)、`typescript.md` / `typescript-test.md` (`.ts`, `.tsx`)
   - `_CONDITIONAL_RULES` に `(ファイル名, (拡張子, ...))` のタプルで追加する
 
@@ -76,7 +76,7 @@ paths:
    claudize --help
    ```
 
-6. 動作確認する （任意だが推奨） — 本家dotfiles以外の作業ツリーで `claudize` を実行してルールが配布されることを確認する
+6. 動作確認する（任意だが推奨）— 本家dotfiles以外の作業ツリーで `claudize` を実行してルールが配布されることを確認する
 
 ## 削除手順
 
@@ -89,7 +89,7 @@ paths:
 ## 避けるべき失敗
 
 - `.chezmoi-source/dot_claude/rules/agent-basics/` 以外の場所に原本を配置しない
-- `install-claude.sh` と `install-claude.ps1` は必ず同時に更新する （片方のみの更新では配布経路の一方が機能しなくなる）
+- `install-claude.sh` と `install-claude.ps1` は必ず同時に更新する（片方のみの更新では配布経路の一方が機能しなくなる）
 - `_UNCONDITIONAL_RULES` と `_CONDITIONAL_RULES` の両方に同じファイル名を記載しない
 - 新しい無条件ルールを追加する際、コンテキスト消費が大きくなる点に注意する。可能な限り `paths` で条件付きにする
 

@@ -5,20 +5,20 @@ paths:
 
 # Rust記述スタイル
 
-- editionは最新安定版 （2024以降） を使う
+- editionは最新安定版（2024以降）を使う
 - 所有権/借用
   - 所有権の移動より借用 (`&` / `&mut`) を優先し、不要な `clone()` は避ける
   - `clone()` はヒープ確保などのコストを理解したうえで使う
   - ライフタイム注釈は推論が効く場合は省略し、必要な場合のみ明示する
 - エラーハンドリング
-  - ライブラリコードでは `thiserror` で独自エラー型を定義する （呼び出し側でエラー種別ごとの分岐を可能にするため）
-  - アプリケーションコードでは `anyhow` で動的なエラーを扱う （エラー集約の実装負荷を下げ、コンテキスト付与も容易にするため）
+  - ライブラリコードでは `thiserror` で独自エラー型を定義する（呼び出し側でエラー種別ごとの分岐を可能にするため）
+  - アプリケーションコードでは `anyhow` で動的なエラーを扱う（エラー集約の実装負荷を下げ、コンテキスト付与も容易にするため）
   - `unwrap()` / `expect()` はテストか、失敗し得ないことが自明な場合に限定する
     - レビュー時は `#[cfg(test)]` 内とテスト用ヘルパーモジュール (`test_helpers.rs` 等) を除外して評価する
   - `panic!` は不変条件違反などプログラマエラー用。ユーザー入力やI/Oエラーには使わない
   - `?` 演算子での早期リターンを積極的に使う
 - 型について
-  - `String`/`&str`、`Vec<T>`/`&[T]` を用途に応じて使い分ける （所有が必要なら所有型、参照で十分なら参照）
+  - `String`/`&str`、`Vec<T>`/`&[T]` を用途に応じて使い分ける（所有が必要なら所有型、参照で十分なら参照）
   - 整数オーバーフローは `checked_*` / `wrapping_*` / `saturating_*` を明示的に選ぶ
   - インデックス以外の用途に `usize` を使わない
   - 列挙は `enum` で表現し、網羅性は `match` で担保する
@@ -29,11 +29,11 @@ paths:
   - 以下のケースでは必ず `// SAFETY:` を付ける:
     - 生ポインタの読み書き、`ptr::read_unaligned`、`from_raw_parts` / `transmute` 系のキャスト
     - `memmap2::Mmap::map` などライフタイム外の前提に依存する操作
-    - `libloading` 経由の関数呼び出し （シグネチャ一致が安全性の根拠）
+    - `libloading` 経由の関数呼び出し（シグネチャ一致が安全性の根拠）
     - `Send` / `Sync` を手で実装している型
     - COMオブジェクトの非自明な所有権遷移
 - モジュール構成
-  - `mod.rs` より `foo.rs` + `foo/` レイアウト （Rust 2018以降の推奨) を使う （ファイル名とモジュール名が一致して特定しやすく、同名 `mod.rs` の衝突も避けられるため）
+  - `mod.rs` より `foo.rs` + `foo/` レイアウト（Rust 2018以降の推奨) を使う（ファイル名とモジュール名が一致して特定しやすく、同名 `mod.rs` の衝突も避けられるため）
   - `pub use` で公開APIを整理する
 - ドキュメントコメント
   - 公開APIには `///` でdocコメントを書き、必要に応じてdoctestを実行可能な形で記述する
@@ -51,13 +51,13 @@ paths:
   - ビルド/依存管理: `cargo`
   - リンター: `cargo clippy`（`-D warnings` で警告ゼロを維持）
   - フォーマッター: `cargo fmt`
-  - MSRV （最小サポートバージョン） は `Cargo.toml` の `rust-version` に明記する
-- テスト （inline, 最低限）
+  - MSRV（最小サポートバージョン）は `Cargo.toml` の `rust-version` に明記する
+- テスト（inline, 最低限）
   - 単体テストは対象モジュール末尾の `#[cfg(test)] mod tests { ... }` に配置する
   - 統合テストはクレートルート直下の `tests/` に置く (詳細は `rust-test.md`)
   - アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使い、浮動小数点は `approx` クレート等で許容誤差付き比較
   - 非同期テストは `#[tokio::test]` を使う
-  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う （sleepループはflakyテストの主要因となるため）
+  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う（sleepループはflakyテストの主要因となるため）
   - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` でcompile-timeに行う (Rust 1.79+)。実行時テストにはしない
 - 新しいRustバージョンの機能を積極的に使う
   - Rust 1.77+: C文字列リテラル (`c"..."`) で `&'static CStr` を直接生成する
@@ -71,5 +71,5 @@ paths:
   - Rust 1.82+: `impl Trait + use<...>` でprecise capturingを行う
     - 不要なlifetimeキャプチャを避けて戻り値型を厳密にできる
   - Edition 2024 (Rust 1.85+): let chains (`if let Some(x) = foo && x > 0 { ... }`) でネストを削減する
-  - Edition 2024 （Rust 1.85+）: asyncクロージャ （`async || { ... }`） と `AsyncFn` 系トレイトを使う
+  - Edition 2024（Rust 1.85+）: asyncクロージャ（`async || { ... }`）と `AsyncFn` 系トレイトを使う
     - 単純な非同期処理で `async-trait` クレートへの依存を削減できる
