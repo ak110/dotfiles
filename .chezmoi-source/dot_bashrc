@@ -49,6 +49,17 @@ if command -v mise >/dev/null 2>&1; then
     esac
 fi
 
+# uv installer が生成する env スクリプト (PATH 等を追加する)。
+# PATH 設定が主目的なので非対話シェルでも source する。
+if [ -e ~/.local/bin/env ] ; then
+    . ~/.local/bin/env
+fi
+
+# nvm (PATH に node を載せるため非対話シェルでも source する)。
+# bash_completion は補完用なので対話シェル側で別途 source する。
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 # ここまで非対話環境でも共通
 ########################################################################################
 
@@ -240,9 +251,19 @@ fi
 # 終了時に画面をクリアするラッパー関数。
 # エイリアスではなく関数にしているのは、claude 本体の終了コードを保持しつつ
 # 終了後に clear を走らせる必要があるため。
-if [ -e ~/.claude/local/claude ] ; then
+# claude の所在は環境によって異なる:
+#   - ~/.claude/local/claude: Claude Code 公式インストーラー (migrate-installer)
+#     が生成する固定パス。PATH には通っていないので絶対パスで呼ぶ
+#   - PATH 上の claude: npm global など別経路で入れた場合 (~/.local/bin/claude 等)
+# 両方に対応するため、ガードでは OR で判定し、本体では公式版があればそれを優先する。
+if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
     claude() {
-        ~/.claude/local/claude "$@"
+        if [ -x ~/.claude/local/claude ]; then
+            ~/.claude/local/claude "$@"
+        else
+            # 組み込み command で関数自身を bypass して PATH 上の本物を呼ぶ
+            command claude "$@"
+        fi
         local rc=$?
         # stdout/stderr が TTY のときだけ clear する。
         # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが
@@ -253,13 +274,9 @@ if [ -e ~/.claude/local/claude ] ; then
         return $rc
     }
 fi
-if [ -e ~/.local/bin/env ] ; then
-    . ~/.local/bin/env
-fi
 
-# nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+# nvm の bash 補完 (対話シェル専用)。
+# nvm 本体は非対話セクションで source 済みのため NVM_DIR は既に export されている。
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
 # ~/.localbashrc
