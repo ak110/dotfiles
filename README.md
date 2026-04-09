@@ -13,12 +13,14 @@
 sudo apt install git
 curl -fsSL https://astral.sh/uv/install.sh | sh
 
-# オプション: nvm, node.js
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-nvm install --lts
-
 # オプション: mise
 curl -fsSL https://mise.run | sh
+
+# オプション: Claude Code
+curl -fsSL https://claude.ai/install.sh | bash
+
+# オプション: Codex CLI (別途Node.jsが必要)
+npm install -g @openai/codex
 ```
 
 ### 例(Windows)
@@ -29,6 +31,12 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 REM オプション: mise
 winget install jdx.mise
+
+REM オプション: Claude Code
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
+
+REM オプション: Codex CLI (別途Node.jsが必要)
+npm install -g @openai/codex
 ```
 
 ## インストール
