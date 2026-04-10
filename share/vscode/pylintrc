@@ -4,7 +4,7 @@ extension-pkg-allow-list=numpy
 [MESSAGES CONTROL]
 disable=
     #bad-continuation,  # obsoleted?
-    #no-self-use,  # obsolated?
+    #no-self-use,  # obsoleted?
     broad-except,
     duplicate-code,
     fixme,

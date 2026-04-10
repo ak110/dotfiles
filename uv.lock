@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-10T17:29:55.39193249Z"
-exclude-newer-span = "PT0S"
+exclude-newer = "2026-04-09T17:41:41.767308691Z"
+exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
 pyfltr = false

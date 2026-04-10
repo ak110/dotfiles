@@ -3,7 +3,7 @@
 "	sudo.vim:  A vim plugin by Rich Paul (vim@rich-paul.net)
 "
 "	This script eases use of vim with sudo by adding the ability to
-"	edit one file with root privleges without running the whole
+"	edit one file with root privileges without running the whole
 "	session that way.
 "
 "
