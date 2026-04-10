@@ -22,7 +22,7 @@ paths:
     - `Get-Content -Encoding UTF8`、`Set-Content -Encoding UTF8`
 - 基本スタイル
   - 冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述する
-  - 命名規則: cmdlet・関数は`Verb-Noun` (PascalCase)、変数は`$camelCase`。承認済み動詞(`Get-Verb`)を使う
+  - 命名規則: cmdlet・関数は`Verb-Noun` (PascalCase)。変数は`$camelCase`。承認済み動詞(`Get-Verb`)を使う
 - エラーハンドリング
   - `try`/`catch`/`finally`を使う
   - non-terminating errorをキャッチするために`-ErrorAction Stop`を指定する
