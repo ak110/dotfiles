@@ -9,6 +9,13 @@ make test     # 全チェック実行（これが通ればコミット可）
 make update   # 依存アップグレード＋全チェック (pinactによるアクション更新含む)
 ```
 
+## 依存関係の方針
+
+- サプライチェーン攻撃対策として、`UV_FROZEN=1`を`Makefile`とCIワークフロー（該当ジョブ・ステップ）で有効化し、`uv sync`/`uv run`が`uv.lock`を再resolveせずそのまま使うようにしている
+  - 開発者のシェルでは`UV_FROZEN`を設定しない前提のため、依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい
+  - `make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい
+  - 詳細な運用方針は`docs/development.md`の「UV_FROZENによるlockfile尊重」セクションを参照
+
 ## アーキテクチャ
 
 - chezmoi管理のdotfilesリポジトリ

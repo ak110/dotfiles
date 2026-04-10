@@ -32,6 +32,18 @@ pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUs
 make test
 ```
 
+## UV_FROZENによるlockfile尊重（サプライチェーン攻撃対策）
+
+CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、環境変数`UV_FROZEN=1`を有効化している。
+意図しない再resolveでロックファイルが書き換わるリスクを抑え、グローバル設定の`exclude-newer`（[docs/security.md](security.md)参照）と組み合わせて二重防御として機能する。
+
+- `make format`/`make test`/`make setup`は`Makefile`の`export UV_FROZEN := 1`で自動適用される
+- CIは`.github/workflows/test.yml`の該当ステップ・ジョブの`env.UV_FROZEN`で自動適用される
+- `git commit`経由のpre-commitフックは`.pre-commit-config.yaml`のlocal hookのentryに`--frozen`を明示している
+
+開発者のシェルでは`UV_FROZEN`を設定しない前提なので、依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい。
+`make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい。
+
 ## その他のコマンド
 
 ```bash

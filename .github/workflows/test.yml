@@ -35,9 +35,12 @@ jobs:
           sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: pre-commitによるチェック
+        env:
+          # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+          UV_FROZEN: "1"
         run: |
           cd ~/dotfiles
-          uv sync --frozen --all-groups
+          uv sync --all-groups
           SKIP=pyfltr uv run pre-commit run --all-files
       - name: install.sh実行
         run: ~/dotfiles/install.sh
@@ -84,6 +87,8 @@ jobs:
         python-version: ["3.12", "3.13"]
     env:
       PYTHONDEVMODE: "1"
+      # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+      UV_FROZEN: "1"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: GitHub Actionsのピン留め検証
