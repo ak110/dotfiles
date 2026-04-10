@@ -62,7 +62,7 @@ repos:
   - repo: local
     hooks:
       - id: check-cmd-encoding
-        name: Check .cmd files UTF-8 encoding
+        name: Check .cmd files CP932 encoding
         entry: scripts/check-cmd-encoding
         language: script
         pass_filenames: false

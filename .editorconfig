@@ -14,5 +14,8 @@ indent_size = 2
 [*.{cmd,cmd.tmpl,bat,bat.tmpl,ps1,ps1.tmpl,psm1,psd1}]
 end_of_line = crlf
 
+[*.{cmd,cmd.tmpl,bat,bat.tmpl}]
+charset = unset
+
 [Makefile]
 indent_style = tab
