@@ -28,6 +28,7 @@ class TestRun:
             return fn
 
         monkeypatch.setattr(post_apply._update_claude_settings, "run", make("claude", True))
+        monkeypatch.setattr(post_apply._update_vscode_settings, "run", make("vscode"))
         monkeypatch.setattr(post_apply.update_ssh_config, "run", make("ssh"))
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", make("cleanup"))
         monkeypatch.setattr(post_apply._update_npmrc, "run", make("npmrc", True))
@@ -36,9 +37,9 @@ class TestRun:
 
         results = post_apply.run()
 
-        assert calls == ["claude", "ssh", "cleanup", "npmrc", "mise", "plugins"]
+        assert calls == ["claude", "vscode", "ssh", "cleanup", "npmrc", "mise", "plugins"]
         assert all(r.ok for r in results)
-        assert [r.changed for r in results] == [True, False, False, True, False, False]
+        assert [r.changed for r in results] == [True, False, False, False, True, False, False]
 
     def test_failing_step_does_not_stop_others(self, monkeypatch: pytest.MonkeyPatch):
         """途中ステップが例外を送出しても後続は実行される。"""
@@ -56,6 +57,7 @@ class TestRun:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(post_apply._update_claude_settings, "run", make("claude"))
+        monkeypatch.setattr(post_apply._update_vscode_settings, "run", make("vscode"))
         monkeypatch.setattr(post_apply.update_ssh_config, "run", broken)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", make("cleanup"))
         monkeypatch.setattr(post_apply._update_npmrc, "run", make("npmrc"))
@@ -64,10 +66,10 @@ class TestRun:
 
         results = post_apply.run()
 
-        assert calls == ["claude", "broken", "cleanup", "npmrc", "mise", "plugins"]
+        assert calls == ["claude", "vscode", "broken", "cleanup", "npmrc", "mise", "plugins"]
         # ssh のみ失敗
         ok_flags = [r.ok for r in results]
-        assert ok_flags == [True, False, True, True, True, True]
+        assert ok_flags == [True, True, False, True, True, True, True]
 
     def test_main_exits_1_on_failure(self, monkeypatch: pytest.MonkeyPatch):
         """失敗があれば _main() は SystemExit(1) で終了する。"""
@@ -79,6 +81,7 @@ class TestRun:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(post_apply._update_claude_settings, "run", ok)
+        monkeypatch.setattr(post_apply._update_vscode_settings, "run", ok)
         monkeypatch.setattr(post_apply.update_ssh_config, "run", broken)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", ok)
         monkeypatch.setattr(post_apply._update_npmrc, "run", ok)
@@ -96,6 +99,7 @@ class TestRun:
             return False
 
         monkeypatch.setattr(post_apply._update_claude_settings, "run", ok)
+        monkeypatch.setattr(post_apply._update_vscode_settings, "run", ok)
         monkeypatch.setattr(post_apply.update_ssh_config, "run", ok)
         monkeypatch.setattr(post_apply, "_cleanup_removed_paths", ok)
         monkeypatch.setattr(post_apply._update_npmrc, "run", ok)

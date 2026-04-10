@@ -5,11 +5,12 @@
 (最後にサマリで失敗件数を出力し、失敗があれば exit 1)。
 
 1. Claude 設定ファイルのマージ  (_update_claude_settings.run)
-2. SSH config / authorized_keys  (update_ssh_config.run)
-3. 配布元から削除された旧ファイルの削除 (_cleanup_paths.cleanup_paths)
-4. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
-5. mise セットアップ (_setup_mise.run)
-6. Claude Code plugin の自動インストール (_install_claude_plugins.run)
+2. VSCode 設定ファイルの更新   (_update_vscode_settings.run)
+3. SSH config / authorized_keys  (update_ssh_config.run)
+4. 配布元から削除された旧ファイルの削除 (_cleanup_paths.cleanup_paths)
+5. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
+6. mise セットアップ (_setup_mise.run)
+7. Claude Code plugin の自動インストール (_install_claude_plugins.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -28,6 +29,7 @@ from pytools import (
     _setup_mise,
     _update_claude_settings,
     _update_npmrc,
+    _update_vscode_settings,
     update_ssh_config,
 )
 
@@ -85,6 +87,7 @@ def run() -> list[_StepResult]:
     """全ステップを順に実行し、結果のリストを返す。"""
     steps: list[tuple[str, Callable[[], bool]]] = [
         ("Claude 設定", _update_claude_settings.run),
+        ("VSCode 設定", _update_vscode_settings.run),
         ("SSH config", update_ssh_config.run),
         ("旧配布物の削除", _cleanup_removed_paths),
         ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
