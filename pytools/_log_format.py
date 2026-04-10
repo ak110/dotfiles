@@ -21,14 +21,14 @@ def format_status(target: str, state: str) -> str:
     return f"    {target}: {state}"
 
 
-def home_short(path: Path) -> str:
+def home_short(path: Path, *, home: Path | None = None) -> str:
     """`Path.home()` 配下なら `~/...` に短縮する。配下外はそのまま `str(path)`。
 
     Path.home() 自身は `~` を返す。シンボリックリンク解決は行わない
     (見た目を整えるだけの用途のため、resolve でユーザーの意図しないパスへ
     展開されないよう素のパスで判定する)。
     """
-    home = Path.home()
+    home = home or Path.home()
     if path == home:
         return "~"
     try:

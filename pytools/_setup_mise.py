@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import typing
+from collections.abc import Callable
 from pathlib import Path
 
 from pytools import _log_format
@@ -50,21 +51,27 @@ def _main() -> None:
     run()
 
 
-def run() -> bool:
+def run(
+    *,
+    find_mise_fn: Callable[[], Path | None] | None = None,
+    is_windows: bool | None = None,
+    ensure_global_node_fn: Callable[[Path], bool] | None = None,
+) -> bool:
     """Mise セットアップを実行する。
 
     Returns:
         何らかの変更を加えたら True。何もしなければ False。
     """
-    mise_bin = _find_mise_binary()
+    mise_bin = (find_mise_fn or _find_mise_binary)()
     if mise_bin is None:
         logger.info(_log_format.format_status("mise", "未検出のためスキップ"))
         return False
 
+    win = _IS_WINDOWS if is_windows is None else is_windows
     changed = False
-    if _IS_WINDOWS:
+    if win:
         changed |= _ensure_windows_user_path_has_shims()
-    changed |= _ensure_global_node(mise_bin)
+    changed |= (ensure_global_node_fn or _ensure_global_node)(mise_bin)
     return changed
 
 
@@ -230,13 +237,18 @@ def _broadcast_environment_change() -> None:
         logger.info(_log_format.format_status("mise", f"環境変数変更のブロードキャストに失敗: {e}"))
 
 
-def _ensure_global_node(mise_bin: Path) -> bool:
+def _ensure_global_node(
+    mise_bin: Path,
+    *,
+    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
+) -> bool:
     """Global 設定に node が無ければ `mise use --global node@lts` を実行する。
 
     Returns:
         node を新たに設定したら True。
     """
-    result = _run_mise(mise_bin, ["ls", "--global", "--json"])
+    runner = run_mise_fn or _run_mise
+    result = runner(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(_log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
@@ -252,7 +264,7 @@ def _ensure_global_node(mise_bin: Path) -> bool:
         logger.info(_log_format.format_status("mise", "global Node は既に設定済み"))
         return False
 
-    install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
+    install_result = runner(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
         stderr = install_result.stderr.strip() if install_result else ""
         logger.info(_log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))

@@ -3,8 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from pytools import _update_claude_settings as mod
 from pytools._update_claude_settings import update_claude_settings
 
@@ -178,45 +176,41 @@ class TestPlatformOverride:
 class TestPlatformOverrideSelection:
     """_platform_overrides のプラットフォーム判定テスト。"""
 
-    def test_posix_selects_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(mod.sys, "platform", "linux")
+    def test_posix_selects_posix_override(self, tmp_path: Path):
         base = tmp_path / "managed.json"
         base.write_text("{}", encoding="utf-8")
         (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
         (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
 
-        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+        result = mod._platform_overrides(base, platform="linux")  # pylint: disable=protected-access
 
         assert result == [tmp_path / "managed.posix.json"]
 
-    def test_darwin_selects_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(mod.sys, "platform", "darwin")
+    def test_darwin_selects_posix_override(self, tmp_path: Path):
         base = tmp_path / "managed.json"
         base.write_text("{}", encoding="utf-8")
         (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
 
-        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+        result = mod._platform_overrides(base, platform="darwin")  # pylint: disable=protected-access
 
         assert result == [tmp_path / "managed.posix.json"]
 
-    def test_win32_selects_win32_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(mod.sys, "platform", "win32")
+    def test_win32_selects_win32_override(self, tmp_path: Path):
         base = tmp_path / "managed.json"
         base.write_text("{}", encoding="utf-8")
         (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
         (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
 
-        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+        result = mod._platform_overrides(base, platform="win32")  # pylint: disable=protected-access
 
         assert result == [tmp_path / "managed.win32.json"]
 
-    def test_missing_override_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_missing_override_returns_empty(self, tmp_path: Path):
         """override が存在しない場合は空リスト。"""
-        monkeypatch.setattr(mod.sys, "platform", "linux")
         base = tmp_path / "managed.json"
         base.write_text("{}", encoding="utf-8")
 
-        result = mod._platform_overrides(base)  # pylint: disable=protected-access
+        result = mod._platform_overrides(base, platform="linux")  # pylint: disable=protected-access
 
         assert not result
 

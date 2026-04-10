@@ -67,12 +67,13 @@ def run() -> bool:
     return changed_settings or changed_config
 
 
-def _platform_overrides(base_path: Path) -> list[Path]:
+def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list[Path]:
     """現プラットフォームに対応するオーバーライド JSON のパス一覧を返す。
 
     実在するファイルのみを返す。未対応 OS では空リスト。
     """
-    suffix = "win32" if sys.platform == "win32" else "posix"
+    plat = platform or sys.platform
+    suffix = "win32" if plat == "win32" else "posix"
     override = base_path.with_suffix(f".{suffix}.json")
     return [override] if override.exists() else []
 

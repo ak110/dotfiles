@@ -64,50 +64,6 @@ class _StepResult:
     changed: bool
 
 
-def _main() -> None:
-    """エントリポイント。各ステップを順に実行し、サマリ後に exit。"""
-    # 全ログ行に 2 列分のインデントを付与する。
-    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位出力であることを
-    # 視覚的に示すため、post-apply 配下の出力はすべて 2 スペース下げる。
-    logging.basicConfig(format="  %(message)s", level="INFO")
-    results = run()
-    failed = [r for r in results if not r.ok]
-    updated = [r for r in results if r.ok and r.changed]
-    skipped = [r for r in results if r.ok and not r.changed]
-    # サマリ前の空行は logger.info("") だと format により末尾空白が
-    # 付与されてしまうため、stdout に直接書き込んで整形された空行を出力する。
-    print(flush=True)
-    logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
-    if failed:
-        logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-        sys.exit(1)
-
-
-def run() -> list[_StepResult]:
-    """全ステップを順に実行し、結果のリストを返す。"""
-    steps: list[tuple[str, Callable[[], bool]]] = [
-        ("Claude 設定", _update_claude_settings.run),
-        ("VSCode 設定", _update_vscode_settings.run),
-        ("SSH config", update_ssh_config.run),
-        ("旧配布物の削除", _cleanup_removed_paths),
-        ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
-        ("mise セットアップ", _setup_mise.run),
-        ("Claude Code plugin のインストール", _install_claude_plugins.run),
-    ]
-    results: list[_StepResult] = []
-    total = len(steps)
-    for index, (name, func) in enumerate(steps, start=1):
-        logger.info("[%d/%d] %s", index, total, name)
-        try:
-            changed = func()
-        except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
-            logger.exception("    %s: 失敗", name)
-            results.append(_StepResult(name=name, ok=False, changed=False))
-            continue
-        results.append(_StepResult(name=name, ok=True, changed=changed))
-    return results
-
-
 def _cleanup_removed_paths() -> bool:
     """`_REMOVED_PATHS` に従って旧配布物を削除する。
 
@@ -122,6 +78,53 @@ def _cleanup_removed_paths() -> bool:
     else:
         logger.info(_log_format.format_status("cleanup", f"{total_removed} 件を削除しました"))
     return total_removed > 0
+
+
+_DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
+    ("Claude 設定", _update_claude_settings.run),
+    ("VSCode 設定", _update_vscode_settings.run),
+    ("SSH config", update_ssh_config.run),
+    ("旧配布物の削除", _cleanup_removed_paths),
+    ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
+    ("mise セットアップ", _setup_mise.run),
+    ("Claude Code plugin のインストール", _install_claude_plugins.run),
+]
+
+
+def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
+    """エントリポイント。各ステップを順に実行し、サマリ後に exit。"""
+    # 全ログ行に 2 列分のインデントを付与する。
+    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位出力であることを
+    # 視覚的に示すため、post-apply 配下の出力はすべて 2 スペース下げる。
+    logging.basicConfig(format="  %(message)s", level="INFO")
+    results = (runner or run)()
+    failed = [r for r in results if not r.ok]
+    updated = [r for r in results if r.ok and r.changed]
+    skipped = [r for r in results if r.ok and not r.changed]
+    # サマリ前の空行は logger.info("") だと format により末尾空白が
+    # 付与されてしまうため、stdout に直接書き込んで整形された空行を出力する。
+    print(flush=True)
+    logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
+    if failed:
+        logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
+        sys.exit(1)
+
+
+def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:
+    """全ステップを順に実行し、結果のリストを返す。"""
+    effective_steps = steps if steps is not None else _DEFAULT_STEPS
+    results: list[_StepResult] = []
+    total = len(effective_steps)
+    for index, (name, func) in enumerate(effective_steps, start=1):
+        logger.info("[%d/%d] %s", index, total, name)
+        try:
+            changed = func()
+        except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
+            logger.exception("    %s: 失敗", name)
+            results.append(_StepResult(name=name, ok=False, changed=False))
+            continue
+        results.append(_StepResult(name=name, ok=True, changed=changed))
+    return results
 
 
 if __name__ == "__main__":

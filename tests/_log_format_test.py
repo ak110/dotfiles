@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from pytools import _log_format
 
 
@@ -22,24 +20,20 @@ class TestFormatStatus:
 class TestHomeShort:
     """`home_short()` のホームディレクトリ短縮処理。"""
 
-    def test_inside_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_inside_home(self, tmp_path: Path):
         """home 配下のパスは `~/...` に短縮される。"""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-        assert _log_format.home_short(tmp_path / ".config" / "x.toml") == "~/.config/x.toml"
+        assert _log_format.home_short(tmp_path / ".config" / "x.toml", home=tmp_path) == "~/.config/x.toml"
 
-    def test_home_itself(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_home_itself(self, tmp_path: Path):
         """`Path.home()` 自身は `~` を返す。"""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-        assert _log_format.home_short(tmp_path) == "~"
+        assert _log_format.home_short(tmp_path, home=tmp_path) == "~"
 
-    def test_outside_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_outside_home(self, tmp_path: Path):
         """home 配下でないパスはそのまま str()。"""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "user"))
         outside = tmp_path / "etc" / "config"
-        assert _log_format.home_short(outside) == str(outside)
+        assert _log_format.home_short(outside, home=tmp_path / "user") == str(outside)
 
-    def test_nested_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_nested_path(self, tmp_path: Path):
         """深い階層も `~/.../` で短縮される (POSIX 区切り固定)。"""
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
         path = tmp_path / "a" / "b" / "c.txt"
-        assert _log_format.home_short(path) == "~/a/b/c.txt"
+        assert _log_format.home_short(path, home=tmp_path) == "~/a/b/c.txt"

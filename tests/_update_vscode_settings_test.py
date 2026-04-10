@@ -6,9 +6,6 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from pytools import _update_vscode_settings as mod
 
@@ -62,35 +59,29 @@ class TestHostnameColor:
 
     def test_returns_valid_hex_color(self) -> None:
         """有効な 7 文字の hex カラーコードを返す。"""
-        with patch.object(mod.socket, "gethostname", return_value="test-host"):
-            color = mod._hostname_color()
+        color = mod._hostname_color(hostname="test-host")
         assert color.startswith("#")
         assert len(color) == 7
         int(color[1:], 16)  # 16 進数として有効であること
 
-    @pytest.mark.parametrize("hostname", ["host-a", "host-b", "server-1", "x", "long-hostname-example"])
-    def test_brightness_not_too_dark(self, hostname: str) -> None:
+    def test_brightness_not_too_dark(self) -> None:
         """RGB 各チャンネルの最小値が暗すぎない (#99 = 153 以上)。"""
-        with patch.object(mod.socket, "gethostname", return_value=hostname):
-            color = mod._hostname_color()
-        r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
-        # 加重平均輝度で検証 (0.299R + 0.587G + 0.114B)
-        luminance = 0.299 * r + 0.587 * g + 0.114 * b
-        assert luminance >= 140, f"色 {color} (ホスト名: {hostname}) が暗すぎる (輝度: {luminance:.0f})"
+        for hostname in ["host-a", "host-b", "server-1", "x", "long-hostname-example"]:
+            color = mod._hostname_color(hostname=hostname)
+            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+            # 加重平均輝度で検証 (0.299R + 0.587G + 0.114B)
+            luminance = 0.299 * r + 0.587 * g + 0.114 * b
+            assert luminance >= 140, f"色 {color} (ホスト名: {hostname}) が暗すぎる (輝度: {luminance:.0f})"
 
     def test_different_hostnames_produce_different_colors(self) -> None:
         """異なるホスト名は異なる色を生成する。"""
-        colors = set()
-        for hostname in ["host-a", "host-b", "host-c", "host-d"]:
-            with patch.object(mod.socket, "gethostname", return_value=hostname):
-                colors.add(mod._hostname_color())
+        colors = {mod._hostname_color(hostname=h) for h in ["host-a", "host-b", "host-c", "host-d"]}
         assert len(colors) == 4
 
     def test_deterministic(self) -> None:
         """同じホスト名なら同じ色を返す。"""
-        with patch.object(mod.socket, "gethostname", return_value="stable-host"):
-            first = mod._hostname_color()
-            second = mod._hostname_color()
+        first = mod._hostname_color(hostname="stable-host")
+        second = mod._hostname_color(hostname="stable-host")
         assert first == second
 
 
@@ -99,34 +90,26 @@ class TestSettingsPath:
 
     def test_linux_returns_path_when_vscode_server_exists(self, tmp_path: Path) -> None:
         """Linux: .vscode-server が存在すればパスを返す。"""
-        vscode_dir = tmp_path / ".vscode-server"
-        vscode_dir.mkdir()
-        with patch.object(mod, "_IS_WINDOWS", False), patch.object(mod.Path, "home", return_value=tmp_path):
-            path = mod._settings_path()
+        (tmp_path / ".vscode-server").mkdir()
+        path = mod._settings_path(is_windows=False, home=tmp_path)
         assert path is not None
         assert ".vscode-server" in str(path)
         assert str(path).endswith("settings.json")
 
     def test_linux_returns_none_when_vscode_server_missing(self, tmp_path: Path) -> None:
         """Linux: .vscode-server が存在しなければ None を返す。"""
-        with patch.object(mod, "_IS_WINDOWS", False), patch.object(mod.Path, "home", return_value=tmp_path):
-            assert mod._settings_path() is None
+        assert mod._settings_path(is_windows=False, home=tmp_path) is None
 
-    def test_windows_returns_path_when_code_dir_exists(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_windows_returns_path_when_code_dir_exists(self, tmp_path: Path) -> None:
         """Windows: %APPDATA%/Code が存在すればパスを返す。"""
-        code_dir = tmp_path / "Code"
-        code_dir.mkdir()
-        monkeypatch.setenv("APPDATA", str(tmp_path))
-        with patch.object(mod, "_IS_WINDOWS", True):
-            path = mod._settings_path()
+        (tmp_path / "Code").mkdir()
+        path = mod._settings_path(is_windows=True, environ={"APPDATA": str(tmp_path)})
         assert path is not None
         assert "Code" in str(path)
 
-    def test_windows_returns_none_when_appdata_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_windows_returns_none_when_appdata_missing(self) -> None:
         """Windows: APPDATA 未設定なら None を返す。"""
-        monkeypatch.delenv("APPDATA", raising=False)
-        with patch.object(mod, "_IS_WINDOWS", True):
-            assert mod._settings_path() is None
+        assert mod._settings_path(is_windows=True, environ={}) is None
 
 
 class TestApply:
@@ -200,8 +183,7 @@ class TestBuildManagedSettings:
 
     def test_contains_required_keys(self) -> None:
         """必須キーが含まれる。"""
-        with patch.object(mod.socket, "gethostname", return_value="test"):
-            settings = mod._build_managed_settings()
+        settings = mod._build_managed_settings(hostname="test")
         assert "workbench.colorCustomizations" in settings
         assert "activityBar.background" in settings["workbench.colorCustomizations"]
         assert "markdown.styles" in settings
@@ -209,15 +191,13 @@ class TestBuildManagedSettings:
 
     def test_css_paths_point_to_share_vscode(self) -> None:
         """CSS パスが share/vscode/ を含む。"""
-        with patch.object(mod.socket, "gethostname", return_value="test"):
-            settings = mod._build_managed_settings()
+        settings = mod._build_managed_settings(hostname="test")
         assert any("share/vscode/markdown.css" in p for p in settings["markdown.styles"])
         assert any("share/vscode/markdown-pdf.css" in p for p in settings["markdown-pdf.styles"])
 
     def test_css_paths_use_posix_separators(self) -> None:
         """CSS パスがスラッシュ区切りである (Windows でも JSON 互換)。"""
-        with patch.object(mod.socket, "gethostname", return_value="test"):
-            settings = mod._build_managed_settings()
+        settings = mod._build_managed_settings(hostname="test")
         for path in settings["markdown.styles"] + settings["markdown-pdf.styles"]:
             assert "\\" not in path
 
@@ -227,16 +207,11 @@ class TestRun:
 
     def test_skips_when_path_is_none(self) -> None:
         """settings_path が None の場合スキップする。"""
-        with patch.object(mod, "_settings_path", return_value=None):
-            assert mod.run() is False
+        assert mod.run(settings_path=None) is False
 
     def test_applies_when_path_exists(self, tmp_path: Path) -> None:
         """settings_path が有効な場合マージを実行する。"""
         target = tmp_path / "settings.json"
-        with (
-            patch.object(mod, "_settings_path", return_value=target),
-            patch.object(mod.socket, "gethostname", return_value="test"),
-        ):
-            assert mod.run() is True
+        assert mod.run(settings_path=target, hostname="test") is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "workbench.colorCustomizations" in result

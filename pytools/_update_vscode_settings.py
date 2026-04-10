@@ -12,6 +12,7 @@ settings.json にマージする。
 - list・スカラー値は managed 側で上書き
 """
 
+import collections.abc
 import colorsys
 import copy
 import hashlib
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 _IS_WINDOWS = platform.system() == "Windows"
 _DOTFILES_DIR = Path.home() / "dotfiles"
 
+# run() が settings_path 引数のデフォルト (自動検出) と明示的 None (パス未検出)
+# を区別するためのセンチネル。
+_UNSET: object = object()
+
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -37,45 +42,54 @@ def _main() -> None:
     run()
 
 
-def run() -> bool:
+def run(*, settings_path: Path | None | object = _UNSET, hostname: str | None = None) -> bool:
     """VSCode settings.json を更新する。
 
     Returns:
         実際にファイルを書き換えたかどうか。
     """
-    settings_path = _settings_path()
+    if settings_path is _UNSET:
+        settings_path = _settings_path()
     if settings_path is None:
         logger.info(_log_format.format_status("vscode", "VSCode未検出のためスキップ"))
         return False
-    managed = _build_managed_settings()
+    assert isinstance(settings_path, Path)
+    managed = _build_managed_settings(hostname=hostname)
     return _apply(managed, settings_path)
 
 
-def _settings_path() -> Path | None:
+def _settings_path(
+    *,
+    is_windows: bool | None = None,
+    home: Path | None = None,
+    environ: collections.abc.Mapping[str, str] | None = None,
+) -> Path | None:
     """OS に応じた VSCode settings.json のパスを返す。
 
     VSCode のベースディレクトリが存在しない場合は None を返す。
     """
-    if _IS_WINDOWS:
-        appdata = os.environ.get("APPDATA")
+    win = _IS_WINDOWS if is_windows is None else is_windows
+    env = os.environ if environ is None else environ
+    if win:
+        appdata = env.get("APPDATA")
         if not appdata:
             return None
         base = Path(appdata) / "Code"
     else:
-        base = Path.home() / ".vscode-server"
+        base = (home or Path.home()) / ".vscode-server"
     if not base.exists():
         return None
-    if _IS_WINDOWS:
+    if win:
         return base / "User" / "settings.json"
     return base / "data" / "Machine" / "settings.json"
 
 
-def _build_managed_settings() -> dict:
+def _build_managed_settings(*, hostname: str | None = None) -> dict:
     """Managed 設定の dict を構築する。"""
     share_vscode = _DOTFILES_DIR / "share" / "vscode"
     return {
         "workbench.colorCustomizations": {
-            "activityBar.background": _hostname_color(),
+            "activityBar.background": _hostname_color(hostname=hostname),
         },
         "markdown.styles": [share_vscode.joinpath("markdown.css").as_posix()],
         "markdown-pdf.styles": [share_vscode.joinpath("markdown-pdf.css").as_posix()],
@@ -156,14 +170,14 @@ def _apply(managed: dict, settings_path: Path) -> bool:
     return True
 
 
-def _hostname_color() -> str:
+def _hostname_color(*, hostname: str | None = None) -> str:
     """ホスト名の SHA-256 ハッシュから穏やかな HEX カラーを生成する。
 
     HSL 色空間で色相をフルレンジ、彩度を控えめ、明度を高めに設定し、
     #999999～#eeeeee 相当の明るく穏やかな色を返す。
     SHA-256 の雪崩効果により、ホスト名が 1 文字違うだけで全成分が変わる。
     """
-    hostname = socket.gethostname()
+    hostname = hostname or socket.gethostname()
     digest = hashlib.sha256(hostname.encode()).digest()
     # 異なるバイト位置から各成分を取得
     h = int.from_bytes(digest[0:2], "big") / 65535.0  # 色相: 0.0-1.0
