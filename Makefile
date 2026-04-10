@@ -1,5 +1,5 @@
 # サプライチェーン攻撃対策としてlockfileを常に尊重する。依存を更新する場合のみ
-# `env -u UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
+# `env --unset UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
 UV_RUN := uv run
@@ -9,7 +9,7 @@ help:
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
-	env -u UV_FROZEN uv sync --upgrade --all-groups
+	env --unset UV_FROZEN uv sync --upgrade --all-groups
 	$(UV_RUN) pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
@@ -32,13 +32,13 @@ setup:
 # ローカルでも実行可能にするための開発者向けターゲット。
 setup-pwsh:
 	sudo apt-get update
-	sudo apt-get install -y wget apt-transport-https software-properties-common
+	sudo apt-get install --yes wget apt-transport-https software-properties-common
 	. /etc/os-release && \
-	    wget -q "https://packages.microsoft.com/config/ubuntu/$$VERSION_ID/packages-microsoft-prod.deb" && \
-	    sudo dpkg -i packages-microsoft-prod.deb && \
+	    wget --quiet "https://packages.microsoft.com/config/ubuntu/$$VERSION_ID/packages-microsoft-prod.deb" && \
+	    sudo dpkg --install packages-microsoft-prod.deb && \
 	    rm packages-microsoft-prod.deb
 	sudo apt-get update
-	sudo apt-get install -y powershell
+	sudo apt-get install --yes powershell
 	pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck"
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）

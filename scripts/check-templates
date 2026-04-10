@@ -16,7 +16,7 @@ if ! command -v chezmoi >/dev/null 2>&1; then
 fi
 
 fail=0
-tmpdir="$(mktemp -d)"
+tmpdir="$(mktemp --directory)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 # pre-commit はリポジトリルートから呼び出される前提。
@@ -57,7 +57,7 @@ for file in "$@"; do
             fi
             if command -v shellcheck >/dev/null 2>&1; then
                 # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
-                if ! shellcheck -S error "$rendered" 2>"$errfile"; then
+                if ! shellcheck --severity error "$rendered" 2>"$errfile"; then
                     echo "FAIL [shellcheck on rendered $file]:" >&2
                     cat "$errfile" >&2
                     fail=1
