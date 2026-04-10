@@ -107,6 +107,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: uv sync --all-groups
       - run: uv run pyfltr ci .
       - run: uv cache prune --ci

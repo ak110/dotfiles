@@ -36,7 +36,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "pyfltr>=1.21.0",
+    "pyfltr>=1.22.2",
 ]
 
 [tool.pyfltr]
