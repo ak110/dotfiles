@@ -6,9 +6,9 @@
 r"""Claude Code PreToolUse フック: dotfiles 個人環境専用チェック集。
 
 mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Code plugin
-`edit-guardrails` へ移管した (`plugins/edit-guardrails/scripts/pretooluse.py`)。
+`agent-toolkit` へ移管した (`plugins/agent-toolkit/scripts/pretooluse.py`)。
 本スクリプトは dotfiles 個人環境でのみ必要な、汎用性の低いチェックをまとめる
-(他人に配布する `edit-guardrails` には含めにくい個人環境前提のチェック群)。
+(他人に配布する `agent-toolkit` には含めにくい個人環境前提のチェック群)。
 
 統合しているチェック:
 
@@ -23,7 +23,7 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
      `Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` の両方が必須。
    - CLAUDE.md の Windows PowerShell スクリプト規約を強制する。
    - Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため対象外。
-   - LF/CRLF の改行チェックは `edit-guardrails` プラグインが担当する。
+   - LF/CRLF の改行チェックは `agent-toolkit` プラグインが担当する。
 3. `CLAUDE.local.md` 言及検出 (warn / 非ブロック)
    - `CLAUDE.local.md` はリポジトリ管理外のローカルファイルであり、
      他のリポジトリ管理ファイルからの参照は厳禁
@@ -199,7 +199,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら True を返す。
 
     Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため Write のみを対象とする。
-    LF/CRLF 改行のチェックは `edit-guardrails` プラグイン側で実施しているため重複させない。
+    LF/CRLF 改行のチェックは `agent-toolkit` プラグイン側で実施しているため重複させない。
     """
     if tool_name != "Write" or not _is_ps1(file_path):
         return False

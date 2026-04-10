@@ -18,6 +18,8 @@ _CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("rust-test.md", (".rs",)),
     ("csharp.md", (".cs",)),
     ("csharp-test.md", (".cs",)),
+    ("powershell.md", (".ps1", ".psm1", ".psd1")),
+    ("windows-batch.md", (".cmd", ".bat")),
 ]
 # 無条件で配布するルール
 _UNCONDITIONAL_RULES: list[str] = ["claude.md", "claude-rules.md", "claude-skills.md", "markdown.md"]

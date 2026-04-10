@@ -1,7 +1,7 @@
 {
   "name": "edit-guardrails",
-  "version": "0.4.0",
-  "description": "PreToolUse guardrails for Write/Edit/MultiEdit: block mojibake, LF-only PowerShell, lockfile and secret edits; warn on manifest and $HOME leaks. Block Read on files with non-UTF-8 bytes, ESC sequences or other terminal-breaking control bytes. Also auto-allows redundant mkdir -p ~/.claude/plans on Bash to skip plan-mode confirmation.",
+  "version": "0.5.0",
+  "description": "Deprecated: agent-toolkit に移行しました。claude plugin uninstall edit-guardrails@ak110-dotfiles でアンインストールしてください。",
   "author": {
     "name": "aki",
     "url": "https://github.com/ak110"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/ak110/dotfiles",
   "repository": "https://github.com/ak110/dotfiles",
   "license": "MIT",
-  "keywords": ["hooks", "pretooluse", "guardrails", "safety", "bash"]
+  "keywords": ["deprecated"]
 }

@@ -15,7 +15,7 @@ paths:
 プラグインは `claude plugin update` 経由で配布される。
 バージョン番号を上げない限り既存ユーザーへ更新は配信されない。
 (同じバージョンでは `update` コマンドが「最新です」と返す)
-過去に `edit-guardrails` で実害があったため、編集のたびにバージョン更新の要否を判定する。
+過去に `agent-toolkit` (旧 `edit-guardrails`) で実害があったため、編集のたびにバージョン更新の要否を判定する。
 
 また、バージョン情報はSSOT違反の状態で2ファイルに重複している。
 片方だけ更新すると配布に失敗するため、必ず両方を同期する。
@@ -28,8 +28,9 @@ paths:
 - `.claude-plugin/marketplace.json` の `plugins[]` 内 `name == "<plugin-name>"` のエントリ
 
 整合性は各プラグインのテストで検査する。
-`edit-guardrails` の担当は `TestManifestSsot` で、`make test` で自動的に失敗する。
-(場所: `plugins/edit-guardrails/tests/pretooluse_test.py`)
+`agent-toolkit`の担当は`TestManifestSsot`で、`make test`で自動的に失敗する
+(場所: `plugins/agent-toolkit/tests/pretooluse_test.py`)。
+deprecatedの空シェル`edit-guardrails`もmarketplace.jsonにエントリが残っているが、SSOTテストは`agent-toolkit`側のみで検証する。
 新しいプラグインを追加するときは同等のSSOTテストも追加する。
 
 ## バージョン更新が必要な変更
@@ -60,7 +61,7 @@ paths:
 
 ## 同期先ドキュメント
 
-`docs/claude-code-concept.md` の「edit-guardrailsプラグイン」セクションに各プラグインのチェック内容要約がある。
+`docs/claude-code-concept.md` の「agent-toolkit」セクションに各プラグインのチェック内容要約がある。
 以下の変更をしたときはここも併せて更新する（更新忘れが起きやすいのでここに明記する）。
 
 - 新しいcheckの追加・既存checkの削除
@@ -83,6 +84,6 @@ paths:
 
 ## 参考
 
-- 配布方式と前提: `docs/claude-code.md` のedit-guardrailsセクション
+- 配布方式と前提: `docs/claude-code.md` のagent-toolkitセクション
 - 利用者向け説明（チェック内容・更新手順）: `docs/claude-code-concept.md`
-- `edit-guardrails` の現行チェック内容: `plugins/edit-guardrails/scripts/pretooluse.py` モジュールdocstring
+- `agent-toolkit` の現行チェック内容: `plugins/agent-toolkit/scripts/pretooluse.py` モジュールdocstring

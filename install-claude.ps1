@@ -28,7 +28,9 @@ $files = @(
     'rust.md',
     'rust-test.md',
     'csharp.md',
-    'csharp-test.md'
+    'csharp-test.md',
+    'powershell.md',
+    'windows-batch.md'
 )
 
 $script:backupDir = $null

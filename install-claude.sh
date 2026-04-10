@@ -29,6 +29,8 @@ FILES=(
     rust-test.md
     csharp.md
     csharp-test.md
+    powershell.md
+    windows-batch.md
 )
 
 BACKUP_DIR=""

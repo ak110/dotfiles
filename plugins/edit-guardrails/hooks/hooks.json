@@ -1,16 +1,3 @@
 {
-  "description": "PreToolUse guardrails for Write/Edit/MultiEdit (mojibake + PS1 EOL + lockfile/secret edits), Read encoding/control-byte scan, and auto-allow for redundant ~/.claude/plans mkdir.",
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit|Bash|Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
-          }
-        ]
-      }
-    ]
-  }
+  "description": "Deprecated: agent-toolkit に移行しました。"
 }

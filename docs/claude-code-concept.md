@@ -87,6 +87,11 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 ルールだけではカバーしきれない領域（hookによる編集検査など）を補うためのプラグインを提供する。
 本リポジトリ自体をClaude CodeのPlugin Marketplace (`ak110-dotfiles`) として登録できるようにしてあり、今後もプラグインを追加する可能性がある。
 
+プラグインは原則project scopeで各プロジェクトに導入する。
+プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
+開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
+設定方法は [docs/claude-code.md](claude-code.md) のセットアップ手順を参照。
+
 ### 前提条件
 
 プラグインは [uv](https://docs.astral.sh/uv/) に依存する。
@@ -102,7 +107,7 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 
 ### プラグイン詳細
 
-#### edit-guardrails
+#### agent-toolkit
 
 好ましくない編集や冗長なBash呼び出しを `PreToolUse` 段階で検出・制御するプラグイン。
 コードベースの破壊や、Claude Codeの訓練データ由来の誤った思い込みによる事故を未然に防ぐことを目的としている。
@@ -121,3 +126,14 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
   - plan modeでClaudeがプラン ファイル書き込み前に走らせる冗長な `mkdir` による
     許可確認プロンプトを抑止する。対象がランタイムで既存ディレクトリの場合のみ許可するため、
     許可される呼び出しは常にno-op相当（ファイルシステム変更なし）
+
+### 移行: edit-guardrails → agent-toolkit
+
+旧プラグイン `edit-guardrails` は `agent-toolkit` に改名・統合された。
+`edit-guardrails` がインストール済みの場合は以下のコマンドで削除する。
+
+```bash
+claude plugin uninstall edit-guardrails@ak110-dotfiles
+```
+
+dotfiles利用者は `update-dotfiles` を実行すれば自動的に削除される。

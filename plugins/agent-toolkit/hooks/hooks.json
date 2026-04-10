@@ -1,0 +1,16 @@
+{
+  "description": "Write/Edit/MultiEditのPreToolUseガードレール（文字化け・PS1改行・ロックファイル/シークレット編集）、Readのエンコーディング/制御文字検査、冗長な~/.claude/plans mkdirの自動許可。agent-toolkitプラグインの一部。",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+---
+paths:
+  - "**/*.ps1"
+  - "**/*.psm1"
+  - "**/*.psd1"
+  - "**/*.ps1.tmpl"
+---
+
+# PowerShell記述スタイル
+
+- Claude Codeツールの挙動と注意点
+  - EditツールはCRLF改行とUTF-8 BOMを透過的に維持する。既存ファイルの編集はEditを使う
+  - Writeツールは常にLF改行・BOMなしで書くため、CRLFとBOMが消失する。PS1ファイルにはWriteを使わない
+    - agent-toolkitプラグインがPS1へのLF-only書き込みをブロックするため、Writeは実行自体が失敗する
+  - 新規ファイル作成時はBashツールでBOM付きCRLFファイルを書く
+    - 例: `printf '\xEF\xBB\xBF' > file.ps1 && cat <<'ENDOFPS1' | sed 's/$/\r/' >> file.ps1`
+  - `.gitattributes`の`eol=crlf`は改行のみ管理し、BOMは復元しない。BOM付加は別途必要
+- Windows PowerShell 5.1互換性
+  - CRLF改行が必須（LFのみだと構文解析に失敗するため）
+  - `.gitattributes`で`*.ps1 text eol=crlf`を設定してgit側でも改行を管理する
+  - UTF-8エンコーディングを常に明示する（Windows PowerShell 5.1のデフォルトエンコーディングはShift-JISであり、日本語が正しく扱えないため）
+    - `Get-Content -Encoding UTF8`、`Set-Content -Encoding UTF8`
+- 基本スタイル
+  - 冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述する
+  - 命名規則: cmdlet・関数は`Verb-Noun` (PascalCase)、変数は`$camelCase`。承認済み動詞(`Get-Verb`)を使う
+- エラーハンドリング
+  - `try`/`catch`/`finally`を使う
+  - non-terminating errorをキャッチするために`-ErrorAction Stop`を指定する
+- パス操作
+  - `Join-Path`を使い、文字列結合でパスを組み立てない
+- セキュリティ上の危険パターン
+  - `Invoke-Expression`はユーザー入力に対して使わない（コマンドインジェクションの危険があるため）
+  - 外部入力を含むコマンド文字列を直接実行しない
+- 他で指定が無い場合のツール推奨:
+  - 静的解析: PSScriptAnalyzer

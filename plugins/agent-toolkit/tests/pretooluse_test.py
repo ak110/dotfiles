@@ -1,4 +1,4 @@
-"""plugins/edit-guardrails/scripts/pretooluse.py のテスト。
+"""plugins/agent-toolkit/scripts/pretooluse.py のテスト。
 
 PreToolUse 統合フック (mojibake / ps1 EOL / Bash mkdir auto-allow 等) のテスト。
 独立スクリプトなので subprocess で起動し exit code・stderr・stdout を検証する。
@@ -84,9 +84,16 @@ class TestPs1EolCheck:
         assert result.returncode == 2
         assert "LF 改行" in result.stderr
 
-    def test_ps1_tmpl_with_lf_only_blocks(self):
+    def test_ps1_tmpl_edit_with_lf_only_allowed(self):
+        """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
         content = "Set-StrictMode\n{{ .chezmoi.homeDir }}\n"
         result = _run({"tool_name": "Edit", "tool_input": {"file_path": "./a.ps1.tmpl", "new_string": content}})
+        assert result.returncode == 0
+
+    def test_ps1_tmpl_write_with_lf_only_blocks(self):
+        """Write は LF のまま書き込むためブロックする。"""
+        content = "Set-StrictMode\n{{ .chezmoi.homeDir }}\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "./a.ps1.tmpl", "content": content}})
         assert result.returncode == 2
 
     def test_ps1_with_crlf_allowed(self):

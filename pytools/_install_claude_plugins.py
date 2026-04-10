@@ -12,17 +12,25 @@
 対象プラグインは `.claude-plugin/marketplace.json` の `plugins[]` 全件。
 このファイルを SSOT として扱うため、`plugins/` 配下に新しいプラグインを追加して
 `marketplace.json` に登録するだけで、本モジュールの対象に自動で追加される。
+`keywords` に ``"deprecated"`` を含むエントリは、インストール済みであれば
+自動でアンインストールされる。
 
 前提を満たした場合の処理:
 
 - marketplace 未登録 → `claude plugin marketplace add <dotfiles root>` で登録
   (ローカルパスを使うのは、オフライン環境でも動くため。GitHub 経由では
    ネットワーク依存になる)
-- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope user`
+- deprecated plugin がインストール済み → 検出されたスコープごとにアンインストール
+- 管理対象 plugin が user scope に残存 → アンインストール (project scope 移行用)
+- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope project`
 - 対象 plugin がインストール済みで `marketplace.json` と version が乖離
   → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
-     `claude plugin update <name>@<marketplace>` で反映
+     `claude plugin update <name>@<marketplace> --scope project` で反映
   (version が一致していれば update コマンドは呼ばずスキップ)
+
+本スクリプトは dotfiles リポジトリの project scope でプラグインを管理する。
+他プロジェクトでは `.claude/settings.json` の `enabledPlugins` + `extraKnownMarketplaces`
+を設定することで、Claude Code がフォルダ trust 時にインストールを自動提案する。
 
 `update-dotfiles` 経由で本モジュールが実行されるたびに version 乖離が解消されるため、
 ユーザー環境では marketplace.json の version 更新が自動で反映される。
@@ -68,19 +76,28 @@ def run() -> bool:
         return False
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
-    # 空 dict の場合 (ファイル欠損 / 解析失敗 / plugins[] が空) は何もしない。
-    target_versions = _read_target_versions(dotfiles_root)
-    if not target_versions:
+    target_versions, deprecated_names = _read_target_info(dotfiles_root)
+    if not target_versions and not deprecated_names:
         logger.info(_log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
         return False
 
-    installed = _list_installed_plugin_versions()
-    if installed is None:
+    raw_data = _get_installed_plugins_raw()
+    if raw_data is None:
         logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
         return False
 
     if not _ensure_marketplace(dotfiles_root):
         return False
+
+    any_change = False
+
+    # deprecated プラグインをアンインストール
+    for name in deprecated_names:
+        if _uninstall_deprecated(name, raw_data):
+            any_change = True
+
+    # project scope のバージョン辞書を取得
+    installed = _extract_plugin_version_map(raw_data)
 
     # 既にインストールされている対象 plugin が 1 つでもあるなら marketplace メタデータを
     # refresh して、ローカルの marketplace.json に入った version 更新を取り込む。
@@ -88,8 +105,10 @@ def run() -> bool:
     if any(name in installed for name in target_versions):
         _refresh_marketplace()
 
-    any_change = False
     for name, target in target_versions.items():
+        # user scope に残存するエントリを除去 (project scope 移行用)
+        _cleanup_old_user_scope(name, raw_data)
+
         current = installed.get(name)
         if current is None:
             if _install_plugin(name):
@@ -127,30 +146,30 @@ def _find_dotfiles_root() -> Path | None:
     return None
 
 
-def _list_installed_plugin_versions() -> dict[str, str] | None:
-    """インストール済み plugin 名 → version の辞書を返す。失敗時は None。
-
-    version 不明な要素は空文字列で登録する (呼び出し側で差分判定から除外される)。
-    """
+def _get_installed_plugins_raw() -> object | None:
+    """`claude plugin list --json` の生パース結果を返す。失敗時は None。"""
     result = _run_claude(["plugin", "list", "--json"])
     if result is None or result.returncode != 0:
         return None
     try:
-        data = json.loads(result.stdout)
+        return json.loads(result.stdout)
     except json.JSONDecodeError:
         logger.info(_log_format.format_status("plugins", "`claude plugin list --json` の出力 JSON を解析できませんでした"))
         return None
-    # Claude Code の出力形式は将来変わる可能性があるため複数形式を許容する
-    return _extract_plugin_version_map(data)
 
 
 def _extract_plugin_version_map(data: object) -> dict[str, str]:
-    """`claude plugin list --json` の戻り値から name → version の辞書を作る。
+    """`claude plugin list --json` の戻り値から project scope の name → version 辞書を作る。
+
+    本スクリプトは ``--scope project`` でインストールするため、
+    project scope のエントリのみを対象とする。``scope`` フィールドが存在しない
+    エントリは後方互換のため含める。
 
     実機で確認した形式 (Claude Code 2.x): list[dict] で各要素が以下を持つ。
 
-    - `id`: `<plugin>@<marketplace>` 形式 (例: `edit-guardrails@ak110-dotfiles`)
+    - `id`: `<plugin>@<marketplace>` 形式 (例: `agent-toolkit@ak110-dotfiles`)
     - `version`: 例 `"0.1.0"` (無い場合は空文字列として記録)
+    - `scope`: `"user"` / `"project"` / `"local"` 等
     - `name`: ない場合あり
 
     知っている全形式:
@@ -172,6 +191,9 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
         for item in list_data:
             if isinstance(item, dict):
                 item_dict = cast("dict[object, object]", item)
+                # project scope 以外のエントリは管理対象外
+                if item_dict.get("scope") not in (None, "project"):
+                    continue
                 name = _name_from_entry(item_dict)
                 if name is not None:
                     raw_version = item_dict.get("version")
@@ -192,29 +214,86 @@ def _name_from_entry(entry: dict[object, object]) -> str | None:
     return None
 
 
-def _read_target_versions(dotfiles_root: Path) -> dict[str, str]:
-    """`marketplace.json` から配布側の name → version 辞書を作る。
+def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
+    """`marketplace.json` から目標バージョン辞書と deprecated 名の集合を返す。
 
-    読み込み失敗時は空辞書を返す (更新判定をスキップする方針とする)。
+    ``keywords`` に ``"deprecated"`` を含むエントリは deprecated 扱いとし、
+    通常のインストール/更新対象から除外する。
+
+    読み込み失敗時は空辞書・空集合を返す (更新判定をスキップする方針とする)。
     """
     manifest = dotfiles_root / ".claude-plugin" / "marketplace.json"
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         logger.info(_log_format.format_status("plugins", f"marketplace.json の読み込みに失敗: {e}"))
-        return {}
+        return {}, set()
     plugins = data.get("plugins") if isinstance(data, dict) else None
     if not isinstance(plugins, list):
-        return {}
-    versions: dict[str, str] = {}
+        return {}, set()
+    targets: dict[str, str] = {}
+    deprecated: set[str] = set()
     for entry in plugins:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
         version = entry.get("version")
-        if isinstance(name, str) and isinstance(version, str):
-            versions[name] = version
-    return versions
+        if not isinstance(name, str) or not isinstance(version, str):
+            continue
+        keywords = entry.get("keywords")
+        if isinstance(keywords, list) and "deprecated" in keywords:
+            deprecated.add(name)
+        else:
+            targets[name] = version
+    return targets, deprecated
+
+
+def _is_installed(name: str, raw_data: object) -> bool:
+    """指定プラグインが何らかのスコープでインストール済みか判定する。"""
+    if not isinstance(raw_data, list):
+        return False
+    for item in cast("list[object]", raw_data):
+        if isinstance(item, dict) and _name_from_entry(cast("dict[object, object]", item)) == name:
+            return True
+    return False
+
+
+def _has_user_scope_entry(name: str, raw_data: object) -> bool:
+    """指定プラグインが user scope にインストール済みか判定する。"""
+    if not isinstance(raw_data, list):
+        return False
+    for item in cast("list[object]", raw_data):
+        if isinstance(item, dict):
+            entry = cast("dict[object, object]", item)
+            if _name_from_entry(entry) == name and entry.get("scope") == "user":
+                return True
+    return False
+
+
+def _uninstall_deprecated(name: str, raw_data: object) -> bool:
+    """Deprecated プラグインがインストール済みならアンインストールする。"""
+    if not _is_installed(name, raw_data):
+        return False
+    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}"])
+    if result is not None and result.returncode == 0:
+        logger.info(_log_format.format_status(name, "deprecated のためアンインストールしました"))
+        return True
+    stderr = result.stderr.strip() if result else ""
+    logger.info(_log_format.format_status(name, f"アンインストールに失敗: {stderr}"))
+    return False
+
+
+def _cleanup_old_user_scope(name: str, raw_data: object) -> None:
+    """管理対象プラグインの user scope エントリを除去する (project scope 移行用)。"""
+    if not _has_user_scope_entry(name, raw_data):
+        return
+    # デフォルト scope が user のため --scope 不要
+    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}"])
+    if result is not None and result.returncode == 0:
+        logger.info(_log_format.format_status(name, "user scope を除去しました (project scope へ移行)"))
+    else:
+        stderr = result.stderr.strip() if result else ""
+        logger.info(_log_format.format_status(name, f"user scope の除去に失敗 (続行): {stderr}"))
 
 
 def _ensure_marketplace(dotfiles_root: Path) -> bool:
@@ -256,7 +335,7 @@ def _marketplace_already_registered(data: object) -> bool:
 
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
+    result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(_log_format.format_status(name, f"install に失敗: {stderr}"))
@@ -281,7 +360,7 @@ def _refresh_marketplace() -> bool:
 
 def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}"])
+    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(_log_format.format_status(name, f"update に失敗: {stderr}"))

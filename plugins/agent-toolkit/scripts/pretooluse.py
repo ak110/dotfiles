@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code plugin edit-guardrails: PreToolUse 統合フック。
+r"""Claude Code plugin agent-toolkit: PreToolUse 統合フック。
 
 Write / Edit / MultiEdit / Bash / Read の実行前に以下のチェックを順に実行する。
 block 系 check は 1 プロセスで直列実行し、最初の違反で exit 2 する。
@@ -98,7 +98,9 @@ def _main() -> int:
     # --- block 系 check (最初の違反で exit 2) ---
     if _check_mojibake(tool_name, fields):
         return 2
-    if _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path):
+    # Edit/MultiEdit は内部的に CRLF を透過的に維持するためチェック不要。
+    # Write のみ LF で書き込むため EOL チェックを実行する。
+    if tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path):
         return 2
     if _check_lockfiles(tool_name, file_path):
         return 2
@@ -335,7 +337,7 @@ def _detect_bom(head: bytes) -> str | None:
 def _emit_read_block(file_path: str, reason: str) -> None:
     """Read block の stderr メッセージを共通フォーマットで出力する。"""
     print(
-        f"[edit-guardrails] Read: {file_path} はテキストとして安全に読めないため block しました"
+        f"[agent-toolkit] Read: {file_path} はテキストとして安全に読めないため block しました"
         f" (理由: {reason})。ターミナル破壊を避けるため Read を中止しました。"
         f" 必要なら `iconv -f <encoding> -t utf-8 <file> | head` や"
         f" `hexdump -C <file> | head` を Bash 経由で確認してください。",
@@ -353,7 +355,7 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         end = min(len(value), position + 11)
         sample = value[start:end]
         print(
-            f"[edit-guardrails] {tool_name}.{field} に U+FFFD (文字化け) を検出したためブロックしました。 周辺: {sample!r}",
+            f"[agent-toolkit] {tool_name}.{field} に U+FFFD (文字化け) を検出したためブロックしました。 周辺: {sample!r}",
             file=sys.stderr,
         )
         return True
@@ -368,8 +370,11 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         if "\r\n" in value:
             continue
         print(
-            f"[edit-guardrails] {tool_name}.{field} に LF 改行のみの内容を検出したためブロックしました。"
-            f" PowerShell 5.1 は LF 改行の .ps1 を正しくパースできないため CRLF (\\r\\n) にしてください。"
+            f"[agent-toolkit] {tool_name}.{field} に LF 改行のみの内容を検出したためブロックしました。"
+            f" PowerShell 5.1 は LF 改行の .ps1 を正しくパースできないため CRLF が必要です。"
+            f" Edit ツールは CRLF を透過的に維持するため、既存ファイルの編集には Edit を使ってください。"
+            f" 新規ファイル作成時は Bash ツールで BOM 付き CRLF ファイルを書いてください"
+            f" (例: printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)。"
             f" 対象: {file_path}",
             file=sys.stderr,
         )
@@ -406,7 +411,7 @@ def _check_lockfiles(tool_name: str, file_path: str) -> bool:
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
             print(
-                f"[edit-guardrails] {tool_name}: {label} の直接編集は禁止です。{hint} 対象: {file_path}",
+                f"[agent-toolkit] {tool_name}: {label} の直接編集は禁止です。{hint} 対象: {file_path}",
                 file=sys.stderr,
             )
             return True
@@ -437,7 +442,7 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
         return False
     if _SECRETS_PATTERN.search(normalized):
         print(
-            f"[edit-guardrails] {tool_name}: シークレット/鍵ファイルの直接編集は禁止です。"
+            f"[agent-toolkit] {tool_name}: シークレット/鍵ファイルの直接編集は禁止です。"
             f" 誤編集はサービス停止や情報漏洩につながります。対象: {file_path}",
             file=sys.stderr,
         )
@@ -476,7 +481,7 @@ def _check_manifest(tool_name: str, file_path: str) -> bool:
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
             print(
-                f"[edit-guardrails] {tool_name}: {label} を編集します (警告)。{hint}",
+                f"[agent-toolkit] {tool_name}: {label} を編集します (警告)。{hint}",
                 file=sys.stderr,
             )
             return True
@@ -528,7 +533,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             end = min(len(value), position + len(home) + 20)
             sample = value[start:end]
             print(
-                f"[edit-guardrails] {tool_name}.{field} にホームディレクトリの絶対パス ({home}) を検出しました (警告)。"
+                f"[agent-toolkit] {tool_name}.{field} にホームディレクトリの絶対パス ({home}) を検出しました (警告)。"
                 f" リポジトリ管理ファイルでは `~` や `$HOME` / `pathlib.Path.home()` を使い、"
                 f"環境依存パスが混入しないようにしてください。"
                 f" 周辺: {sample!r}",

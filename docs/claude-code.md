@@ -18,8 +18,8 @@
 
 更新: `update-dotfiles` (または `chezmoi apply`) で最新化される。
 
-`edit-guardrails` プラグインも個人環境では `chezmoi apply` 後処理で自動インストールされる。
-(`claude` と `uv` がPATHにあり未導入の場合のみ動作する。実装は `pytools/_install_claude_plugins.py`)
+`agent-toolkit` プラグインもdotfilesリポジトリのproject scopeに `chezmoi apply` 後処理で自動インストールされる。
+(`claude` と `uv` がPATHにある場合のみ動作する。実装は `pytools/_install_claude_plugins.py`)
 
 ### 他人に配布: `install-claude.sh` / `install-claude.ps1`
 
@@ -39,25 +39,40 @@ dotfiles全体を入れずに `~/.claude/rules/agent-basics/` だけを配置で
 本プロジェクトの開発時は [ak110/dotfiles の Claude Code 設定 (ルール・プラグイン)](https://github.com/ak110/dotfiles/blob/master/docs/claude-code-concept.md) の導入を推奨する。
 中身やカスタマイズ方法はリンク先を参照。
 
-### 導入手順 (Linux)
+### 前提条件
+
+プロジェクト管理者が `.claude/settings.json` に以下を設定済みであること。
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "ak110-dotfiles": {
+      "source": { "source": "github", "repo": "ak110/dotfiles" }
+    }
+  },
+  "enabledPlugins": { "agent-toolkit@ak110-dotfiles": true }
+}
+```
+
+### ルール導入 (Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
-claude plugin marketplace add ak110/dotfiles
-claude plugin install edit-guardrails@ak110-dotfiles
 ```
 
-### 導入手順 (Windows)
+### ルール導入 (Windows)
 
 ```cmd
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
-claude plugin marketplace add ak110/dotfiles
-claude plugin install edit-guardrails@ak110-dotfiles
 ```
 
-### 導入後 (共通)
+### プラグイン (共通)
 
-プラグインはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
+`.claude/settings.json` の `enabledPlugins` と `extraKnownMarketplaces` が設定済みの場合、
+開発者がフォルダをtrustした時にClaude Codeがプラグインのインストールを自動で提案する。
+手動でのコマンド実行は不要。
+
+非公式のPlugin Marketplaceはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
 1. Claude Code 内で `/plugin` を実行
 2. `Marketplaces` タブで `ak110-dotfiles` を選択

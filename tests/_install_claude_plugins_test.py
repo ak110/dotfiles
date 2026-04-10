@@ -28,8 +28,8 @@ def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
-@pytest.fixture(name="fake_target_versions")
-def _fake_target_versions(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(name="fake_target_info")
+def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
     """marketplace.json の読み込み結果を固定値に差し替える。
 
     テストを実際の marketplace.json の内容から切り離すため。
@@ -38,9 +38,14 @@ def _fake_target_versions(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(
         _install_claude_plugins,
-        "_read_target_versions",
-        lambda _root: {"edit-guardrails": "0.2.0", "sample-plugin": "1.0.0"},
+        "_read_target_info",
+        lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
     )
+
+
+def _plugin_list_json(*entries: dict[str, object]) -> str:
+    """テスト用の `claude plugin list --json` 出力を組み立てる。"""
+    return json.dumps(list(entries))
 
 
 class TestPrerequisites:
@@ -55,7 +60,7 @@ class TestPrerequisites:
         assert _install_claude_plugins.run() is False
 
 
-@pytest.mark.usefixtures("fake_which_present", "fake_target_versions")
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info")
 class TestRunFlow:
     """メインフローのテスト (前提条件は満たしている状態)。"""
 
@@ -68,11 +73,9 @@ class TestRunFlow:
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"},
-                            {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0"},
-                        ]
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "project"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -104,11 +107,9 @@ class TestRunFlow:
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"},
-                            {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0"},
-                        ]
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "project"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "project"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -128,7 +129,9 @@ class TestRunFlow:
         assert _install_claude_plugins.run() is True
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
-        assert any("edit-guardrails@ak110-dotfiles" in c for c in update_calls)
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
+        # --scope project が渡されていること
+        assert any("--scope" in c and "project" in c for c in update_calls)
         # 最新である sample-plugin に対しては update を発行しない
         assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
         # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
@@ -158,8 +161,11 @@ class TestRunFlow:
         # add が呼ばれ、かつ marketplace.json 由来の全プラグインに対し install が呼ばれていること
         assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-        assert any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
+        # --scope project が渡されていること
+        for ic in install_calls:
+            assert "--scope" in ic and "project" in ic
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
@@ -187,7 +193,7 @@ class TestRunFlow:
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
         # 対象プラグインは全て install されていること
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-        assert any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
 
     def test_mixed_installed_and_missing(self, monkeypatch: pytest.MonkeyPatch):
@@ -199,8 +205,8 @@ class TestRunFlow:
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
-                    stdout=json.dumps(
-                        [{"id": "edit-guardrails@ak110-dotfiles", "version": "0.2.0"}],
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -218,9 +224,9 @@ class TestRunFlow:
         monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
-        # 既にインストール済みの edit-guardrails は install されない
+        # 既にインストール済みの agent-toolkit は install されない
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-        assert not any("edit-guardrails@ak110-dotfiles" in c for c in install_calls)
+        assert not any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         # 未インストールの sample-plugin は install される
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
         # 既にインストール済みの plugin が最新であれば update は呼ばれない
@@ -228,7 +234,7 @@ class TestRunFlow:
 
     def test_empty_target_versions_skips(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace.json に対象 plugin が無ければ claude コマンドを一切呼ばずにスキップする。"""
-        monkeypatch.setattr(_install_claude_plugins, "_read_target_versions", lambda _root: {})
+        monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, set()))
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -284,31 +290,105 @@ class TestRunFlow:
 
         assert _install_claude_plugins.run() is False
 
+    def test_user_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch):
+        """user scope のエントリは install/update 判定に使われない。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                # agent-toolkit が user scope にのみ存在
+                return _FakeResult(
+                    returncode=0,
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
+                    ),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            if cmd[:3] == ["claude", "plugin", "uninstall"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # user scope のエントリは無視され、project scope に新規 install される
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
+        # user scope の清掃 (uninstall) が呼ばれること
+        uninstall_calls = [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in uninstall_calls)
+
+    def test_deprecated_plugin_uninstalled(self, monkeypatch: pytest.MonkeyPatch):
+        """deprecated プラグインがインストール済みならアンインストールされる。"""
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_read_target_info",
+            lambda _root: ({"agent-toolkit": "0.2.0"}, {"old-plugin"}),
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=_plugin_list_json(
+                        {"id": "old-plugin@ak110-dotfiles", "version": "0.5.0", "scope": "user"},
+                    ),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:3] == ["claude", "plugin", "uninstall"]:
+                return _FakeResult(returncode=0)
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # deprecated プラグインのアンインストールが呼ばれること
+        uninstall_calls = [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
+        assert any("old-plugin@ak110-dotfiles" in c for c in uninstall_calls)
+        # 通常プラグインの install も呼ばれること
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
+
 
 class TestExtractPluginVersionMap:
-    """`claude plugin list --json` のパース。"""
+    """`claude plugin list --json` のパース (project scope フィルタ付き)。"""
 
     @pytest.mark.parametrize(
         ("data", "expected"),
         [
-            # 実機 (Claude Code 2.x): list[dict] で `id` が `<name>@<marketplace>` 形式
+            # project scope のエントリのみ含まれる
             (
                 [
-                    {"id": "edit-guardrails@ak110-dotfiles", "version": "0.1.0"},
-                    {"id": "code-review@claude-plugins-official", "version": "1.2.3"},
+                    {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "project"},
+                    {"id": "other@marketplace", "version": "1.2.3", "scope": "user"},
                 ],
-                {"edit-guardrails": "0.1.0", "code-review": "1.2.3"},
+                {"agent-toolkit": "0.1.0"},
             ),
+            # scope が存在しないエントリは後方互換で含まれる
+            ([{"id": "a@x", "version": "1.0"}], {"a": "1.0"}),
             # version 欠落は空文字列扱い
-            ([{"id": "a@x"}], {"a": ""}),
-            # 旧来形式: list[dict] で `name` フィールド
-            ([{"name": "a", "version": "1.0"}, {"name": "b"}], {"a": "1.0", "b": ""}),
-            # `id` と `name` が混在しても両方取得する
-            ([{"id": "a@x", "version": "1"}, {"name": "b", "version": "2"}], {"a": "1", "b": "2"}),
-            # `id` に `@` がない場合はそのまま返す
-            ([{"id": "plain", "version": "0"}], {"plain": "0"}),
+            ([{"id": "a@x", "scope": "project"}], {"a": ""}),
+            # user scope のみのエントリは除外される
+            ([{"id": "a@x", "version": "1.0", "scope": "user"}], {}),
             # dict with "plugins" key
-            ({"plugins": [{"name": "a", "version": "1"}]}, {"a": "1"}),
+            ({"plugins": [{"name": "a", "version": "1", "scope": "project"}]}, {"a": "1"}),
             # flat dict (version 不明として空文字列)
             ({"a": {}, "b": {}}, {"a": "", "b": ""}),
             # empty
@@ -322,20 +402,24 @@ class TestExtractPluginVersionMap:
         assert _install_claude_plugins._extract_plugin_version_map(data) == expected
 
 
-class TestReadTargetVersions:
-    """marketplace.json から version を読む helper のテスト。"""
+class TestReadTargetInfo:
+    """marketplace.json から version / deprecated を読む helper のテスト。"""
 
     def test_reads_actual_marketplace_json(self):
         """本リポジトリ配下の marketplace.json を読み取れる。"""
-        # repo ルート = tests/_install_claude_plugins_test.py から 2 つ上
         repo_root = pathlib.Path(__file__).resolve().parents[1]
         # pylint: disable-next=protected-access
-        target = _install_claude_plugins._read_target_versions(repo_root)
-        # edit-guardrails は必ず含まれる (SSOT テストが一致を保証している)
-        assert "edit-guardrails" in target
-        assert target["edit-guardrails"]  # 空文字列ではない
+        targets, deprecated = _install_claude_plugins._read_target_info(repo_root)
+        # agent-toolkit は通常プラグインとして含まれる
+        assert "agent-toolkit" in targets
+        assert targets["agent-toolkit"]  # 空文字列ではない
+        # edit-guardrails は deprecated 扱い
+        assert "edit-guardrails" in deprecated
+        assert "edit-guardrails" not in targets
 
-    def test_missing_file_returns_empty(self, tmp_path):
-        """marketplace.json がない場合は空辞書。"""
+    def test_missing_file_returns_empty(self, tmp_path: pathlib.Path):
+        """marketplace.json がない場合は空辞書・空集合。"""
         # pylint: disable-next=protected-access
-        assert not _install_claude_plugins._read_target_versions(tmp_path)
+        targets, deprecated = _install_claude_plugins._read_target_info(tmp_path)
+        assert not targets
+        assert not deprecated
