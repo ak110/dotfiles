@@ -1,2 +1,6 @@
 #!/bin/bash -eu
 echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+clear
+if [ -e .git ]; then
+    git status
+fi
