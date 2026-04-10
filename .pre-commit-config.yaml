@@ -54,7 +54,7 @@ repos:
     rev: v3.12.0-1
     hooks:
       - id: shfmt
-        args: ["--indent", "4", "--case-indent", "--diff"]
+        args: ["--indent", "4", "--case-indent", "--write"]
         files: '(^|/)(dot_bashrc|dot_bash_profile|executable_[^.]*|.*\.(sh|bash))$'
         exclude: '\.(tmpl|cmd)$'
         types: [text]
