@@ -3,8 +3,11 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-09T22:14:53.453250836Z"
-exclude-newer-span = "PT0S"
+exclude-newer = "2026-04-09T10:54:13.449053651Z"
+exclude-newer-span = "P1D"
+
+[options.exclude-newer-package]
+pyfltr = false
 
 [[package]]
 name = "annotated-types"
@@ -736,7 +739,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.17.1"
+version = "1.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
@@ -758,9 +761,9 @@ dependencies = [
     { name = "textual" },
     { name = "ty" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/79/a2/36f4e3237029a1b0848d4e20e22ed3fc20e0a62a911a585eb7e56cfa5857/pyfltr-1.17.1.tar.gz", hash = "sha256:adeeabba283308c1a994b8a867151cc644fdfbca7941017a92ba4212c307d333", size = 128643, upload-time = "2026-04-09T21:43:09.352Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/ec/a290799f21489eaff575ccc18d9501b18b87e6d82ea0fdad53d8f6bcc377/pyfltr-1.20.0.tar.gz", hash = "sha256:9b330c0f842997dbe61e4368be46c905758214bc1cbb9dd602f8eace70adfa9b", size = 140626, upload-time = "2026-04-10T10:53:55.733Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/37/c7cfb13992d5457c8cb1a3bc6567b566b81c342b2b118bfddae79c7d2ab6/pyfltr-1.17.1-py3-none-any.whl", hash = "sha256:b892f846752790a4d18298e5a5af2d10166764c4e2db27606439e6d77d920226", size = 29093, upload-time = "2026-04-09T21:43:10.618Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/ca/8fe4d793e66675e146ac9b1e889de9cc0d8fdccff0b17302908a4fd435d5/pyfltr-1.20.0-py3-none-any.whl", hash = "sha256:5ee1a2782a6a1f3e45fa8fb04c6226c57f9c740383b57a49f7dba442edb47e2d", size = 33697, upload-time = "2026-04-10T10:53:56.953Z" },
 ]
 
 [[package]]
@@ -971,7 +974,7 @@ provides-extras = ["repack-png"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pyfltr", specifier = ">=1.17.1" },
+    { name = "pyfltr", specifier = ">=1.20.0" },
 ]
 
 [[package]]

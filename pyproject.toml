@@ -36,8 +36,11 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "pyfltr>=1.17.1",
+    "pyfltr>=1.20.0",
 ]
+
+[tool.uv]
+exclude-newer-package = { pyfltr = false }
 
 [tool.pyfltr]
 preset = "latest"
