@@ -17,9 +17,10 @@ $targetDir = Join-Path $HOME '.claude/rules/agent-basics'
 # 配布対象ファイル一覧 (pytools/claudize.py の _UNCONDITIONAL_RULES / _CONDITIONAL_RULES と一致させること)
 $files = @(
     'agent.md',
+    'claude.md',
+    'claude-rules.md',
+    'claude-skills.md',
     'markdown.md',
-    'rules.md',
-    'skills.md',
     'python.md',
     'python-test.md',
     'typescript.md',
@@ -118,11 +119,21 @@ function Invoke-ProcessFile {
     }
 }
 
+# リネームされた旧ファイル一覧（新ファイル配布後に削除する）
+$obsoleteFiles = @('rules.md', 'skills.md')
+
 # Main
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 foreach ($file in $files) {
     Invoke-ProcessFile $file
+}
+foreach ($name in $obsoleteFiles) {
+    $old = Join-Path $targetDir $name
+    if (Test-Path -LiteralPath $old -PathType Leaf) {
+        Remove-Item -LiteralPath $old -Force
+        Write-Output "削除（リネーム済み）: $old"
+    }
 }
 if ($script:backupDir) {
     Write-Output "バックアップ先: $script:backupDir"

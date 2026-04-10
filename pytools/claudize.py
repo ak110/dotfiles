@@ -20,7 +20,7 @@ _CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("csharp-test.md", (".cs",)),
 ]
 # 無条件で配布するルール
-_UNCONDITIONAL_RULES: list[str] = ["markdown.md", "rules.md", "skills.md"]
+_UNCONDITIONAL_RULES: list[str] = ["claude.md", "claude-rules.md", "claude-skills.md", "markdown.md"]
 
 # 走査時に降下しないディレクトリ (生成物・依存物など、プロジェクトが
 # その言語で書かれていることの指標にならないもの)。

@@ -33,10 +33,10 @@
     - 記述スタイルの「トップダウン（段階的詳細化）」は、LLMが長文出力中に細部へ引きずられて全体構造や上位要件を見落としやすい性質を踏まえた対策。
       先に型定義・上位関数・見出し構造を記述してから詳細を追記することで見落としを防ぐ狙い
     - あくまで「ベース指示」であり、プロジェクト固有の規約は各 `CLAUDE.md` やプロジェクト内 `.claude/rules/` で上書きする前提
-3. Claude Code自身の機能仕様の知識補完 (`rules.md` / `skills.md`)
+3. Claude Code自身の機能仕様の知識補完 (`claude.md` / `claude-rules.md` / `claude-skills.md`)
     - Claude Codeの機能は比較的新しく、LLMの訓練データに十分反映されていない可能性がある
     - 対象例: rulesの `paths` frontmatter、skillsのprogressive disclosure、`CLAUDE.md` との使い分けなど
-    - `.claude/rules/` 編集時は `rules.md` が、`.claude/skills/` 編集時は `skills.md` が自動ロードされる
+    - `.claude/` 配下の設定ファイル編集時にメタルールが自動ロードされる
     - これらには各機能の正しい書き方・設計方針がまとめられている
     - これによりClaude Codeが自分の設定ファイルを編集する際に、
       訓練データ頼みの推測ではなく明文化された仕様に基づいて作業できる
@@ -51,8 +51,9 @@
 - `{言語}.md`: 言語固有のコーディング規約（`paths` frontmatterで該当言語ファイル編集時のみロード）
 - `{言語}-test.md`: 言語固有のテスト方針（同上）
 - `markdown.md`: Markdown記述スタイル（`.md` / `.mdx` 編集時のみロード）
-- `rules.md`: Claude Codeのrules機能仕様を参照するメタルール（`.claude/rules/` 編集時のみロード）
-- `skills.md`: Claude Codeのskills機能仕様を参照するメタルール（`.claude/skills/` 編集時のみロード）
+- `claude.md`: CLAUDE.md・ルール・スキルの記述ガイドライン（`.claude/` 配下やCLAUDE.md編集時のみロード）
+- `claude-rules.md`: Claude Codeのrules機能仕様を参照するメタルール（`.claude/rules/` 編集時のみロード）
+- `claude-skills.md`: Claude Codeのskills機能仕様を参照するメタルール（`.claude/skills/` 編集時のみロード）
 
 `agent.md` 以外は `paths` frontmatterで該当拡張子のファイルを読んだときのみロードされる。
 セッション開始時のコンテキスト消費を抑えるための仕組みであり、プロジェクト単位の厳密な分離ではない (たとえばPythonファイルを編集すれば `python.md` はロードされる)。

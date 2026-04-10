@@ -80,9 +80,10 @@ class TestInstallClaude:
         rules_dir = home / ".claude" / "rules" / "agent-basics"
         for name in [
             "agent.md",
+            "claude.md",
+            "claude-rules.md",
+            "claude-skills.md",
             "markdown.md",
-            "rules.md",
-            "skills.md",
             "python.md",
             "python-test.md",
             "typescript.md",

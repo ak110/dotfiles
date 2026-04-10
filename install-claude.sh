@@ -17,9 +17,10 @@ TARGET_DIR="$HOME/.claude/rules/agent-basics"
 # 配布対象ファイル一覧 (pytools/claudize.py の _UNCONDITIONAL_RULES / _CONDITIONAL_RULES と一致させること)
 FILES=(
     agent.md
+    claude.md
+    claude-rules.md
+    claude-skills.md
     markdown.md
-    rules.md
-    skills.md
     python.md
     python-test.md
     typescript.md
@@ -104,10 +105,23 @@ _process_file() {
     fi
 }
 
+# リネームされた旧ファイル一覧（新ファイル配布後に削除する）
+OBSOLETE_FILES=(
+    rules.md
+    skills.md
+)
+
 main() {
     mkdir -p "$TARGET_DIR"
     for name in "${FILES[@]}"; do
         _process_file "$name"
+    done
+    for name in "${OBSOLETE_FILES[@]}"; do
+        local old="$TARGET_DIR/$name"
+        if [ -f "$old" ]; then
+            rm -f "$old"
+            echo "削除（リネーム済み）: $old"
+        fi
     done
     if [ -n "$BACKUP_DIR" ]; then
         echo "バックアップ先: $BACKUP_DIR"

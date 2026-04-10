@@ -41,6 +41,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したもの
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
+        # リネーム: rules.md → claude-rules.md, skills.md → claude-skills.md
+        Path("rules/agent-basics/rules.md"),
+        Path("rules/agent-basics/skills.md"),
     ],
     Path.home() / "bin": [
         # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない

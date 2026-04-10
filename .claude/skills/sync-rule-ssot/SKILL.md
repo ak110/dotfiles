@@ -29,7 +29,7 @@ user-invocable: false
 新規ルールは以下のどちらかに分類する。
 
 - 無条件ルール: セッション開始時に常に読み込まれる。`paths` frontmatterを持たない。
-  - 例: `agent.md`, `markdown.md`, `rules.md`, `skills.md`
+  - 例: `agent.md`, `claude.md`, `claude-rules.md` など
   - `agent.md` は特別扱いで、`claudize.py` の既定配布リストに直接記載されている（配布対象一覧に加える必要はない）
   - それ以外の無条件ルールは `_UNCONDITIONAL_RULES` に追加する
 - 条件付きルール（言語別）: 特定の拡張子のファイルを編集したときだけ読み込まれる。`paths` frontmatterで対象を絞る。
@@ -54,7 +54,7 @@ paths:
 2. `pytools/claudize.py` を更新する — 以下のどちらかに追加する。
 
    ```python
-   _UNCONDITIONAL_RULES: list[str] = ["markdown.md", "rules.md", "skills.md", "<new-rule>.md"]
+   _UNCONDITIONAL_RULES: list[str] = ["claude.md", "claude-rules.md", "claude-skills.md", "markdown.md", "<new-rule>.md"]
    # または
    _CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
        ("python.md", (".py",)),
@@ -96,4 +96,4 @@ paths:
 ## 参考
 
 - 配布方式の詳細: `docs/claude-code.md`
-- 原本ルールの書き方: `.chezmoi-source/dot_claude/rules/agent-basics/rules.md`
+- 原本ルールの書き方: `.chezmoi-source/dot_claude/rules/agent-basics/claude-rules.md`

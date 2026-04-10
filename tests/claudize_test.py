@@ -28,9 +28,10 @@ def _setup_template(tmp_path: Path) -> Path:
     for name in [
         "python.md",
         "python-test.md",
+        "claude.md",
+        "claude-rules.md",
+        "claude-skills.md",
         "markdown.md",
-        "rules.md",
-        "skills.md",
         "typescript.md",
         "typescript-test.md",
     ]:
@@ -68,7 +69,7 @@ class TestLangRules:
         assert (rules_dir / "typescript-test.md").exists()
 
     def test_unconditional_rules_always_deployed(self, tmp_path: Path):
-        """agent.md, markdown.md, rules.md, skills.md は無条件で配布される。"""
+        """agent.md, claude.md, claude-rules.md, claude-skills.md, markdown.md は無条件で配布される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
@@ -77,9 +78,10 @@ class TestLangRules:
 
         rules_dir = target / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "agent.md").exists()
+        assert (rules_dir / "claude.md").exists()
+        assert (rules_dir / "claude-rules.md").exists()
+        assert (rules_dir / "claude-skills.md").exists()
         assert (rules_dir / "markdown.md").exists()
-        assert (rules_dir / "rules.md").exists()
-        assert (rules_dir / "skills.md").exists()
 
     def test_overwrite_existing_rules(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
         """既にルールが存在し差分がある場合、テンプレートで上書きされる。"""
@@ -293,8 +295,9 @@ class TestClean:
         assert not (rules_dir / "python-test.md").exists()
         assert not (rules_dir / "typescript.md").exists()
         assert not (rules_dir / "typescript-test.md").exists()
-        assert not (rules_dir / "rules.md").exists()
-        assert not (rules_dir / "skills.md").exists()
+        assert not (rules_dir / "claude.md").exists()
+        assert not (rules_dir / "claude-rules.md").exists()
+        assert not (rules_dir / "claude-skills.md").exists()
         # 空になったディレクトリも削除されている
         assert not rules_dir.exists()
 
@@ -334,9 +337,10 @@ class TestClean:
         legacy_dir.mkdir(parents=True)
         for name in [
             "agent.md",
+            "claude.md",
+            "claude-rules.md",
+            "claude-skills.md",
             "markdown.md",
-            "rules.md",
-            "skills.md",
             "python.md",
             "python-test.md",
             "typescript.md",
@@ -400,9 +404,10 @@ class TestFrontmatterPreservation:
         for name in [
             "python.md",
             "python-test.md",
+            "claude.md",
+            "claude-rules.md",
+            "claude-skills.md",
             "markdown.md",
-            "rules.md",
-            "skills.md",
             "typescript.md",
             "typescript-test.md",
         ]:
