@@ -43,6 +43,8 @@ dev = [
 preset = "latest"
 pyright = true
 ty = true
+shellcheck = true
+shfmt = true
 extend-exclude = ["*/profile_ipy/*"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",

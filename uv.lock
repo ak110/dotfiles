@@ -3,11 +3,20 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-09T15:14:10.561978472Z"
-exclude-newer-span = "P1D"
+exclude-newer = "2026-04-10T16:14:17.50741038Z"
+exclude-newer-span = "PT0S"
 
 [options.exclude-newer-package]
 pyfltr = false
+
+[[package]]
+name = "annotated-doc"
+version = "0.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/ba/046ceea27344560984e26a590f90bc7f4a75b06701f653222458922b558c/annotated_doc-0.0.4.tar.gz", hash = "sha256:fbcda96e87e9c92ad167c2e53839e57503ecfda18804ea28102353485033faa4", size = 7288, upload-time = "2025-11-10T22:07:42.062Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl", hash = "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320", size = 5303, upload-time = "2025-11-10T22:07:40.673Z" },
+]
 
 [[package]]
 name = "annotated-types"
@@ -739,7 +748,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.21.0"
+version = "1.22.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
@@ -760,10 +769,11 @@ dependencies = [
     { name = "ruff" },
     { name = "textual" },
     { name = "ty" },
+    { name = "uv-sort" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bf/45/028a7a3ef1f913a74ebe88a67ed3c4d080f8f117a154f23e8ff96f040d18/pyfltr-1.21.0.tar.gz", hash = "sha256:09f403e2cf44c52ce716209abd7b1b12e3f51c0cdd9ea1f03c86dbd68b59fa5c", size = 142587, upload-time = "2026-04-10T13:02:26.761Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/73/b483de6d5889d38fa9969d18d0fe637daee87d33d758a51dadb5b7696d77/pyfltr-1.22.0.tar.gz", hash = "sha256:92023c3a9294c6d4529e8657db9fb0abb7019385e374315b3dd859f16e16767b", size = 148510, upload-time = "2026-04-10T16:09:43.225Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/25/66d9dcf8efba9cca0ca1eba499ad62570481e1bbdcc9313a2f8caec5d03c/pyfltr-1.21.0-py3-none-any.whl", hash = "sha256:31416242a5b879597e4ed2d62dfd9dd41ad7df263abe07afdc8995612b11f539", size = 35573, upload-time = "2026-04-10T13:02:25.527Z" },
+    { url = "https://files.pythonhosted.org/packages/81/43/afd9d67050d1ea7422327715bd9ae1454e8afafc7f182210523ba76849c3/pyfltr-1.22.0-py3-none-any.whl", hash = "sha256:ee02c6d0e2cd716aee5c953e22a29a5fd3ed19b5edb1088d99c2fa6b5d2f3d96", size = 37771, upload-time = "2026-04-10T16:09:44.525Z" },
 ]
 
 [[package]]
@@ -1083,6 +1093,15 @@ wheels = [
 ]
 
 [[package]]
+name = "shellingham"
+version = "1.5.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
+]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1163,6 +1182,21 @@ wheels = [
 ]
 
 [[package]]
+name = "typer"
+version = "0.24.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "click" },
+    { name = "rich" },
+    { name = "shellingham" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/24/cb09efec5cc954f7f9b930bf8279447d24618bb6758d4f6adf2574c41780/typer-0.24.1.tar.gz", hash = "sha256:e39b4732d65fbdcde189ae76cf7cd48aeae72919dea1fdfc16593be016256b45", size = 118613, upload-time = "2026-02-21T16:54:40.609Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/91/48db081e7a63bb37284f9fbcefda7c44c277b18b0e13fbc36ea2335b71e6/typer-0.24.1-py3-none-any.whl", hash = "sha256:112c1f0ce578bfb4cab9ffdabc68f031416ebcc216536611ba21f04e9aa84c9e", size = 56085, upload-time = "2026-02-21T16:54:41.616Z" },
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1190,6 +1224,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/78/67/9a363818028526e2d4579334460df777115bdec1bb77c08f9db88f6389f2/uc_micro_py-2.0.0.tar.gz", hash = "sha256:c53691e495c8db60e16ffc4861a35469b0ba0821fe409a8a7a0a71864d33a811", size = 6611, upload-time = "2026-03-01T06:31:27.526Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/73/d21edf5b204d1467e06500080a50f79d49ef2b997c79123a536d4a17d97c/uc_micro_py-2.0.0-py3-none-any.whl", hash = "sha256:3603a3859af53e5a39bc7677713c78ea6589ff188d70f4fee165db88e22b242c", size = 6383, upload-time = "2026-03-01T06:31:26.257Z" },
+]
+
+[[package]]
+name = "uv-sort"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "tomlkit" },
+    { name = "typer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/c8/ace6136cf5983822ad69c301e155c84d1876cce48e728731279d195ad26d/uv_sort-0.7.0.tar.gz", hash = "sha256:bce0f840fac8e44a287cba4c9113efc33d6938d0e983984370ad2974f5f8a450", size = 22422, upload-time = "2026-01-07T05:45:46.755Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/53/a1a51c94f671f41d441532ee791c25d22f92df7dc76aac2b0697b558e286/uv_sort-0.7.0-py3-none-any.whl", hash = "sha256:efb88531ac848668b00f3ac53bae49ce8d3712743ef9dcd86f4d3f3dd5cc55b6", size = 6402, upload-time = "2026-01-07T05:45:45.669Z" },
 ]
 
 [[package]]
