@@ -45,7 +45,9 @@ pyright = true
 ty = true
 shellcheck = true
 shfmt = true
-extend-exclude = ["*/profile_ipy/*"]
+extend-exclude = ["*/profile_ipy/*", "*.cmd"]
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]
+shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",

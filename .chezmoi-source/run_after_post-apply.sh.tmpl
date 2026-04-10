@@ -25,7 +25,7 @@ if [ "$current_hash" != "$cached_hash" ]; then
     echo "  [pytools] pyproject.toml に変更あり → 再インストール"
     if uv tool install --editable "{{ .chezmoi.workingTree }}"; then
         mkdir -p "$cache_dir"
-        printf '%s' "$current_hash" > "$hash_file"
+        printf '%s' "$current_hash" >"$hash_file"
     else
         echo "  [pytools] インストールに失敗しました (後続処理は継続)"
     fi

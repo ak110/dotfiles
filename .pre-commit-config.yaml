@@ -35,53 +35,29 @@ repos:
       # Python
       - id: debug-statements
 
-  - repo: https://github.com/ninoseki/uv-sort
-    rev: v0.7.0
-    hooks:
-      - id: uv-sort
-
-  - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
-    hooks:
-      - id: shellcheck
-        # chezmoi 命名規則の都合でサフィックスが無いが実体は shell のファイルを拾う。
-        # .tmpl は chezmoi 展開後でなければ検証できないため除外 (check-templates で別途検証)。
-        files: '(^|/)(dot_bashrc|dot_bash_profile|executable_[^.]*|.*\.(sh|bash))$'
-        exclude: '\.(tmpl|cmd)$'
-        types: [text]
-
-  - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.12.0-1
-    hooks:
-      - id: shfmt
-        args: ["--indent", "4", "--case-indent", "--write"]
-        files: '(^|/)(dot_bashrc|dot_bash_profile|executable_[^.]*|.*\.(sh|bash))$'
-        exclude: '\.(tmpl|cmd)$'
-        types: [text]
-
   - repo: local
     hooks:
       - id: check-cmd-encoding
         name: Check .cmd files CP932 encoding
-        entry: scripts/check-cmd-encoding
+        entry: scripts/check-cmd-encoding.sh
         language: script
         pass_filenames: false
         files: '\.cmd$'
       - id: check-templates
         name: chezmoi template check
-        entry: scripts/check-templates
+        entry: scripts/check-templates.sh
         language: script
         files: '\.(sh|ps1)\.tmpl$'
         pass_filenames: true
       - id: require-ps1-bom
         name: Require UTF-8 BOM on .ps1 files
-        entry: scripts/check-ps1-bom
+        entry: scripts/check-ps1-bom.sh
         language: script
         files: '\.ps1(\.tmpl)?$'
         pass_filenames: true
       - id: powershell-analyzer
         name: PSScriptAnalyzer
-        entry: scripts/run-psscriptanalyzer
+        entry: scripts/run-psscriptanalyzer.sh
         language: script
         files: '\.ps1$'
         exclude: '\.tmpl$'
@@ -89,6 +65,6 @@ repos:
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen pyfltr fast
-        types_or: [python, markdown]
+        types_or: [python, markdown, toml, shell, bash]
         require_serial: true
         language: system

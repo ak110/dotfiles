@@ -48,26 +48,26 @@ for file in "$@"; do
 
     # Step 2: 展開後の言語別チェック
     case "$file" in
-        *.sh.tmpl)
-            if ! bash -n "$rendered" 2>"$errfile"; then
-                echo "FAIL [bash -n]: $file" >&2
+    *.sh.tmpl)
+        if ! bash -n "$rendered" 2>"$errfile"; then
+            echo "FAIL [bash -n]: $file" >&2
+            cat "$errfile" >&2
+            fail=1
+            continue
+        fi
+        if command -v shellcheck >/dev/null 2>&1; then
+            # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
+            if ! shellcheck --severity error "$rendered" 2>"$errfile"; then
+                echo "FAIL [shellcheck on rendered $file]:" >&2
                 cat "$errfile" >&2
                 fail=1
-                continue
             fi
-            if command -v shellcheck >/dev/null 2>&1; then
-                # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
-                if ! shellcheck --severity error "$rendered" 2>"$errfile"; then
-                    echo "FAIL [shellcheck on rendered $file]:" >&2
-                    cat "$errfile" >&2
-                    fail=1
-                fi
-            fi
-            ;;
-        *.ps1.tmpl)
-            if command -v pwsh >/dev/null 2>&1; then
-                # pwsh の Parser で構文チェックのみを実施する
-                if ! pwsh -NoProfile -NonInteractive -Command "
+        fi
+        ;;
+    *.ps1.tmpl)
+        if command -v pwsh >/dev/null 2>&1; then
+            # pwsh の Parser で構文チェックのみを実施する
+            if ! pwsh -NoProfile -NonInteractive -Command "
                     \$ErrorActionPreference = 'Stop'
                     \$tokens = \$null
                     \$errors = \$null
@@ -77,12 +77,12 @@ for file in "$@"; do
                         exit 1
                     }
                 " 2>"$errfile"; then
-                    echo "FAIL [pwsh parse]: $file" >&2
-                    cat "$errfile" >&2
-                    fail=1
-                fi
+                echo "FAIL [pwsh parse]: $file" >&2
+                cat "$errfile" >&2
+                fail=1
             fi
-            ;;
+        fi
+        ;;
     esac
 done
 
