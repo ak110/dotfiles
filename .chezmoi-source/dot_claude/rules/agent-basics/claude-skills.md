@@ -50,10 +50,10 @@ cloud-deploy/
 
 ## 配置場所
 
-| 場所         | パス                               | 適用範囲             |
-| ------------ | ---------------------------------- | -------------------- |
-| ユーザー     | `~/.claude/skills/<name>/SKILL.md` | 全プロジェクト       |
-| プロジェクト | `.claude/skills/<name>/SKILL.md`   | そのプロジェクトのみ |
+| 場所 | パス | 適用範囲 |
+| --- | --- | --- |
+| ユーザー | `~/.claude/skills/<name>/SKILL.md` | 全プロジェクト |
+| プロジェクト | `.claude/skills/<name>/SKILL.md` | そのプロジェクトのみ |
 
 ## YAML frontmatter
 

@@ -1,2 +1,4 @@
 # サプライチェーン攻撃対策: 公開後24時間未満のパッケージを除外
 exclude-newer = "1 day"
+# pyfltrは除外しちゃう
+exclude-newer-package = { pyfltr = false }

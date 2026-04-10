@@ -107,5 +107,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - run: uv sync --all-groups
-      - run: uv run pyfltr .
+      - run: uv run pyfltr ci .
       - run: uv cache prune --ci

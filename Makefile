@@ -2,15 +2,13 @@
 # `env --unset UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
-UV_RUN := uv run
-
 help:
 	@cat Makefile
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset UV_FROZEN uv sync --upgrade --all-groups
-	$(UV_RUN) pre-commit autoupdate
+	uv run pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
@@ -23,7 +21,7 @@ update-actions:
 setup:
 	uv sync --all-groups
 	uv tool install --editable .
-	$(UV_RUN) pre-commit install
+	uv run pre-commit install
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
@@ -44,13 +42,13 @@ setup-pwsh:
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
 	uv sync --all-groups
-	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	-$(UV_RUN) pyfltr --exit-zero-even-if-formatted --commands=fast .
+	SKIP=pyfltr uv run pre-commit run --all-files
+	-uv run pyfltr fast .
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
 	uv sync --all-groups
-	SKIP=pyfltr $(UV_RUN) pre-commit run --all-files
-	$(UV_RUN) pyfltr --exit-zero-even-if-formatted .
+	SKIP=pyfltr uv run pre-commit run --all-files
+	uv run pyfltr run .
 
 .PHONY: help update update-actions setup setup-pwsh format test

@@ -281,13 +281,7 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが
         # 出力へ混入するのを防ぐため。
         if [ "$no_args" -eq 1 ] && [ -t 1 ] && [ -t 2 ]; then
-            clear
-            # カレントディレクトリが git 作業ツリーなら git status を自動実行する。
-            # claude 終了直後に作業差分を確認しやすくするため。
-            # `.git` はディレクトリだけでなく worktree の場合はファイルになるので `-e` で判定する。
-            if [ -e .git ]; then
-                git status
-            fi
+            ~/bin/c
         fi
         return $rc
     }

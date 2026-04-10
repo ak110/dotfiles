@@ -93,9 +93,9 @@ chezmoiはドットプレフィックスのディレクトリ (`.claude/` など
   - 本人のdotfiles環境でしか動かない。他人には配布されない
   - 向いているチェック: dotfiles固有の運用前提に依存するもの
    （例: `~/.claude/` がchezmoi配布先である前提、個人の命名規約・ディレクトリ構成など）
-- `plugins/edit-guardrails/`（プラグイン）
+- `plugins/agent-toolkit/`（プラグイン）
   - `.claude-plugin/marketplace.json` 経由で他人にも配布される
-  - `claude plugin install edit-guardrails@ak110-dotfiles` でインストールされる
+  - `claude plugin install agent-toolkit@ak110-dotfiles` でインストールされる
   - 向いているチェック: 他人にも役立つ汎用的な制約・自動化
    （例: 一般的な文字化け検出、一般的なPowerShell互換性チェック、Claude Code標準パスに対する操作）
 
@@ -129,13 +129,6 @@ rulesやskillsなどのドキュメントはLLMのコンテキストへ直接投
   - 実例としてagent.mdの記述スタイル節では、禁止項目の各行冒頭に接頭辞 `NG:` を繰り返し付けて推奨事項と区別している
 - 実例として `.chezmoi-source/dot_claude/rules/agent-basics/agent.md` の記述スタイル節では、NG表現の具体例を列挙していない
   - 「不適切な表現の具体例はルールファイルに記載しない」と明記して、コンテキスト汚染を回避している
-
-## 外部ツール仕様の確認
-
-- 本リポジトリで扱うツールの設定や最新仕様を参照する場合は `context7` MCPを優先する
-- 対象例: chezmoi / mise / uv / pnpm / pinact / pre-commitなど
-- 呼び出し順: `resolve-library-id` → `query-docs`
-- 知識のスナップショットではなく最新ドキュメントを確認する
 
 ## 関連ドキュメント
 
