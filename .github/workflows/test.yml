@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
     env:
       PYTHONDEVMODE: "1"
       # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
