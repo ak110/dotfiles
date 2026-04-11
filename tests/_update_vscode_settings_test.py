@@ -147,11 +147,45 @@ class TestApply:
     def test_list_is_overwritten(self, tmp_path: Path) -> None:
         """list 値は上書きされる (union マージではない)。"""
         target = tmp_path / "settings.json"
-        target.write_text(json.dumps({"markdown.styles": ["/old/style.css"]}), encoding="utf-8")
-        managed = {"markdown.styles": ["/new/markdown.css"]}
+        target.write_text(
+            json.dumps({"markdown-pdf.styles": ["/old/markdown-pdf.css"]}),
+            encoding="utf-8",
+        )
+        managed = {"markdown-pdf.styles": ["/new/markdown-pdf.css"]}
         mod._apply(managed, target)
         result = json.loads(target.read_text(encoding="utf-8"))
-        assert result["markdown.styles"] == ["/new/markdown.css"]
+        assert result["markdown-pdf.styles"] == ["/new/markdown-pdf.css"]
+
+    def test_legacy_keys_are_removed(self, tmp_path: Path) -> None:
+        """legacy_keys で指定したキーは apply 時に削除される。
+
+        Machine scope に過去バージョンが書き込んでいた markdown.styles の
+        絶対パスを掃除する用途の挙動を保証する。
+        """
+        target = tmp_path / "settings.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"],
+                    "editor.fontSize": 14,
+                }
+            ),
+            encoding="utf-8",
+        )
+        managed = {"workbench.colorCustomizations": {"activityBar.background": "#aabbcc"}}
+        changed = mod._apply(managed, target, legacy_keys=("markdown.styles",))
+        assert changed is True
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert "markdown.styles" not in result
+        assert result["editor.fontSize"] == 14
+        assert result["workbench.colorCustomizations"]["activityBar.background"] == "#aabbcc"
+
+    def test_legacy_keys_missing_is_noop(self, tmp_path: Path) -> None:
+        """legacy_keys で指定したキーが存在しない場合はエラーにならない。"""
+        target = tmp_path / "settings.json"
+        managed = {"foo": "bar"}
+        target.write_text(json.dumps(managed, indent=2) + "\n", encoding="utf-8")
+        assert mod._apply(managed, target, legacy_keys=("markdown.styles",)) is False
 
     def test_no_change_returns_false(self, tmp_path: Path) -> None:
         """変更がなければ False を返す。"""
@@ -181,25 +215,45 @@ class TestApply:
 class TestBuildManagedSettings:
     """_build_managed_settings のテスト。"""
 
-    def test_contains_required_keys(self) -> None:
-        """必須キーが含まれる。"""
-        settings = mod._build_managed_settings(hostname="test")
+    def test_user_scope_contains_all_keys(self) -> None:
+        """User scope では markdown.styles を含むすべてのキーが含まれる。"""
+        settings = mod._build_managed_settings(hostname="test", is_user_scope=True)
         assert "workbench.colorCustomizations" in settings
         assert "activityBar.background" in settings["workbench.colorCustomizations"]
         assert "markdown.styles" in settings
         assert "markdown-pdf.styles" in settings
 
-    def test_css_paths_point_to_share_vscode(self) -> None:
-        """CSS パスが share/vscode/ を含む。"""
-        settings = mod._build_managed_settings(hostname="test")
-        assert any("share/vscode/markdown.css" in p for p in settings["markdown.styles"])
-        assert any("share/vscode/markdown-pdf.css" in p for p in settings["markdown-pdf.styles"])
+    def test_machine_scope_excludes_markdown_styles(self) -> None:
+        """Machine scope では markdown.styles を含めない (User scope に一任する)。"""
+        settings = mod._build_managed_settings(hostname="test", is_user_scope=False)
+        assert "markdown.styles" not in settings
+        assert "workbench.colorCustomizations" in settings
+        assert "markdown-pdf.styles" in settings
+
+    def test_markdown_styles_is_jsdelivr_url(self) -> None:
+        """User scope の markdown.styles は jsDelivr CDN の HTTPS URL を指す。
+
+        GitHub raw URL に安易に差し戻されると WebView で CSS が
+        拒否される (Content-Type が text/plain + nosniff のため) ので、
+        jsDelivr URL であることを明示的にアサートする予防線を張る。
+        """
+        settings = mod._build_managed_settings(hostname="test", is_user_scope=True)
+        assert settings["markdown.styles"] == [mod._MARKDOWN_STYLE_URL]
+        assert mod._MARKDOWN_STYLE_URL.startswith("https://cdn.jsdelivr.net/")
+
+    def test_markdown_pdf_styles_points_to_share_vscode(self) -> None:
+        """markdown-pdf.styles は両 scope で絶対パスとして share/vscode/ の CSS を指す。"""
+        for scope in (True, False):
+            settings = mod._build_managed_settings(hostname="test", is_user_scope=scope)
+            assert any("share/vscode/markdown-pdf.css" in p for p in settings["markdown-pdf.styles"])
 
     def test_css_paths_use_posix_separators(self) -> None:
-        """CSS パスがスラッシュ区切りである (Windows でも JSON 互換)。"""
-        settings = mod._build_managed_settings(hostname="test")
-        for path in settings["markdown.styles"] + settings["markdown-pdf.styles"]:
-            assert "\\" not in path
+        """CSS パス/URL がスラッシュ区切りである (Windows でも JSON 互換)。"""
+        for scope in (True, False):
+            settings = mod._build_managed_settings(hostname="test", is_user_scope=scope)
+            paths = settings.get("markdown.styles", []) + settings["markdown-pdf.styles"]
+            for path in paths:
+                assert "\\" not in path
 
 
 class TestRun:
@@ -209,9 +263,34 @@ class TestRun:
         """settings_path が None の場合スキップする。"""
         assert mod.run(settings_path=None) is False
 
-    def test_applies_when_path_exists(self, tmp_path: Path) -> None:
-        """settings_path が有効な場合マージを実行する。"""
+    def test_user_scope_writes_markdown_styles(self, tmp_path: Path) -> None:
+        """Windows (User scope) では markdown.styles が書き込まれる。"""
         target = tmp_path / "settings.json"
-        assert mod.run(settings_path=target, hostname="test") is True
+        assert mod.run(settings_path=target, hostname="test", is_windows=True) is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "workbench.colorCustomizations" in result
+        assert result["markdown.styles"] == [mod._MARKDOWN_STYLE_URL]
+        assert "markdown-pdf.styles" in result
+
+    def test_machine_scope_skips_markdown_styles(self, tmp_path: Path) -> None:
+        """Linux (Machine scope) では markdown.styles を書き込まない。"""
+        target = tmp_path / "settings.json"
+        assert mod.run(settings_path=target, hostname="test", is_windows=False) is True
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert "markdown.styles" not in result
+        assert "workbench.colorCustomizations" in result
+        assert "markdown-pdf.styles" in result
+
+    def test_machine_scope_removes_legacy_markdown_styles(self, tmp_path: Path) -> None:
+        """Linux (Machine scope) では既存の markdown.styles を掃除する。
+
+        過去バージョンが絶対パスを書き込んでいたケースの移行パスを保証する。
+        """
+        target = tmp_path / "settings.json"
+        target.write_text(
+            json.dumps({"markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"]}),
+            encoding="utf-8",
+        )
+        mod.run(settings_path=target, hostname="test", is_windows=False)
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert "markdown.styles" not in result

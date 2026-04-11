@@ -3,6 +3,20 @@
  * デジタル庁デザインシステム (DADS) を参考にしたテーマ
  * 参考: https://design.digital.go.jp/dads/foundations/
  *       https://zenn.dev/oubakiou/articles/3309ceed0b90be
+ *
+ * 使い方:
+ *   VSCode の User Settings (settings.json) に以下を追記する。
+ *   VSCode 1.23 以降 markdown.styles は HTTPS URL または
+ *   ワークスペース相対パスしか受け付けないため、このファイルを
+ *   text/css で配信する jsDelivr CDN 経由で参照する。
+ *
+ *     "markdown.styles": [
+ *       "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/vscode/markdown.css"
+ *     ]
+ *
+ *   GitHub raw URL (raw.githubusercontent.com) は Content-Type が
+ *   text/plain + nosniff で配信されるため WebView がスタイルシート
+ *   として拒否する。raw URL に差し替えると効かなくなるので注意する。
  */
 
 /* ========================================
