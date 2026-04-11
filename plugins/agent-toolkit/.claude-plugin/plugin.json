@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。非UTF-8バイト・ESCシーケンス・ターミナル破壊制御文字を含むファイルのReadをブロックする。plan-modeの冗長なmkdir -p ~/.claude/plansを自動許可する。同梱スキル: 未プッシュコミットを安全にsquash/reorderするtidy-unpushed-commits。",
   "author": {
     "name": "aki",
