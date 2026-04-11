@@ -1,6 +1,16 @@
 # dotfiles
 
+[![CI](https://github.com/ak110/dotfiles/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/dotfiles/actions/workflows/ci.yaml)
+
 [chezmoi](https://www.chezmoi.io/) で管理された個人用dotfiles。
+
+## 特徴
+
+- chezmoi管理によるホーム配下(`~/.*`)の一括デプロイ
+- LinuxとWindowsの両対応
+- Python製コマンドラインツール群(`pytools`)の同梱
+- Claude Code用の共通ルール・プラグインの配布
+- サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
 ## 前提条件(要インストール)
 
@@ -68,5 +78,5 @@ update-dotfiles
 ## ドキュメント
 
 - [docs/index.md](docs/index.md) — ドキュメント入口
-- [docs/guide/](docs/guide/index.md) — 利用者向け（chezmoi使い方・Claude Code設定・pytools・SSH・セキュリティ）
-- [docs/development/](docs/development/index.md) — 開発者向け
+- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（chezmoi使い方・Claude Code設定・pytools・SSH・セキュリティ）
+- [docs/development/development.md](docs/development/development.md) — 開発者向け
