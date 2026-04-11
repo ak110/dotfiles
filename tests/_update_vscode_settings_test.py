@@ -4,7 +4,9 @@
 # テストするため protected-access を全体で許可する。
 # pylint: disable=protected-access
 
+import itertools
 import json
+import math
 from pathlib import Path
 
 from pytools import _update_vscode_settings as mod
@@ -54,6 +56,10 @@ class TestLoadJsonc:
         assert result == {"editor.fontSize": 14, "workbench.colorTheme": "Default Dark+"}
 
 
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    return int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+
+
 class TestHostnameColor:
     """_hostname_color のテスト。"""
 
@@ -64,19 +70,28 @@ class TestHostnameColor:
         assert len(color) == 7
         int(color[1:], 16)  # 16 進数として有効であること
 
-    def test_brightness_not_too_dark(self) -> None:
-        """RGB 各チャンネルの最小値が暗すぎない (#99 = 153 以上)。"""
-        for hostname in ["host-a", "host-b", "server-1", "x", "long-hostname-example"]:
-            color = mod._hostname_color(hostname=hostname)
-            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
-            # 加重平均輝度で検証 (0.299R + 0.587G + 0.114B)
+    def test_palette_brightness_not_too_dark(self) -> None:
+        """パレット全色の加重平均輝度が閾値 140 以上である。"""
+        for color in mod._HOST_COLORS:
+            r, g, b = _hex_to_rgb(color)
             luminance = 0.299 * r + 0.587 * g + 0.114 * b
-            assert luminance >= 140, f"色 {color} (ホスト名: {hostname}) が暗すぎる (輝度: {luminance:.0f})"
+            assert luminance >= 140, f"パレット色 {color} が暗すぎる (輝度: {luminance:.1f})"
 
-    def test_different_hostnames_produce_different_colors(self) -> None:
-        """異なるホスト名は異なる色を生成する。"""
-        colors = {mod._hostname_color(hostname=h) for h in ["host-a", "host-b", "host-c", "host-d"]}
-        assert len(colors) == 4
+    def test_color_is_in_palette(self) -> None:
+        """複数ホスト名の戻り値が常にパレット内に含まれる。"""
+        palette = set(mod._HOST_COLORS)
+        for hostname in ["host-a", "host-b", "server-1", "x", "long-hostname-example", "desk", "laptop"]:
+            assert mod._hostname_color(hostname=hostname) in palette
+
+    def test_palette_min_distance(self) -> None:
+        """パレット内の全ペアの RGB ユークリッド距離が十分に離れている。
+
+        連続 HSL サンプリング時代にユーザーが「区別がつかない」と報告した近接ペアの
+        距離は約 23.96 だった。将来パレットを差し替えた際にも、少なくとも閾値 40 を
+        下回らないことをパレット自体のサニティーテストとして担保する。
+        """
+        min_distance = min(math.dist(_hex_to_rgb(a), _hex_to_rgb(b)) for a, b in itertools.combinations(mod._HOST_COLORS, 2))
+        assert min_distance >= 40.0, f"パレット内の最小ペア距離 {min_distance:.2f} が閾値 40 を下回っている"
 
     def test_deterministic(self) -> None:
         """同じホスト名なら同じ色を返す。"""
