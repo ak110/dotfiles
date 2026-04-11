@@ -18,6 +18,7 @@
 
 import argparse
 import fnmatch
+import functools
 import logging
 import os
 import pathlib
@@ -28,7 +29,6 @@ import tempfile
 import typing
 import zipfile
 
-import libarchive
 import pydantic
 import send2trash
 import tqdm
@@ -375,8 +375,48 @@ def _process_target(
             pass
 
 
+@functools.cache
+def _load_libarchive() -> typing.Any:
+    """libarchive-c を遅延 import する (Windows での DLL 解決を含む)。
+
+    ``import libarchive`` 自体がグローバル副作用を伴い、Windows では DLL 解決の
+    過程で例外を送出する。そのため ``repack-archive --help`` や既存テストの
+    ``from pytools import repack_archive`` が失敗しないよう、実際にアーカイブ展開が
+    必要になる瞬間までロードを遅延させる。
+
+    Windows では MSYS2 由来の ``libarchive-13.dll`` が
+    ``~/.local/lib/libarchive/`` 配下に配置されている前提で、``LIBARCHIVE``
+    環境変数と DLL 探索ディレクトリを補ってから import する。
+    libarchive-c 側の ``ffi.py`` は ``LIBARCHIVE`` 環境変数を最優先で参照する。
+    加えて ``libarchive-13.dll`` は複数の依存 DLL (bzip2・libxml2 等) を持つため、
+    同じディレクトリを ``os.add_dll_directory`` で Windows の DLL loader に渡す。
+
+    import が失敗した場合は復旧手順を含む RuntimeError を送出する。
+    libarchive-c の未ガードな ``LoadLibrary(None)`` が ``TypeError`` を投げるケースも
+    拾う必要があるため、ここでは ``Exception`` を広めに捕捉する。
+    """
+    if sys.platform == "win32":
+        libarchive_dir = pathlib.Path.home() / ".local" / "lib" / "libarchive"
+        libarchive_dll = libarchive_dir / "libarchive-13.dll"
+        if libarchive_dll.exists():
+            os.environ.setdefault("LIBARCHIVE", str(libarchive_dll))
+            os.add_dll_directory(str(libarchive_dir))
+    try:
+        import libarchive  # noqa: PLC0415
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            "libarchive の DLL を読み込めませんでした。"
+            "Windows では update-dotfiles を再実行すると "
+            r"%USERPROFILE%\.local\lib\libarchive\ に libarchive-13.dll を "
+            "自動ダウンロードする。再実行後は新しい端末を開き直してから "
+            "repack-archive をもう一度実行すること。"
+        ) from e
+    return libarchive
+
+
 def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> None:
     """libarchive-c でストリーミング展開する。無視対象エントリはディスクに書かない。"""
+    libarchive = _load_libarchive()
     entry_count = _count_archive_entries(archive)
     dest.mkdir(parents=True, exist_ok=True)
     with (
@@ -403,6 +443,7 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
 
 def _count_archive_entries(archive: pathlib.Path) -> int:
     """進捗バー用に事前にエントリ数をカウントする。"""
+    libarchive = _load_libarchive()
     count = 0
     with libarchive.file_reader(str(archive)) as reader:
         for _ in reader:
