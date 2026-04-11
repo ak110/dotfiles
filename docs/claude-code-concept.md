@@ -127,6 +127,13 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
     許可確認プロンプトを抑止する。対象がランタイムで既存ディレクトリの場合のみ許可するため、
     許可される呼び出しは常にno-op相当（ファイルシステム変更なし）
 
+同梱スキルとして以下を持つ。
+
+- `tidy-unpushed-commits`:未プッシュコミットを慎重で再現性のある手順で整理する（squashとreorder）。
+  退避タグとコンテンツハッシュ検証で修正単位が壊れないことを機械的に担保し、乱暴な`git reset`は使わない。
+  Conventional Commitsの無害種別（`docs:`/`chore:`/`ci:`/`build:`/`style:`）を自動で分類し、ユーザーのグループ単位承認を経てcherry-pick連鎖で再構成する。
+  `/tidy-unpushed-commits`スラッシュコマンドで明示的に呼び出せる
+
 ### 移行: edit-guardrails → agent-toolkit
 
 旧プラグイン `edit-guardrails` は `agent-toolkit` に改名・統合された。
