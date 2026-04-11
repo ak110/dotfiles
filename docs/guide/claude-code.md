@@ -7,7 +7,7 @@
 - プラグイン (`plugins/` 配下) — 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する
 
 このドキュメントにはdotfiles管理側の情報（配布方式・配布元・他プロジェクトへの組み込み方）のみ記述している。
-配布されるルールやプラグインの内容については [docs/claude-code-concept.md](claude-code-concept.md) を参照。
+配布されるルールやプラグインの内容については [docs/guide/claude-code-concept.md](claude-code-concept.md) を参照。
 
 ## 配布方式
 
@@ -36,7 +36,7 @@ dotfiles全体を入れずに `~/.claude/rules/agent-basics/` だけを配置で
 ````markdown
 ## Claude Code セットアップ
 
-本プロジェクトの開発時は [ak110/dotfiles の Claude Code 設定 (ルール・プラグイン)](https://github.com/ak110/dotfiles/blob/master/docs/claude-code-concept.md) の導入を推奨する。
+本プロジェクトの開発時は [ak110/dotfiles の Claude Code 設定 (ルール・プラグイン)](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-concept.md) の導入を推奨する。
 中身やカスタマイズ方法はリンク先を参照。
 
 ### 前提条件
@@ -119,4 +119,4 @@ claudize --clean
 - Marketplace定義: `.claude-plugin/marketplace.json`
 - 依存: `uv` CLI（hookスクリプトを `uv run --script` 経由で実行するため）
 
-プラグインの内容（チェック内容など）は [docs/claude-code-concept.md](claude-code-concept.md) を参照。
+プラグインの内容（チェック内容など）は [docs/guide/claude-code-concept.md](claude-code-concept.md) を参照。

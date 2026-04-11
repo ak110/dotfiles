@@ -35,7 +35,7 @@ tools: Read, Grep, Glob, Bash
 | Node.js 設定 | `package.json`, `pnpm-lock.yaml`, `package-lock.json`, `.nvmrc`, `.node-version` |
 | pre-commit / lint | `.pre-commit-config.yaml`, `.editorconfig`, `.gitattributes` |
 | CI | `.github/workflows/**`, `.gitlab-ci.yml` |
-| ドキュメント | `README.md`, `CLAUDE.md`, `docs/development.md`, `docs/security.md` |
+| ドキュメント | `README.md`, `CLAUDE.md`, `docs/**/development.md`, `docs/**/security.md` |
 | 開発ルール | `.claude/rules/agent-basics/**` |
 
 明らかにプロジェクト固有の変更（アプリ ロジック、ドメイン固有のテスト、特定プロジェクトだけにある機能）は対象外。

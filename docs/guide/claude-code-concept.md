@@ -5,7 +5,7 @@
 - ルール (`~/.claude/rules/agent-basics/` 配下) — 全プロジェクトで自動読み込みされるコーディング規約・運用方針
 - プラグイン — Plugin Marketplace `ak110-dotfiles` 経由で配布するClaude Codeプラグイン
 
-インストール手順は [docs/claude-code.md](claude-code.md) を参照。
+インストール手順は [docs/guide/claude-code.md](claude-code.md) を参照。
 ここでは内容とカスタマイズ方法を説明する。
 
 ## ルール
@@ -90,7 +90,7 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 プラグインは原則project scopeで各プロジェクトに導入する。
 プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
 開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
-設定方法は [docs/claude-code.md](claude-code.md) のセットアップ手順を参照。
+設定方法は [docs/guide/claude-code.md](claude-code.md) のセットアップ手順を参照。
 
 ### 前提条件
 

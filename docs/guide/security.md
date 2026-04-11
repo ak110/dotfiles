@@ -24,7 +24,7 @@ pnpm install --config.minimum-release-age=0 <package>
 ### UV_FROZEN による lockfile 尊重
 
 CI/`make`などの自動実行環境では`UV_FROZEN=1`環境変数で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制し、意図しない再resolveでロックファイルが書き換わるリスクを抑えている。
-詳細は[docs/development.md](development.md)の「UV_FROZENによるlockfile尊重」セクションを参照。
+詳細は[docs/development/development.md](../development/development.md)の「UV_FROZENによるlockfile尊重」セクションを参照。
 
 ### GitHub Actions ピン留め
 

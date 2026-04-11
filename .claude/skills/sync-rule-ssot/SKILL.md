@@ -95,5 +95,5 @@ paths:
 
 ## 参考
 
-- 配布方式の詳細: `docs/claude-code.md`
+- 配布方式の詳細: `docs/guide/claude-code.md`
 - 原本ルールの書き方: `.chezmoi-source/dot_claude/rules/agent-basics/claude-rules.md`

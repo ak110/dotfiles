@@ -4,7 +4,7 @@
 (1440 分 = 24 時間) を設定する。既存エントリがあれば置換、なければ追記、
 一致している場合は何もしない。
 
-詳細は docs/security.md を参照。
+詳細は docs/guide/security.md を参照。
 """
 
 import logging

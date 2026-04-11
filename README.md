@@ -67,9 +67,6 @@ update-dotfiles
 
 ## ドキュメント
 
-- [docs/chezmoi-usage.md](docs/chezmoi-usage.md) — chezmoiの使い方（ファイル追加・編集・命名規則）
-- [docs/claude-code.md](docs/claude-code.md) — Claude Code設定管理（claudize）
-- [docs/pytools.md](docs/pytools.md) — Pythonコマンドラインツール群
-- [docs/ssh-config.md](docs/ssh-config.md) — SSH設定管理
-- [docs/security.md](docs/security.md) — セキュリティ
-- [docs/development.md](docs/development.md) — 開発
+- [docs/index.md](docs/index.md) — ドキュメント入口
+- [docs/guide/](docs/guide/index.md) — 利用者向け（chezmoi使い方・Claude Code設定・pytools・SSH・セキュリティ）
+- [docs/development/](docs/development/index.md) — 開発者向け
