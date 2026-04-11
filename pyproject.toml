@@ -54,6 +54,7 @@ build-backend = "hatchling.build"
 dev = [
     "pre-commit>=4.2.0",
     "pyfltr>=1.22.2",
+    "pytest-xdist>=3.8.0",
     "types-PyYAML",
 ]
 
@@ -99,7 +100,7 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.pytest.ini_options]
-addopts = "--showlocals -p no:cacheprovider --maxfail=5"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 -n auto --dist=loadfile"
 asyncio_default_fixture_loop_scope = "function"
 log_level = "DEBUG"
 xfail_strict = true
