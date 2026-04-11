@@ -41,3 +41,56 @@ class TestRename:
         (tmp_path / "FOO.txt").touch()
         self._run("--ignore-case", "foo", "bar", str(tmp_path / "FOO.txt"), cwd=tmp_path)
         assert (tmp_path / "bar.txt").exists()
+
+
+class TestPatternFile:
+    """rgrename 互換のパターンファイル機能のテスト。"""
+
+    def test_load_pattern_file_basic(self, tmp_path: pathlib.Path) -> None:
+        from pytools import rename
+
+        pf = tmp_path / "rules.txt"
+        pf.write_text("foo\tbar\n# comment\nF\t^prefix_\t\nD\t_suffix$\t\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        assert len(rules) == 3
+        assert rules[0].target == "both"
+        assert rules[1].target == "file"
+        assert rules[2].target == "dir"
+
+    def test_rename_tree_with_pattern_file(self, tmp_path: pathlib.Path) -> None:
+        from pytools import rename
+
+        (tmp_path / "img_01.txt").touch()
+        (tmp_path / "img_02.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text("^img_\t\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules)
+        assert (tmp_path / "01.txt").exists()
+        assert (tmp_path / "02.txt").exists()
+
+    def test_rename_tree_files_only(self, tmp_path: pathlib.Path) -> None:
+        from pytools import rename
+
+        sub = tmp_path / "sub_dir"
+        sub.mkdir()
+        (tmp_path / "sub_file.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text("^sub_\t\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules, files_only=True)
+        assert (tmp_path / "file.txt").exists()
+        assert sub.exists()  # ディレクトリは改名されない
+
+    def test_rename_tree_dirs_only(self, tmp_path: pathlib.Path) -> None:
+        from pytools import rename
+
+        sub = tmp_path / "sub_dir"
+        sub.mkdir()
+        (tmp_path / "sub_file.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text("^sub_\t\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules, dirs_only=True)
+        assert (tmp_path / "dir").exists()
+        assert (tmp_path / "sub_file.txt").exists()  # ファイルは改名されない

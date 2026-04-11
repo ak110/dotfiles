@@ -7,11 +7,18 @@ dependencies = [
     "bashplotlib",
     "businesstimedelta",
     "holidays",
+    "httpx",
+    "libarchive-c",
     "natsort",
     "numpy",
     "pdf2image",
     "pillow",
+    "psutil",
+    "pydantic>=2",
+    "pyyaml",
+    "send2trash",
     "tqdm",
+    "zstandard",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +35,16 @@ git-justify = "pytools.git_justify:_main"
 mvdir = "pytools.mvdir:_main"
 update-ssh-config = "pytools.update_ssh_config:_main"
 dotfiles-post-apply = "pytools.post_apply:_main"
+date-relocator = "pytools.date_relocator:_main"
+clonedir = "pytools.clonedir:_main"
+delete-homonym = "pytools.delete_homonym:_main"
+dirsize = "pytools.dirsize:_main"
+randfile = "pytools.randfile:_main"
+rename2hash = "pytools.rename2hash:_main"
+psgrep = "pytools.psgrep:_main"
+reg-export = "pytools.reg_export:_main"
+run-as-admin = "pytools.run_as_admin:_main"
+repack-archive = "pytools.repack_archive:_main"
 
 [build-system]
 requires = ["hatchling"]
@@ -37,6 +54,7 @@ build-backend = "hatchling.build"
 dev = [
     "pre-commit>=4.2.0",
     "pyfltr>=1.22.2",
+    "types-PyYAML",
 ]
 
 [tool.pyfltr]

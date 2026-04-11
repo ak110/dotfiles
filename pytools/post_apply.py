@@ -11,6 +11,7 @@
 5. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
 6. mise セットアップ (_setup_mise.run)
 7. Claude Code plugin の自動インストール (_install_claude_plugins.run)
+8. Windows 向け libarchive.dll の自動インストール (_install_libarchive_windows.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -25,6 +26,7 @@ from pathlib import Path
 from pytools import (
     _cleanup_paths,
     _install_claude_plugins,
+    _install_libarchive_windows,
     _log_format,
     _setup_mise,
     _update_claude_settings,
@@ -88,6 +90,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
     ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
     ("mise セットアップ", _setup_mise.run),
     ("Claude Code plugin のインストール", _install_claude_plugins.run),
+    ("libarchive (Windows)", _install_libarchive_windows.run),
 ]
 
 

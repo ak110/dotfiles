@@ -1,8 +1,15 @@
-"""画像変換。"""
+"""画像変換。
+
+ディレクトリ配下の画像を指定形式へ一括変換し、最大辺サイズを超える場合は縮小する。
+CLI からは `py-imageconverter` コマンドとして、他モジュールからは `convert_directory`
+関数として呼び出せる。
+"""
 
 import argparse
+import logging
 import pathlib
 import secrets
+import typing
 import warnings
 
 import natsort
@@ -11,11 +18,15 @@ import PIL.Image
 import PIL.ImageOps
 import tqdm
 
+logger = logging.getLogger(__name__)
+
 _IGNORE_SUFFIXES = {".db", ".txt", ".htm", ".html", ".pdf"}
 _TYPE_SUFFIXES = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
 
+OutputType = typing.Literal["jpeg", "png", "webp"]
 
-def _main():
+
+def _main() -> None:
     parser = argparse.ArgumentParser(description="画像変換")
     parser.add_argument("--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?")
     parser.add_argument("--max-width", default=2048, type=int)
@@ -26,61 +37,123 @@ def _main():
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
     args = parser.parse_args()
     for target_path in args.targets:
-        _convert(args, target_path)
+        convert_directory(
+            target_path,
+            output_type=args.output_type,
+            max_width=args.max_width,
+            max_height=args.max_height,
+            jpeg_quality=args.jpeg_quality,
+            repack_png=args.repack_png,
+            remove_failed=not args.no_remove_failed,
+        )
 
 
-def _convert(args, target_path):
-    suffix = _TYPE_SUFFIXES[args.output_type]
+def convert_directory(
+    target_path: pathlib.Path,
+    *,
+    output_type: OutputType = "jpeg",
+    max_width: int = 2048,
+    max_height: int = 1536,
+    jpeg_quality: int = 90,
+    repack_png: bool = False,
+    remove_failed: bool = True,
+    progress: tqdm.tqdm | None = None,
+) -> None:
+    """ディレクトリ配下の画像を変換する。
+
+    Args:
+        target_path: 処理対象のディレクトリ。
+        output_type: 出力形式。
+        max_width: 出力最大幅。これを超える場合は縮小する。
+        max_height: 出力最大高さ。これを超える場合は縮小する。
+        jpeg_quality: JPEG 出力時の品質。
+        repack_png: PNG 入力時に wand で再パックしてメタデータを剥がす。
+        remove_failed: 変換に失敗したファイルを削除する。
+        progress: 呼び元で作成済みの tqdm。未指定なら内部で作成する。
+    """
+    suffix = _TYPE_SUFFIXES[output_type]
     paths: list[pathlib.Path] = [p for p in target_path.glob("**/*") if p.is_file() and p.suffix not in _IGNORE_SUFFIXES]
     paths = list(natsort.natsorted(paths))
-    for path in tqdm.tqdm(paths, ascii=True, ncols=100):
-        try:
-            # PNG の場合は repack_png を実行
-            if args.repack_png and path.suffix.lower() == ".png":
-                temp_png_path = path.parent / f"{secrets.token_urlsafe(8)}.png"
-                _repack_png(path, temp_png_path)
-                path.unlink()
-                temp_png_path.rename(path)
-            # 画像を読み込む
-            with PIL.Image.open(path) as img_file:
-                try:
-                    img = PIL.ImageOps.exif_transpose(img_file)
-                except Exception as e:
-                    warnings.warn(f"{type(e).__name__}: {e}", stacklevel=1)
-                    img = img_file.copy()
-                # JPEG 出力時の色空間変換
-                if args.output_type == "jpeg":
-                    if img.mode == "RGBA":
-                        img = img.convert("RGB")
-                    elif img.mode == "LA":
-                        img = img.convert("L")
-                # 指定サイズを超える場合は縮小する
-                if img.width >= args.max_width or img.height >= args.max_height:
-                    r = min(args.max_width / img.width, args.max_height / img.height)
-                    size = int(img.width * r), int(img.height * r)
-                    img = img.resize(size, resample=PIL.Image.Resampling.LANCZOS)
-                # メタデータを削除して保存する
-                with PIL.Image.fromarray(np.asarray(img)) as img2:
-                    temp_path = path.parent / f"{secrets.token_urlsafe(8)}{suffix}"
-                    if args.output_type == "jpeg":
-                        img2.save(temp_path, format="JPEG", quality=args.jpeg_quality)
-                    else:
-                        img2.save(temp_path)
-        except Exception as e:
-            tqdm.tqdm.write(f"{path}: convert failed ({e})")
-            # 失敗したファイルは削除する（バックアップされている前提）
-            if not args.no_remove_failed:
-                path.unlink()
-            continue
-        # 元ファイルを削除し、リネームする（バックアップされている前提）
-        path.unlink()
-        save_path = path.with_suffix(suffix)
-        temp_path.rename(save_path)
-        tqdm.tqdm.write(str(save_path))
+    pbar = progress if progress is not None else tqdm.tqdm(total=len(paths), ascii=True, ncols=100)
+    try:
+        if progress is None:
+            pbar.reset(total=len(paths))
+        for path in paths:
+            _convert_one(
+                path,
+                suffix=suffix,
+                output_type=output_type,
+                max_width=max_width,
+                max_height=max_height,
+                jpeg_quality=jpeg_quality,
+                repack_png=repack_png,
+                remove_failed=remove_failed,
+            )
+            pbar.update(1)
+    finally:
+        if progress is None:
+            pbar.close()
+
+
+def _convert_one(
+    path: pathlib.Path,
+    *,
+    suffix: str,
+    output_type: OutputType,
+    max_width: int,
+    max_height: int,
+    jpeg_quality: int,
+    repack_png: bool,
+    remove_failed: bool,
+) -> None:
+    """1 ファイル分の変換処理。"""
+    try:
+        # PNG の場合は repack_png を実行
+        if repack_png and path.suffix.lower() == ".png":
+            temp_png_path = path.parent / f"{secrets.token_urlsafe(8)}.png"
+            _repack_png(path, temp_png_path)
+            path.unlink()
+            temp_png_path.rename(path)
+        # 画像を読み込む
+        with PIL.Image.open(path) as img_file:
+            try:
+                img = PIL.ImageOps.exif_transpose(img_file)
+            except Exception as e:
+                warnings.warn(f"{type(e).__name__}: {e}", stacklevel=1)
+                img = img_file.copy()
+            # JPEG 出力時の色空間変換
+            if output_type == "jpeg":
+                if img.mode == "RGBA":
+                    img = img.convert("RGB")
+                elif img.mode == "LA":
+                    img = img.convert("L")
+            # 指定サイズを超える場合は縮小する
+            if img.width >= max_width or img.height >= max_height:
+                r = min(max_width / img.width, max_height / img.height)
+                size = int(img.width * r), int(img.height * r)
+                img = img.resize(size, resample=PIL.Image.Resampling.LANCZOS)
+            # メタデータを削除して保存する
+            with PIL.Image.fromarray(np.asarray(img)) as img2:
+                temp_path = path.parent / f"{secrets.token_urlsafe(8)}{suffix}"
+                if output_type == "jpeg":
+                    img2.save(temp_path, format="JPEG", quality=jpeg_quality)
+                else:
+                    img2.save(temp_path)
+    except Exception as e:
+        tqdm.tqdm.write(f"{path}: convert failed ({e})")
+        # 失敗したファイルは削除する（バックアップされている前提）
+        if remove_failed:
+            path.unlink()
+        return
+    # 元ファイルを削除し、リネームする（バックアップされている前提）
+    path.unlink()
+    save_path = path.with_suffix(suffix)
+    temp_path.rename(save_path)
+    tqdm.tqdm.write(str(save_path))
 
 
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
-    """PNGを再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
+    """PNG を再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
     try:
         import wand.color  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
         import wand.image  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
