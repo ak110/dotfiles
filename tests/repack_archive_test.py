@@ -143,6 +143,74 @@ class TestProcessArchive:
         # sub/ が平坦化される
         assert entries == {"01.txt", "02.txt"}
 
+    def test_flatten_nested_single_root(self, tmp_path: pathlib.Path) -> None:
+        """連続した単一ディレクトリチェーンを最深まで剥がす。"""
+        archive = tmp_path / "foo.zip"
+        _make_zip(
+            archive,
+            {
+                "a/b/c/01.txt": b"1",
+                "a/b/c/02.txt": b"2",
+            },
+        )
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "foo.zip")
+        assert entries == {"01.txt", "02.txt"}
+
+    def test_flatten_empty_sibling_after_ignore(self, tmp_path: pathlib.Path) -> None:
+        """ignore_files で空になった兄弟ディレクトリが平坦化を阻害しないこと。"""
+        archive = tmp_path / "foo.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            # 明示ディレクトリエントリー (末尾 "/" 付き空書き込み)
+            zf.writestr("Series/", b"")
+            zf.writestr("Series/Vol01/", b"")
+            zf.writestr("Series/Vol02/", b"")
+            zf.writestr("Series/Vol01/001.txt", b"content")
+            zf.writestr("Series/Vol02/Thumbs.db", b"junk")
+        config = repack_archive.RepackConfig(ignore_files=["Thumbs.db"])
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "foo.zip")
+        assert entries == {"001.txt"}
+
+    def test_flatten_name_collision(self, tmp_path: pathlib.Path) -> None:
+        """同名親子 (foo/foo/bar.txt) でも平坦化が破綻しないこと。"""
+        archive = tmp_path / "foo.zip"
+        _make_zip(
+            archive,
+            {
+                "foo/foo/bar.txt": b"data",
+            },
+        )
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "foo.zip")
+        assert entries == {"bar.txt"}
+
     def test_multiple_roots_preserved(self, tmp_path: pathlib.Path) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(

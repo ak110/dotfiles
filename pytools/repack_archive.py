@@ -467,14 +467,48 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
 
 
 def _flatten_single_root(work_dir: pathlib.Path) -> None:
-    """作業ディレクトリ直下が単一ディレクトリのみなら 1 階層引き上げる。"""
-    entries = list(work_dir.iterdir())
-    if len(entries) != 1 or not entries[0].is_dir():
-        return
-    inner = entries[0]
-    for child in list(inner.iterdir()):
-        shutil.move(str(child), str(work_dir / child.name))
-    inner.rmdir()
+    """作業ディレクトリ配下の冗長な階層を除去する。
+
+    無視パターン適用後に残った空ディレクトリを先に畳んだうえで、直下が単一
+    ディレクトリである状態が続く限り階層を剥がしきる。これにより
+    ``Series/Vol01/001.txt`` と空の ``Series/Vol02/`` が共存するような
+    フィルタ後構造でも、最終 ZIP に余計な階層を残さない。
+    """
+    _prune_empty_dirs(work_dir)
+    while True:
+        entries = list(work_dir.iterdir())
+        if len(entries) != 1 or not entries[0].is_dir():
+            return
+        inner = entries[0]
+        # ``inner`` 直下に ``inner`` と同名の子 (``foo/foo``) があると
+        # ``shutil.move`` が移動先ディレクトリ内へ挿入する挙動になり
+        # ``rmdir`` 前に空にできない。退避名へリネームして衝突を避ける。
+        staging = _reserve_flatten_staging(inner)
+        inner.rename(staging)
+        for child in list(staging.iterdir()):
+            shutil.move(str(child), str(work_dir / child.name))
+        staging.rmdir()
+
+
+def _prune_empty_dirs(root: pathlib.Path) -> None:
+    """Root 配下の空ディレクトリを深い順に除去する (root 自体は残す)。"""
+    dirs = [p for p in root.rglob("*") if p.is_dir()]
+    dirs.sort(key=lambda p: len(p.parts), reverse=True)
+    for path in dirs:
+        if not any(path.iterdir()):
+            path.rmdir()
+
+
+def _reserve_flatten_staging(inner: pathlib.Path) -> pathlib.Path:
+    """``inner`` の兄弟として衝突しない退避名を返す。"""
+    parent = inner.parent
+    base = f"{inner.name}.__flatten_tmp__"
+    candidate = parent / base
+    index = 0
+    while candidate.exists():
+        index += 1
+        candidate = parent / f"{base}{index}"
+    return candidate
 
 
 def _write_uncompressed_zip(work_dir: pathlib.Path, zip_path: pathlib.Path) -> None:
