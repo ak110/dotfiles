@@ -48,20 +48,17 @@ repos:
         entry: scripts/check-templates.sh
         language: script
         files: '\.(sh|ps1)\.tmpl$'
-        pass_filenames: true
       - id: require-ps1-bom
         name: Require UTF-8 BOM on .ps1 files
         entry: scripts/check-ps1-bom.sh
         language: script
         files: '\.ps1(\.tmpl)?$'
-        pass_filenames: true
       - id: powershell-analyzer
         name: PSScriptAnalyzer
         entry: scripts/run-psscriptanalyzer.sh
         language: script
         files: '\.ps1$'
         exclude: '\.tmpl$'
-        pass_filenames: true
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen pyfltr fast
