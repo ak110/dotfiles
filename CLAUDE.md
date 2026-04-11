@@ -14,6 +14,9 @@ make test     # 全チェック実行（これが通ればコミット可）
 make update   # 依存アップグレード＋全チェック（pinactによるアクション更新含む）
 ```
 
+- ドキュメントのみの変更（`*.md`や`docs/**`の更新）をコミットする場合、事前の手動`make test`は省略してよい。`git commit`時点で`pre-commit`の`pyfltr fast`フックが`markdownlint-fast`と`textlint-fast`を自動実行するため、Markdownの検証はそこで担保される
+- コードやテストに手を入れた変更では従来どおり`make test`を通してからコミットする
+
 ## ディレクトリ構造の要点
 
 - `.chezmoi-source/` — chezmoiソースディレクトリ（配布対象。`dot_` prefix → `~/.*`）
