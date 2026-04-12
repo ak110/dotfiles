@@ -555,3 +555,109 @@ class TestManifestSsot:
             "description 不一致: plugin.json と marketplace.json を揃えること"
         )
         assert entry["name"] == plugin_manifest["name"]
+
+
+class TestBashGitCommitWarning:
+    """git commit 未検証警告。
+
+    セッション状態の test_executed を参照し、テスト未実行時に警告する。
+    """
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def _invoke(self, command: str, session_id: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
+            env_overrides=env,
+        )
+
+    def _has_system_message(self, result: subprocess.CompletedProcess[str], keyword: str) -> bool:
+        if not result.stdout.strip():
+            return False
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        return keyword in data.get("systemMessage", "")
+
+    def test_warns_when_test_not_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        sid = "commit-warn"
+        self._write_state(tmp_path, sid, {"test_executed": False})
+        result = self._invoke("git commit -m 'test'", sid, state_dir)
+        assert result.returncode == 0
+        assert self._has_system_message(result, "agent-toolkit")
+
+    def test_warns_when_state_file_absent(self, state_dir: dict[str, str]):
+        """状態ファイル不在時もテスト未実行として警告する。"""
+        result = self._invoke("git commit -m 'test'", "no-state", state_dir)
+        assert result.returncode == 0
+        assert self._has_system_message(result, "agent-toolkit")
+
+    def test_skips_when_test_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        sid = "commit-ok"
+        self._write_state(tmp_path, sid, {"test_executed": True})
+        result = self._invoke("git commit -m 'test'", sid, state_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_non_commit_command_unaffected(self, state_dir: dict[str, str]):
+        result = self._invoke("git status", "x", state_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
+class TestBashGitLogDecorate:
+    """git log --decorate 自動付与。"""
+
+    def test_adds_decorate(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}})
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        updated = data["hookSpecificOutput"]["updatedInput"]["command"]
+        assert "--decorate" in updated
+
+    def test_skips_when_decorate_present(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline --decorate -5"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_compound_command(self):
+        cmd = "git status 2>/dev/null; echo ---; git log --oneline -5"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": cmd}})
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        updated = data["hookSpecificOutput"]["updatedInput"]["command"]
+        assert "git log --decorate" in updated
+        # git status 部分は変更されない
+        assert updated.startswith("git status")
+
+    def test_non_log_git_command_unaffected(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git status"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
+class TestBashCodexExecNudge:
+    """codex exec 未決事項の念押し。"""
+
+    def test_nudge_on_initial_exec(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec --dangerously-bypass plan.md prompt"}})
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert "systemMessage" in data
+
+    def test_no_nudge_on_resume(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec resume --dangerously-bypass abc prompt"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_nudge_on_unrelated_command(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo codex"}})
+        assert result.returncode == 0
+        assert result.stdout == ""

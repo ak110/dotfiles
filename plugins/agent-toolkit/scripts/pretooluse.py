@@ -55,6 +55,7 @@ import pathlib
 import re
 import shlex
 import sys
+import tempfile
 import traceback
 
 # U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
@@ -74,11 +75,31 @@ def _main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    # Bash は専用ハンドラ: 冗長な ~/.claude/plans mkdir のみ自動許可する
+    # Bash は専用ハンドラ
     if tool_name == "Bash":
         command = tool_input.get("command")
-        if isinstance(command, str) and _is_redundant_plans_mkdir(command):
+        if not isinstance(command, str):
+            return 0
+        # 冗長な ~/.claude/plans mkdir の自動許可
+        if _is_redundant_plans_mkdir(command):
             _emit_allow_decision()
+            return 0
+        session_id = payload.get("session_id", "")
+        # git commit 未検証警告
+        result = _check_bash_git_commit(command, session_id)
+        if result is not None:
+            print(json.dumps(result))
+            return 0
+        # git log --decorate 自動付与
+        result = _check_bash_git_log_decorate(command, tool_input)
+        if result is not None:
+            print(json.dumps(result))
+            return 0
+        # codex exec 未決事項の念押し
+        result = _check_bash_codex_exec(command)
+        if result is not None:
+            print(json.dumps(result))
+            return 0
         return 0
 
     # Read は専用ハンドラ: ターミナル破壊バイトを含むファイルを事前ブロックする
@@ -541,6 +562,113 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             )
             return True
     return False
+
+
+# --- Bash: git commit 未検証警告 ---
+
+_GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
+
+
+def _session_state_path(session_id: str) -> pathlib.Path:
+    """セッション状態ファイルのパスを返す (posttooluse.py と共通のパス規則)。"""
+    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
+
+
+def _read_session_state(session_id: str) -> dict:
+    """セッション状態を読む。不在・破損時は空辞書を返す。"""
+    if not isinstance(session_id, str) or not session_id:
+        return {}
+    try:
+        return json.loads(_session_state_path(session_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _check_bash_git_commit(command: str, session_id: str) -> dict | None:
+    """テスト未実行のまま git commit する場合に警告 JSON を返す。
+
+    テスト実行済み (state の test_executed が true) ならスキップ。
+    状態ファイル不在時は test_executed = false として扱い警告を出す。
+    """
+    if not _GIT_COMMIT_PATTERN.search(command):
+        return None
+    state = _read_session_state(session_id)
+    if state.get("test_executed", False):
+        return None
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+        },
+        "systemMessage": (
+            "[agent-toolkit] テスト未実行のままコミットしようとしています。"
+            "agent.md の検証とコミット手順に従い、先にテストを実行してください。"
+        ),
+    }
+
+
+# --- Bash: git log --decorate 自動付与 ---
+
+_GIT_LOG_PATTERN = re.compile(r"\bgit\s+log\b")
+
+
+def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
+    """Git log に --decorate がない場合、自動で挿入した updatedInput を返す。
+
+    複合コマンド (セミコロン・パイプ結合) 内の git log にも対応する。
+    git log から次のセミコロン・パイプ・行末までの範囲に --decorate が
+    含まれるかを判定する。
+    """
+    match = _GIT_LOG_PATTERN.search(command)
+    if match is None:
+        return None
+    # git log から次のセミコロン・パイプ・行末までのスコープを取得
+    rest = command[match.start() :]
+    scope_end = len(rest)
+    for delimiter in (";", "|", "&&"):
+        pos = rest.find(delimiter)
+        if pos != -1 and pos < scope_end:
+            scope_end = pos
+    scope = rest[:scope_end]
+    if "--decorate" in scope:
+        return None
+    # git log を git log --decorate に 1 箇所だけ置換
+    updated_command = command[: match.end()] + " --decorate" + command[match.end() :]
+    updated_input = dict(tool_input)
+    updated_input["command"] = updated_command
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": updated_input,
+        },
+        "systemMessage": ("[agent-toolkit] git log に --decorate を自動で挿入しました。"),
+    }
+
+
+# --- Bash: codex exec 未決事項の念押し ---
+
+_CODEX_EXEC_PATTERN = re.compile(r"\bcodex\s+exec\b")
+_CODEX_RESUME_PATTERN_PRE = re.compile(r"\bcodex\s+exec\s+resume\b")
+
+
+def _check_bash_codex_exec(command: str) -> dict | None:
+    """Codex exec (resume 以外) を検出した場合に未決事項確認の念押しを返す。"""
+    if not _CODEX_EXEC_PATTERN.search(command):
+        return None
+    if _CODEX_RESUME_PATTERN_PRE.search(command):
+        return None
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+        },
+        "systemMessage": (
+            "[agent-toolkit] 計画ファイルを codex レビューに提出します。"
+            "提出前に確認: 推測や独自判断で決めた方針はありませんか？"
+            "ユーザーに確認すべき未決事項が残っていれば、先に解消してください。"
+        ),
+    }
 
 
 if __name__ == "__main__":

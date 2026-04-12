@@ -1,5 +1,5 @@
 {
-  "description": "Write/Edit/MultiEditのPreToolUseガードレール（文字化け・PS1改行・ロックファイル/シークレット編集）、Readのエンコーディング/制御文字検査、冗長な~/.claude/plans mkdirの自動許可。agent-toolkitプラグインの一部。",
+  "description": "PreToolUse: Write/Edit/MultiEditのガードレール（文字化け・PS1改行・ロックファイル/シークレット編集）、Readのエンコーディング/制御文字検査、Bashのmkdir自動許可・git commit警告・git log --decorate自動付与・codex exec念押し。PostToolUse: Bashのテスト実行・git状態確認・codex resume回数をセッション状態に記録。Stop: ユーザー修正が多いセッション終了時にCLAUDE.md更新を提案。agent-toolkitプラグインの一部。",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,27 @@
           {
             "type": "command",
             "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/stop_advisor.py"
           }
         ]
       }

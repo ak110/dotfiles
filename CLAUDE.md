@@ -48,5 +48,6 @@ uv run pyfltr run --output-format=jsonl
 - @README.md
 - @docs/index.md
 - @docs/guide/claude-code.md
+- @docs/guide/claude-code-guide.md
 - @docs/guide/security.md
 - @docs/development/development.md

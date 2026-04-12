@@ -154,9 +154,13 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
   - Shift-JISなど非UTF-8テキストやバイナリをClaude CodeがReadすると、結果がターミナルへ流れて表示が崩れる事故を防ぐ
   - 画像 / PDF / ノートブック（`.png` / `.pdf` / `.ipynb` 等）はClaude本体の専用経路に乗るため検査対象外
 - 既存ディレクトリ `~/.claude/plans` に対する冗長な `mkdir -p` を自動許可 (Bash)
-  - plan modeでClaudeがプラン ファイル書き込み前に走らせる冗長な `mkdir` による
+  - plan modeでClaudeがプランファイル書き込み前に走らせる冗長な `mkdir` による
     許可確認プロンプトを抑止する。対象がランタイムで既存ディレクトリの場合のみ許可するため、
     許可される呼び出しは常にno-op相当（ファイルシステム変更なし）
+- テスト未実行のまま`git commit`を実行しようとした場合に警告する（Bash, PostToolUse連携）
+- `git log`に`--decorate`がない場合に自動で挿入する（Bash）
+- `codex exec`（`resume`以外）の実行前に未決事項の確認を促す（Bash）
+- セッション終了時にユーザーからの修正指示が多い場合やcodexレビュー不合格が多い場合に、CLAUDE.md更新を提案する（Stop）
 
 同梱スキルとして以下を持つ。
 
