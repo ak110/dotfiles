@@ -7,7 +7,7 @@
 - プラグイン (`plugins/` 配下) — 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する
 
 このドキュメントにはdotfiles管理側の情報（配布方式・配布元・他プロジェクトへの組み込み方）のみ記述している。
-配布されるルールやプラグインの内容については [docs/guide/claude-code-concept.md](claude-code-concept.md) を参照。
+配布されるルールやプラグインの内容については [docs/guide/claude-code-guide.md](claude-code-guide.md) を参照。
 
 ## 配布方式
 
@@ -29,60 +29,7 @@ dotfiles全体を入れずに `~/.claude/rules/agent-basics/` だけを配置で
 想定用途はチームプロジェクトのセットアップ手順への組み込み。
 再実行時は既存ファイルのfrontmatterを維持したままbodyのみ更新されるため、利用者によるカスタマイズは保持される。
 差分が発生した場合のバックアップは `~/.claude/rules-backup/agent-basics-<timestamp>/` に作成される。
-（Claude Codeが `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、退避ファイルが読まれないよう `rules/` の外に逃がしている）
-
-#### プロジェクトのセットアップ手順への記述例
-
-````markdown
-## Claude Code セットアップ
-
-本プロジェクトの開発時は [ak110/dotfiles の Claude Code 設定 (ルール・プラグイン)](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-concept.md) の導入を推奨する。
-中身やカスタマイズ方法はリンク先を参照。
-
-### 前提条件
-
-プロジェクト管理者が `.claude/settings.json` に以下を設定済みであること。
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "ak110-dotfiles": {
-      "source": { "source": "github", "repo": "ak110/dotfiles" }
-    }
-  },
-  "enabledPlugins": { "agent-toolkit@ak110-dotfiles": true }
-}
-```
-
-### ルール導入 (Linux)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
-```
-
-### ルール導入 (Windows)
-
-```cmd
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
-```
-
-### プラグイン (共通)
-
-`.claude/settings.json` の `enabledPlugins` と `extraKnownMarketplaces` が設定済みの場合、
-開発者がフォルダをtrustした時にClaude Codeがプラグインのインストールを自動で提案する。
-手動でのコマンド実行は不要。
-
-非公式のPlugin Marketplaceはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
-
-1. Claude Code 内で `/plugin` を実行
-2. `Marketplaces` タブで `ak110-dotfiles` を選択
-3. `Enable auto-update` を選択
-````
-
-[uv](https://docs.astral.sh/uv/) を前提にしていないプロジェクトの場合は、導入手順にuvのインストールも追記するとよい。
-
-- Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
-- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+（Claude Codeが `~/.claude/rules/` 配下を再帰的に読み込む仕様のため、退避ファイルは `rules/` の外にしている）
 
 ### プロジェクトローカルへの配布: `claudize`
 
@@ -118,5 +65,3 @@ claudize --clean
 - 配布元: `plugins/` 配下
 - Marketplace定義: `.claude-plugin/marketplace.json`
 - 依存: `uv` CLI（hookスクリプトを `uv run --script` 経由で実行するため）
-
-プラグインの内容（チェック内容など）は [docs/guide/claude-code-concept.md](claude-code-concept.md) を参照。

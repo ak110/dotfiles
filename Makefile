@@ -7,7 +7,7 @@ help:
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
-	env --unset UV_FROZEN uv sync --upgrade --all-groups
+	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uv run pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
@@ -17,11 +17,11 @@ update-actions:
 	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
 
-# 開発環境セットアップ
+# 開発環境のセットアップ
 setup:
-	uv sync --all-groups
-	uv tool install --editable .
+	uv sync --all-groups --all-extras
 	uv run pre-commit install
+	uv tool install --editable .
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
