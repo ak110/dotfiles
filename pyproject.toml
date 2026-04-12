@@ -60,8 +60,8 @@ dev = [
 
 [tool.pyfltr]
 preset = "latest"
-pyright = true
 ty = true
+pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
 extend-exclude = ["*/profile_ipy/*", "*.cmd"]
@@ -100,7 +100,9 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.pytest.ini_options]
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 -n auto --dist=loadfile"
-asyncio_default_fixture_loop_scope = "function"
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 -n 4 --dist=loadfile"
 log_level = "DEBUG"
 xfail_strict = true
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
