@@ -21,6 +21,7 @@ import contextlib
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import traceback
@@ -43,6 +44,7 @@ _CORRECTION_KEYWORDS: tuple[str, ...] = (
 
 _KEYWORD_THRESHOLD = 3
 _CODEX_RESUME_THRESHOLD = 2
+_UNCOMMITTED_BLOCK_LIMIT = 2
 
 
 def _state_path(session_id: str) -> pathlib.Path:
@@ -72,6 +74,30 @@ def _count_keywords(transcript_path: str) -> int:
     for keyword in _CORRECTION_KEYWORDS:
         count += len(re.findall(re.escape(keyword), text))
     return count
+
+
+def _has_uncommitted_changes(cwd: str) -> bool:
+    """作業ディレクトリに未コミットの変更があるか判定する。
+
+    untracked ファイル (??) は対象外とする（意図的に未追跡の場合があるため）。
+    git 未導入・リポジトリ外・コマンド失敗時は False を返す（安全側）。
+    """
+    if not cwd:
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=cwd,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    return any(line and not line.startswith("??") for line in result.stdout.splitlines())
 
 
 def _approve() -> None:
@@ -111,6 +137,22 @@ def _main() -> int:
     if state.get("git_log_checked", False):
         state["git_log_checked"] = False
         _write_state(state_file, state)
+
+    # 未コミット変更の検出
+    cwd = payload.get("cwd", "")
+    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
+        block_count = state.get("uncommitted_block_count", 0)
+        if block_count < _UNCOMMITTED_BLOCK_LIMIT:
+            state["uncommitted_block_count"] = block_count + 1
+            _write_state(state_file, state)
+            _block(
+                "[agent-toolkit] uncommitted changes detected."
+                " Please commit your work before ending the session."
+                " If CLAUDE.md or project instructions say otherwise,"
+                " you may explain and proceed."
+            )
+            return 0
+        # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
 
     # 2 回目以降は即座に approve
     if state.get("stop_advice_given", False):

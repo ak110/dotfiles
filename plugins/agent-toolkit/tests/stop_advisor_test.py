@@ -158,3 +158,78 @@ class TestEdgeCases:
         result = _run({"session_id": "", "transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestUncommittedChanges:
+    """未コミット変更の検出。"""
+
+    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        """変更ありの git リポジトリを作成する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("initial")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        # tracked file を変更して未コミット状態にする
+        (repo / "file.txt").write_text("modified")
+        return repo
+
+    def _make_clean_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        """変更なしの git リポジトリを作成する。"""
+        repo = tmp_path / "clean"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("clean")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        return repo
+
+    def test_blocks_with_uncommitted_changes(self, tmp_path: pathlib.Path):
+        repo = self._make_dirty_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "dirty", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        assert "uncommitted" in decision.get("systemMessage", "").lower()
+
+    def test_approves_clean_repo(self, tmp_path: pathlib.Path):
+        repo = self._make_clean_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "clean", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_allows_after_block_limit(self, tmp_path: pathlib.Path):
+        repo = self._make_dirty_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, "no corrections")
+        # 2 回ブロック後、3 回目は通過する
+        _write_state(tmp_path, "limit", {"uncommitted_block_count": 2})
+        result = _run(
+            {"session_id": "limit", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_untracked_only_approves(self, tmp_path: pathlib.Path):
+        """untracked ファイルのみの場合はブロックしない。"""
+        repo = self._make_clean_repo(tmp_path)
+        (repo / "untracked.txt").write_text("new file")
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "untracked", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
