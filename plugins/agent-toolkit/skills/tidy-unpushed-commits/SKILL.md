@@ -1,18 +1,18 @@
 ---
 name: tidy-unpushed-commits
-description: 未プッシュコミットを安全に整理するスキル。ユーザーが「コミットをまとめたい」「履歴を整頓したい」「squashしたい」「reorderしたい」「未プッシュコミットを整理したい」などと明示的に言及したときのみ使う。積極的な自動トリガーは避け、ユーザーの意思が明確な場面に限定する。軽微なドキュメント修正やCI・ツールチェイン周りの修正コミットをまとめたり、コミット順を調整したりする。雑なメッセージで積まれたコミットや、まだコミットしていない軽微な変更も同じサイクルで取り込める。退避refとコンテンツハッシュ検証によって修正単位が壊れないことを機械的に担保する。
+description: 複数の未プッシュコミットを安全にsquash・reorder・メッセージ書き直しするスキル。直前コミットへのamendや特定コミットへのfixupはagent.mdの指示で足りるため本スキルの対象外。「未プッシュコミットを整理したい」「コミット履歴をきれいにしたい」「reorderしたい」「散らばったコミットをまとめ直したい」などの明示的指示でトリガーする。退避refとツリー差分検証で最終ツリーの同一性を機械的に担保する。
 user-invocable: true
 ---
 
 # 未プッシュコミットの整理
 
-未プッシュコミットのsquash/reorderを、退避refとコンテンツハッシュ検証で修正単位を壊さずに行う。
+未プッシュコミットのsquash/reorder/メッセージ書き直しを、退避refとツリー差分検証で最終ツリーの同一性を保証しつつ行う。
 `git reset --hard`の後に一括ステージしてコミットしなおすような乱暴な手順は取らない。
 
 ## 適用条件と非適用条件
 
-本スキルはユーザーが明示的に依頼したときのみ使う。軽微なコミットが溜まっているだけで自動起動してはならない。
-`/tidy-unpushed-commits`呼び出し、または「コミットをまとめたい」などの明確な指示を入口にする。
+本スキルは複数コミットの再構成（squash/reorder/メッセージ書き直し）が必要な場合に使う。
+直前コミットへの`git commit --amend`や特定コミットへの`git commit --fixup`で済む操作はagent.mdの既存指示に従い、本スキルを起動しない。
 
 以下のいずれかに該当する場合は使わず、手動対応を促す。
 
@@ -40,6 +40,44 @@ git config --get rerere.enabled
 - `BASE`より先（古い側）は絶対に触らない
 - `git rev-list --merges`の出力が空でなければ即中断して報告する
 - `rerere.enabled`が`true`の場合はユーザーに警告してから進める（意図せぬ自動解決を避けるため）
+
+## トリアージ（早期分岐）
+
+前提確認の結果をもとに、以下の順でパターンを判定する。パターン1・2に該当する場合は本スキルの残りの手順を実行せず、agent.mdの既存指示に委ねて処理を完了する。
+
+### パターン1: amend
+
+条件（すべて満たす）:
+
+- 未プッシュコミットが1つ以上存在する
+- ユーザーの意図が「未コミット変更を直前コミットに吸収する」または「直前コミットのメッセージを修正する」と解釈できる
+- 未プッシュコミット間のreorderやsquashの要望がない
+
+対応:
+
+1. worktree/indexに未コミット変更がある場合、`git diff`/`git diff --cached`で内容を提示し、amend対象と無関係な変更が混じっていないかユーザーに確認する（無関係な変更がある場合は分離を促す）
+2. agent.mdのamendパターン（`git commit --amend`）で処理する
+
+本スキルの以降の手順は実行しない。
+
+### パターン2: fixup
+
+条件（すべて満たす）:
+
+- 未プッシュコミットが2つ以上存在する
+- ユーザーが特定の未プッシュコミット（直前以外）を名指しで修正対象としている
+- 未プッシュコミット間のreorderやsquashの要望がない
+
+対応:
+
+1. worktree/indexに未コミット変更がある場合、`git diff`/`git diff --cached`で内容を提示し、fixup対象と無関係な変更が混じっていないかユーザーに確認する（無関係な変更がある場合は分離を促す）
+2. agent.mdのfixupパターン（`git commit --fixup` + `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`）で処理する
+
+本スキルの以降の手順は実行しない。
+
+### パターン3: フル整理
+
+パターン1・2に該当しない場合。複数コミットのsquash・reorder・メッセージ一括書き直しなどが必要なケース。以降の手順（uncommitted changesの取り込み → コミットの分類 → 整理計画 → 実行 → 検証）を実行する。
 
 ## uncommitted changesの取り込み
 
@@ -111,6 +149,7 @@ B4. ci: workflowのタイムアウト延長 (A6)
 - 統合後メッセージ草案は原則新規起こし。片側採用する場合はその旨を行末に明記する
 - 確認事項はYes/Noまたは選択式で答えられる形にする
 - 全確認事項に判断が返ってくるまで実行フェーズに進まない
+- 全コミットが無害カテゴリに分類され、怪しいコミットが0件かつペア例外の候補も0件の場合、確認事項は「新順序の並びでよいか」の1点に簡略化してよい
 
 ## 実行: 共通準備
 
@@ -122,19 +161,6 @@ BRANCH="$(git symbolic-ref --short HEAD)"
 ```
 
 退避refは`refs/tidy-backup/`の独自名前空間に作る。`refs/tags/`は`fetch.pruneTags=true`で消えうるし、`refs/heads/`は`git branch`一覧に紛れてユーザーが誤操作しうるため使わない。
-
-元コミットのコンテンツハッシュを収集する。`git patch-id`は空白差分を無視するため使わず、インラインでSHA-256を計算する（シェル関数にしないのは`$1`などの位置パラメーターがスキル本文読込時に展開される副作用を避けるため）。
-
-```bash
-git log --reverse --format=%H "$BASE..${BACKUP_REF}" | while read sha; do
-  hash=$(
-    git diff --binary --no-color --no-renames --full-index \
-      --src-prefix=a/ --dst-prefix=b/ "${sha}^..${sha}" \
-      | sha256sum | cut -d ' ' -f 1
-  )
-  printf "%s %s\n" "$hash" "$sha"
-done > /tmp/tidy-orig.txt
-```
 
 ## 実行: 全統合ファストパス
 
@@ -189,40 +215,16 @@ git checkout "$BRANCH"
 
 ## 検証
 
-整理後コミットのコンテンツハッシュを同じ手順で収集する。
-
-```bash
-git log --reverse --format=%H "$BASE..HEAD" | while read sha; do
-  hash=$(
-    git diff --binary --no-color --no-renames --full-index \
-      --src-prefix=a/ --dst-prefix=b/ "${sha}^..${sha}" \
-      | sha256sum | cut -d ' ' -f 1
-  )
-  printf "%s %s\n" "$hash" "$sha"
-done > /tmp/tidy-new.txt
-```
-
-承認済み計画と突き合わせて以下を確認する。
-
-- squashされない元コミットは、そのコンテンツハッシュが新側のいずれか1つと完全一致する（reorderされていてもよい）
-- squashされた新コミットは、以下の手順で親基準を揃えた再現比較を行う
-    1. 新コミットの実親を`git rev-parse`で取得する
-    2. detached HEADでその親をcheckoutする
-    3. 対応する元コミット群を`git cherry-pick --no-commit --allow-empty`で順次stageする。全部stageし終えたら`git commit --allow-empty -F <統合後メッセージファイル>`で1コミットに統合する（途中でcommitしてはならない）
-    4. ステップ2と同じ手順でコンテンツハッシュ化し、新コミットのハッシュと完全一致することを確認する
-
-検証用の一時操作はすべてdetached HEAD上で完結させる。退避refや作業ブランチには触れない。
-
-最後にツリー全体の裏取りを行う。
+ツリー全体の差分を確認する。
 
 ```bash
 git diff "${BACKUP_REF}..HEAD"
 ```
 
 出力が空でなければ事故とみなしロールバックする。空である限り整理後の最終ツリーは整理前と完全一致しているため、`make test`などの追加実行は不要である。
-中間コミットの状態は変わるため厳密にはbisect可能性に影響しうるが、最終状態の等価性が機械的に証明されている以上、本スキルの責務はここで完結する。
+中間コミットの状態は変わるため厳密にはbisect可能性に影響しうるが、最終状態の等価性が証明されている以上、本スキルの責務はここで完結する。
 
-検証がすべて通ったら退避refを削除する。
+検証が通ったら退避refを削除する。
 
 ```bash
 git update-ref -d "${BACKUP_REF}"
@@ -253,5 +255,6 @@ git stash pop 2>/dev/null || true
 - NG: 退避ref作成前の操作
 - NG: conflict時の`git checkout --theirs`/`--ours`による安易な解決
 - NG: push済みコミットへの`git commit --amend`
-- NG: `git rebase -i`の使用（Claude Codeのシステム指示と整合しないため）
+- NG: フル整理パスでの`git rebase -i`の使用（cherry-pick連鎖で代替する）
+  - 例外: トリアージでfixup委譲する場合のagent.md準拠の非対話`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`は対象外
 - NG: `rerere`有効状態での無検証実行
