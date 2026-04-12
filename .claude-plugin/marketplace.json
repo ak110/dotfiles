@@ -10,8 +10,8 @@
     {
       "name": "agent-toolkit",
       "source": "./plugins/agent-toolkit",
-      "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。非UTF-8バイト・ESCシーケンス・ターミナル破壊制御文字を含むファイルのReadをブロックする。plan-modeの冗長なmkdir -p ~/.claude/plansを自動許可する。同梱スキル: 未プッシュコミットを安全にsquash/reorderするtidy-unpushed-commits。",
-      "version": "0.8.0",
+      "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。非UTF-8バイト・ESCシーケンス・ターミナル破壊制御文字を含むファイルのReadをブロックする。plan-modeの冗長なmkdir -p ~/.claude/plansを自動許可する。同梱スキル: 未プッシュコミットを安全にsquash/reorderするtidy-unpushed-commits。pyfltrの使い方・JSONL出力解釈・サブコマンドの使い分けを参照できるpyfltr-usage。",
+      "version": "0.9.0",
       "category": "safety",
       "keywords": ["hooks", "pretooluse", "guardrails", "safety", "bash"]
     },

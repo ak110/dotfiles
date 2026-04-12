@@ -132,6 +132,9 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
   退避タグとコンテンツハッシュ検証で修正単位が壊れないことを機械的に担保し、乱暴な`git reset`は使わない。
   Conventional Commitsの無害種別（`docs:`/`chore:`/`ci:`/`build:`/`style:`）を自動で分類し、ユーザーのグループ単位承認を経てcherry-pick連鎖で再構成する。
   `/tidy-unpushed-commits`スラッシュコマンドで明示的に呼び出せる
+- `pyfltr-usage`: pyfltrの使い方・JSONL出力の解釈方法・サブコマンドの使い分けを参照できるリファレンス。
+  日常的なpyfltr利用に必要な情報を自己完結的に含み、詳細な設定情報が必要な場合のみllms.txtから個別ページを取得する構成。
+  `/pyfltr-usage`スラッシュコマンドで明示的に呼び出せる
 
 ### 移行: edit-guardrails → agent-toolkit
 
