@@ -53,7 +53,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pre-commit>=4.2.0",
-    "pyfltr>=1.22.2",
+    "pyfltr>=1.23.0",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
 ]

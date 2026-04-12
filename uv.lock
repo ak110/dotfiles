@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-10T10:15:18.478457031Z"
+exclude-newer = "2026-04-11T04:06:42.709056044Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -862,7 +862,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.22.2"
+version = "1.23.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
@@ -885,9 +885,9 @@ dependencies = [
     { name = "ty" },
     { name = "uv-sort" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/9c/124cdd72435de42fdb3483a6cf172dc1ca7688d36b60a05bb2372fbe7d35/pyfltr-1.22.2.tar.gz", hash = "sha256:0c3b505a4e0af683496056301a361af01550cb9f8b0486d891a98c5901e05bff", size = 150252, upload-time = "2026-04-10T18:09:52.647Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/3d/7127f9e2ddcf3fe41b63951067448f248e981fadd16275d065d7a199f005/pyfltr-1.23.0.tar.gz", hash = "sha256:01322ee4bfd26c9adf7f2bbd320530e5712dcf5b68658c4deb17e2ee41a25462", size = 167518, upload-time = "2026-04-12T04:05:54.593Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/b1/888c8e943e47a217d41daa66d303a0bc913c857dbb850324cbc4e35dfa71/pyfltr-1.22.2-py3-none-any.whl", hash = "sha256:887f2d183554140fab4391cd55fabb3ad89f89b2a63c4274ace51e0d5a533966", size = 38060, upload-time = "2026-04-10T18:09:53.905Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/75/219b7993be8173f08ab244a540a9a60c7cf38682bb00f09056998194db00/pyfltr-1.23.0-py3-none-any.whl", hash = "sha256:b49adc0c26f0086fd39dd10a17a366d4af7ef3d64c5ea2f385fe8e7f7ca01bcc", size = 44944, upload-time = "2026-04-12T04:05:53.481Z" },
 ]
 
 [[package]]
@@ -1127,7 +1127,7 @@ provides-extras = ["repack-png"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pyfltr", specifier = ">=1.22.2" },
+    { name = "pyfltr", specifier = ">=1.23.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
 ]
