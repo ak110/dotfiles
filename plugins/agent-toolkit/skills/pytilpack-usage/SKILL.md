@@ -61,5 +61,3 @@ llms.txtはモジュール別のリンク集であり、必要なモジュール
 
 1. まず上記のllms.txtを取得してモジュール一覧と各ページのURLを確認する
 2. 必要なモジュールのURLだけを個別に取得する（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）
-
-llms-full.txt（全API文書）は非常に大容量のため一括取得は避ける。

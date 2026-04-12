@@ -46,7 +46,9 @@ paths:
   - パッケージマネージャー: `uv`（Rust製で高速、pip互換、Pythonバージョン管理も統合）
   - pre-commitフック: `pre-commit`（コミット時の自動チェック）
   - リンター/フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
-    - 詳細: <https://ak110.github.io/pyfltr/llms-full.txt>
+    - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
+  - ユーティリティ集: `pytilpack`（便利ライブラリ）
+    - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文 (`def f[T](x: T) -> T:` / `type Alias[T] = list[T]`) を使う
     - `TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため
