@@ -135,6 +135,9 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 - `pyfltr-usage`: pyfltrの使い方・JSONL出力の解釈方法・サブコマンドの使い分けを参照できるリファレンス。
   日常的なpyfltr利用に必要な情報を自己完結的に含み、詳細な設定情報が必要な場合のみllms.txtから個別ページを取得する構成。
   `/pyfltr-usage`スラッシュコマンドで明示的に呼び出せる
+- `pytilpack-usage`: pytilpackのモジュール構成・代表的な使い方・APIドキュメント参照方法のリファレンス。
+  llms.txtを段階的に取得して必要なモジュールのAPI情報を参照する構成。
+  `/pytilpack-usage`スラッシュコマンドで明示的に呼び出せる
 
 ### 移行: edit-guardrails → agent-toolkit
 
