@@ -5,14 +5,18 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録。
 
-Bash の実行後に以下のイベントを検出し、セッション状態ファイルに記録する。
+Bash / Write / Edit / MultiEdit の実行後にイベントを検出し、
+セッション状態ファイルに記録する。
 PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 
 検出対象:
 
-1. テスト実行 — pytest / make test / pyfltr / npm test / cargo test 等
-2. Git 状態確認 — git status / git log / git diff
-3. codex exec resume — codex レビューの再実行（不合格回数の指標）
+1. テスト実行 — pytest / make test / pyfltr / npm test / cargo test 等 (Bash)
+2. Git 状態確認 — git status / git log / git diff (Bash)
+3. codex exec resume — codex レビューの再実行 (Bash)
+4. git log 確認状態のリセット — git commit / rebase / push (Bash),
+   ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
+   amend / rebase 前に改めて git log を確認させる
 
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
 
@@ -44,6 +48,14 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
 # --- Git 状態確認検出パターン ---
 
 _GIT_STATUS_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+(?:status|log|diff)\b")
+
+# --- git log 確認パターン ---
+
+_GIT_LOG_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+log\b")
+
+# --- git log リセットパターン (commit / rebase / push) ---
+
+_GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
 
 # --- codex exec resume 検出パターン ---
 
@@ -80,15 +92,26 @@ def _main() -> int:
     if not isinstance(session_id, str) or not session_id:
         return 0
 
+    tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         return 0
 
+    path = _state_path(session_id)
+
+    # Write / Edit / MultiEdit: ファイル編集は git log 確認状態をリセットする
+    if tool_name in ("Write", "Edit", "MultiEdit"):
+        state = _read_state(path)
+        if state.get("git_log_checked", False):
+            state["git_log_checked"] = False
+            _write_state(path, state)
+        return 0
+
+    # Bash 以外はここで終了
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
 
-    path = _state_path(session_id)
     state = _read_state(path)
     changed = False
 
@@ -103,6 +126,16 @@ def _main() -> int:
     # Git 状態確認検出
     if not state.get("git_status_checked", False) and _GIT_STATUS_PATTERN.search(command):
         state["git_status_checked"] = True
+        changed = True
+
+    # git log 確認状態の管理
+    if _GIT_LOG_PATTERN.search(command):
+        if not state.get("git_log_checked", False):
+            state["git_log_checked"] = True
+            changed = True
+    elif _GIT_LOG_RESET_PATTERN.search(command) and state.get("git_log_checked", False):
+        # commit / rebase / push は git log 確認状態をリセットする
+        state["git_log_checked"] = False
         changed = True
 
     # codex exec resume 検出

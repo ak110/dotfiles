@@ -661,3 +661,48 @@ class TestBashCodexExecNudge:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo codex"}})
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestBashAmendRebaseBlock:
+    """git amend / rebase の log 未確認ブロック。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def _invoke(self, command: str, session_id: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
+            env_overrides=env,
+        )
+
+    def test_amend_blocked_without_log(self, state_dir: dict[str, str]):
+        cmd = "git commit " + "--amend --no-edit"
+        result = self._invoke(cmd, "no-log", state_dir)
+        assert result.returncode == 2
+        assert "amend" in result.stderr
+
+    def test_rebase_blocked_without_log(self, state_dir: dict[str, str]):
+        result = self._invoke("GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "no-log", state_dir)
+        assert result.returncode == 2
+        assert "rebase" in result.stderr
+
+    def test_amend_allowed_with_log(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        self._write_state(tmp_path, "with-log", {"git_log_checked": True})
+        cmd = "git commit " + "--amend --no-edit"
+        result = self._invoke(cmd, "with-log", state_dir)
+        assert result.returncode == 0
+
+    def test_rebase_allowed_with_log(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        self._write_state(tmp_path, "with-log-rb", {"git_log_checked": True})
+        result = self._invoke("GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "with-log-rb", state_dir)
+        assert result.returncode == 0
+
+    def test_normal_commit_not_blocked(self, state_dir: dict[str, str]):
+        """通常の git commit は amend/rebase ブロックの対象外。"""
+        result = self._invoke("git commit -m 'test'", "normal", state_dir)
+        assert result.returncode == 0

@@ -85,6 +85,9 @@ def _main() -> int:
             _emit_allow_decision()
             return 0
         session_id = payload.get("session_id", "")
+        # git amend / rebase は直前に git log を確認していなければブロック
+        if _check_bash_amend_rebase_without_log(command, session_id):
+            return 2
         # git commit 未検証警告
         result = _check_bash_git_commit(command, session_id)
         if result is not None:
@@ -564,6 +567,54 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     return False
 
 
+# --- Bash: heredoc 内のパターンを除外するヘルパー ---
+
+
+def _likely_real_command(command: str, pos: int) -> bool:
+    """マッチ位置がシェルコマンド文脈にあるかヒューリスティックで判定する。
+
+    heredoc (<<) がマッチ位置より前にある場合、マッチはリテラル文字列の
+    一部である可能性が高いため False を返す。
+    python3 -c / cat << 等でファイル内容を書き込むケースの誤検出を防ぐ。
+    """
+    prefix = command[:pos]
+    return "<<" not in prefix
+
+
+# --- Bash: git amend / rebase を log 未確認でブロック ---
+
+_GIT_AMEND_PATTERN = re.compile(r"\bgit\s+commit\b.*--amend\b")
+_GIT_REBASE_PATTERN = re.compile(r"\bgit\s+rebase\b")
+
+
+def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
+    """Git commit --amend / git rebase を git log 未確認で実行しようとした場合にブロックする。
+
+    amend / rebase は既存コミットを書き換えるため、直前に git log --decorate で
+    コミット状態（特にプッシュ済みかどうか）を確認する必要がある。
+    ユーザーが裏で push している場合もあるため、
+    ファイル編集・commit・rebase・push・Stop を挟むと確認状態はリセットされる。
+    """
+    amend_match = _GIT_AMEND_PATTERN.search(command)
+    rebase_match = _GIT_REBASE_PATTERN.search(command)
+    is_amend = amend_match is not None and _likely_real_command(command, amend_match.start())
+    is_rebase = rebase_match is not None and _likely_real_command(command, rebase_match.start())
+    if not is_amend and not is_rebase:
+        return False
+    state = _read_session_state(session_id)
+    if state.get("git_log_checked", False):
+        return False
+    op = "git commit --amend" if is_amend else "git rebase"
+    print(
+        f"[agent-toolkit] {op} をブロックしました。"
+        f"amend / rebase の前に `git log --oneline --decorate` で"
+        f"コミット状態を確認してください"
+        f"（特にプッシュ済みコミットへの amend / rebase は厳禁です）。",
+        file=sys.stderr,
+    )
+    return True
+
+
 # --- Bash: git commit 未検証警告 ---
 
 _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
@@ -590,7 +641,8 @@ def _check_bash_git_commit(command: str, session_id: str) -> dict | None:
     テスト実行済み (state の test_executed が true) ならスキップ。
     状態ファイル不在時は test_executed = false として扱い警告を出す。
     """
-    if not _GIT_COMMIT_PATTERN.search(command):
+    match = _GIT_COMMIT_PATTERN.search(command)
+    if match is None or not _likely_real_command(command, match.start()):
         return None
     state = _read_session_state(session_id)
     if state.get("test_executed", False):
@@ -620,7 +672,7 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
     含まれるかを判定する。
     """
     match = _GIT_LOG_PATTERN.search(command)
-    if match is None:
+    if match is None or not _likely_real_command(command, match.start()):
         return None
     # git log から次のセミコロン・パイプ・行末までのスコープを取得
     rest = command[match.start() :]
@@ -654,7 +706,8 @@ _CODEX_RESUME_PATTERN_PRE = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 def _check_bash_codex_exec(command: str) -> dict | None:
     """Codex exec (resume 以外) を検出した場合に未決事項確認の念押しを返す。"""
-    if not _CODEX_EXEC_PATTERN.search(command):
+    exec_match = _CODEX_EXEC_PATTERN.search(command)
+    if exec_match is None or not _likely_real_command(command, exec_match.start()):
         return None
     if _CODEX_RESUME_PATTERN_PRE.search(command):
         return None

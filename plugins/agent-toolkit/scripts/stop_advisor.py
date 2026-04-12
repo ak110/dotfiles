@@ -105,6 +105,13 @@ def _main() -> int:
     state_file = _state_path(session_id)
     state = _read_state(state_file)
 
+    # Stop のたびに git_log_checked をリセットする。
+    # ユーザーが裏で push している可能性があるため、
+    # 再開後の amend / rebase には改めて log 確認を要求する。
+    if state.get("git_log_checked", False):
+        state["git_log_checked"] = False
+        _write_state(state_file, state)
+
     # 2 回目以降は即座に approve
     if state.get("stop_advice_given", False):
         _approve()

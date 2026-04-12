@@ -140,3 +140,89 @@ class TestEdgeCases:
             state_dir=tmp_path,
         )
         assert result.stdout == ""
+
+
+class TestGitLogChecked:
+    """git_log_checked 状態の管理。"""
+
+    def test_git_log_sets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-check"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("git_log_checked") is True
+
+    def test_git_commit_resets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-reset-commit"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is True
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git commit -m 'x'"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+
+    def test_git_rebase_resets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-reset-rebase"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+
+    def test_git_push_resets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-reset-push"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git push origin master"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+
+    def test_write_resets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-reset-write"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        _run(
+            {"session_id": sid, "tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+
+    def test_edit_resets_checked(self, tmp_path: pathlib.Path):
+        sid = "log-reset-edit"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        _run(
+            {"session_id": sid, "tool_name": "Edit", "tool_input": {"file_path": "/tmp/x.txt"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+
+    def test_unrelated_bash_no_reset(self, tmp_path: pathlib.Path):
+        sid = "log-no-reset"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            state_dir=tmp_path,
+        )
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo hello"}},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is True
