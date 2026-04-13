@@ -141,9 +141,8 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 
 #### agent-toolkit
 
-好ましくない編集や冗長なBash呼び出しを `PreToolUse` 段階で検出・制御するプラグイン。
+好ましくない編集やBash呼び出しを `PreToolUse` 段階で検出・制御するプラグイン。
 コードベースの破壊や、Claude Codeの訓練データ由来の誤った思い込みによる事故を未然に防ぐことを目的としている。
-名前に "edit" を含むが、スコープは `Write` / `Edit` / `MultiEdit` / `Bash` に加えて `Read` まで含む（後述のmkdir自動許可とRead前のエンコーディング検査のため）。
 
 主なチェック内容は以下。
 
@@ -151,13 +150,6 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 - LF改行のみの `.ps1` / `.ps1.tmpl` への書き込みをブロック（Windows PowerShell 5.1対策）
 - ロックファイルや `.venv/` / `node_modules/` など自動生成物の手編集をブロック
 - シークレットらしき値の書き込みや、ホームディレクトリの絶対パスのハードコードを警告・ブロック
-- ターミナル破壊バイト（UTF-16/32 BOM・NUL・ESC・非許可C0制御文字・非UTF-8）を含むファイルに対する `Read` をブロック
-  - Shift-JISなど非UTF-8テキストやバイナリをClaude CodeがReadすると、結果がターミナルへ流れて表示が崩れる事故を防ぐ
-  - 画像 / PDF / ノートブック（`.png` / `.pdf` / `.ipynb` 等）はClaude本体の専用経路に乗るため検査対象外
-- 既存ディレクトリ `~/.claude/plans` に対する冗長な `mkdir -p` を自動許可 (Bash)
-  - plan modeでClaudeがプランファイル書き込み前に走らせる冗長な `mkdir` による
-    許可確認プロンプトを抑止する。対象がランタイムで既存ディレクトリの場合のみ許可するため、
-    許可される呼び出しは常にno-op相当（ファイルシステム変更なし）
 - テスト未実行のまま`git commit`を実行しようとした場合に警告する（Bash, PostToolUse連携）
 - `git log`に`--decorate`がない場合に自動で挿入する（Bash）
 - `codex exec`（`resume`以外）の実行前に未決事項の確認を促す（Bash）
