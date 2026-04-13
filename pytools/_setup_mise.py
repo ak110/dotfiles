@@ -3,10 +3,14 @@ r"""mise 用のセットアップを post_apply から呼ぶモジュール。
 本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
 mise (https://mise.jdx.dev/) が導入されているユーザーに対し、次の 2 つを冪等に実施する。
 
-1. Windows のみ: ユーザー PATH (HKCU\Environment\Path) に `%LOCALAPPDATA%\mise\shims`
-   を追加する。追加後は `WM_SETTINGCHANGE` をブロードキャストして他プロセスに通知する。
-2. クロスプラットフォーム: `mise ls --global --json` に node が無ければ `mise use --global
+1. クロスプラットフォーム: `mise ls --global --json` に node が無ければ `mise use --global
    node@lts` を実行して global Node を担保する。
+2. Windows のみ: ユーザー PATH (HKCU\Environment\Path) に `%LOCALAPPDATA%\mise\shims`
+   を追加する。追加後は `WM_SETTINGCHANGE` をブロードキャストして他プロセスに通知する。
+
+node 設定を先に実行するのは、初回実行時に shims ディレクトリがまだ存在しないケースへの
+対処。`mise use --global node@lts` が shims ディレクトリを作成した後に PATH 追加を
+実行することで、1 回の `update-dotfiles` で両方の設定が完了する。
 
 前提条件が揃わない場合 (mise 未導入など) は何もせず `False` を返す。
 本ステップは dotfiles apply 全体を止めない方針のため、subprocess / JSON パース / winreg の
@@ -69,9 +73,9 @@ def run(
 
     win = _IS_WINDOWS if is_windows is None else is_windows
     changed = False
+    changed |= (ensure_global_node_fn or _ensure_global_node)(mise_bin)
     if win:
         changed |= _ensure_windows_user_path_has_shims()
-    changed |= (ensure_global_node_fn or _ensure_global_node)(mise_bin)
     return changed
 
 
@@ -134,8 +138,8 @@ def _ensure_windows_user_path_has_shims() -> bool:
         logger.info(_log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
         _broadcast_environment_change()
 
-    # 現プロセスの PATH にも反映しておく (この直後の mise 呼び出しで shims を使える
-    # ようにするため)。冪等性のため重複追加は避ける。
+    # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
+    # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
     current_process_path = os.environ.get("PATH", "")
     if str(shims_dir) not in current_process_path.split(os.pathsep):
         os.environ["PATH"] = str(shims_dir) + os.pathsep + current_process_path
