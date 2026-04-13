@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-11T04:06:42.709056044Z"
+exclude-newer = "2026-04-12T11:06:02.270877371Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -862,7 +862,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "1.23.0"
+version = "1.24.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autoflake" },
@@ -873,6 +873,7 @@ dependencies = [
     { name = "isort" },
     { name = "mypy" },
     { name = "natsort" },
+    { name = "pre-commit" },
     { name = "pylint" },
     { name = "pylint-pydantic" },
     { name = "pyproject-flake8" },
@@ -880,14 +881,15 @@ dependencies = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pyupgrade" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "textual" },
     { name = "ty" },
     { name = "uv-sort" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/3d/7127f9e2ddcf3fe41b63951067448f248e981fadd16275d065d7a199f005/pyfltr-1.23.0.tar.gz", hash = "sha256:01322ee4bfd26c9adf7f2bbd320530e5712dcf5b68658c4deb17e2ee41a25462", size = 167518, upload-time = "2026-04-12T04:05:54.593Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/3a/79e1e5e68019e969c460f4455842af702e54eb2dc4e89e14dc5bee5a39c0/pyfltr-1.24.1.tar.gz", hash = "sha256:00be7e7925243918036c931f5ea2b127c67922ce0173381adb81e17d0b71630d", size = 174988, upload-time = "2026-04-13T11:05:39.687Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/75/219b7993be8173f08ab244a540a9a60c7cf38682bb00f09056998194db00/pyfltr-1.23.0-py3-none-any.whl", hash = "sha256:b49adc0c26f0086fd39dd10a17a366d4af7ef3d64c5ea2f385fe8e7f7ca01bcc", size = 44944, upload-time = "2026-04-12T04:05:53.481Z" },
+    { url = "https://files.pythonhosted.org/packages/42/58/7976edcef2d7781c18c4b0e4cac7777d12e0044c76b581ee108662ecc98c/pyfltr-1.24.1-py3-none-any.whl", hash = "sha256:8cd46ec5ddc7390d775e363248b6059f48ad335e43893e3d5d42ebe3a4dfc92f", size = 47025, upload-time = "2026-04-13T11:05:41.122Z" },
 ]
 
 [[package]]
@@ -1097,7 +1099,6 @@ repack-png = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "pre-commit" },
     { name = "pyfltr" },
     { name = "pytest-xdist" },
     { name = "types-pyyaml" },
@@ -1126,7 +1127,6 @@ provides-extras = ["repack-png"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pre-commit", specifier = ">=4.2.0" },
     { name = "pyfltr", specifier = ">=1.23.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
