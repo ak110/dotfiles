@@ -98,6 +98,16 @@ warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
 
+[tool.typos.default.extend-words]
+# gitエイリアス名 (ba = branch --all)・CSSクラス名 (.pl-ba)
+ba = "ba"
+# gitエイリアス名 (aci = add-commit-in-one)
+aci = "aci"
+# 人名 (Antony Stubbs)
+Stubbs = "Stubbs"
+# IPythonの正当な用語（設定項目の複数形）
+configurables = "configurables"
+
 [tool.pytest.ini_options]
 addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 -n 4 --dist=loadfile"
 log_level = "DEBUG"
