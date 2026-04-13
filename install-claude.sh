@@ -18,6 +18,7 @@ TARGET_DIR="$HOME/.claude/rules/agent-basics"
 FILES=(
     agent.md
     claude.md
+    claude-hooks.md
     claude-rules.md
     claude-skills.md
     markdown.md

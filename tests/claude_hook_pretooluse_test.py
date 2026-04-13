@@ -244,18 +244,18 @@ class TestPs1DirectivesBlock:
 
 
 class TestLocalMdReferenceWarning:
-    """ローカル専用ファイル言及検出 (allow + systemMessage 警告)。"""
+    """ローカル専用ファイル言及検出 (allow + additionalContext 警告)。"""
 
     @staticmethod
-    def _get_system_message(result: subprocess.CompletedProcess[str]) -> str:
-        """stdout の JSON から systemMessage を取得する。なければ空文字を返す。"""
+    def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
+        """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
         if not result.stdout.strip():
             return ""
         try:
             data = json.loads(result.stdout)
         except json.JSONDecodeError:
             return ""
-        return data.get("systemMessage", "")
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
 
     def test_content_reference_warns_but_passes(self):
         result = _run(
@@ -265,7 +265,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_system_message(result)
+        msg = self._get_additional_context(result)
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
 
@@ -281,7 +281,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in self._get_system_message(result)
+        assert _LOCAL_MD in self._get_additional_context(result)
 
     def test_multiedit_reference_warns_but_passes(self):
         result = _run(
@@ -297,7 +297,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in self._get_system_message(result)
+        assert _LOCAL_MD in self._get_additional_context(result)
 
     def test_editing_target_file_itself_is_allowed_silently(self):
         """対象ファイル自体の編集は正当な操作として警告も出さない。"""

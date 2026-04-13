@@ -36,7 +36,7 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
 出力契約:
 
 - block: exit 2 + stderr にブロック理由を出力
-- warn (allow + メッセージ): exit 0 + stdout に JSON (systemMessage) を出力
+- warn (allow + メッセージ): exit 0 + stdout に JSON (hookSpecificOutput.additionalContext) を出力
 - 通過 (違反なし / スキップ対象ツール / 想定外入力): exit 0、出力なし
 
 メッセージは英語で記述する (ユーザーの日本語思考コンテキストへのノイズ混入を避けるため)。
@@ -241,13 +241,13 @@ def _check_local_md_reference(tool_name: str, fields: list[tuple[str, str]], fil
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "allow",
+                    "additionalContext": (
+                        f"[pretooluse][warn] detected reference to '{_CLAUDE_LOCAL_MD}'"
+                        f" in {tool_name}.{field}."
+                        f" {_CLAUDE_LOCAL_MD} is a local-only file and must not be"
+                        f" referenced from version-controlled files (warning only, not blocked)."
+                    ),
                 },
-                "systemMessage": (
-                    f"[pretooluse][warn] detected reference to '{_CLAUDE_LOCAL_MD}'"
-                    f" in {tool_name}.{field}."
-                    f" {_CLAUDE_LOCAL_MD} is a local-only file and must not be"
-                    f" referenced from version-controlled files (warning only, not blocked)."
-                ),
             }
     return None
 

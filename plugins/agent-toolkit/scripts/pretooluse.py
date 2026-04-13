@@ -651,11 +651,11 @@ def _check_bash_git_commit(command: str, session_id: str) -> dict | None:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
+            "additionalContext": (
+                "[agent-toolkit] committing without running tests."
+                " Follow the verify-then-commit procedure in agent.md and run tests first."
+            ),
         },
-        "systemMessage": (
-            "[agent-toolkit] committing without running tests."
-            " Follow the verify-then-commit procedure in agent.md and run tests first."
-        ),
     }
 
 
@@ -715,13 +715,13 @@ def _check_bash_codex_exec(command: str) -> dict | None:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
+            "additionalContext": (
+                "[agent-toolkit] submitting plan file to codex review."
+                " Pre-submission check: are there any decisions made by assumption"
+                " rather than user confirmation?"
+                " Resolve any open questions with the user before proceeding."
+            ),
         },
-        "systemMessage": (
-            "[agent-toolkit] submitting plan file to codex review."
-            " Pre-submission check: are there any decisions made by assumption"
-            " rather than user confirmation?"
-            " Resolve any open questions with the user before proceeding."
-        ),
     }
 
 

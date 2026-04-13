@@ -18,6 +18,7 @@ $targetDir = Join-Path $HOME '.claude/rules/agent-basics'
 $files = @(
     'agent.md',
     'claude.md',
+    'claude-hooks.md',
     'claude-rules.md',
     'claude-skills.md',
     'markdown.md',

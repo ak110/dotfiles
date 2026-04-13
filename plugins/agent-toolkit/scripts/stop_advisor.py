@@ -100,20 +100,44 @@ def _has_uncommitted_changes(cwd: str) -> bool:
     return any(line and not line.startswith("??") for line in result.stdout.splitlines())
 
 
-def _approve() -> None:
-    print(json.dumps({"decision": "approve"}))
+def _git_status_for_display(cwd: str) -> str | None:
+    """ユーザー表示用のgit status --shortを返す。
 
-
-def _block(message: str) -> None:
-    print(
-        json.dumps(
-            {
-                "decision": "block",
-                "reason": "session review suggestion",
-                "systemMessage": message,
-            }
+    未コミット変更がない場合・untrackedのみの場合・エラー時はNoneを返す。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=cwd,
+            timeout=10,
         )
-    )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    output = result.stdout.strip()
+    if not output:
+        return None
+    # untrackedファイルのみの場合は表示しない
+    if all(line.startswith("??") for line in output.splitlines()):
+        return None
+    return output
+
+
+def _approve(cwd: str = "") -> None:
+    output: dict[str, str] = {"decision": "approve"}
+    if cwd:
+        status = _git_status_for_display(cwd)
+        if status:
+            output["systemMessage"] = f"[git status]\n{status}"
+    print(json.dumps(output))
+
+
+def _block(reason: str) -> None:
+    print(json.dumps({"decision": "block", "reason": reason}))
 
 
 def _main() -> int:
@@ -156,7 +180,7 @@ def _main() -> int:
 
     # 2 回目以降は即座に approve
     if state.get("stop_advice_given", False):
-        _approve()
+        _approve(cwd=cwd)
         return 0
 
     # transcript の修正キーワードを集計
@@ -172,7 +196,7 @@ def _main() -> int:
     codex_triggered = codex_resume_count >= _CODEX_RESUME_THRESHOLD
 
     if not keyword_triggered and not codex_triggered:
-        _approve()
+        _approve(cwd=cwd)
         return 0
 
     # 発火: stop_advice_given を記録して block

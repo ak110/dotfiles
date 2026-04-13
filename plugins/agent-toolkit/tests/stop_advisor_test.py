@@ -76,7 +76,8 @@ class TestKeywordDetection:
         assert result.returncode == 0
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        assert "systemMessage" in decision
+        assert "reason" in decision
+        assert "correction" in decision["reason"].lower()
 
 
 class TestCodexResumeDetection:
@@ -101,7 +102,7 @@ class TestCodexResumeDetection:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        assert "codex" in decision.get("systemMessage", "").lower()
+        assert "codex" in decision.get("reason", "").lower()
 
 
 class TestBothConditions:
@@ -119,9 +120,9 @@ class TestBothConditions:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        msg = decision.get("systemMessage", "")
-        assert "correction" in msg.lower()
-        assert "codex" in msg.lower()
+        reason = decision.get("reason", "")
+        assert "correction" in reason.lower()
+        assert "codex" in reason.lower()
 
 
 class TestStopAdviceOnce:
@@ -198,7 +199,7 @@ class TestUncommittedChanges:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        assert "uncommitted" in decision.get("systemMessage", "").lower()
+        assert "uncommitted" in decision.get("reason", "").lower()
 
     def test_approves_clean_repo(self, tmp_path: pathlib.Path):
         repo = self._make_clean_repo(tmp_path)
@@ -233,3 +234,82 @@ class TestUncommittedChanges:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestGitStatusDisplay:
+    """approve 時の git status 表示。"""
+
+    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "dirty"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("initial")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("modified")
+        return repo
+
+    def _make_clean_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "clean"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("clean")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        return repo
+
+    def test_dirty_repo_shows_git_status(self, tmp_path: pathlib.Path):
+        """未コミット変更がある場合、approve 時に systemMessage で git status を表示する。"""
+        repo = self._make_dirty_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, "no corrections")
+        # ブロック上限を超過させて approve パスに到達させる
+        _write_state(tmp_path, "gs-dirty", {"uncommitted_block_count": 2})
+        result = _run(
+            {"session_id": "gs-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" in decision
+        assert "git status" in decision["systemMessage"]
+        assert "file.txt" in decision["systemMessage"]
+
+    def test_clean_repo_no_system_message(self, tmp_path: pathlib.Path):
+        """clean repo では systemMessage を出力しない。"""
+        repo = self._make_clean_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "gs-clean", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" not in decision
+
+    def test_no_cwd_no_system_message(self, tmp_path: pathlib.Path):
+        """cwd 未指定時は systemMessage を出力しない。"""
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "gs-nocwd", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" not in decision
+
+    def test_untracked_only_no_system_message(self, tmp_path: pathlib.Path):
+        """untracked ファイルのみの場合は systemMessage を出力しない。"""
+        repo = self._make_clean_repo(tmp_path)
+        (repo / "untracked.txt").write_text("new file")
+        transcript = _write_transcript(tmp_path, "no corrections")
+        result = _run(
+            {"session_id": "gs-untracked", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" not in decision

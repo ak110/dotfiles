@@ -577,27 +577,28 @@ class TestBashGitCommitWarning:
             env_overrides=env,
         )
 
-    def _has_system_message(self, result: subprocess.CompletedProcess[str], keyword: str) -> bool:
+    def _has_additional_context(self, result: subprocess.CompletedProcess[str], keyword: str) -> bool:
         if not result.stdout.strip():
             return False
         try:
             data = json.loads(result.stdout)
         except json.JSONDecodeError:
             return False
-        return keyword in data.get("systemMessage", "")
+        ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+        return keyword in ctx
 
     def test_warns_when_test_not_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         sid = "commit-warn"
         self._write_state(tmp_path, sid, {"test_executed": False})
         result = self._invoke("git commit -m 'test'", sid, state_dir)
         assert result.returncode == 0
-        assert self._has_system_message(result, "agent-toolkit")
+        assert self._has_additional_context(result, "agent-toolkit")
 
     def test_warns_when_state_file_absent(self, state_dir: dict[str, str]):
         """状態ファイル不在時もテスト未実行として警告する。"""
         result = self._invoke("git commit -m 'test'", "no-state", state_dir)
         assert result.returncode == 0
-        assert self._has_system_message(result, "agent-toolkit")
+        assert self._has_additional_context(result, "agent-toolkit")
 
     def test_skips_when_test_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         sid = "commit-ok"
@@ -650,7 +651,7 @@ class TestBashCodexExecNudge:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec --dangerously-bypass plan.md prompt"}})
         assert result.returncode == 0
         data = json.loads(result.stdout)
-        assert "systemMessage" in data
+        assert "additionalContext" in data.get("hookSpecificOutput", {})
 
     def test_no_nudge_on_resume(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec resume --dangerously-bypass abc prompt"}})

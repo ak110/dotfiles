@@ -48,6 +48,7 @@
 - `{言語}-test.md`: 言語固有のテスト方針（同上）
 - `markdown.md`: Markdown記述スタイル（`.md` / `.mdx` 編集時のみロード）
 - `claude.md`: CLAUDE.md・ルール・スキルの記述ガイドライン（`.claude/` 配下やCLAUDE.md編集時のみロード）
+- `claude-hooks.md`: Claude Code Hookの出力フィールドガイドライン（`.claude/hooks/`やプラグインスクリプト編集時のみロード）
 - `claude-rules.md`: Claude Codeのrules機能仕様を参照するメタルール（`.claude/rules/` 編集時のみロード）
 - `claude-skills.md`: Claude Codeのskills機能仕様を参照するメタルール（`.claude/skills/` 編集時のみロード）
 
@@ -160,7 +161,8 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 - テスト未実行のまま`git commit`を実行しようとした場合に警告する（Bash, PostToolUse連携）
 - `git log`に`--decorate`がない場合に自動で挿入する（Bash）
 - `codex exec`（`resume`以外）の実行前に未決事項の確認を促す（Bash）
-- セッション終了時にユーザーからの修正指示が多い場合やcodexレビュー不合格が多い場合に、CLAUDE.md更新を提案する（Stop）
+- 未コミット変更がある場合、Stopのapprove時にgit statusをユーザーに表示する（Stop、LLMコンテキスト外）
+- ユーザーからの修正指示が多い場合やcodexレビュー不合格が多い場合に、CLAUDE.md更新を提案する（Stop）
 
 同梱スキルとして以下を持つ。
 
