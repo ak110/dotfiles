@@ -33,11 +33,13 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
 検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
 `old_string` は既存内容の修正・削除を妨げないため検査しない。
 
-exit code 契約:
+出力契約:
 
-- exit 0: 通過 (違反なし / スキップ対象ツール / 想定外入力 / warn のみ)
-- exit 2: block 違反検出 (stderr に理由を出力)
+- block: exit 2 + stderr にブロック理由を出力
+- warn (allow + メッセージ): exit 0 + stdout に JSON (systemMessage) を出力
+- 通過 (違反なし / スキップ対象ツール / 想定外入力): exit 0、出力なし
 
+メッセージは英語で記述する (ユーザーの日本語思考コンテキストへのノイズ混入を避けるため)。
 予期せぬ例外は 0 にフォールバックする (フックが破損して編集できなくなる事故を避けるため)。
 """
 
@@ -77,8 +79,10 @@ def _main() -> int:
     if _check_ps1_directives(tool_name, fields, file_path):
         return 2
 
-    # --- warn 系 check (stderr に警告のみ、exit code は 0 のまま) ---
-    _check_local_md_reference(tool_name, fields, file_path)
+    # --- warn 系 check (allow + systemMessage) ---
+    result = _check_local_md_reference(tool_name, fields, file_path)
+    if result is not None:
+        print(json.dumps(result))
 
     return 0
 
@@ -161,9 +165,9 @@ def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
     if _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING in rel.name:
         return False
     print(
-        f"[pretooluse] {tool_name}: ~/.claude/ 配下への直接編集はブロックしました。"
-        f" chezmoi の配布先のため次回 `chezmoi apply` で上書きされます。"
-        f" 配布元の `.chezmoi-source/dot_claude/` を編集してください。 対象: {file_path}",
+        f"[pretooluse] {tool_name}: blocked direct edit under ~/.claude/."
+        f" This is a chezmoi deploy target and will be overwritten on next `chezmoi apply`."
+        f" Edit `.chezmoi-source/dot_claude/` instead. Target: {file_path}",
         file=sys.stderr,
     )
     return True
@@ -210,10 +214,11 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
             print(
-                f"[pretooluse] {tool_name}.{field}: PowerShell スクリプトに必須ディレクティブがありません: "
-                f"{', '.join(missing)}。Windows PowerShell 5.1 互換性確保のため "
-                f"`Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` を冒頭付近"
-                f"(先頭 {_PS1_DIRECTIVES_HEAD_LINES} 行以内・行頭)に記述してください。 対象: {file_path}",
+                f"[pretooluse] {tool_name}.{field}: missing required PowerShell directives: "
+                f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
+                f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
+                f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
+                f" Target: {file_path}",
                 file=sys.stderr,
             )
             return True
@@ -223,23 +228,28 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 # --- CLAUDE.local.md 言及 check (warn) ---
 
 
-def _check_local_md_reference(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """`CLAUDE.local.md` への言及を検出したら警告を出して True を返す (warn)。
+def _check_local_md_reference(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> dict | None:
+    """`CLAUDE.local.md` への言及を検出したら allow + systemMessage の dict を返す (warn)。
 
     対象ファイル自身の編集は正当な操作として除外する。
     """
     if _is_claude_local_md(file_path):
-        return False
+        return None
     for field, value in fields:
         if _CLAUDE_LOCAL_MD in value:
-            print(
-                f"[pretooluse][warn] {tool_name}.{field} に '{_CLAUDE_LOCAL_MD}' への言及を検出しました。"
-                f" CLAUDE.local.md はローカル専用ファイルであり、リポジトリ管理されるファイルから"
-                f" 参照しないでください (警告のみ・ブロックはしません)。",
-                file=sys.stderr,
-            )
-            return True
-    return False
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                },
+                "systemMessage": (
+                    f"[pretooluse][warn] detected reference to '{_CLAUDE_LOCAL_MD}'"
+                    f" in {tool_name}.{field}."
+                    f" {_CLAUDE_LOCAL_MD} is a local-only file and must not be"
+                    f" referenced from version-controlled files (warning only, not blocked)."
+                ),
+            }
+    return None
 
 
 def _is_claude_local_md(file_path: str) -> bool:

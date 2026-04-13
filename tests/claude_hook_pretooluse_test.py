@@ -2,7 +2,7 @@
 
 dotfiles 個人環境専用の PreToolUse フックのテスト。
 mojibake / PS1 EOL は plugin 側 (plugins/agent-toolkit) に移管済み。
-独立スクリプトなので subprocess で起動し exit code と stderr を検証する。
+独立スクリプトなので subprocess で起動し exit code / stderr / stdout (JSON) を検証する。
 """
 
 import json
@@ -244,7 +244,18 @@ class TestPs1DirectivesBlock:
 
 
 class TestLocalMdReferenceWarning:
-    """ローカル専用ファイル言及検出 (警告のみ・非ブロック)。"""
+    """ローカル専用ファイル言及検出 (allow + systemMessage 警告)。"""
+
+    @staticmethod
+    def _get_system_message(result: subprocess.CompletedProcess[str]) -> str:
+        """stdout の JSON から systemMessage を取得する。なければ空文字を返す。"""
+        if not result.stdout.strip():
+            return ""
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ""
+        return data.get("systemMessage", "")
 
     def test_content_reference_warns_but_passes(self):
         result = _run(
@@ -254,8 +265,9 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in result.stderr
-        assert "warn" in result.stderr.lower()
+        msg = self._get_system_message(result)
+        assert _LOCAL_MD in msg
+        assert "warn" in msg.lower()
 
     def test_edit_reference_warns_but_passes(self):
         result = _run(
@@ -269,7 +281,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in result.stderr
+        assert _LOCAL_MD in self._get_system_message(result)
 
     def test_multiedit_reference_warns_but_passes(self):
         result = _run(
@@ -285,7 +297,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in result.stderr
+        assert _LOCAL_MD in self._get_system_message(result)
 
     def test_editing_target_file_itself_is_allowed_silently(self):
         """対象ファイル自体の編集は正当な操作として警告も出さない。"""
@@ -296,7 +308,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD not in result.stderr
+        assert result.stdout == ""
 
     def test_editing_target_file_with_windows_path_allowed_silently(self):
         result = _run(
@@ -309,7 +321,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD not in result.stderr
+        assert result.stdout == ""
 
     def test_old_string_reference_is_allowed_silently(self):
         """言及を削除する Edit は old_string に書いてあっても警告しない。"""
@@ -324,7 +336,7 @@ class TestLocalMdReferenceWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD not in result.stderr
+        assert result.stdout == ""
 
 
 class TestGeneralBehavior:

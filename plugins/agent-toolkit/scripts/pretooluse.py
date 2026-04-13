@@ -653,8 +653,8 @@ def _check_bash_git_commit(command: str, session_id: str) -> dict | None:
             "permissionDecision": "allow",
         },
         "systemMessage": (
-            "[agent-toolkit] テスト未実行のままコミットしようとしています。"
-            "agent.md の検証とコミット手順に従い、先にテストを実行してください。"
+            "[agent-toolkit] committing without running tests."
+            " Follow the verify-then-commit procedure in agent.md and run tests first."
         ),
     }
 
@@ -694,7 +694,7 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": ("[agent-toolkit] git log に --decorate を自動で挿入しました。"),
+        "systemMessage": "[agent-toolkit] automatically inserted --decorate into git log.",
     }
 
 
@@ -717,9 +717,10 @@ def _check_bash_codex_exec(command: str) -> dict | None:
             "permissionDecision": "allow",
         },
         "systemMessage": (
-            "[agent-toolkit] 計画ファイルを codex レビューに提出します。"
-            "提出前に確認: 推測や独自判断で決めた方針はありませんか？"
-            "ユーザーに確認すべき未決事項が残っていれば、先に解消してください。"
+            "[agent-toolkit] submitting plan file to codex review."
+            " Pre-submission check: are there any decisions made by assumption"
+            " rather than user confirmation?"
+            " Resolve any open questions with the user before proceeding."
         ),
     }
 
