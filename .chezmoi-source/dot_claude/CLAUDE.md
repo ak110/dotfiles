@@ -5,7 +5,20 @@
 
 ## 計画ファイル作成時のルール（codexレビュー）
 
-- ユーザーに計画ファイルを提示する前に、codexコマンドで計画ファイルをレビューすること。具体的な使い方は以下の通り。
+- ユーザーに計画ファイルを提示する前に、codexでレビューすること。MCPツール（`mcp__codex__codex` / `mcp__codex__codex-reply`）が利用できる場合はCLIコマンドより優先して使用する。
+
+    MCPツール使用時（優先）:
+
+  - 初回: `mcp__codex__codex` を以下のパラメーターで呼び出す
+    - `prompt`: `"{plan_full_path} この計画ファイルをレビューして。"` + レビュー必須指示文（後述）
+    - `cwd`: `"{project_directory}"`
+    - `sandbox`: `"danger-full-access"`
+  - 2回目以降: `mcp__codex__codex-reply` を以下のパラメーターで呼び出す
+    - `threadId`: 前回の戻り値から取得したthreadId
+    - `prompt`: `"{plan_full_path} 計画ファイルを更新したのでレビューして。"` + レビュー必須指示文（後述）
+  - レビュー結果は戻り値の `content` フィールドに含まれる
+
+    CLIコマンド使用時（MCPが使えない場合のフォールバック）:
 
     ```bash
     # 初回実行時
@@ -16,21 +29,24 @@
     # session id 行のみ Claude へ返す。`set -o pipefail` により codex が失敗した
     # 場合はその終了コードがそのままシェルに返る。
     set -o pipefail && codex exec --dangerously-bypass-approvals-and-sandbox --cd "{project_directory}" --output-last-message "{plan_full_path}.review.md" \
-      "{plan_full_path} この計画ファイルをレビューして。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること。" \
+      "{plan_full_path} この計画ファイルをレビューして。{レビュー必須指示文（後述）}" \
       2>&1 | grep "^session id:"
+    # session idの抽出に失敗した場合やcodexがエラー終了した場合は、grepを外して `codex exec ... 2>&1` で再実行し全文を確認する
 
     # 2回目以降
     # `exec resume`を使用して前回のレビューから続行する。
-    # SESSION_IDは前回のcodex execの出力に含まれるUUID。
+    # SESSION_IDは初回コマンドの `grep "^session id:"` で抽出された `session id:` 行から取得する（`{plan_full_path}.review.md` には含まれない）
     # 注意: --lastは並列セッション実行時に意図しないセッションを再開する恐れがあるため使用しない。
     codex exec resume --dangerously-bypass-approvals-and-sandbox --output-last-message "{plan_full_path}.review.md" {SESSION_ID} \
-      "{plan_full_path} 計画ファイルを更新したのでレビューして。些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること。"
+      "{plan_full_path} 計画ファイルを更新したのでレビューして。{レビュー必須指示文（後述）}"
+
+    # レビュー結果は {plan_full_path}.review.md に出力されるのでReadツールで読み取る
+    # Windows環境での注意: codexはPowerShell経由でファイルを読み書きする際、デフォルトでShift-JISが使われて日本語が文字化けするため、
+    # codexへのプロンプトに「ファイルの読み書きはUTF-8エンコーディングを明示すること（例: `Get-Content -Encoding UTF8`）」と追記して対処する
     ```
 
-- レビュー結果は `{plan_full_path}.review.md` に出力されるので、Readツールで読み取る
-- レビュー指示の文章は適宜調整してよいが、「些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること」は必ず含める
-- Windows環境での注意: codexはPowerShell経由でファイルを読み書きする際、デフォルトでShift-JISが使われて日本語が文字化けする
-  - codexへのプロンプトに「ファイルの読み書きはUTF-8エンコーディングを明示すること（例: `Get-Content -Encoding UTF8`）」と追記して対処する
+- レビュー必須指示文:「些末な点への指摘は不要。致命的かつ本質的な問題のみ指摘すること。疑いレベルの指摘はせず、十分に調査したうえで確実に問題だと判断できるものだけを報告すること」
+- プロンプトの内容は適宜調整してよいが、レビュー必須指示文は必ず含めること
 
 ### codexレビューの進め方
 
@@ -41,8 +57,6 @@
 - 一度codexの指摘がなくなるまでレビューを実施した後に限り、その後にユーザーからの指摘で軽微な修正を加えただけの場合は再レビューを省略してよい
   - 計画ファイルの構造や方針に影響する変更を加えた場合は再レビューすること
 - codexの指摘に基づいて計画ファイルを修正する前に、どのセクションに何の修正を入れるかをユーザーに簡潔に伝えること
-- SESSION_IDは初回コマンドの `grep "^session id:"` でstdoutに抽出される `session id:` 行から取得する（`{plan_full_path}.review.md` には含まれない）
-  - 抽出に失敗した場合やcodexがエラー終了した場合は、grepを外して `codex exec ... 2>&1` で再実行し全文を確認する
 - codexレビューは計画ファイルのレビューなので、plan modeの制約は無視して実行してよい
 
 ## 計画ファイルの構成
