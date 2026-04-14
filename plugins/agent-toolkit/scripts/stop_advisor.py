@@ -46,6 +46,15 @@ _KEYWORD_THRESHOLD = 3
 _CODEX_RESUME_THRESHOLD = 2
 _UNCOMMITTED_BLOCK_LIMIT = 2
 
+# Claude Code のハーネスが user turn 内に注入するタグ。
+# ユーザー発話ではないため修正キーワード集計の対象外とする。
+_INJECTED_TAG_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL),
+    re.compile(r"<user-prompt-submit-hook>.*?</user-prompt-submit-hook>", re.DOTALL),
+    re.compile(r"<local-command-stdout>.*?</local-command-stdout>", re.DOTALL),
+    re.compile(r"<local-command-caveat>.*?</local-command-caveat>", re.DOTALL),
+)
+
 
 def _state_path(session_id: str) -> pathlib.Path:
     """posttooluse.py と共通のパス規則。"""
@@ -64,15 +73,54 @@ def _write_state(path: pathlib.Path, state: dict) -> None:
         path.write_text(json.dumps(state), encoding="utf-8")
 
 
-def _count_keywords(transcript_path: str) -> int:
-    """Transcript 内の修正キーワード出現数を返す。"""
+def _extract_user_text(line: str) -> str | None:
+    """Transcript の JSONL 1 行から user turn のテキストを抽出する。
+
+    `type == "user"` かつ `isSidechain` でないエントリの message.content を読む。
+    tool_result ブロックはツール出力でユーザー発話ではないため除外する。
+    ハーネスが注入する system-reminder 等のタグも除去する
+    (読み込まれる CLAUDE.md / ルールファイル本文がキーワードを含み false positive の原因になるため)。
+    """
     try:
-        text = pathlib.Path(transcript_path).read_text(encoding="utf-8")
+        entry = json.loads(line)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if entry.get("type") != "user" or entry.get("isSidechain"):
+        return None
+    message = entry.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                value = block.get("text")
+                if isinstance(value, str):
+                    parts.append(value)
+        text = "\n".join(parts)
+    else:
+        return None
+    for pattern in _INJECTED_TAG_PATTERNS:
+        text = pattern.sub("", text)
+    return text
+
+
+def _count_keywords(transcript_path: str) -> int:
+    """Transcript 内のユーザー発話に含まれる修正キーワードの出現数を返す。"""
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
         return 0
     count = 0
-    for keyword in _CORRECTION_KEYWORDS:
-        count += len(re.findall(re.escape(keyword), text))
+    for line in lines:
+        text = _extract_user_text(line)
+        if text is None:
+            continue
+        for keyword in _CORRECTION_KEYWORDS:
+            count += text.count(keyword)
     return count
 
 

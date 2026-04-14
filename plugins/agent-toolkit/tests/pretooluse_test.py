@@ -332,11 +332,39 @@ class TestBashGitCommitWarning:
         path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
         path.write_text(json.dumps(state), encoding="utf-8")
 
-    def _invoke(self, command: str, session_id: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-        return _run(
-            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
-            env_overrides=env,
-        )
+    def _invoke(
+        self,
+        command: str,
+        session_id: str,
+        env: dict[str, str],
+        cwd: str = "",
+    ) -> subprocess.CompletedProcess[str]:
+        payload: dict = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "session_id": session_id,
+        }
+        if cwd:
+            payload["cwd"] = cwd
+        return _run(payload, env_overrides=env)
+
+    @staticmethod
+    def _make_repo_with_staged(tmp_path: pathlib.Path, files: dict[str, str]) -> pathlib.Path:
+        """staged 状態のファイルを含む git リポジトリを作成する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "seed.txt").write_text("seed")
+        subprocess.run(["git", "add", "seed.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        for name, content in files.items():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        return repo
 
     def _has_additional_context(self, result: subprocess.CompletedProcess[str], keyword: str) -> bool:
         if not result.stdout.strip():
@@ -370,6 +398,36 @@ class TestBashGitCommitWarning:
 
     def test_non_commit_command_unaffected(self, state_dir: dict[str, str]):
         result = self._invoke("git status", "x", state_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_skips_when_staged_is_docs_only(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """staged ファイルが全て .md ならテスト未実行でも警告しない。"""
+        repo = self._make_repo_with_staged(tmp_path, {"docs/a.md": "# a", "README.md": "# r"})
+        result = self._invoke("git commit -m 'docs'", "docs-only", state_dir, cwd=str(repo))
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_warns_when_staged_mixes_non_md(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """staged に .md 以外が混ざる場合は従来どおり警告する。"""
+        repo = self._make_repo_with_staged(tmp_path, {"a.md": "# a", "b.py": "print(1)"})
+        result = self._invoke("git commit -m 'mix'", "mix", state_dir, cwd=str(repo))
+        assert result.returncode == 0
+        assert self._has_additional_context(result, "agent-toolkit")
+
+    def test_docs_only_with_commit_all_uses_worktree(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """git commit -a の場合は作業ツリー側の変更も対象に含めて判定する。"""
+        repo = tmp_path / "repo-a"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "doc.md").write_text("# v1")
+        subprocess.run(["git", "add", "doc.md"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        # tracked .md を作業ツリー上でのみ変更 (index には反映しない)
+        (repo / "doc.md").write_text("# v2")
+        result = self._invoke("git commit -am 'update'", "commit-all", state_dir, cwd=str(repo))
         assert result.returncode == 0
         assert result.stdout == ""
 

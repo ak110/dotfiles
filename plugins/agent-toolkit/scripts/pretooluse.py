@@ -40,6 +40,7 @@ exit code 契約:
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import traceback
@@ -71,7 +72,9 @@ def _main() -> int:
         if _check_bash_amend_rebase_without_log(command, session_id):
             return 2
         # git commit 未検証警告
-        result = _check_bash_git_commit(command, session_id)
+        cwd_raw = payload.get("cwd", "")
+        cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+        result = _check_bash_git_commit(command, session_id, cwd)
         if result is not None:
             print(json.dumps(result))
             return 0
@@ -406,17 +409,58 @@ def _read_session_state(session_id: str) -> dict:
         return {}
 
 
-def _check_bash_git_commit(command: str, session_id: str) -> dict | None:
+_GIT_COMMIT_INCLUDE_WORKTREE_PATTERN = re.compile(r"(?:^|\s)(?:-\w*a\w*|--all)\b")
+
+
+def _is_docs_only_commit(command: str, cwd: str) -> bool:
+    """コミット対象のファイルが全て Markdown なら True を返す。
+
+    プロジェクト方針として docs-only 変更では手動テストを省略し
+    pre-commit 側の markdownlint / textlint に委ねる運用が存在する
+    (本 dotfiles 含む)。その場合に未検証警告を抑制する。
+
+    `git commit -a` / `--all` 等のコマンドでは作業ツリー側の変更も対象となるため、
+    staged と working tree を切り分けて判定する。
+    `cwd` 不在や git 呼び出し失敗時は False を返し従来どおり警告する (安全側)。
+    """
+    if not cwd:
+        return False
+    match = _GIT_COMMIT_PATTERN.search(command)
+    if match is None:
+        return False
+    tail = command[match.end() :]
+    for delimiter in (";", "|", "&&"):
+        pos = tail.find(delimiter)
+        if pos != -1:
+            tail = tail[:pos]
+    include_working_tree = _GIT_COMMIT_INCLUDE_WORKTREE_PATTERN.search(tail) is not None
+    args = ["git", "diff", "--name-only", "HEAD"] if include_working_tree else ["git", "diff", "--cached", "--name-only"]
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    files = [line for line in result.stdout.splitlines() if line.strip()]
+    if not files:
+        return False
+    return all(path.lower().endswith(".md") for path in files)
+
+
+def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | None:
     """テスト未実行のまま git commit する場合に警告 JSON を返す。
 
     テスト実行済み (state の test_executed が true) ならスキップ。
     状態ファイル不在時は test_executed = false として扱い警告を出す。
+    コミット対象が全て Markdown ファイルの場合は pre-commit 側に検証を委ねる運用を想定しスキップする。
     """
     match = _GIT_COMMIT_PATTERN.search(command)
     if match is None or not _likely_real_command(command, match.start()):
         return None
     state = _read_session_state(session_id)
     if state.get("test_executed", False):
+        return None
+    if _is_docs_only_commit(command, cwd):
         return None
     return {
         "hookSpecificOutput": {

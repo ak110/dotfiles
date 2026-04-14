@@ -43,9 +43,25 @@ def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path.write_text(json.dumps(state), encoding="utf-8")
 
 
-def _write_transcript(tmp_path: pathlib.Path, content: str) -> pathlib.Path:
-    transcript = tmp_path / "transcript.txt"
-    transcript.write_text(content, encoding="utf-8")
+def _write_transcript(tmp_path: pathlib.Path, user_texts: str | list[str]) -> pathlib.Path:
+    """ユーザー発話を JSONL 形式の transcript として書き出す。
+
+    文字列 1 つを渡すと user turn 1 つとして、リストを渡すと複数の user turn として書き出す。
+    """
+    if isinstance(user_texts, str):
+        user_texts = [user_texts]
+    lines = [
+        json.dumps({"type": "user", "message": {"role": "user", "content": text}}, ensure_ascii=False) for text in user_texts
+    ]
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return transcript
+
+
+def _write_raw_transcript(tmp_path: pathlib.Path, lines: list[str]) -> pathlib.Path:
+    """任意の JSONL 行を transcript として書き出す (異種エントリを含む検証用)。"""
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return transcript
 
 
@@ -78,6 +94,98 @@ class TestKeywordDetection:
         assert decision["decision"] == "block"
         assert "reason" in decision
         assert "correction" in decision["reason"].lower()
+
+    def test_system_reminder_not_counted(self, tmp_path: pathlib.Path):
+        """user turn に注入される system-reminder タグ内の語は集計対象外。
+
+        CLAUDE.md やルール本文が system-reminder 経由で注入された際の false positive を防ぐ。
+        """
+        reminder = (
+            "<system-reminder>\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 "
+            "\u623b\u3057\u3066 \u3058\u3083\u306a\u304f</system-reminder>"
+        )
+        transcript = _write_transcript(tmp_path, reminder)
+        result = _run(
+            {"session_id": "kw-reminder", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_assistant_messages_not_counted(self, tmp_path: pathlib.Path):
+        """assistant turn のテキストは集計対象外。"""
+        assistant_entries = [
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057"}],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = _write_raw_transcript(tmp_path, assistant_entries)
+        result = _run(
+            {"session_id": "kw-assistant", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_tool_result_not_counted(self, tmp_path: pathlib.Path):
+        """user turn に含まれる tool_result ブロックは集計対象外。
+
+        ツール出力 (読み込んだファイル本文など) が user role で echo されても拾わない。
+        """
+        entries = [
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 \u623b\u3057\u3066",
+                            },
+                        ],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = _write_raw_transcript(tmp_path, entries)
+        result = _run(
+            {"session_id": "kw-tool", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_sidechain_not_counted(self, tmp_path: pathlib.Path):
+        """subagent (isSidechain=true) の user turn は集計対象外。"""
+        entries = [
+            json.dumps(
+                {
+                    "type": "user",
+                    "isSidechain": True,
+                    "message": {
+                        "role": "user",
+                        "content": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 \u623b\u3057\u3066",
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = _write_raw_transcript(tmp_path, entries)
+        result = _run(
+            {"session_id": "kw-sidechain", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
 
 
 class TestCodexResumeDetection:
