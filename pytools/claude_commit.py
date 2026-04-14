@@ -48,6 +48,7 @@ def _main() -> None:
     parser.add_argument(
         "additional_prompt",
         nargs="?",
+        default=None,
         help="フォーマット指示や差分説明などの追加プロンプト。省略可能。",
     )
     args = parser.parse_args()
@@ -92,8 +93,8 @@ def _main() -> None:
         amend=args.amend,
         head_message=head_message,
         head_diff=head_diff,
-        additional_prompt=args.additional_prompt or "",
         dry_run=args.dry_run,
+        additional_prompt=args.additional_prompt or "",
     )
 
     _run_claude(prompt, git_root=git_root, model=args.model, effort=args.effort)
@@ -177,8 +178,8 @@ def _build_prompt(
     amend: bool,
     head_message: str,
     head_diff: str,
-    additional_prompt: str,
     dry_run: bool,
+    additional_prompt: str = "",
 ) -> str:
     """claudeへのプロンプトを構築する。"""
     lines: list[str] = []
