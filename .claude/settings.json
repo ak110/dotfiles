@@ -1,13 +1,14 @@
 {
+  "enabledPlugins": {
+    "agent-toolkit@ak110-dotfiles": true
+  },
   "extraKnownMarketplaces": {
     "ak110-dotfiles": {
       "source": {
         "source": "github",
         "repo": "ak110/dotfiles"
-      }
+      },
+      "autoUpdate": true
     }
-  },
-  "enabledPlugins": {
-    "agent-toolkit@ak110-dotfiles": true
   }
 }
