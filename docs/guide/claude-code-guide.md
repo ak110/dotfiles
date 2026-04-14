@@ -5,8 +5,8 @@
 - ルール (`~/.claude/rules/agent-basics/` 配下) — 全プロジェクトで自動読み込みされるコーディング規約・運用方針
 - プラグイン — Plugin Marketplace `ak110-dotfiles` 経由で配布するClaude Codeプラグイン
 
-インストール手順は [docs/guide/claude-code.md](claude-code.md) を参照。
-ここでは内容とカスタマイズ方法を説明する。
+dotfiles管理側の情報（配布方式・インストール手順など）は [docs/guide/claude-code.md](claude-code.md) を参照。
+ここでは配布されるルール・プラグインの内容とカスタマイズ方法を説明する。
 
 ## ルール
 
