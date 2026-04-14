@@ -56,7 +56,7 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 ### 1. 全体実行でsummaryを確認する
 
 ```bash
-pyfltr run --output-format=jsonl
+pyfltr run --output-format=jsonl | tail -30
 ```
 
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。`run`は前段で自動fixを適用するため、autofixで解消できる違反はここで消える。
@@ -64,7 +64,7 @@ pyfltr run --output-format=jsonl
 ### 2. 問題のあるツールだけ再実行する
 
 ```bash
-pyfltr run --commands=mypy --output-format=jsonl
+pyfltr run --commands=mypy --output-format=jsonl | tail -30
 ```
 
 `--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。

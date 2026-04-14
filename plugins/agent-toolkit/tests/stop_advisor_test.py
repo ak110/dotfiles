@@ -9,6 +9,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import Any
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "stop_advisor.py"
 
@@ -342,6 +343,90 @@ class TestUncommittedChanges:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestQuestionSuppressesUncommittedBlock:
+    """Claude がユーザーに質問中の場合は未コミット変更ブロックを抑制する。"""
+
+    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("initial")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("modified")
+        return repo
+
+    def _write_transcript_with_assistant_last(self, tmp_path: pathlib.Path, assistant_content: list[dict]) -> pathlib.Path:
+        """アシスタントターンを末尾に持つ transcript を書き出す。"""
+        lines = [
+            json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": assistant_content},
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return transcript
+
+    def test_ask_user_question_tool_suppresses_block(self, tmp_path: pathlib.Path):
+        """AskUserQuestion ツール呼び出しが最後にある場合はブロックしない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": "どちらを選びますか？"},
+            {"type": "tool_use", "id": "x", "name": "AskUserQuestion", "input": {}},
+        ]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "ask-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_fullwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+        """テキストが全角 ？ で終わる場合はブロックしない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": "ステージ済みファイルをどうしますか？"}]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "fw-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_halfwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+        """テキストが半角 ? で終わる場合はブロックしない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": "Which option do you prefer?"}]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "hw-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_non_question_text_still_blocks(self, tmp_path: pathlib.Path):
+        """? で終わらないテキストの場合は通常通りブロックする。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": "コミットします。"}]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "no-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        assert "uncommitted" in decision.get("reason", "").lower()
 
 
 class TestGitStatusDisplay:

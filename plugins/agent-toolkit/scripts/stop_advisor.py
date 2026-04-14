@@ -6,6 +6,11 @@
 """Claude Code plugin agent-toolkit: Stop hook.
 
 Claude Code が停止しようとするタイミングで発火する。
+
+未コミット変更がある場合はセッション終了を block する。
+ただし Claude がユーザーへ質問中（AskUserQuestion ツール使用、またはテキストが
+? / ？ で終わる）の場合は block せず approve する（質問への割り込みを防ぐため）。
+
 transcript を分析してユーザーからの修正指示の多寡を判定し、
 閾値を超えた場合に CLAUDE.md 更新を提案する。
 codex exec resume が多い場合も同様に提案する。
@@ -124,6 +129,49 @@ def _count_keywords(transcript_path: str) -> int:
     return count
 
 
+def _is_assistant_asking_question(transcript_path: str) -> bool:
+    """直前のアシスタントターンがユーザーへの質問で終わっているかを確認する。
+
+    以下のいずれかが成立する場合 True を返す。
+    - AskUserQuestion ツール呼び出しが含まれている
+    - テキストが ? または ？ で終わっている
+
+    未コミット変更ブロックの false positive を防ぐための判定。
+    transcript 読み取りに失敗した場合は False を返す（安全側）。
+    """
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return False
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            return False
+        content = message.get("content")
+        if not isinstance(content, list):
+            return False
+        last_text: str | None = None
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "AskUserQuestion":
+                return True
+            if block.get("type") == "text":
+                text = block.get("text", "")
+                if isinstance(text, str) and text.strip():
+                    last_text = text.strip()
+        if last_text is not None:
+            return last_text.endswith("?") or last_text.endswith("？")
+        return False
+    return False
+
+
 def _has_uncommitted_changes(cwd: str) -> bool:
     """作業ディレクトリに未コミットの変更があるか判定する。
 
@@ -210,21 +258,25 @@ def _main() -> int:
         state["git_log_checked"] = False
         _write_state(state_file, state)
 
-    # 未コミット変更の検出
     cwd = payload.get("cwd", "")
+    transcript_path = payload.get("transcript_path", "")
+
+    # 未コミット変更の検出。ただし Claude がユーザーに質問中の場合はスキップする。
     if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-        block_count = state.get("uncommitted_block_count", 0)
-        if block_count < _UNCOMMITTED_BLOCK_LIMIT:
-            state["uncommitted_block_count"] = block_count + 1
-            _write_state(state_file, state)
-            _block(
-                "[agent-toolkit] uncommitted changes detected."
-                " Please commit your work before ending the session."
-                " If CLAUDE.md or project instructions say otherwise,"
-                " you may explain and proceed."
-            )
-            return 0
-        # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
+        asking = isinstance(transcript_path, str) and _is_assistant_asking_question(transcript_path)
+        if not asking:
+            block_count = state.get("uncommitted_block_count", 0)
+            if block_count < _UNCOMMITTED_BLOCK_LIMIT:
+                state["uncommitted_block_count"] = block_count + 1
+                _write_state(state_file, state)
+                _block(
+                    "[agent-toolkit] uncommitted changes detected."
+                    " Please commit your work before ending the session."
+                    " If CLAUDE.md or project instructions say otherwise,"
+                    " you may explain and proceed."
+                )
+                return 0
+            # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
 
     # 2 回目以降は即座に approve
     if state.get("stop_advice_given", False):
@@ -232,7 +284,6 @@ def _main() -> int:
         return 0
 
     # transcript の修正キーワードを集計
-    transcript_path = payload.get("transcript_path", "")
     keyword_count = 0
     if isinstance(transcript_path, str) and transcript_path:
         keyword_count = _count_keywords(transcript_path)
