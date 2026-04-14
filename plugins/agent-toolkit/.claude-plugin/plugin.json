@@ -1,6 +1,6 @@
 {
   "name": "agent-toolkit",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。テスト未実行でのgit commitを警告し、git logに--decorateを自動付与し、codex exec前に未決事項を確認する。セッション終了時にユーザー修正やcodexレビュー不合格が多い場合にCLAUDE.md更新を提案する。同梱スキル: 複数の未プッシュコミットを安全にsquash/reorder/メッセージ書き直しするtidy-unpushed-commits（amend/fixupで済む軽量ケースは自動判別して早期離脱）。pyfltrの使い方・JSONL出力解釈・サブコマンドの使い分けを参照できるpyfltr-usage。pytilpackのモジュール構成・使い方・APIドキュメント参照方法のリファレンスとなるpytilpack-usage。",
   "author": {
     "name": "aki",

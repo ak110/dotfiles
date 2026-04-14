@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-13T06:20:07.045953149Z"
+exclude-newer = "2026-04-13T06:28:01.877558611Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1127,7 +1127,7 @@ provides-extras = ["repack-png"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pyfltr", specifier = ">=1.23.0" },
+    { name = "pyfltr", specifier = ">=2.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
 ]
