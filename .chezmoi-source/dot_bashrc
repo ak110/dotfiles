@@ -39,6 +39,13 @@ if [ -e ~/.env ]; then
     set +a
 fi
 
+# ~/dotfiles/share/user.env を読み込む
+if [ -e ~/dotfiles/share/user.env ]; then
+    set -a
+    . ~/dotfiles/share/user.env
+    set +a
+fi
+
 # mise (https://mise.jdx.dev/)
 # - 対話シェル: `mise activate bash` でフック方式を有効化
 # - 非対話シェル (IDE / スクリプト / ssh exec): `--shims` で shims を PATH に追加
@@ -286,6 +293,8 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         return $rc
     }
 fi
+# ccusage
+alias ccusage="pnpx ccusage"
 
 # nvm の bash 補完 (対話シェル専用)。
 # nvm 本体は非対話セクションで source 済みのため NVM_DIR は既に export されている。

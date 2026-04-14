@@ -36,6 +36,26 @@ if ($currentHash -ne $cachedHash) {
     Write-Host '  [pytools] 変更なし (ハッシュキャッシュヒット)'
 }
 
+# share/user.env をユーザー環境変数に設定する
+$userEnvFile = Join-Path '{{ .chezmoi.workingTree }}' 'share\user.env'
+if (Test-Path $userEnvFile) {
+    Get-Content $userEnvFile -Encoding UTF8 | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -eq '' -or $line.StartsWith('#')) { return }
+        $idx = $line.IndexOf('=')
+        if ($idx -lt 1) { return }
+        $name = $line.Substring(0, $idx)
+        $value = $line.Substring($idx + 1)
+        # シングルクォートまたは二重クォートで囲まれた値を除去する
+        if (($value.StartsWith("'") -and $value.EndsWith("'")) -or
+            ($value.StartsWith('"') -and $value.EndsWith('"'))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        [System.Environment]::SetEnvironmentVariable($name, $value, 'User')
+        Write-Host "  [user.env] $name を設定"
+    }
+}
+
 # uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
 $postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
 if (Test-Path $postApplyBin) {
