@@ -80,3 +80,14 @@ update-dotfiles
 - [docs/index.md](docs/index.md) — ドキュメント入口
 - [docs/guide/index.md](docs/guide/index.md) — 利用者向け（chezmoi使い方・Claude Code設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md) — 開発者向け
+
+## 参考
+
+```bash
+# Claude Codeのバージョン固定化
+\rm ~/.local/bin/claude
+npm install -g @anthropic-ai/claude-code@2.1.98
+# 戻す場合
+npm uninstall -g @anthropic-ai/claude-code
+curl -fsSL https://claude.ai/install.sh | bash
+```

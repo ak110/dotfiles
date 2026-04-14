@@ -24,6 +24,81 @@ descriptionは日本語で書く。
 """
 
 
+def _main() -> None:
+    logging.basicConfig(format="%(message)s", level="INFO")
+
+    parser = argparse.ArgumentParser(description="claudeでコミットメッセージを生成してgit commitを実行する。")
+    parser.add_argument("--amend", action="store_true", help="HEADのコミットをamendする。")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="コミットメッセージを表示するのみでコミットしない。",
+    )
+    parser.add_argument(
+        "--model",
+        "-m",
+        default="sonnet",
+        help="claudeのモデル（デフォルト: sonnet）。",
+    )
+    parser.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "max"],
+        help="思考レベル。",
+    )
+    parser.add_argument(
+        "additional_prompt",
+        nargs="?",
+        help="フォーマット指示や差分説明などの追加プロンプト。省略可能。",
+    )
+    args = parser.parse_args()
+
+    git_root = _get_git_root()
+
+    # ステージング確認（除外なし）
+    staged_names = _get_staged_names()
+    staged_stat = ""
+    head_message = ""
+    head_diff = ""
+
+    if args.amend:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%B"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        head_message = result.stdout.strip()
+        head_diff = _get_diff(staged_only=False)
+        if not staged_names and not head_diff:
+            logger.error("差分がありません。")
+            sys.exit(1)
+        if staged_names:
+            staged_stat = _get_staged_stat()
+    else:
+        if not staged_names:
+            logger.error("ステージング済みの変更がありません。")
+            sys.exit(1)
+        staged_stat = _get_staged_stat()
+
+    # 詳細差分（lock系ファイルを除外）
+    staged_diff = _get_diff(staged_only=True) if staged_names else ""
+
+    format_instructions = _get_format_instructions(git_root)
+    prompt = _build_prompt(
+        git_root=git_root,
+        format_instructions=format_instructions,
+        staged_stat=staged_stat,
+        staged_diff=staged_diff,
+        amend=args.amend,
+        head_message=head_message,
+        head_diff=head_diff,
+        additional_prompt=args.additional_prompt or "",
+        dry_run=args.dry_run,
+    )
+
+    _run_claude(prompt, git_root=git_root, model=args.model, effort=args.effort)
+
+
 def _get_git_root() -> Path:
     """Gitリポジトリのルートディレクトリを返す。"""
     result = subprocess.run(
@@ -102,6 +177,7 @@ def _build_prompt(
     amend: bool,
     head_message: str,
     head_diff: str,
+    additional_prompt: str,
     dry_run: bool,
 ) -> str:
     """claudeへのプロンプトを構築する。"""
@@ -138,6 +214,10 @@ def _build_prompt(
         if dry_run:
             lines.append("実際にコミットはしないでください。実行するコミットメッセージを表示するだけにしてください。")
 
+    if additional_prompt:
+        lines.append("")
+        lines.append(f"# ユーザーによる追加の指示\n{additional_prompt}")
+
     return "\n".join(lines)
 
 
@@ -168,75 +248,6 @@ def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) 
         result = subprocess.run(cmd, check=False, cwd=tmpdir)
     if result.returncode != 0:
         sys.exit(result.returncode)
-
-
-def _main() -> None:
-    logging.basicConfig(format="%(message)s", level="INFO")
-
-    parser = argparse.ArgumentParser(description="claudeでコミットメッセージを生成してgit commitを実行する。")
-    parser.add_argument("--amend", action="store_true", help="HEADのコミットをamendする。")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="コミットメッセージを表示するのみでコミットしない。",
-    )
-    parser.add_argument(
-        "--model",
-        "-m",
-        default="sonnet",
-        help="claudeのモデル（デフォルト: sonnet）。",
-    )
-    parser.add_argument(
-        "--effort",
-        choices=["low", "medium", "high", "max"],
-        help="思考レベル。",
-    )
-    args = parser.parse_args()
-
-    git_root = _get_git_root()
-
-    # ステージング確認（除外なし）
-    staged_names = _get_staged_names()
-    staged_stat = ""
-    head_message = ""
-    head_diff = ""
-
-    if args.amend:
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%B"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        head_message = result.stdout.strip()
-        head_diff = _get_diff(staged_only=False)
-        if not staged_names and not head_diff:
-            logger.error("差分がありません。")
-            sys.exit(1)
-        if staged_names:
-            staged_stat = _get_staged_stat()
-    else:
-        if not staged_names:
-            logger.error("ステージング済みの変更がありません。")
-            sys.exit(1)
-        staged_stat = _get_staged_stat()
-
-    # 詳細差分（lock系ファイルを除外）
-    staged_diff = _get_diff(staged_only=True) if staged_names else ""
-
-    format_instructions = _get_format_instructions(git_root)
-    prompt = _build_prompt(
-        git_root=git_root,
-        format_instructions=format_instructions,
-        staged_stat=staged_stat,
-        staged_diff=staged_diff,
-        amend=args.amend,
-        head_message=head_message,
-        head_diff=head_diff,
-        dry_run=args.dry_run,
-    )
-
-    _run_claude(prompt, git_root=git_root, model=args.model, effort=args.effort)
 
 
 if __name__ == "__main__":

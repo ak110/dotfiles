@@ -207,7 +207,7 @@ function cd() {
     )
 }
 alias ..='cd ..'
-alias reload-shell='exec $SHELL'
+alias r='reset ; exec $SHELL'
 
 # プロンプトのカスタマイズ
 function _show_status() {
@@ -309,6 +309,12 @@ fi
 #if [ -x $xonsh_path ] ; then
 #    exec $xonsh_path
 #fi
+
+# カレントディレクトリが git 作業ツリーなら git status を自動実行する。
+# `.git` はディレクトリだけでなく worktree の場合はファイルになるので `-e` で判定する。
+if [ -e .git ]; then
+    git status
+fi
 
 # exit code: 0
 :
