@@ -26,5 +26,6 @@
       "Read(./.env)"
     ]
   },
-  "showThinkingSummaries": true
+  "showThinkingSummaries": true,
+  "viewMode": "verbose"
 }
