@@ -40,9 +40,7 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 
 - `diagnostic`: 個々の診断。`col`・`rule`・`severity`・`fix`は抽出できた場合のみ含まれる。`fix`は`safe`／`unsafe`のいずれか
 - `tool`: ツールごとの実行結果。`status == "failed"`かつ`diagnostics == 0`のときのみ`message`フィールドに出力末尾（30行／2000文字の短い方）が含まれる。`rc`は`skipped`では省略される
-- `summary`: 全体集計（常に末尾1行）。`tail -1`で取得できる
-
-v1系の`diag`／`diags`はv2.0で`diagnostic`／`diagnostics`にリネームされた。
+- `summary`: 全体集計（常に末尾1行）
 
 ### statusフィールドの意味
 
