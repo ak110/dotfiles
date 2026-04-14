@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from pytools import _update_claude_settings as mod
-from pytools._update_claude_settings import update_claude_settings
+from pytools._update_claude_settings import _diff_lines, _list_diff_summary, _value_summary, update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
@@ -268,6 +268,130 @@ class TestMergeRecursive:
         assert len(pretooluse) == 2
         assert pretooluse[0] == hook_entry
         assert pretooluse[1]["matcher"] == "Bash"
+
+
+class TestValueSummary:
+    """_value_summary のテスト。"""
+
+    def test_string(self):
+        assert _value_summary("hello") == '"hello"'
+
+    def test_number(self):
+        assert _value_summary(42) == "42"
+
+    def test_bool(self):
+        assert _value_summary(True) == "true"
+
+    def test_none(self):
+        assert _value_summary(None) == "null"
+
+    def test_dict(self):
+        assert _value_summary({"a": 1, "b": 2}) == "{...} (2 keys)"
+
+    def test_list(self):
+        assert _value_summary([1, 2, 3]) == "[...] (3 件)"
+
+    def test_long_string_is_truncated(self):
+        long_str = "x" * 100
+        result = _value_summary(long_str)
+        assert len(result) < 100
+        assert result.endswith("...")
+
+    def test_short_string_is_not_truncated(self):
+        short_str = "x" * 10
+        result = _value_summary(short_str)
+        assert not result.endswith("...")
+
+
+class TestListDiffSummary:
+    """_list_diff_summary のテスト。"""
+
+    def test_same_count(self):
+        result = _list_diff_summary(["a", "b"], ["a", "c"])
+        assert result.startswith("2 → 2 件")
+        assert '+"c"' in result
+        assert '-"b"' in result
+
+    def test_item_added(self):
+        result = _list_diff_summary(["a", "b"], ["a", "b", "c"])
+        assert result.startswith("2 → 3 件")
+        assert '+"c"' in result
+
+    def test_item_removed(self):
+        result = _list_diff_summary(["a", "b", "c"], ["a", "b"])
+        assert result.startswith("3 → 2 件")
+        assert '-"c"' in result
+
+    def test_many_added_no_inline(self):
+        before = ["a"]
+        after = ["a", "b", "c", "d", "e"]
+        result = _list_diff_summary(before, after)
+        assert result == "1 → 5 件"  # 差分4件で _MAX_INLINE_DIFF=3 超えるため件数のみ
+
+    def test_dict_list_no_inline(self):
+        """dict を含むリストは件数のみ表示する。"""
+        before = [{"x": 1}]
+        after = [{"x": 1}, {"x": 2}]
+        result = _list_diff_summary(before, after)
+        assert result == "1 → 2 件"
+        assert "+" not in result
+
+    def test_no_change(self):
+        result = _list_diff_summary(["a", "b"], ["b", "a"])
+        # 順序変化のみ（set差分なし）は件数のみ
+        assert result == "2 → 2 件"
+
+
+class TestDiffLines:
+    """_diff_lines のテスト。"""
+
+    def test_scalar_changed(self):
+        lines = _diff_lines({"lang": "english"}, {"lang": "japanese"})
+        assert len(lines) == 1
+        assert 'lang: "english" → "japanese"' in lines[0]
+
+    def test_key_added(self):
+        lines = _diff_lines({}, {"lang": "japanese"})
+        assert len(lines) == 1
+        assert "lang: (新規)" in lines[0]
+
+    def test_key_removed(self):
+        lines = _diff_lines({"lang": "english"}, {})
+        assert len(lines) == 1
+        assert "lang:" in lines[0]
+        assert "→ (削除)" in lines[0]
+
+    def test_no_diff_returns_empty(self):
+        assert not _diff_lines({"a": 1}, {"a": 1})
+
+    def test_dict_recursive(self):
+        before = {"permissions": {"allow": ["Bash"], "defaultMode": "plan"}}
+        after = {"permissions": {"allow": ["Bash"], "defaultMode": "auto"}}
+        lines = _diff_lines(before, after)
+        assert len(lines) == 1
+        assert "permissions.defaultMode" in lines[0]
+        assert '"plan" → "auto"' in lines[0]
+
+    def test_list_shows_summary(self):
+        before = {"items": ["a", "b"]}
+        after = {"items": ["a", "b", "c"]}
+        lines = _diff_lines(before, after)
+        assert len(lines) == 1
+        assert "items:" in lines[0]
+        assert "2 → 3 件" in lines[0]
+
+    def test_indent_prefix(self):
+        """差分行は6スペースインデント。"""
+        lines = _diff_lines({"x": 1}, {"x": 2})
+        assert lines[0].startswith("      ")
+
+    def test_sorted_keys(self):
+        """キーはアルファベット順に出力される。"""
+        before: dict = {}
+        after = {"z": 1, "a": 2, "m": 3}
+        lines = _diff_lines(before, after)
+        keys = [line.split(":")[0].strip() for line in lines]
+        assert keys == ["a", "m", "z"]
 
 
 class TestStripRemovedHooks:

@@ -110,7 +110,70 @@ def update_claude_settings(
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     logger.info(_log_format.format_status(short, "更新しました"))
+    for line in _diff_lines(original, data):
+        logger.info(line)
     return True
+
+
+def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
+    """2つの dict の差分を人間が読める行リストにして返す。
+
+    dict は再帰的に差分を取り、list は件数差のサマリーを表示する。
+    差分行は6スペースのインデントを持ち、basicConfig の2スペースと合わせて合計8スペースになる。
+    """
+    lines = []
+    for key in sorted(set(before) | set(after)):
+        full_path = f"{path}.{key}" if path else key
+        b_exists = key in before
+        a_exists = key in after
+        bv = before.get(key)
+        av = after.get(key)
+        if not b_exists:
+            lines.append(f"      {full_path}: (新規) {_value_summary(av)}")
+        elif not a_exists:
+            lines.append(f"      {full_path}: {_value_summary(bv)} → (削除)")
+        elif bv != av:
+            if isinstance(bv, dict) and isinstance(av, dict):
+                lines.extend(_diff_lines(bv, av, path=full_path))
+            elif isinstance(bv, list) and isinstance(av, list):
+                lines.append(f"      {full_path}: {_list_diff_summary(bv, av)}")
+            else:
+                lines.append(f"      {full_path}: {_value_summary(bv)} → {_value_summary(av)}")
+    return lines
+
+
+_MAX_VALUE_LEN = 60
+_MAX_INLINE_DIFF = 3
+
+
+def _list_diff_summary(before: list, after: list) -> str:
+    """リストの件数差と追加・削除アイテムを文字列化する。
+
+    全要素が文字列かつ差分が _MAX_INLINE_DIFF 件以下の場合のみ内容を表示し、それ以外は件数のみ。
+    """
+    summary = f"{len(before)} → {len(after)} 件"
+    if all(isinstance(x, str) for x in before + after):
+        b_set, a_set = set(before), set(after)
+        added = [x for x in after if x not in b_set]
+        removed = [x for x in before if x not in a_set]
+        parts = []
+        if 0 < len(added) <= _MAX_INLINE_DIFF:
+            parts.append("+" + ", ".join(json.dumps(x, ensure_ascii=False) for x in added))
+        if 0 < len(removed) <= _MAX_INLINE_DIFF:
+            parts.append("-" + ", ".join(json.dumps(x, ensure_ascii=False) for x in removed))
+        if parts:
+            summary += " " + " ".join(parts)
+    return summary
+
+
+def _value_summary(value: object) -> str:
+    """値を短い文字列に変換する。dict/list はサマリー、その他は JSON 文字列（60文字上限）。"""
+    if isinstance(value, dict):
+        return f"{{...}} ({len(value)} keys)"
+    if isinstance(value, list):
+        return f"[...] ({len(value)} 件)"
+    s = json.dumps(value, ensure_ascii=False)
+    return s[:_MAX_VALUE_LEN] + "..." if len(s) > _MAX_VALUE_LEN else s
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
