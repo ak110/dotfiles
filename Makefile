@@ -41,8 +41,7 @@ setup-pwsh:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
-	-uv run pyfltr fix
-	uv run pre-commit run --all-files || uv run pre-commit run --all-files
+	uv run pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
