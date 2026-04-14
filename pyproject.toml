@@ -45,6 +45,7 @@ psgrep = "pytools.psgrep:_main"
 reg-export = "pytools.reg_export:_main"
 run-as-admin = "pytools.run_as_admin:_main"
 repack-archive = "pytools.repack_archive:_main"
+claude-commit = "pytools.claude_commit:_main"
 
 [build-system]
 requires = ["hatchling"]

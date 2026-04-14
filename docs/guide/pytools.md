@@ -5,6 +5,7 @@
 
 ## コマンド一覧
 
+- `claude-commit` — claudeでコミットメッセージを生成してgit commitを実行
 - `claudize` — Claude Code設定ファイルの配布・同期
 - `py-imageconverter` — 画像変換（リサイズ、フォーマット変換、メタデータ削除）
 - `py-rename` — 正規表現でファイルリネーム
