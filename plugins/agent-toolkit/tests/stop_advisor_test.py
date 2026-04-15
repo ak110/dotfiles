@@ -428,6 +428,92 @@ class TestQuestionSuppressesUncommittedBlock:
         assert decision["decision"] == "block"
         assert "uncommitted" in decision.get("reason", "").lower()
 
+    def test_split_entry_question_suppresses_block(self, tmp_path: pathlib.Path):
+        """同一 message.id のエントリが分割された場合、前のエントリの質問テキストを検出する。
+
+        テキストエントリの後にツール呼び出しのみのエントリが来る場合（競合状態:
+        ツールエントリが最後に flush された状態でフックが発火）、
+        前のエントリの質問テキストを確認してブロックを抑制する。
+        """
+        repo = self._make_dirty_repo(tmp_path)
+        msg_id = "msg_test_split123"
+        lines = [
+            json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": msg_id,
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "コミットしますか？"}],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": msg_id,
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "id": "x", "name": "Bash", "input": {}}],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        result = _run(
+            {"session_id": "split-entry", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_different_turn_tool_use_does_not_suppress_block(self, tmp_path: pathlib.Path):
+        """前のターンに質問があっても、最新ターンが質問でなければブロックする。
+
+        異なる message.id を持つエントリは別ターンとして扱い、
+        ユーザー応答を挟んだ後のツール呼び出しのみのエントリではブロックを通過させる。
+        """
+        repo = self._make_dirty_repo(tmp_path)
+        lines = [
+            json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg_old_turn",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "コミットしますか？"}],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps({"type": "user", "message": {"role": "user", "content": "はい"}}),
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "msg_new_turn",
+                        "role": "assistant",
+                        "content": [{"type": "tool_use", "id": "y", "name": "Bash", "input": {}}],
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        ]
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        result = _run(
+            {"session_id": "diff-turn", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        assert "uncommitted" in decision.get("reason", "").lower()
+
 
 class TestGitStatusDisplay:
     """approve 時の git status 表示。"""

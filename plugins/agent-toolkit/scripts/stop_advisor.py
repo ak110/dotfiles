@@ -136,6 +136,10 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
     - AskUserQuestion ツール呼び出しが含まれている
     - テキストが ? または ？ で終わっている
 
+    同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
+    される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
+    競合状態（hook 発火時点で transcript が未 flush）に対処する。
+
     未コミット変更ブロックの false positive を防ぐための判定。
     transcript 読み取りに失敗した場合は False を返す（安全側）。
     """
@@ -143,15 +147,33 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
         return False
+    first_msg_id: str | None = None
+    checked_count = 0
+    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
     for line in reversed(lines):
         try:
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            if first_msg_id is not None:
+                # 別エントリが間に挟まった → 同一ターンの探索終了
+                saw_non_assistant = True
             continue
+        if saw_non_assistant:
+            # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
+            return False
         message = entry.get("message")
         if not isinstance(message, dict):
+            return False
+        msg_id = message.get("id", "")
+        if first_msg_id is None:
+            first_msg_id = msg_id
+        elif msg_id and first_msg_id and msg_id != first_msg_id:
+            # message.id が両方設定されており異なる → 別ターン
+            return False
+        checked_count += 1
+        if checked_count > 3:
             return False
         content = message.get("content")
         if not isinstance(content, list):
@@ -168,7 +190,7 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
                     last_text = text.strip()
         if last_text is not None:
             return last_text.endswith("?") or last_text.endswith("？")
-        return False
+        # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
     return False
 
 
@@ -271,9 +293,9 @@ def _main() -> int:
                 _write_state(state_file, state)
                 _block(
                     "[agent-toolkit] uncommitted changes detected."
-                    " Please commit your work before ending the session."
-                    " If CLAUDE.md or project instructions say otherwise,"
-                    " you may explain and proceed."
+                    " Ask the user whether to commit the changes, or explain"
+                    " why they should not be committed."
+                    " Do not commit without user confirmation."
                 )
                 return 0
             # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
