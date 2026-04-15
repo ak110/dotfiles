@@ -10,8 +10,8 @@
     {
       "name": "agent-toolkit",
       "source": "./plugins/agent-toolkit",
-      "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。テスト未実行でのgit commitを警告し、git logに--decorateを自動付与し、codex exec前に未決事項を確認する。セッション終了時にユーザー修正やcodexレビュー不合格が多い場合にCLAUDE.md更新を提案する。同梱スキル: コード・テストコードの追加・修正・レビュー時に呼び出すコーディング品質とテスト方針のベース指示coding-standards（言語別の詳細はreferencesでprogressive disclosure）。plan mode・計画ファイル作成・codexレビュー運用を統合したplan-mode。バグ・障害・イシュー対応の4ステップ手順bugfix。CLAUDE.md/rules/skills/hooks編集時のメタガイドclaude-meta-rules。複数の未プッシュコミットを安全にsquash/reorder/メッセージ書き直しするtidy-unpushed-commits（amend/fixupで済む軽量ケースは自動判別して早期離脱）。pyfltrの使い方・JSONL出力解釈・サブコマンドの使い分けを参照できるpyfltr-usage。pytilpackのモジュール構成・使い方・APIドキュメント参照方法のリファレンスとなるpytilpack-usage。",
-      "version": "0.13.2",
+      "description": "Write/Edit/MultiEditのPreToolUseガードレール: 文字化け・PS1のLF改行・ロックファイルやシークレットの編集をブロックし、マニフェスト手編集や$HOME混入を警告する。テスト未実行でのgit commitを警告し、git logに--decorateを自動付与し、codex exec前に未決事項を確認する。セッション終了時にユーザー修正やcodexレビュー不合格が多い場合にCLAUDE.md更新を提案する。同梱スキル: コード・テストコードの追加・修正・レビュー時に呼び出すコーディング品質とテスト方針のベース指示coding-standards（言語別の詳細はreferencesでprogressive disclosure）。plan mode・計画ファイル作成・codexレビュー運用を統合したplan-mode。バグ・障害・イシュー対応の4ステップ手順bugfix。CLAUDE.md/rules/skills/hooks編集時のメタガイドclaude-meta-rules。複数の未プッシュコミットを安全にsquash/reorder/メッセージ書き直しするtidy-unpushed-commits（amend/fixupで済む軽量ケースは自動判別して早期離脱）。pyfltrの使い方・JSONL出力解釈・サブコマンドの使い分けを参照できるpyfltr-usage。pytilpackのモジュール構成・使い方・APIドキュメント参照方法のリファレンスとなるpytilpack-usage。`.gitlab-ci.yml`編集時のキーワード仕様・典型パターン・lint手段・トラブルシューティング観点の参照導線となるgitlab-ci-usage。",
+      "version": "0.14.0",
       "category": "safety",
       "keywords": [
         "hooks",
