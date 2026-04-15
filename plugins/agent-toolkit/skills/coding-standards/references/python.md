@@ -1,9 +1,6 @@
----
-paths:
-  - "**/*.py"
----
-
 # Python記述スタイル
+
+## 言語スタイル
 
 - importについて
   - 可能な限り`import xxx`形式で書く (`from xxx import yyy` ではなく)（定義元を特定しやすく、名前衝突も避けられるため）
@@ -60,3 +57,27 @@ paths:
   - Python 3.14+: PEP 750テンプレート文字列 (`t"..."`) は構造を保持した `Template` を返す
     - f-stringと異なり生成済み文字列ではないため、対応レンダラと組み合わせたSQL / HTML生成で使う
     - `t"..."` 自体は注入対策にならない。安全性は後段のレンダラやAPI側に依存する
+
+## テストコード（pytest）
+
+- テストコードは`pytest`で書く
+- 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使用する
+- テスト関数内で使用しないfixture（副作用のみが必要な場合）は
+  `@pytest.mark.usefixtures("fixture_name")` を使用する
+  - `@pytest.mark.parametrize(..., indirect=True)` との併用も可
+  - デコレーター順序（外側から内側）:
+    `parametrize` → `asyncio` → `usefixtures`
+
+### Fixture のコーディングルール
+
+- 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
+- scope: 可能な限り広いスコープ（session → package → module → function）
+- autouse: モジュール単位は積極的に使用、package/session単位は副作用に注意
+- 型ヒント: 必須、複数値返す場合は型エイリアスを定義
+
+### 非同期テスト
+
+- `pytest-asyncio` を使用する
+  - `asyncio_mode = "strict"` を推奨（マーカーの付け忘れを検出できる）
+  - テスト関数には `@pytest.mark.asyncio` を明示する
+  - 非同期fixtureには `@pytest_asyncio.fixture` を使用する（`@pytest.fixture` + `async def` では動作しない）

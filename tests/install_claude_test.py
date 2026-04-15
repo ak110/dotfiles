@@ -75,21 +75,15 @@ class TestInstallClaude:
         home = tmp_path / "home"
         home.mkdir()
 
-        # 1回目: 追加
+        # 1回目: 追加（rules 側の配布対象は agent.md と markdown.md のみ。
+        # その他の規約は agent-toolkit プラグインのスキル側に移行済み）
         result = _run(kind, home, rules_url)
         rules_dir = home / ".claude" / "rules" / "agent-basics"
-        for name in [
-            "agent.md",
-            "claude.md",
-            "claude-rules.md",
-            "claude-skills.md",
-            "markdown.md",
-            "python.md",
-            "python-test.md",
-            "typescript.md",
-            "typescript-test.md",
-        ]:
+        for name in ["agent.md", "markdown.md"]:
             assert (rules_dir / name).exists(), f"{name} が配置されていない"
+        # 移行済みの旧ルールは配布されないこと
+        for name in ["python.md", "claude.md", "claude-rules.md", "typescript.md"]:
+            assert not (rules_dir / name).exists(), f"{name} が配布されている（移行済みのはず）"
         assert "追加" in result.stdout
 
         # 2回目: 変更なし
@@ -117,7 +111,7 @@ class TestInstallClaude:
         home.mkdir()
         rules_dir = home / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
-        target = rules_dir / "python.md"
+        target = rules_dir / "markdown.md"
         target.write_text(
             '---\npaths:\n  - "custom/path"\n---\n# 古い body\n',
             encoding="utf-8",
@@ -127,10 +121,9 @@ class TestInstallClaude:
 
         result = target.read_text(encoding="utf-8")
         assert '"custom/path"' in result, "カスタム frontmatter が維持されていない"
-        assert '"**/*.py"' not in result, "テンプレートの frontmatter が書き込まれている"
         assert "# 古い body" not in result, "body が更新されていない"
         # テンプレートの body が入っている
-        template_body = (RULES_SRC / "python.md").read_text(encoding="utf-8")
+        template_body = (RULES_SRC / "markdown.md").read_text(encoding="utf-8")
         # テンプレート body の特徴的な行
-        assert "# Python記述スタイル" in template_body
-        assert "# Python記述スタイル" in result
+        assert "# Markdown記述スタイル" in template_body
+        assert "# Markdown記述スタイル" in result

@@ -48,19 +48,11 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
         text=True,
     )
 
-    # 4. ルールファイルがデプロイされていること
+    # 4. ルールファイルがデプロイされていること。
+    # rules 側の配布対象は agent.md と markdown.md のみ。
+    # その他の規約は agent-toolkit プラグインのスキル側へ移行済み。
     rules_dir = fake_home / ".claude" / "rules" / "agent-basics"
-    for name in [
-        "agent.md",
-        "claude.md",
-        "claude-rules.md",
-        "claude-skills.md",
-        "markdown.md",
-        "python.md",
-        "python-test.md",
-        "typescript.md",
-        "typescript-test.md",
-    ]:
+    for name in ["agent.md", "markdown.md"]:
         assert (rules_dir / name).exists(), f"{name} が chezmoi でデプロイされていない"
 
 

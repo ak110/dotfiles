@@ -1,14 +1,3 @@
----
-paths:
-  - "**/.claude/**"
-  - "**/dot_claude/**"
-  - "**/plugins/**/hooks/**"
-  - "**/plugins/**/scripts/*.py"
-  - "**/plugins/**/skills/**"
-  - "**/CLAUDE.md"
-  - "**/CLAUDE.local.md"
----
-
 # CLAUDE.md / ルール / スキル 記述ガイドライン
 
 CLAUDE.md・ルール・スキルはLLMのコンテキストへ直接投入される。

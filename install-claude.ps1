@@ -17,21 +17,7 @@ $targetDir = Join-Path $HOME '.claude/rules/agent-basics'
 # 配布対象ファイル一覧 (pytools/claudize.py の _UNCONDITIONAL_RULES / _CONDITIONAL_RULES と一致させること)
 $files = @(
     'agent.md',
-    'claude.md',
-    'claude-hooks.md',
-    'claude-rules.md',
-    'claude-skills.md',
-    'markdown.md',
-    'python.md',
-    'python-test.md',
-    'typescript.md',
-    'typescript-test.md',
-    'rust.md',
-    'rust-test.md',
-    'csharp.md',
-    'csharp-test.md',
-    'powershell.md',
-    'windows-batch.md'
+    'markdown.md'
 )
 
 $script:backupDir = $null
@@ -122,8 +108,52 @@ function Invoke-ProcessFile {
     }
 }
 
-# リネームされた旧ファイル一覧（新ファイル配布後に削除する）
-$obsoleteFiles = @('rules.md', 'skills.md')
+# 配布対象外になった旧ファイル一覧（新ファイル配布後に削除する）
+# agent-toolkit プラグインの各スキル (coding-standards / plan-mode / bugfix / claude-meta-rules) に
+# 移行されたもの。旧レイアウト時代の rules.md / skills.md もそのまま残す。
+$obsoleteFiles = @(
+    'rules.md',
+    'skills.md',
+    'python.md',
+    'python-test.md',
+    'typescript.md',
+    'typescript-test.md',
+    'rust.md',
+    'rust-test.md',
+    'csharp.md',
+    'csharp-test.md',
+    'powershell.md',
+    'windows-batch.md',
+    'claude.md',
+    'claude-hooks.md',
+    'claude-rules.md',
+    'claude-skills.md'
+)
+
+# agent-toolkit プラグインを user scope でインストールする。
+# 旧ルールファイルに含まれていた言語別規約・計画モード手順・バグ対応手順・
+# Claude設定記述ガイドはすべて agent-toolkit プラグインのスキルへ移行されているため、
+# ルール配布と合わせてプラグインの導入を促す。
+function Install-AgentToolkitPlugin {
+    $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
+    if (-not $claudeCmd) {
+        Write-Output ''
+        Write-Output 'agent-toolkit プラグインは未導入です (claude CLI 未検出)。'
+        Write-Output '主要ルールは agent-toolkit プラグインのスキルへ移行済みのため、'
+        Write-Output 'claude CLI 導入後に次のコマンドでインストールすることを推奨します:'
+        Write-Output '  claude plugin marketplace add ak110/dotfiles'
+        Write-Output '  claude plugin install agent-toolkit@ak110-dotfiles --scope user'
+        return
+    }
+    Write-Output ''
+    Write-Output 'agent-toolkit プラグインを user scope にインストールします...'
+    # 既に登録/インストール済みでも問題ないため、失敗しても続行する
+    try { & claude plugin marketplace add ak110/dotfiles --scope user 2>&1 | Out-Null }
+    catch { Write-Output "marketplace add をスキップ: $_" }
+    try { & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope user 2>&1 | Out-Null }
+    catch { Write-Output "plugin install をスキップ: $_" }
+    Write-Output 'agent-toolkit プラグインの導入を試行しました (既に導入済みならスキップされます)。'
+}
 
 # Main
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -141,3 +171,4 @@ foreach ($name in $obsoleteFiles) {
 if ($script:backupDir) {
     Write-Output "バックアップ先: $script:backupDir"
 }
+Install-AgentToolkitPlugin

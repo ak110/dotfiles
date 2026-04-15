@@ -55,6 +55,8 @@ class TestTestExecution:
             "make test",
             "pyfltr run --output-format=jsonl",
             "uv run pyfltr ci",
+            "uv run pyfltr fast",
+            "uv run  pyfltr run-for-agent",
             "npm test",
             "pnpm test",
             "pnpm run test",

@@ -11,7 +11,8 @@
 5. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
 6. mise セットアップ (_setup_mise.run)
 7. Claude Code plugin の自動インストール (_install_claude_plugins.run)
-8. Windows 向け libarchive.dll の自動インストール (_install_libarchive_windows.run)
+8. codex MCP サーバーの自動登録 (_install_codex_mcp.run)
+9. Windows 向け libarchive.dll の自動インストール (_install_libarchive_windows.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -26,6 +27,7 @@ from pathlib import Path
 from pytools import (
     _cleanup_paths,
     _install_claude_plugins,
+    _install_codex_mcp,
     _install_libarchive_windows,
     _log_format,
     _setup_mise,
@@ -48,6 +50,22 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # リネーム: rules.md → claude-rules.md, skills.md → claude-skills.md
         Path("rules/agent-basics/rules.md"),
         Path("rules/agent-basics/skills.md"),
+        # agent-toolkit プラグインの各スキル (coding-standards / plan-mode / bugfix /
+        # claude-meta-rules) へ移行したため、旧ルールファイルを destination 側から除去する
+        Path("rules/agent-basics/python.md"),
+        Path("rules/agent-basics/python-test.md"),
+        Path("rules/agent-basics/typescript.md"),
+        Path("rules/agent-basics/typescript-test.md"),
+        Path("rules/agent-basics/rust.md"),
+        Path("rules/agent-basics/rust-test.md"),
+        Path("rules/agent-basics/csharp.md"),
+        Path("rules/agent-basics/csharp-test.md"),
+        Path("rules/agent-basics/powershell.md"),
+        Path("rules/agent-basics/windows-batch.md"),
+        Path("rules/agent-basics/claude.md"),
+        Path("rules/agent-basics/claude-hooks.md"),
+        Path("rules/agent-basics/claude-rules.md"),
+        Path("rules/agent-basics/claude-skills.md"),
     ],
     Path.home() / "bin": [
         # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない
@@ -90,6 +108,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
     ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
     ("mise セットアップ", _setup_mise.run),
     ("Claude Code plugin のインストール", _install_claude_plugins.run),
+    ("codex MCP サーバーの登録", _install_codex_mcp.run),
     ("libarchive (Windows)", _install_libarchive_windows.run),
 ]
 

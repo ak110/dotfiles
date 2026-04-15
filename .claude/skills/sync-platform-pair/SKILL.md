@@ -69,5 +69,5 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）
-5. `uv run pyfltr run --output-format=jsonl` がgreenであることを確認する
+5. `uv run  pyfltr run-for-agent` がgreenであることを確認する
 6. コミット メッセージにペアを両方記載する

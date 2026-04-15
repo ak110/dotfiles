@@ -43,17 +43,11 @@ dotfiles管理側の情報（配布方式・インストール手順など）は
 
 `~/.claude/rules/agent-basics/` 配下に以下のファイルが配置される。
 
-- `agent.md`: 自動化すべき部分とユーザー確認すべき部分のバランス調整、コード品質の維持のためのルール（無条件ロード）
-- `{言語}.md`: 言語固有のコーディング規約（`paths` frontmatterで該当言語ファイル編集時のみロード）
-- `{言語}-test.md`: 言語固有のテスト方針（同上）
+- `agent.md`: 基本原則・運用方針・記述スタイル・検証/コミットの流れなど、全セッションで必要な共通指示（無条件ロード）
 - `markdown.md`: Markdown記述スタイル（`.md` / `.mdx` 編集時のみロード）
-- `claude.md`: CLAUDE.md・ルール・スキルの記述ガイドライン（`.claude/` 配下やCLAUDE.md編集時のみロード）
-- `claude-hooks.md`: Claude Code Hookの出力フィールドガイドライン（`.claude/hooks/`やプラグインスクリプト編集時のみロード）
-- `claude-rules.md`: Claude Codeのrules機能仕様を参照するメタルール（`.claude/rules/` 編集時のみロード）
-- `claude-skills.md`: Claude Codeのskills機能仕様を参照するメタルール（`.claude/skills/` 編集時のみロード）
 
-`agent.md` 以外は `paths` frontmatterで該当拡張子のファイルを読んだときのみロードされる。
-セッション開始時のコンテキスト消費を抑えるための仕組みであり、プロジェクト単位の厳密な分離ではない (たとえばPythonファイルを編集すれば `python.md` はロードされる)。
+言語別コーディング規約・テスト方針、計画モード、バグ対応、Claude Code設定ファイル記述ガイドなど場面特化型の指示は `agent-toolkit` プラグインのスキルへ集約済み。
+必要な場面でClaudeが自動呼び出しする構成のため、常時コンテキスト消費を抑えられる。
 
 `CLAUDE.md` はプロジェクト固有の情報を記述するファイルとして、配布の管理対象外。
 プロジェクトごとに手動で管理する (`/init` コマンドなどを活用するのも手)。
@@ -109,8 +103,19 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 
 ### プラグインのインストール
 
-プラグインは原則project scopeで各プロジェクトに導入する。
-プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
+プラグインは原則user scopeで導入する。全プロジェクトで共通に有効化され、プロジェクトごとの設定追加が不要になる。
+dotfiles利用者は `update-dotfiles` / `chezmoi apply` の後処理でuser scopeに自動インストールされる。
+
+dotfilesを使わずに手動で導入する場合は以下のコマンドを実行する。
+
+```bash
+claude plugin marketplace add ak110/dotfiles
+claude plugin install agent-toolkit@ak110-dotfiles --scope user
+```
+
+ルール導入用の `install-claude.sh` / `install-claude.ps1` を利用した場合も、スクリプト内で `claude` CLIを検出できれば自動で同じインストールを試行する。
+
+project scopeで導入したい場合は、プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
 開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
 
 ```json
@@ -137,6 +142,18 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 2. `Marketplaces` タブで `ak110-dotfiles` を選択
 3. `Enable auto-update` を選択
 
+### codex MCPサーバーの推奨セットアップ
+
+`plan-mode` スキルはcodex MCPによる計画ファイルレビューを前提としている。
+以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
+
+```bash
+claude mcp add --scope=user codex codex mcp-server
+```
+
+dotfiles利用者は `update-dotfiles` / `chezmoi apply` の後処理で自動登録される（既登録時はスキップ）。
+codex CLI自体のセットアップは別途行うこと。
+
 ### プラグイン詳細
 
 #### agent-toolkit
@@ -158,6 +175,14 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 
 同梱スキルとして以下を持つ。
 
+- `coding-standards`: コード・テストコードの新規作成・修正・レビュー時に呼び出すコーディング品質とテスト方針のベース指示。
+  言語別の詳細（Python/TypeScript/Rust/C#/PowerShell/Windowsバッチ）は `references/<言語>.md` にprogressive disclosureで分割。
+  プロジェクト固有のCLAUDE.mdや`.claude/rules/`が優先で、本スキルはそれを補完するベースライン
+- `plan-mode`: plan mode開始時・複雑な指示受領時に呼び出す計画ファイル作成手順。
+  計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合
+- `bugfix`: バグ・障害・イシュー調査対応の4ステップ標準手順（根本原因特定・対策決定・類似箇所見直し・再発防止）
+- `claude-meta-rules`: CLAUDE.md・`.claude/rules/`・`.claude/skills/`・hooks系ファイル編集時に呼び出すメタガイド。
+  訓練データに無い新機能仕様の補完とコンテキスト汚染を避ける記述原則を集約
 - `tidy-unpushed-commits`: 複数の未プッシュコミットを慎重で再現性のある手順で整理する（squash・reorder・メッセージ書き直し）。
   退避refとツリー差分検証で最終ツリーの同一性を機械的に担保し、乱暴な`git reset`は使わない。
   直前コミットへのamendや特定コミットへのfixupで済む場合はagent.mdの軽量パターンに自動分岐する。

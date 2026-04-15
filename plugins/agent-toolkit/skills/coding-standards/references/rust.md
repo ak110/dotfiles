@@ -1,9 +1,6 @@
----
-paths:
-  - "**/*.rs"
----
-
 # Rust記述スタイル
+
+## 言語スタイル
 
 - editionは最新安定版（2024以降）を使う
 - 所有権/借用
@@ -54,7 +51,7 @@ paths:
   - MSRV（最小サポートバージョン）は `Cargo.toml` の `rust-version` に明記する
 - テスト（inline, 最低限）
   - 単体テストは対象モジュール末尾の `#[cfg(test)] mod tests { ... }` に配置する
-  - 統合テストはクレートルート直下の `tests/` に置く (詳細は `rust-test.md`)
+  - 統合テストはクレートルート直下の `tests/` に置く（後述の統合テスト節を参照）
   - アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使い、浮動小数点は `approx` クレート等で許容誤差付き比較
   - 非同期テストは `#[tokio::test]` を使う
   - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う（sleepループはflakyテストの主要因となるため）
@@ -73,3 +70,20 @@ paths:
   - Edition 2024 (Rust 1.85+): let chains (`if let Some(x) = foo && x > 0 { ... }`) でネストを削減する
   - Edition 2024（Rust 1.85+）: asyncクロージャ（`async || { ... }`）と `AsyncFn` 系トレイトを使う
     - 単純な非同期処理で `async-trait` クレートへの依存を削減できる
+
+## テストコード（統合テスト）
+
+クレート直下の `tests/` ディレクトリ配下に置く統合テスト向けの方針。
+inline単体テストは本ドキュメント冒頭の言語スタイル節を参照。
+
+- テストは標準の `#[test]` で書く
+- アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使う
+  - 浮動小数点の比較には `approx` クレート等の許容誤差付き比較を使う
+- `Result` を返すテスト関数で `?` によるエラー伝播を活用する (`fn xxx() -> anyhow::Result<()>`)
+- 非同期テストは `#[tokio::test]` を使う（通常の `#[test]` では `await` できない）
+- パラメーター化テストは `rstest` の `#[rstest]` + `#[case]` を使う
+- 時刻・乱数など非決定的な値はtraitで抽象化してテスト時に差し替える
+- ファイルシステムが絡むテストは `tempfile` クレートの一時ディレクトリを使う
+- プロパティベースの網羅検証が有効な場合は `proptest` を検討する
+- ベンチマークは `criterion` を使う（標準の `#[bench]` はnightly限定）
+- `cargo test` 全体の実行時間を常に意識し、遅いテストは `#[ignore]` で日常の実行から切り離す

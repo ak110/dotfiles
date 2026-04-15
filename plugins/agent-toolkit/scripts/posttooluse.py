@@ -40,7 +40,7 @@ import traceback
 _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
     re.compile(r"(?:^|[;&|]\s*)make\s+test\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?pyfltr\s+(?:run|ci)\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
     re.compile(r"(?:^|[;&|]\s*)(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
 )

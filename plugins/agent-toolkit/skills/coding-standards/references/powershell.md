@@ -1,11 +1,3 @@
----
-paths:
-  - "**/*.ps1"
-  - "**/*.psm1"
-  - "**/*.psd1"
-  - "**/*.ps1.tmpl"
----
-
 # PowerShell記述スタイル
 
 - Claude Codeツールの挙動と注意点

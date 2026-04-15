@@ -74,8 +74,8 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
-                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "project"},
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -108,8 +108,8 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "project"},
-                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "project"},
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "user"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -130,8 +130,8 @@ class TestRunFlow:
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
-        # --scope project が渡されていること
-        assert any("--scope" in c and "project" in c for c in update_calls)
+        # --scope user が渡されていること
+        assert any("--scope" in c and "user" in c for c in update_calls)
         # 最新である sample-plugin に対しては update を発行しない
         assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
         # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
@@ -163,9 +163,9 @@ class TestRunFlow:
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
-        # --scope project が渡されていること
+        # --scope user が渡されていること
         for ic in install_calls:
-            assert "--scope" in ic and "project" in ic
+            assert "--scope" in ic and "user" in ic
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
@@ -206,7 +206,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -290,18 +290,18 @@ class TestRunFlow:
 
         assert _install_claude_plugins.run() is False
 
-    def test_user_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch):
-        """user scope のエントリは install/update 判定に使われない。"""
+    def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch):
+        """project scope のエントリは install/update 判定に使われず、user scope へ移行される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
             if cmd[:3] == ["claude", "plugin", "list"]:
-                # agent-toolkit が user scope にのみ存在
+                # agent-toolkit が project scope にのみ存在
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -319,10 +319,10 @@ class TestRunFlow:
         monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
-        # user scope のエントリは無視され、project scope に新規 install される
+        # project scope のエントリは無視され、user scope に新規 install される
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
-        # user scope の清掃 (uninstall) が呼ばれること
+        # project scope の清掃 (uninstall) が呼ばれること
         uninstall_calls = [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in uninstall_calls)
 
@@ -368,27 +368,27 @@ class TestRunFlow:
 
 
 class TestExtractPluginVersionMap:
-    """`claude plugin list --json` のパース (project scope フィルタ付き)。"""
+    """`claude plugin list --json` のパース (user scope フィルタ付き)。"""
 
     @pytest.mark.parametrize(
         ("data", "expected"),
         [
-            # project scope のエントリのみ含まれる
+            # user scope のエントリのみ含まれる
             (
                 [
-                    {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "project"},
-                    {"id": "other@marketplace", "version": "1.2.3", "scope": "user"},
+                    {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "user"},
+                    {"id": "other@marketplace", "version": "1.2.3", "scope": "project"},
                 ],
                 {"agent-toolkit": "0.1.0"},
             ),
             # scope が存在しないエントリは後方互換で含まれる
             ([{"id": "a@x", "version": "1.0"}], {"a": "1.0"}),
             # version 欠落は空文字列扱い
-            ([{"id": "a@x", "scope": "project"}], {"a": ""}),
-            # user scope のみのエントリは除外される
-            ([{"id": "a@x", "version": "1.0", "scope": "user"}], {}),
+            ([{"id": "a@x", "scope": "user"}], {"a": ""}),
+            # project scope のみのエントリは除外される
+            ([{"id": "a@x", "version": "1.0", "scope": "project"}], {}),
             # dict with "plugins" key
-            ({"plugins": [{"name": "a", "version": "1", "scope": "project"}]}, {"a": "1"}),
+            ({"plugins": [{"name": "a", "version": "1", "scope": "user"}]}, {"a": "1"}),
             # flat dict (version 不明として空文字列)
             ({"a": {}, "b": {}}, {"a": "", "b": ""}),
             # empty

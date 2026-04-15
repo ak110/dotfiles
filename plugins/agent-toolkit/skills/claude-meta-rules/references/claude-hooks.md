@@ -1,11 +1,3 @@
----
-paths:
-  - "**/.claude/hooks/**"
-  - "**/dot_claude/hooks/**"
-  - "**/plugins/**/hooks/**"
-  - "**/plugins/**/scripts/*.py"
----
-
 # Claude Code Hook出力フィールドガイドライン
 
 ## フィールドの使い分け

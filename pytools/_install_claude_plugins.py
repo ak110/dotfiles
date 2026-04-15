@@ -21,16 +21,16 @@
   (ローカルパスを使うのは、オフライン環境でも動くため。GitHub 経由では
    ネットワーク依存になる)
 - deprecated plugin がインストール済み → 検出されたスコープごとにアンインストール
-- 管理対象 plugin が user scope に残存 → アンインストール (project scope 移行用)
-- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope project`
+- 管理対象 plugin が project scope に残存 → アンインストール (user scope 移行用)
+- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope user`
 - 対象 plugin がインストール済みで `marketplace.json` と version が乖離
   → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
-     `claude plugin update <name>@<marketplace> --scope project` で反映
+     `claude plugin update <name>@<marketplace> --scope user` で反映
   (version が一致していれば update コマンドは呼ばずスキップ)
 
-本スクリプトは dotfiles リポジトリの project scope でプラグインを管理する。
-他プロジェクトでは `.claude/settings.json` の `enabledPlugins` + `extraKnownMarketplaces`
-を設定することで、Claude Code がフォルダ trust 時にインストールを自動提案する。
+本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
+他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
+することを推奨する (詳細は docs/guide/claude-code-guide.md)。
 
 `update-dotfiles` 経由で本モジュールが実行されるたびに version 乖離が解消されるため、
 ユーザー環境では marketplace.json の version 更新が自動で反映される。
@@ -96,7 +96,7 @@ def run() -> bool:
         if _uninstall_deprecated(name, raw_data):
             any_change = True
 
-    # project scope のバージョン辞書を取得
+    # user scope のバージョン辞書を取得
     installed = _extract_plugin_version_map(raw_data)
 
     # 既にインストールされている対象 plugin が 1 つでもあるなら marketplace メタデータを
@@ -106,8 +106,8 @@ def run() -> bool:
         _refresh_marketplace()
 
     for name, target in target_versions.items():
-        # user scope に残存するエントリを除去 (project scope 移行用)
-        _cleanup_old_user_scope(name, raw_data)
+        # project scope に残存するエントリを除去 (user scope 移行用)
+        _cleanup_old_project_scope(name, raw_data)
 
         current = installed.get(name)
         if current is None:
@@ -159,10 +159,10 @@ def _get_installed_plugins_raw() -> object | None:
 
 
 def _extract_plugin_version_map(data: object) -> dict[str, str]:
-    """`claude plugin list --json` の戻り値から project scope の name → version 辞書を作る。
+    """`claude plugin list --json` の戻り値から user scope の name → version 辞書を作る。
 
-    本スクリプトは ``--scope project`` でインストールするため、
-    project scope のエントリのみを対象とする。``scope`` フィールドが存在しない
+    本スクリプトは ``--scope user`` でインストールするため、
+    user scope のエントリのみを対象とする。``scope`` フィールドが存在しない
     エントリは後方互換のため含める。
 
     実機で確認した形式 (Claude Code 2.x): list[dict] で各要素が以下を持つ。
@@ -191,8 +191,8 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
         for item in list_data:
             if isinstance(item, dict):
                 item_dict = cast("dict[object, object]", item)
-                # project scope 以外のエントリは管理対象外
-                if item_dict.get("scope") not in (None, "project"):
+                # user scope 以外のエントリは管理対象外
+                if item_dict.get("scope") not in (None, "user"):
                     continue
                 name = _name_from_entry(item_dict)
                 if name is not None:
@@ -258,14 +258,14 @@ def _is_installed(name: str, raw_data: object) -> bool:
     return False
 
 
-def _has_user_scope_entry(name: str, raw_data: object) -> bool:
-    """指定プラグインが user scope にインストール済みか判定する。"""
+def _has_project_scope_entry(name: str, raw_data: object) -> bool:
+    """指定プラグインが project scope にインストール済みか判定する。"""
     if not isinstance(raw_data, list):
         return False
     for item in cast("list[object]", raw_data):
         if isinstance(item, dict):
             entry = cast("dict[object, object]", item)
-            if _name_from_entry(entry) == name and entry.get("scope") == "user":
+            if _name_from_entry(entry) == name and entry.get("scope") == "project":
                 return True
     return False
 
@@ -283,17 +283,16 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     return False
 
 
-def _cleanup_old_user_scope(name: str, raw_data: object) -> None:
-    """管理対象プラグインの user scope エントリを除去する (project scope 移行用)。"""
-    if not _has_user_scope_entry(name, raw_data):
+def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
+    """管理対象プラグインの project scope エントリを除去する (user scope 移行用)。"""
+    if not _has_project_scope_entry(name, raw_data):
         return
-    # デフォルト scope が user のため --scope 不要
-    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}"])
+    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
     if result is not None and result.returncode == 0:
-        logger.info(_log_format.format_status(name, "user scope を除去しました (project scope へ移行)"))
+        logger.info(_log_format.format_status(name, "project scope を除去しました (user scope へ移行)"))
     else:
         stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status(name, f"user scope の除去に失敗 (続行): {stderr}"))
+        logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {stderr}"))
 
 
 def _ensure_marketplace(dotfiles_root: Path) -> bool:
@@ -335,7 +334,7 @@ def _marketplace_already_registered(data: object) -> bool:
 
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
+    result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(_log_format.format_status(name, f"install に失敗: {stderr}"))
@@ -360,7 +359,7 @@ def _refresh_marketplace() -> bool:
 
 def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
+    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(_log_format.format_status(name, f"update に失敗: {stderr}"))

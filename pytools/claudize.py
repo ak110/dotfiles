@@ -9,20 +9,28 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # 条件付き言語別ルール: (ルールファイル名, 判定に使う拡張子タプル)
-_CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("python.md", (".py",)),
-    ("python-test.md", (".py",)),
-    ("typescript.md", (".ts", ".tsx")),
-    ("typescript-test.md", (".ts", ".tsx")),
-    ("rust.md", (".rs",)),
-    ("rust-test.md", (".rs",)),
-    ("csharp.md", (".cs",)),
-    ("csharp-test.md", (".cs",)),
-    ("powershell.md", (".ps1", ".psm1", ".psd1")),
-    ("windows-batch.md", (".cmd", ".bat")),
-]
+# 言語別ルールは agent-toolkit プラグインの coding-standards スキルへ移行済み。
+# 条件付き配布は維持する仕組みのみ残し、現在の配布対象は空。
+_CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = []
 # 無条件で配布するルール
-_UNCONDITIONAL_RULES: list[str] = ["claude.md", "claude-hooks.md", "claude-rules.md", "claude-skills.md", "markdown.md"]
+_UNCONDITIONAL_RULES: list[str] = ["markdown.md"]
+# 配布対象外になった旧ルール（--clean 時および再配布時に既存インストール先から削除するため保持）
+_OBSOLETE_RULES: list[str] = [
+    "python.md",
+    "python-test.md",
+    "typescript.md",
+    "typescript-test.md",
+    "rust.md",
+    "rust-test.md",
+    "csharp.md",
+    "csharp-test.md",
+    "powershell.md",
+    "windows-batch.md",
+    "claude.md",
+    "claude-hooks.md",
+    "claude-rules.md",
+    "claude-skills.md",
+]
 
 # 走査時に降下しないディレクトリ (生成物・依存物など、プロジェクトが
 # その言語で書かれていることの指標にならないもの)。
@@ -88,7 +96,12 @@ def _clean_rules(rules_dir: Path) -> bool:
     if not rules_dir.exists():
         return False
     removed = False
-    targets = ["agent.md", *_UNCONDITIONAL_RULES, *(name for name, _ in _CONDITIONAL_RULES)]
+    targets = [
+        "agent.md",
+        *_UNCONDITIONAL_RULES,
+        *(name for name, _ in _CONDITIONAL_RULES),
+        *_OBSOLETE_RULES,
+    ]
     for name in targets:
         path = rules_dir / name
         if path.exists():
@@ -124,6 +137,13 @@ def _sync_rules(target_dir: Path, template_dir: Path, rules_dir: Path) -> None:
         dst = rules_dir / rule_name
         if dst.exists() or any(ext in found_exts for ext in exts):
             _sync_rule(dst, template_dir / rule_name)
+
+    # 配布対象外になった旧ルールを除去する (agent-toolkit プラグインへ移行済み)
+    for rule_name in _OBSOLETE_RULES:
+        path = rules_dir / rule_name
+        if path.exists():
+            path.unlink()
+            logger.info("削除（旧配布物）: %s", path)
 
 
 def _sync_rule(dst: Path, src: Path) -> None:
