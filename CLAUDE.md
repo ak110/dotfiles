@@ -1,40 +1,27 @@
-# カスタム指示（プロジェクト固有）
+# CLAUDE.md: dotfiles
 
-## プロジェクト概要
+本リポジトリはchezmoi管理のdotfilesリポジトリ。
+`.chezmoi-source/`配下を`~/.*`にデプロイする。
+多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
 
-chezmoi管理のdotfilesリポジトリ。`.chezmoi-source/`配下を`~/.*`にデプロイする。
-配布対象のルール・プラグインはClaude Code用の共有設定を兼ねる。
+## 主なディレクトリ
 
-## 開発手順
-
-- `make format`: 整形 + 軽量lint + 自動修正（開発時の手動実行用）
-- `make test`: 全チェック実行（これを通過すればコミット可能）
-- `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
-  - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-
-- ドキュメントのみの変更（`*.md`や`docs/**`の更新）をコミットする場合、事前の手動`make test`は省略してよい。
-  `git commit`時点で`pre-commit`の`pyfltr fast`フックが`markdownlint-fast`と`textlint-fast`を自動実行するため、Markdownの検証はそこで担保される
-- コードやテストに手を入れた変更では従来どおり`make test`を通してからコミットする
-
-## Claude Code向けコミット前検証
-
-Claude Codeがコミット前に検証する際は、`make test`の代わりに以下を実行する。JSON Lines出力によりLLMがツール別診断を効率的に解釈できる。
-
-```bash
-uv run pyfltr run --output-format=jsonl
-```
-
-人間の開発者は従来どおり`make test`を使用する。
-
-## ディレクトリ構造の要点
-
-- `.chezmoi-source/` — chezmoiソースディレクトリ（配布対象。`dot_` prefix → `~/.*`）
+- `.chezmoi-source/` — chezmoiソースディレクトリ（`dot_` prefix → `~/.*`に反映される）
 - `pytools/` — Pythonコマンドラインツール群（uv tool installでインストール）
 - `plugins/` — Claude Code用プラグイン（Marketplace経由で他人にも配布）
 - `scripts/` — リポジトリ開発専用スクリプト（pre-commit/Makefileから呼ばれる。配布対象外）
 - `.claude/` — dotfilesリポ自身のClaude Codeプロジェクト設定（配布対象外）
 
-## 重大な注意点
+## 開発手順
+
+- `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
+  - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
+- コミット前の検証方法: `uvx pyfltr run --output-format=jsonl | tail -30`
+  - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
+  - テストコードの単体実行なども極力 `uv run pyfltr --output-format=jsonl <path>` を使う（pytestを直接呼び出さない）
+    - 詳細な情報などが必要な場合に限り `uv run pyfltr -vv <path>` のようにする
+
+## 注意点
 
 - `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。指示の対象を必ず確認する。詳細は[docs/development/development.md](docs/development/development.md)の「ディレクトリ構造の注意」参照
 - ホーム配下のファイルを編集する前に`chezmoi managed | grep <相対パス>`で配布対象か確認する。配布対象は`.chezmoi-source/`側を編集する
@@ -49,7 +36,7 @@ uv run pyfltr run --output-format=jsonl
 
 ## 関連ドキュメント
 
-- @README.md
+- README.md（若干記述量が多いため必要時のみ読み込む）
 - @docs/index.md
 - @docs/guide/claude-code.md
 - @docs/guide/claude-code-guide.md

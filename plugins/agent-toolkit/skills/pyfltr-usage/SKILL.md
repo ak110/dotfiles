@@ -10,22 +10,25 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 
 ## サブコマンド
 
-| サブコマンド      | 用途                                   | fixステージ | formatterの変更で失敗するか | 主な使用場面                 |
-| ----------------- | -------------------------------------- | ----------- | --------------------------- | ---------------------------- |
-| `ci`（既定）      | 全チェック実行                         | なし        | する（exit 1）              | CI、pre-commit               |
-| `run`             | 全チェック実行                         | あり        | しない（exit 0）            | ローカル開発                 |
-| `fast`            | 軽量チェック（mypy/pylint/pytest除外） | あり        | しない（exit 0）            | pre-commitフック、手動整形   |
-| `generate-config` | 設定ファイル雛形を標準出力             | 対象外      | 対象外                      | 新規プロジェクト設定の初期化 |
+| サブコマンド | 用途 | fixステージ | formatterの変更で失敗するか | 主な使用場面 |
+| -- | -- | -- | -- | -- |
+| `ci`（既定） | 全チェック実行 | なし | する（exit 1） | CI、pre-commit |
+| `run` | 全チェック実行 | あり | しない（exit 0） | ローカル開発 |
+| `fast` | 軽量チェック（mypy/pylint/pytestなど重いものを除外） | あり | しない（exit 0） | pre-commitフック、手動整形 |
 
-`run`／`fast`は前段で自動fixステージを実行する（`ruff check --fix` → `ruff format` → `ruff check` のような2段階方式を一般化した仕組み）。抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
+`run`／`fast`は前段で自動fixステージを実行する（`ruff check --fix` → `ruff format` → `ruff check` のような2段階方式を一般化した仕組み）。
+抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
 
 ### pre-commit統合
 
-`pyfltr`は`pyproject.toml`の`[tool.pyfltr] pre-commit = true`で`pre-commit run --all-files`を内部から呼び出せる。v2.0以降は`pre-commit-fast`が既定`True`のため、`pyfltr fast`も統合対象となる。`pre-commit`配下から`pyfltr`が起動された場合は`PRE_COMMIT=1`環境変数の検出で二重実行を自動回避する。
+`pyfltr`は`pyproject.toml`の`[tool.pyfltr] pre-commit = true`で`pre-commit run --all-files`を内部から呼び出せる。
+v2.0以降は`pre-commit-fast`が既定`True`のため、`pyfltr fast`も統合対象となる。
+`pre-commit`配下から`pyfltr`が起動された場合は`PRE_COMMIT=1`環境変数の検出で二重実行を自動回避する。
 
 ## JSONL出力
 
-`--output-format=jsonl`を付けるとLLM向けの構造化出力が得られる。stdoutにJSONLのみを書き、テキストログは抑止される。
+`--output-format=jsonl`を付けるとLLM向けの構造化出力が得られる。
+stdoutにJSONLのみを書き、テキストログは抑止される。
 
 ### レコード種別
 
@@ -39,17 +42,17 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 ```
 
 - `diagnostic`: 個々の診断。`col`・`rule`・`severity`・`fix`は抽出できた場合のみ含まれる。`fix`は`safe`／`unsafe`のいずれか
-- `tool`: ツールごとの実行結果。`status == "failed"`かつ`diagnostics == 0`のときのみ`message`フィールドに出力末尾（30行／2000文字の短い方）が含まれる。`rc`は`skipped`では省略される
+- `tool`: ツールごとの実行結果。`status == "failed"`かつ`diagnostics == 0`のときのみ`message`フィールドに出力末尾が含まれる。`rc`は`skipped`では省略される
 - `summary`: 全体集計（常に末尾1行）
 
 ### statusフィールドの意味
 
-| status      | 意味                          | 対応                                                                       |
-| ----------- | ----------------------------- | -------------------------------------------------------------------------- |
-| `succeeded` | 問題なし                      | 不要                                                                       |
+| status | 意味 | 対応 |
+| -- | -- | -- |
+| `succeeded` | 問題なし | 不要 |
 | `formatted` | formatterがファイルを変更した | 基本的に再実行不要（formatter/linter間で設定矛盾がない限り変更は収束する） |
-| `failed`    | エラーあり                    | `diagnostic`行で修正対象のファイル・行番号・メッセージを確認する           |
-| `skipped`   | ツール未検出などでスキップ    | 通常は無視してよい                                                         |
+| `failed` | エラーあり | `diagnostic`行で修正対象のファイル・行番号・メッセージを確認する |
+| `skipped` | ツール未検出などでスキップ | 通常は無視してよい |
 
 ## 効率的なワークフロー
 
@@ -61,13 +64,13 @@ pyfltr run --output-format=jsonl | tail -30
 
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。`run`は前段で自動fixを適用するため、autofixで解消できる違反はここで消える。
 
-### 2. 問題のあるツールだけ再実行する
+### 2. 問題のあるツール/ファイルだけ再実行する
 
 ```bash
-pyfltr run --commands=mypy --output-format=jsonl | tail -30
+pyfltr run --commands=mypy --output-format=jsonl path/to/file | tail -30
 ```
 
-`--commands`で特定ツールに絞ることで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
+`--commands`で特定ツールに絞る/対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
 
 エラー内容がよくわからない場合は`--output-format=jsonl`を外して通常のテキスト出力で再実行し、ツールの通常出力を確認するのも有効。
 
@@ -83,23 +86,24 @@ pyfltr run --commands=mypy,ruff-check --output-format=jsonl
 
 - `format`: 全formatter（pyupgrade、autoflake、isort、black、ruff-format、prettier、cargo-fmt、dotnet-format等）
 - `lint`: 全linter（ruff-check、pflake8、mypy、pylint、pyright、ty、markdownlint、textlint等。Rust／dotnet系も含む）
-- `test`: 全tester（pytest、vitest、cargo-test、dotnet-test）
+- `test`: 全tester（pytest、vitest、cargo-test、dotnet-test等）
 - `fast`: fastサブコマンド対象のコマンド
 
 ## 主要なCLIオプション
 
-| オプション                        | 説明                                                         |
-| --------------------------------- | ------------------------------------------------------------ |
-| `--output-format=jsonl`           | LLM向け構造化出力                                            |
-| `--commands=<list>`               | 実行ツールをカンマ区切りで指定                               |
-| `--no-fix`                        | `run`／`fast`で自動付与されるfixステージを抑止               |
-| `--human-readable`                | ツールの構造化出力（JSON等）を無効化し元のテキスト出力を使う |
-| `--no-exclude` / `--no-gitignore` | ファイル除外設定を無効化                                     |
-| `-j N` / `--jobs N`               | linter/testerの最大並列数（既定: 4）                         |
+| オプション | 説明 |
+| -- | -- |
+| `--output-format=jsonl` | LLM向け構造化出力 |
+| `--commands=<list>` | 実行ツールをカンマ区切りで指定 |
+| `--no-fix` | `run`／`fast`で自動付与されるfixステージを抑止 |
+| `--human-readable` | ツールの構造化出力（JSON等）を無効化し元のテキスト出力を使う |
+| `--no-exclude` / `--no-gitignore` | ファイル除外設定を無効化 |
 
 ## 推奨設定への準拠
 
-新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。推奨例は`pyproject.toml`・pre-commitフック・タスクランナー（Makefile／mise.toml）・GitHub Actionsを一貫した構成で揃えており、複数プロジェクト間の差分を抑えて保守コストを下げる狙いがある。
+新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
+独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
+推奨例は`pyproject.toml`・pre-commitフック・タスクランナー（Makefile／mise.toml）・GitHub Actionsを一貫した構成で揃えており、複数プロジェクト間の差分を抑えて保守コストを下げる狙いがある。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
 - 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
@@ -108,7 +112,9 @@ pyfltr run --commands=mypy,ruff-check --output-format=jsonl
 
 ## 詳細情報
 
-pyfltrの設定リファレンス、カスタムコマンドの追加方法、pre-commit連携の設定例などの詳細情報が必要な場合は、`https://ak110.github.io/pyfltr/llms.txt`をWebFetchで取得する。llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含まれており、各ページへのリンクから必要なページだけ個別に取得する。主要なページは以下の構成。
+pyfltrの設定リファレンス、カスタムコマンドの追加方法、pre-commit連携の設定例などの詳細情報が必要な場合は、`https://ak110.github.io/pyfltr/llms.txt`をWebFetchで取得する。
+llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含まれており、各ページへのリンクから必要なページだけ個別に取得する。
+主要なページは以下の構成。
 
 - 設定（基本設定・プリセット・並列実行）: `guide/configuration/index.md`
 - ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）: `guide/configuration-tools/index.md`

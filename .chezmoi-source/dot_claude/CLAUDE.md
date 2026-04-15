@@ -133,18 +133,18 @@
 - サーバー側の上限定義: `path/to/server/config.py:34`
 - クライアント側の上限定義: `path/to/client/limits.ts:12`（サーバーと独立して保持されており不整合が発生しやすい）
 - リバースプロキシのbody size上限: `path/to/infra/nginx.conf:58` で20MB
-- 関連テスト: `tests/test_upload.py:40-78`
+- 関連テスト: `tests/upload_test.py:40-78`
 
 ## 変更内容
 
 - 修正: `path/to/server/config.py:34` の上限値を50MBへ変更
 - 削除: `path/to/client/limits.ts:12` の重複定義を撤去し、設定API経由で取得する形へ変更
 - 修正: `path/to/infra/nginx.conf:58` のbody size上限を50MBへ引き上げ
-- 修正: `tests/test_upload.py:40-78` の境界値ケースを更新
+- 修正: `tests/upload_test.py:40-78` の境界値ケースを更新
 
 ## 検証
 
-- `uv run pyfltr run --output-format=jsonl tests/test_upload.py | tail -30` で50MB付近の境界ケースが通過する
+- `uv run pyfltr run --output-format=jsonl tests/upload_test.py | tail -30` で50MB付近の境界ケースが通過する
 
 ## 変更履歴
 
@@ -152,5 +152,5 @@
     - 指摘: リバースプロキシのbody size上限が未考慮 → 対応: 調査結果と変更内容に反映
     - 指摘: 新旧の上限値を切り替えるfeature flagを用意すべき → 不対応: 切り戻しは設定値の差し替えで十分対応でき、feature flagを追加する運用複雑度の増加に見合う利点がないため
 2. ユーザー指示反映
-    - 検証手順を `uv run pyfltr run --output-format=jsonl tests/test_upload.py | tail -30` の実行に変更
+    - 検証手順を `uv run pyfltr run --output-format=jsonl tests/upload_test.py | tail -30` の実行に変更
 ````
