@@ -26,6 +26,28 @@ class TestBuildPrompt:
         assert "diff --git a/foo.py b/foo.py" in result
         assert "Conventional Commits形式" in result
 
+    def test_normal_commit_with_unstaged_and_untracked(self) -> None:
+        """未ステージ・未追跡の変更もプロンプトに含める。"""
+        result = _build_prompt(
+            git_root=Path("/tmp"),
+            format_instructions="Conventional Commits形式",
+            staged_stat="",
+            staged_diff="",
+            unstaged_stat="foo.py | 3 +++",
+            unstaged_diff="diff --git a/foo.py b/foo.py",
+            untracked_names=["new_file.py", "docs/new.md"],
+            amend=False,
+            head_message="",
+            head_diff="",
+            dry_run=False,
+        )
+        assert "未ステージの変更の概要" in result
+        assert "foo.py | 3 +++" in result
+        assert "未追跡ファイルの一覧" in result
+        assert "new_file.py" in result
+        assert "docs/new.md" in result
+        assert "git add" in result
+
     def test_amend(self) -> None:
         """amendコミット時のプロンプトを構築する。"""
         result = _build_prompt(
@@ -41,6 +63,20 @@ class TestBuildPrompt:
         assert "amend" in result
         assert "feat: 既存メッセージ" in result
         assert "diff --git a/bar.py b/bar.py" in result
+
+    def test_amend_message_only(self) -> None:
+        """amendで変更ゼロの場合はメッセージのみ書き直す旨を含む。"""
+        result = _build_prompt(
+            git_root=Path("/tmp"),
+            format_instructions="Conventional Commits形式",
+            staged_stat="",
+            staged_diff="",
+            amend=True,
+            head_message="feat: 既存メッセージ",
+            head_diff="diff --git a/bar.py b/bar.py",
+            dry_run=False,
+        )
+        assert "メッセージのみ" in result
 
     def test_dry_run(self) -> None:
         """dry_run時にコミットしない旨をプロンプトに含む。"""

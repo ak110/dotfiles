@@ -55,12 +55,13 @@ def _main() -> None:
 
     git_root = _get_git_root()
 
-    # ステージング確認（除外なし）
-    staged_names = _get_staged_names()
-    staged_stat = ""
+    staged_names = _get_names(scope="staged")
+    unstaged_names = _get_names(scope="unstaged")
+    untracked_names = _get_names(scope="untracked")
+    has_changes = bool(staged_names or unstaged_names or untracked_names)
+
     head_message = ""
     head_diff = ""
-
     if args.amend:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%B"],
@@ -69,20 +70,15 @@ def _main() -> None:
             check=True,
         )
         head_message = result.stdout.strip()
-        head_diff = _get_diff(staged_only=False)
-        if not staged_names and not head_diff:
-            logger.error("差分がありません。")
-            sys.exit(1)
-        if staged_names:
-            staged_stat = _get_staged_stat()
-    else:
-        if not staged_names:
-            logger.error("ステージング済みの変更がありません。")
-            sys.exit(1)
-        staged_stat = _get_staged_stat()
+        head_diff = _get_head_diff()
+    elif not has_changes:
+        logger.error("変更がありません。")
+        sys.exit(1)
 
-    # 詳細差分（lock系ファイルを除外）
-    staged_diff = _get_diff(staged_only=True) if staged_names else ""
+    staged_stat = _get_stat(scope="staged") if staged_names else ""
+    staged_diff = _get_diff(scope="staged") if staged_names else ""
+    unstaged_stat = _get_stat(scope="unstaged") if unstaged_names else ""
+    unstaged_diff = _get_diff(scope="unstaged") if unstaged_names else ""
 
     format_instructions = _get_format_instructions(git_root)
     prompt = _build_prompt(
@@ -90,6 +86,9 @@ def _main() -> None:
         format_instructions=format_instructions,
         staged_stat=staged_stat,
         staged_diff=staged_diff,
+        unstaged_stat=unstaged_stat,
+        unstaged_diff=unstaged_diff,
+        untracked_names=untracked_names,
         amend=args.amend,
         head_message=head_message,
         head_diff=head_diff,
@@ -139,33 +138,58 @@ def _get_format_instructions(git_root: Path | None = None) -> str:
     return _DEFAULT_FORMAT
 
 
-def _get_staged_names() -> list[str]:
-    """ステージング済みファイルの一覧を返す（除外なし）。"""
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+def _get_names(*, scope: str) -> list[str]:
+    """変更ファイル名一覧を返す（除外なし）。
+
+    Args:
+        scope: 'staged'（ステージ済み）／'unstaged'（未ステージ、追跡中）／'untracked'（未追跡）
+    """
+    if scope == "staged":
+        cmd = ["git", "diff", "--cached", "--name-only"]
+    elif scope == "unstaged":
+        cmd = ["git", "diff", "--name-only"]
+    elif scope == "untracked":
+        cmd = ["git", "ls-files", "--others", "--exclude-standard"]
+    else:
+        raise ValueError(f"unknown scope: {scope}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return [f for f in result.stdout.splitlines() if f]
 
 
-def _get_staged_stat() -> str:
-    """ステージング済み変更の概要を返す（除外なし）。"""
+def _get_stat(*, scope: str) -> str:
+    """変更概要を返す（除外なし）。scope: 'staged' | 'unstaged'"""
+    if scope == "staged":
+        cmd = ["git", "diff", "--cached", "--stat"]
+    elif scope == "unstaged":
+        cmd = ["git", "diff", "--stat"]
+    else:
+        raise ValueError(f"unknown scope: {scope}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return result.stdout
+
+
+def _get_diff(*, scope: str) -> str:
+    """詳細差分を返す（lock系ファイルは除外）。scope: 'staged' | 'unstaged'"""
+    exclude_args = [f":!{p}" for p in _EXCLUDE_PATTERNS]
+    if scope == "staged":
+        cmd = ["git", "diff", "--cached", "--", *exclude_args]
+    elif scope == "unstaged":
+        cmd = ["git", "diff", "--", *exclude_args]
+    else:
+        raise ValueError(f"unknown scope: {scope}")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return result.stdout
+
+
+def _get_head_diff() -> str:
+    """HEADのコミット差分を返す（lock系ファイルは除外）。"""
+    exclude_args = [f":!{p}" for p in _EXCLUDE_PATTERNS]
     result = subprocess.run(
-        ["git", "diff", "--cached", "--stat"],
+        ["git", "show", "HEAD", "--", *exclude_args],
         capture_output=True,
         text=True,
         check=True,
     )
-    return result.stdout
-
-
-def _get_diff(*, staged_only: bool) -> str:
-    """詳細差分を返す（lock系ファイルは除外）。"""
-    exclude_args = [f":!{p}" for p in _EXCLUDE_PATTERNS]
-    cmd = ["git", "diff", "--cached", "--", *exclude_args] if staged_only else ["git", "show", "HEAD", "--", *exclude_args]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return result.stdout
 
 
@@ -175,6 +199,9 @@ def _build_prompt(
     format_instructions: str,
     staged_stat: str,
     staged_diff: str,
+    unstaged_stat: str = "",
+    unstaged_diff: str = "",
+    untracked_names: list[str] | None = None,
     amend: bool,
     head_message: str,
     head_diff: str,
@@ -182,6 +209,7 @@ def _build_prompt(
     additional_prompt: str = "",
 ) -> str:
     """claudeへのプロンプトを構築する。"""
+    untracked_names = untracked_names or []
     lines: list[str] = []
 
     # 一時ディレクトリから起動するため、gitコマンドは git -C で操作する
@@ -189,31 +217,41 @@ def _build_prompt(
     lines.append("")
 
     if amend:
-        lines.append("以下の情報を元に、HEADのコミットをgit commit --amendで改訂してください。")
+        lines.append("HEADのコミットを `git commit --amend` で改訂してください。")
         lines.append("")
-        lines.append(f"# フォーマット\n{format_instructions}")
+        lines.append("ステージング済み・未ステージ・未追跡の変更が混在している可能性があります。")
+        lines.append("HEADのコミット内容と関連する変更のみを `git add` で追加してからamendしてください。")
+        lines.append("無関係な変更はそのまま残してください。")
+        lines.append("取り込むべき変更が全く無い場合は、メッセージのみを書き直してください。")
+    else:
+        lines.append("以下のgit差分を分析して、適切な `git commit` を実行してください。")
+        lines.append("")
+        lines.append("ステージング済み・未ステージ・未追跡の変更が混在している可能性があります。")
+        lines.append("コミット対象とすべき変更を `git add` で適切にステージングしてからコミットしてください。")
+        lines.append("変更が明確に複数の論理単位にまたがる場合は複数のコミットに分割してください。")
+        lines.append("ステージングの組み替えには `git add` / `git restore --staged` を使ってください。")
+
+    lines.append("")
+    lines.append(f"# フォーマット\n{format_instructions}")
+
+    if amend:
         lines.append(f"# 既存のコミットメッセージ\n{head_message}")
         lines.append(f"# 既存のコミット差分（HEAD）\n{head_diff}")
-        if staged_stat:
-            lines.append(f"# 追加のステージング済み変更の概要\n{staged_stat}")
-        if staged_diff:
-            lines.append(f"# 追加のステージング済み変更の詳細\n{staged_diff}")
-        if dry_run:
-            lines.append("実際にコミットはしないでください。実行するコミットメッセージを表示するだけにしてください。")
-        else:
-            lines.append("git commit --amend -m '...' を使ってコミットしてください。")
-    else:
-        lines.append("以下のgit差分を分析して、適切なgit commitを実行してください。")
-        lines.append("")
-        lines.append("変更が明確に複数の論理単位にまたがる場合は複数のコミットに分割してください。")
-        lines.append("分割する場合は git restore --staged / git add を使って適切にステージングを組み替えてください。")
-        lines.append("")
-        lines.append(f"# フォーマット\n{format_instructions}")
+
+    if staged_stat:
         lines.append(f"# ステージング済みの変更の概要\n{staged_stat}")
-        if staged_diff:
-            lines.append(f"# ステージング済みの変更の詳細（lock系ファイルは除外済み）\n{staged_diff}")
-        if dry_run:
-            lines.append("実際にコミットはしないでください。実行するコミットメッセージを表示するだけにしてください。")
+    if staged_diff:
+        lines.append(f"# ステージング済みの変更の詳細（lock系ファイルは除外済み）\n{staged_diff}")
+    if unstaged_stat:
+        lines.append(f"# 未ステージの変更の概要\n{unstaged_stat}")
+    if unstaged_diff:
+        lines.append(f"# 未ステージの変更の詳細（lock系ファイルは除外済み）\n{unstaged_diff}")
+    if untracked_names:
+        lines.append("# 未追跡ファイルの一覧\n" + "\n".join(untracked_names))
+
+    if dry_run:
+        lines.append("")
+        lines.append("実際にコミットはしないでください。実行するコミットメッセージを表示するだけにしてください。")
 
     if additional_prompt:
         lines.append("")
