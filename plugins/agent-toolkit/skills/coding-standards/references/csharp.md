@@ -9,17 +9,17 @@
   - `PascalCase`: クラス・メソッド・プロパティ・publicフィールド
   - `camelCase`: ローカル変数・パラメーター
   - `_camelCase`: privateフィールド
-  - インターフェースは `I` プレフィックス (`IFoo`)
+  - インターフェースは `I` プレフィックス（`IFoo`）
 - 型について
   - `var` はローカル変数の右辺から型が自明な場合に使う
-  - Nullable参照型 (`string?`) を活用し、null許容性を型で明示する
+  - Nullable参照型（`string?`）を活用し、null許容性を型で明示する
   - nullチェックは `is null` / `is not null` を使う（`==` はオーバーロードされる可能性があるため）
-  - 不要な値の破棄は `_` (discard) で表現する
+  - 不要な値の破棄は `_`（discard）で表現する
 - データ/制御フロー
-  - 公開フィールドより自動実装プロパティ (`{ get; init; }`) を使う
+  - 公開フィールドより自動実装プロパティ（`{ get; init; }`）を使う
   - 不変データは `record` / `record struct` で表現する
   - 初期化必須のプロパティには `required`（C# 11+）を付ける（コンパイル時に初期化漏れを検出できるため）
-  - 分岐にはパターンマッチング (`switch` 式、`is` パターン) を積極的に使う
+  - 分岐にはパターンマッチング（`switch` 式・`is` パターン）を積極的に使う
 - 非同期処理
   - I/Oには `async` / `await` を使い、`.Result` / `.Wait()` でブロックしない（デッドロックの原因）
   - `ConfigureAwait(false)` はUIに依存しない純粋なライブラリ・ユーティリティ層で付ける
@@ -30,7 +30,7 @@
 - 例外処理
   - 例外は例外的状況にのみ使う（通常の制御フローには使わない）
   - `catch (Exception)` で握りつぶさず、具体的な型でキャッチする
-  - 広域キャッチが正当な場面 (フックコールバック、`WndProc`、ワーカースレッドの最終防御層など) の対処:
+  - 広域キャッチが正当な場面（フックコールバック、`WndProc`、ワーカースレッドの最終防御層など）の対処:
     - `catch (Exception ex) when (...)` で `when` フィルタを使う
     - もしくは `#pragma warning disable CA1031` をローカルに付け、コメントで理由を明記する
   - 再スローは `throw;` を使う。`throw ex;` はスタックトレースが失われるため使わない
@@ -40,9 +40,9 @@
   - イベントハンドラは `+=` で購読したら対応する `-=` で必ず解除する（解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
 - LINQは可読性を損なわない範囲で使う。ホットパスでは割り当てコストに注意する
   - EF Coreでは `Include` でeager loadingを明示するか `Select` で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
-- ドキュメントコメントはXMLドキュメント (`///`) で書き、公開APIには `<summary>` を必ず記述する
+- ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには `<summary>` を必ず記述する
 - セキュリティ上の危険パターン
-  - SQLはパラメーター化クエリを使う (`SqlCommand.Parameters` / Dapper / EF Coreのパラメーター)
+  - SQLはパラメーター化クエリを使う（`SqlCommand.Parameters` / Dapper / EF Coreのパラメーター）
   - `Process.Start` は `ProcessStartInfo.ArgumentList` で引数を渡す（文字列結合は避ける）
   - 信頼できないXMLは `XmlResolver = null` でXXEを無効化する
   - `BinaryFormatter` は使わない（非推奨・安全でない）。`System.Text.Json` やMessagePackで代替
@@ -52,17 +52,17 @@
   - フォーマッター: `dotnet format`
   - アナライザー: Roslynアナライザー + `Microsoft.CodeAnalysis.NetAnalyzers`（`.editorconfig` で設定）
 - 新しいC# / .NETバージョンの機能を積極的に使う
-  - C# 12+: collection expressions (`[1, 2, 3]` / `[..existing, x]`) で配列・リスト・Spanを簡潔に初期化する
+  - C# 12+: collection expressions（`[1, 2, 3]` / `[..existing, x]`）で配列・リスト・Spanを簡潔に初期化する
     - コンテキストに応じた最適な型が選ばれる
     - 中間コレクションの割り当ても削減される
   - C# 12+: primary constructorsを非recordのクラス/構造体でも使う
     - コンストラクタ引数のフィールド代入ボイラープレートを削減できるため
   - C# 12+: `using MyTuple = (string Name, int Age);` の形式で任意の型をエイリアス化する
     - タプル型や関数ポインタなどの複雑な型を可読な名前で扱えるため
-  - C# 12+: ラムダ式のデフォルトパラメーター (`(x, y = 10) => ...`) を活用する
+  - C# 12+: ラムダ式のデフォルトパラメーター（`(x, y = 10) => ...`）を活用する
   - C# 13+: `params ReadOnlySpan<T>` / `params IEnumerable<T>` 等で配列以外の `params` を受け取る
     - 呼び出し側の割り当てを抑えられるため
-  - C# 13+ (.NET 9+): 同期ブロックには `System.Threading.Lock` 型を使う
+  - C# 13+（.NET 9+）: 同期ブロックには `System.Threading.Lock` 型を使う
     - `lock(myLock) { ... }` が `Lock.EnterScope()` ベースの高速パスに最適化される
     - 従来の `lock(object)` より低オーバーヘッドになる
   - .NET 9+: LINQの `CountBy` / `AggregateBy` を使う
@@ -84,5 +84,5 @@
 - モック/スタブには `NSubstitute` または `Moq` を使う
   - 外部依存はインターフェース経由で注入し、テスト時に差し替える
 - 時刻は `TimeProvider`（.NET 8以降）を注入し、テストでは `FakeTimeProvider` で固定する
-- ファイルI/Oのテストには一意な一時ディレクトリ (`Path.GetTempPath()` + `Guid.NewGuid()`) を使い、`try`/`finally` で確実にクリーンアップする
+- ファイルI/Oのテストには一意な一時ディレクトリ（`Path.GetTempPath()` + `Guid.NewGuid()`）を使い、`try`/`finally` で確実にクリーンアップする
 - テストプロジェクト名は `xxx.Tests` の規約に揃える

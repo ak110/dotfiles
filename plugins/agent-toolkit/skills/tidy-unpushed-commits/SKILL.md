@@ -132,14 +132,14 @@ A4. fix: NPE対策
 A5. docs: CHANGELOG更新
 A6. ci: workflowのタイムアウト延長
 
-【新順序(4コミットに集約)】
-B1. feat: ユーザー認証を追加 (A1+A3)
-B2. fix: NPE対策 (A4)
-B3. docs: READMEとCHANGELOGを更新 (A2+A5)
-B4. ci: workflowのタイムアウト延長 (A6)
+【新順序（4コミットに集約）】
+B1. feat: ユーザー認証を追加（A1+A3）
+B2. fix: NPE対策（A4）
+B3. docs: READMEとCHANGELOGを更新（A2+A5）
+B4. ci: workflowのタイムアウト延長（A6）
 
 【確認事項】
-1. A1にA3をまとめてよいか?(ペア例外)
+1. A1にA3をまとめてよいか?（ペア例外）
 2. 新順序の並びでよいか?
 ```
 

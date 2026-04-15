@@ -1,6 +1,6 @@
 ---
 name: sync-rule-ssot
-description: dotfiles リポジトリで agent-basics ルールファイルを追加・削除・リネームする際に必ず使う。配布対象ファイル一覧が 4 箇所 (pytools/claudize.py、install-claude.sh、install-claude.ps1、pytools/post_apply.py) に重複しているため、1 つだけ更新して他を忘れると配布に失敗する。「ルールを追加」「ルールを削除」「rules/agent-basics を変更」などのキーワードで自動トリガーしてよい
+description: dotfilesリポジトリでagent-basicsルールファイルを追加・削除・リネームする際に必ず使う。配布対象ファイル一覧が4箇所（`pytools/claudize.py`・`install-claude.sh`・`install-claude.ps1`・`pytools/post_apply.py`）に重複しているため、1つだけ更新して他を忘れると配布に失敗する。「ルールを追加」「ルールを削除」「`rules/agent-basics`を変更」などのキーワードで自動トリガーしてよい
 user-invocable: false
 ---
 
@@ -16,7 +16,7 @@ user-invocable: false
 - `pytools/post_apply.py` の `_REMOVED_PATHS`（chezmoi apply後処理で配布先から削除するパス一覧）
 
 新規追加・削除・リネーム時にこの4箇所の同期を怠ると、配布に失敗する。
-プロジェクト ローカル配布（claudize）、リモート インストーラー経由の配布（install-claude.sh/.ps1）、およびchezmoi経由の配布先クリーンアップのいずれかが機能しなくなる。
+プロジェクトローカル配布（claudize）、リモートインストーラー経由の配布（install-claude.sh/.ps1）、およびchezmoi経由の配布先クリーンアップのいずれかが機能しなくなる。
 このスキルは追加・削除・リネーム手順を標準化する。
 
 ## 前提確認
@@ -62,13 +62,13 @@ paths:
 
 3. `install-claude.sh` の `FILES` 配列に追加する — コメント（`pytools/claudize.py の ... と一致させること`）は保持する
 
-4. `install-claude.ps1` の `$files` 配列に追加する — シングル クォート + カンマで囲む文字列リテラル。末尾要素のカンマの有無に注意する
+4. `install-claude.ps1` の `$files` 配列に追加する — シングルクォート + カンマで囲む文字列リテラル。末尾要素のカンマの有無に注意する
 
 5. 検証する。
 
    ```bash
    cd ~/dotfiles
-   uv run  pyfltr run-for-agent  # 全テスト green 必須
+   uv run pyfltr run-for-agent  # 全テスト green 必須
    # 原本ディレクトリから実際に読めるかを claudize の dry-run で確認
    claudize --help
    ```

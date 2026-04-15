@@ -1,4 +1,4 @@
-# SSH設定管理 (`update-ssh-config`)
+# SSH設定管理（`update-ssh-config`）
 
 `update-ssh-config` はSSH configとauthorized_keysを分割ファイルから生成するコマンド。
 

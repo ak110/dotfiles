@@ -1,4 +1,4 @@
-# pytools (Pythonコマンドラインツール群)
+# pytools（Pythonコマンドラインツール群）
 
 `pytools/` ディレクトリに格納されたPythonパッケージ。
 `chezmoi apply` 時に `uv tool install` で自動インストールされ、パスが通ったディレクトリに配置される。

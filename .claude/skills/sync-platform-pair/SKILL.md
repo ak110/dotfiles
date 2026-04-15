@@ -1,9 +1,9 @@
 ---
 name: sync-platform-pair
-description: dotfiles リポジトリの Linux/Windows ペア ファイル (update-dotfiles と .cmd 版、run_onchange_after_pytools.sh.tmpl と -windows.ps1.tmpl 版、supply-chain-npm の sh 版と ps1 版など) を編集するときに使う。片方だけ更新するミスを避けるため、ペアの対応関係と PowerShell 側の書き方の注意点をまとめている。「ペアファイル」「Linux と Windows 両対応」などのキーワードで自動トリガー可
+description: dotfilesリポジトリのLinux/Windowsペアファイル（`update-dotfiles`と`.cmd`版、`run_onchange_after_pytools.sh.tmpl`と`-windows.ps1.tmpl`版、`supply-chain-npm`のsh版とps1版など）を編集するときに使う。片方だけ更新するミスを避けるため、ペアの対応関係とPowerShell側の書き方の注意点をまとめている。「ペアファイル」「LinuxとWindows両対応」などのキーワードで自動トリガー可
 ---
 
-# Linux/Windows ペアファイル編集支援
+# Linux/Windowsペアファイル編集支援
 
 ## いつ使うか
 
@@ -11,14 +11,14 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 
 ## ペアファイル一覧
 
-| Linux/macOS 側 | Windows 側 | 用途 |
+| Linux/macOS側 | Windows側 | 用途 |
 | --- | --- | --- |
-| `bin/executable_update-dotfiles` | `bin/executable_update-dotfiles.cmd` | dotfiles 更新コマンド |
-| `.chezmoi-source/run_onchange_after_pytools.sh.tmpl` | `.chezmoi-source/run_onchange_after_pytools-windows.ps1.tmpl` | pytools の自動再インストール |
-| `.chezmoi-source/run_after_supply-chain-npm.sh.tmpl` | `.chezmoi-source/run_after_supply-chain-npm-windows.ps1.tmpl` | npm サプライ チェーン保護の適用 |
-| `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` | Claude Code のフック定義 (OS 別オーバーライド) |
-| `install-claude.sh` | `install-claude.ps1` | agent-basics ルールのリモート インストーラー |
-| `install.sh` | (README の `winget` コマンド) | dotfiles 本体インストーラー |
+| `bin/executable_update-dotfiles` | `bin/executable_update-dotfiles.cmd` | dotfiles更新コマンド |
+| `.chezmoi-source/run_onchange_after_pytools.sh.tmpl` | `.chezmoi-source/run_onchange_after_pytools-windows.ps1.tmpl` | pytoolsの自動再インストール |
+| `.chezmoi-source/run_after_supply-chain-npm.sh.tmpl` | `.chezmoi-source/run_after_supply-chain-npm-windows.ps1.tmpl` | npmサプライチェーン保護の適用 |
+| `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` | Claude Codeのフック定義（OS別オーバーライド） |
+| `install-claude.sh` | `install-claude.ps1` | agent-basicsルールのリモートインストーラー |
+| `install.sh` | （READMEの`winget`コマンド） | dotfiles本体インストーラー |
 
 新しいペアを追加する場合は本リストと `CLAUDE.md` の「プラットフォーム対応ファイル」節を同時に更新する。
 
@@ -60,7 +60,7 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 ## Bash / `.sh.tmpl` 側の対応
 
 - `set -eux` でエラー/未定義変数/コマンド表示を有効化（既存スクリプトに合わせる）
-- パスは必ずダブル クォートで囲む（スペース対応）
+- パスは必ずダブルクォートで囲む（スペース対応）
 - Windows版と同じ処理を別の記法で書いているだけの場合、両方に同一のコメントを付けて対応関係を示す
 
 ## 変更フロー
@@ -69,5 +69,5 @@ description: dotfiles リポジトリの Linux/Windows ペア ファイル (upda
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）
-5. `uv run  pyfltr run-for-agent` がgreenであることを確認する
-6. コミット メッセージにペアを両方記載する
+5. `uv run pyfltr run-for-agent` がgreenであることを確認する
+6. コミットメッセージにペアを両方記載する

@@ -19,7 +19,7 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 
 `run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する（`ruff check --fix` → `ruff format` → `ruff check` のような2段階方式を一般化した仕組み）。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
-`run-for-agent`は`run --output-format=jsonl`の短縮形であり、LLMエージェントから呼び出す際に利用する。
+`run-for-agent`は`run-for-agent`の短縮形であり、LLMエージェントから呼び出す際に利用する。
 
 ### pre-commit統合
 
@@ -63,7 +63,7 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 ### 1. 全体実行でsummaryを確認する
 
 ```bash
- pyfltr run-for-agent | tail -30
+ pyfltr run-for-agent
 ```
 
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認し、問題がなければ完了する。`run-for-agent`は`run`同様に前段で自動fixを適用するため、autofixで解消できる違反はここで消える。
@@ -71,12 +71,12 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 ### 2. 問題のあるツール/ファイルだけ再実行する
 
 ```bash
- pyfltr run-for-agent --commands=mypy path/to/file | tail -30
+ pyfltr run-for-agent --commands=mypy path/to/file
 ```
 
 `--commands`で特定ツールに絞る/対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
 
-エラー内容がよくわからない場合は`--output-format=jsonl`を外して通常のテキスト出力で再実行し、ツールの通常出力を確認するのも有効。
+エラー内容がよくわからない場合は`run-for-agent`の代わりに`run`コマンドを使用して通常のテキスト出力で再実行し、ツールの通常出力を確認するのも有効。
 
 ## `--commands`オプション
 

@@ -102,7 +102,7 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
 
 ## 検証
 
-- `uv run  pyfltr run-for-agent tests/upload_test.py | tail -30`
+- `uv run pyfltr run-for-agent tests/upload_test.py`
 
 ## 変更履歴
 
@@ -110,7 +110,7 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
     - 指摘: リバースプロキシのbody size上限が未考慮 → 対応: 調査結果と変更内容に反映
     - 指摘: 新旧の上限値を切り替えるfeature flagを用意すべき → 不対応: 切り戻しは設定値の差し替えで十分対応でき、feature flagを追加する運用複雑度の増加に見合う利点がないため
 2. ユーザー指示反映
-    - 検証手順を `uv run  pyfltr run-for-agent tests/upload_test.py | tail -30` の実行に変更
+    - 検証手順を `uv run pyfltr run-for-agent tests/upload_test.py` の実行に変更
 ````
 
 ## codexレビュー

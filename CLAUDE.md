@@ -16,9 +16,9 @@
 
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-- コミット前の検証方法: `uv run  pyfltr run-for-agent | tail -30`
+- コミット前の検証方法: `uv run pyfltr run-for-agent`
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
-  - テストコードの単体実行なども極力 `uv run  pyfltr run-for-agent <path>` を使う（pytestを直接呼び出さない）
+  - テストコードの単体実行なども極力 `uv run pyfltr run-for-agent <path>` を使う（pytestを直接呼び出さない）
     - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
 
 ## 注意点
@@ -34,12 +34,3 @@
   - 後者も参考として他人に提示する想定はあるが、そのまま適用できるとは限らない点で前者と分ける
   - 新規の指示を追加する際は環境依存性の有無で振り分ける
 - 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される
-
-## 関連ドキュメント
-
-- README.md（若干記述量が多いため必要時のみ読み込む）
-- @docs/index.md
-- @docs/guide/claude-code.md
-- @docs/guide/claude-code-guide.md
-- @docs/guide/security.md
-- @docs/development/development.md

@@ -4,16 +4,16 @@
 
 - importについて
   - 型のみのimportには `import type` を使用する（実行時のランタイム依存を減らしバンドルサイズを抑えるため）
-  - barrel export (`index.ts`) の乱用を避ける（ツリーシェイキングを阻害するため）
+  - barrel export（`index.ts`）の乱用を避ける（ツリーシェイキングを阻害するため）
 - モジュールシステム
-  - モダンプロジェクトはESM (`"type": "module"`) を使う
+  - モダンプロジェクトはESM（`"type": "module"`）を使う
   - Default exportよりNamed exportを優先する（tree-shakingが効きやすく、リネーム時の追従やIDE補完も確実になるため）
-- 厳格な型付けを行う (`strict: true`)（null安全・暗黙any排除を徹底するため）
+- 厳格な型付けを行う（`strict: true`。null安全・暗黙any排除を徹底するため）
   - 可能であれば `noUncheckedIndexedAccess` も有効化する（配列・`Record` アクセス結果を `T | undefined` として扱い、境界外アクセスを型で検知できる）
 - 型について
   - `any` の使用は極力避ける（型チェックをすり抜けるため）。やむを得ない場合は `unknown` + 型ガードを優先する
-  - `as` による型アサーションより型ガード (`is` / `satisfies`) を優先する（実行時の型不一致を防ぐため）
-  - union型 (`"a" | "b"`) を `enum` より優先する（tree-shakingしやすく、型の絞り込みも自然なため）
+  - `as` による型アサーションより型ガード（`is` / `satisfies`）を優先する（実行時の型不一致を防ぐため）
+  - union型（`"a" | "b"`）を `enum` より優先する（tree-shakingしやすく、型の絞り込みも自然なため）
   - `switch` の網羅性チェックには `satisfies never` を使用する
 - JSDocコメントを記述する
   - ファイルの先頭に`@fileoverview`で概要を記述
@@ -36,7 +36,7 @@
   - リンター/フォーマッター: `Biome`（lint + formatを1ツールで高速に処理）
     - Biomeが対応していないルール（React固有等）が必要な場合のみESLint + Prettierを併用
 - 新しいTypeScriptバージョンの機能を積極的に使う
-  - TS 5.0+: `const` 型パラメーター (`function f<const T>(x: T)`) でリテラル型を自動保持する
+  - TS 5.0+: `const` 型パラメーター（`function f<const T>(x: T)`）でリテラル型を自動保持する
     - 呼び出し側で `as const` を書かずにリテラル推論が効くため
   - TS 5.0+: `export type *` で型のみの再エクスポートを明示する
     - 実行時コードと型の分離を徹底するため
@@ -45,7 +45,7 @@
     - `Symbol.dispose` / `Symbol.asyncDispose` の実装が前提
   - TS 5.4+: `NoInfer<T>` でデフォルト引数等の型推論から特定の型パラメーターを除外する
     - デフォルト値と他引数の型不一致をコンパイル時に検出できるため
-  - TS 5.5+: 推論される型述語 (inferred type predicates) を活用する
+  - TS 5.5+: 推論される型述語（inferred type predicates）を活用する
     - `array.filter(x => x !== null)` の結果が `T[]` に絞り込まれ、明示的な型ガードの記述を削減できる
 
 ## テストコード（vitest）
@@ -53,7 +53,7 @@
 - テストコードは`vitest`で書く
 - `describe` は原則1階層、ネストは2階層まで
 - 類似パターンの網羅には `it.each()` を活用する
-- テストデータ生成ヘルパー (`makeXxx(overrides)`) で本質的でないセットアップを共通化する
+- テストデータ生成ヘルパー（`makeXxx(overrides)`）で本質的でないセットアップを共通化する
 - 非同期テストでは `await expect(...).resolves` / `.rejects` を活用する
 - セットアップ/ティアダウン
   - `beforeAll` / `afterAll` でコストの高い初期化を共有する

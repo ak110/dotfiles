@@ -1,6 +1,6 @@
 ---
 name: sync-cross-project
-description: 作者個人の姉妹プロジェクト群の間でツールチェイン (Makefile、mise、pre-commit、GitHub Actions等) やドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリ ロジック変更は対象外
+description: 作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、pre-commit、GitHub Actionsなど）やドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
 user-invocable: true
 ---
 
@@ -23,7 +23,7 @@ user-invocable: true
 - 変更内容の分類を特定する（例: pre-commit設定、mise設定、CI workflow、README構成など）
 - 「変更時の同期対象マトリクス」で波及プロジェクトを決める
 - 「意図的に維持している差異」に該当しないか確認する
-- 該当プロジェクトに対して、必要ならサブエージェント (`general-purpose`) で並列調査して差分を把握する
+- 該当プロジェクトに対して、必要ならサブエージェント（`general-purpose`）で並列調査して差分を把握する
 - 同期が必要なプロジェクトと推奨アクションをユーザーに報告する
 
 スコープに含むのは「ツールチェインやドキュメント構成」の範囲。
@@ -39,7 +39,7 @@ user-invocable: true
 ## 変更時の同期対象マトリクス
 
 変更内容に応じて確認すべきプロジェクトを示す。
-プロジェクト名とローカル パスの対応はコンテキスト上のローカル指示から取得する。
+プロジェクト名とローカルパスの対応はコンテキスト上のローカル指示から取得する。
 
 | 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -91,7 +91,7 @@ o=対象、-=対象外、△=緩め
   - 「コミットメッセージ（Conventional Commits）」
 - README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える。共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
 
-### gv / lc (Windows用プロジェクト) の特殊事情
+### gv / lc（Windows用プロジェクト）の特殊事情
 
 - Linuxでの検証はlint系（prettier / markdownlint / textlint）のみ確認可能。cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
 - Makefileではなく `mise.toml` のタスクを使用する。pre-commitフレームワークは `uvx pre-commit` で呼び出す

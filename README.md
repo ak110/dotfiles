@@ -6,18 +6,18 @@
 
 ## 特徴
 
-- chezmoi管理によるホーム配下(`~/.*`)の一括デプロイ
+- chezmoi管理によるホーム配下（`~/.*`）の一括デプロイ
 - LinuxとWindowsの両対応
-- Python製コマンドラインツール群(`pytools`)の同梱
+- Python製コマンドラインツール群（`pytools`）の同梱
 - Claude Code用の共通ルール・プラグインの配布
 - サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
-## 前提条件(要インストール)
+## 前提条件（要インストール）
 
 - [Git](https://git-scm.com/install/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
-### 例(Linux)
+### 例（Linux）
 
 ```bash
 sudo apt install git
@@ -29,11 +29,11 @@ curl -fsSL https://mise.run | sh
 # オプション: Claude Code
 curl -fsSL https://claude.ai/install.sh | bash
 
-# オプション: Codex CLI (別途Node.jsが必要)
+# オプション: Codex CLI（別途Node.jsが必要）
 npm install -g @openai/codex
 ```
 
-### 例(Windows)
+### 例（Windows）
 
 ```cmd
 winget install --id Git.Git -e --source winget
@@ -45,7 +45,7 @@ winget install jdx.mise
 REM オプション: Claude Code
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
 
-REM オプション: Codex CLI (別途Node.jsが必要)
+REM オプション: Codex CLI（別途Node.jsが必要）
 npm install -g @openai/codex
 ```
 
@@ -57,7 +57,7 @@ npm install -g @openai/codex
 curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | bash
 ```
 
-### Windows (PowerShell, 推奨)
+### Windows（PowerShell、推奨）
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install.ps1 | iex"
