@@ -8,6 +8,7 @@
 
 # 編集ターン整形用の Claude Code hook マーカーと、ローカル上書き設定
 /.claude/.format-dirty
+/.claude/scheduled_tasks.lock
 /.claude/settings.local.json
 /.codex/
 /.config/
