@@ -71,7 +71,7 @@ paths:
 
    ```bash
    cd ~/dotfiles
-   make test  # 全テスト green 必須
+   uv run pyfltr run --output-format=jsonl  # 全テスト green 必須
    # 原本ディレクトリから実際に読めるかを claudize の dry-run で確認
    claudize --help
    ```
