@@ -9,11 +9,20 @@ user-invocable: true
 Claude Code設定ファイル群はLLMのコンテキストへ直接投入される。
 記述した内容がそのまま生成候補に影響するため、以下の共通原則と対象別ガイドに従う。
 
+## CLAUDE.md・ルール・スキルの使い分け
+
+| 項目 | CLAUDE.md | .claude/rules/ | .claude/skills/ |
+| --- | --- | --- | --- |
+| 読み込み | 常時 | 起動時 or ファイル操作時 | オンデマンド（呼び出し時） |
+| 用途 | プロジェクト全体の指示 | トピック別・ファイル種別の規約 | 特定タスクの手順・ワークフロー |
+| スコープ制限 | 不可 | `paths`で可能 | 不可 |
+| コンテキスト消費 | 常時 | 常時 or 条件付き | 呼び出し時のみ |
+| 適した内容 | ビルドコマンド、アーキテクチャ概要 | コーディング規約、テスト方針 | デプロイ手順、特定ワークフロー |
+
 ## 対象別リファレンスの使い分け
 
 編集対象に応じて、以下のreferencesを読み込む。
 
-- `references/claude-md-guide.md`: CLAUDE.md・ルール・スキルの使い分け、コンテキスト汚染の回避、システムプロンプトとの整合性
 - `references/claude-rules.md`: `.claude/rules/` 配下のルールファイル編集ガイドライン（`paths` frontmatter、ファイル構成、記述のコツ）
 - `references/claude-skills.md`: `.claude/skills/` 配下のスキル編集ガイドライン（ディレクトリ構造、progressive disclosure、YAML frontmatter、変数）
 - `references/claude-hooks.md`: hook・プラグインスクリプトの出力フィールドガイドライン（`systemMessage` / `reason` / `additionalContext` の使い分け、メッセージ記述言語）
