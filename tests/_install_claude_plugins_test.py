@@ -290,18 +290,28 @@ class TestRunFlow:
 
         assert _install_claude_plugins.run() is False
 
-    def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch):
-        """project scope のエントリは install/update 判定に使われず、user scope へ移行される。"""
-        calls: list[list[str]] = []
+    def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """project scope のエントリは install/update 判定に使われず、user scope へ移行される。
 
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
+        project scope の uninstall は CLI が cwd 依存の判定を行うため、
+        エントリの projectPath を cwd にして呼び出す。本テストでは tmp_path を
+        projectPath として渡し、uninstall 呼び出し時の cwd が一致することを検証する。
+        """
+        calls: list[tuple[list[str], object]] = []
+
+        def fake_run(cmd, **kwargs):  # noqa: ANN001
+            calls.append((cmd, kwargs.get("cwd")))
             if cmd[:3] == ["claude", "plugin", "list"]:
                 # agent-toolkit が project scope にのみ存在
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "project"},
+                        {
+                            "id": "agent-toolkit@ak110-dotfiles",
+                            "version": "0.2.0",
+                            "scope": "project",
+                            "projectPath": str(tmp_path),
+                        },
                     ),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
@@ -320,11 +330,52 @@ class TestRunFlow:
 
         assert _install_claude_plugins.run() is True
         # project scope のエントリは無視され、user scope に新規 install される
-        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        install_calls = [cmd for cmd, _cwd in calls if cmd[:3] == ["claude", "plugin", "install"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
-        # project scope の清掃 (uninstall) が呼ばれること
-        uninstall_calls = [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
-        assert any("agent-toolkit@ak110-dotfiles" in c for c in uninstall_calls)
+        # project scope の清掃 (uninstall) が tmp_path を cwd にして呼ばれること
+        uninstall_calls = [(cmd, cwd) for cmd, cwd in calls if cmd[:3] == ["claude", "plugin", "uninstall"]]
+        matched = [
+            (cmd, cwd)
+            for cmd, cwd in uninstall_calls
+            if "agent-toolkit@ak110-dotfiles" in cmd and "--scope" in cmd and "project" in cmd
+        ]
+        assert matched, f"project scope 除去の呼び出しが無い: {uninstall_calls}"
+        assert all(cwd == tmp_path for _cmd, cwd in matched)
+
+    def test_project_scope_cleanup_skips_missing_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """projectPath のディレクトリが存在しない場合、uninstall を呼ばずスキップする。"""
+        missing = tmp_path / "does-not-exist"
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=_plugin_list_json(
+                        {
+                            "id": "agent-toolkit@ak110-dotfiles",
+                            "version": "0.2.0",
+                            "scope": "project",
+                            "projectPath": str(missing),
+                        },
+                    ),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    # pylint: disable-next=protected-access
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                )
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # 存在しない projectPath に対しては uninstall を呼ばない
+        assert not [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
 
     def test_deprecated_plugin_uninstalled(self, monkeypatch: pytest.MonkeyPatch):
         """deprecated プラグインがインストール済みならアンインストールされる。"""

@@ -50,6 +50,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # リネーム: rules.md → claude-rules.md, skills.md → claude-skills.md
         Path("rules/agent-basics/rules.md"),
         Path("rules/agent-basics/skills.md"),
+        # 配布 agent から dotfiles ローカルの sync-cross-project skill へ移行 (15ca58b)
+        Path("agents/cross-project-sync-checker.md"),
         # agent-toolkit プラグインの各スキル (coding-standards / plan-mode / bugfix /
         # claude-meta-rules) へ移行したため、旧ルールファイルを destination 側から除去する
         Path("rules/agent-basics/python.md"),

@@ -258,16 +258,29 @@ def _is_installed(name: str, raw_data: object) -> bool:
     return False
 
 
-def _has_project_scope_entry(name: str, raw_data: object) -> bool:
-    """指定プラグインが project scope にインストール済みか判定する。"""
+def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
+    """指定プラグインの project scope エントリに対応する projectPath 一覧を返す。
+
+    `claude plugin uninstall --scope project` は呼び出し時の cwd に紐づく
+    プロジェクト設定のみを参照する。そのため、除去対象の project scope
+    エントリごとにインストール元プロジェクトの絶対パスを取得し、
+    後段でそれを cwd にして CLI を呼ぶ必要がある。
+    """
     if not isinstance(raw_data, list):
-        return False
+        return []
+    paths: list[Path] = []
     for item in cast("list[object]", raw_data):
-        if isinstance(item, dict):
-            entry = cast("dict[object, object]", item)
-            if _name_from_entry(entry) == name and entry.get("scope") == "project":
-                return True
-    return False
+        if not isinstance(item, dict):
+            continue
+        entry = cast("dict[object, object]", item)
+        if _name_from_entry(entry) != name or entry.get("scope") != "project":
+            continue
+        project_path = entry.get("projectPath")
+        if not isinstance(project_path, str) or not project_path:
+            logger.info(_log_format.format_status(name, "project scope エントリに projectPath が無いためスキップ"))
+            continue
+        paths.append(Path(project_path))
+    return paths
 
 
 def _uninstall_deprecated(name: str, raw_data: object) -> bool:
@@ -284,15 +297,30 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
 
 
 def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
-    """管理対象プラグインの project scope エントリを除去する (user scope 移行用)。"""
-    if not _has_project_scope_entry(name, raw_data):
-        return
-    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"])
-    if result is not None and result.returncode == 0:
-        logger.info(_log_format.format_status(name, "project scope を除去しました (user scope へ移行)"))
-    else:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {stderr}"))
+    """管理対象プラグインの project scope エントリを除去する (user scope 移行用)。
+
+    `claude plugin uninstall --scope project` は呼び出し時の cwd から
+    プロジェクト設定を特定するため、各エントリの projectPath を cwd に渡す。
+    """
+    for project_path in _project_scope_paths(name, raw_data):
+        if not project_path.is_dir():
+            logger.info(
+                _log_format.format_status(
+                    name,
+                    f"project scope の除去対象 {project_path} が存在しないためスキップ "
+                    "(必要に応じて ~/.claude/plugins/installed_plugins.json から手動で削除)",
+                )
+            )
+            continue
+        result = _run_claude(
+            ["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"],
+            cwd=project_path,
+        )
+        if result is not None and result.returncode == 0:
+            logger.info(_log_format.format_status(name, f"project scope を除去しました ({project_path})"))
+        else:
+            stderr = result.stderr.strip() if result else ""
+            logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {stderr}"))
 
 
 def _ensure_marketplace(dotfiles_root: Path) -> bool:
@@ -368,10 +396,11 @@ def _update_plugin(name: str) -> bool:
     return True
 
 
-def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
+def _run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
     """`claude` CLI を呼び出す共通ヘルパー。
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
+    `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
     """
     try:
         return subprocess.run(
@@ -386,6 +415,7 @@ def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
             # 例外が発生しないよう errors="replace" を併用する。
             encoding="utf-8",
             errors="replace",
+            cwd=cwd,
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.info(_log_format.format_status("claude", f"`{' '.join(args)}` 実行に失敗: {e}"))
