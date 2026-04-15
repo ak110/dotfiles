@@ -5,8 +5,90 @@
 - ルール (`~/.claude/rules/agent-basics/` 配下) — 全プロジェクトで自動読み込みされるコーディング規約・運用方針
 - プラグイン — Plugin Marketplace `ak110-dotfiles` 経由で配布するClaude Codeプラグイン
 
-dotfiles管理側の情報（配布方式・インストール手順など）は [docs/guide/claude-code.md](claude-code.md) を参照。
-ここでは配布されるルール・プラグインの内容とカスタマイズ方法を説明する。
+dotfiles管理側の情報（配布方式・配布元など）は [docs/guide/claude-code.md](claude-code.md) を参照。
+ここでは配布されるルール・プラグインのインストール方法と内容を説明する。
+
+## インストール
+
+ルールとプラグインは同じワンライナーでまとめて導入できる。
+ワンライナーはルールファイルを `~/.claude/rules/agent-basics/` へ配置したうえで、`claude` CLIを検出した場合は `agent-toolkit` プラグインも自動でuser scopeへインストールする。
+`claude` CLI未導入の環境では案内メッセージのみ表示されるため、後述の手動インストールで追加する。
+
+### 前提条件
+
+プラグインは [uv](https://docs.astral.sh/uv/) に依存する（hookスクリプトを `uv run --script` で実行するため）。
+事前にインストールしておく必要がある。
+
+- インストール例:
+  - Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
+  - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+### Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
+```
+
+### Windows
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
+```
+
+### 手動インストール（プラグインのみ）
+
+ワンライナー実行時に `claude` CLIが未検出だった場合や、Marketplace経由でプラグインだけ追加したい場合は以下を実行する。
+
+```bash
+claude plugin marketplace add ak110/dotfiles
+claude plugin install agent-toolkit@ak110-dotfiles --scope user
+```
+
+project scopeで導入したい場合は、プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
+開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "ak110-dotfiles": {
+      "source": {
+        "source": "github",
+        "repo": "ak110/dotfiles"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-toolkit@ak110-dotfiles": true
+  }
+}
+```
+
+### 自動更新の有効化
+
+非公式のPlugin Marketplaceはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
+
+1. Claude Code内で `/plugin` を実行
+2. `Marketplaces` タブで `ak110-dotfiles` を選択
+3. `Enable auto-update` を選択
+
+### codex MCPサーバーの推奨セットアップ
+
+`plan-mode` スキルはcodex MCPによる計画ファイルレビューを前提としている。
+以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
+
+```bash
+claude mcp add --scope=user codex codex mcp-server
+```
+
+dotfiles利用者は `update-dotfiles` / `chezmoi apply` の後処理で自動登録される（既登録時はスキップ）。
+codex CLI自体のセットアップは別途行うこと。
+
+### 更新
+
+ルール・プラグインとも頻繁に更新されるため、定期的に最新化することを推奨する。
+
+- ルール: 上記インストールコマンドを再実行する。既存ファイルのfrontmatterを維持したままbodyのみ更新される
+- プラグイン: 自動更新を有効化していればClaude Codeが自動で更新する
 
 ## ルール
 
@@ -52,25 +134,6 @@ dotfiles管理側の情報（配布方式・インストール手順など）は
 `CLAUDE.md` はプロジェクト固有の情報を記述するファイルとして、配布の管理対象外。
 プロジェクトごとに手動で管理する (`/init` コマンドなどを活用するのも手)。
 
-### ルールのインストール
-
-#### ルール導入 (Linux)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.sh | bash
-```
-
-#### ルール導入 (Windows)
-
-```cmd
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
-```
-
-### 更新
-
-ルールファイルは頻繁に更新されるため、定期的にインストールコマンドを再実行して最新化することを推奨する。
-再実行時は既存ファイルのfrontmatterを維持したままbodyのみ更新される。
-
 ### カスタマイズ
 
 インストール後、`~/.claude/rules/agent-basics/` 配下のファイルは必要に応じて編集できる。
@@ -92,71 +155,7 @@ bodyに差分があった場合、旧ファイルは `~/.claude/rules-backup/age
 ルールだけではカバーしきれない領域（hookによる編集検査など）を補うためのプラグインを提供する。
 本リポジトリ自体をClaude CodeのPlugin Marketplace (`ak110-dotfiles`) として登録できるようにしてあり、今後もプラグインを追加する可能性がある。
 
-### 前提条件
-
-プラグインは [uv](https://docs.astral.sh/uv/) に依存する。
-事前にインストールしておく必要がある。
-
-- インストール例:
-  - Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
-  - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
-
-### プラグインのインストール
-
-プラグインは原則user scopeで導入する。全プロジェクトで共通に有効化され、プロジェクトごとの設定追加が不要になる。
-dotfiles利用者は `update-dotfiles` / `chezmoi apply` の後処理でuser scopeに自動インストールされる。
-
-dotfilesを使わずに手動で導入する場合は以下のコマンドを実行する。
-
-```bash
-claude plugin marketplace add ak110/dotfiles
-claude plugin install agent-toolkit@ak110-dotfiles --scope user
-```
-
-ルール導入用の `install-claude.sh` / `install-claude.ps1` を利用した場合も、スクリプト内で `claude` CLIを検出できれば自動で同じインストールを試行する。
-
-project scopeで導入したい場合は、プロジェクトの `.claude/settings.json` に `enabledPlugins` と `extraKnownMarketplaces` を設定する。
-開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "ak110-dotfiles": {
-      "source": {
-        "source": "github",
-        "repo": "ak110/dotfiles"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "agent-toolkit@ak110-dotfiles": true
-  }
-}
-```
-
-### 自動更新の有効化
-
-非公式のPlugin Marketplaceはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
-
-1. Claude Code内で `/plugin` を実行
-2. `Marketplaces` タブで `ak110-dotfiles` を選択
-3. `Enable auto-update` を選択
-
-### codex MCPサーバーの推奨セットアップ
-
-`plan-mode` スキルはcodex MCPによる計画ファイルレビューを前提としている。
-以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
-
-```bash
-claude mcp add --scope=user codex codex mcp-server
-```
-
-dotfiles利用者は `update-dotfiles` / `chezmoi apply` の後処理で自動登録される（既登録時はスキップ）。
-codex CLI自体のセットアップは別途行うこと。
-
-### プラグイン詳細
-
-#### agent-toolkit
+### agent-toolkit
 
 好ましくない編集やBash呼び出しを `PreToolUse` 段階で検出・制御するプラグイン。
 コードベースの破壊や、Claude Codeの訓練データ由来の誤った思い込みによる事故を未然に防ぐことを目的としている。
@@ -194,7 +193,7 @@ codex CLI自体のセットアップは別途行うこと。
   llms.txtを段階的に取得して必要なモジュールのAPI情報を参照する構成。
   `/pytilpack-usage`スラッシュコマンドで明示的に呼び出せる
 
-### 移行: edit-guardrails → agent-toolkit
+## 移行: edit-guardrails → agent-toolkit
 
 旧プラグイン `edit-guardrails` は `agent-toolkit` に改名・統合された。
 `edit-guardrails` がインストール済みの場合は以下のコマンドで削除する。
