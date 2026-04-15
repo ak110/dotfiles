@@ -243,8 +243,20 @@ class TestPs1DirectivesBlock:
         assert result.returncode == 0
 
 
-class TestLocalMdReferenceWarning:
-    """ローカル専用ファイル言及検出 (allow + additionalContext 警告)。"""
+class TestPersonalFileMentionWarning:
+    """個人用 / ローカル専用ファイル言及検出 (allow + additionalContext 警告)。
+
+    対象は `CLAUDE.local.md` と、ファイル名に `___` (3連アンダースコア) を含むトークン。
+    バックティック囲みの言及と、対象ファイル自身の編集は除外される。
+    """
+
+    # ``___`` を含むトークンもプログラム的に組み立てる (本テストファイル自身が警告を
+    # 誘発しないようにするため)。
+    _TRIPLE = "_" * 3
+    # 正規表現 `\w+___\w+` がファイル名全体 (拡張子まで) を一致として抽出するわけではない点に注意。
+    # `.` は word 文字でないため、マッチされるのは拡張子を除いた stem 部分 (`foo___bar`)。
+    _TRIPLE_STEM = f"foo{_TRIPLE}bar"
+    _TRIPLE_TOKEN = f"{_TRIPLE_STEM}.md"
 
     @staticmethod
     def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
@@ -256,6 +268,8 @@ class TestLocalMdReferenceWarning:
         except json.JSONDecodeError:
             return ""
         return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+    # --- CLAUDE.local.md 言及 ---
 
     def test_content_reference_warns_but_passes(self):
         result = _run(
@@ -293,6 +307,20 @@ class TestLocalMdReferenceWarning:
                         {"old_string": "a", "new_string": "b"},
                         {"old_string": "c", "new_string": f"See {_LOCAL_MD}"},
                     ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in self._get_additional_context(result)
+
+    def test_backtick_wrapped_reference_also_warns(self):
+        """バックティック囲みでも警告は出す (文脈依存のため最終判断は LLM に委ねる)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Recommended: create `{_LOCAL_MD}` in your project.",
                 },
             }
         )
@@ -337,6 +365,82 @@ class TestLocalMdReferenceWarning:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+    # --- ファイル名に `___` を含むトークンの言及 ---
+
+    def test_triple_underscore_mention_warns_but_passes(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {self._TRIPLE_TOKEN} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert self._TRIPLE_STEM in msg
+        assert "___" in msg
+        assert "warn" in msg.lower()
+
+    def test_triple_underscore_in_backticks_also_warns(self):
+        """バックティック囲みでも警告は出す (文脈依存のため最終判断は LLM に委ねる)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Recommended: create `{self._TRIPLE_TOKEN}` locally.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert self._TRIPLE_STEM in self._get_additional_context(result)
+
+    def test_triple_underscore_self_edit_is_allowed_silently(self):
+        """ファイル名自体に `___` を含むファイルの作成・編集は除外。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"/home/user/notes/{self._TRIPLE_TOKEN}",
+                    "content": f"memo referencing {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_bare_triple_underscore_not_matched(self):
+        """区切り記号などに使われる裸の `___` (前後に word 文字なし) は検出しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": "separator: ___ end",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_both_patterns_reported_together(self):
+        """`CLAUDE.local.md` と `___` の両方が言及されたら両方報告する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Refer to {_LOCAL_MD} and {self._TRIPLE_TOKEN}.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert _LOCAL_MD in msg
+        assert self._TRIPLE_STEM in msg
 
 
 class TestGeneralBehavior:

@@ -24,11 +24,16 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
    - CLAUDE.md の Windows PowerShell スクリプト規約を強制する。
    - Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため対象外。
    - LF/CRLF の改行チェックは `agent-toolkit` プラグインが担当する。
-3. `CLAUDE.local.md` 言及検出 (warn / 非ブロック)
-   - `CLAUDE.local.md` はリポジトリ管理外のローカルファイルであり、
-     他のリポジトリ管理ファイルからの参照は厳禁
-   - コミット前に人間の目で気づく機会が残るため、完全ブロックはせず警告にとどめる
-   - ただし `file_path` 自体が `CLAUDE.local.md` の場合は正当な編集として許可する
+3. 個人用 / ローカル専用ファイル言及検出 (warn / 非ブロック)
+   - 対象パターン:
+     - `CLAUDE.local.md` (リポジトリ管理外のローカルメモ)
+     - ファイル名に `___` (アンダースコア3つ) を含むトークン (個人メモの慣習)
+   - 他のリポジトリ管理ファイルから参照すると、無視指定などを通じてファイル名自体が
+     コミットに漏れる原因になる。一方で配布対象ドキュメントで利用者に同名ファイル作成を
+     推奨する文脈など、正当な言及もある。文脈依存のため最終判断は LLM に委ね、
+     hook は緩い警告のみを出してブロックはしない
+   - `file_path` 自体が対象パターンに一致するファイルの場合は、
+     ファイル自身の作成・編集として警告もスキップする
 
 検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
 `old_string` は既存内容の修正・削除を妨げないため検査しない。
@@ -79,8 +84,8 @@ def _main() -> int:
     if _check_ps1_directives(tool_name, fields, file_path):
         return 2
 
-    # --- warn 系 check (allow + systemMessage) ---
-    result = _check_local_md_reference(tool_name, fields, file_path)
+    # --- warn 系 check (allow + additionalContext) ---
+    result = _check_personal_file_mentions(tool_name, fields, file_path)
     if result is not None:
         print(json.dumps(result))
 
@@ -225,31 +230,54 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     return False
 
 
-# --- CLAUDE.local.md 言及 check (warn) ---
+# --- 個人用 / ローカル専用ファイル言及 check (warn) ---
+
+# ファイル名に `___` (3連アンダースコア) を含むトークンを検出する。
+# 個人用メモの慣習として使われるファイル名パターン。
+# `\w+___\w+` で前後に少なくとも1文字のword文字を要求し、単独の `___` は除外する。
+# `\b` でword境界に固定することで、トークンの内側の部分マッチ (例: `foo___bar` の中の
+# `oo___ba`) を避ける。
+_TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w+___\w+\b")
 
 
-def _check_local_md_reference(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> dict | None:
-    """`CLAUDE.local.md` への言及を検出したら allow + systemMessage の dict を返す (warn)。
+def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> dict | None:
+    """個人用 / ローカル専用ファイルの言及を検出したら allow + additionalContext を返す (warn)。
 
-    対象ファイル自身の編集は正当な操作として除外する。
+    対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
+    対象ファイル自身の編集は作成・更新として警告をスキップする。
+    文脈依存の判断は LLM に委ね、hook は緩い警告のみを出してブロックはしない。
     """
-    if _is_claude_local_md(file_path):
+    messages: list[str] = []
+    if not _is_claude_local_md(file_path):
+        for field, value in fields:
+            if _CLAUDE_LOCAL_MD in value:
+                messages.append(f"'{_CLAUDE_LOCAL_MD}' in {tool_name}.{field}")
+                break
+    if not _has_triple_underscore_filename(file_path):
+        for field, value in fields:
+            match = _TRIPLE_UNDERSCORE_PATTERN.search(value)
+            if match:
+                messages.append(f"'{match.group()}' (filename-like token containing '___') in {tool_name}.{field}")
+                break
+    if not messages:
         return None
-    for field, value in fields:
-        if _CLAUDE_LOCAL_MD in value:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                    "additionalContext": (
-                        f"[pretooluse][warn] detected reference to '{_CLAUDE_LOCAL_MD}'"
-                        f" in {tool_name}.{field}."
-                        f" {_CLAUDE_LOCAL_MD} is a local-only file and must not be"
-                        f" referenced from version-controlled files (warning only, not blocked)."
-                    ),
-                },
-            }
-    return None
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "additionalContext": (
+                "[pretooluse][warn] detected possible mention(s) of local-only personal file(s): "
+                + "; ".join(messages)
+                + ". Such files are typically gitignored personal memos."
+                " Referencing them from version-controlled files is often unintentional"
+                " and risks leaking the filename via ignore-lists or stale references."
+                " On the other hand, recommending end users to create their own local memo"
+                " file (e.g., in distributed docs/skills) is legitimate."
+                " Judge the context and keep the mention only if it is intentional"
+                " (warning only, not blocked)."
+            ),
+        },
+    }
 
 
 def _is_claude_local_md(file_path: str) -> bool:
@@ -259,6 +287,14 @@ def _is_claude_local_md(file_path: str) -> bool:
     # パス区切りを正規化してファイル名を取得
     name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
     return name == _CLAUDE_LOCAL_MD
+
+
+def _has_triple_underscore_filename(file_path: str) -> bool:
+    """ファイル名自体に `___` が含まれるかを判定する (言及チェック除外用)。"""
+    if not file_path:
+        return False
+    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return "___" in name
 
 
 if __name__ == "__main__":
