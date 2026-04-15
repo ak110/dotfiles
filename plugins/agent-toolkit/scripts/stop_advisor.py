@@ -8,8 +8,8 @@
 Claude Code が停止しようとするタイミングで発火する。
 
 未コミット変更がある場合はセッション終了を block する。
-ただし Claude がユーザーへ質問中（AskUserQuestion ツール使用、またはテキストが
-? / ？ で終わる）の場合は block せず approve する（質問への割り込みを防ぐため）。
+ただし Claude がユーザーへ質問中（AskUserQuestion ツール使用、またはテキストに
+? / ？ が含まれる）の場合は block せず approve する（質問への割り込みを防ぐため）。
 
 transcript を分析してユーザーからの修正指示の多寡を判定し、
 閾値を超えた場合に CLAUDE.md 更新を提案する。
@@ -130,11 +130,15 @@ def _count_keywords(transcript_path: str) -> int:
 
 
 def _is_assistant_asking_question(transcript_path: str) -> bool:
-    """直前のアシスタントターンがユーザーへの質問で終わっているかを確認する。
+    """直前のアシスタントターンがユーザーへの質問を含んでいるかを確認する。
 
     以下のいずれかが成立する場合 True を返す。
     - AskUserQuestion ツール呼び出しが含まれている
-    - テキストが ? または ？ で終わっている
+    - テキストに ? または ？ が含まれている（位置は問わない）
+
+    末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
+    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
+    false positive でコミットを強行する挙動を避けるため。
 
     同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
     される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
@@ -178,7 +182,7 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
         content = message.get("content")
         if not isinstance(content, list):
             return False
-        last_text: str | None = None
+        texts: list[str] = []
         for block in content:
             if not isinstance(block, dict):
                 continue
@@ -187,9 +191,10 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
             if block.get("type") == "text":
                 text = block.get("text", "")
                 if isinstance(text, str) and text.strip():
-                    last_text = text.strip()
-        if last_text is not None:
-            return last_text.endswith("?") or last_text.endswith("？")
+                    texts.append(text)
+        if texts:
+            joined = "\n".join(texts)
+            return "?" in joined or "？" in joined
         # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
     return False
 

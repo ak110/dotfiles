@@ -415,8 +415,40 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
+    def test_mid_text_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+        """テキストの末尾でなくとも ? や ？ が含まれていれば質問扱いでブロックしない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [
+            {
+                "type": "text",
+                "text": "続行してよいですか？ 判断をいただき次第、残タスクを進めます。",
+            }
+        ]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "mid-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_question_in_earlier_block_suppresses_block(self, tmp_path: pathlib.Path):
+        """同一ターンの先頭テキストブロックに ? があり、末尾ブロックに無い場合も質問扱いでブロックしない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [
+            {"type": "text", "text": "この方針で進めますか？"},
+            {"type": "text", "text": "ご判断をお願いします。"},
+        ]
+        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "split-q", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
     def test_non_question_text_still_blocks(self, tmp_path: pathlib.Path):
-        """? で終わらないテキストの場合は通常通りブロックする。"""
+        """? を含まないテキストの場合は通常通りブロックする。"""
         repo = self._make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": "コミットします。"}]
         transcript = self._write_transcript_with_assistant_last(tmp_path, content)
