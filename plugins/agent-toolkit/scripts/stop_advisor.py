@@ -51,6 +51,18 @@ _KEYWORD_THRESHOLD = 3
 _CODEX_RESUME_THRESHOLD = 2
 _UNCOMMITTED_BLOCK_LIMIT = 2
 
+# LLM 宛てメッセージの共通プレフィックス / サフィックス。
+# 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
+_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
+_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+
+
+def _llm_notice(body: str, *, tag: str = "") -> str:
+    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
+    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
+    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+
+
 # Claude Code のハーネスが user turn 内に注入するタグ。
 # ユーザー発話ではないため修正キーワード集計の対象外とする。
 _INJECTED_TAG_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -297,10 +309,12 @@ def _main() -> int:
                 state["uncommitted_block_count"] = block_count + 1
                 _write_state(state_file, state)
                 _block(
-                    "[agent-toolkit] uncommitted changes detected."
-                    " Ask the user whether to commit the changes, or explain"
-                    " why they should not be committed."
-                    " Do not commit without user confirmation."
+                    _llm_notice(
+                        "uncommitted changes detected."
+                        " Ask the user whether to commit the changes, or explain"
+                        " why they should not be committed."
+                        " Do not commit without user confirmation."
+                    )
                 )
                 return 0
             # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
@@ -330,8 +344,7 @@ def _main() -> int:
     _write_state(state_file, state)
 
     # 理由に応じたメッセージ構築
-    parts: list[str] = []
-    parts.append("[agent-toolkit] session review:")
+    parts: list[str] = ["session review:"]
     if keyword_triggered:
         parts.append(f" transcript analysis: {keyword_count} correction indicators detected.")
     if codex_triggered:
@@ -344,7 +357,7 @@ def _main() -> int:
         " (run /claude-md-management:revise-claude-md if appropriate)"
     )
 
-    _block("".join(parts))
+    _block(_llm_notice("".join(parts)))
     return 0
 
 

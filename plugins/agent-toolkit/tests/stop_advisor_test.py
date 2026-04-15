@@ -95,6 +95,9 @@ class TestKeywordDetection:
         assert decision["decision"] == "block"
         assert "reason" in decision
         assert "correction" in decision["reason"].lower()
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: agent-toolkit/stop_advisor]" in decision["reason"]
+        assert "Auto-generated hook notice" in decision["reason"]
 
     def test_system_reminder_not_counted(self, tmp_path: pathlib.Path):
         """user turn に注入される system-reminder タグ内の語は集計対象外。
@@ -308,7 +311,11 @@ class TestUncommittedChanges:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        assert "uncommitted" in decision.get("reason", "").lower()
+        reason = decision.get("reason", "")
+        assert "uncommitted" in reason.lower()
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
+        assert "Auto-generated hook notice" in reason
 
     def test_approves_clean_repo(self, tmp_path: pathlib.Path):
         repo = self._make_clean_repo(tmp_path)

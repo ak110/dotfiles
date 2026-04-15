@@ -56,6 +56,20 @@ import traceback
 
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
+# LLM 宛てメッセージの共通プレフィックス / サフィックス。
+# 詳細は plugins/agent-toolkit/skills/claude-meta-rules/references/claude-hooks.md を参照。
+_MESSAGE_PREFIX = "[auto-generated: pretooluse]"
+_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+
+
+def _llm_notice(body: str, *, tag: str = "") -> str:
+    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
+
+    `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
+    """
+    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
+    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+
 
 def _main() -> int:
     """エントリポイント。exit code を返す (0 または 2)。"""
@@ -170,9 +184,11 @@ def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
     if _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING in rel.name:
         return False
     print(
-        f"[pretooluse] {tool_name}: blocked direct edit under ~/.claude/."
-        f" This is a chezmoi deploy target and will be overwritten on next `chezmoi apply`."
-        f" Edit `.chezmoi-source/dot_claude/` instead. Target: {file_path}",
+        _llm_notice(
+            f"{tool_name}: blocked direct edit under ~/.claude/."
+            f" This is a chezmoi deploy target and will be overwritten on next `chezmoi apply`."
+            f" Edit `.chezmoi-source/dot_claude/` instead. Target: {file_path}"
+        ),
         file=sys.stderr,
     )
     return True
@@ -219,11 +235,13 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
             print(
-                f"[pretooluse] {tool_name}.{field}: missing required PowerShell directives: "
-                f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
-                f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
-                f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
-                f" Target: {file_path}",
+                _llm_notice(
+                    f"{tool_name}.{field}: missing required PowerShell directives: "
+                    f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
+                    f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
+                    f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
+                    f" Target: {file_path}"
+                ),
                 file=sys.stderr,
             )
             return True
@@ -265,8 +283,8 @@ def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]],
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "additionalContext": (
-                "[pretooluse][warn] detected possible mention(s) of local-only personal file(s): "
+            "additionalContext": _llm_notice(
+                "detected possible mention(s) of local-only personal file(s): "
                 + "; ".join(messages)
                 + ". Such files are typically gitignored personal memos."
                 " Referencing them from version-controlled files is often unintentional"
@@ -274,7 +292,8 @@ def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]],
                 " On the other hand, recommending end users to create their own local memo"
                 " file (e.g., in distributed docs/skills) is legitimate."
                 " Judge the context and keep the mention only if it is intentional"
-                " (warning only, not blocked)."
+                " (warning only, not blocked).",
+                tag="warn",
             ),
         },
     }

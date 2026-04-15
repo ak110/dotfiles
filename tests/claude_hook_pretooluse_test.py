@@ -53,6 +53,9 @@ class TestHomeClaudeEditBlock:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
         assert result.returncode == 2
         assert ".chezmoi-source/dot_claude/" in result.stderr
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: pretooluse]" in result.stderr
+        assert "Auto-generated hook notice" in result.stderr
 
     def test_edit_blocked(self):
         target = str(_HOME / ".claude" / "settings.json")
@@ -282,6 +285,9 @@ class TestPersonalFileMentionWarning:
         msg = self._get_additional_context(result)
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: pretooluse][warn]" in msg
+        assert "Auto-generated hook notice" in msg
 
     def test_edit_reference_warns_but_passes(self):
         result = _run(

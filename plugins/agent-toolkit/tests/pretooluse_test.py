@@ -39,6 +39,9 @@ class TestMojibakeCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
         assert result.returncode == 2
         assert "U+FFFD" in result.stderr
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+        assert "Auto-generated hook notice" in result.stderr
 
     def test_edit_with_mojibake(self):
         result = _run(
@@ -82,7 +85,7 @@ class TestPs1EolCheck:
         content = "Set-StrictMode\nWrite-Host 'x'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
-        assert "LF 改行" in result.stderr
+        assert "LF-only" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -134,7 +137,7 @@ class TestLockfilesCheck:
     def test_write_blocked(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
-        assert "直接編集は禁止" in result.stderr
+        assert "direct edit" in result.stderr
 
     def test_edit_cargo_lock_blocked(self):
         result = _run(
@@ -172,7 +175,7 @@ class TestSecretsCheck:
     def test_blocked(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
-        assert "シークレット" in result.stderr
+        assert "secret" in result.stderr
 
     @pytest.mark.parametrize(
         "file_path",
@@ -228,7 +231,7 @@ class TestHomePathCheck:
         content = f"config_path = '{self._HOME}/myproj/config.yaml'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": content}})
         assert result.returncode == 0
-        assert "ホームディレクトリ" in result.stderr
+        assert "home directory" in result.stderr
 
     def test_home_path_in_local_md_skipped(self):
         content = f"See {self._HOME}/proj for details."
@@ -381,13 +384,14 @@ class TestBashGitCommitWarning:
         self._write_state(tmp_path, sid, {"test_executed": False})
         result = self._invoke("git commit -m 'test'", sid, state_dir)
         assert result.returncode == 0
-        assert self._has_additional_context(result, "agent-toolkit")
+        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
+        assert self._has_additional_context(result, "Auto-generated hook notice")
 
     def test_warns_when_state_file_absent(self, state_dir: dict[str, str]):
         """状態ファイル不在時もテスト未実行として警告する。"""
         result = self._invoke("git commit -m 'test'", "no-state", state_dir)
         assert result.returncode == 0
-        assert self._has_additional_context(result, "agent-toolkit")
+        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse]")
 
     def test_skips_when_test_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         sid = "commit-ok"
@@ -413,7 +417,7 @@ class TestBashGitCommitWarning:
         repo = self._make_repo_with_staged(tmp_path, {"a.md": "# a", "b.py": "print(1)"})
         result = self._invoke("git commit -m 'mix'", "mix", state_dir, cwd=str(repo))
         assert result.returncode == 0
-        assert self._has_additional_context(result, "agent-toolkit")
+        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse]")
 
     def test_docs_only_with_commit_all_uses_worktree(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """git commit -a の場合は作業ツリー側の変更も対象に含めて判定する。"""

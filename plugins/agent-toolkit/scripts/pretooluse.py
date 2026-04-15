@@ -48,6 +48,20 @@ import traceback
 # U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
 _REPLACEMENT_CHAR = "\ufffd"
 
+# LLM 宛てメッセージの共通プレフィックス / サフィックス。
+# 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
+_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/pretooluse]"
+_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+
+
+def _llm_notice(body: str, *, tag: str = "") -> str:
+    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
+
+    `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
+    """
+    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
+    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+
 
 def _main() -> int:
     """エントリポイント。exit code を返す (0 または 2)。"""
@@ -144,7 +158,7 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
 
 
 def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
-    """U+FFFD (文字化け) を検出したら True を返す。"""
+    """U+FFFD (mojibake) を検出したら True を返す。"""
     for field, value in fields:
         position = value.find(_REPLACEMENT_CHAR)
         if position == -1:
@@ -153,7 +167,7 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         end = min(len(value), position + 11)
         sample = value[start:end]
         print(
-            f"[agent-toolkit] {tool_name}.{field} に U+FFFD (文字化け) を検出したためブロックしました。 周辺: {sample!r}",
+            _llm_notice(f"blocked: U+FFFD (mojibake) detected in {tool_name}.{field}. Context: {sample!r}"),
             file=sys.stderr,
         )
         return True
@@ -168,12 +182,14 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         if "\r\n" in value:
             continue
         print(
-            f"[agent-toolkit] {tool_name}.{field} に LF 改行のみの内容を検出したためブロックしました。"
-            f" PowerShell 5.1 は LF 改行の .ps1 を正しくパースできないため CRLF が必要です。"
-            f" Edit ツールは CRLF を透過的に維持するため、既存ファイルの編集には Edit を使ってください。"
-            f" 新規ファイル作成時は Bash ツールで BOM 付き CRLF ファイルを書いてください"
-            f" (例: printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)。"
-            f" 対象: {file_path}",
+            _llm_notice(
+                f"blocked: LF-only content detected in {tool_name}.{field}."
+                f" PowerShell 5.1 cannot parse .ps1 files with LF line endings; CRLF is required."
+                f" Use the Edit tool for existing files (it preserves CRLF transparently)."
+                f" For new files, write via Bash with a UTF-8 BOM and CRLF line endings"
+                f" (e.g., printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)."
+                f" Target: {file_path}"
+            ),
             file=sys.stderr,
         )
         return True
@@ -190,14 +206,26 @@ def _is_ps1(file_path: str) -> bool:
 
 # (label, regex, hint) のタプル。regex は file_path 全体に対するマッチ。
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存追加は `uv add`、削除は `uv remove` を使ってください。"),
-    ("pnpm-lock.yaml", re.compile(r"(^|/)pnpm-lock\.yaml$"), "依存追加は `pnpm add`、削除は `pnpm remove` を使ってください。"),
-    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存追加は `npm install <pkg>` を使ってください。"),
-    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存追加は `yarn add` を使ってください。"),
-    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存追加は `cargo add` を使ってください。"),
-    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理は `mise use` / `mise install` を使ってください。"),
-    (".venv/", re.compile(r"(^|/)\.venv/"), "仮想環境の中身は直接編集せず、uv などで再構築してください。"),
-    ("node_modules/", re.compile(r"(^|/)node_modules/"), "node_modules は生成物なので直接編集しないでください。"),
+    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "Use `uv add` to add dependencies and `uv remove` to remove them."),
+    (
+        "pnpm-lock.yaml",
+        re.compile(r"(^|/)pnpm-lock\.yaml$"),
+        "Use `pnpm add` to add dependencies and `pnpm remove` to remove them.",
+    ),
+    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "Use `npm install <pkg>` to add dependencies."),
+    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "Use `yarn add` to add dependencies."),
+    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "Use `cargo add` to add dependencies."),
+    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "Use `mise use` / `mise install` for tool management."),
+    (
+        ".venv/",
+        re.compile(r"(^|/)\.venv/"),
+        "Do not edit virtual environment files directly; rebuild with uv or similar.",
+    ),
+    (
+        "node_modules/",
+        re.compile(r"(^|/)node_modules/"),
+        "node_modules is a generated directory; do not edit it directly.",
+    ),
 )
 
 
@@ -209,7 +237,7 @@ def _check_lockfiles(tool_name: str, file_path: str) -> bool:
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
             print(
-                f"[agent-toolkit] {tool_name}: {label} の直接編集は禁止です。{hint} 対象: {file_path}",
+                _llm_notice(f"blocked: direct edit of {label} is prohibited by {tool_name}. {hint} Target: {file_path}"),
                 file=sys.stderr,
             )
             return True
@@ -240,8 +268,10 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
         return False
     if _SECRETS_PATTERN.search(normalized):
         print(
-            f"[agent-toolkit] {tool_name}: シークレット/鍵ファイルの直接編集は禁止です。"
-            f" 誤編集はサービス停止や情報漏洩につながります。対象: {file_path}",
+            _llm_notice(
+                f"blocked: direct edit of secret / key files is prohibited by {tool_name}."
+                f" Accidental edits can cause service outages or data leaks. Target: {file_path}"
+            ),
             file=sys.stderr,
         )
         return True
@@ -255,17 +285,17 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "pyproject.toml",
         re.compile(r"(^|/)pyproject\.toml$"),
         (
-            "[project.dependencies] / [project.optional-dependencies] の編集なら"
-            " `uv add` / `uv remove` を使ってください (uv.lock 更新漏れ防止)。"
-            "[tool.*] や version などの編集はそのまま続行して構いません。"
+            "For [project.dependencies] / [project.optional-dependencies],"
+            " use `uv add` / `uv remove` (to keep uv.lock in sync)."
+            " For [tool.*] or version edits, proceed as-is."
         ),
     ),
     (
         "package.json",
         re.compile(r"(^|/)package\.json$"),
         (
-            "依存関係の編集なら `pnpm add` / `pnpm remove` を使ってください"
-            " (pnpm-lock.yaml 更新漏れ防止)。scripts や metadata の編集はそのまま続行して構いません。"
+            "For dependency edits, use `pnpm add` / `pnpm remove`"
+            " (to keep pnpm-lock.yaml in sync). For scripts or metadata edits, proceed as-is."
         ),
     ),
 )
@@ -279,7 +309,10 @@ def _check_manifest(tool_name: str, file_path: str) -> bool:
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
             print(
-                f"[agent-toolkit] {tool_name}: {label} を編集します (警告)。{hint}",
+                _llm_notice(
+                    f"editing {label} via {tool_name}. {hint}",
+                    tag="warn",
+                ),
                 file=sys.stderr,
             )
             return True
@@ -331,10 +364,13 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             end = min(len(value), position + len(home) + 20)
             sample = value[start:end]
             print(
-                f"[agent-toolkit] {tool_name}.{field} にホームディレクトリの絶対パス ({home}) を検出しました (警告)。"
-                f" リポジトリ管理ファイルでは `~` や `$HOME` / `pathlib.Path.home()` を使い、"
-                f"環境依存パスが混入しないようにしてください。"
-                f" 周辺: {sample!r}",
+                _llm_notice(
+                    f"home directory absolute path ({home}) detected in {tool_name}.{field}."
+                    f" In version-controlled files, use `~`, `$HOME`, or `pathlib.Path.home()`"
+                    f" instead to avoid environment-dependent paths."
+                    f" Context: {sample!r}",
+                    tag="warn",
+                ),
                 file=sys.stderr,
             )
             return True
@@ -380,10 +416,11 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
         return False
     op = "git commit --amend" if is_amend else "git rebase"
     print(
-        f"[agent-toolkit] {op} をブロックしました。"
-        f"amend / rebase の前に `git log --oneline --decorate` で"
-        f"コミット状態を確認してください"
-        f"（特にプッシュ済みコミットへの amend / rebase は厳禁です）。",
+        _llm_notice(
+            f"blocked: {op}."
+            f" Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
+            f" (especially, do NOT amend/rebase commits that have already been pushed)."
+        ),
         file=sys.stderr,
     )
     return True
@@ -466,9 +503,9 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "additionalContext": (
-                "[agent-toolkit] committing without running tests."
-                " Follow the verify-then-commit procedure in agent.md and run tests first."
+            "additionalContext": _llm_notice(
+                "committing without running tests. Follow the verify-then-commit procedure in agent.md and run tests first.",
+                tag="warn",
             ),
         },
     }
@@ -530,8 +567,8 @@ def _check_bash_codex_exec(command: str) -> dict | None:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "additionalContext": (
-                "[agent-toolkit] submitting plan file to codex review."
+            "additionalContext": _llm_notice(
+                "submitting plan file to codex review."
                 " Pre-submission check: are there any decisions made by assumption"
                 " rather than user confirmation?"
                 " Resolve any open questions with the user before proceeding."
