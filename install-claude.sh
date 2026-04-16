@@ -17,7 +17,6 @@ TARGET_DIR="$HOME/.claude/rules/agent-basics"
 # 配布対象ファイル一覧 (pytools/claudize.py の _UNCONDITIONAL_RULES / _CONDITIONAL_RULES と一致させること)
 FILES=(
     agent.md
-    markdown.md
 )
 
 BACKUP_DIR=""
@@ -98,6 +97,7 @@ _process_file() {
 # agent-toolkit プラグインの各スキル (coding-standards / plan-mode / bugfix / claude-meta-rules) に
 # 移行されたもの。旧レイアウト時代の rules.md / skills.md もそのまま残す。
 OBSOLETE_FILES=(
+    markdown.md
     rules.md
     skills.md
     python.md

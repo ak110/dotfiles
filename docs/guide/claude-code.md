@@ -60,7 +60,7 @@ claudize
 claudize --clean
 ```
 
-`claudize` は拡張子に応じた条件付き配布の仕組みを持つが、現在の配布対象は共通ルール（`agent.md`・`markdown.md`）のみで、条件付きで配布されるルールは設定されていない。
+`claudize`は拡張子に応じた条件付き配布の仕組みを持つが、現在の配布対象は共通ルール（`agent.md`）のみで、条件付きで配布されるルールは設定されていない。
 
 ## 配布元
 
@@ -68,8 +68,8 @@ claudize --clean
 
 配布元: `.chezmoi-source/dot_claude/rules/agent-basics/`
 
-rules側の配布対象は `agent.md` と `markdown.md` の2ファイル。
-言語別・場面特化型の指示は `agent-toolkit` プラグインのスキルが担う。
+rules側の配布対象は`agent.md`の1ファイル。
+言語別・場面特化型の指示は`agent-toolkit`プラグインのスキルが担う。
 
 ファイル一覧は以下3箇所で重複管理している。ルールファイルを追加・削除・リネームする際はすべてを更新すること。
 旧配布対象ファイルの削除は、各ファイルのobsoleteリストで追跡している（再実行時の既存環境クリーンアップ用）。

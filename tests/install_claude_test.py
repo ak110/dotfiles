@@ -75,14 +75,13 @@ class TestInstallClaude:
         home = tmp_path / "home"
         home.mkdir()
 
-        # 1回目: 追加（rules 側の配布対象は agent.md と markdown.md のみ。
-        # その他の規約は agent-toolkit プラグインのスキル側に移行済み）
+        # 1回目: 追加（rules側の配布対象はagent.mdのみ。
+        # その他の規約はagent-toolkitプラグインのスキルが担う）
         result = _run(kind, home, rules_url)
         rules_dir = home / ".claude" / "rules" / "agent-basics"
-        for name in ["agent.md", "markdown.md"]:
-            assert (rules_dir / name).exists(), f"{name} が配置されていない"
-        # 移行済みの旧ルールは配布されないこと
-        for name in ["python.md", "claude.md", "claude-rules.md", "typescript.md"]:
+        assert (rules_dir / "agent.md").exists(), "agent.md が配置されていない"
+        # スキルへ移行済みの旧ルールは配布されないこと
+        for name in ["markdown.md", "python.md", "claude.md", "claude-rules.md", "typescript.md"]:
             assert not (rules_dir / name).exists(), f"{name} が配布されている（移行済みのはず）"
         assert "追加" in result.stdout
 
@@ -111,7 +110,7 @@ class TestInstallClaude:
         home.mkdir()
         rules_dir = home / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
-        target = rules_dir / "markdown.md"
+        target = rules_dir / "agent.md"
         target.write_text(
             '---\npaths:\n  - "custom/path"\n---\n# 古い body\n',
             encoding="utf-8",
@@ -122,8 +121,8 @@ class TestInstallClaude:
         result = target.read_text(encoding="utf-8")
         assert '"custom/path"' in result, "カスタム frontmatter が維持されていない"
         assert "# 古い body" not in result, "body が更新されていない"
-        # テンプレートの body が入っている
-        template_body = (RULES_SRC / "markdown.md").read_text(encoding="utf-8")
-        # テンプレート body の特徴的な行
-        assert "# Markdown記述スタイル" in template_body
-        assert "# Markdown記述スタイル" in result
+        # テンプレートのbodyが入っている
+        template_body = (RULES_SRC / "agent.md").read_text(encoding="utf-8")
+        # テンプレートbodyの特徴的な行
+        assert "# カスタム指示" in template_body
+        assert "# カスタム指示" in result

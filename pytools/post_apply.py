@@ -68,6 +68,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("rules/agent-basics/claude-hooks.md"),
         Path("rules/agent-basics/claude-rules.md"),
         Path("rules/agent-basics/claude-skills.md"),
+        # writing-standards スキルへ吸収
+        Path("rules/agent-basics/markdown.md"),
     ],
     Path.home() / "bin": [
         # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない

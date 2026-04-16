@@ -49,11 +49,10 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     )
 
     # 4. ルールファイルがデプロイされていること。
-    # rules 側の配布対象は agent.md と markdown.md のみ。
-    # その他の規約は agent-toolkit プラグインのスキル側へ移行済み。
+    # rules側の配布対象はagent.mdのみ。
+    # その他の規約はagent-toolkitプラグインのスキルが担う。
     rules_dir = fake_home / ".claude" / "rules" / "agent-basics"
-    for name in ["agent.md", "markdown.md"]:
-        assert (rules_dir / name).exists(), f"{name} が chezmoi でデプロイされていない"
+    assert (rules_dir / "agent.md").exists(), "agent.md が chezmoi でデプロイされていない"
 
 
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:

@@ -16,7 +16,7 @@ TEMPLATE = """\
 - ルール1
 """
 
-# ルール用テンプレート（markdown.mdなど配布対象のルール向け）
+# ルール用テンプレート（配布対象のルール向け）
 RULE_TEMPLATE = "# テストルール\n"
 
 
@@ -93,7 +93,7 @@ class TestRuleDistribution:
 
         rules_dir = target / ".claude" / "rules" / "agent-basics"
         rules_dir.mkdir(parents=True)
-        target_name = _UNCONDITIONAL_RULES[0]
+        target_name = "agent.md"
         (rules_dir / target_name).write_text("# 古いルール\n", encoding="utf-8")
 
         _claudize(target, template_dir)
