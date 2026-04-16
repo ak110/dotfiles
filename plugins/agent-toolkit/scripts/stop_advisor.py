@@ -47,7 +47,11 @@ _CORRECTION_KEYWORDS: tuple[str, ...] = (
     "指示通り",
 )
 
+# 低すぎると通常会話（「違う話だけど」等）で誤検知する。
+# 3 以上なら意図的な修正指示の繰り返しと見なせる経験的な閾値。
 _KEYWORD_THRESHOLD = 3
+# resume 1 回は正常フロー（初回不合格→修正→合格）のため、
+# 2 以上を異常な繰り返しと判定する。
 _CODEX_RESUME_THRESHOLD = 2
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
@@ -73,11 +77,19 @@ _INJECTED_TAG_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def _state_path(session_id: str) -> pathlib.Path:
-    """posttooluse.py と共通のパス規則。"""
+    """posttooluse.py と共通のパス規則。
+
+    tempdir を使う理由: セッション状態は揮発で構わず、
+    OS 再起動時に自動消去されるため永続化の必要がない。
+    """
     return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
 
 
 def _read_state(path: pathlib.Path) -> dict:
+    """状態ファイルを読み込む。
+
+    ファイル未作成・破損時は空 dict を返し、初回セッションとして扱う。
+    """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, ValueError):
@@ -85,6 +97,10 @@ def _read_state(path: pathlib.Path) -> dict:
 
 
 def _write_state(path: pathlib.Path, state: dict) -> None:
+    """状態ファイルを書き込む。
+
+    書き込み失敗は無視する（hook の失敗でセッション停止を妨げない）。
+    """
     with contextlib.suppress(OSError):
         path.write_text(json.dumps(state), encoding="utf-8")
 
@@ -299,7 +315,15 @@ def _main() -> int:
     cwd = payload.get("cwd", "")
     transcript_path = payload.get("transcript_path", "")
 
-    # 未コミット変更の検出。ただし Claude がユーザーに質問中の場合はスキップする。
+    # --- 未コミット変更ブロック ---
+    # Claude がユーザーに質問中の場合はスキップする（質問への割り込みを防ぐ）。
+    # ブロックは 1 回に限る。理由:
+    #   - Claude Code は block を受けると再度 Stop を試みるため、
+    #     同一メッセージの繰り返しに意味がない
+    #   - 2 回目以降は block_count != 0 でブロックせず、
+    #     後続の stop_advice_given チェックへフォールスルーする
+    #   - _is_assistant_asking_question の transcript flush タイミング問題
+    #     （質問検出失敗）も 2 回目で自然に通過する
     if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
         asking = isinstance(transcript_path, str) and _is_assistant_asking_question(transcript_path)
         if not asking:
@@ -316,9 +340,11 @@ def _main() -> int:
                     )
                 )
                 return 0
-            # 閾値到達後は警告のみで通過させる（コミット不能な状況の救済）
+            # 2 回目以降: ブロックせず後続処理へフォールスルー
 
-    # 2 回目以降は即座に approve
+    # --- CLAUDE.md 更新提案 ---
+    # セッション 1 回制限: block 後に Claude が再度 Stop するため、
+    # 2 回目以降は即座に approve する。
     if state.get("stop_advice_given", False):
         _approve(cwd=cwd)
         return 0
@@ -338,7 +364,8 @@ def _main() -> int:
         _approve(cwd=cwd)
         return 0
 
-    # 発火: stop_advice_given を記録して block
+    # 発火: block 前に stop_advice_given を記録する。
+    # block 後の再 Stop 時に上の早期リターンで即 approve するため。
     state["stop_advice_given"] = True
     _write_state(state_file, state)
 
