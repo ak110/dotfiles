@@ -386,15 +386,16 @@ def _marketplace_registered_path(data: object) -> str | None:
     entry = _find_marketplace_entry(data)
     if entry is None:
         return None
-    for key in ("source", "installLocation", "path"):
+    for key in ("path", "installLocation"):
         value = entry.get(key)
-        if isinstance(value, dict):
-            # `source` が dict の場合はその中の `path` を見る
-            inner = cast("dict[object, object]", value).get("path")
-            if isinstance(inner, str):
-                return inner
-        elif isinstance(value, str):
+        if isinstance(value, str):
             return value
+    # `source` が dict の場合はその中の `path` を見る（旧形式への後方互換）
+    source = entry.get("source")
+    if isinstance(source, dict):
+        inner = cast("dict[object, object]", source).get("path")
+        if isinstance(inner, str):
+            return inner
     return None
 
 

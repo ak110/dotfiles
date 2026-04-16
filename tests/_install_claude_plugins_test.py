@@ -550,6 +550,73 @@ class TestMarketplacePath:
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]] == []
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
 
+    def test_flat_format_path_match_skips_reregistration(self, monkeypatch: pytest.MonkeyPatch):
+        """実際のCLI出力形式（sourceが文字列）でパス一致の場合は再登録しない。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {
+                                # pylint: disable-next=protected-access
+                                "name": _install_claude_plugins._MARKETPLACE_NAME,
+                                "source": "directory",
+                                "path": "/correct/dotfiles",
+                                "installLocation": "/correct/dotfiles",
+                            },
+                        ]
+                    ),
+                )
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._ensure_marketplace(pathlib.Path("/correct/dotfiles")) is True
+        assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]] == []
+        assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
+
+    def test_flat_format_path_mismatch_triggers_reregistration(self, monkeypatch: pytest.MonkeyPatch):
+        """実際のCLI出力形式（sourceが文字列）でパス不一致の場合はremove+addで再登録する。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {
+                                # pylint: disable-next=protected-access
+                                "name": _install_claude_plugins._MARKETPLACE_NAME,
+                                "source": "directory",
+                                "path": "/old/dotfiles",
+                                "installLocation": "/old/dotfiles",
+                            },
+                        ]
+                    ),
+                )
+            if cmd[:4] == ["claude", "plugin", "marketplace", "remove"]:
+                return _FakeResult(returncode=0)
+            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+
+        new_root = pathlib.Path("/new/dotfiles")
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._ensure_marketplace(new_root) is True
+        remove_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]]
+        add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
+        assert len(remove_calls) == 1
+        assert len(add_calls) == 1
+
 
 class TestReadTargetInfo:
     """marketplace.json から version / deprecated を読む helper のテスト。"""
