@@ -25,7 +25,7 @@ from pytools import _log_format
 logger = logging.getLogger(__name__)
 
 # `claude mcp` コマンドのタイムアウト (秒)
-_CLAUDE_TIMEOUT = 30
+_CLAUDE_TIMEOUT = 60
 
 _CODEX_NAME = "codex"
 _CODEX_COMMAND = "codex"
@@ -55,7 +55,12 @@ def run() -> bool:
     args = ["mcp", "add", "--scope", "user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
     result = _run_claude(args)
     if result is None or result.returncode != 0:
+        # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で
+        # 失敗するケースがある。この場合は実際には登録済みなので成功扱いにする
         stderr = result.stderr.strip() if result else ""
+        if result is not None and "already exists" in result.stderr:
+            logger.info(_log_format.format_status("codex-mcp", "登録済み (add が already exists を返却)"))
+            return False
         logger.info(_log_format.format_status("codex-mcp", f"登録に失敗 (続行): {stderr}"))
         return False
     logger.info(_log_format.format_status("codex-mcp", "user scope に登録しました"))

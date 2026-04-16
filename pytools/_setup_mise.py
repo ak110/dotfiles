@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # `mise` CLI のタイムアウト (秒)。`ls --global --json` は数百 ms、`use --global` は
 # 新規インストールが実行されると数十秒かかるため余裕を持たせる。
-_MISE_TIMEOUT = 120
+_MISE_TIMEOUT = 300
 
 # Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は
 # `%LOCALAPPDATA%\mise\shims` のまま REG_EXPAND_SZ で保持する。

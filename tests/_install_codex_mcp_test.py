@@ -84,6 +84,27 @@ class TestAddsWhenMissing:
         assert add_calls[0][-3:] == ["codex", "codex", "mcp-server"]
 
 
+class TestAlreadyExistsHandling:
+    """mcp add が "already exists" を返す場合の処理。"""
+
+    def test_already_exists_treated_as_registered(self, monkeypatch: pytest.MonkeyPatch):
+        """タイムアウトで list が失敗した後、add が already exists を返す場合は登録済み扱い。"""
+        monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            if cmd[:3] == ["claude", "mcp", "list"]:
+                # タイムアウト相当: returncode != 0
+                return _FakeResult(returncode=1, stderr="timeout")
+            if cmd[:3] == ["claude", "mcp", "add"]:
+                return _FakeResult(returncode=1, stderr="MCP server codex already exists")
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+
+        # 登録済みとして False を返す (例外なし)
+        assert _install_codex_mcp.run() is False
+
+
 class TestFailureHandling:
     """失敗系で例外を出さず False を返すこと。"""
 

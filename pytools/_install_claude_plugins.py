@@ -324,8 +324,12 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
 
 
 def _ensure_marketplace(dotfiles_root: Path) -> bool:
-    """対象 marketplace を登録する (既に登録済みなら何もしない)。"""
-    # 既に登録済みかチェック
+    """対象 marketplace を登録する (既に登録済みなら何もしない)。
+
+    登録済みでもパスが不一致の場合は再登録する。`update-dotfiles` を別環境で
+    実行した際に `known_marketplaces.json` に相対パスが残ると `Marketplace file
+    not found` エラーになるため、パスを検証して自動修復する。
+    """
     result = _run_claude(["plugin", "marketplace", "list", "--json"])
     if result is not None and result.returncode == 0:
         try:
@@ -333,9 +337,21 @@ def _ensure_marketplace(dotfiles_root: Path) -> bool:
         except json.JSONDecodeError:
             data = None
         if _marketplace_already_registered(data):
-            return True
+            registered_path = _marketplace_registered_path(data)
+            expected = str(dotfiles_root)
+            if registered_path is not None and registered_path != expected:
+                # パス不一致 → remove + add で再登録
+                logger.info(
+                    _log_format.format_status(
+                        "marketplace",
+                        f"パス不一致を検出 ({registered_path} != {expected})。再登録します",
+                    )
+                )
+                _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
+            else:
+                return True
 
-    # 未登録なら add する
+    # 未登録 (またはパス不一致で remove 済み) なら add する
     add_result = _run_claude(["plugin", "marketplace", "add", str(dotfiles_root)])
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
@@ -358,6 +374,41 @@ def _marketplace_already_registered(data: object) -> bool:
             if isinstance(item, dict) and cast("dict[object, object]", item).get("name") == _MARKETPLACE_NAME:
                 return True
     return False
+
+
+def _marketplace_registered_path(data: object) -> str | None:
+    """登録済み marketplace のパスを抽出する。
+
+    `known_marketplaces.json` に保存されるパスは `source.path` / `installLocation`
+    / `path` のいずれかに格納される。取得できない場合は None を返し、呼び出し元で
+    パス検証をスキップさせる (従来動作を維持)。
+    """
+    entry = _find_marketplace_entry(data)
+    if entry is None:
+        return None
+    for key in ("source", "installLocation", "path"):
+        value = entry.get(key)
+        if isinstance(value, dict):
+            # `source` が dict の場合はその中の `path` を見る
+            inner = cast("dict[object, object]", value).get("path")
+            if isinstance(inner, str):
+                return inner
+        elif isinstance(value, str):
+            return value
+    return None
+
+
+def _find_marketplace_entry(data: object) -> dict[object, object] | None:
+    """対象 marketplace のエントリ dict を返す。見つからなければ None。"""
+    if isinstance(data, dict):
+        dict_data = cast("dict[object, object]", data)
+        if "marketplaces" in dict_data:
+            return _find_marketplace_entry(dict_data["marketplaces"])
+    if isinstance(data, list):
+        for item in cast("list[object]", data):
+            if isinstance(item, dict) and cast("dict[object, object]", item).get("name") == _MARKETPLACE_NAME:
+                return cast("dict[object, object]", item)
+    return None
 
 
 def _install_plugin(name: str) -> bool:
