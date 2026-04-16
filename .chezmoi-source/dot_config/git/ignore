@@ -12,6 +12,7 @@ cmd.bat
 
 # Claude Code
 CLAUDE.local.md
+.claude/worktrees/
 
 # https://github.com/github/gitignore/blob/master/Global/VisualStudioCode.gitignore
 
