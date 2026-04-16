@@ -2,6 +2,7 @@
 
 subprocess.run / shutil.which をモックして、前提条件分岐・marketplace 登録・
 plugin install / update の各パスを検証する。
+ファイル直接読み取り関数の単体テストも含む。
 """
 
 import json
@@ -60,9 +61,16 @@ class TestPrerequisites:
         assert _install_claude_plugins.run() is False
 
 
-@pytest.mark.usefixtures("fake_which_present", "fake_target_info")
+@pytest.fixture(name="disable_file_reads")
+def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ファイル直接読み取りを無効化し、CLIフォールバックパスを通す。"""
+    monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
+    monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
+
+
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads")
 class TestRunFlow:
-    """メインフローのテスト (前提条件は満たしている状態)。"""
+    """メインフローのテスト (前提条件は満たしている状態、CLIフォールバックパス)。"""
 
     def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
         """既に配布 version と一致していれば全プラグインについて update は呼ばない。"""
@@ -454,10 +462,11 @@ class TestExtractPluginVersionMap:
 
 
 class TestMarketplacePath:
-    """marketplace パス検証・再登録のテスト。"""
+    """marketplace パス検証・再登録のテスト (CLIフォールバックパス)。"""
 
     def test_path_mismatch_triggers_reregistration(self, monkeypatch: pytest.MonkeyPatch):
         """登録済みだがパスが異なる場合、remove + add で再登録される。"""
+        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -497,6 +506,7 @@ class TestMarketplacePath:
 
     def test_path_match_skips_reregistration(self, monkeypatch: pytest.MonkeyPatch):
         """パスが一致する場合は remove を呼ばない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -525,6 +535,7 @@ class TestMarketplacePath:
 
     def test_no_path_field_keeps_legacy_behavior(self, monkeypatch: pytest.MonkeyPatch):
         """パスフィールドが無い場合は再登録せず従来動作を維持する。"""
+        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -552,6 +563,7 @@ class TestMarketplacePath:
 
     def test_flat_format_path_match_skips_reregistration(self, monkeypatch: pytest.MonkeyPatch):
         """実際のCLI出力形式（sourceが文字列）でパス一致の場合は再登録しない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -582,6 +594,7 @@ class TestMarketplacePath:
 
     def test_flat_format_path_mismatch_triggers_reregistration(self, monkeypatch: pytest.MonkeyPatch):
         """実際のCLI出力形式（sourceが文字列）でパス不一致の場合はremove+addで再登録する。"""
+        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda _root: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -639,3 +652,171 @@ class TestReadTargetInfo:
         targets, deprecated = _install_claude_plugins._read_target_info(tmp_path)
         assert not targets
         assert not deprecated
+
+
+class TestReadInstalledFromFile:
+    """_read_installed_plugins_from_file()の単体テスト。"""
+
+    def test_normal_read(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """正常なinstalled_plugins.jsonを読み取り、CLI互換形式に変換できる。"""
+        path = tmp_path / "installed_plugins.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "plugins": {
+                        "agent-toolkit@ak110-dotfiles": [
+                            {"scope": "user", "version": "0.15.0"},
+                        ],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        # pylint: disable-next=protected-access
+        result = _install_claude_plugins._read_installed_plugins_from_file()
+        assert result == [{"id": "agent-toolkit@ak110-dotfiles", "scope": "user", "version": "0.15.0"}]
+
+    def test_file_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """ファイルが存在しない場合はNoneを返す。"""
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", tmp_path / "missing.json")
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._read_installed_plugins_from_file() is None
+
+    def test_invalid_json(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """不正なJSONの場合はNoneを返す。"""
+        path = tmp_path / "installed_plugins.json"
+        path.write_text("{invalid", encoding="utf-8")
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._read_installed_plugins_from_file() is None
+
+    def test_mixed_scopes(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """複数スコープのエントリが正しく変換される。"""
+        path = tmp_path / "installed_plugins.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "plugins": {
+                        "plugin-a@mk": [
+                            {"scope": "user", "version": "1.0.0"},
+                            {"scope": "project", "version": "1.0.0", "projectPath": "/some/path"},
+                        ],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", path)
+        # pylint: disable-next=protected-access
+        result = _install_claude_plugins._read_installed_plugins_from_file()
+        assert result is not None
+        assert len(result) == 2
+        assert {"id": "plugin-a@mk", "scope": "user", "version": "1.0.0"} in result
+        assert {"id": "plugin-a@mk", "scope": "project", "version": "1.0.0", "projectPath": "/some/path"} in result
+
+
+class TestCheckMarketplaceFromFile:
+    """_check_marketplace_from_file()の単体テスト。"""
+
+    def test_path_match(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """パスが一致する場合Trueを返す。"""
+        path = tmp_path / "known_marketplaces.json"
+        path.write_text(
+            json.dumps(
+                {
+                    # pylint: disable-next=protected-access
+                    _install_claude_plugins._MARKETPLACE_NAME: {
+                        "source": {"source": "directory", "path": "/home/aki/dotfiles"},
+                        "installLocation": "/home/aki/dotfiles",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/home/aki/dotfiles")) is True
+
+    def test_path_mismatch(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """パスが不一致の場合Falseを返す。"""
+        path = tmp_path / "known_marketplaces.json"
+        path.write_text(
+            json.dumps(
+                {
+                    # pylint: disable-next=protected-access
+                    _install_claude_plugins._MARKETPLACE_NAME: {
+                        "source": {"source": "directory", "path": "/old/dotfiles"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/new/dotfiles")) is False
+
+    def test_marketplace_not_registered(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """marketplaceキーが存在しない場合Noneを返す。"""
+        path = tmp_path / "known_marketplaces.json"
+        path.write_text(json.dumps({"other-marketplace": {}}), encoding="utf-8")
+        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/any")) is None
+
+    def test_file_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """ファイルが存在しない場合Noneを返す。"""
+        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", tmp_path / "missing.json")
+        # pylint: disable-next=protected-access
+        assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/any")) is None
+
+
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info")
+class TestHappyPathNoCli:
+    """happy path（すべて最新）でCLI呼び出しがゼロであることを検証する統合テスト。"""
+
+    def test_all_up_to_date_no_cli_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """全プラグインが最新かつmarketplace登録済みなら、subprocessを一切呼ばない。"""
+        # installed_plugins.json: 全プラグインが最新
+        installed_path = tmp_path / "installed_plugins.json"
+        installed_path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "plugins": {
+                        "agent-toolkit@ak110-dotfiles": [{"scope": "user", "version": "0.2.0"}],
+                        "sample-plugin@ak110-dotfiles": [{"scope": "user", "version": "1.0.0"}],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed_path)
+
+        # known_marketplaces.json: marketplace登録済みでパス一致
+        # pylint: disable-next=protected-access
+        dotfiles_root = _install_claude_plugins._find_dotfiles_root()
+        assert dotfiles_root is not None
+        marketplace_path = tmp_path / "known_marketplaces.json"
+        marketplace_path.write_text(
+            json.dumps(
+                {
+                    # pylint: disable-next=protected-access
+                    _install_claude_plugins._MARKETPLACE_NAME: {
+                        "source": {"source": "directory", "path": str(dotfiles_root)},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
+
+        # subprocessが呼ばれたら失敗させる
+        def fail_if_called(cmd, **_kwargs):  # noqa: ANN001
+            raise AssertionError(f"subprocess.runが呼ばれた: {cmd}")
+
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fail_if_called)
+
+        assert _install_claude_plugins.run() is False

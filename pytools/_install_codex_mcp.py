@@ -16,9 +16,11 @@
 - 無ければ `claude mcp add --scope user codex codex mcp-server` で登録
 """
 
+import json
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 
 from pytools import _log_format
 
@@ -30,6 +32,29 @@ _CLAUDE_TIMEOUT = 60
 _CODEX_NAME = "codex"
 _CODEX_COMMAND = "codex"
 _CODEX_ARGS = ("mcp-server",)
+
+# Claude Code設定ファイルのパス (CLI呼び出しを回避するための直接読み取り用)
+_CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
+
+
+def _is_codex_registered_from_file() -> bool | None:
+    """.claude.jsonを直接読み取り、codex MCPサーバーの登録状態を判定する。
+
+    Returns:
+        True: mcpServersにcodexキーが存在する（登録済み）。
+        False: mcpServersは存在するがcodexキーが無い（未登録）。
+        None: 読み取り失敗（CLIフォールバックが必要）。
+    """
+    try:
+        data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    mcp_servers = data.get("mcpServers")
+    if not isinstance(mcp_servers, dict):
+        return None
+    return _CODEX_NAME in mcp_servers
 
 
 def _main() -> None:
@@ -48,7 +73,12 @@ def run() -> bool:
         logger.info(_log_format.format_status("codex-mcp", "claude CLI 未検出のためスキップ"))
         return False
 
-    if _is_codex_registered():
+    # ファイル直接読み取りを先に試み、登録済みならCLI呼び出しを省略する
+    file_check = _is_codex_registered_from_file()
+    if file_check is True:
+        logger.info(_log_format.format_status("codex-mcp", "登録済み"))
+        return False
+    if file_check is None and _is_codex_registered():
         logger.info(_log_format.format_status("codex-mcp", "登録済み"))
         return False
 

@@ -54,6 +54,79 @@ _MARKETPLACE_NAME = "ak110-dotfiles"
 # ローカルパスからの install は通常 1-2 秒で終わるが、念のため余裕を持たせる
 _CLAUDE_TIMEOUT = 30
 
+# Claude Code設定ファイルのパス (CLI呼び出しを回避するための直接読み取り用)
+_INSTALLED_PLUGINS_PATH = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+_KNOWN_MARKETPLACES_PATH = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
+
+
+def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
+    """installed_plugins.jsonを直接読み取り、CLI互換のlist[dict]形式に変換する。
+
+    ファイルの形式:
+        {"version": 2, "plugins": {"name@marketplace": [{"scope": "user", "version": "0.15.0", ...}]}}
+
+    CLI出力互換の形式に変換:
+        [{"id": "name@marketplace", "scope": "user", "version": "0.15.0", ...}]
+
+    読み取り失敗時はNoneを返し、呼び出し元でCLIフォールバックさせる。
+    """
+    try:
+        data = json.loads(_INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    plugins = data.get("plugins")
+    if not isinstance(plugins, dict):
+        return None
+    result: list[dict[str, object]] = []
+    for key, entries in plugins.items():
+        if not isinstance(key, str) or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            item: dict[str, object] = {"id": key}
+            for field in ("scope", "version", "projectPath"):
+                if field in entry:
+                    item[field] = entry[field]
+            result.append(item)
+    return result
+
+
+def _check_marketplace_from_file(dotfiles_root: Path) -> bool | None:
+    """known_marketplaces.jsonを直接読み取り、marketplace登録状態を判定する。
+
+    Returns:
+        True: 登録済みでパス一致（何もしなくてよい）。
+        False: 登録済みだがパス不一致（再登録が必要）。
+        None: 読み取り失敗またはキー不在（CLIフォールバックが必要）。
+    """
+    try:
+        data = json.loads(_KNOWN_MARKETPLACES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    entry = data.get(_MARKETPLACE_NAME)
+    if entry is None:
+        return None
+    if not isinstance(entry, dict):
+        return None
+    # パスの抽出: source.path または installLocation を確認する
+    expected = str(dotfiles_root)
+    source = entry.get("source")
+    if isinstance(source, dict):
+        path = source.get("path")
+        if isinstance(path, str):
+            return path == expected
+    for key in ("installLocation", "path"):
+        value = entry.get(key)
+        if isinstance(value, str):
+            return value == expected
+    # パスフィールドが無い場合は登録済みとみなす（従来動作を維持）
+    return True
+
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -81,10 +154,13 @@ def run() -> bool:
         logger.info(_log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
         return False
 
-    raw_data = _get_installed_plugins_raw()
+    # ファイル直接読み取りを先に試み、失敗時のみCLIフォールバックする
+    raw_data: object = _read_installed_plugins_from_file()
     if raw_data is None:
-        logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
-        return False
+        raw_data = _get_installed_plugins_raw()
+        if raw_data is None:
+            logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
+            return False
 
     if not _ensure_marketplace(dotfiles_root):
         return False
@@ -99,10 +175,10 @@ def run() -> bool:
     # user scope のバージョン辞書を取得
     installed = _extract_plugin_version_map(raw_data)
 
-    # 既にインストールされている対象 plugin が 1 つでもあるなら marketplace メタデータを
-    # refresh して、ローカルの marketplace.json に入った version 更新を取り込む。
-    # 新規 install しかない場合は install コマンドが毎回ファイルを読むため refresh 不要。
-    if any(name in installed for name in target_versions):
+    # インストール済みプラグインにバージョン不一致があるときのみmarketplaceメタデータを
+    # refreshする。全て最新なら不要（CLIの起動コストを節約）。
+    # 新規installしかない場合もinstallコマンドが毎回ファイルを読むためrefresh不要。
+    if any(name in installed and installed[name] != target for name, target in target_versions.items() if target):
         _refresh_marketplace()
 
     for name, target in target_versions.items():
@@ -330,26 +406,41 @@ def _ensure_marketplace(dotfiles_root: Path) -> bool:
     実行した際に `known_marketplaces.json` に相対パスが残ると `Marketplace file
     not found` エラーになるため、パスを検証して自動修復する。
     """
-    result = _run_claude(["plugin", "marketplace", "list", "--json"])
-    if result is not None and result.returncode == 0:
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            data = None
-        if _marketplace_already_registered(data):
-            registered_path = _marketplace_registered_path(data)
-            expected = str(dotfiles_root)
-            if registered_path is not None and registered_path != expected:
-                # パス不一致 → remove + add で再登録
-                logger.info(
-                    _log_format.format_status(
-                        "marketplace",
-                        f"パス不一致を検出 ({registered_path} != {expected})。再登録します",
+    # ファイル直接読み取りを先に試みる
+    file_check = _check_marketplace_from_file(dotfiles_root)
+    if file_check is True:
+        return True
+    if file_check is False:
+        # パス不一致 → remove + add で再登録
+        logger.info(
+            _log_format.format_status(
+                "marketplace",
+                "パス不一致を検出。再登録します",
+            )
+        )
+        _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
+    elif file_check is None:
+        # ファイル読み取り失敗 → CLIフォールバック
+        result = _run_claude(["plugin", "marketplace", "list", "--json"])
+        if result is not None and result.returncode == 0:
+            try:
+                data = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                data = None
+            if _marketplace_already_registered(data):
+                registered_path = _marketplace_registered_path(data)
+                expected = str(dotfiles_root)
+                if registered_path is not None and registered_path != expected:
+                    # パス不一致 → remove + add で再登録
+                    logger.info(
+                        _log_format.format_status(
+                            "marketplace",
+                            f"パス不一致を検出 ({registered_path} != {expected})。再登録します",
+                        )
                     )
-                )
-                _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
-            else:
-                return True
+                    _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
+                else:
+                    return True
 
     # 未登録 (またはパス不一致で remove 済み) なら add する
     add_result = _run_claude(["plugin", "marketplace", "add", str(dotfiles_root)])
