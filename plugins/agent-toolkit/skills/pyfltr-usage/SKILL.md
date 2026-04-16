@@ -36,7 +36,8 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 
 ### レコード種別
 
-出力は3種別のレコードからなり、`diagnostic` → `tool` → `summary`の順で出力される。
+出力は3種別のレコードからなる。
+stdoutモードではツール完了時にdiagnostic行+tool行が随時書き出され、最後にwarning行+summary行が続く。
 
 ```json
 {"kind":"diagnostic","tool":"ruff-check","file":"src/a.py","line":1,"col":8,"rule":"F401","severity":"error","fix":"safe","msg":"`os` imported but unused"}
