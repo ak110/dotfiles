@@ -69,7 +69,7 @@ repos:
       # コミット時にローカルへの反映もやっちゃう (忘れたまま作業しがちのため…)
       - id: chezmoi-apply
         name: chezmoi apply
-        entry: chezmoi apply
+        entry: bash -c '[ "$(git rev-parse --show-toplevel)" != "$HOME/dotfiles" ] || chezmoi apply'
         require_serial: true
         pass_filenames: false
         language: system
