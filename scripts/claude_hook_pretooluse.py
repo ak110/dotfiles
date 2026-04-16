@@ -250,12 +250,13 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 
 # --- 個人用 / ローカル専用ファイル言及 check (warn) ---
 
-# ファイル名に `___` (3連アンダースコア) を含むトークンを検出する。
+# ファイル名に連続アンダースコア (3〜7 文字) を含むトークンを検出する。
 # 個人用メモの慣習として使われるファイル名パターン。
-# `\w+___\w+` で前後に少なくとも1文字のword文字を要求し、単独の `___` は除外する。
-# `\b` でword境界に固定することで、トークンの内側の部分マッチ (例: `foo___bar` の中の
-# `oo___ba`) を避ける。
-_TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w+___\w+\b")
+# 8 文字以上の連続アンダースコアは区切り線等の装飾用途とみなし対象外にする。
+# `[^\W_]` (= [a-zA-Z0-9]) でアンダースコア列の前後を非アンダースコアの word 文字に
+# 限定し、`(?!_)` で列が 7 文字を超えないことを保証する。
+# `\b` でword境界に固定することで、トークンの内側の部分マッチを避ける。
+_TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
 
 
 def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> dict | None:
@@ -308,12 +309,16 @@ def _is_claude_local_md(file_path: str) -> bool:
     return name == _CLAUDE_LOCAL_MD
 
 
+# 3〜7 文字の連続アンダースコアを検出するパターン (ファイル名判定用)。
+_SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
+
+
 def _has_triple_underscore_filename(file_path: str) -> bool:
-    """ファイル名自体に `___` が含まれるかを判定する (言及チェック除外用)。"""
+    """ファイル名自体に 3〜7 文字の連続アンダースコアが含まれるかを判定する (言及チェック除外用)。"""
     if not file_path:
         return False
     name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
-    return "___" in name
+    return bool(_SHORT_UNDERSCORE_RUN.search(name))
 
 
 if __name__ == "__main__":

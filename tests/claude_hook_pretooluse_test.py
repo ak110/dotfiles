@@ -432,6 +432,58 @@ class TestPersonalFileMentionWarning:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    def test_seven_underscore_mention_warns(self):
+        """7 文字の連続アンダースコアは警告対象。"""
+        sep7 = "_" * 7
+        stem = f"foo{sep7}bar"
+        token = f"{stem}.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {token} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert stem in msg
+        assert "warn" in msg.lower()
+
+    def test_eight_underscore_mention_ignored(self):
+        """8 文字以上の連続アンダースコアは装飾用途とみなし警告しない。"""
+        sep8 = "_" * 8
+        token = f"foo{sep8}bar"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {token} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_long_underscore_self_edit_not_excluded(self):
+        """8 文字以上のアンダースコアを含むファイル名は個人ファイルとみなさず除外しない。"""
+        sep8 = "_" * 8
+        long_name = f"foo{sep8}bar.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"/home/user/notes/{long_name}",
+                    "content": f"memo referencing {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert self._TRIPLE_STEM in msg
+
     def test_both_patterns_reported_together(self):
         """`CLAUDE.local.md` と `___` の両方が言及されたら両方報告する。"""
         result = _run(
