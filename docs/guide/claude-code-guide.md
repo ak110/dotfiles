@@ -94,7 +94,7 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
   プロジェクト固有の`CLAUDE.md`や`.claude/rules/`が優先で、本スキルはそれを補完するベースライン
 - `plan-mode` — plan mode開始時・複雑な指示受領時に呼び出す計画ファイル作成手順。
   計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合
-- `bugfix` — バグ・障害・イシュー調査対応の4ステップ標準手順（根本原因特定・対策決定・類似箇所見直し・再発防止）
+- `bugfix` — バグ・障害・イシュー調査対応の手順。対症療法で済ませず根本原因の追跡と再発防止に踏み込む
 - `claude-meta-rules` — `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks系ファイル編集時に呼び出すメタガイド。
   訓練データにないClaude Code独自機能の仕様補完と、コンテキスト汚染を避ける記述原則を集約
 - `tidy-unpushed-commits` — 複数の未プッシュコミットを慎重で再現性のある手順で整理する（squash・reorder・メッセージ書き直し）。
