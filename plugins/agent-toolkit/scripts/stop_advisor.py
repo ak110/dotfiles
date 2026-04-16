@@ -49,7 +49,6 @@ _CORRECTION_KEYWORDS: tuple[str, ...] = (
 
 _KEYWORD_THRESHOLD = 3
 _CODEX_RESUME_THRESHOLD = 2
-_UNCOMMITTED_BLOCK_LIMIT = 2
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 # 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
@@ -305,7 +304,7 @@ def _main() -> int:
         asking = isinstance(transcript_path, str) and _is_assistant_asking_question(transcript_path)
         if not asking:
             block_count = state.get("uncommitted_block_count", 0)
-            if block_count < _UNCOMMITTED_BLOCK_LIMIT:
+            if block_count == 0:
                 state["uncommitted_block_count"] = block_count + 1
                 _write_state(state_file, state)
                 _block(

@@ -330,8 +330,8 @@ class TestUncommittedChanges:
     def test_allows_after_block_limit(self, tmp_path: pathlib.Path):
         repo = self._make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, "no corrections")
-        # 2 回ブロック後、3 回目は通過する
-        _write_state(tmp_path, "limit", {"uncommitted_block_count": 2})
+        # 1 回ブロック後、2 回目は通過する
+        _write_state(tmp_path, "limit", {"uncommitted_block_count": 1})
         result = _run(
             {"session_id": "limit", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
