@@ -44,7 +44,7 @@ jobs:
         run: |
           test -f ~/.bashrc
           test -f ~/.vimrc
-          test -f ~/.claude/CLAUDE.md
+          test -f ~/.claude/rules/agent-basics/agent.md
           test -f ~/.ssh/config
           test -x ~/bin/update-dotfiles
 
@@ -72,7 +72,7 @@ jobs:
       - name: 主要ファイルの存在確認
         shell: pwsh
         run: |
-          if (-not (Test-Path "$env:USERPROFILE\.claude\CLAUDE.md")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-basics\agent.md")) { exit 1 }
           if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) { exit 1 }
           if (-not (Test-Path "$env:USERPROFILE\bin\update-dotfiles.cmd")) { exit 1 }
 
