@@ -145,6 +145,46 @@ Phase: {1, 2, 3a, 3b, 3c, 4, 5のいずれか}
 -
 ````
 
+## レビュアー呼び出し（spec-reviewer・code-quality-reviewer）
+
+Phase 5で機能単位に直列起動するレビュアーの呼び出しテンプレート。
+両レビュアーに共通する引数は「機能名・恒久ドキュメントのパス・`BASE_SHA`・レビュー対象外の一時ファイル一覧」の4点。
+
+`BASE_SHA`はPhase 5開始時点の`git rev-parse HEAD`の結果を使う。
+spec-implementerはタスク単位でコミットしない設計のため、レビュー時点の差分は未コミットの作業ツリー差分として扱う。
+差分取得は`git diff {BASE_SHA}`と未追跡ファイルを含む作業ツリー参照（`git status`・`Read`）で行う。
+`docs/v{version}/{機能名}.working.md`などの一時ファイルは実装完了時に削除される想定のため、評価対象外として除外する。
+
+### spec-reviewer
+
+```text
+以下の機能について仕様適合性レビューを実施してください。
+
+機能名: {機能名}
+恒久ドキュメント: `docs/v{version}/{機能名}.md`
+BASE_SHA: {Phase 5開始時点のHEAD}
+対象外ファイル: docs/v{version}/{機能名}.working.md
+
+差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
+制約: 読み取り専用。実装者レポートは鵜呑みにせず、コードと差分で独立検証すること
+出力: 仕様適合（✅）または指摘（❌、file:line形式）
+```
+
+### code-quality-reviewer
+
+```text
+以下の機能についてコード品質レビューを実施してください。
+
+機能名: {機能名}
+恒久ドキュメント: `docs/v{version}/{機能名}.md`
+BASE_SHA: {Phase 5開始時点のHEAD}
+対象外ファイル: docs/v{version}/{機能名}.working.md
+
+差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
+制約: 読み取り専用。coding-standardsスキルを事前に呼び出し、品質基準に従うこと
+出力: Strengths / Issues (Critical/Important/Minor) / Assessment (approve/reject)
+```
+
 ## 参照コメント（恒久`.md`への1行参照）
 
 言語別の書式例のみ示す。配置・対象範囲・`.working.md`を参照しない理由はSKILL.md「参照コメント方針」節を参照する。

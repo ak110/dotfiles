@@ -174,6 +174,7 @@ codex CLI自体のセットアップは別途行うこと。
   - Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、各フェーズ終端にユーザー確認ゲートを置く
   - ドキュメント規約: 仕様と設計は`docs/v{version}/{機能名}.md`（恒久、実装後も残す）、進行中の作業メモは`docs/v{version}/{機能名}.working.md`（一時、実装完了時に削除）。複数機能で参照される設計判断・ガイドライン・共通用語は横断ドキュメント`docs/v{version}/{トピック名}.md`（恒久、`.working.md`は設けず直接編集）へ切り出す。バージョン全体の概要と目次は`docs/v{version}/README.md`に置く（バージョン目的・機能一覧・横断ドキュメント一覧の3節構成）。`{version}`は次期リリースのバージョン番号でIntakeフェーズで確定する（末尾の`.0`は省略。例: `3.0.0`→`v3`、`1.2.0`→`v1.2`）
   - 調査は`spec-researcher`、実装は`spec-implementer`の各サブエージェントへ分業し、メインセッションのコンテキスト消費を抑える
+  - レビューは`spec-reviewer`（仕様適合性）と`code-quality-reviewer`（コード品質）を機能単位（全タスク完了・format/lint/test合格後）に直列起動する
 
 ## 更新方法
 

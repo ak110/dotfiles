@@ -1,6 +1,6 @@
 ---
 name: spec-driven
-description: 軽量SDD（Spec-Driven Development）ワークフロー。手動トリガー専用で、ユーザーが`/agent-toolkit:spec-driven`で明示的に起動した時のみ呼び出す。大規模コードベースへの機能追加で検討漏れ・デグレードを抑え、仕様と設計判断を恒久ドキュメントに残すために使う。Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、調査はspec-researcher、実装はspec-implementerの各サブエージェントへ分業する。
+description: 軽量SDD（Spec-Driven Development）ワークフロー。手動トリガー専用で、ユーザーが`/agent-toolkit:spec-driven`で明示的に起動した時のみ呼び出す。大規模コードベースへの機能追加で検討漏れ・デグレードを抑え、仕様と設計判断を恒久ドキュメントに残すために使う。Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、調査はspec-researcher、実装はspec-implementer、仕様適合性レビューはspec-reviewer、コード品質レビューはcode-quality-reviewerの各サブエージェントへ分業する。
 disable-model-invocation: true
 ---
 
@@ -104,10 +104,16 @@ Designは3サブフェーズで構成し、plan modeを2つの合意ゲート（
 
 - `spec-researcher`（`model: sonnet`）: 既存機能調査・影響範囲分析を担う。観点ごとに並列起動可
 - `spec-implementer`（`model: sonnet`）: タスク単位の実装を担う。依存関係の都合から原則順次起動
+- `spec-reviewer`（`model: sonnet`）: 仕様適合性レビューを担う読み取り専用エージェント。機能単位（全タスク完了・format/lint/test合格後）に1回起動
+- `code-quality-reviewer`（`model: sonnet`）: コード品質レビューを担う読み取り専用エージェント。spec-reviewer合格後に機能単位で起動
 - 一過性の単純作業（単純な検索・機械的な置換など）は都度Agentツールで`haiku`を呼ぶ
 
 メインセッションはフェーズ進行管理・ユーザー確認・`plan-mode`呼び出しに集中する。
-調査と実装のコンテキストはサブエージェントに閉じ込め、メイン側のコンテキスト汚染を避ける。
+調査・実装・レビューのコンテキストはサブエージェントに閉じ込め、メイン側のコンテキスト汚染を避ける。
+
+レビュアーは直列で起動し、`format/lint/test` → `spec-reviewer` → `code-quality-reviewer`の順序を固定する。
+品質レビューは仕様適合性を前提に成立するため、順序を逆転させない。
+指摘があれば`spec-implementer`へ差し戻して修正後に再レビューし、両レビュアーが合格を返すまでループする。
 
 ## 参照コメント方針
 
