@@ -70,15 +70,14 @@ def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(name="disable_auto_managed_plugins")
 def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
-    """自動有効化・自動無効化処理を no-op に差し替える。
+    """推奨コマンド算出を no-op に差し替える。
 
     既存テストは ak110-dotfiles marketplace のプラグインだけを対象にしているため、
-    外部 marketplace を触る自動管理処理が走ると CLI 呼び出しの期待値が崩れる。
-    専用テスト (``TestAutoDisablePlugins`` / ``TestAutoInstallAndEnablePlugins``) で
-    直接呼び出して検証する方針。
+    外部 marketplace を参照する推奨コマンド算出は専用テストへ委ねる。
+    ``compute_recommended_commands`` の振る舞いは
+    ``tests/_install_claude_plugins_auto_manage_test.py`` で単体検証している。
     """
-    monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw: None)
-    monkeypatch.setattr(_install_claude_plugins, "_auto_install_and_enable_plugins", lambda _raw: None)
+    monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
 
 
 @pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads", "disable_auto_managed_plugins")

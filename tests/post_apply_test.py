@@ -10,7 +10,7 @@
 
 import pytest
 
-from pytools import post_apply
+from pytools import _install_claude_plugins, post_apply
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):
@@ -91,3 +91,33 @@ class TestRun:
         ]
         # SystemExit が出ないことを確認
         post_apply._main(runner=lambda: fake_results)  # pylint: disable=protected-access
+
+
+class TestPluginRecommendations:
+    """`_install_claude_plugins.consume_recommendations()` による推奨コマンド案内出力。"""
+
+    def test_prints_recommendations_when_present(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+        """推奨コマンドがある場合は見出しと各コマンド行を出力する。"""
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_LAST_RECOMMENDATIONS",
+            ["claude plugin install a --scope user", "claude plugin disable b --scope user"],
+        )
+        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
+        with caplog.at_level("INFO", logger=post_apply.logger.name):
+            post_apply._main(runner=lambda: fake_results)
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("推奨プラグイン設定" in m for m in messages)
+        assert any("claude plugin install a --scope user" in m for m in messages)
+        assert any("claude plugin disable b --scope user" in m for m in messages)
+        # consume 後は空になっている (ワンショット契約)
+        assert not _install_claude_plugins.consume_recommendations()
+
+    def test_no_output_when_no_recommendations(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+        """推奨コマンドが空なら案内を出力しない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_LAST_RECOMMENDATIONS", [])
+        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
+        with caplog.at_level("INFO", logger=post_apply.logger.name):
+            post_apply._main(runner=lambda: fake_results)
+        messages = [record.getMessage() for record in caplog.records]
+        assert not any("推奨プラグイン設定" in m for m in messages)

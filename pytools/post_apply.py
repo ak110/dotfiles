@@ -126,9 +126,24 @@ def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
     # 付与されてしまうため、stdout に直接書き込んで整形された空行を出力する。
     print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
+    _print_plugin_recommendations()
     if failed:
         logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
         sys.exit(1)
+
+
+def _print_plugin_recommendations() -> None:
+    """``_install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。
+
+    エンドユーザー向けの案内文は敬体に揃え、現状と推奨状態に乖離がある場合のみ出力する。
+    """
+    recommendations = _install_claude_plugins.consume_recommendations()
+    if not recommendations:
+        return
+    print(flush=True)
+    logger.info("推奨プラグイン設定に対し以下のコマンドの実行をおすすめします:")
+    for cmd in recommendations:
+        logger.info("  %s", cmd)
 
 
 def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:

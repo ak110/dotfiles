@@ -1,8 +1,9 @@
-"""pytools._install_claude_plugins の自動有効化・自動無効化機構のテスト。
+"""pytools._install_claude_plugins の推奨コマンド算出機構のテスト。
 
-`_auto_disable_plugins` と `_auto_install_and_enable_plugins` の各パスを
-単体で検証する。`run()` 末尾でこの 2 関数が想定順序で呼ばれることも併せて
-検証する (自動管理処理はすべての install/update 試行の後に走らせるため)。
+`compute_recommended_commands` と `consume_recommendations` を単体で検証する。
+また、`run()` 末尾で推奨コマンドが算出され `consume_recommendations()` 経由で
+取り出せること、および自動有効化・無効化のための CLI (install / enable / disable)
+が発行されないことも合わせて検証する。
 """
 
 import json
@@ -26,242 +27,106 @@ def _plugin_list_json(*entries: dict[str, object]) -> str:
     return json.dumps(list(entries))
 
 
-class TestAutoDisablePlugins:
-    """`_auto_disable_plugins` の単体テスト。
+class TestComputeRecommendedCommands:
+    """`compute_recommended_commands` の単体テスト。"""
 
-    ユーザーが使わない公式プラグインを `claude plugin disable` で無効化するが、
-    未インストール・既に disabled の場合は CLI を呼ばずスキップすることが中心。
-    """
+    _ENABLE_TARGET = "context7@claude-plugins-official"
+    _DISABLE_TARGET = "serena@claude-plugins-official"
 
-    # 代表対象として _AUTO_DISABLED_PLUGIN_IDS に含まれるプラグインを1件選ぶ。
-    # 他の対象も同じロジックで動くため、単体テストは1つで十分。
-    _TARGET = "serena@claude-plugins-official"
-
-    def test_noop_when_not_installed(self, monkeypatch: pytest.MonkeyPatch):
-        """対象プラグインが未インストールなら disable CLI を呼ばない。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-
+    def test_install_recommended_when_missing(self):
+        """有効化対象が未インストールなら install コマンドを提案する。"""
         # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins([])
-        assert [c for c in calls if c[:3] == ["claude", "plugin", "disable"]] == []
-
-    def test_noop_when_already_disabled(self, monkeypatch: pytest.MonkeyPatch):
-        """enabledPlugins で既に false なら disable CLI を呼ばない。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {self._TARGET: False})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins(raw_data)
-        assert [c for c in calls if c[:3] == ["claude", "plugin", "disable"]] == []
-
-    def test_disables_when_installed_and_enabled(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ enabledPlugins=true なら `disable --scope user` を呼ぶ。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {self._TARGET: True})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins(raw_data)
-        disable_calls = [c for c in calls if c[:3] == ["claude", "plugin", "disable"]]
-        assert disable_calls == [["claude", "plugin", "disable", self._TARGET, "--scope", "user"]]
-
-    def test_disables_when_enabled_plugins_key_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """enabledPlugins に対象キーが無い (デフォルト有効) なら disable を呼ぶ。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins(raw_data)
-        assert any(c[:3] == ["claude", "plugin", "disable"] and self._TARGET in c for c in calls)
-
-    def test_disables_when_settings_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """settings.json 自体が無い環境では disable を呼んで確実に無効化する。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins(raw_data)
-        assert any(c[:3] == ["claude", "plugin", "disable"] and self._TARGET in c for c in calls)
-
-    def test_disable_failure_does_not_raise(self, monkeypatch: pytest.MonkeyPatch):
-        """disable CLI 失敗時も例外を送出せず続行する (post-apply を落とさない)。"""
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:3] == ["claude", "plugin", "disable"]:
-                return _FakeResult(returncode=1, stderr="boom")
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {self._TARGET: True})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_disable_plugins(raw_data)  # 例外が飛ばなければ成功
-
-
-class TestAutoInstallAndEnablePlugins:
-    """`_auto_install_and_enable_plugins` の単体テスト。
-
-    未インストールなら install、インストール済みでも `enabledPlugins=false` なら
-    enable で有効化する。既に有効 (true または未設定) ならスキップ。
-
-    `_AUTO_ENABLED_PLUGIN_IDS` の具体値に依存する `enable`・`noop` 系テストは、
-    定数を `{_TARGET}` 1 件に差し替えて対象の追加に強いようにしている。
-    `test_installs_when_missing` だけは定数の現行集合すべてについて install が
-    呼ばれることを確認したいので差し替えない。
-    """
-
-    _TARGET = "context7@claude-plugins-official"
-
-    def test_installs_when_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """未インストールなら `claude plugin install <id> --scope user` を呼ぶ。"""
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_install_and_enable_plugins([])
-        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-        # 全ての自動有効化対象について `<id> --scope user` 形式で install が呼ばれる
+        result = _install_claude_plugins.compute_recommended_commands([], {})
         # pylint: disable-next=protected-access
         for plugin_id in _install_claude_plugins._AUTO_ENABLED_PLUGIN_IDS:
-            assert ["claude", "plugin", "install", plugin_id, "--scope", "user"] in install_calls
+            assert f"claude plugin install {plugin_id} --scope user" in result
 
-    def test_enables_when_explicitly_disabled(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins=false` なら enable を呼ぶ。"""
-        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._TARGET}))
-        calls: list[list[str]] = []
+    def test_enable_recommended_when_explicitly_disabled(self, monkeypatch: pytest.MonkeyPatch):
+        """インストール済みかつ `enabledPlugins=false` なら enable コマンドを提案する。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET}))
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
+        raw_data = [{"id": self._ENABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        result = _install_claude_plugins.compute_recommended_commands(raw_data, {self._ENABLE_TARGET: False})
+        assert result == [f"claude plugin enable {self._ENABLE_TARGET} --scope user"]
 
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
+    def test_no_recommendation_when_enabled(self, monkeypatch: pytest.MonkeyPatch):
+        """インストール済みかつ既に有効なら何も提案しない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET}))
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
+        raw_data = [{"id": self._ENABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        assert not _install_claude_plugins.compute_recommended_commands(raw_data, {self._ENABLE_TARGET: True})
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {self._TARGET: False})
+    def test_no_recommendation_when_key_missing(self, monkeypatch: pytest.MonkeyPatch):
+        """インストール済みかつ `enabledPlugins` に対象キーが無い (既定で有効) なら提案しない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET}))
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
+        raw_data = [{"id": self._ENABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        assert not _install_claude_plugins.compute_recommended_commands(raw_data, {})
 
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
+    def test_disable_recommended_when_installed_and_not_disabled(self, monkeypatch: pytest.MonkeyPatch):
+        """無効化対象がインストール済みかつ `enabledPlugins` で false になっていなければ disable を提案する。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset())
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({self._DISABLE_TARGET}))
+        raw_data = [{"id": self._DISABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        result = _install_claude_plugins.compute_recommended_commands(raw_data, {self._DISABLE_TARGET: True})
+        assert result == [f"claude plugin disable {self._DISABLE_TARGET} --scope user"]
+
+    def test_disable_also_recommended_when_settings_missing(self, monkeypatch: pytest.MonkeyPatch):
+        """settings.json 自体が無い (enabled_map=None) 環境でも disable を提案する (既定で有効扱いのため)。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset())
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({self._DISABLE_TARGET}))
+        raw_data = [{"id": self._DISABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        result = _install_claude_plugins.compute_recommended_commands(raw_data, None)
+        assert result == [f"claude plugin disable {self._DISABLE_TARGET} --scope user"]
+
+    def test_disable_not_recommended_when_already_disabled(self, monkeypatch: pytest.MonkeyPatch):
+        """既に `enabledPlugins=false` なら disable を提案しない。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset())
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({self._DISABLE_TARGET}))
+        raw_data = [{"id": self._DISABLE_TARGET, "scope": "user", "version": "1.0.0"}]
+        assert not _install_claude_plugins.compute_recommended_commands(raw_data, {self._DISABLE_TARGET: False})
+
+    def test_disable_not_recommended_when_not_installed(self, monkeypatch: pytest.MonkeyPatch):
+        """未インストールなら disable を提案しない (installして無効化するのは過剰介入)。"""
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset())
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({self._DISABLE_TARGET}))
+        assert not _install_claude_plugins.compute_recommended_commands([], {})
+
+
+class TestConsumeRecommendations:
+    """`consume_recommendations` の取り出し&クリア動作。"""
+
+    def test_returns_last_recommendations_and_clears(self, monkeypatch: pytest.MonkeyPatch):
         # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_install_and_enable_plugins(raw_data)
-        enable_calls = [c for c in calls if c[:3] == ["claude", "plugin", "enable"]]
-        assert enable_calls == [["claude", "plugin", "enable", self._TARGET, "--scope", "user"]]
-        # 既にインストール済みなので install は呼ばれない
-        assert [c for c in calls if c[:3] == ["claude", "plugin", "install"]] == []
-
-    def test_noop_when_enabled(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins=true` なら CLI を呼ばない。"""
-        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._TARGET}))
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {self._TARGET: True})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_install_and_enable_plugins(raw_data)
-        assert not [c for c in calls if c[:3] in (["claude", "plugin", "install"], ["claude", "plugin", "enable"])]
-
-    def test_noop_when_enabled_plugins_key_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins` に対象キーが無い (デフォルト有効) なら CLI を呼ばない。"""
-        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._TARGET}))
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-
-        raw_data = [{"id": self._TARGET, "scope": "user", "version": "1.0.0"}]
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_install_and_enable_plugins(raw_data)
-        assert not [c for c in calls if c[:3] in (["claude", "plugin", "install"], ["claude", "plugin", "enable"])]
-
-    def test_install_failure_does_not_raise(self, monkeypatch: pytest.MonkeyPatch):
-        """install CLI 失敗時も例外を送出せず続行する (post-apply を落とさない)。"""
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:3] == ["claude", "plugin", "install"]:
-                return _FakeResult(returncode=1, stderr="boom")
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
-
-        # pylint: disable-next=protected-access
-        _install_claude_plugins._auto_install_and_enable_plugins([])  # 例外が飛ばなければ成功
+        monkeypatch.setattr(_install_claude_plugins, "_LAST_RECOMMENDATIONS", ["claude plugin install a --scope user"])
+        assert _install_claude_plugins.consume_recommendations() == ["claude plugin install a --scope user"]
+        # 2 回目は空 (ワンショット取り出し)
+        assert not _install_claude_plugins.consume_recommendations()
 
 
-class TestRunAutoManagedInvocationOrder:
-    """`run()` 末尾で auto-install-and-enable → auto-disable の順で呼ばれることを検証する。"""
+class TestRunNoAutomaticStateChange:
+    """`run()` が install/enable/disable の CLI を発行せず、推奨コマンドを残すこと。"""
 
-    def test_both_auto_managers_invoked_in_order(self, monkeypatch: pytest.MonkeyPatch):
+    def test_no_state_change_cli_and_recommendations_recorded(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
         )
-        # ファイル直接読み取りを無効化し、CLI フォールバック経由で stdout を検証する
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
+        # settings.json の読み取りは None (未設定扱い) で固定してテスト環境差を排除する
+        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
+        # 有効化対象を全て未インストール状態に絞って検証する
+        target_enable = "context7@claude-plugins-official"
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({target_enable}))
+        monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
 
-        order: list[str] = []
+        calls: list[list[str]] = []
 
-        def fake_install_and_enable(_raw: object) -> None:
-            order.append("auto_install_and_enable")
-
-        def fake_disable(_raw: object) -> None:
-            order.append("auto_disable")
-
-        monkeypatch.setattr(_install_claude_plugins, "_auto_install_and_enable_plugins", fake_install_and_enable)
-        monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", fake_disable)
-
-        # install/update が走らない最小モック (全プラグイン最新 + marketplace 登録済み)
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
             if cmd[:3] == ["claude", "plugin", "list"]:
                 return _FakeResult(
                     returncode=0,
@@ -281,4 +146,17 @@ class TestRunAutoManagedInvocationOrder:
         monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         _install_claude_plugins.run()
-        assert order == ["auto_install_and_enable", "auto_disable"]
+
+        # 自動 enable/disable/install (外部 marketplace 向け) の CLI は発行されない
+        banned = (
+            ["claude", "plugin", "enable"],
+            ["claude", "plugin", "disable"],
+            ["claude", "plugin", "install", target_enable, "--scope", "user"],
+        )
+        for cmd in calls:
+            assert cmd[:3] != ["claude", "plugin", "enable"], f"unexpected enable call: {cmd}"
+            assert cmd[:3] != ["claude", "plugin", "disable"], f"unexpected disable call: {cmd}"
+            assert cmd != list(banned[2]), f"unexpected install call: {cmd}"
+
+        recommendations = _install_claude_plugins.consume_recommendations()
+        assert recommendations == [f"claude plugin install {target_enable} --scope user"]
