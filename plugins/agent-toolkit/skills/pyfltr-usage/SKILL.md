@@ -19,7 +19,7 @@ pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的
 
 `run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する（`ruff check --fix` → `ruff format` → `ruff check` のような2段階方式を一般化した仕組み）。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
-`run-for-agent`は`run-for-agent`の短縮形であり、LLMエージェントから呼び出す際に利用する。
+`run-for-agent`は`run --output-format=jsonl`のエイリアスであり、LLMエージェントから呼び出す際に利用する。
 
 ### pre-commit統合
 
@@ -122,6 +122,6 @@ llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含
 主要なページは以下の構成。
 
 - 設定（基本設定・プリセット・並列実行）: `guide/configuration/index.md`
-- ツール別設定（2段階実行・bin-runner・npm系・カスタムコマンド）: `guide/configuration-tools/index.md`
+- ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）: `guide/configuration-tools/index.md`
 - 推奨設定（Pythonプロジェクト・タスクランナー・CI）: `guide/recommended/index.md`
 - 非Python推奨設定（TypeScript／JS・Rust・.NET）: `guide/recommended-nonpython/index.md`
