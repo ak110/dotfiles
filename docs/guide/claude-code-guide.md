@@ -69,7 +69,8 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 
 ルールファイル（`~/.claude/rules/agent-basics/`配下）:
 
-- `agent.md` — 基本原則・運用方針・記述スタイル・検証とコミットの流れなど、全セッションで必要な共通指示（無条件ロード）
+- `agent.md` — 基本原則・運用方針・検証とコミットの流れなど、全セッションで必要な共通指示（無条件ロード）
+- `styles.md` — 構造と順序・言語と文体・日本語の表記ルール・コメントとドキュメント・コマンドラインオプションをまとめた記述スタイル指針（無条件ロード）
 
 フック（agent-toolkitプラグイン）:
 
@@ -92,7 +93,7 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
   言語別の詳細（Python/TypeScript/Rust/C#/PowerShell/Windowsバッチ）は`references/<言語>.md`にprogressive disclosureで分割。
   プロジェクト固有の`CLAUDE.md`や`.claude/rules/`が優先で、本スキルはそれを補完するベースライン
 - `writing-standards` — ドキュメントの新規作成・修正・レビュー時に呼び出すドキュメント品質のベース指示。
-  Markdown記述スタイル・README規約・技術文書の書き方を含む。`agent.md`の記述スタイルを共通基盤とし、ドキュメント固有の品質基準を追加する
+  Markdown記述スタイル・README規約・技術文書の書き方を含む。`styles.md`の記述スタイルを共通基盤とし、ドキュメント固有の品質基準を追加する
 - `plan-mode` — plan mode開始時・複雑な指示受領時に呼び出す計画ファイル作成手順。
   計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合
 - `bugfix` — バグ・障害・イシュー調査対応の手順。対症療法で済ませず根本原因の追跡と再発防止に踏み込む

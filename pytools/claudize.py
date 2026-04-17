@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # 条件付き配布は維持する仕組みのみ残し、現在の配布対象は空。
 _CONDITIONAL_RULES: list[tuple[str, tuple[str, ...]]] = []
 # 無条件で配布するルール
-_UNCONDITIONAL_RULES: list[str] = []
+_UNCONDITIONAL_RULES: list[str] = ["styles.md"]
 # 配布対象外になった旧ルール（--clean 時および再配布時に既存インストール先から削除するため保持）
 _OBSOLETE_RULES: list[str] = [
     "markdown.md",

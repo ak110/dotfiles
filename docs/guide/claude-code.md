@@ -68,7 +68,8 @@ claudize --clean
 
 配布元: `.chezmoi-source/dot_claude/rules/agent-basics/`
 
-rules側の配布対象は`agent.md`の1ファイル。
+rules側の配布対象は`agent.md`と`styles.md`の2ファイル。
+両者の分割は人間の編集・レビュー時の見通し改善のみを目的としており、配布先では両ファイルとも常時自動ロードされるためClaude Codeの挙動には影響しない。
 言語別・場面特化型の指示は`agent-toolkit`プラグインのスキルが担う。
 
 ファイル一覧は以下3箇所で重複管理している。ルールファイルを追加・削除・リネームする際はすべてを更新すること。

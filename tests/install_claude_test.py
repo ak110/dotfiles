@@ -75,11 +75,12 @@ class TestInstallClaude:
         home = tmp_path / "home"
         home.mkdir()
 
-        # 1回目: 追加（rules側の配布対象はagent.mdのみ。
+        # 1回目: 追加（rules側の配布対象はagent.mdとstyles.mdの2ファイル。
         # その他の規約はagent-toolkitプラグインのスキルが担う）
         result = _run(kind, home, rules_url)
         rules_dir = home / ".claude" / "rules" / "agent-basics"
         assert (rules_dir / "agent.md").exists(), "agent.md が配置されていない"
+        assert (rules_dir / "styles.md").exists(), "styles.md が配置されていない"
         # スキルへ移行済みの旧ルールは配布されないこと
         for name in ["markdown.md", "python.md", "claude.md", "claude-rules.md", "typescript.md"]:
             assert not (rules_dir / name).exists(), f"{name} が配布されている（移行済みのはず）"

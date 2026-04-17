@@ -17,6 +17,7 @@ TARGET_DIR="$HOME/.claude/rules/agent-basics"
 # 配布対象ファイル一覧 (pytools/claudize.py の _UNCONDITIONAL_RULES / _CONDITIONAL_RULES と一致させること)
 FILES=(
     agent.md
+    styles.md
 )
 
 BACKUP_DIR=""
