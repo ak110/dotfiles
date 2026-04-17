@@ -111,7 +111,11 @@ jobs:
           version: latest
 
       - name: Configure pnpm security
-        run: pnpm config set minimum-release-age 1440 --global
+        # minimum-release-ageの評価にはtimeフィールドが必要。
+        # npmレジストリは省略メタデータではtimeを返さないためフルメタデータ取得を有効化する。
+        run: |
+          pnpm config set minimum-release-age 1440 --global
+          pnpm config set fetch-full-metadata true --global
 
       - name: Get pnpm store path
         id: pnpm-store
