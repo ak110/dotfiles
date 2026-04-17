@@ -111,11 +111,7 @@ jobs:
           version: latest
 
       - name: Configure pnpm security
-        # minimum-release-ageの評価にはtimeフィールドが必要。
-        # npmレジストリは省略メタデータではtimeを返さないためフルメタデータ取得を有効化する。
-        run: |
-          pnpm config set minimum-release-age 1440 --global
-          pnpm config set fetch-full-metadata true --global
+        run: pnpm config set minimum-release-age 1440 --global
 
       - name: Get pnpm store path
         id: pnpm-store
@@ -134,8 +130,10 @@ jobs:
         run: uv sync --all-groups
 
       - name: Install Claude Code CLI
-        # pre-commitの`claude-plugin-validate`フックで使用する
-        run: pnpm add -g @anthropic-ai/claude-code
+        # pre-commitの`claude-plugin-validate`フックで使用する。
+        # npmレジストリは省略メタデータでtimeフィールドを返さないため、
+        # minimum-release-age評価のために`--config.fetch-full-metadata=true`を渡す。
+        run: pnpm add -g @anthropic-ai/claude-code --config.fetch-full-metadata=true
 
       - name: Test with pyfltr
         env:
