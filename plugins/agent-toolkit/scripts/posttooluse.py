@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録。
+r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録と plan file 形式検査。
 
 Bash / Write / Edit / MultiEdit の実行後にイベントを検出し、
 セッション状態ファイルに記録する。
@@ -17,12 +17,15 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 4. git log 確認状態のリセット — git commit / rebase / push (Bash),
    ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
    amend / rebase 前に改めて git log を確認させる
+5. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
+   必須H2 の欠落・順序違反・想定外 H2・`変更履歴` の末尾以外配置を
+   ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)
 
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
 
 exit code 契約:
 
-- exit 0: 常に 0（PostToolUse は許可判定に関与しない。サイレント記録のみ）
+- exit 0: 常に 0（PostToolUse は許可判定に関与しない。サイレント記録 / warn のみ）
 
 予期せぬ例外は 0 にフォールバックする。
 """
@@ -34,6 +37,21 @@ import re
 import sys
 import tempfile
 import traceback
+
+# LLM 宛てメッセージの共通プレフィックス / サフィックス。
+# 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
+_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/posttooluse]"
+_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+
+
+def _llm_notice(body: str, *, tag: str = "") -> str:
+    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
+
+    `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
+    """
+    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
+    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+
 
 # --- テスト実行検出パターン ---
 
@@ -60,6 +78,97 @@ _GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
 # --- codex exec resume 検出パターン ---
 
 _CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
+
+# --- plan file 形式検査の定数 ---
+
+# 期待セクション一覧の SSOT は `skills/plan-mode/SKILL.md` の「計画ファイルの構成」節。
+# SKILL.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
+_PLAN_REQUIRED_H2: tuple[str, ...] = ("背景", "対応方針", "調査結果", "変更内容", "検証")
+_PLAN_OPTIONAL_TRAILING_H2: str = "変更履歴"
+
+
+def _is_plan_file(file_path: str) -> bool:
+    """``~/.claude/plans/`` 直下の plan file (``*.md``) か判定する。
+
+    `.review.md` / `.codex.log` は同ディレクトリの副次ファイルのため除外する。
+    サブディレクトリ配下のファイルは対象外 (直下のみ)。
+    """
+    if not file_path:
+        return False
+    try:
+        path = pathlib.Path(file_path).resolve()
+        plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve()
+        rel = path.relative_to(plans_dir)
+    except (OSError, ValueError):
+        return False
+    if len(rel.parts) != 1:
+        return False
+    name = rel.parts[0]
+    if name.endswith(".review.md") or name.endswith(".codex.log"):
+        return False
+    return name.endswith(".md")
+
+
+def _extract_h2_sections(content: str) -> list[str]:
+    """Markdown 本文から H2 見出しのテキストを順に抽出する (コードフェンス内は無視)。"""
+    headings: list[str] = []
+    in_fence = False
+    for line in content.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("## "):
+            headings.append(line[3:].strip())
+    return headings
+
+
+def _check_plan_format(file_path: str) -> list[str]:
+    """Plan file の構成チェック。違反メッセージの一覧を返す。
+
+    検出する違反:
+
+    - 必須 H2 の欠落
+    - 必須 H2 の順序違反
+    - 予期せぬ H2
+    - ``変更履歴`` が末尾以外に配置されている
+
+    読み取り失敗時は空リストを返す (サイレントにスキップ、安全側)。
+    """
+    try:
+        content = pathlib.Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    headings = _extract_h2_sections(content)
+    allowed = set(_PLAN_REQUIRED_H2) | {_PLAN_OPTIONAL_TRAILING_H2}
+    violations: list[str] = []
+
+    unexpected = [h for h in headings if h not in allowed]
+    if unexpected:
+        violations.append(
+            f"unexpected H2 sections: {unexpected}."
+            f" Allowed: {list(_PLAN_REQUIRED_H2)} + optional trailing '{_PLAN_OPTIONAL_TRAILING_H2}'."
+        )
+
+    missing = [h for h in _PLAN_REQUIRED_H2 if h not in headings]
+    if missing:
+        violations.append(f"missing required H2 sections: {missing}.")
+
+    # 順序違反: 必須 H2 だけを抽出したときの順序が規定順と一致するか
+    present_required = [h for h in headings if h in _PLAN_REQUIRED_H2]
+    expected_order = [h for h in _PLAN_REQUIRED_H2 if h in headings]
+    if present_required != expected_order:
+        violations.append(
+            f"required H2 sections are out of order."
+            f" Expected order among present: {expected_order}, but found: {present_required}."
+        )
+
+    if _PLAN_OPTIONAL_TRAILING_H2 in headings and headings[-1] != _PLAN_OPTIONAL_TRAILING_H2:
+        violations.append(f"'{_PLAN_OPTIONAL_TRAILING_H2}' must appear only as the last H2 section.")
+
+    return violations
 
 
 def _state_path(session_id: str) -> pathlib.Path:
@@ -105,6 +214,28 @@ def _main() -> int:
         if state.get("git_log_checked", False):
             state["git_log_checked"] = False
             _write_state(path, state)
+        # plan file 形式検査: ~/.claude/plans/ 直下の .md のみ対象
+        file_path_raw = tool_input.get("file_path")
+        file_path = file_path_raw if isinstance(file_path_raw, str) else ""
+        if _is_plan_file(file_path):
+            violations = _check_plan_format(file_path)
+            if violations:
+                message = _llm_notice(
+                    f"plan file {file_path} does not conform to the expected structure."
+                    f" {' '.join(violations)}"
+                    f" Fix the structure per skills/plan-mode/SKILL.md.",
+                    tag="warn",
+                )
+                print(
+                    json.dumps(
+                        {
+                            "hookSpecificOutput": {
+                                "hookEventName": "PostToolUse",
+                                "additionalContext": message,
+                            }
+                        }
+                    )
+                )
         return 0
 
     # Bash 以外はここで終了
