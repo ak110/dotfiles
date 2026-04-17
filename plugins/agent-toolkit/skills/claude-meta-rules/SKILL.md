@@ -29,6 +29,17 @@ Claude Code設定ファイル群はLLMのコンテキストへ直接投入され
 
 複数対象を編集する場合は該当するreferencesを必要な分だけ読む。
 
+### 公式ドキュメント
+
+referencesに記載のない仕様の詳細や新機能を確認する必要がある場合、以下の公式ドキュメントをWebFetchで取得する（URLに`.md`サフィックスを付与するとMarkdown形式で取得できる）。
+
+| ページ | URL | 主な内容 |
+| --- | --- | --- |
+| Memory | `https://code.claude.com/docs/ja/memory.md` | CLAUDE.md、`.claude/rules/`の書き方、`@import`構文 |
+| Skills | `https://code.claude.com/docs/ja/skills.md` | スキルのfrontmatter全フィールド、変数、配置場所 |
+| Hooks | `https://code.claude.com/docs/ja/hooks.md` | 全イベント一覧、matcher、type、出力フィールド |
+| Plugins | `https://code.claude.com/docs/ja/plugins.md` | プラグイン構造、plugin.json、コンポーネント構成 |
+
 ## 共通の記述原則（全対象）
 
 ### コンテキスト汚染の回避
