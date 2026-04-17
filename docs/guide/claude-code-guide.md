@@ -170,11 +170,19 @@ codex CLI自体のセットアップは別途行うこと。
 
 - `spec-driven` — 軽量SDD（Spec-Driven Development）ワークフロー。
   起動コマンド: `/spec-driven`（自動補完で`/agent-toolkit:spec-driven`になる）
-  - 想定ユースケース: 大規模コードベースへの機能追加で、検討漏れ・デグレードを抑え、設計判断を恒久ドキュメントに蓄積したい場合
+  - 想定ユースケース: 大規模コードベースへの機能追加・既存機能改修で、検討漏れ・デグレードを抑え、設計判断を恒久ドキュメントに蓄積したい場合
   - Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、各フェーズ終端にユーザー確認ゲートを置く
-  - ドキュメント規約: 仕様と設計は`docs/v{version}/{機能名}.md`（恒久、実装後も残す）、進行中の作業メモは`docs/v{version}/{機能名}.working.md`（一時、実装完了時に削除）。複数機能で参照される設計判断・ガイドライン・共通用語は横断ドキュメント`docs/v{version}/{トピック名}.md`（恒久、`.working.md`は設けず直接編集）へ切り出す。バージョン全体の概要と目次は`docs/v{version}/README.md`に置く（バージョン目的・機能一覧・横断ドキュメント一覧の3節構成）。`{version}`は次期リリースのバージョン番号でIntakeフェーズで確定する（末尾の`.0`は省略。例: `3.0.0`→`v3`、`1.2.0`→`v1.2`）
+  - ドキュメント規約: 恒久ドキュメントは恒常配置（`docs/features/{機能名}.md`・`docs/topics/{トピック名}.md`）へ集約し常時存在させる。次期リリース作業中のみ開発中バージョンディレクトリ（`docs/v{next}/`配下）が存在し、新規追加は初版を、既存改修は恒常配置からコピーした作業版を置く。進行中の作業メモは`docs/v{next}/{機能名}.working.md`（一時、実装完了時に削除）。バージョン全体の概要と目次は`docs/v{next}/README.md`（昇格時に役目を終える）。`{next}`は次期リリースのバージョン番号でIntakeフェーズで確定する（末尾の`.0`は省略。例: `3.0.0`→`v3`、`1.2.0`→`v1.2`）
   - 調査は`spec-researcher`、実装は`spec-implementer`の各サブエージェントへ分業し、メインセッションのコンテキスト消費を抑える
-  - レビューは`spec-reviewer`（仕様適合性）と`code-quality-reviewer`（コード品質）を機能単位（全タスク完了・format/lint/test合格後）に直列起動する
+  - レビューは`spec-reviewer`（仕様適合性・ドキュメント整合性）と`code-quality-reviewer`（コード品質）を機能単位（全タスク完了・最終反映後・format/lint/test合格後）に直列起動する
+- `spec-driven-init` — 既存プロジェクトにspec-drivenを導入するための初回整備スキル。
+  起動コマンド: `/spec-driven-init`（自動補完で`/agent-toolkit:spec-driven-init`になる）
+  - 想定ユースケース: 既存のソースコード・ドキュメント・既存`docs/v*/`群から、`docs/features/`・`docs/topics/`配下の恒常配置の初版を起こす
+  - 引数無しで起動し、走査結果をもとにユーザーとの対話で機能・横断トピックの単位を確定する
+- `spec-driven-promote` — 開発中バージョンディレクトリの作業版を恒常配置へ昇格するスキル。
+  起動コマンド: `/spec-driven-promote`（自動補完で`/agent-toolkit:spec-driven-promote`になる）
+  - 想定ユースケース: リリース完了後のひと段落した時点で、`docs/v{next}/`配下のドキュメントを`docs/features/`・`docs/topics/`へ移動し、開発中ディレクトリを削除する
+  - 引数無しで起動し、実装コード中の参照コメントのパスも恒常配置側へ一括書き換える
 
 ## 更新方法
 
