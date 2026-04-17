@@ -172,7 +172,7 @@ codex CLI自体のセットアップは別途行うこと。
   起動コマンド: `/spec-driven`（自動補完で`/agent-toolkit:spec-driven`になる）
   - 想定ユースケース: 大規模コードベースへの機能追加で、検討漏れ・デグレードを抑え、設計判断を恒久ドキュメントに蓄積したい場合
   - Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、各フェーズ終端にユーザー確認ゲートを置く
-  - ドキュメント規約: 仕様と設計は`docs/v{version}/{機能名}.md`（恒久、実装後も残す）、進行中の作業メモは`docs/v{version}/{機能名}.working.md`（一時、実装完了時に削除）。`{version}`は次期リリースのバージョン番号でIntakeフェーズで確定する
+  - ドキュメント規約: 仕様と設計は`docs/v{version}/{機能名}.md`（恒久、実装後も残す）、進行中の作業メモは`docs/v{version}/{機能名}.working.md`（一時、実装完了時に削除）。`{version}`は次期リリースのバージョン番号でIntakeフェーズで確定する（末尾の`.0`は省略。例: `3.0.0`→`v3`、`1.2.0`→`v1.2`）
   - 調査は`spec-researcher`、実装は`spec-implementer`の各サブエージェントへ分業し、メインセッションのコンテキスト消費を抑える
 
 ## 更新方法
