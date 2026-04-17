@@ -60,6 +60,13 @@ repos:
         language: script
         files: '\.ps1$'
         exclude: '\.tmpl$'
+      - id: claude-plugin-validate
+        name: Validate Claude plugin manifests
+        # `claude plugin validate` は 1 ファイルずつしか受け付けないため、
+        # pass_filenames=true で渡される複数引数を sh -c のループで 1 つずつ処理する。
+        entry: sh -c 'for f; do claude plugin validate "$f" || exit 1; done' --
+        language: system
+        files: '\.claude-plugin/(plugin|marketplace)\.json$'
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen pyfltr fast
