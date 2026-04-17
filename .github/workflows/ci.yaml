@@ -132,8 +132,11 @@ jobs:
       - name: Install Claude Code CLI
         # pre-commitの`claude-plugin-validate`フックで使用する。
         # npmレジストリは省略メタデータでtimeフィールドを返さないため、
-        # minimum-release-age評価のために`--config.fetch-full-metadata=true`を渡す。
-        run: pnpm add -g @anthropic-ai/claude-code --config.fetch-full-metadata=true
+        # minimum-release-age評価のためnpm_config_fetch_full_metadataで
+        # フルメタデータ取得を強制する。
+        env:
+          npm_config_fetch_full_metadata: "true"
+        run: pnpm add -g @anthropic-ai/claude-code
 
       - name: Test with pyfltr
         env:
