@@ -161,6 +161,9 @@ project scopeで導入したい場合は、プロジェクトの`.claude/setting
 }
 ```
 
+`update-dotfiles`を併用する環境では、上記のgithub型登録は実行後にdotfilesローカルパスを指すdirectory型へ上書きされる。
+`known_marketplaces.json`や`settings.json.extraKnownMarketplaces`に相対パスなどの破損が残った場合も`update-dotfiles`が自動で絶対パスへ修復する。
+
 ### edit-guardrailsからの移行
 
 旧プラグイン`edit-guardrails`は`agent-toolkit`に改名・統合された。

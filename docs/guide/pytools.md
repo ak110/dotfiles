@@ -21,3 +21,12 @@
 ```bash
 uv tool install --editable ~/dotfiles
 ```
+
+## 内部モジュール
+
+`pytools/`直下で`_`始まりのモジュールは`chezmoi apply`の後処理から呼ばれる内部用で、コマンドラインからは直接使わない。
+
+- `_install_claude_plugins.py` — `.claude-plugin/marketplace.json`をSSOTとして`agent-toolkit`プラグインを自動インストール・更新する。
+  marketplace登録が相対パス化などで破損した場合は、`~/.claude/plugins/known_marketplaces.json`と`~/.claude/settings.json`を点検する。
+  対象は後者のうち`extraKnownMarketplaces`キーで、CLI再登録で解消しないケースは同一ディレクトリ内の原子的置換で直接書き換えて修復する。
+  修復エントリを常時強制すると他ユーザー・他環境へ意図せず伝播する副作用が読めないため、`share/claude_settings_json_managed.*.json`には`extraKnownMarketplaces`を含めない方針とする。

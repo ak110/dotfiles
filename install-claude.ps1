@@ -149,6 +149,7 @@ function Install-AgentToolkitPlugin {
     Write-Output ''
     Write-Output 'agent-toolkit プラグインを user scope にインストールします...'
     # 既に登録/インストール済みでも問題ないため、失敗しても続行する
+    # bootstrap 初回用: github ショートハンドで登録する (後続の update-dotfiles で directory 型の絶対パスへ矯正される)
     try { & claude plugin marketplace add ak110/dotfiles --scope user 2>&1 | Out-Null }
     catch { Write-Output "marketplace add をスキップ: $_" }
     try { & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope user 2>&1 | Out-Null }

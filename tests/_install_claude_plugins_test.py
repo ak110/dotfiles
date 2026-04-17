@@ -719,7 +719,11 @@ class TestReadInstalledFromFile:
 
 
 class TestCheckMarketplaceFromFile:
-    """_check_marketplace_from_file()の単体テスト。"""
+    """_check_marketplace_from_file()の単体テスト (known_marketplaces.json 単独の基本動作)。
+
+    settings.json を含む 2 ファイル同時検査と修復ロジックの詳細テストは
+    ``tests/_install_claude_plugins_repair_test.py`` に置いている。
+    """
 
     def test_path_match(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """パスが一致する場合Trueを返す。"""
@@ -737,6 +741,8 @@ class TestCheckMarketplaceFromFile:
             encoding="utf-8",
         )
         monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える
+        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/home/aki/dotfiles")) is True
 
@@ -755,6 +761,7 @@ class TestCheckMarketplaceFromFile:
             encoding="utf-8",
         )
         monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/new/dotfiles")) is False
 
@@ -763,12 +770,14 @@ class TestCheckMarketplaceFromFile:
         path = tmp_path / "known_marketplaces.json"
         path.write_text(json.dumps({"other-marketplace": {}}), encoding="utf-8")
         monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/any")) is None
 
     def test_file_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """ファイルが存在しない場合Noneを返す。"""
         monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", tmp_path / "missing.json")
+        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._check_marketplace_from_file(pathlib.Path("/any")) is None
 
@@ -812,6 +821,8 @@ class TestHappyPathNoCli:
             encoding="utf-8",
         )
         monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
+        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える
+        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
 
         # subprocessが呼ばれたら失敗させる
         def fail_if_called(cmd, **_kwargs):  # noqa: ANN001

@@ -133,6 +133,7 @@ _install_agent_toolkit() {
     fi
     echo ""
     echo "agent-toolkit プラグインを user scope にインストールします..."
+    # bootstrap 初回用: github ショートハンドで登録する (後続の update-dotfiles で directory 型の絶対パスへ矯正される)
     claude plugin marketplace add ak110/dotfiles --scope user >/dev/null 2>&1 || true
     claude plugin install agent-toolkit@ak110-dotfiles --scope user >/dev/null 2>&1 || true
     echo "agent-toolkit プラグインの導入を試行しました (既に導入済みならスキップされます)。"
