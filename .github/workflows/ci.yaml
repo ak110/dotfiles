@@ -129,6 +129,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
+      - name: Install Claude Code CLI
+        # pre-commitの`claude-plugin-validate`フックで使用する
+        run: pnpm add -g @anthropic-ai/claude-code
+
       - name: Test with pyfltr
         env:
           # chezmoi-applyはローカルコミット時専用のpre-commit hookなのでCIではスキップ
