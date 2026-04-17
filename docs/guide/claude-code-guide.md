@@ -30,11 +30,15 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 
 ## クイックスタート
 
+### 1. uvのインストール
+
 プラグインは[uv](https://docs.astral.sh/uv/)に依存する。
 事前にインストールしておく。
 
 - Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
 - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+### 2. ツールキットのインストール
 
 ツールキットをインストールするには以下のワンライナーを実行する。
 
@@ -60,6 +64,41 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 1. Claude Code内で`/plugin`を実行
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
 3. `Enable auto-update`を選択
+
+### 3. Claude Codeのおすすめ設定
+
+以下の設定を適用しておくと、Claude Codeを快適に使える。
+
+#### `~/.claude/settings.json`
+
+- `autoMemoryEnabled`: `false`（自動メモリー機能を無効化）
+- `showClearContextOnPlanAccept`: `true`（plan mode承認時にコンテキストクリアの選択肢を表示）
+- `env.CLAUDE_CODE_NO_FLICKER`: `"1"`（画面のちらつきを抑制）
+- `permissions`: 許可・拒否するツールやパターンを記述する（[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）
+
+#### `/config`コマンド
+
+- `Verbose output`: 有効
+- `Default permission mode`: `Plan mode`
+- `Language`: `Japanese`
+
+#### `/plugin`コマンド
+
+claude-plugins-officialから以下を導入する。
+
+- 推奨: `context7`・`serena`・`typescript-lsp`
+- 任意: `claude-md-management`・`skill-creator`
+- 無効推奨: `pyright-lsp`
+
+#### VSCode設定（お好みで）
+
+ターミナル内での右クリックによる意図しない貼り付けを防ぎたい場合、`settings.json`へ以下を追加する。
+
+```json
+{
+  "terminal.integrated.rightClickBehavior": "nothing"
+}
+```
 
 ## 構成と機能
 
