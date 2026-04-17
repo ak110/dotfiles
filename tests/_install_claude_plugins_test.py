@@ -68,7 +68,20 @@ def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
 
 
-@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads")
+@pytest.fixture(name="disable_auto_managed_plugins")
+def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """自動有効化・自動無効化処理を no-op に差し替える。
+
+    既存テストは ak110-dotfiles marketplace のプラグインだけを対象にしているため、
+    外部 marketplace を触る自動管理処理が走ると CLI 呼び出しの期待値が崩れる。
+    専用テスト (``TestAutoDisablePlugins`` / ``TestAutoInstallAndEnablePlugins``) で
+    直接呼び出して検証する方針。
+    """
+    monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw: None)
+    monkeypatch.setattr(_install_claude_plugins, "_auto_install_and_enable_plugins", lambda _raw: None)
+
+
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads", "disable_auto_managed_plugins")
 class TestRunFlow:
     """メインフローのテスト (前提条件は満たしている状態、CLIフォールバックパス)。"""
 
@@ -734,7 +747,7 @@ class TestCheckMarketplaceFromFile:
         assert _install_claude_plugins._check_marketplace_from_file() is None
 
 
-@pytest.mark.usefixtures("fake_which_present", "fake_target_info")
+@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_auto_managed_plugins")
 class TestHappyPathNoCli:
     """happy path（すべて最新）でCLI呼び出しがゼロであることを検証する統合テスト。"""
 

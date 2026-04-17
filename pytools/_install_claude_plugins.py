@@ -28,6 +28,16 @@
      `claude plugin update <name>@<marketplace> --scope user` で反映
   (version が一致していれば update コマンドは呼ばずスキップ)
 
+公式 marketplace (``claude-plugins-official``) のプラグインのうち、
+ユーザーが使わないものは `claude plugin disable <id> --scope user` で自動的に
+無効化する (対象は ``_AUTO_DISABLED_PLUGIN_IDS``)。アンインストールではなく
+disabled 状態にするのは、誤って再インストールされた際にも次回実行で再度無効化
+できるようにするため。逆に常時有効化したいプラグイン (対象は ``_AUTO_ENABLED_PLUGIN_IDS``)
+は、未インストールなら ``claude plugin install --scope user`` で導入し、
+``enabledPlugins`` で ``false`` になっていれば ``claude plugin enable`` で有効化する。
+新機能で ``settings.json`` の ``enabledPlugins`` を直接書き換えることはせず、
+必ず ``claude`` コマンド経由で状態を変更する (内部構造変化への耐性のため)。
+
 本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
 他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
 することを推奨する (詳細は docs/guide/claude-code-guide.md)。
@@ -71,6 +81,33 @@ _CLAUDE_TIMEOUT = 30
 _INSTALLED_PLUGINS_PATH = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
 _KNOWN_MARKETPLACES_PATH = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
 _SETTINGS_JSON_PATH = Path.home() / ".claude" / "settings.json"
+
+# 自動無効化対象 (claude plugin disable で disabled 状態にする)。
+# user scope にインストール済みかつ enabledPlugins で true または未設定のものだけが
+# 実際に CLI 呼び出しの対象になる (`_auto_disable_plugins` 参照)。
+_AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
+    {
+        "serena@claude-plugins-official",
+        "superpowers@claude-plugins-official",
+        "security-guidance@claude-plugins-official",
+        "pr-review-toolkit@claude-plugins-official",
+        "code-simplifier@claude-plugins-official",
+        "commit-commands@claude-plugins-official",
+        "code-review@claude-plugins-official",
+    }
+)
+
+# 自動インストール+有効化対象 (claude plugin install / enable で常時有効にする)。
+# user scope で未インストールなら install し、インストール済みで明示的に false なら
+# enable で有効化する (`_auto_install_and_enable_plugins` 参照)。
+_AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
+    {
+        "context7@claude-plugins-official",
+        "typescript-lsp@claude-plugins-official",
+        "claude-md-management@claude-plugins-official",
+        "skill-creator@claude-plugins-official",
+    }
+)
 
 
 def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
@@ -220,6 +257,10 @@ def run() -> bool:
     if any(name in installed and installed[name] != target for name, target in target_versions.items() if target):
         _refresh_marketplace()
 
+    latest_count = 0
+    updated_count = 0
+    installed_count = 0
+    failed_count = 0
     for name, target in target_versions.items():
         # project scope に残存するエントリを除去 (user scope 移行用)
         _cleanup_old_project_scope(name, raw_data)
@@ -228,12 +269,37 @@ def run() -> bool:
         if current is None:
             if _install_plugin(name):
                 any_change = True
+                installed_count += 1
+            else:
+                failed_count += 1
         elif target and current != target:
             logger.info(_log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
                 any_change = True
+                updated_count += 1
+            else:
+                failed_count += 1
         else:
             logger.info(_log_format.format_status(name, f"最新 ({current or '不明'})"))
+            latest_count += 1
+
+    # 外部 marketplace の自動管理 (公式プラグインの有効化・無効化)。
+    # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
+    # 状態が変わらないため、冒頭で取得した raw_data を使い回してよい。
+    _auto_install_and_enable_plugins(raw_data)
+    _auto_disable_plugins(raw_data)
+
+    # install 試行後のポスト検証と最終サマリ。
+    # 再現性の怪しい未インストール事象を早期に検出できるよう、install 試行後に
+    # installed_plugins.json を再読み込みして欠落を警告する。
+    _warn_if_missing(target_versions)
+    logger.info(
+        _log_format.format_status(
+            "plugins",
+            f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
+            + (f" / 失敗 {failed_count} 件" if failed_count else ""),
+        )
+    )
     return any_change
 
 
@@ -406,8 +472,7 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     if result is not None and result.returncode == 0:
         logger.info(_log_format.format_status(name, "deprecated のためアンインストールしました"))
         return True
-    stderr = result.stderr.strip() if result else ""
-    logger.info(_log_format.format_status(name, f"アンインストールに失敗: {stderr}"))
+    logger.info(_log_format.format_status(name, f"アンインストールに失敗: {_format_cli_error(result)}"))
     return False
 
 
@@ -434,8 +499,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
         if result is not None and result.returncode == 0:
             logger.info(_log_format.format_status(name, f"project scope を除去しました ({project_path})"))
         else:
-            stderr = result.stderr.strip() if result else ""
-            logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {stderr}"))
+            logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {_format_cli_error(result)}"))
 
 
 def _ensure_marketplace() -> bool:
@@ -486,6 +550,14 @@ def _repair_marketplace() -> bool:
     排他で書き込みが失敗するケースを JSON 直接書き換えで救済する。直接書き換えは
     ``installLocation`` のディレクトリ実体を作らないため、後続の ``marketplace update``
     でリポジトリを clone させる必要がある。
+
+    Note:
+        JSON 直接書き換えのフォールバック経路は Claude Code CLI の既知不具合
+        (``marketplace add`` 直後も ``settings.json.extraKnownMarketplaces`` を
+         更新しない環境が存在する) への回避策であり、内部ファイル形式に依存する。
+        CLI 側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
+        (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
+         / ``_now_iso_millis`` / ``_atomic_write_json``) は削除候補となる。
     """
     _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
     add_result = _run_claude(["plugin", "marketplace", "add", _MARKETPLACE_REPO])
@@ -643,10 +715,24 @@ def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
     result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status(name, f"install に失敗: {stderr}"))
+        logger.info(_log_format.format_status(name, f"install に失敗: {_format_cli_error(result)}"))
         return False
     logger.info(_log_format.format_status(name, "インストールしました"))
+    return True
+
+
+def _install_plugin_by_id(plugin_id: str) -> bool:
+    """``<plugin>@<marketplace>`` 形式で指定 plugin を user scope へインストールする。
+
+    自動有効化対象 (例: ``context7@claude-plugins-official``) のように
+    ``_MARKETPLACE_NAME`` 以外の marketplace を扱うための薄いラッパー。
+    既存の ``_install_plugin`` はローカル marketplace 固定のため使えない。
+    """
+    result = _run_claude(["plugin", "install", plugin_id, "--scope", "user"])
+    if result is None or result.returncode != 0:
+        logger.info(_log_format.format_status(plugin_id, f"install に失敗: {_format_cli_error(result)}"))
+        return False
+    logger.info(_log_format.format_status(plugin_id, "インストールしました"))
     return True
 
 
@@ -658,8 +744,11 @@ def _refresh_marketplace() -> bool:
     """
     result = _run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
     if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} の refresh に失敗 (続行): {stderr}"))
+        logger.info(
+            _log_format.format_status(
+                "marketplace", f"{_MARKETPLACE_NAME} の refresh に失敗 (続行): {_format_cli_error(result)}"
+            )
+        )
         return False
     return True
 
@@ -668,11 +757,146 @@ def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
     result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status(name, f"update に失敗: {stderr}"))
+        logger.info(_log_format.format_status(name, f"update に失敗: {_format_cli_error(result)}"))
         return False
     logger.info(_log_format.format_status(name, "更新しました"))
     return True
+
+
+def _disable_plugin(plugin_id: str) -> bool:
+    """指定 plugin を disabled 状態にする (成功時 True を返す)。"""
+    result = _run_claude(["plugin", "disable", plugin_id, "--scope", "user"])
+    if result is None or result.returncode != 0:
+        logger.info(_log_format.format_status(plugin_id, f"disable に失敗: {_format_cli_error(result)}"))
+        return False
+    logger.info(_log_format.format_status(plugin_id, "無効化しました"))
+    return True
+
+
+def _enable_plugin(plugin_id: str) -> bool:
+    """指定 plugin を enabled 状態にする (成功時 True を返す)。"""
+    result = _run_claude(["plugin", "enable", plugin_id, "--scope", "user"])
+    if result is None or result.returncode != 0:
+        logger.info(_log_format.format_status(plugin_id, f"enable に失敗: {_format_cli_error(result)}"))
+        return False
+    logger.info(_log_format.format_status(plugin_id, "有効化しました"))
+    return True
+
+
+def _auto_disable_plugins(raw_data: object) -> None:
+    """自動無効化対象のプラグインを `claude plugin disable` で無効化する。
+
+    `settings.json` の `enabledPlugins` 直読みで既に `false` のものはスキップし、
+    未インストールのものも対象外とする (空 CLI 呼び出しを避けるため)。
+    `settings.json` が存在しない環境では Claude Code 既定で有効扱いになるため、
+    インストール済みなら disable を呼んで確実に無効化する。
+    """
+    installed_ids = _user_scope_plugin_ids(raw_data)
+    enabled = _read_enabled_plugins_from_file()
+    for plugin_id in sorted(_AUTO_DISABLED_PLUGIN_IDS):
+        if plugin_id not in installed_ids:
+            continue
+        if enabled is not None and enabled.get(plugin_id) is False:
+            continue
+        _disable_plugin(plugin_id)
+
+
+def _auto_install_and_enable_plugins(raw_data: object) -> None:
+    """自動有効化対象のプラグインを install / enable で常時有効に保つ。
+
+    user scope で未インストールなら install で導入し、インストール済みでも
+    `enabledPlugins` で明示的に `false` になっていれば enable で有効化する。
+    既に true または未設定 (= 既定で有効) ならスキップする。
+    """
+    installed_ids = _user_scope_plugin_ids(raw_data)
+    enabled = _read_enabled_plugins_from_file()
+    for plugin_id in sorted(_AUTO_ENABLED_PLUGIN_IDS):
+        if plugin_id not in installed_ids:
+            _install_plugin_by_id(plugin_id)
+            continue
+        if enabled is not None and enabled.get(plugin_id) is False:
+            _enable_plugin(plugin_id)
+
+
+def _user_scope_plugin_ids(raw_data: object) -> set[str]:
+    """`claude plugin list` の raw data から user scope の ``id`` 集合を返す。
+
+    自動無効化・自動有効化の判定で、`<plugin>@<marketplace>` 形式の `id` を
+    そのまま参照したいケース向け (既存の `_extract_plugin_version_map` は
+    ak110-dotfiles marketplace の `name` のみを返すため別関数にする)。
+    """
+    if not isinstance(raw_data, list):
+        return set()
+    ids: set[str] = set()
+    for item in cast("list[object]", raw_data):
+        if not isinstance(item, dict):
+            continue
+        entry = cast("dict[str, object]", item)
+        if entry.get("scope") not in (None, "user"):
+            continue
+        plugin_id = entry.get("id")
+        if isinstance(plugin_id, str):
+            ids.add(plugin_id)
+    return ids
+
+
+def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
+    """`settings.json` の `enabledPlugins` を直読みして `<id> -> bool` 辞書で返す。
+
+    ファイル不在・解析失敗・`enabledPlugins` が非 dict の場合は `None` を返し、
+    呼び出し元では「情報なし」として扱う (デフォルト有効扱いと同等)。
+    """
+    data = _load_json_dict(_SETTINGS_JSON_PATH, silent=True)
+    if data is None:
+        return None
+    enabled = data.get("enabledPlugins")
+    if not isinstance(enabled, dict):
+        return None
+    result: dict[str, bool] = {}
+    for key, value in cast("dict[str, object]", enabled).items():
+        if isinstance(key, str) and isinstance(value, bool):
+            result[key] = value
+    return result
+
+
+def _warn_if_missing(target_versions: dict[str, str]) -> None:
+    """Install 試行後も `target_versions` の未インストールが残っていれば警告する。
+
+    再現性が不明瞭な未インストール事象の早期検出を狙う。
+    最新情報を取りたいため installed_plugins.json の再読み取りを行う。
+    """
+    raw_data: object = _read_installed_plugins_from_file()
+    if raw_data is None:
+        raw_data = _get_installed_plugins_raw()
+    if raw_data is None:
+        return
+    installed = _extract_plugin_version_map(raw_data)
+    missing = sorted(name for name in target_versions if name not in installed)
+    if missing:
+        logger.warning(
+            _log_format.format_status(
+                "plugins",
+                f"install 試行後も未インストールが残っています: {', '.join(missing)}",
+            )
+        )
+
+
+def _format_cli_error(result: subprocess.CompletedProcess[str] | None) -> str:
+    """CLI 失敗時のログに付ける stderr/stdout の簡潔な連結文字列を返す。
+
+    Claude Code CLI は本質的なエラーメッセージを stderr 側ではなく stdout に出すことがあり、
+    stderr のみでは原因特定が難しい。双方を併記してログに載せる。
+    """
+    if result is None:
+        return "(実行に失敗)"
+    parts: list[str] = []
+    stderr = (result.stderr or "").strip()
+    stdout = (result.stdout or "").strip()
+    if stderr:
+        parts.append(f"stderr: {stderr}")
+    if stdout:
+        parts.append(f"stdout: {stdout}")
+    return " / ".join(parts) if parts else f"exit {result.returncode}"
 
 
 def _run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
@@ -680,9 +904,16 @@ def _run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.Compl
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
+    失敗時の原因追跡を容易にするため、実行コマンドと戻り値をログに残す。
     """
+    logger.info(
+        _log_format.format_status(
+            "claude",
+            f"exec: {' '.join(args)}" + (f" (cwd={cwd})" if cwd is not None else ""),
+        )
+    )
     try:
-        return subprocess.run(
+        result = subprocess.run(
             ["claude", *args],
             capture_output=True,
             text=True,
@@ -699,6 +930,8 @@ def _run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.Compl
     except (OSError, subprocess.SubprocessError) as e:
         logger.info(_log_format.format_status("claude", f"`{' '.join(args)}` 実行に失敗: {e}"))
         return None
+    logger.info(_log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"))
+    return result
 
 
 if __name__ == "__main__":

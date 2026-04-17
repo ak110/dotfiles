@@ -86,9 +86,9 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 
 claude-plugins-officialから以下を導入する。
 
-- 推奨: `context7`・`serena`・`typescript-lsp`
+- 推奨: `context7`・`typescript-lsp`
 - 任意: `claude-md-management`・`skill-creator`
-- 無効推奨: `pyright-lsp`
+- 無効推奨: `pyright-lsp`（Claude Codeにインストールを推奨されるが誤動作が多いため、インストール後に`Disable`することを推奨）
 
 #### VSCode設定（お好みで）
 
@@ -203,6 +203,15 @@ project scopeで導入したい場合は、プロジェクトの`.claude/setting
 `update-dotfiles`を併用する環境では、github型登録がそのまま維持される。
 過去の`update-dotfiles`が残したdirectory型などの破損エントリがある場合も、自動でgithub型へ修復する。
 対象は`known_marketplaces.json`と`settings.json.extraKnownMarketplaces`の両方である。
+
+### 公式プラグインの自動管理
+
+`update-dotfiles`実行時に、公式marketplace（`claude-plugins-official`）のプラグインの有効/無効を`pytools/_install_claude_plugins.py`が自動で揃える。
+
+- 自動で無効化するプラグイン（`_AUTO_DISABLED_PLUGIN_IDS`定数で管理）: `claude plugin disable --scope user`を呼ぶ。アンインストールではなく`disabled`状態のまま残すため、再インストールされても次回の`update-dotfiles`で再度無効化される
+- 自動で有効化するプラグイン（`_AUTO_ENABLED_PLUGIN_IDS`定数で管理、例: `context7`）: user scopeで未インストールなら`claude plugin install --scope user`で導入する。さらに`enabledPlugins`で明示的に`false`のときだけ`claude plugin enable --scope user`で再有効化する
+
+対象を個別に外したい場合は定数を書き換える。一時的に`claude plugin enable <id>`で有効化しても、次回の`update-dotfiles`で再び無効化される点に注意する。
 
 ### edit-guardrailsからの移行
 
