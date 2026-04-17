@@ -7,8 +7,11 @@
 
 Claude Code が停止しようとするタイミングで発火する。
 
-未コミット変更がある場合はセッション終了を block する。
-ただし Claude がユーザーへ質問中（AskUserQuestion ツール使用、またはテキストに
+未コミット変更がある場合、直前のアシスタントターンが作業完了を示す文言
+（「完了しました」等、`_COMPLETION_KEYWORDS` 参照）を含むときに限って
+セッション終了を block する。作業途中での一時停止やユーザー確認待ち等で
+誤検出しないよう、完了文言ゲートで block 発動を絞り込んでいる。
+ただし同じターンでユーザーへ質問中（AskUserQuestion ツール使用、またはテキストに
 ? / ？ が含まれる）の場合は block せず approve する（質問への割り込みを防ぐため）。
 
 transcript を分析してユーザーからの修正指示の多寡を判定し、
@@ -22,6 +25,7 @@ exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
 """
 
+import collections.abc
 import contextlib
 import json
 import pathlib
@@ -53,6 +57,17 @@ _KEYWORD_THRESHOLD = 3
 # resume 1 回は正常フロー（初回不合格→修正→合格）のため、
 # 2 以上を異常な繰り返しと判定する。
 _CODEX_RESUME_THRESHOLD = 2
+
+# 作業完了を示す言い切り文言。
+# 誤検出削減を最優先するため狭く絞り、過去形・現在形の言い切りに限定する。
+# 「〜を完了します」（未来形）「〜すれば完了です」（条件形）のような文は
+# 作業途中でも出現しうるため対象外とする。
+_COMPLETION_KEYWORDS: tuple[str, ...] = (
+    "完了しました",
+    "完了いたしました",
+    "完了致しました",
+    "完了です",
+)
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 # 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
@@ -156,28 +171,23 @@ def _count_keywords(transcript_path: str) -> int:
     return count
 
 
-def _is_assistant_asking_question(transcript_path: str) -> bool:
-    """直前のアシスタントターンがユーザーへの質問を含んでいるかを確認する。
+def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
+    """直前のアシスタントターンに属する message dict を新しい順に生成する。
 
-    以下のいずれかが成立する場合 True を返す。
-    - AskUserQuestion ツール呼び出しが含まれている
-    - テキストに ? または ？ が含まれている（位置は問わない）
+    以下の制約で 1 ターンを画定する。
+    - sidechain （subagent）のエントリは除外する
+    - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
+      1 ターンとして統合する
+    - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
+      間に挟まった時点でターン境界とみなし走査を終える
+    - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
 
-    末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
-    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
-    false positive でコミットを強行する挙動を避けるため。
-
-    同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
-    される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
-    競合状態（hook 発火時点で transcript が未 flush）に対処する。
-
-    未コミット変更ブロックの false positive を防ぐための判定。
-    transcript 読み取りに失敗した場合は False を返す（安全側）。
+    transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
     """
     try:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
-        return False
+        return
     first_msg_id: str | None = None
     checked_count = 0
     saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
@@ -193,19 +203,41 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
             continue
         if saw_non_assistant:
             # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
-            return False
+            return
         message = entry.get("message")
         if not isinstance(message, dict):
-            return False
+            return
         msg_id = message.get("id", "")
         if first_msg_id is None:
             first_msg_id = msg_id
         elif msg_id and first_msg_id and msg_id != first_msg_id:
             # message.id が両方設定されており異なる → 別ターン
-            return False
+            return
         checked_count += 1
         if checked_count > 3:
-            return False
+            return
+        yield message
+
+
+def _is_assistant_asking_question(transcript_path: str) -> bool:
+    """直前のアシスタントターンがユーザーへの質問を含んでいるかを確認する。
+
+    以下のいずれかが成立する場合 True を返す。
+    - AskUserQuestion ツール呼び出しが含まれている
+    - テキストに ? または ？ が含まれている（位置は問わない）
+
+    末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
+    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
+    false positive でコミットを強行する挙動を避けるため。
+
+    同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
+    される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
+    競合状態（hook 発火時点で transcript が未 flush）に対処する。
+    詳細は `_iter_latest_assistant_messages` を参照。
+
+    未コミット変更ブロックの false positive を防ぐための判定。
+    """
+    for message in _iter_latest_assistant_messages(transcript_path):
         content = message.get("content")
         if not isinstance(content, list):
             return False
@@ -223,6 +255,30 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
             joined = "\n".join(texts)
             return "?" in joined or "？" in joined
         # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
+    return False
+
+
+def _is_assistant_task_completed(transcript_path: str) -> bool:
+    """直前のアシスタントターンに作業完了の言い切り文言が含まれるか判定する。
+
+    未コミット変更 block のゲートとして使う。検索範囲は
+    `_is_assistant_asking_question` と揃え、直前アシスタントターンの
+    テキストエントリに限定する。キーワードは `_COMPLETION_KEYWORDS` 参照。
+    """
+    for message in _iter_latest_assistant_messages(transcript_path):
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "text":
+                continue
+            text = block.get("text", "")
+            if not isinstance(text, str):
+                continue
+            if any(keyword in text for keyword in _COMPLETION_KEYWORDS):
+                return True
     return False
 
 
@@ -316,7 +372,9 @@ def _main() -> int:
     transcript_path = payload.get("transcript_path", "")
 
     # --- 未コミット変更ブロック ---
-    # Claude がユーザーに質問中の場合はスキップする（質問への割り込みを防ぐ）。
+    # 完了文言ゲート: 直前アシスタントターンが作業完了の言い切り文言を含む場合のみ block する。
+    # 作業途中の一時停止・探索中・ユーザー確認待ち等での false positive を避ける。
+    # 質問中の場合はさらにスキップする（質問への割り込みを防ぐ）。
     # ブロックは 1 回に限る。理由:
     #   - Claude Code は block を受けると再度 Stop を試みるため、
     #     同一メッセージの繰り返しに意味がない
@@ -325,8 +383,10 @@ def _main() -> int:
     #   - _is_assistant_asking_question の transcript flush タイミング問題
     #     （質問検出失敗）も 2 回目で自然に通過する
     if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-        asking = isinstance(transcript_path, str) and _is_assistant_asking_question(transcript_path)
-        if not asking:
+        transcript_is_str = isinstance(transcript_path, str)
+        completed = transcript_is_str and _is_assistant_task_completed(transcript_path)
+        asking = transcript_is_str and _is_assistant_asking_question(transcript_path)
+        if completed and not asking:
             block_count = state.get("uncommitted_block_count", 0)
             if block_count == 0:
                 state["uncommitted_block_count"] = block_count + 1

@@ -11,6 +11,8 @@ import subprocess
 import sys
 from typing import Any
 
+import pytest
+
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "stop_advisor.py"
 
 
@@ -61,6 +63,26 @@ def _write_transcript(tmp_path: pathlib.Path, user_texts: str | list[str]) -> pa
 
 def _write_raw_transcript(tmp_path: pathlib.Path, lines: list[str]) -> pathlib.Path:
     """任意の JSONL 行を transcript として書き出す (異種エントリを含む検証用)。"""
+    transcript = tmp_path / "transcript.jsonl"
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return transcript
+
+
+def _write_transcript_with_assistant_last(tmp_path: pathlib.Path, assistant_content: list[dict]) -> pathlib.Path:
+    """アシスタントターンを末尾に持つ transcript を書き出す。
+
+    直前アシスタントターン走査（完了文言ゲート・質問中判定）の検証で共有する。
+    """
+    lines = [
+        json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {"role": "assistant", "content": assistant_content},
+            },
+            ensure_ascii=False,
+        ),
+    ]
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return transcript
@@ -304,7 +326,8 @@ class TestUncommittedChanges:
 
     def test_blocks_with_uncommitted_changes(self, tmp_path: pathlib.Path):
         repo = self._make_dirty_repo(tmp_path)
-        transcript = _write_transcript(tmp_path, "no corrections")
+        content = [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "dirty", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -329,7 +352,8 @@ class TestUncommittedChanges:
 
     def test_allows_after_block_limit(self, tmp_path: pathlib.Path):
         repo = self._make_dirty_repo(tmp_path)
-        transcript = _write_transcript(tmp_path, "no corrections")
+        content = [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         # 1 回ブロック後、2 回目は通過する
         _write_state(tmp_path, "limit", {"uncommitted_block_count": 1})
         result = _run(
@@ -351,9 +375,21 @@ class TestUncommittedChanges:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
+    def test_no_completion_keyword_approves(self, tmp_path: pathlib.Path):
+        """未コミット変更があっても、直前アシスタントターンに完了文言がなければ block しない。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": "\u8abf\u67fb\u3092\u7d9a\u3051\u307e\u3059\u3002"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "no-completion", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
 
-class TestQuestionSuppressesUncommittedBlock:
-    """Claude がユーザーに質問中の場合は未コミット変更ブロックを抑制する。"""
+
+class TestCompletionKeyword:
+    """作業完了文言ゲート: 直前アシスタントターンに完了文言を含むときのみ未コミット block する。"""
 
     def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
         repo = tmp_path / "repo"
@@ -367,30 +403,51 @@ class TestQuestionSuppressesUncommittedBlock:
         (repo / "file.txt").write_text("modified")
         return repo
 
-    def _write_transcript_with_assistant_last(self, tmp_path: pathlib.Path, assistant_content: list[dict]) -> pathlib.Path:
-        """アシスタントターンを末尾に持つ transcript を書き出す。"""
-        lines = [
-            json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {"role": "assistant", "content": assistant_content},
-                },
-                ensure_ascii=False,
-            ),
-        ]
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return transcript
+    @pytest.mark.parametrize(
+        ("keyword_label", "assistant_text"),
+        [
+            ("shimashita", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"),
+            ("itashimashita", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3044\u305f\u3057\u307e\u3057\u305f\u3002"),
+            ("itashimashita_kanji", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u81f4\u3057\u307e\u3057\u305f\u3002"),
+            ("desu", "\u4f5c\u696d\u306f\u4ee5\u4e0a\u3067\u5b8c\u4e86\u3067\u3059\u3002"),
+        ],
+    )
+    def test_completion_keyword_triggers_block(self, tmp_path: pathlib.Path, keyword_label: str, assistant_text: str):
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": assistant_text}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": f"completion-{keyword_label}", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        assert "uncommitted" in decision.get("reason", "").lower()
+
+
+class TestQuestionSuppressesUncommittedBlock:
+    """Claude がユーザーに質問中の場合は完了文言があっても未コミット変更ブロックを抑制する。"""
+
+    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("initial")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("modified")
+        return repo
 
     def test_ask_user_question_tool_suppresses_block(self, tmp_path: pathlib.Path):
         """AskUserQuestion ツール呼び出しが最後にある場合はブロックしない。"""
         repo = self._make_dirty_repo(tmp_path)
         content: list[dict[str, Any]] = [
-            {"type": "text", "text": "どちらを選びますか？"},
+            {"type": "text", "text": "実装が完了しました。どちらを選びますか？"},
             {"type": "tool_use", "id": "x", "name": "AskUserQuestion", "input": {}},
         ]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "ask-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -401,8 +458,8 @@ class TestQuestionSuppressesUncommittedBlock:
     def test_fullwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
         """テキストが全角 ？ で終わる場合はブロックしない。"""
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "ステージ済みファイルをどうしますか？"}]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        content = [{"type": "text", "text": "実装が完了しました。ステージ済みファイルをどうしますか？"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "fw-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -413,8 +470,8 @@ class TestQuestionSuppressesUncommittedBlock:
     def test_halfwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
         """テキストが半角 ? で終わる場合はブロックしない。"""
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "Which option do you prefer?"}]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        content = [{"type": "text", "text": "実装が完了しました。Which option do you prefer?"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "hw-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -428,10 +485,10 @@ class TestQuestionSuppressesUncommittedBlock:
         content = [
             {
                 "type": "text",
-                "text": "続行してよいですか？ 判断をいただき次第、残タスクを進めます。",
+                "text": "実装が完了しました。続行してよいですか？ 判断をいただき次第、残タスクを進めます。",
             }
         ]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "mid-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -443,10 +500,10 @@ class TestQuestionSuppressesUncommittedBlock:
         """同一ターンの先頭テキストブロックに ? があり、末尾ブロックに無い場合も質問扱いでブロックしない。"""
         repo = self._make_dirty_repo(tmp_path)
         content = [
-            {"type": "text", "text": "この方針で進めますか？"},
+            {"type": "text", "text": "実装が完了しました。この方針で進めますか？"},
             {"type": "text", "text": "ご判断をお願いします。"},
         ]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "split-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -455,10 +512,10 @@ class TestQuestionSuppressesUncommittedBlock:
         assert decision["decision"] == "approve"
 
     def test_non_question_text_still_blocks(self, tmp_path: pathlib.Path):
-        """? を含まないテキストの場合は通常通りブロックする。"""
+        """完了文言があり ? を含まないテキストの場合は通常通りブロックする。"""
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "コミットします。"}]
-        transcript = self._write_transcript_with_assistant_last(tmp_path, content)
+        content = [{"type": "text", "text": "コミット前の実装が完了しました。"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "no-q", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -484,7 +541,7 @@ class TestQuestionSuppressesUncommittedBlock:
                     "message": {
                         "id": msg_id,
                         "role": "assistant",
-                        "content": [{"type": "text", "text": "コミットしますか？"}],
+                        "content": [{"type": "text", "text": "実装が完了しました。コミットしますか？"}],
                     },
                 },
                 ensure_ascii=False,
@@ -514,7 +571,8 @@ class TestQuestionSuppressesUncommittedBlock:
         """前のターンに質問があっても、最新ターンが質問でなければブロックする。
 
         異なる message.id を持つエントリは別ターンとして扱い、
-        ユーザー応答を挟んだ後のツール呼び出しのみのエントリではブロックを通過させる。
+        ユーザー応答を挟んだ後のテキスト＋ツール呼び出しエントリ（完了文言あり・質問なし）で
+        ブロックを通過させる。
         """
         repo = self._make_dirty_repo(tmp_path)
         lines = [
@@ -537,7 +595,10 @@ class TestQuestionSuppressesUncommittedBlock:
                     "message": {
                         "id": "msg_new_turn",
                         "role": "assistant",
-                        "content": [{"type": "tool_use", "id": "y", "name": "Bash", "input": {}}],
+                        "content": [
+                            {"type": "text", "text": "作業が完了しました。"},
+                            {"type": "tool_use", "id": "y", "name": "Bash", "input": {}},
+                        ],
                     },
                 },
                 ensure_ascii=False,
