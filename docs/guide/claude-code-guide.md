@@ -162,6 +162,18 @@ codex CLI自体のセットアップは別途行うこと。
 一部のスキルは`/<skill-name>`形式で明示的に呼び出せる。
 現在は`/tidy-unpushed-commits`・`/pyfltr-usage`・`/pytilpack-usage`・`/gitlab-ci-usage`を提供している。
 
+### 手動トリガー専用のスキル
+
+以下のスキルは自動トリガーでは起動せず、ユーザーが明示的にコマンドを入力した時のみ動作する。
+存在と起動名を知らなければ使えないため、用途と合わせてここに記載する。
+
+- `spec-driven` — 軽量SDD（Spec-Driven Development）ワークフロー。
+  起動コマンド: `/spec-driven`（自動補完で`/agent-toolkit:spec-driven`になる）
+  - 想定ユースケース: 大規模コードベースへの機能追加で、検討漏れ・デグレードを抑え、設計判断を恒久ドキュメントに蓄積したい場合
+  - Intake→Explore→Design→Tasks→Implement＆Cleanupの5フェーズで進行し、各フェーズ終端にユーザー確認ゲートを置く
+  - ドキュメント規約: 仕様と設計は`docs/v{version}/{機能名}.md`（恒久、実装後も残す）、進行中の作業メモは`docs/v{version}/{機能名}.working.md`（一時、実装完了時に削除）。`{version}`は次期リリースのバージョン番号でIntakeフェーズで確定する
+  - 調査は`spec-researcher`、実装は`spec-implementer`の各サブエージェントへ分業し、メインセッションのコンテキスト消費を抑える
+
 ## 更新方法
 
 ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化することを推奨する。
