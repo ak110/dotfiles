@@ -80,6 +80,16 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
     ],
 }
 
+# 内容が期待値と完全一致する場合に限り削除するパス一覧。
+# ユーザーが独自に編集している可能性があるファイルを保護するため、bytes 完全一致のときのみ削除する。
+_REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
+    Path.home() / ".claude": {
+        # `.chezmoi-source/dot_claude/CLAUDE.md` を削除したため、未編集の配布先を除去する。
+        # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため撤廃 (Giskard Phare)。
+        Path("CLAUDE.md"): ("# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()),
+    },
+}
+
 
 @dataclass
 class _StepResult:
@@ -89,7 +99,7 @@ class _StepResult:
 
 
 def _cleanup_removed_paths() -> bool:
-    """`_REMOVED_PATHS` に従って旧配布物を削除する。
+    """`_REMOVED_PATHS` と `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。
 
     Returns:
         いずれかのパスを実際に削除したかどうか。
@@ -97,6 +107,8 @@ def _cleanup_removed_paths() -> bool:
     total_removed = 0
     for base_dir, relative_paths in _REMOVED_PATHS.items():
         total_removed += _cleanup_paths.cleanup_paths(base_dir, relative_paths)
+    for base_dir, expected in _REMOVED_PATHS_IF_CONTENT.items():
+        total_removed += _cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
     if total_removed == 0:
         logger.info(_log_format.format_status("cleanup", "削除対象なし"))
     else:

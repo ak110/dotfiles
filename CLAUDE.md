@@ -29,9 +29,5 @@
 - 配布対象（Linux/Windows両対応）と開発対象（Linuxのみ）でサポート範囲が異なる。ファイル追加時にどちら用か意識する
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する。対応ファイル一覧は[docs/development/development.md](docs/development/development.md)の「プラットフォーム対応ファイル」参照
 - `agent-basics/*.md`（配布ルール本体）を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。本体変更前に`grep`で参照箇所を確認する
-- `.chezmoi-source/dot_claude/rules/agent-basics/agent.md`と`.chezmoi-source/dot_claude/CLAUDE.md`の使い分けに注意する
-  - 前者は環境に依存しない汎用ルール、後者は環境依存の前提（codexの利用可否など）を含む指示を書く
-  - 後者も参考として他人に提示する想定はあるが、そのまま適用できるとは限らない点で前者と分ける
-  - 新規の指示を追加する際は環境依存性の有無で振り分ける
 - `agent-basics/`配下のファイル分割（`agent.md`・`styles.md`など）は人間の編集・レビュー時の見通し改善が目的であり、配布先の`~/.claude/rules/agent-basics/`では全ファイルが常時自動ロードされる
 - 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される
