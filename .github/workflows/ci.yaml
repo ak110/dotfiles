@@ -111,7 +111,11 @@ jobs:
           version: latest
 
       - name: Configure pnpm security
-        run: pnpm config set minimum-release-age 1440 --global
+        # `@anthropic-ai/claude-code`は省略メタデータにtimeフィールドが無く
+        # `ERR_PNPM_MISSING_TIME`が発生するため、minimum-release-ageの評価対象から除外する。
+        run: |
+          pnpm config set minimum-release-age 1440 --global
+          pnpm config set minimum-release-age-exclude "@anthropic-ai/claude-code" --global
 
       - name: Get pnpm store path
         id: pnpm-store
@@ -131,11 +135,6 @@ jobs:
 
       - name: Install Claude Code CLI
         # pre-commitの`claude-plugin-validate`フックで使用する。
-        # npmレジストリは省略メタデータでtimeフィールドを返さないため、
-        # minimum-release-age評価のためnpm_config_fetch_full_metadataで
-        # フルメタデータ取得を強制する。
-        env:
-          npm_config_fetch_full_metadata: "true"
         run: pnpm add -g @anthropic-ai/claude-code
 
       - name: Test with pyfltr
