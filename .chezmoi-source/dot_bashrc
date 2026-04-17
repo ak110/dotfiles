@@ -303,7 +303,11 @@ alias ccusage="pnpx ccusage"
 # uv / pyfltr の bash 補完
 if command -v uv &>/dev/null; then
     eval "$(uv generate-shell-completion bash)"
-    eval "$(uvx 'pyfltr>=2.3.0' generate-shell-completion bash)"
+fi
+if command -v pyfltr &>/dev/null; then
+    if pyfltr generate-shell-completion bash &>/dev/null; then
+        eval "$(pyfltr generate-shell-completion bash)"
+    fi
 fi
 
 # ~/.localbashrc
