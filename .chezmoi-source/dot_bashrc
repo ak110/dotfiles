@@ -207,7 +207,16 @@ function cd() {
     )
 }
 alias ..='cd ..'
-alias r='reset ; exec $SHELL'
+function r() {
+    reset
+    # exec $SHELLはシェルを置き換えるため、残存ジョブ（停止中を含む）は失われる
+    if [ -n "$(jobs -p)" ]; then
+        echo "バックグラウンドジョブが残っているためシェルの再起動は行いません。" >&2
+        jobs
+        return 1
+    fi
+    exec "$SHELL"
+}
 
 # プロンプトのカスタマイズ
 function _show_status() {
