@@ -42,7 +42,7 @@ class TestHomeClaudeEditBlock:
         [
             "settings.json",
             "CLAUDE.md",
-            "rules/agent-basics/agent.md",
+            "rules/agent-toolkit/agent.md",
             "agents/foo.md",
             "skills/bar/SKILL.md",
             "plugins/agent-toolkit/hooks/hooks.json",
@@ -78,7 +78,7 @@ class TestHomeClaudeEditBlock:
             "statsig/cache",
             "settings.local.json",  # ローカル設定 (`.local.` を含む)
             "CLAUDE.local.md",  # ローカル メモ
-            "rules/agent-basics/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
+            "rules/agent-toolkit/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
         ],
     )
     def test_allowed(self, rel: str):
@@ -115,7 +115,7 @@ class TestHomeClaudeEditBlock:
         [
             "./.claude/settings.json",  # 冗長な `.` セグメント
             "foo/../.claude/settings.json",  # `..` で戻る
-            ".claude/./rules/agent-basics/agent.md",  # 途中の `.`
+            ".claude/./rules/agent-toolkit/agent.md",  # 途中の `.`
         ],
     )
     def test_blocked_with_non_canonical_segments(self, rel: str):

@@ -84,7 +84,7 @@ o=対象、-=対象外、△=緩め
 - ツールチェイン周りの修正の場合は以下のメンテナンスも検討する（忘れがちなので注意）
   - `pyfltr/docs/guide/recommended.md`
   - `pyfltr/docs/guide/recommended-nonpython.md`
-- 他プロジェクト作業中に `~/.claude/rules/agent-basics/*` や `/agent-toolkit:tidy-unpushed-commits` の問題を発見したらdotfiles側を修正する（マスター）
+- 他プロジェクト作業中に `~/.claude/rules/agent-toolkit/*` や `/agent-toolkit:tidy-unpushed-commits` の問題を発見したらdotfiles側を修正する（マスター）
 - 各プロジェクトの `docs/development/development.md` の以下3セクションは共通文面で統一済み。変更時は他プロジェクトへの波及を確認する
   - 「役割分担（末尾2段落）」
   - 「UV_FROZEN（Python系）」

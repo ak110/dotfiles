@@ -5,153 +5,124 @@ from pathlib import Path
 
 import pytest
 
-from pytools.claudize import _OBSOLETE_RULES, _UNCONDITIONAL_RULES, _claudize, _split_frontmatter
+from pytools.claudize import _claudize
 
-# テスト用テンプレート
-TEMPLATE = """\
-# カスタム指示
-
-## 基本原則
-
-- ルール1
-"""
-
-# ルール用テンプレート（配布対象のルール向け）
-RULE_TEMPLATE = "# テストルール\n"
+# テスト用テンプレート本文
+AGENT_TEMPLATE = "# カスタム指示\n\n## 基本原則\n\n- ルール1\n"
+STYLES_TEMPLATE = "# 記述スタイル\n"
 
 
 def _setup_template(tmp_path: Path) -> Path:
-    """テンプレートディレクトリを作成し、agent.md と配布対象ルールを配置する。"""
-    template_dir = tmp_path / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-basics"
+    """テンプレートディレクトリを作成し、配布対象ファイルを配置する。"""
+    template_dir = tmp_path / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
     template_dir.mkdir(parents=True)
-    (template_dir / "agent.md").write_text(TEMPLATE, encoding="utf-8")
-    for name in _UNCONDITIONAL_RULES:
-        (template_dir / name).write_text(RULE_TEMPLATE, encoding="utf-8")
+    (template_dir / "agent.md").write_text(AGENT_TEMPLATE, encoding="utf-8")
+    (template_dir / "styles.md").write_text(STYLES_TEMPLATE, encoding="utf-8")
     return template_dir
 
 
 class TestRuleDistribution:
     """ルール配布の基本動作。"""
 
-    def test_agent_md_and_unconditional_rules_deployed(self, tmp_path: Path):
-        """agent.md と無条件ルールは配布される。"""
+    def test_basic_deployment(self, tmp_path: Path):
+        """配布元のファイルがそのまま配布先へコピーされる。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules" / "agent-basics"
+        rules_dir = target / ".claude" / "rules" / "agent-toolkit"
+        assert (rules_dir / "agent.md").read_text(encoding="utf-8") == AGENT_TEMPLATE
+        assert (rules_dir / "styles.md").read_text(encoding="utf-8") == STYLES_TEMPLATE
+
+    def test_extra_files_are_removed(self, tmp_path: Path):
+        """配布先に余分なファイルがあっても同期で削除される。"""
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
+
+        rules_dir = target / ".claude" / "rules" / "agent-toolkit"
+        rules_dir.mkdir(parents=True)
+        stale = rules_dir / "obsolete.md"
+        stale.write_text("# 旧ルール\n", encoding="utf-8")
+
+        _claudize(target, template_dir)
+
+        assert not stale.exists(), "配布元に存在しないファイルが削除されていない"
         assert (rules_dir / "agent.md").exists()
-        for name in _UNCONDITIONAL_RULES:
-            assert (rules_dir / name).exists()
 
-    def test_obsolete_rules_are_removed(self, tmp_path: Path):
-        """旧配布対象ファイルがプロジェクトに残っていれば削除される。"""
+    def test_legacy_agent_basics_dir_removed(self, tmp_path: Path):
+        """旧 agent-basics ディレクトリが存在する場合は削除される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
 
-        # 旧ルールを事前に配置
-        rules_dir = target / ".claude" / "rules" / "agent-basics"
-        rules_dir.mkdir(parents=True)
-        stale_names = ["python.md", "typescript.md", "claude.md"]
-        for name in stale_names:
-            (rules_dir / name).write_text("# 旧ルール\n", encoding="utf-8")
+        legacy_dir = target / ".claude" / "rules" / "agent-basics"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
         _claudize(target, template_dir)
 
-        for name in stale_names:
-            assert not (rules_dir / name).exists(), f"{name} が削除されていない"
-
-    def test_obsolete_rules_list_covers_legacy_names(self):
-        """_OBSOLETE_RULES は移行前の言語別・claude系ルール名を網羅する。"""
-        expected_subset = {
-            "python.md",
-            "python-test.md",
-            "typescript.md",
-            "typescript-test.md",
-            "rust.md",
-            "rust-test.md",
-            "csharp.md",
-            "csharp-test.md",
-            "powershell.md",
-            "windows-batch.md",
-            "claude.md",
-            "claude-hooks.md",
-            "claude-rules.md",
-            "claude-skills.md",
-        }
-        assert expected_subset.issubset(set(_OBSOLETE_RULES))
-
-    def test_overwrite_existing_rule_body(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """既存ルールのbodyに差分があればテンプレートで上書きされる。"""
-        caplog.set_level(logging.INFO)
-        template_dir = _setup_template(tmp_path)
-        target = tmp_path / "project"
-        target.mkdir()
-
-        rules_dir = target / ".claude" / "rules" / "agent-basics"
-        rules_dir.mkdir(parents=True)
-        target_name = "agent.md"
-        (rules_dir / target_name).write_text("# 古いルール\n", encoding="utf-8")
-
-        _claudize(target, template_dir)
-
-        expected = (template_dir / target_name).read_text(encoding="utf-8")
-        assert (rules_dir / target_name).read_text(encoding="utf-8") == expected
-        assert any("上書き" in r.message and target_name in r.message for r in caplog.records)
+        assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
+        assert (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").exists()
 
     def test_idempotent(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """2回実行しても結果が同じで、差分なしの旨が表示される。"""
+        """2回実行しても同じ結果になる。"""
         caplog.set_level(logging.INFO)
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
 
         _claudize(target, template_dir)
+        expected_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
 
-        caplog.clear()
         _claudize(target, template_dir)
+        actual_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
 
-        assert any("同期済み" in r.message for r in caplog.records)
+        assert actual_agent == expected_agent
+
+    def test_missing_template_exits(self, tmp_path: Path):
+        """配布元が無ければ非ゼロ終了する。"""
+        template_dir = tmp_path / "nonexistent"
+        target = tmp_path / "project"
+        target.mkdir()
+
+        with pytest.raises(SystemExit):
+            _claudize(target, template_dir)
 
 
 class TestClean:
     """`--clean` での削除動作。"""
 
-    def test_clean_removes_all_distributed_and_obsolete(self, tmp_path: Path):
-        """--clean は配布対象ルールも旧ルールも全て削除する。"""
+    def test_clean_removes_agent_toolkit_and_legacy(self, tmp_path: Path):
+        """--clean で agent-toolkit と旧 agent-basics の両方が削除される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
         target.mkdir()
 
         _claudize(target, template_dir)
 
-        rules_dir = target / ".claude" / "rules" / "agent-basics"
-        # 旧ルールも残存している状況を作る
-        (rules_dir / _OBSOLETE_RULES[0]).write_text("# 旧ルール\n", encoding="utf-8")
+        # 旧ディレクトリも作って削除対象に含める
+        legacy_dir = target / ".claude" / "rules" / "agent-basics"
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
         _claudize(target, template_dir, clean=True)
 
-        # 配布対象・旧ルール・agent.md のいずれも残っていない
-        assert not (rules_dir / "agent.md").exists()
-        for name in _UNCONDITIONAL_RULES:
-            assert not (rules_dir / name).exists()
-        assert not (rules_dir / _OBSOLETE_RULES[0]).exists()
+        assert not (target / ".claude" / "rules" / "agent-toolkit").exists()
+        assert not legacy_dir.exists()
+        # 空になった rules/ と .claude/ も削除されている
+        assert not (target / ".claude" / "rules").exists()
+        assert not (target / ".claude").exists()
 
+    def test_clean_when_absent_is_noop(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """配布先が存在しなくてもエラーにならない。"""
+        caplog.set_level(logging.INFO)
+        template_dir = _setup_template(tmp_path)
+        target = tmp_path / "project"
+        target.mkdir()
 
-class TestSplitFrontmatter:
-    """frontmatter 分割ヘルパーの振る舞い。"""
+        _claudize(target, template_dir, clean=True)
 
-    def test_split_with_frontmatter(self):
-        content = '---\npaths:\n  - "**/*.py"\n---\n# 本文\n'
-        fm, body = _split_frontmatter(content)
-        assert fm == '---\npaths:\n  - "**/*.py"\n---\n'
-        assert body == "# 本文\n"
-
-    def test_split_without_frontmatter(self):
-        content = "# 本文のみ\n"
-        fm, body = _split_frontmatter(content)
-        assert fm is None
-        assert body == content
+        assert any("削除対象なし" in r.message for r in caplog.records)

@@ -51,7 +51,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     # 4. ルールファイルがデプロイされていること。
     # rules側の配布対象はagent.mdとstyles.mdの2ファイル。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
-    rules_dir = fake_home / ".claude" / "rules" / "agent-basics"
+    rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
     assert (rules_dir / "agent.md").exists(), "agent.md が chezmoi でデプロイされていない"
     assert (rules_dir / "styles.md").exists(), "styles.md が chezmoi でデプロイされていない"
 

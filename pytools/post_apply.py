@@ -47,29 +47,12 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したもの
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # リネーム: rules.md → claude-rules.md, skills.md → claude-skills.md
-        Path("rules/agent-basics/rules.md"),
-        Path("rules/agent-basics/skills.md"),
         # 配布 agent から dotfiles ローカルの sync-cross-project skill へ移行 (15ca58b)
         Path("agents/cross-project-sync-checker.md"),
-        # agent-toolkit プラグインの各スキル (coding-standards / plan-mode / bugfix /
-        # claude-meta-rules) へ移行したため、旧ルールファイルを destination 側から除去する
-        Path("rules/agent-basics/python.md"),
-        Path("rules/agent-basics/python-test.md"),
-        Path("rules/agent-basics/typescript.md"),
-        Path("rules/agent-basics/typescript-test.md"),
-        Path("rules/agent-basics/rust.md"),
-        Path("rules/agent-basics/rust-test.md"),
-        Path("rules/agent-basics/csharp.md"),
-        Path("rules/agent-basics/csharp-test.md"),
-        Path("rules/agent-basics/powershell.md"),
-        Path("rules/agent-basics/windows-batch.md"),
-        Path("rules/agent-basics/claude.md"),
-        Path("rules/agent-basics/claude-hooks.md"),
-        Path("rules/agent-basics/claude-rules.md"),
-        Path("rules/agent-basics/claude-skills.md"),
-        # writing-standards スキルへ吸収
-        Path("rules/agent-basics/markdown.md"),
+        # agent-basics から agent-toolkit へのディレクトリ名リネームに伴う旧ディレクトリ削除。
+        # _cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
+        # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
+        Path("rules/agent-basics"),
     ],
     Path.home() / "bin": [
         # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない

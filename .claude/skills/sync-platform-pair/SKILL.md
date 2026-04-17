@@ -17,7 +17,7 @@ description: dotfilesリポジトリのLinux/Windowsペアファイル（`update
 | `.chezmoi-source/run_onchange_after_pytools.sh.tmpl` | `.chezmoi-source/run_onchange_after_pytools-windows.ps1.tmpl` | pytoolsの自動再インストール |
 | `.chezmoi-source/run_after_supply-chain-npm.sh.tmpl` | `.chezmoi-source/run_after_supply-chain-npm-windows.ps1.tmpl` | npmサプライチェーン保護の適用 |
 | `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` | Claude Codeのフック定義（OS別オーバーライド） |
-| `install-claude.sh` | `install-claude.ps1` | agent-basicsルールのリモートインストーラー |
+| `install-claude.sh` | `install-claude.ps1` | agent-toolkitルールのリモートインストーラー |
 | `install.sh` | （READMEの`winget`コマンド） | dotfiles本体インストーラー |
 
 新しいペアを追加する場合は本リストと `CLAUDE.md` の「プラットフォーム対応ファイル」節を同時に更新する。

@@ -1,13 +1,8 @@
-# Claude Code拡張ツールキット 利用ガイド
+# agent-toolkit 利用ガイド
 
-本リポジトリでは、Claude Codeの体験を向上させる拡張ツールキットを提供している。
-
-dotfiles管理側の情報（配布方式・配布元など）は[docs/guide/claude-code.md](claude-code.md)を参照。
-ここではコンセプト・導入方法・機能を説明する。
+本リポジトリでは、Claude Codeの体験を向上させるスキルなどのセット「agent-toolkit」を提供している。
 
 ## コンセプト
-
-本ツールキットの狙いは以下の3つ。
 
 1. 標準動作のカスタマイズ — デフォルトのClaude Codeの振る舞いを大規模開発に耐える品質レベルへ引き上げる。
    判断基準が曖昧な場面での事前相談の徹底、lint抑制時のユーザー確認の必須化、検証からコミットまでの流れの自動化など、具体的なふるまいをチューニングしている
@@ -16,17 +11,19 @@ dotfiles管理側の情報（配布方式・配布元など）は[docs/guide/cla
 3. 機能仕様の知識補完 — Claude Codeの機能は比較的新しく、LLMの訓練データに十分反映されていない可能性がある。
    rulesの`paths` frontmatter、skillsのprogressive disclosure、hookスクリプトの出力フィールドなど、明文化された仕様に基づいて作業できるようにする
 
-Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本語環境での確実なトリガーと大規模開発での細かな制御のために独自に作成している。
+Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
 性質上、頻繁な改訂が発生する。
 
-ツールキットはagent-basics（ルールファイル）とagent-toolkit（プラグイン）の2つのコンポーネントで構成される。
+agent-toolkitルールファイルとプラグインの2つのコンポーネントで構成される。
 
-- agent-basics — `~/.claude/rules/agent-basics/`に配置されるルールファイル。自動読み込みされ、行動原則・運用方針・記述スタイルなどの共通指示を提供する
-- agent-toolkit — Claude Codeのuser scopeにインストールするプラグイン。フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
+- ルールファイル — `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。自動読み込みされ、行動原則・運用方針・記述スタイルなどの共通指示を提供する
+- プラグイン — Claude Codeのuser scopeにインストールするプラグイン。フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
 
 両者は相互依存しており、基本的に同時に導入する前提である。
 
-様々な機能を持つため、部分的に無効化したい場合などはユーザー側の`~/.claude/CLAUDE.md`やプロジェクトの`CLAUDE.md`、プロンプトでの指示などで上書きできる設計としている（優先度としてルールファイル側に明記している）。
+部分的に動作を変えたい場合は、
+ユーザー側の`~/.claude/CLAUDE.md`・プロジェクトの`CLAUDE.md`・プロンプトでの指示などで上書きできる。
+優先度はルールファイル側に明記している。
 
 ## クイックスタート
 
@@ -39,6 +36,9 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### 2. ツールキットのインストール
+
+先にClaude Codeをインストールしておくこと。
+インストーラーは`claude` CLIの存在を前提としており、未検出時はエラー終了する。
 
 ツールキットをインストールするには以下のワンライナーを実行する。
 
@@ -54,10 +54,9 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
     powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex
     ```
 
-ルールファイルが`~/.claude/rules/agent-basics/`へ配置され、
-`claude` CLIを検出した場合はagent-toolkitプラグインもuser scopeへ自動インストールされる。
-
-`claude` CLI未導入の環境では案内メッセージのみ表示される。
+ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、
+agent-toolkitプラグインがuser scopeへインストール・更新される。
+再実行すると常に最新版へ同期される。
 
 インストール後、非公式のPlugin Marketplaceはデフォルトで自動更新が無効のため、初回のみ手動で有効化する必要がある。
 
@@ -65,7 +64,7 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、日本
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
 3. `Enable auto-update`を選択
 
-### 3. Claude Codeのおすすめ設定
+### 3. Claude Codeの推奨設定
 
 以下の設定を適用しておくと、Claude Codeを快適に使える。
 
@@ -88,7 +87,7 @@ claude-plugins-officialから以下を導入する。
 
 - 推奨: `context7`・`typescript-lsp`
 - 任意: `claude-md-management`・`skill-creator`
-- 無効推奨: `pyright-lsp`（Claude Codeにインストールを推奨されるが誤動作が多いため、インストール後に`Disable`することを推奨）
+- 無効: `pyright-lsp`（Claude Codeにインストールを推奨されるが誤動作が多いため、インストール後に`Disable`することを推奨）
 
 #### VSCode設定（お好みで）
 
@@ -100,13 +99,25 @@ claude-plugins-officialから以下を導入する。
 }
 ```
 
+### 4. codex MCPサーバーのセットアップ（推奨）
+
+後述の`plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
+以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
+
+```bash
+claude mcp add --scope=user codex codex mcp-server
+```
+
+dotfiles利用者は`update-dotfiles`/`chezmoi apply`の後処理で自動登録される（既登録時はスキップ）。
+codex CLI自体のセットアップは別途行うこと。
+
 ## 構成と機能
 
 ### 常時有効な仕組み
 
 以下のルールファイルとフックはセッション開始時から常に有効である。
 
-ルールファイル（`~/.claude/rules/agent-basics/`配下）:
+ルールファイル（`~/.claude/rules/agent-toolkit/`配下）:
 
 - `agent.md` — 基本原則・運用方針・検証とコミットの流れなど、全セッションで必要な共通指示（無条件ロード）
 - `styles.md` — 構造と順序・言語と文体・日本語の表記ルール・コメントとドキュメント・コマンドラインオプションをまとめた記述スタイル指針（無条件ロード）
@@ -151,75 +162,8 @@ claude-plugins-officialから以下を導入する。
 一部のスキルは`/<skill-name>`形式で明示的に呼び出せる。
 現在は`/tidy-unpushed-commits`・`/pyfltr-usage`・`/pytilpack-usage`・`/gitlab-ci-usage`を提供している。
 
-## 補足
-
-### codex MCPサーバーのセットアップ（推奨）
-
-`plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
-以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
-
-```bash
-claude mcp add --scope=user codex codex mcp-server
-```
-
-dotfiles利用者は`update-dotfiles`/`chezmoi apply`の後処理で自動登録される（既登録時はスキップ）。
-codex CLI自体のセットアップは別途行うこと。
-
-### 更新方法
+## 更新方法
 
 ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化することを推奨する。
 
-- ルールファイル: 上記インストールコマンドを再実行する
-- プラグイン: 自動更新を有効化していればClaude Codeが自動で更新する
-
-### プラグインの手動インストール
-
-ワンライナー実行時に`claude` CLIが未検出だった場合や、Marketplace経由でプラグインだけ追加したい場合は以下を実行する。
-
-```bash
-claude plugin marketplace add ak110/dotfiles
-claude plugin install agent-toolkit@ak110-dotfiles --scope user
-```
-
-project scopeで導入したい場合は、プロジェクトの`.claude/settings.json`に`enabledPlugins`と`extraKnownMarketplaces`を設定する。
-開発者がフォルダーをtrustした時にClaude Codeがインストールを自動で提案する。
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "ak110-dotfiles": {
-      "source": {
-        "source": "github",
-        "repo": "ak110/dotfiles"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "agent-toolkit@ak110-dotfiles": true
-  }
-}
-```
-
-`update-dotfiles`を併用する環境では、github型登録がそのまま維持される。
-過去の`update-dotfiles`が残したdirectory型などの破損エントリがある場合も、自動でgithub型へ修復する。
-対象は`known_marketplaces.json`と`settings.json.extraKnownMarketplaces`の両方である。
-
-### 公式プラグインの自動管理
-
-`update-dotfiles`実行時に、公式marketplace（`claude-plugins-official`）のプラグインの有効/無効を`pytools/_install_claude_plugins.py`が自動で揃える。
-
-- 自動で無効化するプラグイン（`_AUTO_DISABLED_PLUGIN_IDS`定数で管理）: `claude plugin disable --scope user`を呼ぶ。アンインストールではなく`disabled`状態のまま残すため、再インストールされても次回の`update-dotfiles`で再度無効化される
-- 自動で有効化するプラグイン（`_AUTO_ENABLED_PLUGIN_IDS`定数で管理、例: `context7`）: user scopeで未インストールなら`claude plugin install --scope user`で導入する。さらに`enabledPlugins`で明示的に`false`のときだけ`claude plugin enable --scope user`で再有効化する
-
-対象を個別に外したい場合は定数を書き換える。一時的に`claude plugin enable <id>`で有効化しても、次回の`update-dotfiles`で再び無効化される点に注意する。
-
-### edit-guardrailsからの移行
-
-旧プラグイン`edit-guardrails`は`agent-toolkit`に改名・統合された。
-`edit-guardrails`がインストール済みの場合は以下のコマンドで削除する。
-
-```bash
-claude plugin uninstall edit-guardrails@ak110-dotfiles
-```
-
-dotfiles利用者は`update-dotfiles`を実行すれば自動的に削除される。
+上記インストールコマンドを再実行することで更新できる。
