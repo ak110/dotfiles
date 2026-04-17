@@ -305,7 +305,9 @@ if command -v uv &>/dev/null; then
     eval "$(uv generate-shell-completion bash)"
 fi
 if command -v pyfltr &>/dev/null; then
-    if pyfltr generate-shell-completion bash &>/dev/null; then
+    # 古いpyfltrは generate-shell-completion サブコマンドを持たず、引数をlint対象とみなして実行してしまうため、
+    # --helpの出力にサブコマンド名が含まれるかでバージョン非依存に判定する。
+    if pyfltr --help 2>&1 | grep -q generate-shell-completion; then
         eval "$(pyfltr generate-shell-completion bash)"
     fi
 fi
