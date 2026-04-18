@@ -1,6 +1,6 @@
 ---
 name: gitlab-ci-usage
-description: GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・トラブルシューティング観点の参照リファレンス。`.gitlab-ci.yml`を新規作成または修正するとき、`rules`・`workflow`・`needs`・`include`・`extends`・`artifacts`・`cache`などキーワードの仕様やサブキーを確認したいとき、ジョブの起動条件や依存関係の書き方で迷ったとき、CIパイプラインが意図通りに動かず原因を切り分けたいとき、設定ファイルをlint/validateしたいときに使う。`.gitlab-ci.yml`が存在するリポジトリや、GitLab CIをセットアップしようとしているプロジェクトで特に有用。
+description: GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・トラブルシューティング観点の参照リファレンス。`.gitlab-ci.yml`を新規作成または修正する時、`rules`・`workflow`・`needs`・`include`・`extends`・`artifacts`・`cache`などのキーワード仕様やサブキーを確認したい時、ジョブの起動条件や依存関係の書き方で迷った時、CIパイプラインが意図通りに動かず原因を切り分けたい時、設定ファイルをlint/validateしたい時に使う。`.gitlab-ci.yml`が存在するリポジトリや、GitLab CIをセットアップしようとしているプロジェクトで特に有用。
 user-invocable: true
 ---
 
@@ -15,7 +15,7 @@ user-invocable: true
 訓練データ由来の記憶で書かず、必ず該当キーワードのページを取得してから構文を決める。
 本スキルに書かれているのは代表的な導線と典型パターンのみであり、網羅的な仕様は公式側に委ねる。
 
-## 参照先URL
+## テーマ別参照URL
 
 テーマ別の代表ページを以下に示す。
 該当項目をWebFetchしてから編集することで、サブキーの取り得る値や非推奨化を見落とさずに済む。
@@ -45,11 +45,10 @@ job:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: always
-    - when: never
+    - when: never  # 上記いずれにも該当しないケースは実行しない
 ```
 
-末尾の`when: never`で「上記以外は実行しない」を明示する。
-暗黙のフォールスルー挙動に頼ると意図と異なる起動をしやすい。
+暗黙のフォールスルー挙動に頼ると意図と異なる起動をしやすいため、末尾の`when: never`で明示する。
 
 ### `needs`によるDAG構築
 

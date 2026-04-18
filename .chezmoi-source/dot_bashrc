@@ -302,8 +302,9 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         return $rc
     }
 fi
-# ccusage
+# ccusageなど
 alias ccusage="pnpx ccusage"
+alias claude-code-viewer="pnpx @kimuson/claude-code-viewer@latest"
 
 # nvm の bash 補完 (対話シェル専用)。
 # nvm 本体は非対話セクションで source 済みのため NVM_DIR は既に export されている。

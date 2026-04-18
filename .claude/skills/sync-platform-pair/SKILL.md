@@ -1,33 +1,44 @@
 ---
 name: sync-platform-pair
-description: dotfilesリポジトリのLinux/Windowsペアファイル（`update-dotfiles`と`.cmd`版、`run_onchange_after_pytools.sh.tmpl`と`-windows.ps1.tmpl`版、`supply-chain-npm`のsh版とps1版など）を編集するときに使う。片方だけ更新するミスを避けるため、ペアの対応関係とPowerShell側の書き方の注意点をまとめている。「ペアファイル」「LinuxとWindows両対応」などのキーワードで自動トリガー可
+description: dotfilesリポジトリのLinux/Windowsペアファイル（`executable_update-dotfiles`と`.cmd`版、`run_after_post-apply.sh.tmpl`と`-windows.ps1.tmpl`版、`install.sh`と`install.ps1`、`install-claude.sh`と`install-claude.ps1`など）を編集するときに使う。片方だけ更新するミスを避けるため、対応ファイル一覧の参照先、PowerShell側の書き方の注意点、変更フローをまとめている。「ペアファイル」「LinuxとWindows両対応」などのキーワードでも起動する。
+user-invocable: true
 ---
 
 # Linux/Windowsペアファイル編集支援
 
 ## いつ使うか
 
-`~/dotfiles/` で以下のどちらかのファイルを編集するとき、対になるファイルも同時に更新する必要があるか確認する。片方だけ変更するとバグが発生しやすい。
+`~/dotfiles/` でLinux/Windowsのペアファイルのいずれかを編集するときに使う。
+片方だけ変更すると配布経路の一方が不整合になるため、対応するファイルの更新を忘れやすい作業である。
 
-## ペアファイル一覧
+## ペアファイル一覧の参照
 
-| Linux/macOS側 | Windows側 | 用途 |
-| --- | --- | --- |
-| `bin/executable_update-dotfiles` | `bin/executable_update-dotfiles.cmd` | dotfiles更新コマンド |
-| `.chezmoi-source/run_onchange_after_pytools.sh.tmpl` | `.chezmoi-source/run_onchange_after_pytools-windows.ps1.tmpl` | pytoolsの自動再インストール |
-| `.chezmoi-source/run_after_supply-chain-npm.sh.tmpl` | `.chezmoi-source/run_after_supply-chain-npm-windows.ps1.tmpl` | npmサプライチェーン保護の適用 |
-| `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` | Claude Codeのフック定義（OS別オーバーライド） |
-| `install-claude.sh` | `install-claude.ps1` | agent-toolkitルールのリモートインストーラー |
-| `install.sh` | （READMEの`winget`コマンド） | dotfiles本体インストーラー |
+ペアファイルの対応関係は`docs/development/development.md`の「プラットフォーム対応ファイル」節をSSOTとする。
+編集対象のファイルがペアの片方に該当するかは、まず当該節で確認する。
+本スキル内にはペアの実リストを保持しない（情報が二重管理になり更新漏れが発生するため）。
 
-新しいペアを追加する場合は本リストと `CLAUDE.md` の「プラットフォーム対応ファイル」節を同時に更新する。
+## 片方のみ編集するリスク
+
+以下の事例が発生しやすい。作業着手時に必ず両側の対応関係を確認する。
+
+- Windows側の`.cmd`や`.ps1`を更新し忘れ、Linux側だけで挙動が変わる
+- `install.sh`のオプション追加後、`install.ps1`に同じオプションを追加し忘れる
+- `run_after_post-apply.sh.tmpl`に処理を追加しても、`run_after_post-apply-windows.ps1.tmpl`側が空のままで挙動が非対称になる
+- `share/claude_settings_json_managed.posix.json`と`.win32.json`のマッチャー追加が片方だけで止まる
+
+## 新規ペアの追加
+
+新しくペアを追加する場合、更新先は`docs/development/development.md`の「プラットフォーム対応ファイル」節に限定する。
+本SKILL.mdには追記しない（SSOTを単一化するため）。
+`CLAUDE.md`は`development.md`への参照導線そのものを変更する場合のみ更新対象とする。
+
+新規ペアの種類によっては`.chezmoiignore`への除外エントリ追加も必要になる（chezmoiがOSごとに適切なファイルをデプロイするため）。
 
 ## 一般的な注意点
 
 - 対応関係を崩す変更（片方のパスを変えるなど）は避ける
 - 追加・削除は両側で同時に行う
 - プラットフォーム依存の部分（パス区切り、改行、環境変数の書き方）以外は意味的に同じになるよう統一する
-- 新しいペアを追加したら `.chezmoiignore` で対応ファイルを除外する（chezmoiがOSごとに適切なファイルをデプロイするため）
 
 ## PowerShell / `.ps1.tmpl` 側の必須作法
 
@@ -65,7 +76,7 @@ description: dotfilesリポジトリのLinux/Windowsペアファイル（`update
 
 ## 変更フロー
 
-1. 変更対象のペアを特定する（上記一覧または `CLAUDE.md` を参照）
+1. 変更対象のペアを`docs/development/development.md`の「プラットフォーム対応ファイル」節で特定する
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）

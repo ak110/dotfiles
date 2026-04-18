@@ -1,13 +1,13 @@
 ---
 name: tidy-unpushed-commits
-description: 複数の未プッシュコミットを安全にsquash・reorder・メッセージ書き直しするスキル。直前コミットへのamendや特定コミットへのfixupはagent.mdの指示で足りるため本スキルの対象外。「未プッシュコミットを整理したい」「コミット履歴をきれいにしたい」「reorderしたい」「散らばったコミットをまとめ直したい」などの明示的指示でトリガーする。退避refとツリー差分検証で最終ツリーの同一性を機械的に担保する。
+description: 複数の未プッシュコミットを安全にsquash・reorder・メッセージ書き直しするスキル。退避refとツリー差分検証で最終ツリーの同一性を機械的に担保する。「未プッシュコミットを整理したい」「コミット履歴をきれいにしたい」「reorderしたい」「散らばったコミットをまとめ直したい」などの明示的指示でトリガーする。直前コミットへのamendや特定コミットへのfixupはagent.mdの指示で足りるため本スキルの対象外。
 user-invocable: true
 ---
 
 # 未プッシュコミットの整理
 
-未プッシュコミットのsquash/reorder/メッセージ書き直しを、退避refとツリー差分検証で最終ツリーの同一性を保証しつつ行う。
-`git reset --hard`の後に一括ステージしてコミットしなおすような乱暴な手順は取らない。
+複数の未プッシュコミットのsquash/reorder/メッセージ書き直しを、退避refとツリー差分検証で最終ツリーの同一性を保証しながら行う。
+`git reset --hard`による巻き戻し・一括ステージ・一括コミットなどの破壊的手順は採用しない（詳細は「絶対に避ける操作」節）。
 
 ## 適用条件と非適用条件
 
@@ -162,56 +162,14 @@ BRANCH="$(git symbolic-ref --short HEAD)"
 
 退避refは`refs/tidy-backup/`の独自名前空間に作る。`refs/tags/`は`fetch.pruneTags=true`で消えうるし、`refs/heads/`は`git branch`一覧に紛れてユーザーが誤操作しうるため使わない。
 
-## 実行: 全統合ファストパス
+## 実行: 経路選択
 
-適用条件（すべて満たす場合のみ）
+承認済み新順序の形に応じて2経路を使い分ける。
 
-- 整理対象範囲のコミットがひとつ残らず単一のsquashグループに入る
-- 承認された新順序が`B1`のみ（他にコミットが残らない）
+- 全統合ファストパス: 整理対象範囲の全コミットが単一のsquashグループに入り、新順序が`B1`のみの場合。`git reset --soft`1回で畳める
+- cherry-pick連鎖: 上記以外の全ケース。detached HEAD上で新順序を再構成し、最後にbranch refを付け替える
 
-この条件下では後続コミットが存在しないため、`git reset --soft`を1回行うだけで畳める。
-
-```bash
-git reset --soft "$BASE"
-git commit -F "$MSG_FILE"
-```
-
-残存コミットが1つでもある場合は適用不可。次のcherry-pick連鎖にフォールバックする（末尾から順に`reset --soft`を繰り返すと後続コミットを巻き込むため）。
-
-## 実行: cherry-pick連鎖（標準経路）
-
-ファストパスに該当しない全ケースで使う。detached HEAD上で承認済みの新順序を再構成し、最後にbranch refを付け替える。
-
-```bash
-git checkout --detach "$BASE"
-```
-
-承認済み新順序を先頭から1コミットずつcherry-pickする。
-
-```bash
-git cherry-pick <先頭コミットSHA>
-```
-
-squashグループを合流させる場合は、先頭を通常cherry-pickし、残りを`--no-commit`で重ね、最後に`--amend -F`で統合後メッセージを適用する。
-
-```bash
-git cherry-pick <先頭コミットSHA>
-git cherry-pick --no-commit <2番目コミットSHA>
-git commit --amend -F "$MSG_FILE"
-```
-
-すべてのcherry-pick完了後、元ブランチを新HEADに付け替える。
-
-```bash
-git branch -f "$BRANCH" HEAD
-git checkout "$BRANCH"
-```
-
-### conflict発生時
-
-- reorder起因: 該当箇所だけreorderを諦める。`git cherry-pick --abort`で巻き戻し、当該コミットを元の相対位置に戻して進行する。整理全体は中断しない
-- squash起因: 自動解決を試みず即座に報告する。`git cherry-pick --abort`で中断し、退避refからロールバックして計画を再検討する
-- `git checkout --theirs`/`--ours`による安易な解決は禁止。修正単位が壊れる
+経路ごとの具体コマンド・squashグループ合流の詳細・conflict発生時の対応は`references/cherry-pick.md`を参照する。
 
 ## 検証
 

@@ -27,7 +27,7 @@ spec-drivenスキルのステップ2（Plan&Implement）で、タスク単位の
 
 1. 呼び出し元プロンプトから以下を確認する
    - 変更対象ファイルと変更内容
-   - 参照する恒久`.md`（開発中`.md`）と計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）
+   - 参照する作業版ドキュメント（`docs/v{next}/{作業テーマ名}.md`）と計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）
    - 差し戻しの場合、レビュアー指摘ファイル（`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`または`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`）のパス
    - 完了条件（format/lint/testの合格）
 2. `coding-standards`スキルを呼び出し、品質基準とテスト方針を読み込む
