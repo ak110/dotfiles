@@ -30,7 +30,8 @@
     - `Send` / `Sync` を手で実装している型
     - COMオブジェクトの非自明な所有権遷移
 - モジュール構成
-  - `mod.rs` より `foo.rs` + `foo/` レイアウト（Rust 2018以降の推奨）を使う（ファイル名とモジュール名が一致して特定しやすく、同名 `mod.rs` の衝突も避けられるため）
+  - `mod.rs` より `foo.rs` + `foo/` レイアウト（Rust 2018以降の推奨）を使う
+   （ファイル名とモジュール名が一致して特定しやすく、同名 `mod.rs` の衝突も避けられるため）
   - `pub use` で公開APIを整理する
 - ドキュメントコメント
   - 公開APIには `///` でdocコメントを書き、必要に応じてdoctestを実行可能な形で記述する
@@ -38,7 +39,8 @@
   - ランタイムは `tokio` を基本とする
   - `block_on` は `main` 等の境界でのみ使用する
   - `Send` / `Sync` 境界を意識する
-  - Rust 1.75+ ではAFIT（Async Fn In Trait）がstable化済み。単純なケースでは `async-trait` クレートを入れずにトレイトへ直接 `async fn` を書いてよい
+  - Rust 1.75+ ではAFIT（Async Fn In Trait）がstable化済み。
+    単純なケースでは `async-trait` クレートを入れずにトレイトへ直接 `async fn` を書いてよい
 - セキュリティ上の危険パターン
   - `std::process::Command` はshell経由（`sh -c`）を避け、引数を配列で渡す
   - 信頼できない入力のデシリアライズは `serde` + 明示的な構造体で行う（`serde_json::Value` のまま後段へ渡さない）
@@ -54,8 +56,10 @@
   - 統合テストはクレートルート直下の `tests/` に置く（後述の統合テスト節を参照）
   - アサーションは `assert!` / `assert_eq!` / `assert_ne!` を使い、浮動小数点は `approx` クレート等で許容誤差付き比較
   - 非同期テストは `#[tokio::test]` を使う
-  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う（sleepループはflakyテストの主要因となるため）
-  - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` でcompile-timeに行う（Rust 1.79+）。実行時テストにはしない
+  - ポーリング + `thread::sleep` を避け、`crossbeam-channel::recv_timeout` などの確定待機を使う
+   （sleepループはflakyテストの主要因となるため）
+  - `#[repr(C)]` 構造体のサイズ・オフセット検証は `const { assert!(size_of::<T>() == N) }` でcompile-timeに行う
+   （Rust 1.79+）。実行時テストにはしない
 - 新しいRustバージョンの機能を積極的に使う
   - Rust 1.77+: C文字列リテラル（`c"..."`）で `&'static CStr` を直接生成する
     - FFIでnul終端C文字列を安全かつ効率的に渡せるため

@@ -23,7 +23,8 @@
 - 非同期処理
   - I/Oには `async` / `await` を使い、`.Result` / `.Wait()` でブロックしない（デッドロックの原因）
   - `ConfigureAwait(false)` はUIに依存しない純粋なライブラリ・ユーティリティ層で付ける
-    - WinForms / WPF / Blazor等のSynchronizationContextに依存するアプリケーション層では付けない（UIスレッドへの復帰が必要なため）
+    - WinForms / WPF / Blazor等のSynchronizationContextに依存するアプリケーション層では付けない
+     （UIスレッドへの復帰が必要なため）
   - `async void` は使わない（例外が捕捉できないため）
     - 例外としてWinForms / WPFのイベントハンドラのみ許容し、その場合はハンドラ内で必ず例外をキャッチする
   - 非同期メソッド名は `Async` サフィックスを付け、`CancellationToken` を末尾引数で受け取り伝播させる
@@ -37,7 +38,8 @@
 - リソース管理
   - `IDisposable` は `using` 宣言 / ステートメントで確実に解放する
   - `IAsyncDisposable` には `await using` を使う
-  - イベントハンドラは `+=` で購読したら対応する `-=` で必ず解除する（解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
+  - イベントハンドラは `+=` で購読したら対応する `-=` で必ず解除する
+   （解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
 - LINQは可読性を損なわない範囲で使う。ホットパスでは割り当てコストに注意する
   - EF Coreでは `Include` でeager loadingを明示するか `Select` で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
 - ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには `<summary>` を必ず記述する
@@ -84,5 +86,6 @@
 - モック/スタブには `NSubstitute` または `Moq` を使う
   - 外部依存はインターフェース経由で注入し、テスト時に差し替える
 - 時刻は `TimeProvider`（.NET 8以降）を注入し、テストでは `FakeTimeProvider` で固定する
-- ファイルI/Oのテストには一意な一時ディレクトリ（`Path.GetTempPath()` + `Guid.NewGuid()`）を使い、`try`/`finally` で確実にクリーンアップする
+- ファイルI/Oのテストには一意な一時ディレクトリ（`Path.GetTempPath()` + `Guid.NewGuid()`）を使い、
+  `try`/`finally` で確実にクリーンアップする
 - テストプロジェクト名は `xxx.Tests` の規約に揃える

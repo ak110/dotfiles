@@ -10,7 +10,8 @@
 - Windows PowerShell 5.1互換性
   - CRLF改行が必須（LFのみだと構文解析に失敗するため）
   - `.gitattributes`で`*.ps1 text eol=crlf`を設定してgit側でも改行を管理する
-  - UTF-8エンコーディングを常に明示する（Windows PowerShell 5.1のデフォルトエンコーディングはShift-JISであり、日本語が正しく扱えないため）
+  - UTF-8エンコーディングを常に明示する
+   （Windows PowerShell 5.1のデフォルトエンコーディングはShift-JISであり、日本語が正しく扱えないため）
     - `Get-Content -Encoding UTF8`、`Set-Content -Encoding UTF8`
 - 基本スタイル
   - 冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述する

@@ -9,7 +9,8 @@
   - モダンプロジェクトはESM（`"type": "module"`）を使う
   - Default exportよりNamed exportを優先する（tree-shakingが効きやすく、リネーム時の追従やIDE補完も確実になるため）
 - 厳格な型付けを行う（`strict: true`。null安全・暗黙any排除を徹底するため）
-  - 可能であれば `noUncheckedIndexedAccess` も有効化する（配列・`Record` アクセス結果を `T | undefined` として扱い、境界外アクセスを型で検知できる）
+  - 可能であれば `noUncheckedIndexedAccess` も有効化する
+   （配列・`Record` アクセス結果を `T | undefined` として扱い、境界外アクセスを型で検知できる）
 - 型について
   - `any` の使用は極力避ける（型チェックを回避してしまうため）。やむを得ない場合は `unknown` + 型ガードを優先する
   - `as` による型アサーションより型ガード（`is` / `satisfies`）を優先する（実行時の型不一致を防ぐため）
@@ -28,7 +29,8 @@
   - `innerHTML` / `dangerouslySetInnerHTML` を避け、テキスト挿入には `textContent` やフレームワークのエスケープ機構を使う
   - `JSON.parse()` は信頼できない入力に対してtry-catchで囲み、結果をバリデーションする（zodなどのスキーマバリデーション推奨）
   - SQLはプレースホルダやクエリビルダーを使い、テンプレートリテラルで直接組み立てない
-  - オブジェクトのマージ・コピーでプロトタイプ汚染を防ぐ（`Object.create(null)` やキーの検証。`__proto__`・`constructor`・`prototype` のキーを拒否する）
+  - オブジェクトのマージ・コピーでプロトタイプ汚染を防ぐ
+   （`Object.create(null)` やキーの検証。`__proto__`・`constructor`・`prototype` のキーを拒否する）
   - URL・ファイルパスは文字列結合ではなく `URL` / `path.join` 等の専用APIで構築する
 - 他で指定が無い場合のツール推奨:
   - パッケージマネージャー: `pnpm`（厳密な依存解決でphantom dependencyを防止）
