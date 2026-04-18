@@ -68,13 +68,19 @@ def _write_raw_transcript(tmp_path: pathlib.Path, lines: list[str]) -> pathlib.P
     return transcript
 
 
-def _write_transcript_with_assistant_last(tmp_path: pathlib.Path, assistant_content: list[dict]) -> pathlib.Path:
+def _write_transcript_with_assistant_last(
+    tmp_path: pathlib.Path,
+    assistant_content: list[dict],
+    user_text: str = "hello",
+) -> pathlib.Path:
     """アシスタントターンを末尾に持つ transcript を書き出す。
 
     直前アシスタントターン走査（完了文言ゲート・質問中判定）の検証で共有する。
+    `user_text` を指定すると先頭の user turn のテキストを差し替えられる
+    （修正キーワード集計と完了文言ゲートを同時に検証する用途で使う）。
     """
     lines = [
-        json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
+        json.dumps({"type": "user", "message": {"role": "user", "content": user_text}}, ensure_ascii=False),
         json.dumps(
             {
                 "type": "assistant",
@@ -103,10 +109,11 @@ class TestKeywordDetection:
         assert decision["decision"] == "approve"
 
     def test_at_threshold_blocks(self, tmp_path: pathlib.Path):
-        # 3 keywords
-        transcript = _write_transcript(
+        # 3 keywords + 完了文言ありかつ質問なしのアシスタントターン
+        transcript = _write_transcript_with_assistant_last(
             tmp_path,
-            "user: \u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060\u3002\u3084\u308a\u76f4\u3057\u3066",
+            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
+            user_text="user: \u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060\u3002\u3084\u308a\u76f4\u3057\u3066",
         )
         result = _run(
             {"session_id": "kw-hit", "transcript_path": str(transcript)},
@@ -229,7 +236,12 @@ class TestCodexResumeDetection:
 
     def test_at_threshold_blocks(self, tmp_path: pathlib.Path):
         _write_state(tmp_path, "cr-hit", {"codex_resume_count": 2})
-        transcript = _write_transcript(tmp_path, "no corrections here")
+        # 完了文言ありかつ質問なしのアシスタントターンで共通ゲートを通過させる
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
+            user_text="no corrections here",
+        )
         result = _run(
             {"session_id": "cr-hit", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -244,9 +256,11 @@ class TestBothConditions:
 
     def test_both_triggered(self, tmp_path: pathlib.Path):
         _write_state(tmp_path, "both", {"codex_resume_count": 3})
-        transcript = _write_transcript(
+        # 完了文言ありかつ質問なしのアシスタントターンで共通ゲートを通過させる
+        transcript = _write_transcript_with_assistant_last(
             tmp_path,
-            "\u9055\u3046 \u9593\u9055 \u3084\u308a\u76f4\u3057\u3066 \u623b\u3057\u3066",
+            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
+            user_text="\u9055\u3046 \u9593\u9055 \u3084\u308a\u76f4\u3057\u3066 \u623b\u3057\u3066",
         )
         result = _run(
             {"session_id": "both", "transcript_path": str(transcript)},
@@ -257,6 +271,94 @@ class TestBothConditions:
         reason = decision.get("reason", "")
         assert "correction" in reason.lower()
         assert "codex" in reason.lower()
+
+
+class TestStopBlockableGateForAdvice:
+    """CLAUDE.md 更新提案ブロックの直前ターン状態ゲート。
+
+    閾値を超えていても、直前アシスタントターンが「完了文言あり かつ 質問なし」
+    でなければ block を見送る。再評価を許容するため `stop_advice_given` も立てない
+    （同じセッションで 2 回目を実行しても同じ判定になることで間接的に検証する）。
+    """
+
+    _CORRECTION_USER_TEXT = "\u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060\u3002\u3084\u308a\u76f4\u3057\u3066"
+    # 「実装が完了しました。どうしますか？」（完了文言＋質問符）
+    _COMPLETION_WITH_QUESTION = (
+        "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\u3069\u3046\u3057\u307e\u3059\u304b\uff1f"
+    )
+    # 「調査を続けます。」（完了文言なし・質問なし）
+    _NO_COMPLETION_TEXT = "\u8abf\u67fb\u3092\u7d9a\u3051\u307e\u3059\u3002"
+    # 「作業が完了しました。」（完了文言・質問なし）
+    _COMPLETION_TEXT = "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"
+
+    def _run_twice(self, tmp_path: pathlib.Path, session_id: str, transcript: pathlib.Path) -> tuple[dict, dict]:
+        first = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        second = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        return _parse_decision(first), _parse_decision(second)
+
+    def test_keyword_threshold_with_question_approves(self, tmp_path: pathlib.Path):
+        # 3 keywords + 質問中アシスタントターン → ゲートで approve
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": self._COMPLETION_WITH_QUESTION}],
+            user_text=self._CORRECTION_USER_TEXT,
+        )
+        first, second = self._run_twice(tmp_path, "kw-q", transcript)
+        assert first["decision"] == "approve"
+        # stop_advice_given が立っていないため 2 回目も approve
+        assert second["decision"] == "approve"
+
+    def test_codex_threshold_with_question_approves(self, tmp_path: pathlib.Path):
+        _write_state(tmp_path, "cr-q", {"codex_resume_count": 2})
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": self._COMPLETION_WITH_QUESTION}],
+        )
+        first, second = self._run_twice(tmp_path, "cr-q", transcript)
+        assert first["decision"] == "approve"
+        assert second["decision"] == "approve"
+
+    def test_keyword_threshold_without_completion_approves(self, tmp_path: pathlib.Path):
+        # 3 keywords + 完了文言なしアシスタントターン → ゲートで approve
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": self._NO_COMPLETION_TEXT}],
+            user_text=self._CORRECTION_USER_TEXT,
+        )
+        first, second = self._run_twice(tmp_path, "kw-nc", transcript)
+        assert first["decision"] == "approve"
+        assert second["decision"] == "approve"
+
+    def test_codex_threshold_without_completion_approves(self, tmp_path: pathlib.Path):
+        _write_state(tmp_path, "cr-nc", {"codex_resume_count": 2})
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": self._NO_COMPLETION_TEXT}],
+        )
+        first, second = self._run_twice(tmp_path, "cr-nc", transcript)
+        assert first["decision"] == "approve"
+        assert second["decision"] == "approve"
+
+    def test_keyword_threshold_with_completion_blocks(self, tmp_path: pathlib.Path):
+        # 3 keywords + 完了文言ありかつ質問なし → 従来どおり block
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": self._COMPLETION_TEXT}],
+            user_text=self._CORRECTION_USER_TEXT,
+        )
+        result = _run(
+            {"session_id": "kw-blockable", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        assert "correction" in decision.get("reason", "").lower()
 
 
 class TestStopAdviceOnce:

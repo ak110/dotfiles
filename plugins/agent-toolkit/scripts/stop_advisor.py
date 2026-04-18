@@ -7,19 +7,22 @@
 
 Claude Code が停止しようとするタイミングで発火する。
 
-未コミット変更がある場合、直前のアシスタントターンが作業完了を示す文言
-（「完了しました」等、`_COMPLETION_KEYWORDS` 参照）を含むときに限って
-セッション終了を block する。作業途中での一時停止やユーザー確認待ち等で
-誤検出しないよう、完了文言ゲートで block 発動を絞り込んでいる。
-ただし同じターンでユーザーへ質問中（AskUserQuestion ツール使用、またはテキストに
-? / ？ が含まれる）の場合は block せず approve する（質問への割り込みを防ぐため）。
+未コミット変更ブロックと CLAUDE.md 更新提案ブロックの 2 種類の block を出す。
+両ブロックは「直前アシスタントターンが作業完了の言い切り文言（「完了しました」等、
+`_COMPLETION_KEYWORDS` 参照）を含み、かつ質問を含まない」場合に限り発火する
+（共通ゲート `_is_stop_blockable`）。作業途中での一時停止やユーザー質問待ちでの
+誤検出を避けるためのゲートで、transcript を解釈できない異常系では block しない。
+質問の検出は AskUserQuestion ツール使用、またはテキストに ? / ？ が含まれる場合とする。
 
+未コミット変更ブロック:
+作業ディレクトリに未コミット変更があれば block し、コミット要否をユーザーに確認させる。
+
+CLAUDE.md 更新提案ブロック:
 transcript を分析してユーザーからの修正指示の多寡を判定し、
 閾値を超えた場合に CLAUDE.md 更新を提案する。
 codex exec resume が多い場合も同様に提案する。
-
-1 セッションにつき 1 回のみ発火する。
-2 回目以降の Stop は即座に approve する。
+1 セッションにつき 1 回のみ発火する。共通ゲートで approve に倒れた場合は
+`stop_advice_given` を記録せず、ユーザー応答後や作業完了後の Stop で改めて評価する。
 
 exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
@@ -282,6 +285,22 @@ def _is_assistant_task_completed(transcript_path: str) -> bool:
     return False
 
 
+def _is_stop_blockable(transcript_path: str) -> bool:
+    """未コミット変更ブロック・CLAUDE.md 更新提案ブロックの共通発火ゲート。
+
+    直前アシスタントターンが作業完了の言い切り文言を含み、かつ質問を含まない
+    場合に True を返す。判定は `_is_assistant_task_completed` と
+    `_is_assistant_asking_question` の組み合わせで行う。
+
+    transcript を読み取れない異常系（パス不正・ファイル欠落など）では
+    `_is_assistant_task_completed` が False を返すため、本関数も False になる。
+    このため安全側に倒れて block を見送る。
+    """
+    if not _is_assistant_task_completed(transcript_path):
+        return False
+    return not _is_assistant_asking_question(transcript_path)
+
+
 def _has_uncommitted_changes(cwd: str) -> bool:
     """作業ディレクトリに未コミットの変更があるか判定する。
 
@@ -369,12 +388,13 @@ def _main() -> int:
         _write_state(state_file, state)
 
     cwd = payload.get("cwd", "")
-    transcript_path = payload.get("transcript_path", "")
+    raw_transcript = payload.get("transcript_path", "")
+    transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
 
     # --- 未コミット変更ブロック ---
-    # 完了文言ゲート: 直前アシスタントターンが作業完了の言い切り文言を含む場合のみ block する。
+    # 共通ゲート `_is_stop_blockable` で「直前アシスタントターンが完了文言を含み、
+    # かつ質問を含まない」状態に限って block する。
     # 作業途中の一時停止・探索中・ユーザー確認待ち等での false positive を避ける。
-    # 質問中の場合はさらにスキップする（質問への割り込みを防ぐ）。
     # ブロックは 1 回に限る。理由:
     #   - Claude Code は block を受けると再度 Stop を試みるため、
     #     同一メッセージの繰り返しに意味がない
@@ -382,25 +402,21 @@ def _main() -> int:
     #     後続の stop_advice_given チェックへフォールスルーする
     #   - _is_assistant_asking_question の transcript flush タイミング問題
     #     （質問検出失敗）も 2 回目で自然に通過する
-    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-        transcript_is_str = isinstance(transcript_path, str)
-        completed = transcript_is_str and _is_assistant_task_completed(transcript_path)
-        asking = transcript_is_str and _is_assistant_asking_question(transcript_path)
-        if completed and not asking:
-            block_count = state.get("uncommitted_block_count", 0)
-            if block_count == 0:
-                state["uncommitted_block_count"] = block_count + 1
-                _write_state(state_file, state)
-                _block(
-                    _llm_notice(
-                        "uncommitted changes detected."
-                        " Ask the user whether to commit the changes, or explain"
-                        " why they should not be committed."
-                        " Do not commit without user confirmation."
-                    )
+    if isinstance(cwd, str) and _has_uncommitted_changes(cwd) and _is_stop_blockable(transcript_path):
+        block_count = state.get("uncommitted_block_count", 0)
+        if block_count == 0:
+            state["uncommitted_block_count"] = block_count + 1
+            _write_state(state_file, state)
+            _block(
+                _llm_notice(
+                    "uncommitted changes detected."
+                    " Ask the user whether to commit the changes, or explain"
+                    " why they should not be committed."
+                    " Do not commit without user confirmation."
                 )
-                return 0
-            # 2 回目以降: ブロックせず後続処理へフォールスルー
+            )
+            return 0
+        # 2 回目以降は block_count != 0 で何もせず、後続処理へフォールスルーする。
 
     # --- CLAUDE.md 更新提案 ---
     # セッション 1 回制限: block 後に Claude が再度 Stop するため、
@@ -410,9 +426,7 @@ def _main() -> int:
         return 0
 
     # transcript の修正キーワードを集計
-    keyword_count = 0
-    if isinstance(transcript_path, str) and transcript_path:
-        keyword_count = _count_keywords(transcript_path)
+    keyword_count = _count_keywords(transcript_path) if transcript_path else 0
 
     # codex resume の回数を取得
     codex_resume_count = state.get("codex_resume_count", 0)
@@ -421,6 +435,13 @@ def _main() -> int:
     codex_triggered = codex_resume_count >= _CODEX_RESUME_THRESHOLD
 
     if not keyword_triggered and not codex_triggered:
+        _approve(cwd=cwd)
+        return 0
+
+    # 共通ゲート: 直前ターンが作業完了かつ非質問でない場合は block を見送る。
+    # `stop_advice_given` を記録しないため、ユーザーが応答した後や作業完了後の
+    # Stop で改めて閾値判定が走る。
+    if not _is_stop_blockable(transcript_path):
         _approve(cwd=cwd)
         return 0
 
