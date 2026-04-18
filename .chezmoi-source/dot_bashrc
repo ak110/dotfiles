@@ -301,6 +301,23 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         fi
         return $rc
     }
+    # 計画ファイルの確認用コマンド
+    plans() {
+        mise use --global fzf glow
+        find ~/.claude/plans -type f -name '*.md' -printf '%T@\t%TY-%Tm-%Td %TH:%TM\t%f\t%p\n' |
+            sort \
+                --numeric-sort \
+                --reverse \
+                --field-separator=$'\t' \
+                --key=1,1 |
+            fzf \
+                --delimiter=$'\t' \
+                --with-nth=2,3 \
+                --nth=2,3 \
+                --preview='glow --width "${FZF_PREVIEW_COLUMNS:-100}" -- {4}' \
+                --preview-window='right,70%,border-left' \
+                --bind='enter:execute(${EDITOR:-nvim} -- {4})'
+    }
 fi
 # ccusageなど
 alias ccusage="pnpx ccusage"
