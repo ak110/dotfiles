@@ -314,9 +314,10 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
                 --delimiter=$'\t' \
                 --with-nth=2,3 \
                 --nth=2,3 \
-                --preview='glow --width "${FZF_PREVIEW_COLUMNS:-100}" -- {4}' \
-                --preview-window='right,70%,border-left' \
+                --preview='glow --width=127 -- {4}' \
+                --preview-window='bottom,70%,border-top' \
                 --bind='enter:execute(${EDITOR:-nvim} -- {4})'
+        # --width="${FZF_PREVIEW_COLUMNS:-100}" もありだが固定にしちゃう
     }
 fi
 # ccusageなど
