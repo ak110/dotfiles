@@ -12,12 +12,17 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
 
 統合しているチェック:
 
-1. `~/.claude/` 配下への直接編集ブロック (block)
-   - chezmoi の配布先のため編集しても次回 `chezmoi apply` で上書きされる。
+1. `~/.claude/` 配下への直接編集警告 (warn, 非ブロック)
+   - chezmoi の配布先の場合、次回 `chezmoi apply` で上書きされるため
      配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
-   - 例外的に許可するサブツリー: `plans/` / `projects/` / `todos/` /
-     `shell-snapshots/` / `ide/` / `statsig/` (Claude Code 自身が使うランタイム領域)
-   - 例外的に許可するファイル名: `*.local.*` 系 (個人ローカル設定)
+   - ただし `settings.json` のように Claude Code 自身が書き換える非 chezmoi 管理
+     ファイルもあり、機械的にブロックすると誤判定で作業を阻害する。
+     最終判断は LLM に委ねるため、ブロックせず警告のみ出す。
+   - 警告を出さない対象:
+     - サブツリー: `plans/` / `projects/` / `todos/` /
+       `shell-snapshots/` / `ide/` / `statsig/` (Claude Code のランタイム領域)
+     - ファイル名: `settings.json` (Claude Code 自身が書き換える非 chezmoi 管理設定)
+     - 名前に `.local.` を含むファイル (個人ローカル設定)
 2. PowerShell スクリプトの必須ディレクティブ欠落ブロック (block, Write のみ)
    - `.ps1` / `.ps1.tmpl` の冒頭付近 (先頭 50 行以内) に
      `Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` の両方が必須。
@@ -93,15 +98,30 @@ def _main() -> int:
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
 
     # --- block 系 check (最初の違反で exit 2) ---
-    if _check_home_claude_edit(tool_name, file_path):
-        return 2
     if _check_ps1_directives(tool_name, fields, file_path):
         return 2
 
     # --- warn 系 check (allow + additionalContext) ---
-    result = _check_personal_file_mentions(tool_name, fields, file_path)
-    if result is not None:
-        print(json.dumps(result))
+    # 複数カテゴリーの警告を 1 つの additionalContext に集約して出力する
+    warnings: list[str] = []
+    home_claude_warning = _home_claude_edit_warning(tool_name, file_path)
+    if home_claude_warning is not None:
+        warnings.append(home_claude_warning)
+    personal_warning = _personal_file_mentions_warning(tool_name, fields, file_path)
+    if personal_warning is not None:
+        warnings.append(personal_warning)
+    if warnings:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "additionalContext": _llm_notice(" | ".join(warnings), tag="warn"),
+                    },
+                }
+            )
+        )
 
     return 0
 
@@ -132,9 +152,9 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
     return None
 
 
-# --- ~/.claude/ 配下の直接編集 check (block) ---
+# --- ~/.claude/ 配下の直接編集 check (warn) ---
 
-# 例外的に編集を許可するサブツリー (Claude Code のランタイム領域 / プラン作業領域)。
+# 警告対象外のサブツリー (Claude Code のランタイム領域 / プラン作業領域)。
 # 配布対象 (rules/ や agents/) は含めない。
 _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     {
@@ -147,51 +167,59 @@ _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     }
 )
 
-# 例外的に編集を許可するファイル名 (`*.local.*` 系 ローカル設定)。
+# 警告対象外のファイル名 (Claude Code 自身が書き換える非 chezmoi 管理ファイル)。
+_HOME_CLAUDE_ALLOWED_NAMES: frozenset[str] = frozenset(
+    {
+        "settings.json",  # Claude Code ランタイム設定 (autoMode 等を自身が書き換える)
+    }
+)
+
+# 警告対象外のファイル名部分一致 (`*.local.*` 系 ローカル設定)。
 _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING = ".local."
 
 
-def _check_home_claude_edit(tool_name: str, file_path: str) -> bool:
-    """`~/.claude/` 配下への直接編集を検出したら True を返す。
+def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
+    """`~/.claude/` 配下への直接編集の警告メッセージを返す (該当しなければ None)。
 
-    chezmoi の配布先のため、このパス配下を編集しても次回 `chezmoi apply` で
-    上書きされてしまう。配布元の `.chezmoi-source/dot_claude/` を編集すべき。
+    chezmoi の配布先のため、配布対象ファイルを編集すると次回 `chezmoi apply` で
+    上書きされる。配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
+    ただし `settings.json` など非 chezmoi 管理ファイルを機械的に判別するのは
+    難しく、誤判定でブロックすると作業が止まるため、警告のみ出し判断は LLM に委ねる。
     """
     if not file_path:
-        return False
+        return None
     try:
         target = pathlib.Path(file_path).expanduser()
         # 相対パスでは ~/.claude 配下か判定できないためスキップする
         # (resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定)
         if not target.is_absolute():
-            return False
+            return None
         # `.` / `..`・シンボリックリンクを解消して字句比較の迂回を防ぐ。
         # strict=False で存在しないパスでも例外を送出しない。
         target = target.resolve(strict=False)
         home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
     except (ValueError, OSError):
-        return False
+        return None
     try:
         rel = target.relative_to(home_claude)
     except ValueError:
-        return False
+        return None
     parts = rel.parts
     if not parts:
         # `~/.claude` そのもの (実際にはディレクトリ) は対象外
-        return False
+        return None
     if parts[0] in _HOME_CLAUDE_ALLOWED_DIRS:
-        return False
+        return None
+    if rel.name in _HOME_CLAUDE_ALLOWED_NAMES:
+        return None
     if _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING in rel.name:
-        return False
-    print(
-        _llm_notice(
-            f"{tool_name}: blocked direct edit under ~/.claude/."
-            f" This is a chezmoi deploy target and will be overwritten on next `chezmoi apply`."
-            f" Edit `.chezmoi-source/dot_claude/` instead. Target: {file_path}"
-        ),
-        file=sys.stderr,
+        return None
+    return (
+        f"{tool_name} targets ~/.claude/ ({file_path})."
+        " If this file is distributed via chezmoi, edit `.chezmoi-source/dot_claude/` instead"
+        " (direct edits will be overwritten on next `chezmoi apply`)."
+        " Proceed only if the target is a non-chezmoi runtime/config file."
     )
-    return True
 
 
 # --- PowerShell 必須ディレクティブ check (block) ---
@@ -259,8 +287,8 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 _TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
 
 
-def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> dict | None:
-    """個人用 / ローカル専用ファイルの言及を検出したら allow + additionalContext を返す (warn)。
+def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """個人用 / ローカル専用ファイルの言及の警告メッセージを返す (該当しなければ None)。
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
     対象ファイル自身の編集は作成・更新として警告をスキップする。
@@ -280,24 +308,16 @@ def _check_personal_file_mentions(tool_name: str, fields: list[tuple[str, str]],
                 break
     if not messages:
         return None
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "additionalContext": _llm_notice(
-                "detected possible mention(s) of local-only personal file(s): "
-                + "; ".join(messages)
-                + ". Such files are typically gitignored personal memos."
-                " Referencing them from version-controlled files is often unintentional"
-                " and risks leaking the filename via ignore-lists or stale references."
-                " On the other hand, recommending end users to create their own local memo"
-                " file (e.g., in distributed docs/skills) is legitimate."
-                " Judge the context and keep the mention only if it is intentional"
-                " (warning only, not blocked).",
-                tag="warn",
-            ),
-        },
-    }
+    return (
+        "detected possible mention(s) of local-only personal file(s): "
+        + "; ".join(messages)
+        + ". Such files are typically gitignored personal memos."
+        " Referencing them from version-controlled files is often unintentional"
+        " and risks leaking the filename via ignore-lists or stale references."
+        " On the other hand, recommending end users to create their own local memo"
+        " file (e.g., in distributed docs/skills) is legitimate."
+        " Judge the context and keep the mention only if it is intentional."
+    )
 
 
 def _is_claude_local_md(file_path: str) -> bool:

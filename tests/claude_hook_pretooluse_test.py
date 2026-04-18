@@ -34,13 +34,23 @@ def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.Compl
     )
 
 
-class TestHomeClaudeEditBlock:
-    """`~/.claude/` 配下の直接編集ブロック。"""
+class TestHomeClaudeEditWarning:
+    """`~/.claude/` 配下の直接編集警告 (allow + additionalContext、非ブロック)。"""
+
+    @staticmethod
+    def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
+        """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
+        if not result.stdout.strip():
+            return ""
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ""
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
 
     @pytest.mark.parametrize(
         "rel",
         [
-            "settings.json",
             "CLAUDE.md",
             "rules/agent-toolkit/agent.md",
             "agents/foo.md",
@@ -48,24 +58,27 @@ class TestHomeClaudeEditBlock:
             "plugins/agent-toolkit/hooks/hooks.json",
         ],
     )
-    def test_blocked(self, rel: str):
+    def test_warns(self, rel: str):
         target = str(_HOME / ".claude" / rel)
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
-        assert result.returncode == 2
-        assert ".chezmoi-source/dot_claude/" in result.stderr
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert "~/.claude/" in msg
+        assert ".chezmoi-source/dot_claude/" in msg
         # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: pretooluse]" in result.stderr
-        assert "Auto-generated hook notice" in result.stderr
+        assert "[auto-generated: pretooluse][warn]" in msg
+        assert "Auto-generated hook notice" in msg
 
-    def test_edit_blocked(self):
-        target = str(_HOME / ".claude" / "settings.json")
+    def test_edit_warns(self):
+        target = str(_HOME / ".claude" / "CLAUDE.md")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
 
     @pytest.mark.parametrize(
         "rel",
@@ -76,24 +89,27 @@ class TestHomeClaudeEditBlock:
             "shell-snapshots/foo.sh",
             "ide/cache.json",
             "statsig/cache",
+            "settings.json",  # Claude Code 自身が書き換える非 chezmoi 管理ファイル
             "settings.local.json",  # ローカル設定 (`.local.` を含む)
             "CLAUDE.local.md",  # ローカル メモ
             "rules/agent-toolkit/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
         ],
     )
-    def test_allowed(self, rel: str):
+    def test_silently_allowed(self, rel: str):
         target = str(_HOME / ".claude" / rel)
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
         assert result.returncode == 0
+        assert result.stdout == ""
 
-    def test_outside_home_claude_allowed(self):
-        """`~/.claude/` 配下でなければ通す (例: `~/.claudette/foo` は別物)。"""
+    def test_outside_home_claude_silently_allowed(self):
+        """`~/.claude/` 配下でなければ警告しない (例: `~/.claudette/foo` は別物)。"""
         target = str(_HOME / ".claudette" / "foo")
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
         assert result.returncode == 0
+        assert result.stdout == ""
 
-    def test_chezmoi_source_allowed(self):
-        """配布元の `.chezmoi-source/dot_claude/` 配下は通す。"""
+    def test_chezmoi_source_silently_allowed(self):
+        """配布元の `.chezmoi-source/dot_claude/` 配下は警告しない。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -104,43 +120,59 @@ class TestHomeClaudeEditBlock:
             }
         )
         assert result.returncode == 0
+        assert result.stdout == ""
 
-    def test_relative_path_allowed(self):
-        """相対パスは判定不能なため通す (誤検出を避ける)。"""
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": ".claude/settings.json", "content": "x"}})
+    def test_relative_path_silently_allowed(self):
+        """相対パスは判定不能なため警告しない (誤検出を避ける)。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": ".claude/CLAUDE.md", "content": "x"}})
         assert result.returncode == 0
+        assert result.stdout == ""
 
     @pytest.mark.parametrize(
         "rel",
         [
-            "./.claude/settings.json",  # 冗長な `.` セグメント
-            "foo/../.claude/settings.json",  # `..` で戻る
+            "./.claude/CLAUDE.md",  # 冗長な `.` セグメント
+            "foo/../.claude/CLAUDE.md",  # `..` で戻る
             ".claude/./rules/agent-toolkit/agent.md",  # 途中の `.`
         ],
     )
-    def test_blocked_with_non_canonical_segments(self, rel: str):
-        """非正規化パス (`./` や `../`) でも resolve 後にブロックされること (I-1)。"""
+    def test_warns_with_non_canonical_segments(self, rel: str):
+        """非正規化パス (`./` や `../`) でも resolve 後に警告されること (I-1)。"""
         target = str(_HOME / rel)
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
-        assert result.returncode == 2
-        assert ".chezmoi-source/dot_claude/" in result.stderr
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
 
-    def test_symlinked_home_claude_blocked(self, tmp_path: pathlib.Path):
-        """`~/.claude` がシンボリックリンクの場合でも resolve 後にブロックされること (I-1)。"""
+    def test_symlinked_home_claude_warns(self, tmp_path: pathlib.Path):
+        """`~/.claude` がシンボリックリンクの場合でも resolve 後に警告されること (I-1)。"""
         real_claude = tmp_path / "real_claude"
         real_claude.mkdir()
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         (fake_home / ".claude").symlink_to(real_claude)
         # Claude Code が resolve 後の実体パスを渡してくるケースを想定。
-        target = str(real_claude / "settings.json")
+        target = str(real_claude / "CLAUDE.md")
         env = {**os.environ, "HOME": str(fake_home)}
         result = _run(
             {"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}},
             env=env,
         )
-        assert result.returncode == 2
-        assert ".chezmoi-source/dot_claude/" in result.stderr
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
+
+    def test_combined_with_personal_file_mention(self):
+        """~/.claude/ 直接編集と個人ファイル言及が同時に検出されたら両方まとめて出力する。"""
+        target = str(_HOME / ".claude" / "CLAUDE.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {_LOCAL_MD} for details."},
+            }
+        )
+        assert result.returncode == 0
+        msg = self._get_additional_context(result)
+        assert ".chezmoi-source/dot_claude/" in msg
+        assert _LOCAL_MD in msg
 
 
 class TestPs1DirectivesBlock:
