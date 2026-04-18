@@ -201,3 +201,4 @@ spec-reviewer・code-quality-reviewer呼び出しテンプレートは`templates
 ## サブエージェント分業
 
 役割・起動条件・運用原則は`spec-driven`スキルSKILL.mdの「サブエージェント分業」節を参照する。
+サブエージェントの起動はすべてAgentツールの`model`パラメーターに`"sonnet"`を指定する。各テンプレートのテキストは`prompt`パラメーターとして渡す。
