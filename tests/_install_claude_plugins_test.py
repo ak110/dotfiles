@@ -602,13 +602,10 @@ class TestReadTargetInfo:
         """本リポジトリ配下の marketplace.json を読み取れる。"""
         repo_root = pathlib.Path(__file__).resolve().parents[1]
         # pylint: disable-next=protected-access
-        targets, deprecated = _install_claude_plugins._read_target_info(repo_root)
+        targets, _deprecated = _install_claude_plugins._read_target_info(repo_root)
         # agent-toolkit は通常プラグインとして含まれる
         assert "agent-toolkit" in targets
         assert targets["agent-toolkit"]  # 空文字列ではない
-        # edit-guardrails は deprecated 扱い
-        assert "edit-guardrails" in deprecated
-        assert "edit-guardrails" not in targets
 
     def test_missing_file_returns_empty(self, tmp_path: pathlib.Path):
         """marketplace.json がない場合は空辞書・空集合。"""

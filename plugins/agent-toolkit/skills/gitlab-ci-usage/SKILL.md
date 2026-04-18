@@ -1,7 +1,6 @@
 ---
 name: gitlab-ci-usage
 description: GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・トラブルシューティング観点の参照リファレンス。`.gitlab-ci.yml`を新規作成または修正する時、`rules`・`workflow`・`needs`・`include`・`extends`・`artifacts`・`cache`などのキーワード仕様やサブキーを確認したい時、ジョブの起動条件や依存関係の書き方で迷った時、CIパイプラインが意図通りに動かず原因を切り分けたい時、設定ファイルをlint/validateしたい時に使う。`.gitlab-ci.yml`が存在するリポジトリや、GitLab CIをセットアップしようとしているプロジェクトで特に有用。
-user-invocable: true
 ---
 
 # GitLab CIの使い方

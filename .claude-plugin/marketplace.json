@@ -11,7 +11,7 @@
       "name": "agent-toolkit",
       "source": "./plugins/agent-toolkit",
       "description": "Claude Codeのガードレールとスキル集。危険な編集や不適切なコミットをフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
-      "version": "0.22.1",
+      "version": "0.23.0",
       "category": "safety",
       "keywords": [
         "hooks",
@@ -19,16 +19,6 @@
         "guardrails",
         "safety",
         "bash"
-      ]
-    },
-    {
-      "name": "edit-guardrails",
-      "source": "./plugins/edit-guardrails",
-      "description": "Deprecated: agent-toolkit に移行しました。claude plugin uninstall edit-guardrails@ak110-dotfiles でアンインストールしてください。",
-      "version": "0.5.0",
-      "category": "safety",
-      "keywords": [
-        "deprecated"
       ]
     }
   ]

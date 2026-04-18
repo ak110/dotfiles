@@ -1,7 +1,6 @@
 ---
 name: claude-meta-rules
 description: CLAUDE.md・`.claude/rules/`・`.claude/skills/`・hooks・`plugin.json`・`marketplace.json`などClaude Code設定系ファイルの記述ガイドライン。これらのファイル群を新規作成または修正する時に呼び出すこと。Claudeの訓練データに無い新機能仕様の補完と、コンテキスト汚染を避ける記述原則、対象別リファレンスの導線をまとめている。
-user-invocable: true
 ---
 
 # CLAUDE.md・ルール・スキル・フック記述ガイドライン

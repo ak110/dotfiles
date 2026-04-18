@@ -30,7 +30,6 @@ paths:
 整合性は各プラグインのテストで検査する。
 `agent-toolkit`の担当は`TestManifestSsot`で、`uv run pyfltr run`で自動的に失敗する
 （場所: `plugins/agent-toolkit/tests/pretooluse_test.py`）。
-deprecatedの空シェル`edit-guardrails`もmarketplace.jsonにエントリが残っているが、SSOTテストは`agent-toolkit`側のみで検証する。
 新しいプラグインを追加するときは同等のSSOTテストも追加する。
 
 ## バージョン更新が必要な変更

@@ -1,7 +1,6 @@
 ---
 name: writing-standards
 description: Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント品質の共通ベース指示。これらを新規作成または修正する時、その計画時、およびレビュー時に最初に必ず呼び出すこと。構成・Markdown記述スタイル・README規約・技術文書種別ごとの注意点をまとめている。コードのみの編集やファイル編集を一切しない作業ではスキップしてよい。
-user-invocable: true
 ---
 
 # ドキュメント品質

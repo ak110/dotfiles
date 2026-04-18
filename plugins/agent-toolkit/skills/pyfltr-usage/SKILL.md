@@ -1,7 +1,6 @@
 ---
 name: pyfltr-usage
 description: pyfltrの使い方・JSONL出力解釈・トラブルシューティングのリファレンス。pyfltrの実行結果の解釈に迷った時、特定のツールだけ実行したい時、lintエラーの一括自動修正（`pyfltr run`／`pyfltr fast`）を使いたい時、サブコマンドの違いを確認したい時、pyfltrの設定やカスタムコマンドを変更したい時に使う。`pyfltr`が`CLAUDE.md`や`pyproject.toml`に記載されているプロジェクトで特に有用。pyfltrの出力でエラーが出た際、formatterがファイルを変更した際、特定ツールを再実行したい際にも該当する。
-user-invocable: true
 ---
 
 # pyfltrの使い方

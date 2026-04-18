@@ -1,7 +1,6 @@
 ---
 name: tidy-unpushed-commits
 description: 複数の未プッシュコミットを安全にsquash・reorder・メッセージ書き直しするスキル。退避refとツリー差分検証で最終ツリーの同一性を機械的に担保する。「未プッシュコミットを整理したい」「コミット履歴をきれいにしたい」「reorderしたい」「散らばったコミットをまとめ直したい」などの明示的指示でトリガーする。直前コミットへのamendや特定コミットへのfixupはagent.mdの指示で足りるため本スキルの対象外。
-user-invocable: true
 ---
 
 # 未プッシュコミットの整理

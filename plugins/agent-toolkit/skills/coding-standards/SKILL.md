@@ -1,7 +1,6 @@
 ---
 name: coding-standards
 description: コーディング品質・テスト方針の共通ベース指示。Python・TypeScript・Rust・C#・PowerShell・Windowsバッチの言語別ガイドを`references/`配下に持つ。コード・テストコードを新規作成または修正する時、その計画時、およびコードレビュー時に最初に必ず呼び出すこと。単に理解のためコードを読むだけの場合はトリガー不要。ドキュメントのみの編集やファイル編集を一切しない作業ではスキップしてよい。
-user-invocable: true
 ---
 
 # コーディング品質・テスト方針
