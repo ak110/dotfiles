@@ -68,7 +68,7 @@ deploy:
   script: ./deploy.sh
 ```
 
-`needs`を使うとstage順に縛られず依存順で先行実行できる。
+`needs`を使うとstage順に制約されず依存順で先行実行できる。
 `artifacts: true`は既定値だが、明示すると意図が伝わりやすい。
 
 ### `include`による設定分割
@@ -128,7 +128,7 @@ test:
 | `/api/v4/ci/lint` | GitLab本体のCI Lint API（`content`フィールドにyaml全文を渡す） | CI内やスクリプトからの自動検証 |
 | プロジェクトの`/-/ci/lint`ページ | Web UIでの手動検証。`include`解決や変数込みの検証が可能 | 最終確認、`include`先を含めた統合的な妥当性確認 |
 
-GitLab本体のlintは`include`や`workflow`評価までを行うため、ローカルの構文チェックだけでは検知できない統合レベルの誤りを拾える。
+GitLab本体のlintは`include`や`workflow`評価までを行うため、ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
 
 ## トラブルシューティング指針
 

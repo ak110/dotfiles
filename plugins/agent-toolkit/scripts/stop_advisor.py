@@ -441,7 +441,7 @@ def _main() -> int:
 
     # 共通ゲート: 直前ターンが作業完了かつ非質問でない場合は block を見送る。
     # `stop_advice_given` を記録しないため、ユーザーが応答した後や作業完了後の
-    # Stop で改めて閾値判定が走る。
+    # Stop で改めて閾値判定が実行される。
     if not _is_stop_blockable(transcript_path):
         _approve(cwd=cwd)
         return 0

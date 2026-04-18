@@ -82,7 +82,7 @@ def run(
 def _find_mise_binary() -> Path | None:
     """Mise の実行ファイルを探す。
 
-    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も取りこぼさないよう、
+    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も見落とさないよう、
     既知のインストールパスも併せて確認する。
     """
     from_path = shutil.which("mise")

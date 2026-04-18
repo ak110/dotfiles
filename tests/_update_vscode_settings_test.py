@@ -175,7 +175,7 @@ class TestApply:
         """legacy_keys で指定したキーは apply 時に削除される。
 
         Machine scope に過去バージョンが書き込んでいた markdown.styles の
-        絶対パスを掃除する用途の挙動を保証する。
+        絶対パスを除去する用途の挙動を保証する。
         """
         target = tmp_path / "settings.json"
         target.write_text(
@@ -297,7 +297,7 @@ class TestRun:
         assert "markdown-pdf.styles" in result
 
     def test_machine_scope_removes_legacy_markdown_styles(self, tmp_path: Path) -> None:
-        """Linux (Machine scope) では既存の markdown.styles を掃除する。
+        """Linux (Machine scope) では既存の markdown.styles を削除する。
 
         過去バージョンが絶対パスを書き込んでいたケースの移行パスを保証する。
         """

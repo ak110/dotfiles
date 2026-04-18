@@ -1,6 +1,6 @@
 # 3ステップワークフロー詳細
 
-軽量SDDの各ステップで踏む手順とサブエージェント呼び出しテンプレートをまとめる。
+軽量SDDの各ステップで実施する手順とサブエージェント呼び出しテンプレートをまとめる。
 新規追加フローを基準に記述し、末尾に「既存機能改修フロー」として差分のみをまとめる。
 中断・再開は`operations.md`を参照する。
 リリース完了後の昇格作業は`spec-driven-promote`スキル、既存プロジェクトへの初回導入は`spec-driven-init`スキルを参照する。
@@ -156,12 +156,12 @@ spec-implementer呼び出しテンプレート:
      - 出力ファイルパス（`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`）
    - 「差分に含まれる他の作業版ドキュメント・`README.md`・横断ドキュメント」には、同一開発中バージョンディレクトリ配下の他作業テーマ・横断・`README.md`のうち差分に含まれるものを列挙する
    - 戻り値は判定（✅/❌）と指摘件数のみ。詳細はメインが`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`を読んで把握する
-   - 指摘があれば該当タスクを`spec-implementer`へ差し戻す（`review-spec.md`のパスを入力として渡す）。再実装後は最終反映（手順2・3）も含めて再実施した上で、再度format/lint/test・spec-reviewerのループを回す（同一ファイルを上書き）
+   - 指摘があれば該当タスクを`spec-implementer`へ差し戻す（`review-spec.md`のパスを入力として渡す）。再実装後は最終反映（手順2・3）も含めて再実施した上で、再度format/lint/test・spec-reviewerのループを繰り返す（同一ファイルを上書き）
    - `✅ 仕様適合`が返るまで次ステップへ進まない
 6. `code-quality-reviewer`エージェントにコード品質レビューを委譲する
    - 引数: 作業テーマ名・作業版`.md`のパス・`BASE_SHA`・対象外一時ファイル一覧・出力ファイルパス（`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`）
    - 戻り値はAssessmentと指摘件数のみ。詳細はメインが出力ファイルを読んで把握する
-   - 指摘があれば`spec-implementer`へ差し戻して再実装する（`review-quality.md`のパスを入力として渡す）。再実装後は最終反映も含めて再実施し、再度format/lint/test・spec-reviewer・code-quality-reviewerのループを回す
+   - 指摘があれば`spec-implementer`へ差し戻して再実装する（`review-quality.md`のパスを入力として渡す）。再実装後は最終反映も含めて再実施し、再度format/lint/test・spec-reviewer・code-quality-reviewerのループを繰り返す
    - `Assessment: approve`が返るまで次ステップへ進まない
    - 指摘が繰り返される場合（同種の指摘が2回以上続くなど）はループを中断してユーザーへエスカレーションする
 7. 一時ファイル群を削除する
@@ -177,7 +177,7 @@ spec-reviewer・code-quality-reviewer呼び出しテンプレートは`templates
 
 ## 既存機能改修フロー
 
-既存機能の改修（仕様変更・既存設計判断の見直し・スコープ縮小など）は、新規追加フローと共通の3ステップを踏む。
+既存機能の改修（仕様変更・既存設計判断の見直し・スコープ縮小など）は、新規追加フローと共通の3ステップを実施する。
 以下は新規追加フローとの差分のみ記述する。明記のない手順は新規追加フローと同じ。
 
 ### ステップ1差分

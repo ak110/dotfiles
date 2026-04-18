@@ -3,7 +3,7 @@
 # NOTE: 対応するWindows版 → bin/executable_update-dotfiles.cmd
 #
 # git pull → init → status (apply 予定のみ表示) → silent apply の 4 段で実行する。
-# step 3 で「これから更新されるファイル」を一覧表示してから step 4 で apply を流す構成のため、
+# step 3 で「これから更新されるファイル」を一覧表示してから step 4 で apply を実行する構成のため、
 # `chezmoi update` (= 内部で git pull + apply 一括) ではなく `chezmoi git pull` を使っている。
 
 echo "=== [1/4] git pull ==="

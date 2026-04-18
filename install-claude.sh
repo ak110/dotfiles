@@ -34,7 +34,7 @@ _cleanup() {
     if [ "$REPLACED" -eq 0 ] && [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && [ ! -d "$TARGET_DIR" ]; then
         mv "$OLD_DIR" "$TARGET_DIR" 2>/dev/null || true
     fi
-    # STAGE_DIR と OLD_DIR の残骸を掃除する。
+    # STAGE_DIR と OLD_DIR の残骸を削除する。
     [ -n "$STAGE_DIR" ] && [ -d "$STAGE_DIR" ] && rm -rf "$STAGE_DIR"
     [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && rm -rf "$OLD_DIR"
     return 0

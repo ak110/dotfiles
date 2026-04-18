@@ -67,7 +67,7 @@ def convert_directory(
         max_width: 出力最大幅。これを超える場合は縮小する。
         max_height: 出力最大高さ。これを超える場合は縮小する。
         jpeg_quality: JPEG 出力時の品質。
-        repack_png: PNG 入力時に wand で再パックしてメタデータを剥がす。
+        repack_png: PNG 入力時に wand で再パックしてメタデータを除去する。
         remove_failed: 変換に失敗したファイルを削除する。
         progress: 呼び元で作成済みの tqdm。未指定なら内部で作成する。
     """

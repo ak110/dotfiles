@@ -19,7 +19,7 @@ warn 種別の check は stderr に警告を出しつつ処理を継続する。
      `mise.lock`, `.venv/`, `node_modules/`
 4. シークレット / 鍵ファイルの直接編集 (block, Write/Edit/MultiEdit)
    - `.env*`, `*.pem`, `*.key`, `.encrypt_key`, `.secret_key`, `github_action(.pub)?`
-   - `.example` / `.sample` 拡張子は素通し
+   - `.example` / `.sample` 拡張子は検査対象外
 5. manifest ファイルの手編集 (warn, Write/Edit/MultiEdit)
    - `pyproject.toml`, `package.json`
 6. ホームディレクトリの絶対パス混入 (warn, Write/Edit/MultiEdit)

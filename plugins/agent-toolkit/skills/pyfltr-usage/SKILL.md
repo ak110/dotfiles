@@ -119,7 +119,7 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 
 新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
 独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
-推奨例は`pyproject.toml`・pre-commitフック・タスクランナー（Makefile／mise.toml）・GitHub Actionsを一貫した構成で揃えており、複数プロジェクト間の差分を抑えて保守コストを下げる狙いがある。
+推奨例は`pyproject.toml`・pre-commitフック・タスクランナー（Makefile／mise.toml）・GitHub Actionsを一貫した構成で揃えており、複数プロジェクト間の差分を抑えて保守コストを下げる目的がある。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
 - 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>

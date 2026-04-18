@@ -164,7 +164,7 @@ class TestProcessArchive:
         assert entries == {"01.txt", "02.txt"}
 
     def test_flatten_nested_single_root(self, tmp_path: pathlib.Path) -> None:
-        """連続した単一ディレクトリチェーンを最深まで剥がす。"""
+        """連続した単一ディレクトリチェーンを最深まで除去する。"""
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -319,7 +319,7 @@ class TestProcessDirectory:
         assert (tmp_path / "book.zip").exists()
         entries = _zip_entries(tmp_path / "book.zip")
         assert entries == {"01.txt", "02.txt"}
-        # 元ディレクトリはバックアップされたうえで作業ディレクトリが掃除されている
+        # 元ディレクトリはバックアップされたうえで作業ディレクトリが削除されている
         assert (tmp_path / "bk" / "book").exists()
 
 

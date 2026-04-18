@@ -50,7 +50,7 @@ fi
 # - 対話シェル: `mise activate bash` でフック方式を有効化
 # - 非対話シェル (IDE / スクリプト / ssh exec): `--shims` で shims を PATH に追加
 # 参考: https://mise.jdx.dev/dev-tools/shims.html
-# 非対話のケースはこの直後に return するため、分岐して片方だけ走らせる。
+# 非対話のケースはこの直後に return するため、分岐して片方だけ実行する。
 if command -v mise >/dev/null 2>&1; then
     case $- in
     *i*) eval "$(mise activate bash)" ;;
@@ -271,7 +271,7 @@ fi
 # Claude Code
 # 終了時に画面をクリアするラッパー関数。
 # エイリアスではなく関数にしているのは、claude 本体の終了コードを保持しつつ
-# 終了後に clear を走らせる必要があるため。
+# 終了後に clear を実行する必要があるため。
 # claude の所在は環境によって異なる:
 #   - ~/.claude/local/claude: Claude Code 公式インストーラー (migrate-installer)
 #     が生成する固定パス。PATH には通っていないので絶対パスで呼ぶ

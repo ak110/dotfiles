@@ -234,7 +234,7 @@ class TestGitLogChecked:
         assert _read_state(tmp_path, sid).get("git_log_checked") is True
 
 
-# plan file 形式検査で使う各種 Markdown 断片。テスト全体で使い回す。
+# plan file 形式検査で使う各種 Markdown 断片。テスト全体で共用する。
 _VALID_PLAN = (
     "# タイトル\n\n"
     "## 背景\n\n説明。\n\n"
@@ -526,7 +526,7 @@ class TestPlanFormatCheck:
         assert result.stdout.strip() == ""
 
     def test_bash_does_not_emit_plan_check(self, tmp_path: pathlib.Path):
-        """Bash ツールでは plan check が走らず stdout が空のまま。"""
+        """Bash ツールでは plan check が実行されず stdout が空のまま。"""
         result = _run(
             {
                 "session_id": "bash-silent",

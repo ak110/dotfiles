@@ -17,7 +17,7 @@ git reset --soft "$BASE"
 git commit -F "$MSG_FILE"
 ```
 
-残存コミットが1つでもある場合は適用不可。後述のcherry-pick連鎖にフォールバックする（末尾から順に`reset --soft`を繰り返すと後続コミットを巻き込むため）。
+残存コミットが1つでもある場合は適用不可。後述のcherry-pick連鎖にフォールバックする（末尾から順に`reset --soft`を繰り返すと後続コミットにも影響するため）。
 
 ## cherry-pick連鎖（標準経路）
 

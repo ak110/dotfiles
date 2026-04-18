@@ -282,7 +282,7 @@ def _process_target(
     no_trash: bool,
     dry_run: bool,
 ) -> list[tuple[str, str]]:
-    """1 つの TARGET を処理する。失敗時は作業ディレクトリを掃除し原本を戻す。
+    """1 つの TARGET を処理する。失敗時は作業ディレクトリを削除し原本を戻す。
 
     アーカイブ内の個別エントリ失敗は (エントリパス, エラー文字列) のリストとして返す。
     空でない場合、部分的に欠落した ZIP が生成された状態のためバックアップは保持する
@@ -366,7 +366,7 @@ def _process_target(
             os.replace(tmp_zip, zip_path)
             logger.info("created: %s", zip_path)
     except Exception:
-        # ロールバック: 作業ディレクトリ掃除 + 原本復元
+        # ロールバック: 作業ディレクトリ削除 + 原本復元
         if not dry_run:
             shutil.rmtree(work_dir, ignore_errors=True)
             if is_archive and bk_entry.exists() and not target.exists():
@@ -420,8 +420,8 @@ def _load_libarchive() -> typing.Any:
     同じディレクトリを ``os.add_dll_directory`` で Windows の DLL loader に渡す。
 
     import が失敗した場合は復旧手順を含む RuntimeError を送出する。
-    libarchive-c の未ガードな ``LoadLibrary(None)`` が ``TypeError`` を投げるケースも
-    拾う必要があるため、ここでは ``Exception`` を広めに捕捉する。
+    libarchive-c の未ガードな ``LoadLibrary(None)`` が ``TypeError`` を送出するケースも
+    捕捉する必要があるため、ここでは ``Exception`` を広めに捕捉する。
     """
     if sys.platform == "win32":
         libarchive_dir = pathlib.Path.home() / ".local" / "lib" / "libarchive"
@@ -609,7 +609,7 @@ def _flatten_single_root(work_dir: pathlib.Path) -> None:
     """作業ディレクトリ配下の冗長な階層を除去する。
 
     無視パターン適用後に残った空ディレクトリを先に畳んだうえで、直下が単一
-    ディレクトリである状態が続く限り階層を剥がしきる。これにより
+    ディレクトリである状態が続く限り階層を除去しきる。これにより
     ``Series/Vol01/001.txt`` と空の ``Series/Vol02/`` が共存するような
     フィルタ後構造でも、最終 ZIP に余計な階層を残さない。
     """

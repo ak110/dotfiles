@@ -34,7 +34,7 @@ git rev-list --merges "$BASE..HEAD"
 git config --get rerere.enabled
 ```
 
-- `fetch.prune`/`fetch.pruneTags`はローカル限定の退避refを巻き込みで消しうるため、このfetchに限り明示的に無効化する
+- `fetch.prune`/`fetch.pruneTags`はローカル限定の退避refも併せて削除しうるため、このfetchに限り明示的に無効化する
 - 各コミットに`origin/<branch名>`が付いていればpush済みである。範囲から除外する
 - `BASE`より先（古い側）は絶対に触らない
 - `git rev-list --merges`の出力が空でなければ即中断して報告する

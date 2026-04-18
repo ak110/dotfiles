@@ -289,7 +289,7 @@ def run() -> bool:
 
     # 外部 marketplace のプラグイン推奨コマンド算出 (公式プラグインの有効化・無効化)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
-    # 状態が変わらないため、冒頭で取得した raw_data を使い回してよい。
+    # 状態が変わらないため、冒頭で取得した raw_data を再利用してよい。
     _LAST_RECOMMENDATIONS = compute_recommended_commands(raw_data, _read_enabled_plugins_from_file())
 
     # install 試行後のポスト検証と最終サマリ。
@@ -594,7 +594,7 @@ def _rewrite_known_marketplaces_entry() -> bool:
     ファイル自体が無い場合は新規作成する (CLI add が失敗した直後のフォールバック用)。
     ``lastUpdated`` を欠落させると後続の ``marketplace update`` が
     ``Invalid input: expected string, received undefined`` で失敗するため、
-    現在時刻を ISO 8601 文字列で埋める。
+    現在時刻を ISO 8601 文字列として書き込む。
     """
     path = _KNOWN_MARKETPLACES_PATH
     data = _load_json_dict(path)
@@ -668,8 +668,8 @@ def _load_json_dict(path: Path, *, silent: bool = False) -> dict[str, object] | 
 def _atomic_write_json(path: Path, data: object) -> bool:
     """JSON ファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に書き出す。
 
-    Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を拾い、
-    ``False`` を返して呼び出し元に委ねる (post_apply 全体は落とさない)。
+    Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
+    ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -838,7 +838,7 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
 def _warn_if_missing(target_versions: dict[str, str]) -> None:
     """Install 試行後も `target_versions` の未インストールが残っていれば警告する。
 
-    再現性が不明瞭な未インストール事象の早期検出を狙う。
+    再現性が不明瞭な未インストール事象の早期検出を目的とする。
     最新情報を取りたいため installed_plugins.json の再読み取りを行う。
     """
     raw_data: object = _read_installed_plugins_from_file()

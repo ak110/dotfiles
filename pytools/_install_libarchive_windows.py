@@ -171,7 +171,7 @@ def _persist_libarchive_env_var() -> bool:
 
     libarchive-c の ``ffi.py`` は DLL 探索時にまず ``LIBARCHIVE`` 環境変数を参照する。
     `_INSTALL_DIR` 配下の ``libarchive-13.dll`` を直接指せば、Windows の
-    ``find_library("archive")`` に拾えないファイル名でも解決できる。
+    ``find_library("archive")`` で解決できないファイル名でも解決できる。
 
     挙動:
 

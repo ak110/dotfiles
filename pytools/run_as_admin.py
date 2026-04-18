@@ -30,7 +30,7 @@ def run_elevated(command: str, args: list[str], *, wait: bool = False) -> None:
 
     params = " ".join(f'"{a}"' if " " in a else a for a in args)
     SW_SHOWNORMAL = 1
-    # ctypes.windll は Windows 限定のため、型チェックを抜けるよう getattr 経由で参照する
+    # ctypes.windll は Windows 限定のため、型チェックを回避するよう getattr 経由で参照する
     shell32 = getattr(ctypes, "windll").shell32  # noqa: B009
     result = shell32.ShellExecuteW(None, "runas", command, params, None, SW_SHOWNORMAL)
     if int(result) <= 32:

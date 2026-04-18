@@ -45,7 +45,7 @@ GitHub raw URL は CSS ファイルを ``Content-Type: text/plain`` +
 - dict 値は浅いマージ (既存キーを保持しつつ managed 側で上書き)
 - list・スカラー値は managed 側で上書き
 - ``_LEGACY_KEYS_FOR_MACHINE_SCOPE`` は Machine scope 専用で、apply 前に
-  settings.json から削除する (過去バージョンの残骸を掃除する目的)。
+  settings.json から削除する (過去バージョンの残骸を除去する目的)。
 """
 
 import collections.abc
@@ -76,7 +76,7 @@ _MARKDOWN_STYLE_URL = "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/v
 
 # Machine scope の settings.json に残っていたら apply 時に削除するキー。
 # 過去バージョンがホーム配下の絶対パスで markdown.styles を書き込んでいたが、
-# VSCode 1.23 以降は無視されるため、該当エントリを明示的に掃除する。
+# VSCode 1.23 以降は無視されるため、該当エントリを明示的に削除する。
 _LEGACY_KEYS_FOR_MACHINE_SCOPE: tuple[str, ...] = ("markdown.styles",)
 
 # run() が settings_path 引数のデフォルト (自動検出) と明示的 None (パス未検出)
@@ -116,7 +116,7 @@ def run(
         return False
     assert isinstance(settings_path, Path)
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
-    # scope ごとに managed の内容と掃除対象のレガシーキーを切り替える。
+    # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
     managed = _build_managed_settings(hostname=hostname, is_user_scope=win)
     legacy_keys: tuple[str, ...] = () if win else _LEGACY_KEYS_FOR_MACHINE_SCOPE
     return _apply(managed, settings_path, legacy_keys=legacy_keys)
@@ -230,7 +230,7 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
     書き込みは標準 JSON で行う (コメントは保持しない)。
 
     ``legacy_keys`` はマージ前に settings.json から削除する。現在は管理しない
-    キーの残骸 (過去バージョンが書き込んだ無効な絶対パス等) を掃除するための
+    キーの残骸 (過去バージョンが書き込んだ無効な絶対パス等) を除去するための
     仕組みで、Machine scope から markdown.styles を削除する用途などで使う。
 
     Returns:
