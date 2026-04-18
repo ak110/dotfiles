@@ -115,10 +115,11 @@ def _main() -> None:
 
     _preflight_check(targets, backup_dir=args.backup_dir)
 
-    failed = 0
+    failed_targets: list[tuple[pathlib.Path, str]] = []
+    failed_entries: list[tuple[pathlib.Path, str, str]] = []
     for target in targets:
         try:
-            _process_target(
+            entry_failures = _process_target(
                 target,
                 config=config,
                 compiled=compiled,
@@ -126,10 +127,22 @@ def _main() -> None:
                 no_trash=args.no_trash,
                 dry_run=args.dry_run,
             )
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             logger.exception("%s: 処理失敗", target)
-            failed += 1
-    if failed:
+            failed_targets.append((target, str(e)))
+            continue
+        for entry_path, error in entry_failures:
+            failed_entries.append((target, entry_path, error))
+
+    if failed_targets:
+        logger.warning("失敗した TARGET (%d件):", len(failed_targets))
+        for path, err in failed_targets:
+            logger.warning("  %s: %s", path, err)
+    if failed_entries:
+        logger.warning("失敗したエントリ (%d件):", len(failed_entries))
+        for tp, ep, err in failed_entries:
+            logger.warning("  %s :: %s: %s", tp, ep, err)
+    if failed_targets or failed_entries:
         sys.exit(1)
 
 
@@ -268,8 +281,13 @@ def _process_target(
     backup_dir_override: pathlib.Path | None,
     no_trash: bool,
     dry_run: bool,
-) -> None:
-    """1 つの TARGET を処理する。失敗時は作業ディレクトリを掃除し原本を戻す。"""
+) -> list[tuple[str, str]]:
+    """1 つの TARGET を処理する。失敗時は作業ディレクトリを掃除し原本を戻す。
+
+    アーカイブ内の個別エントリ失敗は (エントリパス, エラー文字列) のリストとして返す。
+    空でない場合、部分的に欠落した ZIP が生成された状態のためバックアップは保持する
+    (``send2trash`` を呼ばない)。
+    """
     logger.info("== %s ==", target)
     parent = target.parent
     stem = _output_stem(target)
@@ -297,18 +315,19 @@ def _process_target(
         work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
 
     source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から読み出す
+    entry_failures: list[tuple[str, str]] = []
     try:
         # 3. 選択的展開 / コピー
         if is_archive:
             if dry_run:
                 logger.info("[dry-run] extract %s -> %s", source_for_extract, work_dir)
             else:
-                _extract_archive(source_for_extract, work_dir, compiled)
+                entry_failures = _extract_archive(source_for_extract, work_dir, compiled)
         else:
             if dry_run:
                 logger.info("[dry-run] copy filtered %s -> %s", source_for_extract, work_dir)
             else:
-                _copy_filtered(source_for_extract, work_dir, compiled)
+                entry_failures = _copy_filtered(source_for_extract, work_dir, compiled)
 
         # 4. リネーム適用
         if compiled.rename_rules and not dry_run:
@@ -358,13 +377,20 @@ def _process_target(
     if not dry_run:
         shutil.rmtree(work_dir, ignore_errors=True)
 
-    # 9. バックアップのゴミ箱送り
+    # 9. バックアップのゴミ箱送り (エントリ失敗があれば欠落 ZIP となるため原本を保持する)
     if not dry_run and not no_trash:
-        try:
-            send2trash.send2trash(str(bk_entry))
-            logger.info("trash: %s", bk_entry)
-        except OSError as e:
-            logger.warning("ゴミ箱送り失敗: %s (%s)", bk_entry, e)
+        if entry_failures:
+            logger.warning(
+                "エントリ失敗が %d 件あったためバックアップを保持する: %s",
+                len(entry_failures),
+                bk_entry,
+            )
+        else:
+            try:
+                send2trash.send2trash(str(bk_entry))
+                logger.info("trash: %s", bk_entry)
+            except OSError as e:
+                logger.warning("ゴミ箱送り失敗: %s (%s)", bk_entry, e)
 
     # 10. bk/ が空なら削除
     if not dry_run and not no_trash and bk_root.exists():
@@ -373,6 +399,8 @@ def _process_target(
                 bk_root.rmdir()
         except OSError:
             pass
+
+    return entry_failures
 
 
 @functools.cache
@@ -414,56 +442,167 @@ def _load_libarchive() -> typing.Any:
     return libarchive
 
 
-def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> None:
-    """libarchive-c でストリーミング展開する。無視対象エントリはディスクに書かない。"""
+def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+    """libarchive-c でストリーミング展開する。無視対象エントリはディスクに書かない。
+
+    個別エントリの ``OSError`` は捕捉してスキップし、(エントリパス, エラー文字列) の
+    リストとして戻り値で返す。target 単位のロールバックは呼び出し元が担うため、
+    アーカイブ全体での致命的エラー (libarchive のフォーマットエラー等) は再送出する。
+    """
     libarchive = _load_libarchive()
-    entry_count = _count_archive_entries(archive)
+    entry_count, pathname_map = _prepare_archive(archive)
     dest.mkdir(parents=True, exist_ok=True)
+    failures: list[tuple[str, str]] = []
     with (
         tqdm.tqdm(total=entry_count, desc=f"extract {archive.name}", ascii=True, ncols=100, unit="f") as pbar,
         libarchive.file_reader(str(archive)) as reader,
     ):
         for entry in reader:
             pbar.update(1)
-            entry_path = entry.pathname
+            entry_path = _resolve_entry_path(entry, pathname_map, libarchive)
             if not entry_path:
                 continue
             if compiled.should_ignore_entry(entry_path):
                 continue
-            out_path = dest / entry_path
-            # 親ディレクトリを作成
-            if entry.isdir:
-                out_path.mkdir(parents=True, exist_ok=True)
-                continue
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            with out_path.open("wb") as fp:
-                for block in entry.get_blocks():
-                    fp.write(block)
+            try:
+                out_path = dest / entry_path
+                # 親ディレクトリを作成
+                if entry.isdir:
+                    out_path.mkdir(parents=True, exist_ok=True)
+                    continue
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with out_path.open("wb") as fp:
+                    for block in entry.get_blocks():
+                        fp.write(block)
+            except OSError as e:
+                failures.append((entry_path, str(e)))
+                logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+    return failures
 
 
-def _count_archive_entries(archive: pathlib.Path) -> int:
-    """進捗バー用に事前にエントリ数をカウントする。"""
+def _prepare_archive(archive: pathlib.Path) -> tuple[int, dict[bytes, str] | None]:
+    """アーカイブ展開前にエントリ数をカウントし、ZIP ならパスマッピングを併せて構築する。
+
+    戻り値のマッピングは libarchive の生バイトパス (``ffi.entry_pathname``) を
+    キーに、``zipfile`` 経由で復元したパスを値に持つ。ZIP 以外 (RAR / 7z / tar 等)
+    では ``None`` を返し、呼び出し元は libarchive の ``entry.pathname`` を使う。
+    """
     libarchive = _load_libarchive()
+    pathname_map = _build_zip_pathname_map(archive)
     count = 0
     with libarchive.file_reader(str(archive)) as reader:
         for _ in reader:
             count += 1
-    return count
+    return count, pathname_map
 
 
-def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> None:
-    """ディレクトリを再帰コピーしつつ、無視対象を省く。"""
+def _build_zip_pathname_map(archive: pathlib.Path) -> dict[bytes, str] | None:
+    """ZIP の中央ディレクトリからエントリごとにパスを復元し、生バイト→復号パスのマッピングを返す。
+
+    General purpose bit 11 (Unicode flag) をエントリ単位で参照する。bit 11 が立つ
+    エントリは UTF-8 のまま採用し、立たないエントリは一括して CP932 strict デコードを
+    試す。全て成功かつ制御文字が混入していなければ CP932 を採用し、満たさない場合は
+    ``zipfile`` 既定の CP437 デコード結果をそのまま使う (ZIP 仕様の既定挙動)。
+
+    ZIP でないなら ``None`` を返す。
+    """
+    if not zipfile.is_zipfile(archive):
+        return None
+
+    mapping: dict[bytes, str] = {}
+    # bit 11 未設定エントリは (生バイト, CP437 デコード結果) を貯めて後段で一括判定する。
+    # 単一エントリ判定では ASCII 名が常に成功扱いになり全体判定を歪めるため、
+    # アーカイブ全体の非 UTF-8 エントリをまとめて判定する必要がある。
+    non_utf8_entries: list[tuple[bytes, str]] = []
+    try:
+        with zipfile.ZipFile(archive) as zf:
+            infos = zf.infolist()
+    except (zipfile.BadZipFile, OSError):
+        # 中央ディレクトリが破損している ZIP は libarchive 側の復旧挙動に委ねる。
+        return None
+    for info in infos:
+        if info.flag_bits & 0x800:
+            mapping[info.filename.encode("utf-8")] = info.filename
+        else:
+            non_utf8_entries.append((info.filename.encode("cp437"), info.filename))
+
+    cp932_decoded: list[str] = []
+    cp932_ok = True
+    for raw, _fallback in non_utf8_entries:
+        try:
+            decoded = raw.decode("cp932")
+        except UnicodeDecodeError:
+            cp932_ok = False
+            break
+        if _has_control_chars(decoded):
+            cp932_ok = False
+            break
+        cp932_decoded.append(decoded)
+
+    if cp932_ok:
+        for (raw, _fallback), decoded in zip(non_utf8_entries, cp932_decoded, strict=True):
+            mapping[raw] = decoded
+    else:
+        for raw, fallback in non_utf8_entries:
+            mapping[raw] = fallback
+    return mapping
+
+
+def _has_control_chars(value: str) -> bool:
+    """文字列に制御文字 (U+0000–U+001F および U+007F–U+009F、ただしタブ・改行を除く) が含まれるかを判定する。
+
+    libarchive が ZIP のファイル名をワイド文字として誤解釈した場合、C1 制御文字 (U+0080–U+009F)
+    が混入した str が返る。CP932 デコードに成功しても制御文字が残るパターンは、実ファイル名ではなく
+    バイト列の偶然の一致である可能性が高いため、CP932 判定から除外する判断材料として使う。
+    """
+    for ch in value:
+        code = ord(ch)
+        if code in (0x09, 0x0A, 0x0D):
+            continue
+        if code <= 0x1F or 0x7F <= code <= 0x9F:
+            return True
+    return False
+
+
+def _resolve_entry_path(entry: typing.Any, pathname_map: dict[bytes, str] | None, libarchive: typing.Any) -> str:
+    """Libarchive エントリから使用すべきパス文字列を返す。
+
+    ZIP 用マッピングがあれば生バイトをキーに引き、見つからない場合のみ libarchive の
+    ``entry.pathname`` にフォールバックする。libarchive の ``entry.pathname`` は
+    bit 11 未設定 ZIP の非 ASCII 名を誤デコードして壊れた str を返すことがあり、
+    Windows の ``OSError: [WinError 123]`` の原因になるため可能な限り回避する。
+    """
+    if pathname_map is not None:
+        raw = libarchive.ffi.entry_pathname(entry._entry_p)  # pylint: disable=protected-access
+        if raw is not None:
+            resolved = pathname_map.get(raw)
+            if resolved is not None:
+                return resolved
+    return entry.pathname or ""
+
+
+def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+    """ディレクトリを再帰コピーしつつ、無視対象を省く。
+
+    個別ファイルの ``OSError`` は捕捉して (相対パス, エラー文字列) のリストとして返す。
+    """
     dest.mkdir(parents=True, exist_ok=True)
+    failures: list[tuple[str, str]] = []
     for item in src.rglob("*"):
         if compiled.should_ignore_path(item, root=src):
             continue
         rel = item.relative_to(src)
-        target = dest / rel
-        if item.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        elif item.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, target)
+        try:
+            target = dest / rel
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif item.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+        except OSError as e:
+            failures.append((rel.as_posix(), str(e)))
+            logger.warning("%s: エントリコピー失敗: %s (%s)", src.name, rel, e)
+    return failures
 
 
 def _flatten_single_root(work_dir: pathlib.Path) -> None:

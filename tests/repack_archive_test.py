@@ -9,6 +9,7 @@
 # 個別シナリオを検証するため、ファイル全体で protected-access を許可する。
 # pylint: disable=protected-access,missing-class-docstring
 
+import logging
 import pathlib
 import zipfile
 
@@ -21,6 +22,25 @@ def _make_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name, data in entries.items():
             zf.writestr(name, data)
+
+
+class _Cp932ZipInfo(zipfile.ZipInfo):
+    """ファイル名を CP932 でエンコードし、Unicode flag (bit 11) を立てない ZipInfo。
+
+    Python 標準の ``ZipInfo._encodeFilenameFlags`` は非 ASCII 名を UTF-8 に変換して
+    bit 11 を立てる。これを上書きすることで、libarchive が過去の日本語 ZIP として
+    誤解釈するパターン (CP932 生バイト + bit 11 未設定) をテストで再現できる。
+    """
+
+    def _encodeFilenameFlags(self) -> tuple[bytes, int]:
+        return self.filename.encode("cp932"), self.flag_bits & ~0x800
+
+
+def _make_cp932_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
+    """CP932 でエンコードされ、bit 11 未設定のエントリのみを含む ZIP を作成する。"""
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as zf:
+        for name, data in entries.items():
+            zf.writestr(_Cp932ZipInfo(name), data)
 
 
 def _zip_entries(path: pathlib.Path) -> set[str]:
@@ -301,3 +321,91 @@ class TestProcessDirectory:
         assert entries == {"01.txt", "02.txt"}
         # 元ディレクトリはバックアップされたうえで作業ディレクトリが掃除されている
         assert (tmp_path / "bk" / "book").exists()
+
+
+class TestFilenameEncoding:
+    """ZIP のファイル名エンコーディング破損を避ける挙動の検証。"""
+
+    def test_cp932_zip_decodes_correctly(self, tmp_path: pathlib.Path) -> None:
+        """bit 11 未設定の CP932 ZIP で日本語ファイル名を正しく復元できる。"""
+        archive = tmp_path / "ja.zip"
+        _make_cp932_zip(
+            archive,
+            {
+                "あいう.txt": b"a",
+                "フォルダ/項目.txt": b"b",
+            },
+        )
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "ja.zip")
+        # 単一ルート "フォルダ" は平坦化されないよう、ルートが複数になる構造にしてある
+        assert entries == {"あいう.txt", "フォルダ/項目.txt"}
+
+    def test_mixed_ascii_and_utf8_zip(self, tmp_path: pathlib.Path) -> None:
+        """ASCII (bit 11 未設定) と UTF-8 日本語名 (bit 11 設定) が混在しても両方破損しない。
+
+        アーカイブ全体を単一エンコーディングと誤判定すると、UTF-8 バイト列が CP932 として
+        再解釈されて非 ASCII 名が破損する。エントリ単位の bit 11 参照で回避できていることを検証する。
+        """
+        archive = tmp_path / "mixed.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            # ASCII 名: zipfile 既定動作で bit 11 未設定
+            zf.writestr("README.txt", b"readme")
+            # 日本語名: zipfile 既定動作で UTF-8 + bit 11 設定
+            zf.writestr("日本語.txt", b"ja")
+        # 事前確認: 想定どおりの bit 11 構成になっている
+        with zipfile.ZipFile(archive, "r") as zf:
+            flags = {info.filename: info.flag_bits & 0x800 for info in zf.infolist()}
+        assert flags["README.txt"] == 0
+        assert flags["日本語.txt"] == 0x800
+
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "mixed.zip")
+        assert entries == {"README.txt", "日本語.txt"}
+
+
+class TestMainFailureSummary:
+    """複数 target の失敗集約と終了コードの検証。"""
+
+    def test_failure_summary_lists_failed_targets(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        good = tmp_path / "good.zip"
+        _make_zip(good, {"a.txt": b"a"})
+        # ZIP の体をなさないファイル。`_preflight_check` は存在チェックのみ通過し、
+        # libarchive がフォーマットエラーで例外を送出する。
+        bad = tmp_path / "bad.zip"
+        bad.write_bytes(b"not a zip file at all, totally garbage contents")
+
+        monkeypatch.setattr("sys.argv", ["repack-archive", "--no-trash", str(good), str(bad)])
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        with pytest.raises(SystemExit) as exc_info:
+            repack_archive._main()
+        assert exc_info.value.code == 1
+
+        # 良い target は出力 ZIP が残り、失敗 target はサマリーに列挙される
+        assert (tmp_path / "good.zip").exists()
+        summary = "\n".join(r.getMessage() for r in caplog.records)
+        assert "失敗した TARGET" in summary
+        assert str(bad) in summary
