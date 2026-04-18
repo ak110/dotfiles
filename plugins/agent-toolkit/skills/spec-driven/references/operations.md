@@ -11,9 +11,9 @@
 - 状態は「計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）＋開発中ディレクトリ配下のファイル群＋TaskCreate残タスク」で保持する
 - 再開時の判断材料
   - TaskCreate残タスクの有無と先頭タスクの内容で、どのステップのどの位置にいるかを特定する
-  - `docs/v{next}/{作業テーマ名}.research-{nn}.md`が存在すればステップ1は実施済み
+  - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`が存在すればステップ1は実施済み
   - `docs/v{next}/{作業テーマ名}.md`・`docs/v{next}/README.md`のエントリが存在すればステップ2後半（`spec-designer`実行済み）以降
-  - `docs/v{next}/{作業テーマ名}.review-spec.md`・`.review-quality.md`の存在でレビュー状況を判定する
+  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`の存在でレビュー状況を判定する
 - ステップ2ではplan mode内（計画ファイル作成中）とplan mode外（設計ドキュメント立ち上げ・実装中）の切り替え位置に注意する。計画ファイルが存在しcodexレビュー済みであれば2b以降、未作成または未合格であれば2aとみなす
 - 開発中配置（`docs/v{next}/`配下）が存在する場合はそこが作業対象となる。恒常配置（`docs/features/`・`docs/topics/`）は参照専用で、改修作業中は直接編集しない（昇格前に恒常配置と実装が乖離するのを避けるため）
 
@@ -29,8 +29,8 @@
 初回導入時または定期確認時に、小さな仮題材（例: READMEへの節追加程度）でステップ1〜3を1回通す。
 
 - [ ] ステップ1で作業テーマ名・バージョン・新規追加か既存改修かの区分の確認が行われる
-- [ ] ステップ1で`spec-researcher`が観点ごとに並列起動され、各起動がそれぞれ`docs/v{next}/{作業テーマ名}.research-{nn}.md`を1つ生成する（`{nn}`はゼロパディング2桁の連番）
-- [ ] ステップ1では骨子・`README.md`エントリを作らない（ステップ2後半の`spec-designer`が一括生成する）。新規バージョンの最初の作業テーマのみ`docs/v{next}/`の空ディレクトリを先行作成する
+- [ ] ステップ1で`spec-researcher`が観点ごとに並列起動され、各起動がそれぞれ`docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`を1つ生成する（`{nn}`はゼロパディング2桁の連番）
+- [ ] ステップ1では骨子・`README.md`エントリを作らない（ステップ2後半の`spec-designer`が一括生成する）。新規バージョンの最初の作業テーマのみ`docs/v{next}/`と`docs/v{next}/.cache/`の空ディレクトリを先行作成する
 - [ ] ステップ2で`plan-mode`が呼び出され、計画ファイル1本（大枠＋実装詳細）が`~/.claude/plans/`配下に作成される
 - [ ] ステップ2前半冒頭で`EnterPlanMode`が呼び出され、codexレビュー合格後に`ExitPlanMode`される
 - [ ] `ExitPlanMode`直後に`spec-designer`が呼び出され、以下が生成／更新される
@@ -41,19 +41,19 @@
 - [ ] ステップ2でメインが`BASE_SHA`を記録し、TaskCreateでタスクを登録する
 - [ ] ステップ2で`spec-implementer`が呼び出される
 - [ ] ステップ3の最終反映（作業版`.md`への最終状態反映・`README.md`最新化）が`spec-reviewer`実行より前に完了している
-- [ ] `spec-reviewer`が呼び出し元指定の`docs/v{next}/{作業テーマ名}.review-spec.md`へ指摘を書き出し、戻り値は判定と件数のみ。以下の整合性観点も検査したことを出力ファイルから確認する
+- [ ] `spec-reviewer`が呼び出し元指定の`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`へ指摘を書き出し、戻り値は判定と件数のみ。以下の整合性観点も検査したことを出力ファイルから確認する
   - `README.md`への反映
   - 恒久ドキュメント間の明示矛盾
   - 参照コメント指し先の実在と関連性
   - 既存改修時のBefore/After整合
   - 計画ファイル→作業版`.md`の転記漏れ
   - 作業テーマ粒度と恒常配置粒度の対応整合
-- [ ] `code-quality-reviewer`が呼び出し元指定の`docs/v{next}/{作業テーマ名}.review-quality.md`へ指摘を書き出し、戻り値はAssessmentと件数のみ
+- [ ] `code-quality-reviewer`が呼び出し元指定の`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`へ指摘を書き出し、戻り値はAssessmentと件数のみ
 - [ ] 差し戻し時は指摘ファイルのパスを`spec-implementer`へ渡し、同一ファイルを上書きする形で再レビューする
 - [ ] ステップ3で以下の一時ファイルが削除される
-  - `docs/v{next}/{作業テーマ名}.research-*.md`
-  - `docs/v{next}/{作業テーマ名}.review-spec.md`
-  - `docs/v{next}/{作業テーマ名}.review-quality.md`
+  - `docs/v{next}/.cache/{作業テーマ名}.research-*.md`
+  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
+  - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
 - [ ] 参照コメントは恒久`.md`のみを指し、`.research-*.md`や`.review-*.md`を参照していない。開発中配置のパスを指すものはマージ統合時に恒常配置のパスへ書き換える想定で作る
 - [ ] 自動トリガー時は起動直後にユーザーへ起動可否を確認する（`description`の条件に一致して自動起動した場合のみ該当）
 - [ ] マージ統合ドライラン: 仮題材の作業版`.md`と想定する恒常配置`.md`の粒度差（1対多・多対1・1対1）を確認し、昇格時の統合方針（追記・置換・併記）をセッションメモまたは計画ファイルにメモしておく

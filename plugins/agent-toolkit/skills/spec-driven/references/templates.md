@@ -168,7 +168,7 @@ spec-drivenスキルで使う恒久ドキュメント（機能・横断・`READM
 次期バージョン: {next}
 区分: 新規追加 / 既存機能改修
 計画ファイル: `~/.claude/plans/{自動生成ファイル名}.md`
-リサーチ結果ファイル: {`docs/v{next}/{作業テーマ名}.research-{nn}.md` の一覧}
+リサーチ結果ファイル: {`docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md` の一覧}
 恒常配置の対応先候補: `docs/features/{機能名}.md` または `docs/topics/{トピック名}.md`（既存改修時、新規は「該当なし」）
 
 出力:
@@ -189,7 +189,7 @@ spec-drivenスキルで使う恒久ドキュメント（機能・横断・`READM
 `BASE_SHA`はステップ2で記録した`git rev-parse HEAD`の結果を使う。
 `spec-implementer`はタスク単位でコミットしない設計のため、レビュー時点の差分は未コミットの作業ツリー差分として扱う。
 差分取得は`git diff {BASE_SHA}`と未追跡ファイルを含む作業ツリー参照（`git status`・`Read`）で行う。
-一時ファイル（`.research-*.md`・`.review-spec.md`・`.review-quality.md`）は実装完了時に削除される想定のため、評価対象外として除外する。
+一時ファイル（`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`）は実装完了時に削除される想定のため、評価対象外として除外する。
 
 指摘は呼び出し元指定の出力ファイルへ書き出し、戻り値は判定・件数のみに絞る。
 差し戻しループでは同一ファイルを上書きする（前回指摘との混在を避けるため）。
@@ -206,8 +206,8 @@ spec-drivenスキルで使う恒久ドキュメント（機能・横断・`READM
 改修前の該当節スナップショット: `docs/v{next}/{作業テーマ名}.md`内の「改修前スナップショット」節（既存改修時のみ）
 計画ファイル: `~/.claude/plans/{自動生成ファイル名}.md`
 BASE_SHA: {ステップ2で記録したHEAD}
-対象外ファイル: `docs/v{next}/{作業テーマ名}.research-*.md`・`docs/v{next}/{作業テーマ名}.review-spec.md`・`docs/v{next}/{作業テーマ名}.review-quality.md`
-出力ファイル: `docs/v{next}/{作業テーマ名}.review-spec.md`（差し戻しループでは上書き）
+対象外ファイル: `docs/v{next}/.cache/{作業テーマ名}.research-*.md`・`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
+出力ファイル: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`（差し戻しループでは上書き）
 
 差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
 制約: 書き込みは出力ファイル1つのみ。実装者レポートは鵜呑みにせず、コードと差分で独立検証すること
@@ -222,8 +222,8 @@ BASE_SHA: {ステップ2で記録したHEAD}
 作業テーマ名: {作業テーマ名}
 作業版ドキュメント: `docs/v{next}/{作業テーマ名}.md`
 BASE_SHA: {ステップ2で記録したHEAD}
-対象外ファイル: `docs/v{next}/{作業テーマ名}.research-*.md`・`docs/v{next}/{作業テーマ名}.review-spec.md`・`docs/v{next}/{作業テーマ名}.review-quality.md`
-出力ファイル: `docs/v{next}/{作業テーマ名}.review-quality.md`（差し戻しループでは上書き）
+対象外ファイル: `docs/v{next}/.cache/{作業テーマ名}.research-*.md`・`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
+出力ファイル: `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`（差し戻しループでは上書き）
 
 差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
 制約: 書き込みは出力ファイル1つのみ。coding-standardsスキルを事前に呼び出し、品質基準に従うこと

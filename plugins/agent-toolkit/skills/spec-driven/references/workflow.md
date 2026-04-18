@@ -33,10 +33,10 @@ plan modeに入る前の準備工程である。本ステップでは骨子・`R
 2. 恒常配置と開発中配置の場所を特定する
    - 恒常配置: `docs/features/`・`docs/topics/`配下の関連ファイルのパスを押さえる（読み込みは`spec-researcher`へ委譲してよい）
    - 開発中配置: `docs/v{next}/`配下に並行作業中の作業版があればパスを押さえる
-   - 開発中バージョンディレクトリ（`docs/v{next}/`）が未作成であれば、空ディレクトリのみ先行作成する（`spec-researcher`のリサーチ結果ファイル書き込み先を用意するため）。骨子・`README.md`の生成はこの時点では行わない
+   - 開発中バージョンディレクトリ（`docs/v{next}/`）と一時ファイル置き場（`docs/v{next}/.cache/`）が未作成であれば、空ディレクトリのみ先行作成する。目的は`spec-researcher`のリサーチ結果ファイル書き込み先を用意するためで、骨子・`README.md`の生成はこの時点では行わない
 3. 既存機能・依存関係・影響範囲を並列調査する
    - 調査観点を列挙する（関連する既存モジュール・テスト・ドキュメント・外部API・設定など）
-   - 独立した観点ごとに`spec-researcher`エージェントを並列起動する。各起動に対して出力ファイルパス`docs/v{next}/{作業テーマ名}.research-{nn}.md`（`{nn}`はゼロパディング2桁の連番）を1つずつ割り当て、同一連番の重複割り当てを避ける
+   - 独立した観点ごとに`spec-researcher`エージェントを並列起動する。各起動に対して出力ファイルパス`docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`（`{nn}`はゼロパディング2桁の連番）を1つずつ割り当て、同一連番の重複割り当てを避ける
    - 各サブエージェントは構造化Markdownを出力ファイルへ書き出し、呼び元にはファイルパスと1〜2行サマリーのみを返す
    - メインは戻り値のファイルパスとサマリーを手元に保持するだけで、内容の集約・転記は行わない（集約はステップ2後半で`spec-designer`が担う）
 
@@ -49,7 +49,7 @@ spec-researcher呼び出しテンプレート:
 観点: {具体的な調査観点}
 恒常配置: `docs/features/`・`docs/topics/`配下の関連ファイルも確認対象に含める
 開発中配置: `docs/v{next}/`配下に並行作業中の作業版があれば確認対象に含める
-出力ファイル: `docs/v{next}/{作業テーマ名}.research-{nn}.md`（このファイルへ構造化Markdownを書き出す）
+出力ファイル: `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`（このファイルへ構造化Markdownを書き出す）
 出力形式: 観点ごとに節分けし、ファイルパスとfile:line参照を必ず含める
 戻り値: 出力ファイルパスと1〜2行サマリー
 制約: 書き込みは上記出力ファイル1つのみ。コード・他ドキュメントの変更は行わないこと
@@ -107,7 +107,7 @@ spec-designer呼び出しテンプレート:
 次期バージョン: {next}
 区分: 新規追加 / 既存機能改修
 計画ファイル: `~/.claude/plans/{自動生成ファイル名}.md`
-リサーチ結果ファイル: {`docs/v{next}/{作業テーマ名}.research-{nn}.md` の一覧}
+リサーチ結果ファイル: {`docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md` の一覧}
 恒常配置の対応先候補: `docs/features/{機能名}.md` または `docs/topics/{トピック名}.md`（既存改修時、新規は「該当なし」）
 
 出力:
@@ -126,7 +126,7 @@ spec-implementer呼び出しテンプレート:
 
 タスク: {タスクの具体的な記述}
 参照: `docs/v{next}/{作業テーマ名}.md` の該当節、ステップ2で作成した計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）
-差し戻し指摘（該当時のみ）: `docs/v{next}/{作業テーマ名}.review-spec.md` または `docs/v{next}/{作業テーマ名}.review-quality.md`
+差し戻し指摘（該当時のみ）: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md` または `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
 制約: coding-standardsスキルを事前に呼び出し、品質基準に従うこと
 完了条件: 変更後にプロジェクトのformat/lint/testが全て通ること
 ```
@@ -153,22 +153,22 @@ spec-implementer呼び出しテンプレート:
      - 改修前の該当節スナップショット（既存改修時のみ、作業版`.md`内の「改修前スナップショット」節）
      - 計画ファイルのパス
      - `BASE_SHA`
-     - レビュー対象外の一時ファイル一覧（`.research-*.md`・`.review-spec.md`・`.review-quality.md`）
-     - 出力ファイルパス（`docs/v{next}/{作業テーマ名}.review-spec.md`）
+     - レビュー対象外の一時ファイル一覧（`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`）
+     - 出力ファイルパス（`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`）
    - 「差分に含まれる他の恒久ドキュメント」には、同一開発中ディレクトリ配下の他作業テーマ・横断・`README.md`のうち差分に含まれるものを列挙する
-   - 戻り値は判定（✅/❌）と指摘件数のみ。詳細はメインが`docs/v{next}/{作業テーマ名}.review-spec.md`を読んで把握する
+   - 戻り値は判定（✅/❌）と指摘件数のみ。詳細はメインが`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`を読んで把握する
    - 指摘があれば該当タスクを`spec-implementer`へ差し戻す（`review-spec.md`のパスを入力として渡す）。再実装後は最終反映（手順2・3）も含めて再実施した上で、再度format/lint/test・spec-reviewerのループを回す（同一ファイルを上書き）
    - `✅ 仕様適合`が返るまで次ステップへ進まない
 6. `code-quality-reviewer`エージェントにコード品質レビューを委譲する
-   - 引数: 作業テーマ名・作業版`.md`のパス・`BASE_SHA`・対象外一時ファイル一覧・出力ファイルパス（`docs/v{next}/{作業テーマ名}.review-quality.md`）
+   - 引数: 作業テーマ名・作業版`.md`のパス・`BASE_SHA`・対象外一時ファイル一覧・出力ファイルパス（`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`）
    - 戻り値はAssessmentと指摘件数のみ。詳細はメインが出力ファイルを読んで把握する
    - 指摘があれば`spec-implementer`へ差し戻して再実装する（`review-quality.md`のパスを入力として渡す）。再実装後は最終反映も含めて再実施し、再度format/lint/test・spec-reviewer・code-quality-reviewerのループを回す
    - `Assessment: approve`が返るまで次ステップへ進まない
    - 指摘が繰り返される場合（同種の指摘が2回以上続くなど）はループを中断してユーザーへエスカレーションする
 7. 一時ファイル群を削除する
-   - `docs/v{next}/{作業テーマ名}.research-*.md`（ステップ1で出力した全ファイル）
-   - `docs/v{next}/{作業テーマ名}.review-spec.md`
-   - `docs/v{next}/{作業テーマ名}.review-quality.md`
+   - `docs/v{next}/.cache/{作業テーマ名}.research-*.md`（ステップ1で出力した全ファイル）
+   - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
+   - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
 8. 全差分を1コミットまたは意味単位で複数コミットにまとめる
 
 手順2・3を`spec-reviewer`実行前に置くのは、最終版のドキュメントと実装を一括で整合性検査するため。
@@ -184,7 +184,7 @@ spec-reviewer・code-quality-reviewer呼び出しテンプレートは`templates
 ### ステップ1差分
 
 - 対応する恒常配置ファイル（`docs/features/{機能名}.md`または`docs/topics/{トピック名}.md`）をユーザーと合意で特定する
-- `spec-researcher`の観点に「改修前の該当節スナップショット取得」を含め、対応先ファイルの該当節を`.research-{nn}.md`のいずれかで記録する。ステップ2で`spec-designer`が作業版`.md`の「改修前スナップショット」節へ貼り付ける
+- `spec-researcher`の観点に「改修前の該当節スナップショット取得」を含め、対応先ファイルの該当節を`docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`のいずれかで記録する。ステップ2で`spec-designer`が作業版`.md`の「改修前スナップショット」節へ貼り付ける
 - 当該機能が他機能・横断ドキュメントから参照されているかを`docs/features/`・`docs/topics/`配下の全文検索観点を`spec-researcher`へ委譲し、波及する記述の更新要否を洗い出す
 
 ### ステップ2差分
