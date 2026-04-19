@@ -106,14 +106,21 @@ function renderFiles() {
     name.textContent = file.path;
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = file.mtime + " / " + file.size + " bytes";
+    meta.textContent = file.mtime;
     item.appendChild(name);
     item.appendChild(meta);
     root.appendChild(item);
   }
 }
 
+async function refreshFiles() {
+  const res = await fetch("/api/files");
+  files = await res.json();
+  renderFiles();
+}
+
 async function openFile(path) {
+  await refreshFiles();
   selectedPath = path;
   renderFiles();
   const res = await fetch("/api/file?path=" + encodeURIComponent(path));
@@ -126,9 +133,7 @@ async function openFile(path) {
 }
 
 async function main() {
-  const res = await fetch("/api/files");
-  files = await res.json();
-  renderFiles();
+  await refreshFiles();
   if (files.length > 0) await openFile(files[0].path);
 }
 
@@ -147,7 +152,6 @@ class _FileEntry:
     path: str
     name: str
     mtime: str
-    size: int
 
 
 def _resolve_css_path() -> pathlib.Path | None:
@@ -182,8 +186,7 @@ def _list_files(root: pathlib.Path) -> list[_FileEntry]:
         entry = _FileEntry(
             path=rel,
             name=path.name,
-            mtime=mtime.isoformat(timespec="seconds"),
-            size=stat.st_size,
+            mtime=mtime.strftime("%Y/%m/%d %H:%M"),
         )
         collected.append((stat.st_mtime, entry))
     collected.sort(key=lambda pair: pair[0], reverse=True)

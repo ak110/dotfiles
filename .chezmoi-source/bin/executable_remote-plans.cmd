@@ -23,6 +23,6 @@ rem サーバー起動を待ってからブラウザを開く。別ウィンドウでバックグラウンド実行す
 start "remote-plans browser" /min cmd /c "timeout /t 3 /nobreak >nul && start %URL%"
 
 rem SSHトンネルを張りつつ、リモート側のビューアを前景で起動する。
-ssh -L %PORT%:127.0.0.1:%PORT% %TARGET% "~/.local/bin/claude-plans-viewer --host 127.0.0.1 --port %PORT%"
+ssh -t -L %PORT%:127.0.0.1:%PORT% %TARGET% "~/.local/bin/claude-plans-viewer --host 127.0.0.1 --port %PORT%"
 
 endlocal

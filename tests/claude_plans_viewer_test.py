@@ -5,6 +5,7 @@
 # pylint: disable=protected-access
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,12 @@ class TestListFiles:
         entries = claude_plans_viewer._list_files(tmp_path)
 
         assert [e.path for e in entries] == ["new.md", "old.md"]
+        # mtimeは`yyyy/MM/dd HH:mm`書式で整形される。
+        pattern = re.compile(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}$")
+        for entry in entries:
+            assert pattern.match(entry.mtime), entry.mtime
+        # `_FileEntry`はサイズを保持しない。
+        assert not hasattr(entries[0], "size")
 
     def test_includes_only_md(self, tmp_path: Path):
         """.md以外は含まず、サブディレクトリは再帰的に拾うこと。"""
