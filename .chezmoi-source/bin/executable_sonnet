@@ -1,0 +1,3 @@
+#!/bin/bash
+# NOTE: 対応するWindows版 → bin/executable_sonnet.cmd
+exec claude --model=sonnet --permission-mode=acceptEdits "$@"

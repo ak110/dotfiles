@@ -11,6 +11,7 @@
 
 # Linux: Windows専用ファイルをスキップ
 {{ if ne .chezmoi.os "windows" }}
+bin/sonnet.cmd
 bin/update-dotfiles.cmd
 {{ end }}
 
