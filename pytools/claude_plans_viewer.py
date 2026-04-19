@@ -14,36 +14,31 @@ Markdown→HTML変換はraw HTMLをエスケープする設定とし、
 """
 
 import argparse
+import asyncio
 import contextlib
 import dataclasses
 import datetime
 import html
-import http.server
 import json
 import logging
 import os
 import pathlib
-import queue
 import socket
 import sys
-import threading
 import typing
-import urllib.parse
 
+import hypercorn.asyncio
+import hypercorn.config
 import markdown_it
+import pytilpack.sse
+import quart
 import watchdog.events
 import watchdog.observers
 
 logger = logging.getLogger(__name__)
 
-# SSE購読者の集合。スレッドセーフ化のため _subscribers_lock で保護する。
-_subscribers: set[queue.Queue[str]] = set()
-_subscribers_lock = threading.Lock()
-
 # debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
 _BROADCAST_DEBOUNCE_SEC = 0.3
-_broadcast_timer: threading.Timer | None = None
-_broadcast_timer_lock = threading.Lock()
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`は`/api/file`応答の`read_text`との間で
 # feedback loopになるため除外する。`FileClosedEvent`は`IN_CLOSE_WRITE`（書き込み後クローズ）を表す。
@@ -54,91 +49,6 @@ _WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileMovedEvent,
     watchdog.events.FileClosedEvent,
 )
-
-
-def _subscribe() -> queue.Queue[str]:
-    """SSE購読キューを生成して登録し返す。"""
-    q: queue.Queue[str] = queue.Queue(maxsize=1)
-    with _subscribers_lock:
-        _subscribers.add(q)
-    return q
-
-
-def _unsubscribe(q: queue.Queue[str]) -> None:
-    """購読キューを解除する。存在しない場合もエラーにしない。"""
-    with _subscribers_lock:
-        _subscribers.discard(q)
-
-
-def _deliver_refresh() -> None:
-    """全購読者へ`refresh`を配信する。
-
-    キューがすでに満杯の場合は新規通知を破棄する。`_broadcast`のdebounce窓満了時に呼ばれる。
-    """
-    with _subscribers_lock:
-        targets = list(_subscribers)
-    for q in targets:
-        with contextlib.suppress(queue.Full):
-            q.put_nowait("refresh")
-
-
-def _broadcast() -> None:
-    """全購読者へ`refresh`を通知する（debounce付き）。
-
-    watchdogは1回の書き込みで複数イベントを発火するため、時間窓（`_BROADCAST_DEBOUNCE_SEC`）で
-    畳み込んで1回だけ配信する。タイマーがすでに起動中であれば即座に返る。
-    """
-    global _broadcast_timer  # noqa: PLW0603 # pylint: disable=global-statement
-    with _broadcast_timer_lock:
-        if _broadcast_timer is not None and _broadcast_timer.is_alive():
-            return
-        _broadcast_timer = threading.Timer(_BROADCAST_DEBOUNCE_SEC, _deliver_refresh)
-        _broadcast_timer.daemon = True
-        _broadcast_timer.start()
-
-
-def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。"""
-    if path.suffix != ".md":
-        return False
-    try:
-        rel = path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return not any(part.startswith(".") for part in rel.parts)
-
-
-class _PlansEventHandler(watchdog.events.FileSystemEventHandler):
-    """watchdogのイベントを受けてSSE購読者へ通知するハンドラ。"""
-
-    def __init__(self, root: pathlib.Path) -> None:
-        super().__init__()
-        self.root = root
-
-    @typing.override
-    def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
-        """ファイルシステムイベントをフィルタリングして購読者へ通知する。"""
-        # 読み取り由来イベント（`FileOpenedEvent`・`FileClosedNoWriteEvent`）は除外する。
-        # これらを通過させると/api/fileのread_textがwatchdog経由でSSEを誘発するfeedback loopになる。
-        if not isinstance(event, _WATCHED_EVENT_TYPES):
-            return
-        # ディレクトリイベントは対象外
-        if event.is_directory:
-            return
-        # src_pathはwatchdog型定義上bytes|strだが実行時はstr。str変換でPath型エラーを回避する
-        src = pathlib.Path(str(event.src_path))
-        # `FileMovedEvent`はsrc_pathとdest_pathの両方を確認する。
-        # atomic-write保存（一時ファイルに書き込み後にrenameする保存方式）では
-        # `FileMovedEvent(src_path="plan.md.tmp", dest_path="plan.md")`となり、
-        # src_pathだけ見ると.md以外として除外されて自動リロードが機能しない。
-        if isinstance(event, watchdog.events.FileMovedEvent):
-            dest = pathlib.Path(str(event.dest_path))
-            if not (_is_watched_path(src, self.root) or _is_watched_path(dest, self.root)):
-                return
-        else:
-            if not _is_watched_path(src, self.root):
-                return
-        _broadcast()
 
 
 _DEFAULT_ROOT = "~/.claude/plans"
@@ -377,33 +287,278 @@ class _FileEntry:
     mtime_epoch: float
 
 
-def _main(argv: list[str] | None = None) -> int:
-    """エントリーポイント。"""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    args = _parse_args(argv)
-    root = pathlib.Path(args.root).expanduser().resolve()
-    if not root.is_dir():
-        logger.error("ディレクトリが見つかりません: %s", root)
-        return 1
+@dataclasses.dataclass(slots=True)
+class _BroadcastState:
+    """SSE購読者集合とdebounce状態を束ねる。
 
-    _PlansHandler.root = root
-    _PlansHandler.renderer = _make_md_renderer()
-    _PlansHandler.hostname = socket.gethostname()
+    Quartアプリの`app.config`に入れて保持することでモジュールレベルの可変状態を避ける。
+    """
 
-    observer = watchdog.observers.Observer()
-    observer.schedule(_PlansEventHandler(root), str(root), recursive=True)
-    observer.start()
+    subscribers: set[asyncio.Queue[str]] = dataclasses.field(default_factory=set)
+    lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock)
+    debounce_task: asyncio.Task[None] | None = None
+    loop: asyncio.AbstractEventLoop | None = None
+
+
+def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。"""
+    if path.suffix != ".md":
+        return False
     try:
-        with http.server.ThreadingHTTPServer((args.host, args.port), _PlansHandler) as server:
-            logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+        rel = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return not any(part.startswith(".") for part in rel.parts)
+
+
+class _PlansEventHandler(watchdog.events.FileSystemEventHandler):
+    """watchdogのイベントを受けてSSE購読者へ通知するハンドラ。
+
+    watchdogコールバックはwatchdog側のスレッドで実行されるため、
+    asyncioループへ`run_coroutine_threadsafe`でブリッジする。
+    """
+
+    def __init__(self, root: pathlib.Path, state: _BroadcastState) -> None:
+        super().__init__()
+        self.root = root
+        self.state = state
+
+    @typing.override
+    def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
+        """ファイルシステムイベントをフィルタリングして購読者へ通知する。"""
+        # 読み取り由来イベント（`FileOpenedEvent`・`FileClosedNoWriteEvent`）は除外する。
+        # これらを通過させると/api/fileのread_textがwatchdog経由でSSEを誘発するfeedback loopになる。
+        if not isinstance(event, _WATCHED_EVENT_TYPES):
+            return
+        # ディレクトリイベントは対象外
+        if event.is_directory:
+            return
+        # src_pathはwatchdog型定義上bytes|strだが実行時はstr。str変換でPath型エラーを回避する
+        src = pathlib.Path(str(event.src_path))
+        # `FileMovedEvent`はsrc_pathとdest_pathの両方を確認する。
+        # atomic-write保存（一時ファイルに書き込み後にrenameする保存方式）では
+        # `FileMovedEvent(src_path="plan.md.tmp", dest_path="plan.md")`となり、
+        # src_pathだけ見ると.md以外として除外されて自動リロードが機能しない。
+        if isinstance(event, watchdog.events.FileMovedEvent):
+            dest = pathlib.Path(str(event.dest_path))
+            if not (_is_watched_path(src, self.root) or _is_watched_path(dest, self.root)):
+                return
+        else:
+            if not _is_watched_path(src, self.root):
+                return
+        loop = self.state.loop
+        if loop is None:
+            # 起動直後にループ参照が未設定のイベントは取りこぼしてよい（直後のイベントで再通知される）。
+            return
+        asyncio.run_coroutine_threadsafe(_schedule_broadcast(self.state), loop)
+
+
+async def _schedule_broadcast(state: _BroadcastState) -> None:
+    """debounce窓を使って`_deliver_refresh`を遅延実行する。
+
+    既にdebounceタスクが走っている場合は何もしない。
+    タイマー中に追加イベントを無視することで時間窓で畳み込む。
+    """
+    async with state.lock:
+        if state.debounce_task is not None and not state.debounce_task.done():
+            return
+        state.debounce_task = asyncio.create_task(_debounced_deliver(state))
+
+
+async def _debounced_deliver(state: _BroadcastState) -> None:
+    """debounce窓満了後に全購読者へ`refresh`を配信する。"""
+    await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC)
+    await _deliver_refresh(state)
+
+
+async def _deliver_refresh(state: _BroadcastState) -> None:
+    """全購読者へ`refresh`を配信する。
+
+    キューがすでに満杯の場合は新規通知を破棄する。
+    """
+    async with state.lock:
+        targets = list(state.subscribers)
+    for q in targets:
+        with contextlib.suppress(asyncio.QueueFull):
+            q.put_nowait("refresh")
+
+
+def _make_md_renderer() -> markdown_it.MarkdownIt:
+    """Raw HTMLを無効化したMarkdownレンダラを返す。"""
+    # CommonMarkプリセットは`html`オプションの既定値が`True`でraw HTMLを通すため、
+    # 明示的に`False`へ上書きしてXSS経路を塞ぐ。表拡張は別途`enable("table")`で有効化する。
+    return markdown_it.MarkdownIt("commonmark", {"html": False}).enable("table")
+
+
+def _markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
+    """Markdown文字列をHTMLへ変換する。"""
+    md = renderer if renderer is not None else _make_md_renderer()
+    return md.render(text)
+
+
+def _list_files(root: pathlib.Path) -> list[_FileEntry]:
+    """rootから`.md`ファイルを再帰的に探し、更新日時の降順で返す。"""
+    tzinfo = datetime.datetime.now().astimezone().tzinfo
+    collected: list[tuple[float, _FileEntry]] = []
+    for path in root.rglob("*.md"):
+        if not path.is_file():
+            continue
+        stat = path.stat()
+        rel = path.relative_to(root).as_posix()
+        mtime = datetime.datetime.fromtimestamp(stat.st_mtime, tz=tzinfo)
+        entry = _FileEntry(
+            path=rel,
+            name=path.name,
+            mtime=mtime.strftime("%Y/%m/%d %H:%M"),
+            mtime_epoch=stat.st_mtime,
+        )
+        collected.append((stat.st_mtime, entry))
+    collected.sort(key=lambda pair: pair[0], reverse=True)
+    return [entry for _, entry in collected]
+
+
+def _resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
+    """`rel`が`root`配下の`.md`ファイルを指す場合のみ絶対パスを返す。"""
+    # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスで範囲検査する。
+    target = (root / rel).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError:
+        return None
+    if target.suffix != ".md" or not target.is_file():
+        return None
+    return target
+
+
+def _resolve_css_path() -> pathlib.Path | None:
+    """リポジトリ内の`share/vscode/markdown.css`を返す。見つからなければNone。"""
+    # dotfilesは通常~/dotfiles配下に置かれる。
+    candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
+    if candidate.is_file():
+        return candidate
+    # 念のためフォールバック。
+    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できるはず。
+    candidate = pathlib.Path(__file__).resolve().parents[1] / "share" / "vscode" / "markdown.css"
+    if candidate.is_file():
+        return candidate
+    return None
+
+
+async def _read_css() -> str:
+    """配布物のCSSを読み込む。見つからなければフォールバックを返す。"""
+    path = _resolve_css_path()
+    if path is not None:
+        # read_textはブロッキングI/Oのためスレッドプールで実行する。
+        return await asyncio.to_thread(path.read_text, encoding="utf-8")
+    return _FALLBACK_CSS
+
+
+async def _subscribe(state: _BroadcastState) -> asyncio.Queue[str]:
+    """SSE購読キューを生成して登録し返す。"""
+    q: asyncio.Queue[str] = asyncio.Queue(maxsize=1)
+    async with state.lock:
+        state.subscribers.add(q)
+    return q
+
+
+async def _unsubscribe(state: _BroadcastState, q: asyncio.Queue[str]) -> None:
+    """購読キューを解除する。存在しない場合もエラーにしない。"""
+    async with state.lock:
+        state.subscribers.discard(q)
+
+
+def create_app(root: pathlib.Path, hostname: str | None = None) -> quart.Quart:
+    """Quartアプリを生成する。
+
+    `root`はMarkdownの探索対象ディレクトリ（resolve済み絶対パス）。
+    `hostname`はトップページへ埋め込むホスト名。`None`のとき`socket.gethostname()`を使う。
+    """
+    app = quart.Quart(__name__)
+    renderer = _make_md_renderer()
+    state = _BroadcastState()
+    resolved_hostname = hostname if hostname is not None else socket.gethostname()
+
+    # app.configに格納してモジュールレベルの可変状態を避ける。
+    # ルートハンドラからは`quart.current_app.config`経由で参照する。
+    app.config["PLANS_ROOT"] = root
+    app.config["PLANS_RENDERER"] = renderer
+    app.config["PLANS_STATE"] = state
+    app.config["PLANS_HOSTNAME"] = resolved_hostname
+
+    @app.before_serving
+    async def _capture_loop() -> None:
+        # watchdogスレッドからの配信ブリッジに必要なイベントループ参照を保持する。
+        state.loop = asyncio.get_running_loop()
+
+    @app.get("/")
+    async def index() -> quart.Response:
+        body = _INDEX_HTML.replace("__HOSTNAME__", html.escape(resolved_hostname))
+        return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/static/markdown.css")
+    async def markdown_css() -> quart.Response:
+        return quart.Response(await _read_css(), content_type="text/css; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/favicon.svg")
+    async def favicon() -> quart.Response:
+        return quart.Response(_FAVICON_SVG, content_type="image/svg+xml; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/manifest.webmanifest")
+    async def manifest() -> quart.Response:
+        return quart.Response(
+            _MANIFEST_JSON,
+            content_type="application/manifest+json; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/sw.js")
+    async def service_worker() -> quart.Response:
+        return quart.Response(
+            _SERVICE_WORKER_JS,
+            content_type="application/javascript; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/api/files")
+    async def api_files() -> quart.Response:
+        entries = _list_files(root)
+        body = json.dumps([dataclasses.asdict(e) for e in entries], ensure_ascii=False)
+        return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/file")
+    async def api_file() -> quart.Response:
+        rel = quart.request.args.get("path")
+        if not rel:
+            return quart.Response("path is required", status=400)
+        target = _resolve_under_root(root, rel)
+        if target is None:
+            return quart.Response("not found", status=404)
+        # read_textはブロッキングI/Oのためスレッドプールで実行する。
+        text = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
+        rendered = _markdown_to_html(text, renderer)
+        return quart.Response(rendered, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/events")
+    async def api_events() -> quart.Response:
+        @pytilpack.sse.generator()
+        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE, None]:
+            q = await _subscribe(state)
             try:
-                server.serve_forever()
-            except KeyboardInterrupt:
-                logger.info("停止します")
-    finally:
-        observer.stop()
-        observer.join()
-    return 0
+                while True:
+                    msg = await q.get()
+                    # 既存クライアント(EventSourceの`onmessage`)が受け取るよう、
+                    # event名を付けずdataのみで配信する。
+                    yield pytilpack.sse.SSE(data=msg)
+            finally:
+                await _unsubscribe(state, q)
+
+        return quart.Response(
+            generate(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+        )
+
+    return app
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -432,169 +587,40 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _list_files(root: pathlib.Path) -> list[_FileEntry]:
-    """rootから`.md`ファイルを再帰的に探し、更新日時の降順で返す。"""
-    tzinfo = datetime.datetime.now().astimezone().tzinfo
-    collected: list[tuple[float, _FileEntry]] = []
-    for path in root.rglob("*.md"):
-        if not path.is_file():
-            continue
-        stat = path.stat()
-        rel = path.relative_to(root).as_posix()
-        mtime = datetime.datetime.fromtimestamp(stat.st_mtime, tz=tzinfo)
-        entry = _FileEntry(
-            path=rel,
-            name=path.name,
-            mtime=mtime.strftime("%Y/%m/%d %H:%M"),
-            mtime_epoch=stat.st_mtime,
-        )
-        collected.append((stat.st_mtime, entry))
-    collected.sort(key=lambda pair: pair[0], reverse=True)
-    return [entry for _, entry in collected]
+async def _serve(app: quart.Quart, host: str, port: int) -> None:
+    """hypercornでQuartアプリを起動する。"""
+    config = hypercorn.config.Config()
+    config.bind = [f"{host}:{port}"]
+    # アクセスログの標準出力抑制（既存実装の`log_message`抑制に相当）。
+    config.accesslog = None
+    await hypercorn.asyncio.serve(app, config)
 
 
-def _make_md_renderer() -> markdown_it.MarkdownIt:
-    """Raw HTMLを無効化したMarkdownレンダラを返す。"""
-    # CommonMarkプリセットは`html`オプションの既定値が`True`でraw HTMLを通すため、
-    # 明示的に`False`へ上書きしてXSS経路を塞ぐ。表拡張は別途`enable("table")`で有効化する。
-    return markdown_it.MarkdownIt("commonmark", {"html": False}).enable("table")
+def _main(argv: list[str] | None = None) -> int:
+    """エントリーポイント。"""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    args = _parse_args(argv)
+    root = pathlib.Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        logger.error("ディレクトリが見つかりません: %s", root)
+        return 1
 
+    app = create_app(root)
+    state: _BroadcastState = app.config["PLANS_STATE"]
 
-def _markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
-    """Markdown文字列をHTMLへ変換する。"""
-    md = renderer if renderer is not None else _make_md_renderer()
-    return md.render(text)
-
-
-def _resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
-    """`rel`が`root`配下の`.md`ファイルを指す場合のみ絶対パスを返す。"""
-    # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスで範囲検査する。
-    target = (root / rel).resolve()
+    observer = watchdog.observers.Observer()
+    observer.schedule(_PlansEventHandler(root, state), str(root), recursive=True)
+    observer.start()
     try:
-        target.relative_to(root.resolve())
-    except ValueError:
-        return None
-    if target.suffix != ".md" or not target.is_file():
-        return None
-    return target
-
-
-class _PlansHandler(http.server.BaseHTTPRequestHandler):
-    """`~/.claude/plans/`配下のMarkdownを提供するHTTPハンドラ。"""
-
-    root: pathlib.Path
-    renderer: markdown_it.MarkdownIt
-    hostname: str = ""
-
-    def do_GET(self) -> None:  # noqa: N802  # BaseHTTPRequestHandlerの命名規約に合わせる
-        """GETリクエストを振り分ける。"""
-        parsed = urllib.parse.urlparse(self.path)
-
-        if parsed.path == "/":
-            index_html = _INDEX_HTML.replace("__HOSTNAME__", html.escape(self.hostname))
-            self._send("text/html; charset=utf-8", index_html.encode("utf-8"))
-            return
-
-        if parsed.path == "/static/markdown.css":
-            self._send("text/css; charset=utf-8", _read_css().encode("utf-8"))
-            return
-
-        if parsed.path == "/favicon.svg":
-            self._send("image/svg+xml; charset=utf-8", _FAVICON_SVG.encode("utf-8"))
-            return
-
-        if parsed.path == "/manifest.webmanifest":
-            self._send("application/manifest+json; charset=utf-8", _MANIFEST_JSON.encode("utf-8"))
-            return
-
-        if parsed.path == "/sw.js":
-            self._send("application/javascript; charset=utf-8", _SERVICE_WORKER_JS.encode("utf-8"))
-            return
-
-        if parsed.path == "/api/files":
-            entries = _list_files(self.root)
-            body = json.dumps([dataclasses.asdict(e) for e in entries], ensure_ascii=False).encode("utf-8")
-            self._send("application/json; charset=utf-8", body)
-            return
-
-        if parsed.path == "/api/events":
-            # SSEエンドポイント。Content-Lengthは指定せずストリーミング応答する。
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Connection", "keep-alive")
-            self.end_headers()
-            q = _subscribe()
-            try:
-                while True:
-                    try:
-                        msg = q.get(timeout=15)
-                        self.wfile.write(f"data: {msg}\n\n".encode())
-                    except queue.Empty:
-                        # タイムアウト時はSSEコメントでkeepaliveを送る
-                        self.wfile.write(b": keepalive\n\n")
-                    self.wfile.flush()
-            except OSError:
-                # クライアント切断時の各種OSError（BrokenPipeError・ConnectionResetError・ECONNABORTED等）を一括で受ける
-                pass
-            finally:
-                _unsubscribe(q)
-            return
-
-        if parsed.path == "/api/file":
-            query = urllib.parse.parse_qs(parsed.query)
-            rel_values = query.get("path", [])
-            if not rel_values:
-                self.send_error(400, "path is required")
-                return
-            target = _resolve_under_root(self.root, rel_values[0])
-            if target is None:
-                self.send_error(404)
-                return
-            text = target.read_text(encoding="utf-8", errors="replace")
-            rendered = _markdown_to_html(text, self.renderer)
-            self._send("text/html; charset=utf-8", rendered.encode("utf-8"))
-            return
-
-        self.send_error(404)
-
-    def log_message(  # noqa: A002  # 基底の仮引数名`format`に合わせる
-        self,
-        format: str,  # pylint: disable=redefined-builtin
-        *args: object,
-    ) -> None:
-        """アクセスログの標準出力を抑制する。"""
-        del format, args
-
-    def _send(self, content_type: str, body: bytes) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-
-def _read_css() -> str:
-    """配布物のCSSを読み込む。見つからなければフォールバックを返す。"""
-    path = _resolve_css_path()
-    if path is not None:
-        return path.read_text(encoding="utf-8")
-    return _FALLBACK_CSS
-
-
-def _resolve_css_path() -> pathlib.Path | None:
-    """リポジトリ内の`share/vscode/markdown.css`を返す。見つからなければNone。"""
-    # dotfilesは通常~/dotfiles配下に置かれる。
-    candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
-    if candidate.is_file():
-        return candidate
-    # 念のためフォールバック。
-    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できるはず。
-    candidate = pathlib.Path(__file__).resolve().parents[1] / "share" / "vscode" / "markdown.css"
-    if candidate.is_file():
-        return candidate
-    return None
+        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+        try:
+            asyncio.run(_serve(app, args.host, args.port))
+        except KeyboardInterrupt:
+            logger.info("停止します")
+    finally:
+        observer.stop()
+        observer.join()
+    return 0
 
 
 if __name__ == "__main__":
