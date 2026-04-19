@@ -279,13 +279,18 @@ fi
 # 両方に対応するため、ガードでは OR で判定し、本体では公式版があればそれを優先する。
 if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
     claude() {
-        # 引数なしの対話セッションのみ clear 対象とする。
-        # 引数付き呼び出し (claude update / claude -p ... / claude mcp ... など) では
-        # 実行結果を残したいので clear しない。
-        local no_args=0
-        if [ $# -eq 0 ]; then
-            no_args=1
-        fi
+        # フラグのみの呼び出し（例: --model=sonnet）も対話セッションとみなして clear する。
+        # -で始まらない引数またはヘルプ・非対話フラグがあれば非対話とみなす。
+        # --model=sonnet 形式（=付き）は対話判定される。--model sonnet（空白区切り）は
+        # sonnet が非フラグと誤判定されるため =付き形式での使用を前提とする。
+        local is_interactive=1
+        for arg in "$@"; do
+            case "$arg" in
+                --help|-h|--version|-v|--print|-p) is_interactive=0; break ;;
+                -*) ;;
+                *) is_interactive=0; break ;;
+            esac
+        done
         if [ -x ~/.claude/local/claude ]; then
             ~/.claude/local/claude "$@"
         else
@@ -296,7 +301,7 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         # stdout/stderr が TTY のときだけ clear する。
         # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが
         # 出力へ混入するのを防ぐため。
-        if [ "$no_args" -eq 1 ] && [ -t 1 ] && [ -t 2 ]; then
+        if [ "$is_interactive" -eq 1 ] && [ -t 1 ] && [ -t 2 ]; then
             ~/bin/c
         fi
         return $rc
