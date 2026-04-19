@@ -18,7 +18,7 @@ OS 別の差分 (主にフック コマンドの shell/PowerShell ラッパー) 
 settings.json から後追いで除去するクリーンアップも行う。union マージ方式の都合上、
 share 側から消した hook がユーザー側に残り続けるのを防ぐため。
 
-配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools._cleanup_paths と
+配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools._internal.cleanup_paths と
 pytools.post_apply に分離した (本モジュールは hook 内部の command 文字列マッチのみ担う)。
 """
 
@@ -28,7 +28,8 @@ import logging
 import sys
 from pathlib import Path
 
-from pytools import _log_format
+from pytools._internal import log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -103,13 +104,13 @@ def update_claude_settings(
     _strip_removed_hooks(data, removed_hook_substrings)
     _merge(data, managed)
 
-    short = _log_format.home_short(settings_path)
+    short = log_format.home_short(settings_path)
     if data == original:
-        logger.info(_log_format.format_status(short, "変更なし"))
+        logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    logger.info(_log_format.format_status(short, "更新しました"))
+    logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):
         logger.info(line)
     return True

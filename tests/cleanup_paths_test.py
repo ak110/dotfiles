@@ -1,8 +1,8 @@
-"""pytools._cleanup_paths のテスト。"""
+"""pytools._internal.cleanup_paths のテスト。"""
 
 from pathlib import Path
 
-from pytools._cleanup_paths import cleanup_paths, cleanup_paths_if_content_matches
+from pytools._internal.cleanup_paths import cleanup_paths, cleanup_paths_if_content_matches
 
 
 class TestCleanupPaths:

@@ -1,10 +1,10 @@
-"""_update_claude_settings モジュールのテスト。"""
+"""update_claude_settings モジュールのテスト。"""
 
 import json
 from pathlib import Path
 
-from pytools import _update_claude_settings as mod
-from pytools._update_claude_settings import _diff_lines, _list_diff_summary, _value_summary, update_claude_settings
+from pytools._internal import update_claude_settings as mod
+from pytools._internal.update_claude_settings import _diff_lines, _list_diff_summary, _value_summary, update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"

@@ -4,16 +4,16 @@
 各ステップは独立して動作し、途中でエラーが発生しても他のステップは継続する
 (最後にサマリで失敗件数を出力し、失敗があれば exit 1)。
 
-1. Claude 設定ファイルのマージ  (_update_claude_settings.run)
-2. VSCode 設定ファイルの更新   (_update_vscode_settings.run)
+1. Claude 設定ファイルのマージ  (update_claude_settings.run)
+2. VSCode 設定ファイルの更新   (update_vscode_settings.run)
 3. SSH config / authorized_keys  (update_ssh_config.run)
-4. 配布元から削除された旧ファイルの削除 (_cleanup_paths.cleanup_paths)
-5. npm/pnpm のサプライチェーン対策 (_update_npmrc.run)
-6. mise セットアップ (_setup_mise.run)
-7. Claude Code plugin の自動インストール (_install_claude_plugins.run)
-8. codex MCP サーバーの自動登録 (_install_codex_mcp.run)
-9. Windows 向け libarchive.dll の自動インストール (_install_libarchive_windows.run)
-10. claude-plans-viewer の自動起動セットアップ (_setup_plans_viewer_windows.run)
+4. 配布元から削除された旧ファイルの削除 (cleanup_paths.cleanup_paths)
+5. npm/pnpm のサプライチェーン対策 (update_npmrc.run)
+6. mise セットアップ (setup_mise.run)
+7. Claude Code plugin の自動インストール (install_claude_plugins.run)
+8. codex MCP サーバーの自動登録 (install_codex_mcp.run)
+9. Windows 向け libarchive.dll の自動インストール (install_libarchive_windows.run)
+10. claude-plans-viewer の自動起動セットアップ (setup_plans_viewer_windows.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -25,18 +25,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools import (
-    _cleanup_paths,
-    _install_claude_plugins,
-    _install_codex_mcp,
-    _install_libarchive_windows,
-    _log_format,
-    _setup_mise,
-    _setup_plans_viewer_windows,
-    _update_claude_settings,
-    _update_npmrc,
-    _update_vscode_settings,
-    update_ssh_config,
+from pytools import update_ssh_config
+from pytools._internal import (
+    cleanup_paths,
+    install_claude_plugins,
+    install_codex_mcp,
+    install_libarchive_windows,
+    log_format,
+    setup_mise,
+    setup_plans_viewer_windows,
+    update_claude_settings,
+    update_npmrc,
+    update_vscode_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 配布 agent から dotfiles ローカルの sync-cross-project skill へ移行 (15ca58b)
         Path("agents/cross-project-sync-checker.md"),
         # agent-basics から agent-toolkit へのディレクトリ名リネームに伴う旧ディレクトリ削除。
-        # _cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
+        # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
         # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
         Path("rules/agent-basics"),
     ],
@@ -91,27 +91,27 @@ def _cleanup_removed_paths() -> bool:
     """
     total_removed = 0
     for base_dir, relative_paths in _REMOVED_PATHS.items():
-        total_removed += _cleanup_paths.cleanup_paths(base_dir, relative_paths)
+        total_removed += cleanup_paths.cleanup_paths(base_dir, relative_paths)
     for base_dir, expected in _REMOVED_PATHS_IF_CONTENT.items():
-        total_removed += _cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
+        total_removed += cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
     if total_removed == 0:
-        logger.info(_log_format.format_status("cleanup", "削除対象なし"))
+        logger.info(log_format.format_status("cleanup", "削除対象なし"))
     else:
-        logger.info(_log_format.format_status("cleanup", f"{total_removed} 件を削除しました"))
+        logger.info(log_format.format_status("cleanup", f"{total_removed} 件を削除しました"))
     return total_removed > 0
 
 
 _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
-    ("Claude 設定", _update_claude_settings.run),
-    ("VSCode 設定", _update_vscode_settings.run),
+    ("Claude 設定", update_claude_settings.run),
+    ("VSCode 設定", update_vscode_settings.run),
     ("SSH config", update_ssh_config.run),
     ("旧配布物の削除", _cleanup_removed_paths),
-    ("npm/pnpm サプライチェーン対策", _update_npmrc.run),
-    ("mise セットアップ", _setup_mise.run),
-    ("Claude Code plugin のインストール", _install_claude_plugins.run),
-    ("codex MCP サーバーの登録", _install_codex_mcp.run),
-    ("libarchive (Windows)", _install_libarchive_windows.run),
-    ("claude-plans-viewer 自動起動セットアップ", _setup_plans_viewer_windows.run),
+    ("npm/pnpm サプライチェーン対策", update_npmrc.run),
+    ("mise セットアップ", setup_mise.run),
+    ("Claude Code plugin のインストール", install_claude_plugins.run),
+    ("codex MCP サーバーの登録", install_codex_mcp.run),
+    ("libarchive (Windows)", install_libarchive_windows.run),
+    ("claude-plans-viewer 自動起動セットアップ", setup_plans_viewer_windows.run),
 ]
 
 
@@ -136,11 +136,11 @@ def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
 
 
 def _print_plugin_recommendations() -> None:
-    """``_install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。
+    """``install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。
 
     エンドユーザー向けの案内文は敬体に揃え、現状と推奨状態に乖離がある場合のみ出力する。
     """
-    recommendations = _install_claude_plugins.consume_recommendations()
+    recommendations = install_claude_plugins.consume_recommendations()
     if not recommendations:
         return
     print(flush=True)

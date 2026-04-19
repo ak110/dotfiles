@@ -10,6 +10,8 @@ import PIL.ImageOps
 import tqdm
 from bashplotlib.histogram import plot_hist
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ def _main():
     parser = argparse.ArgumentParser()
     parser.add_argument("target_dir", type=pathlib.Path)
     args = parser.parse_args()
-    logging.basicConfig(format="%(message)s", level="DEBUG")
+    setup_logging(verbose=True)
     _do_dir(args.target_dir)
 
 

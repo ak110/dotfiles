@@ -12,6 +12,8 @@ import sys
 
 import psutil
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ def _main() -> None:
     parser.add_argument("--regex", action="store_true", help="正規表現マッチ (既定は部分一致/ワイルドカード)")
     parser.add_argument("-i", "--ignore-case", action="store_true")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     found = grep(args.pattern, regex=args.regex, ignore_case=args.ignore_case)
     for pid, exe in found:
         print(f"{pid}\t{exe}")

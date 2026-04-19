@@ -8,7 +8,7 @@ r"""claude-plans-viewer の Windows 向け自動起動セットアップ。
 単純に viewer 実行ファイルを起動するだけの内容とし、ポート番号などの環境別
 設定は `setx CLAUDE_PLANS_VIEWER_PORT ...` などユーザー側で管理する前提とする。
 
-Linux/macOS では no-op (False 返却) として、`_install_libarchive_windows` と
+Linux/macOS では no-op (False 返却) として、`install_libarchive_windows` と
 同じ `sys.platform` 分岐形式にそろえる。
 """
 
@@ -18,7 +18,8 @@ import pathlib
 import subprocess
 import sys
 
-from pytools import _log_format
+from pytools._internal import log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def run() -> bool:
             changed = True
         return changed
     except Exception as e:  # noqa: BLE001
-        logger.info(_log_format.format_status("plans-viewer", f"自動起動セットアップに失敗: {e}"))
+        logger.info(log_format.format_status("plans-viewer", f"自動起動セットアップに失敗: {e}"))
         return False
 
 
@@ -68,7 +69,7 @@ def _ensure_startup_cmd() -> bool:
         return False
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(_STARTUP_CMD_CONTENT.encode("utf-8"))
-    logger.info(_log_format.format_status("plans-viewer", f"スタートアップに配置: {target}"))
+    logger.info(log_format.format_status("plans-viewer", f"スタートアップに配置: {target}"))
     return True
 
 
@@ -90,7 +91,7 @@ def _is_viewer_running() -> bool:
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError) as e:
-        logger.info(_log_format.format_status("plans-viewer", f"tasklist 実行に失敗: {e}"))
+        logger.info(log_format.format_status("plans-viewer", f"tasklist 実行に失敗: {e}"))
         return False
     return "claude-plans-viewer.exe" in result.stdout.lower()
 
@@ -99,7 +100,7 @@ def _start_viewer_if_not_running() -> bool:
     """Viewer が未起動かつ実行ファイルが存在するならデタッチ起動する。"""
     exe = _viewer_exe()
     if not exe.is_file():
-        logger.info(_log_format.format_status("plans-viewer", f"実行ファイルが未配置: {exe}"))
+        logger.info(log_format.format_status("plans-viewer", f"実行ファイルが未配置: {exe}"))
         return False
     if _is_viewer_running():
         return False
@@ -117,10 +118,10 @@ def _start_viewer_if_not_running() -> bool:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    logger.info(_log_format.format_status("plans-viewer", f"バックグラウンド起動: {exe}"))
+    logger.info(log_format.format_status("plans-viewer", f"バックグラウンド起動: {exe}"))
     return True
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()

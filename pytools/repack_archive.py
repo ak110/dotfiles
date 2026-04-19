@@ -35,6 +35,7 @@ import tqdm
 import yaml
 
 from pytools import imageconverter, rename
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def _main() -> None:
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
+    setup_logging(verbose=args.verbose)
 
     targets = [t.resolve() for t in args.targets]
     config_path = _resolve_config_path(args.config, targets)

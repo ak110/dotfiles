@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 # 詳細差分の取得から除外するファイルパターン（コンテキスト長節約）
@@ -25,7 +27,7 @@ descriptionは日本語で書く。
 
 
 def _main() -> None:
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
 
     parser = argparse.ArgumentParser(description="claudeでコミットメッセージを生成してgit commitを実行する。")
     parser.add_argument("--amend", action="store_true", help="HEADのコミットをamendする。")

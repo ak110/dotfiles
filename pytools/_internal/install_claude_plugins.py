@@ -44,23 +44,21 @@
 ユーザー環境では marketplace.json の version 更新が自動で反映される。
 """
 
-import contextlib
 import json
 import logging
-import os
 import shutil
-import subprocess
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from pytools import _log_format
+from pytools._internal import claude_common, log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
-# marketplace.json の `name` と一致させる (.claude-plugin/marketplace.json を参照)
-_MARKETPLACE_NAME = "ak110-dotfiles"
+# claude_common から再エクスポート (後方互換・テストのpatch先として維持)
+_MARKETPLACE_NAME = claude_common.MARKETPLACE_NAME
+_INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
 # marketplace 登録時の `source.repo` 値。GitHub ショートハンドとしても使う。
 _MARKETPLACE_REPO = "ak110/dotfiles"
@@ -69,16 +67,11 @@ _MARKETPLACE_REPO = "ak110/dotfiles"
 # `~/.claude/plugins/marketplaces/<name>/` 配下へ clone するため、これに合わせる。
 _MARKETPLACE_INSTALL_LOCATION = Path.home() / ".claude" / "plugins" / "marketplaces" / _MARKETPLACE_NAME
 
-# `claude plugin` コマンドのタイムアウト (秒)
-# GitHub からの初回 clone や install 処理で時間が掛かる場合があるため余裕を持たせる
-_CLAUDE_TIMEOUT = 30
-
 # Claude Code設定ファイルのパス (CLI呼び出しを回避するための直接読み取り用)
 # marketplace 登録情報は known_marketplaces.json と settings.json.extraKnownMarketplaces の
 # 2箇所に保存されるため、両方を点検・修復する必要がある。
-_INSTALLED_PLUGINS_PATH = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
 _KNOWN_MARKETPLACES_PATH = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
-_SETTINGS_JSON_PATH = Path.home() / ".claude" / "settings.json"
+_SETTINGS_JSON_PATH = claude_common.SETTINGS_JSON_PATH
 
 # 推奨的に無効化したいプラグイン (ユーザーが使わないもの)。
 # 現状と乖離があれば `claude plugin disable` の提案として案内に表示する。
@@ -171,7 +164,7 @@ def _check_marketplace_from_file() -> bool | None:
 
 def _load_known_marketplace_entry() -> dict[str, object] | None:
     """known_marketplaces.json から対象 marketplace のエントリを読み込む。"""
-    data = _load_json_dict(_KNOWN_MARKETPLACES_PATH, silent=True)
+    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH, silent=True)
     if data is None:
         return None
     entry = data.get(_MARKETPLACE_NAME)
@@ -180,7 +173,7 @@ def _load_known_marketplace_entry() -> dict[str, object] | None:
 
 def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
     """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
-    data = _load_json_dict(_SETTINGS_JSON_PATH, silent=True)
+    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH, silent=True)
     if data is None:
         return None
     extra = data.get("extraKnownMarketplaces")
@@ -207,7 +200,7 @@ def _is_entry_healthy(entry: dict[str, object]) -> bool:
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -225,13 +218,13 @@ def run() -> bool:
 
     dotfiles_root = _find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(_log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
+        logger.info(log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
         return False
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
     if not target_versions and not deprecated_names:
-        logger.info(_log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
+        logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
         return False
 
     # ファイル直接読み取りを先に試み、失敗時のみCLIフォールバックする
@@ -239,7 +232,7 @@ def run() -> bool:
     if raw_data is None:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
-            logger.info(_log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
+            logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
             return False
 
     if not _ensure_marketplace():
@@ -277,14 +270,14 @@ def run() -> bool:
             else:
                 failed_count += 1
         elif target and current != target:
-            logger.info(_log_format.format_status(name, f"更新を検出: {current} -> {target}"))
+            logger.info(log_format.format_status(name, f"更新を検出: {current} -> {target}"))
             if _update_plugin(name):
                 any_change = True
                 updated_count += 1
             else:
                 failed_count += 1
         else:
-            logger.info(_log_format.format_status(name, f"最新 ({current or '不明'})"))
+            logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
 
     # 外部 marketplace のプラグイン推奨コマンド算出 (公式プラグインの有効化・無効化)。
@@ -297,7 +290,7 @@ def run() -> bool:
     # installed_plugins.json を再読み込みして欠落を警告する。
     _warn_if_missing(target_versions)
     logger.info(
-        _log_format.format_status(
+        log_format.format_status(
             "plugins",
             f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
             + (f" / 失敗 {failed_count} 件" if failed_count else ""),
@@ -309,10 +302,10 @@ def run() -> bool:
 def _prerequisites_ok() -> bool:
     """前提条件 (claude と uv の両方が PATH にあるか) を確認する。"""
     if shutil.which("claude") is None:
-        logger.info(_log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
+        logger.info(log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
         return False
     if shutil.which("uv") is None:
-        logger.info(_log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
+        logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
         return False
     return True
 
@@ -321,10 +314,10 @@ def _find_dotfiles_root() -> Path | None:
     """本ファイルから見た dotfiles ルートディレクトリを返す。
 
     dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
-    `pytools/install_claude_plugins.py` は dotfiles/pytools/ に置かれているため
-    親の親がルート。
+    `pytools/_internal/install_claude_plugins.py` は dotfiles/pytools/_internal/ に置かれているため
+    親の親の親がルート。
     """
-    candidate = Path(__file__).resolve().parent.parent
+    candidate = Path(__file__).resolve().parent.parent.parent
     if (candidate / ".claude-plugin" / "marketplace.json").is_file():
         return candidate
     return None
@@ -332,13 +325,13 @@ def _find_dotfiles_root() -> Path | None:
 
 def _get_installed_plugins_raw() -> object | None:
     """`claude plugin list --json` の生パース結果を返す。失敗時は None。"""
-    result = _run_claude(["plugin", "list", "--json"])
+    result = claude_common.run_claude(["plugin", "list", "--json"])
     if result is None or result.returncode != 0:
         return None
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
-        logger.info(_log_format.format_status("plugins", "`claude plugin list --json` の出力 JSON を解析できませんでした"))
+        logger.info(log_format.format_status("plugins", "`claude plugin list --json` の出力 JSON を解析できませんでした"))
         return None
 
 
@@ -410,7 +403,7 @@ def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        logger.info(_log_format.format_status("plugins", f"marketplace.json の読み込みに失敗: {e}"))
+        logger.info(log_format.format_status("plugins", f"marketplace.json の読み込みに失敗: {e}"))
         return {}, set()
     plugins = data.get("plugins") if isinstance(data, dict) else None
     if not isinstance(plugins, list):
@@ -461,7 +454,7 @@ def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
             continue
         project_path = entry.get("projectPath")
         if not isinstance(project_path, str) or not project_path:
-            logger.info(_log_format.format_status(name, "project scope エントリに projectPath が無いためスキップ"))
+            logger.info(log_format.format_status(name, "project scope エントリに projectPath が無いためスキップ"))
             continue
         paths.append(Path(project_path))
     return paths
@@ -471,11 +464,11 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     """Deprecated プラグインがインストール済みならアンインストールする。"""
     if not _is_installed(name, raw_data):
         return False
-    result = _run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}"])
+    result = claude_common.run_claude(["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}"])
     if result is not None and result.returncode == 0:
-        logger.info(_log_format.format_status(name, "deprecated のためアンインストールしました"))
+        logger.info(log_format.format_status(name, "deprecated のためアンインストールしました"))
         return True
-    logger.info(_log_format.format_status(name, f"アンインストールに失敗: {_format_cli_error(result)}"))
+    logger.info(log_format.format_status(name, f"アンインストールに失敗: {claude_common.format_cli_error(result)}"))
     return False
 
 
@@ -488,21 +481,23 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
     for project_path in _project_scope_paths(name, raw_data):
         if not project_path.is_dir():
             logger.info(
-                _log_format.format_status(
+                log_format.format_status(
                     name,
                     f"project scope の除去対象 {project_path} が存在しないためスキップ "
                     "(必要に応じて ~/.claude/plugins/installed_plugins.json から手動で削除)",
                 )
             )
             continue
-        result = _run_claude(
+        result = claude_common.run_claude(
             ["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"],
             cwd=project_path,
         )
         if result is not None and result.returncode == 0:
-            logger.info(_log_format.format_status(name, f"project scope を除去しました ({project_path})"))
+            logger.info(log_format.format_status(name, f"project scope を除去しました ({project_path})"))
         else:
-            logger.info(_log_format.format_status(name, f"project scope の除去に失敗 (続行): {_format_cli_error(result)}"))
+            logger.info(
+                log_format.format_status(name, f"project scope の除去に失敗 (続行): {claude_common.format_cli_error(result)}")
+            )
 
 
 def _ensure_marketplace() -> bool:
@@ -517,11 +512,11 @@ def _ensure_marketplace() -> bool:
     if file_check is True:
         return True
     if file_check is False:
-        logger.info(_log_format.format_status("marketplace", "登録情報の不整合を検出。修復します"))
+        logger.info(log_format.format_status("marketplace", "登録情報の不整合を検出。修復します"))
         return _repair_marketplace()
 
     # file_check is None: 両ファイルとも未登録。CLI 経路で最終確認したうえで登録する。
-    result = _run_claude(["plugin", "marketplace", "list", "--json"])
+    result = claude_common.run_claude(["plugin", "marketplace", "list", "--json"])
     if result is not None and result.returncode == 0:
         try:
             data = json.loads(result.stdout)
@@ -530,12 +525,12 @@ def _ensure_marketplace() -> bool:
         if _marketplace_already_registered(data):
             return True
 
-    add_result = _run_claude(["plugin", "marketplace", "add", _MARKETPLACE_REPO])
+    add_result = claude_common.run_claude(["plugin", "marketplace", "add", _MARKETPLACE_REPO])
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
-        logger.info(_log_format.format_status("marketplace", f"登録に失敗したためスキップ: {stderr}"))
+        logger.info(log_format.format_status("marketplace", f"登録に失敗したためスキップ: {stderr}"))
         return False
-    logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を登録しました"))
+    logger.info(log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を登録しました"))
     return True
 
 
@@ -560,30 +555,30 @@ def _repair_marketplace() -> bool:
          更新しない環境が存在する) への回避策であり、内部ファイル形式に依存する。
         CLI 側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
         (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
-         / ``_now_iso_millis`` / ``_atomic_write_json``) は削除候補となる。
+         / ``_now_iso_millis`` / ``claude_common.atomic_write_json``) は削除候補となる。
     """
-    _run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
-    add_result = _run_claude(["plugin", "marketplace", "add", _MARKETPLACE_REPO])
+    claude_common.run_claude(["plugin", "marketplace", "remove", _MARKETPLACE_NAME])
+    add_result = claude_common.run_claude(["plugin", "marketplace", "add", _MARKETPLACE_REPO])
     add_ok = add_result is not None and add_result.returncode == 0
 
     recheck = _check_marketplace_from_file()
     if recheck is True:
-        logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を再登録しました"))
+        logger.info(log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を再登録しました"))
         return True
     # ファイル検査で判定不能 (両ファイル不在) でも CLI add が成功していれば登録済みとみなす
     if recheck is None and add_ok:
-        logger.info(_log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を再登録しました"))
+        logger.info(log_format.format_status("marketplace", f"{_MARKETPLACE_NAME} を再登録しました"))
         return True
 
-    logger.info(_log_format.format_status("marketplace", "CLI では修復できないため JSON を直接書き換えます"))
+    logger.info(log_format.format_status("marketplace", "CLI では修復できないため JSON を直接書き換えます"))
     known_ok = _rewrite_known_marketplaces_entry()
     extra_ok = _rewrite_settings_extra_known_entry()
     if known_ok and extra_ok:
         # installLocation のディレクトリ実体が無い状態で終わらせないよう git clone を誘発する
         _refresh_marketplace()
-        logger.info(_log_format.format_status("marketplace", "JSON 直接書き換えで修復しました"))
+        logger.info(log_format.format_status("marketplace", "JSON 直接書き換えで修復しました"))
         return True
-    logger.info(_log_format.format_status("marketplace", "修復に失敗しました"))
+    logger.info(log_format.format_status("marketplace", "修復に失敗しました"))
     return False
 
 
@@ -597,7 +592,7 @@ def _rewrite_known_marketplaces_entry() -> bool:
     現在時刻を ISO 8601 文字列として書き込む。
     """
     path = _KNOWN_MARKETPLACES_PATH
-    data = _load_json_dict(path)
+    data = claude_common.load_json_dict(path, tag="marketplace")
     if data is None:
         return False
     data[_MARKETPLACE_NAME] = {
@@ -605,7 +600,7 @@ def _rewrite_known_marketplaces_entry() -> bool:
         "installLocation": str(_MARKETPLACE_INSTALL_LOCATION),
         "lastUpdated": _now_iso_millis(),
     }
-    return _atomic_write_json(path, data)
+    return claude_common.atomic_write_json(path, data, tag="marketplace")
 
 
 def _rewrite_settings_extra_known_entry() -> bool:
@@ -619,7 +614,7 @@ def _rewrite_settings_extra_known_entry() -> bool:
     path = _SETTINGS_JSON_PATH
     if not path.exists():
         return True
-    data = _load_json_dict(path)
+    data = claude_common.load_json_dict(path, tag="marketplace")
     if data is None:
         return False
     extra = data.get("extraKnownMarketplaces")
@@ -629,74 +624,12 @@ def _rewrite_settings_extra_known_entry() -> bool:
     cast("dict[str, object]", extra)[_MARKETPLACE_NAME] = {
         "source": {"source": "github", "repo": _MARKETPLACE_REPO},
     }
-    return _atomic_write_json(path, data)
+    return claude_common.atomic_write_json(path, data, tag="marketplace")
 
 
 def _now_iso_millis() -> str:
     """現在時刻を ISO 8601 (UTC, ミリ秒精度, 末尾 Z) で返す。"""
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-def _load_json_dict(path: Path, *, silent: bool = False) -> dict[str, object] | None:
-    """JSON ファイルをトップレベル dict として読み込む。
-
-    ファイルが存在しない場合は空 dict を返し、新規作成の足場として使えるようにする。
-    JSON 解析失敗・非 dict・I/O エラーは ``None`` を返し、呼び出し元で書き込みを中止させる。
-    ``silent=True`` の場合、読み込み専用の検査用途として警告ログを抑制する。
-    """
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}
-    except OSError as e:
-        if not silent:
-            logger.info(_log_format.format_status("marketplace", f"{path.name} の読み込みに失敗: {e}"))
-        return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        if not silent:
-            logger.info(_log_format.format_status("marketplace", f"{path.name} の JSON 解析に失敗: {e}"))
-        return None
-    if not isinstance(data, dict):
-        if not silent:
-            logger.info(_log_format.format_status("marketplace", f"{path.name} がトップレベル dict でないためスキップ"))
-        return None
-    return cast("dict[str, object]", data)
-
-
-def _atomic_write_json(path: Path, data: object) -> bool:
-    """JSON ファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に書き出す。
-
-    Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
-    ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。
-    """
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        logger.info(_log_format.format_status("marketplace", f"ディレクトリ作成に失敗: {e}"))
-        return False
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            delete=False,
-            prefix=f"{path.name}.",
-            suffix=".tmp",
-        ) as tmp:
-            json.dump(data, tmp, ensure_ascii=False, indent=2)
-            tmp.write("\n")
-            tmp_path = Path(tmp.name)
-        os.replace(tmp_path, path)
-        return True
-    except OSError as e:
-        logger.info(_log_format.format_status("marketplace", f"{path.name} の書き込みに失敗: {e}"))
-        if tmp_path is not None:
-            with contextlib.suppress(OSError):
-                tmp_path.unlink()
-        return False
 
 
 def _marketplace_already_registered(data: object) -> bool:
@@ -716,11 +649,11 @@ def _marketplace_already_registered(data: object) -> bool:
 
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
+    result = claude_common.run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
-        logger.info(_log_format.format_status(name, f"install に失敗: {_format_cli_error(result)}"))
+        logger.info(log_format.format_status(name, f"install に失敗: {claude_common.format_cli_error(result)}"))
         return False
-    logger.info(_log_format.format_status(name, "インストールしました"))
+    logger.info(log_format.format_status(name, "インストールしました"))
     return True
 
 
@@ -730,11 +663,11 @@ def _refresh_marketplace() -> bool:
     ローカル marketplace.json の version 更新を取り込むために必要。
     失敗しても `plugin update` 側で回収できる可能性があるため best-effort 扱い。
     """
-    result = _run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
+    result = claude_common.run_claude(["plugin", "marketplace", "update", _MARKETPLACE_NAME])
     if result is None or result.returncode != 0:
         logger.info(
-            _log_format.format_status(
-                "marketplace", f"{_MARKETPLACE_NAME} の refresh に失敗 (続行): {_format_cli_error(result)}"
+            log_format.format_status(
+                "marketplace", f"{_MARKETPLACE_NAME} の refresh に失敗 (続行): {claude_common.format_cli_error(result)}"
             )
         )
         return False
@@ -743,11 +676,11 @@ def _refresh_marketplace() -> bool:
 
 def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
-    result = _run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
+    result = claude_common.run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
     if result is None or result.returncode != 0:
-        logger.info(_log_format.format_status(name, f"update に失敗: {_format_cli_error(result)}"))
+        logger.info(log_format.format_status(name, f"update に失敗: {claude_common.format_cli_error(result)}"))
         return False
-    logger.info(_log_format.format_status(name, "更新しました"))
+    logger.info(log_format.format_status(name, "更新しました"))
     return True
 
 
@@ -822,7 +755,7 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
     ファイル不在・解析失敗・`enabledPlugins` が非 dict の場合は `None` を返し、
     呼び出し元では「情報なし」として扱う (デフォルト有効扱いと同等)。
     """
-    data = _load_json_dict(_SETTINGS_JSON_PATH, silent=True)
+    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH, silent=True)
     if data is None:
         return None
     enabled = data.get("enabledPlugins")
@@ -850,64 +783,11 @@ def _warn_if_missing(target_versions: dict[str, str]) -> None:
     missing = sorted(name for name in target_versions if name not in installed)
     if missing:
         logger.warning(
-            _log_format.format_status(
+            log_format.format_status(
                 "plugins",
                 f"install 試行後も未インストールが残っています: {', '.join(missing)}",
             )
         )
-
-
-def _format_cli_error(result: subprocess.CompletedProcess[str] | None) -> str:
-    """CLI 失敗時のログに付ける stderr/stdout の簡潔な連結文字列を返す。
-
-    Claude Code CLI は本質的なエラーメッセージを stderr 側ではなく stdout に出すことがあり、
-    stderr のみでは原因特定が難しい。双方を併記してログに載せる。
-    """
-    if result is None:
-        return "(実行に失敗)"
-    parts: list[str] = []
-    stderr = (result.stderr or "").strip()
-    stdout = (result.stdout or "").strip()
-    if stderr:
-        parts.append(f"stderr: {stderr}")
-    if stdout:
-        parts.append(f"stdout: {stdout}")
-    return " / ".join(parts) if parts else f"exit {result.returncode}"
-
-
-def _run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
-    """`claude` CLI を呼び出す共通ヘルパー。
-
-    タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
-    `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
-    失敗時の原因追跡を容易にするため、実行コマンドと戻り値をログに残す。
-    """
-    logger.info(
-        _log_format.format_status(
-            "claude",
-            f"exec: {' '.join(args)}" + (f" (cwd={cwd})" if cwd is not None else ""),
-        )
-    )
-    try:
-        result = subprocess.run(
-            ["claude", *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_CLAUDE_TIMEOUT,
-            # Windows では text=True のデフォルトが cp932 になり、claude CLI の
-            # UTF-8 日本語メッセージを読み取る reader thread で UnicodeDecodeError
-            # が発生する。明示的に UTF-8 を指定し、不正なバイトが混入しても
-            # 例外が発生しないよう errors="replace" を併用する。
-            encoding="utf-8",
-            errors="replace",
-            cwd=cwd,
-        )
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.info(_log_format.format_status("claude", f"`{' '.join(args)}` 実行に失敗: {e}"))
-        return None
-    logger.info(_log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"))
-    return result
 
 
 if __name__ == "__main__":

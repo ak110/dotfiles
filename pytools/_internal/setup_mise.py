@@ -26,7 +26,8 @@ import typing
 from collections.abc import Callable
 from pathlib import Path
 
-from pytools import _log_format, _winutils
+from pytools._internal import log_format, winutils
+from pytools._internal.cli import setup_logging
 
 # Pyright の to be narrowed を避けつつ Windows 判定するためのフラグ。
 # `_IS_WINDOWS` を直接使うと非 Windows 環境で条件式が False に評価され、
@@ -51,7 +52,7 @@ _WINDOWS_PATHSEP = ";"
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -68,7 +69,7 @@ def run(
     """
     mise_bin = (find_mise_fn or _find_mise_binary)()
     if mise_bin is None:
-        logger.info(_log_format.format_status("mise", "未検出のためスキップ"))
+        logger.info(log_format.format_status("mise", "未検出のためスキップ"))
         return False
 
     win = _IS_WINDOWS if is_windows is None else is_windows
@@ -111,32 +112,40 @@ def _ensure_windows_user_path_has_shims() -> bool:
     """
     localappdata = os.environ.get("LOCALAPPDATA")
     if not localappdata:
-        logger.info(_log_format.format_status("mise", "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ"))
+        logger.info(log_format.format_status("mise", "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ"))
         return False
 
     shims_dir = Path(localappdata) / "mise" / "shims"
     if not shims_dir.is_dir():
-        logger.info(_log_format.format_status("mise", f"{shims_dir} が無いため shims 追加をスキップ"))
+        logger.info(log_format.format_status("mise", f"{shims_dir} が無いため shims 追加をスキップ"))
         return False
 
     try:
-        current_value, value_type = _read_user_path()
+        current_value, value_type = winutils.read_user_env_var("Path")
     except OSError as e:
-        logger.warning(_log_format.format_status("mise", f"ユーザー PATH の読み取りに失敗: {e}"))
+        logger.warning(log_format.format_status("mise", f"ユーザー PATH の読み取りに失敗: {e}"))
         return False
+    if current_value is None:
+        current_value = ""
+
+    # `%LOCALAPPDATA%` を展開させたいので、元が REG_SZ だった場合も REG_EXPAND_SZ に
+    # 揃えて書き戻す (REG_SZ のままだとリテラルで扱われて shims にアクセスできない)。
+    wr = winutils.import_winreg()
+    if value_type != wr.REG_EXPAND_SZ:
+        value_type = wr.REG_EXPAND_SZ
 
     already_registered = _path_contains_shims(current_value, shims_dir)
     if already_registered:
-        logger.info(_log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
+        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
     else:
         new_value = _append_entry(current_value, _WINDOWS_SHIMS_ENTRY)
         try:
-            _write_user_path(new_value, value_type)
+            winutils.write_user_env_var("Path", new_value, value_type)
         except OSError as e:
-            logger.warning(_log_format.format_status("mise", f"ユーザー PATH の書き込みに失敗: {e}"))
+            logger.warning(log_format.format_status("mise", f"ユーザー PATH の書き込みに失敗: {e}"))
             return False
-        logger.info(_log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
-        _broadcast_environment_change()
+        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
+        winutils.broadcast_environment_change()
 
     # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
@@ -145,31 +154,6 @@ def _ensure_windows_user_path_has_shims() -> bool:
         os.environ["PATH"] = str(shims_dir) + os.pathsep + current_process_path
 
     return not already_registered
-
-
-def _read_user_path() -> tuple[str, int]:
-    r"""HKCU\Environment\Path の現在値と値型を返す (空文字 + REG_EXPAND_SZ なら未設定)."""
-    wr = _winutils.import_winreg()
-    with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_READ) as key:
-        try:
-            value, value_type = wr.QueryValueEx(key, "Path")
-        except FileNotFoundError:
-            return "", wr.REG_EXPAND_SZ
-    if not isinstance(value, str):
-        return "", wr.REG_EXPAND_SZ
-    return value, value_type
-
-
-def _write_user_path(value: str, value_type: int) -> None:
-    r"""HKCU\Environment\Path を書き換える (元の値型 REG_SZ / REG_EXPAND_SZ を維持)."""
-    wr = _winutils.import_winreg()
-    # `%LOCALAPPDATA%` を展開させたいので、元が REG_SZ だった場合も REG_EXPAND_SZ に
-    # 揃えて書き戻す (REG_SZ のままだとリテラルで扱われて shims にアクセスできない)。
-    if value_type != wr.REG_EXPAND_SZ:
-        value_type = wr.REG_EXPAND_SZ
-
-    with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
-        wr.SetValueEx(key, "Path", 0, value_type, value)
 
 
 def _path_contains_shims(current_value: str, shims_dir: Path) -> bool:
@@ -197,37 +181,6 @@ def _append_entry(current_value: str, new_entry: str) -> str:
     return current_value + separator + new_entry
 
 
-def _broadcast_environment_change() -> None:
-    """環境変数変更を他プロセスへ通知する (失敗しても致命ではない)。
-
-    `ctypes.windll` は Windows でしか存在しない属性で、型チェッカや pylint は
-    非 Windows 環境では未解決属性として検出してしまう。実行は Windows に限られる
-    ため `typing.Any` 経由で呼び出してチェック対象外にする。
-    """
-    try:
-        import ctypes  # noqa: PLC0415
-
-        hwnd_broadcast = 0xFFFF
-        wm_settingchange = 0x001A
-        smto_abortifhung = 0x0002
-        result = ctypes.c_long(0)
-        # `ctypes.windll` は Windows 専用で、Linux で pyright/ty などの型チェッカに
-        # かけると `ctypes has no member windll` と誤検出される。getattr 経由で
-        # 取得して型チェック対象から外す (実行は Windows でのみ)。
-        windll = getattr(ctypes, "windll")  # noqa: B009
-        windll.user32.SendMessageTimeoutW(
-            hwnd_broadcast,
-            wm_settingchange,
-            0,
-            "Environment",
-            smto_abortifhung,
-            5000,
-            ctypes.byref(result),
-        )
-    except Exception as e:  # noqa: BLE001 -- 通知失敗は致命ではない
-        logger.info(_log_format.format_status("mise", f"環境変数変更のブロードキャストに失敗: {e}"))
-
-
 def _ensure_global_node(
     mise_bin: Path,
     *,
@@ -242,26 +195,26 @@ def _ensure_global_node(
     result = runner(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
-        logger.info(_log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
+        logger.info(log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
         return False
 
     try:
         data = json.loads(result.stdout) if result.stdout.strip() else {}
     except json.JSONDecodeError as e:
-        logger.info(_log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
+        logger.info(log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
         return False
 
     if _has_global_node(data):
-        logger.info(_log_format.format_status("mise", "global Node は既に設定済み"))
+        logger.info(log_format.format_status("mise", "global Node は既に設定済み"))
         return False
 
     install_result = runner(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
         stderr = install_result.stderr.strip() if install_result else ""
-        logger.info(_log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
+        logger.info(log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
         return False
 
-    logger.info(_log_format.format_status("mise", "global に node@lts を設定しました"))
+    logger.info(log_format.format_status("mise", "global に node@lts を設定しました"))
     return True
 
 
@@ -312,7 +265,7 @@ def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[st
             errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
-        logger.info(_log_format.format_status("mise", f"`{' '.join(args)}` 実行に失敗: {e}"))
+        logger.info(log_format.format_status("mise", f"`{' '.join(args)}` 実行に失敗: {e}"))
         return None
 
 

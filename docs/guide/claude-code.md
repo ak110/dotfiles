@@ -19,12 +19,12 @@
 更新: `update-dotfiles`（または `chezmoi apply`）で最新化される。
 
 `agent-toolkit` プラグインもuser scopeに `chezmoi apply` 後処理で自動インストールされる。
-（`claude` と `uv` がPATHにある場合のみ動作する。実装は `pytools/_install_claude_plugins.py`）
+（`claude` と `uv` がPATHにある場合のみ動作する。実装は `pytools/_internal/install_claude_plugins.py`）
 user scope化により全プロジェクトで共通に有効化される。
 プロジェクトごとの `.claude/settings.json` への記述は不要になる。
 
 codex MCPサーバー（`codex mcp-server`）も同様に `chezmoi apply` 後処理でuser scopeへ自動登録される。
-（`claude` CLIがPATHにある場合のみ動作する。実装は `pytools/_install_codex_mcp.py`）
+（`claude` CLIがPATHにある場合のみ動作する。実装は `pytools/_internal/install_codex_mcp.py`）
 登録済みの場合は冪等にスキップする。codex CLI自体のセットアップは別途行うこと。
 
 ### 他人に配布: `install-claude.sh` / `install-claude.ps1`

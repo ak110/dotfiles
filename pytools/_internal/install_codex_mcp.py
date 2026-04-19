@@ -19,9 +19,9 @@
 import json
 import logging
 import shutil
-from pathlib import Path
 
-from pytools import _install_claude_plugins, _log_format
+from pytools._internal import claude_common, log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ _CODEX_COMMAND = "codex"
 _CODEX_ARGS = ("mcp-server",)
 
 # Claude Code設定ファイルのパス (CLI呼び出しを回避するための直接読み取り用)
-_CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
+_CLAUDE_CONFIG_PATH = claude_common.CLAUDE_CONFIG_PATH
 
 
 def _is_codex_registered_from_file() -> bool | None:
@@ -55,7 +55,7 @@ def _is_codex_registered_from_file() -> bool | None:
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -66,36 +66,36 @@ def run() -> bool:
         新たに登録した場合 True。既登録・CLI不在などでスキップした場合 False。
     """
     if shutil.which("claude") is None:
-        logger.info(_log_format.format_status("codex-mcp", "claude CLI 未検出のためスキップ"))
+        logger.info(log_format.format_status("codex-mcp", "claude CLI 未検出のためスキップ"))
         return False
 
     # ファイル直接読み取りを先に試み、登録済みならCLI呼び出しを省略する
     file_check = _is_codex_registered_from_file()
     if file_check is True:
-        logger.info(_log_format.format_status("codex-mcp", "登録済み"))
+        logger.info(log_format.format_status("codex-mcp", "登録済み"))
         return False
     if file_check is None and _is_codex_registered():
-        logger.info(_log_format.format_status("codex-mcp", "登録済み"))
+        logger.info(log_format.format_status("codex-mcp", "登録済み"))
         return False
 
     args = ["mcp", "add", "--scope", "user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
-    result = _install_claude_plugins._run_claude(args)  # pylint: disable=protected-access
+    result = claude_common.run_claude(args)
     if result is None or result.returncode != 0:
         # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で
         # 失敗するケースがある。この場合は実際には登録済みなので成功扱いにする
         stderr = result.stderr.strip() if result else ""
         if result is not None and "already exists" in result.stderr:
-            logger.info(_log_format.format_status("codex-mcp", "登録済み (add が already exists を返却)"))
+            logger.info(log_format.format_status("codex-mcp", "登録済み (add が already exists を返却)"))
             return False
-        logger.info(_log_format.format_status("codex-mcp", f"登録に失敗 (続行): {stderr}"))
+        logger.info(log_format.format_status("codex-mcp", f"登録に失敗 (続行): {stderr}"))
         return False
-    logger.info(_log_format.format_status("codex-mcp", "user scope に登録しました"))
+    logger.info(log_format.format_status("codex-mcp", "user scope に登録しました"))
     return True
 
 
 def _is_codex_registered() -> bool:
     """`claude mcp list` の出力に codex サーバーが含まれているか判定する。"""
-    result = _install_claude_plugins._run_claude(["mcp", "list"])  # pylint: disable=protected-access
+    result = claude_common.run_claude(["mcp", "list"])
     if result is None or result.returncode != 0:
         # list が失敗した場合は未登録扱いにし、後続の add 試行で改めて判定する
         # (add は登録済みの場合に非ゼロ終了するため冪等性が保たれる)

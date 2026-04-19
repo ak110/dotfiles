@@ -10,6 +10,8 @@ import io
 import logging
 import pathlib
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +23,7 @@ def _main() -> None:
     parser.add_argument("path", type=pathlib.Path)
     parser.add_argument("pattern", nargs="?", default="*.*")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None
     try:
         rename_to_hash(

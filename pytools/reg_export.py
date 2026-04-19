@@ -9,6 +9,8 @@ import logging
 import pathlib
 import sys
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 _HIVES = {
@@ -28,7 +30,7 @@ def _main() -> None:
     parser.add_argument("key", help="例: HKCU\\Software\\MyApp")
     parser.add_argument("-o", "--output", type=pathlib.Path, help="出力先 (.reg)。未指定なら stdout")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     text = export_key(args.key)
     if args.output is None:
         sys.stdout.write(text)

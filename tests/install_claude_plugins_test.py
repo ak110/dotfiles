@@ -1,4 +1,4 @@
-"""pytools._install_claude_plugins のテスト。
+"""pytools._internal.install_claude_plugins のテスト。
 
 subprocess.run / shutil.which をモックして、前提条件分岐・marketplace 登録・
 plugin install / update の各パスを検証する。
@@ -11,7 +11,8 @@ import subprocess
 
 import pytest
 
-from pytools import _install_claude_plugins
+from pytools._internal import claude_common as _claude_common
+from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from .helpers import _FakeResult, _plugin_list_json
 
@@ -96,7 +97,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1, stderr="should not be called")
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
         assert [c for c in calls if c[:3] == ["claude", "plugin", "update"]] == []
@@ -132,7 +133,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
@@ -163,7 +164,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # add が呼ばれ、かつ marketplace.json 由来の全プラグインに対し install が呼ばれていること
@@ -194,7 +195,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # add は呼ばれていないこと
@@ -229,7 +230,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # 既にインストール済みの agent-toolkit は install されない
@@ -249,7 +250,7 @@ class TestRunFlow:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
         assert not calls
@@ -264,7 +265,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=0, stdout="[]")
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
         # list 以外は呼ばれていないこと (失敗で早期 return)
@@ -284,7 +285,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=1, stderr="install failed")
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
 
@@ -294,7 +295,7 @@ class TestRunFlow:
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             raise subprocess.TimeoutExpired(cmd, timeout=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is False
 
@@ -334,7 +335,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # project scope のエントリは無視され、user scope に新規 install される
@@ -379,7 +380,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # 存在しない projectPath に対しては uninstall を呼ばない
@@ -415,7 +416,7 @@ class TestRunFlow:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run() is True
         # deprecated プラグインのアンインストールが呼ばれること
@@ -479,7 +480,7 @@ class TestEnsureMarketplaceCliPath:
                 )
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._ensure_marketplace() is True
@@ -499,7 +500,7 @@ class TestEnsureMarketplaceCliPath:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._ensure_marketplace() is True
@@ -561,7 +562,7 @@ class TestDirectoryTypeMigration:
 
         # CLI remove+add は settings 側を更新しない再現環境として成功のみ返す
         monkeypatch.setattr(
-            _install_claude_plugins.subprocess,
+            _claude_common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
@@ -774,6 +775,6 @@ class TestHappyPathNoCli:
         def fail_if_called(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.runが呼ばれた: {cmd}")
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fail_if_called)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fail_if_called)
 
         assert _install_claude_plugins.run() is False

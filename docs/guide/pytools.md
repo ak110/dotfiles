@@ -66,9 +66,19 @@ setx CLAUDE_PLANS_VIEWER_PORT 12345
 
 ## 内部モジュール
 
-`pytools/`直下で`_`始まりのモジュールは`chezmoi apply`の後処理から呼ばれる内部用で、コマンドラインからは直接使わない。
+`pytools/_internal/`配下はprivateモジュール群。
+`chezmoi apply`の後処理から呼ばれる運用ヘルパーと、各CLIが共有するユーティリティの両方を含む。
 
-- `_install_claude_plugins.py` — `.claude-plugin/marketplace.json`をSSOTとして
+共通ユーティリティ:
+
+- `cli.py` — 共通のロギング設定ヘルパー（`setup_logging`）
+- `claude_common.py` — Claude CLI関連の共通定数・JSON入出力・`run_claude`などの共通関数
+- `log_format.py` — post-apply系モジュールで共有するログ書式ヘルパー
+- `winutils.py` — Windowsレジストリ・ユーザー環境変数操作の補助関数
+
+`chezmoi apply`後処理から呼ばれるヘルパー:
+
+- `install_claude_plugins.py` — `.claude-plugin/marketplace.json`をSSOTとして
   `agent-toolkit`プラグインを自動インストール・更新する。
   marketplace登録は`ak110/dotfiles`のGitHubショートハンドに統一しており、Claude Codeが慣例ディレクトリへ自動cloneする。
   `~/.claude/plugins/known_marketplaces.json`や`~/.claude/settings.json`の`extraKnownMarketplaces`に
@@ -84,4 +94,12 @@ setx CLAUDE_PLANS_VIEWER_PORT 12345
   逆に常時有効化したいプラグイン（`_AUTO_ENABLED_PLUGIN_IDS`に列挙、例: `context7`）は、
   未インストールなら`claude plugin install --scope user`で導入し、
   `enabledPlugins`で明示的に`false`のときだけ`claude plugin enable --scope user`で有効化する。
-  いずれも状態変更は`claude`コマンド経由でのみ行い、`enabledPlugins`の直接書き換えはしない。
+  いずれも状態変更は`claude`コマンド経由でのみ行い、`enabledPlugins`の直接書き換えはしない
+- `install_codex_mcp.py` — codex MCPサーバーをuser scopeに自動登録する
+- `install_libarchive_windows.py` — Windows向けlibarchive.dllをMSYS2リポジトリから自動取得・展開する
+- `setup_mise.py` — mise導入環境向けのセットアップ（シェル設定・ツールインストール）
+- `setup_plans_viewer_windows.py` — claude-plans-viewerのWindows向け自動起動セットアップ
+- `update_claude_settings.py` — `share/`配下の管理対象JSONをClaude Code設定ファイルにマージする
+- `update_npmrc.py` — `~/.npmrc`のサプライチェーン対策設定（`minimum-release-age`）を管理する
+- `update_vscode_settings.py` — ホスト固有設定をVSCodeの`settings.json`にマージする
+- `cleanup_paths.py` — 配布元から除去されたファイル・ディレクトリを削除する

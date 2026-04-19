@@ -1,8 +1,8 @@
-"""pytools._log_format のテスト。"""
+"""pytools._internal.log_format のテスト。"""
 
 from pathlib import Path
 
-from pytools import _log_format
+from pytools._internal import log_format as _log_format
 
 
 class TestFormatStatus:

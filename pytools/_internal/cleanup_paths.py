@@ -12,7 +12,7 @@ import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
-from pytools import _log_format
+from pytools._internal import log_format
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             shutil.rmtree(target)
         else:
             target.unlink()
-        logger.info(_log_format.format_status(_log_format.home_short(target), "旧配布物を削除"))
+        logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed
 
@@ -79,10 +79,10 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
         if actual_bytes != expected_bytes:
             logger.warning(
                 "%s はユーザーによる編集の可能性があるためスキップします",
-                _log_format.home_short(target),
+                log_format.home_short(target),
             )
             continue
         target.unlink()
-        logger.info(_log_format.format_status(_log_format.home_short(target), "旧配布物を削除"))
+        logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed

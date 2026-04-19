@@ -13,7 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pytools import _log_format
+from pytools._internal import log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -37,7 +38,7 @@ def run() -> bool:
     """
     ssh_dir = Path.home() / ".ssh"
     if not (ssh_dir / "conf.d").exists():
-        logger.info(_log_format.format_status(_log_format.home_short(ssh_dir / "conf.d"), "存在しないためスキップ"))
+        logger.info(log_format.format_status(log_format.home_short(ssh_dir / "conf.d"), "存在しないためスキップ"))
         return False
     changed_config = _generate_ssh_config(ssh_dir)
     changed_keys = _generate_authorized_keys(ssh_dir)
@@ -60,19 +61,19 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
     new_content = "".join(parts)
 
     config_path = ssh_dir / "config"
-    short = _log_format.home_short(config_path)
+    short = log_format.home_short(config_path)
     old_content = config_path.read_text(encoding="utf-8") if config_path.exists() else None
     if old_content == new_content:
-        logger.info(_log_format.format_status(short, "変更なし"))
+        logger.info(log_format.format_status(short, "変更なし"))
         return False
 
     # 初回のみバックアップを作成
     backup_path = config_path.with_suffix(".bk")
     if config_path.exists() and not backup_path.exists():
         shutil.copy2(config_path, backup_path)
-        logger.info(_log_format.format_status(short, f"バックアップを作成: {_log_format.home_short(backup_path)}"))
+        logger.info(log_format.format_status(short, f"バックアップを作成: {log_format.home_short(backup_path)}"))
     _atomic_write(config_path, new_content)
-    logger.info(_log_format.format_status(short, "更新しました"))
+    logger.info(log_format.format_status(short, "更新しました"))
     return True
 
 
@@ -107,14 +108,14 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
                 existing_lines.append(line)
                 known_keys.add(key_data)
                 added += 1
-    short = _log_format.home_short(ak_path)
+    short = log_format.home_short(ak_path)
     if added == 0 and existing_lines == original_lines:
-        logger.info(_log_format.format_status(short, "変更なし (追加鍵 0 件)"))
+        logger.info(log_format.format_status(short, "変更なし (追加鍵 0 件)"))
         return False
     # 書き出し
     content = "\n".join(existing_lines) + "\n" if existing_lines else ""
     _atomic_write(ak_path, content)
-    logger.info(_log_format.format_status(short, f"{added} 件の鍵を追加しました"))
+    logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))
     return True
 
 

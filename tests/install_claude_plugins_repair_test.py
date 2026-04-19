@@ -1,9 +1,9 @@
-"""pytools._install_claude_plugins の marketplace 修復ロジックのテスト。
+"""pytools._internal.install_claude_plugins の marketplace 修復ロジックのテスト。
 
 update-dotfiles 実行後に過去の directory 型エントリが残留して
 ``Marketplace file not found`` エラーになる問題に対応する GitHub 型への
 マイグレーションを検証する。基本的な ``_check_marketplace_from_file`` の動作は
-_install_claude_plugins_test.py 側に残しており、本ファイルでは 2 ファイル同時検査・
+install_claude_plugins_test.py 側に残しており、本ファイルでは 2 ファイル同時検査・
 修復に関するケースを扱う。
 """
 
@@ -12,7 +12,8 @@ import pathlib
 
 import pytest
 
-from pytools import _install_claude_plugins
+from pytools._internal import claude_common as _claude_common
+from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from .helpers import _FakeResult
 
@@ -171,12 +172,12 @@ class TestRepairMarketplace:
                 _write_settings_entry(settings, _GITHUB_ENTRY)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called when CLI succeeds")
 
-        monkeypatch.setattr(_install_claude_plugins.os, "replace", fail_replace)
+        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._repair_marketplace() is True
@@ -194,7 +195,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         # pylint: disable-next=protected-access
         _install_claude_plugins._repair_marketplace()
@@ -220,7 +221,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._repair_marketplace() is True
@@ -266,7 +267,7 @@ class TestRepairMarketplace:
             encoding="utf-8",
         )
         monkeypatch.setattr(
-            _install_claude_plugins.subprocess,
+            _claude_common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
@@ -302,7 +303,7 @@ class TestRepairMarketplace:
         # 過去の directory 型エントリで破損した状態
         _write_known_entry(known, {"source": {"source": "directory", "path": "/home/aki/dotfiles"}})
         monkeypatch.setattr(
-            _install_claude_plugins.subprocess,
+            _claude_common.subprocess,
             "run",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
@@ -310,7 +311,7 @@ class TestRepairMarketplace:
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
 
-        monkeypatch.setattr(_install_claude_plugins.os, "replace", fail_replace)
+        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._repair_marketplace() is False
@@ -332,12 +333,12 @@ class TestEnsureMarketplaceHealthy:
         def fail_run(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.run should not be called: {cmd}")
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fail_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fail_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called in healthy state")
 
-        monkeypatch.setattr(_install_claude_plugins.os, "replace", fail_replace)
+        monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
 
         # pylint: disable-next=protected-access
         assert _install_claude_plugins._ensure_marketplace() is True

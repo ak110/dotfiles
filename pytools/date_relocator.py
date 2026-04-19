@@ -9,6 +9,8 @@ import datetime
 import logging
 import pathlib
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ def _main() -> None:
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     for target in args.targets:
         if not target.is_dir():
             logger.warning("%s はディレクトリではありません", target)

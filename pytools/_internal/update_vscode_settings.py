@@ -59,7 +59,8 @@ import re
 import socket
 from pathlib import Path
 
-from pytools import _log_format
+from pytools._internal import log_format
+from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ _UNSET: object = object()
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
-    logging.basicConfig(format="%(message)s", level="INFO")
+    setup_logging()
     run()
 
 
@@ -112,7 +113,7 @@ def run(
     if settings_path is _UNSET:
         settings_path = _settings_path(is_windows=win)
     if settings_path is None:
-        logger.info(_log_format.format_status("vscode", "VSCode未検出のためスキップ"))
+        logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ"))
         return False
     assert isinstance(settings_path, Path)
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
@@ -248,13 +249,13 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
         else:
             data[key] = value
 
-    short = _log_format.home_short(settings_path)
+    short = log_format.home_short(settings_path)
     if data == original:
-        logger.info(_log_format.format_status(short, "変更なし"))
+        logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    logger.info(_log_format.format_status(short, "更新しました"))
+    logger.info(log_format.format_status(short, "更新しました"))
     return True
 
 

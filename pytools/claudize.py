@@ -12,6 +12,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 # 旧配布先ディレクトリ名 (agent-basics → agent-toolkit リネーム前の名前)。
@@ -21,7 +23,7 @@ _RULES_DIRNAME = "agent-toolkit"
 
 
 def _main() -> None:
-    logging.basicConfig(format="%(message)s", level="DEBUG")
+    setup_logging(verbose=True)
     parser = argparse.ArgumentParser(description="Claude Code設定ファイルを配布・同期する。")
     parser.add_argument(
         "--clean",

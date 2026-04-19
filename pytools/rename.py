@@ -13,6 +13,8 @@ import pathlib
 import re
 import typing
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 RuleTarget = typing.Literal["both", "file", "dir"]
@@ -157,7 +159,7 @@ def _main() -> None:
     mode_group.add_argument("--fullpath", action="store_true", help="replace fullpath.")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(message)s")
+    setup_logging(verbose=args.verbose)
 
     if args.pattern_file:
         rules = load_pattern_file(args.pattern_file, ignore_case=args.ignore_case)

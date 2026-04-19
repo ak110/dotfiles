@@ -1,4 +1,4 @@
-"""pytools._install_claude_plugins の推奨コマンド算出機構のテスト。
+"""pytools._internal.install_claude_plugins の推奨コマンド算出機構のテスト。
 
 `compute_recommended_commands` と `consume_recommendations` を単体で検証する。
 また、`run()` 末尾で推奨コマンドが算出され `consume_recommendations()` 経由で
@@ -10,7 +10,8 @@ import json
 
 import pytest
 
-from pytools import _install_claude_plugins
+from pytools._internal import claude_common as _claude_common
+from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from .helpers import _FakeResult, _plugin_list_json
 
@@ -131,7 +132,7 @@ class TestRunNoAutomaticStateChange:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         _install_claude_plugins.run()
 

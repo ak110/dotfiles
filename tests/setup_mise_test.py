@@ -1,4 +1,4 @@
-"""pytools._setup_mise のテスト (レジストリ / subprocess 依存部はモック化)."""
+"""pytools._internal.setup_mise のテスト (レジストリ / subprocess 依存部はモック化)."""
 
 # pylint: disable=protected-access
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools import _setup_mise
+from pytools._internal import setup_mise as _setup_mise
 
 
 class TestHasGlobalNode:

@@ -10,6 +10,8 @@ import logging
 import pathlib
 import shutil
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ def _main() -> None:
     parser.add_argument("-t", "--top-only", action="store_true", help="最上位ディレクトリのみ処理する")
     parser.add_argument("-d", "--dry-run", action="store_true")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     excludes = _load_excludes(args.exclude)
     clone(args.src, args.dst, excludes=excludes, mirror=args.mirror, top_only=args.top_only, dry_run=args.dry_run)
 

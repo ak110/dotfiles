@@ -1,4 +1,4 @@
-"""_update_vscode_settings モジュールのテスト。"""
+"""update_vscode_settings モジュールのテスト。"""
 
 # `_hostname_color` など、パッケージ内部関数 (先頭 _) を
 # テストするため protected-access を全体で許可する。
@@ -9,7 +9,7 @@ import json
 import math
 from pathlib import Path
 
-from pytools import _update_vscode_settings as mod
+from pytools._internal import update_vscode_settings as mod
 
 
 class TestLoadJsonc:

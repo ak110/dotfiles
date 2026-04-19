@@ -10,7 +10,8 @@
 
 import pytest
 
-from pytools import _install_claude_plugins, post_apply
+from pytools import post_apply
+from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 
 def _make_step(name: str, calls: list[str], changed: bool = False):
@@ -133,7 +134,7 @@ class TestRun:
 
 
 class TestPluginRecommendations:
-    """`_install_claude_plugins.consume_recommendations()` による推奨コマンド案内出力。"""
+    """`install_claude_plugins.consume_recommendations()` による推奨コマンド案内出力。"""
 
     def test_prints_recommendations_when_present(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
         """推奨コマンドがある場合は見出しと各コマンド行を出力する。"""

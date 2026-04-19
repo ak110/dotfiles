@@ -4,6 +4,8 @@ import argparse
 import logging
 import pathlib
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -12,7 +14,7 @@ def _main() -> None:
     parser.add_argument("src_dir", type=pathlib.Path)
     parser.add_argument("dest_dir", type=pathlib.Path)
     args = parser.parse_args()
-    logging.basicConfig(format="%(message)s", level="DEBUG")
+    setup_logging(verbose=True)
     _move_dir(args.src_dir, args.dest_dir)
 
 

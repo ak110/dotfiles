@@ -12,6 +12,8 @@ import logging
 import pathlib
 import re
 
+from pytools._internal.cli import setup_logging
+
 logger = logging.getLogger(__name__)
 
 _HASH_RE = re.compile(r"^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -26,7 +28,7 @@ def _main() -> None:
     parser.add_argument("pattern", type=str, help="検索 glob パターン (例: *.jpg)")
     parser.add_argument("paths", nargs="+", type=pathlib.Path)
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging()
     log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None
     try:
         delete_homonym(
