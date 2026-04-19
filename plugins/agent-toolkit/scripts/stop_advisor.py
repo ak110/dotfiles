@@ -74,7 +74,7 @@ _COMPLETION_KEYWORDS: tuple[str, ...] = (
 )
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
-# 詳細は skills/claude-meta-rules/references/claude-hooks.md を参照。
+# 詳細は skills/writing-standards/references/claude-hooks.md を参照。
 _MESSAGE_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 

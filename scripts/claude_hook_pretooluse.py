@@ -62,7 +62,7 @@ import traceback
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
-# 詳細は plugins/agent-toolkit/skills/claude-meta-rules/references/claude-hooks.md を参照。
+# 詳細は plugins/agent-toolkit/skills/writing-standards/references/claude-hooks.md を参照。
 _MESSAGE_PREFIX = "[auto-generated: pretooluse]"
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 
