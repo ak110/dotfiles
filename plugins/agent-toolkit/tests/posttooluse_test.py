@@ -241,8 +241,7 @@ _VALID_PLAN = (
     "## 対応方針\n\n### ユーザー合意済み事項\n\n- a\n\n"
     "## 調査結果\n\n- x\n\n"
     "## 変更内容\n\n- y\n\n"
-    "## 検証\n\n- z\n\n"
-    "## 実装・レビュー工程\n\n- w\n"
+    "## 実装・検証・レビュー\n\n- w\n"
 )
 
 _VALID_PLAN_WITH_HISTORY = _VALID_PLAN + "\n## 変更履歴\n\n1. 初回\n"
@@ -307,8 +306,8 @@ class TestPlanFormatCheck:
 
     def test_missing_required_section_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 検証セクションを欠落させた変種
-        content = _VALID_PLAN.replace("## 検証\n\n- z\n", "")
+        # 調査結果セクションを欠落させた変種
+        content = _VALID_PLAN.replace("## 調査結果\n\n- x\n\n", "")
         plan = _write_plan(plans, "missing.md", content)
         result = _run(
             {
@@ -323,7 +322,7 @@ class TestPlanFormatCheck:
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
         assert "missing required H2 sections" in msg
-        assert "検証" in msg
+        assert "調査結果" in msg
         assert "[auto-generated: agent-toolkit/posttooluse][warn]" in msg
 
     def test_out_of_order_is_warned(self, tmp_path: pathlib.Path):
@@ -335,8 +334,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 調査結果\n\n- x\n\n"
-            "## 検証\n\n- z\n\n"
-            "## 実装・レビュー工程\n\n- w\n"
+            "## 実装・検証・レビュー\n\n- w\n"
         )
         plan = _write_plan(plans, "order.md", content)
         result = _run(
@@ -382,8 +380,7 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更履歴\n\n1. 仮\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 検証\n\n- z\n\n"
-            "## 実装・レビュー工程\n\n- w\n"
+            "## 実装・検証・レビュー\n\n- w\n"
         )
         plan = _write_plan(plans, "hist.md", content)
         result = _run(
@@ -514,8 +511,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 検証\n\n- z\n\n"
-            "## 実装・レビュー工程\n\n- w\n"
+            "## 実装・検証・レビュー\n\n- w\n"
         )
         plan = _write_plan(plans, "fence.md", content)
         result = _run(
@@ -548,5 +544,5 @@ class TestPlanFormatSsot:
     def test_required_and_optional_h2_appear_in_skill(self):
         text = _SKILL_MD.read_text(encoding="utf-8")
         # 必須 H2 と任意 H2 は全て SKILL.md 内の該当構造定義に登場する
-        for heading in ("背景", "対応方針", "調査結果", "変更内容", "検証", "実装・レビュー工程", "変更履歴"):
+        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実装・検証・レビュー", "変更履歴"):
             assert f"## {heading}" in text, f"SKILL.md に `## {heading}` が無い"

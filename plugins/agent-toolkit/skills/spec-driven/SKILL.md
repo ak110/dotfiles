@@ -163,19 +163,19 @@ description: >
 - 主な成果物: リサーチ結果ファイル群（`{作業テーマ名}.research-{nn}.md`）
 - 主担当: メイン＋spec-researcher
 
-### ステップ2: Plan&Implement（plan mode 1回出入り＋実装・レビュー）
+### ステップ2: Plan&Implement（plan mode 1回出入り＋実装・検証・レビュー）
 
 - 目的: 計画ファイル1本（大枠＋実装詳細）作成・codexレビュー合格のあと、
-  ExitPlanMode直後に設計ドキュメント立ち上げと実装・レビューを`plan-implementation`へ委譲する
+  ExitPlanMode直後に設計ドキュメント立ち上げと実装・検証・レビューを`plan-implementation`へ委譲する
 - 主な成果物: 計画ファイル（`~/.claude/plans/`）、作業版ドキュメントの骨子・`README.md`エントリ、
-  実装差分、format/lint/test合格、3レビュアー合格
+  実装差分、検証合格、レビュー合格
 - 主担当: メイン、`plan-mode`、`plan-implementation`、`spec-writer`、`plan-implementer`、
   `spec-reviewer`、`code-quality-reviewer`、`document-quality-reviewer`
 
-### ステップ3: Cleanup（plan-implementationのレビュー合格後）
+### ステップ3: Cleanup（plan-implementationのレビュー合格・コミット完了後）
 
-- 目的: 一時ファイル削除・コミット
-- 主な成果物: 一時ファイル群削除、コミット
+- 目的: 一時ファイル削除と、その削除分の追加コミット
+- 主な成果物: 一時ファイル群削除と追加コミット
 - 主担当: メイン
 
 ステップ終端にユーザー確認ゲートは置かない（ステップ間の進行許可は求めない）。
@@ -194,9 +194,9 @@ description: >
 ## plan-mode・plan-implementationとの連携
 
 ステップ2では`plan-mode`スキルを内部呼び出しして計画ファイル作成・codexレビューまでを進め、
-`ExitPlanMode`後は`plan-implementation`スキルへ切り替えて実装・レビューの全工程を委譲する。
+`ExitPlanMode`後は`plan-implementation`スキルへ切り替えて実装・検証・レビュー・コミットの全工程を委譲する。
 計画ファイル作成・codexレビュー手順のSSOTは`plan-mode`、
-実装フェーズ・レビューフェーズ手順のSSOTは`plan-implementation`に置き、本スキル側では再記述しない。
+実装・検証・レビュー・コミット手順のSSOTは`plan-implementation`に置き、本スキル側では再記述しない。
 
 ステップ2ではplan modeへ1回だけ出入りし、計画ファイルを1本作成する。
 前半冒頭で`EnterPlanMode`ツールを明示的に呼び出し、大枠方針・主要設計判断・実装詳細（file:line・変更内容）を
@@ -208,12 +208,12 @@ description: >
 1. `spec-writer`を呼び出し、計画ファイルとステップ1のリサーチ結果ファイル群を入力に、
    作業版ドキュメントの骨子・`docs/v{next}/README.md`エントリ・必要なら横断ドキュメントを一括生成させる。
    計画ファイルの判断経緯のうち将来参照される要点は作業版`.md`の「主要設計判断」「却下した代替案」節へ転記させる
-2. `spec-writer`の起動と並行して、`plan-implementation`スキルの指示に従い実装フェーズを進める
-  （`BASE_SHA`記録・タスク分解・`plan-implementer`順次委譲）。
+2. `spec-writer`の起動と並行して、`plan-implementation`スキルの指示に従い実装・検証を進める。
+   タスク分解・`plan-implementer`並列委譲・モデル選択・検証タスクの運用は`plan-implementation`側のSSOTに従う。
    `spec-writer`と`plan-implementer`はいずれも計画ファイルをインプットとして独立に動く
 3. 両者の完了を待ち、`plan-implementation`スキルのレビューフェーズへ進む。
-   レビュアーは`spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`の順で直列起動する。
-   レビュー合格を得たのち、`plan-implementation`から戻りステップ3（Cleanup）へ移る
+   レビュー順序・並列化・差し戻しループ・コミットの詳細手順は`plan-implementation`側のSSOTに従う。
+   レビュー合格・コミット完了を得たのち、`plan-implementation`から戻りステップ3（Cleanup）へ移る
 
 計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）はcodex向けの照合材料として機能し、
 恒常配置ドキュメント（および作業版`.md`）は将来の人間向け参照資料として機能する。
@@ -222,9 +222,10 @@ description: >
 ## サブエージェント分業
 
 本スキル配下で起動するサブエージェントは`spec-researcher`・`spec-writer`の2つに絞る。
-実装・レビューを担うエージェントは`plan-implementation`スキルの所掌で、本スキルは起動責務を持たない。
+いずれも既定で`model: sonnet`で起動し、コンテキストはサブエージェント側に閉じ込めてメインの消費を抑える。
+実装・検証・レビューを担うエージェントは`plan-implementation`スキルの所掌で、本スキルは起動責務を持たない。
 対象は`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`の4種類。
-いずれも`model: sonnet`で起動し、コンテキストはサブエージェント側に閉じ込めてメインの消費を抑える。
+モデル選択・並列化・差し戻しループのルールは`plan-implementation`スキルを参照する。
 
 - `spec-researcher`: 既存機能調査・影響範囲分析を担う。観点ごとに並列起動可。
   結果は呼び元指定の`{作業テーマ名}.research-{nn}.md`へ書き出し、戻り値はファイルパスと短いサマリーに絞る
@@ -237,8 +238,8 @@ description: >
 
 - メインセッションはステップ進行管理・ユーザー確認・`plan-mode`呼び出し・`plan-implementation`呼び出しに集中する。
   調査のコンテキストはサブエージェントに閉じ込めてメイン側のコンテキスト汚染を避ける
-- 実装・レビューの詳細手順は`plan-implementation`スキルに委ねる
- （順序・差し戻しループ・レビュアー出力ファイル規約などのSSOTは`plan-implementation`側）
+- 実装・検証・レビュー・コミットの詳細手順は`plan-implementation`スキルに委ねる
+ （並列化・モデル選択・差し戻しループ・レビュアー出力ファイル規約などのSSOTは`plan-implementation`側）
 
 ## 参照コメント方針
 
