@@ -11,6 +11,7 @@ import json
 import pytest
 
 from pytools._internal import claude_common as _claude_common
+from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from .helpers import _FakeResult, _plugin_list_json
@@ -104,7 +105,7 @@ class TestRunNoAutomaticStateChange:
             lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
         )
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
-        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
+        monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         # settings.json の読み取りは None (未設定扱い) で固定してテスト環境差を排除する
         monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
         # 有効化対象を全て未インストール状態に絞って検証する

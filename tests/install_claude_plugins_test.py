@@ -12,6 +12,7 @@ import subprocess
 import pytest
 
 from pytools._internal import claude_common as _claude_common
+from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from .helpers import _FakeResult, _plugin_list_json
@@ -54,7 +55,7 @@ class TestPrerequisites:
 def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """ファイル直接読み取りを無効化し、CLIフォールバックパスを通す。"""
     monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
-    monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
+    monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
 
 
 @pytest.fixture(name="disable_auto_managed_plugins")
@@ -467,7 +468,7 @@ class TestEnsureMarketplaceCliPath:
 
     def test_already_registered_by_name_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace list で name が検出できれば CLI add を呼ばない。"""
-        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
+        monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -482,14 +483,13 @@ class TestEnsureMarketplaceCliPath:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        # pylint: disable-next=protected-access
-        assert _install_claude_plugins._ensure_marketplace() is True
+        assert _claude_marketplace.ensure_marketplace() is True
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]] == []
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
 
     def test_not_registered_calls_add_with_github_shorthand(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace list が空なら GitHub ショートハンドで add を呼ぶ。"""
-        monkeypatch.setattr(_install_claude_plugins, "_check_marketplace_from_file", lambda: None)
+        monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -502,12 +502,11 @@ class TestEnsureMarketplaceCliPath:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        # pylint: disable-next=protected-access
-        assert _install_claude_plugins._ensure_marketplace() is True
+        assert _claude_marketplace.ensure_marketplace() is True
         add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
         assert len(add_calls) == 1
         # pylint: disable-next=protected-access
-        assert add_calls[0][-1] == _install_claude_plugins._MARKETPLACE_REPO
+        assert add_calls[0][-1] == _claude_marketplace._MARKETPLACE_REPO
 
 
 class TestDirectoryTypeMigration:
@@ -531,7 +530,7 @@ class TestDirectoryTypeMigration:
             json.dumps(
                 {
                     # pylint: disable-next=protected-access
-                    _install_claude_plugins._MARKETPLACE_NAME: {
+                    _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "directory", "path": "/home/aki/dotfiles"},
                         "installLocation": "/home/aki/dotfiles",
                         "lastUpdated": "2026-01-01T00:00:00.000Z",
@@ -545,7 +544,7 @@ class TestDirectoryTypeMigration:
                 {
                     "extraKnownMarketplaces": {
                         # pylint: disable-next=protected-access
-                        _install_claude_plugins._MARKETPLACE_NAME: {
+                        _claude_common.MARKETPLACE_NAME: {
                             "source": {"source": "directory", "path": "/home/aki/dotfiles"},
                         },
                     },
@@ -553,12 +552,12 @@ class TestDirectoryTypeMigration:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", known)
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", settings)
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", known)
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", settings)
 
         # 検査は破損と判定されるはず
         # pylint: disable-next=protected-access
-        assert _install_claude_plugins._check_marketplace_from_file() is False
+        assert _claude_marketplace._check_marketplace_from_file() is False
 
         # CLI remove+add は settings 側を更新しない再現環境として成功のみ返す
         monkeypatch.setattr(
@@ -567,15 +566,15 @@ class TestDirectoryTypeMigration:
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
 
-        # pylint: disable-next=protected-access
-        assert _install_claude_plugins._ensure_marketplace() is True
+        assert _claude_marketplace.ensure_marketplace() is True
 
         known_data = json.loads(known.read_text(encoding="utf-8"))
         # pylint: disable-next=protected-access
         entry = known_data[_install_claude_plugins._MARKETPLACE_NAME]
         assert entry["source"] == {"source": "github", "repo": "ak110/dotfiles"}
         # pylint: disable-next=protected-access
-        assert entry["installLocation"] == str(_install_claude_plugins._MARKETPLACE_INSTALL_LOCATION)
+        # pylint: disable-next=protected-access
+        assert entry["installLocation"] == str(_claude_marketplace._MARKETPLACE_INSTALL_LOCATION)
 
         settings_data = json.loads(settings.read_text(encoding="utf-8"))
         # pylint: disable-next=protected-access
@@ -682,18 +681,18 @@ class TestCheckMarketplaceFromFile:
             json.dumps(
                 {
                     # pylint: disable-next=protected-access
-                    _install_claude_plugins._MARKETPLACE_NAME: {
+                    _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "github", "repo": "ak110/dotfiles"},
                     },
                 }
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
         # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
-        assert _install_claude_plugins._check_marketplace_from_file() is True
+        assert _claude_marketplace._check_marketplace_from_file() is True
 
     def test_directory_type_unhealthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """過去の directory 型エントリは False を返す（マイグレーション対象）。"""
@@ -702,7 +701,7 @@ class TestCheckMarketplaceFromFile:
             json.dumps(
                 {
                     # pylint: disable-next=protected-access
-                    _install_claude_plugins._MARKETPLACE_NAME: {
+                    _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "directory", "path": "/home/aki/dotfiles"},
                         "installLocation": "/home/aki/dotfiles",
                     },
@@ -710,26 +709,26 @@ class TestCheckMarketplaceFromFile:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
-        assert _install_claude_plugins._check_marketplace_from_file() is False
+        assert _claude_marketplace._check_marketplace_from_file() is False
 
     def test_marketplace_not_registered(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """marketplaceキーが存在しない場合Noneを返す。"""
         path = tmp_path / "known_marketplaces.json"
         path.write_text(json.dumps({"other-marketplace": {}}), encoding="utf-8")
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", path)
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
-        assert _install_claude_plugins._check_marketplace_from_file() is None
+        assert _claude_marketplace._check_marketplace_from_file() is None
 
     def test_file_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """ファイルが存在しない場合Noneを返す。"""
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", tmp_path / "missing.json")
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "missing.json")
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
-        assert _install_claude_plugins._check_marketplace_from_file() is None
+        assert _claude_marketplace._check_marketplace_from_file() is None
 
 
 @pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_auto_managed_plugins")
@@ -760,16 +759,19 @@ class TestHappyPathNoCli:
             json.dumps(
                 {
                     # pylint: disable-next=protected-access
-                    _install_claude_plugins._MARKETPLACE_NAME: {
+                    _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "github", "repo": "ak110/dotfiles"},
                     },
                 }
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_install_claude_plugins, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
-        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える
-        monkeypatch.setattr(_install_claude_plugins, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
+        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える。
+        # `_claude_marketplace._SETTINGS_JSON_PATH` は `_check_marketplace_from_file` の参照先、
+        # `_claude_common.SETTINGS_JSON_PATH` は `_read_enabled_plugins_from_file` の参照先
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
+        monkeypatch.setattr(_claude_common, "SETTINGS_JSON_PATH", tmp_path / "settings.json")
 
         # subprocessが呼ばれたら失敗させる
         def fail_if_called(cmd, **_kwargs):  # noqa: ANN001
