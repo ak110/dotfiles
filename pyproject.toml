@@ -9,6 +9,7 @@ dependencies = [
     "holidays",
     "httpx",
     "libarchive-c",
+    "markdown-it-py>=4.0.0",
     "natsort",
     "numpy",
     "pdf2image",
@@ -27,6 +28,7 @@ repack-png = ["wand"]
 [project.scripts]
 check-image-sizes = "pytools.check_image_sizes:_main"
 claude-commit = "pytools.claude_commit:_main"
+claude-plans-viewer = "pytools.claude_plans_viewer:_main"
 claude-session-export = "pytools.claude_session_export:_main"
 claudize = "pytools.claudize:_main"
 clonedir = "pytools.clonedir:_main"

@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-17T21:25:57.068375872Z"
+exclude-newer = "2026-04-18T00:32:42.633023315Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1174,6 +1174,7 @@ dependencies = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
+    { name = "markdown-it-py" },
     { name = "natsort" },
     { name = "numpy" },
     { name = "pdf2image" },
@@ -1205,6 +1206,7 @@ requires-dist = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
+    { name = "markdown-it-py", specifier = ">=4.0.0" },
     { name = "natsort" },
     { name = "numpy" },
     { name = "pdf2image" },
