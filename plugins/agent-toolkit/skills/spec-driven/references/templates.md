@@ -161,7 +161,7 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 呼び出しテンプレートは`workflow.md`「ステップ2b」節内の`spec-writer`呼び出しテンプレートを参照する。
 `spec-writer`は起動時に`writing-standards`スキルを事前呼び出しすることを必須とする。
 
-## レビュアー呼び出し（spec-reviewer・code-quality-reviewer）
+## レビュアー呼び出し（spec-reviewer・code-quality-reviewer・document-quality-reviewer）
 
 レビュアーの起動は`plan-mode`スキルのレビューフェーズで行う。
 呼び出しテンプレート・出力ファイルパス規約・差し戻しループ運用の詳細は、
@@ -174,9 +174,9 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 - 恒常配置側の該当ドキュメント（既存改修時のみ、`spec-reviewer`のみ）
 - 改修前の該当節スナップショット（既存改修時のみ、作業版`.md`内の「改修前スナップショット」節、`spec-reviewer`のみ）
 - レビュー対象外の一時ファイル一覧
- （`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`）
+ （`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`・`.review-docs.md`）
 - 出力ファイルパス
- （`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`または`.review-quality.md`）
+ （`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`・`.review-docs.md`のいずれか）
 
 ## 参照コメント（恒常配置ドキュメントへの1行参照）
 

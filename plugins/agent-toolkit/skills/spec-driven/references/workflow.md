@@ -114,9 +114,10 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
 3. `spec-writer`の戻り値で生成／更新ファイルを確認する
    - 作業版`.md`・`README.md`更新エントリ・横断ドキュメント（あれば）の存在とパスを確かめる
 4. 実装完了後、`plan-mode`スキルのレビューフェーズへ進む
-   - `spec-reviewer`→`code-quality-reviewer`の順で直列起動。詳細は`plan-mode`の`references/implement-review.md`
+   - `spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`の順で直列起動。
+     詳細は`plan-mode`の`references/implement-review.md`
    - `spec-driven`文脈ではレビュアー引数に作業版ドキュメント・`README.md`・横断ドキュメントも含める
-    （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`）
+    （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`。`{kind}`は`spec`・`quality`・`docs`のいずれか）
    - 軽微な実装の場合はメイン判断でレビュー省略可（判断基準は`plan-mode`の`references/implement-review.md`）
 
 spec-writer呼び出しテンプレート:
@@ -142,7 +143,7 @@ spec-writer呼び出しテンプレート:
 ```
 
 実装・レビュー向けのサブエージェント呼び出しテンプレートは、`plan-mode`スキルの`references/implement-review.md`を参照する。
-対象は`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`の3種類。
+対象は`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`の4種類。
 
 ## ステップ3: Cleanup
 
@@ -155,6 +156,7 @@ spec-writer呼び出しテンプレート:
    - `docs/v{next}/.cache/{作業テーマ名}.research-*.md`（ステップ1で出力した全ファイル）
    - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
    - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
+   - `docs/v{next}/.cache/{作業テーマ名}.review-docs.md`
 2. 全差分を1コミットまたは意味単位で複数コミットにまとめる
 
 恒常配置への反映は本ステップでは行わない。リリース完了後に`spec-driven-promote`スキルで実施する。
@@ -195,6 +197,7 @@ spec-writer呼び出しテンプレート:
 
 役割・起動条件・運用原則は`spec-driven`スキルSKILL.mdの「サブエージェント分業」節を参照する。
 本スキルが起動するのは`spec-researcher`・`spec-writer`の2つ。
-実装・レビューを担う`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`は`plan-mode`スキルの所掌。
+実装・レビューを担う`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`は
+`plan-mode`スキルの所掌。
 サブエージェントの起動はすべてAgentツールの`model`パラメーターに`"sonnet"`を指定する。
 各テンプレートのテキストは`prompt`パラメーターとして渡す。

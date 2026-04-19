@@ -13,7 +13,7 @@
     ステップ1は実施済み
   - `docs/v{next}/{作業テーマ名}.md`・`docs/v{next}/README.md`のエントリが存在すれば
     ステップ2後半（`spec-writer`実行済み）以降
-  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`の存在で
+  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`・`.review-docs.md`の存在で
     `plan-mode`のレビュー段階の途中とみなす（レビュー完了後はCleanupで削除されるため）
 - ステップ2ではplan mode内（計画ファイル作成中）とplan mode外（設計ドキュメント立ち上げ・実装中）の
   切り替え位置に注意する。計画ファイルが存在しcodexレビュー済みであれば2b以降、

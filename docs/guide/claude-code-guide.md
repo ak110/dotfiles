@@ -161,7 +161,8 @@ codex CLI自体のセットアップは別途行うこと。
 - `plan-mode` — plan mode開始時・複雑な指示受領時・バグ障害イシュー調査相談時に呼び出す計画ファイル作成と
   実装・レビュー工程の運用手順。
   計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合。
-  ExitPlanMode後の実装・レビュー工程では`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`を起動する。
+  ExitPlanMode後の実装・レビュー工程では`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
+  `document-quality-reviewer`を起動する。
   実装・レビューの詳細手順は`references/implement-review.md`に分離している。
   曖昧な指示時には計画ファイル作成前に選択肢提示で要件を確定させる対話フェーズの指針も含む。
   バグ・障害・イシュー調査相談を受けた時は`references/bugfix.md`
@@ -201,16 +202,18 @@ codex CLI自体のセットアップは別途行うこと。
     - `{作業テーマ名}.research-{nn}.md`（`spec-researcher`。`{nn}`はゼロパディング2桁連番）
     - `{作業テーマ名}.review-spec.md`（`spec-reviewer`）
     - `{作業テーマ名}.review-quality.md`（`code-quality-reviewer`）
+    - `{作業テーマ名}.review-docs.md`（`document-quality-reviewer`）
     - レビュー指摘ファイルは差し戻しループで上書きされる。一時ファイル群はいずれもCleanupステップで削除する
     - 一時ファイルは`.cache/`配下に置きgit管理から外す
      （`.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`スキルが担当する）。
       pyfltrなど品質ツール群の多くが`.cache`をデフォルト除外対象とするため、中間成果物が品質チェックを阻害しない
   - `spec-driven`が直接起動するサブエージェントは`spec-researcher`（調査）と`spec-writer`（設計ドキュメント立ち上げ）の2つ。
-    実装・レビューは`plan-mode`スキルの所掌で、`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`を起動する
-  - レビューは`spec-reviewer`（仕様適合性・ドキュメント整合性・計画ファイルからの転記漏れ・粒度差対応の整合）と
-    `code-quality-reviewer`（コード品質）を`plan-mode`が直列起動する。
+    実装・レビューは`plan-mode`スキルの所掌で、`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
+    `document-quality-reviewer`を起動する
+  - レビューは`spec-reviewer`（仕様適合性・ドキュメント間整合性・計画ファイルからの転記漏れ・粒度差対応の整合）と
+    `code-quality-reviewer`（コード品質）と`document-quality-reviewer`（ドキュメント単体の品質）を`plan-mode`が直列起動する。
     全タスク完了・format/lint/test合格のあとに実行する。
-    両レビュアーは指摘を上記サフィックス付きファイルへ書き出し、戻り値は判定・件数に絞ることでメインのコンテキスト消費を抑える。
+    3レビュアーは指摘を上記サフィックス付きファイルへ書き出し、戻り値は判定・件数に絞ることでメインのコンテキスト消費を抑える。
     軽微な実装はメイン判断でレビュー省略可
   - 自動トリガー条件: 既にspec-drivenで開発している形跡（恒常配置の整備・`CLAUDE.md`記述）があり、
     かつ大規模な機能追加・改修の相談を受けた場合に限る。

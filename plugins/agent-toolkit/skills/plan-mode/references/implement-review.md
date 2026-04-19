@@ -9,7 +9,8 @@ SKILL.md本体から分離したのは、記述量が多く本体の肥大化を
 1. `ExitPlanMode`直後にメインが実装着手直前のHEADを`BASE_SHA`として記録する
 2. 計画ファイルの「変更内容」節を起点にタスク分解し、`TaskCreate`へ登録する
 3. 各タスクを`plan-implementer`へ順次委譲する
-4. format/lint/test合格後、必要なら`spec-reviewer`→`code-quality-reviewer`の順でレビュアーを直列起動する
+4. format/lint/test合格後、必要なら`spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`の順で
+   レビュアーを直列起動する
 5. 指摘があれば該当タスクを`plan-implementer`へ差し戻し、合格まで繰り返す
 6. レビュー合格後に成果物を変更した場合はformat/lint/testとレビューを再実行する
 
@@ -73,7 +74,7 @@ plan-implementer呼び出しテンプレート:
 
 ### spec-reviewer起動
 
-仕様適合性・ドキュメント整合性レビューを`spec-reviewer`に委譲する。
+仕様適合性・ドキュメント間整合性レビューを`spec-reviewer`に委譲する。
 
 spec-reviewer呼び出しテンプレート:
 
@@ -129,13 +130,47 @@ BASE_SHA: {ExitPlanMode直後に記録したHEAD}
 `Assessment: approve`が返るまで次ステップへ進まない。
 指摘が繰り返される場合（同種の指摘が2回以上続くなど）はループを中断してユーザーへエスカレーションする。
 
+### document-quality-reviewer起動
+
+`code-quality-reviewer`合格後、ドキュメント単体の品質レビューを`document-quality-reviewer`に委譲する。
+ドキュメント変更が無いまたは軽微な変更のみの場合は、本ファイル末尾の「レビュー省略の判断基準」を流用してメイン判断で省略してよい。
+ただし`spec-driven`文脈での作業版ドキュメント追加や、
+恒常化先（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・プロジェクトドキュメント）への反映を伴う場合は省略しない。
+
+document-quality-reviewer呼び出しテンプレート:
+
+```text
+以下の実装に付随するドキュメント変更についてドキュメント単体の品質レビューを実施してください。
+
+計画ファイル: `~/.claude/plans/{自動生成ファイル名}.md`
+BASE_SHA: {ExitPlanMode直後に記録したHEAD}
+対象外ファイル: {一時ファイル一覧}
+出力ファイル: {出力ファイルパス}（差し戻しループでは上書き）
+
+{spec-driven文脈のみ}
+作業テーマ名: {作業テーマ名}
+作業版ドキュメント: `docs/v{next}/{作業テーマ名}.md`
+
+差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
+制約: 書き込みは出力ファイル1つのみ。writing-standardsスキルを事前に呼び出し、品質基準に従うこと。gitコミット・pushは行わないこと
+戻り値: Assessment（approve/reject）と指摘件数（Critical/Important/Minor別）
+```
+
+指摘があれば`plan-implementer`へ差し戻して再修正する。
+再修正後はformat/lint/testと`spec-reviewer`・`code-quality-reviewer`の再実行もループに含める。
+`Assessment: approve`が返るまで次ステップへ進まない。
+指摘が繰り返される場合（同種の指摘が2回以上続くなど）はループを中断してユーザーへエスカレーションする。
+
 ### レビュー合格後の変更時の再実行規則
 
 レビュー合格後に成果物（コード・ドキュメント・テストなど）を変更した場合は、
 変更量に応じてformat/lint/testと各レビュアーを再実行する。
 
-- コード変更あり: format/lint/test →`spec-reviewer`→`code-quality-reviewer`を再実行
-- ドキュメントのみの変更（`spec-driven`文脈）: format/lint/test→`spec-reviewer`を再実行。
+- コード変更あり: format/lint/test →`spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`を再実行
+ （ドキュメント変更を伴わなければ`document-quality-reviewer`は省略可）
+- ドキュメントのみの変更あり: format/lint/test→`spec-reviewer`→`document-quality-reviewer`を再実行。
+  対象は`spec-driven`文脈の作業版ドキュメント・`README.md`や、
+  恒常化先の`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・プロジェクトドキュメントなど。
   コード挙動が変わらないため`code-quality-reviewer`は省略してよい
 - 軽微な誤字修正・コメント調整など: メイン判断で再実行省略可
 
@@ -155,12 +190,20 @@ BASE_SHA: {ExitPlanMode直後に記録したHEAD}
 ## レビュアー出力ファイルパス規約
 
 計画ファイル名（`~/.claude/plans/{自動生成ファイル名}.md`）から派生する出力ファイル名は、
-拡張子直前に`.review-spec`・`.review-quality`を挿入する規則で生成する。
+拡張子直前に`.review-spec`・`.review-quality`・`.review-docs`を挿入する規則で生成する。
 
 - `spec-driven`文脈: `docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`
 - 単独`plan-mode`文脈: `~/.claude/plans/{plan名}.review-{kind}.md`
   - 例: `~/.claude/plans/foo-bar-plan-m-xxx.md` →
-    `~/.claude/plans/foo-bar-plan-m-xxx.review-spec.md`・`~/.claude/plans/foo-bar-plan-m-xxx.review-quality.md`
+    `~/.claude/plans/foo-bar-plan-m-xxx.review-spec.md`・
+    `~/.claude/plans/foo-bar-plan-m-xxx.review-quality.md`・
+    `~/.claude/plans/foo-bar-plan-m-xxx.review-docs.md`
+
+`{kind}`は以下のいずれか。
+
+- `spec`: 仕様適合性・ドキュメント間整合性レビュー（`spec-reviewer`）
+- `quality`: コード品質レビュー（`code-quality-reviewer`）
+- `docs`: ドキュメント単体品質レビュー（`document-quality-reviewer`）
 
 差し戻しループでは同一ファイルを上書きする（前回指摘と混在させない）。
 レビュー完了後、`spec-driven`文脈のファイルはCleanupで削除する。

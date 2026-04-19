@@ -24,7 +24,8 @@ tools:
 呼び出し元から受領した1タスクを実装し、自己検証した結果を報告する。
 タスク横断の判断や方針変更はせず、範囲外の事項はエスカレーションする。
 
-仕様適合性・ドキュメント整合性レビューは`spec-reviewer`、コード品質レビューは`code-quality-reviewer`が担う。
+仕様適合性・ドキュメント間整合性レビューは`spec-reviewer`、コード品質レビューは`code-quality-reviewer`、
+ドキュメント単体の品質レビューは`document-quality-reviewer`が担う。
 `spec-driven`文脈では並行して`spec-writer`が作業版ドキュメントを立ち上げるが、本エージェントは実装単位のタスクに専念する。
 
 ## 手順
@@ -34,8 +35,8 @@ tools:
    - 参照する計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）
    - `spec-driven`文脈で呼ばれた場合は参照する作業版ドキュメント（`docs/v{next}/{作業テーマ名}.md`）
    - 差し戻しの場合、レビュアー指摘ファイルのパス
-     - `spec-driven`文脈: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`または`.review-quality.md`
-     - 単独`plan-mode`文脈: `~/.claude/plans/{plan名}.review-spec.md`または`.review-quality.md`
+     - `spec-driven`文脈: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`・`.review-docs.md`のいずれか
+     - 単独`plan-mode`文脈: `~/.claude/plans/{plan名}.review-spec.md`・`.review-quality.md`・`.review-docs.md`のいずれか
    - 完了条件（format/lint/testの合格）
 2. `coding-standards`スキルを呼び出し、品質基準とテスト方針を読み込む
 3. 計画ファイル（必要に応じて作業版ドキュメント）を読み、背景・既存制約・判断経緯を把握する
