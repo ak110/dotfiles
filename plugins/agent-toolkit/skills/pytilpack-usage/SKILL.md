@@ -1,6 +1,11 @@
 ---
 name: pytilpack-usage
-description: pytilpackの使い方・モジュール構成・APIドキュメント参照のリファレンス。pytilpackのAPIや関数の使い方を調べたいとき、pytilpackのモジュールを新たに使い始めるとき、pytilpackの依存（extras）を追加・確認したいとき、pytilpackのCLIツールを使いたいときに使う。`pytilpack`が`pyproject.toml`や`CLAUDE.md`に記載されているプロジェクトで特に有用。`import pytilpack`を含むコードを読み書きする際にも参照する。
+description: >
+  pytilpackの使い方・モジュール構成・APIドキュメント参照のリファレンス。
+  pytilpackのAPIや関数の使い方を調べたいとき、pytilpackのモジュールを新たに使い始めるとき、
+  pytilpackの依存（extras）を追加・確認したいとき、pytilpackのCLIツールを使いたいときに使う。
+  `pytilpack`が`pyproject.toml`や`CLAUDE.md`に記載されているプロジェクトで特に有用。
+  `import pytilpack`を含むコードを読み書きする際にも参照する。
 ---
 
 # pytilpackの使い方
@@ -14,7 +19,8 @@ import pytilpack.xxx
 ```
 
 `xxx`には対象ライブラリ名（`httpx`、`pathlib`等）または汎用モジュール名（`cache`、`sse`等）が入る。
-ライブラリ用モジュール（特にBabel・SQLAlchemyなど重量級のもの）はextrasのインストールが必要。`pyproject.toml`の依存指定時に`pytilpack[babel,sqlalchemy]`のように該当名を含めて指定する。
+ライブラリ用モジュール（特にBabel・SQLAlchemyなど重量級のもの）はextrasのインストールが必要。
+`pyproject.toml`の依存指定時に`pytilpack[babel,sqlalchemy]`のように該当名を含めて指定する。
 
 ## モジュール分類
 

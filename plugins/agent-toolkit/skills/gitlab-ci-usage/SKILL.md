@@ -1,12 +1,19 @@
 ---
 name: gitlab-ci-usage
-description: GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・トラブルシューティング観点の参照リファレンス。`.gitlab-ci.yml`を新規作成または修正する時、`rules`・`workflow`・`needs`・`include`・`extends`・`artifacts`・`cache`などのキーワード仕様やサブキーを確認したい時、ジョブの起動条件や依存関係の書き方で迷った時、CIパイプラインが意図通りに動かず原因を切り分けたい時、設定ファイルをlint/validateしたい時に使う。`.gitlab-ci.yml`が存在するリポジトリや、GitLab CIをセットアップしようとしているプロジェクトで特に有用。
+description: >
+  GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・
+  トラブルシューティング観点の参照リファレンス。
+  `.gitlab-ci.yml`を新規作成または修正する時、`rules`・`workflow`・`needs`・`include`・`extends`・`artifacts`・`cache`などの
+  キーワード仕様やサブキーを確認したい時、ジョブの起動条件や依存関係の書き方で迷った時、
+  CIパイプラインが意図通りに動かず原因を切り分けたい時、設定ファイルをlint/validateしたい時に使う。
+  `.gitlab-ci.yml`が存在するリポジトリや、GitLab CIをセットアップしようとしているプロジェクトで特に有用。
 ---
 
 # GitLab CIの使い方
 
 `.gitlab-ci.yml`のキーワード仕様は改訂頻度が高く、訓練データだけでは最新のサブキーや非推奨化を追いきれない。
-本スキルは公式ドキュメントへのピンポイントWebFetchを一次情報源として、編集時の参照・確認を効率化するためのリファレンスを集約する。
+本スキルは公式ドキュメントへのピンポイントWebFetchを一次情報源として、
+編集時の参照・確認を効率化するためのリファレンスを集約する。
 
 ## 基本方針
 
@@ -19,16 +26,18 @@ description: GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様
 テーマ別の代表ページを以下に示す。
 該当項目をWebFetchしてから編集することで、サブキーの取り得る値や非推奨化を見落とさずに済む。
 
-| テーマ | URL | 使う場面 |
-| -- | -- | -- |
-| キーワード全リファレンス | <https://docs.gitlab.com/ci/yaml/> | 未知のキーワード、サブキーの網羅確認 |
-| `rules` / `only` / `except` | <https://docs.gitlab.com/ci/yaml/#rules> | ジョブ起動条件、`rules:if` / `rules:changes` / `rules:exists` |
-| `workflow:rules` | <https://docs.gitlab.com/ci/yaml/workflow/> | パイプライン自体の起動制御、`workflow:auto_cancel` |
-| `include` | <https://docs.gitlab.com/ci/yaml/includes/> | `include:local` / `include:project` / `include:template` / `include:component` |
-| `artifacts:reports` | <https://docs.gitlab.com/ci/yaml/artifacts_reports/> | `junit` / `coverage_report` / `dotenv` / `sast`などレポート種別 |
-| 事前定義変数 | <https://docs.gitlab.com/ci/variables/predefined_variables/> | `CI_*`変数の正確な名称と値のタイミング |
-| CI Lint API | <https://docs.gitlab.com/api/lint/> | 外部からのlint呼び出し仕様 |
-| CI/CD components | <https://docs.gitlab.com/ci/components/> | コンポーネント定義・入力パラメーター |
+- [キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/): 未知のキーワード、サブキーの網羅確認
+- [`rules` / `only` / `except`](https://docs.gitlab.com/ci/yaml/#rules):
+  ジョブ起動条件、`rules:if` / `rules:changes` / `rules:exists`
+- [`workflow:rules`](https://docs.gitlab.com/ci/yaml/workflow/):
+  パイプライン自体の起動制御、`workflow:auto_cancel`
+- [`include`](https://docs.gitlab.com/ci/yaml/includes/):
+  `include:local` / `include:project` / `include:template` / `include:component`
+- [`artifacts:reports`](https://docs.gitlab.com/ci/yaml/artifacts_reports/):
+  `junit` / `coverage_report` / `dotenv` / `sast`などレポート種別
+- [事前定義変数](https://docs.gitlab.com/ci/variables/predefined_variables/): `CI_*`変数の正確な名称と値のタイミング
+- [CI Lint API](https://docs.gitlab.com/api/lint/): 外部からのlint呼び出し仕様
+- [CI/CD components](https://docs.gitlab.com/ci/components/): コンポーネント定義・入力パラメーター
 
 ## 典型パターン
 
@@ -122,13 +131,14 @@ test:
 `.gitlab-ci.yml`の妥当性検証には以下の手段がある。
 ローカル完結で可能ならまずローカルで確認し、最終確認でGitLab本体のlintを使うのが無駄が少ない。
 
-| 手段 | 特徴 | 使い所 |
-| -- | -- | -- |
-| `gitlab-ci-local` | ローカルでジョブをシミュレート実行できるNode製CLI（<https://github.com/firecow/gitlab-ci-local>） | 構文チェックに加え、rulesの評価結果まで確認したいとき |
-| `/api/v4/ci/lint` | GitLab本体のCI Lint API（`content`フィールドにyaml全文を渡す） | CI内やスクリプトからの自動検証 |
-| プロジェクトの`/-/ci/lint`ページ | Web UIでの手動検証。`include`解決や変数込みの検証が可能 | 最終確認、`include`先を含めた統合的な妥当性確認 |
+- [`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local):
+  ローカルでジョブをシミュレート実行できるNode製CLI。構文チェックに加え、rulesの評価結果まで確認したいとき
+- `/api/v4/ci/lint`: GitLab本体のCI Lint API（`content`フィールドにyaml全文を渡す）。CI内やスクリプトからの自動検証
+- プロジェクトの`/-/ci/lint`ページ: Web UIでの手動検証。`include`解決や変数込みの検証が可能。
+  最終確認、`include`先を含めた統合的な妥当性確認に使う
 
-GitLab本体のlintは`include`や`workflow`評価までを行うため、ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
+GitLab本体のlintは`include`や`workflow`評価までを行うため、
+ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
 
 ## トラブルシューティング指針
 

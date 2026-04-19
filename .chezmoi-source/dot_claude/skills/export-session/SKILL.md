@@ -1,6 +1,8 @@
 ---
 name: export-session
-description: Claude Codeのセッション履歴をmarkdownにエクスポートする。「セッションをエクスポート」「会話履歴を保存」「セッション履歴をmarkdownに」「この会話を出力」などのキーワードで使用する
+description: >
+  Claude Codeのセッション履歴をmarkdownにエクスポートする。
+  「セッションをエクスポート」「会話履歴を保存」「セッション履歴をmarkdownに」「この会話を出力」などのキーワードで使用する
 user-invocable: true
 ---
 
