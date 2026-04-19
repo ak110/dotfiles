@@ -6,6 +6,8 @@
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy` ではない。定義元を特定しやすく、名前衝突も避けられるため）
   - `import xxx as yyy` の別名は`np`などの一般的なものを除き極力使用しない（可読性を損なうため）
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
+    - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す
+      設計上の解消を優先する（片方を関数内importにするのも局所対処であり、恒常化は避ける）
 - タイプヒントは可能な限り書く（静的解析・IDE補完・リファクタリング耐性を確保するため）
   - `typing.List`ではなく`list`を使用する。`dict`やその他も同様
   - `typing.Optional`ではなく`| None`を使用する
@@ -83,3 +85,11 @@
   - `asyncio_mode = "strict"` を推奨（マーカーの付け忘れを検出できる）
   - テスト関数には `@pytest.mark.asyncio` を明示する
   - 非同期fixtureには `@pytest_asyncio.fixture` を使用する（`@pytest.fixture` + `async def` では動作しない）
+
+### ロギング出力の検証
+
+- `caplog` fixtureはroot loggerへ伝搬した記録のみ捕捉するため、`propagate=False`のloggerでは捕捉できない
+- `capsys`で捕捉する場合も、`StreamHandler(sys.stdout)`をfixture setup時に追加すると
+  capsysのstdout差し替えタイミングとstream参照が一致せず失敗しやすい
+- 対処: 検証対象loggerへ記録蓄積用の`logging.Handler`サブクラスを直接追加し、
+  fixture終了時に`removeHandler`で取り除くパターンが安定する
