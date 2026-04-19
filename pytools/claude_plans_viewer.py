@@ -40,12 +40,24 @@ logger = logging.getLogger(__name__)
 _subscribers: set[queue.Queue[str]] = set()
 _subscribers_lock = threading.Lock()
 
+# debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
+_BROADCAST_DEBOUNCE_SEC = 0.3
+_broadcast_timer: threading.Timer | None = None
+_broadcast_timer_lock = threading.Lock()
+
+# 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`は`/api/file`応答の`read_text`との間で
+# feedback loopになるため除外する。`FileClosedEvent`は`IN_CLOSE_WRITE`（書き込み後クローズ）を表す。
+_WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
+    watchdog.events.FileCreatedEvent,
+    watchdog.events.FileModifiedEvent,
+    watchdog.events.FileDeletedEvent,
+    watchdog.events.FileMovedEvent,
+    watchdog.events.FileClosedEvent,
+)
+
 
 def _subscribe() -> queue.Queue[str]:
-    """SSE購読キューを生成して登録し返す。
-
-    maxsize=1にすることで短時間の連続イベントを1件に畳む。
-    """
+    """SSE購読キューを生成して登録し返す。"""
     q: queue.Queue[str] = queue.Queue(maxsize=1)
     with _subscribers_lock:
         _subscribers.add(q)
@@ -58,17 +70,42 @@ def _unsubscribe(q: queue.Queue[str]) -> None:
         _subscribers.discard(q)
 
 
-def _broadcast() -> None:
-    """全購読者へ`refresh`を通知する。
+def _deliver_refresh() -> None:
+    """全購読者へ`refresh`を配信する。
 
-    キューがすでに満杯（maxsize=1のため前回通知が未消費）の場合は握りつぶす。
-    これにより短時間の大量イベントが1件の通知に畳まれる。
+    キューがすでに満杯の場合は新規通知を破棄する。`_broadcast`のdebounce窓満了時に呼ばれる。
     """
     with _subscribers_lock:
         targets = list(_subscribers)
     for q in targets:
         with contextlib.suppress(queue.Full):
             q.put_nowait("refresh")
+
+
+def _broadcast() -> None:
+    """全購読者へ`refresh`を通知する（debounce付き）。
+
+    watchdogは1回の書き込みで複数イベントを発火するため、時間窓（`_BROADCAST_DEBOUNCE_SEC`）で
+    畳み込んで1回だけ配信する。タイマーがすでに起動中であれば即座に返る。
+    """
+    global _broadcast_timer  # noqa: PLW0603 # pylint: disable=global-statement
+    with _broadcast_timer_lock:
+        if _broadcast_timer is not None and _broadcast_timer.is_alive():
+            return
+        _broadcast_timer = threading.Timer(_BROADCAST_DEBOUNCE_SEC, _deliver_refresh)
+        _broadcast_timer.daemon = True
+        _broadcast_timer.start()
+
+
+def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。"""
+    if path.suffix != ".md":
+        return False
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return not any(part.startswith(".") for part in rel.parts)
 
 
 class _PlansEventHandler(watchdog.events.FileSystemEventHandler):
@@ -81,23 +118,26 @@ class _PlansEventHandler(watchdog.events.FileSystemEventHandler):
     @typing.override
     def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
         """ファイルシステムイベントをフィルタリングして購読者へ通知する。"""
+        # 読み取り由来イベント（`FileOpenedEvent`・`FileClosedNoWriteEvent`）は除外する。
+        # これらを通過させると/api/fileのread_textがwatchdog経由でSSEを誘発するfeedback loopになる。
+        if not isinstance(event, _WATCHED_EVENT_TYPES):
+            return
         # ディレクトリイベントは対象外
         if event.is_directory:
             return
         # src_pathはwatchdog型定義上bytes|strだが実行時はstr。str変換でPath型エラーを回避する
         src = pathlib.Path(str(event.src_path))
-        # .md以外は対象外
-        if src.suffix != ".md":
-            return
-        # dotdirを経由するパスを除外するため、root配下の相対パスに変換してから判定する。
-        # watchdogは絶対パスでイベントを通知するため、src_path全体のparts判定では
-        # rootのパス成分（~/.claude/plans等）がdotdirに誤マッチする。
-        try:
-            rel = src.resolve().relative_to(self.root.resolve())
-        except ValueError:
-            return
-        if any(part.startswith(".") for part in rel.parts):
-            return
+        # `FileMovedEvent`はsrc_pathとdest_pathの両方を確認する。
+        # atomic-write保存（一時ファイルに書き込み後にrenameする保存方式）では
+        # `FileMovedEvent(src_path="plan.md.tmp", dest_path="plan.md")`となり、
+        # src_pathだけ見ると.md以外として除外されて自動リロードが機能しない。
+        if isinstance(event, watchdog.events.FileMovedEvent):
+            dest = pathlib.Path(str(event.dest_path))
+            if not (_is_watched_path(src, self.root) or _is_watched_path(dest, self.root)):
+                return
+        else:
+            if not _is_watched_path(src, self.root):
+                return
         _broadcast()
 
 
@@ -233,6 +273,7 @@ _INDEX_HTML = """<!doctype html>
 <script>
 let files = [];
 let selectedPath = null;
+let selectedMtime = null;
 
 function renderFiles() {
   const q = document.getElementById("filter").value.toLowerCase();
@@ -294,6 +335,8 @@ async function openFile(path) {
   document.getElementById("preview").innerHTML = await res.text();
   if (main) main.scrollTop = 0;
   document.title = path;
+  const selected = files.find(f => f.path === path);
+  selectedMtime = selected ? selected.mtime_epoch : null;
 }
 
 async function main() {
@@ -303,7 +346,12 @@ async function main() {
   const es = new EventSource("/api/events");
   es.onmessage = async () => {
     await refreshFiles();
-    if (selectedPath) await updatePreview();
+    if (!selectedPath) return;
+    const current = files.find(f => f.path === selectedPath);
+    if (current && current.mtime_epoch !== selectedMtime) {
+      selectedMtime = current.mtime_epoch;
+      await updatePreview();
+    }
   };
 }
 
@@ -326,6 +374,7 @@ class _FileEntry:
     path: str
     name: str
     mtime: str
+    mtime_epoch: float
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -386,7 +435,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _list_files(root: pathlib.Path) -> list[_FileEntry]:
     """rootから`.md`ファイルを再帰的に探し、更新日時の降順で返す。"""
     tzinfo = datetime.datetime.now().astimezone().tzinfo
-    # mtime_epochは並べ替え用。最終結果には含めない。
     collected: list[tuple[float, _FileEntry]] = []
     for path in root.rglob("*.md"):
         if not path.is_file():
@@ -398,6 +446,7 @@ def _list_files(root: pathlib.Path) -> list[_FileEntry]:
             path=rel,
             name=path.name,
             mtime=mtime.strftime("%Y/%m/%d %H:%M"),
+            mtime_epoch=stat.st_mtime,
         )
         collected.append((stat.st_mtime, entry))
     collected.sort(key=lambda pair: pair[0], reverse=True)

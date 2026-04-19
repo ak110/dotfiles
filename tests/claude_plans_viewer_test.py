@@ -12,12 +12,32 @@ import queue
 import re
 import socket
 import threading
+import time
 from pathlib import Path
 
 import pytest
 import watchdog.events
 
 from pytools import claude_plans_viewer
+
+# `_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
+# debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
+_QUEUE_GET_TIMEOUT_SEC = claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.7
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _reset_broadcast_timer():
+    """`_broadcast_timer`をテスト間で残さず独立性を担保する。
+
+    debounceタイマーがモジュールグローバルに残ると、テスト順序や並列実行時に
+    `is_alive()`がTrueのまま新規タイマー生成をスキップしflakyになる。
+    """
+    claude_plans_viewer._broadcast_timer = None
+    yield
+    timer = claude_plans_viewer._broadcast_timer
+    if timer is not None:
+        timer.cancel()
+    claude_plans_viewer._broadcast_timer = None
 
 
 class TestListFiles:
@@ -42,6 +62,8 @@ class TestListFiles:
             assert pattern.match(entry.mtime), entry.mtime
         # `_FileEntry`はサイズを保持しない。
         assert not hasattr(entries[0], "size")
+        # `mtime_epoch`を保持すること（クライアント側mtime変化検知に使用）。
+        assert hasattr(entries[0], "mtime_epoch")
 
     def test_includes_only_md(self, tmp_path: Path):
         """.md以外は含まず、サブディレクトリは再帰的に拾うこと。"""
@@ -276,21 +298,33 @@ class TestSubscribers:
         claude_plans_viewer._unsubscribe(q)
 
     def test_broadcast_delivers_refresh(self):
-        """_broadcast 後にキューから "refresh" が取得できること。"""
+        """_broadcast 後にキューから "refresh" が取得できること（debounce経由で届く）。"""
         q = claude_plans_viewer._subscribe()
         try:
             claude_plans_viewer._broadcast()
-            msg = q.get(timeout=1)
+            msg = q.get(timeout=_QUEUE_GET_TIMEOUT_SEC)
             assert msg == "refresh"
         finally:
             claude_plans_viewer._unsubscribe(q)
 
-    def test_broadcast_deduplicates_via_maxsize(self):
-        """_broadcast を2回連続で呼んでも、キュー長が1のまま（2件目は握りつぶされる）こと。"""
+    def test_broadcast_coalesces_via_debounce(self):
+        """_broadcast を2回連続で呼んでも、debounce窓内は1件にまとめられること。"""
         q = claude_plans_viewer._subscribe()
         try:
             claude_plans_viewer._broadcast()
             claude_plans_viewer._broadcast()
+            time.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            assert q.qsize() == 1
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_broadcast_is_debounced_across_many_calls(self):
+        """_broadcast を短時間に10回呼んでも、debounce窓満了後にキューは1件であること。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            for _ in range(10):
+                claude_plans_viewer._broadcast()
+            time.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.qsize() == 1
         finally:
             claude_plans_viewer._unsubscribe(q)
@@ -300,14 +334,68 @@ class TestWatchdogHandler:
     """_PlansEventHandler のイベントフィルタリングテスト。"""
 
     def test_md_event_broadcasts(self, tmp_path: Path):
-        """.md ファイルの変更イベントで購読者へ refresh が届くこと。"""
+        """.md ファイルの変更イベントで購読者へ refresh が届くこと（debounce経由で届く）。"""
         q = claude_plans_viewer._subscribe()
         try:
             md_file = tmp_path / "plan.md"
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(md_file))
             claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
-            msg = q.get(timeout=1)
+            msg = q.get(timeout=_QUEUE_GET_TIMEOUT_SEC)
+            assert msg == "refresh"
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_file_opened_event_ignored(self, tmp_path: Path):
+        """FileOpenedEvent では購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            md_file = tmp_path / "plan.md"
+            md_file.write_text("x", encoding="utf-8")
+            event = watchdog.events.FileOpenedEvent(str(md_file))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            with pytest.raises(queue.Empty):
+                q.get_nowait()
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_file_closed_nowrite_event_ignored(self, tmp_path: Path):
+        """FileClosedNoWriteEvent では購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            md_file = tmp_path / "plan.md"
+            md_file.write_text("x", encoding="utf-8")
+            event = watchdog.events.FileClosedNoWriteEvent(str(md_file))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            with pytest.raises(queue.Empty):
+                q.get_nowait()
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_file_moved_event_to_md_broadcasts(self, tmp_path: Path):
+        """FileMovedEvent(src=*.md.tmp, dest=*.md) で購読者へ通知されること（atomic-write保存の回帰テスト）。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            event = watchdog.events.FileMovedEvent(
+                src_path=str(tmp_path / "x.md.tmp"),
+                dest_path=str(tmp_path / "x.md"),
+            )
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            msg = q.get(timeout=_QUEUE_GET_TIMEOUT_SEC)
+            assert msg == "refresh"
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_file_moved_event_from_md_broadcasts(self, tmp_path: Path):
+        """FileMovedEvent(src=*.md, dest=*.md) で購読者へ通知されること（rename・移動操作の検出）。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            event = watchdog.events.FileMovedEvent(
+                src_path=str(tmp_path / "x.md"),
+                dest_path=str(tmp_path / "y.md"),
+            )
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            msg = q.get(timeout=_QUEUE_GET_TIMEOUT_SEC)
             assert msg == "refresh"
         finally:
             claude_plans_viewer._unsubscribe(q)
@@ -367,7 +455,8 @@ class TestWatchdogHandler:
         try:
             event = watchdog.events.FileModifiedEvent(str(md_file))
             claude_plans_viewer._PlansEventHandler(dot_root).on_any_event(event)
-            msg = q.get(timeout=1)
+            # debounce経由で届く
+            msg = q.get(timeout=_QUEUE_GET_TIMEOUT_SEC)
             assert msg == "refresh"
         finally:
             claude_plans_viewer._unsubscribe(q)
@@ -397,8 +486,8 @@ class TestEventsEndpoint:
                 assert response.getheader("Content-Type") == "text/event-stream"
                 assert response.getheader("Cache-Control") == "no-store"
 
-                # 少し待ってから _broadcast を呼ぶ
-                threading.Timer(0.3, claude_plans_viewer._broadcast).start()
+                # 少し待ってから _broadcast を呼ぶ（debounce 0.3s + SSE到達が50行ループ内に収まるよう短くする）
+                threading.Timer(0.05, claude_plans_viewer._broadcast).start()
 
                 # data: refresh 行が届くまで読み取る
                 received_refresh = False
