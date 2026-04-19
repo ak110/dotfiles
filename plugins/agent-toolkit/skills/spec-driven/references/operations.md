@@ -5,11 +5,19 @@
 
 ## 中断・再開
 
-- 状態は「計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）＋開発中バージョンディレクトリ配下のファイル群＋TaskCreate残タスク」で保持する
+- 状態は「計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）＋
+  開発中バージョンディレクトリ配下のファイル群＋TaskCreate残タスク」で保持する
 - 再開時の判断材料
   - TaskCreate残タスクの有無と先頭タスクの内容で、どのステップのどの位置にいるかを特定する
-  - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`が存在すればステップ1は実施済み
-  - `docs/v{next}/{作業テーマ名}.md`・`docs/v{next}/README.md`のエントリが存在すればステップ2後半（`spec-designer`実行済み）以降
-  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`の存在でレビュー状況を判定する
-- ステップ2ではplan mode内（計画ファイル作成中）とplan mode外（設計ドキュメント立ち上げ・実装中）の切り替え位置に注意する。計画ファイルが存在しcodexレビュー済みであれば2b以降、未作成または未合格であれば2aとみなす
-- 開発中配置（`docs/v{next}/`配下）が存在する場合はそこが作業対象となる。恒常配置（`docs/features/`・`docs/topics/`）は参照専用で、改修作業中は直接編集しない（昇格前に恒常配置と実装が乖離するのを避けるため）
+  - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`が存在すれば
+    ステップ1は実施済み
+  - `docs/v{next}/{作業テーマ名}.md`・`docs/v{next}/README.md`のエントリが存在すれば
+    ステップ2後半（`spec-designer`実行済み）以降
+  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`の存在で
+    レビュー状況を判定する
+- ステップ2ではplan mode内（計画ファイル作成中）とplan mode外（設計ドキュメント立ち上げ・実装中）の
+  切り替え位置に注意する。計画ファイルが存在しcodexレビュー済みであれば2b以降、
+  未作成または未合格であれば2aとみなす
+- 開発中配置（`docs/v{next}/`配下）が存在する場合はそこが作業対象となる。
+  恒常配置（`docs/features/`・`docs/topics/`）は参照専用で、
+  改修作業中は直接編集しない（昇格前に恒常配置と実装が乖離するのを避けるため）
