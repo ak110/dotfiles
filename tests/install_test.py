@@ -39,13 +39,15 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     env = {
         "HOME": str(fake_home),
         "PATH": f"{local_bin}:/usr/bin:/bin:/usr/local/bin",
+        "LANG": "C.UTF-8",
     }
     subprocess.run(
         ["bash", str(INSTALL_SH)],
         env=env,
         check=True,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
     # 4. ルールファイルがデプロイされていること。
