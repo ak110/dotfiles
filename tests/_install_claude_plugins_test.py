@@ -13,14 +13,7 @@ import pytest
 
 from pytools import _install_claude_plugins
 
-
-class _FakeResult:
-    """subprocess.CompletedProcess の軽量な代替。"""
-
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+from .helpers import _FakeResult, _plugin_list_json
 
 
 @pytest.fixture(name="fake_which_present")
@@ -42,11 +35,6 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
         "_read_target_info",
         lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
     )
-
-
-def _plugin_list_json(*entries: dict[str, object]) -> str:
-    """テスト用の `claude plugin list --json` 出力を組み立てる。"""
-    return json.dumps(list(entries))
 
 
 class TestPrerequisites:

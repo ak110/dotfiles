@@ -19,15 +19,11 @@
 import json
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 
-from pytools import _log_format
+from pytools import _install_claude_plugins, _log_format
 
 logger = logging.getLogger(__name__)
-
-# `claude mcp` コマンドのタイムアウト (秒)
-_CLAUDE_TIMEOUT = 60
 
 _CODEX_NAME = "codex"
 _CODEX_COMMAND = "codex"
@@ -83,7 +79,7 @@ def run() -> bool:
         return False
 
     args = ["mcp", "add", "--scope", "user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
-    result = _run_claude(args)
+    result = _install_claude_plugins._run_claude(args)  # pylint: disable=protected-access
     if result is None or result.returncode != 0:
         # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で
         # 失敗するケースがある。この場合は実際には登録済みなので成功扱いにする
@@ -99,34 +95,13 @@ def run() -> bool:
 
 def _is_codex_registered() -> bool:
     """`claude mcp list` の出力に codex サーバーが含まれているか判定する。"""
-    result = _run_claude(["mcp", "list"])
+    result = _install_claude_plugins._run_claude(["mcp", "list"])  # pylint: disable=protected-access
     if result is None or result.returncode != 0:
         # list が失敗した場合は未登録扱いにし、後続の add 試行で改めて判定する
         # (add は登録済みの場合に非ゼロ終了するため冪等性が保たれる)
         return False
     # 出力の各行は `<name>: <command/url> - <status>` 形式。先頭の name が codex かで判定する
     return any(line.strip().startswith(f"{_CODEX_NAME}:") for line in result.stdout.splitlines())
-
-
-def _run_claude(args: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """`claude` CLI を呼び出す共通ヘルパー。
-
-    タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
-    """
-    try:
-        return subprocess.run(
-            ["claude", *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_CLAUDE_TIMEOUT,
-            # Windows では text=True のデフォルトが cp932 になるため UTF-8 を明示する
-            encoding="utf-8",
-            errors="replace",
-        )
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.info(_log_format.format_status("codex-mcp", f"`claude {' '.join(args)}` 実行に失敗: {e}"))
-        return None
 
 
 if __name__ == "__main__":

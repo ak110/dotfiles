@@ -47,13 +47,15 @@ class TestRun:
             ("npm/pnpm サプライチェーン対策", _make_step("npmrc", calls, changed=True)),
             ("mise セットアップ", _make_step("mise", calls)),
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
+            ("codex MCP サーバーの登録", _make_step("codex", calls)),
+            ("libarchive (Windows)", _make_step("libarchive", calls)),
         ]
 
         results = post_apply.run(steps=steps)
 
-        assert calls == ["claude", "vscode", "ssh", "cleanup", "npmrc", "mise", "plugins"]
+        assert calls == ["claude", "vscode", "ssh", "cleanup", "npmrc", "mise", "plugins", "codex", "libarchive"]
         assert all(r.ok for r in results)
-        assert [r.changed for r in results] == [True, False, False, False, True, False, False]
+        assert [r.changed for r in results] == [True, False, False, False, True, False, False, False, False]
 
     def test_failing_step_does_not_stop_others(self):
         """途中ステップが例外を送出しても後続は実行される。"""
@@ -66,13 +68,15 @@ class TestRun:
             ("npm/pnpm サプライチェーン対策", _make_step("npmrc", calls)),
             ("mise セットアップ", _make_step("mise", calls)),
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
+            ("codex MCP サーバーの登録", _make_step("codex", calls)),
+            ("libarchive (Windows)", _make_step("libarchive", calls)),
         ]
 
         results = post_apply.run(steps=steps)
 
-        assert calls == ["claude", "vscode", "broken", "cleanup", "npmrc", "mise", "plugins"]
+        assert calls == ["claude", "vscode", "broken", "cleanup", "npmrc", "mise", "plugins", "codex", "libarchive"]
         ok_flags = [r.ok for r in results]
-        assert ok_flags == [True, True, False, True, True, True, True]
+        assert ok_flags == [True, True, False, True, True, True, True, True, True]
 
     def test_main_exits_1_on_failure(self):
         """失敗があれば _main() は SystemExit(1) で終了する。"""

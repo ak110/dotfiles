@@ -6,7 +6,7 @@ import re
 import shutil
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("-d", "--dry-run", action="store_true")

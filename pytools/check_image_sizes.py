@@ -21,7 +21,7 @@ def _main():
     _do_dir(args.target_dir)
 
 
-def _do_dir(target_dir: pathlib.Path):
+def _do_dir(target_dir: pathlib.Path) -> None:
     width_list = []
     height_list = []
     files = [p for p in target_dir.glob("**/*") if p.is_file()]

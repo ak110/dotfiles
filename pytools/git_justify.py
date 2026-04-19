@@ -26,7 +26,7 @@ businesshrs = businesstimedelta.Rules(
 )
 
 
-def _main():
+def _main() -> None:
     now = datetime.datetime.now()
     parser = argparse.ArgumentParser(
         description="Justify git commits",
@@ -58,7 +58,7 @@ def _main():
         _set_commit_date(commit, date, branch=f"{start_commit}..{end_commit}")
 
 
-def _get_commits(start_commit, end_commit):
+def _get_commits(start_commit: str, end_commit: str) -> list[str]:
     """指定された範囲のコミットハッシュを取得する"""
     commits = subprocess.check_output(["git", "rev-list", "--ancestry-path", f"{start_commit}..{end_commit}"]).decode().split()
     return commits  # 最新から順に過去へ
@@ -69,7 +69,7 @@ def _adjust_dates(
     end_date: datetime.datetime,
     num_commits: int,
     no_business: bool,
-):
+) -> list[datetime.datetime]:
     """日付を均等に分配し、少しランダムにずらす"""
     span = end_date - start_date if no_business else businesshrs.difference(start_date, end_date).timedelta
     interval_sec = span.total_seconds() / num_commits
@@ -86,7 +86,7 @@ def _adjust_dates(
     return dates
 
 
-def _set_commit_date(commit_hash, new_date: datetime.datetime, branch):
+def _set_commit_date(commit_hash: str, new_date: datetime.datetime, branch: str) -> None:
     """コミットの日付を変更する"""
     formatted_date = new_date.strftime("%Y-%m-%d %H:%M:%S")
     command = [

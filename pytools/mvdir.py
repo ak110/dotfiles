@@ -7,7 +7,7 @@ import pathlib
 logger = logging.getLogger(__name__)
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("src_dir", type=pathlib.Path)
     parser.add_argument("dest_dir", type=pathlib.Path)
@@ -25,7 +25,7 @@ def _move_dir(src_dir, dest_dir):
             else:
                 p.rename(dest_dir / p.name)
             logger.info(p)
-        except BaseException:
+        except Exception:
             logger.warning(f"Error: {p}", exc_info=True)
     src_dir.rmdir()
 

@@ -34,19 +34,19 @@ def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.Compl
     )
 
 
+def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
+    """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
+    if not result.stdout.strip():
+        return ""
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return ""
+    return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
 class TestHomeClaudeEditWarning:
     """`~/.claude/` 配下の直接編集警告 (allow + additionalContext、非ブロック)。"""
-
-    @staticmethod
-    def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
-        """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
-        if not result.stdout.strip():
-            return ""
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return ""
-        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
 
     @pytest.mark.parametrize(
         "rel",
@@ -62,7 +62,7 @@ class TestHomeClaudeEditWarning:
         target = str(_HOME / ".claude" / rel)
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert "~/.claude/" in msg
         assert ".chezmoi-source/dot_claude/" in msg
         # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
@@ -78,7 +78,7 @@ class TestHomeClaudeEditWarning:
             }
         )
         assert result.returncode == 0
-        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
 
     @pytest.mark.parametrize(
         "rel",
@@ -141,7 +141,7 @@ class TestHomeClaudeEditWarning:
         target = str(_HOME / rel)
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
         assert result.returncode == 0
-        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
 
     def test_symlinked_home_claude_warns(self, tmp_path: pathlib.Path):
         """`~/.claude` がシンボリックリンクの場合でも resolve 後に警告されること (I-1)。"""
@@ -158,7 +158,7 @@ class TestHomeClaudeEditWarning:
             env=env,
         )
         assert result.returncode == 0
-        assert ".chezmoi-source/dot_claude/" in self._get_additional_context(result)
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
 
     def test_combined_with_personal_file_mention(self):
         """~/.claude/ 直接編集と個人ファイル言及が同時に検出されたら両方まとめて出力する。"""
@@ -170,7 +170,7 @@ class TestHomeClaudeEditWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert ".chezmoi-source/dot_claude/" in msg
         assert _LOCAL_MD in msg
 
@@ -293,17 +293,6 @@ class TestPersonalFileMentionWarning:
     _TRIPLE_STEM = f"foo{_TRIPLE}bar"
     _TRIPLE_TOKEN = f"{_TRIPLE_STEM}.md"
 
-    @staticmethod
-    def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
-        """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
-        if not result.stdout.strip():
-            return ""
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return ""
-        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
-
     # --- CLAUDE.local.md 言及 ---
 
     def test_content_reference_warns_but_passes(self):
@@ -314,7 +303,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
         # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
@@ -333,7 +322,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in self._get_additional_context(result)
+        assert _LOCAL_MD in _get_additional_context(result)
 
     def test_multiedit_reference_warns_but_passes(self):
         result = _run(
@@ -349,7 +338,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in self._get_additional_context(result)
+        assert _LOCAL_MD in _get_additional_context(result)
 
     def test_backtick_wrapped_reference_also_warns(self):
         """バックティック囲みでも警告は出す (文脈依存のため最終判断は LLM に委ねる)。"""
@@ -363,7 +352,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        assert _LOCAL_MD in self._get_additional_context(result)
+        assert _LOCAL_MD in _get_additional_context(result)
 
     def test_editing_target_file_itself_is_allowed_silently(self):
         """対象ファイル自体の編集は正当な操作として警告も出さない。"""
@@ -417,7 +406,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert self._TRIPLE_STEM in msg
         assert "___" in msg
         assert "warn" in msg.lower()
@@ -434,7 +423,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        assert self._TRIPLE_STEM in self._get_additional_context(result)
+        assert self._TRIPLE_STEM in _get_additional_context(result)
 
     def test_triple_underscore_self_edit_is_allowed_silently(self):
         """ファイル名自体に `___` を含むファイルの作成・編集は除外。"""
@@ -479,7 +468,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert stem in msg
         assert "warn" in msg.lower()
 
@@ -513,7 +502,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert self._TRIPLE_STEM in msg
 
     def test_both_patterns_reported_together(self):
@@ -528,7 +517,7 @@ class TestPersonalFileMentionWarning:
             }
         )
         assert result.returncode == 0
-        msg = self._get_additional_context(result)
+        msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert self._TRIPLE_STEM in msg
 

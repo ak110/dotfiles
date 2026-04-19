@@ -14,14 +14,7 @@ import pytest
 
 from pytools import _install_claude_plugins
 
-
-class _FakeResult:
-    """subprocess.CompletedProcess の軽量な代替。"""
-
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+from .helpers import _FakeResult
 
 
 def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:

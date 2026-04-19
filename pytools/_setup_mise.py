@@ -26,7 +26,7 @@ import typing
 from collections.abc import Callable
 from pathlib import Path
 
-from pytools import _log_format
+from pytools import _log_format, _winutils
 
 # Pyright の to be narrowed を避けつつ Windows 判定するためのフラグ。
 # `_IS_WINDOWS` を直接使うと非 Windows 環境で条件式が False に評価され、
@@ -147,22 +147,9 @@ def _ensure_windows_user_path_has_shims() -> bool:
     return not already_registered
 
 
-def _import_winreg() -> typing.Any:
-    """Winreg モジュールを Any 型で読み込む。
-
-    winreg は Windows 専用の標準モジュールで、Linux 上で pyright を実行すると
-    全属性アクセスが `reportAttributeAccessIssue` として検出されてしまう。
-    本モジュールは Windows でのみ winreg 依存関数を呼ぶ設計のため、型情報を失っても
-    害は無く、`Any` 経由でアクセスするのが最も簡潔。
-    """
-    import importlib  # noqa: PLC0415
-
-    return importlib.import_module("winreg")
-
-
 def _read_user_path() -> tuple[str, int]:
     r"""HKCU\Environment\Path の現在値と値型を返す (空文字 + REG_EXPAND_SZ なら未設定)."""
-    wr = _import_winreg()
+    wr = _winutils.import_winreg()
     with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_READ) as key:
         try:
             value, value_type = wr.QueryValueEx(key, "Path")
@@ -175,7 +162,7 @@ def _read_user_path() -> tuple[str, int]:
 
 def _write_user_path(value: str, value_type: int) -> None:
     r"""HKCU\Environment\Path を書き換える (元の値型 REG_SZ / REG_EXPAND_SZ を維持)."""
-    wr = _import_winreg()
+    wr = _winutils.import_winreg()
     # `%LOCALAPPDATA%` を展開させたいので、元が REG_SZ だった場合も REG_EXPAND_SZ に
     # 揃えて書き戻す (REG_SZ のままだとリテラルで扱われて shims にアクセスできない)。
     if value_type != wr.REG_EXPAND_SZ:

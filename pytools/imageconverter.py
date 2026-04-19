@@ -76,8 +76,6 @@ def convert_directory(
     paths = list(natsort.natsorted(paths))
     pbar = progress if progress is not None else tqdm.tqdm(total=len(paths), ascii=True, ncols=100)
     try:
-        if progress is None:
-            pbar.reset(total=len(paths))
         for path in paths:
             _convert_one(
                 path,

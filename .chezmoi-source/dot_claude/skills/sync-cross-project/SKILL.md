@@ -4,7 +4,6 @@ description: >
   作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、pre-commit、GitHub Actionsなど）や
   ドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」
   「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
-user-invocable: true
 ---
 
 # 姉妹プロジェクト間のツールチェイン・ドキュメント構成同期

@@ -12,16 +12,14 @@ DLL だけを `%USERPROFILE%\\.local\\lib\\libarchive\\` へ展開して User sc
 
 import ctypes
 import ctypes.util
-import importlib
 import io
 import logging
 import pathlib
 import re
 import sys
 import tarfile
-import typing
 
-from pytools import _log_format
+from pytools import _log_format, _winutils
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +90,7 @@ def run() -> bool:
                     logger.info(_log_format.format_status("libarchive", f"downloading {filename}"))
                     data = client.get(f"{_MSYS2_REPO}{filename}").content
                     _extract_dlls(data, zstandard)
-            _append_user_path(_INSTALL_DIR)
+            _winutils.append_user_path(str(_INSTALL_DIR))
             logger.info(_log_format.format_status("libarchive", f"インストール完了: {_INSTALL_DIR}"))
             changed = True
         if _persist_libarchive_env_var():
@@ -144,28 +142,6 @@ def _extract_dlls(pkg_data: bytes, zstandard_mod) -> None:
             (_INSTALL_DIR / dll_name).write_bytes(fp.read())
 
 
-def _import_winreg() -> typing.Any:
-    """Windows 専用の winreg を Any 型で取り込む (`_setup_mise._import_winreg` と同方針)。"""
-    return importlib.import_module("winreg")
-
-
-def _append_user_path(directory: pathlib.Path) -> None:
-    """User スコープの PATH 環境変数に `directory` を追記する (重複は追加しない)。"""
-    wr = _import_winreg()
-    key_path = "Environment"
-    target = str(directory)
-    with wr.OpenKey(wr.HKEY_CURRENT_USER, key_path, 0, wr.KEY_READ | wr.KEY_WRITE) as key:
-        try:
-            current, reg_type = wr.QueryValueEx(key, "Path")
-        except FileNotFoundError:
-            current, reg_type = "", wr.REG_EXPAND_SZ
-        entries = [e for e in current.split(";") if e]
-        if target in entries:
-            return
-        entries.append(target)
-        wr.SetValueEx(key, "Path", 0, reg_type, ";".join(entries))
-
-
 def _persist_libarchive_env_var() -> bool:
     """User スコープの ``LIBARCHIVE`` 環境変数を永続化する。
 
@@ -188,7 +164,7 @@ def _persist_libarchive_env_var() -> bool:
     if not target_dll.exists():
         return False
     target = str(target_dll)
-    wr = _import_winreg()
+    wr = _winutils.import_winreg()
     with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_READ | wr.KEY_WRITE) as key:
         try:
             current, reg_type = wr.QueryValueEx(key, "LIBARCHIVE")

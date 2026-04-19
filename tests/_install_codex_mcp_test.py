@@ -11,16 +11,9 @@ import subprocess
 
 import pytest
 
-from pytools import _install_codex_mcp
+from pytools import _install_claude_plugins, _install_codex_mcp
 
-
-class _FakeResult:
-    """subprocess.CompletedProcess の軽量な代替。"""
-
-    def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
+from .helpers import _FakeResult
 
 
 class TestPrerequisites:
@@ -52,7 +45,7 @@ class TestAlreadyRegistered:
                 )
             return _FakeResult(returncode=1, stderr="should not be called")
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_codex_mcp.run() is False
         # mcp add は呼ばれないこと
@@ -78,7 +71,7 @@ class TestAddsWhenMissing:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_codex_mcp.run() is True
         add_calls = [c for c in calls if c[:3] == ["claude", "mcp", "add"]]
@@ -105,7 +98,7 @@ class TestAlreadyExistsHandling:
                 return _FakeResult(returncode=1, stderr="MCP server codex already exists")
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         # 登録済みとして False を返す (例外なし)
         assert _install_codex_mcp.run() is False
@@ -125,7 +118,7 @@ class TestFailureHandling:
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_codex_mcp.run() is False
 
@@ -136,7 +129,7 @@ class TestFailureHandling:
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             raise subprocess.TimeoutExpired(cmd, timeout=1)
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fake_run)
 
         assert _install_codex_mcp.run() is False
 
@@ -203,6 +196,6 @@ class TestHappyPathNoCli:
         def fail_if_called(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.runが呼ばれた: {cmd}")
 
-        monkeypatch.setattr(_install_codex_mcp.subprocess, "run", fail_if_called)
+        monkeypatch.setattr(_install_claude_plugins.subprocess, "run", fail_if_called)
 
         assert _install_codex_mcp.run() is False

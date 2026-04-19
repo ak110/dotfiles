@@ -1,3 +1,4 @@
 [tools]
 actionlint = "latest"
+pinact = "latest"
 typos = "latest"
