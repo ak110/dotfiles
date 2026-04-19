@@ -154,22 +154,34 @@ class _FileEntry:
     mtime: str
 
 
-def _resolve_css_path() -> pathlib.Path | None:
-    """リポジトリ内の`share/vscode/markdown.css`を返す。見つからなければNone。"""
-    # pytools/claude_plans_viewer.py からの相対で dotfiles リポジトリ直下を指す。
-    # editable installでは本ファイルがリポジトリ配下に置かれているため解決できる。
-    candidate = pathlib.Path(__file__).resolve().parents[1] / "share" / "vscode" / "markdown.css"
-    if candidate.is_file():
-        return candidate
-    return None
+def _main(argv: list[str] | None = None) -> int:
+    """エントリーポイント。"""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    args = _parse_args(argv)
+    root = pathlib.Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        logger.error("ディレクトリが見つかりません: %s", root)
+        return 1
+
+    _PlansHandler.root = root
+    _PlansHandler.renderer = _make_md_renderer()
+
+    with http.server.ThreadingHTTPServer((args.host, args.port), _PlansHandler) as server:
+        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            logger.info("停止します")
+    return 0
 
 
-def _read_css() -> str:
-    """配布物のCSSを読み込む。見つからなければフォールバックを返す。"""
-    path = _resolve_css_path()
-    if path is not None:
-        return path.read_text(encoding="utf-8")
-    return _FALLBACK_CSS
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """コマンドライン引数を解析する。"""
+    parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
+    parser.add_argument("--root", default=_DEFAULT_ROOT, help=f"Markdownのルートディレクトリ（既定: {_DEFAULT_ROOT}）")
+    parser.add_argument("--host", default=_DEFAULT_HOST, help=f"bindアドレス（既定: {_DEFAULT_HOST}）")
+    parser.add_argument("--port", type=int, default=_DEFAULT_PORT, help=f"ポート（既定: {_DEFAULT_PORT}）")
+    return parser.parse_args(argv)
 
 
 def _list_files(root: pathlib.Path) -> list[_FileEntry]:
@@ -224,7 +236,6 @@ class _PlansHandler(http.server.BaseHTTPRequestHandler):
 
     root: pathlib.Path
     renderer: markdown_it.MarkdownIt
-    css_text: str
 
     def do_GET(self) -> None:  # noqa: N802  # BaseHTTPRequestHandlerの命名規約に合わせる
         """GETリクエストを振り分ける。"""
@@ -235,7 +246,7 @@ class _PlansHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/static/markdown.css":
-            self._send("text/css; charset=utf-8", self.css_text.encode("utf-8"))
+            self._send("text/css; charset=utf-8", _read_css().encode("utf-8"))
             return
 
         if parsed.path == "/api/files":
@@ -278,35 +289,26 @@ class _PlansHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """コマンドライン引数を解析する。"""
-    parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
-    parser.add_argument("--root", default=_DEFAULT_ROOT, help=f"Markdownのルートディレクトリ（既定: {_DEFAULT_ROOT}）")
-    parser.add_argument("--host", default=_DEFAULT_HOST, help=f"bindアドレス（既定: {_DEFAULT_HOST}）")
-    parser.add_argument("--port", type=int, default=_DEFAULT_PORT, help=f"ポート（既定: {_DEFAULT_PORT}）")
-    return parser.parse_args(argv)
+def _read_css() -> str:
+    """配布物のCSSを読み込む。見つからなければフォールバックを返す。"""
+    path = _resolve_css_path()
+    if path is not None:
+        return path.read_text(encoding="utf-8")
+    return _FALLBACK_CSS
 
 
-def _main(argv: list[str] | None = None) -> int:
-    """エントリーポイント。"""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    args = _parse_args(argv)
-    root = pathlib.Path(args.root).expanduser().resolve()
-    if not root.is_dir():
-        logger.error("ディレクトリが見つかりません: %s", root)
-        return 1
-
-    _PlansHandler.root = root
-    _PlansHandler.renderer = _make_md_renderer()
-    _PlansHandler.css_text = _read_css()
-
-    with http.server.ThreadingHTTPServer((args.host, args.port), _PlansHandler) as server:
-        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            logger.info("停止します")
-    return 0
+def _resolve_css_path() -> pathlib.Path | None:
+    """リポジトリ内の`share/vscode/markdown.css`を返す。見つからなければNone。"""
+    # dotfilesは通常~/dotfiles配下に置かれる。
+    candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
+    if candidate.is_file():
+        return candidate
+    # 念のためフォールバック。
+    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できるはず。
+    candidate = pathlib.Path(__file__).resolve().parents[1] / "share" / "vscode" / "markdown.css"
+    if candidate.is_file():
+        return candidate
+    return None
 
 
 if __name__ == "__main__":
