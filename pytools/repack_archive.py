@@ -30,6 +30,7 @@ import typing
 import zipfile
 
 import pydantic
+import pytilpack.pathlib
 import send2trash
 import tqdm
 import yaml
@@ -614,7 +615,7 @@ def _flatten_single_root(work_dir: pathlib.Path) -> None:
     ``Series/Vol01/001.txt`` と空の ``Series/Vol02/`` が共存するような
     フィルタ後構造でも、最終 ZIP に余計な階層を残さない。
     """
-    _prune_empty_dirs(work_dir)
+    pytilpack.pathlib.delete_empty_dirs(work_dir, keep_root=True)
     while True:
         entries = list(work_dir.iterdir())
         if len(entries) != 1 or not entries[0].is_dir():
@@ -628,15 +629,6 @@ def _flatten_single_root(work_dir: pathlib.Path) -> None:
         for child in list(staging.iterdir()):
             shutil.move(str(child), str(work_dir / child.name))
         staging.rmdir()
-
-
-def _prune_empty_dirs(root: pathlib.Path) -> None:
-    """Root 配下の空ディレクトリを深い順に除去する (root 自体は残す)。"""
-    dirs = [p for p in root.rglob("*") if p.is_dir()]
-    dirs.sort(key=lambda p: len(p.parts), reverse=True)
-    for path in dirs:
-        if not any(path.iterdir()):
-            path.rmdir()
 
 
 def _reserve_flatten_staging(inner: pathlib.Path) -> pathlib.Path:

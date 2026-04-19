@@ -5,12 +5,11 @@ import logging
 import pathlib
 
 import numpy as np
-import PIL.Image
-import PIL.ImageOps
 import tqdm
 from bashplotlib.histogram import plot_hist
 
 from pytools._internal.cli import setup_logging
+from pytools.imageconverter import open_image_with_exif
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +28,7 @@ def _do_dir(target_dir: pathlib.Path) -> None:
     files = [p for p in target_dir.glob("**/*") if p.is_file()]
     for file in tqdm.tqdm(files, ascii=True, ncols=100):
         try:
-            with PIL.Image.open(file) as img_file:
-                try:
-                    img = PIL.ImageOps.exif_transpose(img_file)
-                except Exception:
-                    img = img_file.copy()
+            with open_image_with_exif(file) as img:
                 width_list.append(img.width)
                 height_list.append(img.height)
                 with tqdm.tqdm.external_write_mode():

@@ -55,9 +55,10 @@ import json
 import logging
 import os
 import platform
-import re
 import socket
 from pathlib import Path
+
+import pytilpack.jsonc
 
 from pytools._internal import log_format
 from pytools._internal.cli import setup_logging
@@ -178,56 +179,11 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
     return settings
 
 
-def _load_jsonc(text: str) -> dict:
-    """JSONC (JSON with Comments) をパースする。
-
-    VSCode の settings.json は行コメント (//)・ブロックコメント
-    (/* */)・トレーリングカンマを許容する JSONC 形式である。
-    コメントとトレーリングカンマを除去してから標準 json でパースする。
-    """
-    # コメントを除去する。文字列リテラル内の // や /* は除去しない。
-    result: list[str] = []
-    i = 0
-    in_string = False
-    while i < len(text):
-        if in_string:
-            if text[i] == "\\" and i + 1 < len(text):
-                result.append(text[i : i + 2])
-                i += 2
-                continue
-            if text[i] == '"':
-                in_string = False
-            result.append(text[i])
-            i += 1
-        elif text[i] == '"':
-            in_string = True
-            result.append(text[i])
-            i += 1
-        elif text[i : i + 2] == "//":
-            # 行コメント: 行末まで読み飛ばす
-            while i < len(text) and text[i] != "\n":
-                i += 1
-        elif text[i : i + 2] == "/*":
-            # ブロックコメント: */ まで読み飛ばす
-            i += 2
-            while i < len(text) - 1 and text[i : i + 2] != "*/":
-                i += 1
-            i += 2
-        else:
-            result.append(text[i])
-            i += 1
-
-    cleaned = "".join(result)
-    # トレーリングカンマを除去 (} や ] の直前)
-    cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-    return json.loads(cleaned)
-
-
 def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] = ()) -> bool:
     """Managed 設定を settings.json にマージして書き込む。
 
     dict 値は浅いマージ (既存キーを保持)、それ以外は上書き。
-    VSCode の settings.json は JSONC 形式のため _load_jsonc でパースする。
+    VSCode の settings.json は JSONC 形式のため pytilpack.jsonc.loads でパースする。
     書き込みは標準 JSON で行う (コメントは保持しない)。
 
     ``legacy_keys`` はマージ前に settings.json から削除する。現在は管理しない
@@ -237,7 +193,7 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
     Returns:
         実際にファイルを書き換えたかどうか。
     """
-    data = _load_jsonc(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
     original = copy.deepcopy(data)
 
     for key in legacy_keys:

@@ -1,6 +1,8 @@
 """imageconverter モジュールの単体テスト。"""
 
 import pathlib
+import unittest.mock
+import warnings
 
 import PIL.Image
 import pytest
@@ -10,6 +12,34 @@ from pytools import imageconverter
 
 def _make_png(path: pathlib.Path, size: tuple[int, int] = (100, 100)) -> None:
     PIL.Image.new("RGB", size, color=(255, 0, 0)).save(path, format="PNG")
+
+
+def test_open_image_with_exif_normal(tmp_path: pathlib.Path) -> None:
+    """EXIF情報のない画像を正常に開ける。"""
+    path = tmp_path / "test.png"
+    _make_png(path, size=(80, 60))
+    img = imageconverter.open_image_with_exif(path)
+    assert img.width == 80
+    assert img.height == 60
+
+
+def test_open_image_with_exif_fallback_on_error(tmp_path: pathlib.Path) -> None:
+    """exif_transpose が例外を送出した場合、copy() にフォールバックする。"""
+    path = tmp_path / "test.png"
+    _make_png(path, size=(40, 30))
+    with (
+        unittest.mock.patch(
+            "pytools.imageconverter.PIL.ImageOps.exif_transpose",
+            side_effect=Exception("exif error"),
+        ),
+        warnings.catch_warnings(record=True) as caught,
+    ):
+        warnings.simplefilter("always")
+        img = imageconverter.open_image_with_exif(path)
+    assert img.width == 40
+    assert img.height == 30
+    # 例外発生時は warnings.warn が呼ばれる
+    assert any("exif error" in str(w.message) for w in caught)
 
 
 def test_convert_directory_to_jpeg(tmp_path: pathlib.Path) -> None:

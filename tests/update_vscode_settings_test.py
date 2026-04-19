@@ -9,51 +9,9 @@ import json
 import math
 from pathlib import Path
 
+import pytest
+
 from pytools._internal import update_vscode_settings as mod
-
-
-class TestLoadJsonc:
-    """_load_jsonc のテスト。"""
-
-    def test_plain_json(self) -> None:
-        """通常の JSON をそのままパースできる。"""
-        assert mod._load_jsonc('{"key": "value"}') == {"key": "value"}
-
-    def test_line_comments(self) -> None:
-        """行コメント (//) を除去してパースできる。"""
-        text = '{\n  // コメント\n  "key": "value"\n}'
-        assert mod._load_jsonc(text) == {"key": "value"}
-
-    def test_block_comments(self) -> None:
-        """ブロックコメント (/* */) を除去してパースできる。"""
-        text = '{\n  /* ブロック\n     コメント */\n  "key": "value"\n}'
-        assert mod._load_jsonc(text) == {"key": "value"}
-
-    def test_trailing_comma(self) -> None:
-        """トレーリングカンマを除去してパースできる。"""
-        text = '{\n  "a": 1,\n  "b": 2,\n}'
-        assert mod._load_jsonc(text) == {"a": 1, "b": 2}
-
-    def test_comment_like_string_preserved(self) -> None:
-        """文字列内の // や /* はコメントとして扱わない。"""
-        text = '{"url": "https://example.com"}'
-        assert mod._load_jsonc(text) == {"url": "https://example.com"}
-
-    def test_inline_comment_after_value(self) -> None:
-        """値の後の行コメントを除去できる。"""
-        text = '{\n  "key": "value" // インラインコメント\n}'
-        assert mod._load_jsonc(text) == {"key": "value"}
-
-    def test_combined_jsonc_features(self) -> None:
-        """コメント・トレーリングカンマの組み合わせ。"""
-        text = """{
-  // 設定
-  "editor.fontSize": 14,
-  /* テーマ設定 */
-  "workbench.colorTheme": "Default Dark+",
-}"""
-        result = mod._load_jsonc(text)
-        assert result == {"editor.fontSize": 14, "workbench.colorTheme": "Default Dark+"}
 
 
 def _hex_to_rgb(color: str) -> tuple[int, int, int]:
@@ -225,6 +183,55 @@ class TestApply:
         assert result["editor.fontSize"] == 14
         assert result["workbench.colorTheme"] == "Default Dark+"
         assert result["workbench.colorCustomizations"]["activityBar.background"] == "#aabbcc"
+
+    def test_reads_jsonc_with_line_comment_only(self, tmp_path: Path) -> None:
+        """行コメント (//) のみを含む JSONC ファイルをパースできる。"""
+        target = tmp_path / "settings.json"
+        target.write_text('{\n  // 行コメント\n  "key": "value"\n}', encoding="utf-8")
+        managed = {"extra": 1}
+        mod._apply(managed, target)
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert result["key"] == "value"
+        assert result["extra"] == 1
+
+    def test_reads_jsonc_with_block_comment_only(self, tmp_path: Path) -> None:
+        """ブロックコメント (/* */) のみを含む JSONC ファイルをパースできる。"""
+        target = tmp_path / "settings.json"
+        target.write_text('{\n  /* ブロック\n     コメント */\n  "key": "value"\n}', encoding="utf-8")
+        managed = {"extra": 2}
+        mod._apply(managed, target)
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert result["key"] == "value"
+        assert result["extra"] == 2
+
+    def test_reads_pure_json_same_result(self, tmp_path: Path) -> None:
+        """純 JSON のファイルも従来どおりパースできる。"""
+        target = tmp_path / "settings.json"
+        target.write_text(json.dumps({"editor.fontSize": 16}), encoding="utf-8")
+        managed = {"workbench.colorCustomizations": {"activityBar.background": "#112233"}}
+        mod._apply(managed, target)
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert result["editor.fontSize"] == 16
+        assert result["workbench.colorCustomizations"]["activityBar.background"] == "#112233"
+
+    def test_invalid_json_raises_json_decode_error(self, tmp_path: Path) -> None:
+        """不正な JSON は json.JSONDecodeError を送出する。"""
+        target = tmp_path / "settings.json"
+        target.write_text("{invalid}", encoding="utf-8")
+        with pytest.raises(json.JSONDecodeError):
+            mod._apply({"key": "value"}, target)
+
+    def test_reads_jsonc_with_trailing_comma(self, tmp_path: Path) -> None:
+        """トレーリングカンマ付きの JSONC をパースできる。"""
+        target = tmp_path / "settings.json"
+        jsonc_content = '{"a": 1, "b": 2,}'
+        target.write_text(jsonc_content, encoding="utf-8")
+        managed = {"c": 3}
+        mod._apply(managed, target)
+        result = json.loads(target.read_text(encoding="utf-8"))
+        assert result["a"] == 1
+        assert result["b"] == 2
+        assert result["c"] == 3
 
 
 class TestBuildManagedSettings:

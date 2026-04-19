@@ -26,6 +26,20 @@ _TYPE_SUFFIXES = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}
 OutputType = typing.Literal["jpeg", "png", "webp"]
 
 
+def open_image_with_exif(path: pathlib.Path) -> PIL.Image.Image:
+    """EXIF情報に従い回転補正した画像を返す。
+
+    `PIL.ImageOps.exif_transpose`が例外を送出した場合、元画像のコピーに
+    フォールバックする。
+    """
+    img = PIL.Image.open(path)
+    try:
+        return PIL.ImageOps.exif_transpose(img)
+    except Exception as e:
+        warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
+        return img.copy()
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(description="画像変換")
     parser.add_argument("--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?")
@@ -113,12 +127,7 @@ def _convert_one(
             path.unlink()
             temp_png_path.rename(path)
         # 画像を読み込む
-        with PIL.Image.open(path) as img_file:
-            try:
-                img = PIL.ImageOps.exif_transpose(img_file)
-            except Exception as e:
-                warnings.warn(f"{type(e).__name__}: {e}", stacklevel=1)
-                img = img_file.copy()
+        with open_image_with_exif(path) as img:
             # JPEG 出力時の色空間変換
             if output_type == "jpeg":
                 if img.mode == "RGBA":
