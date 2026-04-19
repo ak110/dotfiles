@@ -103,13 +103,13 @@ description: >
     — `spec-researcher`出力（観点ごとに1ファイル、`{nn}`はゼロパディング2桁の連番）
   - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
     — `spec-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-implementation`スキル側
+    ファイル名規約のSSOTは`plan-mode`スキル側
   - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
     — `code-quality-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-implementation`スキル側
+    ファイル名規約のSSOTは`plan-mode`スキル側
   - `docs/v{next}/.cache/{作業テーマ名}.review-docs.md`
     — `document-quality-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-implementation`スキル側
+    ファイル名規約のSSOTは`plan-mode`スキル側
   - 一時ファイル群は`.cache/`配下に置きgit管理から外す。
     `.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`スキルが担当する。
     pyfltrなど品質ツール群の多くが`.cache`をデフォルト除外対象とするため、
@@ -238,8 +238,10 @@ description: >
 
 - メインセッションはステップ進行管理・ユーザー確認・`plan-mode`呼び出し・`plan-implementation`呼び出しに集中する。
   調査のコンテキストはサブエージェントに閉じ込めてメイン側のコンテキスト汚染を避ける
-- 実装・検証・レビュー・コミットの詳細手順は`plan-implementation`スキルに委ねる
- （並列化・モデル選択・差し戻しループ・レビュアー出力ファイル規約などのSSOTは`plan-implementation`側）
+- 実装・検証・レビュー・コミットの工程運用のSSOTは`plan-implementation`スキルに委ねる
+ （並列化・モデル選択・差し戻しループなどを含む）
+- レビュアー出力ファイルのパス構築規則と「レビュー実施方針」を含む
+  計画ファイル記述要件のSSOTは`plan-mode`スキルに委ねる
 
 ## 参照コメント方針
 

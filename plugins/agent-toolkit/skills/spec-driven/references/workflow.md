@@ -117,11 +117,15 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
 3. `spec-writer`の戻り値で生成／更新ファイルを確認する
    - 作業版`.md`・`README.md`更新エントリ・横断ドキュメント（あれば）の存在とパスを確かめる
 4. 実装・検証完了後、`plan-implementation`スキルのレビュー・コミットフェーズへ進む
-   - レビュー順序（`spec-reviewer`直列先行→`code-quality-reviewer`と`document-quality-reviewer`並列）・
+   - レビュー順序は`spec-reviewer`を直列先行し、
+     合格後は計画ファイル`## 実装・検証・レビュー`節の「レビュー実施方針」に従って
+     `code-quality-reviewer`・`document-quality-reviewer`のうち
+     起動対象のレビュアーを実行する（両方起動する場合のみ並列化）。
      差し戻しループ・コミットの詳細は`plan-implementation`スキル
    - `spec-driven`文脈ではレビュアー引数に作業版ドキュメント・`README.md`・横断ドキュメントも含める
     （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`。`{kind}`は`spec`・`quality`・`docs`のいずれか）
-   - 軽微な実装の場合はメイン判断でレビュー省略可（判断基準は`plan-implementation`スキル）
+   - レビュー起動要否は計画ファイルの「レビュー実施方針」で事前に決定する。
+     計画時の判断基準は`plan-mode`スキルの「レビュー実施方針の判断基準」節を参照する
 
 spec-writer呼び出しテンプレート:
 
@@ -191,7 +195,8 @@ spec-writer呼び出しテンプレート:
  （昇格後に読む人向けの情報）
 - `plan-implementation`のレビューフェーズでは、`spec-reviewer`へ作業版`.md`内の「改修前スナップショット」節も参照させ、
   Before/Afterの意図的差分と意図しない齟齬を区別させる。
-  `spec-reviewer`は直列先行し、`code-quality-reviewer`・`document-quality-reviewer`は並列起動する
+  `spec-reviewer`は直列先行し、後続の`code-quality-reviewer`・`document-quality-reviewer`は
+  計画ファイルの「レビュー実施方針」に従って起動対象分のみ実行する（両方起動する場合のみ並列化）
  （詳細は`plan-implementation`スキル）
 
 ### ステップ3差分
