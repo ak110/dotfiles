@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-18T00:32:42.633023315Z"
+exclude-newer = "2026-04-18T12:52:09.49610442Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -955,7 +955,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.0.1"
+version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mcp" },
@@ -967,9 +967,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "textual" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/7a/122ceae1a64ffbfce30a05183f1e1829e06ddfcb664058039d56f52b20fb/pyfltr-3.0.1.tar.gz", hash = "sha256:ae686b87a0d5720c8fe8b6ba38abace33e9575f93d9722a8d75d590e14b48eb6", size = 318909, upload-time = "2026-04-18T20:38:12.685Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/30/f3eb4ca39bf1aa6b0b4169c58af5ad7a8d1cab606db1764583383b8da408/pyfltr-3.3.0.tar.gz", hash = "sha256:63a2279230227c39c39f1179566951865c3e27edc66413d901ede71a476dec6f", size = 356030, upload-time = "2026-04-19T12:48:00.157Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/b1/7894f2cab45cd6028d9ede05503e509995903b85e22748b924a0834a9f79/pyfltr-3.0.1-py3-none-any.whl", hash = "sha256:776b72170379b0108c00652f55e88cc14b7fcf934366c33d4753c6a7ef6f41b2", size = 111676, upload-time = "2026-04-18T20:38:14.192Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/94/b63d83ab165c56cb350242ccf634c00f2b0c7d20f0417e64ca856a9d46e4/pyfltr-3.3.0-py3-none-any.whl", hash = "sha256:3b15efe327d12e4893e0c77bd6fb384265a12ba9f09a5edaf38775777ff8baca", size = 134843, upload-time = "2026-04-19T12:47:58.805Z" },
 ]
 
 [package.optional-dependencies]
@@ -1223,7 +1223,7 @@ provides-extras = ["repack-png"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.0.1" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.3.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
 ]
