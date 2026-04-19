@@ -35,6 +35,8 @@
 - 配布対象（Linux/Windows両対応）と開発対象（Linuxのみ）でサポート範囲が異なる。ファイル追加時にどちら用か意識する
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する。
   対応ファイル一覧は[docs/development/development.md](docs/development/development.md)の「プラットフォーム対応ファイル」参照
+- シンプルなコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
+  bashスクリプトと`.cmd`ファイルのペアを生成し、`.chezmoiignore`と`development.md`のペア一覧も自動更新する
 - `agent-toolkit/*.md`（配布ルール本体）を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが
   再掲されていることが多い。本体変更前に`grep`で参照箇所を確認する
 - `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、

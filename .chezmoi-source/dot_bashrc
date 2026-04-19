@@ -312,8 +312,6 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         fi
         return $rc
     }
-    # 便利コマンド
-    alias sonnet='claude --model=sonnet --permission-mode=acceptEdits'
     # 計画ファイルの確認用コマンド
     plans() {
         mise use --global fzf glow
@@ -335,9 +333,6 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
         # --width="${FZF_PREVIEW_COLUMNS:-100}" もありだが固定にしちゃう
     }
 fi
-# ccusageなど
-alias ccusage="pnpx ccusage"
-alias claude-code-viewer="pnpx @kimuson/claude-code-viewer@latest"
 
 # nvm の bash 補完 (対話シェル専用)。
 # nvm 本体は非対話セクションで source 済みのため NVM_DIR は既に export されている。

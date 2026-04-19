@@ -11,6 +11,9 @@
 
 # Linux: Windows専用ファイルをスキップ
 {{ if ne .chezmoi.os "windows" }}
+bin/c.cmd
+bin/ccusage.cmd
+bin/claude-code-viewer.cmd
 bin/sonnet.cmd
 bin/update-dotfiles.cmd
 {{ end }}
