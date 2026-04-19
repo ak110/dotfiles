@@ -23,13 +23,23 @@
 
 ## 注意点
 
-- `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。指示の対象を必ず確認する。詳細は[docs/development/development.md](docs/development/development.md)の「ディレクトリ構造の注意」参照
-- ホーム配下のファイルを編集する前に`chezmoi managed | grep <相対パス>`で配布対象か確認する。配布対象は`.chezmoi-source/`側を編集する
-- `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
+- `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。
+  指示の対象を必ず確認する。詳細は[docs/development/development.md](docs/development/development.md)の
+ 「ディレクトリ構造の注意」参照
+- ホーム配下のファイルを編集する前に`chezmoi managed | grep <相対パス>`で配布対象か確認する。
+  配布対象は`.chezmoi-source/`側を編集する
+- `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
+  配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
 - 配布対象（Linux/Windows両対応）と開発対象（Linuxのみ）でサポート範囲が異なる。ファイル追加時にどちら用か意識する
-- プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する。対応ファイル一覧は[docs/development/development.md](docs/development/development.md)の「プラットフォーム対応ファイル」参照
-- `agent-toolkit/*.md`（配布ルール本体）を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。本体変更前に`grep`で参照箇所を確認する
-- `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
-- `agent-toolkit/agent.md`のコミットメッセージ方針と`.gitmessage`は意図的に重複させている。前者はプラグイン配布対象（他リポジトリでも参照される）、後者は本リポジトリ固有のコミット補助テンプレート（`claude-commit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
-- spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。`docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
+- プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する。
+  対応ファイル一覧は[docs/development/development.md](docs/development/development.md)の「プラットフォーム対応ファイル」参照
+- `agent-toolkit/*.md`（配布ルール本体）を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが
+  再掲されていることが多い。本体変更前に`grep`で参照箇所を確認する
+- `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、
+  配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
+- `agent-toolkit/agent.md`のコミットメッセージ方針と`.gitmessage`は意図的に重複させている。
+  前者はプラグイン配布対象（他リポジトリでも参照される）、後者は本リポジトリ固有のコミット補助テンプレート
+ （`claude-commit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
+- spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
+  `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される

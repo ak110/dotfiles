@@ -2,7 +2,8 @@
 
 ## サプライチェーン保護
 
-パッケージマネージャーに対するサプライチェーン攻撃を緩和するため、公開から一定期間が経っていないパッケージのインストールをブロックしている。
+パッケージマネージャーに対するサプライチェーン攻撃を緩和するため、
+公開から一定期間が経っていないパッケージのインストールをブロックしている。
 `chezmoi apply` / `update-dotfiles` 実行時にグローバルへ自動適用される。
 
 | ツール                 | 設定                              | スコープ                              |
@@ -23,7 +24,8 @@ pnpm install --config.minimum-release-age=0 <package>
 
 ### UV_FROZEN による lockfile 尊重
 
-CI/`make`などの自動実行環境では`UV_FROZEN=1`環境変数で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制し、意図しない再resolveでロックファイルが書き換わるリスクを抑えている。
+CI/`make`などの自動実行環境では`UV_FROZEN=1`環境変数で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制し、
+意図しない再resolveでロックファイルが書き換わるリスクを抑えている。
 詳細は[docs/development/development.md](../development/development.md)の「サプライチェーン攻撃対策」セクションを参照。
 
 ### GitHub Actions ピン留め

@@ -1,6 +1,9 @@
 # dotfiles
 
-[![CI](https://github.com/ak110/dotfiles/actions/workflows/ci.yaml/badge.svg)](https://github.com/ak110/dotfiles/actions/workflows/ci.yaml)
+[![CI][ci-badge]][ci-url]
+
+[ci-badge]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml/badge.svg
+[ci-url]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml
 
 [chezmoi](https://www.chezmoi.io/) で管理された個人用dotfiles。
 
