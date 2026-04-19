@@ -23,6 +23,17 @@
   - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）
     - 例: `pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
 
+## chezmoiの命名規則（早見表）
+
+`.chezmoi-source/`配下のファイル名は以下の規則で`~/`配下にデプロイされる（詳細はchezmoi公式: <https://www.chezmoi.io/reference/source-state-attributes/>）。
+
+- `dot_<name>` → `~/.<name>`（例: `dot_bashrc` → `~/.bashrc`）
+- `private_<name>` → パーミッション`600`／ディレクトリは`700`で配置
+- `executable_<name>` → 実行権限（`+x`）付きで配置
+- `<name>.tmpl` → Goテンプレートとして評価してから配置
+- `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時に変更検知して実行
+- よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed | grep <相対パス>`（配布対象確認）
+
 ## 注意点
 
 - `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。

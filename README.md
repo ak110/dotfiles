@@ -81,7 +81,7 @@ update-dotfiles
 ## ドキュメント
 
 - [docs/index.md](docs/index.md) — ドキュメント入口
-- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（chezmoi使い方・Claude Code設定・pytools・SSH・セキュリティ）
+- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（Claude Code設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md) — 開発者向け
 
 ## 参考
