@@ -98,18 +98,16 @@ description: >
   - パス: `docs/v{next}/README.md`
   - 内容: バージョン目的・作業テーマ一覧・横断ドキュメント一覧の3節（実装ステータスは扱わない）
   - 役割: 次期リリース作業期間中の入口。昇格時に役目を終える
-- サブエージェント出力（一時ファイル、Cleanupステップで削除）
+- サブエージェント出力（一時ファイル、Cleanupステップで削除）。
+  レビュアー出力ファイルのファイル名規約は`plan-mode`スキルを参照する
   - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md`
     — `spec-researcher`出力（観点ごとに1ファイル、`{nn}`はゼロパディング2桁の連番）
   - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
-    — `spec-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-mode`スキル側
+    — `spec-reviewer`指摘（差し戻しループでは上書き）
   - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
-    — `code-quality-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-mode`スキル側
+    — `code-quality-reviewer`指摘（差し戻しループでは上書き）
   - `docs/v{next}/.cache/{作業テーマ名}.review-docs.md`
-    — `document-quality-reviewer`指摘（差し戻しループでは上書き）。
-    ファイル名規約のSSOTは`plan-mode`スキル側
+    — `document-quality-reviewer`指摘（差し戻しループでは上書き）
   - 一時ファイル群は`.cache/`配下に置きgit管理から外す。
     `.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`スキルが担当する。
     pyfltrなど品質ツール群の多くが`.cache`をデフォルト除外対象とするため、
@@ -195,8 +193,8 @@ description: >
 
 ステップ2では`plan-mode`スキルを内部呼び出しして計画ファイル作成・codexレビューまでを進め、
 `ExitPlanMode`後は`plan-implementation`スキルへ切り替えて実装・検証・レビュー・コミットの全工程を委譲する。
-計画ファイル作成・codexレビュー手順のSSOTは`plan-mode`、
-実装・検証・レビュー・コミット手順のSSOTは`plan-implementation`に置き、本スキル側では再記述しない。
+計画ファイル作成・codexレビュー手順は`plan-mode`スキルを参照する。
+実装・検証・レビュー・コミット手順は`plan-implementation`スキルを参照する。
 
 ステップ2ではplan modeへ1回だけ出入りし、計画ファイルを1本作成する。
 前半冒頭で`EnterPlanMode`ツールを明示的に呼び出し、大枠方針・主要設計判断・実装詳細（file:line・変更内容）を
@@ -209,10 +207,10 @@ description: >
    作業版ドキュメントの骨子・`docs/v{next}/README.md`エントリ・必要なら横断ドキュメントを一括生成させる。
    計画ファイルの判断経緯のうち将来参照される要点は作業版`.md`の「主要設計判断」「却下した代替案」節へ転記させる
 2. `spec-writer`の起動と並行して、`plan-implementation`スキルの指示に従い実装・検証を進める。
-   タスク分解・`plan-implementer`並列委譲・モデル選択・検証タスクの運用は`plan-implementation`側のSSOTに従う。
+   タスク分解・`plan-implementer`並列委譲・モデル選択・検証タスクの運用は`plan-implementation`スキルを参照する。
    `spec-writer`と`plan-implementer`はいずれも計画ファイルをインプットとして独立に動く
 3. 両者の完了を待ち、`plan-implementation`スキルのレビューフェーズへ進む。
-   レビュー順序・並列化・差し戻しループ・コミットの詳細手順は`plan-implementation`側のSSOTに従う。
+   レビュー順序・並列化・差し戻しループ・コミットの詳細手順は`plan-implementation`スキルを参照する。
    レビュー合格・コミット完了を得たのち、`plan-implementation`から戻りステップ3（Cleanup）へ移る
 
 計画ファイル（`~/.claude/plans/{自動生成ファイル名}.md`）はcodex向けの照合材料として機能し、
@@ -238,10 +236,10 @@ description: >
 
 - メインセッションはステップ進行管理・ユーザー確認・`plan-mode`呼び出し・`plan-implementation`呼び出しに集中する。
   調査のコンテキストはサブエージェントに閉じ込めてメイン側のコンテキスト汚染を避ける
-- 実装・検証・レビュー・コミットの工程運用のSSOTは`plan-implementation`スキルに委ねる
+- 実装・検証・レビュー・コミットの工程運用は`plan-implementation`スキルを参照する
  （並列化・モデル選択・差し戻しループなどを含む）
 - レビュアー出力ファイルのパス構築規則と「レビュー実施方針」を含む
-  計画ファイル記述要件のSSOTは`plan-mode`スキルに委ねる
+  計画ファイル記述要件は`plan-mode`スキルを参照する
 
 ## 参照コメント方針
 

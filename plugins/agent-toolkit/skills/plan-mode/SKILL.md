@@ -101,7 +101,7 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
 4. `## 調査結果` — 既存コードの挙動・依存・制約（codex向け照合材料）
 5. `## 変更内容` — 変更対象ファイルの絶対パス、変更方針、参照箇所のfile:line（codex向け）
 6. `## 実装・検証・レビュー` — `ExitPlanMode`後の実装・検証・レビュー工程に必要な計画固有の情報を記述する。
-   詳細手順は`agent-toolkit:plan-implementation`スキル側をSSOTとするため、ここには転記しない。
+   詳細手順は`agent-toolkit:plan-implementation`スキルを参照する。
    本節には以下の項目を順に記述する
    - 「実装時に事前呼び出しが必要なスキル」リスト。
      `agent-toolkit:plan-implementation`は必ず含める。

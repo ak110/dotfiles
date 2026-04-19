@@ -33,6 +33,34 @@ tools:
 ドキュメント単体の品質レビューは`document-quality-reviewer`が担う。
 `spec-driven`文脈では並行して`spec-writer`が作業版ドキュメントを立ち上げるが、本エージェントは実装単位のタスクに専念する。
 
+## エスカレーション判断基準
+
+### モデル別守備範囲
+
+本エージェントはAgentツールの`model`パラメーターで起動モデルが指定される（frontmatter既定は`sonnet`）。
+自モデルの判定は、呼び出し時に渡された`model`パラメーターを根拠とする。
+
+| モデル | 守備範囲 |
+| --- | --- |
+| `haiku` | 単純作業のみ（機械的置換、テンプレート適用、明確な単一箇所修正など） |
+| `sonnet` | 修正方針が自明であれば、ある程度曖昧さが残っていても対応可 |
+| `opus` | 修正方針自体の判断が必要な場合 |
+
+### `needs_escalation`の判定
+
+- `haiku`で動作中に「単純作業に収まらない」と気付いた時点で処理を中断し、`needs_escalation`を返す
+- `sonnet`で動作中に「修正方針の判断が必要」と気付いた時点で処理を中断し、`needs_escalation`を返す
+- メインは`needs_escalation`受領時、戻り値の`escalation_reason`を参照して上位モデルで再dispatchする
+
+### `blocked`の判定
+
+依存未解決・情報不足・ユーザー判断が必要などの理由で合理的に続行できなくなった場合、`blocked`を返す。
+メインは`blocked`受領時、戻り値の`blockers`を参照してユーザー判断を仰ぐ。
+
+### 既定の戻り値
+
+判定基準に該当しない限り`blocked`・`needs_escalation`は返さない。正常完了した場合は`completed`を返す。
+
 ## 手順
 
 ### 共通手順
@@ -78,10 +106,19 @@ tools:
 
 ## 出力フォーマット
 
+すべてのタスクで以下の共通フィールドを返す。
+
+- `status`: `completed`・`blocked`・`needs_escalation`のいずれか
+- `summary`: 実行結果の短い要約
+- `blockers`: `blocked`時に記入する、続行できなくなった原因
+- `escalation_reason`: `needs_escalation`時に記入する、自モデルの守備範囲を超えた理由
+
 ### 実装タスクの出力フォーマット
 
 ````markdown
 ## 実装完了: {タスク名}
+
+status: completed
 
 ### 変更ファイル
 
@@ -101,6 +138,8 @@ tools:
 
 ````markdown
 ## 検証完了
+
+status: completed
 
 ### 実行した検証手順
 
@@ -123,4 +162,6 @@ tools:
 - 呼び出し元の計画ファイルに書かれていない設計方針の変更は行わない
 - 検証タスクで警告ゼロに到達できない場合は、原因と試行した対処を「未解決事項」節に記載して報告する。
   強引な警告抑制やlint無視は行わない
+- 自モデルの守備範囲を超えると判断した時点で処理を中断し、`needs_escalation`を返す。
+  強行完遂しない
 - `coding-standards`スキルの呼び出しは必須。skipしない

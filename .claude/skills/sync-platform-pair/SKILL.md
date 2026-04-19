@@ -18,9 +18,8 @@ user-invocable: true
 
 ## ペアファイル一覧の参照
 
-ペアファイルの対応関係は`docs/development/development.md`の「プラットフォーム対応ファイル」節をSSOTとする。
+ペアファイルの対応関係は`docs/development/development.md`の「プラットフォーム対応ファイル」節を参照する。
 編集対象のファイルがペアの片方に該当するかは、まず当該節で確認する。
-本スキル内にはペアの実リストを保持しない（情報が二重管理になり更新漏れが発生するため）。
 
 ## 片方のみ編集するリスク
 
@@ -34,7 +33,6 @@ user-invocable: true
 ## 新規ペアの追加
 
 新しくペアを追加する場合、更新先は`docs/development/development.md`の「プラットフォーム対応ファイル」節に限定する。
-本SKILL.mdには追記しない（SSOTを単一化するため）。
 `CLAUDE.md`は`development.md`への参照導線そのものを変更する場合のみ更新対象とする。
 
 新規ペアの種類によっては`.chezmoiignore`への除外エントリ追加も必要になる（chezmoiがOSごとに適切なファイルをデプロイするため）。
