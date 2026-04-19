@@ -110,9 +110,9 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
    - 作業版ドキュメントには実装詳細（ファイル名・シンボル名・file:line等）を含めない方針を守らせる。
      実装とドキュメントの整合性はレビューフェーズで`spec-reviewer`が確認する
 2. 並行して`plan-implementation`スキルの実装・検証フェーズを開始する
-   - `BASE_SHA`の記録・タスク分解と`TaskCreate`登録・`plan-implementer`委譲（並列化・モデル選択）・
+   - タスク分解と`TaskCreate`登録・`plan-implementer`委譲（並列化・モデル選択）・
      検証タスクの運用は`plan-implementation`の所掌
-   - 詳細手順は`plan-implementation`スキルを参照する
+   - 差分起点・複数フェーズ運用などの詳細手順も`plan-implementation`スキルを参照する
    - `spec-writer`と`plan-implementer`は計画ファイルをそれぞれ独立にインプットとして動き、相互依存はない
 3. `spec-writer`の戻り値で生成／更新ファイルを確認する
    - 作業版`.md`・`README.md`更新エントリ・横断ドキュメント（あれば）の存在とパスを確かめる

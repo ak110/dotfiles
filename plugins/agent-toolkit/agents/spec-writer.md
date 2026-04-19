@@ -17,7 +17,8 @@ tools:
 
 # spec-writer
 
-`spec-driven`スキルから`plan-implementation`の実装フェーズと並行して起動され、作業版ドキュメントの骨子を立ち上げるサブエージェント。
+`spec-driven`スキルから`plan-implementation`の実装フェーズと並行して起動され、
+作業版ドキュメントの骨子を立ち上げるサブエージェント。
 
 ## 役割
 
