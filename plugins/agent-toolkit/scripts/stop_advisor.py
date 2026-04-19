@@ -12,7 +12,7 @@ Claude Code が停止しようとするタイミングで発火する。
 `_COMPLETION_KEYWORDS` 参照）を含み、かつ質問を含まない」場合に限り発火する
 （共通ゲート `_is_stop_blockable`）。作業途中での一時停止やユーザー質問待ちでの
 誤検出を避けるためのゲートで、transcript を解釈できない異常系では block しない。
-質問の検出は AskUserQuestion ツール使用、またはテキストに ? / ？ が含まれる場合とする。
+質問の検出は AskUserQuestion ツール使用、またはテキストに ? / ？ / 「ですか。」が含まれる場合とする。
 
 未コミット変更ブロック:
 作業ディレクトリに未コミット変更があれば block し、コミット要否をユーザーに確認させる。
@@ -228,11 +228,14 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
 
     以下のいずれかが成立する場合 True を返す。
     - AskUserQuestion ツール呼び出しが含まれている
-    - テキストに ? または ？ が含まれている（位置は問わない）
+    - テキストに ? または ？ または 「ですか。」が含まれている（位置は問わない）
 
     末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
     （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
     false positive でコミットを強行する挙動を避けるため。
+
+    「ですか。」を含める理由: 「この案でよいですか。」のように `?` を付けずに
+    ユーザー確認を求めるケースを拾うため。
 
     同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
     される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
@@ -257,7 +260,7 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
                     texts.append(text)
         if texts:
             joined = "\n".join(texts)
-            return "?" in joined or "？" in joined
+            return "?" in joined or "？" in joined or "ですか。" in joined
         # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
     return False
 

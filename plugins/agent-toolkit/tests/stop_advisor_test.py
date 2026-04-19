@@ -626,6 +626,18 @@ class TestQuestionSuppressesUncommittedBlock:
         assert decision["decision"] == "block"
         assert "uncommitted" in decision.get("reason", "").lower()
 
+    def test_desuka_period_suppresses_block(self, tmp_path: pathlib.Path):
+        """「ですか。」（句点止めの確認文）もクエスチョンマーク同様にブロックを抑制する。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": "実装が完了しました。この案でよいですか。"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "desuka", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
     def test_split_entry_question_suppresses_block(self, tmp_path: pathlib.Path):
         """同一 message.id のエントリが分割された場合、前のエントリの質問テキストを検出する。
 
