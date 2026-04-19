@@ -2,7 +2,7 @@
 name: plan-implementer
 description: >
   タスク単位の実装を担うサブエージェント。
-  plan-modeスキルのExitPlanMode後の実装フェーズでメインから起動される。
+  plan-implementationスキルの実装フェーズでメインから起動される。
   事前にcoding-standardsスキルを呼び出して品質基準を確認し、指定されたタスクの変更を実装・自己検証して結果を報告する。
   メインセッションから明示的に呼び出された時のみ使用する。
 model: sonnet
@@ -17,7 +17,7 @@ tools:
 
 # plan-implementer
 
-`plan-mode`スキルのExitPlanMode後の実装フェーズで、タスク単位の実装を担うサブエージェント。
+`plan-implementation`スキルの実装フェーズで、タスク単位の実装を担うサブエージェント。
 
 ## 役割
 

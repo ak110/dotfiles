@@ -1,7 +1,7 @@
 ---
 name: spec-writer
 description: >
-  `spec-driven`スキルから`plan-mode`の実装フェーズと並行して起動され、計画ファイルとリサーチ結果ファイル群を入力に、
+  `spec-driven`スキルから`plan-implementation`の実装フェーズと並行して起動され、計画ファイルとリサーチ結果ファイル群を入力に、
   作業版ドキュメント・バージョン目次`README.md`・必要なら横断ドキュメントを一括生成するサブエージェント。
   実装コードは編集せず、設計ドキュメントの立ち上げのみを担う。
   事前にwriting-standardsスキルを呼び出して品質基準を確認する。
@@ -17,7 +17,7 @@ tools:
 
 # spec-writer
 
-`spec-driven`スキルから`plan-mode`の実装フェーズと並行して起動され、作業版ドキュメントの骨子を立ち上げるサブエージェント。
+`spec-driven`スキルから`plan-implementation`の実装フェーズと並行して起動され、作業版ドキュメントの骨子を立ち上げるサブエージェント。
 
 ## 役割
 

@@ -159,14 +159,19 @@ codex CLI自体のセットアップは別途行うこと。
   `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks系ファイルなどClaude Code設定系ファイル編集時のガイドも本スキルに統合。
   訓練データにないClaude Code独自機能の仕様補完・コンテキスト汚染を避ける記述原則・対象別リファレンスの導線は`references/`配下に持つ
 - `plan-mode` — plan mode開始時・複雑な指示受領時・バグ障害イシュー調査相談時に呼び出す計画ファイル作成と
-  実装・レビュー工程の運用手順。
+  codexレビューの運用手順。
   計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合。
-  ExitPlanMode後の実装・レビュー工程では`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
-  `document-quality-reviewer`を起動する。
-  実装・レビューの詳細手順は`references/implement-review.md`に分離している。
+  計画ファイルの`## 実装・レビュー工程`節を必須H2として持ち、
+  ExitPlanMode後は`plan-implementation`スキルへ接続する。
   曖昧な指示時には計画ファイル作成前に選択肢提示で要件を確定させる対話フェーズの指針も含む。
   バグ・障害・イシュー調査相談を受けた時は`references/bugfix.md`
  （対症療法で済ませず根本原因の追跡と再発防止まで行う4ステップ手順）も併せて読み込む
+- `plan-implementation` — `ExitPlanMode`直後・計画ファイル合意後の実装・レビュー工程を担う運用手順。
+  以下の要点を含む。
+  BASE_SHA記録、タスク分解と`TaskCreate`登録、`plan-implementer`順次委譲、format/lint/test合格。
+  続いて3レビュアー（`spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`）の直列起動。
+  加えてレビュアー出力ファイルパス規約とコミット禁止指示。
+  計画ファイルの`## 実装・レビュー工程`節から本スキルを参照する運用で、SSOTは本スキル側に集約する
 - `tidy-unpushed-commits` — 複数の未プッシュコミットを慎重で再現性のある手順で
   整理する（squash・reorder・メッセージ書き直し）。
   退避refとツリー差分検証で最終ツリーの同一性を機械的に担保する。
@@ -189,7 +194,7 @@ codex CLI自体のセットアップは別途行うこと。
   - ステップ2前半冒頭で`EnterPlanMode`を明示的に呼び出し、
     計画ファイル1本（大枠方針と実装詳細を集約）を作成してcodexレビューに合格するまで繰り返す
   - `ExitPlanMode`の直後に`spec-writer`を呼び出し、作業版`.md`骨子・`README.md`エントリを一括生成させる。
-    実装・レビューは`plan-mode`スキルへ委譲し、`spec-writer`と`plan-mode`の実装フェーズは並行で進める
+    実装・レビューは`plan-implementation`スキルへ委譲し、`spec-writer`と`plan-implementation`の実装フェーズは並行で進める
   - ドキュメント規約（恒常配置側）: 恒常配置は機能単位で`docs/features/{機能名}.md`・`docs/topics/{トピック名}.md`に置く。
     昇格時に`spec-driven-promote`で開発中配置から恒常配置の該当機能ファイルへマージ統合する
   - ドキュメント規約（開発中配置側）: 開発中配置は作業テーマ単位で`docs/v{next}/{作業テーマ名}.md`に置く（例: `SSO追加.md`）。
@@ -208,10 +213,10 @@ codex CLI自体のセットアップは別途行うこと。
      （`.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`スキルが担当する）。
       pyfltrなど品質ツール群の多くが`.cache`をデフォルト除外対象とするため、中間成果物が品質チェックを阻害しない
   - `spec-driven`が直接起動するサブエージェントは`spec-researcher`（調査）と`spec-writer`（設計ドキュメント立ち上げ）の2つ。
-    実装・レビューは`plan-mode`スキルの所掌で、`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
+    実装・レビューは`plan-implementation`スキルの所掌で、`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
     `document-quality-reviewer`を起動する
   - レビューは`spec-reviewer`（仕様適合性・ドキュメント間整合性・計画ファイルからの転記漏れ・粒度差対応の整合）と
-    `code-quality-reviewer`（コード品質）と`document-quality-reviewer`（ドキュメント単体の品質）を`plan-mode`が直列起動する。
+    `code-quality-reviewer`（コード品質）と`document-quality-reviewer`（ドキュメント単体の品質）を`plan-implementation`が直列起動する。
     全タスク完了・format/lint/test合格のあとに実行する。
     3レビュアーは指摘を上記サフィックス付きファイルへ書き出し、戻り値は判定・件数に絞ることでメインのコンテキスト消費を抑える。
     軽微な実装はメイン判断でレビュー省略可

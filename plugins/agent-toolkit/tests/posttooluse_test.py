@@ -241,7 +241,8 @@ _VALID_PLAN = (
     "## 対応方針\n\n### ユーザー合意済み事項\n\n- a\n\n"
     "## 調査結果\n\n- x\n\n"
     "## 変更内容\n\n- y\n\n"
-    "## 検証\n\n- z\n"
+    "## 検証\n\n- z\n\n"
+    "## 実装・レビュー工程\n\n- w\n"
 )
 
 _VALID_PLAN_WITH_HISTORY = _VALID_PLAN + "\n## 変更履歴\n\n1. 初回\n"
@@ -334,7 +335,8 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 調査結果\n\n- x\n\n"
-            "## 検証\n\n- z\n"
+            "## 検証\n\n- z\n\n"
+            "## 実装・レビュー工程\n\n- w\n"
         )
         plan = _write_plan(plans, "order.md", content)
         result = _run(
@@ -380,7 +382,8 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更履歴\n\n1. 仮\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 検証\n\n- z\n"
+            "## 検証\n\n- z\n\n"
+            "## 実装・レビュー工程\n\n- w\n"
         )
         plan = _write_plan(plans, "hist.md", content)
         result = _run(
@@ -511,7 +514,8 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 検証\n\n- z\n"
+            "## 検証\n\n- z\n\n"
+            "## 実装・レビュー工程\n\n- w\n"
         )
         plan = _write_plan(plans, "fence.md", content)
         result = _run(
@@ -544,5 +548,5 @@ class TestPlanFormatSsot:
     def test_required_and_optional_h2_appear_in_skill(self):
         text = _SKILL_MD.read_text(encoding="utf-8")
         # 必須 H2 と任意 H2 は全て SKILL.md 内の該当構造定義に登場する
-        for heading in ("背景", "対応方針", "調査結果", "変更内容", "検証", "変更履歴"):
+        for heading in ("背景", "対応方針", "調査結果", "変更内容", "検証", "実装・レビュー工程", "変更履歴"):
             assert f"## {heading}" in text, f"SKILL.md に `## {heading}` が無い"

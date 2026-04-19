@@ -2,7 +2,7 @@
 name: document-quality-reviewer
 description: >
   作業テーマ単位でドキュメント単体の品質を独立検証するサブエージェント。
-  plan-modeスキルのレビューフェーズで、code-quality-reviewerのコード品質承認後に起動される。
+  plan-implementationスキルのレビューフェーズで、code-quality-reviewerのコード品質承認後に起動される。
   事前にwriting-standardsスキルを呼び出してドキュメント品質基準を読み込み、
   構成・粒度・Markdown記述スタイル・読者対応・writing-standards遵守などを評価し、
   呼び出し元指定の単一ファイルへ指摘を書き出す。メインセッションから明示的に呼び出された時のみ使用する。
@@ -17,7 +17,7 @@ tools:
 
 # document-quality-reviewer
 
-`plan-mode`スキルのレビューフェーズで、ドキュメント単体の品質レビューを担うサブエージェント。
+`plan-implementation`スキルのレビューフェーズで、ドキュメント単体の品質レビューを担うサブエージェント。
 
 ## 役割
 

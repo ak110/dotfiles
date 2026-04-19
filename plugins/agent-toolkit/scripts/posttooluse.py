@@ -83,7 +83,7 @@ _CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 # 期待セクション一覧の SSOT は `skills/plan-mode/SKILL.md` の「計画ファイルの構成」節。
 # SKILL.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
-_PLAN_REQUIRED_H2: tuple[str, ...] = ("背景", "対応方針", "調査結果", "変更内容", "検証")
+_PLAN_REQUIRED_H2: tuple[str, ...] = ("背景", "対応方針", "調査結果", "変更内容", "検証", "実装・レビュー工程")
 _PLAN_OPTIONAL_TRAILING_H2: str = "変更履歴"
 
 

@@ -163,9 +163,9 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 
 ## レビュアー呼び出し（spec-reviewer・code-quality-reviewer・document-quality-reviewer）
 
-レビュアーの起動は`plan-mode`スキルのレビューフェーズで行う。
+レビュアーの起動は`plan-implementation`スキルのレビューフェーズで行う。
 呼び出しテンプレート・出力ファイルパス規約・差し戻しループ運用の詳細は、
-`plan-mode`スキルの`references/implement-review.md`を参照する。
+`plan-implementation`スキルを参照する。
 
 `spec-driven`文脈でレビュアーへ渡す追加引数は以下のとおり。
 

@@ -3,7 +3,8 @@
 軽量SDDの各ステップで実施する手順とサブエージェント呼び出しテンプレートをまとめる。
 新規追加フローを基準に記述し、末尾に「既存機能改修フロー」として差分のみをまとめる。
 中断・再開は`operations.md`を参照する。
-実装・レビューの詳細手順は`plan-mode`スキル側の`references/implement-review.md`を参照する。
+計画ファイル作成・codexレビュー手順は`plan-mode`スキル、
+実装・レビューの詳細手順は`plan-implementation`スキルを参照する。
 リリース完了後の昇格作業は`spec-driven-promote`スキル、既存プロジェクトへの初回導入は`spec-driven-init`スキルを参照する。
 
 ## 全体の流れ
@@ -11,8 +12,8 @@
 1. Setup&Explore（plan mode前）— 要件確定・配置場所特定・既存機能の並列調査。リサーチ結果ファイル出力まで
 2. Plan&Implement（plan mode 1回出入り＋実装・レビュー）— 計画ファイル作成とcodexレビュー合格の後に、
    ExitPlanMode後の設計ドキュメント立ち上げと実装・レビューへ進む。
-   ドキュメント立ち上げは`spec-writer`、実装・レビューは`plan-mode`スキルへ委譲する
-3. Cleanup（plan-modeのレビュー合格後）— 一時ファイル削除・コミット
+   ドキュメント立ち上げは`spec-writer`、実装・レビューは`plan-implementation`スキルへ委譲する
+3. Cleanup（plan-implementationのレビュー合格後）— 一時ファイル削除・コミット
 
 ステップ終端にユーザー確認ゲートは置かない。判断が必要な場面は都度ユーザーに確認する。
 ステップ進行中の状態はメインのTaskCreateで管理し、中断時はTaskCreate残タスクと
@@ -73,7 +74,7 @@ spec-researcher呼び出しテンプレート:
 
 目的: plan modeへ1回出入りして計画ファイル1本（大枠方針と実装詳細を集約）を作成し、
 codexレビューを通して合意を得る。
-`ExitPlanMode`後に`spec-writer`でドキュメントを立ち上げつつ、`plan-mode`スキルのもとで実装・レビューを完了させる。
+`ExitPlanMode`後に`spec-writer`でドキュメントを立ち上げつつ、`plan-implementation`スキルのもとで実装・レビューを完了させる。
 
 plan modeの編集制約下でも、計画ファイル作成に必要なcodexレビューは`plan-mode`スキルの指示に従って実行する
 （同スキル内で制約対象外として扱う）。
@@ -107,18 +108,18 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
      判定が曖昧な場合はエスカレーションされるため、メインはユーザーへ確認する
    - 作業版ドキュメントには実装詳細（ファイル名・シンボル名・file:line等）を含めない方針を守らせる。
      実装とドキュメントの整合性はレビューフェーズで`spec-reviewer`が確認する
-2. 並行して`plan-mode`スキルの実装フェーズを開始する
-   - `BASE_SHA`の記録・タスク分解と`TaskCreate`登録・`plan-implementer`順次委譲は`plan-mode`の所掌
-   - 詳細手順は`plan-mode`スキルの`references/implement-review.md`を参照する
+2. 並行して`plan-implementation`スキルの実装フェーズを開始する
+   - `BASE_SHA`の記録・タスク分解と`TaskCreate`登録・`plan-implementer`順次委譲は`plan-implementation`の所掌
+   - 詳細手順は`plan-implementation`スキルを参照する
    - `spec-writer`と`plan-implementer`は計画ファイルをそれぞれ独立にインプットとして動き、相互依存はない
 3. `spec-writer`の戻り値で生成／更新ファイルを確認する
    - 作業版`.md`・`README.md`更新エントリ・横断ドキュメント（あれば）の存在とパスを確かめる
-4. 実装完了後、`plan-mode`スキルのレビューフェーズへ進む
+4. 実装完了後、`plan-implementation`スキルのレビューフェーズへ進む
    - `spec-reviewer`→`code-quality-reviewer`→`document-quality-reviewer`の順で直列起動。
-     詳細は`plan-mode`の`references/implement-review.md`
+     詳細は`plan-implementation`スキル
    - `spec-driven`文脈ではレビュアー引数に作業版ドキュメント・`README.md`・横断ドキュメントも含める
     （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`。`{kind}`は`spec`・`quality`・`docs`のいずれか）
-   - 軽微な実装の場合はメイン判断でレビュー省略可（判断基準は`plan-mode`の`references/implement-review.md`）
+   - 軽微な実装の場合はメイン判断でレビュー省略可（判断基準は`plan-implementation`スキル）
 
 spec-writer呼び出しテンプレート:
 
@@ -142,13 +143,13 @@ spec-writer呼び出しテンプレート:
 ドキュメントには実装詳細（ファイル名・シンボル名・file:line等）を含めない。gitコミット・pushは行わないこと
 ```
 
-実装・レビュー向けのサブエージェント呼び出しテンプレートは、`plan-mode`スキルの`references/implement-review.md`を参照する。
+実装・レビュー向けのサブエージェント呼び出しテンプレートは、`plan-implementation`スキルを参照する。
 対象は`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`の4種類。
 
 ## ステップ3: Cleanup
 
-目的: `plan-mode`のレビュー合格後に一時ファイルの削除とコミットを行う。
-検証・最終反映・レビューは`plan-mode`側で完了済みの前提。
+目的: `plan-implementation`のレビュー合格後に一時ファイルの削除とコミットを行う。
+検証・最終反映・レビューは`plan-implementation`側で完了済みの前提。
 
 手順:
 
@@ -186,7 +187,7 @@ spec-writer呼び出しテンプレート:
  （過去の判断を消さず、改修判断の履歴を残す）。`spec-writer`がこの方針で転記する
 - 「主要設計判断」は現行判断を上書きしてよいが、変更理由と旧判断との差分を同節内に明記する
  （昇格後に読む人向けの情報）
-- `plan-mode`のレビューフェーズでは、`spec-reviewer`へ作業版`.md`内の「改修前スナップショット」節も参照させ、
+- `plan-implementation`のレビューフェーズでは、`spec-reviewer`へ作業版`.md`内の「改修前スナップショット」節も参照させ、
   Before/Afterの意図的差分と意図しない齟齬を区別させる
 
 ### ステップ3差分
@@ -198,6 +199,6 @@ spec-writer呼び出しテンプレート:
 役割・起動条件・運用原則は`spec-driven`スキルSKILL.mdの「サブエージェント分業」節を参照する。
 本スキルが起動するのは`spec-researcher`・`spec-writer`の2つ。
 実装・レビューを担う`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`は
-`plan-mode`スキルの所掌。
+`plan-implementation`スキルの所掌。
 サブエージェントの起動はすべてAgentツールの`model`パラメーターに`"sonnet"`を指定する。
 各テンプレートのテキストは`prompt`パラメーターとして渡す。

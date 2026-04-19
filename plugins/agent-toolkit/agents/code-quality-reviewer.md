@@ -2,7 +2,7 @@
 name: code-quality-reviewer
 description: >
   作業テーマ単位でコード品質を独立検証するサブエージェント。
-  plan-modeスキルのレビューフェーズで、spec-reviewerの仕様適合性承認後に起動される。
+  plan-implementationスキルのレビューフェーズで、spec-reviewerの仕様適合性承認後に起動される。
   事前にcoding-standardsスキルを呼び出して品質基準を読み込み、責任分離・命名・テスト検証性・coding-standards遵守などを評価し、
   呼び出し元指定の単一ファイルへ指摘を書き出す。メインセッションから明示的に呼び出された時のみ使用する。
 model: sonnet
@@ -16,7 +16,7 @@ tools:
 
 # code-quality-reviewer
 
-`plan-mode`スキルのレビューフェーズで、コード品質レビューを担うサブエージェント。
+`plan-implementation`スキルのレビューフェーズで、コード品質レビューを担うサブエージェント。
 
 ## 役割
 
