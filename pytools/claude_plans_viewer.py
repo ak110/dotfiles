@@ -14,6 +14,7 @@ Markdown→HTML変換はraw HTMLをエスケープする設定とし、
 """
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import html
@@ -22,13 +23,83 @@ import json
 import logging
 import os
 import pathlib
+import queue
 import socket
 import sys
+import threading
+import typing
 import urllib.parse
 
 import markdown_it
+import watchdog.events
+import watchdog.observers
 
 logger = logging.getLogger(__name__)
+
+# SSE購読者の集合。スレッドセーフ化のため _subscribers_lock で保護する。
+_subscribers: set[queue.Queue[str]] = set()
+_subscribers_lock = threading.Lock()
+
+
+def _subscribe() -> queue.Queue[str]:
+    """SSE購読キューを生成して登録し返す。
+
+    maxsize=1にすることで短時間の連続イベントを1件に畳む。
+    """
+    q: queue.Queue[str] = queue.Queue(maxsize=1)
+    with _subscribers_lock:
+        _subscribers.add(q)
+    return q
+
+
+def _unsubscribe(q: queue.Queue[str]) -> None:
+    """購読キューを解除する。存在しない場合もエラーにしない。"""
+    with _subscribers_lock:
+        _subscribers.discard(q)
+
+
+def _broadcast() -> None:
+    """全購読者へ`refresh`を通知する。
+
+    キューがすでに満杯（maxsize=1のため前回通知が未消費）の場合は握りつぶす。
+    これにより短時間の大量イベントが1件の通知に畳まれる。
+    """
+    with _subscribers_lock:
+        targets = list(_subscribers)
+    for q in targets:
+        with contextlib.suppress(queue.Full):
+            q.put_nowait("refresh")
+
+
+class _PlansEventHandler(watchdog.events.FileSystemEventHandler):
+    """watchdogのイベントを受けてSSE購読者へ通知するハンドラ。"""
+
+    def __init__(self, root: pathlib.Path) -> None:
+        super().__init__()
+        self.root = root
+
+    @typing.override
+    def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
+        """ファイルシステムイベントをフィルタリングして購読者へ通知する。"""
+        # ディレクトリイベントは対象外
+        if event.is_directory:
+            return
+        # src_pathはwatchdog型定義上bytes|strだが実行時はstr。str変換でPath型エラーを回避する
+        src = pathlib.Path(str(event.src_path))
+        # .md以外は対象外
+        if src.suffix != ".md":
+            return
+        # dotdirを経由するパスを除外するため、root配下の相対パスに変換してから判定する。
+        # watchdogは絶対パスでイベントを通知するため、src_path全体のparts判定では
+        # rootのパス成分（~/.claude/plans等）がdotdirに誤マッチする。
+        try:
+            rel = src.resolve().relative_to(self.root.resolve())
+        except ValueError:
+            return
+        if any(part.startswith(".") for part in rel.parts):
+            return
+        _broadcast()
+
 
 _DEFAULT_ROOT = "~/.claude/plans"
 _DEFAULT_HOST = "127.0.0.1"
@@ -166,7 +237,11 @@ let selectedPath = null;
 function renderFiles() {
   const q = document.getElementById("filter").value.toLowerCase();
   const root = document.getElementById("files");
+  const aside = document.querySelector("aside");
+  // 一覧再描画前にスクロール位置を退避し、再描画後に復元する
+  const scrollTop = aside ? aside.scrollTop : 0;
   root.innerHTML = "";
+  const frag = document.createDocumentFragment();
   for (const file of files) {
     if (!file.path.toLowerCase().includes(q)) continue;
     const item = document.createElement("div");
@@ -180,8 +255,10 @@ function renderFiles() {
     meta.textContent = file.mtime;
     item.appendChild(name);
     item.appendChild(meta);
-    root.appendChild(item);
+    frag.appendChild(item);
   }
+  root.appendChild(frag);
+  if (aside) aside.scrollTop = scrollTop;
 }
 
 async function refreshFiles() {
@@ -190,22 +267,44 @@ async function refreshFiles() {
   renderFiles();
 }
 
-async function openFile(path) {
-  await refreshFiles();
-  selectedPath = path;
-  renderFiles();
-  const res = await fetch("/api/file?path=" + encodeURIComponent(path));
+async function updatePreview() {
+  if (!selectedPath) return;
+  const main = document.querySelector("main");
+  const scrollTop = main ? main.scrollTop : 0;
+  const res = await fetch("/api/file?path=" + encodeURIComponent(selectedPath));
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     return;
   }
   document.getElementById("preview").innerHTML = await res.text();
+  if (main) main.scrollTop = scrollTop;
+}
+
+async function openFile(path) {
+  await refreshFiles();
+  selectedPath = path;
+  renderFiles();
+  const main = document.querySelector("main");
+  const res = await fetch("/api/file?path=" + encodeURIComponent(path));
+  if (!res.ok) {
+    document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+    if (main) main.scrollTop = 0;
+    return;
+  }
+  document.getElementById("preview").innerHTML = await res.text();
+  if (main) main.scrollTop = 0;
   document.title = path;
 }
 
 async function main() {
   await refreshFiles();
   if (files.length > 0) await openFile(files[0].path);
+
+  const es = new EventSource("/api/events");
+  es.onmessage = async () => {
+    await refreshFiles();
+    if (selectedPath) await updatePreview();
+  };
 }
 
 document.getElementById("filter").addEventListener("input", renderFiles);
@@ -242,12 +341,19 @@ def _main(argv: list[str] | None = None) -> int:
     _PlansHandler.renderer = _make_md_renderer()
     _PlansHandler.hostname = socket.gethostname()
 
-    with http.server.ThreadingHTTPServer((args.host, args.port), _PlansHandler) as server:
-        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            logger.info("停止します")
+    observer = watchdog.observers.Observer()
+    observer.schedule(_PlansEventHandler(root), str(root), recursive=True)
+    observer.start()
+    try:
+        with http.server.ThreadingHTTPServer((args.host, args.port), _PlansHandler) as server:
+            logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                logger.info("停止します")
+    finally:
+        observer.stop()
+        observer.join()
     return 0
 
 
@@ -360,6 +466,30 @@ class _PlansHandler(http.server.BaseHTTPRequestHandler):
             entries = _list_files(self.root)
             body = json.dumps([dataclasses.asdict(e) for e in entries], ensure_ascii=False).encode("utf-8")
             self._send("application/json; charset=utf-8", body)
+            return
+
+        if parsed.path == "/api/events":
+            # SSEエンドポイント。Content-Lengthは指定せずストリーミング応答する。
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            q = _subscribe()
+            try:
+                while True:
+                    try:
+                        msg = q.get(timeout=15)
+                        self.wfile.write(f"data: {msg}\n\n".encode())
+                    except queue.Empty:
+                        # タイムアウト時はSSEコメントでkeepaliveを送る
+                        self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+            except OSError:
+                # クライアント切断時の各種OSError（BrokenPipeError・ConnectionResetError・ECONNABORTED等）を一括で受ける
+                pass
+            finally:
+                _unsubscribe(q)
             return
 
         if parsed.path == "/api/file":

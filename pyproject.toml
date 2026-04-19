@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml",
     "send2trash",
     "tqdm",
+    "watchdog>=6.0.0",
     "zstandard",
 ]
 

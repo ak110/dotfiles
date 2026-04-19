@@ -8,12 +8,14 @@ import http.client
 import http.server
 import json
 import os
+import queue
 import re
 import socket
 import threading
 from pathlib import Path
 
 import pytest
+import watchdog.events
 
 from pytools import claude_plans_viewer
 
@@ -257,3 +259,164 @@ class TestHostnameEmbedding:
         assert "host&lt;&amp;&quot;test" in body
         # 実ホスト名取得関数が問題なく呼べることを動作として担保する。
         assert isinstance(socket.gethostname(), str)
+
+
+class TestSubscribers:
+    """購読者管理（_subscribe・_unsubscribe・_broadcast）のテスト。"""
+
+    def test_subscribe_unsubscribe_roundtrip(self):
+        """_subscribe で登録し _unsubscribe で解除できること。重複解除もエラーにならないこと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            assert q in claude_plans_viewer._subscribers
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+        assert q not in claude_plans_viewer._subscribers
+        # 重複解除してもエラーにならない
+        claude_plans_viewer._unsubscribe(q)
+
+    def test_broadcast_delivers_refresh(self):
+        """_broadcast 後にキューから "refresh" が取得できること。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            claude_plans_viewer._broadcast()
+            msg = q.get(timeout=1)
+            assert msg == "refresh"
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_broadcast_deduplicates_via_maxsize(self):
+        """_broadcast を2回連続で呼んでも、キュー長が1のまま（2件目は握りつぶされる）こと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            claude_plans_viewer._broadcast()
+            claude_plans_viewer._broadcast()
+            assert q.qsize() == 1
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+
+class TestWatchdogHandler:
+    """_PlansEventHandler のイベントフィルタリングテスト。"""
+
+    def test_md_event_broadcasts(self, tmp_path: Path):
+        """.md ファイルの変更イベントで購読者へ refresh が届くこと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            md_file = tmp_path / "plan.md"
+            md_file.write_text("x", encoding="utf-8")
+            event = watchdog.events.FileModifiedEvent(str(md_file))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            msg = q.get(timeout=1)
+            assert msg == "refresh"
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_non_md_event_ignored(self, tmp_path: Path):
+        """.md 以外のファイルイベントでは購読者へ通知しないこと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            txt_file = tmp_path / "note.txt"
+            txt_file.write_text("x", encoding="utf-8")
+            event = watchdog.events.FileModifiedEvent(str(txt_file))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            with pytest.raises(queue.Empty):
+                q.get_nowait()
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_dotdir_event_ignored(self, tmp_path: Path):
+        """root配下のdotdir配下のイベントでは購読者へ通知しないこと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            cache_dir = tmp_path / ".cache"
+            cache_dir.mkdir()
+            md_file = cache_dir / "plan.md"
+            md_file.write_text("x", encoding="utf-8")
+            event = watchdog.events.FileModifiedEvent(str(md_file))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            with pytest.raises(queue.Empty):
+                q.get_nowait()
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_directory_event_ignored(self, tmp_path: Path):
+        """is_directory=True のイベントでは購読者へ通知しないこと。"""
+        q = claude_plans_viewer._subscribe()
+        try:
+            event = watchdog.events.DirModifiedEvent(str(tmp_path / "subdir"))
+            claude_plans_viewer._PlansEventHandler(tmp_path).on_any_event(event)
+            with pytest.raises(queue.Empty):
+                q.get_nowait()
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+    def test_dotdir_root_events_pass(self, tmp_path: Path):
+        """rootそのものがdotdir配下にあっても、root配下の通常.mdは通知されること。
+
+        ~/.claude/plansのようにrootのパス成分にdotdirが含まれるケースの回帰テスト。
+        旧実装ではsrc_path全体のpartsを判定していたためrootのパス成分にも誤マッチしていた。
+        """
+        # rootをdotdir名のディレクトリとし、その配下の通常ファイルが通知される側に入ることを確認する
+        dot_root = tmp_path / ".claude_like"
+        dot_root.mkdir()
+        md_file = dot_root / "plan.md"
+        md_file.write_text("x", encoding="utf-8")
+
+        q = claude_plans_viewer._subscribe()
+        try:
+            event = watchdog.events.FileModifiedEvent(str(md_file))
+            claude_plans_viewer._PlansEventHandler(dot_root).on_any_event(event)
+            msg = q.get(timeout=1)
+            assert msg == "refresh"
+        finally:
+            claude_plans_viewer._unsubscribe(q)
+
+
+class TestEventsEndpoint:
+    """/api/events エンドポイントの統合テスト。"""
+
+    def test_sse_headers_and_refresh_delivered(self, tmp_path: Path):
+        """SSEヘッダが正しく返り、_broadcast 後に data: refresh 行が届くこと。"""
+        claude_plans_viewer._PlansHandler.root = tmp_path
+        claude_plans_viewer._PlansHandler.renderer = claude_plans_viewer._make_md_renderer()
+        claude_plans_viewer._PlansHandler.hostname = "testhost"
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), claude_plans_viewer._PlansHandler)
+        try:
+            _port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", _port, timeout=5)
+                conn.request("GET", "/api/events")
+                response = conn.getresponse()
+
+                # ヘッダを確認
+                assert response.status == 200
+                assert response.getheader("Content-Type") == "text/event-stream"
+                assert response.getheader("Cache-Control") == "no-store"
+
+                # 少し待ってから _broadcast を呼ぶ
+                threading.Timer(0.3, claude_plans_viewer._broadcast).start()
+
+                # data: refresh 行が届くまで読み取る
+                received_refresh = False
+                for _ in range(50):
+                    line = response.fp.readline().decode("utf-8")
+                    if line.strip() == "data: refresh":
+                        received_refresh = True
+                        break
+
+                response.close()
+                conn.close()
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+        finally:
+            server.server_close()
+            # テスト終了時に購読者集合を後始末する
+            with claude_plans_viewer._subscribers_lock:
+                claude_plans_viewer._subscribers.clear()
+
+        assert received_refresh
