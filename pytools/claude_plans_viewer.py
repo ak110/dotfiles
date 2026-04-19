@@ -34,6 +34,49 @@ table { border-collapse: collapse; }
 th, td { border: 1px solid #d1d5db; padding: 6px 8px; }
 """
 
+# タブ識別とPWAアイコンの双方でSSOTにするため、faviconはインラインSVGを単一定数で保持する。
+# 図柄はtabler iconsのclipboard-list準拠。ベクターで配布するためPWAの192x192/512x512要件も1ファイルで満たせる。
+_FAVICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4f46e5"\
+ stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 5H7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2V7a2 2 0 0 0 -2 -2h-2"/>
+  <rect x="9" y="3" width="6" height="4" rx="2"/>
+  <path d="M9 12h.01"/>
+  <path d="M11 12h4"/>
+  <path d="M9 16h.01"/>
+  <path d="M11 16h4"/>
+</svg>
+"""
+
+# PWAインストール可能性を満たすmanifest。iconsはSVG1件で192x192・512x512・anyを同時に宣言する
+# （Chrome 93以降のSVG対応によりraster PNGを別途生成しなくてよい）。
+_MANIFEST_JSON = """\
+{
+  "name": "Claude plans",
+  "short_name": "Plans",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#4f46e5",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512 any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+"""
+
+# PWAインストール可能性判定を満たす最小のservice worker。
+# オフライン動作は目標外のためキャッシュ戦略は持たず、fetchは既定のネットワーク動作に委ねる。
+_SERVICE_WORKER_JS = """\
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener("fetch", () => {});
+"""
+
 # 左ペインにファイル一覧・右ペインにMarkdownプレビューを表示するSPA。
 # Markdown→HTML変換はサーバー側で済ませて`/api/file`がHTMLを返すため、
 # クライアント側はfetchした文字列をそのまま`<article>`へ挿入する。
@@ -43,6 +86,9 @@ _INDEX_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude plans</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#4f46e5">
 <link rel="stylesheet" href="/static/markdown.css">
 <style>
   html, body { height: 100%; }
@@ -139,6 +185,10 @@ async function main() {
 
 document.getElementById("filter").addEventListener("input", renderFiles);
 main();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js");
+}
 </script>
 </body>
 </html>
@@ -247,6 +297,18 @@ class _PlansHandler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/static/markdown.css":
             self._send("text/css; charset=utf-8", _read_css().encode("utf-8"))
+            return
+
+        if parsed.path == "/favicon.svg":
+            self._send("image/svg+xml; charset=utf-8", _FAVICON_SVG.encode("utf-8"))
+            return
+
+        if parsed.path == "/manifest.webmanifest":
+            self._send("application/manifest+json; charset=utf-8", _MANIFEST_JSON.encode("utf-8"))
+            return
+
+        if parsed.path == "/sw.js":
+            self._send("application/javascript; charset=utf-8", _SERVICE_WORKER_JS.encode("utf-8"))
             return
 
         if parsed.path == "/api/files":

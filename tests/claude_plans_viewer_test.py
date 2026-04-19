@@ -1,9 +1,10 @@
 """pytools.claude_plans_viewer のテスト。"""
 
 # 本モジュールはプライベート関数（`_list_files`・`_resolve_under_root`・`_markdown_to_html`・
-# `_resolve_css_path`・`_read_css`）を単体でテストするため、protected-accessを一括で許可する。
+# `_resolve_css_path`・`_read_css`）や同モジュール内の定数を単体でテストするため、protected-accessを一括で許可する。
 # pylint: disable=protected-access
 
+import json
 import os
 import re
 from pathlib import Path
@@ -130,3 +131,39 @@ class TestResolveCssPath:
         css = claude_plans_viewer._read_css()
 
         assert css.strip()
+
+
+class TestPwaAssets:
+    """favicon・manifest・service workerのインライン定数の内容検査。
+
+    HTTPハンドラは標準ライブラリの`BaseHTTPRequestHandler`に委ねているため、
+    統合テストは持たずに定数側で契約を固定する。
+    """
+
+    def test_favicon_svg_root(self):
+        """favicon定数がSVGルート要素で始まる。"""
+        svg = claude_plans_viewer._FAVICON_SVG
+
+        assert svg.lstrip().startswith("<svg")
+        assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+
+    def test_manifest_json_has_required_keys(self):
+        """manifest定数がJSONとしてパースでき、PWAの必須キーを持つ。"""
+        manifest = json.loads(claude_plans_viewer._MANIFEST_JSON)
+
+        assert manifest["name"] == "Claude plans"
+        assert manifest["display"] == "standalone"
+        assert manifest["start_url"] == "/"
+        # iconsはSVG1件で、192x192と512x512を同時に宣言してChromiumのインストール要件を満たす。
+        assert len(manifest["icons"]) == 1
+        icon = manifest["icons"][0]
+        assert icon["src"] == "/favicon.svg"
+        assert icon["type"] == "image/svg+xml"
+        assert "192x192" in icon["sizes"]
+        assert "512x512" in icon["sizes"]
+
+    def test_service_worker_registers_fetch(self):
+        """service worker定数がfetchリスナーを登録する（インストール可能性判定のための最小要件）。"""
+        sw_js = claude_plans_viewer._SERVICE_WORKER_JS
+
+        assert 'addEventListener("fetch"' in sw_js
