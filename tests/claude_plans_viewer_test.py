@@ -4,9 +4,13 @@
 # `_resolve_css_path`・`_read_css`）や同モジュール内の定数を単体でテストするため、protected-accessを一括で許可する。
 # pylint: disable=protected-access
 
+import http.client
+import http.server
 import json
 import os
 import re
+import socket
+import threading
 from pathlib import Path
 
 import pytest
@@ -167,3 +171,89 @@ class TestPwaAssets:
         sw_js = claude_plans_viewer._SERVICE_WORKER_JS
 
         assert 'addEventListener("fetch"' in sw_js
+
+
+class TestParseArgs:
+    """_parse_args の環境変数フォールバック検証。
+
+    「CLI引数 > 環境変数 > 組み込み既定値」の優先順位を固定するため、
+    monkeypatch で環境変数を明示的に設定/解除した上で解決結果を検査する。
+    """
+
+    def test_defaults_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
+        """環境変数未設定時は組み込み既定値を採用する。"""
+        monkeypatch.delenv(claude_plans_viewer._ENV_ROOT, raising=False)
+        monkeypatch.delenv(claude_plans_viewer._ENV_HOST, raising=False)
+        monkeypatch.delenv(claude_plans_viewer._ENV_PORT, raising=False)
+
+        args = claude_plans_viewer._parse_args([])
+
+        assert args.root == claude_plans_viewer._DEFAULT_ROOT
+        assert args.host == claude_plans_viewer._DEFAULT_HOST
+        assert args.port == claude_plans_viewer._DEFAULT_PORT
+
+    def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
+        """環境変数が設定されていればそれを既定値として使う。"""
+        monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
+        monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
+        monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
+
+        args = claude_plans_viewer._parse_args([])
+
+        assert args.root == "/tmp/plans-env"
+        assert args.host == "0.0.0.0"  # noqa: S104
+        assert args.port == 12345
+
+    def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch):
+        """CLI引数は環境変数より優先する。"""
+        monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
+        monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
+        monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
+
+        args = claude_plans_viewer._parse_args(["--root", "/tmp/plans-cli", "--host", "127.0.0.1", "--port", "54321"])
+
+        assert args.root == "/tmp/plans-cli"
+        assert args.host == "127.0.0.1"
+        assert args.port == 54321
+
+
+class TestHostnameEmbedding:
+    """`/` 応答HTMLへのホスト名埋め込みを検証する。
+
+    実際のHTTPサーバーをポート0で起動し、`/` を取得して本文を確認する。
+    別スレッドで1回だけ serve するため、テスト終了時には `shutdown()` と `join()` で
+    確実に停止させる。
+    """
+
+    def test_index_html_contains_escaped_hostname(self, tmp_path: Path):
+        """`/` 応答に socket.gethostname() 相当のホスト名がエスケープ済みで含まれる。"""
+        # HTML特殊文字を含む値で埋め込みのエスケープ処理も同時に検査する。
+        hostname = 'host<&"test'
+        claude_plans_viewer._PlansHandler.root = tmp_path
+        claude_plans_viewer._PlansHandler.renderer = claude_plans_viewer._make_md_renderer()
+        claude_plans_viewer._PlansHandler.hostname = hostname
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), claude_plans_viewer._PlansHandler)
+        try:
+            _port = server.server_address[1]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", _port, timeout=5)
+                conn.request("GET", "/")
+                response = conn.getresponse()
+                body = response.read().decode("utf-8")
+                conn.close()
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+        finally:
+            server.server_close()
+
+        assert response.status == 200
+        # 生のホスト名文字列は含まれない（エスケープされている）こと。
+        assert hostname not in body
+        # エスケープ済みの形で含まれること。
+        assert "host&lt;&amp;&quot;test" in body
+        # 実ホスト名取得関数が問題なく呼べることを動作として担保する。
+        assert isinstance(socket.gethostname(), str)

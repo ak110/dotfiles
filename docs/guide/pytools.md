@@ -23,6 +23,47 @@
 uv tool install --editable ~/dotfiles
 ```
 
+## claude-plans-viewer
+
+`~/.claude/plans/*.md`をブラウザで一覧・閲覧するローカルHTTPビューア。
+SSHポートフォワード越しに複数マシンから参照しやすいよう、
+左ペインのfilter入力欄の上に`socket.gethostname()`で取得したホスト名を表示する。
+
+### 自動起動（Windows）
+
+`chezmoi apply`後処理の「claude-plans-viewer自動起動セットアップ」ステップが、
+スタートアップフォルダーに起動用の`.cmd`を冪等に配置する。
+配置先は`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\claude-plans-viewer.cmd`。
+次回ログオン以降はWindowsが自動起動する。
+post-apply実行時にviewerが未起動であればバックグラウンドでも起動し、新規セットアップ直後でも即時利用できる状態にする。
+
+`update-dotfiles`の再インストールタイミングでは、PowerShell側がviewerを一時停止してから
+`uv tool install`を実行し、完了後に再起動する。
+これによりviewerの`.exe`やvenv内ファイルがロックされた状態での再インストール部分失敗を防ぐ。
+
+Linux/macOSでは自動起動セットアップはno-op。
+常駐させる場合はユーザー側でコマンドを直接起動する。
+
+### 環境別設定（環境変数）
+
+ホスト・ポート・ルートディレクトリは環境変数で上書きできる。
+優先順位は高い順に、CLI引数・環境変数・組み込み既定値。
+
+| 環境変数 | 対応オプション | 既定値 |
+| --- | --- | --- |
+| `CLAUDE_PLANS_VIEWER_ROOT` | `--root` | `~/.claude/plans` |
+| `CLAUDE_PLANS_VIEWER_HOST` | `--host` | `127.0.0.1` |
+| `CLAUDE_PLANS_VIEWER_PORT` | `--port` | Windows: `28875` ／ その他: `28765` |
+
+Windowsでユーザースコープに永続化する例:
+
+```cmd
+setx CLAUDE_PLANS_VIEWER_PORT 12345
+```
+
+`setx`で設定した値は新規起動するコマンドプロンプトから見える。
+自動起動用の`.cmd`も新規プロセスから起動されるため、次回ログオン以降は最新値を継承する。
+
 ## 内部モジュール
 
 `pytools/`直下で`_`始まりのモジュールは`chezmoi apply`の後処理から呼ばれる内部用で、コマンドラインからは直接使わない。

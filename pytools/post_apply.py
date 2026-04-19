@@ -13,6 +13,7 @@
 7. Claude Code plugin の自動インストール (_install_claude_plugins.run)
 8. codex MCP サーバーの自動登録 (_install_codex_mcp.run)
 9. Windows 向け libarchive.dll の自動インストール (_install_libarchive_windows.run)
+10. claude-plans-viewer の自動起動セットアップ (_setup_plans_viewer_windows.run)
 
 呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
 直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
@@ -31,6 +32,7 @@ from pytools import (
     _install_libarchive_windows,
     _log_format,
     _setup_mise,
+    _setup_plans_viewer_windows,
     _update_claude_settings,
     _update_npmrc,
     _update_vscode_settings,
@@ -109,6 +111,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
     ("Claude Code plugin のインストール", _install_claude_plugins.run),
     ("codex MCP サーバーの登録", _install_codex_mcp.run),
     ("libarchive (Windows)", _install_libarchive_windows.run),
+    ("claude-plans-viewer 自動起動セットアップ", _setup_plans_viewer_windows.run),
 ]
 
 

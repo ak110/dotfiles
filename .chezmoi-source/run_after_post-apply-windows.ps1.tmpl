@@ -19,6 +19,20 @@ if (Test-Path $hashFile) {
     $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
 }
 
+$viewerBin = Join-Path $env:USERPROFILE '.local\bin\claude-plans-viewer.exe'
+# 再インストール時に claude-plans-viewer.exe や venv 内ファイルがロックされたまま
+# tool venv 再構築が部分失敗する事象が確認されているため、viewer が起動中なら
+# 先に停止させ、再インストール完了後に再度バックグラウンド起動する。
+$viewerWasRunning = $false
+if ($currentHash -ne $cachedHash) {
+    $viewerProcs = Get-Process -Name claude-plans-viewer -ErrorAction SilentlyContinue
+    if ($viewerProcs) {
+        $viewerWasRunning = $true
+        Write-Host '  [pytools] claude-plans-viewer を一時停止'
+        Stop-Process -InputObject $viewerProcs -Force
+    }
+}
+
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if ($currentHash -ne $cachedHash) {
     Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
@@ -62,4 +76,12 @@ if (Test-Path $postApplyBin) {
     & $postApplyBin
 } else {
     Write-Host "  [pytools] $postApplyBin が見つかりません。後処理をスキップします。"
+}
+
+# 再インストール前に停止した viewer を再起動する。
+# post-apply ステップ側でも未起動時はバックグラウンド起動するため、本節は
+# 「停止済み → 明示的に再開」の経路を担保する役割に限定する。
+if ($viewerWasRunning -and (Test-Path $viewerBin)) {
+    Write-Host '  [pytools] claude-plans-viewer を再起動'
+    Start-Process -FilePath $viewerBin -WindowStyle Hidden
 }
