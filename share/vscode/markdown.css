@@ -25,7 +25,7 @@
 
 body {
   font-family:
-    'Noto Sans JP',
+    "Noto Sans JP",
     -apple-system,
     BlinkMacSystemFont,
     sans-serif;
@@ -169,9 +169,7 @@ blockquote > p:last-child {
 
 /* インラインコード - mono-14N-150 */
 code {
-  font-family: 'Noto Sans Mono', monospace;
-  font-size: 0.875rem; /* 14px */
-  line-height: 1.5;
+  font-family: "Noto Sans Mono", monospace;
   padding: 0.125rem 0.375rem;
   background-color: #f2f2f2; /* neutral-solid-gray-50 */
   border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
@@ -251,7 +249,7 @@ img {
    Checkbox (Task List)
    ======================================== */
 
-input[type='checkbox'] {
+input[type="checkbox"] {
   margin-right: 0.5rem;
   accent-color: #0031d8; /* blue-800 */
 }

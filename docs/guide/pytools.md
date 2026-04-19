@@ -6,8 +6,7 @@
 ## コマンド一覧
 
 - `claude-commit` — claudeでコミットメッセージを生成してgit commitを実行
-- `claude-plans-viewer` — `~/.claude/plans/*.md`をブラウザで一覧・閲覧するローカルHTTPビューア。
-  Windowsから使う場合は[docs/guide/claude-plans-remote.md](claude-plans-remote.md)を参照
+- `claude-plans-viewer` — `~/.claude/plans/*.md`をブラウザで一覧・閲覧するローカルHTTPビューア
 - `claudize` — Claude Code設定ファイルの配布・同期
 - `py-imageconverter` — 画像変換（リサイズ、フォーマット変換、メタデータ削除）
 - `py-rename` — 正規表現でファイルリネーム

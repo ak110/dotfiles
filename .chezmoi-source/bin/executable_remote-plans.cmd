@@ -4,7 +4,7 @@ setlocal
 rem WindowsからSSH先Linuxの~/.claude/plans/*.mdをブラウザで閲覧するラッパー。
 rem 使い方: remote-plans USER@HOST [PORT]
 rem   USER@HOST: SSH接続先（~/.ssh/configのホスト別名でも可）
-rem   PORT:      ローカルとリモートで共通に使うポート（既定 8765）
+rem   PORT:      ローカルとリモートで共通に使うポート（既定 28766）
 rem 終了するにはこのウィンドウでCtrl+Cを押すか、ウィンドウを閉じる。
 rem 対応するLinux版: なし（リモート側のビューア本体は claude-plans-viewer として配布）。
 
@@ -15,7 +15,7 @@ if "%~1"=="" (
 
 set "TARGET=%~1"
 set "PORT=%~2"
-if "%PORT%"=="" set "PORT=8765"
+if "%PORT%"=="" set "PORT=28766"
 
 set "URL=http://127.0.0.1:%PORT%/"
 

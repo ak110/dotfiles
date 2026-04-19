@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_ROOT = "~/.claude/plans"
 _DEFAULT_HOST = "127.0.0.1"
-_DEFAULT_PORT = 8765
+_DEFAULT_PORT = 28765
 
 # share/vscode/markdown.cssが見つからないときの最小フォールバック。
 # editable install前提では使われない想定だが、非editable配布や移動時に備えて持たせる。
