@@ -156,8 +156,11 @@ codex CLI自体のセットアップは別途行うこと。
 - `writing-standards` — ドキュメントの新規作成・修正・レビュー時に呼び出すドキュメント品質のベース指示。
   Markdown記述スタイル・README規約・技術文書の書き方を含む。
   `styles.md`の記述スタイルを共通基盤とし、ドキュメント固有の品質基準を追加する
-- `plan-mode` — plan mode開始時・複雑な指示受領時・バグ障害イシュー調査相談時に呼び出す計画ファイル作成手順。
+- `plan-mode` — plan mode開始時・複雑な指示受領時・バグ障害イシュー調査相談時に呼び出す計画ファイル作成と
+  実装・レビュー工程の運用手順。
   計画ファイルの構成テンプレート、codexレビュー手順（MCP優先・CLIフォールバック）、変更履歴の書き方までを統合。
+  ExitPlanMode後の実装・レビュー工程では`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`を起動する。
+  実装・レビューの詳細手順は`references/implement-review.md`に分離している。
   曖昧な指示時には計画ファイル作成前に選択肢提示で要件を確定させる対話フェーズの指針も含む。
   バグ・障害・イシュー調査相談を受けた時は`references/bugfix.md`
  （対症療法で済ませず根本原因の追跡と再発防止まで行う4ステップ手順）も併せて読み込む
@@ -184,8 +187,8 @@ codex CLI自体のセットアップは別途行うこと。
   - ステップ1の成果物はリサーチ結果ファイル群のみに絞る（骨子・`README.md`エントリは作らない）
   - ステップ2前半冒頭で`EnterPlanMode`を明示的に呼び出し、
     計画ファイル1本（大枠方針と実装詳細を集約）を作成してcodexレビューに合格するまで繰り返す
-  - `ExitPlanMode`の直後に`spec-designer`を呼び出し、作業版`.md`骨子・`README.md`エントリを一括生成させる。
-    メインはその後TaskCreate登録と`spec-implementer`順次起動に進む
+  - `ExitPlanMode`の直後に`spec-writer`を呼び出し、作業版`.md`骨子・`README.md`エントリを一括生成させる。
+    実装・レビューは`plan-mode`スキルへ委譲し、`spec-writer`と`plan-mode`の実装フェーズは並行で進める
   - ドキュメント規約（恒常配置側）: 恒常配置は機能単位で`docs/features/{機能名}.md`・`docs/topics/{トピック名}.md`に置く。
     昇格時に`spec-driven-promote`で開発中配置から恒常配置の該当機能ファイルへマージ統合する
   - ドキュメント規約（開発中配置側）: 開発中配置は作業テーマ単位で`docs/v{next}/{作業テーマ名}.md`に置く（例: `SSO追加.md`）。
@@ -202,12 +205,13 @@ codex CLI自体のセットアップは別途行うこと。
     - 一時ファイルは`.cache/`配下に置きgit管理から外す
      （`.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`スキルが担当する）。
       pyfltrなど品質ツール群の多くが`.cache`をデフォルト除外対象とするため、中間成果物が品質チェックを阻害しない
-  - 調査は`spec-researcher`、設計ドキュメント立ち上げは`spec-designer`、実装は`spec-implementer`の各サブエージェントへ分業し、
-    メインセッションのコンテキスト消費を抑える
+  - `spec-driven`が直接起動するサブエージェントは`spec-researcher`（調査）と`spec-writer`（設計ドキュメント立ち上げ）の2つ。
+    実装・レビューは`plan-mode`スキルの所掌で、`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`を起動する
   - レビューは`spec-reviewer`（仕様適合性・ドキュメント整合性・計画ファイルからの転記漏れ・粒度差対応の整合）と
-    `code-quality-reviewer`（コード品質）を作業テーマ単位で直列起動する。
-    全タスク完了・最終反映・format/lint/test合格のあとに実行する。
-    両レビュアーは指摘を上記サフィックス付きファイルへ書き出し、戻り値は判定・件数に絞ることでメインのコンテキスト消費を抑える
+    `code-quality-reviewer`（コード品質）を`plan-mode`が直列起動する。
+    全タスク完了・format/lint/test合格のあとに実行する。
+    両レビュアーは指摘を上記サフィックス付きファイルへ書き出し、戻り値は判定・件数に絞ることでメインのコンテキスト消費を抑える。
+    軽微な実装はメイン判断でレビュー省略可
   - 自動トリガー条件: 既にspec-drivenで開発している形跡（恒常配置の整備・`CLAUDE.md`記述）があり、
     かつ大規模な機能追加・改修の相談を受けた場合に限る。
     ユーザーが呼び忘れていると判断できるときは、ユーザーに起動可否を確認した上で自動起動する

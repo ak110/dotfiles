@@ -156,62 +156,27 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 - [docs/v{next}/{トピック名2}.md]({トピック名2}.md) — 一行説明
 ````
 
-## spec-designer呼び出し
+## spec-writer呼び出し
 
-呼び出しテンプレートは`workflow.md`「ステップ2b」節内の`spec-designer`呼び出しテンプレートを参照する。
+呼び出しテンプレートは`workflow.md`「ステップ2b」節内の`spec-writer`呼び出しテンプレートを参照する。
+`spec-writer`は起動時に`writing-standards`スキルを事前呼び出しすることを必須とする。
 
 ## レビュアー呼び出し（spec-reviewer・code-quality-reviewer）
 
-ステップ3で機能単位に直列起動するレビュアーの呼び出しテンプレート。
-両レビュアーに共通する引数は
-「作業テーマ名・作業版`.md`のパス・`BASE_SHA`・レビュー対象外の一時ファイル一覧・出力ファイルパス」の5点。
-`spec-reviewer`にはドキュメント整合性検査のため差分に含まれる他の作業版ドキュメント・`README.md`・横断ドキュメントも渡す。
-既存改修時は作業版`.md`内の「改修前スナップショット」節の参照指示、および計画ファイル（転記漏れ検査用）も併せて渡す。
+レビュアーの起動は`plan-mode`スキルのレビューフェーズで行う。
+呼び出しテンプレート・出力ファイルパス規約・差し戻しループ運用の詳細は、
+`plan-mode`スキルの`references/implement-review.md`を参照する。
 
-`BASE_SHA`はステップ2で記録した`git rev-parse HEAD`の結果を使う。
-`spec-implementer`はタスク単位でコミットしない設計のため、レビュー時点の差分は未コミットの作業ツリー差分として扱う。
-差分取得は`git diff {BASE_SHA}`と未追跡ファイルを含む作業ツリー参照（`git status`・`Read`）で行う。
-一時ファイル（`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`）は
-実装完了時に削除される想定のため、評価対象外として除外する。
+`spec-driven`文脈でレビュアーへ渡す追加引数は以下のとおり。
 
-指摘は呼び出し元指定の出力ファイルへ書き出し、戻り値は判定・件数のみに絞る。
-差し戻しループでは同一ファイルを上書きする（前回指摘との混在を避けるため）。
-
-### spec-reviewer
-
-```text
-以下の作業テーマについて仕様適合性・ドキュメント整合性レビューを実施してください。
-
-作業テーマ名: {作業テーマ名}
-作業版ドキュメント: `docs/v{next}/{作業テーマ名}.md`
-差分内の他の作業版ドキュメント・`README.md`・横断ドキュメント: {同一開発中バージョンディレクトリ配下の他作業テーマ・横断・README.mdのうち差分に含まれるもの}
-恒常配置側の該当ドキュメント: `docs/features/{機能名}.md` または `docs/topics/{トピック名}.md`（既存改修時のみ）
-改修前の該当節スナップショット: `docs/v{next}/{作業テーマ名}.md`内の「改修前スナップショット」節（既存改修時のみ）
-計画ファイル: `~/.claude/plans/{自動生成ファイル名}.md`
-BASE_SHA: {ステップ2で記録したHEAD}
-対象外ファイル: `docs/v{next}/.cache/{作業テーマ名}.research-*.md`・`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
-出力ファイル: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`（差し戻しループでは上書き）
-
-差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
-制約: 書き込みは出力ファイル1つのみ。実装者レポートは鵜呑みにせず、コードと差分で独立検証すること
-戻り値: 判定（✅/❌）と指摘件数
-```
-
-### code-quality-reviewer
-
-```text
-以下の作業テーマについてコード品質レビューを実施してください。
-
-作業テーマ名: {作業テーマ名}
-作業版ドキュメント: `docs/v{next}/{作業テーマ名}.md`
-BASE_SHA: {ステップ2で記録したHEAD}
-対象外ファイル: `docs/v{next}/.cache/{作業テーマ名}.research-*.md`・`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
-出力ファイル: `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`（差し戻しループでは上書き）
-
-差分取得: `git diff {BASE_SHA}`と、未追跡ファイルを含む作業ツリー参照で行うこと
-制約: 書き込みは出力ファイル1つのみ。coding-standardsスキルを事前に呼び出し、品質基準に従うこと
-戻り値: Assessment（approve/reject）と指摘件数（Critical/Important/Minor別）
-```
+- 作業テーマ名・作業版`.md`のパス（`docs/v{next}/{作業テーマ名}.md`）
+- 差分に含まれる他の作業版ドキュメント・`README.md`・横断ドキュメント一覧（`spec-reviewer`のみ）
+- 恒常配置側の該当ドキュメント（既存改修時のみ、`spec-reviewer`のみ）
+- 改修前の該当節スナップショット（既存改修時のみ、作業版`.md`内の「改修前スナップショット」節、`spec-reviewer`のみ）
+- レビュー対象外の一時ファイル一覧
+ （`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`）
+- 出力ファイルパス
+ （`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`または`.review-quality.md`）
 
 ## 参照コメント（恒常配置ドキュメントへの1行参照）
 
