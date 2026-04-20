@@ -4,8 +4,6 @@ description: >
   計画ファイル作成とcodexレビューの運用手順。
   Claude Codeがplan modeに入った時、または複雑な指示・多段階の作業を受けた時に最初に必ず呼び出すこと。
   単純な単一ファイルの修正指示や会話だけの質問には不要。
-  計画ファイルの構成テンプレート、codexレビュー手順、エージェント判断とユーザー合意の分離、変更履歴の書き方をまとめている。
-  codexレビューはMCP優先、CLIフォールバック。
 ---
 
 # 計画モード・計画ファイル作成
@@ -279,7 +277,7 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
   - `agent-toolkit:plan-implementation`
   - `agent-toolkit:coding-standards`
 - 検証手順
-  - プロジェクト方針として定められたformat/lint/test一式を実行する（例: `uv run pyfltr run-for-agent`）
+  - `uv run pyfltr run-for-agent tests/upload_test.py`
   - 追加したテストが修正前は失敗し修正後は成功することを確認する
 - レビュー実施方針: 既定通り`plan-reviewer`の3種別すべてを起動する
 - コミット方針: コミットする。subject: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`

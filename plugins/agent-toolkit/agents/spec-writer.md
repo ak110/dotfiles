@@ -4,9 +4,10 @@ description: >
   spec-drivenスキルのステップ2でplan-implementerと並行して起動され、計画ファイルとリサーチ結果ファイル群を入力に
   作業版ドキュメント・README.md・必要なら横断ドキュメントを一括生成するサブエージェント。
   実装コードは編集せず、設計ドキュメントの立ち上げのみを担う。
-  事前にwriting-standardsスキルを呼び出して品質基準を確認する。
   メインセッションから明示的に呼び出された時のみ使用する。
 model: sonnet
+skills:
+  - writing-standards
 tools:
   - Read
   - Edit

@@ -3,11 +3,9 @@ name: plan-implementer
 description: >
   タスク単位の実装または検証を担うサブエージェント。
   plan-implementationスキルの実装フェーズでメインから起動される。
-  呼び出し元が「タスク種別: 実装」または「タスク種別: 検証」を指定する。
-  事前にcoding-standardsスキルを呼び出して品質基準を確認し、
-  実装タスクでは指定された変更を実装、検証タスクでは指示された検証手順を警告ゼロまで内部ループで実行する。
-  メインセッションから明示的に呼び出された時のみ使用する。
 model: sonnet
+skills:
+  - coding-standards
 tools:
   - Read
   - Edit

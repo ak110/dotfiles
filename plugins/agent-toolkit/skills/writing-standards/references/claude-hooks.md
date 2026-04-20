@@ -1,6 +1,6 @@
-# Claude Code Hook出力フィールドガイドライン
+# Claude Code Hook実装ガイドライン
 
-## フィールドの使い分け
+## 出力フィールドの使い分け
 
 hookやプラグインのJSON出力で使えるフィールドは、表示先が異なる。
 LLMに行動を促す必要がある場合は`reason`または`additionalContext`を使い、`systemMessage`は使わない。
