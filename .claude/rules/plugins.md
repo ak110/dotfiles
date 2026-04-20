@@ -91,6 +91,44 @@ paths:
 5. `uv run pyfltr run-for-agent` を実行し、SSOTテストを含む全テストがgreenであることを確認
 6. 変更をコミット（通常の編集と同じコミットに含めてよい）
 
+## 計画・実装系スキルの連携
+
+計画モードで開始すると`plan-mode`スキルが呼ばれ、計画ファイルを作成してcodexレビューで仕上げる。
+`ExitPlanMode`を合意ゲートとして通過すると、`plan-implementation`スキルへ引き継ぐ。
+このときコンテキストがクリアされている可能性があるため、計画ファイルが唯一の入力源として自立するよう書き切っておく。
+
+`plan-implementation`スキルはタスク分解から実装・検証・レビュー・コミットまでを取り仕切る。
+メインは一切手を動かさず、実装と検証は`plan-implementer`サブエージェントへ、
+レビューは`plan-reviewer`サブエージェントへ委譲する。
+`plan-reviewer`はレビュー種別を呼び出し時に指定する設計で、`spec`（仕様適合性）を直列先行し、
+合格後に`code`（コード品質）と`docs`（ドキュメント品質）を必要分だけ並列実行する。
+指摘があれば該当タスクへ差し戻し、指摘ゼロに達した時点でメインが改めてコミットする。
+メインの責務は進行管理・ユーザー確認・コミット・pushに絞り、コンテキスト汚染を避ける。
+
+`spec-driven`を手動トリガーした場合は、前後にこのワークフローの外周が付く。
+plan modeに入る前に`spec-researcher`で既存機能を並列調査し、
+`ExitPlanMode`直後に`spec-writer`を`plan-implementer`と並行起動して作業版ドキュメントの骨子を立ち上げる。
+その後の実装・検証・レビュー・コミットは`plan-implementation`スキルへ一任するため分岐は設けない。
+
+```mermaid
+flowchart TB
+    subgraph PM["plan-mode スキル"]
+      P[計画ファイル作成<br/>codexレビュー]
+    end
+    subgraph PI["plan-implementation スキル"]
+      direction TB
+      T[plan-implementer<br/>実装・検証] --> R[plan-reviewer<br/>spec 先行 → code・docs 並列]
+      R -->|指摘あり| T
+      R -->|合格| C[メインがコミット]
+    end
+    PM -->|ExitPlanMode| PI
+
+    SR[spec-researcher]:::sd -.->|spec-driven 時| PM
+    SW[spec-writer]:::sd -.->|spec-driven 時<br/>ExitPlanMode 直後に並行| T
+
+    classDef sd stroke-dasharray: 4 2
+```
+
 ## 参考
 
 - 配布方式と前提: `docs/guide/claude-code.md` のagent-toolkitセクション
