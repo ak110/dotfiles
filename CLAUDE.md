@@ -8,7 +8,7 @@
 
 - `.chezmoi-source/` — chezmoiソースディレクトリ（`dot_` prefix → `~/.*`に反映される）
 - `pytools/` — Pythonコマンドラインツール群（uv tool installでインストール）
-- `plugins/` — Claude Code用プラグイン（Marketplace経由で他人にも配布）
+- `plugins/` — Claude Code用プラグイン（マーケットプレイス経由で他人にも配布）
 - `scripts/` — リポジトリ開発専用スクリプト（pre-commit/Makefileから呼ばれる。配布対象外）
 - `.claude/` — dotfilesリポ自身のClaude Codeプロジェクト設定（配布対象外）
 

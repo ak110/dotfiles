@@ -4,7 +4,7 @@
 配布するものは以下の2系統。
 
 - ルール（`.chezmoi-source/dot_claude/rules/agent-toolkit/` 配下）— 全プロジェクトで読み込ませるコーディング規約・運用方針
-- プラグイン（`plugins/` 配下）— 本リポジトリ自体をClaude CodeのPlugin Marketplaceとして登録することで配布する
+- プラグイン（`plugins/` 配下）— 本リポジトリ自体をClaude Codeのプラグインマーケットプレイスとして登録することで配布する
 
 このドキュメントにはdotfiles管理側の情報（配布方式・配布元・他プロジェクトへの組み込み方）のみ記述している。
 配布されるルールやプラグインの内容については [docs/guide/claude-code-guide.md](claude-code-guide.md) を参照。
@@ -82,5 +82,5 @@ rules側の配布対象は`agent.md`と`styles.md`の2ファイル。
 ### プラグイン
 
 - 配布元: `plugins/` 配下
-- Marketplace定義: `.claude-plugin/marketplace.json`
+- マーケットプレイス定義: `.claude-plugin/marketplace.json`
 - 依存: `uv` CLI（hookスクリプトを `uv run --script` 経由で実行するため）
