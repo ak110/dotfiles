@@ -13,8 +13,11 @@
     ステップ1は実施済み
   - `docs/v{next}/{作業テーマ名}.md`・`docs/v{next}/README.md`のエントリが存在すれば
     ステップ2後半（`spec-writer`実行済み）以降
-  - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-code.md`・`.review-docs.md`の存在で
-    `plan-implementation`のレビュー段階の途中とみなす（レビュー完了後はCleanupで削除されるため）
+  - 作業版`.md`が存在し、かつ`.research-*.md`がまだ残っていれば、
+    ステップ2b以降〜Cleanup前（実装中・レビュー中・コミット前Cleanupのいずれか）とみなす。
+    ファイルシステムのみではこの範囲内での細かい段階を完全には区別できない。
+    区別が必要な場合は`git status`・未コミット差分の有無・`~/.claude/plans/`配下の計画ファイルから
+    中断状況を読み取って判断する
 - ステップ2ではplan mode内（計画ファイル作成中）とplan mode外（設計ドキュメント立ち上げ・実装中）の
   切り替え位置に注意する。計画ファイルが存在しcodexレビュー済みであれば2b以降、
   未作成または未合格であれば2aとみなす

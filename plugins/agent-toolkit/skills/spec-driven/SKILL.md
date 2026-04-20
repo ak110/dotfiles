@@ -79,8 +79,8 @@ description: >
 - バージョン目次: `docs/v{next}/README.md`。バージョン目的・作業テーマ一覧・横断ドキュメント一覧の3節
 - サブエージェント出力（一時ファイル、Cleanupステップで削除）。`.cache/`配下に置きgit管理から外す。
   `.gitignore`への`docs/v*/.cache/`追記は`spec-driven-init`が担当する
-  - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md` — `spec-researcher`出力（観点ごとに1ファイル、`{nn}`はゼロパディング2桁の連番）
-  - `docs/v{next}/.cache/{作業テーマ名}.review-{spec|code|docs}.md` — `plan-reviewer`の各種別指摘（差し戻しループでは上書き）
+  - `docs/v{next}/.cache/{作業テーマ名}.research-{nn}.md` — `spec-researcher`出力。
+    観点ごとに1ファイル、`{nn}`はゼロパディング2桁の連番
 
 ### ドキュメント粒度
 
@@ -116,9 +116,9 @@ description: >
 
 | ステップ | 目的 | 主担当 |
 | --- | --- | --- |
-| 1. Setup&Explore | 要件・作業テーマ・次期バージョンの確定、既存機能の並列調査 | メイン＋`spec-researcher` |
-| 2. Plan&Implement | 計画ファイル作成・codexレビュー合格、設計ドキュメント立ち上げと実装・検証・レビュー・コミット | メイン、`plan-mode`、`plan-implementation`、`spec-writer` |
-| 3. Cleanup | 一時ファイル削除と追加コミット | メイン |
+| 1. Setup&Explore | 要件確定・既存機能調査 | メイン＋`spec-researcher` |
+| 2. Plan&Implement | 計画・ドキュメント・実装・検証・コミット | メイン、`plan-mode`、`plan-implementation`、`spec-writer` |
+| 3. Cleanup | 一時ファイル削除・追加コミット | メイン |
 
 詳細手順は`references/workflow.md`を参照する。
 
@@ -157,15 +157,15 @@ description: >
 - 形式: 1行で恒常配置`.md`のみを指す（例: `# 仕様: docs/features/ユーザー認証.md`）
 - 開発中は開発中配置のパス（`docs/v{next}/{作業テーマ名}.md`）を指してよい。
   `spec-driven-promote`によるマージ統合時に恒常配置のパスへ一括書き換える
-- `.research-*.md`・`.review-*.md`は参照しない（実装完了時に削除されリンク切れを招くため）
+- `.research-*.md`は参照しない（実装完了時に削除されリンク切れを招くため）
 
 既存ファイルへの小さな追加や、恒常配置ドキュメントで直接触れられていない細部には参照コメントを書かない。
 言語別の書式例は`references/templates.md`を参照する。
 
 ## Gotchas
 
-- 一時ファイルの削除漏れ: `.research-*.md`・`.review-*.md`はCleanupステップで削除する。
-  `.research-{nn}.md`はゼロパディング2桁の連番で統一し、レビュアー出力は作業テーマ単位で固定名とする
+- 一時ファイルの削除漏れ: `.research-*.md`はCleanupステップで削除する。
+  `.research-{nn}.md`はゼロパディング2桁の連番で統一する
 - 新規バージョンの最初の作業テーマで`docs/v{next}/.cache/`が未作成だと`spec-researcher`の出力が失敗する。
   メインが空ディレクトリのみ先行作成する（骨子・`README.md`の生成は`spec-writer`の責務）
 - `.gitignore`への`docs/v*/.cache/`追記漏れ: 通常は`spec-driven-init`が追記する。
