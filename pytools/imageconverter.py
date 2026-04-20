@@ -162,8 +162,8 @@ def _convert_one(
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """PNG を再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
     try:
-        import wand.color  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
-        import wand.image  # pyright: ignore[reportMissingImports]  # ty: ignore[unresolved-import]
+        import wand.color
+        import wand.image
     except ImportError:
         raise RuntimeError(
             "--repack-png を使用するには wand パッケージと ImageMagick のインストールが必要です。\n"
@@ -171,6 +171,7 @@ def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
             "  # ImageMagick: https://imagemagick.org/script/download.php"
         ) from None
     with wand.image.Image(filename=str(input_path)) as img:
+        assert img.options is not None
         img.options["png:exclude-chunk"] = "all"
         img.strip()
         with wand.color.Color("transparent"):

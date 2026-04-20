@@ -20,12 +20,10 @@ dependencies = [
     "pyyaml",
     "send2trash",
     "tqdm",
+    "wand>=0.7.0",
     "watchdog>=6.0.0",
     "zstandard",
 ]
-
-[project.optional-dependencies]
-repack-png = ["wand"]
 
 [project.scripts]
 check-image-sizes = "pytools.check_image_sizes:_main"
