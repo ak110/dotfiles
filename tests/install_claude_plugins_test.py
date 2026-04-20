@@ -53,9 +53,14 @@ class TestPrerequisites:
 
 @pytest.fixture(name="disable_file_reads")
 def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ファイル直接読み取りを無効化し、CLIフォールバックパスを通す。"""
+    """ファイル直接読み取りを無効化し、CLIフォールバックパスを通す。
+
+    ``is_directory_type_registered`` は既定で False (= 旧 GitHub 型残存環境の挙動)。
+    directory 型経路を検証したい個別テストが必要に応じて上書きする。
+    """
     monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
     monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
+    monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
 
 
 @pytest.fixture(name="disable_auto_managed_plugins")
@@ -72,10 +77,14 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_file_reads", "disable_auto_managed_plugins")
 class TestRunFlow:
-    """メインフローのテスト (前提条件は満たしている状態、CLIフォールバックパス)。"""
+    """メインフローのテスト (前提条件は満たしている状態、CLIフォールバックパス)。
+
+    既定で ``is_directory_type_registered`` は False (旧 GitHub 型残存環境)。
+    directory 型経路の追加検証は ``TestRunFlowDirectoryType`` で行う。
+    """
 
     def test_already_installed_up_to_date_skips(self, monkeypatch: pytest.MonkeyPatch):
-        """既に配布 version と一致していれば全プラグインについて update は呼ばない。"""
+        """GitHub 型残存環境: version 一致で update も install も呼ばれない (回帰防止)。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001 -- subprocess.run 互換シグネチャ
@@ -428,6 +437,107 @@ class TestRunFlow:
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
 
 
+@pytest.fixture(name="directory_type_env")
+def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """directory 型登録が健全な環境を模擬する。
+
+    ``disable_file_reads`` は既定で ``is_directory_type_registered`` を False に差し替えるため、
+    directory 型経路を検証したい個別テストではこのフィクスチャで True に上書きする。
+    ``disable_file_reads`` より後に適用される必要があるため、``usefixtures`` の列挙順に注意する。
+    """
+    monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: True)
+    # ensure_marketplace はファイル検査経由で True を返すよう直結させる
+    monkeypatch.setattr(_claude_marketplace, "ensure_marketplace", lambda: True)
+
+
+@pytest.mark.usefixtures(
+    "fake_which_present",
+    "fake_target_info",
+    "disable_file_reads",
+    "disable_auto_managed_plugins",
+    "directory_type_env",
+)
+class TestRunFlowDirectoryType:
+    """directory 型登録が健全な環境での追加検証。
+
+    この環境では version 乖離に依存せず、毎回 ``plugin install <plugin>@<mp> --scope user`` を
+    再実行してキャッシュを最新化する (dotfiles 実体からの同期経路)。
+    ``plugin update`` と ``marketplace update`` は version 一致時 no-op になるため呼ばない。
+    """
+
+    def test_version_match_triggers_reinstall(self, monkeypatch: pytest.MonkeyPatch):
+        """version 一致でも各プラグインに対して install が再実行される (directory 型キャッシュ同期)。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
+                    ),
+                )
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1, stderr=f"unexpected: {cmd}")
+
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        # 対象プラグイン 2 件に対して install が --scope user で再実行される
+        assert [
+            "claude",
+            "plugin",
+            "install",
+            "agent-toolkit@ak110-dotfiles",
+            "--scope",
+            "user",
+        ] in install_calls
+        assert [
+            "claude",
+            "plugin",
+            "install",
+            "sample-plugin@ak110-dotfiles",
+            "--scope",
+            "user",
+        ] in install_calls
+        # plugin update / marketplace update は呼ばれない
+        assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
+
+    def test_version_drift_still_uses_update(self, monkeypatch: pytest.MonkeyPatch):
+        """version 乖離時は update 経路を踏む現行挙動の回帰防止。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "list"]:
+                return _FakeResult(
+                    returncode=0,
+                    stdout=_plugin_list_json(
+                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.1.0", "scope": "user"},
+                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
+                    ),
+                )
+            if cmd[:3] in (["claude", "plugin", "update"], ["claude", "plugin", "install"]):
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # version が乖離している agent-toolkit は update、最新の sample-plugin は install 再実行
+        update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
+        # directory 型では refresh (marketplace update) は呼ばない
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
+
+
 class TestExtractPluginVersionMap:
     """`claude plugin list --json` のパース (user scope フィルタ付き)。"""
 
@@ -487,8 +597,8 @@ class TestEnsureMarketplaceCliPath:
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]] == []
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
 
-    def test_not_registered_calls_add_with_github_shorthand(self, monkeypatch: pytest.MonkeyPatch):
-        """marketplace list が空なら GitHub ショートハンドで add を呼ぶ。"""
+    def test_not_registered_calls_add_with_dotfiles_absolute_path(self, monkeypatch: pytest.MonkeyPatch):
+        """marketplace list が空なら dotfiles 絶対パス + --scope user で add を呼ぶ。"""
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         calls: list[list[str]] = []
 
@@ -506,33 +616,41 @@ class TestEnsureMarketplaceCliPath:
         add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
         assert len(add_calls) == 1
         # pylint: disable-next=protected-access
-        assert add_calls[0][-1] == _claude_marketplace._MARKETPLACE_REPO
+        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        assert dotfiles_root is not None
+        assert add_calls[0] == [
+            "claude",
+            "plugin",
+            "marketplace",
+            "add",
+            str(dotfiles_root),
+            "--scope",
+            "user",
+        ]
 
 
-class TestDirectoryTypeMigration:
-    """既存 directory 型エントリが GitHub 型へ自動マイグレーションされることを検証する。
+class TestLegacyGithubTypeMigration:
+    """install-claude.sh bootstrap が残した旧 GitHub 型エントリが directory 型へ
+    自動マイグレーションされることを検証する。
 
-    以前の update-dotfiles が残した directory 型エントリを持つ環境で起動した場合、
-    ``_check_marketplace_from_file`` が壊れたエントリとして検出し、修復フローで
+    ``_check_marketplace_from_file`` が旧形式として検出し、修復フローで
     ``known_marketplaces.json`` と ``settings.json.extraKnownMarketplaces`` を
-    GitHub 型へ書き換えることを検証する。
+    directory 型 (dotfiles 絶対パス) へ書き換えることを検証する。
     """
 
-    def test_directory_type_entry_is_unhealthy_and_repaired(
+    def test_legacy_github_entry_is_unhealthy_and_repaired(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
         known = tmp_path / "known_marketplaces.json"
         settings = tmp_path / "settings.json"
-        # 既存環境の破損形 (過去の update-dotfiles が書いた directory 型)
+        # install-claude.sh bootstrap 直後の状態 (旧 GitHub 型)
         known.write_text(
             json.dumps(
                 {
-                    # pylint: disable-next=protected-access
                     _claude_common.MARKETPLACE_NAME: {
-                        "source": {"source": "directory", "path": "/home/aki/dotfiles"},
-                        "installLocation": "/home/aki/dotfiles",
+                        "source": {"source": "github", "repo": "ak110/dotfiles"},
                         "lastUpdated": "2026-01-01T00:00:00.000Z",
                     },
                 }
@@ -543,9 +661,8 @@ class TestDirectoryTypeMigration:
             json.dumps(
                 {
                     "extraKnownMarketplaces": {
-                        # pylint: disable-next=protected-access
                         _claude_common.MARKETPLACE_NAME: {
-                            "source": {"source": "directory", "path": "/home/aki/dotfiles"},
+                            "source": {"source": "github", "repo": "ak110/dotfiles"},
                         },
                     },
                 }
@@ -555,7 +672,7 @@ class TestDirectoryTypeMigration:
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", known)
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", settings)
 
-        # 検査は破損と判定されるはず
+        # 検査は旧形式として破損判定されるはず
         # pylint: disable-next=protected-access
         assert _claude_marketplace._check_marketplace_from_file() is False
 
@@ -568,18 +685,20 @@ class TestDirectoryTypeMigration:
 
         assert _claude_marketplace.ensure_marketplace() is True
 
+        # pylint: disable-next=protected-access
+        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        assert dotfiles_root is not None
+
         known_data = json.loads(known.read_text(encoding="utf-8"))
         # pylint: disable-next=protected-access
         entry = known_data[_install_claude_plugins._MARKETPLACE_NAME]
-        assert entry["source"] == {"source": "github", "repo": "ak110/dotfiles"}
-        # pylint: disable-next=protected-access
-        # pylint: disable-next=protected-access
-        assert entry["installLocation"] == str(_claude_marketplace._MARKETPLACE_INSTALL_LOCATION)
+        assert entry["source"] == {"source": "directory", "path": str(dotfiles_root)}
+        assert entry["installLocation"] == str(dotfiles_root)
 
         settings_data = json.loads(settings.read_text(encoding="utf-8"))
         # pylint: disable-next=protected-access
         assert settings_data["extraKnownMarketplaces"][_install_claude_plugins._MARKETPLACE_NAME] == {
-            "source": {"source": "github", "repo": "ak110/dotfiles"},
+            "source": {"source": "directory", "path": str(dotfiles_root)},
         }
 
 
@@ -674,15 +793,18 @@ class TestCheckMarketplaceFromFile:
     ``tests/_install_claude_plugins_repair_test.py`` に置いている。
     """
 
-    def test_github_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """GitHub 型 + 対象 repo ならTrueを返す。"""
+    def test_directory_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """directory 型 + dotfiles 絶対パスなら True を返す。"""
+        # pylint: disable-next=protected-access
+        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        assert dotfiles_root is not None
         path = tmp_path / "known_marketplaces.json"
         path.write_text(
             json.dumps(
                 {
-                    # pylint: disable-next=protected-access
                     _claude_common.MARKETPLACE_NAME: {
-                        "source": {"source": "github", "repo": "ak110/dotfiles"},
+                        "source": {"source": "directory", "path": str(dotfiles_root)},
+                        "installLocation": str(dotfiles_root),
                     },
                 }
             ),
@@ -694,16 +816,14 @@ class TestCheckMarketplaceFromFile:
         # pylint: disable-next=protected-access
         assert _claude_marketplace._check_marketplace_from_file() is True
 
-    def test_directory_type_unhealthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """過去の directory 型エントリは False を返す（マイグレーション対象）。"""
+    def test_legacy_github_type_unhealthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+        """旧 GitHub 型エントリは False を返す（マイグレーション対象）。"""
         path = tmp_path / "known_marketplaces.json"
         path.write_text(
             json.dumps(
                 {
-                    # pylint: disable-next=protected-access
                     _claude_common.MARKETPLACE_NAME: {
-                        "source": {"source": "directory", "path": "/home/aki/dotfiles"},
-                        "installLocation": "/home/aki/dotfiles",
+                        "source": {"source": "github", "repo": "ak110/dotfiles"},
                     },
                 }
             ),
@@ -732,11 +852,20 @@ class TestCheckMarketplaceFromFile:
 
 
 @pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_auto_managed_plugins")
-class TestHappyPathNoCli:
-    """happy path（すべて最新）でCLI呼び出しがゼロであることを検証する統合テスト。"""
+class TestHappyPathDirectoryType:
+    """directory 型登録が健全かつ全プラグイン最新の環境での挙動を検証する統合テスト。
 
-    def test_all_up_to_date_no_cli_calls(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """全プラグインが最新かつmarketplace登録済みなら、subprocessを一切呼ばない。"""
+    directory 型ではバージョン一致時も dotfiles 側編集を反映するため
+    ``plugin install`` を再実行する (キャッシュ同期目的)。
+    ``marketplace list``・``plugin list``・``plugin update`` などの余計な CLI は呼ばれない。
+    """
+
+    def test_directory_type_healthy_resyncs_via_install(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ):
+        """directory 型健全 + version 一致の場合、各プラグインに対して install が再実行される。"""
         # installed_plugins.json: 全プラグインが最新
         installed_path = tmp_path / "installed_plugins.json"
         installed_path.write_text(
@@ -753,14 +882,17 @@ class TestHappyPathNoCli:
         )
         monkeypatch.setattr(_install_claude_plugins, "_INSTALLED_PLUGINS_PATH", installed_path)
 
-        # known_marketplaces.json: GitHub 型で正常登録済み
+        # known_marketplaces.json: directory 型 + dotfiles 絶対パスで正常登録済み
+        # pylint: disable-next=protected-access
+        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        assert dotfiles_root is not None
         marketplace_path = tmp_path / "known_marketplaces.json"
         marketplace_path.write_text(
             json.dumps(
                 {
-                    # pylint: disable-next=protected-access
                     _claude_common.MARKETPLACE_NAME: {
-                        "source": {"source": "github", "repo": "ak110/dotfiles"},
+                        "source": {"source": "directory", "path": str(dotfiles_root)},
+                        "installLocation": str(dotfiles_root),
                     },
                 }
             ),
@@ -773,10 +905,35 @@ class TestHappyPathNoCli:
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         monkeypatch.setattr(_claude_common, "SETTINGS_JSON_PATH", tmp_path / "settings.json")
 
-        # subprocessが呼ばれたら失敗させる
-        def fail_if_called(cmd, **_kwargs):  # noqa: ANN001
-            raise AssertionError(f"subprocess.runが呼ばれた: {cmd}")
+        calls: list[list[str]] = []
 
-        monkeypatch.setattr(_claude_common.subprocess, "run", fail_if_called)
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:3] == ["claude", "plugin", "install"]:
+                return _FakeResult(returncode=0)
+            raise AssertionError(f"予期しない subprocess 呼び出し: {cmd}")
 
-        assert _install_claude_plugins.run() is False
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+
+        assert _install_claude_plugins.run() is True
+        # 全プラグインに対して install が --scope user で再実行される
+        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        assert [
+            "claude",
+            "plugin",
+            "install",
+            "agent-toolkit@ak110-dotfiles",
+            "--scope",
+            "user",
+        ] in install_calls
+        assert [
+            "claude",
+            "plugin",
+            "install",
+            "sample-plugin@ak110-dotfiles",
+            "--scope",
+            "user",
+        ] in install_calls
+        # marketplace update / plugin update は呼ばれない
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
+        assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)

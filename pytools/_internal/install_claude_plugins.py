@@ -17,16 +17,24 @@
 
 前提を満たした場合の処理:
 
-- marketplace 未登録 → `claude plugin marketplace add ak110/dotfiles` で登録
-  (GitHub ショートハンドで登録し、Claude Code が慣例ディレクトリ
-   `~/.claude/plugins/marketplaces/ak110-dotfiles/` へ自動 clone する方式へ統一)
+- marketplace 未登録 → `claude plugin marketplace add <dotfiles 絶対パス> --scope user` で登録
+  (directory 型登録。dotfiles リポジトリを直接参照することで push/update サイクル不要で
+   編集内容が反映される)
+- 旧 GitHub 型登録が残存 → directory 型へ自動マイグレーション (claude_marketplace が担う)
 - deprecated plugin がインストール済み → 検出されたスコープごとにアンインストール
 - 管理対象 plugin が project scope に残存 → アンインストール (user scope 移行用)
 - 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope user`
-- 対象 plugin がインストール済みで `marketplace.json` と version が乖離
+- 対象 plugin がインストール済み + version が乖離
   → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
-     `claude plugin update <name>@<marketplace> --scope user` で反映
-  (version が一致していれば update コマンドは呼ばずスキップ)
+     `claude plugin update <name>@<marketplace> --scope user` で反映。
+     この分岐は directory 型・旧 GitHub 型を区別せず適用され、version 乖離があれば
+     update 経路が優先される
+- 対象 plugin がインストール済み + version が一致 + directory 型登録が健全
+  → `claude plugin install <name>@<marketplace> --scope user` を毎回再実行して
+     キャッシュを最新化する (directory 型では `plugin update` が version 一致時 no-op
+     になるため同期経路として使えない)
+- 対象 plugin がインストール済み + version が一致 + 旧 GitHub 型が残存
+  → install コマンドを呼ばずスキップ (マイグレーション前の旧挙動)
 
 公式 marketplace (``claude-plugins-official``) のプラグインのうち、ユーザーが
 使わないものは ``_AUTO_DISABLED_PLUGIN_IDS``、常時有効化したいものは
@@ -40,8 +48,8 @@
 他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
 することを推奨する (詳細は docs/guide/claude-code-guide.md)。
 
-`update-dotfiles` 経由で本モジュールが実行されるたびに version 乖離が解消されるため、
-ユーザー環境では marketplace.json の version 更新が自動で反映される。
+directory 型環境では version 乖離によらず毎回 `plugin install` で同期するため、
+ユーザーが dotfiles で編集した内容が chezmoi apply 後に反映される。
 """
 
 import json
@@ -175,15 +183,23 @@ def run() -> bool:
     # user scope のバージョン辞書を取得
     installed = _extract_plugin_version_map(raw_data)
 
-    # インストール済みプラグインにバージョン不一致があるときのみmarketplaceメタデータを
-    # refreshする。全て最新なら不要（CLIの起動コストを節約）。
-    # 新規installしかない場合もinstallコマンドが毎回ファイルを読むためrefresh不要。
-    if any(name in installed and installed[name] != target for name, target in target_versions.items() if target):
+    # directory 型登録が健全な環境では、dotfiles 実体からキャッシュへの同期を
+    # `plugin install` の再実行で毎回行う。`plugin update` は version 一致時 no-op になるため
+    # 採用不可 (chezmoi apply 環境での実測: 2026-04-20)。
+    is_directory_type = claude_marketplace.is_directory_type_registered()
+
+    # 旧 GitHub 型が残存する環境では、インストール済みプラグインにバージョン不一致があるときだけ
+    # marketplace メタデータを refresh する (CLI 起動コスト節約)。
+    # directory 型では refresh は validation のみでキャッシュ同期しないため呼ばない。
+    if not is_directory_type and any(
+        name in installed and installed[name] != target for name, target in target_versions.items() if target
+    ):
         claude_marketplace.refresh_marketplace()
 
     latest_count = 0
     updated_count = 0
     installed_count = 0
+    resynced_count = 0
     failed_count = 0
     for name, target in target_versions.items():
         # project scope に残存するエントリを除去 (user scope 移行用)
@@ -203,6 +219,15 @@ def run() -> bool:
                 updated_count += 1
             else:
                 failed_count += 1
+        elif is_directory_type:
+            # directory 型登録が健全かつ version 一致の場合、dotfiles 側の編集を反映するため
+            # `plugin install` を再実行してキャッシュを最新化する。
+            logger.info(log_format.format_status(name, f"最新 ({current or '不明'}) — directory 型キャッシュ再同期"))
+            if _install_plugin(name):
+                any_change = True
+                resynced_count += 1
+            else:
+                failed_count += 1
         else:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
@@ -220,6 +245,7 @@ def run() -> bool:
         log_format.format_status(
             "plugins",
             f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
+            + (f" / 再同期 {resynced_count} 件" if resynced_count else "")
             + (f" / 失敗 {failed_count} 件" if failed_count else ""),
         )
     )
