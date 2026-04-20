@@ -110,13 +110,13 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
    - 「検証手順」リスト。その計画を完了してコミットする前に必要な検証を具体的に記述する。
      プロジェクト方針として定められた手順（format/lint/test一式など）と、計画固有の観測手順の両方を含める。
      自動化不可な手動確認が必要な場合は理由付きで明示する
-   - 「レビュー実施方針」。既定では`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`の
-     3レビュアーをすべて起動する扱いとする。省略するレビュアーがあればレビュアー名と省略理由を列挙する。
-     全レビュアーを省略する軽微実装の場合もこの項目に判断根拠を記述する。
+   - 「レビュー実施方針」。既定では`plan-reviewer`の3種別（`spec`・`code`・`docs`）をすべて起動する扱いとする。
+     省略する種別があれば種別名と省略理由を列挙する。
+     全種別を省略する軽微実装の場合もこの項目に判断根拠を記述する。
      判断基準は後述の「レビュー実施方針の判断基準」を参照する
    - 「レビュアー出力ファイル規約」1行記述。
-     単独利用時は`~/.claude/plans/{plan名}.review-{spec|quality|docs}.md`、
-     `spec-driven`文脈では`docs/v{next}/.cache/{作業テーマ名}.review-{spec|quality|docs}.md`
+     単独利用時は`~/.claude/plans/{plan名}.review-{spec|code|docs}.md`、
+     `spec-driven`文脈では`docs/v{next}/.cache/{作業テーマ名}.review-{spec|code|docs}.md`
 7. `## 変更履歴` — 前回更新からの差分を記録する（初回は`- 初版`のみ記載する）
    - codex指摘への対応と不対応見解、ユーザー指示による修正、エージェントの自発修正をまとめて追記する
    - 目的はcodexの再指摘回避と人間の差分レビュー支援
@@ -182,20 +182,20 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
 - 実装時に事前呼び出しが必要なスキル
   - `agent-toolkit:plan-implementation`
   - `agent-toolkit:coding-standards`
-- レビュアー出力ファイル規約: `~/.claude/plans/{plan名}.review-{spec|quality|docs}.md`
+- レビュアー出力ファイル規約: `~/.claude/plans/{plan名}.review-{spec|code|docs}.md`
 
 ### フェーズ1: 既存テスト整備
 
 - 検証手順
   - `uv run pyfltr run-for-agent`
-- レビュー実施方針: `code-quality-reviewer`のみ起動。仕様変更を伴わないため`spec-reviewer`は省略
+- レビュー実施方針: `plan-reviewer`の`code`種別のみ起動。仕様変更を伴わないため`spec`種別は省略
 
 ### フェーズ2: 上限値の引き上げ
 
 - 検証手順
   - `uv run pyfltr run-for-agent`
   - 50MB境界のテストが追加されており修正前は失敗・修正後は成功することを確認する
-- レビュー実施方針: 既定通り3レビュアーすべて起動する
+- レビュー実施方針: 既定通り`plan-reviewer`の3種別すべてを起動する
 ```
 
 ### レビュー実施方針の判断基準
@@ -214,9 +214,9 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
 
 レビュアー別の観点例:
 
-- `spec-reviewer`: 仕様適合性・ドキュメント間整合性。実装が仕様と一対一で対応し判断の余地がない場合に省略候補
-- `code-quality-reviewer`: コード品質。コード変更がmanifestやバージョン更新のみで実ロジック変更がない場合に省略候補
-- `document-quality-reviewer`: ドキュメント単体品質。ドキュメント変更が無いか、軽微な誤字修正のみの場合に省略候補
+- `spec`種別: 仕様適合性・ドキュメント間整合性。実装が仕様と一対一で対応し判断の余地がない場合に省略候補
+- `code`種別: コード品質。コード変更がmanifestやバージョン更新のみで実ロジック変更がない場合に省略候補
+- `docs`種別: ドキュメント単体品質。ドキュメント変更が無いか、軽微な誤字修正のみの場合に省略候補
 
 ### 記述例
 
@@ -270,8 +270,8 @@ plan modeで計画ファイルを作成する際の構成・codexレビュー手
 - 検証手順
   - プロジェクト方針として定められたformat/lint/test一式を実行する（例: `uv run pyfltr run-for-agent`）
   - 追加したテストが修正前は失敗し修正後は成功することを確認する
-- レビュー実施方針: 既定通り3レビュアーすべて起動する
-- レビュアー出力ファイル規約: `~/.claude/plans/{plan名}.review-{spec|quality|docs}.md`
+- レビュー実施方針: 既定通り`plan-reviewer`の3種別すべてを起動する
+- レビュアー出力ファイル規約: `~/.claude/plans/{plan名}.review-{spec|code|docs}.md`
 
 ## 変更履歴
 

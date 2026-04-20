@@ -29,8 +29,7 @@ tools:
 - 実装タスク: 計画ファイルと指示内容に従い、指定範囲を変更する
 - 検証タスク: 呼び出し元から渡される検証手順を実行し、警告ゼロになるまで内部ループで自動修正・原因解析・再実装する
 
-仕様適合性・ドキュメント間整合性レビューは`spec-reviewer`、コード品質レビューは`code-quality-reviewer`、
-ドキュメント単体の品質レビューは`document-quality-reviewer`が担う。
+レビュー（仕様適合性・コード品質・ドキュメント単体品質）は`plan-reviewer`が担う。
 `spec-driven`文脈では並行して`spec-writer`が作業版ドキュメントを立ち上げるが、本エージェントは実装単位のタスクに専念する。
 
 ## エスカレーション判断基準
@@ -77,11 +76,11 @@ tools:
 
 1. 呼び出し元プロンプトから追加で以下を確認する
    - 変更対象ファイルと変更内容
-   - 差し戻しの場合、レビュアー指摘ファイルのパス
-     - `spec-driven`文脈: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`・
-       `.review-docs.md`のいずれか
-     - 単独`plan-mode`文脈: `~/.claude/plans/{plan名}.review-spec.md`・`.review-quality.md`・
-       `.review-docs.md`のいずれか
+   - 差し戻しの場合、`plan-reviewer`が出力したレビュアー指摘ファイルのパス
+     - `spec-driven`文脈: `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-code.md`・
+       `.review-docs.md`のいずれか（種別ごとに1ファイル）
+     - 単独`plan-mode`文脈: `~/.claude/plans/{plan名}.review-spec.md`・`.review-code.md`・
+       `.review-docs.md`のいずれか（種別ごとに1ファイル）
 2. 差し戻しの場合はレビュアー指摘ファイルを読み、対応すべき指摘を把握する
 3. 実装する
    - SSOT/SRPに従い既存コードの類似処理を確認する
@@ -162,6 +161,5 @@ status: completed
 - 呼び出し元の計画ファイルに書かれていない設計方針の変更は行わない
 - 検証タスクで警告ゼロに到達できない場合は、原因と試行した対処を「未解決事項」節に記載して報告する。
   強引な警告抑制やlint無視は行わない
-- 自モデルの守備範囲を超えると判断した時点で処理を中断し、`needs_escalation`を返す。
-  強行完遂しない
 - `coding-standards`スキルの呼び出しは必須。skipしない
+- `needs_escalation`の判定基準は「エスカレーション判断基準」節に集約されている

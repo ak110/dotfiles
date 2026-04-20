@@ -161,7 +161,7 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 呼び出しテンプレートは`workflow.md`「ステップ2b」節内の`spec-writer`呼び出しテンプレートを参照する。
 `spec-writer`は起動時に`writing-standards`スキルを事前呼び出しすることを必須とする。
 
-## レビュアー呼び出し（spec-reviewer・code-quality-reviewer・document-quality-reviewer）
+## レビュアー呼び出し（plan-reviewer）
 
 レビュアーの起動は`plan-implementation`スキルのレビューフェーズで行う。
 呼び出しテンプレート・出力ファイルパス規約・差し戻しループ運用の詳細は、
@@ -169,14 +169,13 @@ spec-drivenスキルで使う書式テンプレートとレビュアー呼び出
 
 `spec-driven`文脈でレビュアーへ渡す追加引数は以下のとおり。
 
-- 作業テーマ名・作業版`.md`のパス（`docs/v{next}/{作業テーマ名}.md`）
-- 差分に含まれる他の作業版ドキュメント・`README.md`・横断ドキュメント一覧（`spec-reviewer`のみ）
-- 恒常配置側の該当ドキュメント（既存改修時のみ、`spec-reviewer`のみ）
-- 改修前の該当節スナップショット（既存改修時のみ、作業版`.md`内の「改修前スナップショット」節、`spec-reviewer`のみ）
+- 作業テーマ名・作業版`.md`のパス（`docs/v{next}/{作業テーマ名}.md`）（全種別共通）
+- `spec`種別のみ: 差分に含まれる他の作業版ドキュメント・`README.md`・横断ドキュメント一覧
+- `spec`種別のみ: 恒常配置側の該当ドキュメント（既存改修時のみ）
+- `spec`種別のみ: 改修前の該当節スナップショット（既存改修時のみ、作業版`.md`内の「改修前スナップショット」節）
 - レビュー対象外の一時ファイル一覧
- （`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-quality.md`・`.review-docs.md`）
-- 出力ファイルパス
- （`docs/v{next}/.cache/{作業テーマ名}.review-spec.md`・`.review-quality.md`・`.review-docs.md`のいずれか）
+ （`docs/v{next}/.cache/`配下の`.research-*.md`・`.review-spec.md`・`.review-code.md`・`.review-docs.md`）
+- 出力ファイルパス（`docs/v{next}/.cache/{作業テーマ名}.review-{spec|code|docs}.md`）
 
 ## 参照コメント（恒常配置ドキュメントへの1行参照）
 

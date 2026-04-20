@@ -108,7 +108,7 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
     （判定基準は`spec-driven`SKILL.mdの「横断ドキュメントの判定」節）。
      判定が曖昧な場合はエスカレーションされるため、メインはユーザーへ確認する
    - 作業版ドキュメントには実装詳細（ファイル名・シンボル名・file:line等）を含めない方針を守らせる。
-     実装とドキュメントの整合性はレビューフェーズで`spec-reviewer`が確認する
+     実装とドキュメントの整合性はレビューフェーズで`plan-reviewer`の`spec`種別が確認する
 2. 並行して`plan-implementation`スキルの実装・検証フェーズを開始する
    - タスク分解と`TaskCreate`登録・`plan-implementer`委譲（並列化・モデル選択）・
      検証タスクの運用は`plan-implementation`の所掌
@@ -117,13 +117,12 @@ plan modeの編集制約下でも、計画ファイル作成に必要なcodexレ
 3. `spec-writer`の戻り値で生成／更新ファイルを確認する
    - 作業版`.md`・`README.md`更新エントリ・横断ドキュメント（あれば）の存在とパスを確かめる
 4. 実装・検証完了後、`plan-implementation`スキルのレビュー・コミットフェーズへ進む
-   - レビュー順序は`spec-reviewer`を直列先行し、
+   - レビュー順序は`plan-reviewer`の`spec`種別を直列先行し、
      合格後は計画ファイル`## 実装・検証・レビュー`節の「レビュー実施方針」に従って
-     `code-quality-reviewer`・`document-quality-reviewer`のうち
-     起動対象のレビュアーを実行する（両方起動する場合のみ並列化）。
+     `code`・`docs`種別のうち起動対象のレビュアーを実行する（両方起動する場合のみ並列化）。
      差し戻しループ・コミットの詳細は`plan-implementation`スキル
    - `spec-driven`文脈ではレビュアー引数に作業版ドキュメント・`README.md`・横断ドキュメントも含める
-    （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`。`{kind}`は`spec`・`quality`・`docs`のいずれか）
+    （出力ファイルは`docs/v{next}/.cache/{作業テーマ名}.review-{kind}.md`。`{kind}`は`spec`・`code`・`docs`のいずれか）
    - レビュー起動要否は計画ファイルの「レビュー実施方針」で事前に決定する。
      計画時の判断基準は`plan-mode`スキルの「レビュー実施方針の判断基準」節を参照する
 
@@ -150,7 +149,7 @@ spec-writer呼び出しテンプレート:
 ```
 
 実装・検証・レビュー向けのサブエージェント呼び出しテンプレートは、`plan-implementation`スキルを参照する。
-対象は`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・`document-quality-reviewer`の4種類。
+対象は`plan-implementer`・`plan-reviewer`の2種類。
 
 ## ステップ3: Cleanup
 
@@ -162,7 +161,7 @@ spec-writer呼び出しテンプレート:
 1. 一時ファイル群を削除する
    - `docs/v{next}/.cache/{作業テーマ名}.research-*.md`（ステップ1で出力した全ファイル）
    - `docs/v{next}/.cache/{作業テーマ名}.review-spec.md`
-   - `docs/v{next}/.cache/{作業テーマ名}.review-quality.md`
+   - `docs/v{next}/.cache/{作業テーマ名}.review-code.md`
    - `docs/v{next}/.cache/{作業テーマ名}.review-docs.md`
 2. 一時ファイル削除を含むコミットを追加する（`plan-implementation`のコミットメッセージ方針に従う）
 
@@ -193,9 +192,9 @@ spec-writer呼び出しテンプレート:
  （過去の判断を消さず、改修判断の履歴を残す）。`spec-writer`がこの方針で転記する
 - 「主要設計判断」は現行判断を上書きしてよいが、変更理由と旧判断との差分を同節内に明記する
  （昇格後に読む人向けの情報）
-- `plan-implementation`のレビューフェーズでは、`spec-reviewer`へ作業版`.md`内の「改修前スナップショット」節も参照させ、
+- `plan-implementation`のレビューフェーズでは、`plan-reviewer`の`spec`種別へ作業版`.md`内の「改修前スナップショット」節も参照させ、
   Before/Afterの意図的差分と意図しない齟齬を区別させる。
-  `spec-reviewer`は直列先行し、後続の`code-quality-reviewer`・`document-quality-reviewer`は
+  `plan-reviewer`の`spec`種別は直列先行し、後続の`code`・`docs`種別は
   計画ファイルの「レビュー実施方針」に従って起動対象分のみ実行する（両方起動する場合のみ並列化）
  （詳細は`plan-implementation`スキル）
 
@@ -208,7 +207,6 @@ spec-writer呼び出しテンプレート:
 役割・起動条件・運用原則は`spec-driven`スキルSKILL.mdの「サブエージェント分業」節を参照する。
 本スキルが起動するのは`spec-researcher`・`spec-writer`の2つで、既定で`model: sonnet`を指定する。
 Agentツールの`model`パラメーターに`"sonnet"`を指定し、各テンプレートのテキストは`prompt`パラメーターとして渡す。
-実装・検証・レビューを担う`plan-implementer`・`spec-reviewer`・`code-quality-reviewer`・
-`document-quality-reviewer`は`plan-implementation`スキルの所掌。
+実装・検証・レビューを担う`plan-implementer`・`plan-reviewer`は`plan-implementation`スキルの所掌。
 モデル選択（`plan-implementer`はタスク難易度に応じて`haiku`/`sonnet`/`opus`を上書き）・並列化ルールは
 `plan-implementation`スキルを参照する。
