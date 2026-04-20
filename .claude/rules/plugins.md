@@ -31,7 +31,31 @@ paths:
 （場所: `plugins/agent-toolkit/tests/pretooluse_test.py`）。
 新しいプラグインを追加するときは同等のSSOTテストも追加する。
 
+## 配布経路と反映タイミング
+
+### directory型環境（chezmoi管理下の作者環境）での運用
+
+chezmoi管理下のマシンでは、marketplace登録がdirectory型（dotfilesリポジトリ直接参照）になっている。
+このため、「dotfilesで編集 → `chezmoi apply` → Claude Code再起動または `/reload-plugins`」のワークフローで
+編集内容が即時反映される。version bumpは不要。
+
+技術的な背景:
+
+- `chezmoi apply` 後処理が `plugin install` を毎回再実行し、dotfilesからキャッシュへ同期する
+- `plugin update` はバージョン一致時no-op（directory型でのキャッシュ同期に使えない）
+- `claude plugin marketplace update` はvalidationのみでキャッシュ同期しない
+- `/reload-plugins` は現在起動中のClaude Codeセッションで読み込んでいるhook・skill・agentを再読み込みする
+
+### install-claude経由で入った利用者への配布
+
+`install-claude.sh`/`install-claude.ps1` 経由で入った利用者（chezmoi未使用）はGitHub型を使う。
+この環境では従来通りversion bumpして `marketplace.json` に反映したうえで、利用者がインストールコマンドを
+再実行するか `claude plugin update` で更新を受け取る。
+
 ## バージョン更新が必要な変更
+
+directory型環境（chezmoi管理下の作者環境）ではversion bumpなしで編集を反映できる（前節参照）。
+ここで述べるバージョン更新は他者配布向け（`install-claude` 経由で入った利用者への配布サイクル上）の操作である。
 
 プラグイン編集に着手する前に、まず未プッシュコミットでバージョンが既に更新済みか確認する（後述の「手順」参照）。
 更新済みであれば、追加の変更で再度bumpする必要はなく、以降の判定はスキップしてよい。

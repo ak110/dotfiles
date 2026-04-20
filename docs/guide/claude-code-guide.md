@@ -163,3 +163,10 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化することを推奨する。
 
 上記インストールコマンドを再実行することで更新できる。
+
+dotfiles（chezmoi）管理下のマシンでは `chezmoi apply` を実行すると後処理がmarketplaceを
+directory型（dotfilesリポジトリ直接参照）で登録・維持し、プラグインのキャッシュを最新化する。
+そのため、dotfilesで編集した内容はpushなしに `chezmoi apply` 後に反映される。
+初回bootstrap後に `chezmoi apply` を実行すると、後処理がmarketplaceをGitHub型からdirectory型へ自動マイグレーションする。
+
+chezmoi未使用の環境では従来通り上記のインストールコマンドを再実行する（push→updateサイクル）。
