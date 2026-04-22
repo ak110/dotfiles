@@ -453,7 +453,7 @@ def _is_docs_only_commit(command: str, cwd: str) -> bool:
     """コミット対象のファイルが全て Markdown なら True を返す。
 
     プロジェクト方針として docs-only 変更では手動テストを省略し
-    pre-commit 側の markdownlint / textlint に委ねる運用が存在する
+    pre-commit 側の textlint / markdownlint に委ねる運用が存在する
     (本 dotfiles 含む)。その場合に未検証警告を抑制する。
 
     `git commit -a` / `--all` 等のコマンドでは作業ツリー側の変更も対象となるため、

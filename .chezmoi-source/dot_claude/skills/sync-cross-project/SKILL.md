@@ -100,7 +100,7 @@ o=対象、-=対象外、△=緩め
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
-- Linuxでの検証はlint系（prettier / markdownlint / textlint）のみ確認可能。
+- Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能。
   cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
 - Makefileではなく `mise.toml` のタスクを使用する。pre-commitフレームワークは `uvx pre-commit` で呼び出す
 - `package.json` の `lint` / `lint:fix` スクリプトは `CLAUDE.md` もtextlint / markdownlint-cli2対象に含めている。
