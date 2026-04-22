@@ -119,7 +119,8 @@ def _main() -> int:
                         "permissionDecision": "allow",
                         "additionalContext": _llm_notice(" | ".join(warnings), tag="warn"),
                     },
-                }
+                },
+                ensure_ascii=False,
             )
         )
 

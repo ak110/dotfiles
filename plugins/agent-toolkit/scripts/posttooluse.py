@@ -83,8 +83,15 @@ _CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 # 期待セクション一覧の SSOT は `skills/plan-mode/SKILL.md` の「計画ファイルの構成」節。
 # SKILL.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
-_PLAN_REQUIRED_H2: tuple[str, ...] = ("背景", "対応方針", "調査結果", "変更内容", "実装・検証・レビュー")
-_PLAN_OPTIONAL_TRAILING_H2: str = "変更履歴"
+_PLAN_REQUIRED_H2 = (
+    "背景",
+    "対応方針",
+    "調査結果",
+    "変更内容",
+    "実装・検証・レビュー",
+    "変更履歴",
+    "計画ファイル",
+)
 
 
 def _is_plan_file(file_path: str) -> bool:
@@ -142,15 +149,12 @@ def _check_plan_format(file_path: str) -> list[str]:
     except (OSError, UnicodeDecodeError):
         return []
     headings = _extract_h2_sections(content)
-    allowed = set(_PLAN_REQUIRED_H2) | {_PLAN_OPTIONAL_TRAILING_H2}
+    allowed = set(_PLAN_REQUIRED_H2)
     violations: list[str] = []
 
     unexpected = [h for h in headings if h not in allowed]
     if unexpected:
-        violations.append(
-            f"unexpected H2 sections: {unexpected}."
-            f" Allowed: {list(_PLAN_REQUIRED_H2)} + optional trailing '{_PLAN_OPTIONAL_TRAILING_H2}'."
-        )
+        violations.append(f"unexpected H2 sections: {unexpected}. Allowed: {list(_PLAN_REQUIRED_H2)}.")
 
     missing = [h for h in _PLAN_REQUIRED_H2 if h not in headings]
     if missing:
@@ -164,9 +168,6 @@ def _check_plan_format(file_path: str) -> list[str]:
             f"required H2 sections are out of order."
             f" Expected order among present: {expected_order}, but found: {present_required}."
         )
-
-    if _PLAN_OPTIONAL_TRAILING_H2 in headings and headings[-1] != _PLAN_OPTIONAL_TRAILING_H2:
-        violations.append(f"'{_PLAN_OPTIONAL_TRAILING_H2}' must appear only as the last H2 section.")
 
     return violations
 
@@ -187,7 +188,7 @@ def _read_state(path: pathlib.Path) -> dict:
 def _write_state(path: pathlib.Path, state: dict) -> None:
     """状態ファイルを書く。書き込み失敗は無視する（状態記録は best-effort）。"""
     with contextlib.suppress(OSError):
-        path.write_text(json.dumps(state), encoding="utf-8")
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _main() -> int:
@@ -233,7 +234,8 @@ def _main() -> int:
                                 "hookEventName": "PostToolUse",
                                 "additionalContext": message,
                             }
-                        }
+                        },
+                        ensure_ascii=False,
                     )
                 )
         return 0

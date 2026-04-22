@@ -99,7 +99,7 @@ class TestApply:
     def test_preserves_existing_keys(self, tmp_path: Path) -> None:
         """既存キーが保持される。"""
         target = tmp_path / "settings.json"
-        target.write_text(json.dumps({"editor.fontSize": 14}), encoding="utf-8")
+        target.write_text(json.dumps({"editor.fontSize": 14}, ensure_ascii=False), encoding="utf-8")
         managed = {"workbench.colorCustomizations": {"activityBar.background": "#aabbcc"}}
         mod._apply(managed, target)
         result = json.loads(target.read_text(encoding="utf-8"))
@@ -110,7 +110,7 @@ class TestApply:
         """colorCustomizations 内の他キーが保持される (浅い dict マージ)。"""
         target = tmp_path / "settings.json"
         existing = {"workbench.colorCustomizations": {"titleBar.activeBackground": "#112233"}}
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        target.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
         managed = {"workbench.colorCustomizations": {"activityBar.background": "#aabbcc"}}
         mod._apply(managed, target)
         result = json.loads(target.read_text(encoding="utf-8"))
@@ -121,7 +121,7 @@ class TestApply:
         """list 値は上書きされる (union マージではない)。"""
         target = tmp_path / "settings.json"
         target.write_text(
-            json.dumps({"markdown-pdf.styles": ["/old/markdown-pdf.css"]}),
+            json.dumps({"markdown-pdf.styles": ["/old/markdown-pdf.css"]}, ensure_ascii=False),
             encoding="utf-8",
         )
         managed = {"markdown-pdf.styles": ["/new/markdown-pdf.css"]}
@@ -141,7 +141,8 @@ class TestApply:
                 {
                     "markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"],
                     "editor.fontSize": 14,
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -157,14 +158,14 @@ class TestApply:
         """legacy_keys で指定したキーが存在しない場合はエラーにならない。"""
         target = tmp_path / "settings.json"
         managed = {"foo": "bar"}
-        target.write_text(json.dumps(managed, indent=2) + "\n", encoding="utf-8")
+        target.write_text(json.dumps(managed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         assert mod._apply(managed, target, legacy_keys=("markdown.styles",)) is False
 
     def test_no_change_returns_false(self, tmp_path: Path) -> None:
         """変更がなければ False を返す。"""
         target = tmp_path / "settings.json"
         managed = {"foo": "bar"}
-        target.write_text(json.dumps(managed, indent=2) + "\n", encoding="utf-8")
+        target.write_text(json.dumps(managed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         assert mod._apply(managed, target) is False
 
     def test_reads_jsonc_with_comments(self, tmp_path: Path) -> None:
@@ -207,7 +208,7 @@ class TestApply:
     def test_reads_pure_json_same_result(self, tmp_path: Path) -> None:
         """純 JSON のファイルも従来どおりパースできる。"""
         target = tmp_path / "settings.json"
-        target.write_text(json.dumps({"editor.fontSize": 16}), encoding="utf-8")
+        target.write_text(json.dumps({"editor.fontSize": 16}, ensure_ascii=False), encoding="utf-8")
         managed = {"workbench.colorCustomizations": {"activityBar.background": "#112233"}}
         mod._apply(managed, target)
         result = json.loads(target.read_text(encoding="utf-8"))
@@ -310,7 +311,7 @@ class TestRun:
         """
         target = tmp_path / "settings.json"
         target.write_text(
-            json.dumps({"markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"]}),
+            json.dumps({"markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"]}, ensure_ascii=False),
             encoding="utf-8",
         )
         mod.run(settings_path=target, hostname="test", is_windows=False)

@@ -155,8 +155,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 ### 明示呼び出し専用のスキル
 
-- `/spec-driven-init` — 既存プロジェクトへのspec-driven導入（恒常配置の初版起こし）
-- `/spec-driven-promote` — 開発中バージョンディレクトリの作業版を恒常配置へマージ統合
+- `/spec-driven-init` — 既存プロジェクトへのspec-driven導入（現行版ドキュメントの初版起こし）
+- `/spec-driven-promote` — 次版ドキュメントの作業版を現行版ドキュメントへマージ統合
 
 ## 更新方法
 

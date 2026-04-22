@@ -129,7 +129,7 @@ class TestRunNoAutomaticStateChange:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             return _FakeResult(returncode=0)
 

@@ -20,7 +20,7 @@ from .helpers import _FakeResult
 def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
     """known_marketplaces.json に対象 marketplace のエントリを書き出す。"""
     path.write_text(
-        json.dumps({_claude_common.MARKETPLACE_NAME: entry}),
+        json.dumps({_claude_common.MARKETPLACE_NAME: entry}, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -28,7 +28,7 @@ def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
 def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
     """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを書き出す。"""
     path.write_text(
-        json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}),
+        json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}, ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -308,7 +308,8 @@ class TestRepairMarketplace:
                     _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "github", "repo": "ak110/dotfiles"},
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )

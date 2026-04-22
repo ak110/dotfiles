@@ -38,10 +38,10 @@ MANAGED = {
 
 def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
     managed_path = tmp_path / "managed.json"
-    managed_path.write_text(json.dumps(managed), encoding="utf-8")
+    managed_path.write_text(json.dumps(managed, ensure_ascii=False), encoding="utf-8")
     target_path = tmp_path / "target.json"
     if existing is not None:
-        target_path.write_text(json.dumps(existing), encoding="utf-8")
+        target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
     update_claude_settings(managed_path, target_path)
     return json.loads(target_path.read_text(encoding="utf-8"))
 
@@ -130,10 +130,13 @@ class TestPlatformOverride:
     def test_override_adds_hooks(self, tmp_path: Path):
         """ベースに無い hooks セクションをオーバーライド経由で追加できる。"""
         managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         override_path = tmp_path / "override.json"
         override_path.write_text(
-            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "x"}]}]}}),
+            json.dumps(
+                {"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "x"}]}]}},
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         target_path = tmp_path / "target.json"
@@ -147,9 +150,9 @@ class TestPlatformOverride:
     def test_override_replaces_scalar(self, tmp_path: Path):
         """オーバーライドはベースのスカラー値を上書きする。"""
         managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "english"}), encoding="utf-8")
+        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
         override_path = tmp_path / "override.json"
-        override_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        override_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
 
         update_claude_settings(managed_path, target_path, overrides=[override_path])
@@ -160,7 +163,7 @@ class TestPlatformOverride:
     def test_missing_override_is_ignored(self, tmp_path: Path):
         """存在しないオーバーライドはスキップされる (他 OS を壊さない)。"""
         managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "japanese"}), encoding="utf-8")
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
 
         # _platform_overrides は実在チェック済みのリストを返すため、そちらを経由
@@ -401,7 +404,10 @@ class TestStripRemovedHooks:
         """既存の hooks に旧 command 部分文字列が残っている場合、マージ前に除去される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
-            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "new-cmd"}]}]}}),
+            json.dumps(
+                {"hooks": {"PreToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "new-cmd"}]}]}},
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         target_path = tmp_path / "target.json"
@@ -418,7 +424,8 @@ class TestStripRemovedHooks:
                             }
                         ]
                     }
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -450,7 +457,8 @@ class TestStripRemovedHooks:
                             }
                         ]
                     }
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )

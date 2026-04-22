@@ -90,17 +90,17 @@ def _main() -> int:
         cwd = cwd_raw if isinstance(cwd_raw, str) else ""
         result = _check_bash_git_commit(command, session_id, cwd)
         if result is not None:
-            print(json.dumps(result))
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         # git log --decorate 自動付与
         result = _check_bash_git_log_decorate(command, tool_input)
         if result is not None:
-            print(json.dumps(result))
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         # codex exec 未決事項の念押し
         result = _check_bash_codex_exec(command)
         if result is not None:
-            print(json.dumps(result))
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         return 0
 

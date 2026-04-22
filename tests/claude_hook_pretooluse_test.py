@@ -23,7 +23,7 @@ _LOCAL_MD = "CLAUDE" + ".local.md"
 
 
 def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    text = payload if isinstance(payload, str) else json.dumps(payload)
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     return subprocess.run(
         [sys.executable, str(_SCRIPT)],
         input=text,

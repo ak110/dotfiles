@@ -14,4 +14,4 @@ class _FakeResult:
 
 def _plugin_list_json(*entries: dict[str, object]) -> str:
     """テスト用の `claude plugin list --json` 出力を組み立てる。"""
-    return json.dumps(list(entries))
+    return json.dumps(list(entries), ensure_ascii=False)

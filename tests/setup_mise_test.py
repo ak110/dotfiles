@@ -102,7 +102,7 @@ class TestEnsureGlobalNode:
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout=json.dumps({"node": [{"version": "24"}]}),
+                stdout=json.dumps({"node": [{"version": "24"}]}, ensure_ascii=False),
                 stderr="",
             ),
         ]

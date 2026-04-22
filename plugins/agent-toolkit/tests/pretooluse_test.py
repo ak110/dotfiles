@@ -18,7 +18,7 @@ _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-p
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    text = payload if isinstance(payload, str) else json.dumps(payload)
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if env_overrides:
         env.update(env_overrides)
@@ -333,7 +333,7 @@ class TestBashGitCommitWarning:
 
     def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
         path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state), encoding="utf-8")
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     def _invoke(
         self,
@@ -496,7 +496,7 @@ class TestBashAmendRebaseBlock:
 
     def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
         path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state), encoding="utf-8")
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     def _invoke(self, command: str, session_id: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
         return _run(

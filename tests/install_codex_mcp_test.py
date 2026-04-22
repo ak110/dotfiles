@@ -142,7 +142,9 @@ class TestReadCodexFromFile:
         """mcpServersにcodexキーが存在する場合Trueを返す。"""
         path = tmp_path / ".claude.json"
         path.write_text(
-            json.dumps({"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}),
+            json.dumps(
+                {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}, ensure_ascii=False
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", path)
@@ -152,7 +154,7 @@ class TestReadCodexFromFile:
     def test_codex_absent(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """mcpServersは存在するがcodexキーが無い場合Falseを返す。"""
         path = tmp_path / ".claude.json"
-        path.write_text(json.dumps({"mcpServers": {"other": {}}}), encoding="utf-8")
+        path.write_text(json.dumps({"mcpServers": {"other": {}}}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", path)
         # pylint: disable-next=protected-access
         assert _install_codex_mcp._is_codex_registered_from_file() is False
@@ -174,7 +176,7 @@ class TestReadCodexFromFile:
     def test_no_mcp_servers_key(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """mcpServersキー自体が無い場合Noneを返す。"""
         path = tmp_path / ".claude.json"
-        path.write_text(json.dumps({"otherKey": "value"}), encoding="utf-8")
+        path.write_text(json.dumps({"otherKey": "value"}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", path)
         # pylint: disable-next=protected-access
         assert _install_codex_mcp._is_codex_registered_from_file() is None
@@ -189,7 +191,9 @@ class TestHappyPathNoCli:
 
         path = tmp_path / ".claude.json"
         path.write_text(
-            json.dumps({"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}),
+            json.dumps(
+                {"mcpServers": {"codex": {"type": "stdio", "command": "codex", "args": ["mcp-server"]}}}, ensure_ascii=False
+            ),
             encoding="utf-8",
         )
         monkeypatch.setattr(_install_codex_mcp, "_CLAUDE_CONFIG_PATH", path)

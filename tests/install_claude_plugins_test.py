@@ -101,7 +101,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
                 return _FakeResult(returncode=0)
@@ -135,7 +135,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
                 return _FakeResult(returncode=0)
@@ -199,7 +199,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:3] == ["claude", "plugin", "install"]:
                 return _FakeResult(returncode=0)
@@ -232,7 +232,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
                 return _FakeResult(returncode=0)
@@ -337,7 +337,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:3] == ["claude", "plugin", "install"]:
                 return _FakeResult(returncode=0)
@@ -384,7 +384,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:3] == ["claude", "plugin", "install"]:
                 return _FakeResult(returncode=0)
@@ -418,7 +418,7 @@ class TestRunFlow:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             if cmd[:3] == ["claude", "plugin", "uninstall"]:
                 return _FakeResult(returncode=0)
@@ -587,7 +587,7 @@ class TestEnsureMarketplaceCliPath:
                 return _FakeResult(
                     returncode=0,
                     # pylint: disable-next=protected-access
-                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}]),
+                    stdout=json.dumps([{"name": _install_claude_plugins._MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             return _FakeResult(returncode=1)
 
@@ -653,7 +653,8 @@ class TestLegacyGithubTypeMigration:
                         "source": {"source": "github", "repo": "ak110/dotfiles"},
                         "lastUpdated": "2026-01-01T00:00:00.000Z",
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -665,7 +666,8 @@ class TestLegacyGithubTypeMigration:
                             "source": {"source": "github", "repo": "ak110/dotfiles"},
                         },
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -737,7 +739,8 @@ class TestReadInstalledFromFile:
                             {"scope": "user", "version": "0.15.0"},
                         ],
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -773,7 +776,8 @@ class TestReadInstalledFromFile:
                             {"scope": "project", "version": "1.0.0", "projectPath": "/some/path"},
                         ],
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -806,7 +810,8 @@ class TestCheckMarketplaceFromFile:
                         "source": {"source": "directory", "path": str(dotfiles_root)},
                         "installLocation": str(dotfiles_root),
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -825,7 +830,8 @@ class TestCheckMarketplaceFromFile:
                     _claude_common.MARKETPLACE_NAME: {
                         "source": {"source": "github", "repo": "ak110/dotfiles"},
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -837,7 +843,7 @@ class TestCheckMarketplaceFromFile:
     def test_marketplace_not_registered(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """marketplaceキーが存在しない場合Noneを返す。"""
         path = tmp_path / "known_marketplaces.json"
-        path.write_text(json.dumps({"other-marketplace": {}}), encoding="utf-8")
+        path.write_text(json.dumps({"other-marketplace": {}}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         # pylint: disable-next=protected-access
@@ -876,7 +882,8 @@ class TestHappyPathDirectoryType:
                         "agent-toolkit@ak110-dotfiles": [{"scope": "user", "version": "0.2.0"}],
                         "sample-plugin@ak110-dotfiles": [{"scope": "user", "version": "1.0.0"}],
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )
@@ -894,7 +901,8 @@ class TestHappyPathDirectoryType:
                         "source": {"source": "directory", "path": str(dotfiles_root)},
                         "installLocation": str(dotfiles_root),
                     },
-                }
+                },
+                ensure_ascii=False,
             ),
             encoding="utf-8",
         )

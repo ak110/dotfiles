@@ -22,7 +22,7 @@ def _run(
     state_dir: pathlib.Path | None = None,
     home_dir: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    text = payload if isinstance(payload, str) else json.dumps(payload)
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
         env["TMPDIR"] = str(state_dir)
@@ -238,13 +238,14 @@ class TestGitLogChecked:
 _VALID_PLAN = (
     "# タイトル\n\n"
     "## 背景\n\n説明。\n\n"
-    "## 対応方針\n\n### ユーザー合意済み事項\n\n- a\n\n"
+    "## 対応方針\n\n"
+    "### ユーザー合意済み事項\n\n- a\n\n"
     "## 調査結果\n\n- x\n\n"
     "## 変更内容\n\n- y\n\n"
-    "## 実装・検証・レビュー\n\n- w\n"
+    "## 実装・検証・レビュー\n\n- w\n\n"
+    "## 変更履歴\n\n- 初版\n\n"
+    "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
 )
-
-_VALID_PLAN_WITH_HISTORY = _VALID_PLAN + "\n## 変更履歴\n\n1. 初回\n"
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
@@ -288,20 +289,6 @@ class TestPlanFormatCheck:
             home_dir=home,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
-
-    def test_valid_plan_with_history_passes(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        plan = _write_plan(plans, "sample.md", _VALID_PLAN_WITH_HISTORY)
-        result = _run(
-            {
-                "session_id": "plan-hist",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _VALID_PLAN_WITH_HISTORY},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-        )
         assert result.stdout.strip() == ""
 
     def test_missing_required_section_is_warned(self, tmp_path: pathlib.Path):
@@ -511,7 +498,9 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n"
+            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 変更履歴\n\n- w\n\n"
+            "## 計画ファイル\n\n- w\n\n"
         )
         plan = _write_plan(plans, "fence.md", content)
         result = _run(
@@ -543,6 +532,6 @@ class TestPlanFormatSsot:
 
     def test_required_and_optional_h2_appear_in_skill(self):
         text = _SKILL_MD.read_text(encoding="utf-8")
-        # 必須 H2 と任意 H2 は全て SKILL.md 内の該当構造定義に登場する
-        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実装・検証・レビュー", "変更履歴"):
+        # 必須 H2 は全て SKILL.md 内の該当構造定義に登場する
+        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実装・検証・レビュー", "変更履歴", "計画ファイル"):
             assert f"## {heading}" in text, f"SKILL.md に `## {heading}` が無い"

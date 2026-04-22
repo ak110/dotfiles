@@ -121,7 +121,7 @@ def _write_state(path: pathlib.Path, state: dict) -> None:
     書き込み失敗は無視する（hook の失敗でセッション停止を妨げない）。
     """
     with contextlib.suppress(OSError):
-        path.write_text(json.dumps(state), encoding="utf-8")
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _extract_user_text(line: str) -> str | None:
@@ -362,11 +362,11 @@ def _approve(cwd: str = "") -> None:
         status = _git_status_for_display(cwd)
         if status:
             output["systemMessage"] = f"[git status]\n{status}"
-    print(json.dumps(output))
+    print(json.dumps(output, ensure_ascii=False))
 
 
 def _block(reason: str) -> None:
-    print(json.dumps({"decision": "block", "reason": reason}))
+    print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
 
 def _main() -> int:

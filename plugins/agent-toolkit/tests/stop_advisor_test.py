@@ -21,7 +21,7 @@ def _run(
     *,
     state_dir: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    text = payload if isinstance(payload, str) else json.dumps(payload)
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
         env["TMPDIR"] = str(state_dir)
@@ -43,7 +43,7 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
-    path.write_text(json.dumps(state), encoding="utf-8")
+    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _write_transcript(tmp_path: pathlib.Path, user_texts: str | list[str]) -> pathlib.Path:
