@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BRANCH="${1:-master}"
+
+# shellcheck disable=SC2016  # GraphQL変数($endCursor, $branch)をシェル変数と誤検知するため抑制
+gh api graphql \
+    --paginate \
+    --cache 30s \
+    -f branch="$BRANCH" \
+    -f query='
+query($endCursor: String, $branch: String!) {
+  viewer {
+    repositories(
+      first: 100,
+      after: $endCursor,
+      isArchived: false,
+      orderBy: {field: UPDATED_AT, direction: DESC}
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        nameWithOwner
+        ref(qualifiedName: $branch) {
+          target {
+            ... on Commit {
+              oid
+              committedDate
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+' |
+    jq -r '
+  .data.viewer.repositories.nodes[]
+  | select(.ref != null)
+  | {
+      repo: .nameWithOwner,
+      sha: (.ref.target.oid[0:7]),
+      committedDate: .ref.target.committedDate,
+      state: (.ref.target.statusCheckRollup.state // "NO_CHECKS")
+    }
+  | select(.state == "FAILURE" or .state == "ERROR")
+  | [.state, .repo, .sha, .committedDate]
+  | @tsv
+' | column -t -s $'\t'
