@@ -267,17 +267,14 @@ def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) 
     cmd = [
         "claude",
         "--print",
-        "--tools",
-        "Bash",
-        "--permission-mode",
-        "bypassPermissions",
-        "--add-dir",
-        str(git_root),
+        "--tools=Bash",
+        "--permission-mode=bypassPermissions",
+        f"--add-dir={git_root}",
         "--exclude-dynamic-system-prompt-sections",
         "--disable-slash-commands",
         "--strict-mcp-config",
-        "--model",
-        model,
+        "--system-prompt=.",
+        f"--model={model}",
         "--no-session-persistence",
     ]
     if effort is not None:
