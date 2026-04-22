@@ -11,13 +11,6 @@ from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
-# 詳細差分の取得から除外するファイルパターン（コンテキスト長節約）
-_EXCLUDE_PATTERNS = [
-    "*.lock",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-]
-
 _DEFAULT_FORMAT = """\
 Conventional Commits形式、日本語で記述すること。
 形式: <type>[(<scope>)]: <description>
@@ -63,7 +56,6 @@ def _main() -> None:
     has_changes = bool(staged_names or unstaged_names or untracked_names)
 
     head_message = ""
-    head_diff = ""
     if args.amend:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%B"],
@@ -72,28 +64,22 @@ def _main() -> None:
             check=True,
         )
         head_message = result.stdout.strip()
-        head_diff = _get_head_diff()
     elif not has_changes:
         logger.error("変更がありません。")
         sys.exit(1)
 
     staged_stat = _get_stat(scope="staged") if staged_names else ""
-    staged_diff = _get_diff(scope="staged") if staged_names else ""
     unstaged_stat = _get_stat(scope="unstaged") if unstaged_names else ""
-    unstaged_diff = _get_diff(scope="unstaged") if unstaged_names else ""
 
     format_instructions = _get_format_instructions(git_root)
     prompt = _build_prompt(
         git_root=git_root,
         format_instructions=format_instructions,
         staged_stat=staged_stat,
-        staged_diff=staged_diff,
         unstaged_stat=unstaged_stat,
-        unstaged_diff=unstaged_diff,
         untracked_names=untracked_names,
         amend=args.amend,
         head_message=head_message,
-        head_diff=head_diff,
         dry_run=args.dry_run,
         additional_prompt=args.additional_prompt or "",
     )
@@ -141,7 +127,7 @@ def _get_format_instructions(git_root: Path | None = None) -> str:
 
 
 def _get_names(*, scope: str) -> list[str]:
-    """変更ファイル名一覧を返す（除外なし）。
+    """変更ファイル名一覧を返す。
 
     Args:
         scope: 'staged'（ステージ済み）／'unstaged'（未ステージ、追跡中）／'untracked'（未追跡）
@@ -159,7 +145,7 @@ def _get_names(*, scope: str) -> list[str]:
 
 
 def _get_stat(*, scope: str) -> str:
-    """変更概要を返す（除外なし）。scope: 'staged' | 'unstaged'"""
+    """変更概要を返す。scope: 'staged' | 'unstaged'"""
     if scope == "staged":
         cmd = ["git", "diff", "--cached", "--stat"]
     elif scope == "unstaged":
@@ -170,43 +156,15 @@ def _get_stat(*, scope: str) -> str:
     return result.stdout
 
 
-def _get_diff(*, scope: str) -> str:
-    """詳細差分を返す（lock系ファイルは除外）。scope: 'staged' | 'unstaged'"""
-    exclude_args = [f":!{p}" for p in _EXCLUDE_PATTERNS]
-    if scope == "staged":
-        cmd = ["git", "diff", "--cached", "--", *exclude_args]
-    elif scope == "unstaged":
-        cmd = ["git", "diff", "--", *exclude_args]
-    else:
-        raise ValueError(f"unknown scope: {scope}")
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return result.stdout
-
-
-def _get_head_diff() -> str:
-    """HEADのコミット差分を返す（lock系ファイルは除外）。"""
-    exclude_args = [f":!{p}" for p in _EXCLUDE_PATTERNS]
-    result = subprocess.run(
-        ["git", "show", "HEAD", "--", *exclude_args],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout
-
-
 def _build_prompt(
     *,
     git_root: Path,
     format_instructions: str,
     staged_stat: str,
-    staged_diff: str,
     unstaged_stat: str = "",
-    unstaged_diff: str = "",
     untracked_names: list[str] | None = None,
     amend: bool,
     head_message: str,
-    head_diff: str,
     dry_run: bool,
     additional_prompt: str = "",
 ) -> str:
@@ -238,18 +196,16 @@ def _build_prompt(
 
     if amend:
         lines.append(f"# 既存のコミットメッセージ\n{head_message}")
-        lines.append(f"# 既存のコミット差分（HEAD）\n{head_diff}")
 
     if staged_stat:
         lines.append(f"# ステージング済みの変更の概要\n{staged_stat}")
-    if staged_diff:
-        lines.append(f"# ステージング済みの変更の詳細（lock系ファイルは除外済み）\n{staged_diff}")
     if unstaged_stat:
         lines.append(f"# 未ステージの変更の概要\n{unstaged_stat}")
-    if unstaged_diff:
-        lines.append(f"# 未ステージの変更の詳細（lock系ファイルは除外済み）\n{unstaged_diff}")
     if untracked_names:
         lines.append("# 未追跡ファイルの一覧\n" + "\n".join(untracked_names))
+
+    lines.append("")
+    lines.append("差分の詳細は `git diff --cached` / `git diff` / `git show HEAD` などで自分で確認すること。")
 
     if dry_run:
         lines.append("")
