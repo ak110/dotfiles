@@ -3,7 +3,10 @@
 `chezmoi apply` 後処理 (`pytools.post_apply`) から Windows 環境でのみ呼ばれる。
 DSC リソース定義は dotfiles ルート直下の `configuration.dsc.yaml` を SSOT とする。
 winget CLI / configure サブコマンド対応バージョン / DSC ファイルが揃わない場合は
-スキップし、他ステップ同様 subprocess の失敗は内部で吸収する。
+実行条件未充足としてスキップする（戻り値 ``False``）。
+一方、実際に ``winget configure`` を起動した後の失敗（非ゼロ終了・subprocess 例外）は
+``RuntimeError`` として送出し、``post_apply`` 側の失敗集計に載せて exit 1 につなげる。
+他ステップの戻り値規約（``bool`` は「changed」を表す）と揃えるためである。
 """
 
 import logging
@@ -39,7 +42,11 @@ def run(
     """Windows 環境で winget configure を実行する。
 
     Returns:
-        configure が成功した場合 True。スキップ・失敗時は False。
+        configure が実行条件未充足でスキップされた場合 ``False``、
+        実行された場合は ``True``（他ステップの戻り値規約に合わせ「changed」を表す）。
+
+    Raises:
+        RuntimeError: ``winget configure`` の実行時に失敗した場合。
     """
     win = _IS_WINDOWS if is_windows is None else is_windows
     if not win:
@@ -112,6 +119,9 @@ def _apply(winget: str, dsc_file: Path) -> bool:
 
     初回は DSC リソースモジュールの取得で数分かかるため、winget の出力を
     キャプチャせずそのままパススルーし、無音時間を避ける（タイムアウトは `_WINGET_TIMEOUT`）。
+
+    Raises:
+        RuntimeError: subprocess 実行時例外または ``winget configure`` 非ゼロ終了時。
     """
     logger.info(log_format.format_status("winget", f"{dsc_file} を適用します（初回は数分かかることがあります）"))
     try:
@@ -128,12 +138,10 @@ def _apply(winget: str, dsc_file: Path) -> bool:
             timeout=_WINGET_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as e:
-        logger.warning(log_format.format_status("winget", f"`configure` 実行に失敗: {e}"))
-        return False
+        raise RuntimeError(f"winget configure 実行に失敗: {e}") from e
 
     if result.returncode != 0:
-        logger.warning(log_format.format_status("winget", f"`configure` が失敗 (rc={result.returncode})"))
-        return False
+        raise RuntimeError(f"winget configure が失敗 (rc={result.returncode})") from None
 
     logger.info(log_format.format_status("winget", f"{dsc_file} を適用しました"))
     return True

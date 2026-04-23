@@ -15,6 +15,7 @@ properties:
         ValueType: Dword
         ValueData: 0
         Ensure: Present
+        Force: true
     - resource: PSDscResources/Registry
       directives:
         description: タスクバーの検索ボックスを最小化する
@@ -25,6 +26,7 @@ properties:
         ValueType: Dword
         ValueData: 0
         Ensure: Present
+        Force: true
     - resource: PSDscResources/Registry
       directives:
         description: 新規ショートカット作成時に「～へのショートカット」を付けない
@@ -35,6 +37,7 @@ properties:
         ValueType: Dword
         ValueData: 0
         Ensure: Present
+        Force: true
     - resource: PSDscResources/Registry
       directives:
         description: フォルダータイプの自動認識を無効にする
@@ -45,3 +48,4 @@ properties:
         ValueType: String
         ValueData: NotSpecified
         Ensure: Present
+        Force: true

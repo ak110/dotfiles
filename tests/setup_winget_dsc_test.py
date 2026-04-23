@@ -83,7 +83,7 @@ class TestRun:
         )
         assert captured == [("winget.exe", dsc_file)]
 
-    def test_apply_failure_propagates(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_apply_returns_false_propagates(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         (tmp_path / "configuration.dsc.yaml").write_text("properties: {}\n", encoding="utf-8")
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         assert (
@@ -167,11 +167,13 @@ class TestApply:
 
     def test_non_zero_returncode(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         self._stub_run(monkeypatch, returncode=1)
-        assert _setup_winget_dsc._apply("winget.exe", tmp_path / "x.yaml") is False
+        with pytest.raises(RuntimeError, match=r"rc=1"):
+            _setup_winget_dsc._apply("winget.exe", tmp_path / "x.yaml")
 
     def test_oserror(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         def raise_oserror(*_args: object, **_kwargs: object) -> object:
             raise OSError("boom")
 
         monkeypatch.setattr(_setup_winget_dsc.subprocess, "run", raise_oserror)
-        assert _setup_winget_dsc._apply("winget.exe", tmp_path / "x.yaml") is False
+        with pytest.raises(RuntimeError, match=r"boom"):
+            _setup_winget_dsc._apply("winget.exe", tmp_path / "x.yaml")
