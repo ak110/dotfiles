@@ -18,7 +18,7 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
    ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
    amend / rebase 前に改めて git log を確認させる
 5. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
-   必須H2 の欠落・順序違反・想定外 H2・`変更履歴` の末尾以外配置を
+   必須H2 の欠落・順序違反・想定外 H2を
    ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)
 
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
@@ -140,7 +140,6 @@ def _check_plan_format(file_path: str) -> list[str]:
     - 必須 H2 の欠落
     - 必須 H2 の順序違反
     - 予期せぬ H2
-    - ``変更履歴`` が末尾以外に配置されている
 
     読み取り失敗時は空リストを返す (サイレントにスキップ、安全側)。
     """
