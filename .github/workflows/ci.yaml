@@ -37,7 +37,8 @@ jobs:
           test -f ~/.vimrc
           test -f ~/.claude/rules/agent-toolkit/agent.md
           test -f ~/.ssh/config
-          test -x ~/bin/update-dotfiles
+          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
+          grep -qF '$HOME/dotfiles/bin' ~/.bashrc
 
   test-windows:
     runs-on: windows-latest
@@ -65,7 +66,16 @@ jobs:
         run: |
           if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\agent.md")) { exit 1 }
           if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) { exit 1 }
-          if (-not (Test-Path "$env:USERPROFILE\bin\update-dotfiles.cmd")) { exit 1 }
+          $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+          if ($null -eq $envKey) { exit 1 }
+          try {
+            $pathValue = $envKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $pathKind = $envKey.GetValueKind('Path')
+          } finally {
+            $envKey.Close()
+          }
+          if ($pathValue -notlike '*%USERPROFILE%\dotfiles\bin*') { exit 1 }
+          if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { exit 1 }
 
   python-lint:
     runs-on: ubuntu-latest
