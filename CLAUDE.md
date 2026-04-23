@@ -60,3 +60,5 @@
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
   privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
 - 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される
+- ルート直下の`configuration.dsc.yaml`はWindows向けレジストリ設定を
+  `winget configure`で宣言的に適用するDSCファイル（`post_apply`のステップから呼ぶ）

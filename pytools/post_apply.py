@@ -20,6 +20,7 @@ from pytools._internal import (
     log_format,
     setup_mise,
     setup_plans_viewer_windows,
+    setup_winget_dsc,
     update_claude_settings,
     update_npmrc,
     update_vscode_settings,
@@ -91,6 +92,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
     ("codex MCP サーバーの登録", install_codex_mcp.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
     ("claude-plans-viewer 自動起動セットアップ", setup_plans_viewer_windows.run),
+    ("winget configure (Windows)", setup_winget_dsc.run),
 ]
 
 
