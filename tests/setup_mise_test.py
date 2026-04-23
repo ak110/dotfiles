@@ -198,7 +198,71 @@ class TestRun:
                 find_mise_fn=lambda: Path("/fake/mise"),
                 is_windows=False,
                 ensure_global_node_fn=fake_ensure,
+                ensure_working_tree_trusted_fn=lambda _mise_bin: False,
             )
             is True
         )
         assert called == [Path("/fake/mise")]
+
+    def test_trust_changed_propagates_to_run(self):
+        assert (
+            _setup_mise.run(
+                find_mise_fn=lambda: Path("/fake/mise"),
+                is_windows=False,
+                ensure_global_node_fn=lambda _mise_bin: False,
+                ensure_working_tree_trusted_fn=lambda _mise_bin: True,
+            )
+            is True
+        )
+
+
+class TestEnsureWorkingTreeTrusted:
+    """``_ensure_working_tree_trusted`` の分岐テスト。"""
+
+    def test_env_not_set_skips(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
+        called: list[list[str]] = []
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            called.append(args)
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False
+        assert not called
+
+    def test_mise_toml_missing_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        called: list[list[str]] = []
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            called.append(args)
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False
+        assert not called
+
+    def test_invokes_trust_command(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        mise_toml = tmp_path / "mise.toml"
+        mise_toml.write_text("[tools]\n", encoding="utf-8")
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        calls: list[list[str]] = []
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is True
+        assert calls == [["trust", str(mise_toml)]]
+
+    def test_command_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        (tmp_path / "mise.toml").write_text("", encoding="utf-8")
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin, args
+            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False

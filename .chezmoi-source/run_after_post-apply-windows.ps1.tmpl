@@ -73,6 +73,8 @@ if (Test-Path $userEnvFile) {
 # uv tool update-shell は現プロセスの PATH を更新しないため、フルパスで呼び出す
 $postApplyBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-post-apply.exe'
 if (Test-Path $postApplyBin) {
+    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す
+    $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
     & $postApplyBin
 } else {
     Write-Host "  [pytools] $postApplyBin が見つかりません。後処理をスキップします。"

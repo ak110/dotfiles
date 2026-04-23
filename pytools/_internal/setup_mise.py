@@ -49,6 +49,7 @@ def run(
     find_mise_fn: Callable[[], Path | None] | None = None,
     is_windows: bool | None = None,
     ensure_global_node_fn: Callable[[Path], bool] | None = None,
+    ensure_working_tree_trusted_fn: Callable[[Path], bool] | None = None,
 ) -> bool:
     """Mise セットアップを実行する。
 
@@ -62,10 +63,45 @@ def run(
 
     win = _IS_WINDOWS if is_windows is None else is_windows
     changed = False
+    changed |= (ensure_working_tree_trusted_fn or _ensure_working_tree_trusted)(mise_bin)
     changed |= (ensure_global_node_fn or _ensure_global_node)(mise_bin)
     if win:
         changed |= _ensure_windows_user_path_has_shims()
     return changed
+
+
+def _ensure_working_tree_trusted(
+    mise_bin: Path,
+    *,
+    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
+) -> bool:
+    """Chezmoi workingTree 直下の `mise.toml` を `mise trust` 対象にする。
+
+    未 trust のままでは mise CLI が毎回警告を出して設定を無視するため、冪等に trust する。
+    workingTree は `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定なら CLI 単体実行
+    とみなしてスキップ）。既に trust 済みであっても `mise trust` は重複登録しない仕様のため、
+    事前チェックは行わず毎回実行する。副作用が無いため、成功時は changed 判定も常に True を
+    返す（サマリで「更新」扱いになるが、ノイズよりも実行事実が見える方を優先する）。
+    """
+    working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
+    if not working_tree:
+        logger.info(log_format.format_status("mise", "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ"))
+        return False
+
+    mise_toml = Path(working_tree) / "mise.toml"
+    if not mise_toml.is_file():
+        logger.info(log_format.format_status("mise", f"{mise_toml} が無いため trust をスキップ"))
+        return False
+
+    runner = run_mise_fn or _run_mise
+    result = runner(mise_bin, ["trust", str(mise_toml)])
+    if result is None or result.returncode != 0:
+        stderr = result.stderr.strip() if result else ""
+        logger.info(log_format.format_status("mise", f"`trust` に失敗: {stderr}"))
+        return False
+
+    logger.info(log_format.format_status("mise", f"{mise_toml} を trust しました"))
+    return True
 
 
 def _find_mise_binary() -> Path | None:

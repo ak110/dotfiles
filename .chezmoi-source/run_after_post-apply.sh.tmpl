@@ -35,6 +35,8 @@ fi
 
 post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
 if [ -x "$post_apply_bin" ]; then
+    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す
+    export CHEZMOI_WORKING_TREE='{{ .chezmoi.workingTree }}'
     exec "$post_apply_bin"
 else
     echo "  [pytools] $post_apply_bin が見つかりません。後処理をスキップします。"
