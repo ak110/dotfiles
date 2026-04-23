@@ -15,7 +15,7 @@ paths:
 計画フェーズで確認し忘れるとbumpタスクが計画から抜け落ち、push直前に慌てる原因になる。
 
 ```bash
-git log --decorate -p '@{upstream}..HEAD' -- plugins/<plugin-name>/.claude-plugin/plugin.json
+git log --decorate -p 'origin/master..HEAD' -- .claude-plugin/marketplace.json
 ```
 
 - 差分があれば**bump済み**のため、今回の変更で再bumpは不要（後述の判定基準もスキップしてよい）
