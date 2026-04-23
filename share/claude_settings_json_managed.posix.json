@@ -11,6 +11,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'"
+          }
+        ]
+      }
     ]
   }
 }

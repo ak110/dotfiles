@@ -729,6 +729,114 @@ class TestQuestionSuppressesUncommittedBlock:
         assert "uncommitted" in decision.get("reason", "").lower()
 
 
+class TestWaitingKeywordSuppressesBlock:
+    """待機語・非同期待機ツールがある場合は block を抑制する。
+
+    テスト対象: 未コミット変更ブロック（uncommitted changes）および
+    CLAUDE.md 更新提案ブロック（stop advice）の両方。
+    `_stop_gate.is_real_session_end` が False を返すため、
+    どちらの block も発火しない。
+    """
+
+    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        """変更ありの git リポジトリを作成する。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("initial")
+        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        (repo / "file.txt").write_text("modified")
+        return repo
+
+    def test_waiting_keyword_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+        """待機語を含むアシスタントターンは完了文言があっても未コミット変更ブロックを抑制する。"""
+        repo = self._make_dirty_repo(tmp_path)
+        # 完了文言 + 待機語
+        content = [{"type": "text", "text": "作業が完了しました。バックグラウンドで処理中です。完了を待ちます。"}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "waiting-uncommitted", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_agent_tool_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+        """最後の tool_use が Agent のターンは未コミット変更ブロックを抑制する。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": "作業が完了しました。"},
+            {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
+        ]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "agent-tool-uncommitted", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_bash_background_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+        """最後の tool_use が Bash+run_in_background=True のターンは未コミット変更ブロックを抑制する。"""
+        repo = self._make_dirty_repo(tmp_path)
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": "作業が完了しました。"},
+            {
+                "type": "tool_use",
+                "id": "x",
+                "name": "Bash",
+                "input": {"command": "long_task.sh", "run_in_background": True},
+            },
+        ]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        result = _run(
+            {"session_id": "bg-bash-uncommitted", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_waiting_keyword_suppresses_advice_block(self, tmp_path: pathlib.Path):
+        """待機語を含むアシスタントターンは CLAUDE.md 更新提案ブロックを抑制する。"""
+        # user_text に含まれる修正キーワード: 「違う」「間違」「やり直」で計 3 カウント。
+        # 閾値 (_KEYWORD_THRESHOLD == 3) に到達するため、待機抑制がなければ発火する。
+        content = [{"type": "text", "text": "作業が完了しました。バックグラウンドで処理中です。完了を待ちます。"}]
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            content,
+            user_text="違う、それは間違いだ。やり直して",
+        )
+        result = _run(
+            {"session_id": "waiting-advice", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_agent_tool_suppresses_advice_block(self, tmp_path: pathlib.Path):
+        """最後の tool_use が Agent のターンは CLAUDE.md 更新提案ブロックを抑制する。"""
+        # user_text に含まれる修正キーワード: 「違う」「間違」「やり直」で計 3 カウント。
+        # 閾値 (_KEYWORD_THRESHOLD == 3) に到達するため、待機抑制がなければ発火する。
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": "作業が完了しました。"},
+            {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
+        ]
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            content,
+            user_text="違う、それは間違いだ。やり直して",
+        )
+        result = _run(
+            {"session_id": "agent-tool-advice", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+
 class TestGitStatusDisplay:
     """approve 時の git status 表示。"""
 

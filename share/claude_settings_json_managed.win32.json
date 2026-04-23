@@ -11,6 +11,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py; exit 0 }\""
+          }
+        ]
+      }
     ]
   }
 }

@@ -8,11 +8,10 @@
 Claude Code が停止しようとするタイミングで発火する。
 
 未コミット変更ブロックと CLAUDE.md 更新提案ブロックの 2 種類の block を出す。
-両ブロックは「直前アシスタントターンが作業完了の言い切り文言（「完了しました」等、
-`_COMPLETION_KEYWORDS` 参照）を含み、かつ質問を含まない」場合に限り発火する
-（共通ゲート `_is_stop_blockable`）。作業途中での一時停止やユーザー質問待ちでの
-誤検出を避けるためのゲートで、transcript を解釈できない異常系では block しない。
-質問の検出は AskUserQuestion ツール使用、またはテキストに ? / ？ / 「ですか。」が含まれる場合とする。
+両ブロックは共通ゲート `_stop_gate.is_real_session_end` で「直前アシスタントターンが
+完了文言を含み、かつ質問・待機語・非同期待機ツールがない」場合に限り発火する。
+作業途中の一時停止・バックグラウンド待機・ユーザー質問待ちでの誤検出を避けるため、
+transcript を解釈できない異常系では block しない。
 
 未コミット変更ブロック:
 作業ディレクトリに未コミット変更があれば block し、コミット要否をユーザーに確認させる。
@@ -28,15 +27,19 @@ exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
 """
 
-import collections.abc
 import contextlib
 import json
 import pathlib
-import re
 import subprocess
 import sys
 import tempfile
 import traceback
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _INJECTED_TAG_PATTERNS,
+    is_real_session_end,
+)
 
 # --- 修正キーワード ---
 
@@ -61,18 +64,6 @@ _KEYWORD_THRESHOLD = 3
 # 2 以上を異常な繰り返しと判定する。
 _CODEX_RESUME_THRESHOLD = 2
 
-# 作業完了を示す言い切り文言。
-# 誤検出削減を最優先するため狭く絞り、過去形・現在形の言い切りに限定する。
-# 「〜を完了します」（未来形）「〜すれば完了です」（条件形）のような文は
-# 作業途中でも出現しうるため対象外とする。
-_COMPLETION_KEYWORDS: tuple[str, ...] = (
-    "完了しました",
-    "完了いたしました",
-    "完了致しました",
-    "完了です",
-    "完了。",
-)
-
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 # 詳細は skills/writing-standards/references/claude-hooks.md を参照。
 _MESSAGE_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
@@ -83,16 +74,6 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
     return f"{prefix} {body} {_MESSAGE_SUFFIX}"
-
-
-# Claude Code のハーネスが user turn 内に注入するタグ。
-# ユーザー発話ではないため修正キーワード集計の対象外とする。
-_INJECTED_TAG_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL),
-    re.compile(r"<user-prompt-submit-hook>.*?</user-prompt-submit-hook>", re.DOTALL),
-    re.compile(r"<local-command-stdout>.*?</local-command-stdout>", re.DOTALL),
-    re.compile(r"<local-command-caveat>.*?</local-command-caveat>", re.DOTALL),
-)
 
 
 def _state_path(session_id: str) -> pathlib.Path:
@@ -173,136 +154,6 @@ def _count_keywords(transcript_path: str) -> int:
         for keyword in _CORRECTION_KEYWORDS:
             count += text.count(keyword)
     return count
-
-
-def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
-    """直前のアシスタントターンに属する message dict を新しい順に生成する。
-
-    以下の制約で 1 ターンを画定する。
-    - sidechain （subagent）のエントリは除外する
-    - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
-      1 ターンとして統合する
-    - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
-      間に挟まった時点でターン境界とみなし走査を終える
-    - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
-
-    transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
-    """
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return
-    first_msg_id: str | None = None
-    checked_count = 0
-    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
-    for line in reversed(lines):
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if entry.get("type") != "assistant" or entry.get("isSidechain"):
-            if first_msg_id is not None:
-                # 別エントリが間に挟まった → 同一ターンの探索終了
-                saw_non_assistant = True
-            continue
-        if saw_non_assistant:
-            # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
-            return
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            return
-        msg_id = message.get("id", "")
-        if first_msg_id is None:
-            first_msg_id = msg_id
-        elif msg_id and first_msg_id and msg_id != first_msg_id:
-            # message.id が両方設定されており異なる → 別ターン
-            return
-        checked_count += 1
-        if checked_count > 3:
-            return
-        yield message
-
-
-def _is_assistant_asking_question(transcript_path: str) -> bool:
-    """直前のアシスタントターンがユーザーへの質問を含んでいるかを確認する。
-
-    以下のいずれかが成立する場合 True を返す。
-    - AskUserQuestion ツール呼び出しが含まれている
-    - テキストに ? または ？ または 「ですか。」が含まれている（位置は問わない）
-
-    末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
-    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
-    false positive でコミットを強行する挙動を避けるため。
-
-    「ですか。」を含める理由: 「この案でよいですか。」のように `?` を付けずに
-    ユーザー確認を求めるケースを拾うため。
-
-    同一 message.id を持つ複数エントリ（テキストとツール呼び出しが別エントリに分割
-    される場合がある）は 1 ターンとして扱い、テキストのないエントリが末尾に来る
-    競合状態（hook 発火時点で transcript が未 flush）に対処する。
-    詳細は `_iter_latest_assistant_messages` を参照。
-
-    未コミット変更ブロックの false positive を防ぐための判定。
-    """
-    for message in _iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            return False
-        texts: list[str] = []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "tool_use" and block.get("name") == "AskUserQuestion":
-                return True
-            if block.get("type") == "text":
-                text = block.get("text", "")
-                if isinstance(text, str) and text.strip():
-                    texts.append(text)
-        if texts:
-            joined = "\n".join(texts)
-            return "?" in joined or "？" in joined or "ですか。" in joined
-        # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
-    return False
-
-
-def _is_assistant_task_completed(transcript_path: str) -> bool:
-    """直前のアシスタントターンに作業完了の言い切り文言が含まれるか判定する。
-
-    未コミット変更 block のゲートとして使う。検索範囲は
-    `_is_assistant_asking_question` と揃え、直前アシスタントターンの
-    テキストエントリに限定する。キーワードは `_COMPLETION_KEYWORDS` 参照。
-    """
-    for message in _iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "text":
-                continue
-            text = block.get("text", "")
-            if not isinstance(text, str):
-                continue
-            if any(keyword in text for keyword in _COMPLETION_KEYWORDS):
-                return True
-    return False
-
-
-def _is_stop_blockable(transcript_path: str) -> bool:
-    """未コミット変更ブロック・CLAUDE.md 更新提案ブロックの共通発火ゲート。
-
-    直前アシスタントターンが作業完了の言い切り文言を含み、かつ質問を含まない
-    場合に True を返す。判定は `_is_assistant_task_completed` と
-    `_is_assistant_asking_question` の組み合わせで行う。
-
-    transcript を読み取れない異常系（パス不正・ファイル欠落など）では
-    `_is_assistant_task_completed` が False を返すため、本関数も False になる。
-    このため安全側に倒れて block を見送る。
-    """
-    if not _is_assistant_task_completed(transcript_path):
-        return False
-    return not _is_assistant_asking_question(transcript_path)
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:
@@ -396,17 +247,18 @@ def _main() -> int:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
 
     # --- 未コミット変更ブロック ---
-    # 共通ゲート `_is_stop_blockable` で「直前アシスタントターンが完了文言を含み、
-    # かつ質問を含まない」状態に限って block する。
-    # 作業途中の一時停止・探索中・ユーザー確認待ち等での false positive を避ける。
+    # 共通ゲート `is_real_session_end` で「直前アシスタントターンが完了文言を含み、
+    # かつ質問・待機語・非同期待機ツールがない」状態に限って block する。
+    # 作業途中の一時停止・探索中・ユーザー確認待ち・バックグラウンド待機等での
+    # false positive を避ける。
     # ブロックは 1 回に限る。理由:
     #   - Claude Code は block を受けると再度 Stop を試みるため、
     #     同一メッセージの繰り返しに意味がない
     #   - 2 回目以降は block_count != 0 でブロックせず、
     #     後続の stop_advice_given チェックへフォールスルーする
-    #   - _is_assistant_asking_question の transcript flush タイミング問題
-    #     （質問検出失敗）も 2 回目で自然に通過する
-    if isinstance(cwd, str) and _has_uncommitted_changes(cwd) and _is_stop_blockable(transcript_path):
+    #   - 質問検出の transcript flush タイミング問題
+    #     （未フラッシュ時の質問検出失敗）も 2 回目で自然に通過する
+    if isinstance(cwd, str) and _has_uncommitted_changes(cwd) and is_real_session_end(transcript_path):
         block_count = state.get("uncommitted_block_count", 0)
         if block_count == 0:
             state["uncommitted_block_count"] = block_count + 1
@@ -442,10 +294,10 @@ def _main() -> int:
         _approve(cwd=cwd)
         return 0
 
-    # 共通ゲート: 直前ターンが作業完了かつ非質問でない場合は block を見送る。
+    # 共通ゲート: 直前ターンが真のセッション終了でない場合は block を見送る。
     # `stop_advice_given` を記録しないため、ユーザーが応答した後や作業完了後の
     # Stop で改めて閾値判定が実行される。
-    if not _is_stop_blockable(transcript_path):
+    if not is_real_session_end(transcript_path):
         _approve(cwd=cwd)
         return 0
 
