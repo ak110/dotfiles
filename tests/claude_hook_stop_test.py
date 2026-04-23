@@ -17,6 +17,7 @@ def _run(
     payload: object,
     *,
     state_dir: pathlib.Path | None = None,
+    home: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
@@ -24,6 +25,9 @@ def _run(
         env["TMPDIR"] = str(state_dir)
         env["TEMP"] = str(state_dir)
         env["TMP"] = str(state_dir)
+    if home is not None:
+        env["HOME"] = str(home)
+        env["USERPROFILE"] = str(home)
     return subprocess.run(
         [sys.executable, str(_SCRIPT)],
         input=text,
@@ -399,3 +403,32 @@ class TestEdgeCases:
         result = _run({"transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestHomeIndependent:
+    """import パス解決が `$HOME` に依存しないことの回帰テスト。
+
+    CI では repo チェックアウト先と `$HOME` が異なるため、`Path.home()` 起点で
+    import パスを組み立てると `_stop_gate` モジュールが見つからず、スクリプトが
+    モジュール評価時に ImportError で終了して stdout 空になる事故が起きた。
+    起動時の `$HOME` が repo 外を指していてもスクリプトが正常に JSON 決定を返すことを固定化する。
+    """
+
+    def test_runs_with_home_outside_repo(self, tmp_path: pathlib.Path):
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir()
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                _assistant_entry_with_bash("uv run pyfltr run-for-agent some_file.py"),
+                _assistant_entry_completion_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "home-independent", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+            home=fake_home,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"

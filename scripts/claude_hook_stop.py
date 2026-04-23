@@ -35,7 +35,10 @@ import traceback
 
 # agent-toolkit の共通ゲートモジュールを import する。
 # plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
-sys.path.insert(0, str(pathlib.Path.home() / "dotfiles" / "plugins" / "agent-toolkit" / "scripts"))
+sys.path.insert(
+    0,
+    str(pathlib.Path(__file__).resolve().parent.parent / "plugins" / "agent-toolkit" / "scripts"),
+)
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_real_session_end,  # type: ignore[import]
 )
