@@ -1,10 +1,14 @@
 """claude_session_exportモジュールのテスト。"""
 
+import json
+import logging
+
 import pytest
 
 from pytools.claude_session_export import (
     RenderOptions,
     encode_project_path,
+    export_sessions,
     iter_turns,
     render_session,
 )
@@ -471,3 +475,61 @@ class TestRenderSession:
         assert "| セッションID | `sess-abc` |" in md
         assert "| プロジェクト | `/home/test/project` |" in md
         assert "| ブランチ | `feature/test` |" in md
+
+
+class TestExportSessions:
+    """export_sessionsのテスト。"""
+
+    def test_output_filename_uses_session_start_timestamp(self, tmp_path) -> None:
+        """出力ファイル名にセッション開始日時が使われることをテストする。"""
+        session_path = tmp_path / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+        records = [
+            _make_record(
+                uuid="u1",
+                timestamp="2026-01-01T00:00:02Z",
+                session_id="sess-abc",
+                message={"role": "user", "content": "後の発言"},
+            ),
+            _make_record(
+                type_="assistant",
+                uuid="a1",
+                timestamp="2026-01-01T00:00:01Z",
+                session_id="sess-abc",
+                message={
+                    "role": "assistant",
+                    "id": "msg1",
+                    "content": [{"type": "text", "text": "最初の応答"}],
+                },
+            ),
+        ]
+        session_path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records), encoding="utf-8")
+
+        output_dir = tmp_path / "out"
+        export_sessions([session_path], output_dir, RenderOptions())
+
+        assert (output_dir / "20260101_000001.md").exists()
+        assert not (output_dir / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md").exists()
+
+    def test_output_filename_collision_warns(self, tmp_path, caplog) -> None:
+        """出力ファイル名の衝突時に警告することをテストする。"""
+        session_path = tmp_path / "session.jsonl"
+        records = [
+            _make_record(
+                uuid="u1",
+                timestamp="2026-01-01T00:00:01Z",
+                session_id="sess-abc",
+                message={"role": "user", "content": "テスト"},
+            ),
+        ]
+        session_path.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records), encoding="utf-8")
+
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+        collided_path = output_dir / "20260101_000001.md"
+        collided_path.write_text("既存ファイル\n", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING):
+            export_sessions([session_path], output_dir, RenderOptions())
+
+        assert "出力先ファイルが既に存在するため上書きする" in caplog.text
+        assert "Session: sess-abc" in collided_path.read_text(encoding="utf-8")

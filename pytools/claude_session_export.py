@@ -287,6 +287,27 @@ def _format_timestamp(iso: str) -> str:
         return iso
 
 
+def _parse_timestamp(iso: object) -> datetime.datetime | None:
+    """ISO 8601タイムスタンプをdatetimeに変換する。"""
+    if not isinstance(iso, str) or not iso:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _make_export_filename(records: list[dict], fallback_stem: str) -> str:
+    """セッション開始日時からエクスポートファイル名を生成する。"""
+    timestamps = [dt for r in records if (dt := _parse_timestamp(r.get("timestamp"))) is not None]
+    if not timestamps:
+        logger.warning("開始日時が見つからないため元ファイル名を使用: %s", fallback_stem)
+        return f"{fallback_stem}.md"
+
+    started_at = min(timestamps)
+    return f"{started_at:%Y%m%d_%H%M%S}.md"
+
+
 def _extract_tool_summary(block: dict) -> str:
     """tool_useブロックから要約行を生成する。"""
     name = block.get("name", "Unknown")
@@ -578,7 +599,9 @@ def export_sessions(
             sys.stdout.write("\n")
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
-            out_path = output_dir / f"{path.stem}.md"
+            out_path = output_dir / _make_export_filename(records, path.stem)
+            if out_path.exists():
+                logger.warning("出力先ファイルが既に存在するため上書きする: %s", out_path)
             out_path.write_text(md, encoding="utf-8")
             logger.info("出力: %s", out_path)
 
