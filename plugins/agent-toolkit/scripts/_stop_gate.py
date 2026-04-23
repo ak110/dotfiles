@@ -11,6 +11,7 @@ import collections.abc
 import json
 import pathlib
 import re
+import time
 
 # 作業完了を示す言い切り文言。
 # 誤検出削減を最優先するため狭く絞り、過去形・現在形の言い切りに限定する。
@@ -225,6 +226,40 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
     return False
 
 
+def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
+    """Stop hook 起動と Claude Code 側 transcript flush との race を吸収する。
+
+    Claude Code は assistant 最終メッセージの transcript 書き込みと Stop hook 起動が
+    並行することがあり、hook が読んだ時点で最終 assistant エントリが未到着の場合がある。
+    末尾走査で最新 assistant エントリ（非 sidechain）の `stop_reason` が `end_turn` であれば
+    flush 完了とみなし即時戻る。未到着なら短時間ポーリングし、`timeout` 経過で諦める。
+    """
+    deadline = time.monotonic() + timeout
+    poll = 0.05
+    p = pathlib.Path(transcript_path)
+    while True:
+        try:
+            content = p.read_text(encoding="utf-8")
+        except OSError:
+            return
+        for line in reversed(content.splitlines()):
+            try:
+                entry = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if entry.get("type") != "assistant" or entry.get("isSidechain"):
+                continue
+            message = entry.get("message")
+            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
+                return
+            # 最新 assistant エントリが end_turn ではない（tool_use 等）→ race の可能性あり、
+            # ポーリングを継続して最終エントリの到着を待つ。
+            break
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(poll)
+
+
 def is_real_session_end(transcript_path: str) -> bool:
     """Transcript を解析して「真のセッション終了」かどうかを判定する。
 
@@ -236,6 +271,7 @@ def is_real_session_end(transcript_path: str) -> bool:
 
     transcript を読み取れない異常系では False を返す（安全側に倒す）。
     """
+    _wait_for_end_turn(transcript_path)
     if not _is_assistant_task_completed(transcript_path):
         return False
     if _is_assistant_asking_question(transcript_path):

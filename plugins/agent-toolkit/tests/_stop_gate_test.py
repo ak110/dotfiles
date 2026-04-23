@@ -6,6 +6,8 @@ transcript fixture JSONL ファイルに対して関数を呼ぶ形式。
 
 import json
 import pathlib
+import threading
+import time
 
 import pytest
 
@@ -16,6 +18,7 @@ from _stop_gate import (  # type: ignore[import]  # pylint: disable=import-error
     _is_assistant_task_completed,
     _is_assistant_waiting,
     _last_tool_use_is_async_wait,
+    _wait_for_end_turn,
     is_real_session_end,
 )
 
@@ -30,11 +33,15 @@ def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path
     return transcript
 
 
-def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test") -> dict:
-    """アシスタントエントリを生成する。"""
+def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
+    """アシスタントエントリを生成する。
+
+    `stop_reason` の既定は `end_turn`（最終ターン相当）。`is_real_session_end` 内の
+    `_wait_for_end_turn` race 吸収ポーリングを即時戻りで通過させるため。
+    """
     return {
         "type": "assistant",
-        "message": {"id": msg_id, "role": "assistant", "content": content},
+        "message": {"id": msg_id, "role": "assistant", "content": content, "stop_reason": stop_reason},
     }
 
 
@@ -236,6 +243,37 @@ class TestLastToolUseIsAsyncWait:
         assert _last_tool_use_is_async_wait("/nonexistent/transcript.jsonl") is False
 
 
+class TestWaitForEndTurn:
+    """`_wait_for_end_turn` のポーリング挙動の単体テスト。"""
+
+    def test_returns_immediately_when_end_turn_present(self, tmp_path: pathlib.Path):
+        """末尾 assistant が end_turn → 即時戻る（poll 待ちなし）。"""
+        t = _write_transcript(
+            tmp_path,
+            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
+        )
+        start = time.monotonic()
+        _wait_for_end_turn(str(t), timeout=0.3)
+        assert time.monotonic() - start < 0.05
+
+    def test_times_out_when_end_turn_never_arrives(self, tmp_path: pathlib.Path):
+        """末尾 assistant が tool_use のみ → timeout まで待って戻る。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _assistant_entry(
+                    [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "x"}}],
+                    stop_reason="tool_use",
+                ),
+            ],
+        )
+        start = time.monotonic()
+        _wait_for_end_turn(str(t), timeout=0.15)
+        elapsed = time.monotonic() - start
+        assert 0.1 <= elapsed < 0.5
+
+
 class TestIsRealSessionEnd:
     """`is_real_session_end` の AND 条件を網羅するテスト。"""
 
@@ -353,6 +391,37 @@ class TestIsRealSessionEnd:
             ],
         )
         assert is_real_session_end(str(t)) is False
+
+    def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path):
+        """assistant 最終 (end_turn) エントリが遅延 flush されるケースを吸収する。
+
+        Stop hook 起動時点で transcript に未到着のレースを再現する。
+        最初は tool_use のみが書かれた状態でファイル存在、別スレッドで遅延後に
+        end_turn エントリを追記する。`is_real_session_end` がポーリングで吸収して True を返すこと。
+        """
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _assistant_entry(
+                    [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}}],
+                    msg_id="msg_prev",
+                    stop_reason="tool_use",
+                ),
+            ],
+        )
+
+        def append_end_turn() -> None:
+            time.sleep(0.1)
+            with t.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(_assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])) + "\n")
+
+        thread = threading.Thread(target=append_end_turn)
+        thread.start()
+        try:
+            assert is_real_session_end(str(t)) is True
+        finally:
+            thread.join()
 
     def test_monitor_returns_false(self, tmp_path: pathlib.Path):
         """最後の tool_use が Monitor → False。"""
