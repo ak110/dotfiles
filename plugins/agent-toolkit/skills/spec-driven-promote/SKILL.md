@@ -12,7 +12,7 @@ description: >
 
 ## 手順
 
-1. `spec-driven`スキルを呼び出し、用語・配置規約・テンプレートを確認する
+1. `agent-toolkit:spec-driven`スキルを呼び出し、用語・配置規約・テンプレートを確認する
 2. 昇格対象の`docs/v{next}/`を確認する
 3. 各次版ドキュメントの「現行版ドキュメントの対応先」を確認する
 4. 次版ドキュメントの内容を`docs/features/`または`docs/topics/`へ統合する

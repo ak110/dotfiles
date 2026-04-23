@@ -67,7 +67,7 @@ description: >
 
 ## 制約
 
-- 作業開始前にcoding-standardsスキルを呼び出し、品質基準に従うこと
+- 作業開始前に`agent-toolkit:coding-standards`スキルを呼び出し、品質基準に従うこと
 - gitコミット・pushは行わないこと
 ```
 
@@ -117,8 +117,8 @@ description: >
 | 種別 | 事前呼び出しスキル | 担当観点 |
 | --- | --- | --- |
 | `spec` | なし | 仕様適合性・複数ドキュメント間整合性 |
-| `code` | `coding-standards` | コード品質 |
-| `docs` | `writing-standards` | ドキュメント単体品質 |
+| `code` | `agent-toolkit:coding-standards` | コード品質 |
+| `docs` | `agent-toolkit:writing-standards` | ドキュメント単体品質 |
 
 ### 指摘の統合と差し戻し
 

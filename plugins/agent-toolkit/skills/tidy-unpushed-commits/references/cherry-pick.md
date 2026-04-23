@@ -1,6 +1,6 @@
 # cherry-pick連鎖と全統合ファストパスの詳細
 
-`tidy-unpushed-commits`スキルの実行フェーズで使う2つの経路と、conflict発生時の対応方針をまとめる。
+`agent-toolkit:tidy-unpushed-commits`スキルの実行フェーズで使う2つの経路と、conflict発生時の対応方針をまとめる。
 退避refの作成（`refs/tidy-backup/${TS}`）はSKILL.md側で済ませている前提。
 
 ## 全統合ファストパス

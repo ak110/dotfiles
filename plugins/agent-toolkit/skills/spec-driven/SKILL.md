@@ -15,12 +15,12 @@ description: >
 
 ユーザーが入力した要件をもとに、初めに次版ドキュメントを一式作成する。
 その後、複数回の計画・実装・検証・レビューを経て次版の完成を目指す。
-次版のリリース後、`spec-driven-promote`スキルにより現行版ドキュメントへ統合する。
+次版のリリース後、`agent-toolkit:spec-driven-promote`スキルにより現行版ドキュメントへ統合する。
 
-計画・実装・検証・レビュー自体は`plan-mode`と`plan-implementation`に委譲することとし、
+計画・実装・検証・レビュー自体は`agent-toolkit:plan-mode`と`agent-toolkit:plan-implementation`に委譲することとし、
 本スキルではドキュメントの管理とワークフローのガイドを担当する。
 
-現行版ドキュメントが未整備のプロジェクトでは、先に`spec-driven-init`を使う。
+現行版ドキュメントが未整備のプロジェクトでは、先に`agent-toolkit:spec-driven-init`スキルを呼び出す。
 
 ## コンセプト
 
@@ -72,7 +72,7 @@ description: >
 
 ### 2. 計画・実装・検証・レビュー
 
-`plan-mode`スキルを呼び出し、計画ファイル作成とそれ以降の作業を進める。
+`agent-toolkit:plan-mode`スキルを呼び出し、計画ファイル作成とそれ以降の作業を進める。
 
 計画ファイルには、コード変更だけでなく、以下の項目も必ず含める。
 

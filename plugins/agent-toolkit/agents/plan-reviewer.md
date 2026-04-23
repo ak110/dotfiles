@@ -2,7 +2,7 @@
 name: plan-reviewer
 description: >
   計画ファイルで指定された種別に従いレビューを担うサブエージェント。
-  plan-implementationスキルのレビュー工程でメインから起動される。
+  `agent-toolkit:plan-implementation`スキルのレビュー工程でメインから起動される。
 model: sonnet
 tools:
   - Read
@@ -38,7 +38,7 @@ tools:
 
 ### code判断基準
 
-作業開始前に`coding-standards`スキルを呼び出す。
+作業開始前に`agent-toolkit:coding-standards`スキルを呼び出す。
 コード品質のうち、総合的な判断が必要な事項だけを評価する。
 （linterなどの機械的チェックは合格済みの前提）
 
@@ -49,7 +49,7 @@ tools:
 
 ### docs判断基準
 
-作業開始前に`writing-standards`スキルを呼び出す。
+作業開始前に`agent-toolkit:writing-standards`スキルを呼び出す。
 ドキュメント単体品質のうち、総合的な判断が必要な事項だけを評価する。
 （linterなどの機械的チェックは合格済みの前提）
 
