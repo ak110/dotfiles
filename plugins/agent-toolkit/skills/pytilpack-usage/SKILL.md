@@ -1,11 +1,9 @@
 ---
 name: pytilpack-usage
 description: >
-  pytilpackの使い方・モジュール構成・APIドキュメント参照のリファレンス。
-  pytilpackのAPIや関数の使い方を調べたいとき、pytilpackのモジュールを新たに使い始めるとき、
-  pytilpackの依存（extras）を追加・確認したいとき、pytilpackのCLIツールを使いたいときに使う。
-  `pytilpack`が`pyproject.toml`や`CLAUDE.md`に記載されているプロジェクトで特に有用。
-  `import pytilpack`を含むコードを読み書きする際にも参照する。
+  pytilpackの使い方・モジュール構成・APIドキュメントを参照するためのリファレンス。
+  pytilpackのAPIや関数の使い方を調べたい時、新たに使い始める時、依存（extras）を追加・確認したい時、
+  CLIツールを使いたい時、`import pytilpack`を含むコードを読み書きする時に使う。
 ---
 
 # pytilpackの使い方

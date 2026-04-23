@@ -1,9 +1,8 @@
 ---
 name: sync-platform-pair
 description: >
-  dotfilesリポジトリのLinux/Windowsペアファイルを編集するときに使う。
-  ペアファイルの例は`executable_update-dotfiles`と`.cmd`版、`run_after_post-apply.sh.tmpl`と`-windows.ps1.tmpl`版など。
-  他の例は`install.sh`と`install.ps1`、`install-claude.sh`と`install-claude.ps1`など。
+  dotfilesリポジトリのLinux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
+  `.sh.tmpl`と`-windows.ps1.tmpl`など）を編集するときに使う。
   「ペアファイル」「LinuxとWindows両対応」などのキーワードでも起動する。
 user-invocable: true
 ---

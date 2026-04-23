@@ -1,9 +1,8 @@
 ---
 name: sync-rule-ssot
 description: >
-  dotfilesリポジトリでagent-toolkitルールファイルを追加・削除・リネームする際に必ず使う。
-  配布元ディレクトリがSSOTで、chezmoi/claudize経由の配布はディレクトリごと同期するため自動追従するが、
-  `install-claude.sh`/`install-claude.ps1`のファイルリスト配列のみ手動更新が必要。
+  dotfilesリポジトリでagent-toolkitルールファイル（`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）を
+  追加・削除・リネームする際に必ず使う。
   「ルールを追加」「ルールを削除」「`rules/agent-toolkit`を変更」などのキーワードで自動トリガーしてよい。
 user-invocable: false
 ---

@@ -1,10 +1,9 @@
 ---
 name: writing-standards
 description: >
-  Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント品質の共通ベース指示。
-  `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルを含むClaude Code設定系ファイルも対象。
-  これらを新規作成または修正する時、その計画時、およびレビュー時に最初に必ず呼び出すこと。
-  コードのみの編集やファイル編集を一切しない作業では呼び出し不要。
+  Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント、および
+  `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルを含むClaude Code設定系ファイルの
+  新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
 ---
 
 # ドキュメント品質
