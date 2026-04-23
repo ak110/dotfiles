@@ -7,7 +7,7 @@ REM step 3 で「これから更新されるファイル」を一覧表示してから step 4 で apply を
 REM `chezmoi update` (= 内部で git pull + apply 一括) ではなく `chezmoi git pull` を使っている。
 
 echo === [1/4] git pull ===
-chezmoi git --source "%USERPROFILE%\dotfiles" -- pull --ff-only
+chezmoi git --source "%USERPROFILE%\dotfiles" -- pull --rebase
 if errorlevel 1 exit /b %errorlevel%
 
 echo === [2/4] chezmoi init (テンプレート再展開) ===

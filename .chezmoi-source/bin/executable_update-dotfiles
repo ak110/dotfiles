@@ -7,7 +7,7 @@
 # `chezmoi update` (= 内部で git pull + apply 一括) ではなく `chezmoi git pull` を使っている。
 
 echo "=== [1/4] git pull ==="
-chezmoi git --source ~/dotfiles -- pull --ff-only
+chezmoi git --source ~/dotfiles -- pull --rebase
 
 echo "=== [2/4] chezmoi init (テンプレート再展開) ==="
 chezmoi init --source ~/dotfiles
