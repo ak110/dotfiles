@@ -116,16 +116,57 @@ def _is_plan_file(file_path: str) -> bool:
     return name.endswith(".md")
 
 
+# コードフェンス開始／終了の判定に使う (CommonMark 準拠で字種と長さを保持)。
+_FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
+
+
 def _extract_h2_sections(content: str) -> list[str]:
-    """Markdown 本文から H2 見出しのテキストを順に抽出する (コードフェンス内は無視)。"""
+    """Markdown 本文から H2 見出しのテキストを順に抽出する。
+
+    以下の領域内の `## ` 行は本文扱いとして無視する:
+
+    - ファイル先頭の YAML フロントマター (`---` または `...` で閉じる)
+    - コードフェンス (開きフェンスと同字種・同長以上の閉じフェンスで抜ける。ネスト対応)
+    - 複数行にまたがる HTML コメント (`<!--` から `-->` まで)
+    """
     headings: list[str] = []
-    in_fence = False
-    for line in content.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
+    lines = content.splitlines()
+    i = 0
+    # フロントマター: 1 行目が `---` のときのみ検出対象とする (途中の `---` は区切り線)
+    if lines and lines[0].rstrip() == "---":
+        i = 1
+        while i < len(lines):
+            if lines[i].rstrip() in ("---", "..."):
+                i += 1
+                break
+            i += 1
+
+    fence_marker: str | None = None  # 開きフェンスのマーカー文字列 (同字種・同長以上で閉じる)
+    in_html_comment = False
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if in_html_comment:
+            # 閉じタグ到達行は `-->` 以降を解析せず丸ごとスキップする (素朴な実装)
+            if "-->" in line:
+                in_html_comment = False
             continue
-        if in_fence:
+        if fence_marker is not None:
+            stripped = line.strip()
+            if (
+                stripped
+                and stripped[0] == fence_marker[0]
+                and len(stripped) >= len(fence_marker)
+                and set(stripped) == {fence_marker[0]}
+            ):
+                fence_marker = None
+            continue
+        fence_match = _FENCE_PATTERN.match(line.lstrip())
+        if fence_match:
+            fence_marker = fence_match.group(1)
+            continue
+        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
+            in_html_comment = True
             continue
         if line.startswith("## "):
             headings.append(line[3:].strip())

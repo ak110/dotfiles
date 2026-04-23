@@ -514,6 +514,103 @@ class TestPlanFormatCheck:
         )
         assert result.stdout.strip() == ""
 
+    @pytest.mark.parametrize(
+        ("outer", "inner"),
+        [
+            ("````", "```"),  # バックティック同士 (長さ違い)
+            ("~~~~", "```"),  # 外側チルダ・内側バックティック (字種一致チェックの回帰)
+        ],
+    )
+    def test_nested_code_fence_h2_is_ignored(self, tmp_path: pathlib.Path, outer: str, inner: str):
+        """外側フェンスが同字種・同長以上でのみ閉じ、内部の `##` を見出し扱いしない。"""
+        home, plans = self._home(tmp_path)
+        content = (
+            "# タイトル\n\n"
+            "## 背景\n\n"
+            f"{outer}markdown\n"
+            f"{inner}markdown\n"
+            "## 予期せぬ見出し\n"
+            f"{inner}\n"
+            f"{outer}\n\n"
+            "## 対応方針\n\n- a\n\n"
+            "## 調査結果\n\n- x\n\n"
+            "## 変更内容\n\n- y\n\n"
+            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
+            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
+        )
+        plan = _write_plan(plans, "nested-fence.md", content)
+        result = _run(
+            {
+                "session_id": "plan-nested-fence",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+        assert result.stdout.strip() == ""
+
+    def test_html_comment_h2_is_ignored(self, tmp_path: pathlib.Path):
+        """複数行 HTML コメント内の `## 見出し` は見出しとしてカウントしない。"""
+        home, plans = self._home(tmp_path)
+        content = (
+            "# タイトル\n\n"
+            "## 背景\n\n"
+            "<!--\n"
+            "## ダミー\n"
+            "コメントなので無視される想定。\n"
+            "-->\n\n"
+            "## 対応方針\n\n- a\n\n"
+            "## 調査結果\n\n- x\n\n"
+            "## 変更内容\n\n- y\n\n"
+            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
+            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
+        )
+        plan = _write_plan(plans, "html-comment.md", content)
+        result = _run(
+            {
+                "session_id": "plan-html-comment",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+        assert result.stdout.strip() == ""
+
+    @pytest.mark.parametrize("closer", ["---", "..."])
+    def test_frontmatter_h2_is_ignored(self, tmp_path: pathlib.Path, closer: str):
+        """ファイル先頭 YAML フロントマター内の `## 見出し` は見出しとしてカウントしない。"""
+        home, plans = self._home(tmp_path)
+        content = (
+            "---\n"
+            "title: sample\n"
+            "note: |\n"
+            "  ## ダミー\n"
+            f"{closer}\n\n"
+            "# タイトル\n\n"
+            "## 背景\n\n説明。\n\n"
+            "## 対応方針\n\n- a\n\n"
+            "## 調査結果\n\n- x\n\n"
+            "## 変更内容\n\n- y\n\n"
+            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
+            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
+        )
+        plan = _write_plan(plans, "frontmatter.md", content)
+        result = _run(
+            {
+                "session_id": "plan-frontmatter",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+        assert result.stdout.strip() == ""
+
     def test_bash_does_not_emit_plan_check(self, tmp_path: pathlib.Path):
         """Bash ツールでは plan check が実行されず stdout が空のまま。"""
         result = _run(
