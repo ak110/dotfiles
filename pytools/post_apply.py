@@ -18,6 +18,7 @@ from pytools._internal import (
     install_codex_mcp,
     install_libarchive_windows,
     log_format,
+    setup_bin_path,
     setup_mise,
     setup_plans_viewer_windows,
     setup_winget_dsc,
@@ -47,6 +48,28 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("check-cmd-encoding"),
         Path("check-templates"),
         Path("run-psscriptanalyzer"),
+        # bin/ をリポジトリ直下へ移し、~/dotfiles/bin を PATH に通す方式へ変更したため
+        # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
+        Path("c"),
+        Path("c.cmd"),
+        Path("ccusage"),
+        Path("ccusage.cmd"),
+        Path("check-gh-actions"),
+        Path("claude-code-viewer"),
+        Path("claude-code-viewer.cmd"),
+        Path("countfiles"),
+        Path("git_find_big.sh"),
+        Path("gpuwatch"),
+        Path("ipy"),
+        Path("lab"),
+        Path("lab-bg"),
+        Path("rdp"),
+        Path("remote-plans.cmd"),
+        Path("sonnet"),
+        Path("sonnet.cmd"),
+        Path("sudoll"),
+        Path("update-dotfiles"),
+        Path("update-dotfiles.cmd"),
     ],
 }
 
@@ -82,6 +105,7 @@ def _cleanup_removed_paths() -> bool:
 
 
 _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
+    ("bin PATH 登録 (Windows)", setup_bin_path.run),
     ("Claude 設定", update_claude_settings.run),
     ("VSCode 設定", update_vscode_settings.run),
     ("SSH config", update_ssh_config.run),

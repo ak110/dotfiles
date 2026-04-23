@@ -69,14 +69,19 @@ def broadcast_environment_change() -> None:
         logger.info("環境変数変更のブロードキャストに失敗: %s", e)
 
 
-def append_user_path(entry: str) -> None:
-    """ユーザースコープの PATH 環境変数に `entry` を追記する（重複は追加しない）。"""
+def append_user_path(entry: str) -> bool:
+    """ユーザースコープの PATH 環境変数に `entry` を追記する（重複は追加しない）。
+
+    Returns:
+        実際に追記した場合 True、既に含まれていれば False。
+    """
     current, reg_type = read_user_env_var("Path")
     if current is None:
         current = ""
         reg_type = import_winreg().REG_EXPAND_SZ
     entries = [e for e in current.split(";") if e]
     if entry in entries:
-        return
+        return False
     entries.append(entry)
     write_user_env_var("Path", ";".join(entries), reg_type)
+    return True

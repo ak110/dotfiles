@@ -9,15 +9,6 @@
 .tmux.conf
 {{ end }}
 
-# Linux: Windows専用ファイルをスキップ
-{{ if ne .chezmoi.os "windows" }}
-bin/c.cmd
-bin/ccusage.cmd
-bin/claude-code-viewer.cmd
-bin/sonnet.cmd
-bin/update-dotfiles.cmd
-{{ end }}
-
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
 {{ if eq .chezmoi.os "windows" }}
 post-apply.sh
