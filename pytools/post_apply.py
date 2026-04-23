@@ -1,22 +1,8 @@
-"""`chezmoi apply` 後の後処理を一本化するエントリポイント。
+"""`chezmoi apply` 後処理を集約するエントリポイント。
 
-`chezmoi apply` 完了後に毎回 1 回だけ呼ばれ、以下を順に実行する。
-各ステップは独立して動作し、途中でエラーが発生しても他のステップは継続する
-(最後にサマリで失敗件数を出力し、失敗があれば exit 1)。
-
-1. Claude 設定ファイルのマージ  (update_claude_settings.run)
-2. VSCode 設定ファイルの更新   (update_vscode_settings.run)
-3. SSH config / authorized_keys  (update_ssh_config.run)
-4. 配布元から削除された旧ファイルの削除 (cleanup_paths.cleanup_paths)
-5. npm/pnpm のサプライチェーン対策 (update_npmrc.run)
-6. mise セットアップ (setup_mise.run)
-7. Claude Code plugin の自動インストール (install_claude_plugins.run)
-8. codex MCP サーバーの自動登録 (install_codex_mcp.run)
-9. Windows 向け libarchive.dll の自動インストール (install_libarchive_windows.run)
-10. claude-plans-viewer の自動起動セットアップ (setup_plans_viewer_windows.run)
-
-呼び出し元は `.chezmoi-source/run_after_post-apply.{sh,ps1}.tmpl` と
-直接 CLI 実行 (`dotfiles-post-apply`) の 2 系統。
+`chezmoi apply` 完了後に毎回 1 回呼ばれ、各ステップは独立して動作する。
+途中でエラーが発生しても他のステップは継続し、最後のサマリで失敗件数を出力して
+失敗があれば exit 1 する。実行順・対象ステップは `_DEFAULT_STEPS` を SSOT とする。
 """
 
 import logging
@@ -41,9 +27,7 @@ from pytools._internal import (
 
 logger = logging.getLogger(__name__)
 
-# 配布元 (dotfiles) から削除されたため destination 側から除去するパス一覧。
-# chezmoi は配布元から削除されたファイルを自動で削除しないため、本テーブルで追跡する。
-# キーは削除対象のベースディレクトリ、値はそれに対する相対パスのリスト。
+# chezmoi は配布元から削除されたファイルを destination から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
     Path.home() / ".claude": [
         # 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したもの
@@ -65,8 +49,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
     ],
 }
 
-# 内容が期待値と完全一致する場合に限り削除するパス一覧。
-# ユーザーが独自に編集している可能性があるファイルを保護するため、bytes 完全一致のときのみ削除する。
+# ユーザーの独自編集を保護するため、内容が期待値と bytes 完全一致するときのみ削除する。
 _REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
     Path.home() / ".claude": {
         # `.chezmoi-source/dot_claude/CLAUDE.md` を削除したため、未編集の配布先を除去する。
@@ -84,11 +67,7 @@ class _StepResult:
 
 
 def _cleanup_removed_paths() -> bool:
-    """`_REMOVED_PATHS` と `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。
-
-    Returns:
-        いずれかのパスを実際に削除したかどうか。
-    """
+    """`_REMOVED_PATHS` / `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。"""
     total_removed = 0
     for base_dir, relative_paths in _REMOVED_PATHS.items():
         total_removed += cleanup_paths.cleanup_paths(base_dir, relative_paths)
@@ -116,17 +95,14 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
 
 
 def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
-    """エントリポイント。各ステップを順に実行し、サマリ後に exit。"""
-    # 全ログ行に 2 列分のインデントを付与する。
-    # update-dotfiles の `=== [4/4] chezmoi apply ===` の下位出力であることを
-    # 視覚的に示すため、post-apply 配下の出力はすべて 2 スペース下げる。
+    """エントリポイント。"""
+    # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     logging.basicConfig(format="  %(message)s", level="INFO")
     results = (runner or run)()
     failed = [r for r in results if not r.ok]
     updated = [r for r in results if r.ok and r.changed]
     skipped = [r for r in results if r.ok and not r.changed]
-    # サマリ前の空行は logger.info("") だと format により末尾空白が
-    # 付与されてしまうため、stdout に直接書き込んで整形された空行を出力する。
+    # logger.info("") だと format により末尾空白が付与されるため、stdout に直接書き出す。
     print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
     _print_plugin_recommendations()
@@ -136,10 +112,8 @@ def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
 
 
 def _print_plugin_recommendations() -> None:
-    """``install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。
-
-    エンドユーザー向けの案内文は敬体に揃え、現状と推奨状態に乖離がある場合のみ出力する。
-    """
+    """``install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。"""
+    # エンドユーザー向け案内のため敬体。
     recommendations = install_claude_plugins.consume_recommendations()
     if not recommendations:
         return
@@ -150,7 +124,7 @@ def _print_plugin_recommendations() -> None:
 
 
 def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:
-    """全ステップを順に実行し、結果のリストを返す。"""
+    """各ステップを順に実行し、結果のリストを返す。"""
     effective_steps = steps if steps is not None else _DEFAULT_STEPS
     results: list[_StepResult] = []
     total = len(effective_steps)

@@ -1,20 +1,8 @@
-r"""mise 用のセットアップを post_apply から呼ぶモジュール。
+"""mise 関連のセットアップをまとめるモジュール。
 
-本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-mise (https://mise.jdx.dev/) が導入されているユーザーに対し、次の 2 つを冪等に実施する。
-
-1. クロスプラットフォーム: `mise ls --global --json` に node が無ければ `mise use --global
-   node@lts` を実行して global Node を担保する。
-2. Windows のみ: ユーザー PATH (HKCU\Environment\Path) に `%LOCALAPPDATA%\mise\shims`
-   を追加する。追加後は `WM_SETTINGCHANGE` をブロードキャストして他プロセスに通知する。
-
-node 設定を先に実行するのは、初回実行時に shims ディレクトリがまだ存在しないケースへの
-対処。`mise use --global node@lts` が shims ディレクトリを作成した後に PATH 追加を
-実行することで、1 回の `update-dotfiles` で両方の設定が完了する。
-
-前提条件が揃わない場合 (mise 未導入など) は何もせず `False` を返す。
-本ステップは dotfiles apply 全体を止めない方針のため、subprocess / JSON パース / winreg の
-失敗は内部で吸収し例外を伝播させない。
+`chezmoi apply` 後処理（`pytools.post_apply`）から呼ばれる。
+前提条件が揃わない場合や、subprocess / JSON パース / winreg の失敗は
+内部で吸収して post_apply 全体の処理継続を妨げない方針。
 """
 
 import json
