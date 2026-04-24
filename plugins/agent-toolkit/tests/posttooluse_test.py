@@ -14,6 +14,7 @@ import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 _SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
+_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file.md"
 
 
 def _run(
@@ -242,7 +243,7 @@ _VALID_PLAN = (
     "### ユーザー合意済み事項\n\n- a\n\n"
     "## 調査結果\n\n- x\n\n"
     "## 変更内容\n\n- y\n\n"
-    "## 実装・検証・レビュー\n\n- w\n\n"
+    "## 実行方法\n\n- w\n\n"
     "## 変更履歴\n\n- 初版\n\n"
     "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
 )
@@ -321,7 +322,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 調査結果\n\n- x\n\n"
-            "## 実装・検証・レビュー\n\n- w\n"
+            "## 実行方法\n\n- w\n"
         )
         plan = _write_plan(plans, "order.md", content)
         result = _run(
@@ -367,7 +368,7 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更履歴\n\n1. 仮\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n"
+            "## 実行方法\n\n- w\n"
         )
         plan = _write_plan(plans, "hist.md", content)
         result = _run(
@@ -498,7 +499,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 実行方法\n\n- w\n\n"
             "## 変更履歴\n\n- w\n\n"
             "## 計画ファイル\n\n- w\n\n"
         )
@@ -535,7 +536,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 実行方法\n\n- w\n\n"
             "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
@@ -564,7 +565,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 実行方法\n\n- w\n\n"
             "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
@@ -595,7 +596,7 @@ class TestPlanFormatCheck:
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
-            "## 実装・検証・レビュー\n\n- w\n\n"
+            "## 実行方法\n\n- w\n\n"
             "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
@@ -625,10 +626,10 @@ class TestPlanFormatCheck:
 
 
 class TestPlanFormatSsot:
-    """期待セクション一覧が `plan-mode/SKILL.md` に全て登場することを検査する。"""
+    """期待セクション一覧が `plan-mode/references/plan-file.md` に全て登場することを検査する。"""
 
-    def test_required_and_optional_h2_appear_in_skill(self):
-        text = _SKILL_MD.read_text(encoding="utf-8")
-        # 必須 H2 は全て SKILL.md 内の該当構造定義に登場する
-        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実装・検証・レビュー", "変更履歴", "計画ファイル"):
-            assert f"## {heading}" in text, f"SKILL.md に `## {heading}` が無い"
+    def test_required_and_optional_h2_appear_in_plan_file_ref(self):
+        text = _PLAN_FILE_REF.read_text(encoding="utf-8")
+        # 必須 H2 は全て plan-file.md 内の「計画ファイルの構成」節に登場する
+        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実行方法", "変更履歴", "計画ファイル"):
+            assert f"## {heading}" in text, f"plan-file.md に `## {heading}` が無い"

@@ -101,7 +101,7 @@ push前にはbumpが必須である。
   - 担当工程: 計画ファイルの作成・codexレビュー
   - 連携サブエージェント: なし
 - `careful-impl`
-  - 担当工程: 計画合意後の実装・検証・レビュー・コミット（採用時のみ）
+  - 担当工程: 計画合意後のセルフレビュー付き計画実行（採用時のみ）
   - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-code-reviewer`・
     `careful-docs-reviewer`・`careful-followup-reviewer`
 

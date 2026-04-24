@@ -81,14 +81,14 @@ _CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 # --- plan file 形式検査の定数 ---
 
-# 期待セクション一覧の SSOT は `skills/plan-mode/SKILL.md` の「計画ファイルの構成」節。
-# SKILL.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
+# 期待セクション一覧の SSOT は `skills/plan-mode/references/plan-file.md` の「計画ファイルの構成」節。
+# plan-file.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
 _PLAN_REQUIRED_H2 = (
     "背景",
     "対応方針",
     "調査結果",
     "変更内容",
-    "実装・検証・レビュー",
+    "実行方法",
     "変更履歴",
     "計画ファイル",
 )
