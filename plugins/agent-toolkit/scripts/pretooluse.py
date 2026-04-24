@@ -24,6 +24,9 @@ warn 種別の check は stderr に警告を出しつつ処理を継続する。
    - `pyproject.toml`, `package.json`
 6. ホームディレクトリの絶対パス混入 (warn, Write/Edit/MultiEdit)
    - `$HOME` を含むリテラルがリポジトリ管理ファイルに書き込まれるのを検知
+7. plan file 書き込み前の plan-mode スキル先行呼び出し未確認 (warn, Write/Edit/MultiEdit)
+   - `~/.claude/plans/*.md` への書き込み時、セッション状態に
+     `plan_mode_skill_invoked` フラグが無ければスキル先行呼び出しを促す
 
 block 系 check の検査対象は「新規に書き込まれる側」 (`content` / `new_string`)
 のみ。`old_string` は既存内容の修正・削除を妨げないため検査しない。
@@ -127,6 +130,10 @@ def _main() -> int:
     # --- warn 系 check (stderr に警告のみ、exit code は 0 のまま) ---
     _check_manifest(tool_name, file_path)
     _check_home_path(tool_name, fields, file_path)
+    session_id = payload.get("session_id", "")
+    result = _check_plan_skill_invoked(file_path, session_id)
+    if result is not None:
+        print(json.dumps(result, ensure_ascii=False))
 
     return 0
 
@@ -375,6 +382,58 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             )
             return True
     return False
+
+
+# --- plan file 書き込み時の plan-mode スキル先行呼び出し未確認 check (warn) ---
+
+
+def _is_plan_file_path(file_path: str) -> bool:
+    """``~/.claude/plans/`` 直下の plan file (``*.md``) か判定する。
+
+    posttooluse.py の ``_is_plan_file`` と同等の判定だが、依存を持たないように
+    本ファイル内に独立実装する (両者が同期している前提)。
+    `.review.md` / `.codex.log` は副次ファイルのため除外する。
+    """
+    if not file_path:
+        return False
+    try:
+        path = pathlib.Path(file_path).resolve()
+        plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve()
+        rel = path.relative_to(plans_dir)
+    except (OSError, ValueError):
+        return False
+    if len(rel.parts) != 1:
+        return False
+    name = rel.parts[0]
+    if name.endswith(".review.md") or name.endswith(".codex.log"):
+        return False
+    return name.endswith(".md")
+
+
+def _check_plan_skill_invoked(file_path: str, session_id: str) -> dict | None:
+    """Plan file への書き込み前に plan-mode スキルが呼ばれていなければ警告を返す。
+
+    PostToolUse 側で Skill 呼び出しを観測し ``plan_mode_skill_invoked`` を
+    真に設定する運用と組み合わせる。フラグ未設定時のみ警告 (block しない)。
+    """
+    if not _is_plan_file_path(file_path):
+        return None
+    state = _read_session_state(session_id)
+    if state.get("plan_mode_skill_invoked", False):
+        return None
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "additionalContext": _llm_notice(
+                f"writing to plan file ({file_path}) without invoking the plan-mode skill first."
+                f" Invoke `agent-toolkit:plan-mode` skill before drafting the plan to receive"
+                f" the latest section structure and review process guidance."
+                f" Target: {file_path}",
+                tag="warn",
+            ),
+        },
+    }
 
 
 # --- Bash: heredoc 内のパターンを除外するヘルパー ---

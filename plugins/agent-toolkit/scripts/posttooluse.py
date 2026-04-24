@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録と plan file 形式検査。
 
-Bash / Write / Edit / MultiEdit の実行後にイベントを検出し、
+Bash / Write / Edit / MultiEdit / Skill の実行後にイベントを検出し、
 セッション状態ファイルに記録する。
 PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 
@@ -20,6 +20,9 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 5. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
    必須H2 の欠落・順序違反・想定外 H2を
    ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)
+6. plan-mode スキル呼び出し検出 (Skill) — ``agent-toolkit:plan-mode`` または
+   ``plan-mode`` の呼び出しを観測し ``plan_mode_skill_invoked`` フラグを立てる。
+   PreToolUse 側の plan file 書き込み警告を抑制するために使う
 
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
 
@@ -78,6 +81,12 @@ _GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
 # --- codex exec resume 検出パターン ---
 
 _CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
+
+# --- plan-mode スキル呼び出し検出 ---
+
+# Skill ツールの ``skill`` 引数として許容するスキル名。
+# ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
+_PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 # --- plan file 形式検査の定数 ---
 
@@ -248,6 +257,16 @@ def _main() -> int:
         return 0
 
     path = _state_path(session_id)
+
+    # Skill: plan-mode スキル呼び出し検出
+    if tool_name == "Skill":
+        skill_name = tool_input.get("skill")
+        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
+            state = _read_state(path)
+            if not state.get("plan_mode_skill_invoked", False):
+                state["plan_mode_skill_invoked"] = True
+                _write_state(path, state)
+        return 0
 
     # Write / Edit / MultiEdit: ファイル編集は git log 確認状態をリセットする
     if tool_name in ("Write", "Edit", "MultiEdit"):

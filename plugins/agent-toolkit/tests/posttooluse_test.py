@@ -125,6 +125,37 @@ class TestCodexResume:
         assert state.get("codex_resume_count", 0) == 0
 
 
+class TestPlanModeSkillInvocation:
+    """plan-mode スキル呼び出し検出 (Skill ツール)。"""
+
+    @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
+    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path, skill_name: str):
+        sid = "skill-flag"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": skill_name},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_mode_skill_invoked") is True
+
+    def test_other_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
+        sid = "skill-other"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_mode_skill_invoked") is not True
+
+
 class TestEdgeCases:
     """エッジケース。"""
 

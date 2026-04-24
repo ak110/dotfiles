@@ -136,6 +136,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `codex exec`実行前に未決事項の確認を促す
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
 - `~/.claude/plans/*.md`の構成崩れを検査して警告
+- `~/.claude/plans/*.md`書き込み時にplan-modeスキルが先行呼び出しされていなければ警告
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 
 ### オンデマンドのスキル

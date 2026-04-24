@@ -32,6 +32,11 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
     )
 
 
+def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
+    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
 class TestMojibakeCheck:
     """文字化け (U+FFFD) 検出。"""
 
@@ -269,6 +274,94 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
+
+
+class TestPlanSkillInvokedCheck:
+    """plan file 書き込み時の plan-mode スキル先行呼び出し未確認警告 (warn のみ)。"""
+
+    @staticmethod
+    def _setup_plan_env(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, dict[str, str]]:
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        env = {
+            "HOME": str(home),
+            "TMPDIR": str(state_dir),
+            "TEMP": str(state_dir),
+            "TMP": str(state_dir),
+        }
+        return home, plans, env
+
+    @staticmethod
+    def _has_warn(result: subprocess.CompletedProcess[str], keyword: str) -> bool:
+        if not result.stdout.strip():
+            return False
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+        return keyword in ctx
+
+    def test_warns_when_state_absent(self, tmp_path: pathlib.Path):
+        _, plans, env = self._setup_plan_env(tmp_path)
+        plan_path = plans / "sample.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# t\n"},
+                "session_id": "no-skill",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert self._has_warn(result, "plan-mode skill")
+        assert self._has_warn(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
+
+    def test_skipped_when_skill_invoked(self, tmp_path: pathlib.Path):
+        _, plans, env = self._setup_plan_env(tmp_path)
+        sid = "skill-ok"
+        _write_session_state(pathlib.Path(env["TMPDIR"]), sid, {"plan_mode_skill_invoked": True})
+        plan_path = plans / "sample.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# t\n"},
+                "session_id": sid,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_non_plan_path_not_warned(self, tmp_path: pathlib.Path):
+        _, _, env = self._setup_plan_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "other.md"), "content": "# t\n"},
+                "session_id": "non-plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_review_md_not_warned(self, tmp_path: pathlib.Path):
+        """`*.review.md` は副次ファイルのため警告対象外。"""
+        _, plans, env = self._setup_plan_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plans / "sample.review.md"), "content": "# t\n"},
+                "session_id": "review",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 class TestGeneralBehavior:
