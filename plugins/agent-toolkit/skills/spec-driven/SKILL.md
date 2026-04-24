@@ -17,7 +17,7 @@ description: >
 その後、複数回の計画・実装・検証・レビューを経て次版の完成を目指す。
 次版のリリース後、`agent-toolkit:spec-driven-promote`スキルにより現行版ドキュメントへ統合する。
 
-計画・実装・検証・レビュー自体は`agent-toolkit:plan-mode`と`agent-toolkit:plan-implementation`に委譲することとし、
+計画・実装・検証・レビュー自体は`agent-toolkit:plan-mode`と`agent-toolkit:careful-impl`に委譲することとし、
 本スキルではドキュメントの管理とワークフローのガイドを担当する。
 
 現行版ドキュメントが未整備のプロジェクトでは、先に`agent-toolkit:spec-driven-init`スキルを呼び出す。

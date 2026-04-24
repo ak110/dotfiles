@@ -94,38 +94,42 @@ push前にはbumpが必須である。
 スキル本文や呼び出し対象のサブエージェントを編集する際、関連スキルでの参照箇所を更新し忘れないために用いる。
 詳細な動作手順は各スキルのSKILL.mdが正であり、本節は概要のみを示す。
 
-| スキル | 担当工程 | 連携サブエージェント |
-| --- | --- | --- |
-| `plan-mode` | 計画ファイルの作成・codexレビュー | （なし） |
-| `plan-implementation` | 計画合意後の実装・検証・レビュー・コミット | `plan-implementer`／`plan-reviewer` |
-| `spec-driven`（任意） | 既存機能調査と次版ドキュメント執筆 | `spec-researcher`／`spec-writer` |
+- `spec-driven`（任意）
+  - 担当工程: 既存システムの大規模バージョンアップを想定した次版ドキュメント管理とワークフロー誘導
+  - 連携サブエージェント: なし（計画・実装工程は`plan-mode`・`careful-impl`へ委譲）
+- `plan-mode`
+  - 担当工程: 計画ファイルの作成・codexレビュー
+  - 連携サブエージェント: なし
+- `careful-impl`
+  - 担当工程: 計画合意後の実装・検証・レビュー・コミット（採用時のみ）
+  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-code-reviewer`・
+    `careful-docs-reviewer`・`careful-followup-reviewer`
 
-`plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
-`plan-implementation`へ引き継がれる。引き継ぎ時にコンテキストが切れている前提で、
-計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
+`spec-driven`が有効な場合は、同スキルの誘導に従って個別の作業テーマごとに`plan-mode`へ入り計画ファイルを作成する。
+それ以外の場合は直接`plan-mode`から始める。
 
-`spec-driven`を手動トリガーした場合は、`plan-mode`に入る前に`spec-researcher`で既存機能を並列調査する。
-`ExitPlanMode`直後に`spec-writer`を`plan-implementer`と並行起動し、次版ドキュメントの骨子を作成する。
-その後の実装・検証・レビュー・コミットは`plan-implementation`の手順に従う。
+`plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過する。
+計画ファイル内に`careful-impl`の採用が明記されている場合のみ`careful-impl`へ引き継がれる
+（不採用時はメインが計画ファイルの「検証手順」「コミット方針」に従って直接実装・検証・コミットを行う）。
+引き継ぎ時にコンテキストが切れている前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
 
 ```mermaid
 flowchart TB
+    SD["spec-driven スキル（任意）"]:::sd
     subgraph PM["plan-mode スキル"]
       P[計画ファイル作成<br/>codexレビュー]
     end
-    subgraph PI["plan-implementation スキル"]
+    subgraph PI["careful-impl スキル（採用時のみ）"]
       direction TB
-      T[plan-implementer<br/>実装・検証] --> R1[plan-reviewer<br/>spec / code / docs 初回並列]
-      R1 -->|指摘あり<br/>メインが統合| T2[plan-implementer<br/>修正再実装]
-      T2 --> R2[plan-reviewer followup<br/>haiku 単一]
+      T[careful-implementer<br/>実装・検証] --> R1[careful-spec/code/docs-reviewer<br/>初回並列]
+      R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
+      T2 --> R2[careful-followup-reviewer<br/>haiku 単一]
       R2 -->|未対応あり| T2
       R1 -->|指摘なし| C[計画ファイルのコミット方針に従い<br/>メインがコミット]
       R2 -->|対応済み| C
     end
-    PM -->|ExitPlanMode| PI
-
-    SR[spec-researcher]:::sd -.->|spec-driven 時| PM
-    SW[spec-writer]:::sd -.->|spec-driven 時<br/>ExitPlanMode 直後に並行| T
+    SD -.->|作業テーマごとに誘導| PM
+    PM -->|ExitPlanMode<br/>careful-impl 採用時のみ| PI
 
     classDef sd stroke-dasharray: 4 2
 ```
