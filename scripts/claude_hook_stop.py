@@ -3,22 +3,24 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""Claude Code Stop フック: dotfiles 個人環境専用 pyfltr 振り返りプロンプト。
+r"""Claude Code Stop フック: dotfiles 個人環境専用セッション振り返りプロンプト。
 
-pyfltr を使用したセッションの終了時に、pyfltr の動作に関する振り返りを促す。
+pyfltr または agent-toolkit スキルを使用したセッションの終了時に、
+それぞれの動作に関する振り返りを促す。
 対象はメインの transcript のみ（サブエージェント履歴は別ファイルのため対象外）。
 
 動作フロー:
 1. stdin JSON から session_id・transcript_path を取得する
 2. 状態ファイル `${TMPDIR}/claude-dotfiles-stop-{session_id}.json` を読み、
-   `pyfltr_advice_given == true` なら即 approve で終了する
+   `advice_given == true` なら即 approve で終了する
 3. transcript_path が空または不正な場合は approve で終了する
-4. transcript 内の assistant エントリの tool_use ブロックで `name == "Bash"` かつ
-   `input.command` に `pyfltr` トークン一致があるか走査する
-5. 一致なしなら approve で終了する
+4. transcript 内の assistant エントリの tool_use ブロックを走査し、
+   pyfltr 使用（Bash ツールで `\bpyfltr\b` を含むコマンド）と
+   agent-toolkit 使用（Skill ツールで `agent-toolkit:` を含むスキル名）をそれぞれ確認する
+5. 両方一致なしなら approve で終了する
 6. `_stop_gate.is_real_session_end(transcript_path)` が False なら approve で終了する
-7. 状態ファイルに `pyfltr_advice_given = true` を書き込む
-8. block を出力してリフレクションプロンプトを返す
+7. 状態ファイルに `advice_given = true` を書き込む
+8. block を出力して振り返りプロンプトを返す
 
 exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
@@ -46,6 +48,10 @@ from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,
 # `\bpyfltr\b` に相当する正規表現。
 # uv run pyfltr / pyfltr / uv run --script ... pyfltr など典型的な呼び出し形式を網羅する。
 _PYFLTR_PATTERN = re.compile(r"\bpyfltr\b")
+
+# agent-toolkit スキル呼び出しを検出する正規表現。
+# Skill ツールの input.skill フィールドに `agent-toolkit:` が含まれるケースを対象とする。
+_AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 _MESSAGE_PREFIX = "[auto-generated: dotfiles/claude_hook_stop]"
@@ -80,17 +86,15 @@ def _write_state(path: pathlib.Path, state: dict) -> None:
         path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
-def _has_pyfltr_usage(transcript_path: str) -> bool:
-    r"""Transcript 内に pyfltr を Bash 経由で実行した痕跡があるか確認する。
+def _iter_tool_use_blocks(transcript_path: str):
+    """Transcript 内のメイン assistant エントリから tool_use ブロックを yield する。
 
-    assistant エントリの message.content 内の tool_use ブロックのうち
-    `name == "Bash"` かつ `input.command` に `\bpyfltr\b` が含まれるものを検索する。
     サブエージェント（isSidechain）は別ファイルのため対象外。
     """
     try:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
-        return False
+        return
     for line in lines:
         try:
             entry = json.loads(line)
@@ -105,16 +109,43 @@ def _has_pyfltr_usage(transcript_path: str) -> bool:
         if not isinstance(content, list):
             continue
         for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "tool_use" or block.get("name") != "Bash":
-                continue
-            tool_input = block.get("input")
-            if not isinstance(tool_input, dict):
-                continue
-            command = tool_input.get("command", "")
-            if isinstance(command, str) and _PYFLTR_PATTERN.search(command):
-                return True
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                yield block
+
+
+def _has_pyfltr_usage(transcript_path: str) -> bool:
+    r"""Transcript 内に pyfltr を Bash 経由で実行した痕跡があるか確認する。
+
+    tool_use ブロックのうち `name == "Bash"` かつ `input.command` に
+    `\bpyfltr\b` が含まれるものを検索する。
+    """
+    for block in _iter_tool_use_blocks(transcript_path):
+        if block.get("name") != "Bash":
+            continue
+        tool_input = block.get("input")
+        if not isinstance(tool_input, dict):
+            continue
+        command = tool_input.get("command", "")
+        if isinstance(command, str) and _PYFLTR_PATTERN.search(command):
+            return True
+    return False
+
+
+def _has_agent_toolkit_usage(transcript_path: str) -> bool:
+    """Transcript 内に agent-toolkit スキルを呼び出した痕跡があるか確認する。
+
+    tool_use ブロックのうち `name == "Skill"` かつ `input.skill` に
+    `agent-toolkit:` が含まれるものを検索する。
+    """
+    for block in _iter_tool_use_blocks(transcript_path):
+        if block.get("name") != "Skill":
+            continue
+        tool_input = block.get("input")
+        if not isinstance(tool_input, dict):
+            continue
+        skill = tool_input.get("skill", "")
+        if isinstance(skill, str) and _AGENT_TOOLKIT_PATTERN.search(skill):
+            return True
     return False
 
 
@@ -142,7 +173,7 @@ def _main() -> int:
     state = _read_state(state_file)
 
     # セッション 1 回制限: 既に発火済みなら即 approve する。
-    if state.get("pyfltr_advice_given", False):
+    if state.get("advice_given", False):
         _approve()
         return 0
 
@@ -152,8 +183,11 @@ def _main() -> int:
         _approve()
         return 0
 
-    # pyfltr の使用有無を確認する。
-    if not _has_pyfltr_usage(transcript_path):
+    # 各ツールの使用有無を確認する。
+    has_pyfltr = _has_pyfltr_usage(transcript_path)
+    has_agent_toolkit = _has_agent_toolkit_usage(transcript_path)
+
+    if not has_pyfltr and not has_agent_toolkit:
         _approve()
         return 0
 
@@ -162,19 +196,30 @@ def _main() -> int:
         _approve()
         return 0
 
-    # 発火: block 前に pyfltr_advice_given を記録する。
-    state["pyfltr_advice_given"] = True
+    # 発火: block 前に advice_given を記録する。
+    state["advice_given"] = True
     _write_state(state_file, state)
 
-    _block(
-        _llm_notice(
-            "pyfltrセッションレビュー: 今回のセッションでpyfltrを使用した。"
-            "終了前に以下を振り返って報告すること。"
-            "(1) pyfltrの動作・出力に違和感や分かりにくさはなかったか "
-            "(2) 挙動・メッセージ・ドキュメント（`plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md`含む）"
-            "に改善提案はあるか。改善点がない場合は「特になし」と明示してよい。"
+    sections = []
+    if has_pyfltr:
+        sections.append(
+            "pyfltr session review: pyfltr was used in this session. "
+            "Before closing, reflect on and report: "
+            "(1) Were there any confusing or unclear aspects in pyfltr's behavior or output? "
+            "(2) Are there any improvement suggestions for the behavior, messages, or documentation "
+            "(including `plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md`)? "
+            "If there are no improvements to suggest, explicitly state 'None'."
         )
-    )
+    if has_agent_toolkit:
+        sections.append(
+            "agent-toolkit session review: agent-toolkit skills were used in this session. "
+            "Before closing, reflect on and report: "
+            "(1) Were there any confusing or unclear aspects in the skill behavior or instructions? "
+            "(2) Are there any improvement suggestions for the skills, rules, or documentation "
+            "(including files under `plugins/agent-toolkit/` and `~/.claude/rules/agent-toolkit/`)? "
+            "If there are no improvements to suggest, explicitly state 'None'."
+        )
+    _block(_llm_notice(" | ".join(sections)))
     return 0
 
 
