@@ -14,7 +14,7 @@ import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 _SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
-_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file.md"
+_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
 
 
 def _run(
@@ -626,10 +626,10 @@ class TestPlanFormatCheck:
 
 
 class TestPlanFormatSsot:
-    """期待セクション一覧が `plan-mode/references/plan-file.md` に全て登場することを検査する。"""
+    """期待セクション一覧が `plan-mode/references/plan-file-guidelines.md` に全て登場することを検査する。"""
 
     def test_required_and_optional_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 必須 H2 は全て plan-file.md 内の「計画ファイルの構成」節に登場する
+        # 必須 H2 は全て plan-file-guidelines.md 内の記述例とセクション定義に登場する
         for heading in ("背景", "対応方針", "調査結果", "変更内容", "実行方法", "変更履歴", "計画ファイル"):
-            assert f"## {heading}" in text, f"plan-file.md に `## {heading}` が無い"
+            assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
