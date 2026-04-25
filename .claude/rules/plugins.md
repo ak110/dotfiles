@@ -101,7 +101,7 @@ push前にはbumpが必須である。
   - 担当工程: 計画ファイルの作成・codexレビュー
   - 連携サブエージェント: なし
 - `careful-impl`
-  - 担当工程: 計画合意後のセルフレビュー付き計画実行（採用時のみ）
+  - 担当工程: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
   - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-code-reviewer`・
     `careful-docs-reviewer`・`careful-followup-reviewer`
 
@@ -109,8 +109,8 @@ push前にはbumpが必須である。
 それ以外の場合は直接`plan-mode`から始める。
 
 `plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過する。
-計画ファイル内に`careful-impl`の採用が明記されている場合のみ`careful-impl`へ引き継がれる
-（不採用時はメインが計画ファイルの「検証手順」「コミット方針」に従って直接実装・検証・コミットを行う）。
+計画ファイルの`実装方式`項目が`careful-impl`の場合のみ`careful-impl`へ引き継がれる
+（`careful-impl不使用`の場合はメインが計画ファイルの「検証手順」「コミット方針」に従って直接実装・検証・コミットを行う）。
 引き継ぎ時にコンテキストが切れている前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
 
 ```mermaid
@@ -119,7 +119,7 @@ flowchart TB
     subgraph PM["plan-mode スキル"]
       P[計画ファイル作成<br/>codexレビュー]
     end
-    subgraph PI["careful-impl スキル（採用時のみ）"]
+    subgraph PI["careful-impl スキル（実装方式が careful-impl の場合のみ）"]
       direction TB
       T[careful-implementer<br/>実装・検証] --> R1[careful-spec/code/docs-reviewer<br/>初回並列]
       R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
@@ -129,7 +129,7 @@ flowchart TB
       R2 -->|対応済み| C
     end
     SD -.->|作業テーマごとに誘導| PM
-    PM -->|ExitPlanMode<br/>careful-impl 採用時のみ| PI
+    PM -->|ExitPlanMode<br/>実装方式が careful-impl の場合のみ| PI
 
     classDef sd stroke-dasharray: 4 2
 ```

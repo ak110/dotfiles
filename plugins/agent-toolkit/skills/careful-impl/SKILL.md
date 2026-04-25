@@ -103,7 +103,8 @@ description: >
 
 ### 初回レビュー（3種別並列）
 
-計画ファイルの`## 実行方法`節「セルフレビュー実施方針」項目を確認し、起動対象の種別を特定する。
+本スキルは`実装方式: careful-impl`の計画でのみ呼び出される前提で、
+計画ファイルの`## 実行方法`節「セルフレビュー方針」項目を確認し、起動対象の種別を特定する。
 種別`spec`（`careful-spec-reviewer`）・`code`（`careful-code-reviewer`）・
 `docs`（`careful-docs-reviewer`）を並列呼び出しする。
 
