@@ -105,6 +105,50 @@ class RepackConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
 
+@typing.final
+class _CompiledRules:
+    """前処理で使う事前コンパイル済みの正規表現・ルール群。"""
+
+    def __init__(
+        self,
+        ignore_file_patterns: list[str],
+        ignore_dir_patterns: list[re.Pattern[str]],
+        rename_rules: list[rename.RenameRule],
+    ) -> None:
+        self.ignore_file_patterns = ignore_file_patterns
+        self.ignore_dir_patterns = ignore_dir_patterns
+        self.rename_rules = rename_rules
+
+    def should_ignore_entry(self, entry_path: str) -> bool:
+        """アーカイブ内エントリパスが無視対象かを判定する (展開前フィルタ)。"""
+        parts = pathlib.PurePosixPath(entry_path).parts
+        # ディレクトリ名が 1 つでもマッチすれば無視
+        for part in parts[:-1]:
+            if any(p.search(part) for p in self.ignore_dir_patterns):
+                return True
+        # 終端がディレクトリそのものならディレクトリ名でもチェック
+        basename = parts[-1] if parts else ""
+        if entry_path.endswith("/") and any(p.search(basename) for p in self.ignore_dir_patterns):
+            return True
+        return bool(
+            not entry_path.endswith("/") and any(fnmatch.fnmatch(basename, pattern) for pattern in self.ignore_file_patterns)
+        )
+
+    def should_ignore_path(self, path: pathlib.Path, *, root: pathlib.Path) -> bool:
+        """ローカルファイルシステム上のパスが無視対象かを判定する (ディレクトリコピー時)。"""
+        rel = path.relative_to(root)
+        if path.is_file():
+            for part in rel.parts[:-1]:
+                if any(p.search(part) for p in self.ignore_dir_patterns):
+                    return True
+            if any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns):
+                return True
+        elif path.is_dir():
+            if any(p.search(rel.name) for p in self.ignore_dir_patterns):
+                return True
+        return False
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(description="アーカイブを gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
@@ -156,50 +200,6 @@ def _main() -> None:
             logger.warning("  %s :: %s: %s", tp, ep, err)
     if failed_targets or failed_entries:
         sys.exit(1)
-
-
-@typing.final
-class _CompiledRules:
-    """前処理で使う事前コンパイル済みの正規表現・ルール群。"""
-
-    def __init__(
-        self,
-        ignore_file_patterns: list[str],
-        ignore_dir_patterns: list[re.Pattern[str]],
-        rename_rules: list[rename.RenameRule],
-    ) -> None:
-        self.ignore_file_patterns = ignore_file_patterns
-        self.ignore_dir_patterns = ignore_dir_patterns
-        self.rename_rules = rename_rules
-
-    def should_ignore_entry(self, entry_path: str) -> bool:
-        """アーカイブ内エントリパスが無視対象かを判定する (展開前フィルタ)。"""
-        parts = pathlib.PurePosixPath(entry_path).parts
-        # ディレクトリ名が 1 つでもマッチすれば無視
-        for part in parts[:-1]:
-            if any(p.search(part) for p in self.ignore_dir_patterns):
-                return True
-        # 終端がディレクトリそのものならディレクトリ名でもチェック
-        basename = parts[-1] if parts else ""
-        if entry_path.endswith("/") and any(p.search(basename) for p in self.ignore_dir_patterns):
-            return True
-        return bool(
-            not entry_path.endswith("/") and any(fnmatch.fnmatch(basename, pattern) for pattern in self.ignore_file_patterns)
-        )
-
-    def should_ignore_path(self, path: pathlib.Path, *, root: pathlib.Path) -> bool:
-        """ローカルファイルシステム上のパスが無視対象かを判定する (ディレクトリコピー時)。"""
-        rel = path.relative_to(root)
-        if path.is_file():
-            for part in rel.parts[:-1]:
-                if any(p.search(part) for p in self.ignore_dir_patterns):
-                    return True
-            if any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns):
-                return True
-        elif path.is_dir():
-            if any(p.search(rel.name) for p in self.ignore_dir_patterns):
-                return True
-        return False
 
 
 def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Path]) -> pathlib.Path | None:

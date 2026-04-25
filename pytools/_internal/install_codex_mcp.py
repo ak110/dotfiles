@@ -33,26 +33,6 @@ _CODEX_ARGS = ("mcp-server",)
 _CLAUDE_CONFIG_PATH = claude_common.CLAUDE_CONFIG_PATH
 
 
-def _is_codex_registered_from_file() -> bool | None:
-    """.claude.jsonを直接読み取り、codex MCPサーバーの登録状態を判定する。
-
-    Returns:
-        True: mcpServersにcodexキーが存在する（登録済み）。
-        False: mcpServersは存在するがcodexキーが無い（未登録）。
-        None: 読み取り失敗（CLIフォールバックが必要）。
-    """
-    try:
-        data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    mcp_servers = data.get("mcpServers")
-    if not isinstance(mcp_servers, dict):
-        return None
-    return _CODEX_NAME in mcp_servers
-
-
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
@@ -91,6 +71,26 @@ def run() -> bool:
         return False
     logger.info(log_format.format_status("codex-mcp", "user scope に登録しました"))
     return True
+
+
+def _is_codex_registered_from_file() -> bool | None:
+    """.claude.jsonを直接読み取り、codex MCPサーバーの登録状態を判定する。
+
+    Returns:
+        True: mcpServersにcodexキーが存在する（登録済み）。
+        False: mcpServersは存在するがcodexキーが無い（未登録）。
+        None: 読み取り失敗（CLIフォールバックが必要）。
+    """
+    try:
+        data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    mcp_servers = data.get("mcpServers")
+    if not isinstance(mcp_servers, dict):
+        return None
+    return _CODEX_NAME in mcp_servers
 
 
 def _is_codex_registered() -> bool:

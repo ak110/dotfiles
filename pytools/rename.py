@@ -38,6 +38,93 @@ class RenameRule:
         return is_dir
 
 
+def _main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--ignore-case", action="store_true")
+    parser.add_argument("-d", "--dry-run", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-f", "--pattern-file", type=pathlib.Path, help="rgrename 互換のパターンファイル")
+    parser.add_argument("-r", "--recursive", action="store_true")
+    parser.add_argument(
+        "-t",
+        "--target-dir",
+        type=pathlib.Path,
+        default=pathlib.Path.cwd(),
+        help="処理対象ディレクトリ (既定: カレント)",
+    )
+    parser.add_argument("-P", "--make-parents", action="store_true", help="改名先ディレクトリを作成する")
+    parser.add_argument("-O", "--overwrite", action="store_true", help="既存ファイル/ディレクトリを上書き許可する")
+    fd_group = parser.add_mutually_exclusive_group()
+    fd_group.add_argument("-F", "--files-only", action="store_true")
+    fd_group.add_argument("-D", "--dirs-only", action="store_true")
+    parser.add_argument("pattern", type=str, nargs="?", help="正規表現 (pattern-file 指定時は省略可)")
+    parser.add_argument("replacement", type=str, nargs="?", help="置換文字列 (pattern-file 指定時は省略可)")
+    parser.add_argument("targets", nargs="*", type=pathlib.Path)
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--stem", action="store_true", help="replace stem only. (default, ignored in pattern-file mode)")
+    mode_group.add_argument("--name", action="store_true", help="replace name only.")
+    mode_group.add_argument("--fullpath", action="store_true", help="replace fullpath.")
+    enable_completion(parser)
+    args = parser.parse_args()
+
+    setup_logging(verbose=args.verbose)
+
+    if args.pattern_file:
+        rules = load_pattern_file(args.pattern_file, ignore_case=args.ignore_case)
+        if args.pattern and args.replacement:
+            flags = re.IGNORECASE if args.ignore_case else 0
+            rules.append(RenameRule(pattern=re.compile(args.pattern, flags=flags), replacement=args.replacement))
+        if not rules:
+            parser.error("パターンファイルに有効なエントリがありません")
+        rename_tree(
+            args.target_dir,
+            rules,
+            files_only=args.files_only,
+            dirs_only=args.dirs_only,
+            recursive=args.recursive,
+            enable_mkdir=args.make_parents,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if not args.pattern or args.replacement is None:
+        parser.error("pattern と replacement を指定するか、-f でパターンファイルを指定してください")
+
+    targets = args.targets
+    if len(targets) <= 0:
+        targets = list(pathlib.Path(".").glob("*"))
+
+    flags = 0
+    if args.ignore_case:
+        flags |= re.IGNORECASE
+    regex = re.compile(args.pattern, flags=flags)
+
+    for src_path in targets:
+        try:
+            if args.fullpath:
+                dst_path = pathlib.Path(regex.sub(args.replacement, str(src_path)))
+                if src_path == dst_path:
+                    continue
+                print(f"{src_path} -> {dst_path}")
+            elif args.name:
+                dst_name = regex.sub(args.replacement, src_path.name).strip()
+                dst_path = src_path.parent / dst_name
+                if src_path == dst_path:
+                    continue
+                print(f"{src_path.name} -> {dst_name}")
+            else:
+                dst_stem = regex.sub(args.replacement, src_path.stem).strip()
+                dst_path = src_path.parent / (dst_stem + src_path.suffix)
+                if src_path == dst_path:
+                    continue
+                print(f"{src_path.stem} -> {dst_stem}")
+            if not args.dry_run:
+                src_path.rename(dst_path)
+        except OSError as e:
+            print(f"{src_path}: rename failed ({e})")
+
+
 def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[RenameRule]:
     r"""Rgrename 互換のパターンファイルを読み込む。
 
@@ -163,93 +250,6 @@ def rename_tree(
                 path.rename(new_path)
         except OSError as e:
             logger.warning("%s: rename 失敗 (%s)", path, e)
-
-
-def _main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--ignore-case", action="store_true")
-    parser.add_argument("-d", "--dry-run", action="store_true")
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("-f", "--pattern-file", type=pathlib.Path, help="rgrename 互換のパターンファイル")
-    parser.add_argument("-r", "--recursive", action="store_true")
-    parser.add_argument(
-        "-t",
-        "--target-dir",
-        type=pathlib.Path,
-        default=pathlib.Path.cwd(),
-        help="処理対象ディレクトリ (既定: カレント)",
-    )
-    parser.add_argument("-P", "--make-parents", action="store_true", help="改名先ディレクトリを作成する")
-    parser.add_argument("-O", "--overwrite", action="store_true", help="既存ファイル/ディレクトリを上書き許可する")
-    fd_group = parser.add_mutually_exclusive_group()
-    fd_group.add_argument("-F", "--files-only", action="store_true")
-    fd_group.add_argument("-D", "--dirs-only", action="store_true")
-    parser.add_argument("pattern", type=str, nargs="?", help="正規表現 (pattern-file 指定時は省略可)")
-    parser.add_argument("replacement", type=str, nargs="?", help="置換文字列 (pattern-file 指定時は省略可)")
-    parser.add_argument("targets", nargs="*", type=pathlib.Path)
-    mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--stem", action="store_true", help="replace stem only. (default, ignored in pattern-file mode)")
-    mode_group.add_argument("--name", action="store_true", help="replace name only.")
-    mode_group.add_argument("--fullpath", action="store_true", help="replace fullpath.")
-    enable_completion(parser)
-    args = parser.parse_args()
-
-    setup_logging(verbose=args.verbose)
-
-    if args.pattern_file:
-        rules = load_pattern_file(args.pattern_file, ignore_case=args.ignore_case)
-        if args.pattern and args.replacement:
-            flags = re.IGNORECASE if args.ignore_case else 0
-            rules.append(RenameRule(pattern=re.compile(args.pattern, flags=flags), replacement=args.replacement))
-        if not rules:
-            parser.error("パターンファイルに有効なエントリがありません")
-        rename_tree(
-            args.target_dir,
-            rules,
-            files_only=args.files_only,
-            dirs_only=args.dirs_only,
-            recursive=args.recursive,
-            enable_mkdir=args.make_parents,
-            overwrite=args.overwrite,
-            dry_run=args.dry_run,
-        )
-        return
-
-    if not args.pattern or args.replacement is None:
-        parser.error("pattern と replacement を指定するか、-f でパターンファイルを指定してください")
-
-    targets = args.targets
-    if len(targets) <= 0:
-        targets = list(pathlib.Path(".").glob("*"))
-
-    flags = 0
-    if args.ignore_case:
-        flags |= re.IGNORECASE
-    regex = re.compile(args.pattern, flags=flags)
-
-    for src_path in targets:
-        try:
-            if args.fullpath:
-                dst_path = pathlib.Path(regex.sub(args.replacement, str(src_path)))
-                if src_path == dst_path:
-                    continue
-                print(f"{src_path} -> {dst_path}")
-            elif args.name:
-                dst_name = regex.sub(args.replacement, src_path.name).strip()
-                dst_path = src_path.parent / dst_name
-                if src_path == dst_path:
-                    continue
-                print(f"{src_path.name} -> {dst_name}")
-            else:
-                dst_stem = regex.sub(args.replacement, src_path.stem).strip()
-                dst_path = src_path.parent / (dst_stem + src_path.suffix)
-                if src_path == dst_path:
-                    continue
-                print(f"{src_path.stem} -> {dst_stem}")
-            if not args.dry_run:
-                src_path.rename(dst_path)
-        except OSError as e:
-            print(f"{src_path}: rename failed ({e})")
 
 
 if __name__ == "__main__":

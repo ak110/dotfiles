@@ -150,6 +150,45 @@ def _settings_path(
     return base / "data" / "Machine" / "settings.json"
 
 
+# Activity Bar 背景用の CVD-safe 淡色パレット。
+# Paul Tol の qualitative scheme "light" (grey 除く 8 色) に "pale" の
+# 4 色 (grey と pale red を除く) を合成した 12 色構成で、deutan/protan 下でも
+# 相互に区別できる。pale red は pink (#FFAABB) と RGB 距離 38 と近接するため
+# 除外している。全ペアの RGB 距離の最小値は 41.64 (light cyan vs pale blue)
+# あり、連続 HSL サンプリング時代にユーザーが遭遇した近接ペア
+# (#afd19e vs #c6cba1、距離 23.96) を 74% 上回る。
+# 参照: https://personal.sron.nl/~pault/#sec:qualitative
+_HOST_COLORS: tuple[str, ...] = (
+    # Tol light (grey 除く 8 色)
+    "#77AADD",
+    "#99DDFF",
+    "#44BB99",
+    "#BBCC33",
+    "#AAAA00",
+    "#EEDD88",
+    "#EE8866",
+    "#FFAABB",
+    # Tol pale (grey と pale red 除く 4 色)
+    "#BBCCEE",
+    "#CCEEFF",
+    "#CCDDAA",
+    "#EEEEBB",
+)
+
+
+def _hostname_color(*, hostname: str | None = None) -> str:
+    """ホスト名の SHA-256 ハッシュから CVD-safe な淡色パレットを引く。
+
+    ``_HOST_COLORS`` の離散パレットをハッシュインデックスで参照するため、
+    2 ホスト同士が肉眼で区別できない近似色に落ちることは起こらない。
+    完全一致の衝突率は 1/len(パレット) で上昇するが、視覚的区別性を優先する。
+    """
+    hostname = hostname or socket.gethostname()
+    digest = hashlib.sha256(hostname.encode()).digest()
+    index = int.from_bytes(digest[:4], "big") % len(_HOST_COLORS)
+    return _HOST_COLORS[index]
+
+
 def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool) -> dict:
     """Managed 設定の dict を構築する。
 
@@ -213,45 +252,6 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
     settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     logger.info(log_format.format_status(short, "更新しました"))
     return True
-
-
-# Activity Bar 背景用の CVD-safe 淡色パレット。
-# Paul Tol の qualitative scheme "light" (grey 除く 8 色) に "pale" の
-# 4 色 (grey と pale red を除く) を合成した 12 色構成で、deutan/protan 下でも
-# 相互に区別できる。pale red は pink (#FFAABB) と RGB 距離 38 と近接するため
-# 除外している。全ペアの RGB 距離の最小値は 41.64 (light cyan vs pale blue)
-# あり、連続 HSL サンプリング時代にユーザーが遭遇した近接ペア
-# (#afd19e vs #c6cba1、距離 23.96) を 74% 上回る。
-# 参照: https://personal.sron.nl/~pault/#sec:qualitative
-_HOST_COLORS: tuple[str, ...] = (
-    # Tol light (grey 除く 8 色)
-    "#77AADD",
-    "#99DDFF",
-    "#44BB99",
-    "#BBCC33",
-    "#AAAA00",
-    "#EEDD88",
-    "#EE8866",
-    "#FFAABB",
-    # Tol pale (grey と pale red 除く 4 色)
-    "#BBCCEE",
-    "#CCEEFF",
-    "#CCDDAA",
-    "#EEEEBB",
-)
-
-
-def _hostname_color(*, hostname: str | None = None) -> str:
-    """ホスト名の SHA-256 ハッシュから CVD-safe な淡色パレットを引く。
-
-    ``_HOST_COLORS`` の離散パレットをハッシュインデックスで参照するため、
-    2 ホスト同士が肉眼で区別できない近似色に落ちることは起こらない。
-    完全一致の衝突率は 1/len(パレット) で上昇するが、視覚的区別性を優先する。
-    """
-    hostname = hostname or socket.gethostname()
-    digest = hashlib.sha256(hostname.encode()).digest()
-    index = int.from_bytes(digest[:4], "big") % len(_HOST_COLORS)
-    return _HOST_COLORS[index]
 
 
 if __name__ == "__main__":

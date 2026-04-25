@@ -70,6 +70,30 @@ def run(
     return changed
 
 
+def _find_mise_binary() -> Path | None:
+    """Mise の実行ファイルを探す。
+
+    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も見落とさないよう、
+    既知のインストールパスも併せて確認する。
+    """
+    from_path = shutil.which("mise")
+    if from_path is not None:
+        return Path(from_path)
+
+    candidates: list[Path] = []
+    if _IS_WINDOWS:
+        localappdata = os.environ.get("LOCALAPPDATA")
+        if localappdata:
+            candidates.append(Path(localappdata) / "mise" / "bin" / "mise.exe")
+    else:
+        candidates.append(Path.home() / ".local" / "bin" / "mise")
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _ensure_working_tree_trusted(
     mise_bin: Path,
     *,
@@ -104,28 +128,68 @@ def _ensure_working_tree_trusted(
     return True
 
 
-def _find_mise_binary() -> Path | None:
-    """Mise の実行ファイルを探す。
+def _ensure_global_node(
+    mise_bin: Path,
+    *,
+    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
+) -> bool:
+    """Global 設定に node が無ければ `mise use --global node@lts` を実行する。
 
-    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も見落とさないよう、
-    既知のインストールパスも併せて確認する。
+    Returns:
+        node を新たに設定したら True。
     """
-    from_path = shutil.which("mise")
-    if from_path is not None:
-        return Path(from_path)
+    runner = run_mise_fn or _run_mise
+    result = runner(mise_bin, ["ls", "--global", "--json"])
+    if result is None or result.returncode != 0:
+        stderr = result.stderr.strip() if result else ""
+        logger.info(log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
+        return False
 
-    candidates: list[Path] = []
-    if _IS_WINDOWS:
-        localappdata = os.environ.get("LOCALAPPDATA")
-        if localappdata:
-            candidates.append(Path(localappdata) / "mise" / "bin" / "mise.exe")
-    else:
-        candidates.append(Path.home() / ".local" / "bin" / "mise")
+    try:
+        data = json.loads(result.stdout) if result.stdout.strip() else {}
+    except json.JSONDecodeError as e:
+        logger.info(log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
+        return False
 
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
+    if _has_global_node(data):
+        logger.info(log_format.format_status("mise", "global Node は既に設定済み"))
+        return False
+
+    install_result = runner(mise_bin, ["use", "--global", "node@lts"])
+    if install_result is None or install_result.returncode != 0:
+        stderr = install_result.stderr.strip() if install_result else ""
+        logger.info(log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
+        return False
+
+    logger.info(log_format.format_status("mise", "global に node@lts を設定しました"))
+    return True
+
+
+def _has_global_node(data: object) -> bool:
+    """`mise ls --global --json` の戻り値に node エントリがあるかを判定する。
+
+    mise の出力形式は version により揺れがあるため、下記の全パターンに対応する。
+
+    - ``{"node": [{...}, ...]}``: キーがツール名
+    - ``[{"name": "node", ...}, ...]``: 配列の各要素に ``name``
+    - 上記のネスト (例えば ``{"tools": ...}``)
+    """
+    if isinstance(data, dict):
+        if "node" in data:
+            return True
+        return any(_has_global_node(value) for value in data.values())
+    if isinstance(data, list):
+        return any(_list_item_is_node(item) for item in data)
+    return False
+
+
+def _list_item_is_node(item: object) -> bool:
+    """`mise ls --global --json` の list 形式 1 エントリが node を指しているかを判定する。"""
+    if not isinstance(item, dict):
+        return False
+    item_dict = typing.cast("dict[object, object]", item)
+    name = item_dict.get("name")
+    return isinstance(name, str) and name == "node"
 
 
 def _ensure_windows_user_path_has_shims() -> bool:
@@ -203,70 +267,6 @@ def _append_entry(current_value: str, new_entry: str) -> str:
         return new_entry
     separator = "" if current_value.endswith(_WINDOWS_PATHSEP) else _WINDOWS_PATHSEP
     return current_value + separator + new_entry
-
-
-def _ensure_global_node(
-    mise_bin: Path,
-    *,
-    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
-) -> bool:
-    """Global 設定に node が無ければ `mise use --global node@lts` を実行する。
-
-    Returns:
-        node を新たに設定したら True。
-    """
-    runner = run_mise_fn or _run_mise
-    result = runner(mise_bin, ["ls", "--global", "--json"])
-    if result is None or result.returncode != 0:
-        stderr = result.stderr.strip() if result else ""
-        logger.info(log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
-        return False
-
-    try:
-        data = json.loads(result.stdout) if result.stdout.strip() else {}
-    except json.JSONDecodeError as e:
-        logger.info(log_format.format_status("mise", f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}"))
-        return False
-
-    if _has_global_node(data):
-        logger.info(log_format.format_status("mise", "global Node は既に設定済み"))
-        return False
-
-    install_result = runner(mise_bin, ["use", "--global", "node@lts"])
-    if install_result is None or install_result.returncode != 0:
-        stderr = install_result.stderr.strip() if install_result else ""
-        logger.info(log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
-        return False
-
-    logger.info(log_format.format_status("mise", "global に node@lts を設定しました"))
-    return True
-
-
-def _has_global_node(data: object) -> bool:
-    """`mise ls --global --json` の戻り値に node エントリがあるかを判定する。
-
-    mise の出力形式は version により揺れがあるため、下記の全パターンに対応する。
-
-    - ``{"node": [{...}, ...]}``: キーがツール名
-    - ``[{"name": "node", ...}, ...]``: 配列の各要素に ``name``
-    - 上記のネスト (例えば ``{"tools": ...}``)
-    """
-    if isinstance(data, dict):
-        if "node" in data:
-            return True
-        return any(_has_global_node(value) for value in data.values())
-    if isinstance(data, list):
-        return any(_list_item_is_node(item) for item in data)
-    return False
-
-
-def _list_item_is_node(item: object) -> bool:
-    """`mise ls --global --json` の list 形式 1 エントリが node を指しているかを判定する。"""
-    if not isinstance(item, dict):
-        return False
-    item_dict = typing.cast("dict[object, object]", item)
-    name = item_dict.get("name")
-    return isinstance(name, str) and name == "node"
 
 
 def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:

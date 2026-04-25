@@ -34,93 +34,7 @@ _KNOWN_MARKETPLACES_PATH = Path.home() / ".claude" / "plugins" / "known_marketpl
 _SETTINGS_JSON_PATH = claude_common.SETTINGS_JSON_PATH
 
 
-# --- dotfiles ルート検出 ---
-
-
-def _find_dotfiles_root() -> Path | None:
-    """本ファイルから見た dotfiles ルートディレクトリを返す。
-
-    dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
-    `pytools/_internal/claude_marketplace.py` は dotfiles/pytools/_internal/ に置かれているため
-    親の親の親がルート。
-
-    install_claude_plugins._find_dotfiles_root() と同じ実装だが、循環 import を避けるため
-    本モジュールでも独立に検出する (marker ファイル判定で済むシンプルな処理のため)。
-    """
-    candidate = Path(__file__).resolve().parent.parent.parent
-    if (candidate / ".claude-plugin" / "marketplace.json").is_file():
-        return candidate
-    return None
-
-
-# --- 内部ヘルパー (テスト・デバッグ用に公開) ---
-
-
-def _check_marketplace_from_file() -> bool | None:
-    """known_marketplaces.json と settings.json.extraKnownMarketplaces の両方を検査する。
-
-    Returns:
-        True: どちらも directory 型 + dotfiles 絶対パスで健全。
-        False: どちらかが壊れている (旧 GitHub 型・別 path・`source` 欠落など)。
-        None: 両ファイルとも未登録。CLI 経路で新規登録が必要。
-
-    2 ファイルを両方検査する理由:
-        CLI の ``claude plugin marketplace remove``/``add`` が両ファイルを同時に
-        更新しないケースがあり、片方だけに過去の登録が残留して
-        ``Marketplace file not found`` エラーを引き起こす環境が確認されている。
-        どちらか片方でも壊れていれば修復対象とする。
-    """
-    known = _load_known_marketplace_entry()
-    extra = _load_extra_known_marketplace_entry()
-    if known is None and extra is None:
-        return None
-    if known is not None and not _is_entry_healthy(known):
-        return False
-    return not (extra is not None and not _is_entry_healthy(extra))
-
-
-def _load_known_marketplace_entry() -> dict[str, object] | None:
-    """known_marketplaces.json から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH, silent=True)
-    if data is None:
-        return None
-    entry = data.get(claude_common.MARKETPLACE_NAME)
-    return cast("dict[str, object]", entry) if isinstance(entry, dict) else None
-
-
-def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
-    """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH, silent=True)
-    if data is None:
-        return None
-    extra = data.get("extraKnownMarketplaces")
-    if not isinstance(extra, dict):
-        return None
-    entry = cast("dict[str, object]", extra).get(claude_common.MARKETPLACE_NAME)
-    return cast("dict[str, object]", entry) if isinstance(entry, dict) else None
-
-
-def _is_entry_healthy(entry: dict[str, object]) -> bool:
-    """登録エントリが directory 型の正常形式かを判定する。
-
-    正常形式は ``source = {source: "directory", path: <dotfiles 絶対パス>}``。
-    旧 GitHub 型 (``{"source": "github", "repo": "ak110/dotfiles"}``) は
-    「旧形式」として False と判定し、自動マイグレーションの対象とする。
-    別 path・``source`` 欠落・非 dict もすべて False。
-
-    dotfiles ルートを検出できない環境 (チェックアウトが壊れているなど) では
-    比較対象が無いため False を返し、CLI 経路で再登録させる。
-    """
-    source = entry.get("source")
-    if not isinstance(source, dict):
-        return False
-    source_dict = cast("dict[str, object]", source)
-    if source_dict.get("source") != "directory":
-        return False
-    dotfiles_root = _find_dotfiles_root()
-    if dotfiles_root is None:
-        return False
-    return source_dict.get("path") == str(dotfiles_root)
+# --- 公開 API ---
 
 
 def is_directory_type_registered() -> bool:
@@ -134,50 +48,6 @@ def is_directory_type_registered() -> bool:
     ``True`` のみを directory 型健全とみなす。
     """
     return _check_marketplace_from_file() is True
-
-
-def _marketplace_already_registered(data: object) -> bool:
-    """対象 marketplace が既に登録されているかを判定する (`marketplace list` の出力をパース)。"""
-    if isinstance(data, dict):
-        dict_data = cast("dict[str, object]", data)
-        if "marketplaces" in dict_data:
-            return _marketplace_already_registered(dict_data["marketplaces"])
-        return claude_common.MARKETPLACE_NAME in dict_data
-    if isinstance(data, list):
-        list_data = cast("list[object]", data)
-        for item in list_data:
-            if isinstance(item, dict) and cast("dict[str, object]", item).get("name") == claude_common.MARKETPLACE_NAME:
-                return True
-    return False
-
-
-def refresh_marketplace() -> bool:
-    """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
-
-    JSON 直接書き換え後に書き換え内容が有効かを確認するために呼ぶ。
-    壊れたエントリが残っていれば CLI 側でエラーが出るため早期検知できる。
-    directory 型ではキャッシュ同期には効かない (validation のみ) ため、
-    通常フローのキャッシュ同期は `install_claude_plugins._install_plugin` で行う。
-    失敗しても best-effort 扱いで続行する。
-    """
-    result = claude_common.run_claude(["plugin", "marketplace", "update", claude_common.MARKETPLACE_NAME])
-    if result is None or result.returncode != 0:
-        logger.info(
-            log_format.format_status(
-                "marketplace",
-                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 (続行): {claude_common.format_cli_error(result)}",
-            )
-        )
-        return False
-    return True
-
-
-def _now_iso_millis() -> str:
-    """現在時刻を ISO 8601 (UTC, ミリ秒精度, 末尾 Z) で返す。"""
-    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-# --- 公開 API ---
 
 
 def ensure_marketplace() -> bool:
@@ -271,6 +141,136 @@ def repair_marketplace() -> bool:
         return True
     logger.info(log_format.format_status("marketplace", "修復に失敗しました"))
     return False
+
+
+def refresh_marketplace() -> bool:
+    """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
+
+    JSON 直接書き換え後に書き換え内容が有効かを確認するために呼ぶ。
+    壊れたエントリが残っていれば CLI 側でエラーが出るため早期検知できる。
+    directory 型ではキャッシュ同期には効かない (validation のみ) ため、
+    通常フローのキャッシュ同期は `install_claude_plugins._install_plugin` で行う。
+    失敗しても best-effort 扱いで続行する。
+    """
+    result = claude_common.run_claude(["plugin", "marketplace", "update", claude_common.MARKETPLACE_NAME])
+    if result is None or result.returncode != 0:
+        logger.info(
+            log_format.format_status(
+                "marketplace",
+                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 (続行): {claude_common.format_cli_error(result)}",
+            )
+        )
+        return False
+    return True
+
+
+# --- dotfiles ルート検出 ---
+
+
+def _find_dotfiles_root() -> Path | None:
+    """本ファイルから見た dotfiles ルートディレクトリを返す。
+
+    dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
+    `pytools/_internal/claude_marketplace.py` は dotfiles/pytools/_internal/ に置かれているため
+    親の親の親がルート。
+
+    install_claude_plugins._find_dotfiles_root() と同じ実装だが、循環 import を避けるため
+    本モジュールでも独立に検出する (marker ファイル判定で済むシンプルな処理のため)。
+    """
+    candidate = Path(__file__).resolve().parent.parent.parent
+    if (candidate / ".claude-plugin" / "marketplace.json").is_file():
+        return candidate
+    return None
+
+
+# --- 内部ヘルパー (テスト・デバッグ用に公開) ---
+
+
+def _check_marketplace_from_file() -> bool | None:
+    """known_marketplaces.json と settings.json.extraKnownMarketplaces の両方を検査する。
+
+    Returns:
+        True: どちらも directory 型 + dotfiles 絶対パスで健全。
+        False: どちらかが壊れている (旧 GitHub 型・別 path・`source` 欠落など)。
+        None: 両ファイルとも未登録。CLI 経路で新規登録が必要。
+
+    2 ファイルを両方検査する理由:
+        CLI の ``claude plugin marketplace remove``/``add`` が両ファイルを同時に
+        更新しないケースがあり、片方だけに過去の登録が残留して
+        ``Marketplace file not found`` エラーを引き起こす環境が確認されている。
+        どちらか片方でも壊れていれば修復対象とする。
+    """
+    known = _load_known_marketplace_entry()
+    extra = _load_extra_known_marketplace_entry()
+    if known is None and extra is None:
+        return None
+    if known is not None and not _is_entry_healthy(known):
+        return False
+    return not (extra is not None and not _is_entry_healthy(extra))
+
+
+def _load_known_marketplace_entry() -> dict[str, object] | None:
+    """known_marketplaces.json から対象 marketplace のエントリを読み込む。"""
+    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH, silent=True)
+    if data is None:
+        return None
+    entry = data.get(claude_common.MARKETPLACE_NAME)
+    return cast("dict[str, object]", entry) if isinstance(entry, dict) else None
+
+
+def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
+    """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
+    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH, silent=True)
+    if data is None:
+        return None
+    extra = data.get("extraKnownMarketplaces")
+    if not isinstance(extra, dict):
+        return None
+    entry = cast("dict[str, object]", extra).get(claude_common.MARKETPLACE_NAME)
+    return cast("dict[str, object]", entry) if isinstance(entry, dict) else None
+
+
+def _is_entry_healthy(entry: dict[str, object]) -> bool:
+    """登録エントリが directory 型の正常形式かを判定する。
+
+    正常形式は ``source = {source: "directory", path: <dotfiles 絶対パス>}``。
+    旧 GitHub 型 (``{"source": "github", "repo": "ak110/dotfiles"}``) は
+    「旧形式」として False と判定し、自動マイグレーションの対象とする。
+    別 path・``source`` 欠落・非 dict もすべて False。
+
+    dotfiles ルートを検出できない環境 (チェックアウトが壊れているなど) では
+    比較対象が無いため False を返し、CLI 経路で再登録させる。
+    """
+    source = entry.get("source")
+    if not isinstance(source, dict):
+        return False
+    source_dict = cast("dict[str, object]", source)
+    if source_dict.get("source") != "directory":
+        return False
+    dotfiles_root = _find_dotfiles_root()
+    if dotfiles_root is None:
+        return False
+    return source_dict.get("path") == str(dotfiles_root)
+
+
+def _marketplace_already_registered(data: object) -> bool:
+    """対象 marketplace が既に登録されているかを判定する (`marketplace list` の出力をパース)。"""
+    if isinstance(data, dict):
+        dict_data = cast("dict[str, object]", data)
+        if "marketplaces" in dict_data:
+            return _marketplace_already_registered(dict_data["marketplaces"])
+        return claude_common.MARKETPLACE_NAME in dict_data
+    if isinstance(data, list):
+        list_data = cast("list[object]", data)
+        for item in list_data:
+            if isinstance(item, dict) and cast("dict[str, object]", item).get("name") == claude_common.MARKETPLACE_NAME:
+                return True
+    return False
+
+
+def _now_iso_millis() -> str:
+    """現在時刻を ISO 8601 (UTC, ミリ秒精度, 末尾 Z) で返す。"""
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _rewrite_known_marketplaces_entry(dotfiles_root: Path) -> bool:

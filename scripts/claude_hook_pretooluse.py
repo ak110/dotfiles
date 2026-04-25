@@ -153,6 +153,60 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
     return None
 
 
+# --- PowerShell 必須ディレクティブ check (block) ---
+
+# 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
+# 行頭厳格マッチ (インデント不可) にすることで「コメント内に文字列が含まれるだけ」や
+# 「関数/条件ブロック内に書かれている (= スクリプト全体には効かない)」ケースをブロックする。
+_PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
+        "Set-StrictMode -Version Latest",
+    ),
+    (
+        re.compile(r"^\$ErrorActionPreference\s*=\s*'Stop'", re.MULTILINE),
+        "$ErrorActionPreference = 'Stop'",
+    ),
+)
+
+# 検査する先頭行数 (コメントブロックを許容するため広めに取る)。
+_PS1_DIRECTIVES_HEAD_LINES = 50
+
+
+def _is_ps1(file_path: str) -> bool:
+    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
+    lowered = file_path.lower()
+    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
+
+
+def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
+    """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら True を返す。
+
+    Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため Write のみを対象とする。
+    LF/CRLF 改行のチェックは `agent-toolkit` プラグイン側で実施しているため重複させない。
+    """
+    if tool_name != "Write" or not _is_ps1(file_path):
+        return False
+    for field, value in fields:
+        # BOM (U+FEFF) は chezmoi テンプレートで使われることがあるため除去してから判定する
+        normalized = value.lstrip("\ufeff")
+        head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
+        missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
+        if missing:
+            print(
+                _llm_notice(
+                    f"{tool_name}.{field}: missing required PowerShell directives: "
+                    f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
+                    f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
+                    f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
+                    f" Target: {file_path}"
+                ),
+                file=sys.stderr,
+            )
+            return True
+    return False
+
+
 # --- ~/.claude/ 配下の直接編集 check (warn) ---
 
 # 警告対象外のサブツリー (Claude Code のランタイム領域 / プラン作業領域)。
@@ -223,60 +277,6 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
     )
 
 
-# --- PowerShell 必須ディレクティブ check (block) ---
-
-# 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
-# 行頭厳格マッチ (インデント不可) にすることで「コメント内に文字列が含まれるだけ」や
-# 「関数/条件ブロック内に書かれている (= スクリプト全体には効かない)」ケースをブロックする。
-_PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (
-        re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
-        "Set-StrictMode -Version Latest",
-    ),
-    (
-        re.compile(r"^\$ErrorActionPreference\s*=\s*'Stop'", re.MULTILINE),
-        "$ErrorActionPreference = 'Stop'",
-    ),
-)
-
-# 検査する先頭行数 (コメントブロックを許容するため広めに取る)。
-_PS1_DIRECTIVES_HEAD_LINES = 50
-
-
-def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
-    lowered = file_path.lower()
-    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
-
-
-def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら True を返す。
-
-    Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため Write のみを対象とする。
-    LF/CRLF 改行のチェックは `agent-toolkit` プラグイン側で実施しているため重複させない。
-    """
-    if tool_name != "Write" or not _is_ps1(file_path):
-        return False
-    for field, value in fields:
-        # BOM (U+FEFF) は chezmoi テンプレートで使われることがあるため除去してから判定する
-        normalized = value.lstrip("\ufeff")
-        head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
-        missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
-        if missing:
-            print(
-                _llm_notice(
-                    f"{tool_name}.{field}: missing required PowerShell directives: "
-                    f"{', '.join(missing)}. For Windows PowerShell 5.1 compatibility, add "
-                    f"`Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` "
-                    f"near the top (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
-                    f" Target: {file_path}"
-                ),
-                file=sys.stderr,
-            )
-            return True
-    return False
-
-
 # --- 個人用 / ローカル専用ファイル言及 check (warn) ---
 
 # ファイル名に連続アンダースコア (3〜7 文字) を含むトークンを検出する。
@@ -286,6 +286,26 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 # 限定し、`(?!_)` で列が 7 文字を超えないことを保証する。
 # `\b` でword境界に固定することで、トークンの内側の部分マッチを避ける。
 _TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
+
+# 3〜7 文字の連続アンダースコアを検出するパターン (ファイル名判定用)。
+_SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
+
+
+def _is_claude_local_md(file_path: str) -> bool:
+    """ファイルパス自体が CLAUDE.local.md かを判定する (言及チェック除外用)。"""
+    if not file_path:
+        return False
+    # パス区切りを正規化してファイル名を取得
+    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name == _CLAUDE_LOCAL_MD
+
+
+def _has_triple_underscore_filename(file_path: str) -> bool:
+    """ファイル名自体に 3〜7 文字の連続アンダースコアが含まれるかを判定する (言及チェック除外用)。"""
+    if not file_path:
+        return False
+    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return bool(_SHORT_UNDERSCORE_RUN.search(name))
 
 
 def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
@@ -319,27 +339,6 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
         " file (e.g., in distributed docs/skills) is legitimate."
         " Judge the context and keep the mention only if it is intentional."
     )
-
-
-def _is_claude_local_md(file_path: str) -> bool:
-    """ファイルパス自体が CLAUDE.local.md かを判定する (言及チェック除外用)。"""
-    if not file_path:
-        return False
-    # パス区切りを正規化してファイル名を取得
-    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
-    return name == _CLAUDE_LOCAL_MD
-
-
-# 3〜7 文字の連続アンダースコアを検出するパターン (ファイル名判定用)。
-_SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
-
-
-def _has_triple_underscore_filename(file_path: str) -> bool:
-    """ファイル名自体に 3〜7 文字の連続アンダースコアが含まれるかを判定する (言及チェック除外用)。"""
-    if not file_path:
-        return False
-    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
-    return bool(_SHORT_UNDERSCORE_RUN.search(name))
 
 
 if __name__ == "__main__":

@@ -54,14 +54,6 @@ def run() -> bool:
         return False
 
 
-def _startup_dir() -> pathlib.Path:
-    """スタートアップフォルダーのパスを返す。"""
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        raise RuntimeError("環境変数 APPDATA が未設定のためスタートアップフォルダーを解決できない")
-    return pathlib.Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-
-
 def _ensure_startup_cmd() -> bool:
     """スタートアップフォルダーに起動用 .cmd を冪等に配置する。"""
     target = _startup_dir() / _STARTUP_CMD_NAME
@@ -73,27 +65,12 @@ def _ensure_startup_cmd() -> bool:
     return True
 
 
-def _viewer_exe() -> pathlib.Path:
-    """Viewer 実行ファイルの絶対パスを返す。"""
-    return pathlib.Path.home() / _VIEWER_EXE_RELATIVE
-
-
-def _is_viewer_running() -> bool:
-    """Viewer プロセスの有無を tasklist で判定する。"""
-    # tasklist は見つからなくても終了コード 0 を返すため、出力テキストで判定する。
-    # /FI "IMAGENAME eq ..." で実行ファイル名による絞り込みを行う。
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq claude-plans-viewer.exe", "/NH"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.info(log_format.format_status("plans-viewer", f"tasklist 実行に失敗: {e}"))
-        return False
-    return "claude-plans-viewer.exe" in result.stdout.lower()
+def _startup_dir() -> pathlib.Path:
+    """スタートアップフォルダーのパスを返す。"""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        raise RuntimeError("環境変数 APPDATA が未設定のためスタートアップフォルダーを解決できない")
+    return pathlib.Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
 
 def _start_viewer_if_not_running() -> bool:
@@ -120,6 +97,29 @@ def _start_viewer_if_not_running() -> bool:
     )
     logger.info(log_format.format_status("plans-viewer", f"バックグラウンド起動: {exe}"))
     return True
+
+
+def _viewer_exe() -> pathlib.Path:
+    """Viewer 実行ファイルの絶対パスを返す。"""
+    return pathlib.Path.home() / _VIEWER_EXE_RELATIVE
+
+
+def _is_viewer_running() -> bool:
+    """Viewer プロセスの有無を tasklist で判定する。"""
+    # tasklist は見つからなくても終了コード 0 を返すため、出力テキストで判定する。
+    # /FI "IMAGENAME eq ..." で実行ファイル名による絞り込みを行う。
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq claude-plans-viewer.exe", "/NH"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.info(log_format.format_status("plans-viewer", f"tasklist 実行に失敗: {e}"))
+        return False
+    return "claude-plans-viewer.exe" in result.stdout.lower()
 
 
 if __name__ == "__main__":

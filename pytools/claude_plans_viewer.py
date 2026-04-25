@@ -470,6 +470,69 @@ async def _unsubscribe(state: _BroadcastState, q: asyncio.Queue[str]) -> None:
         state.subscribers.discard(q)
 
 
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """コマンドライン引数を解析する。
+
+    各オプションの既定値は環境変数経由で解決する。
+    優先順位は CLI引数 > 環境変数 > 組み込み既定値。
+    """
+    parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
+    parser.add_argument(
+        "--root",
+        default=os.environ.get(_ENV_ROOT, _DEFAULT_ROOT),
+        help=f"Markdownのルートディレクトリ（環境変数 {_ENV_ROOT}、既定: {_DEFAULT_ROOT}）",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get(_ENV_HOST, _DEFAULT_HOST),
+        help=f"bindアドレス（環境変数 {_ENV_HOST}、既定: {_DEFAULT_HOST}）",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get(_ENV_PORT, _DEFAULT_PORT)),
+        help=f"ポート（環境変数 {_ENV_PORT}、既定: {_DEFAULT_PORT}）",
+    )
+    enable_completion(parser)
+    return parser.parse_args(argv)
+
+
+async def _serve(app: quart.Quart, host: str, port: int) -> None:
+    """hypercornでQuartアプリを起動する。"""
+    config = hypercorn.config.Config()
+    config.bind = [f"{host}:{port}"]
+    # アクセスログの標準出力抑制（既存実装の`log_message`抑制に相当）。
+    config.accesslog = None
+    await hypercorn.asyncio.serve(app, config)
+
+
+def _main(argv: list[str] | None = None) -> int:
+    """エントリーポイント。"""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    args = _parse_args(argv)
+    root = pathlib.Path(args.root).expanduser().resolve()
+    if not root.is_dir():
+        logger.error("ディレクトリが見つかりません: %s", root)
+        return 1
+
+    app = create_app(root)
+    state: _BroadcastState = app.config["PLANS_STATE"]
+
+    observer = watchdog.observers.Observer()
+    observer.schedule(_PlansEventHandler(root, state), str(root), recursive=True)
+    observer.start()
+    try:
+        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+        try:
+            asyncio.run(_serve(app, args.host, args.port))
+        except KeyboardInterrupt:
+            logger.info("停止します")
+    finally:
+        observer.stop()
+        observer.join()
+    return 0
+
+
 def create_app(root: pathlib.Path, hostname: str | None = None) -> quart.Quart:
     """Quartアプリを生成する。
 
@@ -562,69 +625,6 @@ def create_app(root: pathlib.Path, hostname: str | None = None) -> quart.Quart:
         )
 
     return app
-
-
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """コマンドライン引数を解析する。
-
-    各オプションの既定値は環境変数経由で解決する。
-    優先順位は CLI引数 > 環境変数 > 組み込み既定値。
-    """
-    parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
-    parser.add_argument(
-        "--root",
-        default=os.environ.get(_ENV_ROOT, _DEFAULT_ROOT),
-        help=f"Markdownのルートディレクトリ（環境変数 {_ENV_ROOT}、既定: {_DEFAULT_ROOT}）",
-    )
-    parser.add_argument(
-        "--host",
-        default=os.environ.get(_ENV_HOST, _DEFAULT_HOST),
-        help=f"bindアドレス（環境変数 {_ENV_HOST}、既定: {_DEFAULT_HOST}）",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.environ.get(_ENV_PORT, _DEFAULT_PORT)),
-        help=f"ポート（環境変数 {_ENV_PORT}、既定: {_DEFAULT_PORT}）",
-    )
-    enable_completion(parser)
-    return parser.parse_args(argv)
-
-
-async def _serve(app: quart.Quart, host: str, port: int) -> None:
-    """hypercornでQuartアプリを起動する。"""
-    config = hypercorn.config.Config()
-    config.bind = [f"{host}:{port}"]
-    # アクセスログの標準出力抑制（既存実装の`log_message`抑制に相当）。
-    config.accesslog = None
-    await hypercorn.asyncio.serve(app, config)
-
-
-def _main(argv: list[str] | None = None) -> int:
-    """エントリーポイント。"""
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    args = _parse_args(argv)
-    root = pathlib.Path(args.root).expanduser().resolve()
-    if not root.is_dir():
-        logger.error("ディレクトリが見つかりません: %s", root)
-        return 1
-
-    app = create_app(root)
-    state: _BroadcastState = app.config["PLANS_STATE"]
-
-    observer = watchdog.observers.Observer()
-    observer.schedule(_PlansEventHandler(root, state), str(root), recursive=True)
-    observer.start()
-    try:
-        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
-        try:
-            asyncio.run(_serve(app, args.host, args.port))
-        except KeyboardInterrupt:
-            logger.info("停止します")
-    finally:
-        observer.stop()
-        observer.join()
-    return 0
 
 
 if __name__ == "__main__":

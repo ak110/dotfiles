@@ -49,6 +49,13 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "claude_hook_check_ps1_eol.py",
 )
 
+_MAX_VALUE_LEN = 60
+_MAX_INLINE_DIFF = 3
+
+#: マージ時に無視するトップレベルキー。
+#: `$schema` は配布元 JSON の IDE 補完用メタ情報であり、ユーザー設定に伝播させない。
+_IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
+
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -143,10 +150,6 @@ def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
     return lines
 
 
-_MAX_VALUE_LEN = 60
-_MAX_INLINE_DIFF = 3
-
-
 def _list_diff_summary(before: list, after: list) -> str:
     """リストの件数差と追加・削除アイテムを文字列化する。
 
@@ -216,11 +219,6 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
             hooks_root[event_name] = kept_matchers
         else:
             del hooks_root[event_name]
-
-
-#: マージ時に無視するトップレベルキー。
-#: `$schema` は配布元 JSON の IDE 補完用メタ情報であり、ユーザー設定に伝播させない。
-_IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 
 
 def _merge(data: dict, managed: dict) -> None:

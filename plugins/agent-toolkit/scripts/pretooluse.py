@@ -181,6 +181,12 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
     return False
 
 
+def _is_ps1(file_path: str) -> bool:
+    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
+    lowered = file_path.lower()
+    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
+
+
 def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
     """PowerShell スクリプトへの LF-only 書き込みを検出したら True を返す。"""
     for field, value in fields:
@@ -201,12 +207,6 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         )
         return True
     return False
-
-
-def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
-    lowered = file_path.lower()
-    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
 
 # --- lockfile / 生成物ディレクトリ check ---
@@ -450,6 +450,26 @@ def _likely_real_command(command: str, pos: int) -> bool:
     return "<<" not in prefix
 
 
+# --- Bash: セッション状態読み取り ---
+
+_GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
+
+
+def _session_state_path(session_id: str) -> pathlib.Path:
+    """セッション状態ファイルのパスを返す (posttooluse.py と共通のパス規則)。"""
+    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
+
+
+def _read_session_state(session_id: str) -> dict:
+    """セッション状態を読む。不在・破損時は空辞書を返す。"""
+    if not isinstance(session_id, str) or not session_id:
+        return {}
+    try:
+        return json.loads(_session_state_path(session_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
 # --- Bash: git amend / rebase を log 未確認でブロック ---
 
 _GIT_AMEND_PATTERN = re.compile(r"\bgit\s+commit\b.*--amend\b")
@@ -486,23 +506,6 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
 
 
 # --- Bash: git commit 未検証警告 ---
-
-_GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
-
-
-def _session_state_path(session_id: str) -> pathlib.Path:
-    """セッション状態ファイルのパスを返す (posttooluse.py と共通のパス規則)。"""
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
-
-
-def _read_session_state(session_id: str) -> dict:
-    """セッション状態を読む。不在・破損時は空辞書を返す。"""
-    if not isinstance(session_id, str) or not session_id:
-        return {}
-    try:
-        return json.loads(_session_state_path(session_id).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {}
 
 
 _GIT_COMMIT_INCLUDE_WORKTREE_PATTERN = re.compile(r"(?:^|\s)(?:-\w*a\w*|--all)\b")

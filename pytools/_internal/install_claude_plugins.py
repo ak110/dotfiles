@@ -98,41 +98,6 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
 _LAST_RECOMMENDATIONS: list[str] = []
 
 
-def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
-    """installed_plugins.jsonを直接読み取り、CLI互換のlist[dict]形式に変換する。
-
-    ファイルの形式:
-        {"version": 2, "plugins": {"name@marketplace": [{"scope": "user", "version": "0.15.0", ...}]}}
-
-    CLI出力互換の形式に変換:
-        [{"id": "name@marketplace", "scope": "user", "version": "0.15.0", ...}]
-
-    読み取り失敗時はNoneを返し、呼び出し元でCLIフォールバックさせる。
-    """
-    try:
-        data = json.loads(_INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    plugins = data.get("plugins")
-    if not isinstance(plugins, dict):
-        return None
-    result: list[dict[str, object]] = []
-    for key, entries in plugins.items():
-        if not isinstance(key, str) or not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            item: dict[str, object] = {"id": key}
-            for field in ("scope", "version", "projectPath"):
-                if field in entry:
-                    item[field] = entry[field]
-            result.append(item)
-    return result
-
-
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
@@ -250,6 +215,106 @@ def run() -> bool:
         )
     )
     return any_change
+
+
+def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:
+    """現状と ``_AUTO_*_PLUGIN_IDS`` の乖離を ``claude plugin ...`` 提案列で返す。
+
+    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうち未インストール → ``claude plugin install <id> --scope user``
+    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false``
+      → ``claude plugin enable <id> --scope user``
+    - ``_AUTO_DISABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false`` でない
+      (= 既定で有効) → ``claude plugin disable <id> --scope user``
+
+    順序は推奨理由ごとに install → enable → disable とし、同カテゴリ内は
+    ID で昇順にソートする (出力の安定化とユーザー側の視認性のため)。
+    """
+    installed_ids = _user_scope_plugin_ids(raw_data)
+    install_cmds: list[str] = []
+    enable_cmds: list[str] = []
+    disable_cmds: list[str] = []
+    for plugin_id in sorted(_AUTO_ENABLED_PLUGIN_IDS):
+        if plugin_id not in installed_ids:
+            install_cmds.append(f"claude plugin install {plugin_id} --scope user")
+        elif enabled_map is not None and enabled_map.get(plugin_id) is False:
+            enable_cmds.append(f"claude plugin enable {plugin_id} --scope user")
+    for plugin_id in sorted(_AUTO_DISABLED_PLUGIN_IDS):
+        if plugin_id not in installed_ids:
+            continue
+        if enabled_map is not None and enabled_map.get(plugin_id) is False:
+            continue
+        disable_cmds.append(f"claude plugin disable {plugin_id} --scope user")
+    return install_cmds + enable_cmds + disable_cmds
+
+
+def consume_recommendations() -> list[str]:
+    """直近の ``run()`` が算出した推奨コマンド列を取り出してクリアする。
+
+    post_apply._main がサマリ末尾の案内表示で 1 度だけ読み取る想定。
+    ``run()`` を複数回呼ぶテスト等で前回の推奨が残ることを防ぐ意図で一度取り出すと空になる。
+    """
+    # 取り出し後の初期化はワンショット契約の一部
+    global _LAST_RECOMMENDATIONS  # noqa: PLW0603 # pylint: disable=global-statement
+    recommendations = _LAST_RECOMMENDATIONS
+    _LAST_RECOMMENDATIONS = []
+    return recommendations
+
+
+def _user_scope_plugin_ids(raw_data: object) -> set[str]:
+    """`claude plugin list` の raw data から user scope の ``id`` 集合を返す。
+
+    自動無効化・自動有効化の判定で、`<plugin>@<marketplace>` 形式の `id` を
+    そのまま参照したいケース向け (既存の `_extract_plugin_version_map` は
+    ak110-dotfiles marketplace の `name` のみを返すため別関数にする)。
+    """
+    if not isinstance(raw_data, list):
+        return set()
+    ids: set[str] = set()
+    for item in cast("list[object]", raw_data):
+        if not isinstance(item, dict):
+            continue
+        entry = cast("dict[str, object]", item)
+        if entry.get("scope") not in (None, "user"):
+            continue
+        plugin_id = entry.get("id")
+        if isinstance(plugin_id, str):
+            ids.add(plugin_id)
+    return ids
+
+
+def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
+    """installed_plugins.jsonを直接読み取り、CLI互換のlist[dict]形式に変換する。
+
+    ファイルの形式:
+        {"version": 2, "plugins": {"name@marketplace": [{"scope": "user", "version": "0.15.0", ...}]}}
+
+    CLI出力互換の形式に変換:
+        [{"id": "name@marketplace", "scope": "user", "version": "0.15.0", ...}]
+
+    読み取り失敗時はNoneを返し、呼び出し元でCLIフォールバックさせる。
+    """
+    try:
+        data = json.loads(_INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    plugins = data.get("plugins")
+    if not isinstance(plugins, dict):
+        return None
+    result: list[dict[str, object]] = []
+    for key, entries in plugins.items():
+        if not isinstance(key, str) or not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            item: dict[str, object] = {"id": key}
+            for field in ("scope", "version", "projectPath"):
+                if field in entry:
+                    item[field] = entry[field]
+            result.append(item)
+    return result
 
 
 def _prerequisites_ok() -> bool:
@@ -471,71 +536,6 @@ def _update_plugin(name: str) -> bool:
         return False
     logger.info(log_format.format_status(name, "更新しました"))
     return True
-
-
-def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:
-    """現状と ``_AUTO_*_PLUGIN_IDS`` の乖離を ``claude plugin ...`` 提案列で返す。
-
-    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうち未インストール → ``claude plugin install <id> --scope user``
-    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false``
-      → ``claude plugin enable <id> --scope user``
-    - ``_AUTO_DISABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false`` でない
-      (= 既定で有効) → ``claude plugin disable <id> --scope user``
-
-    順序は推奨理由ごとに install → enable → disable とし、同カテゴリ内は
-    ID で昇順にソートする (出力の安定化とユーザー側の視認性のため)。
-    """
-    installed_ids = _user_scope_plugin_ids(raw_data)
-    install_cmds: list[str] = []
-    enable_cmds: list[str] = []
-    disable_cmds: list[str] = []
-    for plugin_id in sorted(_AUTO_ENABLED_PLUGIN_IDS):
-        if plugin_id not in installed_ids:
-            install_cmds.append(f"claude plugin install {plugin_id} --scope user")
-        elif enabled_map is not None and enabled_map.get(plugin_id) is False:
-            enable_cmds.append(f"claude plugin enable {plugin_id} --scope user")
-    for plugin_id in sorted(_AUTO_DISABLED_PLUGIN_IDS):
-        if plugin_id not in installed_ids:
-            continue
-        if enabled_map is not None and enabled_map.get(plugin_id) is False:
-            continue
-        disable_cmds.append(f"claude plugin disable {plugin_id} --scope user")
-    return install_cmds + enable_cmds + disable_cmds
-
-
-def consume_recommendations() -> list[str]:
-    """直近の ``run()`` が算出した推奨コマンド列を取り出してクリアする。
-
-    post_apply._main がサマリ末尾の案内表示で 1 度だけ読み取る想定。
-    ``run()`` を複数回呼ぶテスト等で前回の推奨が残ることを防ぐ意図で一度取り出すと空になる。
-    """
-    # 取り出し後の初期化はワンショット契約の一部
-    global _LAST_RECOMMENDATIONS  # noqa: PLW0603 # pylint: disable=global-statement
-    recommendations = _LAST_RECOMMENDATIONS
-    _LAST_RECOMMENDATIONS = []
-    return recommendations
-
-
-def _user_scope_plugin_ids(raw_data: object) -> set[str]:
-    """`claude plugin list` の raw data から user scope の ``id`` 集合を返す。
-
-    自動無効化・自動有効化の判定で、`<plugin>@<marketplace>` 形式の `id` を
-    そのまま参照したいケース向け (既存の `_extract_plugin_version_map` は
-    ak110-dotfiles marketplace の `name` のみを返すため別関数にする)。
-    """
-    if not isinstance(raw_data, list):
-        return set()
-    ids: set[str] = set()
-    for item in cast("list[object]", raw_data):
-        if not isinstance(item, dict):
-            continue
-        entry = cast("dict[str, object]", item)
-        if entry.get("scope") not in (None, "user"):
-            continue
-        plugin_id = entry.get("id")
-        if isinstance(plugin_id, str):
-            ids.add(plugin_id)
-    return ids
 
 
 def _read_enabled_plugins_from_file() -> dict[str, bool] | None:

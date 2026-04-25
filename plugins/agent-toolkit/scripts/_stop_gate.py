@@ -58,52 +58,59 @@ _INJECTED_TAG_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
-    """直前のアシスタントターンに属する message dict を新しい順に生成する。
+def is_real_session_end(transcript_path: str) -> bool:
+    """Transcript を解析して「真のセッション終了」かどうかを判定する。
 
-    以下の制約で 1 ターンを画定する。
-    - sidechain（subagent）のエントリは除外する
-    - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
-      1 ターンとして統合する
-    - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
-      間に挟まった時点でターン境界とみなし走査を終える
-    - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
+    以下の条件をすべて満たす場合に True を返す。
+    - 直前アシスタントターンに作業完了の言い切り文言が含まれる
+    - 直前アシスタントターンが質問を含まない
+    - 直前アシスタントターンが待機語を含まない
+    - 直前アシスタントターンの最後の tool_use が非同期待機系でない
 
-    transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
+    transcript を読み取れない異常系では False を返す（安全側に倒す）。
     """
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return
-    first_msg_id: str | None = None
-    checked_count = 0
-    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
-    for line in reversed(lines):
+    _wait_for_end_turn(transcript_path)
+    if not _is_assistant_task_completed(transcript_path):
+        return False
+    if _is_assistant_asking_question(transcript_path):
+        return False
+    if _is_assistant_waiting(transcript_path):
+        return False
+    return not _last_tool_use_is_async_wait(transcript_path)
+
+
+def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
+    """Stop hook 起動と Claude Code 側 transcript flush との race を吸収する。
+
+    Claude Code は assistant 最終メッセージの transcript 書き込みと Stop hook 起動が
+    並行することがあり、hook が読んだ時点で最終 assistant エントリが未到着の場合がある。
+    末尾走査で最新 assistant エントリ（非 sidechain）の `stop_reason` が `end_turn` であれば
+    flush 完了とみなし即時戻る。未到着なら短時間ポーリングし、`timeout` 経過で諦める。
+    """
+    deadline = time.monotonic() + timeout
+    poll = 0.05
+    p = pathlib.Path(transcript_path)
+    while True:
         try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if entry.get("type") != "assistant" or entry.get("isSidechain"):
-            if first_msg_id is not None:
-                # 別エントリが間に挟まった → 同一ターンの探索終了
-                saw_non_assistant = True
-            continue
-        if saw_non_assistant:
-            # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
+            content = p.read_text(encoding="utf-8")
+        except OSError:
             return
-        message = entry.get("message")
-        if not isinstance(message, dict):
+        for line in reversed(content.splitlines()):
+            try:
+                entry = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if entry.get("type") != "assistant" or entry.get("isSidechain"):
+                continue
+            message = entry.get("message")
+            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
+                return
+            # 最新 assistant エントリが end_turn ではない（tool_use 等）→ race の可能性あり、
+            # ポーリングを継続して最終エントリの到着を待つ。
+            break
+        if time.monotonic() >= deadline:
             return
-        msg_id = message.get("id", "")
-        if first_msg_id is None:
-            first_msg_id = msg_id
-        elif msg_id and first_msg_id and msg_id != first_msg_id:
-            # message.id が両方設定されており異なる → 別ターン
-            return
-        checked_count += 1
-        if checked_count > 3:
-            return
-        yield message
+        time.sleep(poll)
 
 
 def _is_assistant_task_completed(transcript_path: str) -> bool:
@@ -227,56 +234,49 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
     return False
 
 
-def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
-    """Stop hook 起動と Claude Code 側 transcript flush との race を吸収する。
+def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
+    """直前のアシスタントターンに属する message dict を新しい順に生成する。
 
-    Claude Code は assistant 最終メッセージの transcript 書き込みと Stop hook 起動が
-    並行することがあり、hook が読んだ時点で最終 assistant エントリが未到着の場合がある。
-    末尾走査で最新 assistant エントリ（非 sidechain）の `stop_reason` が `end_turn` であれば
-    flush 完了とみなし即時戻る。未到着なら短時間ポーリングし、`timeout` 経過で諦める。
+    以下の制約で 1 ターンを画定する。
+    - sidechain（subagent）のエントリは除外する
+    - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
+      1 ターンとして統合する
+    - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
+      間に挟まった時点でターン境界とみなし走査を終える
+    - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
+
+    transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
     """
-    deadline = time.monotonic() + timeout
-    poll = 0.05
-    p = pathlib.Path(transcript_path)
-    while True:
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return
+    first_msg_id: str | None = None
+    checked_count = 0
+    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
+    for line in reversed(lines):
         try:
-            content = p.read_text(encoding="utf-8")
-        except OSError:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            if first_msg_id is not None:
+                # 別エントリが間に挟まった → 同一ターンの探索終了
+                saw_non_assistant = True
+            continue
+        if saw_non_assistant:
+            # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
             return
-        for line in reversed(content.splitlines()):
-            try:
-                entry = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if entry.get("type") != "assistant" or entry.get("isSidechain"):
-                continue
-            message = entry.get("message")
-            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
-                return
-            # 最新 assistant エントリが end_turn ではない（tool_use 等）→ race の可能性あり、
-            # ポーリングを継続して最終エントリの到着を待つ。
-            break
-        if time.monotonic() >= deadline:
+        message = entry.get("message")
+        if not isinstance(message, dict):
             return
-        time.sleep(poll)
-
-
-def is_real_session_end(transcript_path: str) -> bool:
-    """Transcript を解析して「真のセッション終了」かどうかを判定する。
-
-    以下の条件をすべて満たす場合に True を返す。
-    - 直前アシスタントターンに作業完了の言い切り文言が含まれる
-    - 直前アシスタントターンが質問を含まない
-    - 直前アシスタントターンが待機語を含まない
-    - 直前アシスタントターンの最後の tool_use が非同期待機系でない
-
-    transcript を読み取れない異常系では False を返す（安全側に倒す）。
-    """
-    _wait_for_end_turn(transcript_path)
-    if not _is_assistant_task_completed(transcript_path):
-        return False
-    if _is_assistant_asking_question(transcript_path):
-        return False
-    if _is_assistant_waiting(transcript_path):
-        return False
-    return not _last_tool_use_is_async_wait(transcript_path)
+        msg_id = message.get("id", "")
+        if first_msg_id is None:
+            first_msg_id = msg_id
+        elif msg_id and first_msg_id and msg_id != first_msg_id:
+            # message.id が両方設定されており異なる → 別ターン
+            return
+        checked_count += 1
+        if checked_count > 3:
+            return
+        yield message
