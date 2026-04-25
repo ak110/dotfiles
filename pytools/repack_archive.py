@@ -7,8 +7,14 @@
 
 対応する機能:
 
-- libarchive-c による ZIP / RAR / 7z / tar 等の選択的解凍 (無視エントリを
-  そもそもディスクへ展開しない)。
+- ZIP は Python 標準 ``zipfile`` で展開する。Windows 版 libarchive-c は
+  非 UTF-8 エントリ名 (CP932 等) を Latin-1 相当で str 化するため、SJIS の
+  2 バイト目に含まれる ``0x5C`` がバックスラッシュとして文字列に混入し、
+  Python 側でディレクトリ区切りと誤認される事故が起きる。zipfile は
+  中央ディレクトリのバイト列と bit 11 (Unicode flag) を直接扱えるため、
+  本ツール側でエンコーディング判定とパス検証を掌握できる。
+- ZIP 以外 (RAR / 7z / tar 等) は libarchive-c で選択的解凍する (無視
+  エントリをそもそもディスクへ展開しない)。
 - rgrename 互換のパターンファイル / YAML 直書きルールの混在を許可。
 - 画像変換は `pytools.imageconverter.convert_directory` を関数呼び出しで実行し、
   呼び元 tqdm で進捗を表示する。
@@ -447,30 +453,128 @@ def _load_libarchive() -> typing.Any:
 
 
 def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
-    """libarchive-c でストリーミング展開する。無視対象エントリはディスクに書かない。
+    """アーカイブ形式に応じて展開エンジンを切り替える。
 
-    個別エントリの ``OSError`` は捕捉してスキップし、(エントリパス, エラー文字列) の
-    リストとして戻り値で返す。target 単位のロールバックは呼び出し元が担うため、
-    アーカイブ全体での致命的エラー (libarchive のフォーマットエラー等) は再送出する。
+    ZIP は Python 標準 ``zipfile`` を使い、エンコーディング判定とパス検証をこちらで掌握する。
+    ZIP 以外 (RAR / 7z / tar 等) は libarchive-c に委ねる。個別エントリの ``OSError`` は
+    捕捉してスキップし、(エントリパス, エラー文字列) のリストとして戻り値で返す。
+    アーカイブ全体での致命的エラーは再送出する。
+    """
+    if zipfile.is_zipfile(archive):
+        return _extract_zip(archive, dest, compiled)
+    return _extract_with_libarchive(archive, dest, compiled)
+
+
+def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+    """``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
+
+    エンコーディング判定はエントリ単位で行う。bit 11 (Unicode flag) が立つエントリは
+    UTF-8 として ``info.filename`` をそのまま使い、立たないエントリは原バイト列を
+    CP932 strict で復号する。失敗したエントリのみ ``info.filename`` (CP437 既定) へ
+    フォールバックする。Zip Slip 対策とエンコーディング崩れの保険として、
+    ``..``・先頭 ``/``・バックスラッシュ・``:``・Windows 流のドライブ表記を含むパスは
+    展開せず failures に積む。
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    failures: list[tuple[str, str]] = []
+    with zipfile.ZipFile(archive) as zf:
+        infos = zf.infolist()
+        with tqdm.tqdm(total=len(infos), desc="extract", unit="file", ascii=True, ncols=100) as pbar:
+            for info in infos:
+                pbar.update(1)
+                entry_path = _decode_zip_entry_name(info)
+                if not entry_path:
+                    continue
+                is_dir = info.is_dir() or entry_path.endswith("/")
+                # 末尾 "/" 付きディレクトリ名は検証から除いておく (空要素検査に引っかかるため)
+                normalized = entry_path.rstrip("/") if is_dir else entry_path
+                if not _is_safe_relative_path(normalized):
+                    failures.append((entry_path, "不正なパスのためスキップ"))
+                    logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
+                    continue
+                ignore_path = normalized + "/" if is_dir else normalized
+                if compiled.should_ignore_entry(ignore_path):
+                    continue
+                try:
+                    out_path = dest / normalized
+                    if is_dir:
+                        out_path.mkdir(parents=True, exist_ok=True)
+                        continue
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(info) as src, out_path.open("wb") as fp:
+                        shutil.copyfileobj(src, fp)
+                except OSError as e:
+                    failures.append((entry_path, str(e)))
+                    logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+    return failures
+
+
+def _decode_zip_entry_name(info: zipfile.ZipInfo) -> str:
+    """ZipInfo のファイル名を bit 11・CP932・CP437 の優先順で復号する。
+
+    bit 11 が立つ場合は ``zipfile`` が UTF-8 で ``info.filename`` を構築済みなので
+    そのまま返す。立たない場合は原バイト列を CP932 strict で復号し、失敗時のみ
+    ``info.filename`` (CP437 既定デコード結果) を採用する。日本語 Windows 由来の
+    ZIP は CP932 が圧倒的多数で CP437 が稀なため、優先度を CP932 側に振っている。
+    """
+    if info.flag_bits & 0x800:
+        return info.filename
+    raw = info.filename.encode("cp437")
+    try:
+        return raw.decode("cp932")
+    except UnicodeDecodeError:
+        return info.filename
+
+
+def _is_safe_relative_path(name: str) -> bool:
+    r"""ZIP エントリ名が ``dest`` 配下にとどまる安全な相対パスかを判定する。
+
+    Zip Slip と SJIS 復号崩れの双方を遮るため、以下を全て満たすことを要求する。
+
+    - 空文字でない
+    - バックスラッシュを含まない (CP932 2 バイト目混入の保険)
+    - 先頭が ``/`` でない
+    - ``/`` 区切りの各要素が ``""`` (連続 ``//`` 由来) でも ``..`` でもなく、``:`` を含まない
+    - ``PureWindowsPath`` で ``drive`` または ``root`` を持たない (``C:foo``・``\\srv\\share`` 等の拒否)
+    """
+    if not name or "\\" in name or name.startswith("/"):
+        return False
+    for part in name.split("/"):
+        if part in ("", ".."):
+            return False
+        if ":" in part:
+            return False
+    win = pathlib.PureWindowsPath(name)
+    return not (win.drive or win.root)
+
+
+def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+    """libarchive-c で ZIP 以外のアーカイブをストリーミング展開する。
+
+    エントリ数を取るため一度全エントリを読み出してから本展開を行う 2 パス構成。
+    libarchive は逐次読み出ししかできないため、tqdm の total を埋めるには事前に
+    エントリ数を数える以外の手段がない。
     """
     libarchive = _load_libarchive()
-    entry_count, pathname_map = _prepare_archive(archive)
+    count = 0
+    with libarchive.file_reader(str(archive)) as reader:
+        for _ in reader:
+            count += 1
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[tuple[str, str]] = []
     with (
-        tqdm.tqdm(total=entry_count, desc="extract", unit="file", ascii=True, ncols=100) as pbar,
+        tqdm.tqdm(total=count, desc="extract", unit="file", ascii=True, ncols=100) as pbar,
         libarchive.file_reader(str(archive)) as reader,
     ):
         for entry in reader:
             pbar.update(1)
-            entry_path = _resolve_entry_path(entry, pathname_map, libarchive)
+            entry_path = entry.pathname or ""
             if not entry_path:
                 continue
             if compiled.should_ignore_entry(entry_path):
                 continue
             try:
                 out_path = dest / entry_path
-                # 親ディレクトリを作成
                 if entry.isdir:
                     out_path.mkdir(parents=True, exist_ok=True)
                     continue
@@ -482,107 +586,6 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
                 failures.append((entry_path, str(e)))
                 logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
     return failures
-
-
-def _prepare_archive(archive: pathlib.Path) -> tuple[int, dict[bytes, str] | None]:
-    """アーカイブ展開前にエントリ数をカウントし、ZIP ならパスマッピングを併せて構築する。
-
-    戻り値のマッピングは libarchive の生バイトパス (``ffi.entry_pathname``) を
-    キーに、``zipfile`` 経由で復元したパスを値に持つ。ZIP 以外 (RAR / 7z / tar 等)
-    では ``None`` を返し、呼び出し元は libarchive の ``entry.pathname`` を使う。
-    """
-    libarchive = _load_libarchive()
-    pathname_map = _build_zip_pathname_map(archive)
-    count = 0
-    with libarchive.file_reader(str(archive)) as reader:
-        for _ in reader:
-            count += 1
-    return count, pathname_map
-
-
-def _build_zip_pathname_map(archive: pathlib.Path) -> dict[bytes, str] | None:
-    """ZIP の中央ディレクトリからエントリごとにパスを復元し、生バイト→復号パスのマッピングを返す。
-
-    General purpose bit 11 (Unicode flag) をエントリ単位で参照する。bit 11 が立つ
-    エントリは UTF-8 のまま採用し、立たないエントリは一括して CP932 strict デコードを
-    試す。全て成功かつ制御文字が混入していなければ CP932 を採用し、満たさない場合は
-    ``zipfile`` 既定の CP437 デコード結果をそのまま使う (ZIP 仕様の既定挙動)。
-
-    ZIP でないなら ``None`` を返す。
-    """
-    if not zipfile.is_zipfile(archive):
-        return None
-
-    mapping: dict[bytes, str] = {}
-    # bit 11 未設定エントリは (生バイト, CP437 デコード結果) を貯めて後段で一括判定する。
-    # 単一エントリ判定では ASCII 名が常に成功扱いになり全体判定を歪めるため、
-    # アーカイブ全体の非 UTF-8 エントリをまとめて判定する必要がある。
-    non_utf8_entries: list[tuple[bytes, str]] = []
-    try:
-        with zipfile.ZipFile(archive) as zf:
-            infos = zf.infolist()
-    except (zipfile.BadZipFile, OSError):
-        # 中央ディレクトリが破損している ZIP は libarchive 側の復旧挙動に委ねる。
-        return None
-    for info in infos:
-        if info.flag_bits & 0x800:
-            mapping[info.filename.encode("utf-8")] = info.filename
-        else:
-            non_utf8_entries.append((info.filename.encode("cp437"), info.filename))
-
-    cp932_decoded: list[str] = []
-    cp932_ok = True
-    for raw, _fallback in non_utf8_entries:
-        try:
-            decoded = raw.decode("cp932")
-        except UnicodeDecodeError:
-            cp932_ok = False
-            break
-        if _has_control_chars(decoded):
-            cp932_ok = False
-            break
-        cp932_decoded.append(decoded)
-
-    if cp932_ok:
-        for (raw, _fallback), decoded in zip(non_utf8_entries, cp932_decoded, strict=True):
-            mapping[raw] = decoded
-    else:
-        for raw, fallback in non_utf8_entries:
-            mapping[raw] = fallback
-    return mapping
-
-
-def _has_control_chars(value: str) -> bool:
-    """文字列に制御文字 (U+0000–U+001F および U+007F–U+009F、ただしタブ・改行を除く) が含まれるかを判定する。
-
-    libarchive が ZIP のファイル名をワイド文字として誤解釈した場合、C1 制御文字 (U+0080–U+009F)
-    が混入した str が返る。CP932 デコードに成功しても制御文字が残るパターンは、実ファイル名ではなく
-    バイト列の偶然の一致である可能性が高いため、CP932 判定から除外する判断材料として使う。
-    """
-    for ch in value:
-        code = ord(ch)
-        if code in (0x09, 0x0A, 0x0D):
-            continue
-        if code <= 0x1F or 0x7F <= code <= 0x9F:
-            return True
-    return False
-
-
-def _resolve_entry_path(entry: typing.Any, pathname_map: dict[bytes, str] | None, libarchive: typing.Any) -> str:
-    """Libarchive エントリから使用すべきパス文字列を返す。
-
-    ZIP 用マッピングがあれば生バイトをキーに引き、見つからない場合のみ libarchive の
-    ``entry.pathname`` にフォールバックする。libarchive の ``entry.pathname`` は
-    bit 11 未設定 ZIP の非 ASCII 名を誤デコードして壊れた str を返すことがあり、
-    Windows の ``OSError: [WinError 123]`` の原因になるため可能な限り回避する。
-    """
-    if pathname_map is not None:
-        raw = libarchive.ffi.entry_pathname(entry._entry_p)  # pylint: disable=protected-access
-        if raw is not None:
-            resolved = pathname_map.get(raw)
-            if resolved is not None:
-                return resolved
-    return entry.pathname or ""
 
 
 def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:

@@ -43,6 +43,24 @@ def _make_cp932_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
             zf.writestr(_Cp932ZipInfo(name), data)
 
 
+class _RawBytesZipInfo(zipfile.ZipInfo):
+    """ファイル名として任意の生バイト列を書き込む ZipInfo。
+
+    CP932 strict で復号できないバイト列を含むエントリをテストで合成するために使う。
+    bit 11 は立てない。
+    """
+
+    def __init__(self, raw_name: bytes) -> None:
+        # ZipInfo は filename を str で保持する。CP437 経由で str 化しておけば
+        # ``_encodeFilenameFlags`` を上書きする側が責任を持って raw_name を返す限り、
+        # 実 ZIP ファイル上は raw_name 通りのバイト列が記録される。
+        super().__init__(raw_name.decode("cp437"))
+        self._raw_name = raw_name
+
+    def _encodeFilenameFlags(self) -> tuple[bytes, int]:
+        return self._raw_name, self.flag_bits & ~0x800
+
+
 def _zip_entries(path: pathlib.Path) -> set[str]:
     with zipfile.ZipFile(path, "r") as zf:
         return set(zf.namelist())
@@ -380,6 +398,95 @@ class TestFilenameEncoding:
         )
         entries = _zip_entries(tmp_path / "mixed.zip")
         assert entries == {"README.txt", "日本語.txt"}
+
+    def test_sjis_backslash_byte_is_decoded_as_single_path_component(self, tmp_path: pathlib.Path) -> None:
+        """SJIS 2バイト目に 0x5C を含む文字 (例: ソ) でディレクトリ階層が壊れない。
+
+        報告された系統 B の再現。``ソ`` の SJIS バイト列は ``b"\\x83\\x5c"`` で、
+        2 バイト目が ASCII のバックスラッシュと同値である。文字列処理を誤ると
+        ``\\`` がパス区切りと解釈され、``pathlib.Path`` が意図しないディレクトリ階層に
+        分割してしまう。
+        """
+        archive = tmp_path / "sjis.zip"
+        _make_cp932_zip(
+            archive,
+            {
+                # "ソート" は先頭 "ソ" が 0x83 0x5C
+                "ソート/メモ.txt": b"x",
+                # 単一ルート平坦化を避けるため別ルートも置く
+                "他.txt": b"y",
+            },
+        )
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "sjis.zip")
+        assert entries == {"ソート/メモ.txt", "他.txt"}
+
+    def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path) -> None:
+        """CP932 strict で復号できないエントリだけ CP437 にフォールバックする。
+
+        他の CP932 エントリは正しく日本語名で展開される。アーカイブ単位の一括判定では
+        1 件の失敗で全体が CP437 に転落するため、エントリ単位フォールバックが
+        効いていることをここで担保する。
+        """
+        archive = tmp_path / "fallback.zip"
+        # 0x81 は CP932 の有効な lead byte だが 0x39 ('9') は有効な trail byte 範囲外なため
+        # strict 復号で必ず失敗する。CP437 ではそれぞれ ``ü`` ``9`` として復号される。
+        raw_invalid = b"\x81\x39hi.txt"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr(_Cp932ZipInfo("和文.txt"), b"a")
+            zf.writestr(_RawBytesZipInfo(raw_invalid), b"b")
+            # 単一ルート平坦化に巻き込まれないよう ASCII エントリも追加
+            zf.writestr("safe.txt", b"c")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "fallback.zip")
+        cp437_fallback = raw_invalid.decode("cp437")
+        assert entries == {"和文.txt", cp437_fallback, "safe.txt"}
+
+
+class TestExtractZipPathSafety:
+    """ZIP のエントリ名による不正パスを失敗扱いとする挙動の検証。"""
+
+    def test_unsafe_paths_are_recorded_as_failures(self, tmp_path: pathlib.Path) -> None:
+        archive = tmp_path / "unsafe.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("../escape.txt", b"e")
+            zf.writestr("/abs.txt", b"a")
+            zf.writestr("C:/win.txt", b"w")
+            # PureWindowsPath で root 持ち判定になるバックスラッシュ前置きも拒否
+            zf.writestr(_RawBytesZipInfo(b"\\back.txt"), b"b")
+            zf.writestr("safe.txt", b"s")
+        dest = tmp_path / "out"
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        failures = repack_archive._extract_zip(archive, dest, compiled)
+
+        failed_paths = {p for p, _ in failures}
+        assert "../escape.txt" in failed_paths
+        assert "/abs.txt" in failed_paths
+        assert "C:/win.txt" in failed_paths
+        assert "\\back.txt" in failed_paths
+        # 安全なエントリだけ書き出されている
+        assert (dest / "safe.txt").exists()
+        # 親ディレクトリへの脱出は阻止されている
+        assert not (tmp_path / "escape.txt").exists()
 
 
 class TestMainFailureSummary:
