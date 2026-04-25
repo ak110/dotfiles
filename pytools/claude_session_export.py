@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Claude Codeセッション履歴（JSONL）をmarkdownに変換するCLIツール。"""
 
 import argparse
@@ -11,6 +12,8 @@ from dataclasses import dataclass, field
 
 import psutil
 import tqdm
+
+from pytools._internal.cli import enable_completion
 
 logger = logging.getLogger(__name__)
 
@@ -632,6 +635,7 @@ def _main() -> None:
     # 出力
     parser.add_argument("--output-dir", type=str, help="出力先ディレクトリ")
 
+    enable_completion(parser)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 

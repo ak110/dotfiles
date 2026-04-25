@@ -67,6 +67,12 @@ repos:
         entry: sh -c 'for f; do claude plugin validate "$f" || exit 1; done' --
         language: system
         files: '\.claude-plugin/(plugin|marketplace)\.json$'
+      - id: gen-completions
+        name: bash補完スクリプトの再生成チェック
+        entry: uv run --frozen python scripts/gen-completions.py --check
+        language: system
+        pass_filenames: false
+        files: '^(pyproject\.toml|pytools/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash)$'
       - id: pyfltr
         name: pyfltr
         entry: uv run --frozen pyfltr fast

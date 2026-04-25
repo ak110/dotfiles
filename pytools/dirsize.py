@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """ディレクトリサイズを集計表示する (C# dirsize の Python 移植)。
 
 再帰的に配下のファイルサイズを合計し、サブディレクトリごとに大きさを表示する。
@@ -8,6 +9,8 @@ import argparse
 import logging
 import pathlib
 import sys
+
+from pytools._internal.cli import enable_completion
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,7 @@ def _main() -> None:
     parser.add_argument("-e", "--progress", action="store_true", help="進捗を stderr に出す")
     parser.add_argument("-a", "--all", action="store_true", help="1 MiB 未満も表示する")
     parser.add_argument("target", nargs="?", type=pathlib.Path, default=pathlib.Path.cwd())
+    enable_completion(parser)
     args = parser.parse_args()
     total = _dir_size(args.target, depth=args.recursive, progress=args.progress, show_all=args.all, ply=0)
     print()

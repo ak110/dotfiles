@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """claudeを使ってコミットメッセージを生成してgit commitを実行する。"""
 
 import argparse
@@ -7,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def _main() -> None:
         default=None,
         help="フォーマット指示や差分説明などの追加プロンプト。省略可能。",
     )
+    enable_completion(parser)
     args = parser.parse_args()
 
     git_root = _get_git_root()

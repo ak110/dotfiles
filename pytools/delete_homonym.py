@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """同名ファイルを検出して重複を削除する (C# deletehomonym の Python 移植)。
 
 既定ではファイル名 (拡張子除外・小文字化) が MD5/SHA-1 形式の 16 進文字列の
@@ -12,7 +13,7 @@ import logging
 import pathlib
 import re
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def _main() -> None:
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("pattern", type=str, help="検索 glob パターン (例: *.jpg)")
     parser.add_argument("paths", nargs="+", type=pathlib.Path)
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
     log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None

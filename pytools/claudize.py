@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Claude Code設定ファイルを配布・同期するコマンド。
 
 配布元ディレクトリ (`.chezmoi-source/dot_claude/rules/agent-toolkit/`) の内容を
@@ -12,7 +13,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def _main() -> None:
         action="store_true",
         help="配布対象のルールファイルをプロジェクトから削除する。",
     )
+    enable_completion(parser)
     args = parser.parse_args()
     template_dir = Path.home() / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / _RULES_DIRNAME
     target_dir = Path.cwd()

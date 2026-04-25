@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """ランダムバイト列のファイルを生成する (C# randfile の Python 移植)。
 
 セキュリティ用途ではないが、`secrets.token_bytes` を使うことで低エントロピーな
@@ -12,6 +13,8 @@ import secrets
 
 import tqdm
 
+from pytools._internal.cli import enable_completion
+
 logger = logging.getLogger(__name__)
 
 _CHUNK = 1 << 20  # 1 MiB
@@ -22,6 +25,7 @@ def _main() -> None:
     parser.add_argument("filename", nargs="?", type=pathlib.Path, default=pathlib.Path("randfile.dat"))
     parser.add_argument("size", nargs="?", type=int, default=1024, help="生成サイズ (バイト)")
     parser.add_argument("--force", action="store_true", help="既存ファイルを上書きする")
+    enable_completion(parser)
     args = parser.parse_args()
     create(args.filename, args.size, force=args.force)
 

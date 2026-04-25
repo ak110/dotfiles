@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """ディレクトリツリーの差分同期 (C# clonedir の Python 移植)。
 
 送り側の内容を受け側へ複製する。既定では更新モード (送り側が新しいものだけコピー)。
@@ -10,7 +11,7 @@ import logging
 import pathlib
 import shutil
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def _main() -> None:
     parser.add_argument("-m", "--mirror", action="store_true", help="受け側の不要ファイルを削除する")
     parser.add_argument("-t", "--top-only", action="store_true", help="最上位ディレクトリのみ処理する")
     parser.add_argument("-d", "--dry-run", action="store_true")
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
     excludes = _load_excludes(args.exclude)

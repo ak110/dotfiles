@@ -1,9 +1,12 @@
+# PYTHON_ARGCOMPLETE_OK
 """正規表現でディレクトリ削除。"""
 
 import argparse
 import pathlib
 import re
 import shutil
+
+from pytools._internal.cli import enable_completion
 
 
 def _main() -> None:
@@ -16,6 +19,7 @@ def _main() -> None:
     g = parser.add_mutually_exclusive_group()
     g.add_argument("--name", action="store_true", help="replace name only. (default)")
     g.add_argument("--fullpath", action="store_true", help="replace fullpath.")
+    enable_completion(parser)
     args = parser.parse_args()
 
     flags = 0

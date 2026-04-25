@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """PDFを画像に変換する。システムにPoppler (pdftoppm) のインストールが必要。"""
 
 import argparse
@@ -6,11 +7,14 @@ import pathlib
 import tqdm.contrib
 from pdf2image import convert_from_path
 
+from pytools._internal.cli import enable_completion
+
 
 def _main():
     parser = argparse.ArgumentParser(description="PDFを画像に変換する")
     parser.add_argument("pdf_files", nargs="+", type=pathlib.Path, help="変換するPDFファイル")
     parser.add_argument("--format", default="png", choices=("png", "jpeg"), help="出力フォーマット")
+    enable_completion(parser)
     args = parser.parse_args()
     for pdf_path in args.pdf_files:
         _convert(pdf_path, args.format)

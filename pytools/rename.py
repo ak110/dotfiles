@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """正規表現でリネーム。
 
 単発のパターン指定に加えて、rgrename 互換のパターンファイル (TAB 区切り UTF-8)
@@ -13,7 +14,7 @@ import pathlib
 import re
 import typing
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ def _main() -> None:
     mode_group.add_argument("--stem", action="store_true", help="replace stem only. (default, ignored in pattern-file mode)")
     mode_group.add_argument("--name", action="store_true", help="replace name only.")
     mode_group.add_argument("--fullpath", action="store_true", help="replace fullpath.")
+    enable_completion(parser)
     args = parser.parse_args()
 
     setup_logging(verbose=args.verbose)

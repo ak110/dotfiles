@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """指定フォルダ内の画像ファイルのサイズの分布を調べるスクリプト。"""
 
 import argparse
@@ -8,7 +9,7 @@ import numpy as np
 import tqdm
 from bashplotlib.histogram import plot_hist
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 from pytools.imageconverter import open_image_with_exif
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 def _main():
     parser = argparse.ArgumentParser()
     parser.add_argument("target_dir", type=pathlib.Path)
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging(verbose=True)
     _do_dir(args.target_dir)

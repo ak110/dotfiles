@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Claude Codeの`~/.claude/plans/*.md`をブラウザで一覧・閲覧するローカルHTTPビューア。
 
 SSHポートフォワード経由でWindows側のブラウザから参照することを想定し、
@@ -34,6 +35,8 @@ import pytilpack.sse
 import quart
 import watchdog.events
 import watchdog.observers
+
+from pytools._internal.cli import enable_completion
 
 logger = logging.getLogger(__name__)
 
@@ -584,6 +587,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=int(os.environ.get(_ENV_PORT, _DEFAULT_PORT)),
         help=f"ポート（環境変数 {_ENV_PORT}、既定: {_DEFAULT_PORT}）",
     )
+    enable_completion(parser)
     return parser.parse_args(argv)
 
 

@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """ファイルを内容の MD5 ハッシュ値へリネームする (C# rename2hash の Python 移植)。
 
 互換性維持のため既存資産にならい MD5 を使用する。重複検出用途で
@@ -10,7 +11,7 @@ import io
 import logging
 import pathlib
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def _main() -> None:
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("path", type=pathlib.Path)
     parser.add_argument("pattern", nargs="?", default="*.*")
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
     log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None

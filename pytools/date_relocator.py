@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """ファイルを更新日時に基づいてサフィックス付きディレクトリへ再配置する。
 
 `<dir>` 配下のファイルを、それぞれの最終更新日時 `YYYYMM` に応じて
@@ -9,7 +10,7 @@ import datetime
 import logging
 import pathlib
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ def _main() -> None:
     parser = argparse.ArgumentParser(description="更新日時に応じてファイルを再配置する")
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
     for target in args.targets:

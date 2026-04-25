@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
 
 既存の bat 前処理ワークフロー (7z で全解凍 → rmdirs → imageconverter → 7z 再圧縮)
@@ -36,7 +37,7 @@ import tqdm
 import yaml
 
 from pytools import imageconverter, rename
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ def _main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
+    enable_completion(parser)
     args = parser.parse_args()
 
     setup_logging(verbose=args.verbose)

@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Gitの履歴改変スクリプト。"""
 
 import argparse
@@ -8,6 +9,8 @@ import subprocess
 
 import businesstimedelta
 import holidays
+
+from pytools._internal.cli import enable_completion
 
 businesshrs = businesstimedelta.Rules(
     [
@@ -37,6 +40,7 @@ def _main() -> None:
     parser.add_argument("start_date", help="Start date (%%Y-%%m-%%d %%H:%%M:%%S)")
     parser.add_argument("end_date", help="End date (%%Y-%%m-%%d %%H:%%M:%%S)")
     parser.add_argument("--no-business", action="store_true", help="Ignore business time")
+    enable_completion(parser)
     args = parser.parse_args()
     start_commit = args.start_commit
     end_commit = args.end_commit

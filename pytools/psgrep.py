@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """実行中プロセスの実行ファイルパスを検索する (C# psgrep の Python 移植)。
 
 元 C# 実装は grep 部分が未実装だったため、ここで本来意図されていた機能を
@@ -12,7 +13,7 @@ import sys
 
 import psutil
 
-from pytools._internal.cli import setup_logging
+from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def _main() -> None:
     parser.add_argument("pattern", type=str, help="検索パターン")
     parser.add_argument("--regex", action="store_true", help="正規表現マッチ (既定は部分一致/ワイルドカード)")
     parser.add_argument("-i", "--ignore-case", action="store_true")
+    enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
     found = grep(args.pattern, regex=args.regex, ignore_case=args.ignore_case)

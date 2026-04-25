@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """画像変換。
 
 ディレクトリ配下の画像を指定形式へ一括変換し、最大辺サイズを超える場合は縮小する。
@@ -17,6 +18,8 @@ import numpy as np
 import PIL.Image
 import PIL.ImageOps
 import tqdm
+
+from pytools._internal.cli import enable_completion
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,7 @@ def _main() -> None:
     parser.add_argument("--repack-png", action="store_true")
     parser.add_argument("--no-remove-failed", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
+    enable_completion(parser)
     args = parser.parse_args()
     for target_path in args.targets:
         convert_directory(

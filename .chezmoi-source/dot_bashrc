@@ -351,6 +351,16 @@ if command -v pyfltr &>/dev/null; then
     fi
 fi
 
+# ~/dotfiles/completions/*.bash をまとめて読み込む。
+# pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完をここに集約する。
+# コマンド追加時にbashrcを編集せず、completions/<name>.bashを置くだけで反映する運用とする。
+if [ -d ~/dotfiles/completions ]; then
+    for _completion_file in ~/dotfiles/completions/*.bash; do
+        [ -r "$_completion_file" ] && source "$_completion_file"
+    done
+    unset _completion_file
+fi
+
 # ~/.localbashrc
 if [ -e ~/.localbashrc ]; then
     source ~/.localbashrc
