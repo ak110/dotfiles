@@ -145,11 +145,11 @@ def _main() -> None:
             failed_entries.append((target, entry_path, error))
 
     if failed_targets:
-        logger.warning("失敗した TARGET (%d件):", len(failed_targets))
+        logger.warning("\n失敗したターゲット (%d件):", len(failed_targets))
         for path, err in failed_targets:
             logger.warning("  %s: %s", path, err)
     if failed_entries:
-        logger.warning("失敗したエントリ (%d件):", len(failed_entries))
+        logger.warning("\n失敗したエントリ (%d件):", len(failed_entries))
         for tp, ep, err in failed_entries:
             logger.warning("  %s :: %s: %s", tp, ep, err)
     if failed_targets or failed_entries:
