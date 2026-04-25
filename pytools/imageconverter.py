@@ -76,6 +76,7 @@ def convert_directory(
     repack_png: bool = False,
     remove_failed: bool = True,
     progress: tqdm.tqdm | None = None,
+    log_root: pathlib.Path | None = None,
 ) -> None:
     """ディレクトリ配下の画像を変換する。
 
@@ -88,6 +89,8 @@ def convert_directory(
         repack_png: PNG 入力時に wand で再パックしてメタデータを除去する。
         remove_failed: 変換に失敗したファイルを削除する。
         progress: 呼び元で作成済みの tqdm。未指定なら内部で作成する。
+        log_root: 進捗ログのパス表示で起点にするディレクトリ。指定時は POSIX 区切りの
+            相対パスで表示する。未指定時は絶対パスのまま表示する。
     """
     suffix = _TYPE_SUFFIXES[output_type]
     paths: list[pathlib.Path] = [p for p in target_path.glob("**/*") if p.is_file() and p.suffix not in _IGNORE_SUFFIXES]
@@ -104,6 +107,7 @@ def convert_directory(
                 jpeg_quality=jpeg_quality,
                 repack_png=repack_png,
                 remove_failed=remove_failed,
+                log_root=log_root,
             )
             pbar.update(1)
     finally:
@@ -121,6 +125,7 @@ def _convert_one(
     jpeg_quality: int,
     repack_png: bool,
     remove_failed: bool,
+    log_root: pathlib.Path | None = None,
 ) -> None:
     """1 ファイル分の変換処理。"""
     try:
@@ -151,7 +156,7 @@ def _convert_one(
                 else:
                     img2.save(temp_path)
     except Exception as e:
-        tqdm.tqdm.write(f"{path}: convert failed ({e})")
+        tqdm.tqdm.write(f"{_format_log_path(path, log_root)}: convert failed ({e})")
         # 失敗したファイルは削除する（バックアップされている前提）
         if remove_failed:
             path.unlink()
@@ -160,7 +165,21 @@ def _convert_one(
     path.unlink()
     save_path = path.with_suffix(suffix)
     temp_path.rename(save_path)
-    tqdm.tqdm.write(str(save_path))
+    tqdm.tqdm.write(_format_log_path(save_path, log_root))
+
+
+def _format_log_path(path: pathlib.Path, log_root: pathlib.Path | None) -> str:
+    """進捗ログのパス表示を整形する。
+
+    ``log_root`` が指定され、かつ ``path`` がその配下にある場合のみ POSIX 区切りの
+    相対パスへ変換する。それ以外は絶対パス文字列をそのまま返す。
+    """
+    if log_root is None:
+        return str(path)
+    try:
+        return path.relative_to(log_root).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:

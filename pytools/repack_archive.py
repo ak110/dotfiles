@@ -362,6 +362,7 @@ def _process_target(
                 jpeg_quality=config.image.jpeg_quality,
                 repack_png=config.image.repack_png,
                 remove_failed=True,
+                log_root=target.parent,
             )
 
         # 6. 平坦化
