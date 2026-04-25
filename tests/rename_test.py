@@ -82,6 +82,43 @@ class TestPatternFile:
         assert (tmp_path / "file.txt").exists()
         assert sub.exists()  # ディレクトリは改名されない
 
+    def test_dollar_capture_reference(self, tmp_path: pathlib.Path) -> None:
+        """パターンファイルの置換側で `$N` がキャプチャ参照として展開される。"""
+        from pytools import rename
+
+        (tmp_path / "img_001.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text(r"^img_(\d+)" + "\t" + r"page_$1" + "\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules)
+        assert (tmp_path / "page_001.txt").exists()
+
+    def test_dollar_dollar_literal_and_double_digit(self, tmp_path: pathlib.Path) -> None:
+        """`$$` がリテラル ``$``、`$10` などの 2 桁参照も解釈される。"""
+        from pytools import rename
+
+        # 10 個のキャプチャグループを使い `$10` を 10 番目の参照として検証する
+        pattern = "^" + "".join(r"(\d)" for _ in range(10)) + r"\.txt$"
+        replacement = r"$$_$10$1.txt"  # $$ → $, $10 → 10 番目, $1 → 1 番目
+        (tmp_path / "0123456789.txt").touch()
+        pf = tmp_path / "rules.txt"
+        pf.write_text(pattern + "\t" + replacement + "\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules)
+        assert (tmp_path / "$_90.txt").exists()
+
+    def test_backslash_in_replacement_is_literal(self, tmp_path: pathlib.Path) -> None:
+        """rgrename 互換: 置換側の ``\\`` はリテラルとして残り、Python 流の ``\\1`` は機能しない。"""
+        from pytools import rename
+
+        (tmp_path / "abc.txt").touch()
+        pf = tmp_path / "rules.txt"
+        # Python 流 \1 を書いてもキャプチャ参照にならず、リテラル ``\1`` のまま
+        pf.write_text(r"^(a)" + "\t" + r"\1z" + "\n", encoding="utf-8")
+        rules = rename.load_pattern_file(pf)
+        rename.rename_tree(tmp_path, rules)
+        assert (tmp_path / r"\1zbc.txt").exists()
+
     def test_rename_tree_dirs_only(self, tmp_path: pathlib.Path) -> None:
         from pytools import rename
 

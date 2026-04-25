@@ -48,6 +48,11 @@ def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[
     - ``D\\t正規表現\\t置換文字列`` (ディレクトリのみ)
 
     行頭 ``#`` と空行はスキップする。
+
+    置換文字列は rgrename 互換で ``$N`` をキャプチャ参照、``$$`` をリテラル ``$`` として
+    解釈する。Python の ``re.sub`` は ``\1`` 系のみを解釈するため、ロード時に ``$N``→
+    ``\N``・``$$``→``$`` への変換を行い、置換文字列内の既存 ``\`` は ``\\`` に
+    エスケープする。YAML 直書きルール側はこの変換の対象外で、Python 流の ``\1`` 記法を保つ。
     """
     flags = re.IGNORECASE if ignore_case else 0
     rules: list[RenameRule] = []
@@ -57,7 +62,9 @@ def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[
             continue
         parts = raw.split("\t")
         if len(parts) == 2:
-            rules.append(RenameRule(pattern=re.compile(parts[0], flags=flags), replacement=parts[1]))
+            rules.append(
+                RenameRule(pattern=re.compile(parts[0], flags=flags), replacement=_convert_dollar_replacement(parts[1]))
+            )
         elif len(parts) == 3:
             prefix, pattern_str, replacement = parts
             if prefix == "F":
@@ -67,10 +74,36 @@ def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[
             else:
                 logger.warning("%s:%d: 不正なプレフィクス '%s' (F/D のみ有効)", path, lineno, prefix)
                 continue
-            rules.append(RenameRule(pattern=re.compile(pattern_str, flags=flags), replacement=replacement, target=target))
+            rules.append(
+                RenameRule(
+                    pattern=re.compile(pattern_str, flags=flags),
+                    replacement=_convert_dollar_replacement(replacement),
+                    target=target,
+                )
+            )
         else:
             logger.warning("%s:%d: 書式が不正な行をスキップ", path, lineno)
     return rules
+
+
+_DOLLAR_TOKEN_RE = re.compile(r"\$(\$|\d{1,2})")
+
+
+def _convert_dollar_replacement(replacement: str) -> str:
+    r"""Rgrename 流 ``$N`` / ``$$`` 記法を Python の ``re.sub`` 記法に変換する。
+
+    既存の ``\`` は ``\\`` にエスケープしたうえで、``$N`` を ``\N``・``$$`` を
+    ``$`` に置換する。``$`` 直後が数字でも ``$`` でもない場合はリテラルの ``$`` を保つ。
+    """
+    escaped = replacement.replace("\\", "\\\\")
+
+    def repl(m: re.Match[str]) -> str:
+        token = m.group(1)
+        if token == "$":
+            return "$"
+        return "\\" + token
+
+    return _DOLLAR_TOKEN_RE.sub(repl, escaped)
 
 
 def apply_rules_to_name(name: str, rules: typing.Iterable[RenameRule], *, is_dir: bool) -> str:
