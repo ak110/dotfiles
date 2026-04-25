@@ -68,8 +68,8 @@ repos:
         language: system
         files: '\.claude-plugin/(plugin|marketplace)\.json$'
       - id: gen-completions
-        name: bash補完スクリプトの再生成チェック
-        entry: uv run --frozen python scripts/gen-completions.py --check
+        name: bash補完スクリプトの再生成
+        entry: uv run --frozen python scripts/gen-completions.py
         language: system
         pass_filenames: false
         files: '^(pyproject\.toml|pytools/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash)$'

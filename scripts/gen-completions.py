@@ -9,11 +9,10 @@
 `# PYTHON_ARGCOMPLETE_OK`マーカーがあるコマンドだけを補完登録対象にする。
 
 使い方:
-    scripts/gen-completions.py            # 生成または更新する（既存と同一なら書き換えない）
-    scripts/gen-completions.py --check    # 既存ファイルとの一致を検証する。差分があれば終了コード1
+    scripts/gen-completions.py    # 生成または更新する（既存と同一なら書き換えない）
 
-`completions/_pytools.bash`は手編集禁止。pre-commitフックで`--check`を走らせ、
-`pyproject.toml`またはソース側のマーカー有無と整合しない状態を検出する。
+`completions/_pytools.bash`は手編集禁止。pre-commitフックで再生成し、
+`pyproject.toml`またはソース側のマーカー有無と整合しない状態を自動的に修正する。
 """
 
 import argparse
@@ -31,7 +30,6 @@ _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 _HEADER = """\
 # 自動生成ファイル: scripts/gen-completions.py が出力する。手編集禁止。
 # 再生成: `uv run python scripts/gen-completions.py`
-# 検証 : `uv run python scripts/gen-completions.py --check`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
@@ -66,23 +64,10 @@ _python_argcomplete() {
 
 def main(argv: list[str] | None = None) -> int:
     """エントリーポイント。"""
-    parser = argparse.ArgumentParser(description="completions/_pytools.bash を生成する。")
-    parser.add_argument("--check", action="store_true", help="既存ファイルとの一致を検証する。差分があれば終了コード1。")
-    args = parser.parse_args(argv)
+    argparse.ArgumentParser(description="completions/_pytools.bash を生成する。").parse_args(argv)
 
     commands = sorted(_collect_commands())
     content = _render(commands)
-
-    if args.check:
-        existing = _OUTPUT.read_text(encoding="utf-8") if _OUTPUT.exists() else ""
-        if existing != content:
-            print(
-                f"エラー: {_OUTPUT.relative_to(_REPO_ROOT)} が最新ではない。"
-                "`uv run python scripts/gen-completions.py` を実行して再生成すること。",
-                file=sys.stderr,
-            )
-            return 1
-        return 0
 
     _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     if _OUTPUT.exists() and _OUTPUT.read_text(encoding="utf-8") == content:
