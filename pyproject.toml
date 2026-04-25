@@ -28,7 +28,7 @@ dependencies = [
 
 [project.scripts]
 check-image-sizes = "pytools.check_image_sizes:_main"
-claude-commit = "pytools.claude_commit:_main"
+ccommit = "pytools.claude_commit:_main"
 claude-plans-viewer = "pytools.claude_plans_viewer:_main"
 claude-session-export = "pytools.claude_session_export:_main"
 claudize = "pytools.claudize:_main"

@@ -57,7 +57,7 @@
   配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
 - `agent-toolkit/agent.md`のコミットメッセージ方針と`.gitmessage`は意図的に重複させている。
   前者はプラグイン配布対象（他リポジトリでも参照される）、後者は本リポジトリ固有のコミット補助テンプレート
- （`claude-commit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
+ （`ccommit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
