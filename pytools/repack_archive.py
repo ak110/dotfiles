@@ -458,7 +458,7 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[tuple[str, str]] = []
     with (
-        tqdm.tqdm(total=entry_count, desc=f"extract {archive.name}", ascii=True, ncols=100, unit="f") as pbar,
+        tqdm.tqdm(total=entry_count, desc="extract", unit="file", ascii=True, ncols=100) as pbar,
         libarchive.file_reader(str(archive)) as reader,
     ):
         for entry in reader:
@@ -649,7 +649,7 @@ def _write_uncompressed_zip(work_dir: pathlib.Path, zip_path: pathlib.Path) -> N
     """作業ディレクトリ配下を無圧縮 ZIP へ書き出す。"""
     files = sorted(p for p in work_dir.rglob("*") if p.is_file())
     with (
-        tqdm.tqdm(total=len(files), desc=f"zip {zip_path.name}", ascii=True, ncols=100, unit="f") as pbar,
+        tqdm.tqdm(total=len(files), desc="zip", unit="file", ascii=True, ncols=100) as pbar,
         zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf,
     ):
         for file in files:

@@ -92,7 +92,7 @@ def convert_directory(
     suffix = _TYPE_SUFFIXES[output_type]
     paths: list[pathlib.Path] = [p for p in target_path.glob("**/*") if p.is_file() and p.suffix not in _IGNORE_SUFFIXES]
     paths = list(natsort.natsorted(paths))
-    pbar = progress if progress is not None else tqdm.tqdm(total=len(paths), ascii=True, ncols=100)
+    pbar = progress if progress is not None else tqdm.tqdm(total=len(paths), desc="convert", unit="file", ascii=True, ncols=100)
     try:
         for path in paths:
             _convert_one(
