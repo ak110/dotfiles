@@ -108,7 +108,9 @@ class RepackConfig(pydantic.BaseModel):
 def _main() -> None:
     parser = argparse.ArgumentParser(description="アーカイブを gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
-    parser.add_argument("-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (既定: 各 TARGET の親/bk)")
+    parser.add_argument(
+        "-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (既定: 対象ファイルのあるディレクトリ/bk)"
+    )
     parser.add_argument("--no-trash", action="store_true", help="バックアップをゴミ箱送りしない")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -466,13 +468,11 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
 
 
 def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
-    """``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
+    r"""``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
 
-    エンコーディング判定はエントリ単位で行う。bit 11 (Unicode flag) が立つエントリは
-    UTF-8 として ``info.filename`` をそのまま使い、立たないエントリは原バイト列を
-    CP932 strict で復号する。失敗したエントリのみ ``info.filename`` (CP437 既定) へ
-    フォールバックする。Zip Slip 対策とエンコーディング崩れの保険として、
-    ``..``・先頭 ``/``・バックスラッシュ・``:``・Windows 流のドライブ表記を含むパスは
+    エンコーディング判定はエントリ単位で ``decode_zipinfo_filename`` に委ねる。
+    Zip Slip 対策とエンコーディング崩れの保険として、``..``・先頭 ``/``・
+    バックスラッシュ・``:``・``\x00``・Windows 流のドライブ表記を含むパスは
     展開せず failures に積む。
     """
     dest.mkdir(parents=True, exist_ok=True)
@@ -482,7 +482,7 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
         with tqdm.tqdm(total=len(infos), desc="extract", unit="file", ascii=True, ncols=100) as pbar:
             for info in infos:
                 pbar.update(1)
-                entry_path = _decode_zip_entry_name(info)
+                entry_path = decode_zipinfo_filename(info)
                 if not entry_path:
                     continue
                 is_dir = info.is_dir() or entry_path.endswith("/")
@@ -509,21 +509,36 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
     return failures
 
 
-def _decode_zip_entry_name(info: zipfile.ZipInfo) -> str:
-    """ZipInfo のファイル名を bit 11・CP932・CP437 の優先順で復号する。
+# pytilpack への移設候補。`zipfile.ZipInfo` 単体を入力としフォールバック先を
+# 引数で受け取る自己完結関数として設計してある。実際の移設時は
+# `pytilpack/zipfile.py` を新設して取り込む想定。
+def decode_zipinfo_filename(
+    info: zipfile.ZipInfo,
+    *,
+    fallback_encodings: typing.Sequence[str] = ("cp932", "cp437"),
+) -> str:
+    r"""``ZipInfo`` のファイル名を生バイト列基準で復号する。
 
-    bit 11 が立つ場合は ``zipfile`` が UTF-8 で ``info.filename`` を構築済みなので
-    そのまま返す。立たない場合は原バイト列を CP932 strict で復号し、失敗時のみ
-    ``info.filename`` (CP437 既定デコード結果) を採用する。日本語 Windows 由来の
-    ZIP は CP932 が圧倒的多数で CP437 が稀なため、優先度を CP932 側に振っている。
+    ``info.filename`` は ``zipfile._sanitize_filename`` でプラットフォーム依存の
+    加工 (Windows なら ``\\`` を ``/`` に置換) を経た文字列であり、CP932 の
+    2 バイト目に ``0x5C`` を含む文字 (ソ・ポ・表など) が混入したエントリでは
+    ``info.filename.encode("cp437").decode("cp932")`` の往復復元に失敗する。
+    生バイト列に近い ``info.orig_filename`` を起点にすることでこれを避ける。
+
+    bit 11 (Unicode flag) が立つ場合は ``zipfile`` が UTF-8 で ``orig_filename``
+    を構築済みなのでそのまま返す。立たない場合は ``orig_filename`` を CP437
+    でエンコードして原バイト列を復元し、``fallback_encodings`` の先頭から strict
+    で復号を試み、全て失敗した場合は CP437 既定の ``orig_filename`` をそのまま返す。
     """
     if info.flag_bits & 0x800:
-        return info.filename
-    raw = info.filename.encode("cp437")
-    try:
-        return raw.decode("cp932")
-    except UnicodeDecodeError:
-        return info.filename
+        return info.orig_filename
+    raw = info.orig_filename.encode("cp437")
+    for encoding in fallback_encodings:
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return info.orig_filename
 
 
 def _is_safe_relative_path(name: str) -> bool:
@@ -532,12 +547,14 @@ def _is_safe_relative_path(name: str) -> bool:
     Zip Slip と SJIS 復号崩れの双方を遮るため、以下を全て満たすことを要求する。
 
     - 空文字でない
-    - バックスラッシュを含まない (CP932 2 バイト目混入の保険)
+    - バックスラッシュ・NUL 文字 (``\x00``) を含まない
+      (前者は CP932 2 バイト目混入の保険、後者は ``orig_filename`` 起点で復号した
+      際に ``zipfile._sanitize_filename`` の NUL 切り詰めが効かなくなる影響への保険)
     - 先頭が ``/`` でない
     - ``/`` 区切りの各要素が ``""`` (連続 ``//`` 由来) でも ``..`` でもなく、``:`` を含まない
     - ``PureWindowsPath`` で ``drive`` または ``root`` を持たない (``C:foo``・``\\srv\\share`` 等の拒否)
     """
-    if not name or "\\" in name or name.startswith("/"):
+    if not name or "\\" in name or "\x00" in name or name.startswith("/"):
         return False
     for part in name.split("/"):
         if part in ("", ".."):

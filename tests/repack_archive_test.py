@@ -430,6 +430,47 @@ class TestFilenameEncoding:
         entries = _zip_entries(tmp_path / "sjis.zip")
         assert entries == {"ソート/メモ.txt", "他.txt"}
 
+    def test_cp932_and_utf8_mixed_zip(self, tmp_path: pathlib.Path) -> None:
+        """bit 11 未設定の CP932 日本語エントリと bit 11 付き UTF-8 日本語エントリの混在で双方破損しない。
+
+        CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に入れて、
+        ``info.filename`` 経由ではなく ``info.orig_filename`` 経由で復号できていることを担保する。
+        """
+        archive = tmp_path / "mixed.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr(_Cp932ZipInfo("ソート.txt"), b"a")
+            zf.writestr("日本語.txt", b"u")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        entries = _zip_entries(tmp_path / "mixed.zip")
+        assert entries == {"ソート.txt", "日本語.txt"}
+
+    def test_null_byte_entry_is_recorded_as_failure(self, tmp_path: pathlib.Path) -> None:
+        """エントリ名に NUL 文字が混入しても他エントリの処理は継続する。
+
+        ``orig_filename`` 起点では ``zipfile._sanitize_filename`` の NUL 切り詰めが効かないため、
+        ``_is_safe_relative_path`` 側で NUL を弾いて failures に積む。
+        """
+        archive = tmp_path / "nul.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr(_RawBytesZipInfo(b"bad\x00name.txt"), b"x")
+            zf.writestr("safe.txt", b"y")
+        dest = tmp_path / "out"
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        failures = repack_archive._extract_zip(archive, dest, compiled)
+        failed_paths = {p for p, _ in failures}
+        assert any("\x00" in p for p in failed_paths)
+        assert (dest / "safe.txt").exists()
+
     def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path) -> None:
         """CP932 strict で復号できないエントリだけ CP437 にフォールバックする。
 
@@ -514,5 +555,5 @@ class TestMainFailureSummary:
         # 良い target は出力 ZIP が残り、失敗 target はサマリーに列挙される
         assert (tmp_path / "good.zip").exists()
         summary = "\n".join(r.getMessage() for r in caplog.records)
-        assert "失敗した TARGET" in summary
+        assert "失敗したターゲット" in summary
         assert str(bad) in summary
