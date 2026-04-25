@@ -37,6 +37,9 @@ if "%PORT%"=="%START_PORT%" (
     echo port %START_PORT% unavailable, using %PORT%
 )
 
+rem タイトル設定
+title remote-plans.cmd: %TARGET% port %PORT%
+
 rem SSHトンネルを張りつつ、リモート側のビューアを前景で起動する。
 ssh -t -o ExitOnForwardFailure=yes -L %PORT%:127.0.0.1:%PORT% %TARGET% "~/.local/bin/claude-plans-viewer --host 127.0.0.1 --port %PORT%"
 
