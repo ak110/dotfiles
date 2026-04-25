@@ -195,8 +195,8 @@ class TestStateOnceLimit:
     """1 セッション 1 回の制限テスト。"""
 
     def test_second_stop_approves(self, tmp_path: pathlib.Path):
-        """pyfltr_advice_given = true の状態では即 approve する。"""
-        _write_state(tmp_path, "once", {"pyfltr_advice_given": True})
+        """advice_given = true の状態では即 approve する。"""
+        _write_state(tmp_path, "once", {"advice_given": True})
         transcript = _write_transcript(
             tmp_path,
             [
