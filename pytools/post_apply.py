@@ -144,9 +144,19 @@ def _print_plugin_recommendations() -> None:
     if not recommendations:
         return
     print(flush=True)
-    logger.info("推奨プラグイン設定に対し以下のコマンドの実行をおすすめします:")
-    for cmd in recommendations:
-        logger.info("  %s", cmd)
+    logger.info("推奨プラグイン設定:")
+    if len(recommendations) == 1:
+        logger.info("  %s", recommendations[0])
+        return
+    # 利用者がコピペ1回で全件実行できるよう && で連結し、可読性のため行末継続記号で改行する。
+    # 継続記号はシェル別に切り替える (bash: \, cmd: ^)。
+    continuation = "^" if sys.platform == "win32" else "\\"
+    last_index = len(recommendations) - 1
+    for index, cmd in enumerate(recommendations):
+        if index == last_index:
+            logger.info("  %s", cmd)
+        else:
+            logger.info("  %s && %s", cmd, continuation)
 
 
 def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:
