@@ -75,16 +75,26 @@ th, td { border: 1px solid #d1d5db; padding: 6px 8px; }
 """
 
 # タブ識別とPWAアイコンの双方でSSOTにするため、faviconはインラインSVGを単一定数で保持する。
-# 図柄はtabler iconsのclipboard-list準拠。ベクターで配布するためPWAの192x192/512x512要件も1ファイルで満たせる。
+# 図柄はtabler iconsのclipboard-listに白い背景を追加したもの。
+# ベクターで配布するためPWAの192x192/512x512要件も1ファイルで満たせる。
 _FAVICON_SVG = """\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#4f46e5"\
- stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M9 5H7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2V7a2 2 0 0 0 -2 -2h-2"/>
-  <rect x="9" y="3" width="6" height="4" rx="2"/>
-  <path d="M9 12h.01"/>
-  <path d="M11 12h4"/>
-  <path d="M9 16h.01"/>
-  <path d="M11 16h4"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+  class="icon icon-tabler icons-tabler-outline icon-tabler-clipboard-list">
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <!-- white outline / backing -->
+  <g stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="white">
+    <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
+    <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
+  </g>
+  <!-- original stroke -->
+  <g stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
+    <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
+    <path d="M9 12l.01 0"/>
+    <path d="M13 12l2 0"/>
+    <path d="M9 16l.01 0"/>
+    <path d="M13 16l2 0"/>
+  </g>
 </svg>
 """
 
