@@ -102,8 +102,8 @@ push前にはbumpが必須である。
   - 連携サブエージェント: なし
 - `careful-impl`
   - 担当工程: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
-  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-code-reviewer`・
-    `careful-docs-reviewer`・`careful-followup-reviewer`
+  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-impl-reviewer`・
+    `careful-followup-reviewer`
 
 `spec-driven`が有効な場合は、同スキルの誘導に従って個別の作業テーマごとに`plan-mode`へ入り計画ファイルを作成する。
 それ以外の場合は直接`plan-mode`から始める。
@@ -121,7 +121,7 @@ flowchart TB
     end
     subgraph PI["careful-impl スキル（実装方式が careful-impl の場合のみ）"]
       direction TB
-      T[careful-implementer<br/>実装・検証] --> R1[careful-spec/code/docs-reviewer<br/>初回並列]
+      T[careful-implementer<br/>実装・検証] --> R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回並列]
       R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
       T2 --> R2[careful-followup-reviewer<br/>haiku 単一]
       R2 -->|未対応あり| T2

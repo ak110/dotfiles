@@ -101,29 +101,24 @@ description: >
 
 検証タスクの完了後、レビュータスクを開始する。
 
-### 初回レビュー（3種別並列）
+### 初回レビュー（2種別並列）
 
-本スキルは`実装方式: careful-impl`の計画でのみ呼び出される前提で、
-計画ファイルの`## 実行方法`節「セルフレビュー方針」項目を確認し、起動対象の種別を特定する。
-種別`spec`（`careful-spec-reviewer`）・`code`（`careful-code-reviewer`）・
-`docs`（`careful-docs-reviewer`）を並列呼び出しする。
-
-起動要否は計画時に決定済みであるが、実装での追加変更（ドキュメントの新規追加・削除など）で
-判断が変わる場合は、メイン判断で追加起動・省略を調整してよい。
+`careful-spec-reviewer`と`careful-impl-reviewer`を常に並列で起動する。
+計画ファイル内の起動要否指定は参照せず、両種別を必ず起動する。
 
 ### 初回レビュー呼び出しテンプレート
 
-種別ごとに対応するエージェント（`careful-spec-reviewer`・`careful-code-reviewer`・`careful-docs-reviewer`）を
+種別ごとに対応するエージェント（`careful-spec-reviewer`・`careful-impl-reviewer`）を
 `Agent`ツールで並列起動する。共通骨子を使い、種別固有の欄を差し替える。
 初回レビューでは対象範囲の指摘をすべて洗い出すこと。再レビュー（followup）では新規指摘を追加しない前提で、
 この初回で見つかった問題をすべて列挙する。
 
-`careful-code-reviewer`のfrontmatterでは`agent-toolkit:coding-standards`を自動ロードする。
-`careful-docs-reviewer`のfrontmatterでは`agent-toolkit:writing-standards`を自動ロードする。
-そのためプロンプト側にスキル呼び出し指示は含めない。
-`careful-spec-reviewer`もスキル事前ロード無しで起動する。
+`careful-spec-reviewer`はスキル事前ロード無しで起動する。
+`careful-impl-reviewer`のfrontmatterでは`agent-toolkit:coding-standards`と
+`agent-toolkit:writing-standards`を自動ロードする。
+そのためいずれもプロンプト側にスキル呼び出し指示は含めない。
 
-プレースホルダー`{レビュー種別名}`には`spec`・`code`・`docs`のいずれかを記入する。
+プレースホルダー`{レビュー種別名}`には`spec`・`impl`のいずれかを記入する。
 
 ```text
 以下の実装について{レビュー種別名}レビューを実施してください。
@@ -145,9 +140,8 @@ description: >
 
 | 種別 | 起動エージェント | 担当観点 |
 | --- | --- | --- |
-| `spec` | `careful-spec-reviewer` | 仕様適合性・複数ドキュメント間整合性 |
-| `code` | `careful-code-reviewer` | コード品質 |
-| `docs` | `careful-docs-reviewer` | ドキュメント単体品質 |
+| `spec` | `careful-spec-reviewer` | 計画ファイルと成果物の仕様適合性 |
+| `impl` | `careful-impl-reviewer` | コード単体品質・ドキュメント単体品質・成果物間の整合性 |
 
 ### 指摘の統合と修正依頼
 
