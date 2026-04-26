@@ -19,10 +19,14 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
    amend / rebase 前に改めて git log を確認させる
 5. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
    必須H2 の欠落・順序違反・想定外 H2を
-   ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)
+   ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)。
+   セッション状態の ``plan_mode_skill_invoked`` が真の場合のみ実行する
+   (未呼び出し時は PreToolUse 側で plan-mode スキル先行呼び出しを促すため、
+   構造検査の二重警告を避ける)
 6. plan-mode スキル呼び出し検出 (Skill) — ``agent-toolkit:plan-mode`` または
    ``plan-mode`` の呼び出しを観測し ``plan_mode_skill_invoked`` フラグを立てる。
-   PreToolUse 側の plan file 書き込み警告を抑制するために使う
+   PreToolUse 側の最初ツール呼び出し警告および本フックの plan file 形式検査の
+   有効化に使う
 
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
 
@@ -274,10 +278,12 @@ def _main() -> int:
         if state.get("git_log_checked", False):
             state["git_log_checked"] = False
             _write_state(path, state)
-        # plan file 形式検査: ~/.claude/plans/ 直下の .md のみ対象
+        # plan file 形式検査: ~/.claude/plans/ 直下の .md のみ対象。
+        # plan-mode スキル未呼び出し時は PreToolUse 側の警告で先行催促済みのため、
+        # 構造検査をスキップして二重警告を避ける。
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-        if _is_plan_file(file_path):
+        if state.get("plan_mode_skill_invoked", False) and _is_plan_file(file_path):
             violations = _check_plan_format(file_path)
             if violations:
                 message = _llm_notice(

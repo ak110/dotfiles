@@ -18,10 +18,11 @@ _PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-
 
 
 def _run(
-    payload: object,
+    payload: dict | str,
     *,
     state_dir: pathlib.Path | None = None,
     home_dir: pathlib.Path | None = None,
+    plan_mode_skill_invoked: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
@@ -31,6 +32,16 @@ def _run(
         env["TMP"] = str(state_dir)
     if home_dir is not None:
         env["HOME"] = str(home_dir)
+    # plan file 形式検査は plan_mode_skill_invoked が真の場合のみ実行されるため、
+    # 形式検査を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
+    if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
+        sid = payload.get("session_id", "")
+        if isinstance(sid, str) and sid:
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / f"claude-agent-toolkit-{sid}.json").write_text(
+                json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
+                encoding="utf-8",
+            )
     return subprocess.run(
         [sys.executable, str(_SCRIPT)],
         input=text,
@@ -319,6 +330,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
         assert result.stdout.strip() == ""
@@ -336,6 +348,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -364,6 +377,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -382,6 +396,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -410,6 +425,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -428,6 +444,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -443,6 +460,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -459,6 +477,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -477,6 +496,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -493,6 +513,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -513,6 +534,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
@@ -543,6 +565,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -580,6 +603,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -609,6 +633,7 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
         assert result.stdout.strip() == ""
 
@@ -640,7 +665,30 @@ class TestPlanFormatCheck:
             },
             state_dir=tmp_path / "state",
             home_dir=home,
+            plan_mode_skill_invoked=True,
         )
+        assert result.stdout.strip() == ""
+
+    def test_skipped_when_skill_not_invoked(self, tmp_path: pathlib.Path):
+        """``plan_mode_skill_invoked`` 未設定時は plan file の構造検査をスキップする。
+
+        PreToolUse 側で plan-mode スキル先行呼び出しが既に促されているため、
+        構造検査の二重警告を避ける。
+        """
+        home, plans = self._home(tmp_path)
+        # 必須セクションが欠落した plan を書いても、フラグ未設定なら警告しない。
+        content = "# タイトル\n\n## 背景\n\n説明。\n"
+        plan = _write_plan(plans, "no-skill.md", content)
+        result = _run(
+            {
+                "session_id": "plan-no-skill",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+        )
+        assert result.returncode == 0
         assert result.stdout.strip() == ""
 
     def test_bash_does_not_emit_plan_check(self, tmp_path: pathlib.Path):

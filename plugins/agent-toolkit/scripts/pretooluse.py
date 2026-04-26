@@ -5,28 +5,30 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PreToolUse 統合フック。
 
-Write / Edit / MultiEdit / Bash の実行前に以下のチェックを順に実行する。
+任意ツールの実行前に以下のチェックを順に実行する。
 block 系 check は 1 プロセスで直列実行し、最初の違反で exit 2 する。
-warn 種別の check は stderr に警告を出しつつ処理を継続する。
+warn 種別の check は stderr または stdout に警告を出しつつ処理を継続する。
 
 統合しているチェック:
 
-1. 文字化け (U+FFFD) 検出 (block, Write/Edit/MultiEdit)
-2. `.ps1` / `.ps1.tmpl` への LF-only 書き込み検出 (block, Write/Edit/MultiEdit)
+1. plan mode で最初のツール呼び出しが plan-mode スキル以外の場合の警告
+   (warn, 任意ツール)
+   - `permission_mode == "plan"` かつセッション状態に `plan_mode_skill_invoked`
+     と `plan_mode_warning_emitted` のいずれもなければ警告し、
+     セッションあたり 1 回だけ発火する
+2. 文字化け (U+FFFD) 検出 (block, Write/Edit/MultiEdit)
+3. `.ps1` / `.ps1.tmpl` への LF-only 書き込み検出 (block, Write/Edit/MultiEdit)
    - Windows PowerShell 5.1 は LF 改行の `.ps1` を正しくパースできないため CRLF を強制
-3. lockfile / 生成物ディレクトリの直接編集 (block, Write/Edit/MultiEdit)
+4. lockfile / 生成物ディレクトリの直接編集 (block, Write/Edit/MultiEdit)
    - `uv.lock`, `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `Cargo.lock`,
      `mise.lock`, `.venv/`, `node_modules/`
-4. シークレット / 鍵ファイルの直接編集 (block, Write/Edit/MultiEdit)
+5. シークレット / 鍵ファイルの直接編集 (block, Write/Edit/MultiEdit)
    - `.env*`, `*.pem`, `*.key`, `.encrypt_key`, `.secret_key`, `github_action(.pub)?`
    - `.example` / `.sample` 拡張子は検査対象外
-5. manifest ファイルの手編集 (warn, Write/Edit/MultiEdit)
+6. manifest ファイルの手編集 (warn, Write/Edit/MultiEdit)
    - `pyproject.toml`, `package.json`
-6. ホームディレクトリの絶対パス混入 (warn, Write/Edit/MultiEdit)
+7. ホームディレクトリの絶対パス混入 (warn, Write/Edit/MultiEdit)
    - `$HOME` を含むリテラルがリポジトリ管理ファイルに書き込まれるのを検知
-7. plan file 書き込み前の plan-mode スキル先行呼び出し未確認 (warn, Write/Edit/MultiEdit)
-   - `~/.claude/plans/*.md` への書き込み時、セッション状態に
-     `plan_mode_skill_invoked` フラグが無ければスキル先行呼び出しを促す
 
 block 系 check の検査対象は「新規に書き込まれる側」 (`content` / `new_string`)
 のみ。`old_string` は既存内容の修正・削除を妨げないため検査しない。
@@ -78,13 +80,23 @@ def _main() -> int:
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         return 0
+    session_id_raw = payload.get("session_id", "")
+    session_id = session_id_raw if isinstance(session_id_raw, str) else ""
+    permission_mode_raw = payload.get("permission_mode", "")
+    permission_mode = permission_mode_raw if isinstance(permission_mode_raw, str) else ""
+
+    # plan mode で最初のツール呼び出しが plan-mode スキル以外なら警告 (任意ツール)
+    plan_mode_result = _check_plan_mode_skill_first(tool_name, tool_input, permission_mode, session_id)
+    if plan_mode_result is not None:
+        print(json.dumps(plan_mode_result, ensure_ascii=False))
+        # 1 セッション 1 回限りの警告のため、同フックでの後続 check は省略する
+        return 0
 
     # Bash は専用ハンドラ
     if tool_name == "Bash":
         command = tool_input.get("command")
         if not isinstance(command, str):
             return 0
-        session_id = payload.get("session_id", "")
         # git amend / rebase は直前に git log を確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id):
             return 2
@@ -130,10 +142,6 @@ def _main() -> int:
     # --- warn 系 check (stderr に警告のみ、exit code は 0 のまま) ---
     _check_manifest(tool_name, file_path)
     _check_home_path(tool_name, fields, file_path)
-    session_id = payload.get("session_id", "")
-    result = _check_plan_skill_invoked(file_path, session_id)
-    if result is not None:
-        print(json.dumps(result, ensure_ascii=False))
 
     return 0
 
@@ -384,52 +392,56 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     return False
 
 
-# --- plan file 書き込み時の plan-mode スキル先行呼び出し未確認 check (warn) ---
+# --- plan mode 中の最初のツール呼び出しが plan-mode スキル以外の場合の警告 (warn) ---
+
+# Skill ツールの ``skill`` 引数として許容する plan-mode スキル名。
+# ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
+# posttooluse.py の同名定数と同期しておく。
+_PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 
-def _is_plan_file_path(file_path: str) -> bool:
-    """``~/.claude/plans/`` 直下の plan file (``*.md``) か判定する。
+def _check_plan_mode_skill_first(
+    tool_name: str,
+    tool_input: dict,
+    permission_mode: str,
+    session_id: str,
+) -> dict | None:
+    """Plan mode 中で最初のツール呼び出しが plan-mode スキル以外なら警告を返す。
 
-    posttooluse.py の ``_is_plan_file`` と同等の判定だが、依存を持たないように
-    本ファイル内に独立実装する (両者が同期している前提)。
-    `.review.md` / `.codex.log` は副次ファイルのため除外する。
+    判定条件:
+
+    - ``permission_mode == "plan"``
+    - セッション状態の ``plan_mode_skill_invoked`` が偽
+    - セッション状態の ``plan_mode_warning_emitted`` が偽 (1 セッション 1 回のみ)
+
+    例外: 当該呼び出しが Skill ツールでスキル名が ``_PLAN_MODE_SKILL_NAMES``
+    に含まれる場合は警告しない。
+
+    警告発火時は ``plan_mode_warning_emitted`` を真にして以後の発火を抑制する。
     """
-    if not file_path:
-        return False
-    try:
-        path = pathlib.Path(file_path).resolve()
-        plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve()
-        rel = path.relative_to(plans_dir)
-    except (OSError, ValueError):
-        return False
-    if len(rel.parts) != 1:
-        return False
-    name = rel.parts[0]
-    if name.endswith(".review.md") or name.endswith(".codex.log"):
-        return False
-    return name.endswith(".md")
-
-
-def _check_plan_skill_invoked(file_path: str, session_id: str) -> dict | None:
-    """Plan file への書き込み前に plan-mode スキルが呼ばれていなければ警告を返す。
-
-    PostToolUse 側で Skill 呼び出しを観測し ``plan_mode_skill_invoked`` を
-    真に設定する運用と組み合わせる。フラグ未設定時のみ警告 (block しない)。
-    """
-    if not _is_plan_file_path(file_path):
+    if permission_mode != "plan":
+        return None
+    if not session_id:
         return None
     state = _read_session_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
         return None
+    if state.get("plan_mode_warning_emitted", False):
+        return None
+    if tool_name == "Skill":
+        skill_name = tool_input.get("skill")
+        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
+            return None
+    state["plan_mode_warning_emitted"] = True
+    _write_session_state(session_id, state)
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "additionalContext": _llm_notice(
-                f"writing to plan file ({file_path}) without invoking the plan-mode skill first."
-                f" Invoke `agent-toolkit:plan-mode` skill before drafting the plan to receive"
-                f" the latest section structure and review process guidance."
-                f" Target: {file_path}",
+                "in plan mode, but the first tool call is not the plan-mode skill."
+                " Invoke `agent-toolkit:plan-mode` skill first to load the latest section"
+                " structure and review process guidance before drafting the plan.",
                 tag="warn",
             ),
         },
@@ -468,6 +480,17 @@ def _read_session_state(session_id: str) -> dict:
         return json.loads(_session_state_path(session_id).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, ValueError):
         return {}
+
+
+def _write_session_state(session_id: str, state: dict) -> None:
+    """セッション状態を書く。書き込み失敗は無視する (best-effort)。"""
+    if not isinstance(session_id, str) or not session_id:
+        return
+    path = _session_state_path(session_id)
+    try:
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        return
 
 
 # --- Bash: git amend / rebase を log 未確認でブロック ---
