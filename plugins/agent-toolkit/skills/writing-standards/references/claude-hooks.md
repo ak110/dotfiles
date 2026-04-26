@@ -1,5 +1,16 @@
 # Claude Code Hook実装ガイドライン
 
+## matcher設定
+
+`hooks.json`の`PreToolUse` / `PostToolUse`では`matcher`でhookを起動するツールを絞り込む。
+`matcher`はツール名に対する正規表現として評価される。
+
+- 特定ツールのみ: `"Write|Edit|MultiEdit"`のように`|`で列挙する
+- 任意ツール: 空文字列`""`または`".*"`で全ツールを対象にする
+ （`Read`など個別に列挙しないツールも含めて捕捉したい場合に使う）
+- 個別の早期returnガード: `matcher`を広げた場合、hookスクリプト側で`tool_name`を
+  確認し対象外を早期returnすることで処理コストと誤検出を抑える
+
 ## 出力フィールドの使い分け
 
 hookやプラグインのJSON出力で使えるフィールドは、表示先が異なる。
@@ -76,3 +87,17 @@ _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the c
 def _llm_notice(body: str) -> str:
     return f"{_MESSAGE_PREFIX} {body} {_MESSAGE_SUFFIX}"
 ```
+
+## セッション状態ファイル
+
+PreToolUseとPostToolUseの間で情報を共有する場合、セッション単位の状態ファイルを使う。
+hookは1呼び出しごとに独立プロセスとして起動するため、メモリー上の変数では情報を引き継げない。
+
+- パス規則: `{tempdir}/{plugin名など}-{session_id}.json`
+ （`tempfile.gettempdir()`と`payload["session_id"]`から組み立てる）
+- 形式: 単一のJSONオブジェクト。フラグ名はsnake_caseで統一する
+- 書き込み: PostToolUseで観測したイベント（テスト実行・スキル呼び出しなど）をフラグとして記録する
+- 読み取り: PreToolUseで判定材料として参照する（例: テスト未実行警告・スキル先行呼び出し催促）
+- 破損・不在時: 空辞書として扱い、安全側の判定にフォールバックする
+- フラグの増加に伴い参照関係が把握しづらくなるため、プラグインごとに用途・書き込み元・
+  読み取り元の対応表をドキュメント化することを推奨する

@@ -134,6 +134,26 @@ flowchart TB
     classDef sd stroke-dasharray: 4 2
 ```
 
+## agent-toolkitのセッション状態フラグ
+
+`agent-toolkit`プラグインのhookは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
+パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`である。
+パス規則の一般論は`plugins/agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
+「セッション状態ファイル」節を参照する。
+
+フラグを追加・変更する際は本表を必ず更新し、書き込み元と読み取り元の対応関係を保つ。
+
+- `test_executed` — PostToolUse(Bash)が記録。
+  PreToolUse(Bash)の`git commit`未検証警告の抑制に使う
+- `git_status_checked` — PostToolUse(Bash)が`git status` / `git log` / `git diff`を観測して記録
+- `git_log_checked` — PostToolUse(Bash)が`git log`を観測して記録。
+  PreToolUse(Bash)のamend / rebase直前確認に使う。
+  commit / rebase / push / ファイル編集を観測した時点でリセットする
+- `codex_resume_count` — PostToolUse(Bash)が`codex exec resume`の累積回数を記録
+- `plan_mode_skill_invoked` — PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを観測して記録。
+  PostToolUseのplan file形式検査の有効化、およびPreToolUseの最初ツール警告の抑制に使う
+- `plan_mode_warning_emitted` — PreToolUseが最初ツール警告を発火済みかを記録（1セッション1回限り）
+
 ## 参考
 
 - 配布方式と前提: `docs/guide/claude-code.md`のagent-toolkitセクション
