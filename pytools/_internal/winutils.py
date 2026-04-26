@@ -32,6 +32,25 @@ def read_user_env_var(name: str) -> tuple[str | None, int]:
     return value, reg_type
 
 
+# システム側環境変数の格納先。Windows のセッションマネージャーが起動時に参照する。
+_SYSTEM_ENV_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+
+
+def read_system_env_var(name: str) -> tuple[str | None, int]:
+    r"""`HKLM\\SYSTEM\\...\\Environment` からシステム環境変数を読み出す。
+
+    戻り値は `(値, 値型)` のタプル。値が存在しない場合は `(None, winreg.REG_SZ)`。
+    通常ユーザーでも読み取りは可能（書き込みは管理者権限が必要）。
+    """
+    wr = import_winreg()
+    with wr.OpenKey(wr.HKEY_LOCAL_MACHINE, _SYSTEM_ENV_KEY, 0, wr.KEY_READ) as key:
+        try:
+            value, reg_type = wr.QueryValueEx(key, name)
+        except FileNotFoundError:
+            return None, wr.REG_SZ
+    return value, reg_type
+
+
 def write_user_env_var(name: str, value: str, reg_type: int) -> None:
     r"""`HKCU\\Environment` へユーザー環境変数を書き込む。"""
     wr = import_winreg()

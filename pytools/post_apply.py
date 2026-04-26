@@ -14,6 +14,7 @@ from pathlib import Path
 from pytools import update_ssh_config
 from pytools._internal import (
     cleanup_paths,
+    cleanup_user_path,
     install_claude_plugins,
     install_codex_mcp,
     install_libarchive_windows,
@@ -117,6 +118,8 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
     ("libarchive (Windows)", install_libarchive_windows.run),
     ("claude-plans-viewer 自動起動セットアップ", setup_plans_viewer_windows.run),
     ("winget configure (Windows)", setup_winget_dsc.run),
+    # 他ステップが PATH 追加を行うため、それらの後に重複整理を実行する。
+    ("ユーザー PATH 重複整理 (Windows)", cleanup_user_path.run),
 ]
 
 
