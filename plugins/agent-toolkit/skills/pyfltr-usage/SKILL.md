@@ -67,6 +67,7 @@ pyfltr show-run <run_id> --commands=mypy,ruff-check
 | `succeeded` | 問題なし | 不要 |
 | `formatted` | formatterがファイルを変更した | 基本的に再実行不要（formatter/linter間で設定矛盾がない限り変更は収束する） |
 | `failed` | エラーあり | `diagnostic`行で修正対象のファイル・行番号・メッセージを確認する |
+| `resolution_failed` | ツール起動コマンドの解決に失敗（`bin-runner` / `js-runner`未提供等） | 後述の「bin-runner未提供環境」を参照 |
 | `skipped` | ツール未検出などでスキップ | 通常は無視してよい |
 
 ## 効率的なワークフロー
@@ -128,6 +129,11 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
 - 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を絞る（全体再実行より早く原因切り分けできる）
+- bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
+  対象ファイルが0件のときは解決処理自体を省略するため`skipped`で通過する。
+  対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る。
+  回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
+  当該ツールを`{tool} = false`で無効化する
 
 ## 推奨設定への準拠
 
