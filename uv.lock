@@ -3,10 +3,11 @@ revision = 3
 requires-python = ">=3.12"
 
 [options]
-exclude-newer = "2026-04-24T00:49:56.378317237Z"
+exclude-newer = "2026-04-25T01:13:43.977643758Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
+pytilpack = false
 pyfltr = false
 
 [[package]]
@@ -81,6 +82,19 @@ name = "bashplotlib"
 version = "0.6.5"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ac/a7/b0871fd1bcc38a3be7b6d0a188876e5a84c16c52f62dac9fe28418d12fe0/bashplotlib-0.6.5.tar.gz", hash = "sha256:b1b59be49d6254a5bd808919e0a23a75a703a02e7e84478edda765714e0bfaee", size = 6213, upload-time = "2016-02-06T21:56:52.3Z" }
+
+[[package]]
+name = "beautifulsoup4"
+version = "4.14.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c3/b0/1c6a16426d389813b48d95e26898aff79abbde42ad353958ad95cc8c9b21/beautifulsoup4-4.14.3.tar.gz", hash = "sha256:6292b1c5186d356bba669ef9f7f051757099565ad9ada5dd630bd9de5fa7fb86", size = 627737, upload-time = "2025-11-30T15:08:26.084Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/39/47f9197bdd44df24d67ac8893641e16f386c984a0619ef2ee4c51fbbc019/beautifulsoup4-4.14.3-py3-none-any.whl", hash = "sha256:0918bfe44902e6ad8d57732ba310582e98da931428d231a5ecb9e7c703a735bb", size = 107721, upload-time = "2025-11-30T15:08:24.087Z" },
+]
 
 [[package]]
 name = "blinker"
@@ -1366,16 +1380,17 @@ wheels = [
 
 [[package]]
 name = "pytilpack"
-version = "1.45.0"
+version = "1.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "beautifulsoup4" },
     { name = "httpx" },
-    { name = "typing-extensions" },
+    { name = "mcp" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6b/96/2cf5ca8cf5310b1895c414d47aa52616d8413adf2cc682dc0ec04748a65e/pytilpack-1.45.0.tar.gz", hash = "sha256:545d8ff9eb44faf219ea22384bf542600b3ca71f4dd40047fb3e007055730384", size = 332934, upload-time = "2026-04-08T19:43:34.638Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/33/7086cd3a19f2111cb29ebd9004304f68cd6abac936890b89a4de8a9baca0/pytilpack-1.46.0.tar.gz", hash = "sha256:2bce28b54ea040fedb618fb9295c66dd7dda13a36fe51ee9ce6301e1cc3fe34a", size = 347033, upload-time = "2026-04-26T00:59:47.418Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/a4/d14a070914f5a4c022e5135597c28b60ea4ff532ff33d3232b74f2db332a/pytilpack-1.45.0-py3-none-any.whl", hash = "sha256:0301fd4d227afaefbc84b68ce035b706f59dc5a1d70849c1458c58469a14a9d0", size = 121538, upload-time = "2026-04-08T19:43:32.936Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/db/74f88fb3b7044600210d7e45269926407ef73258af7003daf14628664925/pytilpack-1.46.0-py3-none-any.whl", hash = "sha256:4cd92bbcd822c0b303f3f7a3ebdc6a88b6db9822634e774c63ec71a7a8350b7d", size = 129638, upload-time = "2026-04-26T00:59:49.074Z" },
 ]
 
 [package.optional-dependencies]
@@ -1437,7 +1452,7 @@ requires-dist = [
     { name = "pillow" },
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pytilpack", extras = ["quart"], specifier = ">=1.45.0" },
+    { name = "pytilpack", extras = ["quart"], specifier = ">=1.46.0" },
     { name = "pyyaml" },
     { name = "send2trash" },
     { name = "tqdm" },
@@ -1714,6 +1729,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "soupsieve"
+version = "2.8.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/ae/2d9c981590ed9999a0d91755b47fc74f74de286b0f5cee14c9269041e6c4/soupsieve-2.8.3.tar.gz", hash = "sha256:3267f1eeea4251fb42728b6dfb746edc9acaffc4a45b27e19450b676586e8349", size = 118627, upload-time = "2026-01-20T04:27:02.457Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/2c/1462b1d0a634697ae9e55b3cecdcb64788e8b7d63f54d923fcd0bb140aed/soupsieve-2.8.3-py3-none-any.whl", hash = "sha256:ed64f2ba4eebeab06cc4962affce381647455978ffc1e36bb79a545b91f45a95", size = 37016, upload-time = "2026-01-20T04:27:01.012Z" },
 ]
 
 [[package]]

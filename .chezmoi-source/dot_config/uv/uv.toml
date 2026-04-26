@@ -1,4 +1,4 @@
 # サプライチェーン攻撃対策: 公開後24時間未満のパッケージを除外
 exclude-newer = "1 day"
-# pyfltrは除外しちゃう
-exclude-newer-package = { pyfltr = false }
+# 作者本人ライブラリは公開直後でも取り込み可能にする
+exclude-newer-package = { pyfltr = false, pytilpack = false }

@@ -453,11 +453,11 @@ class TestFilenameEncoding:
         entries = _zip_entries(tmp_path / "mixed.zip")
         assert entries == {"ソート.txt", "日本語.txt"}
 
-    def test_null_byte_entry_is_recorded_as_failure(self, tmp_path: pathlib.Path) -> None:
-        """エントリ名に NUL 文字が混入しても他エントリの処理は継続する。
+    def test_null_byte_entry_is_truncated(self, tmp_path: pathlib.Path) -> None:
+        """エントリ名に NUL 文字が混入した場合は NUL 以降を切り詰めて展開する。
 
-        ``orig_filename`` 起点では ``zipfile._sanitize_filename`` の NUL 切り詰めが効かないため、
-        ``_is_safe_relative_path`` 側で NUL を弾いて failures に積む。
+        ``pytilpack.zipfile.decode_zipinfo_filename`` が NUL 以降を切り詰める仕様のため、
+        ``bad\\x00name.txt`` は ``bad`` という名前で展開され、他エントリと並んで成功扱いになる。
         """
         archive = tmp_path / "nul.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
@@ -467,9 +467,9 @@ class TestFilenameEncoding:
         config = repack_archive.RepackConfig()
         compiled = repack_archive._compile_rules(config, tmp_path)
         failures = repack_archive._extract_zip(archive, dest, compiled)
-        failed_paths = {p for p, _ in failures}
-        assert any("\x00" in p for p in failed_paths)
-        assert (dest / "safe.txt").exists()
+        assert not failures
+        assert (dest / "bad").read_bytes() == b"x"
+        assert (dest / "safe.txt").read_bytes() == b"y"
 
     def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path) -> None:
         """CP932 strict で復号できないエントリだけ CP437 にフォールバックする。

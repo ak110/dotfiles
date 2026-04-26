@@ -38,6 +38,7 @@ import zipfile
 
 import pydantic
 import pytilpack.pathlib
+import pytilpack.zipfile
 import send2trash
 import tqdm
 import yaml
@@ -471,10 +472,11 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
 def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
     r"""``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
 
-    エンコーディング判定はエントリ単位で ``decode_zipinfo_filename`` に委ねる。
+    エンコーディング判定はエントリ単位で ``pytilpack.zipfile.decode_zipinfo_filename`` に委ねる。
     Zip Slip 対策とエンコーディング崩れの保険として、``..``・先頭 ``/``・
-    バックスラッシュ・``:``・``\x00``・Windows 流のドライブ表記を含むパスは
-    展開せず failures に積む。
+    バックスラッシュ・``:``・Windows 流のドライブ表記を含むパスは
+    ``pytilpack.zipfile.is_safe_relative_path`` で弾き、failures に積む。
+    NUL 文字は ``decode_zipinfo_filename`` 側で切り詰められて吸収される。
     """
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[tuple[str, str]] = []
@@ -483,13 +485,13 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
         with tqdm.tqdm(total=len(infos), desc="extract", unit="file", ascii=True, ncols=100) as pbar:
             for info in infos:
                 pbar.update(1)
-                entry_path = decode_zipinfo_filename(info)
+                entry_path = pytilpack.zipfile.decode_zipinfo_filename(info)
                 if not entry_path:
                     continue
                 is_dir = info.is_dir() or entry_path.endswith("/")
                 # 末尾 "/" 付きディレクトリ名は検証から除いておく (空要素検査に引っかかるため)
                 normalized = entry_path.rstrip("/") if is_dir else entry_path
-                if not _is_safe_relative_path(normalized):
+                if not pytilpack.zipfile.is_safe_relative_path(normalized):
                     failures.append((entry_path, "不正なパスのためスキップ"))
                     logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
                     continue
@@ -508,62 +510,6 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                     failures.append((entry_path, str(e)))
                     logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
     return failures
-
-
-# pytilpack への移設候補。`zipfile.ZipInfo` 単体を入力としフォールバック先を
-# 引数で受け取る自己完結関数として設計してある。実際の移設時は
-# `pytilpack/zipfile.py` を新設して取り込む想定。
-def decode_zipinfo_filename(
-    info: zipfile.ZipInfo,
-    *,
-    fallback_encodings: typing.Sequence[str] = ("cp932", "cp437"),
-) -> str:
-    r"""``ZipInfo`` のファイル名を生バイト列基準で復号する。
-
-    ``info.filename`` は ``zipfile._sanitize_filename`` でプラットフォーム依存の
-    加工 (Windows なら ``\\`` を ``/`` に置換) を経た文字列であり、CP932 の
-    2 バイト目に ``0x5C`` を含む文字 (ソ・ポ・表など) が混入したエントリでは
-    ``info.filename.encode("cp437").decode("cp932")`` の往復復元に失敗する。
-    生バイト列に近い ``info.orig_filename`` を起点にすることでこれを避ける。
-
-    bit 11 (Unicode flag) が立つ場合は ``zipfile`` が UTF-8 で ``orig_filename``
-    を構築済みなのでそのまま返す。立たない場合は ``orig_filename`` を CP437
-    でエンコードして原バイト列を復元し、``fallback_encodings`` の先頭から strict
-    で復号を試み、全て失敗した場合は CP437 既定の ``orig_filename`` をそのまま返す。
-    """
-    if info.flag_bits & 0x800:
-        return info.orig_filename
-    raw = info.orig_filename.encode("cp437")
-    for encoding in fallback_encodings:
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return info.orig_filename
-
-
-def _is_safe_relative_path(name: str) -> bool:
-    r"""ZIP エントリ名が ``dest`` 配下にとどまる安全な相対パスかを判定する。
-
-    Zip Slip と SJIS 復号崩れの双方を遮るため、以下を全て満たすことを要求する。
-
-    - 空文字でない
-    - バックスラッシュ・NUL 文字 (``\x00``) を含まない
-      (前者は CP932 2 バイト目混入の保険、後者は ``orig_filename`` 起点で復号した
-      際に ``zipfile._sanitize_filename`` の NUL 切り詰めが効かなくなる影響への保険)
-    - 先頭が ``/`` でない
-    - ``/`` 区切りの各要素が ``""`` (連続 ``//`` 由来) でも ``..`` でもなく、``:`` を含まない
-    - ``PureWindowsPath`` で ``drive`` または ``root`` を持たない (``C:foo``・``\\srv\\share`` 等の拒否)
-    """
-    if not name or "\\" in name or "\x00" in name or name.startswith("/"):
-        return False
-    for part in name.split("/"):
-        if part in ("", ".."):
-            return False
-        if ":" in part:
-            return False
-    win = pathlib.PureWindowsPath(name)
-    return not (win.drive or win.root)
 
 
 def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:

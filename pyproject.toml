@@ -17,7 +17,7 @@ dependencies = [
     "pillow",
     "psutil",
     "pydantic>=2",
-    "pytilpack[quart]>=1.45.0",
+    "pytilpack[quart]>=1.46.0",
     "pyyaml",
     "send2trash",
     "tqdm",
