@@ -33,6 +33,33 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも同等の既定値切り替えができ、`ci`など任意のサブコマンドに適用される
 （CLIオプションが優先）。
 
+### messageの切り詰め仕様
+
+`failed`かつ`diagnostics=0`のとき、`command.message`に生出力の抜粋が入る。
+切り詰めは「先頭ブロック + `... (truncated)` + 末尾ブロック」のハイブリッド方式で、
+`jsonl-message-max-chars`（既定2000文字）を`head : tail = 1 : 4`で配分する。
+冒頭にエラー要約を出すツール（editorconfig-checker等）と末尾にスタックトレースを出すツール（pytest／mypy等）の双方を救う。
+
+切り詰めが起きると`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
+全文が必要な場合は次節の手順でアーカイブから取得する。
+
+### 失敗ツールの全文ログを取得する
+
+`run-for-agent`の出力で重要情報が`message`から落ちている場合、実行アーカイブから全文を取得する。
+`header.run_id`または`summary`の前後に出る`run_id`を控えておく。
+
+```bash
+# 単一ツールの output.log 全文を表示
+pyfltr show-run <run_id> --commands=<tool> --output
+
+# 複数ツールの diagnostics.jsonl をまとめて表示
+pyfltr show-run <run_id> --commands=mypy,ruff-check
+```
+
+`--commands`はカンマ区切りで複数指定可（旧 `--tool` は廃止）。
+`--output`との併用は単一ツール指定のみ許容される。
+最新runを参照する場合は`<run_id>`に`latest`を指定できる。
+
 ### statusフィールドの意味
 
 | status | 意味 | 対応 |
