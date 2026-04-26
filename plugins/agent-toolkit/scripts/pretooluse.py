@@ -47,8 +47,10 @@ import pathlib
 import re
 import subprocess
 import sys
-import tempfile
 import traceback
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
 
 # U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
 _REPLACEMENT_CHAR = "\ufffd"
@@ -423,7 +425,7 @@ def _check_plan_mode_skill_first(
         return None
     if not session_id:
         return None
-    state = _read_session_state(session_id)
+    state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
         return None
     if state.get("plan_mode_warning_emitted", False):
@@ -433,7 +435,7 @@ def _check_plan_mode_skill_first(
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             return None
     state["plan_mode_warning_emitted"] = True
-    _write_session_state(session_id, state)
+    write_state(session_id, state)
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -462,35 +464,9 @@ def _likely_real_command(command: str, pos: int) -> bool:
     return "<<" not in prefix
 
 
-# --- Bash: セッション状態読み取り ---
+# --- Bash: 関連定数 ---
 
 _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
-
-
-def _session_state_path(session_id: str) -> pathlib.Path:
-    """セッション状態ファイルのパスを返す (posttooluse.py と共通のパス規則)。"""
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
-
-
-def _read_session_state(session_id: str) -> dict:
-    """セッション状態を読む。不在・破損時は空辞書を返す。"""
-    if not isinstance(session_id, str) or not session_id:
-        return {}
-    try:
-        return json.loads(_session_state_path(session_id).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _write_session_state(session_id: str, state: dict) -> None:
-    """セッション状態を書く。書き込み失敗は無視する (best-effort)。"""
-    if not isinstance(session_id, str) or not session_id:
-        return
-    path = _session_state_path(session_id)
-    try:
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        return
 
 
 # --- Bash: git amend / rebase を log 未確認でブロック ---
@@ -513,7 +489,7 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
     is_rebase = rebase_match is not None and _likely_real_command(command, rebase_match.start())
     if not is_amend and not is_rebase:
         return False
-    state = _read_session_state(session_id)
+    state = read_state(session_id)
     if state.get("git_log_checked", False):
         return False
     op = "git commit --amend" if is_amend else "git rebase"
@@ -579,7 +555,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
     match = _GIT_COMMIT_PATTERN.search(command)
     if match is None or not _likely_real_command(command, match.start()):
         return None
-    state = _read_session_state(session_id)
+    state = read_state(session_id)
     if state.get("test_executed", False):
         return None
     if _is_docs_only_commit(command, cwd):

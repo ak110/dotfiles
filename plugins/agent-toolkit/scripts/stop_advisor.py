@@ -27,15 +27,14 @@ exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
 """
 
-import contextlib
 import json
 import pathlib
 import subprocess
 import sys
-import tempfile
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
     _INJECTED_TAG_PATTERNS,
     is_real_session_end,
@@ -74,35 +73,6 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
     return f"{prefix} {body} {_MESSAGE_SUFFIX}"
-
-
-def _state_path(session_id: str) -> pathlib.Path:
-    """posttooluse.py と共通のパス規則。
-
-    tempdir を使う理由: セッション状態は揮発で構わず、
-    OS 再起動時に自動消去されるため永続化の必要がない。
-    """
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
-
-
-def _read_state(path: pathlib.Path) -> dict:
-    """状態ファイルを読み込む。
-
-    ファイル未作成・破損時は空 dict を返し、初回セッションとして扱う。
-    """
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _write_state(path: pathlib.Path, state: dict) -> None:
-    """状態ファイルを書き込む。
-
-    書き込み失敗は無視する（hook の失敗でセッション停止を妨げない）。
-    """
-    with contextlib.suppress(OSError):
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _extract_user_text(line: str) -> str | None:
@@ -232,15 +202,14 @@ def _main() -> int:
         _approve()
         return 0
 
-    state_file = _state_path(session_id)
-    state = _read_state(state_file)
+    state = read_state(session_id)
 
     # Stop のたびに git_log_checked をリセットする。
     # ユーザーが裏で push している可能性があるため、
     # 再開後の amend / rebase には改めて log 確認を要求する。
     if state.get("git_log_checked", False):
         state["git_log_checked"] = False
-        _write_state(state_file, state)
+        write_state(session_id, state)
 
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
@@ -262,7 +231,7 @@ def _main() -> int:
         block_count = state.get("uncommitted_block_count", 0)
         if block_count == 0:
             state["uncommitted_block_count"] = block_count + 1
-            _write_state(state_file, state)
+            write_state(session_id, state)
             _block(
                 _llm_notice(
                     "uncommitted changes detected."
@@ -304,7 +273,7 @@ def _main() -> int:
     # 発火: block 前に stop_advice_given を記録する。
     # block 後の再 Stop 時に上の早期リターンで即 approve するため。
     state["stop_advice_given"] = True
-    _write_state(state_file, state)
+    write_state(session_id, state)
 
     # 理由に応じたメッセージ構築
     parts: list[str] = ["session review:"]

@@ -37,13 +37,14 @@ exit code 契約:
 予期せぬ例外は 0 にフォールバックする。
 """
 
-import contextlib
 import json
 import pathlib
 import re
 import sys
-import tempfile
 import traceback
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 # 詳細は skills/writing-standards/references/claude-hooks.md を参照。
@@ -225,25 +226,6 @@ def _check_plan_format(file_path: str) -> list[str]:
     return violations
 
 
-def _state_path(session_id: str) -> pathlib.Path:
-    """セッション状態ファイルのパスを返す。"""
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-{session_id}.json"
-
-
-def _read_state(path: pathlib.Path) -> dict:
-    """状態ファイルを読む。不在・破損時はデフォルト値を返す。"""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _write_state(path: pathlib.Path, state: dict) -> None:
-    """状態ファイルを書く。書き込み失敗は無視する（状態記録は best-effort）。"""
-    with contextlib.suppress(OSError):
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
 def _main() -> int:
     """エントリポイント。常に 0 を返す。"""
     try:
@@ -260,24 +242,22 @@ def _main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    path = _state_path(session_id)
-
     # Skill: plan-mode スキル呼び出し検出
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            state = _read_state(path)
+            state = read_state(session_id)
             if not state.get("plan_mode_skill_invoked", False):
                 state["plan_mode_skill_invoked"] = True
-                _write_state(path, state)
+                write_state(session_id, state)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は git log 確認状態をリセットする
     if tool_name in ("Write", "Edit", "MultiEdit"):
-        state = _read_state(path)
+        state = read_state(session_id)
         if state.get("git_log_checked", False):
             state["git_log_checked"] = False
-            _write_state(path, state)
+            write_state(session_id, state)
         # plan file 形式検査: ~/.claude/plans/ 直下の .md のみ対象。
         # plan-mode スキル未呼び出し時は PreToolUse 側の警告で先行催促済みのため、
         # 構造検査をスキップして二重警告を避ける。
@@ -310,7 +290,7 @@ def _main() -> int:
     if not isinstance(command, str) or not command:
         return 0
 
-    state = _read_state(path)
+    state = read_state(session_id)
     changed = False
 
     # テスト実行検出
@@ -342,7 +322,7 @@ def _main() -> int:
         changed = True
 
     if changed:
-        _write_state(path, state)
+        write_state(session_id, state)
 
     return 0
 
