@@ -71,6 +71,16 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("sudoll"),
         Path("update-dotfiles"),
         Path("update-dotfiles.cmd"),
+        # pytools/ パッケージ化 (fe09fa3) などに伴い .chezmoi-source/bin/ から
+        # 削除した旧配布物。現在は pytools/ の CLI として uv tool install 経由で
+        # ~/.local/bin 等にインストールされる。
+        Path("check-image-sizes.py"),
+        Path("dpkg-licenses"),
+        Path("git-justify.py"),
+        Path("mvdir.py"),
+        Path("update-ssh-config"),
+        Path("update-ssh-config.cmd"),
+        Path("update-ssh-config.py"),
     ],
 }
 
