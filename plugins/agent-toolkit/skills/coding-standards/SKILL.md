@@ -99,6 +99,14 @@ description: >
   - ロックファイルを尊重する: CI/Makefileでは依存解決を再実行せずロックファイルをそのまま使う
     - 環境変数で一括適用する（uvの`UV_FROZEN=1`、pnpmの`--frozen-lockfile`等）
     - 依存更新コマンドのみ一時解除する。開発者個人のシェルには設定しない
+- 自動生成ファイルは直接編集しない:
+  - 対象例:
+    - 依存ロックファイル: `uv.lock`・`pnpm-lock.yaml`・`package-lock.json`・`Cargo.lock`・`poetry.lock`・`go.sum`等
+    - 自動生成コード: `*_pb2.py`・OpenAPIから生成したクライアント等
+    - ビルド成果物、補完スクリプト
+  - 更新は生成元（`pyproject.toml`・`uv.toml`・`package.json`・`.proto`等）または専用CLI
+  （`uv add`/`uv lock`・`pnpm add`・`cargo update`等）経由で行う
+  - 直接編集が必要に見える場合は、生成元側の設定変更で表現できないかをまず検討する
 - lintエラーへの対応は以下の優先順で検討する
   1. コード修正 -- ルールが正当な問題を指摘している場合
   2. コードの書き方の変更 -- del・assert・型の明示など、軽微な変更で解消できる場合
