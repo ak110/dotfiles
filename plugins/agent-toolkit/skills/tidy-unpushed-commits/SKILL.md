@@ -2,9 +2,8 @@
 name: tidy-unpushed-commits
 description: >
   複数の未プッシュコミットを安全にsquash・reorder・メッセージ書き直しするスキル。
-  「未プッシュコミットを整理したい」「コミット履歴をきれいにしたい」「reorderしたい」
-  「散らばったコミットをまとめ直したい」などの明示的指示でトリガーする。
-  直前コミットへのamendや特定コミットへのfixupはagent.mdの指示で足りるため対象外。
+  未プッシュコミットの整理・履歴の整頓などの明示的指示でトリガーする。
+  直前コミットへのamendや特定コミットへのfixupは本スキル対象外。
 ---
 
 # 未プッシュコミットの整理
@@ -16,7 +15,7 @@ description: >
 
 本スキルは複数コミットの再構成（squash/reorder/メッセージ書き直し）が必要な場合に使う。
 直前コミットへの`git commit --amend`や特定コミットへの`git commit --fixup`で済む操作は
-agent.mdの既存指示に従い、本スキルを起動しない。
+配布ルールの指示に従い、本スキルを起動しない。
 
 以下のいずれかに該当する場合は使わず、手動対応を促す。
 
@@ -48,7 +47,7 @@ git config --get rerere.enabled
 ## トリアージ（早期分岐）
 
 前提確認の結果をもとに、以下の順でパターンを判定する。
-パターン1・2に該当する場合は本スキルの残りの手順を実行せず、agent.mdの既存指示に委ねて処理を完了する。
+パターン1・2に該当する場合は本スキルの残りの手順を実行せず、配布ルールの指示に従って処理を完了する。
 
 ### パターン1: amend
 
@@ -62,7 +61,7 @@ git config --get rerere.enabled
 
 1. worktree/indexに未コミット変更がある場合、`git diff`/`git diff --cached`で内容を提示し、
    amend対象と無関係な変更が混じっていないかユーザーに確認する（無関係な変更がある場合は分離を促す）
-2. agent.mdのamendパターン（`git commit --amend`）で処理する
+2. `git commit --amend`で処理する
 
 本スキルの以降の手順は実行しない。
 
@@ -78,7 +77,7 @@ git config --get rerere.enabled
 
 1. worktree/indexに未コミット変更がある場合、`git diff`/`git diff --cached`で内容を提示し、
    fixup対象と無関係な変更が混じっていないかユーザーに確認する（無関係な変更がある場合は分離を促す）
-2. agent.mdのfixupパターン（`git commit --fixup` + `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`）で処理する
+2. `git commit --fixup` + `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`で処理する
 
 本スキルの以降の手順は実行しない。
 
@@ -235,5 +234,5 @@ git stash pop 2>/dev/null || true
 - NG: conflict時の`git checkout --theirs`/`--ours`による安易な解決
 - NG: push済みコミットへの`git commit --amend`
 - NG: フル整理パスでの`git rebase -i`の使用（cherry-pick連鎖で代替する）
-  - 例外: トリアージでfixup委譲する場合のagent.md準拠の非対話`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`は対象外
+  - 例外: トリアージでfixup委譲する場合の非対話`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash`は対象外
 - NG: `rerere`有効状態での無検証実行

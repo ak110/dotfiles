@@ -15,25 +15,25 @@ description: >
 
 ## 使い方
 
-1. 共通品質とテスト方針（本ファイル）を読む
-2. 編集対象のファイル拡張子に合わせて `references/<言語>.md` を読む
-   - Python: `references/python.md`
-   - TypeScript/TSX: `references/typescript.md`
-   - Rust: `references/rust.md`
-   - C#: `references/csharp.md`
-   - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
-   - Windowsバッチ/cmd・bat: `references/windows-batch.md`
-   - Dockerfile: `references/dockerfiles.md`
-   - GitHub Actionsワークフロー（`.github/workflows/*.yaml`）: `references/github-actions.md`
-3. 対応する言語ファイルが無い場合は共通品質のみで進める
-4. コードコメントの品質を保つため`agent-toolkit:writing-standards`スキルも呼び出す
+本ファイルを読んだ後、編集対象の拡張子に対応する `references/<言語>.md` を読む。
+対応ファイルが無い場合は共通品質のみで進める。
+コードコメントの品質を保つため `agent-toolkit:writing-standards` スキルも呼び出す。
+
+- Python: `references/python.md`
+- TypeScript/TSX: `references/typescript.md`
+- Rust: `references/rust.md`
+- C#: `references/csharp.md`
+- PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
+- Windowsバッチ/cmd・bat: `references/windows-batch.md`
+- Dockerfile: `references/dockerfiles.md`
+- GitHub Actionsワークフロー（`.github/workflows/*.yaml`）: `references/github-actions.md`
 
 ## コーディング品質（全言語共通）
 
 言語を問わず、プロダクションレベルのコーディング品質を保つ。
 以下は一般論であり、プロジェクトや言語の特性に応じて適切に判断する。
 
-- トップダウンの記述順序を遵守する。詳細は配布ルール`~/.claude/rules/agent-toolkit/styles.md`の「構造と順序」節を参照する
+- トップダウンの記述順序を遵守する
   - 型定義や上位の関数から先に書き、関数Aから関数Bを呼び出す場合はAを前にBを後ろに定義する
   - 関連するものは近くにまとめ、定義順を保つ
   - 追記時は安易に末尾へ追加せず、既存の定義順序に沿った位置へ挿入する

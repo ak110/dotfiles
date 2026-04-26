@@ -1,10 +1,7 @@
 ---
 name: gitlab-ci-usage
 description: >
-  GitLab CI/CD（`.gitlab-ci.yml`）編集時のキーワード仕様・典型パターン・lint手段・
-  トラブルシューティング観点のリファレンス。
-  `.gitlab-ci.yml`を新規作成・修正する時、ジョブの起動条件や依存関係の書き方で迷った時、
-  CIパイプラインが意図通りに動かず原因を切り分けたい時、設定をlint/validateしたい時に使う。
+  GitLab CI（`.gitlab-ci.yml`）のキーワード仕様・典型パターン・lintのリファレンス。
 ---
 
 # GitLab CIの使い方
@@ -22,7 +19,6 @@ description: >
 ## テーマ別参照URL
 
 テーマ別の代表ページを以下に示す。
-該当項目をWebFetchしてから編集することで、サブキーの取り得る値や非推奨化を見落とさずに済む。
 
 - [キーワード全リファレンス](https://docs.gitlab.com/ci/yaml/): 未知のキーワード、サブキーの網羅確認
 - [`rules` / `only` / `except`](https://docs.gitlab.com/ci/yaml/#rules):
