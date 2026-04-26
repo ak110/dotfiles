@@ -1,7 +1,8 @@
 ---
 name: writing-standards
 description: >
-  Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント、および
+  Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント、
+  各種プログラムやスクリプトのコメント、および、
   `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルを含むClaude Code設定系ファイルの
   新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
 ---
