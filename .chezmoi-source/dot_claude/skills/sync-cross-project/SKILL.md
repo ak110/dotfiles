@@ -115,9 +115,12 @@ o=対象、-=対象外、△=緩め
 
 ### CI / リリース関連
 
-- CI workflow（Python系）のステップ順はpyfltrを基準に統一済み
-  - Install uv → Setup Node.js → Setup pnpm → Configure pnpm security → Setup mise
-  - Install dependencies → Test with pyfltr → Prune uv cache for CI
+- CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針。
+  uv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、`pinact run --check`を直接呼び出せる。
+  Pythonバージョンマトリクスは`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
+  `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
+- container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりruner上で実行する
+- container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
 - `release.yaml` の `GH_TOKEN` は `${{ github.token }}` に統一済み（推奨構文）
 - `release.yaml` のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が `gh api` + `jq` 方式、
   PowerShell系（gv / lc）が `check-suites` API方式
