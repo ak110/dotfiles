@@ -5,6 +5,9 @@ description: >
   各種プログラムやスクリプトのコメント、および、
   `CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルを含むClaude Code設定系ファイルの
   新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
+# 編集時の注意点:
+# コード編集時はcoding-standardsと本スキルの両方を読み込むが、
+# ドキュメントのみの編集時はwriting-standardsのみを読み込むことに注意。
 ---
 
 # ドキュメント品質
