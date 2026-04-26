@@ -204,19 +204,27 @@ def _main() -> int:
     if has_pyfltr:
         sections.append(
             "pyfltr session review: pyfltr was used in this session. "
-            "Before closing, reflect on and report the following in Japanese: "
-            "(1) Were there any confusing or unclear aspects in pyfltr's behavior or output? "
-            "(2) Are there any improvement suggestions for the behavior, messages, or documentation "
-            "(including `plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md`)? "
+            "Before closing, reflect on and report the following in Japanese. "
+            "(1) Were there any confusing or unclear aspects in pyfltr's behavior or output "
+            "(misleading messages, unexpected exit codes, hard-to-read diagnostics)? "
+            "(2) Are there missing entries or incorrect content in the existing documentation "
+            "that future sessions would benefit from clarifying? "
+            "Suggestion targets (the user will apply changes separately, so stop at the proposal stage): "
+            "pyfltr's own behavior and messages, and "
+            "`plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md` (the usage reference). "
             "If there are no improvements to suggest, explicitly state '指摘無し'."
         )
     if has_agent_toolkit:
         sections.append(
             "agent-toolkit session review: agent-toolkit skills were used in this session. "
-            "Before closing, reflect on and report the following in Japanese: "
-            "(1) Were there any confusing or unclear aspects in the skill behavior or instructions? "
-            "(2) Are there any improvement suggestions for the skills, rules, or documentation "
-            "(including files under `plugins/agent-toolkit/` and `~/.claude/rules/agent-toolkit/`)? "
+            "Before closing, reflect on and report the following in Japanese. "
+            "(1) Were there violations of agent.md procedures, "
+            "such as the bug-fix root-cause investigation or the verify-then-commit order? "
+            "(2) Were any plugin or rule instructions confusing or unclear? "
+            "(3) Are there missing entries or incorrect content in the existing instructions? "
+            "Suggestion targets (the user will apply changes separately, so stop at the proposal stage): "
+            "the agent-toolkit plugin (skills, hooks, subagents under `plugins/agent-toolkit/`) "
+            "and the rules under `~/.claude/rules/agent-toolkit/`. "
             "If there are no improvements to suggest, explicitly state '指摘無し'."
         )
     _block(_llm_notice(" | ".join(sections)))

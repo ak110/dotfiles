@@ -282,11 +282,28 @@ def _main() -> int:
     if codex_triggered:
         parts.append(f" codex review iterations: {codex_resume_count} resume calls detected.")
     parts.append(
-        " Before ending this session, please:"
-        " (1) review whether agent.md procedures"
-        " (bug-fix 3-step, verify-then-commit) were followed"
-        " (2) consider updating CLAUDE.md with lessons learned"
-        " (run /claude-md-management:revise-claude-md if appropriate)"
+        " Before ending this session, reflect on and report the following in Japanese."
+        " (1) CLAUDE.md update candidates: did this session surface project-specific"
+        " knowledge worth recording so future Claude work has the context it lacked?"
+        " Look for bash commands used or discovered, code style or patterns to follow,"
+        " effective testing approaches, environment quirks, warnings or pitfalls"
+        " encountered, and points where the user repeated the same correction."
+        " Exclude one-off fixes unlikely to recur and information already obvious."
+        " Possible targets: CLAUDE.md (team-shared, git-tracked) or"
+        " CLAUDE.local.md (personal, local-only, gitignored);"
+        " run `find . -name CLAUDE.md -o -name CLAUDE.local.md` to enumerate candidates."
+        " Each addition should be one concept per line, terse, and avoid restating"
+        " information that is already obvious."
+        " For each candidate, present target file, rationale (why), and proposed diff,"
+        " then obtain user approval before applying via Edit."
+        " (2) agent-toolkit review: were there violations of agent.md procedures"
+        " such as the bug-fix root-cause investigation or the verify-then-commit order?"
+        " Were any plugin or rule instructions confusing or unclear?"
+        " Are there missing entries or incorrect content in the existing instructions?"
+        " Suggestion targets (the user will apply changes separately):"
+        " the agent-toolkit plugin (skills, hooks, subagents under"
+        " plugins/agent-toolkit/) and the rules under ~/.claude/rules/agent-toolkit/."
+        " If a section has no improvements to suggest, explicitly state '指摘無し'."
     )
 
     _block(_llm_notice("".join(parts)))
