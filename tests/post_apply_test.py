@@ -137,7 +137,10 @@ class TestPluginRecommendations:
     """`install_claude_plugins.consume_recommendations()` による推奨コマンド案内出力。"""
 
     def test_prints_single_recommendation_without_continuation(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        capsys: pytest.CaptureFixture[str],
     ):
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
         monkeypatch.setattr(
@@ -150,10 +153,18 @@ class TestPluginRecommendations:
             post_apply._main(runner=lambda: fake_results)
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
-        assert any(m == "  claude plugin install a --scope user" for m in messages)
-        assert not any("&&" in m for m in messages)
+        stdout_lines = capsys.readouterr().out.splitlines()
+        assert "claude plugin install a --scope user" in stdout_lines
+        # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
+        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
+        assert not any("&&" in line for line in stdout_lines)
 
-    def test_prints_multiple_recommendations_bash(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    def test_prints_multiple_recommendations_bash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        capsys: pytest.CaptureFixture[str],
+    ):
         """bash 系では && \\ で連結し、最終行のみ継続記号なしで出力する。"""
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
         monkeypatch.setattr(
@@ -170,13 +181,21 @@ class TestPluginRecommendations:
             post_apply._main(runner=lambda: fake_results)
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
-        assert any(m == "  claude plugin install a --scope user && \\" for m in messages)
-        assert any(m == "  claude plugin install b --scope user && \\" for m in messages)
-        assert any(m == "  claude plugin disable c --scope user" for m in messages)
+        stdout_lines = capsys.readouterr().out.splitlines()
+        assert "claude plugin install a --scope user && \\" in stdout_lines
+        assert "claude plugin install b --scope user && \\" in stdout_lines
+        assert "claude plugin disable c --scope user" in stdout_lines
+        # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
+        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
         # consume 後は空になっている (ワンショット契約)
         assert not _install_claude_plugins.consume_recommendations()
 
-    def test_prints_multiple_recommendations_windows(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    def test_prints_multiple_recommendations_windows(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        capsys: pytest.CaptureFixture[str],
+    ):
         """Windows では && ^ で連結し、最終行のみ継続記号なしで出力する。"""
         monkeypatch.setattr(post_apply.sys, "platform", "win32")
         monkeypatch.setattr(
@@ -190,11 +209,18 @@ class TestPluginRecommendations:
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         with caplog.at_level("INFO", logger=post_apply.logger.name):
             post_apply._main(runner=lambda: fake_results)
-        messages = [record.getMessage() for record in caplog.records]
-        assert any(m == "  claude plugin install a --scope user && ^" for m in messages)
-        assert any(m == "  claude plugin disable b --scope user" for m in messages)
+        stdout_lines = capsys.readouterr().out.splitlines()
+        assert "claude plugin install a --scope user && ^" in stdout_lines
+        assert "claude plugin disable b --scope user" in stdout_lines
+        # cmd.exe では `^` 継続後の行頭空白が解析エラーを起こすため、コマンド行は無インデントとする。
+        assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
 
-    def test_no_output_when_no_recommendations(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    def test_no_output_when_no_recommendations(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        capsys: pytest.CaptureFixture[str],
+    ):
         """推奨コマンドが空なら案内を出力しない。"""
         monkeypatch.setattr(_install_claude_plugins, "_LAST_RECOMMENDATIONS", [])
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
@@ -202,3 +228,5 @@ class TestPluginRecommendations:
             post_apply._main(runner=lambda: fake_results)
         messages = [record.getMessage() for record in caplog.records]
         assert not any("推奨プラグイン設定" in m for m in messages)
+        stdout_lines = capsys.readouterr().out.splitlines()
+        assert not any("claude plugin" in line for line in stdout_lines)

@@ -158,8 +158,11 @@ def _print_plugin_recommendations() -> None:
         return
     print(flush=True)
     logger.info("推奨プラグイン設定:")
+    # コマンド行はそのままコピー&ペーストで実行されるため、basicConfig のインデントを避けて
+    # stdout に直接書き出す。cmd.exe では `^` 継続後に行頭空白が前行へ連結されたまま残り、
+    # `&& <空白>...` の空白がコマンド名として解釈されて貼り付けが失敗するため、行頭は無インデントとする。
     if len(recommendations) == 1:
-        logger.info("  %s", recommendations[0])
+        print(recommendations[0], flush=True)
         return
     # 利用者がコピペ1回で全件実行できるよう && で連結し、可読性のため行末継続記号で改行する。
     # 継続記号はシェル別に切り替える (bash: \, cmd: ^)。
@@ -167,9 +170,9 @@ def _print_plugin_recommendations() -> None:
     last_index = len(recommendations) - 1
     for index, cmd in enumerate(recommendations):
         if index == last_index:
-            logger.info("  %s", cmd)
+            print(cmd, flush=True)
         else:
-            logger.info("  %s && %s", cmd, continuation)
+            print(f"{cmd} && {continuation}", flush=True)
 
 
 def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:
