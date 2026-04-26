@@ -21,6 +21,8 @@ description: >
    - C#: `references/csharp.md`
    - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
    - Windowsバッチ/cmd・bat: `references/windows-batch.md`
+   - Dockerfile: `references/dockerfiles.md`
+   - GitHub Actionsワークフロー（`.github/workflows/*.yaml`）: `references/github-actions.md`
 3. 対応する言語ファイルが無い場合は共通品質のみで進める
 4. コードコメントの品質を保つため`agent-toolkit:writing-standards`スキルも呼び出す
 
