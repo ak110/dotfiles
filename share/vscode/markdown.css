@@ -181,10 +181,11 @@ pre {
   margin-top: 0;
   margin-bottom: 1rem;
   padding: 1rem;
-  overflow-x: auto;
   background-color: #1e1e1e;
   border: 1px solid #333333;
   border-radius: 0.5rem; /* border-radius-8 */
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 pre code {
