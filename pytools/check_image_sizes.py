@@ -30,7 +30,8 @@ def _do_dir(target_dir: pathlib.Path) -> None:
     files = [p for p in target_dir.glob("**/*") if p.is_file()]
     for file in tqdm.tqdm(files, ascii=True, ncols=100):
         try:
-            with open_image_with_exif(file) as img:
+            img, _ = open_image_with_exif(file)
+            with img:
                 width_list.append(img.width)
                 height_list.append(img.height)
                 with tqdm.tqdm.external_write_mode():
