@@ -275,38 +275,31 @@ def _main() -> int:
     state["stop_advice_given"] = True
     write_state(session_id, state)
 
-    # 理由に応じたメッセージ構築
-    parts: list[str] = ["session review:"]
+    # 理由に応じたメッセージ構築。
+    # 発火件数の表示は冗長なため、トリガー種別タグのみを残す
+    # （既存テストが reason に "correction" / "codex" の含有を検査しているため、
+    # それぞれ correction-keyword / codex-resume として残す）。
+    triggers: list[str] = []
     if keyword_triggered:
-        parts.append(f" transcript analysis: {keyword_count} correction indicators detected.")
+        triggers.append("correction-keyword")
     if codex_triggered:
-        parts.append(f" codex review iterations: {codex_resume_count} resume calls detected.")
-    parts.append(
-        " Before ending this session, reflect on and report the following in Japanese."
-        " (1) CLAUDE.md update candidates: did this session surface project-specific"
-        " knowledge worth recording so future Claude work has the context it lacked?"
-        " Look for bash commands used or discovered, code style or patterns to follow,"
-        " effective testing approaches, environment quirks, warnings or pitfalls"
-        " encountered, and points where the user repeated the same correction."
-        " Exclude one-off fixes unlikely to recur and information already obvious."
-        " Possible targets: CLAUDE.md (team-shared, git-tracked) or"
-        " CLAUDE.local.md (personal, local-only, gitignored);"
-        " run `find . -name CLAUDE.md -o -name CLAUDE.local.md` to enumerate candidates."
-        " Each addition should be one concept per line, terse, and avoid restating"
-        " information that is already obvious."
-        " For each candidate, present target file, rationale (why), and proposed diff,"
-        " then obtain user approval before applying via Edit."
-        " (2) agent-toolkit review: were there violations of agent.md procedures"
-        " such as the bug-fix root-cause investigation or the verify-then-commit order?"
-        " Were any plugin or rule instructions confusing or unclear?"
-        " Are there missing entries or incorrect content in the existing instructions?"
-        " Suggestion targets (the user will apply changes separately):"
-        " the agent-toolkit plugin (skills, hooks, subagents under"
-        " plugins/agent-toolkit/) and the rules under ~/.claude/rules/agent-toolkit/."
-        " If a section has no improvements to suggest, explicitly state '指摘無し'."
+        triggers.append("codex-resume")
+    trigger_label = " / ".join(triggers)
+
+    body = (
+        f"session review (triggered by {trigger_label}): list improvement suggestions in Japanese."
+        " (a) CLAUDE.md / CLAUDE.local.md additions worth recording for future Claude work"
+        " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
+        " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
+        " Run `find . -name CLAUDE.md -o -name CLAUDE.local.md` to enumerate target files."
+        ' For each candidate, output one line of "<target file> — <one-sentence summary>"; on user'
+        " approval, draft and apply the diff via Edit."
+        " (b) agent-toolkit plugin (`plugins/agent-toolkit/`) and rules under"
+        " `~/.claude/rules/agent-toolkit/`. Apply via Edit only after user approval."
+        " Output the suggestions only (no preamble or narration). If none, output '指摘無し'."
     )
 
-    _block(_llm_notice("".join(parts)))
+    _block(_llm_notice(body))
     return 0
 
 

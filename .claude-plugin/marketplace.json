@@ -11,7 +11,7 @@
       "name": "agent-toolkit",
       "source": "./plugins/agent-toolkit",
       "description": "Claude Codeのガードレールとスキル集。危険な編集や不適切なコミットをフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
-      "version": "0.36.1",
+      "version": "0.36.2",
       "category": "safety",
       "keywords": [
         "hooks",
