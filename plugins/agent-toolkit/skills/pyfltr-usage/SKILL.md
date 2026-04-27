@@ -132,6 +132,9 @@ pyfltr run-for-agent --commands=mypy,ruff-check
   対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る。
   回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
   当該ツールを`{tool} = false`で無効化する
+- 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
+  `uv run pyfltr command-info --check <tool>` を使う。
+  mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
 
 ## 推奨設定への準拠
 
