@@ -184,6 +184,7 @@ def _hostname_color(*, hostname: str | None = None) -> str:
     完全一致の衝突率は 1/len(パレット) で上昇するが、視覚的区別性を優先する。
     """
     hostname = hostname or socket.gethostname()
+    hostname = hostname.lower().removesuffix("-container")  # 末尾-containerは無視する（独自の都合により…）
     digest = hashlib.sha256(hostname.encode()).digest()
     index = int.from_bytes(digest[:4], "big") % len(_HOST_COLORS)
     return _HOST_COLORS[index]
