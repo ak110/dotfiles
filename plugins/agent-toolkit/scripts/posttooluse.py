@@ -269,7 +269,7 @@ def _main() -> int:
                 message = _llm_notice(
                     f"plan file {file_path} does not conform to the expected structure."
                     f" {' '.join(violations)}"
-                    f" Fix the structure per skills/plan-mode/SKILL.md.",
+                    f" Fix the structure per skills/plan-mode/references/plan-file-guidelines.md (read it first if not yet).",
                     tag="warn",
                 )
                 print(
