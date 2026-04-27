@@ -15,7 +15,7 @@ description: >
 
 ## 使い方
 
-本ファイルを読んだ後、編集対象の拡張子に対応する `references/<言語>.md` を読む。
+コード編集に着手する前に、編集対象の拡張子に対応する `references/<言語>.md` をReadで読み込む。
 対応ファイルが無い場合は共通品質のみで進める。
 コードコメントの品質を保つため `agent-toolkit:writing-standards` スキルも呼び出す。
 
