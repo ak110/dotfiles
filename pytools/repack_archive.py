@@ -414,6 +414,7 @@ def _process_target(
         except OSError:
             pass
 
+    logger.info("")
     return entry_failures
 
 
