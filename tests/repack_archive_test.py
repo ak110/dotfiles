@@ -9,10 +9,13 @@
 # 個別シナリオを検証するため、ファイル全体で protected-access を許可する。
 # pylint: disable=protected-access,missing-class-docstring
 
+import io
 import logging
 import pathlib
+import struct
 import zipfile
 
+import PIL.Image
 import pytest
 
 from pytools import repack_archive
@@ -72,16 +75,18 @@ class TestPreflight:
         b = tmp_path / "foo.cbz"
         _make_zip(a, {"a.txt": b"a"})
         _make_zip(b, {"b.txt": b"b"})
+        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
         with pytest.raises(ValueError, match="出力 ZIP が衝突"):
-            repack_archive._preflight_check([a, b], backup_dir=None)
+            repack_archive._preflight_check([a, b], compiled=compiled, backup_dir=None)
 
     def test_backup_exists_error(self, tmp_path: pathlib.Path) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"a.txt": b"a"})
         (tmp_path / "bk").mkdir()
         (tmp_path / "bk" / "foo.zip").write_bytes(b"existing")
+        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
         with pytest.raises(FileExistsError):
-            repack_archive._preflight_check([archive], backup_dir=None)
+            repack_archive._preflight_check([archive], compiled=compiled, backup_dir=None)
 
 
 class TestProcessArchive:
@@ -271,9 +276,10 @@ class TestProcessArchive:
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"a/01.txt", "b/02.txt"}
 
-    def test_rename_rules_from_pattern_file(self, tmp_path: pathlib.Path) -> None:
+    def test_rename_rules_apply_to_archive_stem(self, tmp_path: pathlib.Path) -> None:
+        """rename_rules は出力 ZIP の stem (アーカイブ名) に適用される。"""
         pattern_file = tmp_path / "rules.txt"
-        pattern_file.write_text("^img_\t\n", encoding="utf-8")
+        pattern_file.write_text("^foo$\tbar\n", encoding="utf-8")
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -294,8 +300,195 @@ class TestProcessArchive:
             no_trash=True,
             dry_run=False,
         )
+        # 出力 ZIP は rename 適用後の stem
+        assert (tmp_path / "bar.zip").exists()
+        assert not (tmp_path / "foo.zip").exists()
+        # バックアップは元の名前のまま
+        assert (tmp_path / "bk" / "foo.zip").exists()
+
+    def test_rename_rules_do_not_apply_to_inner_entries(self, tmp_path: pathlib.Path) -> None:
+        """rename_rules はアーカイブ内ファイル名・ディレクトリ名には適用されない。"""
+        pattern_file = tmp_path / "rules.txt"
+        pattern_file.write_text("^img_\t\n", encoding="utf-8")
+        archive = tmp_path / "foo.zip"
+        _make_zip(
+            archive,
+            {
+                "img_dir/img_01.txt": b"1",
+                "img_dir/img_02.txt": b"2",
+                "other.txt": b"3",
+            },
+        )
+        config = repack_archive.RepackConfig(
+            rename_rules=[repack_archive._PatternFileRule(pattern_file="rules.txt")],
+        )
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        # アーカイブ stem "foo" は rule にマッチしないので出力名は変わらない
         entries = _zip_entries(tmp_path / "foo.zip")
-        assert entries == {"01.txt", "02.txt"}
+        # 内部のファイル名・ディレクトリ名はそのまま保持される
+        assert entries == {"img_dir/img_01.txt", "img_dir/img_02.txt", "other.txt"}
+
+    def test_natsort_order_in_output_zip(self, tmp_path: pathlib.Path) -> None:
+        """最終 ZIP のエントリ順は natsort 順 (自然順) に揃う。"""
+        archive = tmp_path / "foo.zip"
+        # 辞書順だと "001 -> 002 -> 010 -> 020 -> 100" だが、
+        # 入力順を入れ替えても natsort で同じ並びになることを検証する
+        _make_zip(
+            archive,
+            {
+                "100.txt": b"hundred",
+                "010.txt": b"ten",
+                "001.txt": b"one",
+                "020.txt": b"twenty",
+                "002.txt": b"two",
+            },
+        )
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        with zipfile.ZipFile(tmp_path / "foo.zip") as zf:
+            ordered = [info.filename for info in zf.infolist()]
+        assert ordered == ["001.txt", "002.txt", "010.txt", "020.txt", "100.txt"]
+
+
+def _png_bytes(size: tuple[int, int] = (50, 50), color: tuple[int, int, int] = (0, 255, 0)) -> bytes:
+    buf = io.BytesIO()
+    PIL.Image.new("RGB", size, color=color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _png_bytes_with_corrupt_text() -> bytes:
+    """tEXt チャンクの CRC を意図的に破損させた PNG バイト列を返す。
+
+    Pillow 既定モードでは UnidentifiedImageError が送出されるが、寛容モードでは
+    画像本体が読み込まれる。imageconverter の 2 段構え動作確認用。
+    """
+    data = _png_bytes()
+    pos = 8
+    while pos < len(data):
+        chunk_len = int.from_bytes(data[pos : pos + 4], "big")
+        chunk_type = data[pos + 4 : pos + 8]
+        if chunk_type == b"IHDR":
+            after_ihdr = pos + 8 + chunk_len + 4
+            text_data = b"Comment\x00broken"
+            corrupt_chunk = struct.pack(">I", len(text_data)) + b"tEXt" + text_data + b"\x00\x00\x00\x00"
+            return data[:after_ihdr] + corrupt_chunk + data[after_ihdr:]
+        pos += 8 + chunk_len + 4
+    raise AssertionError("IHDR が見つからない")
+
+
+class TestImageConversionBackupRetention:
+    """画像変換の警告・失敗で原本バックアップが保持されることの検証。"""
+
+    def test_corrupt_text_png_warning_keeps_backup(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """tEXt CRC 不整合 PNG は寛容モードで変換されつつバックアップが保持される。"""
+        trashed: list[str] = []
+        monkeypatch.setattr(
+            "pytools.repack_archive.send2trash.send2trash",
+            lambda path: trashed.append(str(path)),
+        )
+        archive = tmp_path / "sample.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("img.png", _png_bytes_with_corrupt_text())
+            # 単一ルート平坦化に巻き込まれないよう別エントリも置く
+            zf.writestr("readme.txt", b"hello")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=False,
+            dry_run=False,
+        )
+        # 出力 ZIP には JPEG が含まれる
+        entries = _zip_entries(tmp_path / "sample.zip")
+        assert "img.jpg" in entries
+        # 警告があったためバックアップは保持され send2trash も呼ばれない
+        assert (tmp_path / "bk" / "sample.zip").exists()
+        assert not trashed
+
+    def test_completely_broken_image_error_keeps_backup(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """完全に壊れた PNG は変換失敗となるが、原本バックアップは保持される。"""
+        trashed: list[str] = []
+        monkeypatch.setattr(
+            "pytools.repack_archive.send2trash.send2trash",
+            lambda path: trashed.append(str(path)),
+        )
+        archive = tmp_path / "sample.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("img.png", b"not a PNG file at all")
+            zf.writestr("readme.txt", b"hello")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=False,
+            dry_run=False,
+        )
+        # バックアップは保持される
+        assert (tmp_path / "bk" / "sample.zip").exists()
+        assert not trashed
+        # 出力 ZIP は生成されるが壊れた画像は除外される
+        entries = _zip_entries(tmp_path / "sample.zip")
+        assert "readme.txt" in entries
+        assert "img.png" not in entries
+
+    def test_clean_run_trashes_backup(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """警告・失敗が無い場合はバックアップがゴミ箱送りされる (回帰防止)。"""
+        trashed: list[str] = []
+        monkeypatch.setattr(
+            "pytools.repack_archive.send2trash.send2trash",
+            lambda path: trashed.append(str(path)),
+        )
+        archive = tmp_path / "sample.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("img.png", _png_bytes())
+            zf.writestr("readme.txt", b"hello")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            archive,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=False,
+            dry_run=False,
+        )
+        # 通常の変換成功ではバックアップが send2trash 経由で送られる
+        assert len(trashed) == 1
+        assert trashed[0].endswith("sample.zip")
 
 
 class TestUncompressedZip:
@@ -519,7 +712,7 @@ class TestExtractZipPathSafety:
         compiled = repack_archive._compile_rules(config, tmp_path)
         failures = repack_archive._extract_zip(archive, dest, compiled)
 
-        failed_paths = {p for p, _ in failures}
+        failed_paths = {p for p, _, _ in failures}
         assert "../escape.txt" in failed_paths
         assert "/abs.txt" in failed_paths
         assert "C:/win.txt" in failed_paths

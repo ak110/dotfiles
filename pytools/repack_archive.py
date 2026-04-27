@@ -1,5 +1,5 @@
 # PYTHON_ARGCOMPLETE_OK
-"""アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
+r"""アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
 
 既存の bat 前処理ワークフロー (7z で全解凍 → rmdirs → imageconverter → 7z 再圧縮)
 を 1 つのコマンドに統合した Python 実装。設定は YAML ファイルで与え、ignore
@@ -16,11 +16,59 @@
 - ZIP 以外 (RAR / 7z / tar 等) は libarchive-c で選択的解凍する (無視
   エントリをそもそもディスクへ展開しない)。
 - rgrename 互換のパターンファイル / YAML 直書きルールの混在を許可。
+  rename_rules はアーカイブファイル / ディレクトリ TARGET 側の名前
+  (= 出力 ZIP の stem) にのみ適用される。アーカイブ内のエントリ名には
+  適用されない。
 - 画像変換は `pytools.imageconverter.convert_directory` を関数呼び出しで実行し、
-  呼び元 tqdm で進捗を表示する。
+  呼び元 tqdm で進捗を表示する。寛容モード (LOAD_TRUNCATED_IMAGES) フォールバックで
+  読み込めた画像は警告として `entry_failures` に積まれ、変換失敗もエラーとして
+  同じ集約に積む。どちらの場合も最終出力 ZIP は生成されるが、原本ロストを避けるため
+  バックアップは保持される。
+- アーカイブ内 / ローカルとも展開・コピー・ZIP 書き出しを natsort 順に揃える。
+  最終 ZIP のエントリ順は POSIX 区切りのフルパス文字列を natsort キーとした
+  自然順となる。
 - 最終出力は無圧縮 ZIP (JPEG + 残ったテキストのみ)。単一ルートディレクトリは
   平坦化する。
 - バックアップは `<parent>/bk/` に作成し、処理完了後にゴミ箱送り。
+  個別エントリの警告・失敗があった場合は欠落の可能性があるためバックアップを保持する。
+
+YAML 設定ファイルの例 (キー名と既定値は ``RepackConfig`` に対応):
+
+.. code-block:: yaml
+
+    # 解凍時にスキップするファイルのワイルドカード（fnmatch）
+    ignore_files:
+      - "*.pdf"
+      - "*.psd"
+      - "*.mp3"
+      - "*.mp4"
+      - "*.mpg"
+      - "*.avi"
+      - "*.ini"
+      - "*.db"
+
+    # 解凍時にスキップするディレクトリ名の正規表現（ignore-case 既定）
+    ignore_dirs:
+      - "中国語|英語"
+      - "^(EN|CN)$"
+
+    # rgrename 相当のリネームルール（順次適用）
+    # YAML 直書きと既存の rgrename パターンファイル（TAB 区切り UTF-8）の併用を許可。
+    # アーカイブファイル / ディレクトリ TARGET 側の名前 (= 出力 ZIP の stem) にのみ適用される。
+    rename_rules:
+      # YAML 直書きエントリー
+      # - pattern: "^\\[.*?\\]"
+      #   replacement: ""
+      #   target: both # both | file | dir
+      - pattern_file: "C:\\path\\to\\my-rename.txt"
+
+    # 画像変換設定（imageconverter の引数と同等）
+    image:
+      output_type: jpeg
+      max_width: 2048
+      max_height: 1536
+      jpeg_quality: 90
+      repack_png: false
 """
 
 import argparse
@@ -36,6 +84,7 @@ import tempfile
 import typing
 import zipfile
 
+import natsort
 import pydantic
 import pytilpack.pathlib
 import pytilpack.zipfile
@@ -69,6 +118,9 @@ _ARCHIVE_SUFFIXES: tuple[str, ...] = (
     ".cab",
     ".7z",
 )
+
+EntrySeverity = typing.Literal["warning", "error"]
+EntryFailure = tuple[str, EntrySeverity, str]
 
 
 class _InlineRenameRule(pydantic.BaseModel):
@@ -170,10 +222,10 @@ def _main() -> None:
     config = _load_config(config_path)
     compiled = _compile_rules(config, config_path.parent if config_path else pathlib.Path.cwd())
 
-    _preflight_check(targets, backup_dir=args.backup_dir)
+    _preflight_check(targets, compiled=compiled, backup_dir=args.backup_dir)
 
     failed_targets: list[tuple[pathlib.Path, str]] = []
-    failed_entries: list[tuple[pathlib.Path, str, str]] = []
+    failed_entries: list[tuple[pathlib.Path, str, EntrySeverity, str]] = []
     for target in targets:
         try:
             entry_failures = _process_target(
@@ -188,18 +240,24 @@ def _main() -> None:
             logger.exception("%s: 処理失敗", target)
             failed_targets.append((target, str(e)))
             continue
-        for entry_path, error in entry_failures:
-            failed_entries.append((target, entry_path, error))
+        for entry_path, severity, error in entry_failures:
+            failed_entries.append((target, entry_path, severity, error))
 
+    error_entries = [e for e in failed_entries if e[2] == "error"]
+    warning_entries = [e for e in failed_entries if e[2] == "warning"]
     if failed_targets:
         logger.warning("\n失敗したターゲット (%d件):", len(failed_targets))
         for path, err in failed_targets:
             logger.warning("  %s: %s", path, err)
-    if failed_entries:
-        logger.warning("\n失敗したエントリ (%d件):", len(failed_entries))
-        for tp, ep, err in failed_entries:
+    if error_entries:
+        logger.warning("\n失敗したエントリ (%d件):", len(error_entries))
+        for tp, ep, _sv, err in error_entries:
             logger.warning("  %s :: %s: %s", tp, ep, err)
-    if failed_targets or failed_entries:
+    if warning_entries:
+        logger.warning("\n警告のエントリ (%d件):", len(warning_entries))
+        for tp, ep, _sv, err in warning_entries:
+            logger.warning("  %s :: %s: %s", tp, ep, err)
+    if failed_targets or error_entries:
         sys.exit(1)
 
 
@@ -249,14 +307,17 @@ def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRul
     )
 
 
-def _preflight_check(targets: list[pathlib.Path], *, backup_dir: pathlib.Path | None) -> None:
-    """事前衝突チェック。1 件でも問題があれば副作用なしで終了する。"""
+def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, backup_dir: pathlib.Path | None) -> None:
+    """事前衝突チェック。1 件でも問題があれば副作用なしで終了する。
+
+    rename 適用後の出力 stem ベースで衝突を検出する。
+    """
     seen_outputs: dict[pathlib.Path, pathlib.Path] = {}
     seen_stems: dict[pathlib.Path, pathlib.Path] = {}
     for target in targets:
         if not target.exists():
             raise FileNotFoundError(f"TARGET が存在しません: {target}")
-        stem = _output_stem(target)
+        stem = _output_stem(target, rename_rules=compiled.rename_rules)
         output_path = target.parent / f"{stem}.zip"
         prior_out = seen_outputs.get(output_path)
         if prior_out is not None and prior_out != target:
@@ -269,21 +330,35 @@ def _preflight_check(targets: list[pathlib.Path], *, backup_dir: pathlib.Path | 
             raise ValueError(f"作業ディレクトリ用の stem が衝突します: {prior_stem} と {target}")
         seen_stems[stem_path] = target
 
-        # バックアップ先の既存チェック
+        # バックアップ先の既存チェック (元の名前のままバックアップする)
         bk_root = backup_dir if backup_dir is not None else target.parent / _BACKUP_DIR_NAME
         bk_entry = bk_root / target.name
         if bk_entry.exists():
             raise FileExistsError(f"バックアップ先が既に存在します: {bk_entry}")
 
 
-def _output_stem(target: pathlib.Path) -> str:
-    """TARGET の出力 ZIP 名 (拡張子なし) を返す。複合拡張子 (.tar.gz 等) も除去する。"""
+def _output_stem(target: pathlib.Path, *, rename_rules: list[rename.RenameRule] | None = None) -> str:
+    """TARGET の出力 ZIP 名 (拡張子なし) を返す。複合拡張子 (.tar.gz 等) も除去する。
+
+    `rename_rules` を渡した場合、stem に対して 1 度だけリネームルールを適用する。
+    アーカイブファイル TARGET は ``is_dir=False``、ディレクトリ TARGET は ``is_dir=True``
+    として渡し、ルール側の ``target`` 区分 (file/dir/both) と整合させる。
+    """
     name = target.name
     lowered = name.lower()
+    base_stem: str | None = None
     for suffix in _ARCHIVE_SUFFIXES:
         if lowered.endswith(suffix):
-            return name[: -len(suffix)]
-    return target.stem if target.is_file() else name
+            base_stem = name[: -len(suffix)]
+            break
+    if base_stem is None:
+        base_stem = target.stem if target.is_file() else name
+    if rename_rules:
+        is_dir = not target.is_file()
+        renamed = rename.apply_rules_to_name(base_stem, rename_rules, is_dir=is_dir)
+        if renamed:
+            base_stem = renamed
+    return base_stem
 
 
 def _process_target(
@@ -294,16 +369,16 @@ def _process_target(
     backup_dir_override: pathlib.Path | None,
     no_trash: bool,
     dry_run: bool,
-) -> list[tuple[str, str]]:
+) -> list[EntryFailure]:
     """1 つの TARGET を処理する。失敗時は作業ディレクトリを削除し原本を戻す。
 
-    アーカイブ内の個別エントリ失敗は (エントリパス, エラー文字列) のリストとして返す。
-    空でない場合、部分的に欠落した ZIP が生成された状態のためバックアップは保持する
+    アーカイブ内の個別エントリ警告・失敗は (エントリパス, severity, メッセージ)
+    のリストとして返す。空でない場合、欠落の可能性があるためバックアップを保持する
     (``send2trash`` を呼ばない)。
     """
     logger.info("== %s ==", target)
     parent = target.parent
-    stem = _output_stem(target)
+    stem = _output_stem(target, rename_rules=compiled.rename_rules)
     is_archive = target.is_file()
 
     bk_root = backup_dir_override if backup_dir_override is not None else parent / _BACKUP_DIR_NAME
@@ -311,7 +386,7 @@ def _process_target(
     if not dry_run:
         bk_root.mkdir(parents=True, exist_ok=True)
 
-    # 1. バックアップ作成
+    # 1. バックアップ作成 (元の名前のまま)
     if dry_run:
         logger.info("[dry-run] backup: %s -> %s", target, bk_entry)
     else:
@@ -328,34 +403,23 @@ def _process_target(
         work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
 
     source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から読み出す
-    entry_failures: list[tuple[str, str]] = []
+    entry_failures: list[EntryFailure] = []
     try:
         # 3. 選択的展開 / コピー
         if is_archive:
             if dry_run:
                 logger.info("[dry-run] extract %s -> %s", source_for_extract, work_dir)
             else:
-                entry_failures = _extract_archive(source_for_extract, work_dir, compiled)
+                entry_failures.extend(_extract_archive(source_for_extract, work_dir, compiled))
         else:
             if dry_run:
                 logger.info("[dry-run] copy filtered %s -> %s", source_for_extract, work_dir)
             else:
-                entry_failures = _copy_filtered(source_for_extract, work_dir, compiled)
+                entry_failures.extend(_copy_filtered(source_for_extract, work_dir, compiled))
 
-        # 4. リネーム適用
-        if compiled.rename_rules and not dry_run:
-            rename.rename_tree(
-                work_dir,
-                compiled.rename_rules,
-                recursive=True,
-                enable_mkdir=False,
-                overwrite=False,
-                dry_run=False,
-            )
-
-        # 5. 画像変換
+        # 4. 画像変換 (rename_rules はアーカイブ内エントリへ適用しない)
         if not dry_run:
-            imageconverter.convert_directory(
+            events = imageconverter.convert_directory(
                 work_dir,
                 output_type=config.image.output_type,
                 max_width=config.image.max_width,
@@ -365,12 +429,15 @@ def _process_target(
                 remove_failed=True,
                 log_root=target.parent,
             )
+            for path, severity, msg in events:
+                rel_path = path.relative_to(work_dir).as_posix()
+                entry_failures.append((rel_path, severity, msg))
 
-        # 6. 平坦化
+        # 5. 平坦化
         if not dry_run:
             _flatten_single_root(work_dir)
 
-        # 7. 無圧縮 ZIP 作成
+        # 6. 無圧縮 ZIP 作成 (出力 stem は rename_rules 適用後)
         zip_path = parent / f"{stem}.zip"
         tmp_zip = parent / f"{stem}.zip.tmp"
         if dry_run:
@@ -387,15 +454,15 @@ def _process_target(
                 shutil.move(str(bk_entry), str(target))
         raise
 
-    # 8. 作業ディレクトリ削除
+    # 7. 作業ディレクトリ削除
     if not dry_run:
         shutil.rmtree(work_dir, ignore_errors=True)
 
-    # 9. バックアップのゴミ箱送り (エントリ失敗があれば欠落 ZIP となるため原本を保持する)
+    # 8. バックアップのゴミ箱送り (警告/失敗があれば欠落の可能性があるため原本を保持する)
     if not dry_run and not no_trash:
         if entry_failures:
             logger.warning(
-                "エントリ失敗が %d 件あったためバックアップを保持する: %s",
+                "エントリ警告/失敗が %d 件あったためバックアップを保持する: %s",
                 len(entry_failures),
                 bk_entry,
             )
@@ -406,7 +473,7 @@ def _process_target(
             except OSError as e:
                 logger.warning("ゴミ箱送り失敗: %s (%s)", bk_entry, e)
 
-    # 10. bk/ が空なら削除
+    # 9. bk/ が空なら削除
     if not dry_run and not no_trash and bk_root.exists():
         try:
             if not any(bk_root.iterdir()):
@@ -457,12 +524,12 @@ def _load_libarchive() -> typing.Any:
     return libarchive
 
 
-def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     """アーカイブ形式に応じて展開エンジンを切り替える。
 
     ZIP は Python 標準 ``zipfile`` を使い、エンコーディング判定とパス検証をこちらで掌握する。
     ZIP 以外 (RAR / 7z / tar 等) は libarchive-c に委ねる。個別エントリの ``OSError`` は
-    捕捉してスキップし、(エントリパス, エラー文字列) のリストとして戻り値で返す。
+    捕捉してスキップし、(エントリパス, severity, エラー文字列) のリストとして戻り値で返す。
     アーカイブ全体での致命的エラーは再送出する。
     """
     if zipfile.is_zipfile(archive):
@@ -470,19 +537,26 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
     return _extract_with_libarchive(archive, dest, compiled)
 
 
-def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     r"""``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
 
     エンコーディング判定はエントリ単位で ``pytilpack.zipfile.decode_zipinfo_filename`` に委ねる。
+    展開順は decode 後のエントリ名を natsort キーとした自然順 (デコード結果が空のエントリは
+    末尾扱い) に並べ替える。
     Zip Slip 対策とエンコーディング崩れの保険として、``..``・先頭 ``/``・
     バックスラッシュ・``:``・Windows 流のドライブ表記を含むパスは
     ``pytilpack.zipfile.is_safe_relative_path`` で弾き、failures に積む。
     NUL 文字は ``decode_zipinfo_filename`` 側で切り詰められて吸収される。
     """
     dest.mkdir(parents=True, exist_ok=True)
-    failures: list[tuple[str, str]] = []
+    failures: list[EntryFailure] = []
     with zipfile.ZipFile(archive) as zf:
-        infos = zf.infolist()
+        infos = list(
+            natsort.natsorted(
+                zf.infolist(),
+                key=lambda i: pytilpack.zipfile.decode_zipinfo_filename(i) or "￿",
+            )
+        )
         with tqdm.tqdm(total=len(infos), desc="extract", unit="file", ascii=True, ncols=100) as pbar:
             for info in infos:
                 pbar.update(1)
@@ -493,7 +567,7 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                 # 末尾 "/" 付きディレクトリ名は検証から除いておく (空要素検査に引っかかるため)
                 normalized = entry_path.rstrip("/") if is_dir else entry_path
                 if not pytilpack.zipfile.is_safe_relative_path(normalized):
-                    failures.append((entry_path, "不正なパスのためスキップ"))
+                    failures.append((entry_path, "error", "不正なパスのためスキップ"))
                     logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
                     continue
                 ignore_path = normalized + "/" if is_dir else normalized
@@ -508,17 +582,20 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                     with zf.open(info) as src, out_path.open("wb") as fp:
                         shutil.copyfileobj(src, fp)
                 except OSError as e:
-                    failures.append((entry_path, str(e)))
+                    failures.append((entry_path, "error", str(e)))
                     logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
     return failures
 
 
-def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     """libarchive-c で ZIP 以外のアーカイブをストリーミング展開する。
 
     エントリ数を取るため一度全エントリを読み出してから本展開を行う 2 パス構成。
     libarchive は逐次読み出ししかできないため、tqdm の total を埋めるには事前に
     エントリ数を数える以外の手段がない。
+
+    展開順は元アーカイブ記録順のまま据え置く（逐次読み出し制約のため事前ソート不可）。
+    最終 ZIP の natsort 順揃えは後段の ``_write_uncompressed_zip`` が担当する。
     """
     libarchive = _load_libarchive()
     count = 0
@@ -526,7 +603,7 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
         for _ in reader:
             count += 1
     dest.mkdir(parents=True, exist_ok=True)
-    failures: list[tuple[str, str]] = []
+    failures: list[EntryFailure] = []
     with (
         tqdm.tqdm(total=count, desc="extract", unit="file", ascii=True, ncols=100) as pbar,
         libarchive.file_reader(str(archive)) as reader,
@@ -548,19 +625,21 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
                     for block in entry.get_blocks():
                         fp.write(block)
             except OSError as e:
-                failures.append((entry_path, str(e)))
+                failures.append((entry_path, "error", str(e)))
                 logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
     return failures
 
 
-def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[tuple[str, str]]:
+def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     """ディレクトリを再帰コピーしつつ、無視対象を省く。
 
-    個別ファイルの ``OSError`` は捕捉して (相対パス, エラー文字列) のリストとして返す。
+    走査順は POSIX 区切りの相対パスを natsort キーとする自然順に揃える。
+    個別ファイルの ``OSError`` は捕捉して (相対パス, severity, エラー文字列) のリストとして返す。
     """
     dest.mkdir(parents=True, exist_ok=True)
-    failures: list[tuple[str, str]] = []
-    for item in src.rglob("*"):
+    failures: list[EntryFailure] = []
+    items = list(natsort.natsorted(src.rglob("*"), key=lambda p: p.relative_to(src).as_posix()))
+    for item in items:
         if compiled.should_ignore_path(item, root=src):
             continue
         rel = item.relative_to(src)
@@ -572,7 +651,7 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(item, target)
         except OSError as e:
-            failures.append((rel.as_posix(), str(e)))
+            failures.append((rel.as_posix(), "error", str(e)))
             logger.warning("%s: エントリコピー失敗: %s (%s)", src.name, rel, e)
     return failures
 
@@ -614,8 +693,16 @@ def _reserve_flatten_staging(inner: pathlib.Path) -> pathlib.Path:
 
 
 def _write_uncompressed_zip(work_dir: pathlib.Path, zip_path: pathlib.Path) -> None:
-    """作業ディレクトリ配下を無圧縮 ZIP へ書き出す。"""
-    files = sorted(p for p in work_dir.rglob("*") if p.is_file())
+    """作業ディレクトリ配下を無圧縮 ZIP へ書き出す。
+
+    エントリ順は POSIX 区切りの相対パスを natsort キーとする自然順に揃える。
+    """
+    files = list(
+        natsort.natsorted(
+            (p for p in work_dir.rglob("*") if p.is_file()),
+            key=lambda p: p.relative_to(work_dir).as_posix(),
+        )
+    )
     with (
         tqdm.tqdm(total=len(files), desc="zip", unit="file", ascii=True, ncols=100) as pbar,
         zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf,
