@@ -71,6 +71,9 @@
   - `@pytest.mark.parametrize(..., indirect=True)` との併用も可
   - デコレーター順序（外側から内側）:
     `parametrize` → `asyncio` → `usefixtures`
+- 空コレクションとの等価比較（`assert x == []`・`assert d == {}`など）はpylintの
+  `use-implicit-booleaness-not-comparison`で警告されるため、`assert not x`と書く
+  - 中身まで含めた比較が必要な場合は`assert x == [expected]`のように具体的な期待値を書く
 
 ### Fixture のコーディングルール
 
