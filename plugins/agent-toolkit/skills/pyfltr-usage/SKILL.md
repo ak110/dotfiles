@@ -18,8 +18,9 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 | `fast` | 軽量チェック（mypy/pylint/pytestなど重いものを除外） | あり | しない（exit 0） | text | pre-commitフック |
 | `run-for-agent` | `run`と同等をJSONL出力で実行するエイリアス | あり | しない（exit 0） | jsonl | LLMエージェント |
 
-`run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する
-（`ruff check --fix` → `ruff format` → `ruff check` のような2段階方式を一般化した仕組み）。
+`run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する。
+fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段）→ `ruff check`（linter段）
+の3段構成を一般化した仕組みである。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
 `run-for-agent`は`run --output-format=jsonl`のエイリアスであり、LLMエージェントから呼び出す際に利用する。
 
@@ -44,34 +45,71 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 冒頭にエラー要約を出すツール（editorconfig-checker等）と末尾にスタックトレースを出すツール（pytest／mypy等）の双方を救う。
 
 切り詰めが起きると`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
-全文が必要な場合は次節の手順でアーカイブから取得する。
+`archive`にはアーカイブ内の相対パスが入る。
+具体的には`tools/<command>/output.log`または`tools/<command>/diagnostics.jsonl`の形式で、
+`run_id`配下のアーカイブディレクトリと組み合わせれば直接参照できる。
+`show-run`サブコマンドを介した取得手順は次節「再実行・調査の手段」を参照。
 
-### 失敗ツールの全文ログを取得する
+### messages[].fixフィールドの値
 
-`run-for-agent`の出力で重要情報が`message`から落ちている場合、実行アーカイブから全文を取得する。
+`failed`の`messages[]`には各違反ごとに`fix`フィールドが付くことがある。値の意味は以下の通り。
+
+| 値 | 意味 |
+| --- | --- |
+| `safe` | 自動fixが安全（副作用が予測可能） |
+| `unsafe` | 自動fixが可能だが意図と異なる修正になる可能性がある |
+| `suggested` | 自動fixの候補があるが適用は手動判断 |
+| `none` | ツールが自動fixを提供しない（手動修正が必要） |
+| 省略 | ツールがfix情報を提供していない（手動修正が必要） |
+
+`safe`／`unsafe`／`suggested`が並ぶ違反は`run-for-agent`の自動fixステージで解消される場合が多い。
+`none`または省略の違反は内容に応じて手動修正する。
+
+### 再実行・調査の手段
+
+失敗ツールの再実行や全文ログの取得には以下の3手段がある。状況に応じて使い分ける。
+
+#### command.retry_command で失敗ファイルだけ再実行
+
+`run-for-agent`のJSONL出力では、失敗した`command`レコードに`retry_command`フィールドが入る。
+失敗ファイルだけに絞った再実行コマンドが文字列として格納されているため、そのままシェルで実行できる。
+特定の失敗ツール1件のみを素早く再現したい場合に最も軽量。
+
+#### --only-failed で失敗ツール全体を再実行
+
+`pyfltr run-for-agent --only-failed`で、直前runの失敗ツール・失敗ファイルのみをまとめて再実行する。
+個別に`retry_command`をコピーする手間を省きたい場合に使う。
+参照runを明示する場合は`--from-run RUN_ID`を併用する（前方一致または`latest`を指定可）。
+
+#### show-run でアーカイブから全文ログを取得
+
+`message`が切り詰められた場合や、確定したrunを後から再確認したい場合は実行アーカイブから取得する。
 `header.run_id`または`summary`の前後に出る`run_id`を控えておく。
 
 ```bash
 # 単一ツールの output.log 全文を表示
-pyfltr show-run <run_id> --commands=<tool> --output
+pyfltr show-run RUN_ID --commands=TOOL --output
 
 # 複数ツールの diagnostics.jsonl をまとめて表示
-pyfltr show-run <run_id> --commands=mypy,ruff-check
+pyfltr show-run RUN_ID --commands=mypy,ruff-check
 ```
 
 `--commands`はカンマ区切りで複数指定可（旧 `--tool` は廃止）。
-`--output`との併用は単一ツール指定のみ許容される。
-最新runを参照する場合は`<run_id>`に`latest`を指定できる。
+`--output`との併用は単一ツール指定のみ許容される。最新runを参照する場合は`RUN_ID`に`latest`を指定できる。
 
 ### statusフィールドの意味
 
 | status | 意味 | 対応 |
 | -- | -- | -- |
 | `succeeded` | 問題なし | 不要 |
-| `formatted` | formatterがファイルを変更した | 基本的に再実行不要（formatter/linter間で設定矛盾がない限り変更は収束する） |
+| `formatted` | formatterがファイルを変更した | `ci`では失敗扱い／`run`系では再実行不要（補足参照） |
 | `failed` | エラーあり | `diagnostic`行で修正対象のファイル・行番号・メッセージを確認する |
-| `resolution_failed` | ツール起動コマンドの解決に失敗（`bin-runner` / `js-runner`未提供等） | 後述の「bin-runner未提供環境」を参照 |
+| `resolution_failed` | ツール起動コマンドの解決失敗（`bin-runner`/`js-runner`未提供等） | 「bin-runner未提供環境」節を参照 |
 | `skipped` | ツール未検出などでスキップ | 通常は無視してよい |
+
+- `formatted`は`run`系では正常終了するため見落とされやすい。実行後は`git diff`で変更内容を必ず確認してからコミットする
+- `formatted`が`run`系の繰り返しでも消えない場合はformatter/linter間の設定矛盾を疑い、
+  `pyproject.toml`の`[tool.ruff-format]`と`[tool.ruff-check]`を突き合わせる
 
 ## 効率的なワークフロー
 
@@ -127,8 +165,6 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 
 - エラー内容が`diagnostic`行だけでは把握しづらい場合、`run-for-agent`の代わりに`run`コマンドで
   通常のテキスト出力を得てツールの生出力を確認する
-- `status=formatted`直後に同じ違反が残る場合、formatterとlinterの設定矛盾が疑われる。
-  `pyproject.toml`の`[tool.ruff-format]`と`[tool.ruff-check]`を突き合わせて再実行する
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
 - 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を絞る（全体再実行より早く原因切り分けできる）

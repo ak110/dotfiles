@@ -4,17 +4,38 @@ PostToolUse セッション状態記録のテスト。
 subprocess で起動し exit code・状態ファイルの内容を検証する。
 """
 
+import importlib.util
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
+import types
 
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 _SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
 _PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
+
+
+def _load_posttooluse_module() -> types.ModuleType:
+    """``scripts/posttooluse.py`` を ``importlib`` で動的importする。
+
+    本体スクリプトが定義する定数（``_PLAN_REQUIRED_H2`` 等）をテストから直接参照し、
+    フィクスチャの順序ドリフトを防ぐ。
+    """
+    spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_POSTTOOLUSE = _load_posttooluse_module()
+# SSOT 共有のため protected member を直接参照する。
+_PLAN_REQUIRED_H2: tuple[str, ...] = _POSTTOOLUSE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
 
 
 def _run(
@@ -278,17 +299,36 @@ class TestGitLogChecked:
 
 
 # plan file 形式検査で使う各種 Markdown 断片。テスト全体で共用する。
-_VALID_PLAN = (
-    "# タイトル\n\n"
-    "## 変更履歴\n\n- 初版\n\n"
-    "## 背景\n\n説明。\n\n"
-    "## 対応方針\n\n"
-    "### ユーザー合意済み事項\n\n- a\n\n"
-    "## 調査結果\n\n- x\n\n"
-    "## 変更内容\n\n- y\n\n"
-    "## 実行方法\n\n- w\n\n"
-    "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
-)
+# 本体スクリプトの ``_PLAN_REQUIRED_H2`` から自動生成し、定義順序のドリフトを防ぐ。
+# ``## 対応方針`` 配下には判断材料 H3 を含めて妥当な plan 構造を再現する。
+_PLAN_BODY: dict[str, str] = {
+    "変更履歴": "- 初版",
+    "背景": "説明。",
+    "対応方針": "### ユーザー合意済み事項\n\n- a",
+    "調査結果": "- x",
+    "変更内容": "- y",
+    "実行方法": "- w",
+    "計画ファイル": "`~/.claude/plans/xxx.md`",
+}
+
+
+def _build_valid_plan(omit: tuple[str, ...] = ()) -> str:
+    """``_PLAN_REQUIRED_H2`` の順序に従い妥当な plan file 内容を生成する。
+
+    ``omit`` で指定した H2 セクションは省略する（必須セクション欠落の検証に用いる）。
+    """
+    parts: list[str] = ["# タイトル", ""]
+    for h2 in _PLAN_REQUIRED_H2:
+        if h2 in omit:
+            continue
+        parts.append(f"## {h2}")
+        parts.append("")
+        parts.append(_PLAN_BODY[h2])
+        parts.append("")
+    return "\n".join(parts) + "\n"
+
+
+_VALID_PLAN = _build_valid_plan()
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
@@ -338,7 +378,7 @@ class TestPlanFormatCheck:
     def test_missing_required_section_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
         # 調査結果セクションを欠落させた変種
-        content = _VALID_PLAN.replace("## 調査結果\n\n- x\n\n", "")
+        content = _build_valid_plan(omit=("調査結果",))
         plan = _write_plan(plans, "missing.md", content)
         result = _run(
             {
@@ -710,5 +750,21 @@ class TestPlanFormatSsot:
     def test_required_and_optional_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
         # 必須 H2 は全て plan-file-guidelines.md 内の記述例とセクション定義に登場する
-        for heading in ("変更履歴", "背景", "対応方針", "調査結果", "変更内容", "実行方法", "計画ファイル"):
+        for heading in _PLAN_REQUIRED_H2:
             assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
+
+    def test_section_definition_order_matches_required_h2(self):
+        """``plan-file-guidelines.md`` のセクション定義 H3 と ``_PLAN_REQUIRED_H2`` の順序が一致することを検査する。
+
+        セクション定義 H3 は ``### XXX（`## YYY`）`` 形式で記述されており、
+        バッククォート内の H2 名（YYY）が登場順に ``_PLAN_REQUIRED_H2`` と完全一致するべき。
+        記述例コードブロック内の H2 や、サブ H3 定義（``### XXX（`### YYY`）`` 形式）は
+        パターン上マッチしないため誤検出しない。
+        """
+        text = _PLAN_FILE_REF.read_text(encoding="utf-8")
+        # 行頭 H3 のうち、丸括弧内のインラインコードが H2 (`## ...`) 形式のものだけ抽出
+        pattern = re.compile(r"^### .+?（`## ([^`]+)`）", re.MULTILINE)
+        defined_h2 = tuple(pattern.findall(text))
+        assert defined_h2 == _PLAN_REQUIRED_H2, (
+            f"plan-file-guidelines.md のセクション定義順 {defined_h2} が _PLAN_REQUIRED_H2 {_PLAN_REQUIRED_H2} と一致しない"
+        )
