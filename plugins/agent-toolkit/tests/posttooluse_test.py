@@ -280,13 +280,13 @@ class TestGitLogChecked:
 # plan file 形式検査で使う各種 Markdown 断片。テスト全体で共用する。
 _VALID_PLAN = (
     "# タイトル\n\n"
+    "## 変更履歴\n\n- 初版\n\n"
     "## 背景\n\n説明。\n\n"
     "## 対応方針\n\n"
     "### ユーザー合意済み事項\n\n- a\n\n"
     "## 調査結果\n\n- x\n\n"
     "## 変更内容\n\n- y\n\n"
     "## 実行方法\n\n- w\n\n"
-    "## 変更履歴\n\n- 初版\n\n"
     "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
 )
 
@@ -404,7 +404,7 @@ class TestPlanFormatCheck:
         assert "unexpected H2" in msg
         assert "備考" in msg
 
-    def test_history_not_at_end_is_warned(self, tmp_path: pathlib.Path):
+    def test_history_not_at_top_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
         # 変更履歴を中間に置いた変種
         content = (
@@ -545,6 +545,7 @@ class TestPlanFormatCheck:
         home, plans = self._home(tmp_path)
         content = (
             "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
             "## 背景\n\n"
             "```markdown\n"
             "## 予期せぬ見出し\n"
@@ -553,7 +554,6 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 実行方法\n\n- w\n\n"
-            "## 変更履歴\n\n- w\n\n"
             "## 計画ファイル\n\n- w\n\n"
         )
         plan = _write_plan(plans, "fence.md", content)
@@ -581,6 +581,7 @@ class TestPlanFormatCheck:
         home, plans = self._home(tmp_path)
         content = (
             "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
             "## 背景\n\n"
             f"{outer}markdown\n"
             f"{inner}markdown\n"
@@ -591,7 +592,6 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 実行方法\n\n- w\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
         plan = _write_plan(plans, "nested-fence.md", content)
@@ -612,6 +612,7 @@ class TestPlanFormatCheck:
         home, plans = self._home(tmp_path)
         content = (
             "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
             "## 背景\n\n"
             "<!--\n"
             "## ダミー\n"
@@ -621,7 +622,6 @@ class TestPlanFormatCheck:
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 実行方法\n\n- w\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
         plan = _write_plan(plans, "html-comment.md", content)
@@ -648,12 +648,12 @@ class TestPlanFormatCheck:
             "  ## ダミー\n"
             f"{closer}\n\n"
             "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
             "## 背景\n\n説明。\n\n"
             "## 対応方針\n\n- a\n\n"
             "## 調査結果\n\n- x\n\n"
             "## 変更内容\n\n- y\n\n"
             "## 実行方法\n\n- w\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
             "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
         )
         plan = _write_plan(plans, "frontmatter.md", content)
@@ -710,5 +710,5 @@ class TestPlanFormatSsot:
     def test_required_and_optional_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
         # 必須 H2 は全て plan-file-guidelines.md 内の記述例とセクション定義に登場する
-        for heading in ("背景", "対応方針", "調査結果", "変更内容", "実行方法", "変更履歴", "計画ファイル"):
+        for heading in ("変更履歴", "背景", "対応方針", "調査結果", "変更内容", "実行方法", "計画ファイル"):
             assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"

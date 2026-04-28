@@ -26,7 +26,8 @@
 
 ## chezmoiの命名規則（早見表）
 
-`.chezmoi-source/`配下のファイル名は以下の規則で`~/`配下にデプロイされる（詳細はchezmoi公式: <https://www.chezmoi.io/reference/source-state-attributes/>）。
+`.chezmoi-source/`配下のファイル名は以下の規則で`~/`配下にデプロイされる
+（詳細はchezmoi公式: <https://www.chezmoi.io/reference/source-state-attributes/>）。
 
 - `dot_<name>` → `~/.<name>`（例: `dot_bashrc` → `~/.bashrc`）
 - `private_<name>` → パーミッション`600`／ディレクトリは`700`で配置
@@ -34,6 +35,15 @@
 - `<name>.tmpl` → Goテンプレートとして評価してから配置
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時に変更検知して実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed | grep <相対パス>`（配布対象確認）
+
+## 振り返りHook/Skill
+
+本リポジトリには、コーディングエージェントに対して当該セッションの振り返りを促すHook/Skillが以下の3カ所に組み込まれている。
+配布先やタイミングなどが異なるため分けているが、極力内容を同期するよう注意すること。
+
+- plugins/agent-toolkit/scripts/stop_advisor.py
+- scripts/claude_hook_stop.py
+- .chezmoi-source/dot_claude/skills/session-review/SKILL.md
 
 ## 注意点
 

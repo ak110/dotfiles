@@ -203,15 +203,15 @@ def _main() -> int:
     sections = []
     if has_pyfltr:
         sections.append(
-            "pyfltr review: list improvement suggestions in Japanese for pyfltr's behavior/messages and "
-            "`plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md`. Output the suggestions only (no preamble "
-            "or narration). If none, output '指摘無し'."
+            "pyfltr review: list improvement suggestions in Japanese for pyfltr's behavior/messages. "
+            "Output the suggestions only (no preamble or narration). If none, output '指摘無し'."
         )
     if has_agent_toolkit:
         sections.append(
             "agent-toolkit review: list improvement suggestions in Japanese for the agent-toolkit plugin "
-            "(`plugins/agent-toolkit/`) and rules under `~/.claude/rules/agent-toolkit/`. Output the "
-            "suggestions only (no preamble or narration). If none, output '指摘無し'."
+            "(`plugins/agent-toolkit/`, including `skills/pyfltr-usage/SKILL.md`) and rules under "
+            "`~/.claude/rules/agent-toolkit/`. Output the suggestions only (no preamble or narration). "
+            "If none, output '指摘無し'."
         )
     _block(_llm_notice(" | ".join(sections)))
     return 0

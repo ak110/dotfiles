@@ -29,11 +29,11 @@ disable-model-invocation: true
 
 ## 2. pyfltr
 
-対象: pyfltr本体の挙動・メッセージ、および`plugins/agent-toolkit/skills/pyfltr-usage/SKILL.md`。
+対象: pyfltr本体の挙動・メッセージ。
 反映はユーザーが別途行う前提のため、提案までにとどめる。
 
 ## 3. agent-toolkit
 
-対象: `agent-toolkit`プラグイン（スキル・フック・サブエージェント）と
+対象: `agent-toolkit`プラグイン（スキル・フック・サブエージェント。`skills/pyfltr-usage/SKILL.md`を含む）と
 `~/.claude/rules/agent-toolkit/`配下のルール。
 反映はユーザーが別途行う前提のため、提案までにとどめる。
