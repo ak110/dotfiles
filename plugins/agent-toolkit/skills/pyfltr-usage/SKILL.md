@@ -31,6 +31,11 @@ stdoutにJSONLのみを書き、テキストログは抑止される。
 環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも同等の既定値切り替えができ、`ci`など任意のサブコマンドに適用される
 （CLIオプションが優先）。
 
+> 注記: mypy / pyright / pylint / ty を併用していると、同じ型エラーが複数の`diagnostic`行に
+> 別ツール名で重複出力されることがある。
+> 1件の問題に対する複数ツールの報告として扱い、修正計画を重複させない。
+> 単一ツールに絞って実行したい場合は`--commands=mypy`等で指定する。
+
 ### messageの切り詰め仕様
 
 `failed`かつ`diagnostics=0`のとき、`command.message`に生出力の抜粋が入る。
