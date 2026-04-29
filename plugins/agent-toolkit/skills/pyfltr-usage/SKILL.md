@@ -11,26 +11,25 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 
 ## サブコマンド
 
-| サブコマンド | 用途 | fixステージ | formatter変更で失敗するか | 出力形式 | 使用場面 |
-| -- | -- | -- | -- | -- | -- |
-| `ci` | 全チェック実行 | なし | する（exit 1） | text | CI、pre-commit |
-| `run` | 全チェック実行 | あり | しない（exit 0） | text | ローカル開発 |
-| `fast` | 軽量チェック（mypy/pylint/pytestなど重いものを除外） | あり | しない（exit 0） | text | pre-commitフック |
-| `run-for-agent` | `run`と同等をJSONL出力で実行するエイリアス | あり | しない（exit 0） | jsonl | LLMエージェント |
+| サブコマンド | 用途 | fixステージ | formatter変更で失敗するか | 使用場面 |
+| -- | -- | -- | -- | -- |
+| `ci` | 全チェック実行 | なし | する（exit 1） | CI、pre-commit |
+| `run` | 全チェック実行 | あり | しない（exit 0） | ローカル開発 |
+| `fast` | 軽量チェック（mypy/pylint/pytestなど重いものを除外） | あり | しない（exit 0） | pre-commitフック |
+| `run-for-agent` | `run --output-format=jsonl`のエイリアス | あり | しない（exit 0） | LLMエージェント |
 
 `run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する。
 fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段）→ `ruff check`（linter段）
 の3段構成を一般化した仕組みである。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
-`run-for-agent`は`run --output-format=jsonl`のエイリアスであり、LLMエージェントから呼び出す際に利用する。
 
 ## JSONL出力
 
 `--output-format=jsonl`を付けるとLLM向けの構造化出力が得られる。
 stdoutにJSONLのみを書き、テキストログは抑止される。
-`pyfltr run-for-agent`は`--output-format=jsonl`を暗黙的に付与するエイリアスなので、エージェントからの呼び出しにはこちらを使う。
-環境変数`PYFLTR_OUTPUT_FORMAT=jsonl`でも同等の既定値切り替えができ、`ci`など任意のサブコマンドに適用される
-（CLIオプションが優先）。
+エージェント環境では`AI_AGENT`が常時設定されるため、`--output-format`未指定でも全サブコマンドが既定でjsonl出力になる。
+text出力が必要な場合のみ`--output-format=text`を明示する（環境変数`PYFLTR_OUTPUT_FORMAT=text`でも同等）。
+エージェントからの呼び出しは可読性のため`run-for-agent`を推奨する。
 
 > 注記: mypy / pyright / pylint / ty を併用していると、同じ型エラーが複数の`diagnostic`行に
 > 別ツール名で重複出力されることがある。
@@ -151,7 +150,6 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 
 | オプション | 説明 |
 | -- | -- |
-| `--output-format=jsonl` | LLM向け構造化出力 |
 | `--commands=<list>` | 実行ツールをカンマ区切りで指定 |
 | `--no-fix` | `run`／`fast`で自動付与されるfixステージを抑止 |
 | `--fail-fast` | 1ツールでもエラーが出た時点で残りを打ち切る |
@@ -163,8 +161,8 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 
 ## トラブルシューティング
 
-- エラー内容が`diagnostic`行だけでは把握しづらい場合、`run-for-agent`の代わりに`run`コマンドで
-  通常のテキスト出力を得てツールの生出力を確認する
+- エラー内容が`diagnostic`行だけでは把握しづらい場合、
+  `pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
 - 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を絞る（全体再実行より早く原因切り分けできる）
