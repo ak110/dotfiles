@@ -47,6 +47,10 @@
 - scripts/claude_hook_stop.py
 - .chezmoi-source/dot_claude/skills/session-review/SKILL.md
 
+なお`stop_advisor.py`は配布物のため対象をプロジェクトドキュメント全般の振り返りに限定する。
+agent-toolkitプラグイン本体・配布ルールの振り返りは
+dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
+
 ## 注意点
 
 - `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。

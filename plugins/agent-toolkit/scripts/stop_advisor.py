@@ -18,7 +18,7 @@ transcript を解釈できない異常系では block しない。
 
 セッション振り返り提案ブロック:
 真のセッション終了であれば、プロジェクトドキュメント全般 (CLAUDE.md・README.md・docs/ 配下など)
-および agent-toolkit プラグインへの改善提案を促す。
+への改善提案を促す。
 1 セッションにつき 1 回のみ発火する。
 
 exit code: 常に 0。
@@ -187,14 +187,12 @@ def _main() -> int:
         "session review: list improvement suggestions in Japanese."
         " Each suggestion must stand alone for readers without this session's conversation history"
         " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
-        " (a) project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
+        " Target project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
         " — only knowledge from this session that helps future Claude work on this project"
         " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
         " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
         ' For each candidate, output one line of "<target file> — <one-sentence summary>"; on user'
         " approval, draft and apply the diff via Edit."
-        " (b) agent-toolkit plugin (`plugins/agent-toolkit/`) and rules under"
-        " `~/.claude/rules/agent-toolkit/`. Apply via Edit only after user approval."
         " Output the suggestions only (no preamble or narration). If none, output '指摘無し'."
     )
 
