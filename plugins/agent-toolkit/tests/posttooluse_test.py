@@ -290,20 +290,30 @@ _PLAN_BODY: dict[str, str] = {
 }
 
 
-def _build_valid_plan(omit: tuple[str, ...] = ()) -> str:
+def _build_valid_plan(
+    omit: tuple[str, ...] = (),
+    *,
+    overrides: dict[str, str] | None = None,
+    prefix: str = "",
+) -> str:
     """``_PLAN_REQUIRED_H2`` の順序に従い妥当な plan file 内容を生成する。
 
-    ``omit`` で指定した H2 セクションは省略する（必須セクション欠落の検証に用いる）。
+    - ``omit``: 指定した H2 セクションを省略する（必須セクション欠落の検証に用いる）。
+    - ``overrides``: 指定した H2 セクションの本文を差し替える
+      （コードフェンス・HTML コメントなど特定本文での無視判定検証に用いる）。
+    - ``prefix``: 戻り値の先頭に連結する文字列（YAML フロントマターなど、
+      ファイル先頭要素の検証に用いる）。
     """
+    overrides = overrides or {}
     parts: list[str] = ["# タイトル", ""]
     for h2 in _PLAN_REQUIRED_H2:
         if h2 in omit:
             continue
         parts.append(f"## {h2}")
         parts.append("")
-        parts.append(_PLAN_BODY[h2])
+        parts.append(overrides.get(h2, _PLAN_BODY[h2]))
         parts.append("")
-    return "\n".join(parts) + "\n"
+    return prefix + "\n".join(parts) + "\n"
 
 
 _VALID_PLAN = _build_valid_plan()
@@ -582,19 +592,10 @@ class TestPlanFormatCheck:
     def test_code_fence_h2_is_ignored(self, tmp_path: pathlib.Path):
         """コードフェンス内の `## 見出し` は見出しとしてカウントしない。"""
         home, plans = self._home(tmp_path)
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
-            "## 背景\n\n"
-            "```markdown\n"
-            "## 予期せぬ見出し\n"
-            "```\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 恒久化計画\n\n- 無し\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 実行方法\n\n- w\n\n"
-            "## 計画ファイル\n\n- w\n\n"
+        content = _build_valid_plan(
+            overrides={
+                "背景": "```markdown\n## 予期せぬ見出し\n```",
+            }
         )
         plan = _write_plan(plans, "fence.md", content)
         result = _run(
@@ -619,21 +620,10 @@ class TestPlanFormatCheck:
     def test_nested_code_fence_h2_is_ignored(self, tmp_path: pathlib.Path, outer: str, inner: str):
         """外側フェンスが同字種・同長以上でのみ閉じ、内部の `##` を見出し扱いしない。"""
         home, plans = self._home(tmp_path)
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
-            "## 背景\n\n"
-            f"{outer}markdown\n"
-            f"{inner}markdown\n"
-            "## 予期せぬ見出し\n"
-            f"{inner}\n"
-            f"{outer}\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 恒久化計画\n\n- 無し\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 実行方法\n\n- w\n\n"
-            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
+        content = _build_valid_plan(
+            overrides={
+                "背景": (f"{outer}markdown\n{inner}markdown\n## 予期せぬ見出し\n{inner}\n{outer}"),
+            }
         )
         plan = _write_plan(plans, "nested-fence.md", content)
         result = _run(
@@ -651,20 +641,10 @@ class TestPlanFormatCheck:
     def test_html_comment_h2_is_ignored(self, tmp_path: pathlib.Path):
         """複数行 HTML コメント内の `## 見出し` は見出しとしてカウントしない。"""
         home, plans = self._home(tmp_path)
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
-            "## 背景\n\n"
-            "<!--\n"
-            "## ダミー\n"
-            "コメントなので無視される想定。\n"
-            "-->\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 恒久化計画\n\n- 無し\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 実行方法\n\n- w\n\n"
-            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
+        content = _build_valid_plan(
+            overrides={
+                "背景": ("<!--\n## ダミー\nコメントなので無視される想定。\n-->"),
+            }
         )
         plan = _write_plan(plans, "html-comment.md", content)
         result = _run(
@@ -683,22 +663,7 @@ class TestPlanFormatCheck:
     def test_frontmatter_h2_is_ignored(self, tmp_path: pathlib.Path, closer: str):
         """ファイル先頭 YAML フロントマター内の `## 見出し` は見出しとしてカウントしない。"""
         home, plans = self._home(tmp_path)
-        content = (
-            "---\n"
-            "title: sample\n"
-            "note: |\n"
-            "  ## ダミー\n"
-            f"{closer}\n\n"
-            "# タイトル\n\n"
-            "## 変更履歴\n\n- 初版\n\n"
-            "## 背景\n\n説明。\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 恒久化計画\n\n- 無し\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 実行方法\n\n- w\n\n"
-            "## 計画ファイル\n\n`~/.claude/plans/xxx.md`\n\n"
-        )
+        content = _build_valid_plan(prefix=f"---\ntitle: sample\nnote: |\n  ## ダミー\n{closer}\n\n")
         plan = _write_plan(plans, "frontmatter.md", content)
         result = _run(
             {

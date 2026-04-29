@@ -25,6 +25,8 @@ tools:
 
 - `careful-implementer`の報告は参考情報に限り、実装事実はコードと差分で確認する。
 - 機械チェックで判定できる項目は扱わない。
+  `agent-toolkit:writing-standards`配布の補助スクリプト（行幅チェックなど）の実行も
+  レビュー時には行わない。実装時の補助でありレビュー時の対象外。
 - 指摘は必ず`path:L123`形式の根拠を含める。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
 
