@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-28T04:19:09.072609138Z"
+exclude-newer = "2026-04-28T05:22:59.282393798Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1173,7 +1173,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.7.0"
+version = "3.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mcp" },
@@ -1188,9 +1188,9 @@ dependencies = [
     { name = "typos" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/d9/ec5219205852b6e06ac612b511c06235d29f72dfd4fbe1e20e135a1c651b/pyfltr-3.7.0.tar.gz", hash = "sha256:0e36bb7ace3de3889602d0b2f0b4d5c2cdecd1abb9ff076422cedec44f2f62da", size = 427759, upload-time = "2026-04-29T04:17:56.736Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/be/1bb73215cd4d00c395be34e789f45e42511ed73286b9db5085f61a5306e8/pyfltr-3.7.1.tar.gz", hash = "sha256:f6ac8992e42b3399effb74853ddc3b4d9459712ddd4f9e840a99ad952969e7f5", size = 431467, upload-time = "2026-04-29T05:19:54.316Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/30/c66067b27307447246effd87e4442f2af6a00a7d65ab013135924ca8cb10/pyfltr-3.7.0-py3-none-any.whl", hash = "sha256:b0fc09a7385ee5429344ea7d241e5cc9299edb69e22876401fe8df950735b0f3", size = 168827, upload-time = "2026-04-29T04:17:55.129Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/15/a0f5140dee1bd1b9d40d841072534684563f6dfd4108f6d5885aba7e8777/pyfltr-3.7.1-py3-none-any.whl", hash = "sha256:36cfd1ae151e2d493717868c8d89c17311c269ec7572b375e07ed137effffbc6", size = 170255, upload-time = "2026-04-29T05:19:53.201Z" },
 ]
 
 [package.optional-dependencies]
@@ -1387,7 +1387,7 @@ wheels = [
 
 [[package]]
 name = "pytilpack"
-version = "1.46.0"
+version = "1.46.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1395,9 +1395,9 @@ dependencies = [
     { name = "mcp" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/42/33/7086cd3a19f2111cb29ebd9004304f68cd6abac936890b89a4de8a9baca0/pytilpack-1.46.0.tar.gz", hash = "sha256:2bce28b54ea040fedb618fb9295c66dd7dda13a36fe51ee9ce6301e1cc3fe34a", size = 347033, upload-time = "2026-04-26T00:59:47.418Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/86/f8/acd8073c530977e28705295fcf97750ec82cf220f50b83010e628e19616f/pytilpack-1.46.1.tar.gz", hash = "sha256:03dd2bc4df1041542a655ae56bee4a0463f09943868d74a8d44bded79feda5f9", size = 346989, upload-time = "2026-04-29T04:32:41.406Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/db/74f88fb3b7044600210d7e45269926407ef73258af7003daf14628664925/pytilpack-1.46.0-py3-none-any.whl", hash = "sha256:4cd92bbcd822c0b303f3f7a3ebdc6a88b6db9822634e774c63ec71a7a8350b7d", size = 129638, upload-time = "2026-04-26T00:59:49.074Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/7c/7ee12d9054f49d256cecd8b72e23d228da04355718cd4374fb121ace37c2/pytilpack-1.46.1-py3-none-any.whl", hash = "sha256:969c42aa64a4a37b5fa7863f9dbce6cb6adacd2b69cc686d14714a10f684d6bd", size = 129640, upload-time = "2026-04-29T04:32:39.887Z" },
 ]
 
 [package.optional-dependencies]
