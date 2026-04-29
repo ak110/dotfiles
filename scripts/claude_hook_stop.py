@@ -200,6 +200,10 @@ def _main() -> int:
     state["advice_given"] = True
     _write_state(state_file, state)
 
+    preamble = (
+        "Each suggestion must stand alone for readers without this session's conversation history "
+        "(avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
+    )
     sections = []
     if has_pyfltr:
         sections.append(
@@ -213,7 +217,7 @@ def _main() -> int:
             "`~/.claude/rules/agent-toolkit/`. Output the suggestions only (no preamble or narration). "
             "If none, output '指摘無し'."
         )
-    _block(_llm_notice(" | ".join(sections)))
+    _block(_llm_notice(preamble + " " + " | ".join(sections)))
     return 0
 
 

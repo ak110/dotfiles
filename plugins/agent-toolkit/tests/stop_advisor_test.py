@@ -1,7 +1,7 @@
 """plugins/agent-toolkit/scripts/stop_advisor.py のテスト。
 
-Stop hook のテスト。transcript 分析と codex resume count による
-CLAUDE.md 更新提案の判定を検証する。
+Stop hook のテスト。`_stop_gate.is_real_session_end` ゲート単独での
+未コミット変更ブロックとセッション振り返り提案ブロックの判定を検証する。
 """
 
 import json
@@ -61,13 +61,6 @@ def _write_transcript(tmp_path: pathlib.Path, user_texts: str | list[str]) -> pa
     return transcript
 
 
-def _write_raw_transcript(tmp_path: pathlib.Path, lines: list[str]) -> pathlib.Path:
-    """任意の JSONL 行を transcript として書き出す (異種エントリを含む検証用)。"""
-    transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return transcript
-
-
 def _write_transcript_with_assistant_last(
     tmp_path: pathlib.Path,
     assistant_content: list[dict],
@@ -76,8 +69,6 @@ def _write_transcript_with_assistant_last(
     """アシスタントターンを末尾に持つ transcript を書き出す。
 
     直前アシスタントターン走査（完了文言ゲート・質問中判定）の検証で共有する。
-    `user_text` を指定すると先頭の user turn のテキストを差し替えられる
-    （修正キーワード集計と完了文言ゲートを同時に検証する用途で使う）。
     """
     lines = [
         json.dumps({"type": "user", "message": {"role": "user", "content": user_text}}, ensure_ascii=False),
@@ -94,271 +85,81 @@ def _write_transcript_with_assistant_last(
     return transcript
 
 
-class TestKeywordDetection:
-    """修正キーワードによる発火判定。"""
-
-    def test_below_threshold_approves(self, tmp_path: pathlib.Path):
-        # 2 keywords (threshold is 3)
-        transcript = _write_transcript(tmp_path, "user: \u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060")
-        result = _run(
-            {"session_id": "kw-low", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_at_threshold_blocks(self, tmp_path: pathlib.Path):
-        # 3 keywords + 完了文言ありかつ質問なしのアシスタントターン
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
-            user_text="user: \u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060\u3002\u3084\u308a\u76f4\u3057\u3066",
-        )
-        result = _run(
-            {"session_id": "kw-hit", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        assert "reason" in decision
-        assert "correction" in decision["reason"].lower()
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: agent-toolkit/stop_advisor]" in decision["reason"]
-        assert "Auto-generated hook notice" in decision["reason"]
-
-    def test_system_reminder_not_counted(self, tmp_path: pathlib.Path):
-        """user turn に注入される system-reminder タグ内の語は集計対象外。
-
-        CLAUDE.md やルール本文が system-reminder 経由で注入された際の false positive を防ぐ。
-        """
-        reminder = (
-            "<system-reminder>\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 "
-            "\u623b\u3057\u3066 \u3058\u3083\u306a\u304f</system-reminder>"
-        )
-        transcript = _write_transcript(tmp_path, reminder)
-        result = _run(
-            {"session_id": "kw-reminder", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_assistant_messages_not_counted(self, tmp_path: pathlib.Path):
-        """assistant turn のテキストは集計対象外。"""
-        assistant_entries = [
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057"}],
-                    },
-                },
-                ensure_ascii=False,
-            ),
-        ]
-        transcript = _write_raw_transcript(tmp_path, assistant_entries)
-        result = _run(
-            {"session_id": "kw-assistant", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_tool_result_not_counted(self, tmp_path: pathlib.Path):
-        """user turn に含まれる tool_result ブロックは集計対象外。
-
-        ツール出力 (読み込んだファイル本文など) が user role で echo されても拾わない。
-        """
-        entries = [
-            json.dumps(
-                {
-                    "type": "user",
-                    "message": {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "content": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 \u623b\u3057\u3066",
-                            },
-                        ],
-                    },
-                },
-                ensure_ascii=False,
-            ),
-        ]
-        transcript = _write_raw_transcript(tmp_path, entries)
-        result = _run(
-            {"session_id": "kw-tool", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_sidechain_not_counted(self, tmp_path: pathlib.Path):
-        """subagent (isSidechain=true) の user turn は集計対象外。"""
-        entries = [
-            json.dumps(
-                {
-                    "type": "user",
-                    "isSidechain": True,
-                    "message": {
-                        "role": "user",
-                        "content": "\u9055\u3046 \u9593\u9055\u3044 \u3084\u308a\u76f4\u3057 \u623b\u3057\u3066",
-                    },
-                },
-                ensure_ascii=False,
-            ),
-        ]
-        transcript = _write_raw_transcript(tmp_path, entries)
-        result = _run(
-            {"session_id": "kw-sidechain", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+# 完了文言・未完了文言・質問付き完了文言の典型例。
+# 真のセッション終了ゲート（_stop_gate.is_real_session_end）の判定を再現する。
+_COMPLETION_TEXT = "作業が完了しました。"
+_NO_COMPLETION_TEXT = "調査を続けます。"
+_COMPLETION_WITH_QUESTION = "実装が完了しました。どうしますか？"
 
 
-class TestCodexResumeDetection:
-    """codex resume count による発火判定。"""
+class TestSessionReviewBlock:
+    """セッション振り返り提案ブロックの基本動作。
 
-    def test_below_threshold_approves(self, tmp_path: pathlib.Path):
-        _write_state(tmp_path, "cr-low", {"codex_resume_count": 1})
-        transcript = _write_transcript(tmp_path, "no corrections here")
-        result = _run(
-            {"session_id": "cr-low", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_at_threshold_blocks(self, tmp_path: pathlib.Path):
-        _write_state(tmp_path, "cr-hit", {"codex_resume_count": 2})
-        # 完了文言ありかつ質問なしのアシスタントターンで共通ゲートを通過させる
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
-            user_text="no corrections here",
-        )
-        result = _run(
-            {"session_id": "cr-hit", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        assert "codex" in decision.get("reason", "").lower()
-
-
-class TestBothConditions:
-    """両方の条件を同時に満たす場合。"""
-
-    def test_both_triggered(self, tmp_path: pathlib.Path):
-        _write_state(tmp_path, "both", {"codex_resume_count": 3})
-        # 完了文言ありかつ質問なしのアシスタントターンで共通ゲートを通過させる
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}],
-            user_text="\u9055\u3046 \u9593\u9055 \u3084\u308a\u76f4\u3057\u3066 \u623b\u3057\u3066",
-        )
-        result = _run(
-            {"session_id": "both", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        reason = decision.get("reason", "")
-        assert "correction" in reason.lower()
-        assert "codex" in reason.lower()
-
-
-class TestStopBlockableGateForAdvice:
-    """CLAUDE.md 更新提案ブロックの直前ターン状態ゲート。
-
-    閾値を超えていても、直前アシスタントターンが「完了文言あり かつ 質問なし」
-    でなければ block を見送る。再評価を許容するため `stop_advice_given` も立てない
-    （同じセッションで 2 回目を実行しても同じ判定になることで間接的に検証する）。
+    `is_real_session_end` ゲート単独で発火する（閾値判定は撤廃済み）。
     """
 
-    _CORRECTION_USER_TEXT = "\u9055\u3046\u3001\u305d\u308c\u306f\u9593\u9055\u3044\u3060\u3002\u3084\u308a\u76f4\u3057\u3066"
-    # 「実装が完了しました。どうしますか？」（完了文言＋質問符）
-    _COMPLETION_WITH_QUESTION = (
-        "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002\u3069\u3046\u3057\u307e\u3059\u304b\uff1f"
-    )
-    # 「調査を続けます。」（完了文言なし・質問なし）
-    _NO_COMPLETION_TEXT = "\u8abf\u67fb\u3092\u7d9a\u3051\u307e\u3059\u3002"
-    # 「作業が完了しました。」（完了文言・質問なし）
-    _COMPLETION_TEXT = "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"
+    def test_completion_blocks(self, tmp_path: pathlib.Path):
+        """完了文言ありかつ質問なしのアシスタントターンは振り返り提案を発火する。"""
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": _COMPLETION_TEXT}],
+        )
+        result = _run(
+            {"session_id": "review-block", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        reason = decision["reason"]
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
+        assert "Auto-generated hook notice" in reason
+        # 自己完結化の注意書きが含まれていること（履歴参照を避ける指示）。
+        assert "stand alone" in reason
 
-    def _run_twice(self, tmp_path: pathlib.Path, session_id: str, transcript: pathlib.Path) -> tuple[dict, dict]:
+    def test_no_completion_approves(self, tmp_path: pathlib.Path):
+        """完了文言がないアシスタントターンは振り返り提案を発火しない。"""
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": _NO_COMPLETION_TEXT}],
+        )
+        result = _run(
+            {"session_id": "review-no-completion", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_question_approves(self, tmp_path: pathlib.Path):
+        """完了文言があっても質問中であれば発火しない。"""
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": _COMPLETION_WITH_QUESTION}],
+        )
+        result = _run(
+            {"session_id": "review-question", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+    def test_gate_failure_does_not_record_advice_given(self, tmp_path: pathlib.Path):
+        """ゲート不通過時は `stop_advice_given` を記録せず、再評価を許容する。"""
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": _NO_COMPLETION_TEXT}],
+        )
         first = _run(
-            {"session_id": session_id, "transcript_path": str(transcript)},
+            {"session_id": "review-rerun", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         second = _run(
-            {"session_id": session_id, "transcript_path": str(transcript)},
+            {"session_id": "review-rerun", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        return _parse_decision(first), _parse_decision(second)
-
-    def test_keyword_threshold_with_question_approves(self, tmp_path: pathlib.Path):
-        # 3 keywords + 質問中アシスタントターン → ゲートで approve
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": self._COMPLETION_WITH_QUESTION}],
-            user_text=self._CORRECTION_USER_TEXT,
-        )
-        first, second = self._run_twice(tmp_path, "kw-q", transcript)
-        assert first["decision"] == "approve"
-        # stop_advice_given が立っていないため 2 回目も approve
-        assert second["decision"] == "approve"
-
-    def test_codex_threshold_with_question_approves(self, tmp_path: pathlib.Path):
-        _write_state(tmp_path, "cr-q", {"codex_resume_count": 2})
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": self._COMPLETION_WITH_QUESTION}],
-        )
-        first, second = self._run_twice(tmp_path, "cr-q", transcript)
-        assert first["decision"] == "approve"
-        assert second["decision"] == "approve"
-
-    def test_keyword_threshold_without_completion_approves(self, tmp_path: pathlib.Path):
-        # 3 keywords + 完了文言なしアシスタントターン → ゲートで approve
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": self._NO_COMPLETION_TEXT}],
-            user_text=self._CORRECTION_USER_TEXT,
-        )
-        first, second = self._run_twice(tmp_path, "kw-nc", transcript)
-        assert first["decision"] == "approve"
-        assert second["decision"] == "approve"
-
-    def test_codex_threshold_without_completion_approves(self, tmp_path: pathlib.Path):
-        _write_state(tmp_path, "cr-nc", {"codex_resume_count": 2})
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": self._NO_COMPLETION_TEXT}],
-        )
-        first, second = self._run_twice(tmp_path, "cr-nc", transcript)
-        assert first["decision"] == "approve"
-        assert second["decision"] == "approve"
-
-    def test_keyword_threshold_with_completion_blocks(self, tmp_path: pathlib.Path):
-        # 3 keywords + 完了文言ありかつ質問なし → 従来どおり block
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            [{"type": "text", "text": self._COMPLETION_TEXT}],
-            user_text=self._CORRECTION_USER_TEXT,
-        )
-        result = _run(
-            {"session_id": "kw-blockable", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        assert "correction" in decision.get("reason", "").lower()
+        assert _parse_decision(first)["decision"] == "approve"
+        assert _parse_decision(second)["decision"] == "approve"
 
 
 class TestStopAdviceOnce:
@@ -372,6 +173,23 @@ class TestStopAdviceOnce:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+    def test_block_records_advice_given(self, tmp_path: pathlib.Path):
+        """ゲート通過 → block の直後は再 Stop で即 approve する。"""
+        transcript = _write_transcript_with_assistant_last(
+            tmp_path,
+            [{"type": "text", "text": _COMPLETION_TEXT}],
+        )
+        first = _run(
+            {"session_id": "once-block", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        second = _run(
+            {"session_id": "once-block", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        assert _parse_decision(first)["decision"] == "block"
+        assert _parse_decision(second)["decision"] == "approve"
 
 
 class TestEdgeCases:
@@ -428,7 +246,7 @@ class TestUncommittedChanges:
 
     def test_blocks_with_uncommitted_changes(self, tmp_path: pathlib.Path):
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}]
+        content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "dirty", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -454,10 +272,11 @@ class TestUncommittedChanges:
 
     def test_allows_after_block_limit(self, tmp_path: pathlib.Path):
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "\u4f5c\u696d\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"}]
+        content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
-        # 1 回ブロック後、2 回目は通過する
-        _write_state(tmp_path, "limit", {"uncommitted_block_count": 1})
+        # 1 回ブロック後、後続の振り返り提案ブロックへフォールスルーする。
+        # `stop_advice_given` を併せて立てて振り返り側も即 approve とし、未コミット側のみ通過することを示す。
+        _write_state(tmp_path, "limit", {"uncommitted_block_count": 1, "stop_advice_given": True})
         result = _run(
             {"session_id": "limit", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
@@ -480,7 +299,7 @@ class TestUncommittedChanges:
     def test_no_completion_keyword_approves(self, tmp_path: pathlib.Path):
         """未コミット変更があっても、直前アシスタントターンに完了文言がなければ block しない。"""
         repo = self._make_dirty_repo(tmp_path)
-        content = [{"type": "text", "text": "\u8abf\u67fb\u3092\u7d9a\u3051\u307e\u3059\u3002"}]
+        content = [{"type": "text", "text": _NO_COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "no-completion", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -508,10 +327,10 @@ class TestCompletionKeyword:
     @pytest.mark.parametrize(
         ("keyword_label", "assistant_text"),
         [
-            ("shimashita", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002"),
-            ("itashimashita", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u3044\u305f\u3057\u307e\u3057\u305f\u3002"),
-            ("itashimashita_kanji", "\u5b9f\u88c5\u304c\u5b8c\u4e86\u81f4\u3057\u307e\u3057\u305f\u3002"),
-            ("desu", "\u4f5c\u696d\u306f\u4ee5\u4e0a\u3067\u5b8c\u4e86\u3067\u3059\u3002"),
+            ("shimashita", "実装が完了しました。"),
+            ("itashimashita", "実装が完了いたしました。"),
+            ("itashimashita_kanji", "実装が完了致しました。"),
+            ("desu", "作業は以上で完了です。"),
         ],
     )
     def test_completion_keyword_triggers_block(self, tmp_path: pathlib.Path, keyword_label: str, assistant_text: str):
@@ -733,7 +552,7 @@ class TestWaitingKeywordSuppressesBlock:
     """待機語・非同期待機ツールがある場合は block を抑制する。
 
     テスト対象: 未コミット変更ブロック（uncommitted changes）および
-    CLAUDE.md 更新提案ブロック（stop advice）の両方。
+    セッション振り返り提案ブロック（stop advice）の両方。
     `_stop_gate.is_real_session_end` が False を返すため、
     どちらの block も発火しない。
     """
@@ -800,15 +619,9 @@ class TestWaitingKeywordSuppressesBlock:
         assert decision["decision"] == "approve"
 
     def test_waiting_keyword_suppresses_advice_block(self, tmp_path: pathlib.Path):
-        """待機語を含むアシスタントターンは CLAUDE.md 更新提案ブロックを抑制する。"""
-        # user_text に含まれる修正キーワード: 「違う」「間違」「やり直」で計 3 カウント。
-        # 閾値 (_KEYWORD_THRESHOLD == 3) に到達するため、待機抑制がなければ発火する。
+        """待機語を含むアシスタントターンはセッション振り返り提案ブロックを抑制する。"""
         content = [{"type": "text", "text": "作業が完了しました。バックグラウンドで処理中です。完了を待ちます。"}]
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            content,
-            user_text="違う、それは間違いだ。やり直して",
-        )
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "waiting-advice", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -817,18 +630,12 @@ class TestWaitingKeywordSuppressesBlock:
         assert decision["decision"] == "approve"
 
     def test_agent_tool_suppresses_advice_block(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Agent のターンは CLAUDE.md 更新提案ブロックを抑制する。"""
-        # user_text に含まれる修正キーワード: 「違う」「間違」「やり直」で計 3 カウント。
-        # 閾値 (_KEYWORD_THRESHOLD == 3) に到達するため、待機抑制がなければ発火する。
+        """最後の tool_use が Agent のターンはセッション振り返り提案ブロックを抑制する。"""
         content: list[dict[str, Any]] = [
             {"type": "text", "text": "作業が完了しました。"},
             {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
         ]
-        transcript = _write_transcript_with_assistant_last(
-            tmp_path,
-            content,
-            user_text="違う、それは間違いだ。やり直して",
-        )
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
             {"session_id": "agent-tool-advice", "transcript_path": str(transcript)},
             state_dir=tmp_path,
@@ -868,7 +675,7 @@ class TestGitStatusDisplay:
         repo = self._make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, "no corrections")
         # ブロック上限を超過させて approve パスに到達させる
-        _write_state(tmp_path, "gs-dirty", {"uncommitted_block_count": 2})
+        _write_state(tmp_path, "gs-dirty", {"uncommitted_block_count": 2, "stop_advice_given": True})
         result = _run(
             {"session_id": "gs-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,

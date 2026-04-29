@@ -13,17 +13,16 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 
 1. テスト実行 — pytest / make test / pyfltr / npm test / cargo test 等 (Bash)
 2. Git 状態確認 — git status / git log / git diff (Bash)
-3. codex exec resume — codex レビューの再実行 (Bash)
-4. git log 確認状態のリセット — git commit / rebase / push (Bash),
+3. git log 確認状態のリセット — git commit / rebase / push (Bash),
    ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
    amend / rebase 前に改めて git log を確認させる
-5. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
+4. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
    必須H2 の欠落・順序違反・想定外 H2を
    ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)。
    セッション状態の ``plan_mode_skill_invoked`` が真の場合のみ実行する
    (未呼び出し時は PreToolUse 側で plan-mode スキル先行呼び出しを促すため、
    構造検査の二重警告を避ける)
-6. plan-mode スキル呼び出し検出 (Skill) — ``agent-toolkit:plan-mode`` または
+5. plan-mode スキル呼び出し検出 (Skill) — ``agent-toolkit:plan-mode`` または
    ``plan-mode`` の呼び出しを観測し ``plan_mode_skill_invoked`` フラグを立てる。
    PreToolUse 側の最初ツール呼び出し警告および本フックの plan file 形式検査の
    有効化に使う
@@ -82,10 +81,6 @@ _GIT_LOG_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+log\b")
 # --- git log リセットパターン (commit / rebase / push) ---
 
 _GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
-
-# --- codex exec resume 検出パターン ---
-
-_CODEX_RESUME_PATTERN = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 # --- plan-mode スキル呼び出し検出 ---
 
@@ -315,11 +310,6 @@ def _main() -> int:
     elif _GIT_LOG_RESET_PATTERN.search(command) and state.get("git_log_checked", False):
         # commit / rebase / push は git log 確認状態をリセットする
         state["git_log_checked"] = False
-        changed = True
-
-    # codex exec resume 検出
-    if _CODEX_RESUME_PATTERN.search(command):
-        state["codex_resume_count"] = state.get("codex_resume_count", 0) + 1
         changed = True
 
     if changed:

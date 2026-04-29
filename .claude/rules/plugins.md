@@ -149,7 +149,6 @@ flowchart TB
 - `git_log_checked` — PostToolUse(Bash)が`git log`を観測して記録。
   PreToolUse(Bash)のamend / rebase直前確認に使う。
   commit / rebase / push / ファイル編集を観測した時点でリセットする
-- `codex_resume_count` — PostToolUse(Bash)が`codex exec resume`の累積回数を記録
 - `plan_mode_skill_invoked` — PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを観測して記録。
   PostToolUseのplan file形式検査の有効化、およびPreToolUseの最初ツール警告の抑制に使う
 - `plan_mode_warning_emitted` — PreToolUseが最初ツール警告を発火済みかを記録（1セッション1回限り）

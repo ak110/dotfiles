@@ -134,29 +134,6 @@ class TestGitStatusCheck:
         assert state.get("git_status_checked") is True
 
 
-class TestCodexResume:
-    """codex exec resume 検出。"""
-
-    def test_resume_increments_count(self, tmp_path: pathlib.Path):
-        sid = "test-codex-resume"
-        for _ in range(3):
-            _run(
-                {"session_id": sid, "tool_input": {"command": "codex exec resume --dangerously-bypass abc123 prompt"}},
-                state_dir=tmp_path,
-            )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_resume_count") == 3
-
-    def test_initial_exec_not_counted(self, tmp_path: pathlib.Path):
-        sid = "test-codex-initial"
-        _run(
-            {"session_id": sid, "tool_input": {"command": "codex exec --dangerously-bypass plan.md prompt"}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_resume_count", 0) == 0
-
-
 class TestPlanModeSkillInvocation:
     """plan-mode スキル呼び出し検出 (Skill ツール)。"""
 

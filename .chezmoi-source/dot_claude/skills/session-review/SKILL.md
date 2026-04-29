@@ -5,6 +5,9 @@ description: >
   CLAUDE.mdへの学びの反映、pyfltr・agent-toolkitスキルの改善点を点検する。
   「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
 disable-model-invocation: true
+# 本SKILLを更新する場合、以下のHookスクリプトも同時に更新すること。
+# - plugins/agent-toolkit/scripts/stop_advisor.py
+# - scripts/claude_hook_stop.py
 ---
 
 # セッション振り返り
@@ -15,25 +18,29 @@ disable-model-invocation: true
 「対象ファイル — 一文要約」の形で書く。
 提案が無い項目には「指摘無し」とのみ書く。
 当該セッションで利用しなかった項目（例: pyfltr未使用）はスキップしてよい。
+各提案文は本セッションの会話履歴を知らない読者にも意味が通るよう自己完結させる
+（「先ほどの議論」のような履歴参照を避け、観測事象を直接書く）。
 
-## 1. CLAUDE.md / CLAUDE.local.md 追記候補
+## 1. プロジェクトドキュメント
 
-`find . -name "CLAUDE.md" -o -name "CLAUDE.local.md"`で候補ファイルを列挙する。
+CLAUDE.md、README.md、docs/配下など、プロジェクト固有のドキュメント全般。
+
 今後のClaude作業に必要な、本セッションで判明したプロジェクト固有の知見のみを対象とする
 （観点: bashコマンド・コードスタイル・テスト手法・環境設定の癖・警告/落とし穴・繰り返された修正指示など）。
 1コンセプト1行で簡潔に書く。
 最初の提示は「対象ファイル — 一文要約」のみとし、ユーザー承認を得てから`Edit`で文面・差分を確定する。
-
-- `CLAUDE.md`: チーム共有（gitコミット対象）
-- `CLAUDE.local.md`: 個人・ローカルのみ（gitignore対象）
 
 ## 2. pyfltr
 
 対象: pyfltr本体の挙動・メッセージ。
 反映はユーザーが別途行う前提のため、提案までにとどめる。
 
+pyfltrプロジェクトで作業中の場合に限り、1と統合する。
+
 ## 3. agent-toolkit
 
 対象: `agent-toolkit`プラグイン（スキル・フック・サブエージェント。`skills/pyfltr-usage/SKILL.md`を含む）と
 `~/.claude/rules/agent-toolkit/`配下のルール。
 反映はユーザーが別途行う前提のため、提案までにとどめる。
+
+dotfilesプロジェクトで作業中の場合に限り、1と統合する。

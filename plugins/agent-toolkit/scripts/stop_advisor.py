@@ -7,7 +7,7 @@
 
 Claude Code が停止しようとするタイミングで発火する。
 
-未コミット変更ブロックと CLAUDE.md 更新提案ブロックの 2 種類の block を出す。
+未コミット変更ブロックとセッション振り返り提案ブロックの 2 種類の block を出す。
 両ブロックは共通ゲート `_stop_gate.is_real_session_end` で「直前アシスタントターンが
 完了文言を含み、かつ質問・待機語・非同期待機ツールがない」場合に限り発火する。
 作業途中の一時停止・バックグラウンド待機・ユーザー質問待ちでの誤検出を避けるため、
@@ -16,12 +16,10 @@ transcript を解釈できない異常系では block しない。
 未コミット変更ブロック:
 作業ディレクトリに未コミット変更があれば block し、コミット要否をユーザーに確認させる。
 
-CLAUDE.md 更新提案ブロック:
-transcript を分析してユーザーからの修正指示の多寡を判定し、
-閾値を超えた場合に CLAUDE.md 更新を提案する。
-codex exec resume が多い場合も同様に提案する。
-1 セッションにつき 1 回のみ発火する。共通ゲートで approve に倒れた場合は
-`stop_advice_given` を記録せず、ユーザー応答後や作業完了後の Stop で改めて評価する。
+セッション振り返り提案ブロック:
+真のセッション終了であれば、プロジェクトドキュメント全般 (CLAUDE.md・README.md・docs/ 配下など)
+および agent-toolkit プラグインへの改善提案を促す。
+1 セッションにつき 1 回のみ発火する。
 
 exit code: 常に 0。
 stdout に JSON (decision: approve | block) を出力する。
@@ -35,33 +33,7 @@ import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
-from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position
-    _INJECTED_TAG_PATTERNS,
-    is_real_session_end,
-)
-
-# --- 修正キーワード ---
-
-_CORRECTION_KEYWORDS: tuple[str, ...] = (
-    "違う",
-    "そうじゃ",
-    "そうでなく",
-    "じゃなく",
-    "間違",
-    "やり直",
-    "ではなく",
-    "戻して",
-    "さっき言った",
-    "指示した通り",
-    "指示通り",
-)
-
-# 低すぎると通常会話（「違う話だけど」等）で誤検知する。
-# 3 以上なら意図的な修正指示の繰り返しと見なせる経験的な閾値。
-_KEYWORD_THRESHOLD = 3
-# resume 1 回は正常フロー（初回不合格→修正→合格）のため、
-# 2 以上を異常な繰り返しと判定する。
-_CODEX_RESUME_THRESHOLD = 2
+from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
 # 詳細は skills/writing-standards/references/claude-hooks.md を参照。
@@ -73,57 +45,6 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
     return f"{prefix} {body} {_MESSAGE_SUFFIX}"
-
-
-def _extract_user_text(line: str) -> str | None:
-    """Transcript の JSONL 1 行から user turn のテキストを抽出する。
-
-    `type == "user"` かつ `isSidechain` でないエントリの message.content を読む。
-    tool_result ブロックはツール出力でユーザー発話ではないため除外する。
-    ハーネスが注入する system-reminder 等のタグも除去する
-    (読み込まれる CLAUDE.md / ルールファイル本文がキーワードを含み false positive の原因になるため)。
-    """
-    try:
-        entry = json.loads(line)
-    except (json.JSONDecodeError, ValueError):
-        return None
-    if entry.get("type") != "user" or entry.get("isSidechain"):
-        return None
-    message = entry.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                value = block.get("text")
-                if isinstance(value, str):
-                    parts.append(value)
-        text = "\n".join(parts)
-    else:
-        return None
-    for pattern in _INJECTED_TAG_PATTERNS:
-        text = pattern.sub("", text)
-    return text
-
-
-def _count_keywords(transcript_path: str) -> int:
-    """Transcript 内のユーザー発話に含まれる修正キーワードの出現数を返す。"""
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return 0
-    count = 0
-    for line in lines:
-        text = _extract_user_text(line)
-        if text is None:
-            continue
-        for keyword in _CORRECTION_KEYWORDS:
-            count += text.count(keyword)
-    return count
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:
@@ -243,29 +164,16 @@ def _main() -> int:
             return 0
         # 2 回目以降は block_count != 0 で何もせず、後続処理へフォールスルーする。
 
-    # --- CLAUDE.md 更新提案 ---
+    # --- セッション振り返り提案 ---
     # セッション 1 回制限: block 後に Claude が再度 Stop するため、
     # 2 回目以降は即座に approve する。
     if state.get("stop_advice_given", False):
         _approve(cwd=cwd)
         return 0
 
-    # transcript の修正キーワードを集計
-    keyword_count = _count_keywords(transcript_path) if transcript_path else 0
-
-    # codex resume の回数を取得
-    codex_resume_count = state.get("codex_resume_count", 0)
-
-    keyword_triggered = keyword_count >= _KEYWORD_THRESHOLD
-    codex_triggered = codex_resume_count >= _CODEX_RESUME_THRESHOLD
-
-    if not keyword_triggered and not codex_triggered:
-        _approve(cwd=cwd)
-        return 0
-
     # 共通ゲート: 直前ターンが真のセッション終了でない場合は block を見送る。
     # `stop_advice_given` を記録しないため、ユーザーが応答した後や作業完了後の
-    # Stop で改めて閾値判定が実行される。
+    # Stop で改めて評価される。
     if not is_real_session_end(transcript_path):
         _approve(cwd=cwd)
         return 0
@@ -275,23 +183,14 @@ def _main() -> int:
     state["stop_advice_given"] = True
     write_state(session_id, state)
 
-    # 理由に応じたメッセージ構築。
-    # 発火件数の表示は冗長なため、トリガー種別タグのみを残す
-    # （既存テストが reason に "correction" / "codex" の含有を検査しているため、
-    # それぞれ correction-keyword / codex-resume として残す）。
-    triggers: list[str] = []
-    if keyword_triggered:
-        triggers.append("correction-keyword")
-    if codex_triggered:
-        triggers.append("codex-resume")
-    trigger_label = " / ".join(triggers)
-
     body = (
-        f"session review (triggered by {trigger_label}): list improvement suggestions in Japanese."
-        " (a) CLAUDE.md / CLAUDE.local.md additions worth recording for future Claude work"
+        "session review: list improvement suggestions in Japanese."
+        " Each suggestion must stand alone for readers without this session's conversation history"
+        " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
+        " (a) project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
+        " — only knowledge from this session that helps future Claude work on this project"
         " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
         " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
-        " Run `find . -name CLAUDE.md -o -name CLAUDE.local.md` to enumerate target files."
         ' For each candidate, output one line of "<target file> — <one-sentence summary>"; on user'
         " approval, draft and apply the diff via Edit."
         " (b) agent-toolkit plugin (`plugins/agent-toolkit/`) and rules under"
