@@ -32,19 +32,17 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position
 from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
 from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position
 
-# LLM 宛てメッセージの共通プレフィックス / サフィックス。
-# 詳細は skills/writing-standards/references/claude-hooks.md を参照。
-_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
-_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+# このスクリプトの hook 識別子。
+_HOOK_ID = "agent-toolkit/stop_advisor"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
-    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
-    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+    return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
 def _has_uncommitted_changes(cwd: str) -> bool:

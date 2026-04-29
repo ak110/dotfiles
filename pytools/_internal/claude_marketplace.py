@@ -74,7 +74,7 @@ def ensure_marketplace() -> bool:
         if _marketplace_already_registered(data):
             return True
 
-    dotfiles_root = _find_dotfiles_root()
+    dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず登録をスキップ"))
         return False
@@ -110,7 +110,7 @@ def repair_marketplace() -> bool:
         (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
          / ``_now_iso_millis`` / ``claude_common.atomic_write_json``) は削除候補となる。
     """
-    dotfiles_root = _find_dotfiles_root()
+    dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず修復をスキップ"))
         return False
@@ -164,25 +164,6 @@ def refresh_marketplace() -> bool:
     return True
 
 
-# --- dotfiles ルート検出 ---
-
-
-def _find_dotfiles_root() -> Path | None:
-    """本ファイルから見た dotfiles ルートディレクトリを返す。
-
-    dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
-    `pytools/_internal/claude_marketplace.py` は dotfiles/pytools/_internal/ に置かれているため
-    親の親の親がルート。
-
-    install_claude_plugins._find_dotfiles_root() と同じ実装だが、循環 import を避けるため
-    本モジュールでも独立に検出する (marker ファイル判定で済むシンプルな処理のため)。
-    """
-    candidate = Path(__file__).resolve().parent.parent.parent
-    if (candidate / ".claude-plugin" / "marketplace.json").is_file():
-        return candidate
-    return None
-
-
 # --- 内部ヘルパー (テスト・デバッグ用に公開) ---
 
 
@@ -211,7 +192,7 @@ def _check_marketplace_from_file() -> bool | None:
 
 def _load_known_marketplace_entry() -> dict[str, object] | None:
     """known_marketplaces.json から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH, silent=True)
+    data = claude_common.load_json_dict(_KNOWN_MARKETPLACES_PATH)
     if data is None:
         return None
     entry = data.get(claude_common.MARKETPLACE_NAME)
@@ -220,7 +201,7 @@ def _load_known_marketplace_entry() -> dict[str, object] | None:
 
 def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
     """settings.json.extraKnownMarketplaces から対象 marketplace のエントリを読み込む。"""
-    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH, silent=True)
+    data = claude_common.load_json_dict(_SETTINGS_JSON_PATH)
     if data is None:
         return None
     extra = data.get("extraKnownMarketplaces")
@@ -247,7 +228,7 @@ def _is_entry_healthy(entry: dict[str, object]) -> bool:
     source_dict = cast("dict[str, object]", source)
     if source_dict.get("source") != "directory":
         return False
-    dotfiles_root = _find_dotfiles_root()
+    dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         return False
     return source_dict.get("path") == str(dotfiles_root)

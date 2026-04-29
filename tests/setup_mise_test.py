@@ -83,137 +83,117 @@ class TestAppendEntry:
 
 
 class TestEnsureGlobalNode:
-    """``_ensure_global_node`` の分岐を run_mise_fn 引数で検証する。"""
+    """``_ensure_global_node`` の分岐を ``_run_mise`` monkeypatch で検証する。"""
 
-    @staticmethod
-    def _fake_run_factory(calls: list[list[str]], responses: list[subprocess.CompletedProcess[str]]):
-        """呼び出し履歴を残しつつ順に ``responses`` を返す fake ``_run_mise``."""
-
-        def fake(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin  # noqa -- interface のため受け取るだけ
-            calls.append(args)
-            return responses.pop(0)
-
-        return fake
-
-    def test_node_already_set(self):
+    def test_node_already_set(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
-        responses = [
-            subprocess.CompletedProcess(
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
                 stdout=json.dumps({"node": [{"version": "24"}]}, ensure_ascii=False),
                 stderr="",
-            ),
-        ]
-        assert (
-            _setup_mise._ensure_global_node(
-                Path("/fake/mise"),
-                run_mise_fn=self._fake_run_factory(calls, responses),
             )
-            is False
-        )
+
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
         assert calls == [["ls", "--global", "--json"]]
 
-    def test_node_missing_triggers_install(self):
+    def test_node_missing_triggers_install(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
         responses = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr=""),
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ]
-        assert (
-            _setup_mise._ensure_global_node(
-                Path("/fake/mise"),
-                run_mise_fn=self._fake_run_factory(calls, responses),
-            )
-            is True
-        )
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return responses.pop(0)
+
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is True
         assert calls == [
             ["ls", "--global", "--json"],
             ["use", "--global", "node@lts"],
         ]
 
-    def test_ls_failure_returns_false(self):
+    def test_ls_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
-        responses = [
-            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom"),
-        ]
-        assert (
-            _setup_mise._ensure_global_node(
-                Path("/fake/mise"),
-                run_mise_fn=self._fake_run_factory(calls, responses),
-            )
-            is False
-        )
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
         assert calls == [["ls", "--global", "--json"]]
 
-    def test_install_failure_returns_false(self):
+    def test_install_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
         responses = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr=""),
             subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="fail"),
         ]
-        assert (
-            _setup_mise._ensure_global_node(
-                Path("/fake/mise"),
-                run_mise_fn=self._fake_run_factory(calls, responses),
-            )
-            is False
-        )
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return responses.pop(0)
+
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
         assert calls == [
             ["ls", "--global", "--json"],
             ["use", "--global", "node@lts"],
         ]
 
-    def test_invalid_json_returns_false(self):
+    def test_invalid_json_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
-        responses = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="not json", stderr=""),
-        ]
-        assert (
-            _setup_mise._ensure_global_node(
-                Path("/fake/mise"),
-                run_mise_fn=self._fake_run_factory(calls, responses),
-            )
-            is False
-        )
+
+        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            calls.append(args)
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="not json", stderr="")
+
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
         assert calls == [["ls", "--global", "--json"]]
 
 
 class TestRun:
-    """``run`` のトップレベルフロー (mise 未検出スキップ)。"""
+    """``run`` のトップレベルフロー。"""
 
-    def test_mise_not_found(self):
-        assert _setup_mise.run(find_mise_fn=lambda: None) is False
+    def test_mise_not_found(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: None)
+        assert _setup_mise.run() is False
 
-    def test_mise_found_delegates_to_ensure_global_node(self):
+    def test_mise_found_delegates_to_ensure_global_node(self, monkeypatch: pytest.MonkeyPatch):
         called: list[Path] = []
 
-        def fake_ensure(mise_bin: Path) -> bool:
+        def fake_ensure_global_node(mise_bin: Path) -> bool:
             called.append(mise_bin)
             return True
 
-        assert (
-            _setup_mise.run(
-                find_mise_fn=lambda: Path("/fake/mise"),
-                is_windows=False,
-                ensure_global_node_fn=fake_ensure,
-                ensure_working_tree_trusted_fn=lambda _mise_bin: False,
-            )
-            is True
-        )
+        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+        monkeypatch.setattr(_setup_mise, "_ensure_global_node", fake_ensure_global_node)
+        monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: False)
+
+        assert _setup_mise.run() is True
         assert called == [Path("/fake/mise")]
 
-    def test_trust_changed_propagates_to_run(self):
-        assert (
-            _setup_mise.run(
-                find_mise_fn=lambda: Path("/fake/mise"),
-                is_windows=False,
-                ensure_global_node_fn=lambda _mise_bin: False,
-                ensure_working_tree_trusted_fn=lambda _mise_bin: True,
-            )
-            is True
-        )
+    def test_trust_changed_propagates_to_run(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+        monkeypatch.setattr(_setup_mise, "_ensure_global_node", lambda _mise_bin: False)
+        monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: True)
+
+        assert _setup_mise.run() is True
 
 
 class TestEnsureWorkingTreeTrusted:
@@ -221,27 +201,29 @@ class TestEnsureWorkingTreeTrusted:
 
     def test_env_not_set_skips(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
-        called: list[list[str]] = []
+        calls: list[list[str]] = []
 
         def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
-            called.append(args)
+            calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False
-        assert not called
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
+        assert not calls
 
     def test_mise_toml_missing_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
-        called: list[list[str]] = []
+        calls: list[list[str]] = []
 
         def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
-            called.append(args)
+            calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False
-        assert not called
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
+        assert not calls
 
     def test_invokes_trust_command(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         mise_toml = tmp_path / "mise.toml"
@@ -254,7 +236,8 @@ class TestEnsureWorkingTreeTrusted:
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is True
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is True
         assert calls == [["trust", str(mise_toml)]]
 
     def test_command_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -265,4 +248,5 @@ class TestEnsureWorkingTreeTrusted:
             del mise_bin, args
             return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
 
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise"), run_mise_fn=fake_run) is False
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False

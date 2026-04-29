@@ -1,5 +1,5 @@
 #!/bin/bash -eu
-# NOTE: 対応するWindows版 → bin/executable_c.cmd
+# NOTE: 対応するWindows版 → bin/c.cmd
 echo -e "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 
 # clear

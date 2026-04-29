@@ -2,6 +2,7 @@
 
 import sys
 
+from pytools._internal import claude_common as _claude_common
 from pytools.update_ssh_config import _ensure_trailing_newline, _extract_key_data
 
 
@@ -50,31 +51,29 @@ class TestEnsureTrailingNewline:
         assert _ensure_trailing_newline("text\n\n") == "text\n\n"
 
 
-class TestAtomicWrite:
-    """_atomic_writeのテスト。"""
+class TestAtomicWriteText:
+    """claude_common.atomic_write_text のテスト (update_ssh_config で使う機能を中心に確認)。"""
 
     def test_creates_file(self, tmp_path):
-        from pytools.update_ssh_config import _atomic_write
-
         target = tmp_path / "test_file"
-        _atomic_write(target, "hello\n")
+        assert _claude_common.atomic_write_text(target, "hello\n") is True
         assert target.read_text(encoding="utf-8") == "hello\n"
+
+    def test_mode_sets_permissions(self, tmp_path):
+        target = tmp_path / "test_file"
+        assert _claude_common.atomic_write_text(target, "data\n", mode=0o600) is True
         if sys.platform != "win32":
             assert oct(target.stat().st_mode & 0o777) == oct(0o600)
 
     def test_overwrites_existing(self, tmp_path):
-        from pytools.update_ssh_config import _atomic_write
-
         target = tmp_path / "test_file"
         target.write_text("old content", encoding="utf-8")
-        _atomic_write(target, "new content\n")
+        assert _claude_common.atomic_write_text(target, "new content\n") is True
         assert target.read_text(encoding="utf-8") == "new content\n"
 
     def test_no_leftover_on_success(self, tmp_path):
-        from pytools.update_ssh_config import _atomic_write
-
         target = tmp_path / "test_file"
-        _atomic_write(target, "content\n")
+        _claude_common.atomic_write_text(target, "content\n")
         # 一時ファイルが残っていないことを確認
         files = list(tmp_path.iterdir())
         assert files == [target]

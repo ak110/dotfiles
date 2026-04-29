@@ -50,24 +50,19 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position
 from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
 
 # U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
 _REPLACEMENT_CHAR = "\ufffd"
 
-# LLM 宛てメッセージの共通プレフィックス / サフィックス。
-# 詳細は skills/writing-standards/references/claude-hooks.md を参照。
-_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/pretooluse]"
-_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+# このスクリプトの hook 識別子。
+_HOOK_ID = "agent-toolkit/pretooluse"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
-
-    `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
-    """
-    prefix = f"{_MESSAGE_PREFIX}[{tag}]" if tag else _MESSAGE_PREFIX
-    return f"{prefix} {body} {_MESSAGE_SUFFIX}"
+    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
+    return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
 def _main() -> int:

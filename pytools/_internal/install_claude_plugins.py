@@ -40,9 +40,9 @@
 使わないものは ``_AUTO_DISABLED_PLUGIN_IDS``、常時有効化したいものは
 ``_AUTO_ENABLED_PLUGIN_IDS`` に列挙している。これらの有効化・無効化・導入は
 ユーザーの裁量に委ねる方針とし、``run()`` 末尾で現状と乖離のあるものだけを
-``compute_recommended_commands()`` で推奨コマンド列として算出する。
-呼び出し元 (``post_apply._main``) は ``consume_recommendations()`` 経由で
-推奨コマンドを取り出し、利用者に案内として表示する。
+``compute_recommended_commands()`` で推奨コマンド列として算出し、戻り値に含める。
+呼び出し元 (``post_apply.run``) はその戻り値から推奨コマンドを取り出し、
+利用者に案内として表示する。
 
 本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
 他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
@@ -93,10 +93,6 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     }
 )
 
-# 直近の `run()` 呼び出しで算出された推奨コマンド列。
-# `post_apply._main` が `consume_recommendations()` 経由で取り出して案内表示する。
-_LAST_RECOMMENDATIONS: list[str] = []
-
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -104,28 +100,27 @@ def _main() -> None:
     run()
 
 
-def run() -> bool:
+def run() -> tuple[bool, list[str]]:
     """Claude Code plugin をインストール/更新する。
 
     Returns:
-        何らかの plugin を新たにインストールまたは更新したら True。
+        (changed, recommendations) のタプル。
+        changed は何らかの plugin を新たにインストールまたは更新した場合に True。
+        recommendations は呼び出し元が利用者へ案内する推奨コマンド列。
     """
-    # post_apply へ推奨コマンドを受け渡すための意図的なモジュール状態
-    global _LAST_RECOMMENDATIONS  # noqa: PLW0603 # pylint: disable=global-statement
-    _LAST_RECOMMENDATIONS = []
     if not _prerequisites_ok():
-        return False
+        return False, []
 
-    dotfiles_root = _find_dotfiles_root()
+    dotfiles_root = claude_common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
-        return False
+        return False, []
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
     if not target_versions and not deprecated_names:
         logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
-        return False
+        return False, []
 
     # ファイル直接読み取りを先に試み、失敗時のみCLIフォールバックする
     raw_data: object = _read_installed_plugins_from_file()
@@ -133,10 +128,10 @@ def run() -> bool:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
             logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
-            return False
+            return False, []
 
     if not claude_marketplace.ensure_marketplace():
-        return False
+        return False, []
 
     any_change = False
 
@@ -200,7 +195,7 @@ def run() -> bool:
     # 外部 marketplace のプラグイン推奨コマンド算出 (公式プラグインの有効化・無効化)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
     # 状態が変わらないため、冒頭で取得した raw_data を再利用してよい。
-    _LAST_RECOMMENDATIONS = compute_recommended_commands(raw_data, _read_enabled_plugins_from_file())
+    recommendations = compute_recommended_commands(raw_data, _read_enabled_plugins_from_file())
 
     # install 試行後のポスト検証と最終サマリ。
     # 再現性の怪しい未インストール事象を早期に検出できるよう、install 試行後に
@@ -214,7 +209,7 @@ def run() -> bool:
             + (f" / 失敗 {failed_count} 件" if failed_count else ""),
         )
     )
-    return any_change
+    return any_change, recommendations
 
 
 def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:
@@ -245,19 +240,6 @@ def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] 
             continue
         disable_cmds.append(f"claude plugin disable {plugin_id} --scope user")
     return install_cmds + enable_cmds + disable_cmds
-
-
-def consume_recommendations() -> list[str]:
-    """直近の ``run()`` が算出した推奨コマンド列を取り出してクリアする。
-
-    post_apply._main がサマリ末尾の案内表示で 1 度だけ読み取る想定。
-    ``run()`` を複数回呼ぶテスト等で前回の推奨が残ることを防ぐ意図で一度取り出すと空になる。
-    """
-    # 取り出し後の初期化はワンショット契約の一部
-    global _LAST_RECOMMENDATIONS  # noqa: PLW0603 # pylint: disable=global-statement
-    recommendations = _LAST_RECOMMENDATIONS
-    _LAST_RECOMMENDATIONS = []
-    return recommendations
 
 
 def _user_scope_plugin_ids(raw_data: object) -> set[str]:
@@ -326,19 +308,6 @@ def _prerequisites_ok() -> bool:
         logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
         return False
     return True
-
-
-def _find_dotfiles_root() -> Path | None:
-    """本ファイルから見た dotfiles ルートディレクトリを返す。
-
-    dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
-    `pytools/_internal/install_claude_plugins.py` は dotfiles/pytools/_internal/ に置かれているため
-    親の親の親がルート。
-    """
-    candidate = Path(__file__).resolve().parent.parent.parent
-    if (candidate / ".claude-plugin" / "marketplace.json").is_file():
-        return candidate
-    return None
 
 
 def _get_installed_plugins_raw() -> object | None:
@@ -544,7 +513,7 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
     ファイル不在・解析失敗・`enabledPlugins` が非 dict の場合は `None` を返し、
     呼び出し元では「情報なし」として扱う (デフォルト有効扱いと同等)。
     """
-    data = claude_common.load_json_dict(claude_common.SETTINGS_JSON_PATH, silent=True)
+    data = claude_common.load_json_dict(claude_common.SETTINGS_JSON_PATH)
     if data is None:
         return None
     enabled = data.get("enabledPlugins")

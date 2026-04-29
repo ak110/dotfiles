@@ -36,8 +36,7 @@ def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
 @pytest.fixture(name="dotfiles_root")
 def _dotfiles_root() -> pathlib.Path:
     """本リポジトリの dotfiles ルート (directory 型 path のテスト期待値)。"""
-    # pylint: disable-next=protected-access
-    root = _claude_marketplace._find_dotfiles_root()
+    root = _claude_common.find_dotfiles_root()
     assert root is not None, "dotfiles ルートが検出できない環境ではテストを実行できない"
     return root
 

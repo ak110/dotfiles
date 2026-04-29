@@ -115,7 +115,10 @@ def _cleanup_removed_paths() -> bool:
     return total_removed > 0
 
 
-_DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
+# ステップ関数の戻り値型。通常ステップは bool、install_claude_plugins だけ推奨コマンドを含むタプルを返す。
+StepReturn = bool | tuple[bool, list[str]]
+
+_DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("bin PATH 登録 (Windows)", setup_bin_path.run),
     ("Claude 設定", update_claude_settings.run),
     ("VSCode 設定", update_vscode_settings.run),
@@ -133,27 +136,26 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], bool]]] = [
 ]
 
 
-def _main(runner: Callable[[], list[_StepResult]] | None = None) -> None:
+def _main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
     """エントリポイント。"""
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     logging.basicConfig(format="  %(message)s", level="INFO")
-    results = (runner or run)()
+    results, recommendations = (runner or run)()
     failed = [r for r in results if not r.ok]
     updated = [r for r in results if r.ok and r.changed]
     skipped = [r for r in results if r.ok and not r.changed]
     # logger.info("") だと format により末尾空白が付与されるため、stdout に直接書き出す。
     print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
-    _print_plugin_recommendations()
+    _print_plugin_recommendations(recommendations)
     if failed:
         logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
         sys.exit(1)
 
 
-def _print_plugin_recommendations() -> None:
+def _print_plugin_recommendations(recommendations: list[str]) -> None:
     """``install_claude_plugins.run()`` が算出した推奨コマンドを案内表示する。"""
     # エンドユーザー向け案内のため敬体。
-    recommendations = install_claude_plugins.consume_recommendations()
     if not recommendations:
         return
     print(flush=True)
@@ -175,21 +177,34 @@ def _print_plugin_recommendations() -> None:
             print(f"{cmd} && {continuation}", flush=True)
 
 
-def run(steps: list[tuple[str, Callable[[], bool]]] | None = None) -> list[_StepResult]:
-    """各ステップを順に実行し、結果のリストを返す。"""
+def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tuple[list[_StepResult], list[str]]:
+    """各ステップを順に実行し、(results, recommendations) を返す。
+
+    recommendations は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
+    ``install_claude_plugins.run`` は ``tuple[bool, list[str]]`` を返すため、
+    タプルの戻り値を持つステップは推奨コマンドとして収集する。
+    """
     effective_steps = steps if steps is not None else _DEFAULT_STEPS
     results: list[_StepResult] = []
+    recommendations: list[str] = []
     total = len(effective_steps)
     for index, (name, func) in enumerate(effective_steps, start=1):
         logger.info("[%d/%d] %s", index, total, name)
         try:
-            changed = func()
+            ret = func()
         except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
             logger.exception("    %s: 失敗", name)
             results.append(_StepResult(name=name, ok=False, changed=False))
             continue
+        # install_claude_plugins.run() は (changed, recommendations) を返す。
+        # 他のステップは bool を返すため isinstance で振り分ける。
+        if isinstance(ret, tuple):
+            changed, step_recs = ret
+            recommendations.extend(step_recs)
+        else:
+            changed = ret
         results.append(_StepResult(name=name, ok=True, changed=changed))
-    return results
+    return results, recommendations
 
 
 if __name__ == "__main__":

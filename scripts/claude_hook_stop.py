@@ -41,6 +41,7 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "plugins" / "agent-toolkit" / "scripts"),
 )
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_real_session_end,  # type: ignore[import]
 )
@@ -53,14 +54,13 @@ _PYFLTR_PATTERN = re.compile(r"\bpyfltr\b")
 # Skill ツールの input.skill フィールドに `agent-toolkit:` が含まれるケースを対象とする。
 _AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
 
-# LLM 宛てメッセージの共通プレフィックス / サフィックス。
-_MESSAGE_PREFIX = "[auto-generated: dotfiles/claude_hook_stop]"
-_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+# このスクリプトの hook 識別子。
+_HOOK_ID = "dotfiles/claude_hook_stop"
 
 
 def _llm_notice(body: str) -> str:
     """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
-    return f"{_MESSAGE_PREFIX} {body} {_MESSAGE_SUFFIX}"
+    return _llm_notice_base(body, _HOOK_ID)
 
 
 def _state_path(session_id: str) -> pathlib.Path:

@@ -6,14 +6,11 @@
 """
 
 import logging
-import os
 import re
 import shutil
-import sys
-import tempfile
 from pathlib import Path
 
-from pytools._internal import log_format
+from pytools._internal import claude_common, log_format
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -72,7 +69,7 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
     if config_path.exists() and not backup_path.exists():
         shutil.copy2(config_path, backup_path)
         logger.info(log_format.format_status(short, f"バックアップを作成: {log_format.home_short(backup_path)}"))
-    _atomic_write(config_path, new_content)
+    claude_common.atomic_write_text(config_path, new_content, mode=0o600)
     logger.info(log_format.format_status(short, "更新しました"))
     return True
 
@@ -114,7 +111,7 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
         return False
     # 書き出し
     content = "\n".join(existing_lines) + "\n" if existing_lines else ""
-    _atomic_write(ak_path, content)
+    claude_common.atomic_write_text(ak_path, content, mode=0o600)
     logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))
     return True
 
@@ -129,21 +126,6 @@ def _extract_key_data(line: str) -> str | None:
         return m.group(1)
     # フォールバック: 行全体
     return stripped
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    """一時ファイルに書き込んでからrenameすることで、中断時のファイル破損を防ぐ。"""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        tmp_path = Path(tmp)
-        if sys.platform != "win32":
-            tmp_path.chmod(0o600)
-        tmp_path.replace(path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 def _ensure_trailing_newline(text: str) -> str:

@@ -42,6 +42,7 @@
 
 本リポジトリには、コーディングエージェントに対して当該セッションの振り返りを促すHook/Skillが以下の3カ所に組み込まれている。
 配布先やタイミングなどが異なるため分けているが、極力内容を同期するよう注意すること。
+ただし配布単位が異なる箇所は責務分離を優先し、共通モジュール化できる部分のみ集約する。
 
 - plugins/agent-toolkit/scripts/stop_advisor.py
 - scripts/claude_hook_stop.py
@@ -72,9 +73,9 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
 - `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、
   配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
 - `agent-toolkit`編集時の方針:
-  - `plugins/agent-toolkit/`配下のスキル・サブエージェントから配布ルール（`~/.claude/rules/agent-toolkit/`）への
-    ファイル名言及・参照リンクは作らない。
-    配布ルールは常時ロードされるため、スキル側からのファイル名指定は不要
+  - 参照方向の許容範囲: dotfilesリポジトリ → プラグイン配布物、およびプラグイン配布物 ↔ 配布ルール
+   （`~/.claude/rules/agent-toolkit/`）の参照は方向性として許容する。
+    配布ルールは常時ロードされるためスキル側からのファイル名指定は省略可能だが、必須ではない。
   - SKILL.md本体に必要な情報は本体に直接書く。`references/`から別の`references/`を多段参照させない
    （Skillsのベストプラクティスに沿うため）
   - サブエージェント間で共通する判断基準・制約は各エージェントに重複記述したまま維持する
@@ -94,6 +95,9 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
   privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
+- `pytools/_internal/claude_common.py`は共通基盤モジュールとして
+  `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
+  新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
 - 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される
 - `pytools/_internal/setup_registry.py`はWindows向けの少数のレジストリ値（Explorerの拡張子表示など）を
   `winreg`で直接書き込むモジュール。`post_apply`のステップから呼ばれる

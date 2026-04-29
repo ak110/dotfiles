@@ -81,10 +81,6 @@ _MARKDOWN_STYLE_URL = "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/v
 # VSCode 1.23 以降は無視されるため、該当エントリを明示的に削除する。
 _LEGACY_KEYS_FOR_MACHINE_SCOPE: tuple[str, ...] = ("markdown.styles",)
 
-# run() が settings_path 引数のデフォルト (自動検出) と明示的 None (パス未検出)
-# を区別するためのセンチネル。
-_UNSET: object = object()
-
 
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -94,15 +90,12 @@ def _main() -> None:
 
 def run(
     *,
-    settings_path: Path | None | object = _UNSET,
     hostname: str | None = None,
     is_windows: bool | None = None,
 ) -> bool:
     """VSCode settings.json を更新する。
 
     Args:
-        settings_path: 書き込み先。省略時は OS に応じて自動検出する。
-            明示的に ``None`` を渡すとパス未検出扱いでスキップする。
         hostname: Activity Bar 色生成に使うホスト名 (テスト用)。
         is_windows: 実行環境の判定オーバーライド (テスト用)。
             Windows (User scope) なら True、Linux (Machine scope) なら False。
@@ -111,12 +104,10 @@ def run(
         実際にファイルを書き換えたかどうか。
     """
     win = _IS_WINDOWS if is_windows is None else is_windows
-    if settings_path is _UNSET:
-        settings_path = _settings_path(is_windows=win)
+    settings_path = _settings_path(is_windows=win)
     if settings_path is None:
         logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ"))
         return False
-    assert isinstance(settings_path, Path)
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
     # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
     managed = _build_managed_settings(hostname=hostname, is_user_scope=win)

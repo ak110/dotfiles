@@ -9,6 +9,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -218,34 +219,10 @@ class TestEdgeCases:
 class TestUncommittedChanges:
     """未コミット変更の検出。"""
 
-    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        """変更ありの git リポジトリを作成する。"""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        # tracked file を変更して未コミット状態にする
-        (repo / "file.txt").write_text("modified")
-        return repo
-
-    def _make_clean_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        """変更なしの git リポジトリを作成する。"""
-        repo = tmp_path / "clean"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("clean")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        return repo
-
-    def test_blocks_with_uncommitted_changes(self, tmp_path: pathlib.Path):
-        repo = self._make_dirty_repo(tmp_path)
+    def test_blocks_with_uncommitted_changes(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -260,8 +237,8 @@ class TestUncommittedChanges:
         assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
         assert "Auto-generated hook notice" in reason
 
-    def test_approves_clean_repo(self, tmp_path: pathlib.Path):
-        repo = self._make_clean_repo(tmp_path)
+    def test_approves_clean_repo(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
+        repo = make_clean_repo(tmp_path)
         transcript = _write_transcript(tmp_path, "no corrections")
         result = _run(
             {"session_id": "clean", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -270,8 +247,8 @@ class TestUncommittedChanges:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_allows_after_block_limit(self, tmp_path: pathlib.Path):
-        repo = self._make_dirty_repo(tmp_path)
+    def test_allows_after_block_limit(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         # 1 回ブロック後、後続の振り返り提案ブロックへフォールスルーする。
@@ -284,9 +261,9 @@ class TestUncommittedChanges:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_untracked_only_approves(self, tmp_path: pathlib.Path):
+    def test_untracked_only_approves(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
         """untracked ファイルのみの場合はブロックしない。"""
-        repo = self._make_clean_repo(tmp_path)
+        repo = make_clean_repo(tmp_path)
         (repo / "untracked.txt").write_text("new file")
         transcript = _write_transcript(tmp_path, "no corrections")
         result = _run(
@@ -296,9 +273,11 @@ class TestUncommittedChanges:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_no_completion_keyword_approves(self, tmp_path: pathlib.Path):
+    def test_no_completion_keyword_approves(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """未コミット変更があっても、直前アシスタントターンに完了文言がなければ block しない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": _NO_COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -312,18 +291,6 @@ class TestUncommittedChanges:
 class TestCompletionKeyword:
     """作業完了文言ゲート: 直前アシスタントターンに完了文言を含むときのみ未コミット block する。"""
 
-    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("modified")
-        return repo
-
     @pytest.mark.parametrize(
         ("keyword_label", "assistant_text"),
         [
@@ -333,8 +300,14 @@ class TestCompletionKeyword:
             ("desu", "作業は以上で完了です。"),
         ],
     )
-    def test_completion_keyword_triggers_block(self, tmp_path: pathlib.Path, keyword_label: str, assistant_text: str):
-        repo = self._make_dirty_repo(tmp_path)
+    def test_completion_keyword_triggers_block(
+        self,
+        tmp_path: pathlib.Path,
+        keyword_label: str,
+        assistant_text: str,
+        make_dirty_repo: Callable[[pathlib.Path], pathlib.Path],
+    ):
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": assistant_text}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -349,21 +322,11 @@ class TestCompletionKeyword:
 class TestQuestionSuppressesUncommittedBlock:
     """Claude がユーザーに質問中の場合は完了文言があっても未コミット変更ブロックを抑制する。"""
 
-    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("modified")
-        return repo
-
-    def test_ask_user_question_tool_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_ask_user_question_tool_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """AskUserQuestion ツール呼び出しが最後にある場合はブロックしない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content: list[dict[str, Any]] = [
             {"type": "text", "text": "実装が完了しました。どちらを選びますか？"},
             {"type": "tool_use", "id": "x", "name": "AskUserQuestion", "input": {}},
@@ -376,9 +339,11 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_fullwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_fullwidth_question_mark_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """テキストが全角 ？ で終わる場合はブロックしない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": "実装が完了しました。ステージ済みファイルをどうしますか？"}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -388,9 +353,11 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_halfwidth_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_halfwidth_question_mark_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """テキストが半角 ? で終わる場合はブロックしない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": "実装が完了しました。Which option do you prefer?"}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -400,9 +367,11 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_mid_text_question_mark_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_mid_text_question_mark_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """テキストの末尾でなくとも ? や ？ が含まれていれば質問扱いでブロックしない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [
             {
                 "type": "text",
@@ -417,9 +386,11 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_question_in_earlier_block_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_question_in_earlier_block_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """同一ターンの先頭テキストブロックに ? があり、末尾ブロックに無い場合も質問扱いでブロックしない。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [
             {"type": "text", "text": "実装が完了しました。この方針で進めますか？"},
             {"type": "text", "text": "ご判断をお願いします。"},
@@ -432,9 +403,11 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_non_question_text_still_blocks(self, tmp_path: pathlib.Path):
+    def test_non_question_text_still_blocks(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """完了文言があり ? を含まないテキストの場合は通常通りブロックする。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": "コミット前の実装が完了しました。"}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -445,9 +418,11 @@ class TestQuestionSuppressesUncommittedBlock:
         assert decision["decision"] == "block"
         assert "uncommitted" in decision.get("reason", "").lower()
 
-    def test_desuka_period_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_desuka_period_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """「ですか。」（句点止めの確認文）もクエスチョンマーク同様にブロックを抑制する。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": "実装が完了しました。この案でよいですか。"}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         result = _run(
@@ -457,14 +432,16 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_split_entry_question_suppresses_block(self, tmp_path: pathlib.Path):
+    def test_split_entry_question_suppresses_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """同一 message.id のエントリが分割された場合、前のエントリの質問テキストを検出する。
 
         テキストエントリの後にツール呼び出しのみのエントリが来る場合（競合状態:
         ツールエントリが最後に flush された状態でフックが発火）、
         前のエントリの質問テキストを確認してブロックを抑制する。
         """
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         msg_id = "msg_test_split123"
         lines = [
             json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
@@ -500,14 +477,16 @@ class TestQuestionSuppressesUncommittedBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_different_turn_tool_use_does_not_suppress_block(self, tmp_path: pathlib.Path):
+    def test_different_turn_tool_use_does_not_suppress_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """前のターンに質問があっても、最新ターンが質問でなければブロックする。
 
         異なる message.id を持つエントリは別ターンとして扱い、
         ユーザー応答を挟んだ後のテキスト＋ツール呼び出しエントリ（完了文言あり・質問なし）で
         ブロックを通過させる。
         """
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         lines = [
             json.dumps({"type": "user", "message": {"role": "user", "content": "hello"}}),
             json.dumps(
@@ -557,22 +536,11 @@ class TestWaitingKeywordSuppressesBlock:
     どちらの block も発火しない。
     """
 
-    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        """変更ありの git リポジトリを作成する。"""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("modified")
-        return repo
-
-    def test_waiting_keyword_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+    def test_waiting_keyword_suppresses_uncommitted_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """待機語を含むアシスタントターンは完了文言があっても未コミット変更ブロックを抑制する。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         # 完了文言 + 待機語
         content = [{"type": "text", "text": "作業が完了しました。バックグラウンドで処理中です。完了を待ちます。"}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
@@ -583,9 +551,11 @@ class TestWaitingKeywordSuppressesBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_agent_tool_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+    def test_agent_tool_suppresses_uncommitted_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """最後の tool_use が Agent のターンは未コミット変更ブロックを抑制する。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content: list[dict[str, Any]] = [
             {"type": "text", "text": "作業が完了しました。"},
             {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
@@ -598,9 +568,11 @@ class TestWaitingKeywordSuppressesBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_bash_background_suppresses_uncommitted_block(self, tmp_path: pathlib.Path):
+    def test_bash_background_suppresses_uncommitted_block(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """最後の tool_use が Bash+run_in_background=True のターンは未コミット変更ブロックを抑制する。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         content: list[dict[str, Any]] = [
             {"type": "text", "text": "作業が完了しました。"},
             {
@@ -647,32 +619,9 @@ class TestWaitingKeywordSuppressesBlock:
 class TestGitStatusDisplay:
     """approve 時の git status 表示。"""
 
-    def _make_dirty_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        repo = tmp_path / "dirty"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("initial")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("modified")
-        return repo
-
-    def _make_clean_repo(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        repo = tmp_path / "clean"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "file.txt").write_text("clean")
-        subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        return repo
-
-    def test_dirty_repo_shows_git_status(self, tmp_path: pathlib.Path):
+    def test_dirty_repo_shows_git_status(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
         """未コミット変更がある場合、approve 時に systemMessage で git status を表示する。"""
-        repo = self._make_dirty_repo(tmp_path)
+        repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, "no corrections")
         # ブロック上限を超過させて approve パスに到達させる
         _write_state(tmp_path, "gs-dirty", {"uncommitted_block_count": 2, "stop_advice_given": True})
@@ -686,9 +635,11 @@ class TestGitStatusDisplay:
         assert "git status" in decision["systemMessage"]
         assert "file.txt" in decision["systemMessage"]
 
-    def test_clean_repo_no_system_message(self, tmp_path: pathlib.Path):
+    def test_clean_repo_no_system_message(
+        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """clean repo では systemMessage を出力しない。"""
-        repo = self._make_clean_repo(tmp_path)
+        repo = make_clean_repo(tmp_path)
         transcript = _write_transcript(tmp_path, "no corrections")
         result = _run(
             {"session_id": "gs-clean", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -709,9 +660,11 @@ class TestGitStatusDisplay:
         assert decision["decision"] == "approve"
         assert "systemMessage" not in decision
 
-    def test_untracked_only_no_system_message(self, tmp_path: pathlib.Path):
+    def test_untracked_only_no_system_message(
+        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
         """untracked ファイルのみの場合は systemMessage を出力しない。"""
-        repo = self._make_clean_repo(tmp_path)
+        repo = make_clean_repo(tmp_path)
         (repo / "untracked.txt").write_text("new file")
         transcript = _write_transcript(tmp_path, "no corrections")
         result = _run(

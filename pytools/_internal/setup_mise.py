@@ -11,17 +11,10 @@ import os
 import shutil
 import subprocess
 import typing
-from collections.abc import Callable
 from pathlib import Path
 
-from pytools._internal import log_format, winutils
+from pytools._internal import claude_common, log_format, winutils
 from pytools._internal.cli import setup_logging
-
-# Pyright の to be narrowed を避けつつ Windows 判定するためのフラグ。
-# `_IS_WINDOWS` を直接使うと非 Windows 環境で条件式が False に評価され、
-# Windows 専用コードが unreachable として警告されてしまうため、実行時参照の `os.name`
-# を使う。
-_IS_WINDOWS = os.name == "nt"
 
 logger = logging.getLogger(__name__)
 
@@ -38,34 +31,32 @@ _WINDOWS_SHIMS_ENTRY = r"%LOCALAPPDATA%\mise\shims"
 _WINDOWS_PATHSEP = ";"
 
 
+def _is_windows() -> bool:
+    """Windows 環境かどうかを返すヘルパー。テストで monkeypatch しやすいよう関数化している。"""
+    return os.name == "nt"
+
+
 def _main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
 
 
-def run(
-    *,
-    find_mise_fn: Callable[[], Path | None] | None = None,
-    is_windows: bool | None = None,
-    ensure_global_node_fn: Callable[[Path], bool] | None = None,
-    ensure_working_tree_trusted_fn: Callable[[Path], bool] | None = None,
-) -> bool:
+def run() -> bool:
     """Mise セットアップを実行する。
 
     Returns:
         何らかの変更を加えたら True。何もしなければ False。
     """
-    mise_bin = (find_mise_fn or _find_mise_binary)()
+    mise_bin = _find_mise_binary()
     if mise_bin is None:
         logger.info(log_format.format_status("mise", "未検出のためスキップ"))
         return False
 
-    win = _IS_WINDOWS if is_windows is None else is_windows
     changed = False
-    changed |= (ensure_working_tree_trusted_fn or _ensure_working_tree_trusted)(mise_bin)
-    changed |= (ensure_global_node_fn or _ensure_global_node)(mise_bin)
-    if win:
+    changed |= _ensure_working_tree_trusted(mise_bin)
+    changed |= _ensure_global_node(mise_bin)
+    if _is_windows():
         changed |= _ensure_windows_user_path_has_shims()
     return changed
 
@@ -81,7 +72,7 @@ def _find_mise_binary() -> Path | None:
         return Path(from_path)
 
     candidates: list[Path] = []
-    if _IS_WINDOWS:
+    if _is_windows():
         localappdata = os.environ.get("LOCALAPPDATA")
         if localappdata:
             candidates.append(Path(localappdata) / "mise" / "bin" / "mise.exe")
@@ -94,11 +85,7 @@ def _find_mise_binary() -> Path | None:
     return None
 
 
-def _ensure_working_tree_trusted(
-    mise_bin: Path,
-    *,
-    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
-) -> bool:
+def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     """Chezmoi workingTree 直下の `mise.toml` を `mise trust` 対象にする。
 
     未 trust のままでは mise CLI が毎回警告を出して設定を無視するため、冪等に trust する。
@@ -117,8 +104,7 @@ def _ensure_working_tree_trusted(
         logger.info(log_format.format_status("mise", f"{mise_toml} が無いため trust をスキップ"))
         return False
 
-    runner = run_mise_fn or _run_mise
-    result = runner(mise_bin, ["trust", str(mise_toml)])
+    result = _run_mise(mise_bin, ["trust", str(mise_toml)])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(log_format.format_status("mise", f"`trust` に失敗: {stderr}"))
@@ -128,18 +114,13 @@ def _ensure_working_tree_trusted(
     return True
 
 
-def _ensure_global_node(
-    mise_bin: Path,
-    *,
-    run_mise_fn: Callable[[Path, list[str]], subprocess.CompletedProcess[str] | None] | None = None,
-) -> bool:
+def _ensure_global_node(mise_bin: Path) -> bool:
     """Global 設定に node が無ければ `mise use --global node@lts` を実行する。
 
     Returns:
         node を新たに設定したら True。
     """
-    runner = run_mise_fn or _run_mise
-    result = runner(mise_bin, ["ls", "--global", "--json"])
+    result = _run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         stderr = result.stderr.strip() if result else ""
         logger.info(log_format.format_status("mise", f"`ls --global --json` に失敗したため node 設定をスキップ: {stderr}"))
@@ -155,7 +136,7 @@ def _ensure_global_node(
         logger.info(log_format.format_status("mise", "global Node は既に設定済み"))
         return False
 
-    install_result = runner(mise_bin, ["use", "--global", "node@lts"])
+    install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
     if install_result is None or install_result.returncode != 0:
         stderr = install_result.stderr.strip() if install_result else ""
         logger.info(log_format.format_status("mise", f"`use --global node@lts` に失敗: {stderr}"))
@@ -274,23 +255,7 @@ def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[st
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     """
-    try:
-        return subprocess.run(
-            [str(mise_bin), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_MISE_TIMEOUT,
-            # Windows で text=True のデフォルトが cp932 になり、mise CLI の
-            # UTF-8 出力に日本語や非 ASCII 文字が含まれると reader thread で
-            # UnicodeDecodeError が発生する。UTF-8 を明示し、不正なバイトが
-            # 混入しても例外が発生しないよう errors="replace" を併用する。
-            encoding="utf-8",
-            errors="replace",
-        )
-    except (OSError, subprocess.SubprocessError) as e:
-        logger.info(log_format.format_status("mise", f"`{' '.join(args)}` 実行に失敗: {e}"))
-        return None
+    return claude_common.run_subprocess([str(mise_bin), *args], timeout=_MISE_TIMEOUT, tag="mise")
 
 
 if __name__ == "__main__":

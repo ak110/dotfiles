@@ -1,8 +1,8 @@
 """pytools._internal.install_claude_plugins の推奨コマンド算出機構のテスト。
 
-`compute_recommended_commands` と `consume_recommendations` を単体で検証する。
-また、`run()` 末尾で推奨コマンドが算出され `consume_recommendations()` 経由で
-取り出せること、および自動有効化・無効化のための CLI (install / enable / disable)
+`compute_recommended_commands` を単体で検証する。
+また、`run()` 末尾で推奨コマンドが算出され戻り値経由で取り出せること、
+および自動有効化・無効化のための CLI (install / enable / disable)
 が発行されないことも合わせて検証する。
 """
 
@@ -83,21 +83,10 @@ class TestComputeRecommendedCommands:
         assert not _install_claude_plugins.compute_recommended_commands([], {})
 
 
-class TestConsumeRecommendations:
-    """`consume_recommendations` の取り出し&クリア動作。"""
-
-    def test_returns_last_recommendations_and_clears(self, monkeypatch: pytest.MonkeyPatch):
-        # pylint: disable-next=protected-access
-        monkeypatch.setattr(_install_claude_plugins, "_LAST_RECOMMENDATIONS", ["claude plugin install a --scope user"])
-        assert _install_claude_plugins.consume_recommendations() == ["claude plugin install a --scope user"]
-        # 2 回目は空 (ワンショット取り出し)
-        assert not _install_claude_plugins.consume_recommendations()
-
-
 class TestRunNoAutomaticStateChange:
-    """`run()` が install/enable/disable の CLI を発行せず、推奨コマンドを残すこと。"""
+    """`run()` が install/enable/disable の CLI を発行せず、推奨コマンドを返すこと。"""
 
-    def test_no_state_change_cli_and_recommendations_recorded(self, monkeypatch: pytest.MonkeyPatch):
+    def test_no_state_change_cli_and_recommendations_returned(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
         monkeypatch.setattr(
             _install_claude_plugins,
@@ -135,7 +124,7 @@ class TestRunNoAutomaticStateChange:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        _install_claude_plugins.run()
+        _changed, recommendations = _install_claude_plugins.run()
 
         # 自動 enable/disable/install (外部 marketplace 向け) の CLI は発行されない
         banned = (
@@ -148,5 +137,4 @@ class TestRunNoAutomaticStateChange:
             assert cmd[:3] != ["claude", "plugin", "disable"], f"unexpected disable call: {cmd}"
             assert cmd != list(banned[2]), f"unexpected install call: {cmd}"
 
-        recommendations = _install_claude_plugins.consume_recommendations()
         assert recommendations == [f"claude plugin install {target_enable} --scope user"]

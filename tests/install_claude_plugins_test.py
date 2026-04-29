@@ -44,11 +44,11 @@ class TestPrerequisites:
 
     def test_missing_claude_skips(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: None if name == "claude" else "/usr/bin/uv")
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
 
     def test_missing_uv_skips(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: None if name == "uv" else "/usr/bin/claude")
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
 
 
 @pytest.fixture(name="disable_file_reads")
@@ -109,7 +109,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
         assert [c for c in calls if c[:3] == ["claude", "plugin", "update"]] == []
         assert [c for c in calls if c[:3] == ["claude", "plugin", "install"]] == []
 
@@ -145,7 +145,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
@@ -176,7 +176,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # add が呼ばれ、かつ marketplace.json 由来の全プラグインに対し install が呼ばれていること
         assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
@@ -207,7 +207,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # add は呼ばれていないこと
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
         # 対象プラグインは全て install されていること
@@ -242,7 +242,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # 既にインストール済みの agent-toolkit は install されない
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert not any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
@@ -262,7 +262,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
         assert not calls
 
     def test_plugin_list_failure_skips(self, monkeypatch: pytest.MonkeyPatch):
@@ -277,7 +277,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
         # list 以外は呼ばれていないこと (失敗で早期 return)
         assert all(c[:3] == ["claude", "plugin", "list"] for c in seen)
 
@@ -297,7 +297,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
 
     def test_claude_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch):
         """claude CLI のタイムアウトはスキップに丸める (post-apply を落とさない)。"""
@@ -307,7 +307,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is False
+        assert _install_claude_plugins.run()[0] is False
 
     def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """project scope のエントリは install/update 判定に使われず、user scope へ移行される。
@@ -347,7 +347,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # project scope のエントリは無視され、user scope に新規 install される
         install_calls = [cmd for cmd, _cwd in calls if cmd[:3] == ["claude", "plugin", "install"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
@@ -392,7 +392,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # 存在しない projectPath に対しては uninstall を呼ばない
         assert not [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
 
@@ -428,7 +428,7 @@ class TestRunFlow:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # deprecated プラグインのアンインストールが呼ばれること
         uninstall_calls = [c for c in calls if c[:3] == ["claude", "plugin", "uninstall"]]
         assert any("old-plugin@ak110-dotfiles" in c for c in uninstall_calls)
@@ -485,7 +485,7 @@ class TestRunFlowDirectoryType:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         # 対象プラグイン 2 件に対して install が --scope user で再実行される
         assert [
@@ -528,7 +528,7 @@ class TestRunFlowDirectoryType:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # version が乖離している agent-toolkit は update、最新の sample-plugin は install 再実行
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
@@ -616,7 +616,7 @@ class TestEnsureMarketplaceCliPath:
         add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
         assert len(add_calls) == 1
         # pylint: disable-next=protected-access
-        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        dotfiles_root = _claude_common.find_dotfiles_root()
         assert dotfiles_root is not None
         assert add_calls[0] == [
             "claude",
@@ -688,7 +688,7 @@ class TestLegacyGithubTypeMigration:
         assert _claude_marketplace.ensure_marketplace() is True
 
         # pylint: disable-next=protected-access
-        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        dotfiles_root = _claude_common.find_dotfiles_root()
         assert dotfiles_root is not None
 
         known_data = json.loads(known.read_text(encoding="utf-8"))
@@ -800,7 +800,7 @@ class TestCheckMarketplaceFromFile:
     def test_directory_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """directory 型 + dotfiles 絶対パスなら True を返す。"""
         # pylint: disable-next=protected-access
-        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        dotfiles_root = _claude_common.find_dotfiles_root()
         assert dotfiles_root is not None
         path = tmp_path / "known_marketplaces.json"
         path.write_text(
@@ -891,7 +891,7 @@ class TestHappyPathDirectoryType:
 
         # known_marketplaces.json: directory 型 + dotfiles 絶対パスで正常登録済み
         # pylint: disable-next=protected-access
-        dotfiles_root = _claude_marketplace._find_dotfiles_root()
+        dotfiles_root = _claude_common.find_dotfiles_root()
         assert dotfiles_root is not None
         marketplace_path = tmp_path / "known_marketplaces.json"
         marketplace_path.write_text(
@@ -923,7 +923,7 @@ class TestHappyPathDirectoryType:
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
-        assert _install_claude_plugins.run() is True
+        assert _install_claude_plugins.run()[0] is True
         # 全プラグインに対して install が --scope user で再実行される
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert [

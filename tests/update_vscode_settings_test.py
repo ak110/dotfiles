@@ -282,29 +282,32 @@ class TestBuildManagedSettings:
 class TestRun:
     """run() の統合テスト。"""
 
-    def test_skips_when_path_is_none(self) -> None:
-        """settings_path が None の場合スキップする。"""
-        assert mod.run(settings_path=None) is False
+    def test_skips_when_settings_path_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_settings_path が None を返す場合スキップする。"""
+        monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: None)
+        assert mod.run() is False
 
-    def test_user_scope_writes_markdown_styles(self, tmp_path: Path) -> None:
+    def test_user_scope_writes_markdown_styles(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Windows (User scope) では markdown.styles が書き込まれる。"""
         target = tmp_path / "settings.json"
-        assert mod.run(settings_path=target, hostname="test", is_windows=True) is True
+        monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: target)
+        assert mod.run(hostname="test", is_windows=True) is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "workbench.colorCustomizations" in result
         assert result["markdown.styles"] == [mod._MARKDOWN_STYLE_URL]
         assert "markdown-pdf.styles" in result
 
-    def test_machine_scope_skips_markdown_styles(self, tmp_path: Path) -> None:
+    def test_machine_scope_skips_markdown_styles(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Linux (Machine scope) では markdown.styles を書き込まない。"""
         target = tmp_path / "settings.json"
-        assert mod.run(settings_path=target, hostname="test", is_windows=False) is True
+        monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: target)
+        assert mod.run(hostname="test", is_windows=False) is True
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "markdown.styles" not in result
         assert "workbench.colorCustomizations" in result
         assert "markdown-pdf.styles" in result
 
-    def test_machine_scope_removes_legacy_markdown_styles(self, tmp_path: Path) -> None:
+    def test_machine_scope_removes_legacy_markdown_styles(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Linux (Machine scope) では既存の markdown.styles を削除する。
 
         過去バージョンが絶対パスを書き込んでいたケースの移行パスを保証する。
@@ -314,6 +317,7 @@ class TestRun:
             json.dumps({"markdown.styles": ["/home/aki/dotfiles/share/vscode/markdown.css"]}, ensure_ascii=False),
             encoding="utf-8",
         )
-        mod.run(settings_path=target, hostname="test", is_windows=False)
+        monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: target)
+        mod.run(hostname="test", is_windows=False)
         result = json.loads(target.read_text(encoding="utf-8"))
         assert "markdown.styles" not in result
