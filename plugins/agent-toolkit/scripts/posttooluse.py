@@ -11,7 +11,8 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 
 検出対象:
 
-1. テスト実行 — pytest / make test / pyfltr / npm test / cargo test 等 (Bash)
+1. テスト実行 — pytest / pyfltr / cargo test / 汎用タスクランナー (make / mise run /
+   npm | pnpm | yarn / just / task) の test / check / validate アクション (Bash)
 2. Git 状態確認 — git status / git log / git diff (Bash)
 3. git log 確認状態のリセット — git commit / rebase / push (Bash),
    ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
@@ -58,11 +59,17 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
 # --- テスト実行検出パターン ---
 
 _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # 直接実行系
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
-    re.compile(r"(?:^|[;&|]\s*)make\s+test\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:npm|pnpm|yarn)\s+(?:run\s+)?test\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
+    # タスクランナー経由 (make / mise run / npm | pnpm | yarn (run省略可) / just / task) で
+    # test / check / validate アクション
+    re.compile(
+        r"(?:^|[;&|]\s*)"
+        r"(?:make\s+|(?:npm|pnpm|yarn)\s+(?:run\s+)?|mise\s+run\s+|just\s+|task\s+)"
+        r"(?:test|check|validate)\b"
+    ),
 )
 
 # --- Git 状態確認検出パターン ---
@@ -92,6 +99,7 @@ _PLAN_REQUIRED_H2 = (
     "背景",
     "対応方針",
     "恒久化計画",
+    "リファクタリング計画",
     "調査結果",
     "変更内容",
     "実行方法",

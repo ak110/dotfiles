@@ -121,12 +121,17 @@ flowchart TB
     end
     subgraph PI["careful-impl スキル（実装方式が careful-impl の場合のみ）"]
       direction TB
-      T[careful-implementer<br/>実装・検証] --> R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回並列]
+      T[careful-implementer<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
+      CM -->|全コミット完了| FC[恒久化計画チェック]
+      FC -->|反映漏れあり| CR[メインが追加コミット<br/>恒久化反映]
+      CR --> R1
+      FC -->|反映漏れなし| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回並列・全体差分対象]
       R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
-      T2 --> R2[careful-followup-reviewer<br/>haiku 単一]
-      R2 -->|未対応あり| T2
-      R1 -->|指摘なし| C[計画ファイルのコミット方針に従い<br/>メインがコミット]
-      R2 -->|対応済み| C
+      T2 --> CFix[メインが追加コミット<br/>修正反映]
+      CFix --> R2[careful-followup-reviewer<br/>haiku 単一]
+      R2 -->|missing / partial / regression| T2
+      R1 -->|指摘なし| END[完了]
+      R2 -->|対応済み| END
     end
     SD -.->|作業テーマごとに誘導| PM
     PM -->|ExitPlanMode<br/>実装方式が careful-impl の場合のみ| PI
