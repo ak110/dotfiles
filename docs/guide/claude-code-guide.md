@@ -146,7 +146,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/coding-standards` — コードの新規作成・修正・レビュー時の品質基準とテスト方針
 - `/writing-standards` — ドキュメントやClaude Code設定系ファイルの品質基準
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
-- `/careful-impl` — 計画ファイルの`実装方式`が`careful-impl`の場合に呼び出す。サブエージェント分散実装と全コミット完了後の集約レビューを行う
+- `/careful-impl` — 計画ファイルの`実装方式`が`careful-impl`の場合に呼び出す。
+  サブエージェント分散実装と全コミット完了後の集約レビューを行う
 - `/tidy-unpushed-commits` — 未プッシュコミットのsquash・reorder・メッセージ書き直し
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
