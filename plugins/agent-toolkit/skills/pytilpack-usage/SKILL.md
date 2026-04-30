@@ -16,7 +16,7 @@ import pytilpack.xxx
 ```
 
 `xxx`には対象ライブラリ名（`httpx`、`pathlib`等）または汎用モジュール名（`cache`、`sse`等）が入る。
-ライブラリ用モジュール（特にBabel・SQLAlchemyなど重量級のもの）はextrasのインストールが必要。
+ライブラリ用モジュール（特にBabel・SQLAlchemyなど重量級のライブラリ）はextrasのインストールが必要。
 `pyproject.toml`の依存指定時に`pytilpack[babel,sqlalchemy]`のように該当名を含めて指定する。
 
 ## モジュール分類

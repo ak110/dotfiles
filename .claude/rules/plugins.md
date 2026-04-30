@@ -102,8 +102,8 @@ push前にはbumpが必須である。
   - 連携サブエージェント: なし
 - `careful-impl`
   - 担当工程: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
-  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-impl-reviewer`・
-    `careful-followup-reviewer`
+  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-impl-reviewer`
+   （再レビューは`careful-spec-reviewer`・`careful-impl-reviewer`のfollowupモードで実施する）
 
 `spec-driven`が有効な場合は、同スキルの誘導に従って個別の作業テーマごとに`plan-mode`へ入り計画ファイルを作成する。
 それ以外の場合は直接`plan-mode`から始める。
@@ -125,10 +125,10 @@ flowchart TB
       CM -->|全コミット完了| FC[恒久化計画チェック]
       FC -->|反映漏れあり| CR[メインが追加コミット<br/>恒久化反映]
       CR --> R1
-      FC -->|反映漏れなし| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回並列・全体差分対象]
+      FC -->|反映漏れなし| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回モード並列・全体差分対象]
       R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
       T2 --> CFix[メインが追加コミット<br/>修正反映]
-      CFix --> R2[careful-followup-reviewer<br/>haiku 単一]
+      CFix --> R2[careful-spec-reviewer / careful-impl-reviewer<br/>followupモード並列]
       R2 -->|missing / partial / regression| T2
       R1 -->|指摘なし| END[完了]
       R2 -->|対応済み| END

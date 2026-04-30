@@ -15,7 +15,7 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 | -- | -- | -- | -- | -- |
 | `ci` | 全チェック実行 | なし | する（exit 1） | CI、pre-commit |
 | `run` | 全チェック実行 | あり | しない（exit 0） | ローカル開発 |
-| `fast` | 軽量チェック（mypy/pylint/pytestなど重いものを除外） | あり | しない（exit 0） | pre-commitフック |
+| `fast` | 軽量チェック（mypy/pylint/pytestなど重いツールを除外） | あり | しない（exit 0） | pre-commitフック |
 | `run-for-agent` | `run --output-format=jsonl`のエイリアス | あり | しない（exit 0） | LLMエージェント |
 
 `run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する。
