@@ -45,6 +45,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # careful-followup-reviewer を廃止し、再レビューを careful-spec-reviewer / careful-impl-reviewer の
         # followup モードに統合したため、配布先から旧エージェント定義を削除する。
         Path("agents/careful-followup-reviewer.md"),
+        # empirical-prompt-tuning を refine-prompt へ改名したため、配布先から旧スキルディレクトリを削除する。
+        Path("skills/empirical-prompt-tuning"),
     ],
     Path.home() / "bin": [
         # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない
