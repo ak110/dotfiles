@@ -186,6 +186,7 @@ pre {
   border-radius: 0.5rem; /* border-radius-8 */
   word-break: break-all;
   overflow-wrap: anywhere;
+  text-wrap: wrap;
 }
 
 pre code {
