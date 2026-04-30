@@ -124,7 +124,7 @@ flowchart TB
     subgraph PI["careful-impl スキル（実装方式が careful-impl の場合のみ）"]
       direction TB
       T[careful-implementer<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
-      CM -->|全コミット完了| FC[恒久化計画チェック]
+      CM -->|全コミット完了| FC[恒久化チェック]
       FC -->|反映漏れあり| CR[メインが追加コミット<br/>恒久化反映]
       CR --> R1
       FC -->|反映漏れなし| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回モード並列・全体差分対象]

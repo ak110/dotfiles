@@ -298,8 +298,6 @@ _PLAN_BODY: dict[str, str] = {
     "変更履歴": "- 初版",
     "背景": "説明。",
     "対応方針": "### ユーザー合意済み事項\n\n- a",
-    "恒久化計画": "- 無し",
-    "リファクタリング計画": "- 無し",
     "調査結果": "- x",
     "変更内容": "- y",
     "実行方法": "- w",
@@ -402,14 +400,14 @@ class TestPlanFormatCheck:
         assert "調査結果" in msg
         assert "[auto-generated: agent-toolkit/posttooluse][warn]" in msg
 
-    def test_missing_persistence_plan_is_warned(self, tmp_path: pathlib.Path):
-        """``恒久化計画`` セクション欠落も必須セクション違反として警告される。"""
+    def test_missing_response_policy_is_warned(self, tmp_path: pathlib.Path):
+        """``対応方針`` セクション欠落も必須セクション違反として警告される。"""
         home, plans = self._home(tmp_path)
-        content = _build_valid_plan(omit=("恒久化計画",))
-        plan = _write_plan(plans, "missing-perm.md", content)
+        content = _build_valid_plan(omit=("対応方針",))
+        plan = _write_plan(plans, "missing-policy.md", content)
         result = _run(
             {
-                "session_id": "plan-miss-perm",
+                "session_id": "plan-miss-policy",
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
             },
@@ -421,7 +419,7 @@ class TestPlanFormatCheck:
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
         assert "missing required H2 sections" in msg
-        assert "恒久化計画" in msg
+        assert "対応方針" in msg
 
     def test_out_of_order_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
