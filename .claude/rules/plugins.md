@@ -104,6 +104,8 @@ push前にはbumpが必須である。
   - 担当工程: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
   - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-impl-reviewer`
    （再レビューは`careful-spec-reviewer`・`careful-impl-reviewer`のfollowupモードで実施する）
+  - 修正再実装やfollowupレビューでは、初回起動時の`agentId`を保持して`SendMessage`で再開する経路を楽観試行し、
+    失敗時は新規`Agent`起動へフォールバックする（実験的機能のため利用者環境に応じて経路が切り替わる）
 
 `spec-driven`が有効な場合は、同スキルの誘導に従って個別の作業テーマごとに`plan-mode`へ入り計画ファイルを作成する。
 それ以外の場合は直接`plan-mode`から始める。
@@ -126,9 +128,9 @@ flowchart TB
       FC -->|反映漏れあり| CR[メインが追加コミット<br/>恒久化反映]
       CR --> R1
       FC -->|反映漏れなし| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回モード並列・全体差分対象]
-      R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
+      R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装<br/>初回agentIdで再開試行]
       T2 --> CFix[メインが追加コミット<br/>修正反映]
-      CFix --> R2[careful-spec-reviewer / careful-impl-reviewer<br/>followupモード並列]
+      CFix --> R2[careful-spec-reviewer / careful-impl-reviewer<br/>followupモード並列<br/>初回agentIdで再開試行]
       R2 -->|missing / partial / regression| T2
       R1 -->|指摘なし| END[完了]
       R2 -->|対応済み| END
