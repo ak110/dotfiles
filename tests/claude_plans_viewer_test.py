@@ -170,11 +170,17 @@ class TestPwaAssets:
         assert "192x192" in icon["sizes"]
         assert "512x512" in icon["sizes"]
 
-    def test_service_worker_registers_fetch(self):
-        """service worker定数がfetchリスナーを登録する（インストール可能性判定のための最小要件）。"""
+    def test_service_worker_contract(self):
+        """service worker定数がinstall・activateを登録し、fetchリスナーは持たないこと。
+
+        Chrome 93以降はno-opのfetchハンドラをDevToolsで警告対象とするため、
+        意図的にfetchリスナーを登録せず、install／activateのみでPWAインストール可能性を満たす。
+        """
         sw_js = claude_plans_viewer._SERVICE_WORKER_JS
 
-        assert 'addEventListener("fetch"' in sw_js
+        assert 'addEventListener("install"' in sw_js
+        assert 'addEventListener("activate"' in sw_js
+        assert 'addEventListener("fetch"' not in sw_js
 
 
 class TestParseArgs:
@@ -242,6 +248,21 @@ class TestIndexHtml:
         assert hostname not in body
         # エスケープ済みの形で含まれること。
         assert "host&lt;&amp;&quot;test" in body
+
+    def test_index_html_handles_pagehide_and_pageshow(self):
+        """クライアントJSがpagehideでEventSource.close()を呼び、pageshowのbfcache復帰時に再接続する。
+
+        SSE切断時のERR_INCOMPLETE_CHUNKED_ENCODING抑制と
+        bfcache復帰後の自動反映継続を両立するための契約。
+        """
+        html_src = claude_plans_viewer._INDEX_HTML
+
+        # pagehideでEventSourceをcloseする
+        assert 'addEventListener("pagehide"' in html_src
+        assert ".close()" in html_src
+        # pageshowのevent.persisted=true（bfcache復帰）で再接続する
+        assert 'addEventListener("pageshow"' in html_src
+        assert "event.persisted" in html_src
 
 
 class TestSubscribers:

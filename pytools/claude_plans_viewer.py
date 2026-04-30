@@ -120,11 +120,13 @@ _MANIFEST_JSON = """\
 """
 
 # PWAインストール可能性判定を満たす最小のservice worker。
-# オフライン動作は目標外のためキャッシュ戦略は持たず、fetchは既定のネットワーク動作に委ねる。
+# Chrome 89以降はインストール可能性の必須要件からfetchハンドラが外れたうえ、
+# Chrome 93以降は本ファイルのようなno-opのfetchハンドラを「不要」と警告する仕様に変わった
+# （DevToolsコンソールに "no-op fetch handler" 系の警告が出る）。
+# オフライン動作は目標外のためfetchリスナー自体を登録せず、ネットワーク動作はブラウザ既定に委ねる。
 _SERVICE_WORKER_JS = """\
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
-self.addEventListener("fetch", () => {});
 """
 
 # 左ペインにファイル一覧・右ペインにMarkdownプレビューを表示するSPA。
@@ -262,10 +264,14 @@ async function openFile(path) {
   selectedMtime = selected ? selected.mtime_epoch : null;
 }
 
-async function main() {
-  await refreshFiles();
-  if (files.length > 0) await openFile(files[0].path);
+// SSE接続はpagehideで能動的にcloseする。
+// 放置するとページ遷移時にブラウザがchunked転送終端マーカー無しでストリームを切断し、
+// DevToolsコンソールに ERR_INCOMPLETE_CHUNKED_ENCODING が記録されるため。
+// bfcache復帰時はpageshowのevent.persisted=trueで検出して再接続することで、
+// バックフォワード遷移後も自動反映を維持する（beforeunloadはbfcacheを無効化するため避ける）。
+let eventSource = null;
 
+function connectEvents() {
   const es = new EventSource("/api/events");
   es.onmessage = async () => {
     await refreshFiles();
@@ -276,7 +282,28 @@ async function main() {
       await updatePreview();
     }
   };
+  return es;
 }
+
+async function main() {
+  await refreshFiles();
+  if (files.length > 0) await openFile(files[0].path);
+
+  eventSource = connectEvents();
+}
+
+window.addEventListener("pagehide", () => {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+});
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted && !eventSource) {
+    eventSource = connectEvents();
+  }
+});
 
 document.getElementById("filter").addEventListener("input", renderFiles);
 main();
