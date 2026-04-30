@@ -57,6 +57,10 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
 - `.claude`を含むディレクトリが3系統あり取り違えやすい（`.chezmoi-source/dot_claude/` / `~/.claude/` / `.claude/`）。
   指示の対象を必ず確認する。詳細は[docs/development/development.md](docs/development/development.md)の
  「ディレクトリ構造の注意」参照
+- chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
+  配布先`~/.claude/`配下のClaude Code設定系ファイルと同等として扱う。
+  編集着手前に`agent-toolkit:writing-standards`スキルと、その`references/claude-common.md`を含む
+  必読リファレンスを参照する
 - ホーム配下のファイルを編集する前に`chezmoi managed | grep <相対パス>`で配布対象か確認する。
   配布対象は`.chezmoi-source/`側を編集する
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
@@ -91,6 +95,11 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
     検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する。
     リポジトリ管理ファイルから個人メモへ言及するとhookが警告で阻止する。
     利用者向けに同名ファイル作成を推奨する文脈は配布対象外のドキュメントへ寄せる
+  - 配布物（`plugins/agent-toolkit/`配下と`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）には、
+    執筆者の手元プロジェクト固有の前提を断定的に書かない。
+    特定設定値の採用状況・特定のディレクトリパス・「本リポジトリは〜」のような自指的表現を避け、
+    条件付き表現（「`～`設定が有効な場合、」など）で書く
+   （ルール名・設定キー名そのものは仕様参照として書いてよい）
 - `agent-toolkit/agent.md`のコミットメッセージ方針と`.gitmessage`は意図的に重複させている。
   前者はプラグイン配布対象（他リポジトリでも参照される）、後者は本リポジトリ固有のコミット補助テンプレート
  （`ccommit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
