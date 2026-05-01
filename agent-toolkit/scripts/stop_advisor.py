@@ -189,9 +189,11 @@ def _main() -> int:
         " — only knowledge from this session that helps future Claude work on this project"
         " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
         " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
-        ' For each candidate, output one line of "<target file> — <one-sentence summary>"; on user'
-        " approval, draft and apply the diff via Edit."
-        " Output the suggestions only (no preamble or narration). If none, output '指摘無し'."
+        " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
+        " and list each item as '- <対象ファイル> — <提案内容>'."
+        " If none, write '指摘無し' under the same heading."
+        " On user approval, draft and apply the diff via Edit."
+        " Output the suggestions only (no preamble or narration)."
     )
 
     _block(_llm_notice(body))

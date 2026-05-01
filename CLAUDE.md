@@ -4,14 +4,33 @@
 `.chezmoi-source/`配下を`~/.*`にデプロイする。
 多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
 
-## 主なディレクトリ
+## ロールとファイル群の対応
 
-- `.chezmoi-source/` — chezmoiソースディレクトリ（`dot_` prefix → `~/.*`に反映される）
-- `pytools/` — Pythonコマンドラインツール群（uv tool installでインストール）
-- `bin/` — ユーザーのPATHに追加して使うコマンドラッパー（リポジトリ直下でgit管理）
-- `agent-toolkit/` — Claude Code用プラグイン本体（マーケットプレイス経由で他人にも配布）
-- `scripts/` — リポジトリ開発専用スクリプト（pre-commit/Makefileから呼ばれる。配布対象外）
-- `.claude/` — dotfilesリポ自身のClaude Codeプロジェクト設定（配布対象外）
+本リポジトリと配布物には以下の4ロールが関与する。
+ファイル群を編集する際は、対象読者を意識して文面を選ぶ。
+
+- dotfiles利用者: 本リポジトリ（chezmoiソース・`bin`・`pytools`等）を自分の環境にインストールして使う人
+- agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人。
+  dotfiles利用者を含むがそれ以外もいる
+- エージェント: Claude Codeなどのコーディングエージェント。
+  実行時にagent-toolkit本体やルール・スキルをロードして動く
+- 編集者: 本リポジトリや`agent-toolkit`本体を修正する主体。エージェントと人間の双方を含む
+
+各ファイル群の対象読者と役割は以下の通り。
+
+| ファイル群 | 対象読者 | 役割 |
+| --- | --- | --- |
+| `agent-toolkit/skills/*/SKILL.md`本文・`agent-toolkit/agents/*` | エージェント | スキル・サブエージェントの指示本体 |
+| 上記のfrontmatterコメント | 編集者 | 連携先や注意事項などの編集用メタ情報 |
+| `agent-toolkit/agent.md`等のルール本体 | エージェント | `~/.claude/rules/agent-toolkit/`配下で常時自動ロードされる行動原則 |
+| `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
+| `.chezmoi-source/dot_claude/`配下 | dotfiles利用者 | 配布先`~/.claude/`相当のClaude Code設定 |
+| `.claude/`（リポジトリ直下） | 編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
+| `CLAUDE.md`（本ファイル） | 編集者 | 本リポジトリの修正方針・固有知見 |
+| `pytools/`・`bin/`・`scripts/` | dotfiles利用者・編集者 | コマンドラインツールと開発スクリプト |
+
+`.chezmoi-source/dot_claude/`配下の変更は配布先`~/.claude/`を経由して、
+dotfiles利用者が他リポジトリで作業する場面にも影響する。
 
 ## 開発手順
 
