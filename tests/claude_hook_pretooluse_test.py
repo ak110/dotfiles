@@ -66,7 +66,7 @@ class TestHomeClaudeEditWarning:
         assert "~/.claude/" in msg
         assert ".chezmoi-source/dot_claude/" in msg
         # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: pretooluse][warn]" in msg
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
         assert "Auto-generated hook notice" in msg
 
     def test_edit_warns(self):
@@ -307,7 +307,7 @@ class TestPersonalFileMentionWarning:
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
         # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: pretooluse][warn]" in msg
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
         assert "Auto-generated hook notice" in msg
 
     def test_edit_reference_warns_but_passes(self):
@@ -520,6 +520,105 @@ class TestPersonalFileMentionWarning:
         msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert self._TRIPLE_STEM in msg
+
+
+class TestRepoClaudeAutoAllow:
+    """リポジトリ配下 `.claude/` 編集の自動許可判定 (allow、警告メッセージなし)。
+
+    任意のリポジトリ配下 `.claude/` への編集に対し `permissionDecision: "allow"` を返し、
+    Claude Code 組み込みの保護機構の確認プロンプトを抑制する。
+    判定経路は `~/.claude/` 配下の警告経路と独立しており、自動許可単独では
+    `additionalContext` を付与しない。
+    """
+
+    @staticmethod
+    def _make_repo(tmp_path: pathlib.Path, *, claude_subpath: str) -> pathlib.Path:
+        """`.git` ディレクトリ付きの fake リポジトリ配下にファイルパスを組み立てて返す。"""
+        repo = tmp_path / "fake-repo"
+        repo.mkdir(exist_ok=True)
+        (repo / ".git").mkdir(exist_ok=True)
+        target = repo / claude_subpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    @staticmethod
+    def _env_with_fake_home(tmp_path: pathlib.Path) -> dict[str, str]:
+        """`~/.claude/` 警告経路と被らないよう subprocess の HOME を fake にする。"""
+        fake_home = tmp_path / "fake-home"
+        fake_home.mkdir(exist_ok=True)
+        return {**os.environ, "HOME": str(fake_home), "USERPROFILE": str(fake_home)}
+
+    def test_allows_repo_claude_rules(self, tmp_path: pathlib.Path):
+        """リポジトリ配下 `.claude/rules/foo.md` は警告メッセージなしで allow を返す。"""
+        target = self._make_repo(tmp_path, claude_subpath=".claude/rules/foo.md")
+        result = _run(
+            {"tool_name": "Edit", "tool_input": {"file_path": str(target), "old_string": "a", "new_string": "b"}},
+            env=self._env_with_fake_home(tmp_path),
+        )
+        assert result.returncode == 0
+        hook_specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hook_specific["permissionDecision"] == "allow"
+        assert "additionalContext" not in hook_specific
+
+    def test_allows_repo_claude_skill_subdir(self, tmp_path: pathlib.Path):
+        """サブディレクトリ配下の SKILL.md なども allow される。"""
+        target = self._make_repo(tmp_path, claude_subpath=".claude/skills/foo/SKILL.md")
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": str(target), "content": "x"}},
+            env=self._env_with_fake_home(tmp_path),
+        )
+        hook_specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hook_specific["permissionDecision"] == "allow"
+
+    def test_allows_repo_claude_multiedit(self, tmp_path: pathlib.Path):
+        """MultiEdit でも自動許可される。"""
+        target = self._make_repo(tmp_path, claude_subpath=".claude/agents/bar.md")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [{"old_string": "a", "new_string": "b"}],
+                },
+            },
+            env=self._env_with_fake_home(tmp_path),
+        )
+        hook_specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hook_specific["permissionDecision"] == "allow"
+
+    def test_skips_outside_git_worktree(self, tmp_path: pathlib.Path):
+        """`.git` の無いディレクトリ配下の `.claude/` パスは自動許可しない (出力なし)。"""
+        target = tmp_path / "no-git" / ".claude" / "foo.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        result = _run(
+            {"tool_name": "Edit", "tool_input": {"file_path": str(target), "old_string": "a", "new_string": "b"}},
+            env=self._env_with_fake_home(tmp_path),
+        )
+        assert result.returncode == 0
+        # 警告系も自動許可も該当しないため出力は空
+        assert result.stdout == ""
+
+    def test_skips_normal_path(self, tmp_path: pathlib.Path):
+        """`.claude` を含まない通常パスは何も出力しない。"""
+        target = self._make_repo(tmp_path, claude_subpath="src/foo.py")
+        result = _run(
+            {"tool_name": "Edit", "tool_input": {"file_path": str(target), "old_string": "a", "new_string": "b"}},
+            env=self._env_with_fake_home(tmp_path),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_skips_relative_path(self, tmp_path: pathlib.Path):
+        """相対パスは判定対象外として何も出力しない (判定基準のロバスト性確認)。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": ".claude/rules/foo.md", "old_string": "a", "new_string": "b"},
+            },
+            env=self._env_with_fake_home(tmp_path),
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 class TestGeneralBehavior:

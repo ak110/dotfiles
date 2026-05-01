@@ -83,8 +83,13 @@ push前にはbumpが必須である。
 
 軽微な閾値調整やパターン追加など要約が変わらない範囲なら更新不要。
 
-配布方式自体（chezmoi自動インストール／marketplace経由など）を変えた場合は`docs/guide/claude-code.md`側の修正も必要。
 `README.md`本体には各プラグイン固有の記述がないため、通常は修正不要。
+
+### install-claude.sh / install-claude.ps1 のファイルリスト
+
+`install-claude.sh`の`FILES`と`install-claude.ps1`の`$files`は手動同期が必要。
+`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下を編集した場合は両ファイルを同期する。
+ワンライナーインストーラーをGitHub API非依存で動かす方針のため自動同期手段は持たない。
 
 ## agent-toolkit編集時の方針
 
@@ -194,6 +199,5 @@ flowchart TB
 
 ## 参考
 
-- 配布方式と前提: `docs/guide/claude-code.md`のagent-toolkitセクション
 - 利用者向け説明（チェック内容・更新手順）: `docs/guide/claude-code-guide.md`
 - `agent-toolkit`の現行チェック内容: `agent-toolkit/scripts/pretooluse.py`モジュールdocstring
