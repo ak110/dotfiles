@@ -14,6 +14,7 @@ tools:
   - Bash
   - Grep
   - Glob
+user-invocable: false
 # 編集時の注意点:
 # このエージェントはspec-driven*, plan-mode, careful-implスキルなどを呼び出さないため、
 # それらの知識を持たないことに注意。

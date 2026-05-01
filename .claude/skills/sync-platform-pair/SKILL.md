@@ -4,7 +4,6 @@ description: >
   dotfilesリポジトリのLinux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
   `.sh.tmpl`と`-windows.ps1.tmpl`など）を編集するときに使う。
   「ペアファイル」「LinuxとWindows両対応」などのキーワードでも起動する。
-user-invocable: true
 ---
 
 # Linux/Windowsペアファイル編集支援
