@@ -34,7 +34,7 @@ push前にはbumpが必須である。
 
 整合性は各プラグインのテストで検査する。
 `agent-toolkit`の担当は`TestManifestSsot`で、`uv run pyfltr run`で自動的に失敗する
-（場所: `plugins/agent-toolkit/tests/pretooluse_test.py`）。
+（場所: `agent-toolkit/tests/pretooluse_test.py`）。
 新しいプラグインを追加するときは同等のSSOTテストも追加する。
 
 ## バージョン更新の判定基準
@@ -90,7 +90,7 @@ push前にはbumpが必須である。
 
 ## 計画・実装系スキルの連携
 
-`plugins/agent-toolkit/skills/`配下の計画・実装系スキルとサブエージェントの対応を一覧する。
+`agent-toolkit/skills/`配下の計画・実装系スキルとサブエージェントの対応を一覧する。
 スキル本文や呼び出し対象のサブエージェントを編集する際、関連スキルでの参照箇所を更新し忘れないために用いる。
 詳細な動作手順は各スキルのSKILL.mdが正であり、本節は概要のみを示す。
 
@@ -142,7 +142,7 @@ flowchart TB
 
 `agent-toolkit`プラグインのhookは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
 パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`である。
-パス規則の一般論は`plugins/agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
+パス規則の一般論は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節を参照する。
 
 フラグを追加・変更する際は本表を必ず更新し、書き込み元と読み取り元の対応関係を保つ。
@@ -161,4 +161,4 @@ flowchart TB
 
 - 配布方式と前提: `docs/guide/claude-code.md`のagent-toolkitセクション
 - 利用者向け説明（チェック内容・更新手順）: `docs/guide/claude-code-guide.md`
-- `agent-toolkit`の現行チェック内容: `plugins/agent-toolkit/scripts/pretooluse.py`モジュールdocstring
+- `agent-toolkit`の現行チェック内容: `agent-toolkit/scripts/pretooluse.py`モジュールdocstring

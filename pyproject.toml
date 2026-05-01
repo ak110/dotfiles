@@ -67,8 +67,8 @@ dev = [
 preset = "latest"
 python = true
 ty = true
-# scripts/ から plugins/agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する。
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "plugins/agent-toolkit/scripts"]
+# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する。
+ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts"]
 pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
@@ -97,9 +97,9 @@ convention = "google"
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# scripts/ から plugins/agent-toolkit/scripts/ の _stop_gate モジュールを import するため
+# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを import するため
 # そのパスを追加する。
-extraPaths = ["plugins/agent-toolkit/scripts"]
+extraPaths = ["agent-toolkit/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

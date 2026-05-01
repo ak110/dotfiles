@@ -1,4 +1,4 @@
-"""plugins/agent-toolkit/scripts/_stop_gate.py のテスト。
+"""agent-toolkit/scripts/_stop_gate.py のテスト。
 
 各ヘルパー関数の単体テストと `is_real_session_end` の統合テストを行う。
 transcript fixture JSONL ファイルに対して関数を呼ぶ形式。

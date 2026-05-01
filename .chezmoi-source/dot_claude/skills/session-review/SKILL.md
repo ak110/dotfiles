@@ -6,7 +6,7 @@ description: >
   「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
 disable-model-invocation: true
 # 本SKILLを更新する場合、以下のHookスクリプトも同時に更新すること。
-# - plugins/agent-toolkit/scripts/stop_advisor.py
+# - agent-toolkit/scripts/stop_advisor.py
 # - scripts/claude_hook_stop.py
 ---
 

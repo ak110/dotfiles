@@ -1,4 +1,4 @@
-"""plugins/agent-toolkit/scripts/stop_advisor.py のテスト。
+"""agent-toolkit/scripts/stop_advisor.py のテスト。
 
 Stop hook のテスト。`_stop_gate.is_real_session_end` ゲート単独での
 未コミット変更ブロックとセッション振り返り提案ブロックの判定を検証する。

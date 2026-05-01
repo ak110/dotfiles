@@ -1,4 +1,4 @@
-"""plugins/agent-toolkit/scripts/posttooluse.py のテスト。
+"""agent-toolkit/scripts/posttooluse.py のテスト。
 
 PostToolUse セッション状態記録のテスト。
 subprocess で起動し exit code・状態ファイルの内容を検証する。

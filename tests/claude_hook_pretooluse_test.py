@@ -1,7 +1,7 @@
 """scripts/claude_hook_pretooluse.py のテスト。
 
 dotfiles 個人環境専用の PreToolUse フックのテスト。
-mojibake / PS1 EOL は plugin 側 (plugins/agent-toolkit) に移管済み。
+mojibake / PS1 EOL は plugin 側 (agent-toolkit) に移管済み。
 独立スクリプトなので subprocess で起動し exit code / stderr / stdout (JSON) を検証する。
 """
 
@@ -55,7 +55,7 @@ class TestHomeClaudeEditWarning:
             "rules/agent-toolkit/agent.md",
             "agents/foo.md",
             "skills/bar/SKILL.md",
-            "plugins/agent-toolkit/hooks/hooks.json",
+            "agent-toolkit/hooks/hooks.json",
         ],
     )
     def test_warns(self, rel: str):

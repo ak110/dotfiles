@@ -6,7 +6,7 @@
 r"""Claude Code PreToolUse フック: dotfiles 個人環境専用チェック集。
 
 mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Code plugin
-`agent-toolkit` へ移管した (`plugins/agent-toolkit/scripts/pretooluse.py`)。
+`agent-toolkit` へ移管した (`agent-toolkit/scripts/pretooluse.py`)。
 本スクリプトは dotfiles 個人環境でのみ必要な、汎用性の低いチェックをまとめる
 (他人に配布する `agent-toolkit` には含めにくい個人環境前提のチェック群)。
 
@@ -62,7 +62,7 @@ import traceback
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 # LLM 宛てメッセージの共通プレフィックス / サフィックス。
-# 詳細は plugins/agent-toolkit/skills/writing-standards/references/claude-hooks.md を参照。
+# 詳細は agent-toolkit/skills/writing-standards/references/claude-hooks.md を参照。
 _MESSAGE_PREFIX = "[auto-generated: pretooluse]"
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 

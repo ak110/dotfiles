@@ -44,7 +44,7 @@
 配布先やタイミングなどが異なるため分けているが、極力内容を同期するよう注意すること。
 ただし配布単位が異なる箇所は責務分離を優先し、共通モジュール化できる部分のみ集約する。
 
-- plugins/agent-toolkit/scripts/stop_advisor.py
+- agent-toolkit/scripts/stop_advisor.py
 - scripts/claude_hook_stop.py
 - .chezmoi-source/dot_claude/skills/session-review/SKILL.md
 
@@ -90,12 +90,12 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
   - 配布ルールは常時ロード、スキル本体は呼び出し時のみという責務分担を意識する
    （配布ルールに常時ロードする内容と、スキル側で扱う詳細は重複させない）
   - 「実行時エラーで判明する仕様（tool quirk）」「具体例」は事前知識・見落とし防止のため削除候補から外す
-  - 配布物（`plugins/agent-toolkit/`配下）の出力文字列・hookメッセージ・docstringには
+  - 配布物（`agent-toolkit/`配下）の出力文字列・hookメッセージ・docstringには
     リポジトリ管理外の個人メモファイル名を含めない。
     検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する。
     リポジトリ管理ファイルから個人メモへ言及するとhookが警告で阻止する。
     利用者向けに同名ファイル作成を推奨する文脈は配布対象外のドキュメントへ寄せる
-  - 配布物（`plugins/agent-toolkit/`配下と`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）には、
+  - 配布物（`agent-toolkit/`配下と`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）には、
     執筆者の手元プロジェクト固有の前提を断定的に書かない。
     特定設定値の採用状況・特定のディレクトリパス・「本リポジトリは〜」のような自指的表現を避け、
     条件付き表現（「`～`設定が有効な場合、」など）で書く

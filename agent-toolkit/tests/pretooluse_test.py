@@ -1,4 +1,4 @@
-"""plugins/agent-toolkit/scripts/pretooluse.py のテスト。
+"""agent-toolkit/scripts/pretooluse.py のテスト。
 
 PreToolUse 統合フック (mojibake / ps1 EOL 等) のテスト。
 独立スクリプトなので subprocess で起動し exit code・stderr・stdout を検証する。

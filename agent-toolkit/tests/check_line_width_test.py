@@ -1,4 +1,4 @@
-"""plugins/agent-toolkit/skills/writing-standards/scripts/check_line_width.py のテスト。
+"""agent-toolkit/skills/writing-standards/scripts/check_line_width.py のテスト。
 
 Markdown 1行幅検査スクリプトを subprocess で起動し、
 正常系・異常系・閾値切り替え・コードブロック除外・frontmatter対象化の挙動を検証する。
@@ -8,8 +8,8 @@ import pathlib
 import subprocess
 import sys
 
-# テストファイルは plugins/agent-toolkit/tests/ 直下配置を前提とし、
-# parents[1] でプラグインルート（plugins/agent-toolkit/）を指す。
+# テストファイルは agent-toolkit/tests/ 直下配置を前提とし、
+# parents[1] でプラグインルート（agent-toolkit/）を指す。
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "skills" / "writing-standards" / "scripts" / "check_line_width.py"
 
 

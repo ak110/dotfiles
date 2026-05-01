@@ -213,7 +213,7 @@ def _main() -> int:
     if has_agent_toolkit:
         sections.append(
             "agent-toolkit review: list improvement suggestions in Japanese for the agent-toolkit plugin "
-            "(`plugins/agent-toolkit/`, including `skills/pyfltr-usage/SKILL.md`) and rules under "
+            "(`agent-toolkit/`, including `skills/pyfltr-usage/SKILL.md`) and rules under "
             "`~/.claude/rules/agent-toolkit/`. Output the suggestions only (no preamble or narration). "
             "If none, output '指摘無し'."
         )
