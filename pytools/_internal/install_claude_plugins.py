@@ -10,7 +10,7 @@
 2. `uv` CLI が PATH にある (plugin の hook スクリプトが `uv run --script` で動くため)
 
 対象プラグインは `.claude-plugin/marketplace.json` の `plugins[]` 全件。
-このファイルを SSOT として扱うため、`plugins/` 配下に新しいプラグインを追加して
+このファイルを SSOT として扱うため、リポジトリ直下にプラグインディレクトリを追加して
 `marketplace.json` に登録するだけで、本モジュールの対象に自動で追加される。
 `keywords` に ``"deprecated"`` を含むエントリは、インストール済みであれば
 自動でアンインストールされる。

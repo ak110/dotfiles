@@ -1,12 +1,21 @@
 ---
 paths:
-  - "plugins/**"
+  - "agent-toolkit/**"
+  - ".chezmoi-source/dot_claude/rules/agent-toolkit/**"
+  - "~/.claude/rules/agent-toolkit/**"
   - ".claude-plugin/marketplace.json"
 ---
 
-# Claude Code plugin 編集チェックリスト
+# Claude Codeプラグイン: agent-toolkit
 
-本リポジトリ配下の`plugins/`と`.claude-plugin/marketplace.json`を編集するときに確認する。
+`agent-toolkit/`配下のファイルはClaude Codeのプラグイン`agent-toolkit`として配布される。
+`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下のファイルと共に利用される
+（利用者は本リポジトリ(dotfiles)の利用者とは限らない）。
+
+`~/.claude/rules/agent-toolkit/`は配布先であり、直接編集は不可。
+
+これらのファイルは人間ではなくClaude Codeから読まれる、または実行される前提で書く必要がある。
+
 バージョン更新・SSOT同期・ドキュメント同期は漏れが発生しやすいため、本ファイルで手順を確認する。
 
 ## 着手前チェック: 未プッシュコミットでbump済みか
@@ -27,15 +36,13 @@ push前にはbumpが必須である。
 
 ## SSOTの2ファイル
 
-プラグインごとに以下の2箇所で`version`／`description`を完全に同一文字列に保つ。
+以下の2箇所で`version`／`description`を完全に同一文字列に保つ。
 
-- `plugins/<plugin-name>/.claude-plugin/plugin.json`
-- `.claude-plugin/marketplace.json`の`plugins[]`内`name == "<plugin-name>"`のエントリ
+- `agent-toolkit/.claude-plugin/plugin.json`
+- `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
 
-整合性は各プラグインのテストで検査する。
-`agent-toolkit`の担当は`TestManifestSsot`で、`uv run pyfltr run`で自動的に失敗する
-（場所: `agent-toolkit/tests/pretooluse_test.py`）。
-新しいプラグインを追加するときは同等のSSOTテストも追加する。
+整合性は`agent-toolkit/tests/pretooluse_test.py`の`TestManifestSsot`が検査し、
+`uv run pyfltr run`で自動的に失敗する。
 
 ## バージョン更新の判定基準
 
@@ -79,14 +86,33 @@ push前にはbumpが必須である。
 配布方式自体（chezmoi自動インストール／marketplace経由など）を変えた場合は`docs/guide/claude-code.md`側の修正も必要。
 `README.md`本体には各プラグイン固有の記述がないため、通常は修正不要。
 
-## 手順
+## agent-toolkit編集時の方針
 
-1. 冒頭の「着手前チェック」でbump要否を判定する
-2. 必要に応じて`plugins/<plugin-name>/.claude-plugin/plugin.json`の`version`（および`description`）を更新
-3. `.claude-plugin/marketplace.json`の該当プラグインエントリを同一文字列に同期する
-4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新
-5. `uv run pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認
-6. 変更をコミット（通常の編集と同じコミットに含めてよい）
+- `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、
+  配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
+- 参照方向の許容範囲: dotfilesリポジトリ → プラグイン配布物、およびプラグイン配布物 ↔ 配布ルール
+ （`~/.claude/rules/agent-toolkit/`）の参照は方向性として許容する。
+  配布ルールは常時ロードされるためスキル側からのファイル名指定は省略可能だが、必須ではない
+- SKILL.md本体に必要な情報は本体に直接書く。`references/`から別の`references/`を多段参照させない
+ （Skillsのベストプラクティスに沿うため）
+- サブエージェント間で共通する判断基準・制約は各エージェントに重複記述したまま維持する
+ （別コンテキストで実行されるため、統合するとコンテキスト汚染や指示漏れが起きる）
+- 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を必ず確認する。
+  例えば`careful-impl`経路と`careful-impl不使用`経路で同じ手順を分担する場合、
+  片側にある排他的表現（「唯一のガード」など）が新設で不整合になりやすい
+- 配布ルールは常時ロード、スキル本体は呼び出し時のみという責務分担を意識する
+ （配布ルールに常時ロードする内容と、スキル側で扱う詳細は重複させない）
+- 「実行時エラーで判明する仕様（tool quirk）」「具体例」は事前知識・見落とし防止のため削除候補から外す
+- 配布物（`agent-toolkit/`配下）の出力文字列・hookメッセージ・docstringには
+  リポジトリ管理外の個人メモファイル名を含めない。
+  検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する。
+  リポジトリ管理ファイルから個人メモへ言及するとhookが警告で阻止する。
+  利用者向けに同名ファイル作成を推奨する文脈は配布対象外のドキュメントへ寄せる
+- 配布物（`agent-toolkit/`配下と`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）には、
+  執筆者の手元プロジェクト固有の前提を断定的に書かない。
+  特定設定値の採用状況・特定のディレクトリパス・「本リポジトリは〜」のような自指的表現を避け、
+  条件付き表現（「`～`設定が有効な場合、」など）で書く
+ （ルール名・設定キー名そのものは仕様参照として書いてよい）
 
 ## 計画・実装系スキルの連携
 
@@ -156,6 +182,15 @@ flowchart TB
 - `plan_mode_skill_invoked` — PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを観測して記録。
   PostToolUseのplan file形式検査の有効化、およびPreToolUseの最初ツール警告の抑制に使う
 - `plan_mode_warning_emitted` — PreToolUseが最初ツール警告を発火済みかを記録（1セッション1回限り）
+
+## 手順
+
+1. 冒頭の「着手前チェック」でbump要否を判定する
+2. 必要に応じて`agent-toolkit/.claude-plugin/plugin.json`の`version`（および`description`）を更新
+3. `.claude-plugin/marketplace.json`の該当プラグインエントリを同一文字列に同期する
+4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新
+5. `uv run pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認
+6. 変更をコミット（通常の編集と同じコミットに含めてよい）
 
 ## 参考
 

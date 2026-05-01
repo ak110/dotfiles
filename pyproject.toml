@@ -72,7 +72,7 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
-extend-exclude = ["*/profile_ipy/*", "*.cmd"]
+extend-exclude = ["*/profile_ipy/*", "*.cmd", "plugins/agent-toolkit"]
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]
 shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*"]
 textlint-packages = [

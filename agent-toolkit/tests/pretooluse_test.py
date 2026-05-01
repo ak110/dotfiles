@@ -14,7 +14,7 @@ import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
-_MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[3] / ".claude-plugin" / "marketplace.json"
+_MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -458,7 +458,7 @@ class TestManifestSsot:
         entry = entries[0]
 
         # SSOT の 3 フィールドが完全一致することを要求する。
-        # 不一致が出たら .claude/rules/plugins.md を参照して両側を揃えること。
+        # 不一致が出たら .claude/rules/agent-toolkit.md を参照して両側を揃えること。
         assert entry["version"] == plugin_manifest["version"], (
             f"version 不一致: plugin.json={plugin_manifest['version']} marketplace.json={entry['version']}"
         )

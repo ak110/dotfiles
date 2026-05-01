@@ -39,7 +39,7 @@ import traceback
 # plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
 sys.path.insert(
     0,
-    str(pathlib.Path(__file__).resolve().parent.parent / "plugins" / "agent-toolkit" / "scripts"),
+    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
