@@ -72,7 +72,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"
 ```
 
-## 更新
+## 使い方
 
 ```bash
 update-dotfiles
@@ -83,14 +83,3 @@ update-dotfiles
 - [docs/index.md](docs/index.md) — ドキュメント入口
 - [docs/guide/index.md](docs/guide/index.md) — 利用者向け（Claude Code設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md) — 開発者向け
-
-## 参考
-
-```bash
-# Claude Codeのバージョン固定化
-\rm ~/.local/bin/claude
-npm install -g @anthropic-ai/claude-code@2.1.98
-# 戻す場合
-npm uninstall -g @anthropic-ai/claude-code
-curl -fsSL https://claude.ai/install.sh | bash
-```

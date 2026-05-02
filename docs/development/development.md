@@ -1,6 +1,6 @@
 # 開発
 
-## 初回セットアップ
+## 開発環境の構築手順
 
 ```bash
 make setup
@@ -28,18 +28,33 @@ brew install --cask powershell
 pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck"
 ```
 
+## 開発コマンド
+
+```bash
+make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
+make update   # 依存アップグレード＋全チェック（pinactによるアクション更新含む）
+```
+
 ## チェックの実行
 
 ```bash
 make test
 ```
 
-## その他のコマンド
+## サプライチェーン攻撃対策
 
-```bash
-make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
-make update   # 依存アップグレード＋全チェック（pinactによるアクション更新含む）
-```
+CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、
+環境変数`UV_FROZEN=1`を有効化している。
+意図しない再resolveでロックファイルが書き換わるリスクを抑え、
+グローバル設定の`exclude-newer`（[docs/guide/security.md](../guide/security.md)参照）と組み合わせて二重防御として機能する。
+
+- `make format`/`make test`/`make setup`は`Makefile`の`export UV_FROZEN := 1`で自動適用される
+- CIは`.github/workflows/*.yaml`の`env.UV_FROZEN`で自動適用される
+- `git commit`経由のpre-commitフックは`.pre-commit-config.yaml`のlocal hookのentryに`--frozen`を明示している
+
+開発者のシェルでは`UV_FROZEN`を設定しない前提なので、
+依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい。
+`make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい。
 
 ## READMEとdocsの役割分担
 
@@ -236,21 +251,6 @@ version bumpは不要。編集が即時反映される。
 - ローカル更新: `make update-actions`（mise経由で`pinact run --update --min-age 1`を実行）
 - CI検証: `go install pinact@v3.9.0` + `pinact run --check`（バージョン固定）
 - pinactのCIバージョンを更新する場合は全プロジェクトのワークフローを一括更新すること
-
-## サプライチェーン攻撃対策
-
-CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、
-環境変数`UV_FROZEN=1`を有効化している。
-意図しない再resolveでロックファイルが書き換わるリスクを抑え、
-グローバル設定の`exclude-newer`（[docs/guide/security.md](../guide/security.md)参照）と組み合わせて二重防御として機能する。
-
-- `make format`/`make test`/`make setup`は`Makefile`の`export UV_FROZEN := 1`で自動適用される
-- CIは`.github/workflows/*.yaml`の`env.UV_FROZEN`で自動適用される
-- `git commit`経由のpre-commitフックは`.pre-commit-config.yaml`のlocal hookのentryに`--frozen`を明示している
-
-開発者のシェルでは`UV_FROZEN`を設定しない前提なので、
-依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使えばよい。
-`make update`も内部で自動的にUV_FROZENを外すため、そのまま実行してよい。
 
 ## その他
 

@@ -90,13 +90,20 @@ o=対象、-=対象外、△=緩め
   - `pyfltr/docs/guide/recommended-nonpython.md`
 - 他プロジェクト作業中に `~/.claude/rules/agent-toolkit/*` や `/agent-toolkit:tidy-unpushed-commits` の問題を
   発見したらdotfiles側を修正する（マスター）
-- 各プロジェクトの `docs/development/development.md` の以下3セクションは共通文面で統一済み。
+- `docs/development/development.md` の「サプライチェーン攻撃対策」節は、
+  Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする。
+  UV_FROZEN方針を含む。
+  `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する。
   変更時は他プロジェクトへの波及を確認する
-  - 「役割分担（末尾2段落）」
-  - 「UV_FROZEN（Python系）」
-  - 「コミットメッセージ（Conventional Commits）」
+- README.md・CLAUDE.md・docs/development/development.md間で、
+  既共通文面化を進める候補節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える方針
 - README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える。
   共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
+- README.md・CLAUDE.md・docs/development/development.mdを更新する際は、
+  他プロジェクトと章構成・章順を揃える方針。
+  共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃える。
+  ただし、プロジェクト固有部分は無理に揃えず必要な情報を記述する。
+  単独プロジェクトでの章追加・章順変更を避け、他プロジェクトとの比較で逸脱を検出する
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
