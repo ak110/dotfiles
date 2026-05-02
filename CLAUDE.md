@@ -39,7 +39,6 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 - コミット前の検証方法: `uvx pyfltr run-for-agent`
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
   - テストコードの単体実行なども極力`uvx pyfltr run-for-agent <path>`を使う（pytestを直接呼び出さない）
-    - 詳細な情報などが必要な場合に限り`uv run pytest -vv <path>`などを使用
   - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）
     - 例: `pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
 
@@ -102,6 +101,11 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
   privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する。
   エージェント・hook・自動化など手で起動しないスクリプトは`scripts/`配下へ置く
  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
+- `scripts/`配下にPython製スクリプトを追加する場合、
+  テスト同居（`scripts/<name>_test.py`）方式で動作する。
+  pytestはprependモードで`scripts/`を`sys.path`へ自動追加するため、
+  テスト側からスクリプトを直接importできる。
+  importしたい場合はファイル名をハイフン区切りではなくアンダースコア区切り（`<name>.py`）で命名する
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける

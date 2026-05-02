@@ -21,6 +21,16 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
   `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
 - pyfltr自身を開発・検証するときに限り、`uv run --with-editable=. pyfltr ...`を使う。
 
+新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
+独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
+推奨例は`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsを一貫した構成で揃える。
+（タスクランナー：Makefileやmiseなど）
+複数プロジェクト間の差分を抑えて保守コストを下げる目的がある。
+既存プロジェクトで推奨例と乖離した設定を見つけた場合も、揃える方向の提案を優先する。
+
+- Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
+- 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
+
 ## サブコマンド
 
 | サブコマンド | 用途 | fixステージ | formatter変更で失敗するか | 使用場面 |
@@ -88,7 +98,7 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 
 #### --only-failed で失敗ツール全体を再実行
 
-`pyfltr run-for-agent --only-failed`で、直前runの失敗ツール・失敗ファイルのみをまとめて再実行する。
+`uvx pyfltr run-for-agent --only-failed`で、直前runの失敗ツール・失敗ファイルのみをまとめて再実行する。
 個別に`retry_command`をコピーする手間を省きたい場合に使う。
 参照runを明示する場合は`--from-run RUN_ID`を併用する（前方一致または`latest`を指定可）。
 
@@ -99,10 +109,10 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 
 ```bash
 # 単一ツールの output.log 全文を表示
-pyfltr show-run RUN_ID --commands=TOOL --output
+uvx pyfltr show-run RUN_ID --commands=TOOL --output
 
 # 複数ツールの diagnostics.jsonl をまとめて表示
-pyfltr show-run RUN_ID --commands=mypy,ruff-check
+uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
 ```
 
 `--commands`はカンマ区切りで複数指定可（旧 `--tool` は廃止）。
@@ -129,7 +139,7 @@ pyfltr show-run RUN_ID --commands=mypy,ruff-check
 コミット前検証は対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）。
 
 ```bash
-pyfltr run-for-agent --commands=mypy path/to/file
+uvx pyfltr run-for-agent --commands=mypy path/to/file
 ```
 
 `--commands`で特定ツールに絞る／対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
@@ -137,7 +147,7 @@ pyfltr run-for-agent --commands=mypy path/to/file
 公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合や、状況全体を把握したい場合は全体で実行する。
 
 ```bash
-pyfltr run-for-agent
+uvx pyfltr run-for-agent
 ```
 
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認する。
@@ -148,7 +158,7 @@ pyfltr run-for-agent
 カンマ区切りで実行するツールを指定する。全サブコマンドで使用可能。
 
 ```bash
-pyfltr run-for-agent --commands=mypy,ruff-check
+uvx pyfltr run-for-agent --commands=mypy,ruff-check
 ```
 
 以下のエイリアスも使える。
@@ -174,7 +184,7 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 ## トラブルシューティング
 
 - エラー内容が`diagnostic`行だけでは把握しづらい場合、
-  `pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
+  `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
 - 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を絞る（全体再実行より早く原因切り分けできる）
@@ -186,19 +196,6 @@ pyfltr run-for-agent --commands=mypy,ruff-check
 - 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
   `uvx pyfltr command-info --check <tool>`を使う。
   mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
-
-## 推奨設定への準拠
-
-新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
-独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
-推奨例は`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsを一貫した構成で揃える。
-（タスクランナー：Makefileやmiseなど）
-複数プロジェクト間の差分を抑えて保守コストを下げる目的がある。
-
-- Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
-- 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
-
-既存プロジェクトで推奨例と乖離した設定を見つけた場合も、揃える方向の提案を優先する。
 
 ## 詳細情報
 

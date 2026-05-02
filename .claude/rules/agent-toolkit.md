@@ -141,7 +141,7 @@ flowchart TB
       T[careful-implementer<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
       CM -->|全コミット完了| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回モード並列・全体差分対象]
       R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装<br/>初回agentIdで再開試行]
-      T2 --> CFix[メインが追加コミット<br/>修正反映]
+      T2 --> CFix[メインがamend統合<br/>修正反映]
       CFix --> R2[careful-spec-reviewer / careful-impl-reviewer<br/>followupモード並列<br/>初回agentIdで再開試行]
       R2 -->|missing / partial / regression| T2
       R1 -->|指摘なし| END[完了]

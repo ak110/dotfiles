@@ -228,11 +228,13 @@ description: >
 修正再実装を`careful-implementer`へ依頼する。
 依頼方法は「## 2. 実装」節の経路選択に従う。
 該当フェーズの`agentId`を保持していれば再開経路を選び、文脈の引き継ぎとトークン効率の改善を得る。
-修正の再実装が完了したら検証タスクを再起動して合格を確認し、修正反映の追加コミットを行う。
+修正の再実装が完了したら検証タスクを再起動して合格を確認し、
+直前の未プッシュコミットへ`git commit --amend`で統合する
+（`agent-toolkit`配布ルールの未プッシュコミット運用に従う）。
 
 ### 再レビュー（followupモード）
 
-修正反映コミット後、初回レビューと同じ`careful-spec-reviewer`・`careful-impl-reviewer`を並列で起動し、
+修正をamend統合した後、初回レビューと同じ`careful-spec-reviewer`・`careful-impl-reviewer`を並列で起動し、
 followupモード（前回指摘＋修正差分を入力とする再評価）として呼び出す。
 両エージェントは前回指摘ごとに`addressed`／`partial`／`missing`を判定し、
 修正の副作用で生じた回帰のみ`regression`欄に記載する。新規指摘は追加しない。
