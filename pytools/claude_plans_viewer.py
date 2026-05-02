@@ -610,6 +610,10 @@ async def _watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
 def _main(argv: list[str] | None = None) -> int:
     """エントリーポイント。"""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # hypercornは`hypercorn.error`に独自フォーマット付きハンドラーを設定するが、
+    # `propagate`は既定でTrueのためrootの`basicConfig`ハンドラーへも伝搬し二重出力になる。
+    # hypercorn側のフォーマット（タイムスタンプ・PID付き）を活かすため、伝搬を止める。
+    logging.getLogger("hypercorn.error").propagate = False
     args = _parse_args(argv)
     root = pathlib.Path(args.root).expanduser().resolve()
     if not root.is_dir():
