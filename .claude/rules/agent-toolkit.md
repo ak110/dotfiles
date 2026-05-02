@@ -18,22 +18,6 @@ paths:
 
 バージョン更新・SSOT同期・ドキュメント同期は漏れが発生しやすいため、本ファイルで手順を確認する。
 
-## 着手前チェック: 未プッシュコミットでbump済みか
-
-プラグイン編集に着手する前、および`plan-mode`で計画ファイルを書き始める前に必ず実施する。
-計画フェーズで確認し忘れるとbumpタスクが計画から抜け落ち、push直前に慌てる原因になる。
-
-```bash
-git log --decorate -p 'origin/master..HEAD' -- .claude-plugin/marketplace.json
-```
-
-- 差分があれば**bump済み**のため、今回の変更で再bumpは不要（後述の判定基準もスキップしてよい）
-- 差分がなければ**未bump**のため、後述の判定基準に従って今回の変更でbumpする必要があるかを判断する
-
-push前にはbumpが必須である。
-同じバージョンでは`claude plugin update`が「最新です」と返すため、bumpしないと利用者へ配信されない
-（過去に`agent-toolkit`（旧`edit-guardrails`）で実害があった）。
-
 ## SSOTの2ファイル
 
 以下の2箇所で`version`／`description`を完全に同一文字列に保つ。
@@ -190,12 +174,16 @@ flowchart TB
 
 ## 手順
 
-1. 冒頭の「着手前チェック」でbump要否を判定する
-2. 必要に応じて`agent-toolkit/.claude-plugin/plugin.json`の`version`（および`description`）を更新
-3. `.claude-plugin/marketplace.json`の該当プラグインエントリを同一文字列に同期する
-4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新
-5. `uv run pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認
-6. 変更をコミット（通常の編集と同じコミットに含めてよい）
+1. 今回の変更が「バージョン更新の判定基準」に該当するか判定する
+2. 該当する場合は`scripts/agent_toolkit_bump.py {patch|minor|major}`を実行する。
+   未プッシュの既存bumpが指定種別と同等以上ならツールは何もせず、指定種別が上位なら既存bumpを上書きして格上げする
+3. `description`を変更する場合はSSOT2ファイルを手で同期する
+4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
+5. `uv run pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認する
+6. 変更をコミットする（通常の編集と同じコミットに含めてよい）
+
+push前にはbumpが必須である。
+同じバージョンでは`claude plugin update`が「最新です」と返すため、bumpしないと利用者へ配信されない。
 
 ## 参考
 

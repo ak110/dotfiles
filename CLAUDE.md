@@ -99,7 +99,9 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
-  privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
+  privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する。
+  エージェント・hook・自動化など手で起動しないスクリプトは`scripts/`配下へ置く
+ （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
