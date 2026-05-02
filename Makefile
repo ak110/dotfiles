@@ -8,7 +8,7 @@ help:
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uv run pre-commit autoupdate
+	uvx pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
@@ -20,7 +20,7 @@ update-actions:
 # 開発環境のセットアップ
 setup:
 	uv sync --all-groups --all-extras
-	uv run pre-commit install
+	uvx pre-commit install
 	uv tool install --editable .
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
@@ -41,10 +41,10 @@ setup-pwsh:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
-	uv run pyfltr fast
+	uvx pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 test:
-	uv run pyfltr run
+	uvx pyfltr run
 
 .PHONY: help update update-actions setup setup-pwsh format test

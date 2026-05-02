@@ -86,7 +86,7 @@ jobs:
         shell: bash
     strategy:
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: [ "3.12", "3.13", "3.14" ]
     env:
       # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
@@ -108,7 +108,7 @@ jobs:
           key: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-groups --all-extras
 
       - name: Test with pyfltr
         env:
@@ -116,7 +116,7 @@ jobs:
           # claude-plugin-validateはclaude CLIが必要で、CI環境への導入はpnpm/npmの
           # minimum-release-age機構とメタデータ欠落で安定せず現実的でないためスキップ。
           SKIP: chezmoi-apply,claude-plugin-validate
-        run: uv run pyfltr ci
+        run: pyfltr ci
 
       - name: Prune uv cache for CI
         run: uv cache prune --ci

@@ -26,7 +26,7 @@ paths:
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
 
 整合性は`agent-toolkit/tests/pretooluse_test.py`の`TestManifestSsot`が検査し、
-`uv run pyfltr run`で自動的に失敗する。
+`uvx pyfltr run`で自動的に失敗する。
 
 ## バージョン更新の判定基準
 
@@ -179,7 +179,7 @@ flowchart TB
    未プッシュの既存bumpが指定種別と同等以上ならツールは何もせず、指定種別が上位なら既存bumpを上書きして格上げする
 3. `description`を変更する場合はSSOT2ファイルを手で同期する
 4. 必要なら`docs/guide/claude-code-guide.md`のチェック内容リストを更新する
-5. `uv run pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認する
+5. `uvx pyfltr run-for-agent`を実行し、SSOTテストを含む全テストがgreenであることを確認する
 6. 変更をコミットする（通常の編集と同じコミットに含めてよい）
 
 push前にはbumpが必須である。

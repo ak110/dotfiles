@@ -9,6 +9,18 @@ description: >
 pyfltrは各種コード品質ツール（formatter/linter/tester）を統合的に並列実行するツール。
 Python・Rust・.NET・TypeScript/JSなどに対応する。
 
+## 呼び出し方の基本
+
+- 通常運用は`uvx pyfltr ...`を使う。
+  v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
+  本体依存に統合されたため、`uvx pyfltr`単発で揃う。
+  cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される。
+- pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える。
+  `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
+- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）配下のCIジョブでは、
+  `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
+- pyfltr自身を開発・検証するときに限り、`uv run --with-editable=. pyfltr ...`を使う。
+
 ## サブコマンド
 
 | サブコマンド | 用途 | fixステージ | formatter変更で失敗するか | 使用場面 |
@@ -172,7 +184,7 @@ pyfltr run-for-agent --commands=mypy,ruff-check
   回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
   当該ツールを`{tool} = false`で無効化する
 - 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
-  `uv run pyfltr command-info --check <tool>` を使う。
+  `uvx pyfltr command-info --check <tool>`を使う。
   mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
 
 ## 推奨設定への準拠

@@ -66,7 +66,7 @@
   - `agent-toolkit:careful-impl`
   - `agent-toolkit:coding-standards`
 - 検証手順
-  - `uv run pyfltr run-for-agent tests/upload_test.py`
+  - `uvx pyfltr run-for-agent tests/upload_test.py`
   - 追加したテストが修正前は失敗し修正後は成功することを確認する
 - コミット方針: コミットする。subject: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
 
@@ -350,13 +350,13 @@
 ### フェーズ1: 既存テスト整備
 
 - 検証手順
-  - `uv run pyfltr run-for-agent`
+  - `uvx pyfltr run-for-agent`
 - コミット方針: コミットする。subject: `test(upload): フィクスチャを共通化する`
 
 ### フェーズ2: 上限値の引き上げ
 
 - 検証手順
-  - `uv run pyfltr run-for-agent`
+  - `uvx pyfltr run-for-agent`
   - 50MB境界のテストが追加されており修正前は失敗・修正後は成功することを確認する
 - コミット方針: コミットする。subject: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
 ```

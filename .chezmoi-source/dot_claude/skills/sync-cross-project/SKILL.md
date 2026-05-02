@@ -109,9 +109,9 @@ o=対象、-=対象外、△=緩め
 
 ### pre-commit / pyfltr / ビルド関連
 
-- 全プロジェクトでpre-commitフレームワークにより `pyfltr fast` が実行される
-  - `markdownlint-fast` / `textlint-fast` によりmd変更時のlintが軽量に実行される
-  - Python系は `uv run --frozen pyfltr fast`、gv / lc / glatasksは `uvx pyfltr fast` で呼び出す
+- 全プロジェクトでpre-commitフレームワークにより`pyfltr fast`が実行される
+  - `markdownlint-fast`／`textlint-fast`によりmd変更時のlintが軽量に実行される
+  - 全プロジェクト共通で`uvx pyfltr fast`を呼び出す
 
 ### CI / リリース関連
 

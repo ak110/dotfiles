@@ -155,7 +155,7 @@ description: >
 
 ## タスク
 
-{検証内容の具体的な記述。例: `uv run pyfltr run-for-agent` を実行し、警告ゼロ・テストグリーンを確認する等}
+{検証内容の具体的な記述。例: `uvx pyfltr run-for-agent`を実行し、警告ゼロ・テストグリーンを確認する等}
 ```
 
 実装担当エージェントを再開して検証させる場合、保持した`agentId`へ`SendMessage`で次の指示を渡す。

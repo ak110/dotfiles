@@ -36,10 +36,10 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-- コミット前の検証方法: `uv run pyfltr run-for-agent`
+- コミット前の検証方法: `uvx pyfltr run-for-agent`
   - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
-  - テストコードの単体実行なども極力 `uv run pyfltr run-for-agent <path>` を使う（pytestを直接呼び出さない）
-    - 詳細な情報などが必要な場合に限り `uv run pytest -vv <path>` などを使用
+  - テストコードの単体実行なども極力`uvx pyfltr run-for-agent <path>`を使う（pytestを直接呼び出さない）
+    - 詳細な情報などが必要な場合に限り`uv run pytest -vv <path>`などを使用
   - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）
     - 例: `pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
 
