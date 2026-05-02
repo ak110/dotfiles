@@ -24,7 +24,9 @@ import json
 import logging
 import os
 import pathlib
+import signal
 import socket
+import stat
 import sys
 import typing
 
@@ -443,16 +445,16 @@ def _list_files(root: pathlib.Path) -> list[_FileEntry]:
     for path in root.rglob("*.md"):
         if not path.is_file():
             continue
-        stat = path.stat()
+        st = path.stat()
         rel = path.relative_to(root).as_posix()
-        mtime = datetime.datetime.fromtimestamp(stat.st_mtime, tz=tzinfo)
+        mtime = datetime.datetime.fromtimestamp(st.st_mtime, tz=tzinfo)
         entry = _FileEntry(
             path=rel,
             name=path.name,
             mtime=mtime.strftime("%Y/%m/%d %H:%M"),
-            mtime_epoch=stat.st_mtime,
+            mtime_epoch=st.st_mtime,
         )
-        collected.append((stat.st_mtime, entry))
+        collected.append((st.st_mtime, entry))
     collected.sort(key=lambda pair: pair[0], reverse=True)
     return [entry for _, entry in collected]
 
@@ -535,12 +537,74 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def _serve(app: quart.Quart, host: str, port: int) -> None:
-    """hypercornでQuartアプリを起動する。"""
+    """hypercornでQuartアプリを起動する。
+
+    シグナル（SIGINT/SIGTERM/SIGHUP）とstdin EOF（非PTY SSH切断検知）を
+    単一のshutdown_triggerに集約し、SSE接続中の体感遅延を抑えるため
+    graceful_timeoutを1.0秒へ短縮する。
+    """
     config = hypercorn.config.Config()
     config.bind = [f"{host}:{port}"]
     # アクセスログの標準出力抑制（既存実装の`log_message`抑制に相当）。
     config.accesslog = None
-    await hypercorn.asyncio.serve(app, config)
+    # SSE generatorは`CancelledError`を捕捉して`finally`で`_unsubscribe`するため、
+    # 短時間で打ち切ってもデータ整合性は保たれる。Ctrl+C後の体感遅延を1秒以内へ抑える。
+    config.graceful_timeout = 1.0
+
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    # hypercorn既定のsignal処理はSIGINT/SIGTERM/SIGBREAKのみでSIGHUPを含まない。
+    # remote-plans経由の主経路はstdin EOF監視だが、プロセス監視ツール等からSIGHUPが
+    # 到達した場合にもgraceful shutdownできるよう、3種を統一のshutdown_triggerに集約する。
+    for sig_name in ("SIGINT", "SIGTERM", "SIGHUP"):
+        sig = getattr(signal, sig_name, None)
+        if sig is None:
+            continue
+        with contextlib.suppress(NotImplementedError):
+            loop.add_signal_handler(sig, shutdown_event.set)
+
+    stdin_task = asyncio.create_task(_watch_stdin_eof(shutdown_event))
+
+    async def shutdown_trigger() -> None:
+        await shutdown_event.wait()
+
+    try:
+        await hypercorn.asyncio.serve(app, config, shutdown_trigger=shutdown_trigger)
+    finally:
+        stdin_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stdin_task
+
+
+async def _watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
+    """SSH経由（非PTY）で起動された場合の切断検知。
+
+    OpenSSHのsshdは非PTYセッションのチャンネル閉鎖時に子プロセスへSIGHUPを送らないため
+    （`session.c`の`session_close_by_channel`はPTYのときのみ`session_pty_cleanup`を呼ぶ）、
+    代替としてsshdがリモートコマンドのstdinに割り当てるパイプのEOFを監視する。
+
+    対象はstdinがFIFO（パイプ）のときのみ。TTY（対話起動）やCHR（`/dev/null`等の
+    バックグラウンド起動）では誤発火を避けるため早期returnする。
+    """
+    try:
+        st = os.fstat(sys.stdin.fileno())
+    except (OSError, AttributeError, ValueError):
+        return
+    if not stat.S_ISFIFO(st.st_mode):
+        return
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader()
+    protocol = asyncio.StreamReaderProtocol(reader)
+    try:
+        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+    except (OSError, ValueError, NotImplementedError):
+        return
+    try:
+        while await reader.read(1024):
+            pass
+    finally:
+        shutdown_event.set()
 
 
 def _main(argv: list[str] | None = None) -> int:
@@ -560,10 +624,7 @@ def _main(argv: list[str] | None = None) -> int:
     observer.start()
     try:
         logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
-        try:
-            asyncio.run(_serve(app, args.host, args.port))
-        except KeyboardInterrupt:
-            logger.info("停止します")
+        asyncio.run(_serve(app, args.host, args.port))
     finally:
         observer.stop()
         observer.join()
