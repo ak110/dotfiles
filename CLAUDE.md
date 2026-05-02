@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | `agent-toolkit/skills/*/SKILL.md`本文・`agent-toolkit/agents/*` | エージェント | スキル・サブエージェントの指示本体 |
 | 上記のfrontmatterコメント | 編集者 | 連携先や注意事項などの編集用メタ情報 |
-| `agent-toolkit/agent.md`等のルール本体 | エージェント | `~/.claude/rules/agent-toolkit/`配下で常時自動ロードされる行動原則 |
+| `.chezmoi-source/dot_claude/rules/agent-toolkit/`配下のルール本体 | エージェント | `~/.claude/rules/agent-toolkit/`配下で常時自動ロードされる行動原則 |
 | `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
 | `.chezmoi-source/dot_claude/`配下 | dotfiles利用者 | 配布先`~/.claude/`相当のClaude Code設定 |
 | `.claude/`（リポジトリ直下） | 編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
@@ -79,22 +79,23 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
   配布先`~/.claude/`配下のClaude Code設定系ファイルと同等として扱う。
   編集着手前に`agent-toolkit:writing-standards`スキルと、その`references/claude-common.md`を含む
   必読リファレンスを参照する
-- ホーム配下のファイルを編集する前に`chezmoi managed | grep <相対パス>`で配布対象か確認する。
-  配布対象は`.chezmoi-source/`側を編集する
+- ホーム配下を編集する場合の手順は[docs/development/development.md](docs/development/development.md)の
+ 「ホーム配下のファイルを編集する前の確認」参照
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
   配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
-- 配布対象（Linux/Windows両対応）と開発対象（Linuxのみ）でサポート範囲が異なる。ファイル追加時にどちら用か意識する
+- 配布対象と開発対象のサポート範囲の差は[docs/development/development.md](docs/development/development.md)の
+ 「開発者と利用者の対象環境」参照
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する。
   対応ファイル一覧は[docs/development/development.md](docs/development/development.md)の「プラットフォーム対応ファイル」参照
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する。
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが壊れるため
 - シンプルなコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
-- `agent-toolkit/*.md`（配布ルール本体）を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが
-  再掲されていることが多い。本体変更前に`grep`で参照箇所を確認する
-- `agent-toolkit/agent.md`のコミットメッセージ方針と`.gitmessage`は意図的に重複させている。
-  前者はプラグイン配布対象（他リポジトリでも参照される）、後者は本リポジトリ固有のコミット補助テンプレート
- （`ccommit`等も参照する想定）のため、SSOT化せず双方に必要な情報を持たせる。片方を参照リンクに置き換えない
+- `.chezmoi-source/dot_claude/rules/agent-toolkit/*.md`（配布ルール本体）を改訂する際、
+  `docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
+  本体変更前に`grep`で参照箇所を確認する
+- `.chezmoi-source/dot_claude/rules/agent-toolkit/agent.md`のコミットメッセージ方針と
+  `.gitmessage`は配布範囲が異なるため意図的に重複させている。SSOT化しない
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
@@ -109,6 +110,3 @@ dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
-- 依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使う。`UV_FROZEN`はCI/make内で自動適用される
-- `pytools/_internal/setup_registry.py`はWindows向けの少数のレジストリ値（Explorerの拡張子表示など）を
-  `winreg`で直接書き込むモジュール。`post_apply`のステップから呼ばれる

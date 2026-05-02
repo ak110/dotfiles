@@ -301,7 +301,7 @@ _PLAN_BODY: dict[str, str] = {
     "調査結果": "- x",
     "変更内容": "- y",
     "実行方法": "- w",
-    "計画ファイル": "`~/.claude/plans/xxx.md`",
+    "計画ファイル（本ファイル）のパス": "`~/.claude/plans/xxx.md`",
 }
 
 

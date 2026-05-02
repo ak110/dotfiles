@@ -33,11 +33,11 @@ description: >
 OSSプロジェクトの典型的なドキュメント配置パターンを示す。
 プロジェクト方針がある場合はそちらに従う。
 
-- ルート直下の定番ファイル: `README.md`、`CONTRIBUTING.md`、`CHANGELOG.md`、`LICENSE`
+- ルート直下の定番ファイル: `README.md`、`LICENSE`
 - `docs/`配下のレイアウト: ガイド・リファレンス・チュートリアルなど種別ごとにサブディレクトリを切る
   - 例: `docs/guide/`（利用者向け手順）、`docs/development/`（開発者向け情報）、`docs/api/`（API仕様）
 - ファイル粒度: 1ファイル1トピックを基本とする。1ファイルが300行を超えたら分割を検討する
-- ファイル命名: ケバブケース（`setup-guide.md`）を基本とする。定番ファイル（`README.md`・`CHANGELOG.md`等）は大文字の慣例に従う
+- ファイル命名: ケバブケース（`setup-guide.md`）を基本とする。定番ファイル（`README.md`等）は大文字の慣例に従う
 - サブディレクトリの入口index（`docs/development/index.md`等）: 静的サイトジェネレーター（mkdocs等）の
   nav機能で目次を自動生成できる場合は不要。手動メンテのリンク集index.mdは陳腐化しやすいため作らない
 
