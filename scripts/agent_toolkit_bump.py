@@ -51,22 +51,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     requested: BumpKind = args.kind
+    upstream_str = upstream if upstream is not None else "取得不可"
 
     if existing is None:
         new_version = compute_new_version(current, requested)
         _write_version(new_version)
-        print(f"bump: {current} -> {new_version} ({requested})")
+        print(f"bump: {current} -> {new_version} ({requested}, 上流: {upstream_str})")
         return 0
 
     if BUMP_RANKS[requested] <= BUMP_RANKS[existing]:
-        print(f"既存の未プッシュbump種別({existing})が指定種別({requested})と同等以上のため何もしない。現在: {current}")
+        print(f"既存の未プッシュbump種別({existing})が指定種別({requested})と同等以上のため何もしない。")
+        print(f"  上流: {upstream_str}")
+        print(f"  現在: {current} (既存bump: {existing})")
         return 0
 
     # 上書き格上げ。基準は上流時点のバージョン
     assert upstream is not None
     new_version = compute_new_version(upstream, requested)
     _write_version(new_version)
-    print(f"upgrade bump: {current} -> {new_version} ({existing} -> {requested})")
+    print(f"upgrade bump: {current} -> {new_version} ({existing} -> {requested}, 上流: {upstream})")
     return 0
 
 

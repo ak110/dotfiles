@@ -112,3 +112,9 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 なお`stop_advisor.py`は配布物のため対象をプロジェクトドキュメント全般の振り返りに限定する。
 agent-toolkitプラグイン本体・配布ルールの振り返りは
 dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
+
+両hookは同じStopイベントで並列発火する前提のため、振り返りメッセージ全体に適用される共通指示
+（自己完結性・行フォーマット・空時表記・出力スタイル）は
+`stop_advisor.py`側のreasonへ集約する。
+`claude_hook_stop.py`側は当該章固有の指示のみ記述する。
+重複記述は出力の冗長化とLLM解釈の不安定化を招く。
