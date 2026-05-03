@@ -25,15 +25,6 @@
 ```bash
 sudo apt install git
 curl -fsSL https://astral.sh/uv/install.sh | sh
-
-# オプション: mise
-curl -fsSL https://mise.run | sh
-
-# オプション: Claude Code
-curl -fsSL https://claude.ai/install.sh | bash
-
-# オプション: Codex CLI（別途Node.jsが必要）
-npm install -g @openai/codex
 ```
 
 ### 例（Windows）
@@ -41,16 +32,9 @@ npm install -g @openai/codex
 ```cmd
 winget install --id Git.Git -e --source winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-REM オプション: mise
-winget install jdx.mise
-
-REM オプション: Claude Code
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"
-
-REM オプション: Codex CLI（別途Node.jsが必要）
-npm install -g @openai/codex
 ```
+
+Claude Code・Codex CLI・miseなどの周辺ツールは任意。
 
 ## インストール
 

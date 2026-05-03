@@ -44,7 +44,7 @@ make test
 ## サプライチェーン攻撃対策
 
 CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、
-環境変数`UV_FROZEN=1`を有効化している。
+環境変数`UV_FROZEN=1`を常時有効化している。
 意図しない再resolveでロックファイルが書き換わるリスクを抑え、
 グローバル設定の`exclude-newer`（[docs/guide/security.md](../guide/security.md)参照）と組み合わせて二重防御として機能する。
 
