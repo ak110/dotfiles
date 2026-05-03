@@ -1,0 +1,110 @@
+# myprojects.md
+{{- $hostname := lower .chezmoi.hostname }}
+{{/*
+  stheno: gv, lcの2プロジェクトのみ存在するWindows環境
+  circe/circe-container: 全プロジェクト存在するLinux環境
+*/}}
+{{- if eq $hostname "stheno" }}
+
+以下の2プロジェクトは同一作者によるWindowsアプリである。
+
+- `D:\VC\_Develop\gv`
+- `D:\VC\_Develop\lc`
+
+これらは開発言語こそ違うが、ツールチェインやドキュメント構成などを極力揃えるようにしている。
+片方に変更を行う場合、必ずもう片方の変更が必要無いか確認し、必要ならユーザーに提案すること。
+
+{{- else if has $hostname (list "circe" "circe-container") }}
+
+## プロジェクト間の同期
+
+以下のディレクトリは全て同一作者によるプロジェクト。
+ツールチェインやドキュメント構成などを極力揃えるようにしている。
+
+全プロジェクトに反映する可能性のある変更時は、必ず `/sync-cross-project` スキルを使用すること。
+同期対象マトリクス・意図的な差異・pnpm既知問題・運用ノウハウはそのスキルに集約している。
+
+### プロジェクト一覧
+
+| パス | 概要 | 言語 | 開発環境 | 備考 |
+| --- | --- | --- | --- | --- |
+| `~/dotfiles` | dotfiles・ルール原本管理 | Python + Shell + PS | Linux | 実行はWindowsも考慮 |
+| `~/pyfltr` | Python CLIツール | Python | Linux | 実行はWindowsも考慮 |
+| `~/pytilpack` | Pythonライブラリ | Python | Linux | 実行はWindowsも考慮 |
+| `~/smpr` | Python CLIツール（非公開・個人用） | Python | Linux | 厳密に合わせなくてよい。実行はWindowsも考慮 |
+| `~/glatasks` | TypeScript Webシステム | TypeScript + Python | Linux | pnpm使用 |
+| `~/gv` | Windows用画像ビューアー | Rust | Windows | このPCでは開発できない(ドキュメント修正等は可能) |
+| `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows | このPCでは開発できない(ドキュメント修正等は可能) |
+
+### pyfltr / pytilpackのSKILL更新漏れ注意
+
+pyfltrとpytilpackの使用方法がdotfiles内のSKILL.mdにあるため更新漏れに注意。
+
+- `~/dotfiles/agent-toolkit/skills/pyfltr-usage/SKILL.md`
+- `~/dotfiles/agent-toolkit/skills/pytilpack-usage/SKILL.md`
+
+## ドキュメント章構成の統一
+
+各プロジェクトのREADME.md・CLAUDE.md・docs/development/development.mdを
+更新する際は、他プロジェクトと章構成・章順を揃える方針。
+共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃える。
+ただし、プロジェクト固有部分は無理に揃えず必要な情報を記述する。
+
+単独プロジェクトでの章追加・章順変更は避ける。
+他プロジェクトとの比較で逸脱を検出するため、`/sync-cross-project`スキル実走時に確認する。
+
+### README.mdの標準章構成
+
+1. プロジェクト名・1行概要・バッジ
+2. 特徴
+3. 前提条件（任意）
+4. インストール（任意）
+5. 使い方（任意）
+6. ドキュメント
+
+### CLAUDE.mdの標準章構成
+
+1. プロジェクト概要パラグラフ（必須）
+2. 開発手順（必須）
+3. アーキテクチャの参照先（任意。docs/development/architecture.mdへの誘導）
+4. 実装上の不変条件・コーディング規約（任意）
+5. サブエージェント・スキル連携（任意）
+6. 注意点（必須）
+7. 固有差分（任意。dotfilesの「ロールとファイル群の対応」など）
+
+### docs/development/development.mdの標準章構成
+
+1. 開発環境の構築手順
+2. 開発コマンド
+3. チェックの実行
+4. サプライチェーン攻撃対策
+5. UV_FROZEN（Python系のみ。既共通文面）
+6. アーキテクチャ（任意）
+7. ドキュメントサイト運用（任意）
+8. リリース手順
+
+UV_FROZEN節は「常時有効化している」を含む共通文面で揃える。
+コミットメッセージ規約は`agent-toolkit:agent.md`と`.gitmessage`にSSOTがあるためdevelopment.mdには再掲しない。
+README.mdとdocs配下の役割分担は閲覧者がディレクトリ構成を見れば把握できるため章として立てない。
+GitHub Actionsのピン留め運用は各プロジェクトのpinact設定とCIで自明なため章として立てない。
+
+### docs/guide/index.mdの扱い
+
+VitePress導入プロジェクト（glatasks・gv・lcなど）では、guide/index.mdがなくても
+自動生成ナビゲーション（nav・sidebar）でガイドページ一覧を提示できるため、
+存在しないプロジェクトに新規作成する必要はない。
+既存のguide/index.mdは見出しを「利用者向けガイド」で揃える。
+docs/development/index.mdの見出しは「開発者向けガイド」で揃える。
+
+### バッジ記法
+
+README.mdのCI・Release・Deployバッジは参照形式（`[![Name][name-badge]][name-url]`）で書き、
+キー名は`ci-url`・`release-url`・`deploy-url`に揃える。
+PyPIなど外部サービスのバッジはインライン形式のままでよい。
+
+## Sonnet/Haikuの活用
+
+全プロジェクトに対する作業は作業量が多くなる傾向があるため、
+サブエージェントでsonnet/haikuを積極的に使うこと。
+
+{{- end }}
