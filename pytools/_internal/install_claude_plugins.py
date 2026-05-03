@@ -38,11 +38,12 @@
 
 公式 marketplace (``claude-plugins-official``) のプラグインのうち、ユーザーが
 使わないものは ``_AUTO_DISABLED_PLUGIN_IDS``、常時有効化したいものは
-``_AUTO_ENABLED_PLUGIN_IDS`` に列挙している。これらの有効化・無効化・導入は
-ユーザーの裁量に委ねる方針とし、``run()`` 末尾で現状と乖離のあるものだけを
-``compute_recommended_commands()`` で推奨コマンド列として算出し、戻り値に含める。
-呼び出し元 (``post_apply.run``) はその戻り値から推奨コマンドを取り出し、
-利用者に案内として表示する。
+``_AUTO_ENABLED_PLUGIN_IDS`` に列挙している。両者の扱いは方向で分け、
+disable は副作用が小さく可逆な操作のため ``_auto_disable_plugins()`` で
+``run()`` 中に自動実行する。一方 install / enable はユーザーの裁量に委ねる方針とし、
+``run()`` 末尾で現状と乖離のあるものだけを ``compute_recommended_commands()`` で
+推奨コマンド列として算出し、戻り値に含める。呼び出し元 (``post_apply.run``) は
+その戻り値から推奨コマンドを取り出し、利用者に案内として表示する。
 
 本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
 他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
@@ -67,8 +68,8 @@ logger = logging.getLogger(__name__)
 _MARKETPLACE_NAME = claude_common.MARKETPLACE_NAME
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
-# 推奨的に無効化したいプラグイン (ユーザーが使わないもの)。
-# 現状と乖離があれば `claude plugin disable` の提案として案内に表示する。
+# 自動的に無効化するプラグイン (ユーザーが使わないもの)。
+# インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
         "serena@claude-plugins-official",
@@ -192,10 +193,14 @@ def run() -> tuple[bool, list[str]]:
             logger.info(log_format.format_status(name, f"最新 ({current or '不明'})"))
             latest_count += 1
 
-    # 外部 marketplace のプラグイン推奨コマンド算出 (公式プラグインの有効化・無効化)。
+    # 外部 marketplace の自動 disable 実行と install/enable 推奨コマンド算出 (公式プラグイン)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
     # 状態が変わらないため、冒頭で取得した raw_data を再利用してよい。
-    recommendations = compute_recommended_commands(raw_data, _read_enabled_plugins_from_file())
+    enabled_map = _read_enabled_plugins_from_file()
+    disabled_count, disable_failed_count = _auto_disable_plugins(raw_data, enabled_map)
+    if disabled_count:
+        any_change = True
+    recommendations = compute_recommended_commands(raw_data, enabled_map)
 
     # install 試行後のポスト検証と最終サマリ。
     # 再現性の怪しい未インストール事象を早期に検出できるよう、install 試行後に
@@ -206,40 +211,59 @@ def run() -> tuple[bool, list[str]]:
             "plugins",
             f"サマリ: 最新 {latest_count} 件 / 更新 {updated_count} 件 / 新規 {installed_count} 件"
             + (f" / 再同期 {resynced_count} 件" if resynced_count else "")
-            + (f" / 失敗 {failed_count} 件" if failed_count else ""),
+            + (f" / 自動無効化 {disabled_count} 件" if disabled_count else "")
+            + (f" / 失敗 {failed_count + disable_failed_count} 件" if failed_count + disable_failed_count else ""),
         )
     )
     return any_change, recommendations
 
 
 def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:
-    """現状と ``_AUTO_*_PLUGIN_IDS`` の乖離を ``claude plugin ...`` 提案列で返す。
+    """現状と ``_AUTO_ENABLED_PLUGIN_IDS`` の乖離を ``claude plugin ...`` 提案列で返す。
 
     - ``_AUTO_ENABLED_PLUGIN_IDS`` のうち未インストール → ``claude plugin install <id> --scope user``
     - ``_AUTO_ENABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false``
       → ``claude plugin enable <id> --scope user``
-    - ``_AUTO_DISABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false`` でない
-      (= 既定で有効) → ``claude plugin disable <id> --scope user``
 
-    順序は推奨理由ごとに install → enable → disable とし、同カテゴリ内は
+    ``_AUTO_DISABLED_PLUGIN_IDS`` の disable 実行は ``_auto_disable_plugins()`` が直接行うため、
+    本関数では推奨コマンドの算出対象に含めない。
+
+    順序は推奨理由ごとに install → enable とし、同カテゴリ内は
     ID で昇順にソートする (出力の安定化とユーザー側の視認性のため)。
     """
     installed_ids = _user_scope_plugin_ids(raw_data)
     install_cmds: list[str] = []
     enable_cmds: list[str] = []
-    disable_cmds: list[str] = []
     for plugin_id in sorted(_AUTO_ENABLED_PLUGIN_IDS):
         if plugin_id not in installed_ids:
             install_cmds.append(f"claude plugin install {plugin_id} --scope user")
         elif enabled_map is not None and enabled_map.get(plugin_id) is False:
             enable_cmds.append(f"claude plugin enable {plugin_id} --scope user")
+    return install_cmds + enable_cmds
+
+
+def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None) -> tuple[int, int]:
+    """``_AUTO_DISABLED_PLUGIN_IDS`` のうち有効状態のものを自動で無効化する。
+
+    インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない (既定で有効な) 対象に対し、
+    ``claude plugin disable <id> --scope user`` を発行する。失敗しても他対象を続行する。
+
+    Returns:
+        (成功件数, 失敗件数) のタプル。
+    """
+    installed_ids = _user_scope_plugin_ids(raw_data)
+    disabled = 0
+    failed = 0
     for plugin_id in sorted(_AUTO_DISABLED_PLUGIN_IDS):
         if plugin_id not in installed_ids:
             continue
         if enabled_map is not None and enabled_map.get(plugin_id) is False:
             continue
-        disable_cmds.append(f"claude plugin disable {plugin_id} --scope user")
-    return install_cmds + enable_cmds + disable_cmds
+        if _disable_plugin(plugin_id):
+            disabled += 1
+        else:
+            failed += 1
+    return disabled, failed
 
 
 def _user_scope_plugin_ids(raw_data: object) -> set[str]:
@@ -504,6 +528,19 @@ def _update_plugin(name: str) -> bool:
         logger.info(log_format.format_status(name, f"update に失敗: {claude_common.format_cli_error(result)}"))
         return False
     logger.info(log_format.format_status(name, "更新しました"))
+    return True
+
+
+def _disable_plugin(plugin_id: str) -> bool:
+    """指定 plugin を user scope で無効化する (成功時 True を返す)。
+
+    ``plugin_id`` は ``<name>@<marketplace>`` 形式。
+    """
+    result = claude_common.run_claude(["plugin", "disable", plugin_id, "--scope", "user"])
+    if result is None or result.returncode != 0:
+        logger.info(log_format.format_status(plugin_id, f"disable に失敗: {claude_common.format_cli_error(result)}"))
+        return False
+    logger.info(log_format.format_status(plugin_id, "推奨設定に従って無効化しました"))
     return True
 
 
