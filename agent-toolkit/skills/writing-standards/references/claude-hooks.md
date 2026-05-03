@@ -52,6 +52,28 @@ LLMに行動を促す必要がある場合は`reason`または`additionalContext
 
 PreToolUseの`permissionDecision: "allow"`でLLMに情報を渡せる唯一のフィールドは`hookSpecificOutput.additionalContext`。
 
+組み込みのdeny / askルールはhookの戻り値に関わらず評価される。
+`.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできない。
+確認ダイアログを抑制したい場合はPermissionRequestイベントで`decision.behavior: "allow"`を返す。
+
+**PermissionRequest:**
+
+確認ダイアログ表示時に発火するイベント。ユーザーに代わって許可 / 拒否を決定するときに使う。
+スキーマがPreToolUseと異なり、`hookSpecificOutput`直下に`decision`オブジェクトを置く。
+`hookEventName`は`"PermissionRequest"`を指定する。
+
+| フィールド | 用途 |
+| --- | --- |
+| `decision.behavior` | `"allow"`で許可、`"deny"`で拒否 |
+| `decision.updatedInput` | `allow`時のみ。ツール入力を改変する |
+| `decision.updatedPermissions` | `allow`時のみ。許可ルールの追加など |
+| `decision.message` | `deny`時のみ。LLMへ拒否理由を伝える |
+| `decision.interrupt` | `deny`時のみ。`true`でClaudeを停止 |
+
+組み込みdenyルールは`allow`でも上書きできないが、確認ダイアログ（ask相当）はスキップできる。
+`matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。
+入力payloadは`tool_name` / `tool_input`に加え、`permission_suggestions`配列を受け取る。
+
 ## メッセージの記述言語
 
 hookやプラグインが出力するメッセージは英語で記述する（プロジェクト方針が無い場合）。

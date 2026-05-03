@@ -50,7 +50,9 @@
   テスト同居（`scripts/<name>_test.py`）方式で動作する。
   pytestはprependモードで`scripts/`を`sys.path`へ自動追加するため、
   テスト側からスクリプトを直接importできる。
-  importしたい場合はファイル名をハイフン区切りではなくアンダースコア区切り（`<name>.py`）で命名する
+  importしたい場合はファイル名をハイフン区切りではなくアンダースコア区切り（`<name>.py`）で命名する。
+  shebangを持つスクリプトは`chmod +x`で実行権限を付与する
+ （pre-commitの`check-shebang-scripts-are-executable`が強制し、付与漏れではコミットが失敗する）
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
