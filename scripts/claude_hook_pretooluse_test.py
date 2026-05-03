@@ -15,7 +15,7 @@ import pytest
 
 _HOME = pathlib.Path.home()
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook_pretooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_pretooluse.py"
 
 # 文字列リテラルで直接書くと本ファイル自身が警告を出す原因になるため、
 # テスト対象の「言及される名前」はプログラム的に組み立てる。

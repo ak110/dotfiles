@@ -10,7 +10,7 @@ import pathlib
 import subprocess
 import sys
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook_stop.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_stop.py"
 
 
 def _run(
