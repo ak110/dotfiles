@@ -43,16 +43,10 @@
 - 重複判定: base64鍵データ部分で比較（コメントの違いは無視）
 - 鍵の削除: `~/.ssh/authorized_keys` を手動で編集して行を削除する
 
-## 自動実行
+## 実行
 
-chezmoi apply時、`conf.d/` 内のファイルが変更されると
-自動的に `update-ssh-config` が実行される
-（`run_onchange` テンプレート）。
-
-`localconfig` や `local_authorized_keys` はchezmoi管理外のため、
-変更時は手動で `update-ssh-config` を実行すること。
-
-## 手動実行
+chezmoi apply時に`conf.d/`内のファイルが変更されると自動的に`update-ssh-config`が実行される。
+`localconfig`や`local_authorized_keys`はchezmoi管理外のため、変更時は手動で実行する。
 
 ```bash
 update-ssh-config

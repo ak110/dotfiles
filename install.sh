@@ -38,7 +38,7 @@ backup_existing_dotfiles() {
         mkdir -p "$dest_dir"
         cp -a "$src" "$dest_dir/"
         count=$((count + 1))
-    done < <(chezmoi managed --source "$source_dir")
+    done < <(chezmoi managed --source="$source_dir")
 
     if [ "$count" -gt 0 ]; then
         echo "Backed up $count existing files to: $backup_dir"
@@ -46,4 +46,4 @@ backup_existing_dotfiles() {
 }
 
 backup_existing_dotfiles ~/dotfiles
-chezmoi init --verbose --source ~/dotfiles --apply
+chezmoi init --verbose --source=~/dotfiles --apply

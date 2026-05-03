@@ -13,7 +13,7 @@
 冪等動作:
 
 - `claude mcp list` の出力に `codex:` 行があれば既登録としてスキップ
-- 無ければ `claude mcp add --scope user codex codex mcp-server` で登録
+- 無ければ `claude mcp add --scope=user codex codex mcp-server` で登録
 """
 
 import json

@@ -1,5 +1,5 @@
 # サプライチェーン攻撃対策としてlockfileを常に尊重する。依存を更新する場合のみ
-# `env --unset UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
+# `env --unset=UV_FROZEN` で一時的に無効化する（`UV_FROZEN=` の空文字代入はuvがエラー扱い）。
 export UV_FROZEN := 1
 
 help:
@@ -7,7 +7,7 @@ help:
 
 # 依存パッケージをアップグレードし全テスト実行
 update:
-	env --unset UV_FROZEN uv sync --upgrade --all-groups --all-extras
+	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	uvx pre-commit autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
@@ -15,7 +15,7 @@ update:
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
 	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
-	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age 1
+	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # 開発環境のセットアップ
 setup:

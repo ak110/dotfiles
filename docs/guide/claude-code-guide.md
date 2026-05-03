@@ -11,9 +11,6 @@
    LLMも既存コードに引きずられ同レベルの質のコードを量産してしまう（割れ窓理論）。
    各言語のモダンなイディオム・禁止パターン・セキュリティ注意点・テスト方針を明示し、
    プロジェクトの初期状態によらず一定の品質ラインを維持する
-3. 機能仕様の知識補完 — Claude Codeの機能は比較的新しく、LLMの訓練データに十分反映されていない可能性がある。
-   rulesの`paths` frontmatter、skillsのprogressive disclosure、hookスクリプトの出力フィールドなど、
-   明文化された仕様に基づいて作業できるようにする
 
 Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
@@ -109,7 +106,7 @@ claude-plugins-officialから以下を導入する。
 
 ### 4. codex MCPサーバーのセットアップ（推奨）
 
-後述の`plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
+`plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
 以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
 
 ```bash
@@ -165,11 +162,5 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化することを推奨する。
 
-上記インストールコマンドを再実行することで更新できる。
-
-dotfiles（chezmoi）管理下のマシンでは `chezmoi apply` を実行すると後処理がmarketplaceを
-directory型（dotfilesリポジトリ直接参照）で登録・維持し、プラグインのキャッシュを最新化する。
-そのため、dotfilesで編集した内容はpushなしに `chezmoi apply` 後に反映される。
-初回bootstrap後に `chezmoi apply` を実行すると、後処理がmarketplaceをGitHub型からdirectory型へ自動マイグレーションする。
-
-chezmoi未使用の環境では従来通り上記のインストールコマンドを再実行する（push→updateサイクル）。
+「ツールキットのインストール」のワンライナーを再実行することで更新できる。
+dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。

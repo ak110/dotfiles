@@ -143,13 +143,13 @@ class TestPluginRecommendations:
     ):
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
-        fake_recommendations = ["claude plugin install a --scope user"]
+        fake_recommendations = ["claude plugin install a --scope=user"]
         with caplog.at_level("INFO", logger=post_apply.logger.name):
             post_apply._main(runner=lambda: (fake_results, fake_recommendations))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
-        assert "claude plugin install a --scope user" in stdout_lines
+        assert "claude plugin install a --scope=user" in stdout_lines
         # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
         assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
         assert not any("&&" in line for line in stdout_lines)
@@ -164,18 +164,18 @@ class TestPluginRecommendations:
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = [
-            "claude plugin install a --scope user",
-            "claude plugin install b --scope user",
-            "claude plugin disable c --scope user",
+            "claude plugin install a --scope=user",
+            "claude plugin install b --scope=user",
+            "claude plugin disable c --scope=user",
         ]
         with caplog.at_level("INFO", logger=post_apply.logger.name):
             post_apply._main(runner=lambda: (fake_results, fake_recommendations))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
-        assert "claude plugin install a --scope user && \\" in stdout_lines
-        assert "claude plugin install b --scope user && \\" in stdout_lines
-        assert "claude plugin disable c --scope user" in stdout_lines
+        assert "claude plugin install a --scope=user && \\" in stdout_lines
+        assert "claude plugin install b --scope=user && \\" in stdout_lines
+        assert "claude plugin disable c --scope=user" in stdout_lines
         # コマンド行は cmd.exe での貼り付け失敗を避けるため行頭インデントを付けない。
         assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
 
@@ -189,14 +189,14 @@ class TestPluginRecommendations:
         monkeypatch.setattr(post_apply.sys, "platform", "win32")
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = [
-            "claude plugin install a --scope user",
-            "claude plugin disable b --scope user",
+            "claude plugin install a --scope=user",
+            "claude plugin disable b --scope=user",
         ]
         with caplog.at_level("INFO", logger=post_apply.logger.name):
             post_apply._main(runner=lambda: (fake_results, fake_recommendations))
         stdout_lines = capsys.readouterr().out.splitlines()
-        assert "claude plugin install a --scope user && ^" in stdout_lines
-        assert "claude plugin disable b --scope user" in stdout_lines
+        assert "claude plugin install a --scope=user && ^" in stdout_lines
+        assert "claude plugin disable b --scope=user" in stdout_lines
         # cmd.exe では `^` 継続後の行頭空白が解析エラーを起こすため、コマンド行は無インデントとする。
         assert not any(line.startswith(" ") and line.strip() for line in stdout_lines)
 

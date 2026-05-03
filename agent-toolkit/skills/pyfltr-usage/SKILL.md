@@ -11,6 +11,8 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 
 ## 呼び出し方の基本
 
+### 既存プロジェクトでの通常運用
+
 - 通常運用は`uvx pyfltr ...`を使う。
   v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
   本体依存に統合されたため、`uvx pyfltr`単発で揃う。
@@ -21,24 +23,32 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
   `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
 - pyfltr自身を開発・検証するときに限り、`uv run --with-editable=. pyfltr ...`を使う。
 
-新規プロジェクトのpyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
+### 新規プロジェクトへの導入
+
+pyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
 独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
 推奨例は`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsを一貫した構成で揃える。
-（タスクランナー：Makefileやmiseなど）
 複数プロジェクト間の差分を抑えて保守コストを下げる目的がある。
 既存プロジェクトで推奨例と乖離した設定を見つけた場合も、揃える方向の提案を優先する。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
 - 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
 
-## サブコマンド
+## サブコマンドの使い分け
 
-| サブコマンド | 用途 | fixステージ | formatter変更で失敗するか | 使用場面 |
-| -- | -- | -- | -- | -- |
-| `ci` | 全チェック実行 | なし | する（exit 1） | CI、pre-commit |
-| `run` | 全チェック実行 | あり | しない（exit 0） | ローカル開発 |
-| `fast` | 軽量チェック（mypy/pylint/pytestなど重いツールを除外） | あり | しない（exit 0） | pre-commitフック |
-| `run-for-agent` | `run --output-format=jsonl`のエイリアス | あり | しない（exit 0） | LLMエージェント |
+用途に応じて以下のフローで選択する。
+
+- LLMエージェントが呼び出す → `run-for-agent`
+- CI環境で実行する → `ci`
+- pre-commitフックで実行する → `fast`
+- ローカル開発で手動実行する → `run`
+
+| サブコマンド | 用途 | fixステージ | formatter変更で失敗するか |
+| -- | -- | -- | -- |
+| `ci` | 全チェック実行 | なし | する（exit 1） |
+| `run` | 全チェック実行 | あり | しない（exit 0） |
+| `fast` | 軽量チェック（mypy/pylint/pytestなど重いツールを除外） | あり | しない（exit 0） |
+| `run-for-agent` | `run --output-format=jsonl`のエイリアス | あり | しない（exit 0） |
 
 `run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する。
 fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段）→ `ruff check`（linter段）

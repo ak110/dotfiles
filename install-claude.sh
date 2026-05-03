@@ -51,11 +51,11 @@ _download() {
 _install_agent_toolkit() {
     echo ""
     echo "agent-toolkit プラグインを user scope にインストール・更新します..."
-    claude plugin marketplace add ak110/dotfiles --scope user >/dev/null 2>&1 || true
+    claude plugin marketplace add ak110/dotfiles --scope=user >/dev/null 2>&1 || true
     claude plugin marketplace update ak110-dotfiles >/dev/null 2>&1 || true
     claude plugin uninstall edit-guardrails@ak110-dotfiles >/dev/null 2>&1 || true
-    claude plugin install agent-toolkit@ak110-dotfiles --scope user >/dev/null 2>&1 || true
-    claude plugin update agent-toolkit@ak110-dotfiles --scope user >/dev/null 2>&1 || true
+    claude plugin install agent-toolkit@ak110-dotfiles --scope=user >/dev/null 2>&1 || true
+    claude plugin update agent-toolkit@ak110-dotfiles --scope=user >/dev/null 2>&1 || true
     echo "agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。"
 }
 

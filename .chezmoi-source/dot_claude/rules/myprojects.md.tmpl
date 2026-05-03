@@ -31,7 +31,7 @@
 | `~/dotfiles` | dotfiles・ルール原本管理 | Python + Shell + PS | Linux | 実行はWindowsも考慮 |
 | `~/pyfltr` | Python CLIツール | Python | Linux | 実行はWindowsも考慮 |
 | `~/pytilpack` | Pythonライブラリ | Python | Linux | 実行はWindowsも考慮 |
-| `~/smpr` | Python CLIツール（非公開・個人用） | Python | Linux | 厳密に合わせなくてよい。実行はWindowsも考慮 |
+| `~/smpr` | Python CLIツール（非公開・個人用） | Python | Linux | 実行はWindowsも考慮 |
 | `~/glatasks` | TypeScript Webシステム | TypeScript + Python | Linux | pnpm使用 |
 | `~/gv` | Windows用画像ビューアー | Rust | Windows | このPCでは開発できない(ドキュメント修正等は可能) |
 | `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows | このPCでは開発できない(ドキュメント修正等は可能) |
@@ -88,15 +88,21 @@ mise経由で動く処理も同じ理由で中断する。
 
 1. 開発環境の構築手順
 2. 開発コマンド
-3. チェックの実行
-4. サプライチェーン攻撃対策
-5. UV_FROZEN（Python系のみ。既共通文面）
-6. アーキテクチャ（任意）
-7. ドキュメントサイト運用（任意）
-8. リリース手順
+3. サプライチェーン攻撃対策
+4. アーキテクチャ（任意）
+5. ドキュメントサイト運用（任意）
+6. リリース手順
 
-UV_FROZEN節は「常時有効化している」を含む共通文面で揃える。
-コミットメッセージ規約は`agent-toolkit:agent.md`と`.gitmessage`にSSOTがあるためdevelopment.mdには再掲しない。
+「開発コマンド」章にチェック実行コマンド（`uvx pyfltr run-for-agent`等）を内包する。
+独立した「チェックの実行」章は立てず、開発コマンド章で一体的に記述する。
+
+サプライチェーン攻撃対策章は各エコシステム固有の対策（uv/pnpm/cargo/dependabot等の
+ロックファイル尊重・公開待機・ピン留め運用）を本文中に内包する。
+Pythonパッケージとして配布するプロジェクト（dotfiles・pyfltr・pytilpack・smpr）は
+UV_FROZEN=1常時有効化を含む共通文面で揃える。
+glatasksはPython依存を持たないためUV_FROZENの常時有効化は行わず、`exclude-newer`のみ採用する。
+コミットメッセージ規約は`agent-toolkit:agent.md`と`.gitmessage`にSSOTがあるため
+development.mdには再掲しない。
 README.mdとdocs配下の役割分担は閲覧者がディレクトリ構成を見れば把握できるため章として立てない。
 GitHub Actionsのピン留め運用は各プロジェクトのpinact設定とCIで自明なため章として立てない。
 

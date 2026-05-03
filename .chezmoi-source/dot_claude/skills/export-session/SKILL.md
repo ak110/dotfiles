@@ -11,19 +11,6 @@ description: >
 
 ## 使い方
 
-引数に応じて適切なオプションを構成し、`uv tool run claude-session-export`で実行する。
-
-### 引数なし: 現在のセッションをエクスポート
-
-```bash
-uv tool run claude-session-export --current
-```
-
-標準出力にmarkdownが出力される。
-ファイルに保存する場合は`--output-dir`を指定する。
-
-### 引数あり: オプションを適切に構成して実行
-
 利用可能なオプション:
 
 ```text
@@ -45,15 +32,24 @@ uv tool run claude-session-export --current
   --output-dir DIR     出力先ディレクトリ（未指定時はstdout）
 ```
 
+標準出力に直接表示する場合はstdoutへ出力される（`--output-dir`省略時）。
+
 ### 実行例
 
+最小（現在のセッションをstdoutへ出力）:
+
 ```bash
-# 現在のプロジェクトの直近3件をディレクトリに出力
-uv tool run claude-session-export --project-dir /path/to/project --latest 3 --output-dir ./exports
+uv tool run claude-session-export --current
+```
 
-# 全セッションを一括変換
-uv tool run claude-session-export --all --output-dir ~/claude-sessions
+標準（現在のプロジェクトの直近3件をディレクトリに保存）:
 
-# thinkingブロック付きで現在のセッションを出力
-uv tool run claude-session-export --current --include-thinking
+```bash
+uv tool run claude-session-export --project-dir=/path/to/project --latest=3 --output-dir=./exports
+```
+
+詳細（thinkingブロック・サブエージェント含む全セッション一括変換）:
+
+```bash
+uv tool run claude-session-export --all --include-thinking --include-subagents --output-dir=~/claude-sessions
 ```

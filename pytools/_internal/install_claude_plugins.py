@@ -17,20 +17,20 @@
 
 前提を満たした場合の処理:
 
-- marketplace 未登録 → `claude plugin marketplace add <dotfiles 絶対パス> --scope user` で登録
+- marketplace 未登録 → `claude plugin marketplace add <dotfiles 絶対パス> --scope=user` で登録
   (directory 型登録。dotfiles リポジトリを直接参照することで push/update サイクル不要で
    編集内容が反映される)
 - 旧 GitHub 型登録が残存 → directory 型へ自動マイグレーション (claude_marketplace が担う)
 - deprecated plugin がインストール済み → 検出されたスコープごとにアンインストール
 - 管理対象 plugin が project scope に残存 → アンインストール (user scope 移行用)
-- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope user`
+- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope=user`
 - 対象 plugin がインストール済み + version が乖離
   → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
-     `claude plugin update <name>@<marketplace> --scope user` で反映。
+     `claude plugin update <name>@<marketplace> --scope=user` で反映。
      この分岐は directory 型・旧 GitHub 型を区別せず適用され、version 乖離があれば
      update 経路が優先される
 - 対象 plugin がインストール済み + version が一致 + directory 型登録が健全
-  → `claude plugin install <name>@<marketplace> --scope user` を毎回再実行して
+  → `claude plugin install <name>@<marketplace> --scope=user` を毎回再実行して
      キャッシュを最新化する (directory 型では `plugin update` が version 一致時 no-op
      になるため同期経路として使えない)
 - 対象 plugin がインストール済み + version が一致 + 旧 GitHub 型が残存
@@ -46,7 +46,7 @@ disable は副作用が小さく可逆な操作のため ``_auto_disable_plugins
 その戻り値から推奨コマンドを取り出し、利用者に案内として表示する。
 
 本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
-他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope user`
+他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope=user`
 することを推奨する (詳細は docs/guide/claude-code-guide.md)。
 
 directory 型環境では version 乖離によらず毎回 `plugin install` で同期するため、
@@ -221,9 +221,9 @@ def run() -> tuple[bool, list[str]]:
 def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:
     """現状と ``_AUTO_ENABLED_PLUGIN_IDS`` の乖離を ``claude plugin ...`` 提案列で返す。
 
-    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうち未インストール → ``claude plugin install <id> --scope user``
+    - ``_AUTO_ENABLED_PLUGIN_IDS`` のうち未インストール → ``claude plugin install <id> --scope=user``
     - ``_AUTO_ENABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false``
-      → ``claude plugin enable <id> --scope user``
+      → ``claude plugin enable <id> --scope=user``
 
     ``_AUTO_DISABLED_PLUGIN_IDS`` の disable 実行は ``_auto_disable_plugins()`` が直接行うため、
     本関数では推奨コマンドの算出対象に含めない。
@@ -236,9 +236,9 @@ def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] 
     enable_cmds: list[str] = []
     for plugin_id in sorted(_AUTO_ENABLED_PLUGIN_IDS):
         if plugin_id not in installed_ids:
-            install_cmds.append(f"claude plugin install {plugin_id} --scope user")
+            install_cmds.append(f"claude plugin install {plugin_id} --scope=user")
         elif enabled_map is not None and enabled_map.get(plugin_id) is False:
-            enable_cmds.append(f"claude plugin enable {plugin_id} --scope user")
+            enable_cmds.append(f"claude plugin enable {plugin_id} --scope=user")
     return install_cmds + enable_cmds
 
 
@@ -246,7 +246,7 @@ def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None)
     """``_AUTO_DISABLED_PLUGIN_IDS`` のうち有効状態のものを自動で無効化する。
 
     インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない (既定で有効な) 対象に対し、
-    ``claude plugin disable <id> --scope user`` を発行する。失敗しても他対象を続行する。
+    ``claude plugin disable <id> --scope=user`` を発行する。失敗しても他対象を続行する。
 
     Returns:
         (成功件数, 失敗件数) のタプル。
@@ -349,7 +349,7 @@ def _get_installed_plugins_raw() -> object | None:
 def _extract_plugin_version_map(data: object) -> dict[str, str]:
     """`claude plugin list --json` の戻り値から user scope の name → version 辞書を作る。
 
-    本スクリプトは ``--scope user`` でインストールするため、
+    本スクリプトは ``--scope=user`` でインストールするため、
     user scope のエントリのみを対象とする。``scope`` フィールドが存在しない
     エントリは後方互換のため含める。
 
@@ -449,7 +449,7 @@ def _is_installed(name: str, raw_data: object) -> bool:
 def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
     """指定プラグインの project scope エントリに対応する projectPath 一覧を返す。
 
-    `claude plugin uninstall --scope project` は呼び出し時の cwd に紐づく
+    `claude plugin uninstall --scope=project` は呼び出し時の cwd に紐づく
     プロジェクト設定のみを参照する。そのため、除去対象の project scope
     エントリごとにインストール元プロジェクトの絶対パスを取得し、
     後段でそれを cwd にして CLI を呼ぶ必要がある。
@@ -486,7 +486,7 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
 def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
     """管理対象プラグインの project scope エントリを除去する (user scope 移行用)。
 
-    `claude plugin uninstall --scope project` は呼び出し時の cwd から
+    `claude plugin uninstall --scope=project` は呼び出し時の cwd から
     プロジェクト設定を特定するため、各エントリの projectPath を cwd に渡す。
     """
     for project_path in _project_scope_paths(name, raw_data):

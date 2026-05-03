@@ -6,7 +6,7 @@ BRANCH="${1:-master}"
 # shellcheck disable=SC2016  # GraphQL変数($endCursor, $branch)をシェル変数と誤検知するため抑制
 gh api graphql \
     --paginate \
-    --cache 30s \
+    --cache=30s \
     -f branch="$BRANCH" \
     -f query='
 query($endCursor: String, $branch: String!) {

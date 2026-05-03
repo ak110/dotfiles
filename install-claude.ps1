@@ -39,11 +39,11 @@ function Invoke-Download {
 function Install-AgentToolkitPlugin {
     Write-Output ''
     Write-Output 'agent-toolkit プラグインを user scope にインストール・更新します...'
-    try { & claude plugin marketplace add ak110/dotfiles --scope user 2>&1 | Out-Null } catch { $null = $_ }
+    try { & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null } catch { $null = $_ }
     try { & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null } catch { $null = $_ }
     try { & claude plugin uninstall 'edit-guardrails@ak110-dotfiles' 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope user 2>&1 | Out-Null } catch { $null = $_ }
-    try { & claude plugin update 'agent-toolkit@ak110-dotfiles' --scope user 2>&1 | Out-Null } catch { $null = $_ }
+    try { & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null } catch { $null = $_ }
+    try { & claude plugin update 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null } catch { $null = $_ }
     Write-Output 'agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。'
 }
 

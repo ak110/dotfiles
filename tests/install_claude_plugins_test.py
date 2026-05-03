@@ -150,7 +150,7 @@ class TestRunFlow:
         assert any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
-        # --scope user が渡されていること
+        # --scope=user が渡されていること
         assert any("--scope" in c and "user" in c for c in update_calls)
         # 最新である sample-plugin に対しては update を発行しない
         assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
@@ -183,7 +183,7 @@ class TestRunFlow:
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
-        # --scope user が渡されていること
+        # --scope=user が渡されていること
         for ic in install_calls:
             assert "--scope" in ic and "user" in ic
 
@@ -461,7 +461,7 @@ def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestRunFlowDirectoryType:
     """directory 型登録が健全な環境での追加検証。
 
-    この環境では version 乖離に依存せず、毎回 ``plugin install <plugin>@<mp> --scope user`` を
+    この環境では version 乖離に依存せず、毎回 ``plugin install <plugin>@<mp> --scope=user`` を
     再実行してキャッシュを最新化する (dotfiles 実体からの同期経路)。
     ``plugin update`` と ``marketplace update`` は version 一致時 no-op になるため呼ばない。
     """
@@ -488,7 +488,7 @@ class TestRunFlowDirectoryType:
 
         assert _install_claude_plugins.run()[0] is True
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-        # 対象プラグイン 2 件に対して install が --scope user で再実行される
+        # 対象プラグイン 2 件に対して install が --scope=user で再実行される
         assert [
             "claude",
             "plugin",
@@ -599,7 +599,7 @@ class TestEnsureMarketplaceCliPath:
         assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
 
     def test_not_registered_calls_add_with_dotfiles_absolute_path(self, monkeypatch: pytest.MonkeyPatch):
-        """marketplace list が空なら dotfiles 絶対パス + --scope user で add を呼ぶ。"""
+        """marketplace list が空なら dotfiles 絶対パス + --scope=user で add を呼ぶ。"""
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         calls: list[list[str]] = []
 
@@ -925,7 +925,7 @@ class TestHappyPathDirectoryType:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run()[0] is True
-        # 全プラグインに対して install が --scope user で再実行される
+        # 全プラグインに対して install が --scope=user で再実行される
         install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         assert [
             "claude",

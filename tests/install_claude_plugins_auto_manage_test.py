@@ -29,7 +29,7 @@ class TestComputeRecommendedCommands:
         result = _install_claude_plugins.compute_recommended_commands([], {})
         # pylint: disable-next=protected-access
         for plugin_id in _install_claude_plugins._AUTO_ENABLED_PLUGIN_IDS:
-            assert f"claude plugin install {plugin_id} --scope user" in result
+            assert f"claude plugin install {plugin_id} --scope=user" in result
 
     def test_enable_recommended_when_explicitly_disabled(self, monkeypatch: pytest.MonkeyPatch):
         """インストール済みかつ `enabledPlugins=false` なら enable コマンドを提案する。"""
@@ -37,7 +37,7 @@ class TestComputeRecommendedCommands:
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
         raw_data = [{"id": self._ENABLE_TARGET, "scope": "user", "version": "1.0.0"}]
         result = _install_claude_plugins.compute_recommended_commands(raw_data, {self._ENABLE_TARGET: False})
-        assert result == [f"claude plugin enable {self._ENABLE_TARGET} --scope user"]
+        assert result == [f"claude plugin enable {self._ENABLE_TARGET} --scope=user"]
 
     def test_no_recommendation_when_enabled(self, monkeypatch: pytest.MonkeyPatch):
         """インストール済みかつ既に有効なら何も提案しない。"""
@@ -231,4 +231,4 @@ class TestRunNoAutomaticStateChange:
             assert cmd[:3] != ["claude", "plugin", "disable"], f"unexpected disable call: {cmd}"
             assert cmd != install_target_cmd, f"unexpected install call: {cmd}"
 
-        assert recommendations == [f"claude plugin install {target_enable} --scope user"]
+        assert recommendations == [f"claude plugin install {target_enable} --scope=user"]

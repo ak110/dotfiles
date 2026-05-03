@@ -93,7 +93,7 @@ def repair_marketplace() -> bool:
     """壊れた marketplace 登録を段階的に修復する。
 
     1. ``claude plugin marketplace remove`` で既存エントリを除去 (失敗しても継続)
-    2. ``claude plugin marketplace add <dotfiles 絶対パス> --scope user`` で directory 型として再登録
+    2. ``claude plugin marketplace add <dotfiles 絶対パス> --scope=user`` で directory 型として再登録
     3. ``_check_marketplace_from_file`` で再検証し健全なら終了
     4. それでも解消しない場合は known_marketplaces.json と
        settings.json.extraKnownMarketplaces を directory 型エントリで直接書き換え、

@@ -37,8 +37,8 @@ for file in "$@"; do
 
     # Step 1: chezmoi template 構文チェック + 展開
     if ! chezmoi execute-template --init \
-        --source "$source_dir" \
-        --working-tree "$working_tree" \
+        --source="$source_dir" \
+        --working-tree="$working_tree" \
         <"$file" >"$rendered" 2>"$errfile"; then
         echo "FAIL [chezmoi template]: $file" >&2
         cat "$errfile" >&2
@@ -57,7 +57,7 @@ for file in "$@"; do
         fi
         if command -v shellcheck >/dev/null 2>&1; then
             # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
-            if ! shellcheck --severity error "$rendered" 2>"$errfile"; then
+            if ! shellcheck --severity=error "$rendered" 2>"$errfile"; then
                 echo "FAIL [shellcheck on rendered $file]:" >&2
                 cat "$errfile" >&2
                 fail=1

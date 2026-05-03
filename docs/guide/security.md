@@ -15,7 +15,7 @@
 
 ```bash
 # uv
-uv pip install --exclude-newer 0seconds <package>
+uv pip install --exclude-newer=0seconds <package>
 
 # npm / pnpm
 npm install --minimum-release-age=0 <package>
@@ -24,11 +24,12 @@ pnpm install --config.minimum-release-age=0 <package>
 
 ### UV_FROZEN による lockfile 尊重
 
-CI/`make`などの自動実行環境では`UV_FROZEN=1`環境変数で`uv sync`/`uv run`が`uv.lock`を尊重するよう強制し、
-意図しない再resolveでロックファイルが書き換わるリスクを抑えている。
-詳細は[docs/development/development.md](../development/development.md)の「サプライチェーン攻撃対策」セクションを参照。
+`UV_FROZEN=1`環境変数を常時有効化している。
+`uv sync`/`uv run`が`uv.lock`を尊重して動作し、意図しない依存の再解決を防ぐ。
+運用詳細は[docs/development/development.md](../development/development.md)の「サプライチェーン攻撃対策」セクションを参照。
 
 ### GitHub Actions ピン留め
 
-GitHub Actionsのアクションは [pinact](https://github.com/suzuki-shunsuke/pinact) でコミットハッシュにピン留めしている。
-`make update` 実行時に自動更新される（mise未導入時はスキップ）。
+GitHub Actionsのアクションはコミットハッシュにピン留めして実行する。
+[pinact](https://github.com/suzuki-shunsuke/pinact)による自動管理が有効化されており、
+`make update`実行時に自動更新される。

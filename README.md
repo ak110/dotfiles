@@ -30,7 +30,7 @@ curl -fsSL https://astral.sh/uv/install.sh | sh
 ### 例（Windows）
 
 ```cmd
-winget install --id Git.Git -e --source winget
+winget install --id=Git.Git -e --source=winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
@@ -53,7 +53,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 #### 簡易版
 
 ```cmd
-winget install twpayne.chezmoi && chezmoi init ak110 --source %USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"
+winget install twpayne.chezmoi && chezmoi init ak110 --source=%USERPROFILE%\dotfiles --apply && setx PATH "%PATH%;%USERPROFILE%\bin;%USERPROFILE%\.local\bin"
 ```
 
 ## 使い方

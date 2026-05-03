@@ -5,9 +5,8 @@ description: >
   CLAUDE.mdへの学びの反映、pyfltr・agent-toolkitスキルの改善点を点検する。
   「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
 disable-model-invocation: true
-# 本SKILLを更新する場合、以下のHookスクリプトも同時に更新すること。
-# - agent-toolkit/scripts/stop_advisor.py
-# - scripts/claude_hook_stop.py
+# 本SKILLを更新する場合、stop_advisor.py・claude_hook_stop.pyも同時に更新すること。
+# 同期メタ情報は CLAUDE.md の「振り返りHook/Skill」節を参照。
 ---
 
 # セッション振り返り

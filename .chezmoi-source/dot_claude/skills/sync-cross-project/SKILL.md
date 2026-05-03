@@ -46,20 +46,20 @@ description: >
 
 | 変更内容 | dotfiles | pyfltr | pytilpack | smpr | glatasks | gv | lc |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| GitHub Actions全般 | o | o | o | o | o | o | o |
-| リリースワークフロー | - | o | o | - | o | o | o |
-| git-cliff設定 | - | o | o | - | o | o | o |
-| Makefile構成 | o | o | o | o | o | - | - |
-| mise設定 | o | o | o | o | o | o | o |
-| pre-commit設定 | o | o | o | o | o | o | o |
-| textlintルール | o | o | o | o | o | o | o |
-| pyfltr設定・更新 | o | - | o | o | o | o | o |
-| pinact/アクション更新 | o | o | o | o | o | o | o |
-| UV_FROZEN運用 | o | o | o | o | o | - | - |
-| ドキュメント構成 | o | o | o | △ | o | o | o |
-| Python CI構成 | o | o | o | o | - | - | - |
+| GitHub Actions全般 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
+| リリースワークフロー | — | ★ | ★ | — | ★ | ★ | ★ |
+| git-cliff設定 | — | ★ | ★ | — | ★ | ★ | ★ |
+| Makefile構成 | ★ | ★ | ★ | ★ | ★ | — | — |
+| mise設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
+| pre-commit設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
+| textlintルール | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
+| pyfltr設定・更新 | ★ | — | ★ | ★ | ★ | ★ | ★ |
+| pinact/アクション更新 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
+| UV_FROZEN運用 | ★ | ★ | ★ | ★ | ★ | — | — |
+| ドキュメント構成 | ★ | ★ | ★ | △ | ★ | ★ | ★ |
+| Python CI構成 | ★ | ★ | ★ | ★ | — | — | — |
 
-o=対象、-=対象外、△=緩め
+★=必須同期、△=確認推奨（smprは厳密一致不要）、—=スキップ
 
 ## 意図的に維持している差異
 

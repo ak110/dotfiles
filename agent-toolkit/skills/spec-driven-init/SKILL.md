@@ -7,12 +7,33 @@ description: >
 
 # spec-driven導入ワークフロー
 
-現行版ドキュメントの初版を整備する。
+本スキルはspec-driven系ワークフローの最初のステップであり、
+現行版ドキュメントが未整備のプロジェクトで1回だけ実行する。
+
+## ワークフロー全体像
+
+```mermaid
+flowchart LR
+    INIT["spec-driven-init\n現行版ドキュメントの初版整備"]
+    SD["spec-driven\n次版ドキュメント管理・\nワークフロー誘導"]
+    PROMOTE["spec-driven-promote\n次版→現行版の統合"]
+
+    INIT -->|初版完成後| SD
+    SD -->|計画・実装・検証・レビューを繰り返す| SD
+    SD -->|リリース後| PROMOTE
+    PROMOTE -->|次版作業開始時| SD
+```
+
 配置先はプロジェクト指定があればそれを採用し、無ければ規模・性質に応じて決定する。
+
+## 参照ファイル
+
+- `agent-toolkit:spec-driven`の`references/spec-driven-framework.md`: 用語定義・配置規約（手順1で読み込む）
+- `references/doc-layout-samples.md`: 現行版ドキュメント構成サンプル（手順2で参照する）
 
 ## 手順
 
-1. `agent-toolkit:spec-driven`スキルを呼び出し、用語・配置規約・テンプレートを確認する
+1. `agent-toolkit:spec-driven`スキルと`references/spec-driven-framework.md`を呼び出し、用語・配置規約・テンプレートを確認する
 2. 現行版ドキュメントの構成を確定する。
    プロジェクト指定（`CLAUDE.md`等での明示）があればそれを採用する。
    無ければ`references/doc-layout-samples.md`を読み込み、サンプルを参考にユーザーと協議して構成を決定する

@@ -7,10 +7,10 @@
 # `chezmoi update` (= 内部で git pull + apply 一括) ではなく `chezmoi git pull` を使っている。
 
 echo "=== [1/4] git pull ==="
-chezmoi git --source ~/dotfiles -- pull --rebase
+chezmoi git --source=~/dotfiles -- pull --rebase
 
 echo "=== [2/4] chezmoi init (テンプレート再展開) ==="
-chezmoi init --source ~/dotfiles
+chezmoi init --source=~/dotfiles
 
 echo "=== [3/4] chezmoi status (apply 予定のファイル) ==="
 # `chezmoi status` は 2 列構成。

@@ -197,11 +197,11 @@ class TestInstallClaude:
         lines = [ln for ln in stub_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
         # 少なくとも以下の呼び出しが含まれる (順序も維持されている)
         expected_substrings = [
-            "plugin marketplace add ak110/dotfiles --scope user",
+            "plugin marketplace add ak110/dotfiles --scope=user",
             "plugin marketplace update ak110-dotfiles",
             "plugin uninstall edit-guardrails@ak110-dotfiles",
-            "plugin install agent-toolkit@ak110-dotfiles --scope user",
-            "plugin update agent-toolkit@ak110-dotfiles --scope user",
+            "plugin install agent-toolkit@ak110-dotfiles --scope=user",
+            "plugin update agent-toolkit@ak110-dotfiles --scope=user",
         ]
         joined = "\n".join(lines)
         last_idx = -1

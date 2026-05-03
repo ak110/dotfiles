@@ -32,7 +32,7 @@ if ($missing.Count -gt 0) {
 # chezmoi が無ければ winget で入れる (winget 自体は Windows 10/11 標準搭載)
 if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
     Write-Host 'chezmoi をインストールします...'
-    winget install --id twpayne.chezmoi -e --source winget
+    winget install --id=twpayne.chezmoi -e --source=winget
 }
 
 $dotfilesDir = Join-Path $env:USERPROFILE 'dotfiles'
@@ -44,7 +44,7 @@ if (-not (Test-Path $dotfilesDir)) {
 # chezmoi 管理対象の既存ファイルをバックアップ
 $backupDir = Join-Path $env:USERPROFILE (".dotfiles-backup\{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $count = 0
-$managed = & chezmoi managed --source $dotfilesDir
+$managed = & chezmoi managed --source=$dotfilesDir
 foreach ($target in $managed) {
     if (-not $target) { continue }
     $src = Join-Path $env:USERPROFILE $target
@@ -60,4 +60,4 @@ if ($count -gt 0) {
     Write-Host "既存ファイル $count 件を $backupDir にバックアップしました"
 }
 
-chezmoi init --verbose --source $dotfilesDir --apply
+chezmoi init --verbose --source=$dotfilesDir --apply

@@ -1,8 +1,9 @@
 # dotfiles
 
-本dotfilesリポジトリのドキュメント一覧。
+本dotfilesリポジトリのドキュメント。
+導入手順・前提条件・更新方法は[README.md](../README.md)に記載している。
 
-- [docs/guide/index.md](guide/index.md) — 利用者向け（dotfilesの使い方・配布されるツール・設定の解説）
-- [docs/development/index.md](development/index.md) — 開発者向け（リポジトリの構造・改変手順）
-
-導入手順・前提条件・更新方法は [README.md](../README.md) に記載している。
+- [docs/guide/index.md](guide/index.md) — 利用者向け。
+  dotfilesを導入した環境で使えるClaude Code設定・SSH・セキュリティ対策の解説
+- [docs/development/index.md](development/index.md) — 開発者向け。
+  リポジトリの構造・改変手順・アーキテクチャの説明

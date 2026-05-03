@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          chezmoi init --source ~/dotfiles --apply
+          chezmoi init --source=~/dotfiles --apply
       - name: dotfiles-post-applyの動作確認
         shell: pwsh
         run: dotfiles-post-apply

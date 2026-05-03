@@ -223,7 +223,7 @@ class TestRepairMarketplace:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """CLI add には dotfiles の絶対パスと ``--scope user`` が渡される。``remove`` には ``--scope`` は付かない。"""
+        """CLI add には dotfiles の絶対パスと ``--scope=user`` が渡される。``remove`` には ``--scope`` は付かない。"""
         _known, _settings = marketplace_paths
         calls: list[list[str]] = []
 

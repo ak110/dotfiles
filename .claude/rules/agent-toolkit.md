@@ -8,13 +8,13 @@ paths:
 
 # Claude Codeプラグイン: agent-toolkit
 
+本ファイルの対象読者はdotfiles編集者（本リポジトリやagent-toolkitを修正するコーディングエージェント）。
+
 `agent-toolkit/`配下のファイルはClaude Codeのプラグイン`agent-toolkit`として配布される。
-`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下のファイルと共に利用される
-（利用者は本リポジトリ(dotfiles)の利用者とは限らない）。
+`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下の配布ルールと共に利用される
+（agent-toolkit利用者は本リポジトリのdotfiles利用者とは限らない）。
 
 `~/.claude/rules/agent-toolkit/`は配布先であり、直接編集は不可。
-
-これらのファイルは人間ではなくClaude Codeから読まれる、または実行される前提で書く必要がある。
 
 バージョン更新・SSOT同期・ドキュメント同期は漏れが発生しやすいため、本ファイルで手順を確認する。
 
@@ -75,55 +75,41 @@ paths:
 `.chezmoi-source/dot_claude/rules/agent-toolkit/`配下を編集した場合は両ファイルを同期する。
 ワンライナーインストーラーをGitHub API非依存で動かす方針のため自動同期手段は持たない。
 
-## agent-toolkit編集時の方針
+## ファイル構成と参照方向
 
-- `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的で、
+- `agent-toolkit/`配下のファイル分割（`agent.md`・`styles.md`など）は編集・レビュー時の見通し改善が目的。
   配布先の`~/.claude/rules/agent-toolkit/`では全ファイルが常時自動ロードされる
 - 参照方向の許容範囲: dotfilesリポジトリ → プラグイン配布物、およびプラグイン配布物 ↔ 配布ルール
- （`~/.claude/rules/agent-toolkit/`）の参照は方向性として許容する。
+ （`~/.claude/rules/agent-toolkit/`）の参照は許容する。
   配布ルールは常時ロードされるためスキル側からのファイル名指定は省略可能だが、必須ではない
+- 配布ルールは常時ロード、スキル本体は呼び出し時のみという責務分担を意識する
+
+## スキル・エージェント開発
+
 - SKILL.md本体に必要な情報は本体に直接書く。`references/`から別の`references/`を多段参照させない
  （Skillsのベストプラクティスに沿うため）
 - サブエージェント間で共通する判断基準・制約は各エージェントに重複記述したまま維持する
  （別コンテキストで実行されるため、統合するとコンテキスト汚染や指示漏れが起きる）
-- 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を必ず確認する。
-  例えば`careful-impl`経路と`careful-impl不使用`経路で同じ手順を分担する場合、
-  片側にある排他的表現（「唯一のガード」など）が新設で不整合になりやすい
-- 配布ルールは常時ロード、スキル本体は呼び出し時のみという責務分担を意識する
- （配布ルールに常時ロードする内容と、スキル側で扱う詳細は重複させない）
+- 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を必ず確認する
 - 「実行時エラーで判明する仕様（tool quirk）」「具体例」は事前知識・見落とし防止のため削除候補から外す
+
+スキル連携の概要（詳細は各SKILL.mdが正）:
+
+- `spec-driven`（任意）: 大規模バージョンアップを想定した次版ドキュメント管理とワークフロー誘導
+- `plan-mode`: 計画ファイルの作成・codexレビュー
+- `careful-impl`: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
+
+`spec-driven`が有効な場合は同スキルの誘導に従い、それ以外は直接`plan-mode`から始める。
+
+## 配布物の制約
+
 - 配布物（`agent-toolkit/`配下）の出力文字列・hookメッセージ・docstringには
   リポジトリ管理外の個人メモファイル名を含めない。
-  検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する。
-  リポジトリ管理ファイルから個人メモへ言及するとhookが警告で阻止する。
-  利用者向けに同名ファイル作成を推奨する文脈は配布対象外のドキュメントへ寄せる
+  検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する
 - 配布物（`agent-toolkit/`配下と`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下）には、
   執筆者の手元プロジェクト固有の前提を断定的に書かない。
   特定設定値の採用状況・特定のディレクトリパス・「本リポジトリは〜」のような自指的表現を避け、
   条件付き表現（「`～`設定が有効な場合、」など）で書く
- （ルール名・設定キー名そのものは仕様参照として書いてよい）
-
-## 計画・実装系スキルの連携
-
-`agent-toolkit/skills/`配下の計画・実装系スキルとサブエージェントの対応を一覧する。
-スキル本文や呼び出し対象のサブエージェントを編集する際、関連スキルでの参照箇所を更新し忘れないために用いる。
-詳細な動作手順は各スキルのSKILL.mdが正であり、本節は概要のみを示す。
-
-- `spec-driven`（任意）
-  - 担当工程: 既存システムの大規模バージョンアップを想定した次版ドキュメント管理とワークフロー誘導
-  - 連携サブエージェント: なし（計画・実装工程は`plan-mode`・`careful-impl`へ委譲）
-- `plan-mode`
-  - 担当工程: 計画ファイルの作成・codexレビュー
-  - 連携サブエージェント: なし
-- `careful-impl`
-  - 担当工程: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
-  - 連携サブエージェント: `careful-implementer`・`careful-spec-reviewer`・`careful-impl-reviewer`
-   （再レビューは`careful-spec-reviewer`・`careful-impl-reviewer`のfollowupモードで実施する）
-  - 修正再実装やfollowupレビューでは、初回起動時の`agentId`を保持して`SendMessage`で再開する経路を楽観試行し、
-    失敗時は新規`Agent`起動へフォールバックする（実験的機能のため利用者環境に応じて経路が切り替わる）
-
-`spec-driven`が有効な場合は、同スキルの誘導に従って個別の作業テーマごとに`plan-mode`へ入り計画ファイルを作成する。
-それ以外の場合は直接`plan-mode`から始める。
 
 `plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過する。
 計画ファイルの`実装方式`項目が`careful-impl`の場合のみ`careful-impl`へ引き継がれる
