@@ -7,6 +7,7 @@ PreToolUse 統合フック (mojibake / ps1 EOL 等) のテスト。
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -274,6 +275,73 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
+
+
+class TestColloquialCheck:
+    """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。
+
+    辞書ファイルから動的にサンプルを生成するため、テスト本体には口語表現を直接書かない。
+    """
+
+    _DENY_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words.txt"
+    _ALLOW_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words_allow.txt"
+
+    @staticmethod
+    def _expand(pattern_str: str) -> str:
+        return re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], pattern_str)
+
+    @classmethod
+    def _patterns(cls, path: pathlib.Path) -> list[re.Pattern[str]]:
+        return [
+            re.compile(s)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            for s in [line.strip()]
+            if s and not s.startswith("#")
+        ]
+
+    @pytest.fixture(name="deny_substring")
+    def _deny_substring(self) -> str:
+        """allowlistの最初のオーバーラップサンプルから denylist 部分文字列を抽出。"""
+        deny_patterns = self._patterns(self._DENY_PATH)
+        for raw in self._ALLOW_PATH.read_text(encoding="utf-8").splitlines():
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            sample = self._expand(stripped)
+            for dp in deny_patterns:
+                m = dp.search(sample)
+                if m:
+                    return m.group(0)
+        pytest.skip("no overlap between denylist and allowlist; cannot generate test sample")
+        return ""  # unreachable
+
+    def test_warns_on_deny(self, deny_substring: str):
+        content = f"概要は{deny_substring}該当する。\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
+        assert result.returncode == 0
+        assert "colloquial" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+        # 検出語そのものは出力に含めない（コンテキスト汚染防止）
+        assert deny_substring not in result.stderr
+
+    def test_does_not_block(self, deny_substring: str):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "x.md", "content": deny_substring}})
+        assert result.returncode == 0  # warn のみ
+
+    def test_clean_text_no_warn(self):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x = 1\n"}})
+        assert result.returncode == 0
+        assert "colloquial" not in result.stderr
+
+    def test_old_string_not_inspected(self, deny_substring: str):
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "x.md", "old_string": deny_substring, "new_string": "ok"},
+            }
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in result.stderr
 
 
 class TestPlanModeSkillFirstCheck:
