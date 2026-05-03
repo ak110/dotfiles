@@ -264,6 +264,40 @@ class TestIndexHtml:
         assert 'addEventListener("pageshow"' in html_src
         assert "event.persisted" in html_src
 
+    def test_index_html_resyncs_on_eventsource_open(self):
+        """EventSourceの`onopen`で初回／再接続のいずれもファイル一覧を強制再取得する。
+
+        ブラウザの自動再接続中に発生したSSEイベントが取り逃される構造的な問題を解消する契約。
+        """
+        html_src = claude_plans_viewer._INDEX_HTML
+
+        # `onopen`にハンドラが設定され、`onmessage`と同じ再同期関数を共有していること。
+        assert "es.onopen" in html_src
+        assert "es.onmessage" in html_src
+        # 再同期の実体は`refreshFiles`を呼ぶ`resyncFromServer`に集約されていること。
+        assert "function resyncFromServer" in html_src or "async function resyncFromServer" in html_src
+        assert "es.onopen = resyncFromServer" in html_src
+        assert "es.onmessage = resyncFromServer" in html_src
+
+    def test_index_html_has_copy_button_contract(self):
+        """右ペインのsticky toolbarにコピーボタンが存在し、`/api/raw`をクリップボードへ書き込む。
+
+        生Markdownをエディタへ貼り付けるためのスモーク。
+        secure context（HTTPSまたはhttp://localhost）での動作前提。
+        """
+        html_src = claude_plans_viewer._INDEX_HTML
+
+        # toolbarがmain側にも置かれること（既存のaside側のtoolbarに加えて）。
+        assert html_src.count('class="toolbar"') >= 2
+        # ボタン要素のid指定。
+        assert 'id="copy-btn"' in html_src
+        # clickハンドラが`/api/raw`からfetchして`navigator.clipboard.writeText`へ渡す。
+        assert "/api/raw?path=" in html_src
+        assert "navigator.clipboard.writeText" in html_src
+        # 成否のフィードバックはボタン文言の一時的な書き換えで示す。
+        assert "コピーしました" in html_src
+        assert "コピーに失敗しました" in html_src
+
 
 class TestSubscribers:
     """購読者管理(`_subscribe`・`_unsubscribe`・`_schedule_broadcast`)のテスト。"""
@@ -519,6 +553,37 @@ class TestApiEndpoints:
         app = claude_plans_viewer.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/file?path=missing.md")
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_api_raw_returns_markdown(self, tmp_path: Path):
+        """/api/rawはMarkdown原文をtext/markdownで返す。"""
+        body = "# title\n\n本文\n"
+        (tmp_path / "a.md").write_text(body, encoding="utf-8")
+        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/raw?path=a.md")
+
+        assert response.status_code == 200
+        assert response.content_type == "text/markdown; charset=utf-8"
+        assert await response.get_data(as_text=True) == body
+
+    @pytest.mark.asyncio
+    async def test_api_raw_missing_path_returns_400(self, tmp_path: Path):
+        """/api/rawでpathパラメーターがなければ400を返す。"""
+        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/raw")
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_api_raw_not_found_returns_404(self, tmp_path: Path):
+        """/api/rawで存在しないファイルを指すと404を返す。"""
+        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/raw?path=missing.md")
 
         assert response.status_code == 404
 

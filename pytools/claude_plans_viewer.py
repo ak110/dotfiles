@@ -182,8 +182,28 @@ _INDEX_HTML = """<!doctype html>
   .file:hover, .file.active { background: #eef2ff; }
   .name { font-size: 13px; font-weight: 600; word-break: break-all; }
   .meta { margin-top: 4px; font-size: 11px; color: #6b7280; }
-  main { overflow: auto; padding: 2rem; box-sizing: border-box; }
-  main article { max-width: 860px; margin: 0 auto; }
+  main { overflow: auto; box-sizing: border-box; }
+  main .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #e6e6e6;
+  }
+  main .toolbar button {
+    padding: 6px 12px;
+    font-size: 13px;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  main .toolbar button:hover:not(:disabled) { background: #f3f4f6; }
+  main .toolbar button:disabled { color: #9ca3af; cursor: default; }
+  main article { max-width: 860px; margin: 0 auto; padding: 2rem; box-sizing: border-box; }
 </style>
 </head>
 <body>
@@ -195,7 +215,12 @@ _INDEX_HTML = """<!doctype html>
     </div>
     <div id="files"></div>
   </aside>
-  <main><article id="preview">左の一覧からMarkdownを選択してください。</article></main>
+  <main>
+    <div class="toolbar">
+      <button id="copy-btn" type="button" disabled>Markdownをコピー</button>
+    </div>
+    <article id="preview">左の一覧からMarkdownを選択してください。</article>
+  </main>
 </div>
 <script>
 let files = [];
@@ -264,6 +289,34 @@ async function openFile(path) {
   document.title = path;
   const selected = files.find(f => f.path === path);
   selectedMtime = selected ? selected.mtime_epoch : null;
+  document.getElementById("copy-btn").disabled = false;
+}
+
+async function resyncFromServer() {
+  await refreshFiles();
+  if (!selectedPath) return;
+  const current = files.find(f => f.path === selectedPath);
+  if (current && current.mtime_epoch !== selectedMtime) {
+    selectedMtime = current.mtime_epoch;
+    await updatePreview();
+  }
+}
+
+async function copySelectedRaw() {
+  if (!selectedPath) return;
+  const btn = document.getElementById("copy-btn");
+  const originalLabel = btn.dataset.label || btn.textContent;
+  btn.dataset.label = originalLabel;
+  try {
+    const res = await fetch("/api/raw?path=" + encodeURIComponent(selectedPath));
+    if (!res.ok) throw new Error("status " + res.status);
+    const text = await res.text();
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "コピーしました";
+  } catch (e) {
+    btn.textContent = "コピーに失敗しました";
+  }
+  setTimeout(() => { btn.textContent = originalLabel; }, 2000);
 }
 
 // SSE接続はpagehideで能動的にcloseする。
@@ -275,15 +328,10 @@ let eventSource = null;
 
 function connectEvents() {
   const es = new EventSource("/api/events");
-  es.onmessage = async () => {
-    await refreshFiles();
-    if (!selectedPath) return;
-    const current = files.find(f => f.path === selectedPath);
-    if (current && current.mtime_epoch !== selectedMtime) {
-      selectedMtime = current.mtime_epoch;
-      await updatePreview();
-    }
-  };
+  // EventSourceは接続断後にブラウザが自動再接続を行うが、再接続中に発生したSSEイベントは
+  // 取り逃される。初回／再接続のいずれでもonopen時に強制再同期することで取り逃しを解消する。
+  es.onopen = resyncFromServer;
+  es.onmessage = resyncFromServer;
   return es;
 }
 
@@ -308,6 +356,7 @@ window.addEventListener("pageshow", (event) => {
 });
 
 document.getElementById("filter").addEventListener("input", renderFiles);
+document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
 main();
 
 if ("serviceWorker" in navigator) {
@@ -705,6 +754,19 @@ def create_app(root: pathlib.Path, hostname: str | None = None) -> quart.Quart:
         text = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
         rendered = _markdown_to_html(text, renderer)
         return quart.Response(rendered, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/raw")
+    async def api_raw() -> quart.Response:
+        # クライアントのコピーボタン用に生Markdownを返す。`/api/file`はHTMLレンダリング結果を返すため
+        # 経路を分離し、`Cache-Control`扱いやテストを単純に保つ。
+        rel = quart.request.args.get("path")
+        if not rel:
+            return quart.Response("path is required", status=400)
+        target = _resolve_under_root(root, rel)
+        if target is None:
+            return quart.Response("not found", status=404)
+        text = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
+        return quart.Response(text, content_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/events")
     async def api_events() -> quart.Response:
