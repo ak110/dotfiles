@@ -33,12 +33,7 @@ pwsh -NoProfile -Command "Install-Module -Name PSScriptAnalyzer -Scope CurrentUs
 ```bash
 make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
 make update   # 依存アップグレード＋全チェック（pinactによるアクション更新含む）
-```
-
-## チェックの実行
-
-```bash
-make test
+make test     # 全チェック
 ```
 
 ## サプライチェーン攻撃対策
