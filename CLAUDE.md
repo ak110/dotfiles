@@ -94,6 +94,9 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 - `private_<name>` → パーミッション`600`／ディレクトリは`700`で配置
 - `executable_<name>` → 実行権限（`+x`）付きで配置
 - `<name>.tmpl` → Goテンプレートとして評価してから配置
+- `.tmpl`本文に`{{ ... }}`構文を文字列として残したい場合は文字列リテラルでエスケープする。
+  例: `{{ "{{ env.X }}" }}`と書くと配布先で`{{ env.X }}`が出力される。
+  展開結果は`chezmoi execute-template < <path>`で確認できる
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時に変更検知して実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed | grep <相対パス>`（配布対象確認）
 - pre-commitフックで`$HOME/dotfiles`チェックアウト時のみ`chezmoi apply`が自動実行される。
