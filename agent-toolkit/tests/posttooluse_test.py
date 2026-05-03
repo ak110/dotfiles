@@ -96,6 +96,9 @@ class TestTestExecution:
             "uv run pyfltr run-for-agent",
             "uvx pyfltr run-for-agent",
             "uvx pyfltr ci",
+            "pre-commit run",
+            "pre-commit run --all-files",
+            "uvx pre-commit run -a",
             "cargo test",
             # タスクランナー経由 (test / check / validate アクションを各ランナーで網羅)
             "make test",

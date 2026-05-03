@@ -44,8 +44,8 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
@@ -62,6 +62,7 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     # 直接実行系
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pre-commit\s+run\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
     # タスクランナー経由 (make / mise run / npm | pnpm | yarn (run省略可) / just / task) で
     # test / check / validate アクション

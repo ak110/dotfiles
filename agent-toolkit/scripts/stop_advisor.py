@@ -34,9 +34,9 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
-from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/stop_advisor"

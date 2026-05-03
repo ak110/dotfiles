@@ -113,8 +113,10 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 - `.chezmoi-source/dot_claude/skills/session-review/SKILL.md`
 
 なお`stop_advisor.py`は配布物のため対象をプロジェクトドキュメント全般の振り返りに限定する。
-agent-toolkitプラグイン本体・配布ルールの振り返りは
+agent-toolkitプラグイン本体・配布ルールの振り返り、およびpyfltrの動作・メッセージの振り返りは
 dotfiles個人環境専用の`scripts/claude_hook_stop.py`が担当する。
+対象プロジェクトはセッションのcwdに応じて切り替わる
+（dotfiles配下ではagent-toolkit章を統合、pyfltr配下ではpyfltr章を統合する）。
 
 両hookは同じStopイベントで並列発火する前提のため、振り返りメッセージ全体に適用される共通指示
 （自己完結性・行フォーマット・空時表記・出力スタイル）は

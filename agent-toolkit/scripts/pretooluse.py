@@ -56,9 +56,9 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
-from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position
+import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
 _REPLACEMENT_CHAR = "\ufffd"
