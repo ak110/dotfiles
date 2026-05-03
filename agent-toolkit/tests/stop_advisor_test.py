@@ -222,6 +222,7 @@ class TestUncommittedChanges:
     def test_blocks_with_uncommitted_changes(
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
+        """未コミット変更ありかつ振り返り未発火の初回 Stop は、両通知を 1 block にまとめて返す。"""
         repo = make_dirty_repo(tmp_path)
         content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
@@ -232,10 +233,31 @@ class TestUncommittedChanges:
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
         reason = decision.get("reason", "")
+        # 未コミット通知と振り返り提案の両方が含まれること。
         assert "uncommitted" in reason.lower()
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
-        assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
+        assert "stand alone" in reason
+        # 2 通知それぞれに自動生成プレフィックスが付与されること（連結時の境界保持）。
+        assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
         assert "Auto-generated hook notice" in reason
+
+    def test_blocks_uncommitted_only_after_review_given(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        """振り返り発火済みかつ未コミット未発火なら、未コミット通知のみを返す。"""
+        repo = make_dirty_repo(tmp_path)
+        content = [{"type": "text", "text": _COMPLETION_TEXT}]
+        transcript = _write_transcript_with_assistant_last(tmp_path, content)
+        _write_state(tmp_path, "uncommitted-only", {"stop_advice_given": True})
+        result = _run(
+            {"session_id": "uncommitted-only", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        reason = decision.get("reason", "")
+        assert "uncommitted" in reason.lower()
+        assert "stand alone" not in reason
+        assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
 
     def test_approves_clean_repo(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
         repo = make_clean_repo(tmp_path)

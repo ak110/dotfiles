@@ -7,16 +7,18 @@
 
 Claude Code が停止しようとするタイミングで発火する。
 
-未コミット変更ブロックとセッション振り返り提案ブロックの 2 種類の block を出す。
-両ブロックは共通ゲート `_stop_gate.is_real_session_end` で「直前アシスタントターンが
+未コミット変更通知とセッション振り返り提案の 2 種類の通知を、
+該当するものを 1 つの block にまとめて出力する。
+両通知は共通ゲート `_stop_gate.is_real_session_end` で「直前アシスタントターンが
 完了文言を含み、かつ質問・待機語・非同期待機ツールがない」場合に限り発火する。
 作業途中の一時停止・バックグラウンド待機・ユーザー質問待ちでの誤検出を避けるため、
 transcript を解釈できない異常系では block しない。
 
-未コミット変更ブロック:
-作業ディレクトリに未コミット変更があれば block し、コミット要否をユーザーに確認させる。
+未コミット変更通知:
+作業ディレクトリに未コミット変更があれば、コミット要否をユーザーに確認させる。
+1 セッションにつき 1 回のみ発火する。
 
-セッション振り返り提案ブロック:
+セッション振り返り提案:
 真のセッション終了であれば、プロジェクトドキュメント全般 (CLAUDE.md・README.md・docs/ 配下など)
 への改善提案を促す。
 1 セッションにつき 1 回のみ発火する。
@@ -134,24 +136,29 @@ def _main() -> int:
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
 
-    # --- 未コミット変更ブロック ---
-    # 共通ゲート `is_real_session_end` で「直前アシスタントターンが完了文言を含み、
-    # かつ質問・待機語・非同期待機ツールがない」状態に限って block する。
+    # 共通ゲート: 直前アシスタントターンが完了文言を含み、
+    # かつ質問・待機語・非同期待機ツールがない状態でのみ通知候補とする。
     # 作業途中の一時停止・探索中・ユーザー確認待ち・バックグラウンド待機等での
     # false positive を避ける。
-    # ブロックは 1 回に限る。理由:
+    real_end = is_real_session_end(transcript_path)
+    if not real_end:
+        _approve(cwd=cwd)
+        return 0
+
+    # 各通知は 1 セッション 1 回までに制限する。理由:
     #   - Claude Code は block を受けると再度 Stop を試みるため、
     #     同一メッセージの繰り返しに意味がない
-    #   - 2 回目以降は block_count != 0 でブロックせず、
-    #     後続の stop_advice_given チェックへフォールスルーする
     #   - 質問検出の transcript flush タイミング問題
-    #     （未フラッシュ時の質問検出失敗）も 2 回目で自然に通過する
-    if isinstance(cwd, str) and _has_uncommitted_changes(cwd) and is_real_session_end(transcript_path):
+    #     （未フラッシュ時の質問検出失敗）も 2 回目以降の Stop で自然に通過する
+    messages: list[str] = []
+
+    # --- 未コミット変更通知 ---
+    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
         block_count = state.get("uncommitted_block_count", 0)
         if block_count == 0:
             state["uncommitted_block_count"] = block_count + 1
             write_state(session_id, state)
-            _block(
+            messages.append(
                 _llm_notice(
                     "uncommitted changes detected."
                     " Ask the user whether to commit the changes, or explain"
@@ -159,44 +166,37 @@ def _main() -> int:
                     " Do not commit without user confirmation."
                 )
             )
-            return 0
-        # 2 回目以降は block_count != 0 で何もせず、後続処理へフォールスルーする。
 
     # --- セッション振り返り提案 ---
-    # セッション 1 回制限: block 後に Claude が再度 Stop するため、
-    # 2 回目以降は即座に approve する。
-    if state.get("stop_advice_given", False):
-        _approve(cwd=cwd)
+    if not state.get("stop_advice_given", False):
+        # 発火: block 前に stop_advice_given を記録する。
+        # block 後の再 Stop 時に同フラグで即スキップするため。
+        state["stop_advice_given"] = True
+        write_state(session_id, state)
+
+        body = (
+            "session review: list improvement suggestions in Japanese."
+            " Each suggestion must stand alone for readers without this session's conversation history"
+            " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
+            " Target project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
+            " — only knowledge from this session that helps future Claude work on this project"
+            " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
+            " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
+            " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
+            " and list each item as '- <対象ファイル> — <提案内容>'."
+            " If none, write '指摘無し' under the same heading."
+            " On user approval, draft and apply the diff via Edit."
+            " Output the suggestions only (no preamble or narration)."
+        )
+        messages.append(_llm_notice(body))
+
+    if messages:
+        # 複数通知は空行で区切って 1 block にまとめる。
+        # LLM 側はそれぞれの `[auto-generated: ...]` プレフィックスで通知の境界を識別する。
+        _block("\n\n".join(messages))
         return 0
 
-    # 共通ゲート: 直前ターンが真のセッション終了でない場合は block を見送る。
-    # `stop_advice_given` を記録しないため、ユーザーが応答した後や作業完了後の
-    # Stop で改めて評価される。
-    if not is_real_session_end(transcript_path):
-        _approve(cwd=cwd)
-        return 0
-
-    # 発火: block 前に stop_advice_given を記録する。
-    # block 後の再 Stop 時に上の早期リターンで即 approve するため。
-    state["stop_advice_given"] = True
-    write_state(session_id, state)
-
-    body = (
-        "session review: list improvement suggestions in Japanese."
-        " Each suggestion must stand alone for readers without this session's conversation history"
-        " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
-        " Target project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
-        " — only knowledge from this session that helps future Claude work on this project"
-        " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
-        " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
-        " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
-        " and list each item as '- <対象ファイル> — <提案内容>'."
-        " If none, write '指摘無し' under the same heading."
-        " On user approval, draft and apply the diff via Edit."
-        " Output the suggestions only (no preamble or narration)."
-    )
-
-    _block(_llm_notice(body))
+    _approve(cwd=cwd)
     return 0
 
 
