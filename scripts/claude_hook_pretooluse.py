@@ -39,21 +39,6 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
      hook は緩い警告のみを出してブロックはしない
    - `file_path` 自体が対象パターンに一致するファイルの場合は、
      ファイル自身の作成・編集として警告もスキップする
-4. リポジトリ配下 `.claude/` 編集の自動許可 (allow, 非ブロック)
-   - 任意のリポジトリ配下の `.claude/` への編集に対し
-     `permissionDecision: "allow"` を返し、Claude Code 組み込みの保護機構が
-     発動する確認プロンプトを抑制する。
-     ルール・スキル整備中の体感負荷を下げるための個人環境専用ガード。
-   - 判定条件 (3 つすべてを満たす場合に対象):
-     (a) パスのいずれかのコンポーネントが `.claude` である
-     (b) `~/.claude/` 配下ではない
-         (配布先誤編集の警告経路 (1) を維持するため除外する。
-          ただし (1) も `permissionDecision: "allow"` を返すため
-          ユーザーから見える挙動は警告メッセージ付きで確認なしのまま変わらない)
-     (c) パスの親を順に遡り `.git` (ディレクトリまたはファイル) が見つかる
-         (= Git ワークツリー配下である)
-   - Git ワークツリー判定は subprocess を使わずファイルシステム存在確認のみで行う
-     (PreToolUse は編集毎に走るため軽量化が必要)。
 
 検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
 `old_string` は既存内容の修正・削除を妨げないため検査しない。
@@ -61,10 +46,11 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
 出力契約:
 
 - block: exit 2 + stderr にブロック理由を出力
-- warn / auto-allow (allow + 任意のメッセージ):
-  exit 0 + stdout に JSON (`hookSpecificOutput`) を出力
-  - 警告系または自動許可のいずれかが該当する場合に `permissionDecision: "allow"` を付与
-  - 警告がある場合のみ `additionalContext` を付与
+- warn: exit 0 + stdout に JSON (`hookSpecificOutput`) を出力
+  - `permissionDecision: "allow"` と `additionalContext` (警告メッセージ) を付与
+  - 組み込みの ask ルール (`.claude/` 配下の確認ダイアログ等) は本フックの allow では
+    上書きできないため、確認ダイアログの抑制が必要な経路は PermissionRequest フック
+    (`scripts/claude_hook_permissionrequest.py`) で別途処理する
 - 通過 (違反なし / スキップ対象ツール / 想定外入力): exit 0、出力なし
 
 メッセージは英語で記述する (ユーザーの日本語思考コンテキストへのノイズ混入を避けるため)。
@@ -89,10 +75,6 @@ from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pyli
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 
 _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
-
-# Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
-# 病的に深いパスでの暴走を避けるためのガード。
-_GIT_WORKTREE_LOOKUP_DEPTH = 64
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -128,9 +110,7 @@ def _main() -> int:
     if _check_ps1_directives(tool_name, fields, file_path):
         return 2
 
-    # --- warn 系 / 自動許可 系 check ---
-    # 警告系と自動許可は判定経路を独立させるが、最終出力は同一 JSON に集約する。
-    # いずれかが該当した時点で `permissionDecision: "allow"` を付与する。
+    # --- warn 系 check ---
     warnings: list[str] = []
     home_claude_warning = _home_claude_edit_warning(tool_name, file_path)
     if home_claude_warning is not None:
@@ -139,19 +119,16 @@ def _main() -> int:
     if personal_warning is not None:
         warnings.append(personal_warning)
 
-    auto_allow = _is_repo_claude_edit(file_path)
-    should_allow = bool(warnings) or auto_allow
-
-    if should_allow:
-        hook_specific: dict[str, object] = {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-        }
-        if warnings:
-            hook_specific["additionalContext"] = _llm_notice(" | ".join(warnings), tag="warn")
+    if warnings:
         print(
             json.dumps(
-                {"hookSpecificOutput": hook_specific},
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "additionalContext": _llm_notice(" | ".join(warnings), tag="warn"),
+                    }
+                },
                 ensure_ascii=False,
             )
         )
@@ -371,60 +348,6 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
         " file (e.g., in distributed docs/skills) is legitimate."
         " Judge the context and keep the mention only if it is intentional."
     )
-
-
-# --- リポジトリ配下 `.claude/` 編集の自動許可 check (allow) ---
-
-
-def _is_repo_claude_edit(file_path: str) -> bool:
-    """リポジトリ配下の `.claude/` 配下への編集かを判定する。
-
-    判定条件 (3 つすべてを満たす場合に True):
-    1. パスのいずれかのコンポーネントが `.claude` である
-    2. `~/.claude/` 配下ではない (配布先誤編集の警告経路を維持するため除外)
-    3. パスの親を順に遡って `.git` (ディレクトリまたはファイル) が見つかる
-       (= Git ワークツリー配下である)
-    """
-    if not file_path:
-        return False
-    try:
-        target = pathlib.Path(file_path).expanduser()
-        if not target.is_absolute():
-            return False
-        target = target.resolve(strict=False)
-        home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
-    except (ValueError, OSError):
-        return False
-
-    if ".claude" not in target.parts:
-        return False
-
-    # ~/.claude 配下は対象外 (既存の警告経路がカバー)
-    try:
-        target.relative_to(home_claude)
-        return False
-    except ValueError:
-        pass
-
-    return _is_inside_git_worktree(target)
-
-
-def _is_inside_git_worktree(target: pathlib.Path) -> bool:
-    """対象パスの親を遡って `.git` の存在を確認する。
-
-    `.git` はディレクトリ (通常のリポジトリ) またはファイル (worktree / submodule) の
-    いずれもありうるため `exists()` で判定する。subprocess は使わずファイルシステム
-    存在確認のみで完結させる (PreToolUse が編集毎に走るため軽量化が必要)。
-    """
-    current = target.parent
-    for _ in range(_GIT_WORKTREE_LOOKUP_DEPTH):
-        if (current / ".git").exists():
-            return True
-        if current.parent == current:
-            # filesystem root に到達
-            return False
-        current = current.parent
-    return False
 
 
 if __name__ == "__main__":
