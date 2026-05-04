@@ -1527,6 +1527,145 @@ class TestRemoteHostIntegration:
         assert data == {"local-host": "connected", "host1": "connected"}
 
 
+class TestBuildRemoteCommand:
+    """`build_remote_command_argv`はPOSIXシェル非依存・cmd.exe互換であること。
+
+    Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`・heredoc・`head -c`等の
+    POSIX組み込みが解釈できない。リモート起動コマンドはこれらに依存せず、
+    クォート境界はダブルクォートのみで表現する不変条件を持つ。
+    """
+
+    @pytest.mark.parametrize("op,args", [("serve", []), ("read", ["YWJjLm1k"])])
+    def test_excludes_posix_shell_idioms(self, op: str, args: list[str]):
+        """argv連結文字列にPOSIXシェル組み込み・heredoc・パイプ等が含まれない。"""
+        argv = _remote.build_remote_command_argv(op, args)
+        joined = " ".join(argv)
+        # POSIXシェル非依存に必須となる禁止トークン。
+        for token in ("bash ", "bash\t", "head ", "mkdir ", "<<", "<<<", "<<-", "exec ", " | ", "&&", "||"):
+            assert token not in joined, f"{token!r} unexpectedly present: {joined!r}"
+        # 単独の文字としてリダイレクト・パイプ・cmd.exeエスケープが現れない。
+        # `>=`はwatchdogバージョン指定子として`"..."`内に閉じ込められて出現するため除外する。
+        for ch in ("|", "&", "^"):
+            assert ch not in joined, f"{ch!r} unexpectedly present: {joined!r}"
+
+    def test_python_bootstrap_excludes_shell_specials(self):
+        """bootstrapコード本体にはPOSIX/cmd.exeで意味を持つ特殊文字を含めない。"""
+        bootstrap = _remote.REMOTE_BOOTSTRAP
+        # `$`はPOSIXのダブルクォート内でも展開される。`%`はcmd.exeでも展開される。
+        # `<`・`>`・`|`・`&`・`^`はクォート外でリダイレクト・連結・エスケープに解釈される。
+        # `\`はPOSIXダブルクォート内でエスケープ扱いになる。
+        for ch in ("$", "%", "<", ">", "|", "&", "^", "\\"):
+            assert ch not in bootstrap, f"bootstrap contains forbidden char {ch!r}: {bootstrap!r}"
+
+    def test_op_and_args_appended_at_tail(self):
+        """`op`と`args`はargv末尾に未加工のまま追加される（helperはsys.argvで読み取る）。"""
+        argv = _remote.build_remote_command_argv("read", ["YWJjLm1k"])
+        assert argv[-2:] == ["read", "YWJjLm1k"]
+
+    def test_uses_double_quote_boundaries_only(self):
+        """空白を含む要素は両端ダブルクォートで囲み、シングルクォート境界は使わない。"""
+        argv = _remote.build_remote_command_argv("serve", [])
+        for elem in argv:
+            if " " not in elem:
+                continue
+            # cmd.exeはシングルクォートをクォート境界として認識しない。
+            assert elem.startswith('"') and elem.endswith('"'), elem
+
+
+class _FakeProcessForTerminate:
+    """`terminate_process`の段階的フォールバック検証用の擬似Process。
+
+    `exits_on`で「どの段階で終了するか」を制御し、helperがstdin EOF / SIGTERM /
+    SIGKILLのいずれで停止するかを再現する。`wait()`はreturncodeが入るまで待つ。
+    """
+
+    def __init__(self, exits_on: typing.Literal["stdin_close", "terminate", "kill", "never"]) -> None:
+        self._exits_on = exits_on
+        self.stdin = self._Stdin(self._on_stdin_close)
+        self.returncode: int | None = None
+        self.terminate_called = False
+        self.kill_called = False
+        self._wait_event = asyncio.Event()
+
+    class _Stdin:
+        def __init__(self, on_close: typing.Callable[[], None]) -> None:
+            self._closing = False
+            self._on_close = on_close
+
+        def is_closing(self) -> bool:
+            return self._closing
+
+        def close(self) -> None:
+            if not self._closing:
+                self._closing = True
+                self._on_close()
+
+    def _on_stdin_close(self) -> None:
+        if self._exits_on == "stdin_close":
+            self._set_exited(0)
+
+    def terminate(self) -> None:
+        self.terminate_called = True
+        if self._exits_on == "terminate":
+            self._set_exited(-15)
+
+    def kill(self) -> None:
+        self.kill_called = True
+        if self._exits_on == "kill":
+            self._set_exited(-9)
+
+    def _set_exited(self, rc: int) -> None:
+        if self.returncode is None:
+            self.returncode = rc
+            self._wait_event.set()
+
+    async def wait(self) -> int:
+        await self._wait_event.wait()
+        assert self.returncode is not None
+        return self.returncode
+
+
+class TestTerminateProcess:
+    """`terminate_process`の段階的フォールバック挙動を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_stdin_close_triggers_graceful_exit(self):
+        """stdin closeで停止経路に乗る場合、terminate/killは呼ばれない。"""
+        proc = _FakeProcessForTerminate(exits_on="stdin_close")
+        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.1)
+        assert proc.returncode == 0
+        assert not proc.terminate_called
+        assert not proc.kill_called
+
+    @pytest.mark.asyncio
+    async def test_terminate_after_stdin_unresponsive(self):
+        """stdin closeで応答が無ければterminateで停止し、killは呼ばれない。"""
+        proc = _FakeProcessForTerminate(exits_on="terminate")
+        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        assert proc.returncode == -15
+        assert proc.terminate_called
+        assert not proc.kill_called
+
+    @pytest.mark.asyncio
+    async def test_kill_when_process_is_unresponsive(self):
+        """terminateにも応答しないプロセスはkillで打ち切られる。"""
+        proc = _FakeProcessForTerminate(exits_on="kill")
+        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        assert proc.returncode == -9
+        assert proc.terminate_called
+        assert proc.kill_called
+
+    @pytest.mark.asyncio
+    async def test_already_exited_process_is_no_op(self):
+        """既に終了済みのプロセスはstdin close・terminate・killいずれも呼ばれない。"""
+        proc = _FakeProcessForTerminate(exits_on="never")
+        proc.returncode = 0
+        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        assert not proc.terminate_called
+        assert not proc.kill_called
+        assert not proc.stdin.is_closing()
+
+
 class TestRemoteStreamLimit:
     """`asyncio.create_subprocess_exec`既定StreamReader上限超過時の挙動。"""
 

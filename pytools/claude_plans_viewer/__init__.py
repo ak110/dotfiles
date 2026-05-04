@@ -8,8 +8,9 @@ Markdown→HTML変換はraw HTMLをエスケープする設定とし、
 
 `--remote-host`を複数指定すると、SSH経由で各ホストの`~/.claude/plans/`を
 watchdog経由で監視し、ローカル分と同じ左ペインへ統合表示する。
-リモート側は`uv run --no-project --script -`でヘルパーを実行し、
-`python`／`python3`のPATH差を吸収する。
+リモート側ヘルパーは`$HOME/dotfiles/pytools/claude_plans_viewer/_remote_helper.py`に
+チェックアウトされている前提で、SSH経由の短いPython bootstrapから直接読み込み実行する。
+これによりPOSIXシェル組み込みコマンドに依存せず、Windows OpenSSHの既定シェル`cmd.exe`でも動作する。
 
 設定値の優先順位は「CLI引数 > 環境変数 > 組み込み既定値」とし、
 環境ごとの差分は環境変数で吸収できるようにしている。
@@ -25,10 +26,11 @@ watchdog経由で監視し、ローカル分と同じ左ペインへ統合表示
 
 モジュール構成は責務単位で以下に分割している。
 
-- `_assets`: SPA・PWA・リモートヘルパーの埋め込みアセット
+- `_assets`: SPA・PWAの埋め込みアセット
 - `_state`: SSE購読者・debounce状態・リモートホストキャッシュなど共有状態
 - `_local`: ローカルファイル探索・watchdog連携・Markdown変換・CSS解決
 - `_remote`: SSH経由のリモートホスト統合（リモートwatch・リモートファイル取得）
+- `_remote_helper`: SSH経由でリモート側にて実行されるヘルパースクリプト本体
 - `_app`: Quartアプリ生成とAPIハンドラ
 - `_cli`: コマンドライン引数解析とエントリーポイント
 

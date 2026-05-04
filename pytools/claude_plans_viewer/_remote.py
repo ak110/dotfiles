@@ -16,7 +16,7 @@ import random
 import subprocess
 import typing
 
-from pytools.claude_plans_viewer import _assets, _state
+from pytools.claude_plans_viewer import _state
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +54,6 @@ REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 # エントリー数増加でこれを超えると行末を発見できず例外送出する。
 REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
-# リモートヘルパーの配置先（リモートホストのホームディレクトリからの相対パス）。
-# サーバ起動・再接続のたびに最新版で上書きされるため、ローカル/リモートのバージョンずれは生じない。
-REMOTE_HELPER_DIR = ".cache/claude_plans_viewer"
-REMOTE_HELPER_FILENAME = "helper.py"
-
-
 # SSHランナーの抽象シグネチャ。テストではfake実装を注入し、本番は`default_ssh_runner`を使う。
 # (host, op, args) -> stdout (UTF-8文字列)。失敗時は例外を送出する。
 SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
@@ -69,48 +63,62 @@ SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
 # `asyncio.subprocess.Process.stdout`に依存しないインターフェースを使う。
 LineSource = typing.AsyncIterator[str]
 
+# リモート側で実行する短いPython bootstrap。
+# `os.path.expanduser('~')`でホームを展開し、リモートdotfiles配下の`_remote_helper.py`を
+# `read_text(encoding='utf-8')`で読み込んで`exec`する。
+# `$`・`%`・`<`・`>`・`|`・`&`・`^`はPOSIXシェル/cmd.exe双方で意味を持つため
+# このコード本体には含めない（`>=`を含むパッケージ指定子はargv側のダブルクォート内に置く）。
+REMOTE_BOOTSTRAP = (
+    "import os, pathlib; "
+    "p = pathlib.Path(os.path.expanduser('~')) / "
+    "'dotfiles/pytools/claude_plans_viewer/_remote_helper.py'; "
+    "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
+)
 
-def _build_serve_remote_command(helper_size: int) -> str:
-    """`serve`サブコマンド用のリモート実行シェルコマンド文字列を組み立てる。
 
-    stdinの先頭`helper_size`バイトをヘルパースクリプトとしてリモートへ保存してから
-    `uv run --script <配置先> serve`に`exec`する。
-    残りのstdinは置換後のserveプロセスのstdinとなり、RPC通信路として使われる。
-    `head -c <N>`は読み取りバイト数を限定するため、stdinに残った行JSONリクエストが
-    スクリプト本文に混ざる事故を防げる。
+def build_remote_command_argv(op: str, args: list[str]) -> list[str]:
+    """SSH経由でリモートヘルパーを起動するargv要素列を返す。
+
+    SSHは末尾の各要素を空白で連結してリモートシェルへ渡すため、
+    シェルにより1単位として解釈すべき要素はあらかじめダブルクォートで囲んで返す。
+
+    リモート起動コマンドはPOSIXシェル非依存とする。
+    Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開・`head -c`等が
+    使えないため、シェル組み込みコマンドへ依存しないこと。
+    リモート側に`$HOME/dotfiles`が存在することを前提とし、
+    ヘルパースクリプトはリモート側 dotfiles から直接読み込む。
+    `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
+    クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
+    `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
+    Windowsの既定ロケールはUTF-8とは限らないため、ヘルパー本体の読み込みは
+    `read_text(encoding="utf-8")`でエンコーディングを明示する。
     """
-    return (
-        f'D="$HOME/{REMOTE_HELPER_DIR}" && mkdir -p "$D" '
-        f'&& head -c {helper_size} > "$D/{REMOTE_HELPER_FILENAME}.tmp" '
-        f'&& mv "$D/{REMOTE_HELPER_FILENAME}.tmp" "$D/{REMOTE_HELPER_FILENAME}" '
-        f'&& exec uv run --no-project --script "$D/{REMOTE_HELPER_FILENAME}" serve'
-    )
+    return [
+        "uv",
+        "run",
+        "--no-project",
+        "--with",
+        '"watchdog>=6.0.0"',
+        "python",
+        "-c",
+        f'"{REMOTE_BOOTSTRAP}"',
+        op,
+        *args,
+    ]
 
 
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
     fallback経路（常駐watch経由RPCが使えない場合）でのみ使う。
-    ヘルパースクリプト本体はstdinに、操作種別と引数はSSHコマンドのargvに渡す。
-    `python`／`python3`のPATH不整合を吸収するため、リモート実行は常に`uv run --script -`で行う。
+    起動経路は`RemoteWatcher`と統一し、リモート側 dotfiles の`_remote_helper.py`を
+    短いPython bootstrap経由で`exec`する。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。
     """
-    cmd = [
-        "ssh",
-        *SSH_BASE_OPTIONS,
-        host,
-        "uv",
-        "run",
-        "--no-project",
-        "--script",
-        "-",
-        op,
-        *args,
-    ]
+    cmd = ["ssh", *SSH_BASE_OPTIONS, host, *build_remote_command_argv(op, args)]
     proc = await asyncio.to_thread(
         subprocess.run,
         cmd,
-        input=_assets.REMOTE_HELPER_SCRIPT.encode("utf-8"),
         capture_output=True,
         timeout=SSH_TIMEOUT_SEC,
         check=True,
@@ -168,7 +176,7 @@ class RemoteWatcher:
 
     `run()`の流れ:
       1. host_statusを"connecting"へ更新しSSE配信
-      2. SSH+stdinでリモートヘルパーを配置し、`serve`サブコマンドを起動
+      2. SSH経由でPython bootstrapを実行し、リモート側`_remote_helper.py`の`serve`を起動
       3. stdoutの行を読みつつ`_handle_event`でキャッシュ・SSE・RPC応答を処理
       4. snapshotを受信したら"connected"へ遷移し、以降は`request()`によるRPCも可能になる
       5. EOF・例外で"disconnected"へ遷移し、pending RPCを打ち切ってから指数バックオフで再接続
@@ -178,11 +186,9 @@ class RemoteWatcher:
         self,
         host: str,
         state: _state.BroadcastState,
-        helper_script: str = _assets.REMOTE_HELPER_SCRIPT,
     ) -> None:
         self.host = host
         self.state = state
-        self._helper_script = helper_script
         # 長時間維持された接続が途絶した後の再接続時にバックオフが最大値から始まらないよう、
         # snapshot受信（接続成功）時にリセットする。
         self._backoff = REMOTE_BACKOFF_INITIAL_SEC
@@ -277,15 +283,12 @@ class RemoteWatcher:
             self._backoff = min(self._backoff * 2, REMOTE_BACKOFF_MAX_SEC)
 
     async def _connect(self) -> _async_subprocess.Process:
-        helper_bytes = self._helper_script.encode("utf-8")
         cmd = [
             "ssh",
             *SSH_BASE_OPTIONS,
             *SSH_WATCH_OPTIONS,
             self.host,
-            "bash",
-            "-c",
-            _build_serve_remote_command(len(helper_bytes)),
+            *build_remote_command_argv("serve", []),
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -298,12 +301,7 @@ class RemoteWatcher:
             # 上限を8MiB相当へ引き上げて十分な余裕を確保する。
             limit=REMOTE_STREAM_LIMIT_BYTES,
         )
-        assert proc.stdin is not None
-        # ヘルパー本体だけを書き込み、stdin自体は閉じずRPC通信路として保持する。
-        # リモート側の`head -c <N>`がN bytesでEOF扱いを止めるため、
-        # 後続のwriteはserveプロセスのstdinへ流れ込む。
-        proc.stdin.write(helper_bytes)
-        await proc.stdin.drain()
+        # stdinはRPC通信路としてそのまま保持する（ヘルパー本体はリモート側dotfilesから読み込まれる）。
         return proc
 
     async def _process_stream(self, lines: LineSource) -> None:
@@ -401,18 +399,52 @@ async def iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterato
         yield chunk.decode("utf-8", errors="replace")
 
 
-async def terminate_process(proc: _async_subprocess.Process) -> None:
-    """watch用subprocessを後始末する。
+# 各停止段階で`proc.wait()`に与える既定タイムアウト（秒）。
+# helperは数秒以内にEOF/SIGTERMへ反応するため、合計でも数秒〜十数秒に収まる。
+TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
-    既に終了していれば何もしない。
-    `terminate`後に短時間waitし、ゾンビ化を避ける。
+
+async def terminate_process(
+    proc: _async_subprocess.Process,
+    grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
+) -> None:
+    """watch用subprocessを段階的に後始末する。
+
+    serveヘルパーは`for raw in sys.stdin:`のEOFで停止経路に入るため、
+    まずstdinをcloseして穏当な終了を試み、応答が無ければ`terminate`、
+    それでも応答が無ければ`kill`へ降下する。
+    各段階で`grace_timeout`秒ずつ待機し、ゾンビ化や残留serveプロセスを避ける。
     """
     if proc.returncode is not None:
         return
+    # 1) stdinへEOFを送ってhelperのreader_loopをbreakさせる。
+    if proc.stdin is not None and not proc.stdin.is_closing():
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
+            proc.stdin.close()
+    if await _wait_with_timeout(proc, grace_timeout):
+        return
+    # 2) SIGTERM相当でhelperへ停止指示する。
     with contextlib.suppress(ProcessLookupError):
         proc.terminate()
+    if await _wait_with_timeout(proc, grace_timeout):
+        return
+    # 3) 最後にSIGKILL相当で強制終了させる。
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+    await _wait_with_timeout(proc, grace_timeout)
+
+
+async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
+    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
+
+    `terminate_process`はキャンセル経路からも呼ばれるため、
+    `CancelledError`は呑み込んで段階的処理を継続する。
+    """
+    if proc.returncode is not None:
+        return True
     with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-        await asyncio.wait_for(proc.wait(), timeout=2.0)
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    return proc.returncode is not None
 
 
 def is_safe_remote_relpath(rel: str) -> bool:
