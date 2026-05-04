@@ -61,7 +61,7 @@ class TestAutoDisablePlugins:
 
     @pytest.fixture(name="single_disable_target")
     def _single_disable_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`_AUTO_DISABLED_PLUGIN_IDS` を1件に絞る共通fixture。"""
+        """`_AUTO_DISABLED_PLUGIN_IDS` を1件に限定する共通fixture。"""
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({self._DISABLE_TARGET}))
 
     def _record_calls(self, monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
@@ -83,7 +83,7 @@ class TestAutoDisablePlugins:
         # pylint: disable-next=protected-access
         disabled, failed = _install_claude_plugins._auto_disable_plugins(raw_data, {self._DISABLE_TARGET: True})
         assert (disabled, failed) == (1, 0)
-        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope", "user"]]
+        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"]]
 
     @pytest.mark.usefixtures("single_disable_target")
     def test_disable_called_when_settings_missing(self, monkeypatch: pytest.MonkeyPatch):
@@ -93,7 +93,7 @@ class TestAutoDisablePlugins:
         # pylint: disable-next=protected-access
         disabled, failed = _install_claude_plugins._auto_disable_plugins(raw_data, None)
         assert (disabled, failed) == (1, 0)
-        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope", "user"]]
+        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"]]
 
     @pytest.mark.usefixtures("single_disable_target")
     def test_disable_skipped_when_already_disabled(self, monkeypatch: pytest.MonkeyPatch):
@@ -128,7 +128,7 @@ class TestAutoDisablePlugins:
         # pylint: disable-next=protected-access
         disabled, failed = _install_claude_plugins._auto_disable_plugins(raw_data, None)
         assert (disabled, failed) == (0, 1)
-        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope", "user"]]
+        assert calls == [["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"]]
 
 
 class TestRunAutoDisable:
@@ -177,7 +177,7 @@ class TestRunAutoDisable:
 
         assert changed is True
         assert not recommendations
-        assert ["claude", "plugin", "disable", target_disable, "--scope", "user"] in calls
+        assert ["claude", "plugin", "disable", target_disable, "--scope=user"] in calls
 
 
 class TestRunNoAutomaticStateChange:
@@ -195,7 +195,7 @@ class TestRunNoAutomaticStateChange:
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         # settings.json の読み取りは None (未設定扱い) で固定してテスト環境差を排除する
         monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
-        # 有効化対象を全て未インストール状態に絞って検証する
+        # 有効化対象を全て未インストール状態に限定して検証する
         target_enable = "context7@claude-plugins-official"
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({target_enable}))
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset())
@@ -225,7 +225,7 @@ class TestRunNoAutomaticStateChange:
         _changed, recommendations = _install_claude_plugins.run()
 
         # 自動 enable/disable/install (外部 marketplace 向け) の CLI は発行されない
-        install_target_cmd = ["claude", "plugin", "install", target_enable, "--scope", "user"]
+        install_target_cmd = ["claude", "plugin", "install", target_enable, "--scope=user"]
         for cmd in calls:
             assert cmd[:3] != ["claude", "plugin", "enable"], f"unexpected enable call: {cmd}"
             assert cmd[:3] != ["claude", "plugin", "disable"], f"unexpected disable call: {cmd}"

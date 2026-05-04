@@ -151,7 +151,7 @@ class TestRunFlow:
         update_calls = [c for c in calls if c[:3] == ["claude", "plugin", "update"]]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
         # --scope=user が渡されていること
-        assert any("--scope" in c and "user" in c for c in update_calls)
+        assert any("--scope=user" in c for c in update_calls)
         # 最新である sample-plugin に対しては update を発行しない
         assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
         # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
@@ -185,7 +185,7 @@ class TestRunFlow:
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
         # --scope=user が渡されていること
         for ic in install_calls:
-            assert "--scope" in ic and "user" in ic
+            assert "--scope=user" in ic
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
@@ -355,9 +355,7 @@ class TestRunFlow:
         # project scope の清掃 (uninstall) が tmp_path を cwd にして呼ばれること
         uninstall_calls = [(cmd, cwd) for cmd, cwd in calls if cmd[:3] == ["claude", "plugin", "uninstall"]]
         matched = [
-            (cmd, cwd)
-            for cmd, cwd in uninstall_calls
-            if "agent-toolkit@ak110-dotfiles" in cmd and "--scope" in cmd and "project" in cmd
+            (cmd, cwd) for cmd, cwd in uninstall_calls if "agent-toolkit@ak110-dotfiles" in cmd and "--scope=project" in cmd
         ]
         assert matched, f"project scope 除去の呼び出しが無い: {uninstall_calls}"
         assert all(cwd == tmp_path for _cmd, cwd in matched)
@@ -494,16 +492,14 @@ class TestRunFlowDirectoryType:
             "plugin",
             "install",
             "agent-toolkit@ak110-dotfiles",
-            "--scope",
-            "user",
+            "--scope=user",
         ] in install_calls
         assert [
             "claude",
             "plugin",
             "install",
             "sample-plugin@ak110-dotfiles",
-            "--scope",
-            "user",
+            "--scope=user",
         ] in install_calls
         # plugin update / marketplace update は呼ばれない
         assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)
@@ -625,8 +621,7 @@ class TestEnsureMarketplaceCliPath:
             "marketplace",
             "add",
             str(dotfiles_root),
-            "--scope",
-            "user",
+            "--scope=user",
         ]
 
 
@@ -932,16 +927,14 @@ class TestHappyPathDirectoryType:
             "plugin",
             "install",
             "agent-toolkit@ak110-dotfiles",
-            "--scope",
-            "user",
+            "--scope=user",
         ] in install_calls
         assert [
             "claude",
             "plugin",
             "install",
             "sample-plugin@ak110-dotfiles",
-            "--scope",
-            "user",
+            "--scope=user",
         ] in install_calls
         # marketplace update / plugin update は呼ばれない
         assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)

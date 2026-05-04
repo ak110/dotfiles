@@ -11,11 +11,11 @@ writing-standards本来の範囲外だが、本ファイルの記述指示（mat
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数。
   `hooks.json`の`command`フィールドや、hookスクリプトから他リソースを参照するときに用いる
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`は
-  どちらもLLMに届くため一方で十分。両方指定するとLLM側で重複して見える可能性があるため、片方に統一する
+  どちらもLLMに届くため一方で十分。両方指定するとLLM側で重複して表示される可能性があるため、片方に統一する
 
 ## matcher設定
 
-`hooks.json`の`PreToolUse` / `PostToolUse`では`matcher`でhookを起動するツールを絞り込む。
+`hooks.json`の`PreToolUse` / `PostToolUse`では`matcher`でhookを起動するツールを限定する。
 `matcher`はツール名に対する正規表現として評価される。
 
 - 特定ツールのみ: `"Write|Edit|MultiEdit"`のように`|`で列挙する
@@ -26,7 +26,7 @@ writing-standards本来の範囲外だが、本ファイルの記述指示（mat
 
 ## 出力フィールドの使い分け
 
-hookやプラグインのJSON出力で使えるフィールドは、表示先が異なる。
+hookやプラグインのJSON出力で利用できるフィールドは、表示先が異なる。
 LLMに行動を促す必要がある場合は`reason`または`additionalContext`を使い、`systemMessage`は使わない。
 
 **共通フィールド（全hookイベント）:**

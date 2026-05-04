@@ -34,7 +34,10 @@
   - 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
     pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
     抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
-- Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を書ける
+  - 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
+    別ルールで重複指摘するため、両方併記が必要。
+    `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で書く
+- Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を記述できる
  （フォーマッターが自動整形する場合あり）
 - 入力バリデーション: API境界や外部入力は `pydantic` v2で型駆動バリデーションする
  （型・範囲・形式を一括で保証し、不正データを早期に拒否するため）
@@ -42,6 +45,10 @@
   - `eval()` / `exec()` / `compile()` はユーザー入力に対して使わない（`ast.literal_eval()` や専用パーサーで代替）
   - `pickle` / `shelve` は信頼できないデータに使わない（`json` や `msgpack` で代替）
   - `subprocess` は `shell=True` を避ける（引数はリスト形式で渡す。やむを得ない場合は `shlex.quote()` で引数をエスケープ）
+  - `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
+    `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る。
+    使用前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る。
+    `text=True`を指定する場合は`str`に推論されるが、その場合も`None`の可能性が残るため同様に限定する
   - YAML読み込みは `yaml.safe_load()` を使う（`yaml.load()` は任意コード実行の危険あり）
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは `tempfile` モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
@@ -53,11 +60,16 @@
     - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
   - ユーティリティ集: `pytilpack`（便利ライブラリ）
     - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
+- `argparse`で`action="append"`を使う場合の既定値は`default=None`にする。
+  非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻し、
+  list（例: `[]`）を渡すと毎回初期要素として混入する。
+  環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、
+  `None`なら環境変数から初期化、それ以外はそのまま使用する
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:` / `type Alias[T] = list[T]`）を使う
     - `TypeVar` 宣言が不要になり、ジェネリック定義が簡潔になるため
   - Python 3.12+: PEP 701のf-string拡張を活用する
-    - 複数行・ネストクォート・バックスラッシュが使えるようになり可読性が上がる
+    - 複数行・ネストクォート・バックスラッシュが利用できるようになり可読性が上がる
   - Python 3.13+: `typing.TypedDict` の `ReadOnly[...]` で不変フィールドを型レベルで表現する
   - Python 3.13+: `copy.replace(obj, field=value)` で変更コピーを生成する
     - 対応対象は `dataclass` / `namedtuple` / `__replace__()` 定義クラスのみに限定される

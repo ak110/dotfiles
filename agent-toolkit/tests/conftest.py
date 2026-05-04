@@ -29,7 +29,7 @@ def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
         subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
         (repo / "file.txt").write_text("initial")
         subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "--message", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "--message=init"], cwd=str(repo), capture_output=True, check=True)
         # tracked file を変更して未コミット状態にする
         (repo / "file.txt").write_text("modified")
         return repo
@@ -49,7 +49,7 @@ def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
         subprocess.run(["git", "config", "user.name", "test"], cwd=str(repo), capture_output=True, check=True)
         (repo / "file.txt").write_text("clean")
         subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "--message", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "--message=init"], cwd=str(repo), capture_output=True, check=True)
         return repo
 
     return _make

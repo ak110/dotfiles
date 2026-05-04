@@ -2,6 +2,11 @@
 
 `create_app`はパッケージ外へも公開する公開API。それ以外のヘルパー（`resolve_request_target`・
 `safe_base_path`）はpackage-internalとしてunderscoreなしで定義する。
+
+本モジュールは`pytilpack.quart.ProxyFix`を採用しており、リバースプロキシ前段は
+`X-Forwarded-Prefix`を保持して転送する構成（prefixを除去しない構成）を前提とする。
+Quartは`scope.root_path`をパス冒頭から除去する仕様のため、prefixを除去する構成では404を返す。
+`safe_base_path`は信頼境界として`request.root_path`を厳格に検査する。
 """
 
 import asyncio
@@ -115,7 +120,7 @@ def create_app(
         # 発火しないため、テスト側は`RemoteWatcher`を直接駆動する。
         for host in remote_host_list:
             watcher = _remote.RemoteWatcher(host, state)
-            # `/api/file`/`/api/raw`がwatch経路のRPCを使えるよう参照を共有する。
+            # `/api/file`/`/api/raw`がwatch経路のRPCを利用できるよう参照を共有する。
             state.remote_watchers[host] = watcher
             task = asyncio.create_task(watcher.run())
             state.remote_tasks.append(task)

@@ -1154,7 +1154,7 @@ def _attach_fake_connection(watcher: _remote.RemoteWatcher) -> _FakeProc:
     """`RemoteWatcher`を擬似的に接続済みにする。
 
     `_connect`を経由せずに`_proc`/`_connected`を直接設定し、
-    RPCテストを最小限の依存で書けるようにする。
+    RPCテストを最小限の依存で記述できるようにする。
     """
     proc = _FakeProc()
     watcher._proc = typing.cast(typing.Any, proc)
@@ -1804,7 +1804,7 @@ class TestProxyFixIntegration:
     ):
         """ルート到達可能な悪意プレフィクスでも出力に生バイトが漏れない。
 
-        ProxyFixがroot_pathに設定し、Quartが路追剥がしを行ってルートに到達するパスを
+        ProxyFixがroot_pathに設定し、Quartが路追prefix除去を行ってルートに到達するパスを
         引き渡す。`safe_base_path`が空扱いに正規化するため、HTML属性・JS定数・manifestの
         いずれにもプレフィクス文字列が漏れず、外部オリジンへのスキーム相対URLも生まれない。
         """

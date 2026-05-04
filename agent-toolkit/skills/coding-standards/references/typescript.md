@@ -14,14 +14,14 @@
 - 型について
   - `any` の使用は極力避ける（型チェックを回避してしまうため）。やむを得ない場合は `unknown` + 型ガードを優先する
   - `as` による型アサーションより型ガード（`is` / `satisfies`）を優先する（実行時の型不一致を防ぐため）
-  - union型（`"a" | "b"`）を `enum` より優先する（tree-shakingしやすく、型の絞り込みも自然なため）
+  - union型（`"a" | "b"`）を `enum` より優先する（tree-shakingしやすく、型のnarrowingも自然なため）
   - `switch` の網羅性チェックには `satisfies never` を使用する
 - JSDocコメントを記述する
   - ファイルの先頭に`@fileoverview`で概要を記述
   - 関数・クラス・メソッドには機能を説明するコメントを記述
   - 自明な`@param`や`@returns`は省略する
 - エラーハンドリング
-  - `catch` の引数は `unknown` として扱い、`instanceof` で型を絞り込む
+  - `catch` の引数は `unknown` として扱い、`instanceof` で型を特定する
 - `null`は使わず`undefined`を使用、APIから`null`が返される場合は`?? undefined`で変換（「値がない」表現を1つに統一するため）
 - 未使用の変数・引数には `_` プレフィックスを付ける
 - セキュリティ上の危険パターン
@@ -48,7 +48,7 @@
   - TS 5.4+: `NoInfer<T>` でデフォルト引数等の型推論から特定の型パラメーターを除外する
     - デフォルト値と他引数の型不一致をコンパイル時に検出できるため
   - TS 5.5+: 推論される型述語（inferred type predicates）を活用する
-    - `array.filter(x => x !== null)` の結果が `T[]` に絞り込まれ、明示的な型ガードの記述を削減できる
+    - `array.filter(x => x !== null)` の結果が `T[]` へnarrowingされ、明示的な型ガードの記述を削減できる
 
 ## テストコード（vitest）
 

@@ -70,7 +70,7 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 
 ### 3. Claude Codeの推奨設定
 
-以下の設定を適用しておくと、Claude Codeを快適に使える。
+以下の設定を適用しておくと、Claude Codeを快適に利用できる。
 
 #### `~/.claude/settings.json`
 

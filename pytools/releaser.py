@@ -28,7 +28,7 @@ _CI_RUN_APPEAR_INTERVAL_SEC = 5
 # 一般的なCIの実行時間を考慮し、完了まで最大30分待つ。
 _CI_COMPLETE_TIMEOUT_SEC = 1800
 _CI_COMPLETE_INTERVAL_SEC = 15
-# workflow_dispatch起動後に新規runが見えるまでの待機上限。
+# workflow_dispatch起動後に新規runが確認できるまでの待機上限。
 _DISPATCH_RUN_APPEAR_TIMEOUT_SEC = 120
 _DISPATCH_RUN_APPEAR_INTERVAL_SEC = 5
 
@@ -299,12 +299,9 @@ def _list_runs_for_commit(sha: str) -> list[dict[str, Any]]:
             "gh",
             "run",
             "list",
-            "--commit",
-            sha,
-            "--json",
-            "databaseId,status,conclusion,workflowName,name",
-            "--limit",
-            "50",
+            f"--commit={sha}",
+            "--json=databaseId,status,conclusion,workflowName,name",
+            "--limit=50",
         ],
         capture_output=True,
         text=True,
@@ -407,12 +404,9 @@ def _list_release_runs() -> list[dict[str, Any]]:
             "gh",
             "run",
             "list",
-            "--workflow",
-            _RELEASE_WORKFLOW_FILENAME,
-            "--json",
-            "databaseId,status,createdAt",
-            "--limit",
-            "5",
+            f"--workflow={_RELEASE_WORKFLOW_FILENAME}",
+            "--json=databaseId,status,createdAt",
+            "--limit=5",
         ],
         capture_output=True,
         text=True,
@@ -436,7 +430,7 @@ def _dispatch_release_workflow(bump: str) -> None:
     """release.yamlをworkflow_dispatchで起動する。"""
     logger.info("release.yamlをworkflow_dispatchで起動する（bump=%s）。", bump)
     subprocess.run(
-        ["gh", "workflow", "run", _RELEASE_WORKFLOW_FILENAME, "--field", f"bump={bump}"],
+        ["gh", "workflow", "run", _RELEASE_WORKFLOW_FILENAME, f"--field=bump={bump}"],
         check=True,
     )
 

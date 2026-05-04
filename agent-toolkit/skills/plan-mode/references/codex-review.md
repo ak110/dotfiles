@@ -76,7 +76,7 @@ codex exec resume --dangerously-bypass-approvals-and-sandbox --output-last-messa
 
 レビュー結果は `{plan_full_path}.review.md` に出力されるのでReadツールで読み取る。
 
-## MCPもCLIも使えない場合
+## MCPもCLIも利用できない場合
 
 計画ファイル提示前にユーザーに状況を報告し、以下の選択を仰ぐ。
 

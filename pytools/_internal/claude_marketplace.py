@@ -79,7 +79,7 @@ def ensure_marketplace() -> bool:
         logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず登録をスキップ"))
         return False
     add_result = claude_common.run_claude(
-        ["plugin", "marketplace", "add", str(dotfiles_root), "--scope", "user"],
+        ["plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
     )
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
@@ -117,7 +117,7 @@ def repair_marketplace() -> bool:
 
     claude_common.run_claude(["plugin", "marketplace", "remove", claude_common.MARKETPLACE_NAME])
     add_result = claude_common.run_claude(
-        ["plugin", "marketplace", "add", str(dotfiles_root), "--scope", "user"],
+        ["plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
     )
     add_ok = add_result is not None and add_result.returncode == 0
 

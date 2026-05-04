@@ -58,7 +58,7 @@ def run() -> bool:
         logger.info(log_format.format_status("codex-mcp", "登録済み"))
         return False
 
-    args = ["mcp", "add", "--scope", "user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
+    args = ["mcp", "add", "--scope=user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
     result = claude_common.run_claude(args)
     if result is None or result.returncode != 0:
         # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で

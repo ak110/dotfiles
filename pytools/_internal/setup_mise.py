@@ -92,7 +92,7 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     workingTree は `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定なら CLI 単体実行
     とみなしてスキップ）。既に trust 済みであっても `mise trust` は重複登録しない仕様のため、
     事前チェックは行わず毎回実行する。副作用が無いため、成功時は changed 判定も常に True を
-    返す（サマリで「更新」扱いになるが、ノイズよりも実行事実が見える方を優先する）。
+    返す（サマリで「更新」扱いになるが、ノイズよりも実行事実を確認できる方を優先する）。
     """
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree:

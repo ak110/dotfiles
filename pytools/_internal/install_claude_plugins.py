@@ -32,7 +32,7 @@
 - 対象 plugin がインストール済み + version が一致 + directory 型登録が健全
   → `claude plugin install <name>@<marketplace> --scope=user` を毎回再実行して
      キャッシュを最新化する (directory 型では `plugin update` が version 一致時 no-op
-     になるため同期経路として使えない)
+     になるため同期経路として機能しない)
 - 対象 plugin がインストール済み + version が一致 + 旧 GitHub 型が残存
   → install コマンドを呼ばずスキップ (マイグレーション前の旧挙動)
 
@@ -500,7 +500,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
             )
             continue
         result = claude_common.run_claude(
-            ["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope", "project"],
+            ["plugin", "uninstall", f"{name}@{_MARKETPLACE_NAME}", "--scope=project"],
             cwd=project_path,
         )
         if result is not None and result.returncode == 0:
@@ -513,7 +513,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
 
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
-    result = claude_common.run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
+    result = claude_common.run_claude(["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope=user"])
     if result is None or result.returncode != 0:
         logger.info(log_format.format_status(name, f"install に失敗: {claude_common.format_cli_error(result)}"))
         return False
@@ -523,7 +523,7 @@ def _install_plugin(name: str) -> bool:
 
 def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
-    result = claude_common.run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope", "user"])
+    result = claude_common.run_claude(["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope=user"])
     if result is None or result.returncode != 0:
         logger.info(log_format.format_status(name, f"update に失敗: {claude_common.format_cli_error(result)}"))
         return False
@@ -536,7 +536,7 @@ def _disable_plugin(plugin_id: str) -> bool:
 
     ``plugin_id`` は ``<name>@<marketplace>`` 形式。
     """
-    result = claude_common.run_claude(["plugin", "disable", plugin_id, "--scope", "user"])
+    result = claude_common.run_claude(["plugin", "disable", plugin_id, "--scope=user"])
     if result is None or result.returncode != 0:
         logger.info(log_format.format_status(plugin_id, f"disable に失敗: {claude_common.format_cli_error(result)}"))
         return False

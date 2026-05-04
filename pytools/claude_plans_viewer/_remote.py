@@ -84,7 +84,7 @@ def build_remote_command_argv(op: str, args: list[str]) -> list[str]:
 
     リモート起動コマンドはPOSIXシェル非依存とする。
     Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開・`head -c`等が
-    使えないため、シェル組み込みコマンドへ依存しないこと。
+    利用できないため、シェル組み込みコマンドへ依存しないこと。
     リモート側に`$HOME/dotfiles`が存在することを前提とし、
     ヘルパースクリプトはリモート側 dotfiles から直接読み込む。
     `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
@@ -110,7 +110,7 @@ def build_remote_command_argv(op: str, args: list[str]) -> list[str]:
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
-    fallback経路（常駐watch経由RPCが使えない場合）でのみ使う。
+    fallback経路（常駐watch経由RPCが利用できない場合）でのみ使う。
     起動経路は`RemoteWatcher`と統一し、リモート側 dotfiles の`_remote_helper.py`を
     短いPython bootstrap経由で`exec`する。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。

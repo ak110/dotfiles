@@ -66,7 +66,7 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 > 注記: mypy / pyright / pylint / ty を併用していると、同じ型エラーが複数の`diagnostic`行に
 > 別ツール名で重複出力されることがある。
 > 1件の問題に対する複数ツールの報告として扱い、修正計画を重複させない。
-> 単一ツールに絞って実行したい場合は`--commands=mypy`等で指定する。
+> 単一ツールに限定して実行したい場合は`--commands=mypy`等で指定する。
 
 ### messageの切り詰め仕様
 
@@ -103,7 +103,7 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 #### command.retry_command で失敗ファイルだけ再実行
 
 `run-for-agent`のJSONL出力では、失敗した`command`レコードに`retry_command`フィールドが入る。
-失敗ファイルだけに絞った再実行コマンドが文字列として格納されているため、そのままシェルで実行できる。
+失敗ファイルだけに限定した再実行コマンドが文字列として格納されているため、そのままシェルで実行できる。
 特定の失敗ツール1件のみを素早く再現したい場合に最も軽量。
 
 #### --only-failed で失敗ツール全体を再実行
@@ -146,13 +146,13 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
 
 ### 実行範囲の使い分け
 
-コミット前検証は対象ファイルや対象ツールを必要に応じて絞って実行する（最終検証はCIに委ねる前提）。
+コミット前検証は対象ファイルや対象ツールを必要に応じて限定して実行する（最終検証はCIに委ねる前提）。
 
 ```bash
 uvx pyfltr run-for-agent --commands=mypy path/to/file
 ```
 
-`--commands`で特定ツールに絞る／対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
+`--commands`で特定ツールに限定する／対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
 
 公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合や、状況全体を把握したい場合は全体で実行する。
 
@@ -171,7 +171,7 @@ uvx pyfltr run-for-agent
 uvx pyfltr run-for-agent --commands=mypy,ruff-check
 ```
 
-以下のエイリアスも使える。
+以下のエイリアスも利用できる。
 
 - `format`: 全formatter（pre-commit、ruff-format、prettier、uv-sort、shfmt、cargo-fmt、dotnet-format等）
 - `lint`: 全linter（ruff-check、mypy、pylint、pyright、ty、markdownlint、textlint等。Rust／dotnet系も含む）
@@ -197,7 +197,7 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
   `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
-- 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を絞る（全体再実行より早く原因切り分けできる）
+- 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を限定する（全体再実行より早く原因切り分けできる）
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
   対象ファイルが0件のときは解決処理自体を省略するため`skipped`で通過する。
   対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る。
@@ -206,6 +206,10 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
 - 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
   `uvx pyfltr command-info --check <tool>`を使う。
   mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
+- 特定ディレクトリが`extend-exclude`等で除外されている場合、`uvx pyfltr run-for-agent`の検査対象から外れる。
+  除外を一時的に無視して特定ファイルをチェックしたいときは`--no-exclude`オプションを使う
+ （例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）。
+  pyfltr自体の除外設定は`pyproject.toml`の`[tool.pyfltr]`またはツール固有の`extend-exclude`を参照する
 
 ## 詳細情報
 

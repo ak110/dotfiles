@@ -236,7 +236,7 @@ def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) 
         "--no-session-persistence",
     ]
     if effort is not None:
-        cmd.extend(["--effort", effort])
+        cmd.append(f"--effort={effort}")
     # --tools が可変長引数のため、prompt の前に -- が必須
     cmd.extend(["--", prompt])
     # 一時ディレクトリをカレントにすることで CLAUDE.md の自動読み込みを防ぐ

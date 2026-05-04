@@ -78,7 +78,7 @@ class TestAddsWhenMissing:
         add_calls = [c for c in calls if c[:3] == ["claude", "mcp", "add"]]
         assert len(add_calls) == 1
         # --scope=user が渡されていること
-        assert "--scope" in add_calls[0] and "user" in add_calls[0]
+        assert "--scope=user" in add_calls[0]
         # codex codex mcp-server の順で渡されていること
         assert add_calls[0][-3:] == ["codex", "codex", "mcp-server"]
 

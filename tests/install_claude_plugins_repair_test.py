@@ -242,13 +242,12 @@ class TestRepairMarketplace:
             "marketplace",
             "add",
             str(dotfiles_root),
-            "--scope",
-            "user",
+            "--scope=user",
         ]
         remove_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]]
         assert remove_calls, f"marketplace remove が呼ばれていない: {calls}"
         # remove には --scope オプションは存在しない
-        assert "--scope" not in remove_calls[0]
+        assert not any(c.startswith("--scope") for c in remove_calls[0])
 
     def test_cli_noop_triggers_direct_write(
         self,

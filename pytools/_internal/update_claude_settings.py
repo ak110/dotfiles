@@ -124,7 +124,7 @@ def update_claude_settings(
 
 
 def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
-    """2つの dict の差分を人間が読める行リストにして返す。
+    """2つの dict の差分を人間が解読できる行リストにして返す。
 
     dict は再帰的に差分を取り、list は件数差のサマリーを表示する。
     差分行は6スペースのインデントを持ち、basicConfig の2スペースと合わせて合計8スペースになる。

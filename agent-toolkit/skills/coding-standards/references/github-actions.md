@@ -9,7 +9,7 @@
 
 ## 権限と秘密情報
 
-- ワークフロー全体または個別ジョブで`permissions:`を最小権限に絞る。
+- ワークフロー全体または個別ジョブで`permissions:`を最小権限に設定する。
   既定のtoken権限に頼らない（例: `contents: read`が基本、書き込みが必要なジョブのみ`contents: write`）
 - secretは`${{ secrets.NAME }}`で参照する。stepの`run`にベタ書きしない
 - 信頼できないPRからの`pull_request_target`は厳禁。レビュー前の任意コード実行を許してしまう
@@ -33,7 +33,7 @@
 
 ## トリガーと最適化
 
-- `on:`では必要なイベントだけを指定する。`paths`/`paths-ignore`で対象を絞り、
+- `on:`では必要なイベントだけを指定する。`paths`/`paths-ignore`で対象を限定し、
   無関係な変更でCIを起動させない
 - `actions/cache`等でビルド成果物を再利用する。キーは依存ファイルのhashを含める
 - jobの並列度を意識する。独立な処理は別jobに分けて並列化する
