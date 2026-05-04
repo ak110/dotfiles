@@ -21,6 +21,7 @@ from pytools._internal import (
     log_format,
     setup_bin_path,
     setup_mise,
+    setup_plans_viewer_linux,
     setup_plans_viewer_windows,
     setup_registry,
     update_claude_settings,
@@ -134,7 +135,8 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("codex MCP サーバーの登録", install_codex_mcp.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
-    ("claude-plans-viewer 自動起動セットアップ", setup_plans_viewer_windows.run),
+    ("claude-plans-viewer 自動起動セットアップ (Windows)", setup_plans_viewer_windows.run),
+    ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),
     # 他ステップが PATH 追加を行うため、それらの後に重複整理を実行する。
     ("ユーザー PATH 重複整理 (Windows)", cleanup_user_path.run),

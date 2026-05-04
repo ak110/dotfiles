@@ -10,8 +10,8 @@ Markdown→HTML変換はraw HTMLをエスケープする設定とし、
 `~/.claude/plans/`配下の内容がスクリプトとして実行されないようにする。
 
 `--remote-host`を複数指定すると、SSH経由で各ホストの`~/.claude/plans/`を
-ポーリング取得し、ローカル分と同じ左ペインへ統合表示する。
-リモート側は`uv run --no-project --script -`で標準ライブラリのみのヘルパーを実行し、
+watchdog経由で監視し、ローカル分と同じ左ペインへ統合表示する。
+リモート側は`uv run --no-project --script -`でヘルパーを実行し、
 `python`／`python3`のPATH差を吸収する。
 
 設定値の優先順位は「CLI引数 > 環境変数 > 組み込み既定値」とし、
@@ -21,11 +21,15 @@ Markdown→HTML変換はraw HTMLをエスケープする設定とし、
 - `CLAUDE_PLANS_VIEWER_HOST`: bindアドレス
 - `CLAUDE_PLANS_VIEWER_PORT`: 待受ポート
 - `CLAUDE_PLANS_VIEWER_REMOTE_HOSTS`: コロン区切りのSSH接続先一覧
-- `CLAUDE_PLANS_VIEWER_REMOTE_POLL_INTERVAL`: リモートポーリング周期（秒）
+
+リモート監視はwatchdogによるpush方式を採用する。
+ポーリング方式は対象ファイル数が増えた場合や低リソースホストでのCPU/SSH接続コストが
+懸念されるため、SSH越しに長時間watchプロセスを常駐させて差分イベントだけを配信する設計としている。
 """
 
 import argparse
 import asyncio
+import asyncio.subprocess as _async_subprocess
 import base64
 import contextlib
 import dataclasses
@@ -35,6 +39,7 @@ import json
 import logging
 import os
 import pathlib
+import random
 import signal
 import socket
 import stat
@@ -73,21 +78,36 @@ _DEFAULT_HOST = "127.0.0.1"
 # VSCodeリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、
 # Windowsローカル実行時に既定値が衝突する。Windowsのみ別値へずらして回避する。
 _DEFAULT_PORT = 28875 if sys.platform == "win32" else 28765
-_DEFAULT_REMOTE_POLL_INTERVAL = 10.0
 
 _ENV_ROOT = "CLAUDE_PLANS_VIEWER_ROOT"
 _ENV_HOST = "CLAUDE_PLANS_VIEWER_HOST"
 _ENV_PORT = "CLAUDE_PLANS_VIEWER_PORT"
 _ENV_REMOTE_HOSTS = "CLAUDE_PLANS_VIEWER_REMOTE_HOSTS"
-_ENV_REMOTE_POLL_INTERVAL = "CLAUDE_PLANS_VIEWER_REMOTE_POLL_INTERVAL"
 
 # SSH接続時に共通付与するオプション。
 # `BatchMode=yes`で鍵認証失敗時にパスワードプロンプトでハングしないようにする。
 _SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
 
-# リモートヘルパーへのSSH呼び出しに対するタイムアウト秒。
+# `read`サブコマンド（同期SSH呼び出し）のタイムアウト秒。
 # ネットワーク不通時の検知遅延と通常応答の余裕を兼ねた値。
+# `watch`サブコマンドの長時間ストリームには適用しない。
 _SSH_TIMEOUT_SEC = 30.0
+
+# `watch`用のSSH追加オプション。
+# 接続確立を5秒、ServerAliveの組合せでネットワーク途絶を最大30秒程度で検知する。
+_SSH_WATCH_OPTIONS = (
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=3",
+)
+
+# `_RemoteWatcher`の再接続バックオフ。指数増加・上限・ジッタ係数を一箇所にまとめる。
+_REMOTE_BACKOFF_INITIAL_SEC = 1.0
+_REMOTE_BACKOFF_MAX_SEC = 30.0
+_REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 
 # share/vscode/markdown.cssが見つからないときの最小フォールバック。
 # editable install前提では使われない想定だが、非editable配布や移動時に備えて持たせる。
@@ -214,6 +234,19 @@ _INDEX_HTML = """<!doctype html>
   }
   .meta .host { word-break: break-all; }
   .meta .mtime { white-space: nowrap; }
+  /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
+  .host-badge {
+    display: none;
+    margin-left: 4px;
+    padding: 0 4px;
+    font-size: 10px;
+    color: #4b5563;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    vertical-align: baseline;
+  }
+  .host-badge.connecting, .host-badge.disconnected { display: inline-block; }
   main { overflow: auto; box-sizing: border-box; }
   main .toolbar {
     position: sticky;
@@ -260,6 +293,13 @@ let files = [];
 let selectedHost = null;
 let selectedPath = null;
 let selectedMtime = null;
+// ホスト別の接続状態。connected / connecting / disconnected。
+let hostStatus = {};
+
+const HOST_BADGE_LABELS = {
+  connecting: "再接続中",
+  disconnected: "切断中",
+};
 
 function fileKey(file) { return file.host + "\\u0000" + file.path; }
 
@@ -294,6 +334,13 @@ function renderFiles() {
     const hostSpan = document.createElement("span");
     hostSpan.className = "host";
     hostSpan.textContent = file.host;
+    const status = hostStatus[file.host];
+    if (status === "connecting" || status === "disconnected") {
+      const badge = document.createElement("span");
+      badge.className = "host-badge " + status;
+      badge.textContent = HOST_BADGE_LABELS[status];
+      hostSpan.appendChild(badge);
+    }
     const mtimeSpan = document.createElement("span");
     mtimeSpan.className = "mtime";
     mtimeSpan.textContent = file.mtime;
@@ -311,6 +358,14 @@ async function refreshFiles() {
   const res = await fetch("/api/files");
   files = await res.json();
   renderFiles();
+}
+
+async function refreshHostStatus() {
+  // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
+  const res = await fetch("/api/host-status");
+  if (res.ok) {
+    hostStatus = await res.json();
+  }
 }
 
 async function updatePreview() {
@@ -380,16 +435,37 @@ async function copySelectedRaw() {
 // バックフォワード遷移後も自動反映を維持する（beforeunloadはbfcacheを無効化するため避ける）。
 let eventSource = null;
 
+async function handleSseMessage(event) {
+  // 旧形式（dataが"refresh"文字列固定）と新形式（JSON）を両対応する。
+  // JSON解析失敗時もrefresh扱いで再同期する（パース不能なフレームを握り潰さない）。
+  let payload = null;
+  try {
+    payload = JSON.parse(event.data);
+  } catch (_) {
+    payload = null;
+  }
+  if (payload && payload.type === "host-status") {
+    hostStatus[payload.host] = payload.status;
+    renderFiles();
+    return;
+  }
+  await resyncFromServer();
+}
+
 function connectEvents() {
   const es = new EventSource("/api/events");
   // EventSourceは接続断後にブラウザが自動再接続を行うが、再接続中に発生したSSEイベントは
-  // 取り逃される。初回／再接続のいずれでもonopen時に強制再同期することで取り逃しを解消する。
-  es.onopen = resyncFromServer;
-  es.onmessage = resyncFromServer;
+  // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
+  es.onopen = async () => {
+    await refreshHostStatus();
+    await resyncFromServer();
+  };
+  es.onmessage = handleSseMessage;
   return es;
 }
 
 async function main() {
+  await refreshHostStatus();
   await refreshFiles();
   if (files.length > 0) await openFile(files[0].host, files[0].path);
 
@@ -422,18 +498,27 @@ if ("serviceWorker" in navigator) {
 """
 
 # SSH経由でリモート側へstdin投入する小さなヘルパースクリプト。
-# 標準ライブラリのみで完結させ、リモート側の追加依存を作らない。
+# listとread操作は標準ライブラリのみで完結する。watchサブコマンドはwatchdogに依存し、
+# リモート側のuv inline metadataで自動解決させる。
 # 操作種別と引数（base64エンコードした相対パス）はSSHコマンドのargv経由で渡す
 # （`uv run --script -`はstdinをスクリプト本文として消費するため、操作引数のstdin同居はできない）。
 # raw文字列リテラルで保持し、エスケープシーケンスを内部Pythonの解釈に委ねる。
 _REMOTE_HELPER_SCRIPT = r'''# /// script
 # requires-python = ">=3.10"
+# dependencies = ["watchdog>=6.0.0"]
 # ///
 """claude_plans_viewerのリモートホスト側ヘルパー。
 
 操作種別はargvで受け取る:
   - list           : ~/.claude/plans配下の.mdファイル一覧をJSON文字列でstdoutへ出力する
   - read <b64>     : 指定相対パスのファイル本文をbase64エンコードしてstdoutへ出力する
+  - watch          : ~/.claude/plans配下をwatchdogで監視し、行区切りJSONをstdoutへ流す
+
+watch サブコマンドのプロトコル（行区切りJSON）:
+  - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
+  - {"type":"upsert","path":..., "name":..., "mtime_epoch":...}
+  - {"type":"deleted","path":...}
+  - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
 
 スクリプト本体はSSHのstdin経由で渡される（`uv run --no-project --script -`）。
 """
@@ -441,26 +526,45 @@ import base64
 import json
 import pathlib
 import sys
+import threading
+import time
 
 ROOT = pathlib.Path.home() / ".claude" / "plans"
 
+# 生存確認pingの送信間隔（秒）。短すぎるとトラフィックが増え、長すぎると切断検知が遅れる。
+_PING_INTERVAL_SEC = 30.0
+
+
+def _is_target_path(path: pathlib.Path) -> bool:
+    if path.suffix != ".md":
+        return False
+    try:
+        rel = path.relative_to(ROOT)
+    except ValueError:
+        return False
+    return not any(p.startswith(".") for p in rel.parts)
+
+
+def _scan_entries() -> list[dict]:
+    entries: list[dict] = []
+    if not ROOT.is_dir():
+        return entries
+    for path in ROOT.rglob("*.md"):
+        if not path.is_file():
+            continue
+        if not _is_target_path(path):
+            continue
+        st = path.stat()
+        entries.append({
+            "path": path.relative_to(ROOT).as_posix(),
+            "name": path.name,
+            "mtime_epoch": st.st_mtime,
+        })
+    return entries
+
 
 def list_files() -> None:
-    entries = []
-    if ROOT.is_dir():
-        for path in ROOT.rglob("*.md"):
-            if not path.is_file():
-                continue
-            rel = path.relative_to(ROOT)
-            if any(p.startswith(".") for p in rel.parts):
-                continue
-            st = path.stat()
-            entries.append({
-                "path": rel.as_posix(),
-                "name": path.name,
-                "mtime_epoch": st.st_mtime,
-            })
-    json.dump(entries, sys.stdout, ensure_ascii=False)
+    json.dump(_scan_entries(), sys.stdout, ensure_ascii=False)
 
 
 def read_file(rel_b64: str) -> None:
@@ -473,6 +577,109 @@ def read_file(rel_b64: str) -> None:
     if target.suffix != ".md" or not target.is_file():
         raise FileNotFoundError(rel)
     sys.stdout.write(base64.b64encode(target.read_bytes()).decode("ascii"))
+
+
+def _emit(payload: dict) -> None:
+    # 1行JSONとして出力し、SSH切断時のSIGPIPEを即時に拾えるよう毎回フラッシュする。
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def watch_files() -> int:
+    # watchdogはローカル側`_PlansEventHandler`と同等のフィルタを適用する。
+    # 読み取り由来の`FileOpenedEvent`/`FileClosedNoWriteEvent`は除外し、
+    # `FileMovedEvent`はatomic-write rename対応のためdest側も判定対象に含める。
+    import watchdog.events
+    import watchdog.observers
+
+    watched_types = (
+        watchdog.events.FileCreatedEvent,
+        watchdog.events.FileModifiedEvent,
+        watchdog.events.FileDeletedEvent,
+        watchdog.events.FileMovedEvent,
+        watchdog.events.FileClosedEvent,
+    )
+
+    # `~/.claude/plans`未作成のホストでも監視を開始できるよう、無ければ作成する。
+    # 作成失敗時はsnapshot空・ping待機のみで継続する。
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        sys.stderr.write(f"warn: cannot create {ROOT}: {e}\n")
+
+    stop_event = threading.Event()
+
+    def ping_loop() -> None:
+        while not stop_event.wait(_PING_INTERVAL_SEC):
+            try:
+                _emit({"type": "ping"})
+            except BrokenPipeError:
+                stop_event.set()
+                return
+
+    class Handler(watchdog.events.FileSystemEventHandler):
+        def on_any_event(self, event):
+            if not isinstance(event, watched_types):
+                return
+            if event.is_directory:
+                return
+            src = pathlib.Path(str(event.src_path))
+            if isinstance(event, watchdog.events.FileMovedEvent):
+                dest = pathlib.Path(str(event.dest_path))
+                src_ok = _is_target_path(src)
+                dest_ok = _is_target_path(dest)
+                if not (src_ok or dest_ok):
+                    return
+                # rename経路でsrcのみ`.md`の場合は元パス側を削除扱い、
+                # destが`.md`なら新パス側をupsertする。
+                if src_ok and not dest_ok:
+                    _emit({"type": "deleted", "path": src.relative_to(ROOT).as_posix()})
+                    return
+                target = dest if dest_ok else src
+                self._emit_upsert(target)
+                return
+            if not _is_target_path(src):
+                return
+            if isinstance(event, watchdog.events.FileDeletedEvent):
+                _emit({"type": "deleted", "path": src.relative_to(ROOT).as_posix()})
+                return
+            self._emit_upsert(src)
+
+        @staticmethod
+        def _emit_upsert(path: pathlib.Path) -> None:
+            try:
+                st = path.stat()
+            except OSError as e:
+                sys.stderr.write(f"warn: stat failed for {path}: {e}\n")
+                return
+            _emit({
+                "type": "upsert",
+                "path": path.relative_to(ROOT).as_posix(),
+                "name": path.name,
+                "mtime_epoch": st.st_mtime,
+            })
+
+    observer = watchdog.observers.Observer()
+    if ROOT.is_dir():
+        observer.schedule(Handler(), str(ROOT), recursive=True)
+        observer.start()
+    # observer起動後にsnapshotを出すことで、起動以前の変更取りこぼしを排除する。
+    _emit({"type": "snapshot", "entries": _scan_entries()})
+
+    ping_thread = threading.Thread(target=ping_loop, daemon=True)
+    ping_thread.start()
+
+    # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止経路に乗せる。
+    try:
+        while not stop_event.is_set():
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        if observer.is_alive():
+            observer.stop()
+            observer.join()
+    return 0
 
 
 def main() -> int:
@@ -489,6 +696,8 @@ def main() -> int:
             return 2
         read_file(sys.argv[2])
         return 0
+    if op == "watch":
+        return watch_files()
     sys.stderr.write(f"unknown operation: {op}\n")
     return 2
 
@@ -516,7 +725,7 @@ class _FileEntry:
 
 @dataclasses.dataclass(slots=True)
 class _BroadcastState:
-    """SSE購読者集合・debounce状態・リモートホストキャッシュを束ねる。
+    """SSE購読者集合・debounce状態・リモートホストキャッシュ・接続状態を束ねる。
 
     Quartアプリの`app.config`に入れて保持することでモジュールレベルの可変状態を避ける。
     """
@@ -525,10 +734,13 @@ class _BroadcastState:
     lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock)
     debounce_task: asyncio.Task[None] | None = None
     loop: asyncio.AbstractEventLoop | None = None
-    # ホスト名 -> 最後に観測した_FileEntry一覧。リモートポーリングで更新される。
+    # ホスト名 -> 最後に観測した_FileEntry一覧。リモートwatchで更新される。
     remote_files: dict[str, list[_FileEntry]] = dataclasses.field(default_factory=dict)
-    # 起動中のリモートポーリングタスク群。after_servingで一括キャンセルする。
+    # 起動中のリモートwatchタスク群。after_servingで一括キャンセルする。
     remote_tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
+    # ホスト名 -> "connected"|"connecting"|"disconnected"。
+    # フロントエンドのサイドペインに切断バッジを表示するための状態。
+    host_status: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -602,16 +814,37 @@ async def _debounced_deliver(state: _BroadcastState) -> None:
     await _deliver_refresh(state)
 
 
-async def _deliver_refresh(state: _BroadcastState) -> None:
-    """全購読者へ`refresh`を配信する。
+# SSE配信メッセージ型: refreshはサイドペイン全体の再同期、host-statusはバッジ更新を意味する。
+# 旧クライアント互換のためサーバー側はJSON文字列を1行で配信する（クライアントは`type`不在を
+# refreshとみなすフォールバックを持つ）。
+_SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 
-    キューがすでに満杯の場合は新規通知を破棄する。
+
+async def _deliver_refresh(state: _BroadcastState) -> None:
+    """全購読者へ`{"type":"refresh"}`を配信する。
+
+    キューがすでに満杯の場合は新規通知を破棄する（既に未配信の通知がある状態のため、
+    クライアントは次に取り出した時点で最新化される）。
     """
+    await _broadcast(state, _SSE_REFRESH_PAYLOAD)
+
+
+async def _deliver_host_status(state: _BroadcastState, host: str, status: str) -> None:
+    """全購読者へ`{"type":"host-status","host":...,"status":...}`を配信する。
+
+    SSE経路で取りこぼした場合は接続時に`/api/host-status`から再同期できるため、
+    `Queue`満杯時の破棄も許容する。
+    """
+    payload = json.dumps({"type": "host-status", "host": host, "status": status}, ensure_ascii=False)
+    await _broadcast(state, payload)
+
+
+async def _broadcast(state: _BroadcastState, payload: str) -> None:
     async with state.lock:
         targets = list(state.subscribers)
     for q in targets:
         with contextlib.suppress(asyncio.QueueFull):
-            q.put_nowait("refresh")
+            q.put_nowait(payload)
 
 
 async def _default_ssh_runner(host: str, op: str, args: list[str]) -> str:
@@ -646,67 +879,201 @@ async def _default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     return proc.stdout.decode("utf-8")
 
 
-def _decode_remote_list(host: str, raw: str) -> list[_FileEntry]:
-    """リモートヘルパーの`list`応答を_FileEntryリストへ変換する。"""
-    items = json.loads(raw)
+def _make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> _FileEntry:
+    """リモートヘルパー由来のdictを`_FileEntry`に変換する。
+
+    snapshot/upsertの両方から共通に使う。
+    """
+    mtime_epoch = float(item["mtime_epoch"])
     tzinfo = datetime.datetime.now().astimezone().tzinfo
-    entries: list[_FileEntry] = []
-    for item in items:
-        mtime_epoch = float(item["mtime_epoch"])
-        mtime = datetime.datetime.fromtimestamp(mtime_epoch, tz=tzinfo)
-        entries.append(
-            _FileEntry(
-                host=host,
-                path=str(item["path"]),
-                name=str(item["name"]),
-                mtime=mtime.strftime("%Y/%m/%d %H:%M"),
-                mtime_epoch=mtime_epoch,
-            )
-        )
-    return entries
-
-
-async def _fetch_remote_files(host: str, ssh_runner: SshRunner) -> list[_FileEntry]:
-    """リモートホストの一覧を取得して_FileEntryリストを返す。"""
-    raw = await ssh_runner(host, "list", [])
-    return _decode_remote_list(host, raw)
+    mtime = datetime.datetime.fromtimestamp(mtime_epoch, tz=tzinfo)
+    return _FileEntry(
+        host=host,
+        path=str(item["path"]),
+        name=str(item["name"]),
+        mtime=mtime.strftime("%Y/%m/%d %H:%M"),
+        mtime_epoch=mtime_epoch,
+    )
 
 
 async def _fetch_remote_file(host: str, rel: str, ssh_runner: SshRunner) -> str:
-    """リモートホストの指定ファイル本文を取得する（UTF-8文字列）。"""
+    """リモートホストの指定ファイル本文を取得する（UTF-8文字列）。
+
+    `read`サブコマンドは1回限りの同期SSH呼び出しのため、watch用の常駐ストリームとは別経路で
+    既存`SshRunner`抽象を使う。テストでは`_FakeSshRunner`に差し替える。
+    """
     rel_b64 = base64.b64encode(rel.encode("utf-8")).decode("ascii")
     raw = await ssh_runner(host, "read", [rel_b64])
     return base64.b64decode(raw).decode("utf-8", errors="replace")
 
 
-async def _poll_remote_host(host: str, state: _BroadcastState, ssh_runner: SshRunner) -> bool:
-    """1ホストの一覧取得→キャッシュ更新を1回だけ行う。
+# 行ジェネレーターのプロトコル。テストではメモリー上のリストから供給するため、
+# `asyncio.subprocess.Process.stdout`に依存しないインターフェースを使う。
+_LineSource = typing.AsyncIterator[str]
 
-    キャッシュに変化があればTrueを返す。取得失敗はwarningで握り潰し既存キャッシュを保持する。
+
+class _RemoteWatcher:
+    """1ホスト分のwatch接続ライフサイクルを担うクラス。
+
+    `run()`の流れ:
+      1. host_statusを"connecting"へ更新しSSE配信
+      2. SSH+stdinでリモートwatchを起動
+      3. stdoutの行を読みつつ`_handle_event`でキャッシュとSSEを更新
+      4. snapshotを受信したら"connected"へ遷移
+      5. EOF・例外で"disconnected"へ遷移し、指数バックオフ後に再接続
     """
-    try:
-        entries = await _fetch_remote_files(host, ssh_runner)
-    except Exception as e:  # noqa: BLE001
-        # 1ホストの失敗を他ホストへ波及させないため、ここで広めに捕捉して継続する。
-        # SSH失敗時はsubprocess.CalledProcessError等が来るほか、
-        # JSON破損時にValueError、キャッシュ更新時に予期せぬ例外が起きうる。
-        logger.warning("リモートホスト %s の一覧取得に失敗: %s", host, e)
-        return False
-    async with state.lock:
-        prev = state.remote_files.get(host)
-        if prev == entries:
-            return False
-        state.remote_files[host] = entries
-    return True
+
+    def __init__(
+        self,
+        host: str,
+        state: _BroadcastState,
+        helper_script: str = _REMOTE_HELPER_SCRIPT,
+    ) -> None:
+        self.host = host
+        self.state = state
+        self._helper_script = helper_script
+        # 長時間維持された接続が切れた後の再接続時にバックオフが最大値から始まらないよう、
+        # snapshot受信（接続成功）時にリセットする。
+        self._backoff = _REMOTE_BACKOFF_INITIAL_SEC
+
+    async def run(self) -> None:
+        """無限ループで接続→ストリーム処理→バックオフ→再接続を行う。
+
+        `asyncio.CancelledError`は再送出してタスク終了させる。
+        それ以外の例外は warning ログに残し、`disconnected`遷移後にバックオフ再試行する。
+        """
+        while True:
+            await self._set_status("connecting")
+            # pylintのE1101 no-memberが`asyncio.subprocess.Process`に対して誤検出されるため、
+            # `import asyncio.subprocess as _async_subprocess`で別名importを介して参照する。
+            proc: _async_subprocess.Process | None = None
+            try:
+                proc = await self._connect()
+                assert proc.stdout is not None
+                await self._process_stream(_iter_stream_lines(proc.stdout))
+                await self._set_status("disconnected")
+            except asyncio.CancelledError:
+                if proc is not None:
+                    await _terminate_process(proc)
+                raise
+            except Exception as e:  # noqa: BLE001
+                # 接続失敗・JSON解析失敗・stat不能などをまとめて拾い、ホスト単位で再接続継続する。
+                logger.warning("リモートwatch失敗 host=%s: %s", self.host, e)
+                await self._set_status("disconnected")
+            finally:
+                if proc is not None:
+                    await _terminate_process(proc)
+            # 指数バックオフ（上限・±20%ジッタ）。リトライ上限なし。
+            jittered = self._backoff * random.uniform(*_REMOTE_BACKOFF_JITTER_RANGE)
+            await asyncio.sleep(jittered)
+            self._backoff = min(self._backoff * 2, _REMOTE_BACKOFF_MAX_SEC)
+
+    async def _connect(self) -> _async_subprocess.Process:
+        cmd = [
+            "ssh",
+            *_SSH_BASE_OPTIONS,
+            *_SSH_WATCH_OPTIONS,
+            self.host,
+            "uv",
+            "run",
+            "--no-project",
+            "--script",
+            "-",
+            "watch",
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        assert proc.stdin is not None
+        proc.stdin.write(self._helper_script.encode("utf-8"))
+        await proc.stdin.drain()
+        proc.stdin.close()
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            await proc.stdin.wait_closed()
+        return proc
+
+    async def _process_stream(self, lines: _LineSource) -> None:
+        """行ストリームを受け取り、type別にハンドラへ振り分ける。
+
+        テスト容易性のため`_LineSource`を引数化し、本番は`_iter_stream_lines`を渡す。
+        """
+        async for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as e:
+                logger.warning("リモートwatch JSON解析失敗 host=%s: %s line=%r", self.host, e, line)
+                continue
+            await self._handle_event(event)
+
+    async def _handle_event(self, event: typing.Mapping[str, typing.Any]) -> None:
+        kind = event.get("type")
+        if kind == "snapshot":
+            entries = [_make_file_entry(self.host, item) for item in event.get("entries", [])]
+            async with self.state.lock:
+                self.state.remote_files[self.host] = entries
+            await self._set_status("connected")
+            # 接続成功時にバックオフをリセットし、次回切断後の再接続を初期値から始める。
+            self._backoff = _REMOTE_BACKOFF_INITIAL_SEC
+            await _deliver_refresh(self.state)
+            return
+        if kind == "upsert":
+            entry = _make_file_entry(self.host, event)
+            async with self.state.lock:
+                cached = self.state.remote_files.get(self.host, [])
+                cached = [e for e in cached if e.path != entry.path]
+                cached.append(entry)
+                self.state.remote_files[self.host] = cached
+            await _deliver_refresh(self.state)
+            return
+        if kind == "deleted":
+            path = str(event.get("path", ""))
+            async with self.state.lock:
+                cached = self.state.remote_files.get(self.host, [])
+                self.state.remote_files[self.host] = [e for e in cached if e.path != path]
+            await _deliver_refresh(self.state)
+            return
+        if kind == "ping":
+            return
+        logger.warning("リモートwatch 未知のイベント host=%s type=%r", self.host, kind)
+
+    async def _set_status(self, status: str) -> None:
+        async with self.state.lock:
+            previous = self.state.host_status.get(self.host)
+            self.state.host_status[self.host] = status
+        if previous != status:
+            await _deliver_host_status(self.state, self.host, status)
 
 
-async def _remote_poll_loop(host: str, state: _BroadcastState, ssh_runner: SshRunner, interval: float) -> None:
-    """ホスト1件分のポーリングループ。アプリのafter_servingでキャンセルされる。"""
+async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
+    """`StreamReader`から1行ずつ取り出す非同期イテレータ。
+
+    `readline()`はEOFで空bytesを返すため、その時点で打ち切る。
+    """
     while True:
-        changed = await _poll_remote_host(host, state, ssh_runner)
-        if changed:
-            await _deliver_refresh(state)
-        await asyncio.sleep(interval)
+        chunk = await stream.readline()
+        if not chunk:
+            return
+        yield chunk.decode("utf-8", errors="replace")
+
+
+async def _terminate_process(proc: _async_subprocess.Process) -> None:
+    """watch用subprocessを後始末する。
+
+    既に終了していれば何もしない。
+    `terminate`後に短時間waitし、ゾンビ化を避ける。
+    """
+    if proc.returncode is not None:
+        return
+    with contextlib.suppress(ProcessLookupError):
+        proc.terminate()
+    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+        await asyncio.wait_for(proc.wait(), timeout=2.0)
 
 
 def _make_md_renderer() -> markdown_it.MarkdownIt:
@@ -859,22 +1226,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="HOST",
         help=(f"SSH経由で監視するリモートホスト（複数指定可、`user@host`形式可、環境変数 {_ENV_REMOTE_HOSTS} はコロン区切り）"),
     )
-    parser.add_argument(
-        "--remote-poll-interval",
-        type=float,
-        default=None,
-        metavar="SEC",
-        help=(f"リモートポーリング周期（秒、環境変数 {_ENV_REMOTE_POLL_INTERVAL}、既定: {_DEFAULT_REMOTE_POLL_INTERVAL}）"),
-    )
     enable_completion(parser)
     args = parser.parse_args(argv)
     # `action="append"`はCLI未指定時にNone固定のため、ここで環境変数→既定値の順に解決する。
     if args.remote_host is None:
         env_hosts = os.environ.get(_ENV_REMOTE_HOSTS, "")
         args.remote_host = [h for h in env_hosts.split(":") if h] if env_hosts else []
-    if args.remote_poll_interval is None:
-        env_interval = os.environ.get(_ENV_REMOTE_POLL_INTERVAL)
-        args.remote_poll_interval = float(env_interval) if env_interval else _DEFAULT_REMOTE_POLL_INTERVAL
     return args
 
 
@@ -962,11 +1319,14 @@ def _main(argv: list[str] | None = None) -> int:
         logger.error("ディレクトリが見つかりません: %s", root)
         return 1
 
-    app = create_app(
-        root,
-        remote_hosts=args.remote_host,
-        poll_interval=args.remote_poll_interval,
-    )
+    try:
+        app = create_app(
+            root,
+            remote_hosts=args.remote_host,
+        )
+    except ValueError as e:
+        logger.error("設定エラー: %s", e)
+        return 1
     state: _BroadcastState = app.config["PLANS_STATE"]
 
     observer = watchdog.observers.Observer()
@@ -975,7 +1335,7 @@ def _main(argv: list[str] | None = None) -> int:
     try:
         logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
         if args.remote_host:
-            logger.info("Remote hosts: %s (poll interval %ss)", ", ".join(args.remote_host), args.remote_poll_interval)
+            logger.info("Remote hosts: %s (watchdog)", ", ".join(args.remote_host))
         asyncio.run(_serve(app, args.host, args.port))
     finally:
         observer.stop()
@@ -988,23 +1348,31 @@ def create_app(
     hostname: str | None = None,
     remote_hosts: list[str] | None = None,
     ssh_runner: SshRunner | None = None,
-    poll_interval: float = _DEFAULT_REMOTE_POLL_INTERVAL,
 ) -> quart.Quart:
     """Quartアプリを生成する。
 
     `root`はMarkdownの探索対象ディレクトリ（resolve済み絶対パス）。
     `hostname`はトップページとローカル分の`host`ラベルへ埋め込むホスト名。
     `None`のとき`socket.gethostname()`を使う。
-    `remote_hosts`が空でない場合、各ホストを`ssh_runner`経由で`poll_interval`秒ごとにポーリングする。
-    `ssh_runner=None`のときは`_default_ssh_runner`を使う（テストでは差し替え可能）。
+    `remote_hosts`が空でない場合、各ホストへSSH越しにwatchを起動して差分イベントを配信する。
+    `ssh_runner=None`のときは`_default_ssh_runner`を使う（`/api/file`/`/api/raw`の
+    リモート参照経路でのみ使用する。watch経路は`_RemoteWatcher`が直接asyncio subprocessを起動する）。
     """
     app = quart.Quart(__name__)
     renderer = _make_md_renderer()
     state = _BroadcastState()
     resolved_hostname = hostname if hostname is not None else socket.gethostname()
     remote_host_list = list(remote_hosts) if remote_hosts else []
+    if resolved_hostname in remote_host_list:
+        # `remote_files`のキーが衝突しローカル/リモートが上書きし合うため、起動時に拒絶する。
+        raise ValueError("local hostname conflicts with --remote-host")
     allowed_remote_hosts = set(remote_host_list)
     runner: SshRunner = ssh_runner if ssh_runner is not None else _default_ssh_runner
+
+    # 初期接続状態を設定する。ローカルは常にconnected、リモートはconnecting開始。
+    state.host_status[resolved_hostname] = "connected"
+    for host in remote_host_list:
+        state.host_status[host] = "connecting"
 
     # app.configに格納してモジュールレベルの可変状態を避ける。
     # ルートハンドラからは`quart.current_app.config`経由で参照する。
@@ -1014,16 +1382,15 @@ def create_app(
     app.config["PLANS_HOSTNAME"] = resolved_hostname
     app.config["PLANS_REMOTE_HOSTS"] = remote_host_list
     app.config["PLANS_SSH_RUNNER"] = runner
-    app.config["PLANS_POLL_INTERVAL"] = poll_interval
 
     @app.before_serving
     async def _capture_loop() -> None:
         # watchdogスレッドからの配信ブリッジに必要なイベントループ参照を保持する。
         state.loop = asyncio.get_running_loop()
-        # リモートポーリングタスクを起動する。test_client経由ではbefore_serving自体が
-        # 発火しないため、テスト側は`_poll_remote_host`を直接呼ぶ。
+        # リモートwatchタスクを起動する。test_client経由ではbefore_serving自体が
+        # 発火しないため、テスト側は`_RemoteWatcher`を直接駆動する。
         for host in remote_host_list:
-            task = asyncio.create_task(_remote_poll_loop(host, state, runner, poll_interval))
+            task = asyncio.create_task(_RemoteWatcher(host, state).run())
             state.remote_tasks.append(task)
 
     @app.after_serving
@@ -1063,6 +1430,14 @@ def create_app(
             content_type="application/javascript; charset=utf-8",
             headers={"Cache-Control": "no-store"},
         )
+
+    @app.get("/api/host-status")
+    async def api_host_status() -> quart.Response:
+        # SPA起動時の初期同期用。SSE取りこぼし時の救済経路としても使う。
+        async with state.lock:
+            snapshot = dict(state.host_status)
+        body = json.dumps(snapshot, ensure_ascii=False)
+        return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/files")
     async def api_files() -> quart.Response:

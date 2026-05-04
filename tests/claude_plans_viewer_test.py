@@ -1,7 +1,8 @@
 """pytools.claude_plans_viewer のテスト。"""
 
 # 本モジュールはモジュール内部の関数・定数を単体テスト対象とするため、protected-accessを一括で許可する。
-# pylint: disable=protected-access
+# 単一テスト対象モジュールに対する全テストを集約するため行数制限も緩和する。
+# pylint: disable=protected-access,too-many-lines
 
 import asyncio
 import base64
@@ -197,7 +198,6 @@ class TestParseArgs:
         monkeypatch.delenv(claude_plans_viewer._ENV_HOST, raising=False)
         monkeypatch.delenv(claude_plans_viewer._ENV_PORT, raising=False)
         monkeypatch.delenv(claude_plans_viewer._ENV_REMOTE_HOSTS, raising=False)
-        monkeypatch.delenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, raising=False)
 
         args = claude_plans_viewer._parse_args([])
 
@@ -205,7 +205,6 @@ class TestParseArgs:
         assert args.host == claude_plans_viewer._DEFAULT_HOST
         assert args.port == claude_plans_viewer._DEFAULT_PORT
         assert args.remote_host == []
-        assert args.remote_poll_interval == claude_plans_viewer._DEFAULT_REMOTE_POLL_INTERVAL
 
     def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
         """環境変数が設定されていればそれを既定値として使う。"""
@@ -213,7 +212,6 @@ class TestParseArgs:
         monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
         monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
         monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "host1:user@host2")
-        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, "5.5")
 
         args = claude_plans_viewer._parse_args([])
 
@@ -221,7 +219,6 @@ class TestParseArgs:
         assert args.host == "0.0.0.0"  # noqa: S104
         assert args.port == 12345
         assert args.remote_host == ["host1", "user@host2"]
-        assert args.remote_poll_interval == 5.5
 
     def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch):
         """CLI引数は環境変数より優先する。"""
@@ -229,7 +226,6 @@ class TestParseArgs:
         monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
         monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
         monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "envhost")
-        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, "5.5")
 
         args = claude_plans_viewer._parse_args(
             [
@@ -243,8 +239,6 @@ class TestParseArgs:
                 "cli1",
                 "--remote-host",
                 "cli2",
-                "--remote-poll-interval",
-                "1.25",
             ]
         )
 
@@ -252,7 +246,6 @@ class TestParseArgs:
         assert args.host == "127.0.0.1"
         assert args.port == 54321
         assert args.remote_host == ["cli1", "cli2"]
-        assert args.remote_poll_interval == 1.25
 
 
 class TestIndexHtml:
@@ -293,19 +286,43 @@ class TestIndexHtml:
         assert "event.persisted" in html_src
 
     def test_index_html_resyncs_on_eventsource_open(self):
-        """EventSourceの`onopen`で初回／再接続のいずれもファイル一覧を強制再取得する。
+        """EventSourceの`onopen`で初回／再接続のいずれもファイル一覧と接続状態を強制再取得する。
 
         ブラウザの自動再接続中に発生したSSEイベントが取り逃される構造的な問題を解消する契約。
+        host-status経路は取りこぼし可能性があるためonopen時の`refreshHostStatus`で救済する。
         """
         html_src = claude_plans_viewer._INDEX_HTML
 
-        # `onopen`にハンドラが設定され、`onmessage`と同じ再同期関数を共有していること。
+        # `onopen`・`onmessage`の両ハンドラが設定されていること。
         assert "es.onopen" in html_src
         assert "es.onmessage" in html_src
         # 再同期の実体は`refreshFiles`を呼ぶ`resyncFromServer`に集約されていること。
         assert "function resyncFromServer" in html_src or "async function resyncFromServer" in html_src
-        assert "es.onopen = resyncFromServer" in html_src
-        assert "es.onmessage = resyncFromServer" in html_src
+        # onopenではホスト状態とファイル一覧の両方を再同期する。
+        assert "refreshHostStatus" in html_src
+        # onmessageはJSONパース結果のtypeで分岐する`handleSseMessage`に集約されていること。
+        assert "handleSseMessage" in html_src
+
+    def test_index_html_handles_host_status_badge(self):
+        """サイドペインのホスト名横に控えめな接続状態バッジを描画する契約。
+
+        Connecting → 「再接続中」、Disconnected → 「切断中」、Connected → 非表示。
+        SSE取りこぼし対策として`/api/host-status`を初回／再接続時に再取得する。
+        """
+        html_src = claude_plans_viewer._INDEX_HTML
+
+        # CSS: `.host-badge`の既定は非表示、状態クラス付与で表示。
+        assert ".host-badge {" in html_src
+        assert ".host-badge.connecting" in html_src
+        assert ".host-badge.disconnected" in html_src
+        # JSラベルが定数として用意されている。
+        assert "再接続中" in html_src
+        assert "切断中" in html_src
+        # `/api/host-status`を呼んでhostStatusを取得する関数がある。
+        assert "/api/host-status" in html_src
+        assert "hostStatus" in html_src
+        # SSEのtype=host-statusを受けた際の分岐がある。
+        assert "host-status" in html_src
 
     def test_index_html_has_copy_button_contract(self):
         """右ペインのsticky toolbarにコピーボタンが存在し、`/api/raw`をクリップボードへ書き込む。
@@ -368,7 +385,7 @@ class TestSubscribers:
         try:
             await claude_plans_viewer._schedule_broadcast(state)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
+            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
         finally:
             await claude_plans_viewer._unsubscribe(state, q)
 
@@ -414,7 +431,7 @@ class TestWatchdogHandler:
             event = watchdog.events.FileModifiedEvent(str(md_file))
             claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
+            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
         finally:
             await claude_plans_viewer._unsubscribe(state, q)
 
@@ -464,7 +481,7 @@ class TestWatchdogHandler:
             )
             claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
+            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
         finally:
             await claude_plans_viewer._unsubscribe(state, q)
 
@@ -481,7 +498,7 @@ class TestWatchdogHandler:
             )
             claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
+            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
         finally:
             await claude_plans_viewer._unsubscribe(state, q)
 
@@ -552,7 +569,7 @@ class TestWatchdogHandler:
             event = watchdog.events.FileModifiedEvent(str(md_file))
             claude_plans_viewer._PlansEventHandler(dot_root, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
+            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
         finally:
             await claude_plans_viewer._unsubscribe(state, q)
 
@@ -697,10 +714,11 @@ class TestEventsEndpoint:
             # 直後にもう1回呼んで畳まれること（debounce）を同時に確認する。
             await claude_plans_viewer._schedule_broadcast(state)
 
-            # ストリーミングチャンクを逐次受信し、`data: refresh`を含むまで読み進める。
+            # ストリーミングチャンクを逐次受信し、refreshのJSONペイロードを含むまで読み進める。
+            expected_data_line = "data: " + claude_plans_viewer._SSE_REFRESH_PAYLOAD
             body_text = ""
             try:
-                while "data: refresh" not in body_text:
+                while expected_data_line not in body_text:
                     chunk = await asyncio.wait_for(conn.receive(), timeout=_QUEUE_GET_TIMEOUT_SEC + 1.0)
                     body_text += chunk.decode("utf-8")
             finally:
@@ -712,32 +730,41 @@ class TestEventsEndpoint:
 
         # event名は付かない（`event: refresh`は含まれない）こと。
         assert "event: refresh" not in body_text
-        # `data: refresh`が現れ、SSEイベントの終端`\n\n`で区切られていること。
-        assert re.search(r"data: refresh\r?\n\r?\n", body_text) is not None
-        # debounce畳み込みのため、`data: refresh`は1回だけ含まれる。
-        assert body_text.count("data: refresh") == 1
+        # `data: {"type":"refresh"}`が現れ、SSEイベントの終端`\n\n`で区切られていること。
+        assert re.search(re.escape(expected_data_line) + r"\r?\n\r?\n", body_text) is not None
+        # debounce畳み込みのため、refreshペイロードは1回だけ含まれる。
+        assert body_text.count(expected_data_line) == 1
 
 
 class TestBroadcastStateDataclass:
     """`_BroadcastState`のフィールド既定値の契約を固定する。"""
 
     def test_defaults(self):
-        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動。"""
+        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態は空。"""
         state = claude_plans_viewer._BroadcastState()
         assert not state.subscribers
         assert state.debounce_task is None
         assert state.loop is None
         assert not state.remote_files
         assert not state.remote_tasks
+        assert not state.host_status
         # `dataclasses.fields`経由で契約を固定し、意図しないフィールド追加を検出する。
         fields = {f.name for f in dataclasses.fields(state)}
-        assert fields == {"subscribers", "lock", "debounce_task", "loop", "remote_files", "remote_tasks"}
+        assert fields == {
+            "subscribers",
+            "lock",
+            "debounce_task",
+            "loop",
+            "remote_files",
+            "remote_tasks",
+            "host_status",
+        }
 
 
 class _FakeSshRunner:
     """テスト用SshRunner。
 
-    `list_responses`はホスト→ファイル一覧（`{path,name,mtime_epoch}`の辞書list）。
+    現在は`/api/file`/`/api/raw`のリモート参照経路（read）専用。
     `read_responses`は`(host, rel)`→Markdown原文の辞書。
     `failing_hosts`に含めたホストへの呼び出しは`RuntimeError`を送出する。
     呼び出し履歴は`calls`に`(host, op, args)`タプルで蓄積される。
@@ -746,24 +773,17 @@ class _FakeSshRunner:
     def __init__(
         self,
         *,
-        list_responses: dict[str, list[dict[str, typing.Any]]] | None = None,
         read_responses: dict[tuple[str, str], str] | None = None,
         failing_hosts: set[str] | None = None,
     ) -> None:
-        self._list_responses = list_responses or {}
         self._read_responses = read_responses or {}
         self._failing_hosts = failing_hosts or set()
         self.calls: list[tuple[str, str, list[str]]] = []
-
-    def set_list(self, host: str, items: list[dict[str, typing.Any]]) -> None:
-        self._list_responses[host] = items
 
     async def __call__(self, host: str, op: str, args: list[str]) -> str:
         self.calls.append((host, op, list(args)))
         if host in self._failing_hosts:
             raise RuntimeError(f"ssh failed for {host}")
-        if op == "list":
-            return json.dumps(self._list_responses.get(host, []))
         if op == "read":
             rel = base64.b64decode(args[0]).decode("utf-8")
             body = self._read_responses[(host, rel)]
@@ -771,8 +791,223 @@ class _FakeSshRunner:
         raise ValueError(f"unknown op: {op}")
 
 
+async def _aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:
+    """インメモリーの行リストを`_RemoteWatcher._process_stream`に流し込むためのヘルパー。"""
+    for line in lines:
+        yield line
+
+
+def _seed_remote_cache(state: claude_plans_viewer._BroadcastState, host: str, items: list[dict[str, typing.Any]]) -> None:
+    """テスト用に`state.remote_files`へ直接エントリを書き込む。
+
+    `_RemoteWatcher._process_stream`を経由せずに`/api/files`merge挙動を検証するための土台。
+    """
+    state.remote_files[host] = [claude_plans_viewer._make_file_entry(host, item) for item in items]
+
+
+class TestRemoteWatcher:
+    """`_RemoteWatcher._process_stream`の行処理ユニットテスト。
+
+    純粋な行ジェネレーターを引数化することで、subprocess・SSHを介さず分岐網羅する。
+    """
+
+    @pytest.mark.asyncio
+    async def test_snapshot_updates_cache_and_marks_connected(self):
+        state = claude_plans_viewer._BroadcastState()
+        # 本番購読者の`maxsize=1`は容量超過時に新規通知を破棄する設計のため、
+        # snapshotで連続発火する host-status と refresh の両方を観測するには十分な容量を要する。
+        q: asyncio.Queue[str] = asyncio.Queue(maxsize=8)
+        async with state.lock:
+            state.subscribers.add(q)
+        try:
+            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            lines = [
+                json.dumps(
+                    {
+                        "type": "snapshot",
+                        "entries": [
+                            {"path": "a.md", "name": "a.md", "mtime_epoch": 100.0},
+                            {"path": "sub/b.md", "name": "b.md", "mtime_epoch": 200.0},
+                        ],
+                    }
+                )
+                + "\n",
+            ]
+            await watcher._process_stream(_aiter_lines(lines))
+
+            assert state.host_status["host1"] == "connected"
+            cached = state.remote_files["host1"]
+            assert sorted(e.path for e in cached) == ["a.md", "sub/b.md"]
+            # snapshot受信時は host-status と refresh の両方が配信される。
+            received: list[str] = []
+            while not q.empty():
+                received.append(q.get_nowait())
+            assert claude_plans_viewer._SSE_REFRESH_PAYLOAD in received
+            host_status_payload = json.dumps(
+                {"type": "host-status", "host": "host1", "status": "connected"}, ensure_ascii=False
+            )
+            assert host_status_payload in received
+        finally:
+            async with state.lock:
+                state.subscribers.discard(q)
+
+    @pytest.mark.asyncio
+    async def test_upsert_adds_new_path(self):
+        state = claude_plans_viewer._BroadcastState()
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        # 既存snapshotを与えてから、新規pathのupsertが追加されることを確認する。
+        await watcher._process_stream(
+            _aiter_lines(
+                [
+                    json.dumps(
+                        {
+                            "type": "snapshot",
+                            "entries": [{"path": "a.md", "name": "a.md", "mtime_epoch": 100.0}],
+                        }
+                    )
+                    + "\n",
+                    json.dumps({"type": "upsert", "path": "b.md", "name": "b.md", "mtime_epoch": 200.0}) + "\n",
+                ]
+            )
+        )
+
+        cached = state.remote_files["host1"]
+        assert sorted(e.path for e in cached) == ["a.md", "b.md"]
+
+    @pytest.mark.asyncio
+    async def test_upsert_replaces_existing_path(self):
+        state = claude_plans_viewer._BroadcastState()
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        await watcher._process_stream(
+            _aiter_lines(
+                [
+                    json.dumps(
+                        {
+                            "type": "snapshot",
+                            "entries": [{"path": "a.md", "name": "a.md", "mtime_epoch": 100.0}],
+                        }
+                    )
+                    + "\n",
+                    json.dumps({"type": "upsert", "path": "a.md", "name": "a.md", "mtime_epoch": 999.0}) + "\n",
+                ]
+            )
+        )
+
+        cached = state.remote_files["host1"]
+        assert len(cached) == 1
+        assert cached[0].mtime_epoch == 999.0
+
+    @pytest.mark.asyncio
+    async def test_deleted_removes_path(self):
+        state = claude_plans_viewer._BroadcastState()
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        await watcher._process_stream(
+            _aiter_lines(
+                [
+                    json.dumps(
+                        {
+                            "type": "snapshot",
+                            "entries": [
+                                {"path": "a.md", "name": "a.md", "mtime_epoch": 100.0},
+                                {"path": "b.md", "name": "b.md", "mtime_epoch": 200.0},
+                            ],
+                        }
+                    )
+                    + "\n",
+                    json.dumps({"type": "deleted", "path": "a.md"}) + "\n",
+                ]
+            )
+        )
+
+        cached = state.remote_files["host1"]
+        assert [e.path for e in cached] == ["b.md"]
+
+    @pytest.mark.asyncio
+    async def test_ping_does_not_emit_anything(self):
+        state = claude_plans_viewer._BroadcastState()
+        q = await claude_plans_viewer._subscribe(state)
+        try:
+            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            await watcher._process_stream(_aiter_lines([json.dumps({"type": "ping"}) + "\n"]))
+            # キャッシュにもhost_statusにも一切影響しない（接続確立前なので空のまま）。
+            assert "host1" not in state.remote_files
+            assert not state.host_status
+            assert q.empty()
+        finally:
+            await claude_plans_viewer._unsubscribe(state, q)
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_logged_and_processing_continues(self, caplog: pytest.LogCaptureFixture):
+        state = claude_plans_viewer._BroadcastState()
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
+            await watcher._process_stream(
+                _aiter_lines(
+                    [
+                        "not-a-json-line\n",
+                        json.dumps(
+                            {
+                                "type": "snapshot",
+                                "entries": [{"path": "a.md", "name": "a.md", "mtime_epoch": 100.0}],
+                            }
+                        )
+                        + "\n",
+                    ]
+                )
+            )
+        # 後続行は処理が継続される。
+        assert "host1" in state.remote_files
+        assert any("JSON解析失敗" in r.message for r in caplog.records if r.levelname == "WARNING")
+
+    @pytest.mark.asyncio
+    async def test_set_status_disconnected_emits_sse_after_snapshot(self):
+        """`_set_status`経由のdisconnected遷移とSSE配信を検証する。
+
+        `run`本体の再接続ループは同期テストが困難なため手動確認に委ねる。
+        本テストでは`_set_status`を直接呼び出してhost_statusの遷移と
+        host-statusのSSE配信が想定通り動くことを確認する。
+        """
+        state = claude_plans_viewer._BroadcastState()
+        q = await claude_plans_viewer._subscribe(state)
+        try:
+            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            # snapshot を受け、いったん connected へ遷移させる。
+            await watcher._process_stream(
+                _aiter_lines(
+                    [
+                        json.dumps({"type": "snapshot", "entries": []}) + "\n",
+                    ]
+                )
+            )
+            # キューを掃き出してから切断遷移を観測する。
+            while not q.empty():
+                q.get_nowait()
+            await watcher._set_status("disconnected")
+            assert state.host_status["host1"] == "disconnected"
+            payload = json.dumps({"type": "host-status", "host": "host1", "status": "disconnected"}, ensure_ascii=False)
+            assert q.get_nowait() == payload
+        finally:
+            await claude_plans_viewer._unsubscribe(state, q)
+
+    @pytest.mark.asyncio
+    async def test_snapshot_resets_backoff(self):
+        """snapshot受信でバックオフが`_REMOTE_BACKOFF_INITIAL_SEC`にリセットされること。"""
+        state = claude_plans_viewer._BroadcastState()
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        # 最大値まで増加していると仮定してから snapshot を流す。
+        watcher._backoff = claude_plans_viewer._REMOTE_BACKOFF_MAX_SEC
+        await watcher._process_stream(
+            _aiter_lines(
+                [
+                    json.dumps({"type": "snapshot", "entries": []}) + "\n",
+                ]
+            )
+        )
+        assert watcher._backoff == claude_plans_viewer._REMOTE_BACKOFF_INITIAL_SEC
+
+
 class TestRemoteHostIntegration:
-    """リモートホスト統合（ポーリング・API・許可リスト）の挙動を検証する。"""
+    """リモートホスト統合（API・許可リスト・host-status）の挙動を検証する。"""
 
     @pytest.mark.asyncio
     async def test_api_files_merges_local_and_remote_sorted(self, tmp_path: Path):
@@ -781,22 +1016,14 @@ class TestRemoteHostIntegration:
         local.write_text("local", encoding="utf-8")
         os.utime(local, (3_000.0, 3_000.0))
 
-        runner = _FakeSshRunner(
-            list_responses={
-                "host1": [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0}],
-                "host2": [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0}],
-            }
-        )
         app = claude_plans_viewer.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1", "host2"],
-            ssh_runner=runner,
         )
         state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
-
-        assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
-        assert await claude_plans_viewer._poll_remote_host("host2", state, runner) is True
+        _seed_remote_cache(state, "host1", [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0}])
+        _seed_remote_cache(state, "host2", [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0}])
 
         client = app.test_client()
         response = await client.get("/api/files")
@@ -852,65 +1079,6 @@ class TestRemoteHostIntegration:
         assert response.status_code == 200
         assert response.content_type == "text/markdown; charset=utf-8"
         assert await response.get_data(as_text=True) == body_src
-
-    @pytest.mark.asyncio
-    async def test_remote_cache_change_triggers_refresh(self, tmp_path: Path):
-        """fake runnerの戻り値変更でキャッシュが更新され、SSE`refresh`が発火する。"""
-        runner = _FakeSshRunner(list_responses={"host1": [{"path": "a.md", "name": "a.md", "mtime_epoch": 1.0}]})
-        app = claude_plans_viewer.create_app(
-            tmp_path,
-            hostname="local-host",
-            remote_hosts=["host1"],
-            ssh_runner=runner,
-        )
-        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
-        state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
-        try:
-            # 初回ポーリングはキャッシュ未保持から変化があるためTrueを返す。
-            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
-            await claude_plans_viewer._deliver_refresh(state)
-            msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == "refresh"
-            # 2回目（同一データ）は変化なしでFalse。
-            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is False
-            # データ変更後は再びTrue。
-            runner.set_list("host1", [{"path": "b.md", "name": "b.md", "mtime_epoch": 2.0}])
-            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
-        finally:
-            await claude_plans_viewer._unsubscribe(state, q)
-
-    @pytest.mark.asyncio
-    async def test_remote_failure_isolated_per_host(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """1ホストのSSH失敗は他ホストの取得・APIに影響しない。"""
-        (tmp_path / "local.md").write_text("local", encoding="utf-8")
-        runner = _FakeSshRunner(
-            list_responses={"host_ok": [{"path": "ok.md", "name": "ok.md", "mtime_epoch": 100.0}]},
-            failing_hosts={"host_bad"},
-        )
-        app = claude_plans_viewer.create_app(
-            tmp_path,
-            hostname="local-host",
-            remote_hosts=["host_ok", "host_bad"],
-            ssh_runner=runner,
-        )
-        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
-
-        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
-            assert await claude_plans_viewer._poll_remote_host("host_ok", state, runner) is True
-            assert await claude_plans_viewer._poll_remote_host("host_bad", state, runner) is False
-
-        # 失敗ホストはwarningログを残し、キャッシュには載らない。
-        assert any("host_bad" in r.message for r in caplog.records if r.levelname == "WARNING")
-        assert "host_bad" not in state.remote_files
-        assert "host_ok" in state.remote_files
-
-        client = app.test_client()
-        response = await client.get("/api/files")
-        data = json.loads(await response.get_data())
-        hosts = {e["host"] for e in data}
-        # ローカル＋成功ホストのみ。失敗ホストは含まない。
-        assert hosts == {"local-host", "host_ok"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("endpoint", ["/api/file", "/api/raw"])
@@ -969,3 +1137,45 @@ class TestRemoteHostIntegration:
         body = await response.get_data(as_text=True)
         assert "<h1>local</h1>" in body
         assert not runner.calls
+
+    def test_local_hostname_conflict_rejected(self, tmp_path: Path):
+        """ローカルhostnameと同じ`--remote-host`を渡すと`create_app`が拒絶する。"""
+        with pytest.raises(ValueError, match="local hostname"):
+            claude_plans_viewer.create_app(
+                tmp_path,
+                hostname="local-host",
+                remote_hosts=["local-host"],
+            )
+
+    @pytest.mark.asyncio
+    async def test_api_host_status_initial_state(self, tmp_path: Path):
+        """`/api/host-status`の初期応答はローカル=connected・リモート=connecting。"""
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+        )
+        client = app.test_client()
+        response = await client.get("/api/host-status")
+
+        assert response.status_code == 200
+        assert response.content_type == "application/json; charset=utf-8"
+        data = json.loads(await response.get_data())
+        assert data == {"local-host": "connected", "host1": "connecting"}
+
+    @pytest.mark.asyncio
+    async def test_api_host_status_updates_after_snapshot(self, tmp_path: Path):
+        """snapshot受信後は`/api/host-status`がそのホストを`connected`として返す。"""
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+        )
+        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        await watcher._process_stream(_aiter_lines([json.dumps({"type": "snapshot", "entries": []}) + "\n"]))
+
+        client = app.test_client()
+        response = await client.get("/api/host-status")
+        data = json.loads(await response.get_data())
+        assert data == {"local-host": "connected", "host1": "connected"}
