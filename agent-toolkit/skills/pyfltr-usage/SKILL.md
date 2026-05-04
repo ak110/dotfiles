@@ -210,6 +210,12 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
   除外を一時的に無視して特定ファイルをチェックしたいときは`--no-exclude`オプションを使う
  （例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）。
   pyfltr自体の除外設定は`pyproject.toml`の`[tool.pyfltr]`またはツール固有の`extend-exclude`を参照する
+- コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下に
+  `command-timeout`（グローバル既定値、秒単位。既定600秒、`0`で無効化）と
+  `{command}-timeout`（per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、
+  `0`で当該per-toolを明示的に無効化）で調整できる。
+  pytest-xdist併用時のハング解析やLLMによる観測でtimeout調整が必要になった場合に活用する。
+  ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
 
 ## 詳細情報
 

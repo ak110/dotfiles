@@ -68,8 +68,8 @@
 補完スクリプトの再生成・検証:
 
 ```bash
-uv run python scripts/gen-completions.py          # 再生成
-uv run python scripts/gen-completions.py --check  # 検証（pre-commitフックで自動実行）
+uv run --script scripts/gen-completions.py          # 再生成
+uv run --script scripts/gen-completions.py --check  # 検証（pre-commitフックで自動実行）
 ```
 
 新しいCLIに補完を追加する場合:
