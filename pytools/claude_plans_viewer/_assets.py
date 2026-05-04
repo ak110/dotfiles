@@ -536,7 +536,10 @@ INDEX_HTML = (
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude plans</title>
 <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
-<link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest">
+<!-- Basic認証配下でもmanifestが取得できるようcrossorigin="use-credentials"を付与する。
+     未指定だとブラウザはmanifestをno-credentialsで取得し、Apache等の認証で401になり
+     PWAインストール条件を満たせない（W3C Web App Manifest仕様準拠）。 -->
+<link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#4f46e5">
 <link rel="stylesheet" href="__BASE_PATH_HTML__/static/markdown.css">
 <style>

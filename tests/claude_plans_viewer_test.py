@@ -1312,7 +1312,7 @@ class TestProxyFixIntegration:
         assert response.status_code == 200
         body = await response.get_data(as_text=True)
         assert 'href="/plans/favicon.svg"' in body
-        assert 'href="/plans/manifest.webmanifest"' in body
+        assert 'href="/plans/manifest.webmanifest" crossorigin="use-credentials"' in body
         assert 'href="/plans/static/markdown.css"' in body
         # JSリテラルはjson.dumpsで生成されるためダブルクォート付き。
         assert 'const BASE_PATH = "/plans";' in body
