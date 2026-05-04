@@ -107,12 +107,6 @@ _INDEX_CSS = """\
     padding: 10px;
     border-bottom: 1px solid #e6e6e6;
   }
-  aside .hostinfo {
-    font-size: 11px;
-    color: #6b7280;
-    margin-bottom: 6px;
-    word-break: break-all;
-  }
   aside input {
     width: 100%;
     box-sizing: border-box;
@@ -533,7 +527,6 @@ if ("serviceWorker" in navigator) {
 
 # Markdown→HTML変換はサーバー側で済ませて`/api/file`がHTMLを返すため、
 # クライアント側はfetchした文字列をそのまま`<article>`へ挿入する。
-# `__HOSTNAME__`は`create_app`がhtml.escape済みのホスト名で置換する。
 # `__BASE_PATH_HTML__`は`create_app`が`html.escape(quote=True)`済みのbase_pathで置換する。
 INDEX_HTML = (
     """<!doctype html>
@@ -555,7 +548,6 @@ INDEX_HTML = (
 <div id="app">
   <aside>
     <div class="toolbar">
-      <div class="hostinfo">__HOSTNAME__</div>
       <input id="filter" placeholder="filter...">
     </div>
     <div id="files"></div>
@@ -563,8 +555,8 @@ INDEX_HTML = (
   <main>
     <div class="toolbar">
       <button id="menu-btn" type="button" aria-label="ファイル一覧を開く">&#9776;</button>
-      <button id="copy-btn" type="button" disabled>Markdownをコピー</button>
       <span class="spacer"></span>
+      <button id="copy-btn" type="button" disabled>Markdownをコピー</button>
       <button id="prev-btn" class="nav-btn" type="button" aria-label="前のファイル" disabled>&uarr;</button>
       <button id="next-btn" class="nav-btn" type="button" aria-label="次のファイル" disabled>&darr;</button>
     </div>

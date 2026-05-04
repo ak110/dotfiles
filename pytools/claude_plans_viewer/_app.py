@@ -74,8 +74,8 @@ def create_app(
     """Quartアプリを生成する。
 
     `root`はMarkdownの探索対象ディレクトリ（resolve済み絶対パス）。
-    `hostname`はトップページとローカル分の`host`ラベルへ埋め込むホスト名。
-    `None`のとき`socket.gethostname()`を使う。
+    `hostname`はローカル分のファイルエントリーに付与する`host`ラベルおよび
+    リモートホストとの一意性検査に使う。`None`のとき`socket.gethostname()`を使う。
     `remote_hosts`が空でない場合、各ホストへSSH越しにwatchを起動して差分イベントを配信する。
     `ssh_runner=None`のときは`default_ssh_runner`を使う（`/api/file`/`/api/raw`の
     リモート参照経路でのみ使用する。watch経路は`RemoteWatcher`が直接asyncio subprocessを起動する）。
@@ -129,10 +129,8 @@ def create_app(
         base_path = safe_base_path(quart.request.root_path)
         # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
         # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
-        body = (
-            _assets.INDEX_HTML.replace("__HOSTNAME__", html.escape(resolved_hostname))
-            .replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
-            .replace("__BASE_PATH_JS__", json.dumps(base_path))
+        body = _assets.INDEX_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
+            "__BASE_PATH_JS__", json.dumps(base_path)
         )
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 

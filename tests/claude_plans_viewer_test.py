@@ -259,26 +259,7 @@ class TestParseArgs:
 
 
 class TestIndexHtml:
-    """`/`応答HTMLへのホスト名埋め込みを検証する。
-
-    実ホスト名ではなくcreate_appへ明示指定した値を埋め込むことで、
-    環境依存を排除しつつエスケープ挙動も同時に検査する。
-    """
-
-    @pytest.mark.asyncio
-    async def test_index_html_contains_escaped_hostname(self, tmp_path: Path):
-        """`/`応答にホスト名がエスケープ済みで含まれる。"""
-        hostname = 'host<&"test'
-        app = _app.create_app(tmp_path, hostname=hostname)
-        client = app.test_client()
-        response = await client.get("/")
-
-        assert response.status_code == 200
-        body = await response.get_data(as_text=True)
-        # 生のホスト名文字列は含まれない（エスケープされている）こと。
-        assert hostname not in body
-        # エスケープ済みの形で含まれること。
-        assert "host&lt;&amp;&quot;test" in body
+    """`/`応答HTMLとSPAクライアントJSの契約を検証する。"""
 
     def test_index_html_handles_pagehide_and_pageshow(self):
         """クライアントJSがpagehideでEventSource.close()を呼び、pageshowのbfcache復帰時に再接続する。
