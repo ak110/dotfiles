@@ -1,10 +1,10 @@
 """pytools.claude_plans_viewer のテスト。"""
 
-# 本モジュールはプライベート関数（`_list_files`・`_resolve_under_root`・`_markdown_to_html`・
-# `_resolve_css_path`・`_read_css`）や同モジュール内の定数を単体でテストするため、protected-accessを一括で許可する。
+# 本モジュールはモジュール内部の関数・定数を単体テスト対象とするため、protected-accessを一括で許可する。
 # pylint: disable=protected-access
 
 import asyncio
+import base64
 import dataclasses
 import json
 import os
@@ -36,7 +36,7 @@ class TestListFiles:
         new_path.write_text("new", encoding="utf-8")
         os.utime(new_path, (2_000.0, 2_000.0))
 
-        entries = claude_plans_viewer._list_files(tmp_path)
+        entries = claude_plans_viewer._list_files(tmp_path, "local-host")
 
         assert [e.path for e in entries] == ["new.md", "old.md"]
         # mtimeは`yyyy/MM/dd HH:mm`書式で整形される。
@@ -45,8 +45,9 @@ class TestListFiles:
             assert pattern.match(entry.mtime), entry.mtime
         # `_FileEntry`はサイズを保持しない。
         assert not hasattr(entries[0], "size")
-        # `mtime_epoch`を保持すること（クライアント側mtime変化検知に使用）。
+        # `mtime_epoch`・`host`を保持すること（クライアント側mtime変化検知・多ホスト識別に使用）。
         assert hasattr(entries[0], "mtime_epoch")
+        assert all(e.host == "local-host" for e in entries)
 
     def test_includes_only_md(self, tmp_path: Path):
         """.md以外は含まず、サブディレクトリは再帰的に拾うこと。"""
@@ -55,7 +56,7 @@ class TestListFiles:
         (tmp_path / "sub").mkdir()
         (tmp_path / "sub" / "c.md").write_text("x", encoding="utf-8")
 
-        entries = claude_plans_viewer._list_files(tmp_path)
+        entries = claude_plans_viewer._list_files(tmp_path, "local-host")
 
         assert sorted(e.path for e in entries) == ["a.md", "sub/c.md"]
 
@@ -195,36 +196,63 @@ class TestParseArgs:
         monkeypatch.delenv(claude_plans_viewer._ENV_ROOT, raising=False)
         monkeypatch.delenv(claude_plans_viewer._ENV_HOST, raising=False)
         monkeypatch.delenv(claude_plans_viewer._ENV_PORT, raising=False)
+        monkeypatch.delenv(claude_plans_viewer._ENV_REMOTE_HOSTS, raising=False)
+        monkeypatch.delenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, raising=False)
 
         args = claude_plans_viewer._parse_args([])
 
         assert args.root == claude_plans_viewer._DEFAULT_ROOT
         assert args.host == claude_plans_viewer._DEFAULT_HOST
         assert args.port == claude_plans_viewer._DEFAULT_PORT
+        assert args.remote_host == []
+        assert args.remote_poll_interval == claude_plans_viewer._DEFAULT_REMOTE_POLL_INTERVAL
 
     def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
         """環境変数が設定されていればそれを既定値として使う。"""
         monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
         monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
         monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
+        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "host1:user@host2")
+        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, "5.5")
 
         args = claude_plans_viewer._parse_args([])
 
         assert args.root == "/tmp/plans-env"
         assert args.host == "0.0.0.0"  # noqa: S104
         assert args.port == 12345
+        assert args.remote_host == ["host1", "user@host2"]
+        assert args.remote_poll_interval == 5.5
 
     def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch):
         """CLI引数は環境変数より優先する。"""
         monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
         monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
         monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
+        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "envhost")
+        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_POLL_INTERVAL, "5.5")
 
-        args = claude_plans_viewer._parse_args(["--root", "/tmp/plans-cli", "--host", "127.0.0.1", "--port", "54321"])
+        args = claude_plans_viewer._parse_args(
+            [
+                "--root",
+                "/tmp/plans-cli",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "54321",
+                "--remote-host",
+                "cli1",
+                "--remote-host",
+                "cli2",
+                "--remote-poll-interval",
+                "1.25",
+            ]
+        )
 
         assert args.root == "/tmp/plans-cli"
         assert args.host == "127.0.0.1"
         assert args.port == 54321
+        assert args.remote_host == ["cli1", "cli2"]
+        assert args.remote_poll_interval == 1.25
 
 
 class TestIndexHtml:
@@ -292,11 +320,30 @@ class TestIndexHtml:
         # ボタン要素のid指定。
         assert 'id="copy-btn"' in html_src
         # clickハンドラが`/api/raw`からfetchして`navigator.clipboard.writeText`へ渡す。
-        assert "/api/raw?path=" in html_src
+        # 多ホスト統合のため`host`と`path`の両クエリを組み立てる`fileQuery`を経由する。
+        assert "/api/raw?" in html_src
         assert "navigator.clipboard.writeText" in html_src
+        assert "function fileQuery" in html_src
         # 成否のフィードバックはボタン文言の一時的な書き換えで示す。
         assert "コピーしました" in html_src
         assert "コピーに失敗しました" in html_src
+
+    def test_index_html_renders_host_and_mtime_in_meta(self):
+        """左ペインのmetaが左にホスト名、右にmtimeを並べる。
+
+        多ホスト統合表示で、行内のホスト識別と更新日時の視認性を担保する契約。
+        """
+        html_src = claude_plans_viewer._INDEX_HTML
+
+        # `.meta`は`display: flex; justify-content: space-between`で左右分割される。
+        assert ".meta {" in html_src
+        meta_block = html_src.split(".meta {", 1)[1].split("}", 1)[0]
+        assert "display: flex" in meta_block
+        assert "justify-content: space-between" in meta_block
+        # 行内に`host`と`mtime`の2つのspanが描画される。
+        assert 'className = "meta"' in html_src or 'class="meta"' in html_src
+        assert 'hostSpan.className = "host"' in html_src
+        assert 'mtimeSpan.className = "mtime"' in html_src
 
 
 class TestSubscribers:
@@ -677,9 +724,248 @@ class TestBroadcastStateDataclass:
     def test_defaults(self):
         """新規状態の購読者は空、ループは未設定、debounceタスクは未起動。"""
         state = claude_plans_viewer._BroadcastState()
-        assert state.subscribers == set()
+        assert not state.subscribers
         assert state.debounce_task is None
         assert state.loop is None
+        assert not state.remote_files
+        assert not state.remote_tasks
         # `dataclasses.fields`経由で契約を固定し、意図しないフィールド追加を検出する。
         fields = {f.name for f in dataclasses.fields(state)}
-        assert fields == {"subscribers", "lock", "debounce_task", "loop"}
+        assert fields == {"subscribers", "lock", "debounce_task", "loop", "remote_files", "remote_tasks"}
+
+
+class _FakeSshRunner:
+    """テスト用SshRunner。
+
+    `list_responses`はホスト→ファイル一覧（`{path,name,mtime_epoch}`の辞書list）。
+    `read_responses`は`(host, rel)`→Markdown原文の辞書。
+    `failing_hosts`に含めたホストへの呼び出しは`RuntimeError`を送出する。
+    呼び出し履歴は`calls`に`(host, op, args)`タプルで蓄積される。
+    """
+
+    def __init__(
+        self,
+        *,
+        list_responses: dict[str, list[dict[str, typing.Any]]] | None = None,
+        read_responses: dict[tuple[str, str], str] | None = None,
+        failing_hosts: set[str] | None = None,
+    ) -> None:
+        self._list_responses = list_responses or {}
+        self._read_responses = read_responses or {}
+        self._failing_hosts = failing_hosts or set()
+        self.calls: list[tuple[str, str, list[str]]] = []
+
+    def set_list(self, host: str, items: list[dict[str, typing.Any]]) -> None:
+        self._list_responses[host] = items
+
+    async def __call__(self, host: str, op: str, args: list[str]) -> str:
+        self.calls.append((host, op, list(args)))
+        if host in self._failing_hosts:
+            raise RuntimeError(f"ssh failed for {host}")
+        if op == "list":
+            return json.dumps(self._list_responses.get(host, []))
+        if op == "read":
+            rel = base64.b64decode(args[0]).decode("utf-8")
+            body = self._read_responses[(host, rel)]
+            return base64.b64encode(body.encode("utf-8")).decode("ascii")
+        raise ValueError(f"unknown op: {op}")
+
+
+class TestRemoteHostIntegration:
+    """リモートホスト統合（ポーリング・API・許可リスト）の挙動を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_api_files_merges_local_and_remote_sorted(self, tmp_path: Path):
+        """`/api/files`がローカル＋全リモートホストのエントリをmtime降順で統合する。"""
+        local = tmp_path / "local.md"
+        local.write_text("local", encoding="utf-8")
+        os.utime(local, (3_000.0, 3_000.0))
+
+        runner = _FakeSshRunner(
+            list_responses={
+                "host1": [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0}],
+                "host2": [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0}],
+            }
+        )
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1", "host2"],
+            ssh_runner=runner,
+        )
+        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+
+        assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
+        assert await claude_plans_viewer._poll_remote_host("host2", state, runner) is True
+
+        client = app.test_client()
+        response = await client.get("/api/files")
+
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert [(e["host"], e["path"]) for e in data] == [
+            ("host1", "h1.md"),
+            ("local-host", "local.md"),
+            ("host2", "h2.md"),
+        ]
+        # 全エントリに`host`フィールドが乗ること。
+        assert {e["host"] for e in data} == {"host1", "host2", "local-host"}
+
+    @pytest.mark.asyncio
+    async def test_api_file_for_remote_host_renders(self, tmp_path: Path):
+        """`/api/file?host=host1&path=foo.md`がfake runnerの`read`応答をHTMLレンダリングして返す。"""
+        runner = _FakeSshRunner(
+            read_responses={("host1", "foo.md"): "# remote title\n"},
+        )
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        response = await client.get("/api/file?host=host1&path=foo.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert "<h1>remote title</h1>" in body
+        # `read`オペレーションがhost1宛に1回発行され、引数はbase64エンコードされた相対パス。
+        read_calls = [c for c in runner.calls if c[1] == "read"]
+        assert len(read_calls) == 1
+        assert read_calls[0][0] == "host1"
+        assert base64.b64decode(read_calls[0][2][0]).decode("utf-8") == "foo.md"
+
+    @pytest.mark.asyncio
+    async def test_api_raw_for_remote_host_returns_markdown(self, tmp_path: Path):
+        """`/api/raw?host=host1&path=foo.md`がfake runnerから取得した生Markdownを返す。"""
+        body_src = "# title\n\n本文\n"
+        runner = _FakeSshRunner(read_responses={("host1", "foo.md"): body_src})
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        response = await client.get("/api/raw?host=host1&path=foo.md")
+
+        assert response.status_code == 200
+        assert response.content_type == "text/markdown; charset=utf-8"
+        assert await response.get_data(as_text=True) == body_src
+
+    @pytest.mark.asyncio
+    async def test_remote_cache_change_triggers_refresh(self, tmp_path: Path):
+        """fake runnerの戻り値変更でキャッシュが更新され、SSE`refresh`が発火する。"""
+        runner = _FakeSshRunner(list_responses={"host1": [{"path": "a.md", "name": "a.md", "mtime_epoch": 1.0}]})
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+        state.loop = asyncio.get_running_loop()
+        q = await claude_plans_viewer._subscribe(state)
+        try:
+            # 初回ポーリングはキャッシュ未保持から変化があるためTrueを返す。
+            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
+            await claude_plans_viewer._deliver_refresh(state)
+            msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
+            assert msg == "refresh"
+            # 2回目（同一データ）は変化なしでFalse。
+            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is False
+            # データ変更後は再びTrue。
+            runner.set_list("host1", [{"path": "b.md", "name": "b.md", "mtime_epoch": 2.0}])
+            assert await claude_plans_viewer._poll_remote_host("host1", state, runner) is True
+        finally:
+            await claude_plans_viewer._unsubscribe(state, q)
+
+    @pytest.mark.asyncio
+    async def test_remote_failure_isolated_per_host(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """1ホストのSSH失敗は他ホストの取得・APIに影響しない。"""
+        (tmp_path / "local.md").write_text("local", encoding="utf-8")
+        runner = _FakeSshRunner(
+            list_responses={"host_ok": [{"path": "ok.md", "name": "ok.md", "mtime_epoch": 100.0}]},
+            failing_hosts={"host_bad"},
+        )
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host_ok", "host_bad"],
+            ssh_runner=runner,
+        )
+        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+
+        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
+            assert await claude_plans_viewer._poll_remote_host("host_ok", state, runner) is True
+            assert await claude_plans_viewer._poll_remote_host("host_bad", state, runner) is False
+
+        # 失敗ホストはwarningログを残し、キャッシュには載らない。
+        assert any("host_bad" in r.message for r in caplog.records if r.levelname == "WARNING")
+        assert "host_bad" not in state.remote_files
+        assert "host_ok" in state.remote_files
+
+        client = app.test_client()
+        response = await client.get("/api/files")
+        data = json.loads(await response.get_data())
+        hosts = {e["host"] for e in data}
+        # ローカル＋成功ホストのみ。失敗ホストは含まない。
+        assert hosts == {"local-host", "host_ok"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("endpoint", ["/api/file", "/api/raw"])
+    async def test_unknown_host_rejected_without_ssh_call(self, tmp_path: Path, endpoint: str):
+        """許可リスト外のhost指定は400で拒否され、`ssh_runner`は呼ばれない。
+
+        サーバーが`0.0.0.0`等で公開された場合に、クライアントが任意のSSH接続先へ
+        接続試行を誘発できないようにするための境界検証。
+        """
+        runner = _FakeSshRunner()
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        response = await client.get(f"{endpoint}?host=evil&path=foo.md")
+
+        assert response.status_code == 400
+        # ssh_runnerは一度も呼ばれていない。
+        assert not runner.calls
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("endpoint", ["/api/file", "/api/raw"])
+    async def test_remote_traversal_rejected_without_ssh_call(self, tmp_path: Path, endpoint: str):
+        """`..`を含む相対パスはSSH呼び出し前に400で拒否される。"""
+        runner = _FakeSshRunner()
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        response = await client.get(f"{endpoint}?host=host1&path=../escape.md")
+
+        assert response.status_code == 400
+        assert not runner.calls
+
+    @pytest.mark.asyncio
+    async def test_local_host_query_uses_local_path(self, tmp_path: Path):
+        """`host`にローカル名を明示してもローカル経路で解決され、SSHは呼ばれない。"""
+        (tmp_path / "a.md").write_text("# local\n", encoding="utf-8")
+        runner = _FakeSshRunner()
+        app = claude_plans_viewer.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        response = await client.get("/api/file?host=local-host&path=a.md")
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert "<h1>local</h1>" in body
+        assert not runner.calls
