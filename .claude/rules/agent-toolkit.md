@@ -25,7 +25,7 @@ paths:
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
 
-整合性は`agent-toolkit/tests/pretooluse_test.py`の`TestManifestSsot`が検査し、
+整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が検査し、
 `uvx pyfltr run`で自動的に失敗する。
 
 ## バージョン更新の判定基準
@@ -43,7 +43,7 @@ paths:
 ### bumpが不要な変更
 
 - コメント・docstringのみの修正
-- `tests/`のみの追加・修正（SSOTテスト自身の変更を含む）
+- `*_test.py`のみの追加・修正（SSOTテスト自身の変更を含む）
 - 入出力が完全に不変なリファクタリング
 - 誤字修正・スタイル調整
 

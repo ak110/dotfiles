@@ -7,7 +7,7 @@
 import pathlib
 import re
 
-import _colloquial_check  # type: ignore[import-not-found]
+import _colloquial_check
 import pytest
 
 

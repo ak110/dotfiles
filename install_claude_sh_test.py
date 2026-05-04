@@ -21,7 +21,7 @@ import typing
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+REPO_ROOT = pathlib.Path(__file__).resolve().parent
 RULES_SRC = REPO_ROOT / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"

@@ -1,17 +1,10 @@
-"""pytest conftest: scripts/ ディレクトリを sys.path に追加する。
-
-`_stop_gate_test.py` など、scripts/ 配下のモジュールを直接 import するテストのため。
-テスト用の git リポジトリ作成 factory fixture も提供する。
-"""
+"""pytest conftest: テスト用の git リポジトリ作成 factory fixture を提供する。"""
 
 import pathlib
 import subprocess
-import sys
 from collections.abc import Callable
 
 import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 
 @pytest.fixture(name="make_dirty_repo")

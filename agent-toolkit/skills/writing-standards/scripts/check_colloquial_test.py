@@ -11,9 +11,9 @@ import sys
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "skills" / "writing-standards" / "scripts" / "check_colloquial.py"
-_DENY_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words.txt"
-_ALLOW_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words_allow.txt"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "check_colloquial.py"
+_DENY_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words.txt"
+_ALLOW_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words_allow.txt"
 
 
 def _expand(pattern_str: str) -> str:

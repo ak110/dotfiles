@@ -10,10 +10,7 @@ import threading
 import time
 
 import pytest
-
-# scripts/ は conftest.py で sys.path に追加済みのため、ここでは直接 import する。
-# static 解析ツールは conftest.py 経由の sys.path 変更を追跡できないため型エラーを抑制する。
-from _stop_gate import (  # type: ignore[import]  # pylint: disable=import-error
+from _stop_gate import (
     _is_assistant_asking_question,
     _is_assistant_task_completed,
     _is_assistant_waiting,

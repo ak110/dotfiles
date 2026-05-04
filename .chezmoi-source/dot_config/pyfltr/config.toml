@@ -1,4 +1,4 @@
-# check_colloquial.py: 口語表現検出（writing-standardsスキル付属）
+# check_colloquial.py: 口語表現検出（agent-toolkit:writing-standardsスキル付属）
 # ホスト circe / circe-container でのみ有効化される
 # （配布制御は ~/dotfiles/.chezmoi-source/.chezmoiignore で行う）
 [tool.pyfltr.custom-commands.colloquial]
@@ -11,7 +11,7 @@ args = [
 ]
 targets = ["*"]
 error-pattern = '^(?P<file>[^:]+):(?P<line>\d+):(?P<col>\d+) \[(?P<rule>[^\]]+)\] (?P<message>.+)$'
-severity = "warning"
+# severity = "warning"
 hints = [
     "Colloquial Japanese expressions detected. Replace with formal written-language equivalents.",
     "See ~/dotfiles/agent-toolkit/skills/writing-standards/SKILL.md for guidance.",

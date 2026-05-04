@@ -14,7 +14,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 
-from .helpers import _FakeResult
+from ._test_helpers import _FakeResult
 
 
 def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:

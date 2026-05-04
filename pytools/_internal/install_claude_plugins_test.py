@@ -15,7 +15,7 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from .helpers import _FakeResult, _plugin_list_json
+from ._test_helpers import _FakeResult, _plugin_list_json
 
 
 @pytest.fixture(name="fake_which_present")
@@ -70,7 +70,7 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     既存テストは ak110-dotfiles marketplace のプラグインだけを対象にしているため、
     外部 marketplace を参照する自動 disable と推奨コマンド算出は専用テストへ委ねる。
     ``_auto_disable_plugins`` / ``compute_recommended_commands`` の振る舞いは
-    ``tests/install_claude_plugins_auto_manage_test.py`` で単体検証している。
+    ``install_claude_plugins_auto_manage_test.py`` で単体検証している。
     """
     monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
     monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
@@ -705,7 +705,7 @@ class TestReadTargetInfo:
 
     def test_reads_actual_marketplace_json(self):
         """本リポジトリ配下の marketplace.json を読み取れる。"""
-        repo_root = pathlib.Path(__file__).resolve().parents[1]
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
         # pylint: disable-next=protected-access
         targets, _deprecated = _install_claude_plugins._read_target_info(repo_root)
         # agent-toolkit は通常プラグインとして含まれる
@@ -790,7 +790,7 @@ class TestCheckMarketplaceFromFile:
     """_check_marketplace_from_file()の単体テスト (known_marketplaces.json 単独の基本動作)。
 
     settings.json を含む 2 ファイル同時検査と修復ロジックの詳細テストは
-    ``tests/_install_claude_plugins_repair_test.py`` に置いている。
+    ``install_claude_plugins_repair_test.py`` に置いている。
     """
 
     def test_directory_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):

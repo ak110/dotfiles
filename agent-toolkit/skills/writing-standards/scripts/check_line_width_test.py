@@ -8,9 +8,7 @@ import pathlib
 import subprocess
 import sys
 
-# テストファイルは agent-toolkit/tests/ 直下配置を前提とし、
-# parents[1] でプラグインルート（agent-toolkit/）を指す。
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "skills" / "writing-standards" / "scripts" / "check_line_width.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "check_line_width.py"
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:

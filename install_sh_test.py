@@ -14,7 +14,7 @@ import subprocess
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+REPO_ROOT = pathlib.Path(__file__).resolve().parent
 INSTALL_SH = REPO_ROOT / "install.sh"
 
 

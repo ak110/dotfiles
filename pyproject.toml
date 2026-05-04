@@ -33,6 +33,7 @@ claude-plans-viewer = "pytools.claude_plans_viewer:_main"
 claude-session-export = "pytools.claude_session_export:_main"
 claudize = "pytools.claudize:_main"
 clonedir = "pytools.clonedir:_main"
+colloquial-checker = "pytools.colloquial_checker:_main"
 dateRelocator = "pytools.date_relocator:_main"
 deletehomonym = "pytools.delete_homonym:_main"
 dirsize = "pytools.dirsize:_main"
@@ -55,6 +56,10 @@ update-ssh-config = "pytools.update_ssh_config:_main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pytools"]
+exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
 
 [dependency-groups]
 dev = [
