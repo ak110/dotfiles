@@ -1,7 +1,6 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
-dotfiles 側の Stop hook スクリプト (`scripts/claude_hook_stop.py`) と
-`stop_advisor.py` の両方から import して使う。
+`stop_advisor.py` から import して使う。
 
 公開 API: `is_real_session_end(transcript_path)` のみ。
 PEP 723 ヘッダーなし（通常モジュールとして import 可能にするため）。

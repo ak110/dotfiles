@@ -179,7 +179,7 @@ Git操作前には次の項目を確認する。
 - `git status ; git log --oneline --decorate -5`で現在の状態を把握する
 - push前: `git remote -v`と`git branch --show-current`で対象リポジトリ・リモートURL・ブランチを確認する
 - pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される。別リポジトリ・別セッションには波及しない。
-  横断同期作業（`sync-cross-project`など）ではリポジトリごとに個別確認する
+  複数プロジェクト横断作業ではリポジトリごとに個別確認する
 - 複数プロジェクト横断作業中の`git commit --amend`／`git commit --fixup=`は、
   プロジェクトごとに直前で`git log --oneline --decorate`を改めて確認する
  （hookの`git_log_checked`状態は単一フラグでcwd差を区別しないため、前のプロジェクトでの確認は引き継がれない）

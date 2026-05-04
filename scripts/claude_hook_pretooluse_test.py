@@ -522,6 +522,181 @@ class TestPersonalFileMentionWarning:
         assert self._TRIPLE_STEM in msg
 
 
+class TestAgentToolkitDotfilesNamesCheck:
+    """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
+
+    対象は `agent-toolkit/` および `.chezmoi-source/dot_claude/rules/agent-toolkit/` 配下。
+    block 対象は配布先利用者にとって意味不明な参照となるため exit 2 で停止する。
+    warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
+    """
+
+    _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
+    _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
+    _AT_RULES_DIR = _DOTFILES_ROOT / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "sync-cross-project",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
+            "session-review",  # 個人スキル名
+            "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
+            "claude-session-export",  # pytools コマンド名 (project.scripts)
+            "psgrep",  # pytools コマンド名
+            "claude_hook_stop",  # scripts 名 (拡張子除去)
+            "agent_toolkit_bump",  # scripts 名
+            "glatasks",  # 固定プロジェクト名
+            "gv",
+            "lc",
+            "smpr",
+        ],
+    )
+    def test_block_when_target_is_in_agent_toolkit(self, name: str):
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {name} for details."},
+            }
+        )
+        assert result.returncode == 2
+        assert name in result.stderr
+        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
+        assert "Auto-generated hook notice" in result.stderr
+
+    def test_block_in_chezmoi_source_rules(self):
+        target = str(self._AT_RULES_DIR / "agent.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": target,
+                    "old_string": "x",
+                    "new_string": "Refer to glatasks for details.",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "glatasks" in result.stderr
+
+    def test_block_in_multiedit(self):
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": target,
+                    "edits": [
+                        {"old_string": "a", "new_string": "harmless"},
+                        {"old_string": "c", "new_string": "See smpr usage."},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "smpr" in result.stderr
+
+    @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
+    def test_warn_when_target_is_in_agent_toolkit(self, name: str):
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {name} for details."},
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert name in msg
+        assert "warn" in msg.lower()
+
+    def test_block_takes_precedence_over_warn(self):
+        """block と warn の両方が成立する場合は block を優先 (exit 2)。"""
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Use pyfltr alongside glatasks tooling.",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "glatasks" in result.stderr
+
+    def test_outside_distribution_silently_allowed(self):
+        """配布範囲外のファイル (例: scripts/) では混入しても通す。"""
+        target = str(self._DOTFILES_ROOT / "scripts" / "fictional.py")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "Refer to glatasks and gv."},
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_relative_path_silently_allowed(self):
+        """相対パスは判定不能なため通す (誤検出を避ける)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/example/SKILL.md",
+                    "content": "Refer to glatasks.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_word_boundary_avoids_substring_match(self):
+        """単語境界マッチで部分一致は検出しない (短い名前 `gv` / `lc` の誤検出回避)。"""
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Use pygvX-extension and pylcY-tool.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_clean_content_silently_allowed(self):
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Plain documentation without project-specific references.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_old_string_not_inspected(self):
+        """new_string のみが対象。old_string に違反語があっても通す。"""
+        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": target,
+                    "old_string": "Refer to glatasks for details.",
+                    "new_string": "Refer to the upstream project.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 

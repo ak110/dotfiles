@@ -13,9 +13,6 @@ disable-model-invocation: true
 出力ファイルを添えて新しいClaude Codeセッションを立ち上げ直し、冒頭でそのファイルを読ませることで、
 これまでの経緯を短く伝えて作業を再開できる。
 
-セッション自体を履歴として残したい場合は`export-session`スキル（`claude-session-export` CLIで会話全文をmarkdown化）を使う。
-本スキルは要点の抽出・整理に特化しており、用途が直交する。
-
 ## 用途と前提
 
 - 想定場面:
