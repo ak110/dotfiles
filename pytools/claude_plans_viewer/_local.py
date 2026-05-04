@@ -6,6 +6,7 @@ underscore接頭辞を付けない（package-internalとして扱う）。
 """
 
 import asyncio
+import collections
 import datetime
 import pathlib
 import typing
@@ -14,6 +15,12 @@ import markdown_it
 import watchdog.events
 
 from pytools.claude_plans_viewer import _assets, _state
+
+# Markdownレンダリング結果LRUキャッシュの上限。
+# エントリ数とバイト数の二重上限のうち、先に到達した側で古い順に追い出す。
+# 連続選択や前後ナビゲーションでヒットさせつつ、長時間運用でも有界に保つ値とする。
+MARKDOWN_CACHE_MAX_ENTRIES = 128
+MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`は`/api/file`応答の`read_text`との間で
 # feedback loopになるため除外する。`FileClosedEvent`は`IN_CLOSE_WRITE`（書き込み後クローズ）を表す。
@@ -90,6 +97,65 @@ def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) 
     """Markdown文字列をHTMLへ変換する。"""
     md = renderer if renderer is not None else make_md_renderer()
     return md.render(text)
+
+
+# キャッシュキーは(host, path, mtime_epoch)。`mtime_epoch`がキーに含まれるため、
+# ファイル更新時は自動的に新しいエントリとなり明示的な無効化は不要。
+MarkdownCacheKey = tuple[str, str, float]
+
+
+class MarkdownCache:
+    """Markdownレンダリング結果のLRUキャッシュ。
+
+    キーは`(host, path, mtime_epoch)`。リモート分は`fetch_remote_file`が本文と
+    同時取得した`mtime_epoch`をそのまま使うことで、watch通知の遅延と無関係に整合する。
+    `mtime_epoch`が`None`の場合、呼び出し側はキャッシュを参照せずバイパスする
+    （本クラスは`None`を扱わない）。
+    """
+
+    def __init__(
+        self,
+        max_entries: int = MARKDOWN_CACHE_MAX_ENTRIES,
+        max_bytes: int = MARKDOWN_CACHE_MAX_BYTES,
+    ) -> None:
+        self._max_entries = max_entries
+        self._max_bytes = max_bytes
+        # OrderedDictで挿入順を保ち、`move_to_end`でLRU順に保つ。
+        self._entries: collections.OrderedDict[MarkdownCacheKey, str] = collections.OrderedDict()
+        self._total_bytes = 0
+
+    def get(self, key: MarkdownCacheKey) -> str | None:
+        html = self._entries.get(key)
+        if html is None:
+            return None
+        # アクセスのたびに末尾へ移して最近使用扱いにする。
+        self._entries.move_to_end(key)
+        return html
+
+    def put(self, key: MarkdownCacheKey, html: str) -> None:
+        # 既存キーは置換扱い。サイズ計算のため一旦削除してから挿入する。
+        existing = self._entries.pop(key, None)
+        if existing is not None:
+            self._total_bytes -= len(existing.encode("utf-8"))
+        size = len(html.encode("utf-8"))
+        # 単一エントリが上限を超える場合は保持せずに諦める（次回はミスのまま再レンダリング）。
+        if size > self._max_bytes:
+            return
+        self._entries[key] = html
+        self._total_bytes += size
+        self._evict_excess()
+
+    def _evict_excess(self) -> None:
+        while self._entries and (len(self._entries) > self._max_entries or self._total_bytes > self._max_bytes):
+            _, evicted = self._entries.popitem(last=False)
+            self._total_bytes -= len(evicted.encode("utf-8"))
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def total_bytes(self) -> int:
+        """テスト・観測用に現在の総バイト数を返す。"""
+        return self._total_bytes
 
 
 def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:

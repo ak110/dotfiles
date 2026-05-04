@@ -327,30 +327,33 @@ function navigateRelative(delta) {
   openFile(target.host, target.path);
 }
 
-function renderFiles() {
-  const q = document.getElementById("filter").value.toLowerCase();
-  const root = document.getElementById("files");
-  const aside = document.querySelector("aside");
-  // 一覧再描画前にスクロール位置を退避し、再描画後に復元する
-  const scrollTop = aside ? aside.scrollTop : 0;
-  root.innerHTML = "";
-  const frag = document.createDocumentFragment();
-  visibleFiles = [];
-  for (const file of files) {
-    // ホスト名・パスのいずれかに部分一致するもののみ表示する
-    const haystack = (file.host + " " + file.path).toLowerCase();
-    if (!haystack.includes(q)) continue;
-    visibleFiles.push(file);
-    const item = document.createElement("div");
-    item.className = "file" + (isSelected(file) ? " active" : "");
-    item.onclick = () => openFile(file.host, file.path);
-    const name = document.createElement("div");
-    name.className = "name";
-    name.textContent = file.path;
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    const hostSpan = document.createElement("span");
-    hostSpan.className = "host";
+function createFileItem(file) {
+  // 1ファイルエントリのDOMノードを生成する。差分更新時の追加経路から呼ぶ。
+  const item = document.createElement("div");
+  item.dataset.key = fileKey(file);
+  const name = document.createElement("div");
+  name.className = "name";
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const hostSpan = document.createElement("span");
+  hostSpan.className = "host";
+  const mtimeSpan = document.createElement("span");
+  mtimeSpan.className = "mtime";
+  meta.appendChild(hostSpan);
+  meta.appendChild(mtimeSpan);
+  item.appendChild(name);
+  item.appendChild(meta);
+  item.addEventListener("click", () => openFile(file.host, file.path));
+  return item;
+}
+
+function updateFileItem(item, file) {
+  // 既存ノードのテキスト・クラス・バッジを最新値で上書きする。
+  item.className = "file" + (isSelected(file) ? " active" : "");
+  const name = item.querySelector(".name");
+  if (name) name.textContent = file.path;
+  const hostSpan = item.querySelector(".host");
+  if (hostSpan) {
     hostSpan.textContent = file.host;
     const status = hostStatus[file.host];
     if (status === "connecting" || status === "disconnected") {
@@ -359,17 +362,48 @@ function renderFiles() {
       badge.textContent = HOST_BADGE_LABELS[status];
       hostSpan.appendChild(badge);
     }
-    const mtimeSpan = document.createElement("span");
-    mtimeSpan.className = "mtime";
-    mtimeSpan.textContent = file.mtime;
-    meta.appendChild(hostSpan);
-    meta.appendChild(mtimeSpan);
-    item.appendChild(name);
-    item.appendChild(meta);
-    frag.appendChild(item);
   }
-  root.appendChild(frag);
-  if (aside) aside.scrollTop = scrollTop;
+  const mtimeSpan = item.querySelector(".mtime");
+  if (mtimeSpan) mtimeSpan.textContent = file.mtime;
+}
+
+function renderFiles() {
+  // ファイル一覧を差分更新する。innerHTMLの全消去ではなく既存ノードを再利用することで、
+  // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
+  const q = document.getElementById("filter").value.toLowerCase();
+  const root = document.getElementById("files");
+  visibleFiles = [];
+  // 既存ノードを`data-key`で索引化し、再利用候補とする。最終的に未参照のノードは削除する。
+  const existing = new Map();
+  for (const node of root.children) {
+    const key = node.dataset.key;
+    if (key) existing.set(key, node);
+  }
+  let cursor = root.firstChild;
+  for (const file of files) {
+    // ホスト名・パスのいずれかに部分一致するもののみ表示する
+    const haystack = (file.host + " " + file.path).toLowerCase();
+    if (!haystack.includes(q)) continue;
+    visibleFiles.push(file);
+    const key = fileKey(file);
+    let item = existing.get(key);
+    if (item) {
+      existing.delete(key);
+    } else {
+      item = createFileItem(file);
+    }
+    updateFileItem(item, file);
+    if (cursor === item) {
+      cursor = item.nextSibling;
+    } else {
+      // 期待位置へ並べ替える。`insertBefore`は同一ノードを移動できるため重複処理は不要。
+      root.insertBefore(item, cursor);
+    }
+  }
+  // 残った未使用ノードを削除する。
+  for (const node of existing.values()) {
+    node.remove();
+  }
   updateNavButtons();
   updateMetaMobile();
 }
@@ -402,7 +436,8 @@ async function updatePreview() {
 }
 
 async function openFile(host, path) {
-  await refreshFiles();
+  // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
+  // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
   selectedPath = path;
   renderFiles();
@@ -577,11 +612,12 @@ INDEX_HTML = (
 """
 )
 
-# SSH経由でリモート側へstdin投入する小さなヘルパースクリプト。
-# listとread操作は標準ライブラリのみで完結する。watchサブコマンドはwatchdogに依存し、
-# リモート側のuv inline metadataで自動解決させる。
-# 操作種別と引数（base64エンコードした相対パス）はSSHコマンドのargv経由で渡す
-# （`uv run --script -`はstdinをスクリプト本文として消費するため、操作引数のstdin同居はできない）。
+# SSH経由でリモート側へ配置・実行する小さなヘルパースクリプト。
+# `serve`サブコマンドではwatchの常駐SSH接続をRPC通信路として再利用するため、stdinから
+# JSON行リクエストを受け取り、stdoutへ既存watchイベントと混在させて応答を返す。
+# `serve`を使う配置経路では、リモートの`~/.cache/claude_plans_viewer/helper.py`へ
+# 本スクリプトを書き出してから`uv run --no-project --script <path> serve`で起動する。
+# `read`サブコマンドはfallback用途で残し、応答はJSON文字列に統一して`mtime_epoch`を同梱する。
 # raw文字列リテラルで保持し、エスケープシーケンスを内部Pythonの解釈に委ねる。
 REMOTE_HELPER_SCRIPT = r'''# /// script
 # requires-python = ">=3.10"
@@ -591,16 +627,27 @@ REMOTE_HELPER_SCRIPT = r'''# /// script
 
 操作種別はargvで受け取る:
   - list           : ~/.claude/plans配下の.mdファイル一覧をJSON文字列でstdoutへ出力する
-  - read <b64>     : 指定相対パスのファイル本文をbase64エンコードしてstdoutへ出力する
+  - read <b64>     : 指定相対パスのファイル本文と`mtime_epoch`をJSON文字列でstdoutへ出力する
   - watch          : ~/.claude/plans配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する
+  - serve          : watchの行ストリームに加え、stdinのRPCリクエストへ応答する常駐モード
 
-watch サブコマンドのプロトコル（行区切りJSON）:
+read 応答（fallback経路用、単発SSH呼び出し）:
+  {"data":"<base64本文>", "mtime_epoch":<float>}
+
+watch / serve サブコマンドの行プロトコル（行区切りJSON）:
   - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
   - {"type":"upsert","path":..., "name":..., "mtime_epoch":...}
   - {"type":"deleted","path":...}
   - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
 
-スクリプト本体はSSHのstdin経由で渡される（`uv run --no-project --script -`）。
+serve サブコマンドのRPC追加（行区切りJSON）:
+  リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
+  応答（stdout）:
+    成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>", "mtime_epoch":<float>}
+    失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
+
+スクリプト本体はSSHのstdin経由で配置するか（`serve`時）、
+`uv run --no-project --script -`にstdinとして渡す（`list`/`read`/`watch`時）。
 """
 import base64
 import json
@@ -613,6 +660,10 @@ ROOT = pathlib.Path.home() / ".claude" / "plans"
 
 # 生存確認pingの送信間隔（秒）。短すぎるとトラフィックが増え、長すぎると切断検知が遅れる。
 _PING_INTERVAL_SEC = 30.0
+
+# stdoutへの書き込みは観測スレッドとRPC応答スレッドの双方から発生し得る。
+# print内のwrite/flushが分割されると行JSONが破損するため、emit側で排他する。
+_STDOUT_LOCK = threading.Lock()
 
 
 def _is_target_path(path: pathlib.Path) -> bool:
@@ -643,11 +694,7 @@ def _scan_entries() -> list[dict]:
     return entries
 
 
-def list_files() -> None:
-    json.dump(_scan_entries(), sys.stdout, ensure_ascii=False)
-
-
-def read_file(rel_b64: str) -> None:
+def _resolve_target(rel_b64: str) -> pathlib.Path:
     rel = base64.b64decode(rel_b64).decode("utf-8")
     rel_path = pathlib.PurePosixPath(rel)
     if rel_path.is_absolute() or ".." in rel_path.parts:
@@ -656,21 +703,53 @@ def read_file(rel_b64: str) -> None:
     target.relative_to(ROOT.resolve())
     if target.suffix != ".md" or not target.is_file():
         raise FileNotFoundError(rel)
-    sys.stdout.write(base64.b64encode(target.read_bytes()).decode("ascii"))
+    return target
+
+
+def _read_payload(rel_b64: str) -> dict:
+    """指定相対パスのファイル本文と`mtime_epoch`をRPC応答用辞書として返す。
+
+    `read_bytes`と`stat`を続けて呼ぶことで、本文と取得時点のmtimeをペアで提供する。
+    呼び出し側はこの`mtime_epoch`をMarkdownキャッシュキーへ使い、watch通知の遅延と
+    無関係に正確性を担保する。
+    """
+    target = _resolve_target(rel_b64)
+    data = target.read_bytes()
+    st = target.stat()
+    return {
+        "data": base64.b64encode(data).decode("ascii"),
+        "mtime_epoch": st.st_mtime,
+    }
+
+
+def list_files() -> None:
+    json.dump(_scan_entries(), sys.stdout, ensure_ascii=False)
+
+
+def read_file(rel_b64: str) -> None:
+    json.dump(_read_payload(rel_b64), sys.stdout, ensure_ascii=False)
 
 
 def _emit(payload: dict) -> None:
     # 1行JSONとして出力し、SSH切断時のSIGPIPEを即時に拾えるよう毎回フラッシュする。
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    line = json.dumps(payload, ensure_ascii=False)
+    with _STDOUT_LOCK:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
 
 
-def watch_files() -> int:
-    # watchdogはローカル側`PlansEventHandler`と同等のフィルタを適用する。
-    # 読み取り由来の`FileOpenedEvent`/`FileClosedNoWriteEvent`は除外し、
-    # `FileMovedEvent`はatomic-write rename対応のためdest側も判定対象に含める。
+def _start_observer(stop_event):
+    """watchdog Observerとping送信スレッドを起動し、Observerを返す。
+
+    `serve`/`watch`の両サブコマンドで共通利用する。
+    `~/.claude/plans`未作成のホストでも起動できるよう、無ければ作成する。
+    作成失敗時はsnapshot空・ping待機のみで継続する。
+    """
     import watchdog.events
     import watchdog.observers
 
+    # 読み取り由来の`FileOpenedEvent`/`FileClosedNoWriteEvent`は除外し、
+    # `FileMovedEvent`はatomic-write rename対応のためdest側も判定対象に含める。
     watched_types = (
         watchdog.events.FileCreatedEvent,
         watchdog.events.FileModifiedEvent,
@@ -679,22 +758,10 @@ def watch_files() -> int:
         watchdog.events.FileClosedEvent,
     )
 
-    # `~/.claude/plans`未作成のホストでも監視を開始できるよう、無ければ作成する。
-    # 作成失敗時はsnapshot空・ping待機のみで継続する。
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         sys.stderr.write(f"warn: cannot create {ROOT}: {e}\n")
-
-    stop_event = threading.Event()
-
-    def ping_loop() -> None:
-        while not stop_event.wait(_PING_INTERVAL_SEC):
-            try:
-                _emit({"type": "ping"})
-            except BrokenPipeError:
-                stop_event.set()
-                return
 
     class Handler(watchdog.events.FileSystemEventHandler):
         def on_any_event(self, event):
@@ -738,6 +805,14 @@ def watch_files() -> int:
                 "mtime_epoch": st.st_mtime,
             })
 
+    def ping_loop() -> None:
+        while not stop_event.wait(_PING_INTERVAL_SEC):
+            try:
+                _emit({"type": "ping"})
+            except BrokenPipeError:
+                stop_event.set()
+                return
+
     observer = watchdog.observers.Observer()
     if ROOT.is_dir():
         observer.schedule(Handler(), str(ROOT), recursive=True)
@@ -747,8 +822,68 @@ def watch_files() -> int:
 
     ping_thread = threading.Thread(target=ping_loop, daemon=True)
     ping_thread.start()
+    return observer
 
+
+def watch_files() -> int:
+    stop_event = threading.Event()
+    observer = _start_observer(stop_event)
     # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止経路に乗せる。
+    try:
+        while not stop_event.is_set():
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+        if observer.is_alive():
+            observer.stop()
+            observer.join()
+    return 0
+
+
+def _handle_request(req: dict) -> dict:
+    """RPCリクエストを処理して応答辞書を返す。"""
+    req_id = req.get("id")
+    op = req.get("op")
+    if not isinstance(req_id, int):
+        return {"type": "response", "id": -1, "ok": False, "error": "invalid id"}
+    try:
+        if op == "read":
+            payload = _read_payload(str(req.get("path", "")))
+            return {"type": "response", "id": req_id, "ok": True, **payload}
+        return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
+    except Exception as e:  # noqa: BLE001
+        return {"type": "response", "id": req_id, "ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def serve() -> int:
+    """watch通知とstdin RPCの両方を1プロセスで処理する常駐モード。"""
+    stop_event = threading.Event()
+    observer = _start_observer(stop_event)
+
+    def reader_loop() -> None:
+        # stdinはサーバー側からの行JSONリクエストを受け取る。
+        # EOFまたは入力エラーで終了し、stop_eventを通じてメインループへ伝播する。
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError as e:
+                _emit({"type": "response", "id": -1, "ok": False, "error": f"json: {e}"})
+                continue
+            try:
+                _emit(_handle_request(req))
+            except BrokenPipeError:
+                stop_event.set()
+                return
+        stop_event.set()
+
+    reader_thread = threading.Thread(target=reader_loop, daemon=True)
+    reader_thread.start()
+
     try:
         while not stop_event.is_set():
             time.sleep(1.0)
@@ -778,6 +913,8 @@ def main() -> int:
         return 0
     if op == "watch":
         return watch_files()
+    if op == "serve":
+        return serve()
     sys.stderr.write(f"unknown operation: {op}\n")
     return 2
 

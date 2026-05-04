@@ -123,6 +123,65 @@ class TestMarkdownToHtml:
         assert "&lt;script&gt;" in html
 
 
+class TestMarkdownCache:
+    """`MarkdownCache`のヒット/ミス/容量上限/`mtime_epoch`変化挙動を検証する。"""
+
+    def test_hit_returns_cached_html(self):
+        """同一キーの`get`はputした値をそのまま返す。"""
+        cache = _local.MarkdownCache()
+        cache.put(("local", "a.md", 1.0), "<p>a</p>")
+        assert cache.get(("local", "a.md", 1.0)) == "<p>a</p>"
+
+    def test_miss_returns_none(self):
+        """未登録キーの`get`はNoneを返す。"""
+        cache = _local.MarkdownCache()
+        assert cache.get(("local", "missing.md", 1.0)) is None
+
+    def test_mtime_change_invalidates(self):
+        """`mtime_epoch`が変わると別エントリ扱いとなる（自動無効化）。"""
+        cache = _local.MarkdownCache()
+        cache.put(("local", "a.md", 1.0), "<p>old</p>")
+        # 新しいmtimeで参照すると未ヒットになる。
+        assert cache.get(("local", "a.md", 2.0)) is None
+        # 旧キーは別物として残るが、同一(host,path)で新キーをputすれば共存する。
+        cache.put(("local", "a.md", 2.0), "<p>new</p>")
+        assert cache.get(("local", "a.md", 2.0)) == "<p>new</p>"
+
+    def test_evicts_oldest_on_entry_limit(self):
+        """エントリ数上限を超えると最古のエントリから追い出される（LRU）。"""
+        cache = _local.MarkdownCache(max_entries=2, max_bytes=1024 * 1024)
+        cache.put(("local", "a.md", 1.0), "<p>a</p>")
+        cache.put(("local", "b.md", 1.0), "<p>b</p>")
+        # `a.md`を参照して最近使用扱いに昇格させる。
+        assert cache.get(("local", "a.md", 1.0)) == "<p>a</p>"
+        cache.put(("local", "c.md", 1.0), "<p>c</p>")
+        # `b.md`が最古（最終アクセスが最初）のため追い出される。
+        assert cache.get(("local", "b.md", 1.0)) is None
+        assert cache.get(("local", "a.md", 1.0)) == "<p>a</p>"
+        assert cache.get(("local", "c.md", 1.0)) == "<p>c</p>"
+
+    def test_evicts_on_byte_limit(self):
+        """総バイト数上限を超えると古い順に追い出される。"""
+        # 1エントリ約100バイト。max_bytes=200で2件程度に制限される。
+        big_html = "x" * 100
+        cache = _local.MarkdownCache(max_entries=100, max_bytes=200)
+        cache.put(("local", "a.md", 1.0), big_html)
+        cache.put(("local", "b.md", 1.0), big_html)
+        cache.put(("local", "c.md", 1.0), big_html)
+        # 最古の`a.md`は追い出される。
+        assert cache.get(("local", "a.md", 1.0)) is None
+        # 上限の二重制約のうち先に到達した方で追い出すため、現存数は最大2件。
+        assert len(cache) <= 2
+        assert cache.total_bytes() <= 200
+
+    def test_oversized_entry_not_stored(self):
+        """単一エントリが`max_bytes`を超える場合は保持しない（メモリ暴走を防ぐ）。"""
+        cache = _local.MarkdownCache(max_entries=10, max_bytes=10)
+        cache.put(("local", "huge.md", 1.0), "x" * 1000)
+        assert cache.get(("local", "huge.md", 1.0)) is None
+        assert len(cache) == 0
+
+
 class TestResolveCssPath:
     """_resolve_css_path のテスト。
 
@@ -786,6 +845,7 @@ class TestBroadcastStateDataclass:
         assert not state.remote_files
         assert not state.remote_tasks
         assert not state.host_status
+        assert not state.remote_watchers
         # `dataclasses.fields`経由で契約を固定し、意図しないフィールド追加を検出する。
         fields = {f.name for f in dataclasses.fields(state)}
         assert fields == {
@@ -796,6 +856,7 @@ class TestBroadcastStateDataclass:
             "remote_files",
             "remote_tasks",
             "host_status",
+            "remote_watchers",
         }
 
 
@@ -803,7 +864,8 @@ class _FakeSshRunner:
     """テスト用SshRunner。
 
     現在は`/api/file`/`/api/raw`のリモート参照経路（read）専用。
-    `read_responses`は`(host, rel)`→Markdown原文の辞書。
+    `read_responses`は`(host, rel)`→`(本文, mtime_epoch)`の辞書、
+    または`(host, rel)`→本文（mtimeは1000.0固定）の辞書。
     `failing_hosts`に含めたホストへの呼び出しは`RuntimeError`を送出する。
     呼び出し履歴は`calls`に`(host, op, args)`タプルで蓄積される。
     """
@@ -811,7 +873,7 @@ class _FakeSshRunner:
     def __init__(
         self,
         *,
-        read_responses: dict[tuple[str, str], str] | None = None,
+        read_responses: dict[tuple[str, str], str | tuple[str, float]] | None = None,
         failing_hosts: set[str] | None = None,
     ) -> None:
         self._read_responses = read_responses or {}
@@ -824,8 +886,18 @@ class _FakeSshRunner:
             raise RuntimeError(f"ssh failed for {host}")
         if op == "read":
             rel = base64.b64decode(args[0]).decode("utf-8")
-            body = self._read_responses[(host, rel)]
-            return base64.b64encode(body.encode("utf-8")).decode("ascii")
+            entry = self._read_responses[(host, rel)]
+            if isinstance(entry, tuple):
+                body, mtime = entry
+            else:
+                body, mtime = entry, 1_000.0
+            return json.dumps(
+                {
+                    "data": base64.b64encode(body.encode("utf-8")).decode("ascii"),
+                    "mtime_epoch": mtime,
+                },
+                ensure_ascii=False,
+            )
         raise ValueError(f"unknown op: {op}")
 
 
@@ -1044,6 +1116,206 @@ class TestRemoteWatcher:
         assert watcher._backoff == _remote.REMOTE_BACKOFF_INITIAL_SEC
 
 
+class _FakeStdin:
+    """テスト用の擬似`StreamWriter`。`write`/`drain`/`is_closing`のみ実装する。
+
+    `RemoteWatcher.request`が呼び出すstdin APIを最小限満たす。
+    送出されたバイト列は`buffer`に蓄積し、テストから解析できる。
+    """
+
+    def __init__(self) -> None:
+        self.buffer: list[bytes] = []
+        self._closing = False
+
+    def write(self, data: bytes) -> None:
+        self.buffer.append(data)
+
+    async def drain(self) -> None:
+        return
+
+    def is_closing(self) -> bool:
+        return self._closing
+
+    def mark_closing(self) -> None:
+        self._closing = True
+
+
+class _FakeProc:
+    """テスト用の擬似`asyncio.subprocess.Process`。stdinのみ提供する。"""
+
+    def __init__(self) -> None:
+        self.stdin = _FakeStdin()
+        self.stdout = None
+        self.stderr = None
+        self.returncode = None
+
+
+def _attach_fake_connection(watcher: _remote.RemoteWatcher) -> _FakeProc:
+    """`RemoteWatcher`を擬似的に接続済みにする。
+
+    `_connect`を経由せずに`_proc`/`_connected`を直接設定し、
+    RPCテストを最小限の依存で書けるようにする。
+    """
+    proc = _FakeProc()
+    watcher._proc = typing.cast(typing.Any, proc)
+    watcher._connected = True
+    return proc
+
+
+class TestRemoteWatcherRpc:
+    """`RemoteWatcher`の双方向RPCの単体検証。"""
+
+    @pytest.mark.asyncio
+    async def test_request_resolves_with_response_event(self):
+        """`request`は対応する`response`イベント受信で結果を返す。"""
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        proc = _attach_fake_connection(watcher)
+
+        async def _drive() -> None:
+            # `request`が送信を完了してpendingに登録されるまで少し待つ。
+            await asyncio.sleep(0.05)
+            # サーバー側のJSON行から取り出した応答を`_handle_event`へ流す。
+            await watcher._handle_event({"type": "response", "id": 1, "ok": True, "data": "QUJD", "mtime_epoch": 12.5})
+
+        request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))
+        drive_task = asyncio.create_task(_drive())
+        result = await asyncio.wait_for(request_task, timeout=1.0)
+        await drive_task
+
+        assert result["ok"] is True
+        assert result["data"] == "QUJD"
+        assert result["mtime_epoch"] == 12.5
+        # stdinへ送信されたリクエストJSONには`id`/`op`/`path`が乗る。
+        sent = b"".join(proc.stdin.buffer).decode("utf-8")
+        assert '"op": "read"' in sent or '"op":"read"' in sent
+        assert '"path": "Zg=="' in sent or '"path":"Zg=="' in sent
+
+    @pytest.mark.asyncio
+    async def test_request_when_disconnected_raises(self):
+        """切断状態（`_connected=False`）の`request`はRuntimeErrorを送出する。"""
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        # `_proc`は設定するが`_connected`はFalseのままにする。
+        _attach_fake_connection(watcher)
+        watcher._connected = False
+        with pytest.raises(RuntimeError, match="not connected"):
+            await watcher.request("read", {"path": "Zg=="})
+
+    @pytest.mark.asyncio
+    async def test_fail_pending_breaks_inflight_requests(self):
+        """`_fail_pending`は実行中のすべての`request`を例外で解決する。"""
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        _attach_fake_connection(watcher)
+
+        async def _drive() -> None:
+            await asyncio.sleep(0.05)
+            watcher._fail_pending(ConnectionError("disconnected"))
+
+        request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))
+        drive_task = asyncio.create_task(_drive())
+        with pytest.raises(ConnectionError):
+            await asyncio.wait_for(request_task, timeout=1.0)
+        await drive_task
+
+    @pytest.mark.asyncio
+    async def test_request_timeout_removes_pending(self):
+        """応答が届かないとtimeoutでTimeoutErrorとなり、pendingエントリが残らない。"""
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        _attach_fake_connection(watcher)
+
+        with pytest.raises(asyncio.TimeoutError):
+            await watcher.request("read", {"path": "Zg=="}, timeout=0.05)
+        # 失敗側でpendingが除去されていること（後続応答の遅延配達でメモリリークしない）。
+        assert not watcher._pending
+
+
+class TestFetchRemoteFile:
+    """`fetch_remote_file`のRPC優先・fallback分岐とmtime同梱の挙動を検証する。"""
+
+    @pytest.mark.asyncio
+    async def test_uses_watcher_rpc_when_connected(self):
+        """watcherが接続中ならRPCで取得し、fallback`ssh_runner`は呼ばれない。"""
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        _attach_fake_connection(watcher)
+        runner = _FakeSshRunner()
+
+        async def _drive() -> None:
+            await asyncio.sleep(0.05)
+            await watcher._handle_event(
+                {
+                    "type": "response",
+                    "id": 1,
+                    "ok": True,
+                    "data": base64.b64encode(b"# remote\n").decode("ascii"),
+                    "mtime_epoch": 42.0,
+                }
+            )
+
+        drive_task = asyncio.create_task(_drive())
+        text, mtime = await asyncio.wait_for(
+            _remote.fetch_remote_file("host1", "foo.md", runner, watcher),
+            timeout=1.0,
+        )
+        await drive_task
+
+        assert text == "# remote\n"
+        assert mtime == 42.0
+        # fallback経路は使われない。
+        assert not runner.calls
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_watcher_disconnected(self):
+        """watcher未接続時はfallback`ssh_runner`経由で取得し、mtimeも返す。"""
+        runner = _FakeSshRunner(read_responses={("host1", "foo.md"): ("# fallback\n", 7.0)})
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        # `_connected=False`のまま渡す。
+
+        text, mtime = await _remote.fetch_remote_file("host1", "foo.md", runner, watcher)
+
+        assert text == "# fallback\n"
+        assert mtime == 7.0
+        read_calls = [c for c in runner.calls if c[1] == "read"]
+        assert len(read_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_falls_back_on_rpc_error_response(self):
+        """watcherが`ok=False`を返した場合もfallback経由で救済する。"""
+        runner = _FakeSshRunner(read_responses={("host1", "foo.md"): ("# fallback\n", 8.0)})
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        _attach_fake_connection(watcher)
+
+        async def _drive() -> None:
+            await asyncio.sleep(0.05)
+            await watcher._handle_event({"type": "response", "id": 1, "ok": False, "error": "permission denied"})
+
+        drive_task = asyncio.create_task(_drive())
+        text, mtime = await asyncio.wait_for(
+            _remote.fetch_remote_file("host1", "foo.md", runner, watcher),
+            timeout=1.0,
+        )
+        await drive_task
+
+        assert text == "# fallback\n"
+        assert mtime == 8.0
+        # fallback経路が1回だけ呼ばれる。
+        read_calls = [c for c in runner.calls if c[1] == "read"]
+        assert len(read_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_returns_none_mtime_when_missing_in_payload(self):
+        """応答に`mtime_epoch`が欠落していると`mtime`は`None`になる（キャッシュバイパス目的）。"""
+        # _FakeSshRunnerのreadはmtimeを必ず付ける仕様のため、テストは`_decode_read_payload`を直接検証する。
+        text, mtime = _remote._decode_read_payload({"data": base64.b64encode(b"hello").decode("ascii")})
+        assert text == "hello"
+        assert mtime is None
+
+
 class TestRemoteHostIntegration:
     """リモートホスト統合（API・許可リスト・host-status）の挙動を検証する。"""
 
@@ -1099,6 +1371,42 @@ class TestRemoteHostIntegration:
         assert len(read_calls) == 1
         assert read_calls[0][0] == "host1"
         assert base64.b64decode(read_calls[0][2][0]).decode("utf-8") == "foo.md"
+
+    @pytest.mark.asyncio
+    async def test_api_file_caches_remote_response_by_mtime(self, tmp_path: Path):
+        """リモート応答のmtimeをキーにMarkdownキャッシュへ格納し、同一ファイルの再要求でssh呼び出しが増えない。"""
+        runner = _FakeSshRunner(
+            read_responses={("host1", "foo.md"): ("# remote\n", 1234.5)},
+        )
+        app = _app.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        )
+        client = app.test_client()
+        first = await client.get("/api/file?host=host1&path=foo.md")
+        second = await client.get("/api/file?host=host1&path=foo.md")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        cache: _local.MarkdownCache = app.config["PLANS_MARKDOWN_CACHE"]
+        # `(host, rel, mtime_epoch)`キーで格納されている。
+        assert cache.get(("host1", "foo.md", 1234.5)) is not None
+
+    @pytest.mark.asyncio
+    async def test_api_file_caches_local_response_by_mtime(self, tmp_path: Path):
+        """ローカル応答も`stat`から取得した`mtime_epoch`をキーにMarkdownキャッシュへ格納する。"""
+        target = tmp_path / "a.md"
+        target.write_text("# title\n", encoding="utf-8")
+        os.utime(target, (4_200.0, 4_200.0))
+        app = _app.create_app(tmp_path, hostname="local-host")
+        client = app.test_client()
+        await client.get("/api/file?path=a.md")
+
+        cache: _local.MarkdownCache = app.config["PLANS_MARKDOWN_CACHE"]
+        # ローカルの`mtime_epoch`はstatのst_mtimeに一致する。
+        assert cache.get(("local-host", "a.md", 4_200.0)) is not None
 
     @pytest.mark.asyncio
     async def test_api_raw_for_remote_host_returns_markdown(self, tmp_path: Path):

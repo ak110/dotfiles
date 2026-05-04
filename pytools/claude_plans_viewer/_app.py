@@ -82,6 +82,7 @@ def create_app(
     """
     app = quart.Quart(__name__)
     renderer = _local.make_md_renderer()
+    markdown_cache = _local.MarkdownCache()
     state = _state.BroadcastState()
     resolved_hostname = hostname if hostname is not None else socket.gethostname()
     remote_host_list = list(remote_hosts) if remote_hosts else []
@@ -100,6 +101,7 @@ def create_app(
     # ルートハンドラからは`quart.current_app.config`経由で参照する。
     app.config["PLANS_ROOT"] = root
     app.config["PLANS_RENDERER"] = renderer
+    app.config["PLANS_MARKDOWN_CACHE"] = markdown_cache
     app.config["PLANS_STATE"] = state
     app.config["PLANS_HOSTNAME"] = resolved_hostname
     app.config["PLANS_REMOTE_HOSTS"] = remote_host_list
@@ -112,7 +114,10 @@ def create_app(
         # リモートwatchタスクを起動する。test_client経由ではbefore_serving自体が
         # 発火しないため、テスト側は`RemoteWatcher`を直接駆動する。
         for host in remote_host_list:
-            task = asyncio.create_task(_remote.RemoteWatcher(host, state).run())
+            watcher = _remote.RemoteWatcher(host, state)
+            # `/api/file`/`/api/raw`がwatch経路のRPCを使えるよう参照を共有する。
+            state.remote_watchers[host] = watcher
+            task = asyncio.create_task(watcher.run())
             state.remote_tasks.append(task)
 
     @app.after_serving
@@ -191,27 +196,53 @@ def create_app(
         body = json.dumps([dataclasses.asdict(e) for e in merged], ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 
+    async def _resolve_text_and_mtime(host: str, rel: str) -> tuple[str, float | None] | quart.Response:
+        """`api_file`/`api_raw`共通: 本文と`mtime_epoch`を取得する。
+
+        ローカルは`stat`から、リモートは`fetch_remote_file`が本文と同時取得した値を使う。
+        パスやホストが不正な場合はQuart応答を返す。
+        """
+        if host == resolved_hostname:
+            target = _local.resolve_under_root(root, rel)
+            if target is None:
+                return quart.Response("not found", status=404)
+
+            def _read_with_mtime(path: pathlib.Path) -> tuple[str, float]:
+                # 本文とstatを連続取得して、`mtime_epoch`の整合を最大限保つ。
+                data = path.read_text(encoding="utf-8", errors="replace")
+                return data, path.stat().st_mtime
+
+            text, mtime = await asyncio.to_thread(_read_with_mtime, target)
+            return text, mtime
+        if not _remote.is_safe_remote_relpath(rel):
+            return quart.Response("invalid path", status=400)
+        watcher = state.remote_watchers.get(host)
+        try:
+            return await _remote.fetch_remote_file(host, rel, runner, watcher)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, e)
+            return quart.Response("not found", status=404)
+
     @app.get("/api/file")
     async def api_file() -> quart.Response:
         resolved = resolve_request_target(resolved_hostname, allowed_remote_hosts)
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
-        if host == resolved_hostname:
-            target = _local.resolve_under_root(root, rel)
-            if target is None:
-                return quart.Response("not found", status=404)
-            # read_textはブロッキングI/Oのためスレッドプールで実行する。
-            text = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
-        else:
-            if not _remote.is_safe_remote_relpath(rel):
-                return quart.Response("invalid path", status=400)
-            try:
-                text = await _remote.fetch_remote_file(host, rel, runner)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, e)
-                return quart.Response("not found", status=404)
-        rendered = _local.markdown_to_html(text, renderer)
+        result = await _resolve_text_and_mtime(host, rel)
+        if isinstance(result, quart.Response):
+            return result
+        text, mtime = result
+        # `mtime`が取れた場合のみキャッシュを参照する。リモート応答にmtimeが欠落した場合は
+        # 古い結果を返さないよう安全側に倒してバイパスする。
+        cache_key: _local.MarkdownCacheKey | None = (host, rel, mtime) if mtime is not None else None
+        rendered: str | None = None
+        if cache_key is not None:
+            rendered = markdown_cache.get(cache_key)
+        if rendered is None:
+            rendered = _local.markdown_to_html(text, renderer)
+            if cache_key is not None:
+                markdown_cache.put(cache_key, rendered)
         return quart.Response(rendered, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/raw")
@@ -222,19 +253,10 @@ def create_app(
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
-        if host == resolved_hostname:
-            target = _local.resolve_under_root(root, rel)
-            if target is None:
-                return quart.Response("not found", status=404)
-            text = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
-        else:
-            if not _remote.is_safe_remote_relpath(rel):
-                return quart.Response("invalid path", status=400)
-            try:
-                text = await _remote.fetch_remote_file(host, rel, runner)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("リモートファイル取得失敗 host=%s path=%s: %s", host, rel, e)
-                return quart.Response("not found", status=404)
+        result = await _resolve_text_and_mtime(host, rel)
+        if isinstance(result, quart.Response):
+            return result
+        text, _ = result
         return quart.Response(text, content_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/events")

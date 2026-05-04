@@ -53,6 +53,11 @@ class BroadcastState:
     # ホスト名 -> "connected"|"connecting"|"disconnected"。
     # フロントエンドのサイドペインに切断バッジを表示するための状態。
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
+    # ホスト名 -> 対応する`_remote.RemoteWatcher`。
+    # `/api/file`/`/api/raw`がリモート読み込みをwatch常駐SSH接続経由のRPCで実行する際に参照する。
+    # 型を`typing.Any`にしているのは`_state` → `_remote`の循環import回避のため
+    # （`_remote`が`_state`をimportしているのと逆方向の参照になるため）。
+    remote_watchers: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
 
 
 def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEntry:
