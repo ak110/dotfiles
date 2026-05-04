@@ -38,6 +38,8 @@ body {
   max-width: 860px;
   margin: 0 auto;
   padding: 2rem;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 /* ========================================
@@ -184,8 +186,6 @@ pre {
   background-color: #1e1e1e;
   border: 1px solid #333333;
   border-radius: 0.5rem; /* border-radius-8 */
-  word-break: break-all;
-  overflow-wrap: anywhere;
   text-wrap: wrap;
 }
 
