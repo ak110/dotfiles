@@ -1,7 +1,7 @@
 """Quartアプリ生成とAPIハンドラ。
 
-`create_app`はパッケージ外へも公開する公開API。それ以外のヘルパー（`resolve_request_target`）は
-package-internalとしてunderscoreなしで定義する。
+`create_app`はパッケージ外へも公開する公開API。それ以外のヘルパー（`resolve_request_target`・
+`safe_base_path`）はpackage-internalとしてunderscoreなしで定義する。
 """
 
 import asyncio
@@ -11,15 +11,40 @@ import html
 import json
 import logging
 import pathlib
+import re
 import socket
 import typing
 
+import pytilpack.quart
 import pytilpack.sse
 import quart
 
 from pytools.claude_plans_viewer import _assets, _local, _remote, _state
 
 logger = logging.getLogger(__name__)
+
+# 安全な`base_path`の照合パターン。先頭スラッシュ強制、英数字と`._~/-`のみ、
+# 連続スラッシュ（`//`）はスキーム相対URL扱いになり外部オリジン誘導の口になるため別途禁止する。
+_BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
+
+
+def safe_base_path(raw: str) -> str:
+    """`request.root_path`を信頼境界として正規化する。
+
+    リバースプロキシ前段が`X-Forwarded-Prefix`を握りつぶさない構成での悪意ある値の
+    HTML/JS/JSON埋め込みを防ぐため、文字種・連続スラッシュ・末尾スラッシュを厳格に検査する。
+    不正値や空値は空文字列として返し、呼び出し元がそのままURL前置として扱えるようにする。
+    """
+    if not raw:
+        return ""
+    candidate = raw.rstrip("/")
+    if not candidate:
+        return ""
+    if "//" in candidate:
+        return ""
+    if not _BASE_PATH_ALLOWED_RE.fullmatch(candidate):
+        return ""
+    return candidate
 
 
 def resolve_request_target(local_host: str, allowed_remote_hosts: set[str]) -> tuple[str, str] | quart.Response:
@@ -101,7 +126,14 @@ def create_app(
 
     @app.get("/")
     async def index() -> quart.Response:
-        body = _assets.INDEX_HTML.replace("__HOSTNAME__", html.escape(resolved_hostname))
+        base_path = safe_base_path(quart.request.root_path)
+        # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
+        # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
+        body = (
+            _assets.INDEX_HTML.replace("__HOSTNAME__", html.escape(resolved_hostname))
+            .replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
+            .replace("__BASE_PATH_JS__", json.dumps(base_path))
+        )
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
     @app.get("/static/markdown.css")
@@ -122,8 +154,12 @@ def create_app(
 
     @app.get("/manifest.webmanifest")
     async def manifest() -> quart.Response:
+        # PWA manifestは静的JSONを文字列置換するとurl値の検証/エスケープを誤りやすいため、
+        # 各リクエストで辞書からビルドし`json.dumps`で安全に直列化する。
+        base_path = safe_base_path(quart.request.root_path)
+        body = json.dumps(_assets.build_manifest(base_path), ensure_ascii=False)
         return quart.Response(
-            _assets.MANIFEST_JSON,
+            body,
             content_type="application/manifest+json; charset=utf-8",
             headers={"Cache-Control": "no-store"},
         )
@@ -223,4 +259,9 @@ def create_app(
             headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
         )
 
+    # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを差し込む。
+    # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンを使うことで、
+    # `app.config`等のハンドラ参照は維持しつつ、ASGIディスパッチだけを上流に通す。
+    # method-assignとASGIプロトコル不一致は意図的なため型チェッカは抑制する。
+    app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app

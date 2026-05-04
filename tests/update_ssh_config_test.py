@@ -83,7 +83,8 @@ class TestGenerateAuthorizedKeys:
     """authorized_keys生成の結合テスト。"""
 
     def test_merges_keys(self, tmp_path):
-        from pytools.update_ssh_config import _generate_authorized_keys
+        # pytools.update_ssh_config の private 関数のため、テストファイル内に局所importする。
+        from pytools.update_ssh_config import _generate_authorized_keys  # pylint: disable=import-outside-toplevel
 
         ssh_dir = tmp_path / ".ssh"
         ssh_dir.mkdir()

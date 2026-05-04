@@ -40,7 +40,8 @@ def _main() -> None:
 
 def export_key(key_path: str) -> str:
     """指定キー配下を Windows Registry Editor 互換の .reg テキストへ変換する。"""
-    import importlib
+    # Windows専用機能のため、Linux環境ではimportlib経由で局所importする。
+    import importlib  # pylint: disable=import-outside-toplevel
 
     winreg = importlib.import_module("winreg")
 

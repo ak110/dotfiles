@@ -16,6 +16,7 @@ TestCheckMarketplaceFromFile・TestLegacyGithubTypeMigration・TestRepairMarketp
 重複を避け、本ファイルではそれらで扱っていない分岐・パラメーター化ケースを追加する。
 """
 
+import datetime
 import json
 import pathlib
 
@@ -139,8 +140,6 @@ class TestNowIsoMillis:
 
     def test_format_is_parseable(self):
         """返された文字列が datetime.fromisoformat で復元できる。"""
-        import datetime
-
         # pylint: disable-next=protected-access
         result = _claude_marketplace._now_iso_millis()
         # Z を +00:00 に変換してから解析

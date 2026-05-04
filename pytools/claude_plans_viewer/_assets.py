@@ -9,6 +9,10 @@ underscore接頭辞を付けない（package-internalとして扱う）。
 パッケージ外への公開可否は`__init__.py`の再export一覧で制御する。
 `_INDEX_CSS`・`_INDEX_JS`は`INDEX_HTML`組立時の中間値として本モジュール内でのみ使うため、
 underscore接頭辞付きのまま残す。
+
+リバースプロキシ越し配信に対応するため、SPAおよびmanifestの絶対パス参照は
+`__BASE_PATH_HTML__` / `__BASE_PATH_JS__`プレースホルダーで保持し、
+`_app.py`側でリクエスト時に`request.root_path`を厳格に検証してから埋め込む。
 """
 
 # share/vscode/markdown.cssが見つからないときの最小フォールバック。
@@ -45,26 +49,34 @@ FAVICON_SVG = """\
 </svg>
 """
 
+
 # PWAインストール可能性を満たすmanifest。iconsはSVG1件で192x192・512x512・anyを同時に宣言する
 # （Chrome 93以降のSVG対応によりraster PNGを別途生成しなくてよい）。
-MANIFEST_JSON = """\
-{
-  "name": "Claude plans",
-  "short_name": "Plans",
-  "start_url": "/",
-  "display": "standalone",
-  "theme_color": "#4f46e5",
-  "background_color": "#ffffff",
-  "icons": [
-    {
-      "src": "/favicon.svg",
-      "sizes": "192x192 512x512 any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+# X-Forwarded-Prefixを尊重するため、URLは`base_path`を組み立てて返す関数として保持する
+# （静的JSONの文字列置換にすると`json.dumps`相当のエスケープ漏れを起こしやすいため）。
+def build_manifest(base_path: str) -> dict[str, object]:
+    """指定`base_path`に基づくPWA manifest辞書を返す。
+
+    `base_path`は`_app.safe_base_path`で正規化済みの安全な前置文字列を想定する
+    （空文字列または先頭スラッシュ＋連続スラッシュを含まない値）。
+    """
+    return {
+        "name": "Claude plans",
+        "short_name": "Plans",
+        "start_url": f"{base_path}/",
+        "display": "standalone",
+        "theme_color": "#4f46e5",
+        "background_color": "#ffffff",
+        "icons": [
+            {
+                "src": f"{base_path}/favicon.svg",
+                "sizes": "192x192 512x512 any",
+                "type": "image/svg+xml",
+                "purpose": "any maskable",
+            }
+        ],
     }
-  ]
-}
-"""
+
 
 # PWAインストール可能性判定を満たす最小のservice worker。
 # Chrome 89以降はインストール可能性の必須要件からfetchハンドラが外れたうえ、
@@ -217,6 +229,10 @@ _INDEX_CSS = """\
 # - モバイル時のドロワー開閉と上部メタ表示
 # - ↑↓ナビゲーションボタンによる前後ファイル移動
 _INDEX_JS = """\
+// `__BASE_PATH_JS__`は`_app.py`が`json.dumps`で文字列リテラルとして埋め込む。
+// X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
+const BASE_PATH = __BASE_PATH_JS__;
+
 let files = [];
 // ホスト名とパスの組で一意に識別する。
 let selectedHost = null;
@@ -365,14 +381,14 @@ function renderFiles() {
 }
 
 async function refreshFiles() {
-  const res = await fetch("/api/files");
+  const res = await fetch(BASE_PATH + "/api/files");
   files = await res.json();
   renderFiles();
 }
 
 async function refreshHostStatus() {
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await fetch("/api/host-status");
+  const res = await fetch(BASE_PATH + "/api/host-status");
   if (res.ok) {
     hostStatus = await res.json();
   }
@@ -382,7 +398,7 @@ async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("main");
   const scrollTop = main ? main.scrollTop : 0;
-  const res = await fetch("/api/file?" + fileQuery(selectedHost, selectedPath));
+  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(selectedHost, selectedPath));
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     return;
@@ -399,7 +415,7 @@ async function openFile(host, path) {
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
   if (isMobileViewport()) setDrawerOpen(false);
   const main = document.querySelector("main");
-  const res = await fetch("/api/file?" + fileQuery(host, path));
+  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path));
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     if (main) main.scrollTop = 0;
@@ -431,7 +447,7 @@ async function copySelectedRaw() {
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
   try {
-    const res = await fetch("/api/raw?" + fileQuery(selectedHost, selectedPath));
+    const res = await fetch(BASE_PATH + "/api/raw?" + fileQuery(selectedHost, selectedPath));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await res.text();
     await navigator.clipboard.writeText(text);
@@ -467,7 +483,7 @@ async function handleSseMessage(event) {
 }
 
 function connectEvents() {
-  const es = new EventSource("/api/events");
+  const es = new EventSource(BASE_PATH + "/api/events");
   // EventSourceは接続断後にブラウザが自動再接続を行うが、再接続中に発生したSSEイベントは
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
@@ -511,13 +527,14 @@ document.getElementById("drawer-backdrop").addEventListener("click", () => setDr
 main();
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js");
+  navigator.serviceWorker.register(BASE_PATH + "/sw.js");
 }
 """
 
 # Markdown→HTML変換はサーバー側で済ませて`/api/file`がHTMLを返すため、
 # クライアント側はfetchした文字列をそのまま`<article>`へ挿入する。
 # `__HOSTNAME__`は`create_app`がhtml.escape済みのホスト名で置換する。
+# `__BASE_PATH_HTML__`は`create_app`が`html.escape(quote=True)`済みのbase_pathで置換する。
 INDEX_HTML = (
     """<!doctype html>
 <html lang="ja">
@@ -525,10 +542,10 @@ INDEX_HTML = (
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Claude plans</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
+<link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest">
 <meta name="theme-color" content="#4f46e5">
-<link rel="stylesheet" href="/static/markdown.css">
+<link rel="stylesheet" href="__BASE_PATH_HTML__/static/markdown.css">
 <style>
 """
     + _INDEX_CSS

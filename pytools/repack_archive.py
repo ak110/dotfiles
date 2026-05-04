@@ -512,7 +512,7 @@ def _load_libarchive() -> typing.Any:
             os.environ.setdefault("LIBARCHIVE", str(libarchive_dll))
             os.add_dll_directory(str(libarchive_dir))
     try:
-        import libarchive  # noqa: PLC0415
+        import libarchive  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     except Exception as e:  # noqa: BLE001
         raise RuntimeError(
             "libarchive の DLL を読み込めませんでした。"

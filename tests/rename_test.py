@@ -4,6 +4,8 @@ import pathlib
 import subprocess
 import sys
 
+from pytools import rename
+
 
 class TestRename:
     """py-renameコマンドのテスト。"""
@@ -47,7 +49,6 @@ class TestPatternFile:
     """rgrename 互換のパターンファイル機能のテスト。"""
 
     def test_load_pattern_file_basic(self, tmp_path: pathlib.Path) -> None:
-        from pytools import rename
 
         pf = tmp_path / "rules.txt"
         pf.write_text("foo\tbar\n# comment\nF\t^prefix_\t\nD\t_suffix$\t\n", encoding="utf-8")
@@ -58,7 +59,6 @@ class TestPatternFile:
         assert rules[2].target == "dir"
 
     def test_rename_tree_with_pattern_file(self, tmp_path: pathlib.Path) -> None:
-        from pytools import rename
 
         (tmp_path / "img_01.txt").touch()
         (tmp_path / "img_02.txt").touch()
@@ -70,7 +70,6 @@ class TestPatternFile:
         assert (tmp_path / "02.txt").exists()
 
     def test_rename_tree_files_only(self, tmp_path: pathlib.Path) -> None:
-        from pytools import rename
 
         sub = tmp_path / "sub_dir"
         sub.mkdir()
@@ -84,7 +83,6 @@ class TestPatternFile:
 
     def test_dollar_capture_reference(self, tmp_path: pathlib.Path) -> None:
         """パターンファイルの置換側で `$N` がキャプチャ参照として展開される。"""
-        from pytools import rename
 
         (tmp_path / "img_001.txt").touch()
         pf = tmp_path / "rules.txt"
@@ -95,7 +93,6 @@ class TestPatternFile:
 
     def test_dollar_dollar_literal_and_double_digit(self, tmp_path: pathlib.Path) -> None:
         """`$$` がリテラル ``$``、`$10` などの 2 桁参照も解釈される。"""
-        from pytools import rename
 
         # 10 個のキャプチャグループを使い `$10` を 10 番目の参照として検証する
         pattern = "^" + "".join(r"(\d)" for _ in range(10)) + r"\.txt$"
@@ -109,7 +106,6 @@ class TestPatternFile:
 
     def test_backslash_in_replacement_is_literal(self, tmp_path: pathlib.Path) -> None:
         """rgrename 互換: 置換側の ``\\`` はリテラルとして残り、Python 流の ``\\1`` は機能しない。"""
-        from pytools import rename
 
         (tmp_path / "abc.txt").touch()
         pf = tmp_path / "rules.txt"
@@ -120,7 +116,6 @@ class TestPatternFile:
         assert (tmp_path / r"\1zbc.txt").exists()
 
     def test_rename_tree_dirs_only(self, tmp_path: pathlib.Path) -> None:
-        from pytools import rename
 
         sub = tmp_path / "sub_dir"
         sub.mkdir()

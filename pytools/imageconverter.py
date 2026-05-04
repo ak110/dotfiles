@@ -272,8 +272,9 @@ def _format_log_path(path: pathlib.Path, log_root: pathlib.Path | None) -> str:
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
     """PNG を再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
     try:
-        import wand.color
-        import wand.image
+        # 重量級optional依存のため遅延import。
+        import wand.color  # pylint: disable=import-outside-toplevel
+        import wand.image  # pylint: disable=import-outside-toplevel
     except ImportError:
         raise RuntimeError(
             "--repack-png を使用するには wand パッケージと ImageMagick のインストールが必要です。\n"

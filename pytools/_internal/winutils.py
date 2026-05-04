@@ -13,7 +13,7 @@ def import_winreg() -> typing.Any:
     全属性アクセスが `reportAttributeAccessIssue` として検出されてしまう。
     実行は Windows 限定のため、`Any` 経由でアクセスするのが最も簡潔。
     """
-    import importlib  # noqa: PLC0415
+    import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     return importlib.import_module("winreg")
 
@@ -68,7 +68,7 @@ def broadcast_environment_change() -> None:
     通知失敗は致命ではないため、例外は吸収してログ出力に留める。
     """
     try:
-        import ctypes  # noqa: PLC0415
+        import ctypes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         hwnd_broadcast = 0xFFFF
         wm_settingchange = 0x001A

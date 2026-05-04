@@ -81,8 +81,8 @@ if (Test-Path $postApplyBin) {
 }
 
 # 再インストール前に停止した viewer を再起動する。
-# post-apply ステップ側でも未起動時はバックグラウンド起動するため、本節は
-# 「停止済み → 明示的に再開」の経路を担保する役割に限定する。
+# post-apply 側に Windows 用のレストアステップは存在しないため、
+# 本節が「停止済み → 明示的に再開」を単独で担う。
 if ($viewerWasRunning -and (Test-Path $viewerBin)) {
     Write-Host '  [pytools] claude-plans-viewer を再起動'
     Start-Process -FilePath $viewerBin -WindowStyle Hidden

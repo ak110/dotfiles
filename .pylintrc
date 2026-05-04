@@ -2,6 +2,8 @@
 ignore-patterns=dot_.*
 
 [MESSAGES CONTROL]
+# `import-outside-toplevel` はトップレベルimportを既定とし、
+# 遅延・条件付きimportが必要な箇所はファイル内で個別disableする方針。
 disable=
     broad-exception-caught,
     duplicate-code,

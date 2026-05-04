@@ -45,6 +45,11 @@ REMOTE_BACKOFF_INITIAL_SEC = 1.0
 REMOTE_BACKOFF_MAX_SEC = 30.0
 REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 
+# リモートwatch subprocessのstdout用StreamReader上限（バイト）。
+# `asyncio.streams._DEFAULT_LIMIT`は64KiBで、helperが1行JSONとして全エントリーを出力するsnapshot行が
+# エントリー数増加でこれを超えると行末を発見できず例外送出する。
+REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
+
 
 # SSHランナーの抽象シグネチャ。テストではfake実装を差し込み、本番は`default_ssh_runner`を使う。
 # (host, op, args) -> stdout (UTF-8文字列)。失敗時は例外を送出する。
@@ -173,6 +178,11 @@ class RemoteWatcher:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # ヘルパーは初回snapshotで全エントリーを1行JSONとして出力するため、
+            # asyncio既定の64KiB上限を超えると`readline()`が
+            # `ValueError("Separator is found, but chunk is longer than limit")`を送出する。
+            # 上限を8MiB相当へ引き上げて十分な余裕を確保する。
+            limit=REMOTE_STREAM_LIMIT_BYTES,
         )
         assert proc.stdin is not None
         proc.stdin.write(self._helper_script.encode("utf-8"))

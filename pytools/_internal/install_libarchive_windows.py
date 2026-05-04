@@ -73,8 +73,9 @@ def run() -> bool:
         if _is_already_available():
             logger.info(log_format.format_status("libarchive", f"既に利用可能 ({_INSTALL_DIR})"))
         else:
-            import httpx
-            import zstandard
+            # Windows専用処理の関数内ローカル依存のため遅延import。
+            import httpx  # pylint: disable=import-outside-toplevel
+            import zstandard  # pylint: disable=import-outside-toplevel
 
             _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
             with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:

@@ -49,8 +49,7 @@ class TestRun:
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
             ("codex MCP サーバーの登録", _make_step("codex", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
-            ("claude-plans-viewer 自動起動セットアップ (Windows)", _make_step("plans-viewer", calls)),
-            ("claude-plans-viewer 自動起動セットアップ (Linux)", _make_step("plans-viewer-linux", calls)),
+            ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
         ]
 
         results, recommendations = post_apply.run(steps=steps)
@@ -65,8 +64,7 @@ class TestRun:
             "plugins",
             "codex",
             "libarchive",
-            "plans-viewer",
-            "plans-viewer-linux",
+            "plans-viewer-restart-linux",
         ]
         assert all(r.ok for r in results)
         assert [r.changed for r in results] == [
@@ -75,7 +73,6 @@ class TestRun:
             False,
             False,
             True,
-            False,
             False,
             False,
             False,
@@ -97,8 +94,7 @@ class TestRun:
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
             ("codex MCP サーバーの登録", _make_step("codex", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
-            ("claude-plans-viewer 自動起動セットアップ (Windows)", _make_step("plans-viewer", calls)),
-            ("claude-plans-viewer 自動起動セットアップ (Linux)", _make_step("plans-viewer-linux", calls)),
+            ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
         ]
 
         results, _ = post_apply.run(steps=steps)
@@ -113,11 +109,10 @@ class TestRun:
             "plugins",
             "codex",
             "libarchive",
-            "plans-viewer",
-            "plans-viewer-linux",
+            "plans-viewer-restart-linux",
         ]
         ok_flags = [r.ok for r in results]
-        assert ok_flags == [True, True, False, True, True, True, True, True, True, True, True]
+        assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
     def test_main_exits_1_on_failure(self):
         """失敗があれば _main() は SystemExit(1) で終了する。"""

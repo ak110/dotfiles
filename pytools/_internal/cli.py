@@ -25,7 +25,7 @@ def enable_completion(parser: argparse.ArgumentParser) -> None:
     `argcomplete`から別実装（shtab等）へ切り替える際は本関数のみ差し替える想定。
     """
     try:
-        import argcomplete  # noqa: PLC0415  # 補完起動時のみ必要なので遅延importする。
+        import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする。
     except ImportError:
         return
     argcomplete.autocomplete(parser)

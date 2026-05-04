@@ -19,10 +19,9 @@ from pytools._internal import (
     install_codex_mcp,
     install_libarchive_windows,
     log_format,
+    restart_plans_viewer_linux,
     setup_bin_path,
     setup_mise,
-    setup_plans_viewer_linux,
-    setup_plans_viewer_windows,
     setup_registry,
     update_claude_settings,
     update_npmrc,
@@ -97,6 +96,12 @@ _REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
         # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため撤廃 (Giskard Phare)。
         Path("CLAUDE.md"): ("# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()),
     },
+    # claude-plans-viewer 自動起動セットアップ (旧 setup_plans_viewer_windows) で
+    # スタートアップフォルダーへ配置していた .cmd を、未編集なら除去する。
+    # 旧モジュール削除に伴い、配布物としての保守元が消えたため。
+    Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup": {
+        Path("claude-plans-viewer.cmd"): (b'@echo off\r\nstart "" "%USERPROFILE%\\.local\\bin\\claude-plans-viewer.exe"\r\n'),
+    },
 }
 
 
@@ -135,8 +140,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("codex MCP サーバーの登録", install_codex_mcp.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
-    ("claude-plans-viewer 自動起動セットアップ (Windows)", setup_plans_viewer_windows.run),
-    ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
+    ("claude-plans-viewer 再起動 (Linux)", restart_plans_viewer_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),
     # 他ステップが PATH 追加を行うため、それらの後に重複整理を実行する。
     ("ユーザー PATH 重複整理 (Windows)", cleanup_user_path.run),

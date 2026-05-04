@@ -157,20 +157,30 @@ class TestPwaAssets:
         assert svg.lstrip().startswith("<svg")
         assert 'xmlns="http://www.w3.org/2000/svg"' in svg
 
-    def test_manifest_json_has_required_keys(self):
-        """manifest定数がJSONとしてパースでき、PWAの必須キーを持つ。"""
-        manifest = json.loads(_assets.MANIFEST_JSON)
+    def test_manifest_build_has_required_keys(self):
+        """build_manifestがPWAの必須キーを持つ辞書を返し、JSONとして直列化可能。"""
+        manifest = _assets.build_manifest("")
+        # 直列化可能であることを別途確認しておく（型違反ではjson.dumpsが落ちるため）。
+        # 型推論に依存せず、JSON文字列に戻して再パースした側で構造比較する。
+        round_tripped = json.loads(json.dumps(manifest))
 
-        assert manifest["name"] == "Claude plans"
-        assert manifest["display"] == "standalone"
-        assert manifest["start_url"] == "/"
+        assert round_tripped["name"] == "Claude plans"
+        assert round_tripped["display"] == "standalone"
+        assert round_tripped["start_url"] == "/"
         # iconsはSVG1件で、192x192と512x512を同時に宣言してChromiumのインストール要件を満たす。
-        assert len(manifest["icons"]) == 1
-        icon = manifest["icons"][0]
+        icons = round_tripped["icons"]
+        assert len(icons) == 1
+        icon = icons[0]
         assert icon["src"] == "/favicon.svg"
         assert icon["type"] == "image/svg+xml"
         assert "192x192" in icon["sizes"]
         assert "512x512" in icon["sizes"]
+
+    def test_manifest_build_with_base_path_prefixes_urls(self):
+        """base_pathが与えられたmanifestはstart_url・icons.srcの双方に反映される。"""
+        round_tripped = json.loads(json.dumps(_assets.build_manifest("/plans")))
+        assert round_tripped["start_url"] == "/plans/"
+        assert round_tripped["icons"][0]["src"] == "/plans/favicon.svg"
 
     def test_service_worker_contract(self):
         """service worker定数がinstall・activateを登録し、fetchリスナーは持たないこと。
@@ -1226,3 +1236,166 @@ class TestRemoteHostIntegration:
         response = await client.get("/api/host-status")
         data = json.loads(await response.get_data())
         assert data == {"local-host": "connected", "host1": "connected"}
+
+
+class TestRemoteStreamLimit:
+    """`asyncio.create_subprocess_exec`既定StreamReader上限超過時の挙動。"""
+
+    @pytest.mark.asyncio
+    async def test_iter_stream_lines_handles_oversized_line(self):
+        """64KiB既定上限を超える1行をlimit引き上げ後のStreamReaderで読み取れる。
+
+        modules内に専用モジュールを足さず、`asyncio.StreamReader`に対し
+        `iter_stream_lines`の前提（`readline()`が分離記号を見つけるまで読み続ける）が
+        `limit`引数で制御可能であることを直接確認する。
+        既定limit=64KiBではvalueErrorが上がる挙動を再現したうえで、
+        REMOTE_STREAM_LIMIT_BYTES適用時に同じ行が完了することを示す。
+        """
+        big_payload = ("a" * (200 * 1024)) + "\n"
+        # 既定limit (64KiB) では行末を見つけられず例外を送出する。
+        small_reader = asyncio.StreamReader()
+        small_reader.feed_data(big_payload.encode("utf-8"))
+        small_reader.feed_eof()
+        with pytest.raises(ValueError, match="chunk is longer than limit"):
+            await small_reader.readline()
+
+        # REMOTE_STREAM_LIMIT_BYTES適用後はそのまま読み切れる。
+        big_reader = asyncio.StreamReader(limit=_remote.REMOTE_STREAM_LIMIT_BYTES)
+        big_reader.feed_data(big_payload.encode("utf-8"))
+        big_reader.feed_eof()
+
+        async def _consume() -> list[str]:
+            collected: list[str] = []
+            async for line in _remote.iter_stream_lines(big_reader):
+                collected.append(line)
+            return collected
+
+        lines = await _consume()
+        assert len(lines) == 1
+        assert lines[0].rstrip("\n") == "a" * (200 * 1024)
+
+
+class TestSafeBasePath:
+    """`_app.safe_base_path`の入力検証。"""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("", ""),
+            ("/", ""),
+            ("/plans", "/plans"),
+            ("/plans/", "/plans"),
+            ("/api/v1", "/api/v1"),
+            ("/foo-bar_baz.qux", "/foo-bar_baz.qux"),
+        ],
+    )
+    def test_accepts_safe_values(self, raw: str, expected: str):
+        assert _app.safe_base_path(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "//evil.example",
+            "/foo//bar",
+            '/"><script>',
+            '/"; alert(1); //',
+            "no-leading-slash",
+            "/has space",
+            "/has\nnewline",
+            "/has<tag>",
+        ],
+    )
+    def test_rejects_unsafe_values(self, raw: str):
+        assert _app.safe_base_path(raw) == ""
+
+
+class TestProxyFixIntegration:
+    """ProxyFixミドルウェアがX-Forwarded-Prefix/Protoを反映する経路の統合検証。
+
+    ASGI scopeでは`root_path`に対しQuartが`path`の冒頭から同値を切り落とすため、
+    リバースプロキシは「prefixを保持したままバックエンドへ転送する」構成（nginxで
+    `proxy_pass http://backend;`をtrailing slash無しで指定する形）を想定する。
+    テストもクライアントがプレフィクス付きの絶対URLを叩く前提で組み立てる。
+    """
+
+    @pytest.mark.asyncio
+    async def test_index_includes_prefix_in_links_and_js(self, tmp_path: Path):
+        """`X-Forwarded-Prefix`付与時、href・JS const `BASE_PATH`の双方に反映される。"""
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get(
+            "/plans/",
+            headers={"X-Forwarded-Prefix": "/plans", "X-Forwarded-Proto": "https"},
+        )
+
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert 'href="/plans/favicon.svg"' in body
+        assert 'href="/plans/manifest.webmanifest"' in body
+        assert 'href="/plans/static/markdown.css"' in body
+        # JSリテラルはjson.dumpsで生成されるためダブルクォート付き。
+        assert 'const BASE_PATH = "/plans";' in body
+
+    @pytest.mark.asyncio
+    async def test_index_without_prefix_uses_empty_base(self, tmp_path: Path):
+        """ヘッダー無しでは空文字列扱いとなりプレフィクスが付かない。"""
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/")
+
+        body = await response.get_data(as_text=True)
+        assert 'href="/favicon.svg"' in body
+        assert 'const BASE_PATH = "";' in body
+
+    @pytest.mark.asyncio
+    async def test_manifest_includes_prefix(self, tmp_path: Path):
+        """manifest.webmanifestの`start_url`・`icons.src`がプレフィクス付きになる。"""
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get(
+            "/plans/manifest.webmanifest",
+            headers={"X-Forwarded-Prefix": "/plans"},
+        )
+
+        data = json.loads(await response.get_data())
+        assert data["start_url"] == "/plans/"
+        assert data["icons"][0]["src"] == "/plans/favicon.svg"
+
+    @pytest.mark.parametrize(
+        "malicious_path",
+        [
+            "//evil.example/",
+            "/foo//bar/",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_routable_malicious_prefix_neutralized_in_output(
+        self,
+        tmp_path: Path,
+        malicious_path: str,
+    ):
+        """ルート到達可能な悪意プレフィクスでも出力に生バイトが漏れない。
+
+        ProxyFixがroot_pathに設定し、Quartが路追剥がしを行ってルートに到達するパスを
+        投げる。`safe_base_path`が空扱いに正規化するため、HTML属性・JS定数・manifestの
+        いずれにもプレフィクス文字列が漏れず、外部オリジンへのスキーム相対URLも生まれない。
+        """
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        # ProxyFixはheader値をrstrip("/")してから格納するため、headerは末尾スラッシュを含めない。
+        prefix_header = malicious_path.rstrip("/")
+        response_index = await client.get(malicious_path, headers={"X-Forwarded-Prefix": prefix_header})
+        body_index = await response_index.get_data(as_text=True)
+        assert response_index.status_code == 200
+        assert prefix_header not in body_index
+        assert "//evil.example" not in body_index
+        assert 'href="/favicon.svg"' in body_index
+        assert 'const BASE_PATH = "";' in body_index
+
+        response_manifest = await client.get(
+            f"{malicious_path}manifest.webmanifest",
+            headers={"X-Forwarded-Prefix": prefix_header},
+        )
+        manifest = json.loads(await response_manifest.get_data())
+        assert manifest["start_url"] == "/"
+        assert manifest["icons"][0]["src"] == "/favicon.svg"
