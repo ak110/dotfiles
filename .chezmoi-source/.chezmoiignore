@@ -16,3 +16,9 @@ post-apply.sh
 {{ if ne .chezmoi.os "windows" }}
 post-apply-windows.ps1
 {{ end }}
+
+# pyfltr グローバル設定（writing-standards/check_colloquial.py用）:
+# circe / circe-container でのみ配布する
+{{ if not (has (lower .chezmoi.hostname) (list "circe" "circe-container")) }}
+.config/pyfltr/config.toml
+{{ end }}
