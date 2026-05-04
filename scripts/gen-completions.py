@@ -84,13 +84,27 @@ def _collect_commands() -> list[str]:
     result: list[str] = []
     for name, target in scripts.items():
         module = target.split(":", 1)[0]
-        path = _REPO_ROOT / pathlib.Path(*module.split(".")).with_suffix(".py")
-        if not path.is_file():
+        path = _resolve_module_path(module)
+        if path is None:
             continue
         # マーカーは先頭付近のコメント行を想定。ファイル全体を読んでもサイズは小さく許容できる。
         if _has_marker(path):
             result.append(name)
     return result
+
+
+def _resolve_module_path(module: str) -> pathlib.Path | None:
+    """`pytools.foo`形式のモジュール名から実体ファイルを返す。
+
+    単一ファイルモジュール（`pytools/foo.py`）とパッケージ
+    （`pytools/foo/__init__.py`）の両方を解決対象にする。
+    """
+    base = _REPO_ROOT / pathlib.Path(*module.split("."))
+    candidates = (base.with_suffix(".py"), base / "__init__.py")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _has_marker(path: pathlib.Path) -> bool:

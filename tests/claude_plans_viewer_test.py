@@ -17,11 +17,11 @@ import pytest
 import watchdog.events
 from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
-from pytools import claude_plans_viewer
+from pytools.claude_plans_viewer import _app, _assets, _cli, _local, _remote, _state
 
-# `_schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
+# `schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
 # debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
-_QUEUE_GET_TIMEOUT_SEC = claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.7
+_QUEUE_GET_TIMEOUT_SEC = _state._BROADCAST_DEBOUNCE_SEC + 0.7
 
 
 class TestListFiles:
@@ -37,7 +37,7 @@ class TestListFiles:
         new_path.write_text("new", encoding="utf-8")
         os.utime(new_path, (2_000.0, 2_000.0))
 
-        entries = claude_plans_viewer._list_files(tmp_path, "local-host")
+        entries = _local.list_files(tmp_path, "local-host")
 
         assert [e.path for e in entries] == ["new.md", "old.md"]
         # mtimeは`yyyy/MM/dd HH:mm`書式で整形される。
@@ -57,7 +57,7 @@ class TestListFiles:
         (tmp_path / "sub").mkdir()
         (tmp_path / "sub" / "c.md").write_text("x", encoding="utf-8")
 
-        entries = claude_plans_viewer._list_files(tmp_path, "local-host")
+        entries = _local.list_files(tmp_path, "local-host")
 
         assert sorted(e.path for e in entries) == ["a.md", "sub/c.md"]
 
@@ -70,7 +70,7 @@ class TestResolveUnderRoot:
         target_path = tmp_path / "a.md"
         target_path.write_text("x", encoding="utf-8")
 
-        result = claude_plans_viewer._resolve_under_root(tmp_path, "a.md")
+        result = _local.resolve_under_root(tmp_path, "a.md")
 
         assert result == target_path.resolve()
 
@@ -81,7 +81,7 @@ class TestResolveUnderRoot:
         outside = tmp_path.parent / "outside.md"
         outside.write_text("x", encoding="utf-8")
         try:
-            assert claude_plans_viewer._resolve_under_root(tmp_path, rel) is None
+            assert _local.resolve_under_root(tmp_path, rel) is None
         finally:
             outside.unlink()
 
@@ -89,11 +89,11 @@ class TestResolveUnderRoot:
         """拡張子が.md以外のファイルはNoneを返す。"""
         (tmp_path / "a.txt").write_text("x", encoding="utf-8")
 
-        assert claude_plans_viewer._resolve_under_root(tmp_path, "a.txt") is None
+        assert _local.resolve_under_root(tmp_path, "a.txt") is None
 
     def test_rejects_missing(self, tmp_path: Path):
         """存在しないファイルはNoneを返す。"""
-        assert claude_plans_viewer._resolve_under_root(tmp_path, "missing.md") is None
+        assert _local.resolve_under_root(tmp_path, "missing.md") is None
 
 
 class TestMarkdownToHtml:
@@ -103,7 +103,7 @@ class TestMarkdownToHtml:
         """見出し・コードブロック・表が反映される。"""
         src = "# title\n\n```\ncode\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n"
 
-        html = claude_plans_viewer._markdown_to_html(src)
+        html = _local.markdown_to_html(src)
 
         assert "<h1>title</h1>" in html
         assert "<pre><code>code\n</code></pre>" in html
@@ -114,7 +114,7 @@ class TestMarkdownToHtml:
         """raw HTMLタグは出力にそのまま現れず、エスケープされる。"""
         src = "# t\n\n<script>alert(1)</script>\n\n<img src=x onerror=y>\n"
 
-        html = claude_plans_viewer._markdown_to_html(src)
+        html = _local.markdown_to_html(src)
 
         # 生タグが残らないこと（属性付きを含む広めの判定）
         assert "<script" not in html.lower()
@@ -131,7 +131,7 @@ class TestResolveCssPath:
     """
 
     def test_returns_repo_css(self):
-        path = claude_plans_viewer._resolve_css_path()
+        path = _local.resolve_css_path()
 
         assert path is not None
         assert path.name == "markdown.css"
@@ -142,7 +142,7 @@ class TestResolveCssPath:
     @pytest.mark.asyncio
     async def test_read_css_nonempty(self):
         """_read_cssがCSS本文を返す（空でない）。"""
-        css = await claude_plans_viewer._read_css()
+        css = await _local.read_css()
 
         assert css.strip()
 
@@ -152,14 +152,14 @@ class TestPwaAssets:
 
     def test_favicon_svg_root(self):
         """favicon定数がSVGルート要素で始まる。"""
-        svg = claude_plans_viewer._FAVICON_SVG
+        svg = _assets.FAVICON_SVG
 
         assert svg.lstrip().startswith("<svg")
         assert 'xmlns="http://www.w3.org/2000/svg"' in svg
 
     def test_manifest_json_has_required_keys(self):
         """manifest定数がJSONとしてパースでき、PWAの必須キーを持つ。"""
-        manifest = json.loads(claude_plans_viewer._MANIFEST_JSON)
+        manifest = json.loads(_assets.MANIFEST_JSON)
 
         assert manifest["name"] == "Claude plans"
         assert manifest["display"] == "standalone"
@@ -178,7 +178,7 @@ class TestPwaAssets:
         Chrome 93以降はno-opのfetchハンドラをDevToolsで警告対象とするため、
         意図的にfetchリスナーを登録せず、install／activateのみでPWAインストール可能性を満たす。
         """
-        sw_js = claude_plans_viewer._SERVICE_WORKER_JS
+        sw_js = _assets.SERVICE_WORKER_JS
 
         assert 'addEventListener("install"' in sw_js
         assert 'addEventListener("activate"' in sw_js
@@ -194,26 +194,26 @@ class TestParseArgs:
 
     def test_defaults_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
         """環境変数未設定時は組み込み既定値を採用する。"""
-        monkeypatch.delenv(claude_plans_viewer._ENV_ROOT, raising=False)
-        monkeypatch.delenv(claude_plans_viewer._ENV_HOST, raising=False)
-        monkeypatch.delenv(claude_plans_viewer._ENV_PORT, raising=False)
-        monkeypatch.delenv(claude_plans_viewer._ENV_REMOTE_HOSTS, raising=False)
+        monkeypatch.delenv(_cli.ENV_ROOT, raising=False)
+        monkeypatch.delenv(_cli.ENV_HOST, raising=False)
+        monkeypatch.delenv(_cli.ENV_PORT, raising=False)
+        monkeypatch.delenv(_cli.ENV_REMOTE_HOSTS, raising=False)
 
-        args = claude_plans_viewer._parse_args([])
+        args = _cli.parse_args([])
 
-        assert args.root == claude_plans_viewer._DEFAULT_ROOT
-        assert args.host == claude_plans_viewer._DEFAULT_HOST
-        assert args.port == claude_plans_viewer._DEFAULT_PORT
+        assert args.root == _cli.DEFAULT_ROOT
+        assert args.host == _cli.DEFAULT_HOST
+        assert args.port == _cli.DEFAULT_PORT
         assert args.remote_host == []
 
     def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
         """環境変数が設定されていればそれを既定値として使う。"""
-        monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
-        monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
-        monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
-        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "host1:user@host2")
+        monkeypatch.setenv(_cli.ENV_ROOT, "/tmp/plans-env")
+        monkeypatch.setenv(_cli.ENV_HOST, "0.0.0.0")  # noqa: S104
+        monkeypatch.setenv(_cli.ENV_PORT, "12345")
+        monkeypatch.setenv(_cli.ENV_REMOTE_HOSTS, "host1:user@host2")
 
-        args = claude_plans_viewer._parse_args([])
+        args = _cli.parse_args([])
 
         assert args.root == "/tmp/plans-env"
         assert args.host == "0.0.0.0"  # noqa: S104
@@ -222,12 +222,12 @@ class TestParseArgs:
 
     def test_cli_overrides_env(self, monkeypatch: pytest.MonkeyPatch):
         """CLI引数は環境変数より優先する。"""
-        monkeypatch.setenv(claude_plans_viewer._ENV_ROOT, "/tmp/plans-env")
-        monkeypatch.setenv(claude_plans_viewer._ENV_HOST, "0.0.0.0")  # noqa: S104
-        monkeypatch.setenv(claude_plans_viewer._ENV_PORT, "12345")
-        monkeypatch.setenv(claude_plans_viewer._ENV_REMOTE_HOSTS, "envhost")
+        monkeypatch.setenv(_cli.ENV_ROOT, "/tmp/plans-env")
+        monkeypatch.setenv(_cli.ENV_HOST, "0.0.0.0")  # noqa: S104
+        monkeypatch.setenv(_cli.ENV_PORT, "12345")
+        monkeypatch.setenv(_cli.ENV_REMOTE_HOSTS, "envhost")
 
-        args = claude_plans_viewer._parse_args(
+        args = _cli.parse_args(
             [
                 "--root",
                 "/tmp/plans-cli",
@@ -259,7 +259,7 @@ class TestIndexHtml:
     async def test_index_html_contains_escaped_hostname(self, tmp_path: Path):
         """`/`応答にホスト名がエスケープ済みで含まれる。"""
         hostname = 'host<&"test'
-        app = claude_plans_viewer.create_app(tmp_path, hostname=hostname)
+        app = _app.create_app(tmp_path, hostname=hostname)
         client = app.test_client()
         response = await client.get("/")
 
@@ -276,7 +276,7 @@ class TestIndexHtml:
         SSE切断時のERR_INCOMPLETE_CHUNKED_ENCODING抑制と
         bfcache復帰後の自動反映継続を両立するための契約。
         """
-        html_src = claude_plans_viewer._INDEX_HTML
+        html_src = _assets.INDEX_HTML
 
         # pagehideでEventSourceをcloseする
         assert 'addEventListener("pagehide"' in html_src
@@ -291,7 +291,7 @@ class TestIndexHtml:
         ブラウザの自動再接続中に発生したSSEイベントが取り逃される構造的な問題を解消する契約。
         host-status経路は取りこぼし可能性があるためonopen時の`refreshHostStatus`で救済する。
         """
-        html_src = claude_plans_viewer._INDEX_HTML
+        html_src = _assets.INDEX_HTML
 
         # `onopen`・`onmessage`の両ハンドラが設定されていること。
         assert "es.onopen" in html_src
@@ -309,7 +309,7 @@ class TestIndexHtml:
         Connecting → 「再接続中」、Disconnected → 「切断中」、Connected → 非表示。
         SSE取りこぼし対策として`/api/host-status`を初回／再接続時に再取得する。
         """
-        html_src = claude_plans_viewer._INDEX_HTML
+        html_src = _assets.INDEX_HTML
 
         # CSS: `.host-badge`の既定は非表示、状態クラス付与で表示。
         assert ".host-badge {" in html_src
@@ -330,7 +330,7 @@ class TestIndexHtml:
         生Markdownをエディタへ貼り付けるためのスモーク。
         secure context（HTTPSまたはhttp://localhost）での動作前提。
         """
-        html_src = claude_plans_viewer._INDEX_HTML
+        html_src = _assets.INDEX_HTML
 
         # toolbarがmain側にも置かれること（既存のaside側のtoolbarに加えて）。
         assert html_src.count('class="toolbar"') >= 2
@@ -350,7 +350,7 @@ class TestIndexHtml:
 
         多ホスト統合表示で、行内のホスト識別と更新日時の視認性を担保する契約。
         """
-        html_src = claude_plans_viewer._INDEX_HTML
+        html_src = _assets.INDEX_HTML
 
         # `.meta`は`display: flex; justify-content: space-between`で左右分割される。
         assert ".meta {" in html_src
@@ -362,6 +362,53 @@ class TestIndexHtml:
         assert 'hostSpan.className = "host"' in html_src
         assert 'mtimeSpan.className = "mtime"' in html_src
 
+    def test_index_html_has_mobile_drawer_contract(self):
+        """モバイル幅（768px以下）で左ペインをドロワー化する契約。
+
+        ハンバーガーボタン・ドロワーbackdrop・モバイル専用メタブロックが要素として存在し、
+        メディアクエリで切替されること。
+        """
+        html_src = _assets.INDEX_HTML
+
+        # 768pxメディアクエリでドロワー化する。
+        assert "@media (max-width: 768px)" in html_src
+        # ハンバーガーボタン・backdrop・モバイル専用メタブロックの存在。
+        assert 'id="menu-btn"' in html_src
+        assert 'id="drawer-backdrop"' in html_src
+        assert 'id="meta-mobile"' in html_src
+        # ドロワー開閉はasideに`open`クラスを付与して制御する。
+        assert 'classList.toggle("open"' in html_src
+
+    def test_index_html_has_nav_buttons_contract(self):
+        """↑↓ナビゲーションボタンが存在し、活性/非活性をJSで制御する契約。
+
+        フィルタや選択変更に追従して活性状態を再評価し、リスト先頭/末尾で非活性にする。
+        """
+        html_src = _assets.INDEX_HTML
+
+        # ボタン要素のid指定。
+        assert 'id="prev-btn"' in html_src
+        assert 'id="next-btn"' in html_src
+        # disabled制御を行う関数があり、prev/nextの両方を更新する。
+        assert "function updateNavButtons" in html_src
+        assert "prevBtn.disabled" in html_src
+        assert "nextBtn.disabled" in html_src
+        # 活性状態の再評価はrenderFiles末尾でも行う（filter変更に追従するため）。
+        # 現在描画リストはvisibleFilesに保持される。
+        assert "visibleFiles" in html_src
+
+    def test_index_html_toolbar_does_not_stick(self):
+        """右ペインのコピーボタンバーがstickyで上部に固定されない契約。
+
+        モバイル/デスクトップともに本文と一緒にスクロールする。
+        """
+        html_src = _assets.INDEX_HTML
+
+        # `main .toolbar`定義ブロックを抽出し、`position: sticky`が含まれないこと。
+        assert "main .toolbar {" in html_src
+        toolbar_block = html_src.split("main .toolbar {", 1)[1].split("}", 1)[0]
+        assert "position: sticky" not in toolbar_block
+
 
 class TestSubscribers:
     """購読者管理(`_subscribe`・`_unsubscribe`・`_schedule_broadcast`)のテスト。"""
@@ -369,51 +416,51 @@ class TestSubscribers:
     @pytest.mark.asyncio
     async def test_subscribe_unsubscribe_roundtrip(self):
         """_subscribeで登録し_unsubscribeで解除できること。重複解除もエラーにならないこと。"""
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         assert q in state.subscribers
-        await claude_plans_viewer._unsubscribe(state, q)
+        await _state.unsubscribe(state, q)
         assert q not in state.subscribers
         # 重複解除してもエラーにならない
-        await claude_plans_viewer._unsubscribe(state, q)
+        await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_delivers_refresh(self):
         """`_schedule_broadcast`後にキューから"refresh"が取得できること（debounce経由で届く）。"""
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         try:
-            await claude_plans_viewer._schedule_broadcast(state)
+            await _state.schedule_broadcast(state)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            assert msg == _state._SSE_REFRESH_PAYLOAD
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_coalesces_via_debounce(self):
         """`_schedule_broadcast`を連続で呼んでもdebounce窓内は1件にまとめられること。"""
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         try:
-            await claude_plans_viewer._schedule_broadcast(state)
-            await claude_plans_viewer._schedule_broadcast(state)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await _state.schedule_broadcast(state)
+            await _state.schedule_broadcast(state)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.qsize() == 1
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_many_calls(self):
         """`_schedule_broadcast`を短時間に10回呼んでも、debounce窓満了後にキューは1件であること。"""
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         try:
             for _ in range(10):
-                await claude_plans_viewer._schedule_broadcast(state)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+                await _state.schedule_broadcast(state)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.qsize() == 1
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
 
 class TestWatchdogHandler:
@@ -422,133 +469,133 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_md_event_broadcasts(self, tmp_path: Path):
         """.mdファイルの変更イベントで購読者へrefreshが届くこと（debounce経由で届く）。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             md_file = tmp_path / "plan.md"
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(md_file))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            assert msg == _state._SSE_REFRESH_PAYLOAD
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_file_opened_event_ignored(self, tmp_path: Path):
         """FileOpenedEventでは購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             md_file = tmp_path / "plan.md"
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileOpenedEvent(str(md_file))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             # debounce窓より長く待ってもキューに入らないこと
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_file_closed_nowrite_event_ignored(self, tmp_path: Path):
         """FileClosedNoWriteEventでは購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             md_file = tmp_path / "plan.md"
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileClosedNoWriteEvent(str(md_file))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_file_moved_event_to_md_broadcasts(self, tmp_path: Path):
         """FileMovedEvent(src=*.md.tmp, dest=*.md)で購読者へ通知されること（atomic-write保存の回帰テスト）。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             event = watchdog.events.FileMovedEvent(
                 src_path=str(tmp_path / "x.md.tmp"),
                 dest_path=str(tmp_path / "x.md"),
             )
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            assert msg == _state._SSE_REFRESH_PAYLOAD
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_file_moved_event_from_md_broadcasts(self, tmp_path: Path):
         """FileMovedEvent(src=*.md, dest=*.md)で購読者へ通知されること（rename・移動操作の検出）。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             event = watchdog.events.FileMovedEvent(
                 src_path=str(tmp_path / "x.md"),
                 dest_path=str(tmp_path / "y.md"),
             )
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            assert msg == _state._SSE_REFRESH_PAYLOAD
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_non_md_event_ignored(self, tmp_path: Path):
         """.md以外のファイルイベントでは購読者へ通知しないこと。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             txt_file = tmp_path / "note.txt"
             txt_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(txt_file))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_dotdir_event_ignored(self, tmp_path: Path):
         """root配下のdotdir配下のイベントでは購読者へ通知しないこと。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             cache_dir = tmp_path / ".cache"
             cache_dir.mkdir()
             md_file = cache_dir / "plan.md"
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(md_file))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_directory_event_ignored(self, tmp_path: Path):
         """is_directory=Trueのイベントでは購読者へ通知しないこと。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             event = watchdog.events.DirModifiedEvent(str(tmp_path / "subdir"))
-            claude_plans_viewer._PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(claude_plans_viewer._BROADCAST_DEBOUNCE_SEC + 0.2)
+            _local.PlansEventHandler(tmp_path, state).on_any_event(event)
+            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_dotdir_root_events_pass(self, tmp_path: Path):
@@ -562,16 +609,16 @@ class TestWatchdogHandler:
         md_file = dot_root / "plan.md"
         md_file.write_text("x", encoding="utf-8")
 
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         state.loop = asyncio.get_running_loop()
-        q = await claude_plans_viewer._subscribe(state)
+        q = await _state.subscribe(state)
         try:
             event = watchdog.events.FileModifiedEvent(str(md_file))
-            claude_plans_viewer._PlansEventHandler(dot_root, state).on_any_event(event)
+            _local.PlansEventHandler(dot_root, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            assert msg == _state._SSE_REFRESH_PAYLOAD
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
 
 class TestApiEndpoints:
@@ -581,7 +628,7 @@ class TestApiEndpoints:
     async def test_api_files_returns_list(self, tmp_path: Path):
         """/api/filesが.mdの一覧をJSONで返す。"""
         (tmp_path / "a.md").write_text("x", encoding="utf-8")
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/files")
 
@@ -594,7 +641,7 @@ class TestApiEndpoints:
     async def test_api_file_renders_markdown(self, tmp_path: Path):
         """/api/fileがMarkdownをHTMLへ変換して返す。"""
         (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/file?path=a.md")
 
@@ -605,7 +652,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_api_file_missing_path_returns_400(self, tmp_path: Path):
         """/api/fileでpathパラメーターがなければ400を返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/file")
 
@@ -614,7 +661,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_api_file_not_found_returns_404(self, tmp_path: Path):
         """/api/fileで存在しないファイルを指すと404を返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/file?path=missing.md")
 
@@ -625,7 +672,7 @@ class TestApiEndpoints:
         """/api/rawはMarkdown原文をtext/markdownで返す。"""
         body = "# title\n\n本文\n"
         (tmp_path / "a.md").write_text(body, encoding="utf-8")
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/raw?path=a.md")
 
@@ -636,7 +683,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_api_raw_missing_path_returns_400(self, tmp_path: Path):
         """/api/rawでpathパラメーターがなければ400を返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/raw")
 
@@ -645,7 +692,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_api_raw_not_found_returns_404(self, tmp_path: Path):
         """/api/rawで存在しないファイルを指すと404を返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/raw?path=missing.md")
 
@@ -654,7 +701,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_static_markdown_css_served(self, tmp_path: Path):
         """/static/markdown.cssがCSSを返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/static/markdown.css")
 
@@ -664,7 +711,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_favicon_served(self, tmp_path: Path):
         """/favicon.svgがSVGを返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/favicon.svg")
 
@@ -675,7 +722,7 @@ class TestApiEndpoints:
     @pytest.mark.asyncio
     async def test_manifest_served(self, tmp_path: Path):
         """/manifest.webmanifestがJSONを返す。"""
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/manifest.webmanifest")
 
@@ -694,9 +741,9 @@ class TestEventsEndpoint:
         ストリーミング応答のため`TestHTTPConnection.receive()`でチャンクを逐次読み取る。
         `_schedule_broadcast`を2回連続で呼んでもdebounceで1件に畳まれることを確認する。
         """
-        app = claude_plans_viewer.create_app(tmp_path, hostname="test")
+        app = _app.create_app(tmp_path, hostname="test")
         # test_client経由の呼び出しでは`before_serving`が発火しないため、loop参照を手動注入する。
-        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
         state.loop = asyncio.get_running_loop()
         client = app.test_client()
 
@@ -710,12 +757,12 @@ class TestEventsEndpoint:
             await conn.send_complete()
             # ヘッダ受信まで待機する。Quartのtest connectionはbodyが来るとheaderが確定する仕様のため、
             # サーバー側から初回チャンクが来るようbroadcastを事前に1回仕込む。
-            await claude_plans_viewer._schedule_broadcast(state)
+            await _state.schedule_broadcast(state)
             # 直後にもう1回呼んで畳まれること（debounce）を同時に確認する。
-            await claude_plans_viewer._schedule_broadcast(state)
+            await _state.schedule_broadcast(state)
 
             # ストリーミングチャンクを逐次受信し、refreshのJSONペイロードを含むまで読み進める。
-            expected_data_line = "data: " + claude_plans_viewer._SSE_REFRESH_PAYLOAD
+            expected_data_line = "data: " + _state._SSE_REFRESH_PAYLOAD
             body_text = ""
             try:
                 while expected_data_line not in body_text:
@@ -741,7 +788,7 @@ class TestBroadcastStateDataclass:
 
     def test_defaults(self):
         """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態は空。"""
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         assert not state.subscribers
         assert state.debounce_task is None
         assert state.loop is None
@@ -797,12 +844,12 @@ async def _aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:
         yield line
 
 
-def _seed_remote_cache(state: claude_plans_viewer._BroadcastState, host: str, items: list[dict[str, typing.Any]]) -> None:
+def _seed_remote_cache(state: _state.BroadcastState, host: str, items: list[dict[str, typing.Any]]) -> None:
     """テスト用に`state.remote_files`へ直接エントリを書き込む。
 
     `_RemoteWatcher._process_stream`を経由せずに`/api/files`merge挙動を検証するための土台。
     """
-    state.remote_files[host] = [claude_plans_viewer._make_file_entry(host, item) for item in items]
+    state.remote_files[host] = [_state.make_file_entry(host, item) for item in items]
 
 
 class TestRemoteWatcher:
@@ -813,14 +860,14 @@ class TestRemoteWatcher:
 
     @pytest.mark.asyncio
     async def test_snapshot_updates_cache_and_marks_connected(self):
-        state = claude_plans_viewer._BroadcastState()
+        state = _state.BroadcastState()
         # 本番購読者の`maxsize=1`は容量超過時に新規通知を破棄する設計のため、
         # snapshotで連続発火する host-status と refresh の両方を観測するには十分な容量を要する。
         q: asyncio.Queue[str] = asyncio.Queue(maxsize=8)
         async with state.lock:
             state.subscribers.add(q)
         try:
-            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            watcher = _remote.RemoteWatcher("host1", state)
             lines = [
                 json.dumps(
                     {
@@ -842,7 +889,7 @@ class TestRemoteWatcher:
             received: list[str] = []
             while not q.empty():
                 received.append(q.get_nowait())
-            assert claude_plans_viewer._SSE_REFRESH_PAYLOAD in received
+            assert _state._SSE_REFRESH_PAYLOAD in received
             host_status_payload = json.dumps(
                 {"type": "host-status", "host": "host1", "status": "connected"}, ensure_ascii=False
             )
@@ -853,8 +900,8 @@ class TestRemoteWatcher:
 
     @pytest.mark.asyncio
     async def test_upsert_adds_new_path(self):
-        state = claude_plans_viewer._BroadcastState()
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
         # 既存snapshotを与えてから、新規pathのupsertが追加されることを確認する。
         await watcher._process_stream(
             _aiter_lines(
@@ -876,8 +923,8 @@ class TestRemoteWatcher:
 
     @pytest.mark.asyncio
     async def test_upsert_replaces_existing_path(self):
-        state = claude_plans_viewer._BroadcastState()
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
         await watcher._process_stream(
             _aiter_lines(
                 [
@@ -899,8 +946,8 @@ class TestRemoteWatcher:
 
     @pytest.mark.asyncio
     async def test_deleted_removes_path(self):
-        state = claude_plans_viewer._BroadcastState()
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
         await watcher._process_stream(
             _aiter_lines(
                 [
@@ -924,22 +971,22 @@ class TestRemoteWatcher:
 
     @pytest.mark.asyncio
     async def test_ping_does_not_emit_anything(self):
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         try:
-            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            watcher = _remote.RemoteWatcher("host1", state)
             await watcher._process_stream(_aiter_lines([json.dumps({"type": "ping"}) + "\n"]))
             # キャッシュにもhost_statusにも一切影響しない（接続確立前なので空のまま）。
             assert "host1" not in state.remote_files
             assert not state.host_status
             assert q.empty()
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_invalid_json_logged_and_processing_continues(self, caplog: pytest.LogCaptureFixture):
-        state = claude_plans_viewer._BroadcastState()
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
         with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
             await watcher._process_stream(
                 _aiter_lines(
@@ -967,10 +1014,10 @@ class TestRemoteWatcher:
         本テストでは`_set_status`を直接呼び出してhost_statusの遷移と
         host-statusのSSE配信が想定通り動くことを確認する。
         """
-        state = claude_plans_viewer._BroadcastState()
-        q = await claude_plans_viewer._subscribe(state)
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
         try:
-            watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+            watcher = _remote.RemoteWatcher("host1", state)
             # snapshot を受け、いったん connected へ遷移させる。
             await watcher._process_stream(
                 _aiter_lines(
@@ -987,15 +1034,15 @@ class TestRemoteWatcher:
             payload = json.dumps({"type": "host-status", "host": "host1", "status": "disconnected"}, ensure_ascii=False)
             assert q.get_nowait() == payload
         finally:
-            await claude_plans_viewer._unsubscribe(state, q)
+            await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
     async def test_snapshot_resets_backoff(self):
         """snapshot受信でバックオフが`_REMOTE_BACKOFF_INITIAL_SEC`にリセットされること。"""
-        state = claude_plans_viewer._BroadcastState()
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
         # 最大値まで増加していると仮定してから snapshot を流す。
-        watcher._backoff = claude_plans_viewer._REMOTE_BACKOFF_MAX_SEC
+        watcher._backoff = _remote.REMOTE_BACKOFF_MAX_SEC
         await watcher._process_stream(
             _aiter_lines(
                 [
@@ -1003,7 +1050,7 @@ class TestRemoteWatcher:
                 ]
             )
         )
-        assert watcher._backoff == claude_plans_viewer._REMOTE_BACKOFF_INITIAL_SEC
+        assert watcher._backoff == _remote.REMOTE_BACKOFF_INITIAL_SEC
 
 
 class TestRemoteHostIntegration:
@@ -1016,12 +1063,12 @@ class TestRemoteHostIntegration:
         local.write_text("local", encoding="utf-8")
         os.utime(local, (3_000.0, 3_000.0))
 
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1", "host2"],
         )
-        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
         _seed_remote_cache(state, "host1", [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0}])
         _seed_remote_cache(state, "host2", [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0}])
 
@@ -1044,7 +1091,7 @@ class TestRemoteHostIntegration:
         runner = _FakeSshRunner(
             read_responses={("host1", "foo.md"): "# remote title\n"},
         )
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1067,7 +1114,7 @@ class TestRemoteHostIntegration:
         """`/api/raw?host=host1&path=foo.md`がfake runnerから取得した生Markdownを返す。"""
         body_src = "# title\n\n本文\n"
         runner = _FakeSshRunner(read_responses={("host1", "foo.md"): body_src})
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1089,7 +1136,7 @@ class TestRemoteHostIntegration:
         接続試行を誘発できないようにするための境界検証。
         """
         runner = _FakeSshRunner()
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1107,7 +1154,7 @@ class TestRemoteHostIntegration:
     async def test_remote_traversal_rejected_without_ssh_call(self, tmp_path: Path, endpoint: str):
         """`..`を含む相対パスはSSH呼び出し前に400で拒否される。"""
         runner = _FakeSshRunner()
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1124,7 +1171,7 @@ class TestRemoteHostIntegration:
         """`host`にローカル名を明示してもローカル経路で解決され、SSHは呼ばれない。"""
         (tmp_path / "a.md").write_text("# local\n", encoding="utf-8")
         runner = _FakeSshRunner()
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1141,7 +1188,7 @@ class TestRemoteHostIntegration:
     def test_local_hostname_conflict_rejected(self, tmp_path: Path):
         """ローカルhostnameと同じ`--remote-host`を渡すと`create_app`が拒絶する。"""
         with pytest.raises(ValueError, match="local hostname"):
-            claude_plans_viewer.create_app(
+            _app.create_app(
                 tmp_path,
                 hostname="local-host",
                 remote_hosts=["local-host"],
@@ -1150,7 +1197,7 @@ class TestRemoteHostIntegration:
     @pytest.mark.asyncio
     async def test_api_host_status_initial_state(self, tmp_path: Path):
         """`/api/host-status`の初期応答はローカル=connected・リモート=connecting。"""
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
@@ -1166,13 +1213,13 @@ class TestRemoteHostIntegration:
     @pytest.mark.asyncio
     async def test_api_host_status_updates_after_snapshot(self, tmp_path: Path):
         """snapshot受信後は`/api/host-status`がそのホストを`connected`として返す。"""
-        app = claude_plans_viewer.create_app(
+        app = _app.create_app(
             tmp_path,
             hostname="local-host",
             remote_hosts=["host1"],
         )
-        state: claude_plans_viewer._BroadcastState = app.config["PLANS_STATE"]
-        watcher = claude_plans_viewer._RemoteWatcher("host1", state)
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        watcher = _remote.RemoteWatcher("host1", state)
         await watcher._process_stream(_aiter_lines([json.dumps({"type": "snapshot", "entries": []}) + "\n"]))
 
         client = app.test_client()
