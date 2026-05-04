@@ -347,7 +347,7 @@ def _get_installed_plugins_raw() -> object | None:
 
 
 def _extract_plugin_version_map(data: object) -> dict[str, str]:
-    """`claude plugin list --json` の戻り値から user scope の name → version 辞書を作る。
+    """`claude plugin list --json` の戻り値から user scope の name → version 辞書を構築する。
 
     本スクリプトは ``--scope=user`` でインストールするため、
     user scope のエントリのみを対象とする。``scope`` フィールドが存在しない

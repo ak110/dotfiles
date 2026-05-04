@@ -61,7 +61,7 @@ description: >
   $content | Set-Content -Encoding UTF8 $path
   ```
 
-  加えて、BOMなしUTF-8で書き出す場合は `System.Text.UTF8Encoding` のインスタンスを使う。
+  加えて、BOMなしUTF-8で出力する場合は `System.Text.UTF8Encoding` のインスタンスを使う。
   既存 `install-claude.ps1` の `$script:utf8NoBom` を参照
 
 - パス区切り — ハードコードを避け、`Join-Path` や `[IO.Path]::Combine` を使う

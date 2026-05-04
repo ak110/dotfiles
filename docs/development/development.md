@@ -9,7 +9,7 @@ make setup
 ### 任意: PowerShellスクリプトのローカル完全検証環境
 
 `.ps1.tmpl`検証は`pwsh`（PowerShell 7）と`PSScriptAnalyzer`モジュールに依存する。
-未導入でも`make test`は通過する（フックが警告を出してスキップ）。検証漏れはCIが担保する。
+未導入でも`make test`は通過する（フックが警告を表示してスキップ）。検証漏れはCIが担保する。
 ローカルで完全検証したい場合のみ導入する。
 
 ```bash

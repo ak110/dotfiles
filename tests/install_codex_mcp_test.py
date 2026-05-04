@@ -106,7 +106,7 @@ class TestAlreadyExistsHandling:
 
 
 class TestFailureHandling:
-    """失敗系で例外を出さず False を返すこと (CLIフォールバックパス)。"""
+    """失敗系で例外を発生させず False を返すこと (CLIフォールバックパス)。"""
 
     def test_add_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_install_codex_mcp.shutil, "which", lambda _name: "/usr/bin/claude")

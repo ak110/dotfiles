@@ -48,7 +48,7 @@ def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
-    """dict のリストを JSONL 形式の transcript として書き出す。"""
+    """dict のリストを JSONL 形式の transcript として保存する。"""
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",

@@ -7,7 +7,7 @@ description: >
   プロンプトやskillを新規作成・大幅改訂した直後、
   またはエージェントの挙動が期待通りにならない原因を指示側の曖昧さに求めたい場合に使用する。
 # 元ネタ: https://zenn.dev/mizchi/articles/empirical-prompt-tuning
-# （自動採点・収束判定を捨てて改善提案ドリブンに簡素化）
+# （自動採点・収束判定を廃止し改善提案ドリブンに簡素化）
 ---
 
 # Refine Prompt

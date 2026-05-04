@@ -39,7 +39,7 @@ class FileEntry:
 class BroadcastState:
     """SSE購読者集合・debounce状態・リモートホストキャッシュ・接続状態を束ねる。
 
-    Quartアプリの`app.config`に入れて保持することでモジュールレベルの可変状態を避ける。
+    Quartアプリの`app.config`に格納して保持することでモジュールレベルの可変状態を避ける。
     """
 
     subscribers: set[asyncio.Queue[str]] = dataclasses.field(default_factory=set)
@@ -89,7 +89,7 @@ async def unsubscribe(state: BroadcastState, q: asyncio.Queue[str]) -> None:
 async def schedule_broadcast(state: BroadcastState) -> None:
     """debounce窓を使って`deliver_refresh`を遅延実行する。
 
-    既にdebounceタスクが走っている場合は何もしない。
+    既にdebounceタスクが実行中の場合は何もしない。
     タイマー中に追加イベントを無視することで時間窓で畳み込む。
     """
     async with state.lock:

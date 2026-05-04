@@ -19,8 +19,8 @@ def enable_completion(parser: argparse.ArgumentParser) -> None:
     対応するコマンドのソース先頭に`# PYTHON_ARGCOMPLETE_OK`マーカーを置き、
     `parser.parse_args()`の直前で呼び出す。
     `_COMPLETE`系の環境変数が設定されているシェル補完起動時のみargcompleteが介入し、
-    通常実行ではほぼno-opになる。`argcomplete`未導入環境でもImportErrorを握りつぶしてno-op化し、
-    開発時にextrasを欠いたままでも壊れないようにする。
+    通常実行ではほぼno-opになる。`argcomplete`未導入環境でもImportErrorを無視してno-op化し、
+    開発時にextrasを欠いたままでも破綻しないようにする。
     補完スクリプトの実体は`completions/_pytools.bash`で、将来的に
     `argcomplete`から別実装（shtab等）へ切り替える際は本関数のみ差し替える想定。
     """

@@ -78,7 +78,7 @@ def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
         width = _display_width(raw)
         if width > max_width:
             excerpt = _truncate(raw, _EXCERPT_WIDTH)
-            violations.append(f"{path}:L{lineno} 幅={width} {excerpt}")
+            violations.append(f"{path}:{lineno} 幅={width} {excerpt}")
     return violations
 
 

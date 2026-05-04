@@ -156,5 +156,5 @@ def test_convert_directory_non_image_extension_excluded_from_events(tmp_path: pa
     bad = tmp_path / "data.bin"
     bad.write_bytes(b"random binary blob")
     events = imageconverter.convert_directory(tmp_path, output_type="jpeg", remove_failed=True)
-    # _IGNORE_SUFFIXES に該当しないため処理対象に入るが、Pillow 画像拡張子ではないため event には積まれない
+    # _IGNORE_SUFFIXES に該当しないため処理対象に入るが、Pillow 画像拡張子ではないため event には追加されない
     assert not events

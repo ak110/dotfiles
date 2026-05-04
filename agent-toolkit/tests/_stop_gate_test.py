@@ -24,7 +24,7 @@ from _stop_gate import (  # type: ignore[import]  # pylint: disable=import-error
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
-    """dict のリストを JSONL 形式の transcript として書き出す。"""
+    """dict のリストを JSONL 形式の transcript として保存する。"""
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",

@@ -301,7 +301,7 @@ class TestRunFlow:
         assert _install_claude_plugins.run()[0] is False
 
     def test_claude_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch):
-        """claude CLI のタイムアウトはスキップに丸める (post-apply を落とさない)。"""
+        """claude CLI のタイムアウトはスキップとして扱う (post-apply を中断させない)。"""
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             raise subprocess.TimeoutExpired(cmd, timeout=1)
@@ -510,7 +510,7 @@ class TestRunFlowDirectoryType:
         assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
 
     def test_version_drift_still_uses_update(self, monkeypatch: pytest.MonkeyPatch):
-        """version 乖離時は update 経路を踏む現行挙動の回帰防止。"""
+        """version 乖離時は update 経路を経由する現行挙動の回帰防止。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001

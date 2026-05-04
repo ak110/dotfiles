@@ -88,7 +88,7 @@ class TestRegistrySettings:
 
     def test_link_uses_binary_four_zero_bytes(self):
         # Explorer の `link` は 4 バイトの BINARY であるべき。
-        # DWORD で誤書きすると一部環境でショートカット名抑止が効かない。
+        # DWORD で誤書きすると一部環境でショートカット名抑止が機能しない。
         link = next(s for s in _setup_registry._REGISTRY_SETTINGS if s.value_name == "link")
         assert link.value_type == "REG_BINARY"
         assert link.value == b"\x00\x00\x00\x00"

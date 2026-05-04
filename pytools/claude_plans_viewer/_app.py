@@ -31,7 +31,7 @@ _BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
 def safe_base_path(raw: str) -> str:
     """`request.root_path`を信頼境界として正規化する。
 
-    リバースプロキシ前段が`X-Forwarded-Prefix`を握りつぶさない構成での悪意ある値の
+    リバースプロキシ前段が`X-Forwarded-Prefix`を破棄しない構成での悪意ある値の
     HTML/JS/JSON埋め込みを防ぐため、文字種・連続スラッシュ・末尾スラッシュを厳格に検査する。
     不正値や空値は空文字列として返し、呼び出し元がそのままURL前置として扱えるようにする。
     """
@@ -257,7 +257,7 @@ def create_app(
             headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
         )
 
-    # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを差し込む。
+    # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを介在させる。
     # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンを使うことで、
     # `app.config`等のハンドラ参照は維持しつつ、ASGIディスパッチだけを上流に通す。
     # method-assignとASGIプロトコル不一致は意図的なため型チェッカは抑制する。

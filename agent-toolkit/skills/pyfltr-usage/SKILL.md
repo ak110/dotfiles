@@ -73,7 +73,7 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 `failed`かつ`diagnostics=0`のとき、`command.message`に生出力の抜粋が入る。
 切り詰めは「先頭ブロック + `... (truncated)` + 末尾ブロック」のハイブリッド方式で、
 `jsonl-message-max-chars`（既定2000文字）を`head : tail = 1 : 4`で配分する。
-冒頭にエラー要約を出すツール（editorconfig-checker等）と末尾にスタックトレースを出すツール（pytest／mypy等）の双方を救う。
+冒頭にエラー要約を表示するツール（editorconfig-checker等）と末尾にスタックトレースを表示するツール（pytest／mypy等）の双方を救う。
 
 切り詰めが起きると`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
 `archive`にはアーカイブ内の相対パスが入る。
@@ -138,7 +138,7 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
 | `resolution_failed` | ツール起動コマンドの解決失敗（`bin-runner`/`js-runner`未提供等） | 「bin-runner未提供環境」節を参照 |
 | `skipped` | ツール未検出などでスキップ | 通常は無視してよい |
 
-- `formatted`は`run`系では正常終了するため見落とされやすい。実行後は`git diff`で変更内容を必ず確認してからコミットする
+- `formatted`は`run`系では正常終了するため看過されやすい。実行後は`git diff`で変更内容を必ず確認してからコミットする
 - `formatted`が`run`系の繰り返しでも消えない場合はformatter/linter間の設定矛盾を疑い、
   `pyproject.toml`の`[tool.ruff-format]`と`[tool.ruff-check]`を突き合わせる
 

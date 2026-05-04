@@ -77,7 +77,7 @@ class TestResolveUnderRoot:
     @pytest.mark.parametrize("rel", ["../outside.md", "sub/../../outside.md"])
     def test_rejects_traversal(self, tmp_path: Path, rel: str):
         """root外へ出るパスはNoneを返す。"""
-        # root外の実体を作っても相対参照で抜けられないことを確認する。
+        # root外の実体を用意しても相対参照で抜けられないことを確認する。
         outside = tmp_path.parent / "outside.md"
         outside.write_text("x", encoding="utf-8")
         try:
@@ -160,7 +160,7 @@ class TestPwaAssets:
     def test_manifest_build_has_required_keys(self):
         """build_manifestがPWAの必須キーを持つ辞書を返し、JSONとして直列化可能。"""
         manifest = _assets.build_manifest("")
-        # 直列化可能であることを別途確認しておく（型違反ではjson.dumpsが落ちるため）。
+        # 直列化可能であることを別途確認しておく（型違反ではjson.dumpsが失敗するため）。
         # 型推論に依存せず、JSON文字列に戻して再パースした側で構造比較する。
         round_tripped = json.loads(json.dumps(manifest))
 
@@ -312,7 +312,7 @@ class TestIndexHtml:
         # `/api/host-status`を呼んでhostStatusを取得する関数がある。
         assert "/api/host-status" in html_src
         assert "hostStatus" in html_src
-        # SSEのtype=host-statusを受けた際の分岐がある。
+        # SSEのtype=host-statusを受信した際の分岐がある。
         assert "host-status" in html_src
 
     def test_index_html_has_copy_button_contract(self):
@@ -738,7 +738,7 @@ class TestEventsEndpoint:
         state.loop = asyncio.get_running_loop()
         client = app.test_client()
 
-        # client.request()の戻り値はProtocol型のためcastで実装クラスへ寄せる。
+        # client.request()の戻り値はProtocol型のためcastで実装クラスへキャストする。
         # QuartのTestHTTPConnectionは`__aexit__`の型注釈が`exc_type: type`固定のため、
         # 厳格な型検査(ty)では`async with`の実装として認識されない。ライブラリ側の型注釈の
         # 限界に起因するfalse positiveのためここでは`ty: ignore`で抑制する。
@@ -746,8 +746,8 @@ class TestEventsEndpoint:
         conn = typing.cast(_TestHTTPConnection, raw_connection)
         async with conn:  # ty: ignore[invalid-context-manager]
             await conn.send_complete()
-            # ヘッダ受信まで待機する。Quartのtest connectionはbodyが来るとheaderが確定する仕様のため、
-            # サーバー側から初回チャンクが来るようbroadcastを事前に1回仕込む。
+            # ヘッダ受信まで待機する。Quartのtest connectionはbodyが届くとheaderが確定する仕様のため、
+            # サーバー側から初回チャンクが届くようbroadcastを事前に1回発行する。
             await _state.schedule_broadcast(state)
             # 直後にもう1回呼んで畳まれること（debounce）を同時に確認する。
             await _state.schedule_broadcast(state)
@@ -830,7 +830,7 @@ class _FakeSshRunner:
 
 
 async def _aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:
-    """インメモリーの行リストを`_RemoteWatcher._process_stream`に流し込むためのヘルパー。"""
+    """インメモリーの行リストを`_RemoteWatcher._process_stream`へ供給するためのヘルパー。"""
     for line in lines:
         yield line
 
@@ -1009,7 +1009,7 @@ class TestRemoteWatcher:
         q = await _state.subscribe(state)
         try:
             watcher = _remote.RemoteWatcher("host1", state)
-            # snapshot を受け、いったん connected へ遷移させる。
+            # snapshot を受信し、いったん connected へ遷移させる。
             await watcher._process_stream(
                 _aiter_lines(
                     [
@@ -1017,7 +1017,7 @@ class TestRemoteWatcher:
                     ]
                 )
             )
-            # キューを掃き出してから切断遷移を観測する。
+            # キューの中身を消費してから切断遷移を観測する。
             while not q.empty():
                 q.get_nowait()
             await watcher._set_status("disconnected")
@@ -1032,7 +1032,7 @@ class TestRemoteWatcher:
         """snapshot受信でバックオフが`_REMOTE_BACKOFF_INITIAL_SEC`にリセットされること。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
-        # 最大値まで増加していると仮定してから snapshot を流す。
+        # 最大値まで増加していると仮定してから snapshot を送信する。
         watcher._backoff = _remote.REMOTE_BACKOFF_MAX_SEC
         await watcher._process_stream(
             _aiter_lines(
@@ -1240,7 +1240,7 @@ class TestRemoteStreamLimit:
         with pytest.raises(ValueError, match="chunk is longer than limit"):
             await small_reader.readline()
 
-        # REMOTE_STREAM_LIMIT_BYTES適用後はそのまま読み切れる。
+        # REMOTE_STREAM_LIMIT_BYTES適用後はそのまま読み終えられる。
         big_reader = asyncio.StreamReader(limit=_remote.REMOTE_STREAM_LIMIT_BYTES)
         big_reader.feed_data(big_payload.encode("utf-8"))
         big_reader.feed_eof()
@@ -1293,10 +1293,10 @@ class TestSafeBasePath:
 class TestProxyFixIntegration:
     """ProxyFixミドルウェアがX-Forwarded-Prefix/Protoを反映する経路の統合検証。
 
-    ASGI scopeでは`root_path`に対しQuartが`path`の冒頭から同値を切り落とすため、
+    ASGI scopeでは`root_path`に対しQuartが`path`の冒頭から同値を除去するため、
     リバースプロキシは「prefixを保持したままバックエンドへ転送する」構成（nginxで
     `proxy_pass http://backend;`をtrailing slash無しで指定する形）を想定する。
-    テストもクライアントがプレフィクス付きの絶対URLを叩く前提で組み立てる。
+    テストもクライアントがプレフィクス付きの絶対URLへ要求する前提で組み立てる。
     """
 
     @pytest.mark.asyncio
@@ -1358,7 +1358,7 @@ class TestProxyFixIntegration:
         """ルート到達可能な悪意プレフィクスでも出力に生バイトが漏れない。
 
         ProxyFixがroot_pathに設定し、Quartが路追剥がしを行ってルートに到達するパスを
-        投げる。`safe_base_path`が空扱いに正規化するため、HTML属性・JS定数・manifestの
+        引き渡す。`safe_base_path`が空扱いに正規化するため、HTML属性・JS定数・manifestの
         いずれにもプレフィクス文字列が漏れず、外部オリジンへのスキーム相対URLも生まれない。
         """
         app = _app.create_app(tmp_path, hostname="test")

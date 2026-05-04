@@ -64,7 +64,7 @@ def run() -> bool:
 def _find_mise_binary() -> Path | None:
     """Mise の実行ファイルを探す。
 
-    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も見落とさないよう、
+    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も看過しないよう、
     既知のインストールパスも併せて確認する。
     """
     from_path = shutil.which("mise")
@@ -88,7 +88,7 @@ def _find_mise_binary() -> Path | None:
 def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     """Chezmoi workingTree 直下の `mise.toml` を `mise trust` 対象にする。
 
-    未 trust のままでは mise CLI が毎回警告を出して設定を無視するため、冪等に trust する。
+    未 trust のままでは mise CLI が毎回警告を表示して設定を無視するため、冪等に trust する。
     workingTree は `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定なら CLI 単体実行
     とみなしてスキップ）。既に trust 済みであっても `mise trust` は重複登録しない仕様のため、
     事前チェックは行わず毎回実行する。副作用が無いため、成功時は changed 判定も常に True を

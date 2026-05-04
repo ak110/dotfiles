@@ -2,7 +2,7 @@
 """ディレクトリサイズを集計表示する (C# dirsize の Python 移植)。
 
 再帰的に配下のファイルサイズを合計し、サブディレクトリごとに大きさを表示する。
-`-r DEPTH` で深度制限、`-a` で 1 MiB 未満も表示、`-e` で進捗を stderr に出す。
+`-r DEPTH` で深度制限、`-a` で 1 MiB 未満も表示、`-e` で進捗を stderr に表示する。
 """
 
 import argparse
@@ -20,7 +20,7 @@ _MIB = 1024 * 1024
 def _main() -> None:
     parser = argparse.ArgumentParser(description="ディレクトリサイズを集計する")
     parser.add_argument("-r", "--recursive", nargs="?", const=1, type=int, default=0, help="再帰深度 (既定 0: 直下のみ)")
-    parser.add_argument("-e", "--progress", action="store_true", help="進捗を stderr に出す")
+    parser.add_argument("-e", "--progress", action="store_true", help="進捗を stderr に表示する")
     parser.add_argument("-a", "--all", action="store_true", help="1 MiB 未満も表示する")
     parser.add_argument("target", nargs="?", type=pathlib.Path, default=pathlib.Path.cwd())
     enable_completion(parser)

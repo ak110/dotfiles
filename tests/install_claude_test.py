@@ -168,7 +168,7 @@ class TestInstallClaude:
         home.mkdir()
         stub_bin, stub_log = _make_claude_stub(tmp_path)
 
-        # 既存環境を先に作る
+        # 既存環境を先に生成する
         rules_dir = home / ".claude" / "rules" / "agent-toolkit"
         rules_dir.mkdir(parents=True)
         sentinel = rules_dir / "agent.md"
@@ -213,7 +213,7 @@ class TestInstallClaude:
 
 @pytest.mark.parametrize("kind", _runners())
 def test_exits_when_claude_missing(kind: str, tmp_path: pathlib.Path, rules_url: str):
-    """claude CLI 未検出なら非ゼロ終了し、配布先を作らない。"""
+    """claude CLI 未検出なら非ゼロ終了し、配布先を生成しない。"""
     home = tmp_path / "home"
     home.mkdir()
 

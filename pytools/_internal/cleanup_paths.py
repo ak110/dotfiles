@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
     """base_dir 配下から relative_paths に列挙されたパスを安全に削除する。
 
-    シンボリックリンクを辿って base_dir 外を消さないよう、削除前に resolve 後のパスが
+    シンボリックリンクを辿って base_dir 外を削除しないよう、削除前に resolve 後のパスが
     base_dir 配下に収まることを確認する。
 
     Returns:
@@ -53,7 +53,7 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
     """内容が期待値と完全一致する場合に限り、base_dir 配下のファイルを削除する。
 
     cleanup_paths との違いは「ユーザーが独自に編集済みの可能性があるファイル」を保護するため、
-    bytes 完全一致のときのみ削除する点。テキスト正規化を挟まないのは改行差異で誤判定しないため。
+    bytes 完全一致のときのみ削除する点。テキスト正規化を介在させないのは改行差異で誤判定しないため。
 
     Returns:
         実際に削除した件数。

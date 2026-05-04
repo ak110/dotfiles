@@ -7,7 +7,7 @@ DLL だけを `%USERPROFILE%\\.local\\lib\\libarchive\\` へ展開して User sc
 
 `install_claude_plugins.py` と同じ「想定される失敗は自前で吸収する」方針を
 踏襲している。ネットワーク障害・MSYS2 側のレイアウト変更・権限不足などは
-すべてログ警告を出したうえで False を返し、post_apply 全体は継続させる。
+すべてログ警告を表示したうえで False を返し、post_apply 全体は継続させる。
 """
 
 import ctypes
@@ -60,7 +60,7 @@ def run() -> bool:
     DLL ダウンロードはべき等とし、既に配置済みの場合はスキップする。
     一方 ``LIBARCHIVE`` 環境変数の永続化は、DLL の有無にかかわらず毎回実施する。
     libarchive-c は Windows で DLL を解決する際 ``LIBARCHIVE`` 環境変数を最優先
-    に見るため、旧バージョンの本モジュールが DLL だけ配置して環境変数を設定して
+    を参照するため、旧バージョンの本モジュールが DLL だけ配置して環境変数を設定して
     いなかったケースを救う必要があるため。
 
     Returns:
@@ -126,7 +126,7 @@ def _pick_latest(index_html: str, prefix: str) -> str | None:
 
 
 def _extract_dlls(pkg_data: bytes, zstandard_mod) -> None:
-    """pkg.tar.zst のバイト列を展開し、DLL だけを `_INSTALL_DIR` へ書き出す。"""
+    """pkg.tar.zst のバイト列を展開し、DLL だけを `_INSTALL_DIR` へ配置する。"""
     decompressor = zstandard_mod.ZstdDecompressor()
     raw = decompressor.decompress(pkg_data, max_output_size=512 * 1024 * 1024)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as tar:
@@ -155,7 +155,7 @@ def _persist_libarchive_env_var() -> bool:
 
     - DLL が未配置なら何もしない (false を返す)。
     - 既に同じ値が設定されていればスキップする。
-    - 既存値が別パスを指している場合は上書きせず警告ログのみ出す
+    - 既存値が別パスを指している場合は上書きせず警告ログのみ表示する
       (ユーザーが別途 libarchive を導入している可能性に配慮)。
     - 書き換えに成功したら true を返す。
 

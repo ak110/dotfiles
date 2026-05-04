@@ -56,7 +56,7 @@ def test_detects_violation(tmp_path: pathlib.Path, deny_substring: str):
     result = _run(target)
     assert result.returncode == 1
     assert "colloquial" in result.stderr
-    assert "L3" in result.stderr
+    assert ":3:" in result.stderr
 
 
 def test_clean_file_passes(tmp_path: pathlib.Path):

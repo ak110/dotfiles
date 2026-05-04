@@ -49,7 +49,7 @@ _REGISTRY_SETTINGS: list[_RegistrySpec] = [
         value=0,
     ),
     # Explorer の `link` 値は本来 4 バイトの BINARY であり、DWORD で書くと
-    # 一部環境で「～へのショートカット」抑止が効かない。ここでは BINARY で正しく書き込む。
+    # 一部環境で「～へのショートカット」抑止が機能しない。ここでは BINARY で正しく書き込む。
     _RegistrySpec(
         description="新規ショートカット作成時に「～へのショートカット」を付けない",
         sub_key=r"Software\Microsoft\Windows\CurrentVersion\Explorer",

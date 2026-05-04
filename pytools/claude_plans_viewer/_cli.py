@@ -152,7 +152,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     `pyproject.toml`の`[project.scripts]`から
     `claude-plans-viewer = "pytools.claude_plans_viewer:_main"`の形で参照されるため、
-    関数名はunderscore付きのまま維持する（変更すると配布物との互換が壊れる）。
+    関数名はunderscore付きのまま維持する（変更すると配布物との互換が破綻する）。
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # hypercornは`hypercorn.error`に独自フォーマット付きハンドラーを設定するが、

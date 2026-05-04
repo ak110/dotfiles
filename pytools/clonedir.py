@@ -1,8 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
 """ディレクトリツリーの差分同期 (C# clonedir の Python 移植)。
 
-送り側の内容を受け側へ複製する。既定では更新モード (送り側が新しいものだけコピー)。
-`--mirror` で受け側の不要ファイル・ディレクトリも削除する。
+コピー元の内容をコピー先へ複製する。既定では更新モード (コピー元が新しいものだけコピー)。
+`--mirror` でコピー先の不要ファイル・ディレクトリも削除する。
 """
 
 import argparse
@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description="ディレクトリを同期する")
-    parser.add_argument("src", type=pathlib.Path, help="送り側ディレクトリ")
-    parser.add_argument("dst", type=pathlib.Path, help="受け側ディレクトリ")
+    parser.add_argument("src", type=pathlib.Path, help="コピー元ディレクトリ")
+    parser.add_argument("dst", type=pathlib.Path, help="コピー先ディレクトリ")
     parser.add_argument("--exclude", type=pathlib.Path, help="除外パターンを改行区切りで書いたファイル")
-    parser.add_argument("-m", "--mirror", action="store_true", help="受け側の不要ファイルを削除する")
+    parser.add_argument("-m", "--mirror", action="store_true", help="コピー先の不要ファイルを削除する")
     parser.add_argument("-t", "--top-only", action="store_true", help="最上位ディレクトリのみ処理する")
     parser.add_argument("-d", "--dry-run", action="store_true")
     enable_completion(parser)
@@ -95,7 +95,7 @@ def clone(
             if not dry_run:
                 shutil.copy2(sub, target)
 
-    # 不要ファイル・ディレクトリ削除 (ミラーモード以外でも受け側だけにあるものは除去するのが元実装)
+    # 不要ファイル・ディレクトリ削除 (ミラーモード以外でもコピー先だけにあるものは除去するのが元実装)
     dst_dirs = [] if top_only else [d for d in dst.rglob("*") if d.is_dir() and not _is_excluded(d, excludes)]
     dst_files = list(dst.iterdir()) if top_only else list(dst.rglob("*"))
     for sub in dst_files:

@@ -147,7 +147,7 @@ class TestRunAutoDisable:
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)
         # settings.json の読み取りは None (既定で有効扱い) で固定する
         monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
-        # 有効化対象の自動 install/enable には踏み込まないよう空集合にする
+        # 有効化対象の自動 install/enable には立ち入らないよう空集合にする
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset())
         monkeypatch.setattr(_install_claude_plugins, "_AUTO_DISABLED_PLUGIN_IDS", frozenset({target_disable}))
 

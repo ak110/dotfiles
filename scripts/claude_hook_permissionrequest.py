@@ -14,7 +14,7 @@ PreToolUse の `permissionDecision: "allow"` は組み込みの ask ルール
 1. Git ワークツリー配下の `.claude/` 配下
    - `~/.claude/` 配下は除外する (chezmoi 配布先誤編集の警告経路を維持するため)
    - Git ワークツリー判定は subprocess を使わずファイルシステム存在確認のみで行う
-     (PermissionRequest が編集毎に走るため軽量化が必要)
+     (PermissionRequest が編集毎に実行されるため軽量化が必要)
 2. `~/.claude/plans/` 配下
    - plan mode が書き込む計画ファイル領域
 
@@ -227,7 +227,7 @@ def _is_inside_git_worktree(target: pathlib.Path) -> bool:
 
     `.git` はディレクトリ (通常のリポジトリ) またはファイル (worktree / submodule) の
     いずれもありうるため `exists()` で判定する。subprocess は使わずファイルシステム
-    存在確認のみで完結させる (PermissionRequest が編集毎に走るため軽量化が必要)。
+    存在確認のみで完結させる (PermissionRequest が編集毎に実行されるため軽量化が必要)。
     """
     current = target.parent
     for _ in range(_GIT_WORKTREE_LOOKUP_DEPTH):

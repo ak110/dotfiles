@@ -28,10 +28,10 @@ def _make_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
 
 
 class _Cp932ZipInfo(zipfile.ZipInfo):
-    """ファイル名を CP932 でエンコードし、Unicode flag (bit 11) を立てない ZipInfo。
+    """ファイル名を CP932 でエンコードし、Unicode flag (bit 11) を未設定にする ZipInfo。
 
     Python 標準の ``ZipInfo._encodeFilenameFlags`` は非 ASCII 名を UTF-8 に変換して
-    bit 11 を立てる。これを上書きすることで、libarchive が過去の日本語 ZIP として
+    bit 11 をセットする。これを上書きすることで、libarchive が過去の日本語 ZIP として
     誤解釈するパターン (CP932 生バイト + bit 11 未設定) をテストで再現できる。
     """
 
@@ -50,7 +50,7 @@ class _RawBytesZipInfo(zipfile.ZipInfo):
     """ファイル名として任意の生バイト列を書き込む ZipInfo。
 
     CP932 strict で復号できないバイト列を含むエントリをテストで合成するために使う。
-    bit 11 は立てない。
+    bit 11 はセットしない。
     """
 
     def __init__(self, raw_name: bytes) -> None:
@@ -375,7 +375,7 @@ def _png_bytes(size: tuple[int, int] = (50, 50), color: tuple[int, int, int] = (
 def _png_bytes_with_corrupt_text() -> bytes:
     """tEXt チャンクの CRC を意図的に破損させた PNG バイト列を返す。
 
-    Pillow 既定モードでは UnidentifiedImageError が送出されるが、寛容モードでは
+    Pillow 既定モードでは UnidentifiedImageError が発生するが、寛容モードでは
     画像本体が読み込まれる。imageconverter の 2 段構え動作確認用。
     """
     data = _png_bytes()
@@ -433,7 +433,7 @@ class TestImageConversionBackupRetention:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """完全に壊れた PNG は変換失敗となるが、原本バックアップは保持される。"""
+        """完全に破損した PNG は変換失敗となるが、原本バックアップは保持される。"""
         trashed: list[str] = []
         monkeypatch.setattr(
             "pytools.repack_archive.send2trash.send2trash",
@@ -456,7 +456,7 @@ class TestImageConversionBackupRetention:
         # バックアップは保持される
         assert (tmp_path / "bk" / "sample.zip").exists()
         assert not trashed
-        # 出力 ZIP は生成されるが壊れた画像は除外される
+        # 出力 ZIP は生成されるが破損した画像は除外される
         entries = _zip_entries(tmp_path / "sample.zip")
         assert "readme.txt" in entries
         assert "img.png" not in entries
@@ -593,7 +593,7 @@ class TestFilenameEncoding:
         assert entries == {"README.txt", "日本語.txt"}
 
     def test_sjis_backslash_byte_is_decoded_as_single_path_component(self, tmp_path: pathlib.Path) -> None:
-        """SJIS 2バイト目に 0x5C を含む文字 (例: ソ) でディレクトリ階層が壊れない。
+        """SJIS 2バイト目に 0x5C を含む文字 (例: ソ) でディレクトリ階層が破壊されない。
 
         報告された系統 B の再現。``ソ`` の SJIS バイト列は ``b"\\x83\\x5c"`` で、
         2 バイト目が ASCII のバックスラッシュと同値である。文字列処理を誤ると
@@ -626,7 +626,7 @@ class TestFilenameEncoding:
     def test_cp932_and_utf8_mixed_zip(self, tmp_path: pathlib.Path) -> None:
         """bit 11 未設定の CP932 日本語エントリと bit 11 付き UTF-8 日本語エントリの混在で双方破損しない。
 
-        CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に入れて、
+        CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に格納して、
         ``info.filename`` 経由ではなく ``info.orig_filename`` 経由で復号できていることを担保する。
         """
         archive = tmp_path / "mixed.zip"
@@ -669,7 +669,7 @@ class TestFilenameEncoding:
 
         他の CP932 エントリは正しく日本語名で展開される。アーカイブ単位の一括判定では
         1 件の失敗で全体が CP437 に転落するため、エントリ単位フォールバックが
-        効いていることをここで担保する。
+        機能していることをここで担保する。
         """
         archive = tmp_path / "fallback.zip"
         # 0x81 は CP932 の有効な lead byte だが 0x39 ('9') は有効な trail byte 範囲外なため
@@ -717,7 +717,7 @@ class TestExtractZipPathSafety:
         assert "/abs.txt" in failed_paths
         assert "C:/win.txt" in failed_paths
         assert "\\back.txt" in failed_paths
-        # 安全なエントリだけ書き出されている
+        # 安全なエントリだけ出力されている
         assert (dest / "safe.txt").exists()
         # 親ディレクトリへの脱出は阻止されている
         assert not (tmp_path / "escape.txt").exists()

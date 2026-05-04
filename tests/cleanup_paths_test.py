@@ -55,7 +55,7 @@ class TestCleanupPaths:
         assert (outside / "do_not_delete.txt").exists()
 
     def test_multiple_paths_counted(self, tmp_path: Path):
-        """削除件数は実際に消したものだけをカウントする。"""
+        """削除件数は実際に削除したものだけをカウントする。"""
         (tmp_path / "a").mkdir()
         (tmp_path / "b").write_text("", encoding="utf-8")
         # c は存在しない

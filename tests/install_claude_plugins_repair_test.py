@@ -18,7 +18,7 @@ from .helpers import _FakeResult
 
 
 def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """known_marketplaces.json に対象 marketplace のエントリを書き出す。"""
+    """known_marketplaces.json に対象 marketplace のエントリを保存する。"""
     path.write_text(
         json.dumps({_claude_common.MARKETPLACE_NAME: entry}, ensure_ascii=False),
         encoding="utf-8",
@@ -26,7 +26,7 @@ def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
 
 
 def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを書き出す。"""
+    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを保存する。"""
     path.write_text(
         json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}, ensure_ascii=False),
         encoding="utf-8",
@@ -49,7 +49,7 @@ def _marketplace_paths(
     """known_marketplaces.json と settings.json のパスを tmp_path へ差し替える。
 
     2 ファイルを同時に点検・修復するため、両方をテスト専用パスへ差し替えて
-    実環境の ``~/.claude/settings.json`` に依存しない状態を作る。
+    実環境の ``~/.claude/settings.json`` に依存しない状態を構築する。
     """
     known = tmp_path / "known_marketplaces.json"
     settings = tmp_path / "settings.json"
@@ -296,7 +296,7 @@ class TestRepairMarketplace:
     ):
         """原子的置換で known_marketplaces.json の他キーが保持される。"""
         known, _settings = marketplace_paths
-        # 壊れたエントリ + 無関係な他キー (他キーは触らない)
+        # 破損したエントリ + 無関係な他キー (他キーは触らない)
         known.write_text(
             json.dumps(
                 {

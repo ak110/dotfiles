@@ -91,7 +91,7 @@ def _main() -> int:
             continue
         for line_no, col, match_str, snippet in _colloquial_check.scan_text(text, deny_patterns, allow_patterns):
             excerpt = snippet if len(snippet) <= _EXCERPT_LIMIT else snippet[:_EXCERPT_LIMIT] + "…"
-            print(f"{path}:L{line_no}:C{col} [{match_str}] {excerpt}", file=sys.stderr)
+            print(f"{path}:{line_no}:{col} [{match_str}] {excerpt}", file=sys.stderr)
             total += 1
     if total:
         print(

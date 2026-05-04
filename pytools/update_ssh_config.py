@@ -109,7 +109,7 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
     if added == 0 and existing_lines == original_lines:
         logger.info(log_format.format_status(short, "変更なし (追加鍵 0 件)"))
         return False
-    # 書き出し
+    # 出力
     content = "\n".join(existing_lines) + "\n" if existing_lines else ""
     claude_common.atomic_write_text(ak_path, content, mode=0o600)
     logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))

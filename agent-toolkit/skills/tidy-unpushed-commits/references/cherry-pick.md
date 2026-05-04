@@ -35,7 +35,7 @@ git checkout --detach "$BASE"
 git cherry-pick <先頭コミットSHA>
 ```
 
-squashグループを合流させる場合は、先頭を通常cherry-pickし、残りを`--no-commit`で重ね、
+squashグループを結合する場合は、先頭を通常cherry-pickし、残りを`--no-commit`で連続適用し、
 最後に`--amend -F`で統合後メッセージを適用する。
 
 ```bash
@@ -56,4 +56,4 @@ git checkout "$BRANCH"
 - reorder起因: 該当箇所だけreorderを諦める。`git cherry-pick --abort`で巻き戻し、
   当該コミットを元の相対位置に戻して進行する。整理全体は中断しない
 - squash起因: 自動解決を試みず即座に報告する。`git cherry-pick --abort`で中断し、退避refからロールバックして計画を再検討する
-- `git checkout --theirs`/`--ours`による安易な解決は禁止。修正単位が壊れる
+- `git checkout --theirs`/`--ours`による安易な解決は禁止。修正単位が破壊される

@@ -49,7 +49,7 @@ class TestCheckLineWidth:
         path = _write(tmp_path / "ng.md", "あ" * 64 + "\n")  # 64*2 = 128
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:L1 幅=128" in result.stderr
+        assert f"{path}:1 幅=128" in result.stderr
 
     def test_table_row_is_checked(self, tmp_path: pathlib.Path):
         # 表（Markdownテーブル）の行も対象。
@@ -60,7 +60,7 @@ class TestCheckLineWidth:
         )
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:L3" in result.stderr
+        assert f"{path}:3" in result.stderr
 
     def test_frontmatter_is_checked(self, tmp_path: pathlib.Path):
         # frontmatter（YAML）の長すぎる行も違反扱い。
@@ -70,7 +70,7 @@ class TestCheckLineWidth:
         )
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:L2" in result.stderr
+        assert f"{path}:2" in result.stderr
 
     def test_fenced_code_block_is_excluded(self, tmp_path: pathlib.Path):
         # ``` フェンス内の超過行は対象外。
@@ -98,7 +98,7 @@ class TestCheckLineWidth:
         assert result_default.returncode == 0
         result_narrow = _run("--width=80", str(path))
         assert result_narrow.returncode == 1
-        assert f"{path}:L1 幅=81" in result_narrow.stderr
+        assert f"{path}:1 幅=81" in result_narrow.stderr
 
     def test_multiple_files_aggregated(self, tmp_path: pathlib.Path):
         # 複数ファイルの違反を集約報告し、終了コード1。
@@ -106,5 +106,5 @@ class TestCheckLineWidth:
         bad = _write(tmp_path / "bad.md", "あ" * 64 + "\n")
         result = _run(str(good), str(bad))
         assert result.returncode == 1
-        assert f"{bad}:L1" in result.stderr
+        assert f"{bad}:1" in result.stderr
         assert str(good) not in result.stderr

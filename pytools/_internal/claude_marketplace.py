@@ -10,7 +10,7 @@ directory 型を使う理由は、dotfiles で編集した内容が push/update 
 
 公開 API:
 - `ensure_marketplace()`: marketplace を directory 型で登録する (未登録・旧形式は自動マイグレーション)
-- `repair_marketplace()`: 壊れた・旧形式の marketplace 登録を段階的に修復する
+- `repair_marketplace()`: 破損・旧形式の marketplace 登録を段階的に修復する
 - `is_directory_type_registered()`: 現在の登録が directory 型で健全かを返す
 """
 
@@ -90,7 +90,7 @@ def ensure_marketplace() -> bool:
 
 
 def repair_marketplace() -> bool:
-    """壊れた marketplace 登録を段階的に修復する。
+    """破損した marketplace 登録を段階的に修復する。
 
     1. ``claude plugin marketplace remove`` で既存エントリを除去 (失敗しても継続)
     2. ``claude plugin marketplace add <dotfiles 絶対パス> --scope=user`` で directory 型として再登録
@@ -135,7 +135,7 @@ def repair_marketplace() -> bool:
     extra_ok = _rewrite_settings_extra_known_entry(dotfiles_root)
     if known_ok and extra_ok:
         # 書き換え後のメタデータ整合を念のため確認する (directory 型では validation のみだが、
-        # 壊れたエントリが残っていれば CLI 側でエラーが出るため早期検知できる)
+        # 破損したエントリが残っていれば CLI 側でエラーが出るため早期検知できる)
         refresh_marketplace()
         logger.info(log_format.format_status("marketplace", "JSON 直接書き換えで修復しました"))
         return True
@@ -146,9 +146,9 @@ def repair_marketplace() -> bool:
 def refresh_marketplace() -> bool:
     """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
 
-    JSON 直接書き換え後に書き換え内容が有効かを確認するために呼ぶ。
-    壊れたエントリが残っていれば CLI 側でエラーが出るため早期検知できる。
-    directory 型ではキャッシュ同期には効かない (validation のみ) ため、
+    JSON 直接書き換え後に書き換え内容が反映済みかを確認するために呼ぶ。
+    破損したエントリが残っていれば CLI 側でエラーが出るため早期検知できる。
+    directory 型ではキャッシュ同期には機能しない (validation のみ) ため、
     通常フローのキャッシュ同期は `install_claude_plugins._install_plugin` で行う。
     失敗しても best-effort 扱いで続行する。
     """
@@ -172,14 +172,14 @@ def _check_marketplace_from_file() -> bool | None:
 
     Returns:
         True: どちらも directory 型 + dotfiles 絶対パスで健全。
-        False: どちらかが壊れている (旧 GitHub 型・別 path・`source` 欠落など)。
+        False: どちらかが破損している (旧 GitHub 型・別 path・`source` 欠落など)。
         None: 両ファイルとも未登録。CLI 経路で新規登録が必要。
 
     2 ファイルを両方検査する理由:
         CLI の ``claude plugin marketplace remove``/``add`` が両ファイルを同時に
         更新しないケースがあり、片方だけに過去の登録が残留して
         ``Marketplace file not found`` エラーを引き起こす環境が確認されている。
-        どちらか片方でも壊れていれば修復対象とする。
+        どちらか片方でも破損していれば修復対象とする。
     """
     known = _load_known_marketplace_entry()
     extra = _load_extra_known_marketplace_entry()
@@ -219,7 +219,7 @@ def _is_entry_healthy(entry: dict[str, object]) -> bool:
     「旧形式」として False と判定し、自動マイグレーションの対象とする。
     別 path・``source`` 欠落・非 dict もすべて False。
 
-    dotfiles ルートを検出できない環境 (チェックアウトが壊れているなど) では
+    dotfiles ルートを検出できない環境 (チェックアウトが破損しているなど) では
     比較対象が無いため False を返し、CLI 経路で再登録させる。
     """
     source = entry.get("source")

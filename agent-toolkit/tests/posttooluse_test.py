@@ -200,7 +200,7 @@ class TestEdgeCases:
         assert result.returncode == 0
 
     def test_silent_output(self, tmp_path: pathlib.Path):
-        """PostToolUse は stdout に何も出さない。"""
+        """PostToolUse は stdout に何も書き込まない。"""
         result = _run(
             {"session_id": "silent", "tool_input": {"command": "pytest"}},
             state_dir=tmp_path,
@@ -569,7 +569,7 @@ class TestPlanFormatCheck:
 
     def test_edit_tool_triggers_check(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 先に崩れた plan を作り、Edit ツールからのフック通知を検証する
+        # 先に崩れた plan を生成し、Edit ツールからのフック通知を検証する
         content = "# タイトル\n\n## 背景\n\nx\n"
         plan = _write_plan(plans, "edit.md", content)
         result = _run(

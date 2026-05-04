@@ -19,7 +19,7 @@ def import_winreg() -> typing.Any:
 
 
 def read_user_env_var(name: str) -> tuple[str | None, int]:
-    r"""`HKCU\\Environment` からユーザー環境変数を読み出す。
+    r"""`HKCU\\Environment` からユーザー環境変数を読み取る。
 
     戻り値は `(値, 値型)` のタプル。値が存在しない場合は `(None, winreg.REG_SZ)`。
     """
@@ -37,7 +37,7 @@ _SYSTEM_ENV_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment
 
 
 def read_system_env_var(name: str) -> tuple[str | None, int]:
-    r"""`HKLM\\SYSTEM\\...\\Environment` からシステム環境変数を読み出す。
+    r"""`HKLM\\SYSTEM\\...\\Environment` からシステム環境変数を読み取る。
 
     戻り値は `(値, 値型)` のタプル。値が存在しない場合は `(None, winreg.REG_SZ)`。
     通常ユーザーでも読み取りは可能（書き込みは管理者権限が必要）。

@@ -258,7 +258,7 @@ class TestBuildManagedSettings:
 
         GitHub raw URL に安易に差し戻されると WebView で CSS が
         拒否される (Content-Type が text/plain + nosniff のため) ので、
-        jsDelivr URL であることを明示的にアサートする予防線を張る。
+        jsDelivr URL であることを明示的にアサートする予防線を設ける。
         """
         settings = mod._build_managed_settings(hostname="test", is_user_scope=True)
         assert settings["markdown.styles"] == [mod._MARKDOWN_STYLE_URL]

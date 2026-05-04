@@ -146,7 +146,7 @@ def _main() -> int:
         return 0
 
     # 各通知は 1 セッション 1 回までに制限する。理由:
-    #   - Claude Code は block を受けると再度 Stop を試みるため、
+    #   - Claude Code は block を受信すると再度 Stop を試みるため、
     #     同一メッセージの繰り返しに意味がない
     #   - 質問検出の transcript flush タイミング問題
     #     （未フラッシュ時の質問検出失敗）も 2 回目以降の Stop で自然に通過する

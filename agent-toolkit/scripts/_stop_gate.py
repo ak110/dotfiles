@@ -237,7 +237,7 @@ def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Ite
     - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
       1 ターンとして統合する
     - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
-      間に挟まった時点でターン境界とみなし走査を終える
+      間に介在した時点でターン境界とみなし走査を終える
     - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
 
     transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
@@ -256,11 +256,11 @@ def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Ite
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             if first_msg_id is not None:
-                # 別エントリが間に挟まった → 同一ターンの探索終了
+                # 別エントリが間に介在 → 同一ターンの探索終了
                 saw_non_assistant = True
             continue
         if saw_non_assistant:
-            # 直前のアシスタントエントリとの間に別エントリが挟まっている → 別ターン
+            # 直前のアシスタントエントリとの間に別エントリが介在 → 別ターン
             return
         message = entry.get("message")
         if not isinstance(message, dict):

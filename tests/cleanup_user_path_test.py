@@ -179,7 +179,7 @@ class TestRun:
         assert cleanup_user_path.run() is False
 
     def test_system_read_failure_logs_warning(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
-        """システム側読み込み失敗時は警告ログを出して False を返し、書き戻しは行わない。"""
+        """システム側読み込み失敗時は警告ログを表示して False を返し、書き戻しは行わない。"""
         monkeypatch.setattr(cleanup_user_path.sys, "platform", "win32")
         write_calls: list[tuple[str, str, int]] = []
 

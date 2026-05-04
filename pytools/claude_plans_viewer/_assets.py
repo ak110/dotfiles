@@ -592,7 +592,7 @@ REMOTE_HELPER_SCRIPT = r'''# /// script
 操作種別はargvで受け取る:
   - list           : ~/.claude/plans配下の.mdファイル一覧をJSON文字列でstdoutへ出力する
   - read <b64>     : 指定相対パスのファイル本文をbase64エンコードしてstdoutへ出力する
-  - watch          : ~/.claude/plans配下をwatchdogで監視し、行区切りJSONをstdoutへ流す
+  - watch          : ~/.claude/plans配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する
 
 watch サブコマンドのプロトコル（行区切りJSON）:
   - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
@@ -742,7 +742,7 @@ def watch_files() -> int:
     if ROOT.is_dir():
         observer.schedule(Handler(), str(ROOT), recursive=True)
         observer.start()
-    # observer起動後にsnapshotを出すことで、起動以前の変更取りこぼしを排除する。
+    # observer起動後にsnapshotを発行することで、起動以前の変更取りこぼしを排除する。
     _emit({"type": "snapshot", "entries": _scan_entries()})
 
     ping_thread = threading.Thread(target=ping_loop, daemon=True)

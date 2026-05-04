@@ -62,7 +62,7 @@ def find_dotfiles_root() -> Path | None:
 def format_cli_error(result: subprocess.CompletedProcess[str] | None) -> str:
     """CLI 失敗時のログに付ける stderr/stdout の簡潔な連結文字列を返す。
 
-    Claude Code CLI は本質的なエラーメッセージを stderr 側ではなく stdout に出すことがあり、
+    Claude Code CLI は本質的なエラーメッセージを stderr 側ではなく stdout に書き込むことがあり、
     stderr のみでは原因特定が難しい。双方を併記してログに載せる。
     """
     if result is None:
@@ -167,7 +167,7 @@ def load_json_dict(
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag: str | None = None) -> bool:
-    """テキストファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に書き出す。
+    """テキストファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に保存する。
 
     Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
     ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。
@@ -206,7 +206,7 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
 
 
 def atomic_write_json(path: Path, data: object, *, tag: str | None = None) -> bool:
-    """JSON ファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に書き出す。
+    """JSON ファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に保存する。
 
     Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
     ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。

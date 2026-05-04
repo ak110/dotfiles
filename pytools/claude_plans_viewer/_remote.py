@@ -51,7 +51,7 @@ REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
 REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
 
-# SSHランナーの抽象シグネチャ。テストではfake実装を差し込み、本番は`default_ssh_runner`を使う。
+# SSHランナーの抽象シグネチャ。テストではfake実装を注入し、本番は`default_ssh_runner`を使う。
 # (host, op, args) -> stdout (UTF-8文字列)。失敗時は例外を送出する。
 SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
 
@@ -124,7 +124,7 @@ class RemoteWatcher:
         self.host = host
         self.state = state
         self._helper_script = helper_script
-        # 長時間維持された接続が切れた後の再接続時にバックオフが最大値から始まらないよう、
+        # 長時間維持された接続が途絶した後の再接続時にバックオフが最大値から始まらないよう、
         # snapshot受信（接続成功）時にリセットする。
         self._backoff = REMOTE_BACKOFF_INITIAL_SEC
 
@@ -276,7 +276,7 @@ async def terminate_process(proc: _async_subprocess.Process) -> None:
 def is_safe_remote_relpath(rel: str) -> bool:
     """SSHヘルパーへ渡す前に相対パスのトラバーサルを事前検証する。
 
-    リモート側でも検証するが、サーバー側で先に弾くことで不要なSSH呼び出しを避け、
+    リモート側でも検証するが、サーバー側で先に拒否することで不要なSSH呼び出しを避け、
     ログにも危険な相対パスが残らないようにする。
     """
     if not rel or rel.startswith("/") or "\\" in rel:

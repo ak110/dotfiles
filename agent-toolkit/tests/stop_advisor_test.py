@@ -48,9 +48,9 @@ def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
 
 
 def _write_transcript(tmp_path: pathlib.Path, user_texts: str | list[str]) -> pathlib.Path:
-    """ユーザー発話を JSONL 形式の transcript として書き出す。
+    """ユーザー発話を JSONL 形式の transcript として保存する。
 
-    文字列 1 つを渡すと user turn 1 つとして、リストを渡すと複数の user turn として書き出す。
+    文字列 1 つを渡すと user turn 1 つとして、リストを渡すと複数の user turn として保存する。
     """
     if isinstance(user_texts, str):
         user_texts = [user_texts]
@@ -67,7 +67,7 @@ def _write_transcript_with_assistant_last(
     assistant_content: list[dict],
     user_text: str = "hello",
 ) -> pathlib.Path:
-    """アシスタントターンを末尾に持つ transcript を書き出す。
+    """アシスタントターンを末尾に持つ transcript を保存する。
 
     直前アシスタントターン走査（完了文言ゲート・質問中判定）の検証で共有する。
     """
@@ -274,7 +274,7 @@ class TestUncommittedChanges:
         content = [{"type": "text", "text": _COMPLETION_TEXT}]
         transcript = _write_transcript_with_assistant_last(tmp_path, content)
         # 1 回ブロック後、後続の振り返り提案ブロックへフォールスルーする。
-        # `stop_advice_given` を併せて立てて振り返り側も即 approve とし、未コミット側のみ通過することを示す。
+        # `stop_advice_given` を併せて設定し振り返り側も即 approve とし、未コミット側のみ通過することを示す。
         _write_state(tmp_path, "limit", {"uncommitted_block_count": 1, "stop_advice_given": True})
         result = _run(
             {"session_id": "limit", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -459,7 +459,7 @@ class TestQuestionSuppressesUncommittedBlock:
     ):
         """同一 message.id のエントリが分割された場合、前のエントリの質問テキストを検出する。
 
-        テキストエントリの後にツール呼び出しのみのエントリが来る場合（競合状態:
+        テキストエントリの後にツール呼び出しのみのエントリが続く場合（競合状態:
         ツールエントリが最後に flush された状態でフックが発火）、
         前のエントリの質問テキストを確認してブロックを抑制する。
         """
@@ -505,7 +505,7 @@ class TestQuestionSuppressesUncommittedBlock:
         """前のターンに質問があっても、最新ターンが質問でなければブロックする。
 
         異なる message.id を持つエントリは別ターンとして扱い、
-        ユーザー応答を挟んだ後のテキスト＋ツール呼び出しエントリ（完了文言あり・質問なし）で
+        ユーザー応答が介在した後のテキスト＋ツール呼び出しエントリ（完了文言あり・質問なし）で
         ブロックを通過させる。
         """
         repo = make_dirty_repo(tmp_path)

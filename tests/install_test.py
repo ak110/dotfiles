@@ -3,7 +3,7 @@
 隔離 `$HOME` に現在のリポジトリを複製して install.sh を実行し、chezmoi による
 デプロイが行われることを検証する。外部ネットワーク依存を避けるため:
 
-- git clone 分岐は事前に `$FAKE_HOME/dotfiles` を作って回避
+- git clone 分岐は事前に `$FAKE_HOME/dotfiles` を用意して回避
 - chezmoi ダウンロード分岐はシステムの chezmoi バイナリを `$FAKE_HOME/.local/bin/`
   にコピーして回避
 """

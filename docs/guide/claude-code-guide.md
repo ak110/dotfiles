@@ -151,7 +151,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `/spec-driven` — 大規模な機能追加・改修向けの軽量SDDワークフロー
-- `/export-for-resume` — 議論が発散した時の現状スナップショットを書き出す
+- `/export-for-resume` — 議論が発散した時の現状スナップショットを出力する
 
 ### 明示呼び出し専用のスキル
 

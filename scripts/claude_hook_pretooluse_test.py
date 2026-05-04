@@ -17,7 +17,7 @@ _HOME = pathlib.Path.home()
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_pretooluse.py"
 
-# 文字列リテラルで直接書くと本ファイル自身が警告を出す原因になるため、
+# 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
 # テスト対象の「言及される名前」はプログラム的に組み立てる。
 _LOCAL_MD = "CLAUDE" + ".local.md"
 
@@ -265,7 +265,7 @@ class TestPs1DirectivesBlock:
     def test_indented_directive_blocks(self):
         """行頭にインデントされたディレクティブはブロックされること (I-2)。
 
-        関数/条件ブロック内に書かれている可能性があり、スクリプト全体には効かないため。
+        関数/条件ブロック内に書かれている可能性があり、スクリプト全体には適用されないため。
         """
         content = "    " + self._OK_HEADER + "Write-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
@@ -341,7 +341,7 @@ class TestPersonalFileMentionWarning:
         assert _LOCAL_MD in _get_additional_context(result)
 
     def test_backtick_wrapped_reference_also_warns(self):
-        """バックティック囲みでも警告は出す (文脈依存のため最終判断は LLM に委ねる)。"""
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断は LLM に委ねる)。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -355,7 +355,7 @@ class TestPersonalFileMentionWarning:
         assert _LOCAL_MD in _get_additional_context(result)
 
     def test_editing_target_file_itself_is_allowed_silently(self):
-        """対象ファイル自体の編集は正当な操作として警告も出さない。"""
+        """対象ファイル自体の編集は正当な操作として警告も表示しない。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -412,7 +412,7 @@ class TestPersonalFileMentionWarning:
         assert "warn" in msg.lower()
 
     def test_triple_underscore_in_backticks_also_warns(self):
-        """バックティック囲みでも警告は出す (文脈依存のため最終判断は LLM に委ねる)。"""
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断は LLM に委ねる)。"""
         result = _run(
             {
                 "tool_name": "Write",

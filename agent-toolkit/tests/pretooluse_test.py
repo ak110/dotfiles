@@ -78,7 +78,7 @@ class TestMojibakeCheck:
         result = _run(
             {
                 "tool_name": "Edit",
-                "tool_input": {"file_path": "/tmp/a.txt", "old_string": "壊れた\ufffd文字", "new_string": "壊れた文字"},
+                "tool_input": {"file_path": "/tmp/a.txt", "old_string": "破損した\ufffd文字", "new_string": "破損した文字"},
             }
         )
         assert result.returncode == 0

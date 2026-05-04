@@ -103,7 +103,7 @@ class TestClean:
 
         _claudize(target, template_dir)
 
-        # 旧ディレクトリも作って削除対象に含める
+        # 旧ディレクトリも生成して削除対象に含める
         legacy_dir = target / ".claude" / "rules" / "agent-basics"
         legacy_dir.mkdir(parents=True)
         (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")

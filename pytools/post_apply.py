@@ -155,7 +155,7 @@ def _main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = Non
     failed = [r for r in results if not r.ok]
     updated = [r for r in results if r.ok and r.changed]
     skipped = [r for r in results if r.ok and not r.changed]
-    # logger.info("") だと format により末尾空白が付与されるため、stdout に直接書き出す。
+    # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
     print(flush=True)
     logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
     _print_plugin_recommendations(recommendations)
@@ -172,7 +172,7 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
     print(flush=True)
     logger.info("推奨プラグイン設定:")
     # コマンド行はそのままコピー&ペーストで実行されるため、basicConfig のインデントを避けて
-    # stdout に直接書き出す。cmd.exe では `^` 継続後に行頭空白が前行へ連結されたまま残り、
+    # stdout に直接出力する。cmd.exe では `^` 継続後に行頭空白が前行へ連結されたまま残り、
     # `&& <空白>...` の空白がコマンド名として解釈されて貼り付けが失敗するため、行頭は無インデントとする。
     if len(recommendations) == 1:
         print(recommendations[0], flush=True)

@@ -171,7 +171,7 @@ def _hostname_color(*, hostname: str | None = None) -> str:
     """ホスト名の SHA-256 ハッシュから CVD-safe な淡色パレットを引く。
 
     ``_HOST_COLORS`` の離散パレットをハッシュインデックスで参照するため、
-    2 ホスト同士が肉眼で区別できない近似色に落ちることは起こらない。
+    2 ホスト同士が肉眼で区別できない近似色になることは起こらない。
     完全一致の衝突率は 1/len(パレット) で上昇するが、視覚的区別性を優先する。
     """
     hostname = hostname or socket.gethostname()

@@ -17,8 +17,8 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
      配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
    - ただし `settings.json` のように Claude Code 自身が書き換える非 chezmoi 管理
      ファイルもあり、機械的にブロックすると誤判定で作業を阻害する。
-     最終判断は LLM に委ねるため、ブロックせず警告のみ出す。
-   - 警告を出さない対象:
+     最終判断は LLM に委ねるため、ブロックせず警告のみ表示する。
+   - 警告を表示しない対象:
      - サブツリー: `plans/` / `projects/` / `todos/` /
        `shell-snapshots/` / `ide/` / `statsig/` (Claude Code のランタイム領域)
      - ファイル名: `settings.json` (Claude Code 自身が書き換える非 chezmoi 管理設定)
@@ -36,7 +36,7 @@ mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Cod
    - 他のリポジトリ管理ファイルから参照すると、無視指定などを通じてファイル名自体が
      コミットに漏れる原因になる。一方で配布対象ドキュメントで利用者に同名ファイル作成を
      推奨する文脈など、正当な言及もある。文脈依存のため最終判断は LLM に委ね、
-     hook は緩い警告のみを出してブロックはしない
+     hook は緩い警告のみを表示してブロックはしない
    - `file_path` 自体が対象パターンに一致するファイルの場合は、
      ファイル自身の作成・編集として警告もスキップする
 
@@ -166,7 +166,7 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
 
 # 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
 # 行頭厳格マッチ (インデント不可) にすることで「コメント内に文字列が含まれるだけ」や
-# 「関数/条件ブロック内に書かれている (= スクリプト全体には効かない)」ケースをブロックする。
+# 「関数/条件ブロック内に書かれている (= スクリプト全体には適用されない)」ケースをブロックする。
 _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
@@ -248,7 +248,7 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
     chezmoi の配布先のため、配布対象ファイルを編集すると次回 `chezmoi apply` で
     上書きされる。配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
     ただし `settings.json` など非 chezmoi 管理ファイルを機械的に判別するのは
-    難しく、誤判定でブロックすると作業が止まるため、警告のみ出し判断は LLM に委ねる。
+    難しく、誤判定でブロックすると作業が止まるため、警告のみ表示し判断は LLM に委ねる。
     """
     if not file_path:
         return None
@@ -322,7 +322,7 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
     対象ファイル自身の編集は作成・更新として警告をスキップする。
-    文脈依存の判断は LLM に委ね、hook は緩い警告のみを出してブロックはしない。
+    文脈依存の判断は LLM に委ね、hook は緩い警告のみを表示してブロックはしない。
     """
     messages: list[str] = []
     if not _is_claude_local_md(file_path):
@@ -354,6 +354,6 @@ if __name__ == "__main__":
     try:
         sys.exit(_main())
     except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
-        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出す
+        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に表示する
         traceback.print_exc()
         sys.exit(0)

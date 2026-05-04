@@ -55,7 +55,7 @@ def _marketplace_paths(
 
 
 def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """known_marketplaces.json に対象 marketplace のエントリを書き出す。"""
+    """known_marketplaces.json に対象 marketplace のエントリを保存する。"""
     path.write_text(
         json.dumps({_claude_common.MARKETPLACE_NAME: entry}, ensure_ascii=False),
         encoding="utf-8",
@@ -63,7 +63,7 @@ def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
 
 
 def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを書き出す。"""
+    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを保存する。"""
     path.write_text(
         json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}, ensure_ascii=False),
         encoding="utf-8",
@@ -248,7 +248,7 @@ class TestRewriteSettingsExtraKnownEntry:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """settings.json が存在しない場合は何も書かず True を返す (勝手に作らない)。"""
+        """settings.json が存在しない場合は何も書かず True を返す (勝手に新規作成しない)。"""
         _known, settings = marketplace_paths
         assert not settings.exists()
 
@@ -367,7 +367,7 @@ class TestRefreshMarketplace:
         assert _claude_common.MARKETPLACE_NAME in update_calls[0]
 
     def test_cli_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        """CLI が失敗しても例外を出さず False を返す (best-effort)。"""
+        """CLI が失敗しても例外を発生させず False を返す (best-effort)。"""
         monkeypatch.setattr(
             _claude_common.subprocess,
             "run",

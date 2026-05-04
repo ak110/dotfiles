@@ -38,7 +38,7 @@ def is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 class PlansEventHandler(watchdog.events.FileSystemEventHandler):
-    """watchdogのイベントを受けてSSE購読者へ通知するハンドラ。
+    """watchdogのイベントを受信してSSE購読者へ通知するハンドラ。
 
     watchdogコールバックはwatchdog側のスレッドで実行されるため、
     asyncioループへ`run_coroutine_threadsafe`でブリッジする。
@@ -64,7 +64,7 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
         # `FileMovedEvent`はsrc_pathとdest_pathの両方を確認する。
         # atomic-write保存（一時ファイルに書き込み後にrenameする保存方式）では
         # `FileMovedEvent(src_path="plan.md.tmp", dest_path="plan.md")`となり、
-        # src_pathだけ見ると.md以外として除外されて自動リロードが機能しない。
+        # src_pathだけ参照すると.md以外として除外されて自動リロードが機能しない。
         if isinstance(event, watchdog.events.FileMovedEvent):
             dest = pathlib.Path(str(event.dest_path))
             if not (is_watched_path(src, self.root) or is_watched_path(dest, self.root)):
@@ -138,7 +138,7 @@ def resolve_css_path() -> pathlib.Path | None:
         return candidate
     # 念のためフォールバック。
     # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できるはず。
-    # `pytools/claude_plans_viewer/_local.py`から見てリポジトリルートは2階層上。
+    # `pytools/claude_plans_viewer/_local.py`の位置を起点とするとリポジトリルートは2階層上。
     candidate = pathlib.Path(__file__).resolve().parents[2] / "share" / "vscode" / "markdown.css"
     if candidate.is_file():
         return candidate
