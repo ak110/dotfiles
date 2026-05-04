@@ -73,7 +73,8 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 `failed`かつ`diagnostics=0`のとき、`command.message`に生出力の抜粋が入る。
 切り詰めは「先頭ブロック + `... (truncated)` + 末尾ブロック」のハイブリッド方式で、
 `jsonl-message-max-chars`（既定2000文字）を`head : tail = 1 : 4`で配分する。
-冒頭にエラー要約を表示するツール（editorconfig-checker等）と末尾にスタックトレースを表示するツール（pytest／mypy等）の双方を救う。
+冒頭にエラー要約を表示するツール（editorconfig-checker等）と
+末尾にスタックトレースを表示するツール（pytest／mypy等）の双方を取りこぼさない。
 
 切り詰めが起きると`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
 `archive`にはアーカイブ内の相対パスが入る。
@@ -229,3 +230,9 @@ llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含
   `guide/configuration-tools/index.md`
 - 推奨設定（Pythonプロジェクト・タスクランナー・CI）: `guide/recommended/index.md`
 - 非Python推奨設定（TypeScript／JS・Rust・.NET）: `guide/recommended-nonpython/index.md`
+
+カスタムコマンドを設定する際は、`{command}-severity`（`"error"` / `"warning"`）と
+`{command}-hints`（文字列配列）が指定できる。
+`severity = "warning"`はパイプラインを止めずに警告通知する用途に使う。
+`{command}-path`・`{command}-args`・`{command}-fix-args`に含まれる`~`は、
+subprocess引数組み立て直前にホームディレクトリへ展開される。

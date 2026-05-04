@@ -17,7 +17,7 @@ agent-toolkitプラグイン同梱の辞書ファイル（`agent-toolkit/scripts
   ディレクトリの場合は対象拡張子（`.md` `.py` `.txt` `.yaml` `.yml` `.toml`）を
   再帰的に走査し、`.git`・`.venv`・`node_modules`・`__pycache__`・各種キャッシュ
   ディレクトリは除外する
-- 違反行は標準エラーへ `path:Lnn:Cnn [match] …抜粋…` 形式で列挙する
+- 違反行は標準エラーへ `path:line:col [match] …抜粋…` 形式で列挙する
 - 違反が1件以上あれば終了コード1、無ければ0
 - 検出辞書をエージェントのコンテキストへ持ち込まない設計のため、
   本スクリプトの実行結果（stderr）を読む際は注意する
