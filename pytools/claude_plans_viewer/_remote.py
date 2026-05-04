@@ -30,7 +30,7 @@ SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
 SSH_TIMEOUT_SEC = 30.0
 
 # RPCリクエスト1件あたりのタイムアウト秒。
-# 常駐SSH接続が一時的に詰まった場合にfallback経路へ切り替えるための値。
+# 常駐SSH接続の応答が一時的に遅延した場合にfallback経路へ切り替えるための値。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 
 # `serve`用のSSH追加オプション。
@@ -73,7 +73,7 @@ LineSource = typing.AsyncIterator[str]
 def _build_serve_remote_command(helper_size: int) -> str:
     """`serve`サブコマンド用のリモート実行シェルコマンド文字列を組み立てる。
 
-    stdinの先頭`helper_size`バイトをヘルパースクリプトとしてリモートへ書き出してから
+    stdinの先頭`helper_size`バイトをヘルパースクリプトとしてリモートへ保存してから
     `uv run --script <配置先> serve`に`exec`する。
     残りのstdinは置換後のserveプロセスのstdinとなり、RPC通信路として使われる。
     `head -c <N>`は読み取りバイト数を限定するため、stdinに残った行JSONリクエストが
@@ -360,7 +360,7 @@ class RemoteWatcher:
     def _resolve_response(self, event: typing.Mapping[str, typing.Any]) -> None:
         """`type=response`イベントに対し、対応するpending Futureを解決する。
 
-        対応Futureが既に取り消されている／タイムアウト後の遅延応答である場合は黙って捨てる。
+        対応Futureが既に取り消されている／タイムアウト後の遅延応答である場合は黙って破棄する。
         """
         req_id = event.get("id")
         if not isinstance(req_id, int):

@@ -148,29 +148,29 @@ class TestMarkdownCache:
         assert cache.get(("local", "a.md", 2.0)) == "<p>new</p>"
 
     def test_evicts_oldest_on_entry_limit(self):
-        """エントリ数上限を超えると最古のエントリから追い出される（LRU）。"""
+        """エントリ数上限を超えると最古のエントリから削除される（LRU）。"""
         cache = _local.MarkdownCache(max_entries=2, max_bytes=1024 * 1024)
         cache.put(("local", "a.md", 1.0), "<p>a</p>")
         cache.put(("local", "b.md", 1.0), "<p>b</p>")
         # `a.md`を参照して最近使用扱いに昇格させる。
         assert cache.get(("local", "a.md", 1.0)) == "<p>a</p>"
         cache.put(("local", "c.md", 1.0), "<p>c</p>")
-        # `b.md`が最古（最終アクセスが最初）のため追い出される。
+        # `b.md`が最古（最終アクセスが最初）のため削除される。
         assert cache.get(("local", "b.md", 1.0)) is None
         assert cache.get(("local", "a.md", 1.0)) == "<p>a</p>"
         assert cache.get(("local", "c.md", 1.0)) == "<p>c</p>"
 
     def test_evicts_on_byte_limit(self):
-        """総バイト数上限を超えると古い順に追い出される。"""
+        """総バイト数上限を超えると古い順に削除される。"""
         # 1エントリ約100バイト。max_bytes=200で2件程度に制限される。
         big_html = "x" * 100
         cache = _local.MarkdownCache(max_entries=100, max_bytes=200)
         cache.put(("local", "a.md", 1.0), big_html)
         cache.put(("local", "b.md", 1.0), big_html)
         cache.put(("local", "c.md", 1.0), big_html)
-        # 最古の`a.md`は追い出される。
+        # 最古の`a.md`は削除される。
         assert cache.get(("local", "a.md", 1.0)) is None
-        # 上限の二重制約のうち先に到達した方で追い出すため、現存数は最大2件。
+        # 上限の二重制約のうち先に到達した方で削除するため、現存数は最大2件。
         assert len(cache) <= 2
         assert cache.total_bytes() <= 200
 
@@ -1175,7 +1175,7 @@ class TestRemoteWatcherRpc:
         async def _drive() -> None:
             # `request`が送信を完了してpendingに登録されるまで少し待つ。
             await asyncio.sleep(0.05)
-            # サーバー側のJSON行から取り出した応答を`_handle_event`へ流す。
+            # サーバー側のJSON行から取り出した応答を`_handle_event`へ渡す。
             await watcher._handle_event({"type": "response", "id": 1, "ok": True, "data": "QUJD", "mtime_epoch": 12.5})
 
         request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))

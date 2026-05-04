@@ -616,7 +616,7 @@ INDEX_HTML = (
 # `serve`サブコマンドではwatchの常駐SSH接続をRPC通信路として再利用するため、stdinから
 # JSON行リクエストを受け取り、stdoutへ既存watchイベントと混在させて応答を返す。
 # `serve`を使う配置経路では、リモートの`~/.cache/claude_plans_viewer/helper.py`へ
-# 本スクリプトを書き出してから`uv run --no-project --script <path> serve`で起動する。
+# 本スクリプトを配置してから`uv run --no-project --script <path> serve`で起動する。
 # `read`サブコマンドはfallback用途で残し、応答はJSON文字列に統一して`mtime_epoch`を同梱する。
 # raw文字列リテラルで保持し、エスケープシーケンスを内部Pythonの解釈に委ねる。
 REMOTE_HELPER_SCRIPT = r'''# /// script

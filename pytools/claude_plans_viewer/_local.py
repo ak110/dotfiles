@@ -17,7 +17,7 @@ import watchdog.events
 from pytools.claude_plans_viewer import _assets, _state
 
 # Markdownレンダリング結果LRUキャッシュの上限。
-# エントリ数とバイト数の二重上限のうち、先に到達した側で古い順に追い出す。
+# エントリ数とバイト数の二重上限のうち、先に到達した側で古い順に削除する。
 # 連続選択や前後ナビゲーションでヒットさせつつ、長時間運用でも有界に保つ値とする。
 MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
