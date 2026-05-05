@@ -1,13 +1,7 @@
-r"""Windows 向け libarchive.dll の自動インストーラー。
+"""Windows向けlibarchive.dllの自動インストーラー。
 
-本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-MSYS2 リポジトリから libarchive と動的依存の pkg.tar.zst を取得し、必要な
-DLL だけを `%USERPROFILE%\\.local\\lib\\libarchive\\` へ展開して User scope
-の `PATH` へ追記する。既に導入済みの場合は何もしない。
-
-`install_claude_plugins.py` と同じ「想定される失敗は自前で吸収する」方針を
-踏襲している。ネットワーク障害・MSYS2 側のレイアウト変更・権限不足などは
-すべてログ警告を表示したうえで False を返し、post_apply 全体は継続させる。
+`chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
+MSYS2リポジトリからlibarchiveと動的依存パッケージのDLLを取得・配置する。
 """
 
 import ctypes

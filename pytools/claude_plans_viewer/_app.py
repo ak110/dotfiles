@@ -1,13 +1,4 @@
-"""Quartアプリ生成とAPIハンドラ。
-
-`create_app`はパッケージ外へも公開する公開API。それ以外のヘルパー（`resolve_request_target`・
-`safe_base_path`）はpackage-internalとしてunderscoreなしで定義する。
-
-本モジュールは`pytilpack.quart.ProxyFix`を採用しており、リバースプロキシ前段は
-`X-Forwarded-Prefix`を保持して転送する構成（prefixを除去しない構成）を前提とする。
-Quartは`scope.root_path`をパス冒頭から除去する仕様のため、prefixを除去する構成では404を返す。
-`safe_base_path`は信頼境界として`request.root_path`を厳格に検査する。
-"""
+"""Quartアプリ生成とAPIハンドラ。"""
 
 import asyncio
 import contextlib
@@ -287,6 +278,9 @@ def create_app(
     # X-Forwarded-Proto/Prefix を解釈してASGI scopeへ反映するミドルウェアを介在させる。
     # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンを使うことで、
     # `app.config`等のハンドラ参照は維持しつつ、ASGIディスパッチだけを上流に通す。
+    # 前提: リバースプロキシ前段が`X-Forwarded-Prefix`を保持して転送する構成
+    # （prefixを除去しない構成）であること。Quartは`scope.root_path`をパス冒頭から除去するため、
+    # prefixを除去する構成では404を返す。
     # method-assignとASGIプロトコル不一致は意図的なため型チェッカは抑制する。
     app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app

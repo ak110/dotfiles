@@ -6,21 +6,11 @@
 """口語的な日本語表現の混入を検査する独立スクリプト。
 
 writing-standards SKILL.mdの「書き言葉・フォーマルな表現を厳守する」規約を機械化する。
-agent-toolkitプラグイン同梱の辞書ファイル（`agent-toolkit/scripts/_colloquial_words.txt`
-と `_colloquial_words_allow.txt`）を共通ロジック経由で読み込み、
+agent-toolkitプラグイン同梱の辞書ファイル（`agent-toolkit/scripts/_colloquial_words.txt`と
+`_colloquial_words_allow.txt`）を共通ロジック経由で読み込み、
 対象ファイルから検出された口語表現を列挙する。
-
-仕様:
-
-- 検出は `agent-toolkit/scripts/_colloquial_check.py` の `scan_text` を使う
-- 引数にはファイルパスとディレクトリパスの両方を指定可能。
-  ディレクトリの場合は対象拡張子（`.md` `.py` `.txt` `.yaml` `.yml` `.toml`）を
-  再帰的に走査し、`.git`・`.venv`・`node_modules`・`__pycache__`・各種キャッシュ
-  ディレクトリは除外する
-- 違反行は標準エラーへ `path:line:col [match] …抜粋…` 形式で列挙する
-- 違反が1件以上あれば終了コード1、無ければ0
-- 検出辞書をエージェントのコンテキストへ持ち込まない設計のため、
-  本スクリプトの実行結果（stderr）を読む際は注意する
+検出辞書をエージェントのコンテキストへ持ち込まない設計のため、
+本スクリプトの実行結果（stderr）を読む際は注意する。
 """
 
 from __future__ import annotations

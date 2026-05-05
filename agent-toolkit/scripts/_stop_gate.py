@@ -1,10 +1,4 @@
-"""Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
-
-`stop_advisor.py` から import して使う。
-
-公開 API: `is_real_session_end(transcript_path)` のみ。
-PEP 723 ヘッダーなし（通常モジュールとして import 可能にするため）。
-"""
+"""Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。"""
 
 import collections.abc
 import json

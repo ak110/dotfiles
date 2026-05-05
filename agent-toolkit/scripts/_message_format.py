@@ -1,10 +1,4 @@
-"""Claude Code agent-toolkit: LLM 宛てメッセージ整形共通モジュール。
-
-`pretooluse.py` / `posttooluse.py` / `stop_advisor.py` から import して使う。
-
-公開 API: `llm_notice(body, hook_id, tag)` のみ。
-PEP 723 ヘッダーなし（通常モジュールとして import 可能にするため）。
-"""
+"""Claude Code agent-toolkit: LLM 宛てメッセージ整形共通モジュール。"""
 
 # LLM 宛てメッセージの共通サフィックス。
 # 詳細は skills/writing-standards/references/claude-hooks.md を参照。

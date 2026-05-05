@@ -1,21 +1,4 @@
-"""SPA・PWA等のインライン資産。
-
-`INDEX_HTML`は`<style>`と`<script>`を別定数（`_INDEX_CSS`・`_INDEX_JS`）として持ち、
-モジュール読み込み時に1つの文字列へ組み立てる。
-JSが伸びても1定数の見通しを維持できるようにするための分割。
-
-定数名は同一パッケージ内の兄弟モジュールから参照される前提のため、
-underscore接頭辞を付けない（package-internalとして扱う）。
-パッケージ外への公開可否は`__init__.py`の再export一覧で制御する。
-`_INDEX_CSS`・`_INDEX_JS`は`INDEX_HTML`組立時の中間値として本モジュール内でのみ使うため、
-underscore接頭辞付きのまま残す。
-
-リバースプロキシ越し配信に対応するため、SPAおよびmanifestの絶対パス参照は
-`__BASE_PATH_HTML__` / `__BASE_PATH_JS__`プレースホルダーで保持し、
-`_app.py`側でリクエスト時に`request.root_path`を厳格に検証してから埋め込む。
-
-リモート側ヘルパー本体は`_remote_helper.py`へ独立配置している。
-"""
+"""SPA・PWA等のインライン資産。"""
 
 # share/vscode/markdown.cssが見つからないときの最小フォールバック。
 # editable install前提では使われない想定だが、非editable配布や移動時に備えて持たせる。

@@ -3,24 +3,11 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""bin/ 配下の Linux/Windows ラッパースクリプトペアを生成するジェネレーター。
+"""bin/配下のLinux/Windowsラッパースクリプトペアを生成するジェネレーター。
 
-使い方:
-    scripts/new-bin-cmd <name> <command...>
-
-引数:
-    name    スクリプト名（bin/<name> および bin/<name>.cmd を生成する）
-    command 実行するコマンド（複数トークンはスペースで連結する）
-
-生成物:
-    bin/<name>     (bash, UTF-8, LF, 実行権限付き)
-    bin/<name>.cmd (CP932, CRLF)
-
-副作用:
-    docs/development/development.md のプラットフォーム対応ファイル一覧へエントリをアルファベット順に挿入する。
-
-冪等性:
-    既存エントリがあればスキップする。
+`bin/<name>`（bash、UTF-8、LF、実行権限付き）と`bin/<name>.cmd`（CP932、CRLF）のペアを生成し、
+`docs/development/development.md`のプラットフォーム対応ファイル一覧へエントリをアルファベット順に挿入する。
+既存エントリがあればスキップする。
 """
 
 import argparse

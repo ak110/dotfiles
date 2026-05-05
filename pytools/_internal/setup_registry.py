@@ -1,8 +1,7 @@
-"""Windows レジストリ設定を winreg で直接書き込むモジュール。
+"""Windowsレジストリ設定をwinregで直接書き込むモジュール。
 
-`chezmoi apply` 後処理 (`pytools.post_apply`) から Windows 環境でのみ呼ばれる。
-書き込み対象は `_REGISTRY_SETTINGS` を SSOT とし、`HKEY_CURRENT_USER` 配下のみを扱う。
-非 Windows では何もせずスキップする。
+`chezmoi apply`後処理（`pytools.post_apply`）からWindows環境でのみ呼ばれる。
+書き込み対象は`_REGISTRY_SETTINGS`をSSOTとして`HKEY_CURRENT_USER`配下のみを扱う。
 """
 
 import dataclasses

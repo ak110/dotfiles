@@ -7,14 +7,6 @@
 
 writing-standards SKILL.mdの「1行の表示幅は半角換算で127までを上限」規約を機械化する。
 textlintやmarkdownlintには全角2・半角1で判定する既製ルールが無いため本スクリプトを設ける。
-
-仕様:
-
-- 全角文字（unicodedata.east_asian_widthが`F`/`W`/`A`）を2、それ以外を1としてカウントする
-- フェンス付きコードブロック（``` または ~~~ で開閉）の内側は対象外
-- 表・frontmatterを含む通常本文は閾値の対象とする
-- 違反行は標準エラーへ`path:line 幅=width …先頭抜粋…`形式で列挙する
-- 違反が1件以上あれば終了コード1、無ければ0
 """
 
 from __future__ import annotations

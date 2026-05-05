@@ -3,36 +3,16 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code Stop フック: dotfiles 個人環境専用セッション振り返りプロンプト。
+r"""Claude Code Stopフック: dotfiles個人環境専用セッション振り返りプロンプト。
 
-pyfltr または agent-toolkit スキルを使用したセッションの終了時に、
+pyfltrまたはagent-toolkitスキルを使用したセッションの終了時に、
 それぞれの動作に関する振り返りを促す。
-対象はメインの transcript のみ（サブエージェント履歴は別ファイルのため対象外）。
+対象はメインのtranscriptのみ（サブエージェント履歴は別ファイルのため対象外）。
 
-配布物 hook (`agent-toolkit/scripts/stop_advisor.py`) と同じ Stop イベントで並列発火する前提で書く。
+配布物hook（`agent-toolkit/scripts/stop_advisor.py`）と同じStopイベントで並列発火する前提で書く。
 振り返りメッセージ全体に適用される共通指示
-（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は配布物 hook の reason が出力するため、
-本 hook では当該章固有の指示と、cwd に応じた統合判定
-（dotfiles プロジェクト中なら agent-toolkit 章を「## プロジェクトドキュメント改善提案」へ統合し、
-pyfltr プロジェクト中なら pyfltr 章を同じく統合する）のみを記述する。
-
-動作フロー:
-1. stdin JSON から session_id・transcript_path・cwd を取得する
-2. 状態ファイル `${TMPDIR}/claude-dotfiles-stop-{session_id}.json` を読み、
-   `advice_given == true` なら即 approve で終了する
-3. transcript_path が空または不正な場合は approve で終了する
-4. transcript 内の assistant エントリの tool_use ブロックを走査し、
-   pyfltr 使用（Bash ツールで `\bpyfltr\b` を含むコマンド）と
-   agent-toolkit 使用（Skill ツールで `agent-toolkit:` を含むスキル名）をそれぞれ確認する
-5. 両方一致なしなら approve で終了する
-6. `_stop_gate.is_real_session_end(transcript_path)` が False なら approve で終了する
-7. 状態ファイルに `advice_given = true` を書き込む
-8. cwd から現プロジェクトを判定し、章ごとに統合 or 別建ての指示を生成する
-9. block を出力して振り返りプロンプトを返す
-
-exit code: 常に 0。
-stdout に JSON (decision: approve | block) を出力する。
-例外・想定外入力時は approve にフォールバックする。
+（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は配布物hookのreasonが出力するため、
+本hookでは当該章固有の指示と、cwdに応じた統合判定のみを記述する。
 """
 
 import contextlib

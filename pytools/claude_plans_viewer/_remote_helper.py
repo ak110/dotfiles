@@ -4,32 +4,8 @@
 # ///
 """claude_plans_viewerのリモートホスト側ヘルパー。
 
-操作種別はargvで受け取る:
-  - list           : ~/.claude/plans配下の.mdファイル一覧をJSON文字列でstdoutへ出力する
-  - read <b64>     : 指定相対パスのファイル本文と`mtime_epoch`をJSON文字列でstdoutへ出力する
-  - watch          : ~/.claude/plans配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する
-  - serve          : watchの行ストリームに加え、stdinのRPCリクエストへ応答する常駐モード
-
-read 応答（fallback経路用、単発SSH呼び出し）:
-  {"data":"<base64本文>", "mtime_epoch":<float>}
-
-watch / serve サブコマンドの行プロトコル（行区切りJSON）:
-  - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
-  - {"type":"upsert","path":..., "name":..., "mtime_epoch":...}
-  - {"type":"deleted","path":...}
-  - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
-
-serve サブコマンドのRPC追加（行区切りJSON）:
-  リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
-  応答（stdout）:
-    成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>", "mtime_epoch":<float>}
-    失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
-
-本ファイルはリモートホストの`$HOME/dotfiles/pytools/claude_plans_viewer/_remote_helper.py`に
-チェックアウトされている前提で、SSH経由の短いPython bootstrapから
-`pathlib.Path(...).read_text(encoding="utf-8")`で読み込まれて`exec`される。
-PEP 723ヘッダーは`uv run --no-project --script <path>`で直接実行する場合のために残してあるが、
-通常経路ではbootstrap側で`uv run --no-project --with "watchdog>=6.0.0" python -c ...`が使う。
+操作種別はargvで受け取る（`list`・`read`・`watch`・`serve`）。
+各サブコマンドの入出力プロトコルは対応する関数のdocstringを参照する。
 """
 
 import base64
@@ -109,10 +85,16 @@ def _read_payload(rel_b64: str) -> dict[str, typing.Any]:
 
 
 def list_files() -> None:
+    """`list`サブコマンド: `~/.claude/plans`配下の`.md`ファイル一覧をJSON文字列でstdoutへ出力する。"""
     json.dump(_scan_entries(), sys.stdout, ensure_ascii=False)
 
 
 def read_file(rel_b64: str) -> None:
+    """`read`サブコマンド: 指定相対パスのファイル本文と`mtime_epoch`をJSON文字列でstdoutへ出力する。
+
+    応答形式（fallback経路用、単発SSH呼び出し）:
+        {"data":"<base64本文>", "mtime_epoch":<float>}
+    """
     json.dump(_read_payload(rel_b64), sys.stdout, ensure_ascii=False)
 
 
@@ -218,6 +200,14 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
 
 
 def watch_files() -> int:
+    """`watch`サブコマンド: `~/.claude/plans`配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する。
+
+    行プロトコル（行区切りJSON）:
+        - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
+        - {"type":"upsert","path":..., "name":..., "mtime_epoch":...}
+        - {"type":"deleted","path":...}
+        - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
+    """
     stop_event = threading.Event()
     observer = _start_observer(stop_event)
     # SIGPIPEはping_loopが捕捉してstop_eventを通じて停止経路に乗せる。
@@ -250,7 +240,15 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
 
 def serve() -> int:
-    """watch通知とstdin RPCの両方を1プロセスで処理する常駐モード。"""
+    """`serve`サブコマンド: watchの行ストリームに加え、stdinのRPCリクエストへ応答する常駐モード。
+
+    watch行プロトコルは`watch_files`と共通。
+    RPCプロトコル（行区切りJSON）:
+        リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
+        応答（stdout）:
+            成功: {"type":"response", "id":<int>, "ok":true, "data":"<base64本文>", "mtime_epoch":<float>}
+            失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
+    """
     stop_event = threading.Event()
     observer = _start_observer(stop_event)
 

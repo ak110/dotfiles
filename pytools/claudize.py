@@ -1,10 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
 """Claude Code設定ファイルを配布・同期するコマンド。
 
-配布元ディレクトリ (`.chezmoi-source/dot_claude/rules/agent-toolkit/`) の内容を
-プロジェクト配下の `.claude/rules/agent-toolkit/` へ完全同期する。
-配布先は管理対象であり、ユーザーによる個別カスタマイズを前提としない方針のため、
-配布元との一致をシンプルに保つ (frontmatter 維持や旧ファイル個別追跡は行わない)。
+配布元ディレクトリ（`.chezmoi-source/dot_claude/rules/agent-toolkit/`）の内容を
+プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全同期する。
 """
 
 import argparse

@@ -1,74 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
-r"""アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
+"""アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
 
-既存の bat 前処理ワークフロー (7z で全解凍 → rmdirs → imageconverter → 7z 再圧縮)
-を 1 つのコマンドに統合した Python 実装。設定は YAML ファイルで与え、ignore
-パターンやリネームルール、画像変換オプションを一元管理する。
-
-対応する機能:
-
-- ZIP は Python 標準 ``zipfile`` で展開する。Windows 版 libarchive-c は
-  非 UTF-8 エントリ名 (CP932 等) を Latin-1 相当で str 化するため、SJIS の
-  2 バイト目に含まれる ``0x5C`` がバックスラッシュとして文字列に混入し、
-  Python 側でディレクトリ区切りと誤認される事故が起きる。zipfile は
-  中央ディレクトリのバイト列と bit 11 (Unicode flag) を直接扱えるため、
-  本ツール側でエンコーディング判定とパス検証を掌握できる。
-- ZIP 以外 (RAR / 7z / tar 等) は libarchive-c で選択的解凍する (無視
-  エントリをそもそもディスクへ展開しない)。
-- rgrename 互換のパターンファイル / YAML 直書きルールの混在を許可。
-  rename_rules はアーカイブファイル / ディレクトリ TARGET 側の名前
-  (= 出力 ZIP の stem) にのみ適用される。アーカイブ内のエントリ名には
-  適用されない。
-- 画像変換は `pytools.imageconverter.convert_directory` を関数呼び出しで実行し、
-  呼び元 tqdm で進捗を表示する。寛容モード (LOAD_TRUNCATED_IMAGES) フォールバックで
-  読み込めた画像は警告として `entry_failures` に追加され、変換失敗もエラーとして
-  同じ集約に追加する。どちらの場合も最終出力 ZIP は生成されるが、原本ロストを避けるため
-  バックアップは保持される。
-- アーカイブ内 / ローカルとも展開・コピー・ZIP 出力を natsort 順に揃える。
-  最終 ZIP のエントリ順は POSIX 区切りのフルパス文字列を natsort キーとした
-  自然順となる。
-- 最終出力は無圧縮 ZIP (JPEG + 残ったテキストのみ)。単一ルートディレクトリは
-  平坦化する。
-- バックアップは `<parent>/bk/` に作成し、処理完了後にゴミ箱送り。
-  個別エントリの警告・失敗があった場合は欠落の可能性があるためバックアップを保持する。
-
-YAML 設定ファイルの例 (キー名と既定値は ``RepackConfig`` に対応):
-
-.. code-block:: yaml
-
-    # 解凍時にスキップするファイルのワイルドカード（fnmatch）
-    ignore_files:
-      - "*.pdf"
-      - "*.psd"
-      - "*.mp3"
-      - "*.mp4"
-      - "*.mpg"
-      - "*.avi"
-      - "*.ini"
-      - "*.db"
-
-    # 解凍時にスキップするディレクトリ名の正規表現（ignore-case 既定）
-    ignore_dirs:
-      - "中国語|英語"
-      - "^(EN|CN)$"
-
-    # rgrename 相当のリネームルール（順次適用）
-    # YAML 直書きと既存の rgrename パターンファイル（TAB 区切り UTF-8）の併用を許可。
-    # アーカイブファイル / ディレクトリ TARGET 側の名前 (= 出力 ZIP の stem) にのみ適用される。
-    rename_rules:
-      # YAML 直書きエントリー
-      # - pattern: "^\\[.*?\\]"
-      #   replacement: ""
-      #   target: both # both | file | dir
-      - pattern_file: "C:\\path\\to\\my-rename.txt"
-
-    # 画像変換設定（imageconverter の引数と同等）
-    image:
-      output_type: jpeg
-      max_width: 2048
-      max_height: 1536
-      jpeg_quality: 90
-      repack_png: false
+設定は YAML ファイルで与え、ignore パターン・リネームルール・画像変換オプションを
+一元管理する。
 """
 
 import argparse
@@ -528,6 +462,11 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
     """アーカイブ形式に応じて展開エンジンを切り替える。
 
     ZIP は Python 標準 ``zipfile`` を使い、エンコーディング判定とパス検証をこちらで掌握する。
+    Windows 版 libarchive-c は非 UTF-8 エントリ名 (CP932 等) を Latin-1 相当で
+    str 化するため、SJIS の 2 バイト目に含まれる ``0x5C`` がバックスラッシュとして
+    混入し Python 側でディレクトリ区切りと誤認される事故が起きる。zipfile は
+    中央ディレクトリのバイト列と bit 11 (Unicode flag) を直接扱えるため、
+    本ツール側でエンコーディング判定を掌握できる。
     ZIP 以外 (RAR / 7z / tar 等) は libarchive-c に委ねる。個別エントリの ``OSError`` は
     捕捉してスキップし、(エントリパス, severity, エラー文字列) のリストとして戻り値で返す。
     アーカイブ全体での致命的エラーは再送出する。

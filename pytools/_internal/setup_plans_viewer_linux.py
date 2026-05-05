@@ -1,17 +1,7 @@
-"""claude-plans-viewer の Linux 向け自動起動セットアップ。
+"""claude-plans-viewerのLinux向け自動起動セットアップ。
 
-本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-ホスト名が `euryale` のときに限り、systemd user service ユニット
-(`~/.config/systemd/user/claude-plans-viewer.service`) を冪等に配置・有効化し、
-viewer を常駐起動させる。
-
-ホスト判定は euryale 1台のみとし、その他の Linux ホストでは no-op (False 返却) として、
-`sys.platform` 分岐形式を他ステップにそろえる。
-linger 状態が無効の場合はエンドユーザー向けに 1 行のログで手動有効化を案内する
-(`loginctl enable-linger` を post_apply から sudo で発火しない設計)。
-
-restart は chezmoi apply 直後の viewer コード変更（実装ファイル更新）を取りこぼさず反映するため
-毎回発火する。enable は systemctl 側で冪等のため毎回呼んでも追加コストは小さい。
+`chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
+特定ホストでのみsystemd user serviceユニットを冪等に配置・有効化する。
 """
 
 import getpass

@@ -1,12 +1,4 @@
-"""共有状態とSSE配信ロジック。
-
-Quartアプリの`app.config`へ`BroadcastState`を格納してモジュールレベルの可変状態を避ける。
-debounce窓は`watchdog`が1回の書き込みで複数イベントを発火する性質に対する畳み込み。
-
-クラス・関数名は同一パッケージ内の兄弟モジュールから参照される前提のため、
-underscore接頭辞を付けない（package-internalとして扱う）。
-パッケージ外への公開可否は`__init__.py`の再export一覧で制御する。
-"""
+"""共有状態とSSE配信ロジック。"""
 
 import asyncio
 import contextlib

@@ -1,51 +1,9 @@
-"""VSCode の settings.json をホスト固有設定で更新するモジュール。
+"""VSCodeのsettings.jsonをホスト固有設定で更新するモジュール。
 
-ホスト名から生成した Activity Bar の色と Markdown 関連の CSS 設定を、
-OS に応じた scope の settings.json にマージする。
-
-対象 scope:
-
-- Windows (ローカル VSCode の User scope):
-  ``%APPDATA%/Code/User/settings.json``
-  全 VSCode インスタンスで共有されるユーザー設定。Settings Sync 対象。
-- Linux (Remote SSH 時の Machine scope):
-  ``~/.vscode-server/data/Machine/settings.json``
-  Remote Host ごとの上書き設定。User scope より優先される。
-
-scope ごとの管理対象:
-
-- ``workbench.colorCustomizations`` (ホスト色): 両 scope
-  ホスト名から生成した色で Activity Bar の背景を差し替え、
-  接続中の VSCode ウィンドウがどのマシンのものか一目で分かるようにする。
-- ``markdown-pdf.styles`` (絶対パス): 両 scope
-  各マシンのホームディレクトリに依存するため scope ごとに書き分ける。
-  yzane/vscode-markdown-pdf 拡張は絶対パスを正式サポートする一方、
-  HTTPS URL 指定は PDF 出力で CSS が適用されない可能性が公式 README に
-  示唆されているため、URL 方式には統一しない。
-- ``markdown.styles`` (jsDelivr URL): User scope のみ
-  全マシン共通の URL で指定するため、User scope に 1 度書けば足りる。
-  Machine scope 側には書かない (User scope を Machine scope が上書きする
-  関係だが、同じ値を重複して書く必要がない)。過去のバージョンが
-  Machine scope に絶対パスを書き込んでいた名残が残っている場合は、
-  apply 時に明示的に削除する。
-
-Markdown CSS の指定方式に関する設計メモ:
-
-``markdown.styles`` と ``markdown-pdf.styles`` で指定方式が非対称な点に注意する。
-``markdown.styles`` は VSCode 1.23 (2018) 以降セキュリティ上の制約でホーム配下の
-絶対パスを受け付けず、ワークスペース相対パスまたは HTTPS URL のみを解釈する。
-従来このモジュールが書き込んでいた絶対パスは長らく無視されていた。代替として
-dotfiles リポジトリの CSS を HTTPS URL で配信する方式に切り替えたが、
-GitHub raw URL は CSS ファイルを ``Content-Type: text/plain`` +
-``X-Content-Type-Options: nosniff`` で返すため WebView がスタイルシートとして
-拒否する。そのため ``text/css`` で配信する jsDelivr CDN を経由する必要がある。
-
-マージ方針:
-
-- dict 値は浅いマージ (既存キーを保持しつつ managed 側で上書き)
-- list・スカラー値は managed 側で上書き
-- ``_LEGACY_KEYS_FOR_MACHINE_SCOPE`` は Machine scope 専用で、apply 前に
-  settings.json から削除する (過去バージョンの残骸を除去する目的)。
+ホスト名から生成したActivity Barの色とMarkdown関連のCSS設定を、
+WindowsではUser scope（`%APPDATA%/Code/User/settings.json`）、
+Linux Remote SSHではMachine scope（`~/.vscode-server/data/Machine/settings.json`）の
+settings.jsonへマージする。
 """
 
 import collections.abc

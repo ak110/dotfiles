@@ -1,9 +1,4 @@
-"""コマンドライン引数解析とエントリーポイント。
-
-`_main`は`pyproject.toml`の`[project.scripts]`から参照される公開エントリーポイント。
-historicalにunderscore接頭辞付きで配信されているため互換のためそのまま残す。
-それ以外のヘルパーは同一パッケージ内の参照のみのためunderscore接頭辞を付けない。
-"""
+"""コマンドライン引数解析とエントリーポイント。"""
 
 import argparse
 import asyncio

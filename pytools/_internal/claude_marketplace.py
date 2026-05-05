@@ -1,17 +1,9 @@
-"""install_claude_plugins が担う chezmoi apply 後処理から呼ばれる、marketplace 登録・検証・修復専用モジュール。
+"""marketplace登録・検証・修復モジュール。
 
-本モジュールは marketplace をローカルの dotfiles リポジトリを参照する directory 型で登録する。
-GitHub 型は install-claude.sh/`.ps1` の bootstrap 経路が残している旧形式であり、
-chezmoi apply 経由で呼ばれた際に directory 型へ自動マイグレーションする。
-
-directory 型を使う理由は、dotfiles で編集した内容が push/update サイクルを介さずに
-ユーザー環境へ反映されること。キャッシュ同期は `install_claude_plugins` 側で
-`plugin install` の再実行として行う。
-
-公開 API:
-- `ensure_marketplace()`: marketplace を directory 型で登録する (未登録・旧形式は自動マイグレーション)
-- `repair_marketplace()`: 破損・旧形式の marketplace 登録を段階的に修復する
-- `is_directory_type_registered()`: 現在の登録が directory 型で健全かを返す
+`install_claude_plugins`から呼ばれ、ローカルdotfilesリポジトリ参照の
+directory型でmarketplaceを登録する。
+GitHub型は`install-claude.sh`/`install-claude.ps1`のbootstrap経路が残す旧形式で、
+`chezmoi apply`経由で呼ばれた際にdirectory型へ自動マイグレーションする。
 """
 
 import json

@@ -1,9 +1,4 @@
-"""SSH経由のリモートホスト統合（リモートwatch・リモートファイル取得）。
-
-クラス・関数名は同一パッケージ内の兄弟モジュールから参照される前提のため、
-underscore接頭辞を付けない（package-internalとして扱う）。
-パッケージ外への公開可否は`__init__.py`の再export一覧で制御する。
-"""
+"""SSH経由のリモートホスト統合（リモートwatch・リモートファイル取得）。"""
 
 import asyncio
 import asyncio.subprocess as _async_subprocess
@@ -173,6 +168,10 @@ async def fetch_remote_file(
 
 class RemoteWatcher:
     """1ホスト分のwatch+RPC接続ライフサイクルを担うクラス。
+
+    リモート監視はwatchdogによるpush方式を採用する。
+    ポーリング方式は対象ファイル数が増えた場合や低リソースホストでのCPU/SSH接続コストが
+    懸念されるため、SSH越しに長時間watchプロセスを常駐させて差分イベントだけを配信する。
 
     `run()`の流れ:
       1. host_statusを"connecting"へ更新しSSE配信

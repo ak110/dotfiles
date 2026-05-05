@@ -1,56 +1,9 @@
-"""dotfiles 同梱の Claude Code plugin を自動インストール/更新する。
+"""dotfiles同梱のClaude Code pluginを自動インストール/更新する。
 
-本モジュールは `chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-必要な前提条件をすべて満たす場合だけ動作し、満たさない場合は
-完全にスキップする (dotfiles apply 全体を失敗させないための安全側動作)。
-
-前提条件 (すべて必要):
-
-1. `claude` CLI が PATH にある
-2. `uv` CLI が PATH にある (plugin の hook スクリプトが `uv run --script` で動くため)
-
-対象プラグインは `.claude-plugin/marketplace.json` の `plugins[]` 全件。
-このファイルを SSOT として扱うため、リポジトリ直下にプラグインディレクトリを追加して
-`marketplace.json` に登録するだけで、本モジュールの対象に自動で追加される。
-`keywords` に ``"deprecated"`` を含むエントリは、インストール済みであれば
-自動でアンインストールされる。
-
-前提を満たした場合の処理:
-
-- marketplace 未登録 → `claude plugin marketplace add <dotfiles 絶対パス> --scope=user` で登録
-  (directory 型登録。dotfiles リポジトリを直接参照することで push/update サイクル不要で
-   編集内容が反映される)
-- 旧 GitHub 型登録が残存 → directory 型へ自動マイグレーション (claude_marketplace が担う)
-- deprecated plugin がインストール済み → 検出されたスコープごとにアンインストール
-- 管理対象 plugin が project scope に残存 → アンインストール (user scope 移行用)
-- 対象 plugin が未インストール → `claude plugin install <name>@<marketplace> --scope=user`
-- 対象 plugin がインストール済み + version が乖離
-  → `claude plugin marketplace update <name>` で marketplace メタデータを更新した後、
-     `claude plugin update <name>@<marketplace> --scope=user` で反映。
-     この分岐は directory 型・旧 GitHub 型を区別せず適用され、version 乖離があれば
-     update 経路が優先される
-- 対象 plugin がインストール済み + version が一致 + directory 型登録が健全
-  → `claude plugin install <name>@<marketplace> --scope=user` を毎回再実行して
-     キャッシュを最新化する (directory 型では `plugin update` が version 一致時 no-op
-     になるため同期経路として機能しない)
-- 対象 plugin がインストール済み + version が一致 + 旧 GitHub 型が残存
-  → install コマンドを呼ばずスキップ (マイグレーション前の旧挙動)
-
-公式 marketplace (``claude-plugins-official``) のプラグインのうち、ユーザーが
-使わないものは ``_AUTO_DISABLED_PLUGIN_IDS``、常時有効化したいものは
-``_AUTO_ENABLED_PLUGIN_IDS`` に列挙している。両者の扱いは方向で分け、
-disable は副作用が小さく可逆な操作のため ``_auto_disable_plugins()`` で
-``run()`` 中に自動実行する。一方 install / enable はユーザーの裁量に委ねる方針とし、
-``run()`` 末尾で現状と乖離のあるものだけを ``compute_recommended_commands()`` で
-推奨コマンド列として算出し、戻り値に含める。呼び出し元 (``post_apply.run``) は
-その戻り値から推奨コマンドを取り出し、利用者に案内として表示する。
-
-本スクリプトは dotfiles リポジトリの user scope でプラグインを管理する。
-他プロジェクトへ配布するときも利用者が手動で `claude plugin install ... --scope=user`
-することを推奨する (詳細は docs/guide/claude-code-guide.md)。
-
-directory 型環境では version 乖離によらず毎回 `plugin install` で同期するため、
-ユーザーが dotfiles で編集した内容が chezmoi apply 後に反映される。
+`chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
+対象プラグインは`.claude-plugin/marketplace.json`の`plugins[]`をSSOTとして動的に決定する。
+前提条件（`claude` CLI / `uv` CLI がPATHにある）を満たさない場合は完全にスキップし、
+dotfiles apply全体の失敗にはしない。
 """
 
 import json

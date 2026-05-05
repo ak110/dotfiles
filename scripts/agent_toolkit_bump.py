@@ -6,10 +6,7 @@
 """agent-toolkitプラグインのバージョンbumpツール。
 
 `agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`の
-`version`を同時に更新する。未プッシュの既存bumpがある場合は、指定種別が
-同等以下なら何もせず終了し、上位種別が指定されたら既存bumpを上書きして格上げする。
-
-引数なしで起動した場合は現在のversion・上流ブランチ上のversion・既存bump種別を表示する。
+`version`を同時に更新する。
 
 使い方:
     scripts/agent_toolkit_bump.py [patch|minor|major]

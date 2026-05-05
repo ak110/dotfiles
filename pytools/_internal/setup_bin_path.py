@@ -1,10 +1,8 @@
-r"""ユーザー PATH への `%USERPROFILE%\dotfiles\bin` 登録 (Windows のみ)。
+r"""ユーザーPATHへの`%USERPROFILE%\dotfiles\bin`登録（Windowsのみ）。
 
-bin/ をリポジトリ直下へ移し chezmoi 管理外にしたため、Linux は `~/.bashrc` で
-`$HOME/dotfiles/bin` を PATH に追加する。Windows には対応する自動投入経路がないため、
-本モジュールが `chezmoi apply` 後処理で `HKCU\Environment` の `Path` に冪等に追記する。
-
-Linux/macOS では no-op (False 返却)。
+`bin/`はリポジトリ直下にあるchezmoi管理外ディレクトリで、Linuxでは`~/.bashrc`で
+`$HOME/dotfiles/bin`をPATHへ追加する。Windowsには対応する自動投入経路がないため、
+`chezmoi apply`後処理で`HKCU\Environment`の`Path`へ冪等に追記する。
 """
 
 import logging

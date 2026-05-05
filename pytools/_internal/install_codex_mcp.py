@@ -1,19 +1,8 @@
-"""codex MCPサーバーを user scope に自動登録する。
+"""codex MCPサーバーをuser scopeに自動登録する。
 
-`chezmoi apply` 後処理 (`pytools.post_apply`) から呼ばれる。
-`claude mcp add --scope=user codex codex mcp-server` を冪等に実行する。
-
-前提条件を満たさない場合は完全にスキップする
-(dotfiles apply 全体を失敗させないための安全側動作)。
-
-前提条件:
-
-1. `claude` CLI が PATH にある
-
-冪等動作:
-
-- `claude mcp list` の出力に `codex:` 行があれば既登録としてスキップ
-- 無ければ `claude mcp add --scope=user codex codex mcp-server` で登録
+`chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
+`claude mcp add --scope=user codex codex mcp-server`を冪等に実行する。
+前提条件を満たさない場合は完全にスキップする。
 """
 
 import json

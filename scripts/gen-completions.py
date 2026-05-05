@@ -7,12 +7,10 @@
 
 `pyproject.toml`の`[project.scripts]`を読み、エントリポイント先のモジュールに
 `# PYTHON_ARGCOMPLETE_OK`マーカーがあるコマンドだけを補完登録対象にする。
+`completions/_pytools.bash`は手編集禁止（pre-commitフックで再生成される）。
 
 使い方:
     scripts/gen-completions.py    # 生成または更新する（既存と同一なら書き換えない）
-
-`completions/_pytools.bash`は手編集禁止。pre-commitフックで再生成し、
-`pyproject.toml`またはソース側のマーカー有無と整合しない状態を自動的に修正する。
 """
 
 import argparse

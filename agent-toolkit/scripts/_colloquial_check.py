@@ -1,14 +1,9 @@
 """Claude Code agent-toolkit: 口語表現検査の共通ロジック。
 
-`agent-toolkit/scripts/pretooluse.py`（hook）と
-`agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`（CLI lint）
-から import して使う。
-
-辞書ファイルは `agent-toolkit/scripts/_colloquial_words.txt`（denylist）と
+辞書ファイルは`agent-toolkit/scripts/_colloquial_words.txt`（denylist）と
 `agent-toolkit/scripts/_colloquial_words_allow.txt`（allowlist）。
-denylistの内容をエージェントのコンテキストに持ち込まない設計のため、
+denylistの内容をエージェントのコンテキストへ持ち込まない設計のため、
 本モジュールはパターンを動的に読み込み、検出語そのものは保持しない。
-PEP 723ヘッダーは付けない（通常モジュールとして import 可能にするため）。
 """
 
 import pathlib

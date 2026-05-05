@@ -3,69 +3,23 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code PreToolUse フック: dotfiles 個人環境専用チェック集。
+r"""Claude Code PreToolUseフック: dotfiles個人環境専用チェック集。
 
-mojibake (U+FFFD) / PowerShell LF-only 書き込みのチェックは Claude Code plugin
-`agent-toolkit` へ移管した (`agent-toolkit/scripts/pretooluse.py`)。
-本スクリプトは dotfiles 個人環境でのみ必要な、汎用性の低いチェックをまとめる
-(他人に配布する `agent-toolkit` には含めにくい個人環境前提のチェック群)。
+汎用的なチェック（mojibake検出・PowerShell LF-only検出など）は`agent-toolkit`
+プラグインが担当する。本スクリプトはdotfiles個人環境前提に依存する汎用性の
+低いチェックをまとめる。
 
 統合しているチェック:
 
-1. `~/.claude/` 配下への直接編集警告 (warn, 非ブロック)
-   - chezmoi の配布先の場合、次回 `chezmoi apply` で上書きされるため
-     配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
-   - ただし `settings.json` のように Claude Code 自身が書き換える非 chezmoi 管理
-     ファイルもあり、機械的にブロックすると誤判定で作業を阻害する。
-     最終判断は LLM に委ねるため、ブロックせず警告のみ表示する。
-   - 警告を表示しない対象:
-     - サブツリー: `plans/` / `projects/` / `todos/` /
-       `shell-snapshots/` / `ide/` / `statsig/` (Claude Code のランタイム領域)
-     - ファイル名: `settings.json` (Claude Code 自身が書き換える非 chezmoi 管理設定)
-     - 名前に `.local.` を含むファイル (個人ローカル設定)
-2. PowerShell スクリプトの必須ディレクティブ欠落ブロック (block, Write のみ)
-   - `.ps1` / `.ps1.tmpl` の冒頭付近 (先頭 50 行以内) に
-     `Set-StrictMode -Version Latest` と `$ErrorActionPreference = 'Stop'` の両方が必須。
-   - CLAUDE.md の Windows PowerShell スクリプト規約を強制する。
-   - Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため対象外。
-   - LF/CRLF の改行チェックは `agent-toolkit` プラグインが担当する。
-3. 個人用 / ローカル専用ファイル言及検出 (warn / 非ブロック)
-   - 対象パターン:
-     - `CLAUDE.local.md` (リポジトリ管理外のローカルメモ)
-     - ファイル名に `___` (アンダースコア3つ) を含むトークン (個人メモの慣習)
-   - 他のリポジトリ管理ファイルから参照すると、無視指定などを通じてファイル名自体が
-     コミットに漏れる原因になる。一方で配布対象ドキュメントで利用者に同名ファイル作成を
-     推奨する文脈など、正当な言及もある。文脈依存のため最終判断は LLM に委ね、
-     hook は緩い警告のみを表示してブロックはしない
-   - `file_path` 自体が対象パターンに一致するファイルの場合は、
-     ファイル自身の作成・編集として警告もスキップする
-4. agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)
-   - 対象範囲: `agent-toolkit/` および `.chezmoi-source/dot_claude/rules/agent-toolkit/` 配下
-   - block 対象: 個人スキル名 (`~/dotfiles/.chezmoi-source/dot_claude/skills/` 配下) ・
-     dotfiles スキル名 (`~/dotfiles/.claude/skills/` 配下) ・
-     `pyproject.toml` の `[project.scripts]` キー名・
-     `pytools/` 直下のモジュール名・`scripts/` 直下のモジュール名・
-     固定の個人プロジェクト名 (`glatasks` / `gv` / `lc` / `smpr`)
-   - warn 対象: OSS として正規参照されうる個人プロジェクト名 (`pyfltr` / `pytilpack`)
-   - block 対象は配布先の利用者にとって意味不明な参照となるため exit 2 で停止する。
-     warn 対象は誤参照が多いため通知するが許容する
-   - 動的取得側は対象ディレクトリ未存在時に空集合扱いで安全側に倒す
+1. `~/.claude/`配下への直接編集警告（warn、非ブロック）
+2. PowerShellスクリプトの必須ディレクティブ欠落ブロック（block、Writeのみ）
+3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
+4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 
-検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
-`old_string` は既存内容の修正・削除を妨げないため検査しない。
-
-出力契約:
-
-- block: exit 2 + stderr にブロック理由を出力
-- warn: exit 0 + stdout に JSON (`hookSpecificOutput`) を出力
-  - `permissionDecision: "allow"` と `additionalContext` (警告メッセージ) を付与
-  - 組み込みの ask ルール (`.claude/` 配下の確認ダイアログ等) は本フックの allow では
-    上書きできないため、確認ダイアログの抑制が必要な経路は PermissionRequest フック
-    (`scripts/claude_hook_permissionrequest.py`) で別途処理する
-- 通過 (違反なし / スキップ対象ツール / 想定外入力): exit 0、出力なし
-
-メッセージは英語で記述する (ユーザーの日本語思考コンテキストへのノイズ混入を避けるため)。
-予期せぬ例外は 0 にフォールバックする (フックが破損して編集できなくなる事故を避けるため)。
+各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
+検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみ。
+予期せぬ例外は0にフォールバックする（フックが破損して編集できなくなる事故を避けるため）。
+メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 """
 
 import json
@@ -138,6 +92,9 @@ def _main() -> int:
         warnings.append(dotfiles_warn)
 
     if warnings:
+        # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
+        # 上書きできないため、確認ダイアログの抑制が必要な経路は PermissionRequest フック
+        # (`scripts/claude_hook_permissionrequest.py`) で別途処理する。
         print(
             json.dumps(
                 {

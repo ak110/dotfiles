@@ -1,25 +1,8 @@
-"""Claude Code の設定ファイルを管理対象設定とマージするコマンド。
+"""Claude Codeの設定ファイルを管理対象設定とマージするコマンド。
 
-~/dotfiles/share/ 以下の managed JSON を対応する設定ファイルにマージする。
-dict は再帰マージ、list は union マージ (順序維持・重複排除)、それ以外は上書き。
-
-`claude_settings_json_managed.json` は OS 共通のベース設定のみを持ち、
-OS 別の差分 (主にフック コマンドの shell/PowerShell ラッパー) は以下のオーバーライドで
-上乗せする:
-
-- POSIX (Linux/macOS/他 UNIX 系): share/claude_settings_json_managed.posix.json
-- Windows: share/claude_settings_json_managed.win32.json
-
-対象:
-- share/claude_settings_json_managed.json (+ 現 OS のオーバーライド) → ~/.claude/settings.json
-- share/claude_json_managed.json                                    → ~/.claude.json
-
-加えて、配布元から削除された hook エントリ (JSON 内の command 文字列マッチ) を
-settings.json から事後的に除去するクリーンアップも行う。union マージ方式の都合上、
-share 側から削除した hook がユーザー側に残り続けるのを防ぐため。
-
-配布元から消えたファイル/ディレクトリの削除は汎用的な処理のため pytools._internal.cleanup_paths と
-pytools.post_apply に分離した (本モジュールは hook 内部の command 文字列マッチのみ担う)。
+`~/dotfiles/share/`配下のmanaged JSONを対応する設定ファイルへマージする。
+OS別の差分（主にhookコマンドのshell/PowerShellラッパー）は
+`*.posix.json`/`*.win32.json`のオーバーライドで上乗せする。
 """
 
 import copy

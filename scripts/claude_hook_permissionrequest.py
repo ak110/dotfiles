@@ -3,39 +3,19 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code PermissionRequest フック: 信頼領域への書き込みを自動許可する。
+r"""Claude Code PermissionRequestフック: 信頼領域への書き込みを自動許可する。
 
-PreToolUse の `permissionDecision: "allow"` は組み込みの ask ルール
-(`.claude/` 配下の編集確認ダイアログ等) を上書きできないため、
-確認ダイアログ表示時に発火する PermissionRequest フックで自動許可を返す。
+PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
+（`.claude/`配下の編集確認ダイアログ等）を上書きできないため、
+確認ダイアログ表示時に発火するPermissionRequestフックで自動許可を返す。
 
 自動許可の対象パス:
 
-1. Git ワークツリー配下の `.claude/` 配下
-   - `~/.claude/` 配下は除外する (chezmoi 配布先誤編集の警告経路を維持するため)
-   - Git ワークツリー判定は subprocess を使わずファイルシステム存在確認のみで行う
-     (PermissionRequest が編集毎に実行されるため軽量化が必要)
-2. `~/.claude/plans/` 配下
-   - plan mode が書き込む計画ファイル領域
+1. Gitワークツリー配下の`.claude/`配下（`~/.claude/`配下を除く）
+2. `~/.claude/plans/`配下
 
-対応ツール:
-
-- `Write` / `Edit` / `MultiEdit`: `file_path` が対象パスなら許可
-- `Bash`: 安全に解析できる単純なコマンドのみ判定し、操作対象パスがすべて
-  対象パス配下なら許可
-  - 対象コマンド: `rm` / `mkdir` / `mv` / `cp` / `touch` / `ln` / `chmod` / `chown`
-  - リダイレクト (`>` / `>>`) のみ単独トークンとして許容し、リダイレクト先パスを
-    操作対象に含める。リダイレクトのみのコマンド (例: `echo foo > target`) は
-    コマンド本体を問わずリダイレクト先のパスで判定する
-  - 危険なシェルメタ文字 (`|` / `&` / `;` / `` ` `` / `$` / `(` / `)` / `<`)
-    を含むコマンドは安全側で不許可。クォート内に含まれる場合も巻き込みで
-    不許可になるが、複合コマンドを誤許可するリスクと比較して安全側に倒す
-
-出力契約:
-
-- 自動許可対象: stdout に `decision.behavior: "allow"` を含む JSON を出力 (exit 0)
-- 対象外: 出力なし (exit 0、組み込みの確認ダイアログがそのまま表示される)
-- 想定外入力 / 例外: 出力なし (exit 0、フックが破損して編集できなくなる事故を避けるため)
+各判定ロジックの詳細は対応する関数のdocstringを参照する。
+予期せぬ例外は0にフォールバックする（フックが破損して編集できなくなる事故を避けるため）。
 """
 
 import json

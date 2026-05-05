@@ -2,17 +2,7 @@
 """画像変換。
 
 ディレクトリ配下の画像を指定形式へ一括変換し、最大辺サイズを超える場合は縮小する。
-CLI からは `py-imageconverter` コマンドとして、他モジュールからは `convert_directory`
-関数として呼び出せる。
-
-画像読み込みは 2 段構えで行う。Pillow 12.x は PNG 補助チャンク（tEXt 等）の CRC が
-不整合だと既定で `UnidentifiedImageError` を送出して `Image.open` が失敗するが、
-ImageMagick 等の他ツールでは警告レベルで読み込めるケースがある。そこでまず既定モード
-（`PIL.ImageFile.LOAD_TRUNCATED_IMAGES = False`）で開き、読み込み例外が発生した
-場合のみ `LOAD_TRUNCATED_IMAGES = True` の状態で再試行する。再試行で読み込めた
-場合は変換自体は実施するが警告イベントとして集約に追加し、呼び元（repack-archive 等）
-がバックアップ保持の判断材料として参照できる形にする。再試行でも読み込めない場合は
-通常の変換失敗として集約に追加する。
+CLIからは`py-imageconverter`コマンドとして、他モジュールからは`convert_directory`関数として呼び出せる。
 """
 
 import argparse
@@ -47,16 +37,18 @@ ConvertEvent = tuple[pathlib.Path, EventSeverity, str]
 def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
     """EXIF情報に従い回転補正した画像と寛容モードフラグを返す。
 
-    まず既定モードで `PIL.Image.open` を試み、`UnidentifiedImageError` 等の
-    読み込み例外が発生した場合のみ `PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True`
-    に切り替えて再試行する。再試行で成功した場合は第 2 戻り値を `True` として返し、
+    Pillow 12.xはPNG補助チャンク（tEXt等）のCRCが不整合だと既定で`UnidentifiedImageError`を
+    送出して`Image.open`が失敗するが、ImageMagick等の他ツールでは警告レベルで読み込めるケースがある。
+    そこでまず既定モードで`PIL.Image.open`を試み、`UnidentifiedImageError`等の
+    読み込み例外が発生した場合のみ`PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True`へ
+    切り替えて再試行する。再試行で成功した場合は第2戻り値を`True`として返し、
     呼び元が警告として集約できるようにする。再試行でも失敗した場合は例外を再送出する。
 
-    `PIL.ImageOps.exif_transpose` が例外を送出した場合は元画像のコピーへフォールバックする。
+    `PIL.ImageOps.exif_transpose`が例外を送出した場合は元画像のコピーへフォールバックする。
 
     Returns:
-        `(image, used_truncated_fallback)` のタプル。第 2 要素が `True` のとき、
-        Pillow が既定モードで読み込みに失敗し寛容モードへフォールバックしたことを示す。
+        `(image, used_truncated_fallback)`のタプル。第2要素が`True`のとき、
+        Pillowが既定モードで読み込みに失敗し寛容モードへフォールバックしたことを示す。
     """
     try:
         img = PIL.Image.open(path)

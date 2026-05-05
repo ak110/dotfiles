@@ -1,8 +1,6 @@
-"""mise 関連のセットアップをまとめるモジュール。
+"""mise関連のセットアップをまとめるモジュール。
 
-`chezmoi apply` 後処理（`pytools.post_apply`）から呼ばれる。
-前提条件が揃わない場合や、subprocess / JSON パース / winreg の失敗は
-内部で吸収して post_apply 全体の処理継続を妨げない方針。
+`chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 """
 
 import json

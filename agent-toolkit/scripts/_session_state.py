@@ -1,9 +1,7 @@
 """Claude Code agent-toolkit: hook 間で共有するセッション状態ファイルのアクセスヘルパー。
 
-`pretooluse.py` / `posttooluse.py` / `stop_advisor.py` から import して使う。
-パス規則は `writing-standards/references/claude-hooks.md` の「セッション状態ファイル」節と、
-`.claude/rules/agent-toolkit.md` の「agent-toolkit のセッション状態フラグ」節に記載がある。
-PEP 723 ヘッダーなし（通常モジュールとして import 可能にするため）。
+パス規則は`writing-standards/references/claude-hooks.md`の「セッション状態ファイル」節と、
+`.claude/rules/agent-toolkit.md`の「agent-toolkit のセッション状態フラグ」節に記載がある。
 """
 
 import json

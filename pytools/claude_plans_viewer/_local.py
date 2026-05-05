@@ -1,9 +1,4 @@
-"""ローカルファイル探索・watchdog連携・Markdownレンダリング・CSS解決。
-
-クラス・関数名は同一パッケージ内の兄弟モジュールから参照される前提のため、
-underscore接頭辞を付けない（package-internalとして扱う）。
-パッケージ外への公開可否は`__init__.py`の再export一覧で制御する。
-"""
+"""ローカルファイル探索・watchdog連携・Markdownレンダリング・CSS解決。"""
 
 import asyncio
 import collections

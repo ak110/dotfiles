@@ -1,8 +1,4 @@
-"""Claude Code 関連の共通定数・ユーティリティ。
-
-複数のモジュール (install_claude_plugins・install_codex_mcp など) から共通して
-利用する定数および低レベルヘルパーを集約する。
-"""
+"""Claude Code関連の共通定数・ユーティリティ。"""
 
 import contextlib
 import json

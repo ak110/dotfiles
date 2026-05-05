@@ -1,10 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
 """正規表現でリネーム。
 
-単発のパターン指定に加えて、rgrename 互換のパターンファイル (TAB 区切り UTF-8)
-を `-f/--pattern-file` で読み込めるようにしている。パターンファイルローダーは
-`load_pattern_file()` / `apply_rules()` としてモジュール関数で公開し、
-`pytools.repack_archive` からも再利用する。
+単発のパターン指定に加えて、rgrename互換のパターンファイル（TAB区切りUTF-8）も
+`-f/--pattern-file`で読み込める。
 """
 
 import argparse

@@ -11,30 +11,13 @@ PreToolUse や Stop フックが参照して警告・提案の判定に使う。
 
 検出対象:
 
-1. テスト実行 — pytest / pyfltr / cargo test / 汎用タスクランナー (make / mise run /
-   npm | pnpm | yarn / just / task) の test / check / validate アクション (Bash)
-2. Git 状態確認 — git status / git log / git diff (Bash)
-3. git log 確認状態のリセット — git commit / rebase / push (Bash),
-   ファイル編集 (Write / Edit / MultiEdit) の実行後にリセットし、
-   amend / rebase 前に改めて git log を確認させる
-4. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
-   必須H2 の欠落・順序違反・想定外 H2を
-   ``additionalContext`` で LLM に通知する (warn のみで exit code は 0 のまま)。
-   セッション状態の ``plan_mode_skill_invoked`` が真の場合のみ実行する
-   (未呼び出し時は PreToolUse 側で plan-mode スキル先行呼び出しを促すため、
-   構造検査の二重警告を避ける)
-5. plan-mode スキル呼び出し検出 (Skill) — ``agent-toolkit:plan-mode`` または
-   ``plan-mode`` の呼び出しを観測し ``plan_mode_skill_invoked`` フラグを立てる。
-   PreToolUse 側の最初ツール呼び出し警告および本フックの plan file 形式検査の
-   有効化に使う
+1. テスト実行 (Bash)
+2. Git 状態確認 (Bash) と git log 確認状態のリセット (commit/rebase/push/編集後)
+3. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
+4. plan-mode スキル呼び出し検出 (Skill)
 
+各検出ロジックの詳細は対応する実装関数のdocstringを参照する。
 状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
-
-exit code 契約:
-
-- exit 0: 常に 0（PostToolUse は許可判定に関与しない。サイレント記録 / warn のみ）
-
-予期せぬ例外は 0 にフォールバックする。
 """
 
 import json
