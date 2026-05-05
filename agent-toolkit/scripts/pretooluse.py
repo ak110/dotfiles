@@ -28,6 +28,7 @@ block 系 check の検査対象は「新規に書き込まれる側」 (`content
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -87,12 +88,15 @@ def _main() -> int:
         command = tool_input.get("command")
         if not isinstance(command, str):
             return 0
+        cwd_raw = payload.get("cwd", "")
+        cwd = cwd_raw if isinstance(cwd_raw, str) else ""
         # git amend / rebase は直前に git log を確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id):
             return 2
+        # uv run python <path> 形式の起動は非 Python プロジェクトでブロック
+        if _check_bash_uv_run_python(command, cwd):
+            return 2
         # git commit 未検証警告
-        cwd_raw = payload.get("cwd", "")
-        cwd = cwd_raw if isinstance(cwd_raw, str) else ""
         result = _check_bash_git_commit(command, session_id, cwd)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
@@ -526,6 +530,194 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
         file=sys.stderr,
     )
     return True
+
+
+# --- Bash: uv run python <path> 形式の起動ブロック ---
+
+# 副作用の理由:
+# cwd の pyproject.toml が [tool.uv] のみで [project] セクションを持たない場合、
+# `uv run python <path>` は cwd をプロジェクト解決対象として扱い `.venv` と
+# `uv.lock` を生成する (uv の仕様)。
+# エージェントが PEP 723 スクリプトを誤って `uv run python <path>` 形式で起動する
+# 事故を予防的に block する。
+#
+# 判定の優先順位:
+#
+# 1. `uv run` と `python` の間 (uv run 自身のオプション位置) に `--script` または
+#    `--no-project` が現れる場合は許容する (cwd の依存解決を行わないため副作用なし)。
+# 2. cwd 変更経路 (Bash の `cd` / `pushd` 先行・`uv --directory` / `uv --project`)
+#    が無く、cwd の pyproject.toml が [project] セクションを持つ Python プロジェクト
+#    の場合は許容する (`uv run python -c '...'` 等の正規利用を妨げない)。
+# 3. それ以外は block する。
+#
+# cwd 変更経路を伴う場合は payload 上の cwd を判定根拠に使えないため、Python
+# プロジェクト判定をスキップして block 側に倒す (副作用の有無を確実に判定できない
+# ため安全側の挙動とする)。
+# 環境変数経由の cwd / project 切り替え (UV_WORKING_DIR / UV_PROJECT) は
+# 利用頻度が低く実装コストに見合わないため対応スコープ外とする。
+
+_UV_RUN_PYTHON_BLOCK_MSG = (
+    "blocked: `uv run python <path>` style invocation."
+    " In a non-Python project (pyproject.toml without a [project] section, or absent),"
+    " uv treats the cwd as a project and generates `.venv` and `uv.lock` as a side effect."
+    " Alternatives:"
+    " (1) for a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
+    " (2) to skip cwd project resolution, use `uv run --no-project python ...`;"
+    " (3) inside a Python project, `cd` to the project root before running."
+)
+
+_ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
+_PYTHON_TOKEN_PATTERN = re.compile(r"^python[0-9.]*(?:\.exe)?$", re.IGNORECASE)
+_PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]\s*$")
+
+
+def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
+    """`uv run python <path>` 形式の起動を非 Python プロジェクトでブロックする。
+
+    判定詳細は本節冒頭のコメントを参照する。戻り値 True で block (exit 2)。
+    """
+    # heredoc を含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる
+    if "<<" in command:
+        return False
+    segments = _split_bash_segments(command)
+    cwd_changed_before = False
+    for segment in segments:
+        try:
+            tokens = shlex.split(segment, posix=True)
+        except ValueError:
+            return False
+        info = _parse_uv_run_python(tokens)
+        if info is not None:
+            has_script_or_no_project, directory_or_project_overridden = info
+            if not has_script_or_no_project and (
+                directory_or_project_overridden or cwd_changed_before or not _cwd_is_python_project(cwd)
+            ):
+                print(_llm_notice(_UV_RUN_PYTHON_BLOCK_MSG), file=sys.stderr)
+                return True
+        if _segment_changes_cwd(tokens):
+            cwd_changed_before = True
+    return False
+
+
+def _split_bash_segments(command: str) -> list[str]:
+    """Bash コマンドを `;` / `&&` / `||` / `|` / `&` で分割する。
+
+    クォート (`'` / `"`) 内のメタ文字は分割対象外とする。
+    バックスラッシュエスケープや heredoc は厳密には扱わないため、heredoc を含む
+    コマンドは呼び出し側で除外する想定。
+    """
+    segments: list[str] = []
+    buf: list[str] = []
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(command):
+        c = command[i]
+        if in_single:
+            buf.append(c)
+            if c == "'":
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            buf.append(c)
+            if c == '"':
+                in_double = False
+            i += 1
+            continue
+        if c == "'":
+            in_single = True
+            buf.append(c)
+            i += 1
+            continue
+        if c == '"':
+            in_double = True
+            buf.append(c)
+            i += 1
+            continue
+        if c in ("&", "|") and i + 1 < len(command) and command[i + 1] == c:
+            segments.append("".join(buf))
+            buf = []
+            i += 2
+            continue
+        if c in (";", "&", "|"):
+            segments.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    if buf:
+        segments.append("".join(buf))
+    return [s.strip() for s in segments if s.strip()]
+
+
+def _skip_env_assignments(tokens: list[str], start: int) -> int:
+    """先頭の `KEY=VALUE` 形式の環境変数代入をスキップして次の位置を返す。"""
+    i = start
+    while i < len(tokens) and _ENV_ASSIGN_PATTERN.match(tokens[i]):
+        i += 1
+    return i
+
+
+def _segment_changes_cwd(tokens: list[str]) -> bool:
+    """セグメント先頭のコマンドが `cd` / `pushd` / `popd` ならば True を返す。"""
+    i = _skip_env_assignments(tokens, 0)
+    if i >= len(tokens):
+        return False
+    return tokens[i] in ("cd", "pushd", "popd")
+
+
+def _is_python_token(token: str) -> bool:
+    """`python` / `python3` / `python3.12` などの実行ファイル名トークンか判定する。"""
+    return _PYTHON_TOKEN_PATTERN.match(token) is not None
+
+
+def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
+    """`uv [...] run [...] python` 構造を tokens から検出する。
+
+    構造を検出した場合は (has_script_or_no_project, directory_or_project_overridden) を返す。
+    対象構造でなければ None。
+    `--script` / `--no-project` は `uv` トークンと `python` トークンの間に
+    出現する場合のみ「uv run のオプション」として扱う (`python` 以降に書かれた
+    場合は `python` の引数として解釈されるため例外扱いしない)。
+    """
+    i = _skip_env_assignments(tokens, 0)
+    if i >= len(tokens) or tokens[i] != "uv":
+        return None
+    uv_idx = i
+    python_idx: int | None = None
+    for j in range(uv_idx + 1, len(tokens)):
+        if _is_python_token(tokens[j]):
+            python_idx = j
+            break
+    if python_idx is None:
+        return None
+    has_run_between = any(tokens[j] == "run" for j in range(uv_idx + 1, python_idx))
+    if not has_run_between:
+        return None
+    has_script_or_no_project = False
+    directory_or_project_overridden = False
+    for tok in tokens[uv_idx + 1 : python_idx]:
+        if tok in ("--script", "--no-project"):
+            has_script_or_no_project = True
+        elif tok in ("--directory", "--project") or tok.startswith("--directory=") or tok.startswith("--project="):
+            directory_or_project_overridden = True
+    return has_script_or_no_project, directory_or_project_overridden
+
+
+def _cwd_is_python_project(cwd: str) -> bool:
+    """Cwd の `pyproject.toml` が `[project]` セクションを持てば True を返す。
+
+    `pyproject.toml` 不在・読み込み失敗・[project] セクション欠如の場合は False。
+    """
+    if not cwd:
+        return False
+    try:
+        text = (pathlib.Path(cwd) / "pyproject.toml").read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return False
+    return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
 
 
 # --- Bash: git commit 未検証警告 ---

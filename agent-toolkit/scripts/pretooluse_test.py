@@ -745,3 +745,123 @@ class TestBashAmendRebaseBlock:
         """通常の git commit は amend/rebase ブロックの対象外。"""
         result = self._invoke("git commit -m 'test'", "normal", state_dir)
         assert result.returncode == 0
+
+
+class TestBashUvRunPythonBlock:
+    """`uv run python <path>` 形式の起動ブロック。
+
+    `[tool.uv]` のみで `[project]` セクションが無い cwd で `uv run python <path>`
+    を実行すると、uv が cwd をプロジェクト解決対象として扱い `.venv` と `uv.lock`
+    を生成する副作用がある。エージェントが PEP 723 スクリプトを誤起動する事故を
+    予防的にブロックするためのテスト。
+    """
+
+    @staticmethod
+    def _make_python_project(tmp_path: pathlib.Path) -> str:
+        """`[project]` セクション付き pyproject.toml を作成し cwd 文字列を返す。"""
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\nversion = "0.0.0"\n',
+            encoding="utf-8",
+        )
+        return str(tmp_path)
+
+    @staticmethod
+    def _make_non_python_project(tmp_path: pathlib.Path) -> str:
+        """`[tool.uv]` のみ持つ pyproject.toml を作成し cwd 文字列を返す。"""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.uv]\nexclude-newer = "2025-01-01"\n',
+            encoding="utf-8",
+        )
+        return str(tmp_path)
+
+    @staticmethod
+    def _invoke(command: str, cwd: str) -> subprocess.CompletedProcess[str]:
+        return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
+
+    def test_script_option_allowed(self, tmp_path: pathlib.Path):
+        """`--script` 経由は cwd の依存解決を行わないため許容する。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run --script /tmp/foo.py", cwd)
+        assert result.returncode == 0
+
+    def test_no_project_option_allowed(self, tmp_path: pathlib.Path):
+        """`--no-project` 経由は cwd の依存解決を行わないため許容する。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run --no-project python -c 'print(1)'", cwd)
+        assert result.returncode == 0
+
+    def test_python_project_allowed(self, tmp_path: pathlib.Path):
+        """`[project]` セクション付き cwd では `uv run python -c '...'` を許容する。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("uv run python -c 'print(1)'", cwd)
+        assert result.returncode == 0
+
+    def test_non_python_project_blocked(self, tmp_path: pathlib.Path):
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+
+    def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
+        """pyproject.toml が無い cwd でも block する (Python プロジェクトと認識できないため)。"""
+        result = self._invoke("uv run python /tmp/foo.py", str(tmp_path))
+        assert result.returncode == 2
+
+    def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
+        """`uv run python --script s.py` は `--script` が python の引数となるため例外扱いしない。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run python --script s.py", cwd)
+        assert result.returncode == 2
+
+    def test_no_project_after_python_blocked(self, tmp_path: pathlib.Path):
+        """`uv run python --no-project s.py` は同上の理由で例外扱いしない。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run python --no-project s.py", cwd)
+        assert result.returncode == 2
+
+    def test_cd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
+        """payload cwd が Python プロジェクトでも、先行 `cd` で実行時 cwd が変わる場合は block。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+
+    def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("pushd /tmp && uv run python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+
+    def test_uv_directory_option_blocked(self, tmp_path: pathlib.Path):
+        """`uv --directory` はプロジェクト解決対象を payload cwd から外すため block。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("uv --directory /tmp run python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+
+    def test_uv_project_global_option_blocked(self, tmp_path: pathlib.Path):
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("uv --project /tmp run python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+
+    def test_uv_run_project_option_blocked(self, tmp_path: pathlib.Path):
+        """run サブコマンドオプション位置の `--project=` も block 対象。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("uv run --project=/tmp python /tmp/foo.py", cwd)
+        assert result.returncode == 2
+
+    def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
+        """cwd 変更があっても `--no-project` 例外が優先するため許容する。"""
+        cwd = self._make_python_project(tmp_path)
+        result = self._invoke("cd /tmp && uv run --no-project python -c 'print(1)'", cwd)
+        assert result.returncode == 0
+
+    def test_unrelated_command_unaffected(self, tmp_path: pathlib.Path):
+        """`uv run pytest` などは対象外 (`python` トークンを含まない)。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run pytest tests/", cwd)
+        assert result.returncode == 0
+
+    def test_uvx_unaffected(self, tmp_path: pathlib.Path):
+        """`uvx` は別コマンドのため対象外。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uvx ruff check .", cwd)
+        assert result.returncode == 0
