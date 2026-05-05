@@ -37,7 +37,7 @@ body {
   background-color: #ffffff;
   max-width: 860px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
   word-break: break-all;
   overflow-wrap: anywhere;
 }
@@ -54,8 +54,8 @@ h5,
 h6 {
   font-weight: 700;
   color: #1a1a1a;
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
 }
 
 /* std-36B-140 */
@@ -111,7 +111,7 @@ h6 {
 
 p {
   margin-top: 0;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 strong {
@@ -134,17 +134,17 @@ a:hover {
 ul,
 ol {
   margin-top: 0;
-  margin-bottom: 1rem;
-  padding-left: 2rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1rem;
 }
 
 li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
 }
 
 li > ul,
 li > ol {
-  margin-top: 0.25rem;
+  margin-top: 0.125rem;
   margin-bottom: 0;
 }
 
@@ -153,8 +153,8 @@ li > ol {
    ======================================== */
 
 blockquote {
-  margin: 0 0 1rem 0;
-  padding: 0.5rem 1rem;
+  margin: 0 0 0.5rem 0;
+  padding: 0.25rem 0.75rem;
   border-left: 4px solid #cccccc; /* neutral-solid-gray-200 */
   color: #4d4d4d; /* neutral-solid-gray-700 */
   background-color: #f2f2f2; /* neutral-solid-gray-50 */
@@ -181,8 +181,8 @@ code {
 /* コードブロック - ターミナル風のダーク背景 */
 pre {
   margin-top: 0;
-  margin-bottom: 1rem;
-  padding: 1rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
   background-color: #1e1e1e;
   border: 1px solid #333333;
   border-radius: 0.5rem; /* border-radius-8 */
@@ -206,7 +206,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 0;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
   font-size: 1rem; /* 16px */
   line-height: 1.5;
 }
@@ -234,7 +234,7 @@ td {
 hr {
   border: none;
   border-top: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
-  margin: 2rem 0;
+  margin: 1rem 0;
 }
 
 /* ========================================

@@ -172,7 +172,7 @@ _INDEX_CSS = """\
   #menu-btn { display: none; }
   #meta-mobile { display: none; }
   #drawer-backdrop { display: none; }
-  main article { max-width: 860px; margin: 0 auto; padding: 2rem; box-sizing: border-box; }
+  main article { max-width: 860px; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
   /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
   @media (max-width: 768px) {
     #app { grid-template-columns: 1fr; }
