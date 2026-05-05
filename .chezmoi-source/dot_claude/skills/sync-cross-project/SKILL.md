@@ -50,6 +50,7 @@ description: >
 | リリースワークフロー | — | ★ | ★ | — | ★ | ★ | ★ |
 | git-cliff設定 | — | ★ | ★ | — | ★ | ★ | ★ |
 | Makefile構成 | ★ | ★ | ★ | ★ | ★ | — | — |
+| commit.template設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
 | mise設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
 | pre-commit設定 | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
 | textlintルール | ★ | ★ | ★ | ★ | ★ | ★ | ★ |
@@ -60,6 +61,10 @@ description: >
 | Python CI構成 | ★ | ★ | ★ | ★ | — | — | — |
 
 ★=必須同期、△=確認推奨（smprは厳密一致不要）、—=スキップ
+
+`commit.template設定`はsetupタスク（`make setup`または`mise run setup`）から
+`git config --local commit.template .gitmessage`を呼ぶ実装を指す。
+`.gitmessage`本文の追加変更も含め、setup実装と本体ファイルを揃えて変更する。
 
 ## 意図的に維持している差異
 

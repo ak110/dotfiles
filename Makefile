@@ -21,6 +21,7 @@ update-actions:
 setup:
 	uv sync --all-groups --all-extras
 	uvx pre-commit install
+	git config --local commit.template .gitmessage
 	uv tool install --editable .
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
