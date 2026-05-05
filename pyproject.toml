@@ -72,7 +72,7 @@ dev = [
 preset = "latest"
 python = true
 ty = true
-# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する。
+# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts"]
 pylint-args = ["--jobs=4"]
 shellcheck = true
@@ -103,7 +103,7 @@ convention = "google"
 
 [tool.pyright]
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを import するため
-# そのパスを追加する。
+# そのパスを追加する
 extraPaths = ["agent-toolkit/scripts"]
 
 [tool.mypy]
@@ -118,11 +118,11 @@ warn_unused_configs = true
 show_error_codes = true
 
 [tool.typos.default.extend-words]
-# gitエイリアス名 (ba = branch --all)・CSSクラス名 (.pl-ba)
+# gitエイリアス名（ba = branch --all）・CSSクラス名（.pl-ba）
 ba = "ba"
-# gitエイリアス名 (aci = add-commit-in-one)
+# gitエイリアス名（aci = add-commit-in-one）
 aci = "aci"
-# 人名 (Antony Stubbs)
+# 人名（Antony Stubbs）
 Stubbs = "Stubbs"
 # IPythonの正当な用語（設定項目の複数形）
 configurables = "configurables"

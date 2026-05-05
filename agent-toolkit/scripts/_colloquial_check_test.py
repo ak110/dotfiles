@@ -1,7 +1,7 @@
 """agent-toolkit/scripts/_colloquial_check.py のテスト。
 
-共通ロジック（load_patterns / scan_text / first_hit / mask_allowed）の検証。
-テスト本体に口語表現を直接書かないよう、辞書ファイルから動的にサンプルを構築する。
+load_patterns / scan_text / first_hit / mask_allowedの検証。
+テスト本体に口語表現を直接書かないため、辞書ファイルから動的にサンプルを構築する。
 """
 
 import pathlib
@@ -12,9 +12,9 @@ import pytest
 
 
 def _expand_pattern(pattern_str: str) -> str:
-    """文字クラス `[...]` を先頭文字に置換する簡易展開。
+    """文字クラス`[...]`を先頭文字に置換する簡易展開。
 
-    辞書のパターン記法は文字クラスのみのため、これでマッチサンプルが得られる。
+    辞書のパターン記法は文字クラスのみのため、この方法でマッチサンプルを得ることができる。
     """
     return re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], pattern_str)
 
@@ -38,7 +38,7 @@ def _allow_patterns():
 def _overlap_sample(deny_patterns) -> tuple[str, str]:
     """allowlist側のパターンを展開して、denylist側にも当たる最初のサンプルを返す。
 
-    戻り値: `(allow_sample, deny_substring)`
+    戻り値は`(allow_sample, deny_substring)`のタプル。
     マスキング動作の検証用に、両者を共通の文字列から取り出す。
     """
     for raw in _read_patterns_text(_colloquial_check.ALLOW_PATH):

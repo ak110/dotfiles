@@ -26,16 +26,16 @@ _OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
 _HEADER = """\
-# 自動生成ファイル: scripts/gen-completions.py が出力する。手編集禁止。
+# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
 # 再生成: `uv run --script scripts/gen-completions.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
-# argcomplete側で候補生成と出力を行う仕組み。
+# argcomplete側で候補生成と出力を行う。
 """
 
 # argcomplete公式の生成物（`register-python-argcomplete bash`相当）と同じ実装を
-# リポジトリで持ち回るため、ここに直接埋め込む。互換性維持のため安易に書き換えない。
+# リポジトリで持ち回るため直接埋め込む。互換性維持のため安易に書き換えない。
 _DISPATCHER = r"""
 _python_argcomplete() {
     local IFS=$'\013'
@@ -61,7 +61,7 @@ _python_argcomplete() {
 
 
 def main(argv: list[str] | None = None) -> int:
-    """エントリーポイント。"""
+    """completions/_pytools.bashを生成する。"""
     argparse.ArgumentParser(description="completions/_pytools.bash を生成する。").parse_args(argv)
 
     commands = sorted(_collect_commands())
@@ -85,7 +85,7 @@ def _collect_commands() -> list[str]:
         path = _resolve_module_path(module)
         if path is None:
             continue
-        # マーカーは先頭付近のコメント行を想定。ファイル全体を読んでもサイズは小さく許容できる。
+        # マーカーは先頭付近のコメント行を想定する。ファイル全体を読んでもサイズは小さく許容できる。
         if _has_marker(path):
             result.append(name)
     return result

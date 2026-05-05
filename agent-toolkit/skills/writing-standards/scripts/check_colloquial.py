@@ -5,12 +5,12 @@
 # ///
 """口語的な日本語表現の混入を検査する独立スクリプト。
 
-writing-standards SKILL.mdの「書き言葉・フォーマルな表現を厳守する」規約を機械化する。
 agent-toolkitプラグイン同梱の辞書ファイル（`agent-toolkit/scripts/_colloquial_words.txt`と
 `_colloquial_words_allow.txt`）を共通ロジック経由で読み込み、
 対象ファイルから検出された口語表現を列挙する。
 検出辞書をエージェントのコンテキストへ持ち込まない設計のため、
-本スクリプトの実行結果（stderr）を読む際は注意する。
+検出語そのものはstderr出力に含まれない。
+対比集（`references/tone-examples.md`）も同じ理由で検査対象から除外する。
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ import argparse
 import pathlib
 import sys
 
-# agent-toolkit/scripts を sys.path に追加し、共通モジュールを読み込む。
-# 本スクリプトは agent-toolkit/skills/writing-standards/scripts/ 配下に置かれる前提。
+# agent-toolkit/scriptsをsys.pathに追加し、共通モジュールを読み込む。
+# 本スクリプトはagent-toolkit/skills/writing-standards/scripts/配下に置かれる前提。
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parents[3] / "scripts"
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
 import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-# 抜粋の最大文字数。違反行を見やすく示すための切り詰め幅。
+# 抜粋の最大文字数。違反行を見やすく示す切り詰め幅。
 _EXCERPT_LIMIT = 100
 
 # ディレクトリ展開時に走査する拡張子。日本語が含まれうるテキストファイルを対象とする。
@@ -50,8 +50,17 @@ _EXCLUDED_DIRS = frozenset(
     }
 )
 
-# 検査対象から自動的に外す辞書ファイル本体（自身を検査するとほぼ全行マッチするため）。
-_DICT_FILES = frozenset({_colloquial_check.DENY_PATH.resolve(), _colloquial_check.ALLOW_PATH.resolve()})
+# 検査対象から自動的に外すファイル群。
+# 辞書ファイル本体は自身を検査するとほぼ全行マッチするため除外する。
+# 対比集（`tone-examples.md`）は悪い例を意図的に記載しており、辞書ファイルと同等の理由で除外する。
+_TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
+_EXCLUDED_FILES = frozenset(
+    {
+        _colloquial_check.DENY_PATH.resolve(),
+        _colloquial_check.ALLOW_PATH.resolve(),
+        _TONE_EXAMPLES.resolve(),
+    }
+)
 
 
 def _main() -> int:
@@ -69,7 +78,7 @@ def _main() -> int:
     deny_patterns = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
     allow_patterns = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
     if not deny_patterns:
-        # 辞書未配置・空でも安全側に通過させる
+        # 辞書未配置・空でも安全側に通過させる。
         return 0
 
     targets = _expand_paths(args.paths)
@@ -96,8 +105,8 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """ファイル/ディレクトリ混在の入力を、検査対象ファイルの一覧へ展開する。
 
     ディレクトリは再帰的に対象拡張子のファイルを収集する。
-    `_EXCLUDED_DIRS` 配下と辞書ファイル自身は除外する。
-    順序の安定性のため、ディレクトリ展開分は path 順に並べる。
+    `_EXCLUDED_DIRS`配下と`_EXCLUDED_FILES`に含まれるファイルは除外する。
+    順序の安定性のため、ディレクトリ展開分はpath順に並べる。
     """
     expanded: list[pathlib.Path] = []
     seen: set[pathlib.Path] = set()
@@ -117,9 +126,9 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
 
 
 def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -> None:
-    """重複・辞書ファイル本体を除いて出力リストへ追加する。"""
+    """重複・除外ファイルを除き出力リストへ追加する。"""
     resolved = path.resolve()
-    if resolved in _DICT_FILES or resolved in seen:
+    if resolved in _EXCLUDED_FILES or resolved in seen:
         return
     seen.add(resolved)
     out.append(path)

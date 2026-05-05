@@ -1,7 +1,7 @@
 #!/bin/bash
 # install-claude.sh - ~/.claude/rules/agent-toolkit/ に agent-toolkit ルールファイルを配置する。
 #
-# 会社マシンなど dotfiles 全体を入れられない環境向け。GitHub から最新のルールファイルを
+# 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
 # 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
 #
 # 使い方: Claude Code をインストールしたあとで以下を実行する。
@@ -15,7 +15,7 @@ BASE_URL="${DOTFILES_RULES_URL:-https://raw.githubusercontent.com/ak110/dotfiles
 TARGET_DIR="$HOME/.claude/rules/agent-toolkit"
 LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # ステージング先は rules/ の外に置く。
-# rules/ 配下に作ると Claude Code が再帰的に読み込んでしまい、差し替え中に二重ロードされる危険がある。
+# rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 
 # 配布対象ファイル一覧 (install-claude.ps1 の $files と一致させること)
@@ -26,7 +26,7 @@ FILES=(
 
 STAGE_DIR=""
 OLD_DIR=""
-# 差し替え完了後は OLD_DIR を削除扱いとするため本フラグで区別する (エラー時の復元を抑止)
+# 差し替え完了後は OLD_DIR を削除扱いとするため本フラグで区別する（エラー時の復元を抑止）
 REPLACED=0
 
 _cleanup() {
@@ -47,7 +47,7 @@ _download() {
 }
 
 # agent-toolkit プラグインを user scope でインストール・更新する。
-# 併せて旧 edit-guardrails プラグインを除去する (agent-toolkit へ改名・統合されたため)。
+# 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 _install_agent_toolkit() {
     echo ""
     echo "agent-toolkit プラグインを user scope にインストール・更新します..."
@@ -74,7 +74,7 @@ main() {
     done
 
     # 既存の TARGET_DIR を退避し、ステージングを差し替える。
-    # mv 同士は同一ファイルシステム上で原子的リネームとして動作する。
+    # mv は同一ファイルシステム上で原子的リネームとして動作する。
     if [ -d "$TARGET_DIR" ]; then
         OLD_DIR="$STAGE_ROOT/agent-toolkit.old.$$"
         mv "$TARGET_DIR" "$OLD_DIR"

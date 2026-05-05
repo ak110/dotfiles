@@ -25,16 +25,16 @@ import sys
 import traceback
 
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
-# 病的に深いパスでの暴走を避けるためのガード。
+# 病的に深いパスでの暴走を防ぐガード。
 _GIT_WORKTREE_LOOKUP_DEPTH = 64
 
 _FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 
-# Bash 自動許可の対象コマンド (引数が全て対象パス配下なら許可)。
+# Bash 自動許可の対象コマンド（引数がすべて対象パス配下なら許可）。
 # 危険性が高い `dd` / `tar` / `rsync` 等は対象外。
 _BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "chown"})
 
-# 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトのみは別途トークンレベルで許容する。
+# 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトのみ別途トークンレベルで許容する。
 _UNSAFE_METACHARS = frozenset("|&;`$()<")
 
 
@@ -110,7 +110,7 @@ def should_allow_bash(command: str, cwd: str) -> bool:
 
     redirect_targets, remaining = _split_redirects(tokens)
     if remaining is None:
-        return False  # 不正なリダイレクト構文
+        return False  # 不正なリダイレクト構文のため拒否する
 
     paths: list[str] = list(redirect_targets)
     if remaining:
@@ -118,9 +118,9 @@ def should_allow_bash(command: str, cwd: str) -> bool:
         if cmd in _BASH_FILE_OPS:
             paths.extend(_extract_path_args(remaining[1:]))
         elif not redirect_targets:
-            # ファイル操作系でもリダイレクトでもない
+            # ファイル操作系でもリダイレクトでもないため拒否する。
             return False
-        # else: リダイレクトのみで判定 (コマンド本体は問わない)
+        # else: リダイレクトのみで判定する（コマンド本体は問わない）
 
     if not paths:
         return False
@@ -134,7 +134,7 @@ def should_allow_bash(command: str, cwd: str) -> bool:
 
 
 def _normalize_path(file_path: str, *, cwd_base: pathlib.Path | None = None) -> pathlib.Path | None:
-    """パス文字列を正規化された絶対パスへ変換する (失敗時は None)。
+    """パス文字列を正規化された絶対パスへ変換する（失敗時は None）。
 
     相対パスは `cwd_base` 起点で絶対パスへ解決する。`cwd_base` が None の場合は
     相対パスを拒否する。`~` は expanduser で展開する。
@@ -155,7 +155,7 @@ def _normalize_path(file_path: str, *, cwd_base: pathlib.Path | None = None) -> 
 
 
 def _resolve_cwd(cwd: str) -> pathlib.Path | None:
-    """`cwd` 文字列を絶対パスへ正規化する (空 / 不正なら None)。"""
+    """`cwd` 文字列を絶対パスへ正規化する（空 / 不正なら None）。"""
     if not cwd:
         return None
     try:
@@ -179,7 +179,7 @@ def _is_target_path(target: pathlib.Path) -> bool:
 
 
 def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
-    """`target` が `base` 配下 (`base` 自身は含まない) か判定する。"""
+    """`target` が `base` 配下（`base` 自身は含まない）か判定する。"""
     try:
         rel = target.relative_to(base)
     except ValueError:
@@ -205,9 +205,9 @@ def _is_repo_claude_edit(target: pathlib.Path, home_claude: pathlib.Path) -> boo
 def _is_inside_git_worktree(target: pathlib.Path) -> bool:
     """対象パスの親を遡って `.git` の存在を確認する。
 
-    `.git` はディレクトリ (通常のリポジトリ) またはファイル (worktree / submodule) の
+    `.git` はディレクトリ（通常のリポジトリ）またはファイル（worktree / submodule）の
     いずれもありうるため `exists()` で判定する。subprocess は使わずファイルシステム
-    存在確認のみで完結させる (PermissionRequest が編集毎に実行されるため軽量化が必要)。
+    存在確認のみで完結させる（PermissionRequest が編集毎に実行されるため軽量化が必要）。
     """
     current = target.parent
     for _ in range(_GIT_WORKTREE_LOOKUP_DEPTH):
@@ -222,7 +222,7 @@ def _is_inside_git_worktree(target: pathlib.Path) -> bool:
 def _split_redirects(tokens: list[str]) -> tuple[list[str], list[str] | None]:
     """`>` / `>>` トークンを抽出してリダイレクト先パスと残りのトークンに分ける。
 
-    リダイレクト直後にトークンが無い不正な構文の場合は `(_, None)` を返す。
+    リダイレクト直後にトークンがない不正な構文の場合は `(_, None)` を返す。
     """
     redirects: list[str] = []
     remaining: list[str] = []
@@ -243,7 +243,7 @@ def _split_redirects(tokens: list[str]) -> tuple[list[str], list[str] | None]:
 def _extract_path_args(args: list[str]) -> list[str]:
     """`-` で始まらない引数のみをパスとして抽出する。
 
-    `--` をオプション終端マーカーとして扱う (それ以降は `-` 始まりも全てパス扱い)。
+    `--` をオプション終端マーカーとして扱う（それ以降は `-` 始まりもすべてパス扱い）。
     """
     paths: list[str] = []
     after_double_dash = False

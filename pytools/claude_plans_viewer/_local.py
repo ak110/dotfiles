@@ -103,8 +103,8 @@ class MarkdownCache:
     """Markdownレンダリング結果のLRUキャッシュ。
 
     キーは`(host, path, mtime_epoch)`。リモート分は`fetch_remote_file`が本文と
-    同時取得した`mtime_epoch`をそのまま使うことで、watch通知の遅延と無関係に整合する。
-    `mtime_epoch`が`None`の場合、呼び出し側はキャッシュを参照せずバイパスする
+    同時取得した`mtime_epoch`をそのまま使うことで、watch通知の遅延に左右されず整合する。
+    `mtime_epoch`が`None`の場合、呼び出し側はキャッシュをバイパスする
     （本クラスは`None`を扱わない）。
     """
 
@@ -154,7 +154,7 @@ class MarkdownCache:
 
 
 def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
-    """rootから`.md`ファイルを再帰的に探し、更新日時の降順で返す。
+    """`root`から`.md`ファイルを再帰的に探し、更新日時の降順で返す。
 
     `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
     """
@@ -179,7 +179,7 @@ def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
 
 
 def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
-    """`rel`が`root`配下の`.md`ファイルを指す場合のみ絶対パスを返す。"""
+    """`rel`が`root`配下の`.md`ファイルを指す場合のみ絶対パスを返す。存在しない場合はNone。"""
     # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスで範囲検査する。
     target = (root / rel).resolve()
     try:
@@ -192,13 +192,12 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
 
 
 def resolve_css_path() -> pathlib.Path | None:
-    """リポジトリ内の`share/vscode/markdown.css`を返す。見つからなければNone。"""
+    """リポジトリ内の`share/vscode/markdown.css`のパスを返す。見つからなければNone。"""
     # dotfilesは通常~/dotfiles配下に置かれる。
     candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
     if candidate.is_file():
         return candidate
-    # 念のためフォールバック。
-    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できるはず。
+    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できる。
     # `pytools/claude_plans_viewer/_local.py`の位置を起点とするとリポジトリルートは2階層上。
     candidate = pathlib.Path(__file__).resolve().parents[2] / "share" / "vscode" / "markdown.css"
     if candidate.is_file():

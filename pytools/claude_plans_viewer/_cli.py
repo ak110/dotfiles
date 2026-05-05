@@ -36,7 +36,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """コマンドライン引数を解析する。
 
     各オプションの既定値は環境変数経由で解決する。
-    優先順位は CLI引数 > 環境変数 > 組み込み既定値。
+    優先順位はCLI引数 > 環境変数 > 組み込み既定値。
     """
     parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
     parser.add_argument(
@@ -75,8 +75,8 @@ async def serve(app: quart.Quart, host: str, port: int) -> None:
     """hypercornでQuartアプリを起動する。
 
     シグナル（SIGINT/SIGTERM/SIGHUP）とstdin EOF（非PTY SSH切断検知）を
-    単一のshutdown_triggerに集約し、SSE接続中の体感遅延を抑えるため
-    graceful_timeoutを1.0秒へ短縮する。
+    単一の`shutdown_trigger`に集約し、SSE接続中の体感遅延を抑えるため
+    `graceful_timeout`を1.0秒へ短縮する。
     """
     config = hypercorn.config.Config()
     config.bind = [f"{host}:{port}"]
@@ -119,7 +119,7 @@ async def watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
     （`session.c`の`session_close_by_channel`はPTYのときのみ`session_pty_cleanup`を呼ぶ）、
     代替としてsshdがリモートコマンドのstdinに割り当てるパイプのEOFを監視する。
 
-    対象はstdinがFIFO（パイプ）のときのみ。TTY（対話起動）やCHR（`/dev/null`等の
+    対象はstdinがFIFO（パイプ）のときのみ。TTY（対話起動）やCHR（`/dev/null`等
     バックグラウンド起動）では誤発火を避けるため早期returnする。
     """
     try:
@@ -143,11 +143,11 @@ async def watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
 
 
 def _main(argv: list[str] | None = None) -> int:
-    """エントリーポイント。
+    """エントリポイント。
 
     `pyproject.toml`の`[project.scripts]`から
     `claude-plans-viewer = "pytools.claude_plans_viewer:_main"`の形で参照されるため、
-    関数名はunderscore付きのまま維持する（変更すると配布物との互換が破綻する）。
+    関数名はアンダースコア付きのまま維持する（変更すると配布物との互換が破綻する）。
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # hypercornは`hypercorn.error`に独自フォーマット付きハンドラーを設定するが、

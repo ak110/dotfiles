@@ -1,6 +1,6 @@
 """配布元から削除されたファイル/ディレクトリを削除する汎用モジュール。
 
-chezmoiは配布元から削除されたファイルを自動でdestination側から削除しないため、
+chezmoiは配布元から削除されたファイルをdestination側から自動削除しないため、
 過去に配布して不要になったファイルを追従して削除する仕組みを提供する。
 """
 
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
-    """base_dir 配下から relative_paths に列挙されたパスを安全に削除する。
+    """`base_dir` 配下から `relative_paths` に列挙されたパスを安全に削除する。
 
-    シンボリックリンクを辿って base_dir 外を削除しないよう、削除前に resolve 後のパスが
-    base_dir 配下に収まることを確認する。
+    シンボリックリンクを辿って `base_dir` 外を削除しないよう、削除前にresolve後のパスが
+    `base_dir` 配下に収まることを確認する。
 
     Returns:
-        実際に削除した件数 (存在しないパスはカウントしない)。
+        実際に削除した件数（存在しないパスはカウントしない）。
     """
     if not base_dir.exists():
         return 0
@@ -47,10 +47,10 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
 
 
 def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]) -> int:
-    """内容が期待値と完全一致する場合に限り、base_dir 配下のファイルを削除する。
+    """内容が期待値と完全一致する場合に限り、`base_dir` 配下のファイルを削除する。
 
-    cleanup_paths との違いは「ユーザーが独自に編集済みの可能性があるファイル」を保護するため、
-    bytes 完全一致のときのみ削除する点。テキスト正規化を介在させないのは改行差異で誤判定しないため。
+    `cleanup_paths` との違いは「ユーザーが独自に編集済みの可能性があるファイル」を保護するため、
+    bytes完全一致のときのみ削除する点。テキスト正規化を介在させないのは改行差異で誤判定しないためである。
 
     Returns:
         実際に削除した件数。

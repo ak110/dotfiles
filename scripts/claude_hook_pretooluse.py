@@ -52,11 +52,11 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
 
 
 def _main() -> int:
-    """エントリポイント。exit code を返す (0 または 2)。"""
+    """エントリポイント。exit code を返す（0 または 2）。"""
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
-        # 想定外入力ではフックを無効化 (実処理の破損を避ける安全側の判定)
+        # 想定外入力ではフックを無効化する（実処理の破損を避ける安全側の判定）。
         return 0
 
     tool_name = payload.get("tool_name", "")
@@ -64,7 +64,6 @@ def _main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    # Write/Edit/MultiEdit 以外は全スキップ
     fields = _collect_new_fields(tool_name, tool_input)
     if fields is None:
         return 0
@@ -72,7 +71,7 @@ def _main() -> int:
     file_path_raw = tool_input.get("file_path")
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
 
-    # --- block 系 check (最初の違反で exit 2) ---
+    # --- block 系 check（最初の違反で exit 2）---
     if _check_ps1_directives(tool_name, fields, file_path):
         return 2
     dotfiles_block, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
@@ -93,8 +92,8 @@ def _main() -> int:
 
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
-        # 上書きできないため、確認ダイアログの抑制が必要な経路は PermissionRequest フック
-        # (`scripts/claude_hook_permissionrequest.py`) で別途処理する。
+        # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
+        # （`scripts/claude_hook_permissionrequest.py`）で別途処理する。
         print(
             json.dumps(
                 {
@@ -112,7 +111,7 @@ def _main() -> int:
 
 
 def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]] | None:
-    """対象ツールの「新規書き込みフィールド」を (field 名, 値) のリストで返す。
+    """対象ツールの「新規書き込みフィールド」を（field 名, 値）のリストで返す。
 
     対象外ツールの場合は None を返す。値が文字列でないものはスキップする。
     """
@@ -140,8 +139,8 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
 # --- PowerShell 必須ディレクティブ check (block) ---
 
 # 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
-# 行頭厳格マッチ (インデント不可) にすることで「コメント内に文字列が含まれるだけ」や
-# 「関数/条件ブロック内に書かれている (= スクリプト全体には適用されない)」ケースをブロックする。
+# 行頭厳格マッチ（インデント不可）にすることで「コメント内に文字列が含まれるだけ」や
+# 「関数/条件ブロック内に書かれている（＝スクリプト全体には適用されない）」ケースをブロックする。
 _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
@@ -153,12 +152,12 @@ _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
-# 検査する先頭行数 (コメントブロックを許容するため広めに取る)。
+# 検査する先頭行数（コメントブロックを許容するため広めに取る）。
 _PS1_DIRECTIVES_HEAD_LINES = 50
 
 
 def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
+    """対象拡張子か判定する（`.ps1` / `.ps1.tmpl`）。"""
     lowered = file_path.lower()
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
@@ -172,7 +171,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     if tool_name != "Write" or not _is_ps1(file_path):
         return False
     for field, value in fields:
-        # BOM (U+FEFF) は chezmoi テンプレートで使われることがあるため除去してから判定する
+        # BOM（U+FEFF）は chezmoi テンプレートで使われることがあるため除去してから判定する。
         normalized = value.lstrip("﻿")
         head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
@@ -193,8 +192,8 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
 
 # --- ~/.claude/ 配下の直接編集 check (warn) ---
 
-# 警告対象外のサブツリー (Claude Code のランタイム領域 / プラン作業領域)。
-# 配布対象 (rules/ や agents/) は含めない。
+# 警告対象外のサブツリー（Claude Code のランタイム領域 / プラン作業領域）。
+# 配布対象（rules/ や agents/）は含めない。
 _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     {
         "plans",  # plan mode が書き込む計画ファイル
@@ -206,14 +205,14 @@ _HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
     }
 )
 
-# 警告対象外のファイル名 (Claude Code 自身が書き換える非 chezmoi 管理ファイル)。
+# 警告対象外のファイル名（Claude Code 自身が書き換える非 chezmoi 管理ファイル）。
 _HOME_CLAUDE_ALLOWED_NAMES: frozenset[str] = frozenset(
     {
         "settings.json",  # Claude Code ランタイム設定 (autoMode 等を自身が書き換える)
     }
 )
 
-# 警告対象外のファイル名部分一致 (`*.local.*` 系 ローカル設定)。
+# 警告対象外のファイル名部分一致（`*.local.*` 系ローカル設定）。
 _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING = ".local."
 
 
@@ -229,8 +228,8 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
         return None
     try:
         target = pathlib.Path(file_path).expanduser()
-        # 相対パスでは ~/.claude 配下か判定できないためスキップする
-        # (resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定)
+        # 相対パスでは ~/.claude 配下か判定できないためスキップする。
+        # （resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定する）
         if not target.is_absolute():
             return None
         # `.` / `..`・シンボリックリンクを解消して字句比較の迂回を防ぐ。
@@ -245,7 +244,7 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
         return None
     parts = rel.parts
     if not parts:
-        # `~/.claude` そのもの (実際にはディレクトリ) は対象外
+        # `~/.claude` そのもの（実際にはディレクトリ）は対象外。
         return None
     if parts[0] in _HOME_CLAUDE_ALLOWED_DIRS:
         return None
@@ -263,15 +262,15 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
 
 # --- 個人用 / ローカル専用ファイル言及 check (warn) ---
 
-# ファイル名に連続アンダースコア (3〜7 文字) を含むトークンを検出する。
+# ファイル名に連続アンダースコア（3〜7 文字）を含むトークンを検出する。
 # 個人用メモの慣習として使われるファイル名パターン。
-# 8 文字以上の連続アンダースコアは区切り線等の装飾用途とみなし対象外にする。
-# `[^\W_]` (= [a-zA-Z0-9]) でアンダースコア列の前後を非アンダースコアの word 文字に
+# 8 文字以上の連続アンダースコアは区切り線等の装飾用途とみなし対象外とする。
+# `[^\W_]`（= [a-zA-Z0-9]）でアンダースコア列の前後を非アンダースコアの word 文字に
 # 限定し、`(?!_)` で列が 7 文字を超えないことを保証する。
 # `\b` でword境界に固定することで、トークンの内側の部分マッチを避ける。
 _TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
 
-# 3〜7 文字の連続アンダースコアを検出するパターン (ファイル名判定用)。
+# 3〜7 文字の連続アンダースコアを検出するパターン（ファイル名判定用）。
 _SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
 
 
@@ -330,7 +329,7 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
 # 個人プロジェクト名の固定リスト。
 # ファイルシステムから機械的に取得できないため明示的に持つ。
 # OSS として紹介する想定がある pyfltr / pytilpack は warn にとどめ、
-# それ以外 (個人非公開・特定プラットフォーム専用) は block する。
+# それ以外（個人非公開・特定プラットフォーム専用）は block する。
 _PERSONAL_PROJECTS_BLOCK: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
 _PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 
@@ -378,7 +377,7 @@ def _check_dotfiles_specific_names(
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:
     """対象ファイルが agent-toolkit 配布範囲のいずれかに含まれるかを判定する。
 
-    相対パスでは判定不能なためスキップする (resolve は CWD 基準で解決され誤検出になり得る)。
+    相対パスでは判定不能なためスキップする（resolve は CWD 基準で解決され誤検出になり得る）。
     """
     try:
         target = pathlib.Path(file_path).expanduser()
@@ -417,7 +416,7 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
     block |= _list_pytools_modules(dotfiles_root / "pytools")
     block |= _list_scripts_modules(dotfiles_root / "scripts")
     block |= _PERSONAL_PROJECTS_BLOCK
-    # warn 対象が誤って block に混入した場合は warn を優先する (保守的措置)
+    # warn 対象が誤って block に混入した場合は warn を優先する（保守的措置）。
     block -= _PERSONAL_PROJECTS_WARN
     return frozenset(block), _PERSONAL_PROJECTS_WARN
 
@@ -447,14 +446,14 @@ def _list_pyproject_scripts(path: pathlib.Path) -> set[str]:
 
 
 def _list_pytools_modules(path: pathlib.Path) -> set[str]:
-    """`pytools/` 直下のモジュール名 (拡張子除去) を返す。`__init__.py` と `_internal/` は除外。"""
+    """`pytools/` 直下のモジュール名（拡張子除去）を返す。`__init__.py` と `_internal/` は除外。"""
     if not path.is_dir():
         return set()
     return {child.stem for child in path.glob("*.py") if child.name != "__init__.py"}
 
 
 def _list_scripts_modules(path: pathlib.Path) -> set[str]:
-    """`scripts/` 直下のスクリプト名 (拡張子除去) を返す。`*_test.py` は除外。"""
+    """`scripts/` 直下のスクリプト名（拡張子除去）を返す。`*_test.py` は除外。"""
     if not path.is_dir():
         return set()
     names: set[str] = set()
@@ -468,7 +467,7 @@ def _list_scripts_modules(path: pathlib.Path) -> set[str]:
 def _collect_word_hits(tool_name: str, fields: list[tuple[str, str]], names: frozenset[str]) -> list[str]:
     """単語境界マッチで各フィールドから検出された名前を `'name' in field` 形式で列挙する。
 
-    同名が複数フィールドで出ても 1 度だけ記録する。
+    同名が複数フィールドで出ても 1 件だけ記録する。
     """
     hits: list[str] = []
     seen: set[str] = set()
@@ -486,6 +485,6 @@ if __name__ == "__main__":
     try:
         sys.exit(_main())
     except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
-        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に表示する
+        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出力する。
         traceback.print_exc()
         sys.exit(0)

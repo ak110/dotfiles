@@ -1,8 +1,8 @@
-"""dotfiles同梱のClaude Code pluginを自動インストール/更新する。
+"""dotfiles同梱のClaude Code pluginを自動インストール・更新する。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 対象プラグインは`.claude-plugin/marketplace.json`の`plugins[]`をSSOTとして動的に決定する。
-前提条件（`claude` CLI / `uv` CLI がPATHにある）を満たさない場合は完全にスキップし、
+前提条件（`claude` CLI / `uv` CLIがPATHにある）を満たさない場合は完全にスキップし、
 dotfiles apply全体の失敗にはしない。
 """
 
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 _MARKETPLACE_NAME = claude_common.MARKETPLACE_NAME
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
-# 自動的に無効化するプラグイン (ユーザーが使わないもの)。
 # インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
@@ -35,8 +34,7 @@ _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     }
 )
 
-# 推奨的にインストール+有効化したいプラグイン。
-# 未インストールなら `claude plugin install`、明示的に false なら
+# 未インストールなら `claude plugin install`、明示的にfalseなら
 # `claude plugin enable` の提案として案内に表示する。
 _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
@@ -55,12 +53,12 @@ def _main() -> None:
 
 
 def run() -> tuple[bool, list[str]]:
-    """Claude Code plugin をインストール/更新する。
+    """Claude Code pluginをインストール・更新する。
 
     Returns:
         (changed, recommendations) のタプル。
-        changed は何らかの plugin を新たにインストールまたは更新した場合に True。
-        recommendations は呼び出し元が利用者へ案内する推奨コマンド列。
+        changedは何らかのpluginを新たにインストールまたは更新した場合にTrue。
+        recommendationsは呼び出し元が利用者へ案内する推奨コマンド列。
     """
     if not _prerequisites_ok():
         return False, []
@@ -178,11 +176,11 @@ def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] 
     - ``_AUTO_ENABLED_PLUGIN_IDS`` のうちインストール済みかつ ``enabledPlugins[id]`` が ``false``
       → ``claude plugin enable <id> --scope=user``
 
-    ``_AUTO_DISABLED_PLUGIN_IDS`` の disable 実行は ``_auto_disable_plugins()`` が直接行うため、
+    ``_AUTO_DISABLED_PLUGIN_IDS`` のdisable実行は ``_auto_disable_plugins()`` が直接行うため、
     本関数では推奨コマンドの算出対象に含めない。
 
-    順序は推奨理由ごとに install → enable とし、同カテゴリ内は
-    ID で昇順にソートする (出力の安定化とユーザー側の視認性のため)。
+    順序は推奨理由ごとにinstall → enableとし、同カテゴリ内はIDで昇順にソートする
+    （出力の安定化と視認性のため）。
     """
     installed_ids = _user_scope_plugin_ids(raw_data)
     install_cmds: list[str] = []
@@ -198,7 +196,7 @@ def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] 
 def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None) -> tuple[int, int]:
     """``_AUTO_DISABLED_PLUGIN_IDS`` のうち有効状態のものを自動で無効化する。
 
-    インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない (既定で有効な) 対象に対し、
+    インストール済みかつ ``enabledPlugins[id]`` が ``false`` でない（既定で有効な）対象に対し、
     ``claude plugin disable <id> --scope=user`` を発行する。失敗しても他対象を続行する。
 
     Returns:
@@ -220,11 +218,11 @@ def _auto_disable_plugins(raw_data: object, enabled_map: dict[str, bool] | None)
 
 
 def _user_scope_plugin_ids(raw_data: object) -> set[str]:
-    """`claude plugin list` の raw data から user scope の ``id`` 集合を返す。
+    """`claude plugin list` のraw dataからuser scopeの ``id`` 集合を返す。
 
-    自動無効化・自動有効化の判定で、`<plugin>@<marketplace>` 形式の `id` を
-    そのまま参照したいケース向け (既存の `_extract_plugin_version_map` は
-    ak110-dotfiles marketplace の `name` のみを返すため別関数にする)。
+    自動無効化・自動有効化の判定で `<plugin>@<marketplace>` 形式の `id` を
+    そのまま参照したいケース向け（既存の `_extract_plugin_version_map` は
+    ak110-dotfiles marketplaceの `name` のみを返すため別関数にする）。
     """
     if not isinstance(raw_data, list):
         return set()
@@ -242,7 +240,7 @@ def _user_scope_plugin_ids(raw_data: object) -> set[str]:
 
 
 def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
-    """installed_plugins.jsonを直接読み取り、CLI互換のlist[dict]形式に変換する。
+    """`installed_plugins.json`を直接読み取り、CLI互換のlist[dict]形式に変換する。
 
     ファイルの形式:
         {"version": 2, "plugins": {"name@marketplace": [{"scope": "user", "version": "0.15.0", ...}]}}
@@ -300,26 +298,26 @@ def _get_installed_plugins_raw() -> object | None:
 
 
 def _extract_plugin_version_map(data: object) -> dict[str, str]:
-    """`claude plugin list --json` の戻り値から user scope の name → version 辞書を構築する。
+    """`claude plugin list --json` の戻り値からuser scopeのname → version辞書を構築する。
 
     本スクリプトは ``--scope=user`` でインストールするため、
-    user scope のエントリのみを対象とする。``scope`` フィールドが存在しない
+    user scopeのエントリのみを対象とする。``scope`` フィールドが存在しない
     エントリは後方互換のため含める。
 
-    実機で確認した形式 (Claude Code 2.x): list[dict] で各要素が以下を持つ。
+    実機で確認した形式（Claude Code 2.x）: list[dict]で各要素が以下を持つ。
 
-    - `id`: `<plugin>@<marketplace>` 形式 (例: `agent-toolkit@ak110-dotfiles`)
-    - `version`: 例 `"0.1.0"` (無い場合は空文字列として記録)
+    - `id`: `<plugin>@<marketplace>` 形式（例: `agent-toolkit@ak110-dotfiles`）
+    - `version`: 例 `"0.1.0"`（ない場合は空文字列として記録）
     - `scope`: `"user"` / `"project"` / `"local"` 等
     - `name`: ない場合あり
 
-    知っている全形式:
+    対応する全形式:
 
-    - list[dict]: 各要素の `id` (`@` の前を切り出す) または `name` フィールドを plugin 名とする
-    - dict[str, ...]: キーが plugin 名 (version は不明として空文字列)
-    - dict に `plugins` キーがあり、その中に上記いずれか
+    - list[dict]: 各要素の `id`（`@` の前を切り出す）または `name` フィールドをplugin名とする
+    - dict[str, ...]: キーがplugin名（versionは不明として空文字列）
+    - dictに `plugins` キーがあり、その中に上記いずれか
 
-    未知の形式では空辞書を返す (呼び出し側でスキップ扱いになる)。
+    未知の形式では空辞書を返す（呼び出し側でスキップ扱いになる）。
     """
     if isinstance(data, dict):
         dict_data = cast("dict[str, object]", data)
@@ -344,7 +342,7 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
 
 
 def _name_from_entry(entry: dict[str, object]) -> str | None:
-    """`plugin list` の 1 エントリから plugin 名を取り出す (優先順位: `id` の `@` 前 → `name`)."""
+    """`plugin list` の1エントリからplugin名を取り出す（優先順位: `id` の `@` 前 → `name`）。"""
     raw_id = entry.get("id")
     if isinstance(raw_id, str):
         # `id` は `<name>@<marketplace>` 形式。`@` がなければそのまま返す
@@ -356,12 +354,12 @@ def _name_from_entry(entry: dict[str, object]) -> str | None:
 
 
 def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
-    """`marketplace.json` から目標バージョン辞書と deprecated 名の集合を返す。
+    """`marketplace.json` から目標バージョン辞書とdeprecated名の集合を返す。
 
-    ``keywords`` に ``"deprecated"`` を含むエントリは deprecated 扱いとし、
-    通常のインストール/更新対象から除外する。
+    ``keywords`` に ``"deprecated"`` を含むエントリはdeprecated扱いとし、
+    通常のインストール・更新対象から除外する。
 
-    読み込み失敗時は空辞書・空集合を返す (更新判定をスキップする方針とする)。
+    読み込み失敗時は空辞書・空集合を返す（更新判定をスキップする）。
     """
     manifest = dotfiles_root / ".claude-plugin" / "marketplace.json"
     try:
@@ -400,12 +398,12 @@ def _is_installed(name: str, raw_data: object) -> bool:
 
 
 def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
-    """指定プラグインの project scope エントリに対応する projectPath 一覧を返す。
+    """指定プラグインのproject scopeエントリに対応するprojectPath一覧を返す。
 
-    `claude plugin uninstall --scope=project` は呼び出し時の cwd に紐づく
-    プロジェクト設定のみを参照する。そのため、除去対象の project scope
+    `claude plugin uninstall --scope=project` は呼び出し時のcwdに紐づく
+    プロジェクト設定のみを参照する。そのため、除去対象のproject scope
     エントリごとにインストール元プロジェクトの絶対パスを取得し、
-    後段でそれを cwd にして CLI を呼ぶ必要がある。
+    後段でそれをcwdにしてCLIを呼ぶ必要がある。
     """
     if not isinstance(raw_data, list):
         return []
@@ -500,8 +498,8 @@ def _disable_plugin(plugin_id: str) -> bool:
 def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
     """`settings.json` の `enabledPlugins` を直読みして `<id> -> bool` 辞書で返す。
 
-    ファイル不在・解析失敗・`enabledPlugins` が非 dict の場合は `None` を返し、
-    呼び出し元では「情報なし」として扱う (デフォルト有効扱いと同等)。
+    ファイル不在・解析失敗・`enabledPlugins` が非dictの場合は `None` を返し、
+    呼び出し元では「情報なし」（デフォルト有効扱いと同等）として扱う。
     """
     data = claude_common.load_json_dict(claude_common.SETTINGS_JSON_PATH)
     if data is None:
@@ -517,10 +515,10 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
 
 
 def _warn_if_missing(target_versions: dict[str, str]) -> None:
-    """Install 試行後も `target_versions` の未インストールが残っていれば警告する。
+    """install試行後も `target_versions` の未インストールが残っていれば警告する。
 
     再現性が不明瞭な未インストール事象の早期検出を目的とする。
-    最新情報を取りたいため installed_plugins.json の再読み取りを行う。
+    最新情報を取得するため `installed_plugins.json` を再読み取りする。
     """
     raw_data: object = _read_installed_plugins_from_file()
     if raw_data is None:

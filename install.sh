@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 
-# 前提条件チェック (README の「前提条件(要インストール)」セクション参照)
+# 前提条件チェック（README の「前提条件(要インストール)」セクション参照）
 missing=()
 command -v git >/dev/null 2>&1 || missing+=(git)
 command -v uv >/dev/null 2>&1 || missing+=(uv)
@@ -13,7 +13,7 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 
 set -x
-# 既に chezmoi が入っていればダウンロードをスキップ (冪等性とテスト用途)
+# 既に chezmoi が入っていればダウンロードをスキップする（冪等性とテスト用途）
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v chezmoi >/dev/null 2>&1; then
     sh -c "$(curl -fsSL get.chezmoi.io)" -- -b ~/.local/bin
@@ -22,7 +22,7 @@ if [ ! -d ~/dotfiles ]; then
     git clone https://github.com/ak110/dotfiles.git ~/dotfiles
 fi
 
-# chezmoi管理対象の既存ファイルをバックアップ
+# chezmoi 管理対象の既存ファイルをバックアップする
 backup_existing_dotfiles() {
     local source_dir="$1"
     local backup_dir
@@ -31,7 +31,7 @@ backup_existing_dotfiles() {
 
     while IFS= read -r target; do
         local src="$HOME/$target"
-        # ファイルとシンボリックリンクのみ対象（ディレクトリはスキップ）
+        # ファイルとシンボリックリンクのみ対象とする（ディレクトリはスキップ）
         [ -f "$src" ] || [ -L "$src" ] || continue
         local dest_dir
         dest_dir="$backup_dir/$(dirname "$target")"

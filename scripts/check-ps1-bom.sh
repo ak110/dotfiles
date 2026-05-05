@@ -4,7 +4,7 @@
 # Windows PowerShell 5.1 は BOM なし UTF-8 ファイルを Shift-JIS として誤読し、
 # 日本語メッセージが文字化けする。PSScriptAnalyzer の
 # PSUseBOMForUnicodeEncodedFile でも検出できるが、pwsh 非導入環境でも
-# 検出できるよう独立したチェックとして用意している。
+# 検出できるよう独立したチェックとして用意する。
 set -eu
 
 fail=0

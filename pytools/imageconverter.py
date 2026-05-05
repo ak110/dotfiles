@@ -39,10 +39,10 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
 
     Pillow 12.xはPNG補助チャンク（tEXt等）のCRCが不整合だと既定で`UnidentifiedImageError`を
     送出して`Image.open`が失敗するが、ImageMagick等の他ツールでは警告レベルで読み込めるケースがある。
-    そこでまず既定モードで`PIL.Image.open`を試み、`UnidentifiedImageError`等の
+    まず既定モードで`PIL.Image.open`を試み、`UnidentifiedImageError`等の
     読み込み例外が発生した場合のみ`PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True`へ
-    切り替えて再試行する。再試行で成功した場合は第2戻り値を`True`として返し、
-    呼び元が警告として集約できるようにする。再試行でも失敗した場合は例外を再送出する。
+    切り替えて再試行する。再試行で成功した場合は第2戻り値を`True`として返す。
+    再試行でも失敗した場合は例外を再送出する。
 
     `PIL.ImageOps.exif_transpose`が例外を送出した場合は元画像のコピーへフォールバックする。
 
@@ -83,10 +83,10 @@ def _truncated_images_enabled() -> typing.Iterator[None]:
 
 @functools.cache
 def _pillow_image_extensions() -> frozenset[str]:
-    """Pillow が画像とみなす拡張子集合を返す（小文字・先頭ドット付き）。
+    """Pillowが画像とみなす拡張子集合を返す（小文字・先頭ドット付き）。
 
-    `PIL.Image.registered_extensions()` の戻り値（拡張子→フォーマット名の dict）を
-    元に構築する。新形式（heic/avif など）が Pillow に追加されても自動的に追従する。
+    `PIL.Image.registered_extensions()` の戻り値（拡張子→フォーマット名のdict）を元に構築する。
+    新形式（heic/avifなど）がPillowに追加されても自動的に追従する。
     """
     return frozenset(PIL.Image.registered_extensions())
 
@@ -136,20 +136,20 @@ def convert_directory(
     Args:
         target_path: 処理対象のディレクトリ。
         output_type: 出力形式。
-        max_width: 出力最大幅。これを超える場合は縮小する。
-        max_height: 出力最大高さ。これを超える場合は縮小する。
-        jpeg_quality: JPEG 出力時の品質。
-        repack_png: PNG 入力時に wand で再パックしてメタデータを除去する。
+        max_width: 出力最大幅（これを超える場合は縮小する）。
+        max_height: 出力最大高さ（これを超える場合は縮小する）。
+        jpeg_quality: JPEG出力時の品質。
+        repack_png: PNG入力時にwandで再パックしてメタデータを除去する。
         remove_failed: 変換に失敗したファイルを削除する。
-        progress: 呼び元で作成済みの tqdm。未指定なら内部で作成する。
-        log_root: 進捗ログのパス表示で起点にするディレクトリ。指定時は POSIX 区切りの
+        progress: 呼び元で作成済みのtqdm。未指定なら内部で作成する。
+        log_root: 進捗ログのパス表示で起点にするディレクトリ。指定時はPOSIX区切りの
             相対パスで表示する。未指定時は絶対パスのまま表示する。
 
     Returns:
         画像変換の警告・失敗イベント一覧（成功のみのファイルは含まれない）。
-        各要素は `(対象ファイルのパス, severity, メッセージ)` の 3 要素タプル。
+        各要素は `(対象ファイルのパス, severity, メッセージ)` の3要素タプル。
         `severity` は寛容モードへフォールバックして変換に成功した場合 `"warning"`、
-        変換自体が失敗した場合 `"error"`。Pillow が画像とみなす拡張子のファイル
+        変換自体が失敗した場合 `"error"`。Pillowが画像とみなす拡張子のファイル
         （`PIL.Image.registered_extensions()` 由来）のみ集約対象に含める。
     """
     suffix = _TYPE_SUFFIXES[output_type]
@@ -191,15 +191,14 @@ def _convert_one(
     remove_failed: bool,
     log_root: pathlib.Path | None = None,
 ) -> ConvertEvent | None:
-    """1 ファイル分の変換処理。
+    """1ファイル分の変換処理。
 
-    成功時は None。寛容モードで読み込みに成功した場合は `("warning", ...)`、
-    変換失敗の場合は `("error", ...)` を返す。Pillow が画像とみなさない拡張子の
+    成功時はNone。寛容モードで読み込みに成功した場合は `("warning", ...)`、
+    変換失敗の場合は `("error", ...)` を返す。Pillowが画像とみなさない拡張子の
     ファイルで失敗した場合はログのみ出力し戻り値には含めない。
     """
     is_pillow_image = path.suffix.lower() in _pillow_image_extensions()
     try:
-        # PNG の場合は repack_png を実行
         if repack_png and path.suffix.lower() == ".png":
             temp_png_path = path.parent / f"{secrets.token_urlsafe(8)}.png"
             _repack_png(path, temp_png_path)
@@ -208,13 +207,11 @@ def _convert_one(
         # 画像を読み込む（補助チャンクの CRC 不整合等は寛容モードで再試行）
         img, used_fallback = open_image_with_exif(path)
         with img:
-            # JPEG 出力時の色空間変換
             if output_type == "jpeg":
                 if img.mode == "RGBA":
                     img = img.convert("RGB")
                 elif img.mode == "LA":
                     img = img.convert("L")
-            # 指定サイズを超える場合は縮小する
             if img.width >= max_width or img.height >= max_height:
                 r = min(max_width / img.width, max_height / img.height)
                 size = int(img.width * r), int(img.height * r)
@@ -250,7 +247,7 @@ def _convert_one(
 def _format_log_path(path: pathlib.Path, log_root: pathlib.Path | None) -> str:
     """進捗ログのパス表示を整形する。
 
-    ``log_root`` が指定され、かつ ``path`` がその配下にある場合のみ POSIX 区切りの
+    ``log_root`` が指定され、かつ ``path`` がその配下にある場合のみPOSIX区切りの
     相対パスへ変換する。それ以外は絶対パス文字列をそのまま返す。
     """
     if log_root is None:
@@ -262,7 +259,7 @@ def _format_log_path(path: pathlib.Path, log_root: pathlib.Path | None) -> str:
 
 
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
-    """PNG を再パックして不要なチャンクを削除する。wand (ImageMagick) が必要。"""
+    """PNGを再パックして不要なチャンクを削除する。wand（ImageMagick）が必要。"""
     try:
         # 重量級optional依存のため遅延import。
         import wand.color  # pylint: disable=import-outside-toplevel

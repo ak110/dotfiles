@@ -1,7 +1,6 @@
 """agent-toolkit/scripts/posttooluse.py のテスト。
 
-PostToolUse セッション状態記録のテスト。
-subprocess で起動し exit code・状態ファイルの内容を検証する。
+subprocessで起動しexit code・状態ファイルの内容を検証する。
 """
 
 import importlib.util
@@ -21,10 +20,10 @@ _PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-
 
 
 def _load_posttooluse_module() -> types.ModuleType:
-    """``scripts/posttooluse.py`` を ``importlib`` で動的importする。
+    """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
 
-    本体スクリプトが定義する定数（``_PLAN_REQUIRED_H2`` 等）をテストから直接参照し、
-    フィクスチャの順序ドリフトを防ぐ。
+    本体スクリプトの定数（`_PLAN_REQUIRED_H2`等）をテストから直接参照し、
+    順序ドリフトを防ぐ。
     """
     spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
     assert spec is not None and spec.loader is not None
@@ -34,7 +33,7 @@ def _load_posttooluse_module() -> types.ModuleType:
 
 
 _POSTTOOLUSE = _load_posttooluse_module()
-# SSOT 共有のため protected member を直接参照する。
+# SSOT共有のためprotected memberを直接参照する。
 _PLAN_REQUIRED_H2: tuple[str, ...] = _POSTTOOLUSE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
 
 
@@ -53,7 +52,7 @@ def _run(
         env["TMP"] = str(state_dir)
     if home_dir is not None:
         env["HOME"] = str(home_dir)
-    # plan file 形式検査は plan_mode_skill_invoked が真の場合のみ実行されるため、
+    # plan file形式検査はplan_mode_skill_invokedが真の場合のみ実行されるため、
     # 形式検査を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
@@ -100,7 +99,7 @@ class TestTestExecution:
             "pre-commit run --all-files",
             "uvx pre-commit run -a",
             "cargo test",
-            # タスクランナー経由 (test / check / validate アクションを各ランナーで網羅)
+            # タスクランナー経由（test / check / validateアクションを各ランナーで網羅）
             "make test",
             "make check",
             "make validate",
@@ -294,9 +293,9 @@ class TestGitLogChecked:
         assert _read_state(tmp_path, sid).get("git_log_checked") is True
 
 
-# plan file 形式検査で使う各種 Markdown 断片。テスト全体で共用する。
-# 本体スクリプトの ``_PLAN_REQUIRED_H2`` から自動生成し、定義順序のドリフトを防ぐ。
-# ``## 対応方針`` 配下には判断材料 H3 を含めて妥当な plan 構造を再現する。
+# plan file形式検査で使う各種Markdown断片。テスト全体で共用する。
+# 本体スクリプトの`_PLAN_REQUIRED_H2`から自動生成し、定義順序のドリフトを防ぐ。
+# `## 対応方針`配下には判断材料H3を含めて妥当なplan構造を再現する。
 _PLAN_BODY: dict[str, str] = {
     "変更履歴": "- 初版",
     "背景": "説明。",
@@ -314,13 +313,12 @@ def _build_valid_plan(
     overrides: dict[str, str] | None = None,
     prefix: str = "",
 ) -> str:
-    """``_PLAN_REQUIRED_H2`` の順序に従い妥当な plan file 内容を生成する。
+    """`_PLAN_REQUIRED_H2`の順序に従い妥当なplan file内容を生成する。
 
-    - ``omit``: 指定した H2 セクションを省略する（必須セクション欠落の検証に用いる）。
-    - ``overrides``: 指定した H2 セクションの本文を差し替える
-      （コードフェンス・HTML コメントなど特定本文での無視判定検証に用いる）。
-    - ``prefix``: 戻り値の先頭に連結する文字列（YAML フロントマターなど、
-      ファイル先頭要素の検証に用いる）。
+    - `omit`: 指定したH2セクションを省略する（必須セクション欠落の検証用）。
+    - `overrides`: 指定したH2セクションの本文を差し替える
+      （コードフェンス・HTMLコメントなど特定本文での無視判定検証用）。
+    - `prefix`: 戻り値の先頭に連結する文字列（YAMLフロントマターなどの検証用）。
     """
     overrides = overrides or {}
     parts: list[str] = ["# タイトル", ""]
@@ -338,7 +336,7 @@ _VALID_PLAN = _build_valid_plan()
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
-    """``<home>/.claude/plans`` を作成してそのパスを返す。"""
+    """`<home>/.claude/plans`を作成してパスを返す。"""
     plans = home_dir / ".claude" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
     return plans
@@ -358,7 +356,7 @@ def _parse_hook_output(stdout: str) -> dict | None:
 
 
 class TestPlanFormatCheck:
-    """plan file 形式検査。"""
+    """plan file形式検査。"""
 
     def _home(self, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
         home = tmp_path / "home"
@@ -383,7 +381,7 @@ class TestPlanFormatCheck:
 
     def test_missing_required_section_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 調査結果セクションを欠落させた変種
+        # 調査結果セクションを欠落させた変種。
         content = _build_valid_plan(omit=("調査結果",))
         plan = _write_plan(plans, "missing.md", content)
         result = _run(
@@ -426,7 +424,7 @@ class TestPlanFormatCheck:
 
     def test_out_of_order_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 変更内容 と 調査結果 を入れ替える
+        # 変更内容と調査結果を入れ替える。
         content = (
             "# タイトル\n\n"
             "## 背景\n\n説明。\n\n"
@@ -473,7 +471,7 @@ class TestPlanFormatCheck:
 
     def test_history_not_at_top_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 変更履歴を中間に置いた変種
+        # 変更履歴を中間に置いた変種。
         content = (
             "# タイトル\n\n"
             "## 背景\n\n説明。\n\n"
@@ -569,7 +567,7 @@ class TestPlanFormatCheck:
 
     def test_edit_tool_triggers_check(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
-        # 先に崩れた plan を生成し、Edit ツールからのフック通知を検証する
+        # 崩れたplanを生成し、EditツールからのHook通知を検証する。
         content = "# タイトル\n\n## 背景\n\nx\n"
         plan = _write_plan(plans, "edit.md", content)
         result = _run(
@@ -731,24 +729,24 @@ class TestPlanFormatCheck:
 
 
 class TestPlanFormatSsot:
-    """期待セクション一覧が `plan-mode/references/plan-file-guidelines.md` に全て登場することを検査する。"""
+    """期待セクション一覧が`plan-mode/references/plan-file-guidelines.md`に全て登場することを検査する。"""
 
     def test_required_and_optional_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 必須 H2 は全て plan-file-guidelines.md 内の記述例とセクション定義に登場する
+        # 必須H2は全てplan-file-guidelines.md内の記述例とセクション定義に登場する。
         for heading in _PLAN_REQUIRED_H2:
             assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
 
     def test_section_definition_order_matches_required_h2(self):
-        """``plan-file-guidelines.md`` のセクション定義 H3 と ``_PLAN_REQUIRED_H2`` の順序が一致することを検査する。
+        """`plan-file-guidelines.md`のセクション定義H3と`_PLAN_REQUIRED_H2`の順序が一致することを検査する。
 
-        セクション定義 H3 は ``### XXX（`## YYY`）`` 形式で記述されており、
-        バッククォート内の H2 名（YYY）が登場順に ``_PLAN_REQUIRED_H2`` と完全一致するべき。
-        記述例コードブロック内の H2 や、サブ H3 定義（``### XXX（`### YYY`）`` 形式）は
+        セクション定義H3は`### XXX（`## YYY`）`形式で記述されており、
+        バッククォート内のH2名（YYY）が登場順に`_PLAN_REQUIRED_H2`と完全一致するべき。
+        記述例コードブロック内のH2や、サブH3定義（`### XXX（`### YYY`）`形式）は
         パターン上マッチしないため誤検出しない。
         """
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 行頭 H3 のうち、丸括弧内のインラインコードが H2 (`## ...`) 形式のものだけ抽出
+        # 行頭H3のうち、丸括弧内のインラインコードがH2（`## ...`）形式のものだけ抽出。
         pattern = re.compile(r"^### .+?（`## ([^`]+)`）", re.MULTILINE)
         defined_h2 = tuple(pattern.findall(text))
         assert defined_h2 == _PLAN_REQUIRED_H2, (

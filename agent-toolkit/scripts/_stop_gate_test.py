@@ -1,7 +1,7 @@
 """agent-toolkit/scripts/_stop_gate.py のテスト。
 
-各ヘルパー関数の単体テストと `is_real_session_end` の統合テストを行う。
-transcript fixture JSONL ファイルに対して関数を呼ぶ形式。
+各ヘルパー関数の単体テストと`is_real_session_end`の統合テスト。
+transcript JSONLファイルを作成して関数を呼ぶ形式。
 """
 
 import json
@@ -21,7 +21,7 @@ from _stop_gate import (
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
-    """dict のリストを JSONL 形式の transcript として保存する。"""
+    """dict のリストを JSONL 形式の transcript として書き込む。"""
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(json.dumps(line, ensure_ascii=False) for line in lines) + "\n",
@@ -33,8 +33,8 @@ def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
     """アシスタントエントリを生成する。
 
-    `stop_reason` の既定は `end_turn`（最終ターン相当）。`is_real_session_end` 内の
-    `_wait_for_end_turn` race 吸収ポーリングを即時戻りで通過させるため。
+    `stop_reason`の既定は`end_turn`（最終ターン相当）。
+    `_wait_for_end_turn`のポーリングを即時通過させるための設定。
     """
     return {
         "type": "assistant",

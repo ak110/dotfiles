@@ -20,16 +20,16 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: dotfiles
-      - name: ~/dotfilesに配置
+      - name: ~/dotfiles に配置
         run: mv dotfiles ~/dotfiles
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - name: PowerShell + PSScriptAnalyzerインストール
+      - name: PowerShell + PSScriptAnalyzer インストール
         run: make -C "$HOME/dotfiles" setup-pwsh
-      - name: chezmoiインストール
+      - name: chezmoi インストール
         run: |
           sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: install.sh実行
+      - name: install.sh 実行
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
         run: |
@@ -46,19 +46,19 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: dotfiles
-      - name: ~/dotfilesに配置
+      - name: ~/dotfiles に配置
         shell: bash
         run: mv dotfiles ~/dotfiles
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - name: chezmoiインストール
+      - name: chezmoi インストール
         shell: bash
         run: sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
-      - name: chezmoi適用
+      - name: chezmoi 適用
         shell: bash
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source=~/dotfiles --apply
-      - name: dotfiles-post-applyの動作確認
+      - name: dotfiles-post-apply の動作確認
         shell: pwsh
         run: dotfiles-post-apply
       - name: 主要ファイルの存在確認
@@ -88,18 +88,18 @@ jobs:
       matrix:
         python-version: [ "3.12", "3.13", "3.14" ]
     env:
-      # 開発モード: DeprecationWarningなどの隠れた問題を早期検出する
+      # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"
-      # サプライチェーン攻撃対策: uvがlockfileを常に尊重する
+      # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
       UV_FROZEN: "1"
       UV_PYTHON: ${{ matrix.python-version }}
-      # mise・pinact等がGitHub APIを呼び出す際のレート制限（403）回避。
-      # container jobでは明示しないとsecrets.GITHUB_TOKENがコンテナへ渡らない
+      # mise・pinact 等が GitHub API を呼び出す際のレート制限（403）回避。
+      # container job では明示しないと secrets.GITHUB_TOKEN がコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: GitHub Actionsのピン留め検証
+      - name: GitHub Actions のピン留め検証
         run: pinact run --check
 
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -112,9 +112,9 @@ jobs:
 
       - name: Test with pyfltr
         env:
-          # chezmoi-applyはローカルコミット時専用のpre-commit hookなのでCIではスキップ。
-          # claude-plugin-validateはclaude CLIが必要で、CI環境への導入はpnpm/npmの
-          # minimum-release-age機構とメタデータ欠落で安定せず現実的でないためスキップ。
+          # chezmoi-apply はローカルコミット時専用の pre-commit hook であるため CI ではスキップする
+          # claude-plugin-validate は claude CLI が必要で CI 環境への導入は pnpm/npm の
+          # minimum-release-age 機構とメタデータ欠落で安定せず現実的でないためスキップする
           SKIP: chezmoi-apply,claude-plugin-validate
         run: pyfltr ci
 

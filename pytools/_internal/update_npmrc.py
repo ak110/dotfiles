@@ -1,6 +1,6 @@
 """~/.npmrcのサプライチェーン対策設定を管理するモジュール。
 
-`minimum-release-age`を設定して公開直後のパッケージインストールをブロックする。
+`minimum-release-age`を設定して公開直後のパッケージインストールを遅延させる。
 詳細は`docs/guide/security.md`を参照。
 """
 

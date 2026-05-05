@@ -1,6 +1,6 @@
 """agent-toolkit/skills/writing-standards/scripts/check_line_width.py のテスト。
 
-Markdown 1行幅検査スクリプトを subprocess で起動し、
+Markdown 1行幅検査スクリプトをsubprocessで起動し、
 正常系・異常系・閾値切り替え・コードブロック除外・frontmatter対象化の挙動を検証する。
 """
 
@@ -29,7 +29,7 @@ class TestCheckLineWidth:
     """1行幅検査の主要シナリオをまとめて検証する。"""
 
     def test_within_limit_passes(self, tmp_path: pathlib.Path):
-        # 全角混在で127半角換算以内、127丁度の境界、半角のみのいずれも通る。
+        # 全角混在で127半角換算以内、127丁度の境界値、半角のみのいずれも通過する。
         path = _write(
             tmp_path / "ok.md",
             "短い見出し行\n"
@@ -71,7 +71,7 @@ class TestCheckLineWidth:
         assert f"{path}:2" in result.stderr
 
     def test_fenced_code_block_is_excluded(self, tmp_path: pathlib.Path):
-        # ``` フェンス内の超過行は対象外。
+        # バックティック（` ``` `）フェンス内の超過行は対象外。
         path = _write(
             tmp_path / "code.md",
             "通常文\n```text\n" + ("a" * 200) + "\n```\n本文\n",
@@ -81,7 +81,7 @@ class TestCheckLineWidth:
         assert result.stderr == ""
 
     def test_tilde_fence_is_excluded(self, tmp_path: pathlib.Path):
-        # ~~~ フェンスでも同様にコードブロック扱い。
+        # チルダ（`~~~`）フェンスでも同様にコードブロック扱い。
         path = _write(
             tmp_path / "tilde.md",
             "~~~text\n" + ("a" * 200) + "\n~~~\n",
@@ -90,7 +90,7 @@ class TestCheckLineWidth:
         assert result.returncode == 0
 
     def test_width_option_overrides_threshold(self, tmp_path: pathlib.Path):
-        # --width=80 を指定すると80字超過が検出される。
+        # `--width=80`を指定すると80字超過が検出される。
         path = _write(tmp_path / "narrow.md", "a" * 81 + "\n")
         result_default = _run(str(path))
         assert result_default.returncode == 0

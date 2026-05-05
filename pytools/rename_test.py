@@ -35,7 +35,6 @@ class TestRename:
     def test_dry_run(self, tmp_path):
         (tmp_path / "original.txt").touch()
         self._run("--dry-run", "original", "renamed", str(tmp_path / "original.txt"), cwd=tmp_path)
-        # dry-runではファイルがリネームされない
         assert (tmp_path / "original.txt").exists()
         assert not (tmp_path / "renamed.txt").exists()
 

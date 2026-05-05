@@ -153,9 +153,11 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
 uvx pyfltr run-for-agent --commands=mypy path/to/file
 ```
 
-`--commands`で特定ツールに限定する／対象ファイルを指定することで出力量を抑えつつ、`diagnostic`行から修正対象を取得する。
+`--commands`で特定ツールに限定する、または対象ファイルを指定することで出力量を抑え、
+`diagnostic`行から修正対象を取得する。
 
-公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合や、状況全体を把握したい場合は全体で実行する。
+公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合や、
+状況全体を把握したい場合は全体で実行する。
 
 ```bash
 uvx pyfltr run-for-agent
@@ -222,7 +224,7 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
 
 pyfltrの設定リファレンス、カスタムコマンドの追加方法、pre-commit連携の設定例などの詳細情報が必要な場合は、
 [llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得する。
-llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含まれており、各ページへのリンクから必要なページだけ個別に取得する。
+llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含まれており、各ページへのリンクから必要なページを個別に取得する。
 主要なページは以下の構成。
 
 - 設定（基本設定・プリセット・並列実行）: `guide/configuration/index.md`

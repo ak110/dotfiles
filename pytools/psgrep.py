@@ -1,8 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """実行中プロセスの実行ファイルパスを検索する (C# psgrep の Python 移植)。
 
-元 C# 実装は grep 部分が未実装だったため、ここで本来意図されていた機能を
-`psutil` でクロスプラットフォームに新規実装する。
+元 C# 実装は grep 部分が未実装だったため、`psutil` でクロスプラットフォームに実装する。
 """
 
 import argparse

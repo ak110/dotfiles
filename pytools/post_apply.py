@@ -1,4 +1,4 @@
-"""`chezmoi apply`後処理を集約するエントリポイント。
+"""`chezmoi apply`後処理のエントリポイント。
 
 実行順・対象ステップは`_DEFAULT_STEPS`をSSOTとする。
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
@@ -32,28 +32,28 @@ logger = logging.getLogger(__name__)
 # chezmoi は配布元から削除されたファイルを destination から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
     Path.home() / ".claude": [
-        # 過去に .chezmoi-source/dot_claude/ から配布していたが、プロジェクトローカルへ移したもの
+        # プロジェクトローカルへ移動済み（.chezmoi-source/dot_claude/ 配布から除外）。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # 配布 agent から dotfiles ローカルの sync-cross-project skill へ移行 (15ca58b)
+        # dotfiles ローカルの sync-cross-project skill に統合済み (15ca58b)。
         Path("agents/cross-project-sync-checker.md"),
-        # agent-basics から agent-toolkit へのディレクトリ名リネームに伴う旧ディレクトリ削除。
+        # agent-basics → agent-toolkit のディレクトリ名リネームに伴う旧ディレクトリ削除。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
         # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
         Path("rules/agent-basics"),
-        # careful-followup-reviewer を廃止し、再レビューを careful-spec-reviewer / careful-impl-reviewer の
-        # followup モードに統合したため、配布先から旧エージェント定義を削除する。
+        # careful-followup-reviewer を廃止し、再レビューを careful-spec-reviewer /
+        # careful-impl-reviewer の followup モードに統合。配布先から旧エージェント定義を削除する。
         Path("agents/careful-followup-reviewer.md"),
-        # empirical-prompt-tuning を refine-prompt へ改名したため、配布先から旧スキルディレクトリを削除する。
+        # empirical-prompt-tuning を refine-prompt へ改名。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
     ],
     Path.home() / "bin": [
-        # 過去に .chezmoi-source/bin/ から配布していたが、pre-commit からしか呼ばれない
-        # 開発者向けツールのため scripts/ に移し、配布を停止したもの
+        # pre-commit からしか呼ばれない開発者向けツールのため scripts/ へ移動。
+        # .chezmoi-source/bin/ 配布から除外済み。
         Path("check-cmd-encoding"),
         Path("check-templates"),
         Path("run-psscriptanalyzer"),
-        # bin/ をリポジトリ直下へ移し、~/dotfiles/bin を PATH に通す方式へ変更したため
+        # bin/ をリポジトリ直下へ移動し、~/dotfiles/bin を PATH に通す方式へ変更。
         # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
         Path("c"),
         Path("c.cmd"),
@@ -75,9 +75,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("sudoll"),
         Path("update-dotfiles"),
         Path("update-dotfiles.cmd"),
-        # pytools/ パッケージ化 (fe09fa3) などに伴い .chezmoi-source/bin/ から
-        # 削除した旧配布物。現在は pytools/ の CLI として uv tool install 経由で
-        # ~/.local/bin 等にインストールされる。
+        # pytools/ パッケージ化 (fe09fa3) 等に伴い .chezmoi-source/bin/ から除外した旧配布物。
+        # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
         Path("check-image-sizes.py"),
         Path("dpkg-licenses"),
         Path("git-justify.py"),
@@ -91,13 +90,13 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
 # ユーザーの独自編集を保護するため、内容が期待値と bytes 完全一致するときのみ削除する。
 _REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
     Path.home() / ".claude": {
-        # `.chezmoi-source/dot_claude/CLAUDE.md` を削除したため、未編集の配布先を除去する。
+        # `.chezmoi-source/dot_claude/CLAUDE.md` を除外済み。未編集の配布先を除去する。
         # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため撤廃 (Giskard Phare)。
         Path("CLAUDE.md"): ("# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()),
     },
-    # claude-plans-viewer 自動起動セットアップ (旧 setup_plans_viewer_windows) で
+    # claude-plans-viewer 自動起動セットアップ（旧 setup_plans_viewer_windows）で
     # スタートアップフォルダーへ配置していた .cmd を、未編集なら除去する。
-    # 旧モジュール削除に伴い、配布物としての保守元が消えたため。
+    # 旧モジュールの削除に伴い配布物としての保守元がないため。
     Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup": {
         Path("claude-plans-viewer.cmd"): (b'@echo off\r\nstart "" "%USERPROFILE%\\.local\\bin\\claude-plans-viewer.exe"\r\n'),
     },
@@ -188,9 +187,9 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
 
 
 def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tuple[list[_StepResult], list[str]]:
-    """各ステップを順に実行し、(results, recommendations) を返す。
+    """各ステップを順に実行し、`(results, recommendations)` を返す。
 
-    recommendations は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
+    `recommendations` は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
     ``install_claude_plugins.run`` は ``tuple[bool, list[str]]`` を返すため、
     タプルの戻り値を持つステップは推奨コマンドとして収集する。
     """

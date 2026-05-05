@@ -3,64 +3,65 @@
 ## 言語スタイル
 
 - importについて
-  - 型のみのimportには `import type` を使用する（実行時のランタイム依存を減らしバンドルサイズを抑えるため）
+  - 型のみのimportには`import type`を使う（実行時のランタイム依存を減らしバンドルサイズを抑えるため）
   - barrel export（`index.ts`）の乱用を避ける（ツリーシェイキングを阻害するため）
 - モジュールシステム
   - モダンプロジェクトはESM（`"type": "module"`）を使う
   - Default exportよりNamed exportを優先する（tree-shakingが機能しやすく、リネーム時の追従やIDE補完も確実になるため）
 - 厳格な型付けを行う（`strict: true`。null安全・暗黙any排除を徹底するため）
-  - 可能であれば `noUncheckedIndexedAccess` も有効化する
-   （配列・`Record` アクセス結果を `T | undefined` として扱い、境界外アクセスを型で検知できる）
+  - 可能であれば`noUncheckedIndexedAccess`も有効化する
+   （配列・`Record`アクセス結果を`T | undefined`として扱い、境界外アクセスを型で検知できる）
 - 型について
-  - `any` の使用は極力避ける（型チェックを回避してしまうため）。やむを得ない場合は `unknown` + 型ガードを優先する
-  - `as` による型アサーションより型ガード（`is` / `satisfies`）を優先する（実行時の型不一致を防ぐため）
-  - union型（`"a" | "b"`）を `enum` より優先する（tree-shakingしやすく、型のnarrowingも自然なため）
-  - `switch` の網羅性チェックには `satisfies never` を使用する
+  - `any`の使用は極力避ける（型チェックを回避してしまうため）。やむを得ない場合は`unknown` + 型ガードを優先する
+  - `as`による型アサーションより型ガード（`is`／`satisfies`）を優先する（実行時の型不一致を防ぐため）
+  - union型（`"a" | "b"`）を`enum`より優先する（tree-shakingしやすく、型のnarrowingも自然なため）
+  - `switch`の網羅性チェックには`satisfies never`を使う
 - JSDocコメントを記述する
   - ファイルの先頭に`@fileoverview`で概要を記述
   - 関数・クラス・メソッドには機能を説明するコメントを記述
   - 自明な`@param`や`@returns`は省略する
 - エラーハンドリング
-  - `catch` の引数は `unknown` として扱い、`instanceof` で型を特定する
-- `null`は使わず`undefined`を使用、APIから`null`が返される場合は`?? undefined`で変換（「値がない」表現を1つに統一するため）
-- 未使用の変数・引数には `_` プレフィックスを付ける
+  - `catch`の引数は`unknown`として扱い、`instanceof`で型を特定する
+- `null`は使わず`undefined`を使い、APIから`null`が返される場合は`?? undefined`で変換する
+ （「値がない」表現を1つに統一するため）
+- 未使用の変数・引数には`_`プレフィックスを付ける
 - セキュリティ上の危険パターン
-  - `eval()` / `new Function()` はユーザー入力に対して使わない
-  - `innerHTML` / `dangerouslySetInnerHTML` を避け、テキスト挿入には `textContent` やフレームワークのエスケープ機構を使う
-  - `JSON.parse()` は信頼できない入力に対してtry-catchで囲み、結果をバリデーションする（zodなどのスキーマバリデーション推奨）
+  - `eval()`／`new Function()`はユーザー入力に対して使わない
+  - `innerHTML`／`dangerouslySetInnerHTML`を避け、テキスト挿入には`textContent`やフレームワークのエスケープ機構を使う
+  - `JSON.parse()`は信頼できない入力に対してtry-catchで囲み、結果をバリデーションする（zodなどのスキーマバリデーション推奨）
   - SQLはプレースホルダやクエリビルダーを使い、テンプレートリテラルで直接組み立てない
   - オブジェクトのマージ・コピーでプロトタイプ汚染を防ぐ
-   （`Object.create(null)` やキーの検証。`__proto__`・`constructor`・`prototype` のキーを拒否する）
-  - URL・ファイルパスは文字列結合ではなく `URL` / `path.join` 等の専用APIで構築する
+   （`Object.create(null)`やキーの検証。`__proto__`・`constructor`・`prototype`のキーを拒否する）
+  - URL・ファイルパスは文字列結合ではなく`URL`／`path.join`等の専用APIで構築する
 - 他で指定が無い場合のツール推奨:
   - パッケージマネージャー: `pnpm`（厳密な依存解決でphantom dependencyを防止）
-  - 一度限りのコマンド実行には `npx` の代わりに `pnpx` を使う（pnpmと同じ依存解決・キャッシュを再利用できるため）
-  - リンター/フォーマッター: `Biome`（lint + formatを1ツールで高速に処理）
+  - 一度限りのコマンド実行には`npx`の代わりに`pnpx`を使う（pnpmと同じ依存解決・キャッシュを再利用できるため）
+  - リンター／フォーマッター: `Biome`（lint + formatを1ツールで高速に処理）
     - Biomeが対応していないルール（React固有等）が必要な場合のみESLint + Prettierを併用
 - 新しいTypeScriptバージョンの機能を積極的に使う
-  - TS 5.0+: `const` 型パラメーター（`function f<const T>(x: T)`）でリテラル型を自動保持する
-    - 呼び出し側で `as const` を書かずにリテラル推論が機能するため
-  - TS 5.0+: `export type *` で型のみの再エクスポートを明示する
+  - TS 5.0+: `const`型パラメーター（`function f<const T>(x: T)`）でリテラル型を自動保持する
+    - 呼び出し側で`as const`を書かずにリテラル推論が機能するため
+  - TS 5.0+: `export type *`で型のみの再エクスポートを明示する
     - 実行時コードと型の分離を徹底するため
-  - TS 5.2+: `using` / `await using` 宣言でリソースを自動解放する
-    - `try { } finally { dispose() }` が不要になる
-    - `Symbol.dispose` / `Symbol.asyncDispose` の実装が前提
-  - TS 5.4+: `NoInfer<T>` でデフォルト引数等の型推論から特定の型パラメーターを除外する
+  - TS 5.2+: `using`／`await using`宣言でリソースを自動解放する
+    - `try { } finally { dispose() }`が不要になる
+    - `Symbol.dispose`／`Symbol.asyncDispose`の実装が前提
+  - TS 5.4+: `NoInfer<T>`でデフォルト引数等の型推論から特定の型パラメーターを除外する
     - デフォルト値と他引数の型不一致をコンパイル時に検出できるため
   - TS 5.5+: 推論される型述語（inferred type predicates）を活用する
-    - `array.filter(x => x !== null)` の結果が `T[]` へnarrowingされ、明示的な型ガードの記述を削減できる
+    - `array.filter(x => x !== null)`の結果が`T[]`へnarrowingされ、明示的な型ガードの記述を削減できる
 
 ## テストコード（vitest）
 
 - テストコードは`vitest`で書く
-- `describe` は原則1階層、ネストは2階層まで
-- 類似パターンの網羅には `it.each()` を活用する
+- `describe`は原則1階層、ネストは2階層まで
+- 類似パターンの網羅には`it.each()`を活用する
 - テストデータ生成ヘルパー（`makeXxx(overrides)`）で本質的でないセットアップを共通化する
-- 非同期テストでは `await expect(...).resolves` / `.rejects` を活用する
-- セットアップ/ティアダウン
-  - `beforeAll` / `afterAll` でコストの高い初期化を共有する
-  - 時間依存のテストは `vi.useFakeTimers()` で制御し、実時間の `sleep` を避ける
-  - `afterEach` で `vi.restoreAllMocks()` / `vi.useRealTimers()` を確実に呼ぶ
-- モック/スパイ
-  - `vi.mock()` はファイル先頭へホイスティングされる点に注意（動的な値の参照不可）
-  - 外部モジュール全体のモックより `vi.spyOn()` での部分モックを優先する
+- 非同期テストでは`await expect(...).resolves`／`.rejects`を活用する
+- セットアップ／ティアダウン
+  - `beforeAll`／`afterAll`でコストの高い初期化を共有する
+  - 時間依存のテストは`vi.useFakeTimers()`で制御し、実時間の`sleep`を避ける
+  - `afterEach`で`vi.restoreAllMocks()`／`vi.useRealTimers()`を確実に呼ぶ
+- モック／スパイ
+  - `vi.mock()`はファイル先頭へホイスティングされる点に注意（動的な値の参照不可）
+  - 外部モジュール全体のモックより`vi.spyOn()`での部分モックを優先する

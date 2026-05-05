@@ -5,7 +5,7 @@
 [ci-badge]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml/badge.svg
 [ci-url]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml
 
-[chezmoi](https://www.chezmoi.io/) で管理された個人用dotfiles。
+[chezmoi](https://www.chezmoi.io/)で管理する個人用dotfiles。
 
 ## 特徴
 
@@ -15,7 +15,7 @@
 - Claude Code用の共通ルール・プラグインの配布
 - サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
-## 前提条件（要インストール）
+## 前提条件
 
 - [Git](https://git-scm.com/install/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
@@ -44,7 +44,7 @@ Claude Code・Codex CLI・miseなどの周辺ツールは任意。
 curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install.sh | bash
 ```
 
-### Windows（PowerShell、推奨）
+### Windows（PowerShell）
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install.ps1 | iex"

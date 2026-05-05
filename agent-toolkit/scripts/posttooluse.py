@@ -3,21 +3,18 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録と plan file 形式検査。
+r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / Skill の実行後にイベントを検出し、
+Bash / Write / Edit / MultiEdit / Skillの実行後にイベントを検出し、
 セッション状態ファイルに記録する。
-PreToolUse や Stop フックが参照して警告・提案の判定に使う。
+PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
 検出対象:
 
 1. テスト実行 (Bash)
-2. Git 状態確認 (Bash) と git log 確認状態のリセット (commit/rebase/push/編集後)
-3. plan file (``~/.claude/plans/*.md``) 形式検査 (Write / Edit / MultiEdit)
-4. plan-mode スキル呼び出し検出 (Skill)
-
-各検出ロジックの詳細は対応する実装関数のdocstringを参照する。
-状態ファイルのパス: `{tempdir}/claude-agent-toolkit-{session_id}.json`
+2. Git状態確認 (Bash) とgit log確認状態のリセット (commit/rebase/push/編集後)
+3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
+4. plan-modeスキル呼び出し検出 (Skill)
 """
 
 import json
@@ -35,7 +32,7 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
+    """LLM宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
@@ -47,8 +44,8 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pre-commit\s+run\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
-    # タスクランナー経由 (make / mise run / npm | pnpm | yarn (run省略可) / just / task) で
-    # test / check / validate アクション
+    # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
+    # test / check / validateアクション
     re.compile(
         r"(?:^|[;&|]\s*)"
         r"(?:make\s+|(?:npm|pnpm|yarn)\s+(?:run\s+)?|mise\s+run\s+|just\s+|task\s+)"
@@ -56,28 +53,28 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
 )
 
-# --- Git 状態確認検出パターン ---
+# --- Git状態確認検出パターン ---
 
 _GIT_STATUS_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+(?:status|log|diff)\b")
 
-# --- git log 確認パターン ---
+# --- git log確認パターン ---
 
 _GIT_LOG_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+log\b")
 
-# --- git log リセットパターン (commit / rebase / push) ---
+# --- git logリセットパターン（commit / rebase / push）---
 
 _GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
 
-# --- plan-mode スキル呼び出し検出 ---
+# --- plan-modeスキル呼び出し検出 ---
 
-# Skill ツールの ``skill`` 引数として許容するスキル名。
+# Skillツールの`skill`引数として許容するスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
-# --- plan file 形式検査の定数 ---
+# --- plan file形式検査の定数 ---
 
-# 期待セクション一覧の SSOT は `skills/plan-mode/references/plan-file-guidelines.md` の「セクション構成と記述要件」節。
-# plan-file-guidelines.md 側を更新する場合は本定数も同期すること (SSOT テスト `TestPlanFormatSsot` で検査)。
+# 期待セクション一覧のSSOTは`skills/plan-mode/references/plan-file-guidelines.md`の「セクション構成と記述要件」節。
+# plan-file-guidelines.md側を更新する場合は本定数も同期すること（SSOTテスト`TestPlanFormatSsot`で検査）。
 _PLAN_REQUIRED_H2 = (
     "変更履歴",
     "背景",
@@ -90,10 +87,10 @@ _PLAN_REQUIRED_H2 = (
 
 
 def _is_plan_file(file_path: str) -> bool:
-    """``~/.claude/plans/`` 直下の plan file (``*.md``) か判定する。
+    """`~/.claude/plans/`直下のplan file（`*.md`）の場合に真を返す。
 
-    `.review.md` / `.codex.log` は同ディレクトリの副次ファイルのため除外する。
-    サブディレクトリ配下のファイルは対象外 (直下のみ)。
+    `.review.md` / `.codex.log`は副次ファイルのため除外する。
+    サブディレクトリ配下のファイルは対象外（直下のみ）。
     """
     if not file_path:
         return False
@@ -111,18 +108,18 @@ def _is_plan_file(file_path: str) -> bool:
     return name.endswith(".md")
 
 
-# コードフェンス開始／終了の判定に使う (CommonMark 準拠で字種と長さを保持)。
+# コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 
 
 def _extract_h2_sections(content: str) -> list[str]:
-    """Markdown 本文から H2 見出しのテキストを順に抽出する。
+    """Markdown本文からH2見出しのテキストを順に抽出する。
 
-    以下の領域内の `## ` 行は本文扱いとして無視する:
+    以下の領域内の`## `行は見出しとして扱わない。
 
-    - ファイル先頭の YAML フロントマター (`---` または `...` で閉じる)
-    - コードフェンス (開きフェンスと同字種・同長以上の閉じフェンスで抜ける。ネスト対応)
-    - 複数行にまたがる HTML コメント (`<!--` から `-->` まで)
+    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
+    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける。ネスト対応）
+    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
     """
     headings: list[str] = []
     lines = content.splitlines()
@@ -136,7 +133,7 @@ def _extract_h2_sections(content: str) -> list[str]:
                 break
             i += 1
 
-    fence_marker: str | None = None  # 開きフェンスのマーカー文字列 (同字種・同長以上で閉じる)
+    fence_marker: str | None = None  # 開きフェンスのマーカー文字列（同字種・同長以上で閉じる）
     in_html_comment = False
     while i < len(lines):
         line = lines[i]
@@ -160,7 +157,7 @@ def _extract_h2_sections(content: str) -> list[str]:
         if fence_match:
             fence_marker = fence_match.group(1)
             continue
-        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
+        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:  # 複数行コメントの開始
             in_html_comment = True
             continue
         if line.startswith("## "):
@@ -169,15 +166,15 @@ def _extract_h2_sections(content: str) -> list[str]:
 
 
 def _check_plan_format(file_path: str) -> list[str]:
-    """Plan file の構成チェック。違反メッセージの一覧を返す。
+    """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
     検出する違反:
 
-    - 必須 H2 の欠落
-    - 必須 H2 の順序違反
-    - 予期せぬ H2
+    - 必須H2の欠落
+    - 必須H2の順序違反
+    - 予期せぬH2
 
-    読み取り失敗時は空リストを返す (サイレントにスキップ、安全側)。
+    読み取り失敗時は空リストを返す。
     """
     try:
         content = pathlib.Path(file_path).read_text(encoding="utf-8")
@@ -208,7 +205,7 @@ def _check_plan_format(file_path: str) -> list[str]:
 
 
 def _main() -> int:
-    """エントリポイント。常に 0 を返す。"""
+    """エントリポイント。exit codeは常に0。"""
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
@@ -223,7 +220,7 @@ def _main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    # Skill: plan-mode スキル呼び出し検出
+    # Skill: plan-modeスキル呼び出し検出
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
@@ -233,14 +230,14 @@ def _main() -> int:
                 write_state(session_id, state)
         return 0
 
-    # Write / Edit / MultiEdit: ファイル編集は git log 確認状態をリセットする
+    # Write / Edit / MultiEdit: ファイル編集はgit log確認状態をリセットする
     if tool_name in ("Write", "Edit", "MultiEdit"):
         state = read_state(session_id)
         if state.get("git_log_checked", False):
             state["git_log_checked"] = False
             write_state(session_id, state)
-        # plan file 形式検査: ~/.claude/plans/ 直下の .md のみ対象。
-        # plan-mode スキル未呼び出し時は PreToolUse 側の警告で先行催促済みのため、
+        # plan file形式検査: ~/.claude/plans/直下の.mdのみ対象。
+        # plan-modeスキル未呼び出し時はPreToolUse側の警告で先行催促済みのため、
         # 構造検査をスキップして二重警告を避ける。
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
@@ -266,7 +263,7 @@ def _main() -> int:
                 )
         return 0
 
-    # Bash 以外はここで終了
+    # Bash以外はここで終了
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
@@ -274,7 +271,7 @@ def _main() -> int:
     state = read_state(session_id)
     changed = False
 
-    # テスト実行検出
+    # テスト実行の検出
     if not state.get("test_executed", False):
         for pattern in _TEST_PATTERNS:
             if pattern.search(command):
@@ -282,18 +279,18 @@ def _main() -> int:
                 changed = True
                 break
 
-    # Git 状態確認検出
+    # Git状態確認の検出
     if not state.get("git_status_checked", False) and _GIT_STATUS_PATTERN.search(command):
         state["git_status_checked"] = True
         changed = True
 
-    # git log 確認状態の管理
+    # git log確認状態の管理
     if _GIT_LOG_PATTERN.search(command):
         if not state.get("git_log_checked", False):
             state["git_log_checked"] = True
             changed = True
     elif _GIT_LOG_RESET_PATTERN.search(command) and state.get("git_log_checked", False):
-        # commit / rebase / push は git log 確認状態をリセットする
+        # commit / rebase / pushはgit log確認状態をリセットする
         state["git_log_checked"] = False
         changed = True
 

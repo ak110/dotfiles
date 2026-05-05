@@ -22,7 +22,7 @@ set viminfo='50,:0,f0,h
 set history=50
 set noexrc          " カレントディレクトリ内のvimrcとかを読み込まない
 
-set shortmess+=I    " 起動時のメッセージを消す？
+set shortmess+=I    " 起動時のメッセージを抑制する？
 
 
 set number          " 行番号の表示

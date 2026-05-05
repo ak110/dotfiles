@@ -38,7 +38,7 @@ class TestParseVersion:
 
 
 class TestComputeNewVersion:
-    """compute_new_versionが正しいbumpを行う。"""
+    """compute_new_version が正しい bump を行う。"""
 
     @pytest.mark.parametrize(
         ("current", "kind", "expected"),
@@ -56,7 +56,7 @@ class TestComputeNewVersion:
 
 
 class TestInferBumpKind:
-    """infer_bump_kindがbase→currentの差分から種別を正しく推定する。"""
+    """infer_bump_kind が base→current の差分から種別を正しく推定する。"""
 
     @pytest.mark.parametrize(
         ("base", "current", "expected"),
@@ -76,12 +76,12 @@ class TestInferBumpKind:
     @pytest.mark.parametrize(
         ("base", "current"),
         [
-            # patchが残ったまま minor が上がっている: 不整合
+            # patch が残ったまま minor が上がっている: 不整合
             ("0.40.1", "0.41.1"),
-            # major が上がっているが minor/patch がリセットされていない
+            # major が上がっているが minor/patch がリセットされていない。
             ("0.40.1", "1.0.1"),
             ("0.40.1", "1.1.0"),
-            # 後退（regression）
+            # 後退（regression）。
             ("0.40.2", "0.40.1"),
             ("0.40.0", "0.39.9"),
         ],
@@ -92,7 +92,7 @@ class TestInferBumpKind:
 
 
 class TestBumpRanks:
-    """bump種別の順序: patch < minor < major。"""
+    """bump 種別の順序: patch < minor < major。"""
 
     def test_ordering(self) -> None:
         assert bump.BUMP_RANKS["patch"] < bump.BUMP_RANKS["minor"] < bump.BUMP_RANKS["major"]

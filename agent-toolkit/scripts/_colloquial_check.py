@@ -1,9 +1,7 @@
 """Claude Code agent-toolkit: 口語表現検査の共通ロジック。
 
-辞書ファイルは`agent-toolkit/scripts/_colloquial_words.txt`（denylist）と
-`agent-toolkit/scripts/_colloquial_words_allow.txt`（allowlist）。
 denylistの内容をエージェントのコンテキストへ持ち込まない設計のため、
-本モジュールはパターンを動的に読み込み、検出語そのものは保持しない。
+パターンを動的に読み込み、検出語そのものはメモリー上に保持しない。
 """
 
 import pathlib
@@ -21,7 +19,7 @@ def load_patterns(path: pathlib.Path) -> list[re.Pattern[str]]:
     """辞書ファイルから1行1正規表現を読み込んでコンパイルする。
 
     `#`で始まる行と空行は無視する。
-    不正な正規表現はフックを破損させないため安全側にスキップする。
+    不正な正規表現はフックを破損させないためスキップする。
     """
     if not path.is_file():
         return []
@@ -38,10 +36,10 @@ def load_patterns(path: pathlib.Path) -> list[re.Pattern[str]]:
 
 
 def mask_allowed(text: str, allow_patterns: list[re.Pattern[str]]) -> str:
-    """allow_patterns に一致する部分を同長の空白で置き換える。
+    """allow_patternsに一致する部分を同長の空白で置き換える。
 
-    位置情報を保つため空文字ではなく空白で埋める。
-    その後の denylist 検索結果が元テキスト上のオフセットと整合する。
+    空文字ではなく空白で埋めることで位置情報を保持する。
+    後続のdenylist検索結果が元テキスト上のオフセットと整合する。
     """
     masked = text
     for ap in allow_patterns:
@@ -56,9 +54,8 @@ def scan_text(
 ) -> list[tuple[int, int, str, str]]:
     """テキスト全体を検査して検出箇所のリストを返す。
 
-    要素は `(行番号, 列, 検出文字列, 行抜粋)` のタプル。
-    位置はallow_patternsマスク後でもオフセットを維持しているため、
-    元テキスト上の正確な位置を指す。
+    各要素は`(行番号, 列, 検出文字列, 行抜粋)`のタプル。
+    allow_patternsマスク後もオフセットを維持しているため、元テキスト上の正確な位置を指す。
     """
     if not deny_patterns:
         return []
@@ -83,7 +80,7 @@ def first_hit(
     deny_patterns: list[re.Pattern[str]],
     allow_patterns: list[re.Pattern[str]],
 ) -> bool:
-    """検出が1件でもあれば真を返す（hookのwarn判定用に最適化された経路）。"""
+    """検出が1件でもあれば真を返す（hookのwarn判定用の高速経路）。"""
     if not deny_patterns:
         return False
     masked = mask_allowed(text, allow_patterns)

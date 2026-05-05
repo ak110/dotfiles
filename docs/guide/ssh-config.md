@@ -1,14 +1,14 @@
 # SSH設定管理（`update-ssh-config`）
 
-`update-ssh-config` はSSH configとauthorized_keysを分割ファイルから生成するコマンド。
+`update-ssh-config`はSSH configとauthorized_keysを分割ファイルから生成するコマンド。
 
 ## 概要
 
 - `~/.ssh/config`
-  - 入力: `conf.d/*.conf` + `localconfig`
+  - 入力: `conf.d/*.conf`と`localconfig`
   - 動作: 毎回上書き生成（初回バックアップあり）
 - `~/.ssh/authorized_keys`
-  - 入力: `conf.d/authorized_keys` + `local_authorized_keys`
+  - 入力: `conf.d/authorized_keys`と`local_authorized_keys`
   - 動作: 既存にない鍵のみ追加（削除しない）
 
 ## ファイル配置
@@ -27,26 +27,26 @@
 
 ## SSH config生成
 
-`~/.ssh/conf.d/*.conf` をファイル名順に結合し、
-`~/.ssh/localconfig` があれば末尾に追加して
-`~/.ssh/config` を生成する。
+`~/.ssh/conf.d/*.conf`をファイル名順に結合し、
+`~/.ssh/localconfig`があれば末尾に追加して
+`~/.ssh/config`を生成する。
 
-- 初回実行時（`~/.ssh/config.bk` が存在しない場合）、既存のconfigをバックアップする
-- 毎回上書きされるため、configの直接編集はlocalconfigを使うこと
+- 初回実行時（`~/.ssh/config.bk`が存在しない場合）、既存のconfigをバックアップする
+- 毎回上書きされるため、configを直接編集せずlocalconfigを使用
 
 ## authorized_keys生成
 
-`conf.d/authorized_keys` と `local_authorized_keys` の鍵を、
-既存の `authorized_keys` に含まれていなければ追加する。
+`conf.d/authorized_keys`と`local_authorized_keys`の鍵を、
+既存の`authorized_keys`に含まれていなければ追加する。
 
 - 追加のみ: 既存の鍵は削除されない。クラウドプロバイダや手動で追加した鍵も保持される
-- 重複判定: base64鍵データ部分で比較（コメントの違いは無視）
-- 鍵の削除: `~/.ssh/authorized_keys` を手動で編集して行を削除する
+- 重複判定: base64鍵データ部分で比較する（コメントの違いは無視）
+- 鍵の削除: `~/.ssh/authorized_keys`を手動で編集して行を削除
 
 ## 実行
 
 chezmoi apply時に`conf.d/`内のファイルが変更されると自動的に`update-ssh-config`が実行される。
-`localconfig`や`local_authorized_keys`はchezmoi管理外のため、変更時は手動で実行する。
+`localconfig`や`local_authorized_keys`はchezmoi管理外のため、変更時は手動で実行。
 
 ```bash
 update-ssh-config

@@ -31,7 +31,7 @@ def _main() -> None:
 
 
 def create(path: pathlib.Path, size: int, *, force: bool = False) -> None:
-    """指定サイズのランダムファイルを生成する。"""
+    """指定サイズのランダムバイト列ファイルを生成する。"""
     if path.exists() and not force:
         raise FileExistsError(f"出力先ファイルが既に存在します: {path}")
     remaining = size

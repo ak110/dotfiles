@@ -14,40 +14,26 @@ from pytools._internal import log_format
 
 logger = logging.getLogger(__name__)
 
-# --- 定数 ---
-
-# Claude Code の設定ディレクトリ
 CLAUDE_HOME = Path.home() / ".claude"
-
-# Claude Code のグローバル設定ファイル
 CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
-
-# Claude Code のユーザー設定ファイル
 SETTINGS_JSON_PATH = CLAUDE_HOME / "settings.json"
-
-# Claude Code の plan ファイル保存ディレクトリ
 PLANS_DIR = CLAUDE_HOME / "plans"
 
-# インストール済みプラグイン情報ファイル (CLI 呼び出しを回避するための直接読み取り用)
+# CLI 呼び出しを回避するための直接読み取り用
 INSTALLED_PLUGINS_PATH = CLAUDE_HOME / "plugins" / "installed_plugins.json"
 
 # marketplace.json の `name` と一致させる (.claude-plugin/marketplace.json を参照)
 MARKETPLACE_NAME = "ak110-dotfiles"
 
-# `claude plugin` コマンドのタイムアウト (秒)
-# GitHub からの初回 clone や install 処理で時間が掛かる場合があるため余裕を持たせる
+# GitHub からの初回 clone や install 処理で時間がかかる場合があるため余裕を持たせる
 CLAUDE_TIMEOUT = 30
-
-
-# --- 関数 ---
 
 
 def find_dotfiles_root() -> Path | None:
     """Dotfiles ルートディレクトリを返す。
 
     dotfiles ルートは `.claude-plugin/marketplace.json` を持つ。
-    `pytools/_internal/` は dotfiles/pytools/_internal/ に置かれているため
-    親の親の親がルート。
+    本ファイルは `dotfiles/pytools/_internal/` に置かれるため、3階層上がルートとなる。
     """
     candidate = Path(__file__).resolve().parent.parent.parent
     if (candidate / ".claude-plugin" / "marketplace.json").is_file():
@@ -80,14 +66,14 @@ def run_subprocess(
     cwd: Path | None = None,
     tag: str | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
-    """Subprocess を UTF-8 + `errors="replace"` で実行する共通ラッパー。
+    """サブプロセスをUTF-8 + `errors="replace"` で実行する共通ラッパー。
 
     タイムアウト・OSError・SubprocessError を吸収して None を返す。非ゼロ終了は
-    そのまま呼び出し元に渡す。`tag` を指定すると失敗時のログラベルに使用する。
+    そのまま呼び出し元に返す。`tag` を指定すると失敗時のログラベルに使用する。
 
-    Windows では `text=True` のデフォルトが cp932 になり、CLI の UTF-8 出力で
-    UnicodeDecodeError が発生するため、明示的に UTF-8 を指定し、不正バイトが
-    混入しても例外が発生しないよう `errors="replace"` を併用する。
+    Windowsでは `text=True` の既定エンコーディングがcp932となり、CLIのUTF-8出力で
+    UnicodeDecodeErrorが発生するため、エンコーディングをUTF-8に明示し、
+    不正バイトが混入しても例外が発生しないよう `errors="replace"` を併用する。
     """
     try:
         return subprocess.run(
@@ -108,11 +94,11 @@ def run_subprocess(
 
 
 def run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
-    """`claude` CLI を呼び出す共通ヘルパー。
+    """`claude` CLIを呼び出す共通ヘルパー。
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
-    失敗時の原因追跡を容易にするため、実行コマンドと戻り値をログに残す。
+    原因追跡のため、実行コマンドと戻り値をログに残す。
     """
     logger.info(
         log_format.format_status(
@@ -133,10 +119,10 @@ def load_json_dict(
     *,
     tag: str | None = None,
 ) -> dict[str, object] | None:
-    """JSON ファイルをトップレベル dict として読み込む。
+    """JSONファイルをトップレベルdictとして読み込む。
 
-    ファイルが存在しない場合は空 dict (または `default`) を返し、新規作成の足場として機能させる。
-    JSON 解析失敗・非 dict・I/O エラーは ``None`` を返し、呼び出し元で書き込みを中止させる。
+    ファイルが存在しない場合は空dict（または `default`）を返す。
+    JSON解析失敗・非dict・I/Oエラーは ``None`` を返し、呼び出し元で書き込みを中止させる。
     ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
     """
     if default is None:
@@ -163,11 +149,11 @@ def load_json_dict(
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag: str | None = None) -> bool:
-    """テキストファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に保存する。
+    """テキストファイルを同一ディレクトリのtempfile + ``os.replace`` で原子的に保存する。
 
-    Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
-    ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。
-    ``mode`` を指定すると書き込み後に ``chmod`` でパーミッションを設定する (Unix のみ)。
+    Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
+    ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
+    ``mode`` を指定すると書き込み後に ``chmod`` でパーミッションを設定する（Unixのみ）。
     ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
     """
     try:
@@ -202,10 +188,10 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
 
 
 def atomic_write_json(path: Path, data: object, *, tag: str | None = None) -> bool:
-    """JSON ファイルを同一ディレクトリの tempfile + ``os.replace`` で原子的に保存する。
+    """JSONファイルを同一ディレクトリのtempfile + ``os.replace`` で原子的に保存する。
 
-    Claude Code 起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
-    ``False`` を返して呼び出し元に委ねる (post_apply 全体を中断させない)。
+    Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
+    ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
     ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
     """
     content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"

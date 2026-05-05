@@ -42,11 +42,10 @@ _ACCEPTABLE_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
 
 
 class _ReleaserError(Exception):
-    """releaserで扱う想定済みエラー。`_main()`で捕捉し`sys.exit(1)`へ集約する。"""
+    """releaserが扱う想定済みエラー。`_main()`で捕捉し`sys.exit(1)`へ集約する。"""
 
 
 def _main() -> None:
-    """エントリポイント。"""
     setup_logging(fmt="%(levelname)s: %(message)s")
     parser = _build_parser()
     enable_completion(parser)
@@ -62,7 +61,6 @@ def _main() -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """argparseパーサーを構築する。"""
     parser = argparse.ArgumentParser(
         description="release.yamlワークフローを安全に起動する。",
     )
@@ -76,7 +74,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _run_release_flow(bump: str) -> None:
-    """release起動フローを実行する。"""
     git_root = _get_git_root()
     _ensure_default_branch()
     _ensure_clean_working_tree()
@@ -122,7 +119,6 @@ def _show_unreleased(parser: argparse.ArgumentParser) -> None:
 
 
 def _is_git_repo() -> bool:
-    """カレントがgit作業ツリー内かを判定する。"""
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
@@ -133,7 +129,6 @@ def _is_git_repo() -> bool:
 
 
 def _get_git_root() -> Path:
-    """gitリポジトリのルートパスを返す。"""
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
@@ -167,7 +162,6 @@ def _ensure_default_branch() -> None:
 
 
 def _get_current_branch() -> str:
-    """現在のブランチ名を返す。"""
     result = subprocess.run(
         ["git", "branch", "--show-current"],
         capture_output=True,
@@ -258,7 +252,6 @@ def _has_non_release_workflow(git_root: Path) -> bool:
 
 
 def _get_head_sha() -> str:
-    """HEADコミットのSHAを返す。"""
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         capture_output=True,
@@ -269,7 +262,7 @@ def _get_head_sha() -> str:
 
 
 def _get_release_workflow_name() -> str:
-    """release.yamlワークフローの`name`をGitHub APIから取得する。
+    """`release.yaml`ワークフローの`name`をGitHub APIから取得する。
 
     ワークフローがGitHub側へ未登録の場合はファイル名で代替する
     （workflowName比較で`release.yaml`は使われないため副作用なし）。
@@ -293,7 +286,6 @@ def _get_release_workflow_name() -> str:
 
 
 def _list_runs_for_commit(sha: str) -> list[dict[str, Any]]:
-    """指定コミットに紐づくworkflow run一覧を取得する。"""
     result = subprocess.run(
         [
             "gh",
@@ -359,14 +351,13 @@ def _check_runs_success(runs: list[dict[str, Any]]) -> None:
 
 
 def _check_release_workflow(workflow_path: Path) -> None:
-    """release.yamlの構造を検証する。"""
     text = workflow_path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
     _validate_release_workflow_dict(data)
 
 
 def _validate_release_workflow_dict(data: Any) -> None:
-    """release.yamlのパース済みデータを検証する。
+    """`release.yaml`のパース済みデータを検証する。
 
     PyYAMLは`on:`キーをYAML 1.1仕様の真偽値`True`へ強制変換するため、
     `on`文字列キーと`True`キーの両方に対応する。
@@ -398,7 +389,6 @@ def _validate_release_workflow_dict(data: Any) -> None:
 
 
 def _list_release_runs() -> list[dict[str, Any]]:
-    """release.yamlの最近のrun一覧を取得する。"""
     result = subprocess.run(
         [
             "gh",
@@ -416,7 +406,7 @@ def _list_release_runs() -> list[dict[str, Any]]:
 
 
 def _get_latest_release_run_id() -> int | None:
-    """release.yamlの最新run IDを取得する。dispatch前の状態確認用。"""
+    """dispatch前の状態確認用。`release.yaml`の最新run IDを返す。"""
     runs = _list_release_runs()
     if not runs:
         return None
@@ -427,7 +417,6 @@ def _get_latest_release_run_id() -> int | None:
 
 
 def _dispatch_release_workflow(bump: str) -> None:
-    """release.yamlをworkflow_dispatchで起動する。"""
     logger.info("release.yamlをworkflow_dispatchで起動する（bump=%s）。", bump)
     subprocess.run(
         ["gh", "workflow", "run", _RELEASE_WORKFLOW_FILENAME, f"--field=bump={bump}"],
@@ -452,7 +441,7 @@ def _wait_for_new_release_run(last_id: int | None) -> int:
 
 
 def _watch_run(run_id: int) -> None:
-    """`gh run watch --exit-status`でrunの完了を待機する。"""
+    """`gh run watch --exit-status` でrunの完了を待機する。"""
     logger.info("release run %s の完了を待機する。", run_id)
     result = subprocess.run(
         ["gh", "run", "watch", str(run_id), "--exit-status"],
@@ -464,7 +453,6 @@ def _watch_run(run_id: int) -> None:
 
 
 def _sync_local_repo() -> None:
-    """ローカルリポジトリを最新化する。"""
     logger.info("ローカルリポジトリを最新化する。")
     subprocess.run(["git", "fetch", "--tags", "--prune"], check=True)
     subprocess.run(["git", "pull", "--ff-only"], check=True)

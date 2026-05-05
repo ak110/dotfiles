@@ -1,4 +1,4 @@
-"""Windows向けlibarchive.dllの自動インストーラー。
+"""Windows向けlibarchive.dllインストーラー。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
 MSYS2リポジトリからlibarchiveと動的依存パッケージのDLLを取得・配置する。
@@ -49,16 +49,15 @@ def _main() -> None:
 
 
 def run() -> bool:
-    """libarchive.dll を導入する (Windows のみ)。
+    """libarchive.dllを配置する（Windowsのみ）。
 
-    DLL ダウンロードはべき等とし、既に配置済みの場合はスキップする。
-    一方 ``LIBARCHIVE`` 環境変数の永続化は、DLL の有無にかかわらず毎回実施する。
-    libarchive-c は Windows で DLL を解決する際 ``LIBARCHIVE`` 環境変数を最優先
-    を参照するため、旧バージョンの本モジュールが DLL だけ配置して環境変数を設定して
-    いなかったケースを補う必要があるため。
+    DLLダウンロードはべき等とし、既に配置済みの場合はスキップする。
+    ``LIBARCHIVE`` 環境変数の永続化は、DLLの有無にかかわらず毎回実施する。
+    libarchive-cはWindowsでDLLを解決する際に ``LIBARCHIVE`` 環境変数を最優先で
+    参照するため、DLLだけ配置されて環境変数が未設定の環境でも正しく動作させるためのワークアラウンドである。
 
     Returns:
-        DLL の新規ダウンロードまたは環境変数の書き換えを 1 つでも行った場合 True。
+        DLLの新規ダウンロードまたは環境変数の書き換えを1つでも行った場合True。
     """
     if sys.platform != "win32":
         return False
@@ -105,11 +104,11 @@ def _is_already_available() -> bool:
 
 
 def _pick_latest(index_html: str, prefix: str) -> str | None:
-    """リポジトリのディレクトリインデックス HTML から最新の pkg.tar.zst ファイル名を選ぶ。
+    """リポジトリのディレクトリインデックスHTMLから最新のpkg.tar.zstファイル名を返す。
 
-    MSYS2 は同じ prefix で複数バージョンを保持することがあるため、
+    MSYS2は同じprefixで複数バージョンを保持することがあるため、
     正規表現で該当するファイル名を全件抽出してから文字列順で最大を取る
-    (ファイル名にバージョンが含まれ昇順性が期待できる)。
+    （ファイル名にバージョンが含まれ昇順性が期待できる）。
     """
     escaped = re.escape(prefix)
     pattern = re.compile(rf'href="({escaped}-[^"]+\.pkg\.tar\.zst)"')
@@ -139,22 +138,22 @@ def _extract_dlls(pkg_data: bytes, zstandard_mod) -> None:
 
 
 def _persist_libarchive_env_var() -> bool:
-    """User スコープの ``LIBARCHIVE`` 環境変数を永続化する。
+    """ユーザースコープの ``LIBARCHIVE`` 環境変数を永続化する。
 
-    libarchive-c の ``ffi.py`` は DLL 探索時にまず ``LIBARCHIVE`` 環境変数を参照する。
-    `_INSTALL_DIR` 配下の ``libarchive-13.dll`` を直接指せば、Windows の
+    libarchive-cの ``ffi.py`` はDLL探索時にまず ``LIBARCHIVE`` 環境変数を参照する。
+    `_INSTALL_DIR` 配下の ``libarchive-13.dll`` を直接指すことで、Windowsの
     ``find_library("archive")`` で解決できないファイル名でも解決できる。
 
     挙動:
 
-    - DLL が未配置なら何もしない (false を返す)。
+    - DLLが未配置なら何もしない（``False`` を返す）。
     - 既に同じ値が設定されていればスキップする。
-    - 既存値が別パスを指している場合は上書きせず警告ログのみ表示する
-      (ユーザーが別途 libarchive を導入している可能性に配慮)。
-    - 書き換えに成功したら true を返す。
+    - 既存値が別パスを指している場合は上書きせず警告ログのみ出力する
+      （ユーザーが別途libarchiveを導入している可能性に配慮）。
+    - 書き換えに成功したら ``True`` を返す。
 
     Returns:
-        レジストリを実際に書き換えた場合に true。
+        レジストリを実際に書き換えた場合に ``True``。
     """
     target_dll = _INSTALL_DIR / "libarchive-13.dll"
     if not target_dll.exists():

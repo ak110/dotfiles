@@ -1,7 +1,7 @@
 """claude-plans-viewerのLinux向け自動起動セットアップ。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
-特定ホストでのみsystemd user serviceユニットを冪等に配置・有効化する。
+特定ホストでのみsystemd user serviceユニットをべき等に配置・有効化する。
 """
 
 import getpass

@@ -1,9 +1,9 @@
-# 自動生成ファイル: scripts/gen-completions.py が出力する。手編集禁止。
+# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
 # 再生成: `uv run --script scripts/gen-completions.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
-# argcomplete側で候補生成と出力を行う仕組み。
+# argcomplete側で候補生成と出力を行う。
 
 _python_argcomplete() {
     local IFS=$'\013'

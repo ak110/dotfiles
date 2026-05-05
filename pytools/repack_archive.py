@@ -210,7 +210,7 @@ def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Pa
 
 
 def _load_config(path: pathlib.Path | None) -> RepackConfig:
-    """YAML 設定ファイルをロードする。未指定なら既定値のみ。"""
+    """YAML設定ファイルを読み込む。未指定なら既定値のみ。"""
     if path is None:
         logger.info("設定ファイル未指定。既定値で実行する")
         return RepackConfig()
@@ -219,7 +219,7 @@ def _load_config(path: pathlib.Path | None) -> RepackConfig:
 
 
 def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRules:
-    """設定値を高速判定用の構造に変換する。"""
+    """設定値を判定用の構造に変換する。"""
     ignore_dir_patterns = [re.compile(p, re.IGNORECASE) for p in config.ignore_dirs]
     rename_rules: list[rename.RenameRule] = []
     for entry in config.rename_rules:
@@ -242,9 +242,9 @@ def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRul
 
 
 def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, backup_dir: pathlib.Path | None) -> None:
-    """事前衝突チェック。1 件でも問題があれば副作用なしで終了する。
+    """事前衝突チェック。1件でも問題があれば副作用なしで終了する。
 
-    rename 適用後の出力 stem ベースで衝突を検出する。
+    rename適用後の出力stemベースで衝突を検出する。
     """
     seen_outputs: dict[pathlib.Path, pathlib.Path] = {}
     seen_stems: dict[pathlib.Path, pathlib.Path] = {}
@@ -421,22 +421,22 @@ def _process_target(
 
 @functools.cache
 def _load_libarchive() -> typing.Any:
-    """libarchive-c を遅延 import する (Windows での DLL 解決を含む)。
+    """libarchive-cを遅延importする（WindowsでのDLL解決を含む）。
 
-    ``import libarchive`` 自体がグローバル副作用を伴い、Windows では DLL 解決の
+    ``import libarchive`` 自体がグローバル副作用を伴い、WindowsではDLL解決の
     過程で例外を送出する。そのため ``repack-archive --help`` や既存テストの
     ``from pytools import repack_archive`` が失敗しないよう、実際にアーカイブ展開が
     必要になる瞬間までロードを遅延させる。
 
-    Windows では MSYS2 由来の ``libarchive-13.dll`` が
+    WindowsではMSYS2由来の ``libarchive-13.dll`` が
     ``~/.local/lib/libarchive/`` 配下に配置されている前提で、``LIBARCHIVE``
-    環境変数と DLL 探索ディレクトリを補ってから import する。
-    libarchive-c 側の ``ffi.py`` は ``LIBARCHIVE`` 環境変数を最優先で参照する。
-    加えて ``libarchive-13.dll`` は複数の依存 DLL (bzip2・libxml2 等) を持つため、
-    同じディレクトリを ``os.add_dll_directory`` で Windows の DLL loader に渡す。
+    環境変数とDLL探索ディレクトリを補ってからimportする。
+    libarchive-c側の ``ffi.py`` は ``LIBARCHIVE`` 環境変数を最優先で参照する。
+    加えて ``libarchive-13.dll`` は複数の依存DLL（bzip2・libxml2等）を持つため、
+    同じディレクトリを ``os.add_dll_directory`` でWindowsのDLL loaderに渡す。
 
-    import が失敗した場合は復旧手順を含む RuntimeError を送出する。
-    libarchive-c の未ガードな ``LoadLibrary(None)`` が ``TypeError`` を送出するケースも
+    importが失敗した場合は復旧手順を含むRuntimeErrorを送出する。
+    libarchive-cの未ガードな ``LoadLibrary(None)`` が ``TypeError`` を送出するケースも
     捕捉する必要があるため、ここでは ``Exception`` を広めに捕捉する。
     """
     if sys.platform == "win32":
@@ -461,14 +461,14 @@ def _load_libarchive() -> typing.Any:
 def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     """アーカイブ形式に応じて展開エンジンを切り替える。
 
-    ZIP は Python 標準 ``zipfile`` を使い、エンコーディング判定とパス検証をこちらで掌握する。
-    Windows 版 libarchive-c は非 UTF-8 エントリ名 (CP932 等) を Latin-1 相当で
-    str 化するため、SJIS の 2 バイト目に含まれる ``0x5C`` がバックスラッシュとして
-    混入し Python 側でディレクトリ区切りと誤認される事故が起きる。zipfile は
-    中央ディレクトリのバイト列と bit 11 (Unicode flag) を直接扱えるため、
+    ZIPはPython標準の ``zipfile`` を使い、エンコーディング判定とパス検証を本ツール側で掌握する。
+    Windows版libarchive-cは非UTF-8エントリ名（CP932等）をLatin-1相当でstr化するため、
+    SJISの2バイト目に含まれる ``0x5C`` がバックスラッシュとして混入し
+    Python側でディレクトリ区切りと誤認される事故が起きる。zipfileは
+    中央ディレクトリのバイト列とbit 11（Unicode flag）を直接扱えるため、
     本ツール側でエンコーディング判定を掌握できる。
-    ZIP 以外 (RAR / 7z / tar 等) は libarchive-c に委ねる。個別エントリの ``OSError`` は
-    捕捉してスキップし、(エントリパス, severity, エラー文字列) のリストとして戻り値で返す。
+    ZIP以外（RAR / 7z / tar等）はlibarchive-cに委ねる。個別エントリの ``OSError`` は
+    捕捉してスキップし、（エントリパス, severity, エラー文字列）のリストとして戻り値で返す。
     アーカイブ全体での致命的エラーは再送出する。
     """
     if zipfile.is_zipfile(archive):
@@ -527,14 +527,14 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
 
 
 def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
-    """libarchive-c で ZIP 以外のアーカイブをストリーミング展開する。
+    """libarchive-cでZIP以外のアーカイブをストリーミング展開する。
 
-    エントリ数を取るため一度全エントリを走査してから本展開を行う 2 パス構成。
-    libarchive は逐次走査しかできないため、tqdm の total を埋めるには事前に
+    エントリ数を取るため一度全エントリを走査してから本展開を行う2パス構成。
+    libarchiveは逐次走査しかできないため、tqdmのtotalを埋めるには事前に
     エントリ数を数える以外の手段がない。
 
     展開順は元アーカイブ記録順のまま据え置く（逐次走査制約のため事前ソート不可）。
-    最終 ZIP の natsort 順揃えは後段の ``_write_uncompressed_zip`` が担当する。
+    最終ZIPのnatsort順揃えは後段の ``_write_uncompressed_zip`` が担当する。
     """
     libarchive = _load_libarchive()
     count = 0
@@ -601,7 +601,7 @@ def _flatten_single_root(work_dir: pathlib.Path) -> None:
     無視パターン適用後に残った空ディレクトリを先に畳んだうえで、直下が単一
     ディレクトリである状態が続く限り階層を除去しきる。これにより
     ``Series/Vol01/001.txt`` と空の ``Series/Vol02/`` が共存するような
-    フィルタ後構造でも、最終 ZIP に余計な階層を残さない。
+    フィルタ後構造でも、最終ZIPに余計な階層を残さない。
     """
     pytilpack.pathlib.delete_empty_dirs(work_dir, keep_root=True)
     while True:
@@ -632,9 +632,9 @@ def _reserve_flatten_staging(inner: pathlib.Path) -> pathlib.Path:
 
 
 def _write_uncompressed_zip(work_dir: pathlib.Path, zip_path: pathlib.Path) -> None:
-    """作業ディレクトリ配下を無圧縮 ZIP として出力する。
+    """作業ディレクトリ配下を無圧縮ZIPとして出力する。
 
-    エントリ順は POSIX 区切りの相対パスを natsort キーとする自然順に揃える。
+    エントリ順はPOSIX区切りの相対パスをnatsortキーとする自然順に揃える。
     """
     files = list(
         natsort.natsorted(

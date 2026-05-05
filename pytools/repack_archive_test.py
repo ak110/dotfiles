@@ -113,7 +113,6 @@ class TestProcessArchive:
         assert output.exists()
         entries = _zip_entries(output)
         assert entries == {"img1.txt", "img2.txt"}
-        # バックアップが残っている (no_trash=True)
         assert (tmp_path / "bk" / "sample.zip").exists()
 
     def test_ignore_files_skips_extraction(self, tmp_path: pathlib.Path) -> None:
@@ -183,7 +182,6 @@ class TestProcessArchive:
             dry_run=False,
         )
         entries = _zip_entries(tmp_path / "foo.zip")
-        # sub/ が平坦化される
         assert entries == {"01.txt", "02.txt"}
 
     def test_flatten_nested_single_root(self, tmp_path: pathlib.Path) -> None:

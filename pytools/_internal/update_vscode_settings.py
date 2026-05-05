@@ -2,8 +2,8 @@
 
 ホスト名から生成したActivity Barの色とMarkdown関連のCSS設定を、
 WindowsではUser scope（`%APPDATA%/Code/User/settings.json`）、
-Linux Remote SSHではMachine scope（`~/.vscode-server/data/Machine/settings.json`）の
-settings.jsonへマージする。
+Linux Remote SSHではMachine scope（`~/.vscode-server/data/Machine/settings.json`）へ
+マージする。
 """
 
 import collections.abc
@@ -35,8 +35,8 @@ _DOTFILES_DIR = Path.home() / "dotfiles"
 _MARKDOWN_STYLE_URL = "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/vscode/markdown.css"
 
 # Machine scope の settings.json に残っていたら apply 時に削除するキー。
-# 過去バージョンがホーム配下の絶対パスで markdown.styles を書き込んでいたが、
-# VSCode 1.23 以降は無視されるため、該当エントリを明示的に削除する。
+# ホーム配下の絶対パス形式の markdown.styles は VSCode 1.23 以降で無視されるため、
+# 該当エントリを明示的に削除する。
 _LEGACY_KEYS_FOR_MACHINE_SCOPE: tuple[str, ...] = ("markdown.styles",)
 
 
@@ -126,38 +126,37 @@ _HOST_COLORS: tuple[str, ...] = (
 
 
 def _hostname_color(*, hostname: str | None = None) -> str:
-    """ホスト名の SHA-256 ハッシュから CVD-safe な淡色パレットを引く。
+    """ホスト名のSHA-256ハッシュからCVD-safeな淡色パレットを参照する。
 
     ``_HOST_COLORS`` の離散パレットをハッシュインデックスで参照するため、
-    2 ホスト同士が肉眼で区別できない近似色になることは起こらない。
-    完全一致の衝突率は 1/len(パレット) で上昇するが、視覚的区別性を優先する。
+    2ホスト同士が肉眼で区別できない近似色になることはない。
+    完全一致の衝突率は `1/len(パレット)` で上昇するが、視覚的区別性を優先する。
     """
     hostname = hostname or socket.gethostname()
-    hostname = hostname.lower().removesuffix("-container")  # 末尾-containerは無視する（独自の都合により…）
+    hostname = hostname.lower().removesuffix("-container")  # コンテナ環境でも物理ホスト名で色を統一する
     digest = hashlib.sha256(hostname.encode()).digest()
     index = int.from_bytes(digest[:4], "big") % len(_HOST_COLORS)
     return _HOST_COLORS[index]
 
 
 def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool) -> dict:
-    """Managed 設定の dict を構築する。
+    """managed設定のdictを構築する。
 
     Args:
-        hostname: Activity Bar 色生成に使うホスト名。
-        is_user_scope: True なら User scope (全マシン共通)、
-            False なら Machine scope (マシン固有)。markdown.styles は
-            User scope でのみ管理する。
+        hostname: Activity Bar色生成に使うホスト名。
+        is_user_scope: TrueならUser scope（全マシン共通）、
+            FalseならMachine scope（マシン固有）。`markdown.styles` は
+            User scopeでのみ管理する。
     """
     share_vscode = _DOTFILES_DIR / "share" / "vscode"
     settings: dict = {
         "workbench.colorCustomizations": {
             "activityBar.background": _hostname_color(hostname=hostname),
         },
-        # yzane/vscode-markdown-pdf は絶対パスを正式サポートしているため従来どおり
-        # 絶対パスで渡す。HTTPS URL 指定は PDF 出力で CSS が適用されない可能性が
-        # 公式 README に示唆されており、markdown.styles 側と揃えて URL 化しては
-        # ならない (揃えたくなる誘惑への注意)。マシン依存のパスなので両 scope で
-        # 書き込む必要がある。
+        # yzane/vscode-markdown-pdf は絶対パスを正式サポートしているため絶対パスで渡す。
+        # HTTPS URL 指定は PDF 出力で CSS が適用されない可能性が公式 README に示唆されており、
+        # markdown.styles 側と揃えて URL 化してはならない（揃えたくなる誘惑への注意）。
+        # マシン依存のパスなので両 scope で書き込む必要がある。
         "markdown-pdf.styles": [share_vscode.joinpath("markdown-pdf.css").as_posix()],
     }
     if is_user_scope:
@@ -169,18 +168,18 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
 
 
 def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] = ()) -> bool:
-    """Managed 設定を settings.json にマージして書き込む。
+    """managed設定を`settings.json`にマージして書き込む。
 
-    dict 値は浅いマージ (既存キーを保持)、それ以外は上書き。
-    VSCode の settings.json は JSONC 形式のため pytilpack.jsonc.loads でパースする。
-    書き込みは標準 JSON で行う (コメントは保持しない)。
+    dict値は浅いマージ（既存キーを保持）、それ以外は上書き。
+    VSCodeの`settings.json`はJSONC形式のため`pytilpack.jsonc.loads`でパースする。
+    書き込みは標準JSONで行う（コメントは保持しない）。
 
-    ``legacy_keys`` はマージ前に settings.json から削除する。現在は管理しない
-    キーの残骸 (過去バージョンが書き込んだ無効な絶対パス等) を除去するための
-    仕組みで、Machine scope から markdown.styles を削除する用途などで使う。
+    ``legacy_keys`` はマージ前に`settings.json`から削除する。管理しなくなった
+    キーの残骸（過去バージョンが書き込んだ無効な絶対パス等）を除去するための
+    仕組みで、Machine scopeから`markdown.styles`を削除する用途などで使う。
 
     Returns:
-        実際にファイルを書き換えたかどうか。
+        実際にファイルを書き換えた場合True。
     """
     data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
     original = copy.deepcopy(data)

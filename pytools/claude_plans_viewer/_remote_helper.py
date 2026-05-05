@@ -5,7 +5,7 @@
 """claude_plans_viewerのリモートホスト側ヘルパー。
 
 操作種別はargvで受け取る（`list`・`read`・`watch`・`serve`）。
-各サブコマンドの入出力プロトコルは対応する関数のdocstringを参照する。
+各サブコマンドの入出力プロトコルは対応する関数のdocstringを参照。
 """
 
 import base64
@@ -71,9 +71,9 @@ def _resolve_target(rel_b64: str) -> pathlib.Path:
 def _read_payload(rel_b64: str) -> dict[str, typing.Any]:
     """指定相対パスのファイル本文と`mtime_epoch`をRPC応答用辞書として返す。
 
-    `read_bytes`と`stat`を続けて呼ぶことで、本文と取得時点のmtimeをペアで提供する。
-    呼び出し側はこの`mtime_epoch`をMarkdownキャッシュキーへ使い、watch通知の遅延と
-    無関係に正確性を担保する。
+    `read_bytes`と`stat`を続けて呼ぶことで、本文と取得時点のmtimeをペアで取得する。
+    呼び出し側はこの`mtime_epoch`をMarkdownキャッシュキーへ使い、watch通知の遅延に
+    左右されず正確性を担保できる。
     """
     target = _resolve_target(rel_b64)
     data = target.read_bytes()

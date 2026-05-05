@@ -8,24 +8,24 @@ description: >
 
 # Linux/Windowsペアファイル編集支援
 
-## いつ使うか
+## 適用条件
 
-`~/dotfiles/` でLinux/Windowsのペアファイルのいずれかを編集するときに使う。
-片方だけ変更すると配布経路の一方が不整合になるため、対応するファイルの更新を忘れやすい作業である。
+`~/dotfiles/` でLinux/Windowsのペアファイルのいずれかを編集するときに適用する。
+片方のみ変更すると配布経路の一方が不整合になる。
 
 ## ペアファイル一覧の参照
 
 ペアファイルの対応関係は`docs/development/development.md`の「プラットフォーム対応ファイル」節を参照する。
 編集対象のファイルがペアの片方に該当するかは、まず当該節で確認する。
 
-## 片方のみ編集するリスク
+## 片方のみ編集した場合の不整合事例
 
-以下の事例が発生しやすい。作業着手時に必ず両側の対応関係を確認する。
+作業着手時に両側の対応関係を確認する。
 
-- Windows側の`.cmd`や`.ps1`を更新し忘れ、Linux側だけで挙動が変わる
-- `install.sh`のオプション追加後、`install.ps1`に同じオプションを追加し忘れる
+- Windows側の`.cmd`や`.ps1`を更新せず、Linux側のみ挙動が変わる
+- `install.sh`のオプション追加後、`install.ps1`への同一オプション追加が漏れる
 - `run_after_post-apply.sh.tmpl`に処理を追加しても、`run_after_post-apply-windows.ps1.tmpl`側が空のままで挙動が非対称になる
-- `share/claude_settings_json_managed.posix.json`と`.win32.json`のマッチャー追加が片方だけで止まる
+- `share/claude_settings_json_managed.posix.json`と`.win32.json`のマッチャー追加が一方のみで止まる
 
 ## 新規ペアの追加
 

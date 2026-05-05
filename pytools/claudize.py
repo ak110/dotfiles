@@ -2,7 +2,7 @@
 """Claude Code設定ファイルを配布・同期するコマンド。
 
 配布元ディレクトリ（`.chezmoi-source/dot_claude/rules/agent-toolkit/`）の内容を
-プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全同期する。
+プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全に同期する。
 """
 
 import argparse
@@ -52,7 +52,7 @@ def _claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> N
         logger.error("テンプレートが見つかりません: %s", template_dir)
         sys.exit(1)
 
-    # 旧ディレクトリ (`agent-basics`) を撤去して移行。
+    # 旧ディレクトリ (`agent-basics`) が存在する場合は削除する。
     _clean_rules_dir(legacy_rules_dir)
 
     # 配布先を配布元と完全一致させる。個別ファイル差分比較はしない。
@@ -64,10 +64,10 @@ def _claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> N
 
 
 def _clean_rules_dir(rules_dir: Path) -> bool:
-    """配布先ディレクトリごと削除する。空になった親ディレクトリも併せて削除する。
+    """配布先ディレクトリごと削除する。空になった親ディレクトリも削除する。
 
     Returns:
-        何らかのディレクトリを削除した場合 True。
+        何らかのディレクトリを削除した場合True。
     """
     if not rules_dir.exists():
         return False

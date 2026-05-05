@@ -11,14 +11,14 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install.ps1 | iex"
 #
 # README の「Windows」セクションには winget を使う簡易版も残してある。
-# winget を避けたい/使えない場合はこのスクリプトを利用する。
+# winget を避けたい/採用できない場合はこのスクリプトを利用する。
 #
 # NOTE: 対応するLinux版 → install.sh
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# 前提条件チェック
+# 前提条件チェック。
 $missing = @()
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { $missing += 'git' }
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { $missing += 'uv' }
@@ -29,7 +29,7 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
-# chezmoi が無ければ winget で入れる (winget 自体は Windows 10/11 標準搭載)
+# chezmoi が無ければ winget で導入する（winget 自体は Windows 10/11 標準搭載）
 if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
     Write-Host 'chezmoi をインストールします...'
     winget install --id=twpayne.chezmoi -e --source=winget
@@ -41,7 +41,7 @@ if (-not (Test-Path $dotfilesDir)) {
     git clone https://github.com/ak110/dotfiles.git $dotfilesDir
 }
 
-# chezmoi 管理対象の既存ファイルをバックアップ
+# chezmoi 管理対象の既存ファイルをバックアップする。
 $backupDir = Join-Path $env:USERPROFILE (".dotfiles-backup\{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $count = 0
 $managed = & chezmoi managed --source=$dotfilesDir

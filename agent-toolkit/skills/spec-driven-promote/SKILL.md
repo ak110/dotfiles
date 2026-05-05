@@ -7,8 +7,7 @@ description: >
 
 # spec-driven昇格ワークフロー
 
-本スキルはspec-driven系ワークフローの最終ステップであり、
-リリース後に次版ドキュメントを現行版ドキュメントへ統合するときに使う。
+リリース後に次版ドキュメントを現行版ドキュメントへ統合する。
 
 ## ワークフロー全体像
 
@@ -30,11 +29,13 @@ flowchart LR
 
 ## 参照ファイル
 
-- `agent-toolkit:spec-driven`の`references/spec-driven-framework.md`: 用語定義・配置規約・現行版ドキュメントの記述レベル（手順1で読み込む）
+- `agent-toolkit:spec-driven`の`references/spec-driven-framework.md`:
+  用語定義・配置規約・現行版ドキュメントの記述レベル（手順1で使用）
 
 ## 手順
 
-1. `agent-toolkit:spec-driven`スキルと`references/spec-driven-framework.md`を呼び出し、用語・配置規約・現行版の記述レベルを把握する
+1. `agent-toolkit:spec-driven`スキルと`references/spec-driven-framework.md`を呼び出し、
+   用語・配置規約・現行版の記述レベルを把握する
 2. 昇格対象の`docs/v{next}/`を確認する。
    `OVERVIEW.md`を除く`.md`ファイルを作業テーマドキュメントとして扱う
 3. 各作業テーマドキュメントの「現行版ドキュメントの対応先」節から統合先を特定する。
@@ -61,8 +62,8 @@ flowchart LR
 - 主要設計判断は現行の判断として整理する
 - 却下した代替案は判断履歴として残す
 - 次版ドキュメントに含まれる内部実装詳細（クラス・関数・変数名、ファイルパス、モジュール分割など）は、
-  現行版へ統合する際に外部仕様レベルへ整理して取り除く
- （現行版ドキュメントの記述レベル規定は`references/spec-driven-framework.md`参照）
+  現行版へ統合する際に外部仕様レベルへ整理して除去する。
+  記述レベルの規定は`references/spec-driven-framework.md`を参照
 - 次版ドキュメントの「現行版ドキュメントの対応先」節は統合先を案内する次版固有の記述なので、
   現行版へ持ち込まない
 - `docs/v{next}/OVERVIEW.md`は次版作業の進行管理用ファイルなので統合せず、

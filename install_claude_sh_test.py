@@ -68,7 +68,7 @@ def _runners() -> list:
 
 
 def _make_claude_stub(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """`claude` スタブを作成し、(binディレクトリ, ログパス) を返す。"""
+    """`claude` スタブを作成し、（binディレクトリ, ログパス）を返す。"""
     bin_dir = tmp_path / "stub-bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     stub = bin_dir / "claude"
@@ -195,7 +195,7 @@ class TestInstallClaude:
         _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
         lines = [ln for ln in stub_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
-        # 少なくとも以下の呼び出しが含まれる (順序も維持されている)
+        # 少なくとも以下の呼び出しが含まれる（順序も維持されている）
         expected_substrings = [
             "plugin marketplace add ak110/dotfiles --scope=user",
             "plugin marketplace update ak110-dotfiles",

@@ -29,7 +29,7 @@ BUMP_RANKS: dict[BumpKind, int] = {"patch": 1, "minor": 2, "major": 3}
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドラインエントリーポイント。"""
+    """agent-toolkitプラグインのバージョンをbumpする。"""
     parser = argparse.ArgumentParser(description="agent-toolkitプラグインのバージョンbumpツール。")
     parser.add_argument(
         "kind",
@@ -57,12 +57,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if BUMP_RANKS[requested] <= BUMP_RANKS[existing]:
-        print(f"既存の未プッシュbump種別({existing})が指定種別({requested})と同等以上のため何もしない。")
+        print(f"既存の未プッシュbump種別（{existing}）が指定種別（{requested}）と同等以上のため何もしない。")
         print(f"  上流: {upstream_str}")
-        print(f"  現在: {current} (既存bump: {existing})")
+        print(f"  現在: {current}（既存bump: {existing}）")
         return 0
 
-    # 上書き格上げ。基準は上流時点のバージョン
+    # 上書き格上げ。基準は上流時点のバージョン。
     assert upstream is not None
     new_version = compute_new_version(upstream, requested)
     _write_version(new_version)
@@ -173,7 +173,7 @@ def _print_status(current: str, upstream: str | None, existing: BumpKind | None)
     if existing is None:
         print("未プッシュbump: なし")
     else:
-        print(f"未プッシュbump: あり ({existing})")
+        print(f"未プッシュbump: あり（{existing}）")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
-"""Claude Code agent-toolkit: hook 間で共有するセッション状態ファイルのアクセスヘルパー。
+"""Claude Code agent-toolkit: hook間で共有するセッション状態ファイルのアクセスヘルパー。
 
 パス規則は`writing-standards/references/claude-hooks.md`の「セッション状態ファイル」節と、
-`.claude/rules/agent-toolkit.md`の「agent-toolkit のセッション状態フラグ」節に記載がある。
+`.claude/rules/agent-toolkit.md`の「agent-toolkitのセッション状態フラグ」節に記載がある。
 """
 
 import json
@@ -18,7 +18,7 @@ def state_path(session_id: str) -> pathlib.Path:
 
 
 def read_state(session_id: str) -> dict:
-    """セッション状態を読む。session_id が無効・不在・破損時は空辞書を返す。"""
+    """セッション状態を読む。session_idが無効・不在・破損時は空辞書を返す。"""
     if not isinstance(session_id, str) or not session_id:
         return {}
     try:
@@ -28,7 +28,7 @@ def read_state(session_id: str) -> dict:
 
 
 def write_state(session_id: str, state: dict) -> None:
-    """セッション状態を書く。書き込み失敗は無視する（best-effort）。"""
+    """セッション状態を書き込む。書き込み失敗は無視する（best-effort）。"""
     if not isinstance(session_id, str) or not session_id:
         return
     try:

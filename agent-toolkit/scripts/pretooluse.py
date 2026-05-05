@@ -3,26 +3,39 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code plugin agent-toolkit: PreToolUse 統合フック。
+r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
 任意ツールの実行前に以下のチェックを順に実行する。
-block 系 check は 1 プロセスで直列実行し、最初の違反で exit 2 する。
-warn 種別の check は stderr または stdout に警告を表示しつつ処理を継続する。
+block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
+warn種別のcheckはstderrまたはstdoutに警告を表示しつつ処理を継続する。
 
 統合しているチェック:
 
-1. plan mode で最初のツール呼び出しが plan-mode スキル以外の場合の警告 (warn, 任意ツール)
-2. 文字化け (U+FFFD) 検出 (block, Write/Edit/MultiEdit)
-3. `.ps1` / `.ps1.tmpl` への LF-only 書き込み検出 (block, Write/Edit/MultiEdit)
-4. lockfile / 生成物ディレクトリの直接編集 (block, Write/Edit/MultiEdit)
-5. シークレット / 鍵ファイルの直接編集 (block, Write/Edit/MultiEdit)
-6. manifest ファイルの手編集 (warn, Write/Edit/MultiEdit)
-7. ホームディレクトリの絶対パス混入 (warn, Write/Edit/MultiEdit)
-8. 口語的な日本語表現の混入 (warn, Write/Edit/MultiEdit)
+任意ツール:
+
+- plan modeで最初のツール呼び出しがplan-modeスキル以外の場合の警告 (warn)
+
+Bash:
+
+- git amend / rebase直前に`git log`未確認のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- `git commit`未検証警告 (warn)
+- `git log --decorate`の自動付与提案 (warn)
+- `codex exec`の未決事項念押し (warn)
+
+Write / Edit / MultiEdit:
+
+- 文字化け（U+FFFD）検出 (block)
+- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
+- lockfile / 生成物ディレクトリの直接編集 (block)
+- シークレット / 鍵ファイルの直接編集 (block)
+- manifestファイルの手編集 (warn)
+- ホームディレクトリの絶対パス混入 (warn)
+- 口語的な日本語表現の混入 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
-block 系 check の検査対象は「新規に書き込まれる側」 (`content` / `new_string`) のみ。
-`old_string` は既存内容の修正・削除を妨げないため検査しない。
+block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）のみ。
+`old_string`は既存内容の修正・削除を妨げないため検査しない。
 """
 
 import json
@@ -38,7 +51,7 @@ import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-# U+FFFD (REPLACEMENT CHARACTER): UTF-8 デコード失敗の典型的な代替文字
+# U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
 
 # このスクリプトの hook 識別子。
@@ -46,25 +59,24 @@ _HOOK_ID = "agent-toolkit/pretooluse"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
+    """LLM宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
 def _main() -> int:
     """エントリポイント。
 
-    exit code 契約:
+    exit code契約:
 
-    - exit 0: 通過 (違反なし / スキップ対象ツール / 想定外入力 / warn のみ)
-    - exit 2: block 違反検出 (stderr に理由を出力)
+    - exit 0: 通過（違反なし / スキップ対象ツール / 想定外入力 / warnのみ）
+    - exit 2: block違反検出（stderrに理由を出力）
 
-    予期せぬ例外は 0 にフォールバックする (plugin の hook が破損して編集できなくなる
-    事故を避けるため、安全側の判定としている)。
+    予期せぬ例外は0にフォールバックする（pluginのhookが破損して編集できなくなる事故を避けるため）。
     """
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
-        # 想定外入力ではフックを無効化 (実処理の破損を避ける安全側の判定)
+        # 想定外入力ではフックを無効化（実処理の破損を避ける安全側の判定）
         return 0
 
     tool_name = payload.get("tool_name", "")
@@ -76,44 +88,44 @@ def _main() -> int:
     permission_mode_raw = payload.get("permission_mode", "")
     permission_mode = permission_mode_raw if isinstance(permission_mode_raw, str) else ""
 
-    # plan mode で最初のツール呼び出しが plan-mode スキル以外なら警告 (任意ツール)
+    # plan modeで最初のツール呼び出しがplan-modeスキル以外なら警告（任意ツール）
     plan_mode_result = _check_plan_mode_skill_first(tool_name, tool_input, permission_mode, session_id)
     if plan_mode_result is not None:
         print(json.dumps(plan_mode_result, ensure_ascii=False))
-        # 1 セッション 1 回限りの警告のため、同フックでの後続 check は省略する
+        # 1セッション1回限りの警告のため、同フックでの後続checkは省略する
         return 0
 
-    # Bash は専用ハンドラ
+    # Bashは専用ハンドラ
     if tool_name == "Bash":
         command = tool_input.get("command")
         if not isinstance(command, str):
             return 0
         cwd_raw = payload.get("cwd", "")
         cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-        # git amend / rebase は直前に git log を確認していなければブロック
+        # git amend / rebaseは直前にgit logを確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id):
             return 2
-        # uv run python <path> 形式の起動は非 Python プロジェクトでブロック
+        # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
             return 2
-        # git commit 未検証警告
+        # git commit未検証警告
         result = _check_bash_git_commit(command, session_id, cwd)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
             return 0
-        # git log --decorate 自動付与
+        # git log --decorate自動付与
         result = _check_bash_git_log_decorate(command, tool_input)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
             return 0
-        # codex exec 未決事項の念押し
+        # codex exec未決事項の念押し
         result = _check_bash_codex_exec(command)
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
             return 0
         return 0
 
-    # Write/Edit/MultiEdit 以外は全スキップ
+    # Write/Edit/MultiEdit以外は全スキップ
     fields = _collect_new_fields(tool_name, tool_input)
     if fields is None:
         return 0
@@ -121,11 +133,11 @@ def _main() -> int:
     file_path_raw = tool_input.get("file_path")
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
 
-    # --- block 系 check (最初の違反で exit 2) ---
+    # --- block系check（最初の違反でexit 2）---
     if _check_mojibake(tool_name, fields):
         return 2
-    # Edit/MultiEdit は内部的に CRLF を透過的に維持するためチェック不要。
-    # Write のみ LF で書き込むため EOL チェックを実行する。
+    # Edit/MultiEditは内部的にCRLFを透過的に維持するためチェック不要。
+    # WriteのみLFで書き込むためEOLチェックを実行する。
     if tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path):
         return 2
     if _check_lockfiles(tool_name, file_path):
@@ -133,7 +145,7 @@ def _main() -> int:
     if _check_secrets(tool_name, file_path):
         return 2
 
-    # --- warn 系 check (stderr に警告のみ、exit code は 0 のまま) ---
+    # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
     _check_manifest(tool_name, file_path)
     _check_home_path(tool_name, fields, file_path)
     _check_colloquial(tool_name, fields, file_path)
@@ -142,9 +154,9 @@ def _main() -> int:
 
 
 def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]] | None:
-    """対象ツールの「新規書き込みフィールド」を (field 名, 値) のリストで返す。
+    """対象ツールの「新規書き込みフィールド」を（field名, 値）のリストで返す。
 
-    対象外ツールの場合は None を返す。値が文字列でないものはスキップする。
+    対象外ツールの場合はNoneを返す。文字列でない値はスキップする。
     """
     if tool_name == "Write":
         value = tool_input.get("content")
@@ -168,7 +180,7 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
 
 
 def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
-    """U+FFFD (mojibake) を検出したら True を返す。"""
+    """U+FFFD（mojibake）を検出したらTrueを返す。"""
     for field, value in fields:
         position = value.find(_REPLACEMENT_CHAR)
         if position == -1:
@@ -185,13 +197,13 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
 
 
 def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する (`.ps1` / `.ps1.tmpl`)。"""
+    """`.ps1` / `.ps1.tmpl`の場合に真を返す。"""
     lowered = file_path.lower()
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
 
 def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """PowerShell スクリプトへの LF-only 書き込みを検出したら True を返す。"""
+    """PowerShellスクリプトへのLF-only書き込みを検出したらTrueを返す。"""
     for field, value in fields:
         if "\n" not in value:
             continue
@@ -212,9 +224,9 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
     return False
 
 
-# --- lockfile / 生成物ディレクトリ check ---
+# --- lockfile / 生成物ディレクトリcheck ---
 
-# (label, regex, hint) のタプル。regex は file_path 全体に対するマッチ。
+# （label, regex, hint）のタプル。regexはfile_path全体に対するマッチ。
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "Use `uv add` to add dependencies and `uv remove` to remove them."),
     (
@@ -240,7 +252,7 @@ _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 
 
 def _check_lockfiles(tool_name: str, file_path: str) -> bool:
-    """Lockfile や生成物ディレクトリへの直接編集を検出したら True を返す。"""
+    """lockfileや生成物ディレクトリへの直接編集を検出した場合に真を返す。"""
     if not file_path:
         return False
     normalized = file_path.replace("\\", "/")
@@ -254,7 +266,7 @@ def _check_lockfiles(tool_name: str, file_path: str) -> bool:
     return False
 
 
-# --- シークレット / 鍵ファイル check ---
+# --- シークレット / 鍵ファイルcheck ---
 
 _SECRETS_PATTERN = re.compile(
     r"(^|/)("
@@ -270,7 +282,7 @@ _SECRETS_EXEMPT_SUFFIXES: tuple[str, ...] = (".example", ".sample", "-example", 
 
 
 def _check_secrets(tool_name: str, file_path: str) -> bool:
-    """シークレット/鍵ファイルへの直接編集を検出したら True を返す。"""
+    """シークレット / 鍵ファイルへの直接編集を検出した場合に真を返す。"""
     if not file_path:
         return False
     normalized = file_path.replace("\\", "/")
@@ -288,7 +300,7 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
     return False
 
 
-# --- manifest 手編集 check (warn) ---
+# --- manifest手編集check (warn) ---
 
 _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
@@ -312,7 +324,7 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 
 
 def _check_manifest(tool_name: str, file_path: str) -> bool:
-    """Manifest 手編集を検出したら警告を表示して True を返す (warn なので exit code は変えない)。"""
+    """manifest手編集を検出したら警告を表示して真を返す（warnのみ、exit codeは変えない）。"""
     if not file_path:
         return False
     normalized = file_path.replace("\\", "/")
@@ -329,9 +341,9 @@ def _check_manifest(tool_name: str, file_path: str) -> bool:
     return False
 
 
-# --- ホームディレクトリパス混入 check (warn) ---
+# --- ホームディレクトリパス混入check (warn) ---
 
-# 混入を許容するファイル末尾パターン (ローカル設定やログなど)
+# 混入を許容するファイル末尾パターン（ローカル設定やログなど）
 _HOME_PATH_SKIP_SUFFIXES: tuple[str, ...] = (
     ".local.md",
     ".local.json",
@@ -344,13 +356,13 @@ _HOME_PATH_SKIP_SUFFIXES: tuple[str, ...] = (
 
 
 def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """ホームディレクトリの絶対パス混入を検出したら警告を表示して True を返す。
+    """ホームディレクトリの絶対パス混入を検出したら警告を表示して真を返す。
 
-    リポジトリ管理ファイルに `/home/user/...` のような環境依存パスが書き込まれると
-    他環境での再現性が崩れるため警告する。警告のみで edit は継続 (warn)。
+    リポジトリ管理ファイルに`/home/user/...`のような環境依存パスが書き込まれると
+    他環境での再現性が失われるため警告する。警告のみでeditは継続（warn）。
     """
     home_str = str(pathlib.Path.home())
-    # ルートなど極端に短いパスは誤検出を避けてスキップ
+    # ルートなど極端に短いパスは誤検出を避けてスキップ。
     if len(home_str) < 3:
         return False
 
@@ -362,7 +374,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     if normalized_path.endswith("/.claude/settings.local.json"):
         return False
 
-    # POSIX 正規化された両表記で検査 (Windows から POSIX 風パスが混入するケースに対応)
+    # POSIX正規化された両表記で検査（WindowsからPOSIX風パスが混入するケースに対応）
     candidates = {home_str, home_str.replace("\\", "/")}
 
     for field, value in fields:
@@ -387,21 +399,21 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
     return False
 
 
-# --- 口語表現混入 check (warn) ---
+# --- 口語表現混入check (warn) ---
 
 # モジュールロード時に1回だけコンパイルする。
-# 検出語そのものを LLM コンテキストへ持ち込まないよう、
+# 検出語そのものをLLMコンテキストへ持ち込まないよう、
 # 本ファイルからパターンの実体を文字列で参照しない。
 _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
 
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """口語的な日本語表現の混入を検出して警告する (warn)。
+    """口語的な日本語表現の混入を検出して警告する（warn）。
 
-    検出した語そのものは出力に含めない (LLM コンテキスト汚染防止)。
-    Allowlist の正規表現に一致する部分を一旦取り除いてから denylist を適用し、
-    複合動詞・複合名詞などの標準用語が誤検出されるのを抑える。
+    検出した語そのものは出力に含めない（LLMコンテキスト汚染防止）。
+    allowlistに一致する部分を先に除去してからdenylistを適用し、
+    複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """
     for field, value in fields:
         if not value:
@@ -422,11 +434,11 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     return False
 
 
-# --- plan mode 中の最初のツール呼び出しが plan-mode スキル以外の場合の警告 (warn) ---
+# --- plan mode中の最初のツール呼び出しがplan-modeスキル以外の場合の警告（warn）---
 
-# Skill ツールの ``skill`` 引数として許容する plan-mode スキル名。
+# Skillツールの`skill`引数として許容するplan-modeスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
-# posttooluse.py の同名定数と同期しておく。
+# posttooluse.pyの同名定数と同期しておく。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 
@@ -436,18 +448,18 @@ def _check_plan_mode_skill_first(
     permission_mode: str,
     session_id: str,
 ) -> dict | None:
-    """Plan mode 中で最初のツール呼び出しが plan-mode スキル以外なら警告を返す。
+    """Plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告を返す。
 
     判定条件:
 
-    - ``permission_mode == "plan"``
-    - セッション状態の ``plan_mode_skill_invoked`` が偽
-    - セッション状態の ``plan_mode_warning_emitted`` が偽 (1 セッション 1 回のみ)
+    - `permission_mode == "plan"`
+    - セッション状態の`plan_mode_skill_invoked`が偽
+    - セッション状態の`plan_mode_warning_emitted`が偽（1セッション1回のみ）
 
-    例外: 当該呼び出しが Skill ツールでスキル名が ``_PLAN_MODE_SKILL_NAMES``
+    例外: 当該呼び出しがSkillツールかつスキル名が`_PLAN_MODE_SKILL_NAMES`
     に含まれる場合は警告しない。
 
-    警告発火時は ``plan_mode_warning_emitted`` を真にして以後の発火を抑制する。
+    警告発火時は`plan_mode_warning_emitted`を真にして以後の発火を抑制する。
     """
     if permission_mode != "plan":
         return None
@@ -478,38 +490,38 @@ def _check_plan_mode_skill_first(
     }
 
 
-# --- Bash: heredoc 内のパターンを除外するヘルパー ---
+# --- Bash: heredoc内のパターンを除外するヘルパー ---
 
 
 def _likely_real_command(command: str, pos: int) -> bool:
     """マッチ位置がシェルコマンド文脈にあるかヒューリスティックで判定する。
 
-    heredoc (<<) がマッチ位置より前にある場合、マッチはリテラル文字列の
-    一部である可能性が高いため False を返す。
-    python3 -c / cat << 等でファイル内容を書き込むケースの誤検出を防ぐ。
+    heredoc（`<<`）がマッチ位置より前にある場合、マッチはリテラル文字列の
+    一部である可能性が高いため偽を返す。
+    `python3 -c` / `cat <<`等でファイル内容を書き込むケースの誤検出を防ぐ。
     """
     prefix = command[:pos]
     return "<<" not in prefix
 
 
-# --- Bash: 関連定数 ---
+# --- Bash: 関連定数（git commit検出）---
 
 _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
 
 
-# --- Bash: git amend / rebase を log 未確認でブロック ---
+# --- Bash: git amend / rebaseをlog未確認でブロック ---
 
 _GIT_AMEND_PATTERN = re.compile(r"\bgit\s+commit\b.*--amend\b")
 _GIT_REBASE_PATTERN = re.compile(r"\bgit\s+rebase\b")
 
 
 def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
-    """Git commit --amend / git rebase を git log 未確認で実行しようとした場合にブロックする。
+    """Git commit --amend / git rebaseをgit log未確認で実行しようとした場合にブロックする。
 
-    amend / rebase は既存コミットを書き換えるため、直前に git log --decorate で
+    amend / rebaseは既存コミットを書き換えるため、直前にgit log --decorateで
     コミット状態（特にプッシュ済みかどうか）を確認する必要がある。
-    ユーザーが裏で push している場合もあるため、
-    ファイル編集・commit・rebase・push・Stop が介在すると確認状態はリセットされる。
+    ファイル編集・commit・rebase・push・Stopが介在すると確認状態をリセットする。
+    ユーザーが裏でpushしている可能性があるためリセット対象に含める。
     """
     amend_match = _GIT_AMEND_PATTERN.search(command)
     rebase_match = _GIT_REBASE_PATTERN.search(command)
@@ -532,28 +544,28 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
     return True
 
 
-# --- Bash: uv run python <path> 形式の起動ブロック ---
+# --- Bash: uv run python <path>形式の起動ブロック ---
 
 # 副作用の理由:
-# cwd の pyproject.toml が [tool.uv] のみで [project] セクションを持たない場合、
-# `uv run python <path>` は cwd をプロジェクト解決対象として扱い `.venv` と
-# `uv.lock` を生成する (uv の仕様)。
-# エージェントが PEP 723 スクリプトを誤って `uv run python <path>` 形式で起動する
-# 事故を予防的に block する。
+# cwdのpyproject.tomlが[tool.uv]のみで[project]セクションを持たない場合、
+# `uv run python <path>`はcwdをプロジェクト解決対象として扱い`.venv`と
+# `uv.lock`を生成する（uvの仕様）。
+# エージェントがPEP 723スクリプトを誤って`uv run python <path>`形式で起動する
+# 事故を予防的にblockする。
 #
 # 判定の優先順位:
 #
-# 1. `uv run` と `python` の間 (uv run 自身のオプション位置) に `--script` または
-#    `--no-project` が現れる場合は許容する (cwd の依存解決を行わないため副作用なし)。
-# 2. cwd 変更経路 (Bash の `cd` / `pushd` 先行・`uv --directory` / `uv --project`)
-#    が無く、cwd の pyproject.toml が [project] セクションを持つ Python プロジェクト
-#    の場合は許容する (`uv run python -c '...'` 等の正規利用を妨げない)。
-# 3. それ以外は block する。
+# 1. `uv run`と`python`の間（uv run自身のオプション位置）に`--script`または
+#    `--no-project`が現れる場合は許容する（cwdの依存解決を行わないため副作用なし）。
+# 2. cwd変更経路（Bashの`cd` / `pushd`先行・`uv --directory` / `uv --project`）
+#    が無く、cwdのpyproject.tomlが[project]セクションを持つPythonプロジェクト
+#    の場合は許容する（`uv run python -c '...'`等の正規利用を妨げない）。
+# 3. それ以外はblockする。
 #
-# cwd 変更経路を伴う場合は payload 上の cwd を判定根拠に使えないため、Python
-# プロジェクト判定をスキップして block 側に倒す (副作用の有無を確実に判定できない
-# ため安全側の挙動とする)。
-# 環境変数経由の cwd / project 切り替え (UV_WORKING_DIR / UV_PROJECT) は
+# cwd変更経路を伴う場合はpayload上のcwdを判定根拠に採用できないため、Python
+# プロジェクト判定をスキップしてblock側に倒す（副作用の有無を確実に判定できない
+# ため安全側の挙動とする）。
+# 環境変数経由のcwd / project切り替え（UV_WORKING_DIR / UV_PROJECT）は
 # 利用頻度が低く実装コストに見合わないため対応スコープ外とする。
 
 _UV_RUN_PYTHON_BLOCK_MSG = (
@@ -572,11 +584,11 @@ _PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]
 
 
 def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
-    """`uv run python <path>` 形式の起動を非 Python プロジェクトでブロックする。
+    """`uv run python <path>`形式の起動を非PythonプロジェクトでBlockする。
 
-    判定詳細は本節冒頭のコメントを参照する。戻り値 True で block (exit 2)。
+    判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
     """
-    # heredoc を含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる
+    # heredocを含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる。
     if "<<" in command:
         return False
     segments = _split_bash_segments(command)
@@ -600,10 +612,10 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
 
 
 def _split_bash_segments(command: str) -> list[str]:
-    """Bash コマンドを `;` / `&&` / `||` / `|` / `&` で分割する。
+    """Bashコマンドを`;` / `&&` / `||` / `|` / `&`で分割する。
 
-    クォート (`'` / `"`) 内のメタ文字は分割対象外とする。
-    バックスラッシュエスケープや heredoc は厳密には扱わないため、heredoc を含む
+    クォート（`'` / `"`）内のメタ文字は分割対象外とする。
+    バックスラッシュエスケープやheredocは厳密に扱わないため、heredocを含む
     コマンドは呼び出し側で除外する想定。
     """
     segments: list[str] = []
@@ -653,7 +665,7 @@ def _split_bash_segments(command: str) -> list[str]:
 
 
 def _skip_env_assignments(tokens: list[str], start: int) -> int:
-    """先頭の `KEY=VALUE` 形式の環境変数代入をスキップして次の位置を返す。"""
+    """先頭の`KEY=VALUE`形式の環境変数代入をスキップした次の位置を返す。"""
     i = start
     while i < len(tokens) and _ENV_ASSIGN_PATTERN.match(tokens[i]):
         i += 1
@@ -661,7 +673,7 @@ def _skip_env_assignments(tokens: list[str], start: int) -> int:
 
 
 def _segment_changes_cwd(tokens: list[str]) -> bool:
-    """セグメント先頭のコマンドが `cd` / `pushd` / `popd` ならば True を返す。"""
+    """セグメント先頭のコマンドが`cd` / `pushd` / `popd`の場合に真を返す。"""
     i = _skip_env_assignments(tokens, 0)
     if i >= len(tokens):
         return False
@@ -669,18 +681,18 @@ def _segment_changes_cwd(tokens: list[str]) -> bool:
 
 
 def _is_python_token(token: str) -> bool:
-    """`python` / `python3` / `python3.12` などの実行ファイル名トークンか判定する。"""
+    """`python` / `python3` / `python3.12`などの実行ファイル名トークンの場合に真を返す。"""
     return _PYTHON_TOKEN_PATTERN.match(token) is not None
 
 
 def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
-    """`uv [...] run [...] python` 構造を tokens から検出する。
+    """`uv [...] run [...] python`構造をtokensから検出する。
 
-    構造を検出した場合は (has_script_or_no_project, directory_or_project_overridden) を返す。
-    対象構造でなければ None。
-    `--script` / `--no-project` は `uv` トークンと `python` トークンの間に
-    出現する場合のみ「uv run のオプション」として扱う (`python` 以降に書かれた
-    場合は `python` の引数として解釈されるため例外扱いしない)。
+    構造を検出した場合は`(has_script_or_no_project, directory_or_project_overridden)`を返す。
+    対象構造でなければNoneを返す。
+    `--script` / `--no-project`は`uv`トークンと`python`トークンの間に
+    出現する場合のみ「uv runのオプション」として扱う（`python`以降に書かれた
+    場合は`python`の引数として解釈されるため対象外）。
     """
     i = _skip_env_assignments(tokens, 0)
     if i >= len(tokens) or tokens[i] != "uv":
@@ -707,9 +719,9 @@ def _parse_uv_run_python(tokens: list[str]) -> tuple[bool, bool] | None:
 
 
 def _cwd_is_python_project(cwd: str) -> bool:
-    """Cwd の `pyproject.toml` が `[project]` セクションを持てば True を返す。
+    """cwdの`pyproject.toml`が`[project]`セクションを持つ場合に真を返す。
 
-    `pyproject.toml` 不在・読み込み失敗・[project] セクション欠如の場合は False。
+    `pyproject.toml`不在・読み込み失敗・`[project]`セクション欠如の場合は偽を返す。
     """
     if not cwd:
         return False
@@ -720,22 +732,21 @@ def _cwd_is_python_project(cwd: str) -> bool:
     return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
 
 
-# --- Bash: git commit 未検証警告 ---
+# --- Bash: git commit未検証警告 ---
 
 
 _GIT_COMMIT_INCLUDE_WORKTREE_PATTERN = re.compile(r"(?:^|\s)(?:-\w*a\w*|--all)\b")
 
 
 def _is_docs_only_commit(command: str, cwd: str) -> bool:
-    """コミット対象のファイルが全て Markdown なら True を返す。
+    """コミット対象のファイルが全てMarkdownの場合に真を返す。
 
-    プロジェクト方針として docs-only 変更では手動テストを省略し
-    pre-commit 側の textlint / markdownlint に委ねる運用が存在する
-    (本 dotfiles 含む)。その場合に未検証警告を抑制する。
+    docs-only変更では手動テストを省略しpre-commit側のtextlint / markdownlintに
+    委ねる運用を想定しており、その場合に未検証警告を抑制する。
 
-    `git commit -a` / `--all` 等のコマンドでは作業ツリー側の変更も対象となるため、
-    staged と working tree を切り分けて判定する。
-    `cwd` 不在や git 呼び出し失敗時は False を返し従来どおり警告する (安全側)。
+    `git commit -a` / `--all`等のコマンドでは作業ツリー側の変更も対象となるため、
+    stagedとworking treeを切り分けて判定する。
+    `cwd`不在やgit呼び出し失敗時は偽を返して警告を継続する。
     """
     if not cwd:
         return False
@@ -762,11 +773,11 @@ def _is_docs_only_commit(command: str, cwd: str) -> bool:
 
 
 def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | None:
-    """テスト未実行のまま git commit する場合に警告 JSON を返す。
+    """テスト未実行のままgit commitする場合に警告JSONを返す。
 
-    テスト実行済み (state の test_executed が true) ならスキップ。
-    状態ファイル不在時は test_executed = false として扱い警告を表示する。
-    コミット対象が全て Markdown ファイルの場合は pre-commit 側に検証を委ねる運用を想定しスキップする。
+    テスト実行済み（stateの`test_executed`が真）の場合はスキップする。
+    状態ファイル不在時は`test_executed` = falseとして扱い警告を表示する。
+    コミット対象が全てMarkdownファイルの場合はpre-commit側に検証を委ねる運用を想定してスキップする。
     """
     match = _GIT_COMMIT_PATTERN.search(command)
     if match is None or not _likely_real_command(command, match.start()):
@@ -788,22 +799,21 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
     }
 
 
-# --- Bash: git log --decorate 自動付与 ---
+# --- Bash: git log --decorate自動付与 ---
 
 _GIT_LOG_PATTERN = re.compile(r"\bgit\s+log\b")
 
 
 def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
-    """Git log に --decorate がない場合、自動で挿入した updatedInput を返す。
+    """Git logに--decorateがない場合、自動で挿入したupdatedInputを返す。
 
-    複合コマンド (セミコロン・パイプ結合) 内の git log にも対応する。
-    git log から次のセミコロン・パイプ・行末までの範囲に --decorate が
-    含まれるかを判定する。
+    複合コマンド（セミコロン・パイプ結合）内のgit logにも対応する。
+    git logから次のセミコロン・パイプ・行末までの範囲に--decorateが含まれるかを判定する。
     """
     match = _GIT_LOG_PATTERN.search(command)
     if match is None or not _likely_real_command(command, match.start()):
         return None
-    # git log から次のセミコロン・パイプ・行末までのスコープを取得
+    # git logから次のセミコロン・パイプ・行末までのスコープを取得
     rest = command[match.start() :]
     scope_end = len(rest)
     for delimiter in (";", "|", "&&"):
@@ -813,7 +823,7 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
     scope = rest[:scope_end]
     if "--decorate" in scope:
         return None
-    # git log を git log --decorate に 1 箇所だけ置換
+    # git logをgit log --decorateに1箇所だけ置換
     updated_command = command[: match.end()] + " --decorate" + command[match.end() :]
     updated_input = dict(tool_input)
     updated_input["command"] = updated_command
@@ -823,18 +833,18 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": "[agent-toolkit] automatically inserted --decorate into git log.",
+        "systemMessage": "[agent-toolkit] git logに--decorateを自動的に挿入しました。",
     }
 
 
-# --- Bash: codex exec 未決事項の念押し ---
+# --- Bash: codex exec未決事項の念押し ---
 
 _CODEX_EXEC_PATTERN = re.compile(r"\bcodex\s+exec\b")
 _CODEX_RESUME_PATTERN_PRE = re.compile(r"\bcodex\s+exec\s+resume\b")
 
 
 def _check_bash_codex_exec(command: str) -> dict | None:
-    """Codex exec (resume 以外) を検出した場合に未決事項確認の念押しを返す。"""
+    """Codex exec（resume以外）を検出した場合に未決事項確認の念押しメッセージを返す。"""
     exec_match = _CODEX_EXEC_PATTERN.search(command)
     if exec_match is None or not _likely_real_command(command, exec_match.start()):
         return None
@@ -857,7 +867,7 @@ def _check_bash_codex_exec(command: str) -> dict | None:
 if __name__ == "__main__":
     try:
         sys.exit(_main())
-    except Exception:  # noqa: BLE001 -- plugin が破損して編集できなくなる事故を避けるため広範に捕捉
-        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に表示する
+    except Exception:  # noqa: BLE001 -- pluginが破損して編集できなくなる事故を避けるため広範に捕捉
+        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースはstderrに出力する。
         traceback.print_exc()
         sys.exit(0)

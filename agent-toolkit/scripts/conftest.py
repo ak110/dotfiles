@@ -1,4 +1,4 @@
-"""pytest conftest: テスト用の git リポジトリ作成 factory fixture を提供する。"""
+"""pytest conftest: テスト用のgitリポジトリ作成factory fixtureを提供する。"""
 
 import pathlib
 import subprocess
@@ -9,9 +9,9 @@ import pytest
 
 @pytest.fixture(name="make_dirty_repo")
 def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
-    """変更ありの git リポジトリを作成する factory fixture。
+    """変更ありのgitリポジトリを作成するfactory fixture。
 
-    tracked ファイルを変更した未コミット状態のリポジトリを返す。
+    trackedファイルを変更した未コミット状態のリポジトリを返す。
     """
 
     def _make(tmp_path: pathlib.Path, name: str = "repo") -> pathlib.Path:
@@ -23,7 +23,7 @@ def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
         (repo / "file.txt").write_text("initial")
         subprocess.run(["git", "add", "file.txt"], cwd=str(repo), capture_output=True, check=True)
         subprocess.run(["git", "commit", "--message=init"], cwd=str(repo), capture_output=True, check=True)
-        # tracked file を変更して未コミット状態にする
+        # trackedファイルを変更して未コミット状態にする。
         (repo / "file.txt").write_text("modified")
         return repo
 
@@ -32,7 +32,7 @@ def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
 
 @pytest.fixture(name="make_clean_repo")
 def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
-    """変更なしの git リポジトリを作成する factory fixture。"""
+    """変更なしのgitリポジトリを作成するfactory fixture。"""
 
     def _make(tmp_path: pathlib.Path, name: str = "clean") -> pathlib.Path:
         repo = tmp_path / name

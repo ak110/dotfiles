@@ -1,0 +1,6 @@
+# textlint対象外。
+# 対比集（writing-standardsスキルのreferences/tone-examples.md）は
+# 観点ごとに悪い例を意図的に記載する隔離ファイルのため、
+# `ja-technical-writing/no-dropping-the-ra`等のチェックから除外する。
+# `check_colloquial.py`側でも_TONE_EXAMPLESとして同じ理由で除外している。
+agent-toolkit/skills/writing-standards/references/tone-examples.md

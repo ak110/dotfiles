@@ -18,7 +18,7 @@ import pytilpack.xxx
 ```
 
 `xxx`には対象ライブラリ名（`httpx`、`pathlib`等）または汎用モジュール名（`cache`、`sse`等）が入る。
-ライブラリ用モジュール（特にBabel・SQLAlchemyなど重量級のライブラリ）はextrasのインストールが必要。
+ライブラリ用モジュール（特にBabel・SQLAlchemyなど依存サイズが大きいライブラリ）はextrasのインストールが必要。
 
 新規プロジェクトへの追加は`uv add`を使う:
 
@@ -29,9 +29,9 @@ uv add "pytilpack[babel,sqlalchemy]"  # extras指定
 
 ## モジュール分類
 
-### よく使われるモジュール（追加依存なしまたは軽量依存）
+### 標準・軽量依存モジュール
 
-汎用ユーティリティ・標準ライブラリ拡張など、導入コストが低いモジュール。
+汎用ユーティリティ・標準ライブラリ拡張など、追加依存なしまたは軽量依存で利用できるモジュール。
 
 ```text
 asyncio, base64, cache, csv, dataclasses, datetime, environ,

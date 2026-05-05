@@ -62,7 +62,6 @@ def clone(
         if not dry_run:
             dst.mkdir(parents=True)
 
-    # ディレクトリ作成
     if not top_only:
         for sub in src.rglob("*"):
             if not sub.is_dir() or _is_excluded(sub, excludes):
@@ -74,7 +73,6 @@ def clone(
                 if not dry_run:
                     target.mkdir(parents=True)
 
-    # ファイルコピー・更新
     iterator = src.iterdir() if top_only else src.rglob("*")
     for sub in iterator:
         if not sub.is_file() or _is_excluded(sub, excludes):

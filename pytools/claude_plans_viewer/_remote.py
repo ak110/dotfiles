@@ -106,7 +106,7 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
     fallback経路（常駐watch経由RPCが利用できない場合）でのみ使う。
-    起動経路は`RemoteWatcher`と統一し、リモート側 dotfiles の`_remote_helper.py`を
+    起動経路は`RemoteWatcher`と統一し、リモート側dotfilesの`_remote_helper.py`を
     短いPython bootstrap経由で`exec`する。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。
     """
@@ -145,7 +145,7 @@ async def fetch_remote_file(
     """リモートホストの指定ファイル本文と取得時点の`mtime_epoch`を返す。
 
     `watcher`が渡され、対応する常駐SSH接続が`connected`状態にあればRPC経由で読み取る。
-    未接続・タイムアウト・例外などRPC不可状態では`ssh_runner`経由のfallbackに切り替える。
+    未接続・タイムアウト・例外などRPC不可状態では`ssh_runner`経由のfallbackへ切り替える。
     本文と`mtime_epoch`は同一読み取り処理から取り出すため、watch通知の遅延に左右されず整合する。
     `mtime_epoch`が応答に欠落している場合は`None`を返し、呼び出し側はキャッシュをバイパスする。
     """
@@ -245,8 +245,8 @@ class RemoteWatcher:
     async def run(self) -> None:
         """無限ループで接続→ストリーム処理→バックオフ→再接続を行う。
 
-        `asyncio.CancelledError`は再送出してタスク終了させる。
-        それ以外の例外は warning ログに残し、`disconnected`遷移後にバックオフ再試行する。
+        `asyncio.CancelledError`は再送出してタスクを終了させる。
+        それ以外の例外はwarningログに残し、`disconnected`遷移後にバックオフ再試行する。
         """
         while True:
             await self._set_status("connecting")
@@ -357,7 +357,7 @@ class RemoteWatcher:
     def _resolve_response(self, event: typing.Mapping[str, typing.Any]) -> None:
         """`type=response`イベントに対し、対応するpending Futureを解決する。
 
-        対応Futureが既に取り消されている／タイムアウト後の遅延応答である場合は黙って破棄する。
+        対応Futureが既に取り消されている・タイムアウト後の遅延応答である場合は黙って破棄する。
         """
         req_id = event.get("id")
         if not isinstance(req_id, int):
@@ -369,7 +369,7 @@ class RemoteWatcher:
         fut.set_result(dict(event))
 
     def _fail_pending(self, exc: BaseException) -> None:
-        """切断・キャンセル時に全pending Futureを例外で打ち切る。"""
+        """切断・キャンセル時に全pending Futureを例外で解決する。"""
         if not self._pending:
             return
         pending = self._pending
@@ -407,11 +407,11 @@ async def terminate_process(
     proc: _async_subprocess.Process,
     grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
 ) -> None:
-    """watch用subprocessを段階的に後始末する。
+    """watch用subprocessを段階的に終了させる。
 
     serveヘルパーは`for raw in sys.stdin:`のEOFで停止経路に入るため、
-    まずstdinをcloseして穏当な終了を試み、応答が無ければ`terminate`、
-    それでも応答が無ければ`kill`へ降下する。
+    まずstdinをcloseして穏当な終了を試み、応答がなければ`terminate`、
+    それでも応答がなければ`kill`へ降下する。
     各段階で`grace_timeout`秒ずつ待機し、ゾンビ化や残留serveプロセスを避ける。
     """
     if proc.returncode is not None:
@@ -437,7 +437,7 @@ async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) ->
     """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
 
     `terminate_process`はキャンセル経路からも呼ばれるため、
-    `CancelledError`は呑み込んで段階的処理を継続する。
+    `CancelledError`は吸収して段階的処理を継続する。
     """
     if proc.returncode is not None:
         return True
@@ -447,7 +447,7 @@ async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) ->
 
 
 def is_safe_remote_relpath(rel: str) -> bool:
-    """SSHヘルパーへ渡す前に相対パスのトラバーサルを事前検証する。
+    """SSHヘルパーへ渡す前に相対パスのトラバーサルを検証する。
 
     リモート側でも検証するが、サーバー側で先に拒否することで不要なSSH呼び出しを避け、
     ログにも危険な相対パスが残らないようにする。

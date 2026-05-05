@@ -22,7 +22,7 @@ _DEVELOPMENT_MD = _REPO_ROOT / "docs" / "development" / "development.md"
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドラインエントリーポイント。"""
+    """bin/配下のLinux/Windowsラッパースクリプトペアを生成する。"""
     parser = argparse.ArgumentParser(description="bin/ 配下の Linux/Windows ラッパースクリプトペアを生成する。")
     parser.add_argument("name", help="スクリプト名")
     parser.add_argument("command", nargs="+", help="実行するコマンド（複数トークンはスペースで連結）")
@@ -43,7 +43,7 @@ def _generate_bash(name: str, command: str) -> None:
     if path.exists():
         print(f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}")
         return
-    content = f'#!/bin/bash\n# NOTE: 対応するWindows版 → bin/{name}.cmd\nexec {command} "$@"\n'
+    content = f'#!/bin/bash\n# NOTE: 対応する Windows 版 → bin/{name}.cmd\nexec {command} "$@"\n'
     path.write_text(content, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"生成: {path.relative_to(_REPO_ROOT)}")
@@ -54,8 +54,8 @@ def _generate_cmd(name: str, command: str) -> None:
     if path.exists():
         print(f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}")
         return
-    content = f"@echo off\r\nrem NOTE: 対応するLinux版 → bin/{name}\r\n{command} %*\r\n"
-    # CP932エンコード + CRLFで直接書き込む（iconv不要）
+    content = f"@echo off\r\nrem NOTE: 対応する Linux 版 → bin/{name}\r\n{command} %*\r\n"
+    # CP932 エンコード + CRLF で直接書き込む（iconv 不要）
     path.write_bytes(content.encode("cp932"))
     print(f"生成: {path.relative_to(_REPO_ROOT)}")
 
@@ -76,7 +76,7 @@ def _update_development_md(name: str) -> None:
     )
     match = block_re.search(text)
     if not match:
-        print(f"警告: development.md のプラットフォーム対応ファイル一覧が見つかりません。手動で追加してください: {entry}")
+        print(f"警告: development.md のプラットフォーム対応ファイル一覧が見つからない。手動で追加する: {entry}")
         return
 
     entries = sorted([e for e in match.group(1).splitlines() if e.strip()] + [entry])

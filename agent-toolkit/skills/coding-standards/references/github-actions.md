@@ -20,7 +20,7 @@
   - リリース系は`cancel-in-progress: false`で完走を待つ
   - PR CIなどは`cancel-in-progress: true`で古い実行を打ち切る
 - リリース・publish系は再実行時の冪等性を意識する。
-  既存タグ・既存リリース・既存パッケージの存在を確認し、二重作成を回避する
+  既存タグ・既存リリース・既存パッケージの存在を確認し、二重作成を防ぐ
 
 ## 破壊的ステップと事前検証
 
@@ -33,7 +33,7 @@
 
 ## トリガーと最適化
 
-- `on:`では必要なイベントだけを指定する。`paths`/`paths-ignore`で対象を限定し、
+- `on:`では必要なイベントだけを指定する。`paths`／`paths-ignore`で対象を限定し、
   無関係な変更でCIを起動させない
 - `actions/cache`等でビルド成果物を再利用する。キーは依存ファイルのhashを含める
 - jobの並列度を意識する。独立な処理は別jobに分けて並列化する
@@ -41,5 +41,5 @@
 ## 出力とstep間連携
 
 - step間の値受け渡しは`$GITHUB_OUTPUT`を使う（`echo "key=value" >> "$GITHUB_OUTPUT"`）。
-  古い`set-output`は廃止済み
+  旧来の`set-output`はGitHub Actions側で受け付けない
 - `run:`ブロックの先頭に`set -euo pipefail`を置き、未定義変数や途中失敗を確実に止める

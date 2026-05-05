@@ -1,7 +1,6 @@
 # spec-drivenフレームワーク共通定義
 
-spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）で共有する
-用語定義・配置規約をまとめる。
+spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）で共有する用語定義と配置規約。
 
 ## ワークフロー全体像
 

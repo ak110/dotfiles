@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 
 
 def import_winreg() -> typing.Any:
-    """Winreg モジュールを Any 型で読み込む。
+    """winregモジュールをAny型で読み込む。
 
-    winreg は Windows 専用の標準モジュールで、Linux 上で pyright を実行すると
-    全属性アクセスが `reportAttributeAccessIssue` として検出されてしまう。
-    実行は Windows 限定のため、`Any` 経由でアクセスするのが最も簡潔。
+    winregはWindows専用の標準モジュールで、Linux上でpyrightを実行すると
+    全属性アクセスが `reportAttributeAccessIssue` として検出される。
+    実行はWindows限定のため、`Any` 経由でアクセスする。
     """
     import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
@@ -59,13 +59,13 @@ def write_user_env_var(name: str, value: str, reg_type: int) -> None:
 
 
 def broadcast_environment_change() -> None:
-    """Explorer 等に環境変数変更を通知する (`WM_SETTINGCHANGE` / `Environment`)。
+    """Explorer等に環境変数変更を通知する（`WM_SETTINGCHANGE` / `Environment`）。
 
-    `ctypes.windll` は Windows 専用で、Linux で pyright/ty などの型チェッカに
-    かけると `ctypes has no member windll` と誤検出される。getattr 経由で
-    取得して型チェック対象から外す（実行は Windows でのみ）。
+    `ctypes.windll` はWindows専用で、Linux上でpyright/tyなどの型チェッカをかけると
+    `ctypes has no member windll` と誤検出される。getattr経由で取得して型チェック対象から外す
+    （実行はWindowsのみ）。
 
-    通知失敗は致命ではないため、例外は吸収してログ出力に留める。
+    通知失敗は致命的でないため、例外は吸収してログ出力に留める。
     """
     try:
         import ctypes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
@@ -89,10 +89,10 @@ def broadcast_environment_change() -> None:
 
 
 def append_user_path(entry: str) -> bool:
-    """ユーザースコープの PATH 環境変数に `entry` を追記する（重複は追加しない）。
+    """ユーザースコープのPATH環境変数に `entry` を追記する（重複は追加しない）。
 
     Returns:
-        実際に追記した場合 True、既に含まれていれば False。
+        実際に追記した場合True、既に含まれていればFalse。
     """
     current, reg_type = read_user_env_var("Path")
     if current is None:

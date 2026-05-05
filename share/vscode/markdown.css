@@ -16,7 +16,7 @@
  *
  *   GitHub raw URL (raw.githubusercontent.com) は Content-Type が
  *   text/plain + nosniff で配信されるため WebView がスタイルシート
- *   として拒否する。raw URL に差し替えると効かなくなるので注意する。
+ *   として拒否する。raw URL に差し替えると機能しなくなるので注意する。
  */
 
 /* ========================================

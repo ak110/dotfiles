@@ -1,4 +1,4 @@
-"""共有状態とSSE配信ロジック。"""
+"""共有状態とSSE配信ロジック群。"""
 
 import asyncio
 import contextlib
@@ -11,7 +11,7 @@ import typing
 _BROADCAST_DEBOUNCE_SEC = 0.3
 
 # SSE配信メッセージ型: refreshはサイドペイン全体の再同期、host-statusはバッジ更新を意味する。
-# 旧クライアント互換のためサーバー側はJSON文字列を1行で配信する（クライアントは`type`不在を
+# 後方互換のためサーバー側はJSON文字列を1行で配信する（クライアントは`type`不在を
 # refreshとみなすフォールバックを持つ）。
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 
@@ -29,9 +29,9 @@ class FileEntry:
 
 @dataclasses.dataclass(slots=True)
 class BroadcastState:
-    """SSE購読者集合・debounce状態・リモートホストキャッシュ・接続状態を束ねる。
+    """SSE購読者集合・debounce状態・リモートホストキャッシュ・接続状態を保持する。
 
-    Quartアプリの`app.config`に格納して保持することでモジュールレベルの可変状態を避ける。
+    Quartアプリの`app.config`に格納することでモジュールレベルの可変状態を避ける。
     """
 
     subscribers: set[asyncio.Queue[str]] = dataclasses.field(default_factory=set)
@@ -53,10 +53,7 @@ class BroadcastState:
 
 
 def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEntry:
-    """リモートヘルパー由来のdictを`FileEntry`に変換する。
-
-    snapshot/upsertの両方から共通に使う。
-    """
+    """リモートヘルパー由来のdictを`FileEntry`に変換する。snapshot/upsertの両方から使う。"""
     mtime_epoch = float(item["mtime_epoch"])
     tzinfo = datetime.datetime.now().astimezone().tzinfo
     mtime = datetime.datetime.fromtimestamp(mtime_epoch, tz=tzinfo)
@@ -78,7 +75,7 @@ async def subscribe(state: BroadcastState) -> asyncio.Queue[str]:
 
 
 async def unsubscribe(state: BroadcastState, q: asyncio.Queue[str]) -> None:
-    """購読キューを解除する。存在しない場合もエラーにしない。"""
+    """購読キューを解除する。存在しない場合はエラーにしない。"""
     async with state.lock:
         state.subscribers.discard(q)
 
@@ -87,7 +84,7 @@ async def schedule_broadcast(state: BroadcastState) -> None:
     """debounce窓を使って`deliver_refresh`を遅延実行する。
 
     既にdebounceタスクが実行中の場合は何もしない。
-    タイマー中に追加イベントを無視することで時間窓で畳み込む。
+    タイマー中に追加イベントを無視することで時間窓で畳み込む動作となる。
     """
     async with state.lock:
         if state.debounce_task is not None and not state.debounce_task.done():
@@ -104,7 +101,7 @@ async def _debounced_deliver(state: BroadcastState) -> None:
 async def deliver_refresh(state: BroadcastState) -> None:
     """全購読者へ`{"type":"refresh"}`を配信する。
 
-    キューがすでに満杯の場合は新規通知を破棄する（既に未配信の通知がある状態のため、
+    キューが既に満杯の場合は新規通知を破棄する（既に未配信の通知がある状態のため、
     クライアントは次に取り出した時点で最新化される）。
     """
     await _broadcast(state, _SSE_REFRESH_PAYLOAD)
@@ -114,7 +111,7 @@ async def deliver_host_status(state: BroadcastState, host: str, status: str) -> 
     """全購読者へ`{"type":"host-status","host":...,"status":...}`を配信する。
 
     SSE経路で取りこぼした場合は接続時に`/api/host-status`から再同期できるため、
-    `Queue`満杯時の破棄も許容する。
+    Queue満杯時の破棄も許容する。
     """
     payload = json.dumps({"type": "host-status", "host": host, "status": status}, ensure_ascii=False)
     await _broadcast(state, payload)

@@ -1,5 +1,5 @@
 # PYTHON_ARGCOMPLETE_OK
-"""claudeを使ってコミットメッセージを生成してgit commitを実行する。"""
+"""claudeを使ってコミットメッセージを生成しgit commitを実行する。"""
 
 import argparse
 import logging
@@ -103,7 +103,7 @@ def _get_git_root() -> Path:
 def _get_format_instructions(git_root: Path | None = None) -> str:
     """コミットメッセージのフォーマット指示を取得する。
 
-    優先順: .gitmessage（リポジトリ固有） → git config commit.template → デフォルト
+    優先順: `.gitmessage`（リポジトリ固有）→ `git config commit.template` → 組み込み既定値
     """
     if git_root is None:
         git_root = _get_git_root()
@@ -132,7 +132,7 @@ def _get_names(*, scope: str) -> list[str]:
     """変更ファイル名一覧を返す。
 
     Args:
-        scope: 'staged'（ステージ済み）／'unstaged'（未ステージ、追跡中）／'untracked'（未追跡）
+        scope: `staged`（ステージ済み）・`unstaged`（未ステージ、追跡中）・`untracked`（未追跡）
     """
     if scope == "staged":
         cmd = ["git", "diff", "--cached", "--name-only"]

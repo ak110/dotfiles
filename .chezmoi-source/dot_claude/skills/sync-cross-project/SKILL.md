@@ -8,14 +8,14 @@ description: >
 
 # 姉妹プロジェクト間のツールチェイン・ドキュメント構成同期
 
-## 目的と前提
+## 前提
 
-作者個人の複数の姉妹プロジェクトはツールチェインやドキュメント構成を極力揃える方針であり、
-コメントの表記揺れや軽微な並び順も含めて一字一句差分が減る方向で整備している。
-1プロジェクトで変更した場合、後述のマトリクスに基づいて他プロジェクトへの波及要否を確認し、必要ならユーザーに提案する。
+姉妹プロジェクト群はツールチェインやドキュメント構成を極力揃える方針とする。
+コメントの表記揺れや軽微な並び順も含めて一字一句差分を減らす。
+1プロジェクトで変更した場合、後述のマトリクスに基づいて他プロジェクトへの波及要否を確認し、必要ならユーザーへ提案する。
 
 対象プロジェクトの一覧と絶対パスはセッション開始時にコンテキストへロードされるローカル指示から得る。
-本スキルでは対象を「対象プロジェクト群」と抽象的に扱い、個別プロジェクトのパスは前述のコンテキスト経由で参照する。
+個別プロジェクトのパスはそのコンテキスト経由で参照する。
 
 明らかにプロジェクト固有の変更や、「ツールチェインやドキュメント構成など」以外の変更であれば確認不要。
 
@@ -79,29 +79,27 @@ description: >
 ## pnpmに関する既知の注意点
 
 - `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある。
-  `corepack use pnpm@<version>`でSHAハッシュ付きに更新すること
+  `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
 - pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）。
   env var経由の設定反映テストには`npm config get`を使う
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される
 
 ## 補足事項
 
-注意点・運用ノウハウ・統一方針を以下にまとめる。
-
 ### ドキュメント・運用方針
 
-- ツールチェイン周りの修正の場合は以下のメンテナンスも検討する（忘れがちなので注意）
+- ツールチェイン周りの修正の場合は以下のメンテナンスも確認する（気付きにくい）
   - `pyfltr/docs/guide/recommended.md`
   - `pyfltr/docs/guide/recommended-nonpython.md`
-- 他プロジェクト作業中に `~/.claude/rules/agent-toolkit/*` や `/agent-toolkit:tidy-unpushed-commits` の問題を
+- 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:tidy-unpushed-commits`の問題を
   発見したらdotfiles側を修正する（マスター）
-- `docs/development/development.md` の「サプライチェーン攻撃対策」節は、
+- `docs/development/development.md`の「サプライチェーン攻撃対策」節は、
   Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする。
   UV_FROZEN方針を含む。
   `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する。
   変更時は他プロジェクトへの波及を確認する
 - README.md・CLAUDE.md・docs/development/development.md間で、
-  既共通文面化を進める候補節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える方針
+  共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
 - README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える。
   共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
 - README.md・CLAUDE.md・docs/development/development.mdを更新する際は、
@@ -114,10 +112,10 @@ description: >
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能。
   cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
-- Makefileではなく `mise.toml` のタスクを使用する。pre-commitフレームワークは `uvx pre-commit` で呼び出す
-- `package.json` の `lint` / `lint:fix` スクリプトは `CLAUDE.md` もtextlint / markdownlint-cli2対象に含めている。
+- Makefileではなく`mise.toml`のタスクを使用する。pre-commitフレームワークは`uvx pre-commit`で呼び出す
+- `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている。
   新規Node系プロジェクトでも同様に設定する
-- `taiki-e/install-action@cargo-deny` はツール名タグ形式のためpinactでハッシュピン不可（gvの `.pinact.yaml` で除外済み）
+- `taiki-e/install-action@cargo-deny`はツール名タグ形式のためpinactでハッシュピン不可（gvの`.pinact.yaml`で除外済み）
 
 ### pre-commit / pyfltr / ビルド関連
 
@@ -133,9 +131,9 @@ description: >
   `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
 - container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりruner上で実行する
 - container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
-- `release.yaml` の `GH_TOKEN` は `${{ github.token }}` に統一済み（推奨構文）
-- `release.yaml` のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が `gh api` + `jq` 方式、
-  PowerShell系（gv / lc）が `check-suites` API方式
+- `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
+- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
+  PowerShell系（gv / lc）が`check-suites` API方式
 - リリース時のバージョニング基準は以下のとおり（セマンティックバージョニングとは異なる）
   - バグ修正・軽微な機能追加: パッチ（CI定義上は「PATCH」）
   - 大きめの機能追加・軽微な破壊的変更: マイナー

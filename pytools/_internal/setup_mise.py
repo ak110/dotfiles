@@ -1,4 +1,4 @@
-"""mise関連のセットアップをまとめるモジュール。
+"""miseセットアップをまとめるモジュール。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 """
@@ -30,7 +30,7 @@ _WINDOWS_PATHSEP = ";"
 
 
 def _is_windows() -> bool:
-    """Windows 環境かどうかを返すヘルパー。テストで monkeypatch しやすいよう関数化している。"""
+    """Windows環境かどうかを返す。テストでmonkeypatchしやすいよう関数化している。"""
     return os.name == "nt"
 
 
@@ -84,12 +84,12 @@ def _find_mise_binary() -> Path | None:
 
 
 def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
-    """Chezmoi workingTree 直下の `mise.toml` を `mise trust` 対象にする。
+    """Chezmoi workingTree直下の `mise.toml` を `mise trust` 対象にする。
 
-    未 trust のままでは mise CLI が毎回警告を表示して設定を無視するため、冪等に trust する。
-    workingTree は `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定なら CLI 単体実行
-    とみなしてスキップ）。既に trust 済みであっても `mise trust` は重複登録しない仕様のため、
-    事前チェックは行わず毎回実行する。副作用が無いため、成功時は changed 判定も常に True を
+    未trustのままではmise CLIが毎回警告を表示して設定を無視するため、べき等にtrustする。
+    workingTreeは `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定ならCLI単体実行
+    とみなしてスキップ）。既にtrust済みであっても `mise trust` は重複登録しない仕様のため、
+    事前チェックは行わず毎回実行する。副作用がないため、成功時はchanged判定も常にTrueを
     返す（サマリで「更新」扱いになるが、ノイズよりも実行事実を確認できる方を優先する）。
     """
     working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
@@ -113,10 +113,10 @@ def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
 
 
 def _ensure_global_node(mise_bin: Path) -> bool:
-    """Global 設定に node が無ければ `mise use --global node@lts` を実行する。
+    """global設定にnodeがなければ `mise use --global node@lts` を実行する。
 
     Returns:
-        node を新たに設定したら True。
+        nodeを新たに設定した場合True。
     """
     result = _run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
@@ -145,13 +145,13 @@ def _ensure_global_node(mise_bin: Path) -> bool:
 
 
 def _has_global_node(data: object) -> bool:
-    """`mise ls --global --json` の戻り値に node エントリがあるかを判定する。
+    """`mise ls --global --json` の戻り値にnodeエントリがあるかを判定する。
 
-    mise の出力形式は version により揺れがあるため、下記の全パターンに対応する。
+    miseの出力形式はversionにより揺れがあるため、以下の全パターンに対応する。
 
     - ``{"node": [{...}, ...]}``: キーがツール名
     - ``[{"name": "node", ...}, ...]``: 配列の各要素に ``name``
-    - 上記のネスト (例えば ``{"tools": ...}``)
+    - 上記のネスト（例: ``{"tools": ...}``）
     """
     if isinstance(data, dict):
         if "node" in data:
@@ -224,10 +224,10 @@ def _ensure_windows_user_path_has_shims() -> bool:
 
 
 def _path_contains_shims(current_value: str, shims_dir: Path) -> bool:
-    r"""PATH 文字列に shims ディレクトリが既に含まれているかを判定する.
+    r"""PATH文字列にshimsディレクトリが既に含まれているかを判定する。
 
-    レジストリに ``%LOCALAPPDATA%\mise\shims`` のまま入っているケースと、既に展開済みの
-    絶対パスが入っているケースの両方を許容する。
+    レジストリに ``%LOCALAPPDATA%\mise\shims`` のまま格納されているケースと、
+    既に展開済みの絶対パスが格納されているケースの両方を許容する。
     """
     entries = [entry for entry in current_value.split(_WINDOWS_PATHSEP) if entry]
     shims_str = str(shims_dir).lower()
@@ -249,7 +249,7 @@ def _append_entry(current_value: str, new_entry: str) -> str:
 
 
 def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """`mise` CLI を呼び出す共通ヘルパー。
+    """`mise` CLIを呼び出す共通ヘルパー。
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     """

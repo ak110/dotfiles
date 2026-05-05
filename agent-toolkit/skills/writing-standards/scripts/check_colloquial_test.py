@@ -1,6 +1,6 @@
 """agent-toolkit/skills/writing-standards/scripts/check_colloquial.py のテスト。
 
-CLI スクリプトの動作確認。subprocess 経由で起動し exit code・stderr を検証する。
+CLIスクリプトの動作確認。subprocess経由で起動しexit code・stderrを検証する。
 辞書ファイルから動的にサンプルを生成するため、テスト本体には口語表現を直接書かない。
 """
 
@@ -14,6 +14,7 @@ import pytest
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_colloquial.py"
 _DENY_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words.txt"
 _ALLOW_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words_allow.txt"
+_TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
 
 
 def _expand(pattern_str: str) -> str:
@@ -22,7 +23,7 @@ def _expand(pattern_str: str) -> str:
 
 @pytest.fixture(name="deny_substring")
 def _deny_substring() -> str:
-    """辞書ファイルからdeny検出に当たる最短サンプルを動的生成する。"""
+    """辞書ファイルからdenyリスト検出に当たる最短サンプルを動的生成する。"""
     deny_patterns: list[re.Pattern[str]] = []
     for line in _DENY_PATH.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -80,7 +81,7 @@ def test_multiple_files_aggregates(tmp_path: pathlib.Path, deny_substring: str):
     result = _run(a, b)
     assert result.returncode == 1
     assert str(a) in result.stderr
-    assert str(b) not in result.stderr  # b は検出無し
+    assert str(b) not in result.stderr  # bは検出なし
 
 
 def test_directory_recurses(tmp_path: pathlib.Path, deny_substring: str):
@@ -91,7 +92,7 @@ def test_directory_recurses(tmp_path: pathlib.Path, deny_substring: str):
     other = sub / "other.txt"
     target.write_text(f"概要は{deny_substring}該当する。\n", encoding="utf-8")
     other.write_text(f"説明は{deny_substring}記載する。\n", encoding="utf-8")
-    # 対象外拡張子は無視される
+    # 対象外拡張子は無視される。
     skipped = sub / "ignore.bin"
     skipped.write_text(f"{deny_substring}\n", encoding="utf-8")
     result = _run(tmp_path)
@@ -117,7 +118,35 @@ def test_directory_excludes_known_dirs(tmp_path: pathlib.Path, deny_substring: s
 
 
 def test_dictionary_files_are_skipped():
-    """辞書ファイル本体を直接渡しても検査されず exit 0（自己誘発検出を避ける）。"""
+    """辞書ファイル本体を直接渡しても検査されずexit 0（自己誘発検出を避ける）。"""
     result = _run(_DENY_PATH, _ALLOW_PATH)
     assert result.returncode == 0
     assert result.stderr == ""
+
+
+def test_tone_examples_file_is_skipped():
+    """対比集ファイルを直接渡しても検査されずexit 0（悪い例を含むため除外対象）。"""
+    if not _TONE_EXAMPLES.exists():
+        pytest.skip("tone-examples.mdが未配置のためスキップ")
+    result = _run(_TONE_EXAMPLES)
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
+def test_tone_examples_excluded_from_directory_scan(tmp_path: pathlib.Path):
+    """ディレクトリ走査時に対比集ファイルが除外される。
+
+    対比集ファイルをクリーンなファイルのみと同じディレクトリに置き、
+    ディレクトリ走査でも対比集が除外されてexit 0になることを確認する。
+    """
+    if not _TONE_EXAMPLES.exists():
+        pytest.skip("tone-examples.mdが未配置のためスキップ")
+    # 対比集ファイルのシンボリックリンクをクリーンなファイルと同じ一時ディレクトリに配置する。
+    # 違反のないファイルのみの構成でexit 0になることを確認する。
+    tone_link = tmp_path / "tone-examples.md"
+    tone_link.symlink_to(_TONE_EXAMPLES)
+    clean = tmp_path / "clean.md"
+    clean.write_text("# header\n\nplain content.\n", encoding="utf-8")
+    result = _run(tmp_path)
+    assert str(tone_link) not in result.stderr
+    assert result.returncode == 0

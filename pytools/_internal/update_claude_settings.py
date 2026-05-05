@@ -1,4 +1,4 @@
-"""Claude Codeの設定ファイルを管理対象設定とマージするコマンド。
+"""Claude Code設定ファイルを管理対象設定とマージするコマンド。
 
 `~/dotfiles/share/`配下のmanaged JSONを対応する設定ファイルへマージする。
 OS別の差分（主にhookコマンドのshell/PowerShellラッパー）は
@@ -22,12 +22,12 @@ _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
 _CONFIG_PATH = Path.home() / ".claude.json"
 
-# settings.json の hooks 配下から除去したい command 部分文字列。
-# 過去に share/claude_settings_json_managed.* で配布していたが廃止したエントリを書く。
+# settings.json の hooks 配下から除去する command 部分文字列。
+# share/claude_settings_json_managed.* から廃止したエントリを列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
 _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "claude_hook_call_formatter.py",
-    # 2026-04: 統合フック (claude_hook_pretooluse.py) へ移行したため旧エントリを除去
+    # 2026-04: 統合フック (claude_hook_pretooluse.py) に統合したため旧エントリを除去
     "claude_hook_check_mojibake.py",
     "claude_hook_check_ps1_eol.py",
 )
@@ -75,14 +75,14 @@ def update_claude_settings(
     overrides: list[Path] | None = None,
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
 ) -> bool:
-    """managed_path の設定を settings_path にマージして書き込む。
+    """`managed_path` の設定を `settings_path` にマージして書き込む。
 
-    overrides が与えられた場合は、managed_path の内容に上乗せしてからマージする。
-    マージ前に settings_path から removed_hook_substrings に該当する hook エントリを
-    除去することで、配布元から消えた hook が残り続けるのを防ぐ。
+    `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
+    マージ前に `settings_path` から `removed_hook_substrings` に該当するhookエントリを
+    除去することで、配布元から削除されたhookが残り続けるのを防ぐ。
 
     Returns:
-        実際にファイルを書き換えたかどうか。
+        実際にファイルを書き換えた場合True。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -107,10 +107,10 @@ def update_claude_settings(
 
 
 def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
-    """2つの dict の差分を人間が解読できる行リストにして返す。
+    """2つのdictの差分を行リストで返す。
 
-    dict は再帰的に差分を取り、list は件数差のサマリーを表示する。
-    差分行は6スペースのインデントを持ち、basicConfig の2スペースと合わせて合計8スペースになる。
+    dictは再帰的に差分を取り、listは件数差のサマリーを表示する。
+    差分行は6スペースのインデントを持ち、`basicConfig`の2スペースと合わせて合計8スペースになる。
     """
     lines = []
     for key in sorted(set(before) | set(after)):
@@ -136,7 +136,7 @@ def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
 def _list_diff_summary(before: list, after: list) -> str:
     """リストの件数差と追加・削除アイテムを文字列化する。
 
-    全要素が文字列かつ差分が _MAX_INLINE_DIFF 件以下の場合のみ内容を表示し、それ以外は件数のみ。
+    全要素が文字列かつ差分が`_MAX_INLINE_DIFF`件以下の場合のみ内容を表示し、それ以外は件数のみ。
     """
     summary = f"{len(before)} → {len(after)} 件"
     if all(isinstance(x, str) for x in before + after):
@@ -154,7 +154,7 @@ def _list_diff_summary(before: list, after: list) -> str:
 
 
 def _value_summary(value: object) -> str:
-    """値を短い文字列に変換する。dict/list はサマリー、その他は JSON 文字列（60文字上限）。"""
+    """値を短い文字列に変換する。dict/listはサマリー、その他はJSON文字列（60文字上限）。"""
     if isinstance(value, dict):
         return f"{{...}} ({len(value)} keys)"
     if isinstance(value, list):
@@ -164,10 +164,10 @@ def _value_summary(value: object) -> str:
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
-    """data["hooks"][event][*]["hooks"] から substrings を含む command を除去する。
+    """`data["hooks"][event][*]["hooks"]` から `substrings` を含むcommandを除去する。
 
-    エントリが空になったら matcher エントリ自体も除去する。さらに event 配列ごと空に
-    なったら event キーごと除去する。
+    エントリが空になったらmatcherエントリ自体も除去する。さらにevent配列ごと空に
+    なったらeventキーごと除去する。
     """
     if not substrings:
         return
@@ -205,10 +205,10 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
 
 
 def _merge(data: dict, managed: dict) -> None:
-    """Managed の設定を data に再帰的にマージする。
+    """managedの設定をdataに再帰的にマージする。
 
-    dict は再帰マージ、list は union マージ (順序維持・重複排除)、
-    それ以外は managed 側で上書き。`_IGNORED_KEYS` はマージ対象外。
+    dictは再帰マージ、listはunionマージ（順序維持・重複排除）、
+    それ以外はmanaged側で上書き。`_IGNORED_KEYS` はマージ対象外。
     """
     for key, value in managed.items():
         if key in _IGNORED_KEYS:
@@ -222,10 +222,10 @@ def _merge(data: dict, managed: dict) -> None:
 
 
 def _union_list(existing: list, managed: list) -> list:
-    """順序維持・重複排除で 2 つの list を結合する。
+    """順序維持・重複排除で2つのlistを結合する。
 
-    hashable な要素はそのまま集合判定に使い、dict/list などの非 hashable 要素は
-    JSON 正規化文字列をキーにして重複判定する (hooks 配列のマージで必要)。
+    hashableな要素はそのまま集合判定に使い、dict/listなどの非hashable要素は
+    JSON正規化文字列をキーにして重複判定する（hooks配列のマージで必要）。
     """
     result: list = []
     seen: set = set()

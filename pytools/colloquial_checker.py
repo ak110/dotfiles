@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
-"""口語的な日本語表現を検査するCLIのシンラッパー。
+"""口語的な日本語表現を検査するCLIのラッパー。
 
-agent-toolkitプラグイン同梱の`check_colloquial.py`を import して`_main()`を呼び出す。
+agent-toolkitプラグイン同梱の`check_colloquial.py`をimportして`_main()`を呼び出す。
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """scripts/claude_hook_pretooluse.py のテスト。
 
 dotfiles 個人環境専用の PreToolUse フックのテスト。
-mojibake / PS1 EOL は plugin 側 (agent-toolkit) に移管済み。
+mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
 独立スクリプトなので subprocess で起動し exit code / stderr / stdout (JSON) を検証する。
 """
 
@@ -285,11 +285,11 @@ class TestPersonalFileMentionWarning:
     バックティック囲みの言及と、対象ファイル自身の編集は除外される。
     """
 
-    # ``___`` を含むトークンもプログラム的に組み立てる (本テストファイル自身が警告を
-    # 誘発しないようにするため)。
+    # ``___`` を含むトークンもプログラム的に組み立てる（本テストファイル自身が警告を
+    # 誘発しないようにするため）。
     _TRIPLE = "_" * 3
-    # 正規表現 `\w+___\w+` がファイル名全体 (拡張子まで) を一致として抽出するわけではない点に注意。
-    # `.` は word 文字でないため、マッチされるのは拡張子を除いた stem 部分 (`foo___bar`)。
+    # 正規表現 `\w+___\w+` がファイル名全体（拡張子まで）を一致として抽出するわけではない点に注意する。
+    # `.` は word 文字でないため、マッチされるのは拡張子を除いた stem 部分（`foo___bar`）。
     _TRIPLE_STEM = f"foo{_TRIPLE}bar"
     _TRIPLE_TOKEN = f"{_TRIPLE_STEM}.md"
 

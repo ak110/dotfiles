@@ -1789,34 +1789,37 @@ class TestProxyFixIntegration:
         assert data["start_url"] == "/plans/"
         assert data["icons"][0]["src"] == "/plans/favicon.svg"
 
-    @pytest.mark.parametrize(
-        "malicious_path",
-        [
-            "//evil.example/",
-            "/foo//bar/",
-        ],
-    )
     @pytest.mark.asyncio
-    async def test_routable_malicious_prefix_neutralized_in_output(
-        self,
-        tmp_path: Path,
-        malicious_path: str,
-    ):
-        """ルート到達可能な悪意プレフィクスでも出力に生バイトが漏れない。
+    async def test_protocol_relative_prefix_rejected_by_proxy_fix(self, tmp_path: Path):
+        """プロトコル相対形式のプレフィクスはProxyFix層で拒否される。
 
-        ProxyFixがroot_pathに設定し、Quartが路追prefix除去を行ってルートに到達するパスを
-        引き渡す。`safe_base_path`が空扱いに正規化するため、HTML属性・JS定数・manifestの
-        いずれにもプレフィクス文字列が漏れず、外部オリジンへのスキーム相対URLも生まれない。
+        pytilpackの`validate_forwarded_prefix`が先頭`//`を不正値として拒否するため
+        `root_path`は設定されず、Quartは`//evil.example/`をルート未マッチとして404を返す。
+        `safe_base_path`へ到達する前段で防御される二段構えを担保する。
         """
         app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
-        # ProxyFixはheader値をrstrip("/")してから格納するため、headerは末尾スラッシュを含めない。
-        prefix_header = malicious_path.rstrip("/")
+        response = await client.get("//evil.example/", headers={"X-Forwarded-Prefix": "//evil.example"})
+        assert response.status_code == 404
+        body = await response.get_data(as_text=True)
+        assert "//evil.example" not in body
+
+    @pytest.mark.asyncio
+    async def test_routable_malicious_prefix_neutralized_in_output(self, tmp_path: Path):
+        """ルート到達可能な悪意プレフィクスでも出力に生バイトが漏れない。
+
+        途中に`//`を含むプレフィクスはProxyFix層を通過してroot_pathに設定され、
+        Quartがprefix除去してルートに到達する。`safe_base_path`が空扱いに正規化するため、
+        HTML属性・JS定数・manifestのいずれにもプレフィクス文字列が漏れない。
+        """
+        malicious_path = "/foo//bar/"
+        prefix_header = "/foo//bar"
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
         response_index = await client.get(malicious_path, headers={"X-Forwarded-Prefix": prefix_header})
         body_index = await response_index.get_data(as_text=True)
         assert response_index.status_code == 200
         assert prefix_header not in body_index
-        assert "//evil.example" not in body_index
         assert 'href="/favicon.svg"' in body_index
         assert 'const BASE_PATH = "";' in body_index
 

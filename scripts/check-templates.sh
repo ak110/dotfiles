@@ -1,13 +1,13 @@
 #!/bin/bash
-# chezmoi template (.sh.tmpl / .ps1.tmpl) の構文検証 + 展開後の言語別チェック。
+# chezmoi template (.sh.tmpl / .ps1.tmpl) の構文検証と展開後の言語別チェック。
 #
-# Step 1: chezmoi execute-template --init で template 構文エラーを検出し、展開する
-# Step 2: 展開結果を言語別にチェック
+# Step 1: chezmoi execute-template --init でテンプレート構文エラーを検出し展開する
+# Step 2: 展開結果を言語別にチェックする
 #   - .sh.tmpl  → bash -n (必須) + shellcheck (WARN、導入済みの場合のみ)
 #   - .ps1.tmpl → pwsh の Parser (導入済みの場合のみ)
 #
 # 未定義変数はダミーに置換されるため、shellcheck / PSScriptAnalyzer の
-# 指摘は参考情報扱いにする。構文エラーのみを確実に検出することが目的。
+# 指摘は参考情報扱いとする。構文エラーのみを確実に検出することが目的。
 set -eu
 
 if ! command -v chezmoi >/dev/null 2>&1; then
@@ -22,7 +22,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 # pre-commit はリポジトリルートから呼び出される前提。
 # .chezmoiroot を読み取り、working-tree と source を明示指定することで
 # chezmoi のデフォルト source (~/.local/share/chezmoi) に依存しない検証を行う
-# (CI など chezmoi init 未実施の環境でも動作させるため)。
+# （CI など chezmoi init 未実施の環境でも動作させるため）。
 working_tree="$(pwd)"
 if [ -f "$working_tree/.chezmoiroot" ]; then
     source_dir="$working_tree/$(cat "$working_tree/.chezmoiroot")"
@@ -56,7 +56,7 @@ for file in "$@"; do
             continue
         fi
         if command -v shellcheck >/dev/null 2>&1; then
-            # 展開後ファイルではダミー変数により誤検出されやすいため WARN 扱い
+            # 展開後ファイルはダミー変数による誤検出が生じやすいため WARN 扱いとする
             if ! shellcheck --severity=error "$rendered" 2>"$errfile"; then
                 echo "FAIL [shellcheck on rendered $file]:" >&2
                 cat "$errfile" >&2
@@ -66,7 +66,7 @@ for file in "$@"; do
         ;;
     *.ps1.tmpl)
         if command -v pwsh >/dev/null 2>&1; then
-            # pwsh の Parser で構文チェックのみを実施する
+            # pwsh の Parser で構文チェックのみを実施する。
             if ! pwsh -NoProfile -NonInteractive -Command "
                     \$ErrorActionPreference = 'Stop'
                     \$tokens = \$null

@@ -1,8 +1,8 @@
 """marketplace登録・検証・修復モジュール。
 
-`install_claude_plugins`から呼ばれ、ローカルdotfilesリポジトリ参照の
+`install_claude_plugins`から呼ばれ、ローカルdotfilesリポジトリを参照する
 directory型でmarketplaceを登録する。
-GitHub型は`install-claude.sh`/`install-claude.ps1`のbootstrap経路が残す旧形式で、
+GitHub型は`install-claude.sh`/`install-claude.ps1`のbootstrap経路が残す旧形式であり、
 `chezmoi apply`経由で呼ばれた際にdirectory型へ自動マイグレーションする。
 """
 
@@ -32,22 +32,22 @@ _SETTINGS_JSON_PATH = claude_common.SETTINGS_JSON_PATH
 def is_directory_type_registered() -> bool:
     """現在の登録が directory 型で健全かを返す。
 
-    ``install_claude_plugins`` から「version 乖離に依存せず毎回 `plugin install`
-    を再実行するか」を判断するために参照する。健全な directory 型登録があれば
-    True、旧 GitHub 型や未登録の場合は False。
+    ``install_claude_plugins`` がversion乖離に依存せず毎回 `plugin install`
+    を再実行するかどうかを判断するために参照する。健全なdirectory型登録があれば
+    True、旧GitHub型や未登録の場合はFalse。
 
     判定は `_check_marketplace_from_file()` と同じロジックを使い、
-    ``True`` のみを directory 型健全とみなす。
+    ``True`` のみをdirectory型健全とみなす。
     """
     return _check_marketplace_from_file() is True
 
 
 def ensure_marketplace() -> bool:
-    """対象 marketplace を directory 型で登録する (既に directory 型で健全なら何もしない)。
+    """対象marketplaceをdirectory型で登録する（既にdirectory型で健全なら何もしない）。
 
-    登録済みでも旧 GitHub 型・別 path などで破損している場合は自動でマイグレーションする。
-    install-claude.sh/`.ps1` の bootstrap で GitHub 型が登録された状態から chezmoi apply
-    経由で呼ばれることを想定している。
+    登録済みでも旧GitHub型・別pathなどで破損している場合は自動でマイグレーションする。
+    `install-claude.sh`/`.ps1`のbootstrapでGitHub型が登録された状態から
+    `chezmoi apply`経由で呼ばれることを想定する。
     """
     file_check = _check_marketplace_from_file()
     if file_check is True:
@@ -82,23 +82,23 @@ def ensure_marketplace() -> bool:
 
 
 def repair_marketplace() -> bool:
-    """破損した marketplace 登録を段階的に修復する。
+    """破損したmarketplace登録を段階的に修復する。
 
-    1. ``claude plugin marketplace remove`` で既存エントリを除去 (失敗しても継続)
-    2. ``claude plugin marketplace add <dotfiles 絶対パス> --scope=user`` で directory 型として再登録
+    1. ``claude plugin marketplace remove`` で既存エントリを除去（失敗しても継続）
+    2. ``claude plugin marketplace add <dotfiles絶対パス> --scope=user`` でdirectory型として再登録
     3. ``_check_marketplace_from_file`` で再検証し健全なら終了
-    4. それでも解消しない場合は known_marketplaces.json と
-       settings.json.extraKnownMarketplaces を directory 型エントリで直接書き換え、
+    4. それでも解消しない場合は `known_marketplaces.json` と
+       `settings.json.extraKnownMarketplaces` をdirectory型エントリで直接書き換え、
        続けて ``claude plugin marketplace update`` を呼んで整合性を確認する
 
-    CLI の remove+add が settings.json 側を更新しないケースや、Claude Code 起動中の
-    排他で書き込みが失敗するケースを JSON 直接書き換えで救済する。
+    CLIのremove+addが`settings.json`側を更新しないケースや、Claude Code起動中の
+    排他で書き込みが失敗するケースをJSON直接書き換えで救済する。
 
     Note:
-        JSON 直接書き換えのフォールバック経路は Claude Code CLI の既知不具合
-        (``marketplace add`` 直後も ``settings.json.extraKnownMarketplaces`` を
-         更新しない環境が存在する) への回避策であり、内部ファイル形式に依存する。
-        CLI 側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
+        JSON直接書き換えのフォールバック経路はClaude Code CLIの既知不具合
+        （``marketplace add``直後も ``settings.json.extraKnownMarketplaces`` を
+         更新しない環境が存在する）への回避策であり、内部ファイル形式に依存する。
+        CLI側で該当不具合が解消したら、直接書き換え経路とその関連ヘルパー
         (``_rewrite_known_marketplaces_entry`` / ``_rewrite_settings_extra_known_entry``
          / ``_now_iso_millis`` / ``claude_common.atomic_write_json``) は削除候補となる。
     """
@@ -136,13 +136,13 @@ def repair_marketplace() -> bool:
 
 
 def refresh_marketplace() -> bool:
-    """Marketplace のメタデータを最新化する (`claude plugin marketplace update`)。
+    """marketplaceのメタデータを最新化する（`claude plugin marketplace update`）。
 
-    JSON 直接書き換え後に書き換え内容が反映済みかを確認するために呼ぶ。
-    破損したエントリが残っていれば CLI 側でエラーが出るため早期検知できる。
-    directory 型ではキャッシュ同期には機能しない (validation のみ) ため、
+    JSON直接書き換え後に書き換え内容が反映済みかを確認するために呼ぶ。
+    破損したエントリが残っていればCLI側でエラーが出るため早期検知できる。
+    directory型ではキャッシュ同期には機能しない（validationのみ）ため、
     通常フローのキャッシュ同期は `install_claude_plugins._install_plugin` で行う。
-    失敗しても best-effort 扱いで続行する。
+    失敗してもbest-effort扱いで続行する。
     """
     result = claude_common.run_claude(["plugin", "marketplace", "update", claude_common.MARKETPLACE_NAME])
     if result is None or result.returncode != 0:
@@ -160,15 +160,15 @@ def refresh_marketplace() -> bool:
 
 
 def _check_marketplace_from_file() -> bool | None:
-    """known_marketplaces.json と settings.json.extraKnownMarketplaces の両方を検査する。
+    """`known_marketplaces.json` と `settings.json.extraKnownMarketplaces` の両方を検査する。
 
     Returns:
-        True: どちらも directory 型 + dotfiles 絶対パスで健全。
-        False: どちらかが破損している (旧 GitHub 型・別 path・`source` 欠落など)。
-        None: 両ファイルとも未登録。CLI 経路で新規登録が必要。
+        True: どちらもdirectory型 + dotfiles絶対パスで健全。
+        False: どちらかが破損している（旧GitHub型・別path・`source`欠落など）。
+        None: 両ファイルとも未登録。CLI経路で新規登録が必要。
 
-    2 ファイルを両方検査する理由:
-        CLI の ``claude plugin marketplace remove``/``add`` が両ファイルを同時に
+    2ファイルを両方検査する理由:
+        CLIの ``claude plugin marketplace remove``/``add`` が両ファイルを同時に
         更新しないケースがあり、片方だけに過去の登録が残留して
         ``Marketplace file not found`` エラーを引き起こす環境が確認されている。
         どちらか片方でも破損していれば修復対象とする。
@@ -204,15 +204,15 @@ def _load_extra_known_marketplace_entry() -> dict[str, object] | None:
 
 
 def _is_entry_healthy(entry: dict[str, object]) -> bool:
-    """登録エントリが directory 型の正常形式かを判定する。
+    """登録エントリがdirectory型の正常形式かを判定する。
 
-    正常形式は ``source = {source: "directory", path: <dotfiles 絶対パス>}``。
-    旧 GitHub 型 (``{"source": "github", "repo": "ak110/dotfiles"}``) は
-    「旧形式」として False と判定し、自動マイグレーションの対象とする。
-    別 path・``source`` 欠落・非 dict もすべて False。
+    正常形式は ``source = {source: "directory", path: <dotfiles絶対パス>}``。
+    旧GitHub型（``{"source": "github", "repo": "ak110/dotfiles"}``）は
+    旧形式としてFalseと判定し、自動マイグレーションの対象とする。
+    別path・``source``欠落・非dictもすべてFalse。
 
-    dotfiles ルートを検出できない環境 (チェックアウトが破損しているなど) では
-    比較対象が無いため False を返し、CLI 経路で再登録させる。
+    dotfilesルートを検出できない環境（チェックアウトが破損しているなど）では
+    比較対象がないためFalseを返し、CLI経路で再登録させる。
     """
     source = entry.get("source")
     if not isinstance(source, dict):
@@ -247,15 +247,15 @@ def _now_iso_millis() -> str:
 
 
 def _rewrite_known_marketplaces_entry(dotfiles_root: Path) -> bool:
-    """known_marketplaces.json の対象エントリを directory 型で上書きする。
+    """`known_marketplaces.json` の対象エントリをdirectory型で上書きする。
 
-    他の marketplace キー (例: claude-plugins-official) は保持する。
-    ファイル自体が無い場合は新規作成する (CLI add が失敗した直後のフォールバック用)。
+    他のmarketplaceキー（例: claude-plugins-official）は保持する。
+    ファイル自体がない場合は新規作成する（CLI addが失敗した直後のフォールバック用）。
     ``lastUpdated`` を欠落させると後続の ``marketplace update`` が
     ``Invalid input: expected string, received undefined`` で失敗するため、
-    現在時刻を ISO 8601 文字列として書き込む。
-    ``installLocation`` は directory 型でも ``source.path`` と同一のフルパスを書く
-    (`claude plugin marketplace add` で登録された正常エントリ形式に合わせる)。
+    現在時刻をISO 8601文字列として書き込む。
+    ``installLocation`` はdirectory型でも ``source.path`` と同一のフルパスを書く
+    （`claude plugin marketplace add` で登録された正常エントリ形式に合わせる）。
     """
     path = _KNOWN_MARKETPLACES_PATH
     data = claude_common.load_json_dict(path, tag="marketplace")
@@ -270,12 +270,12 @@ def _rewrite_known_marketplaces_entry(dotfiles_root: Path) -> bool:
 
 
 def _rewrite_settings_extra_known_entry(dotfiles_root: Path) -> bool:
-    """settings.json の extraKnownMarketplaces[対象] を directory 型で上書きする。
+    """`settings.json` の `extraKnownMarketplaces[対象]` をdirectory型で上書きする。
 
-    settings.json 自体が存在しない環境では書き込まない。
-    known_marketplaces.json 側が健全ならそれだけで Claude Code は動作するため、
-    ユーザーが作成していない settings.json を勝手に生成するのは避ける。
-    正常登録形式 (claude-plugins-official と同様) に揃え ``installLocation`` は持たせない。
+    `settings.json`自体が存在しない環境では書き込まない。
+    `known_marketplaces.json`側が健全ならそれだけでClaude Codeは動作するため、
+    ユーザーが作成していない`settings.json`を生成しない。
+    正常登録形式（claude-plugins-officialと同様）に揃え ``installLocation`` は持たせない。
     """
     path = _SETTINGS_JSON_PATH
     if not path.exists():

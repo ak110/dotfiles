@@ -214,7 +214,7 @@ def rename_tree(
     """ディレクトリツリーを走査してルールを適用する。
 
     ディレクトリの改名は下位ツリーのパスを無効化するため、深い階層から処理する
-    (rglob の結果をパス長でソート)。
+    （rglobの結果をパス長でソート）。
     """
     if files_only and dirs_only:
         raise ValueError("files_only と dirs_only は同時に指定できません")

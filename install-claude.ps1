@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 # install-claude.ps1 - ~/.claude/rules/agent-toolkit/ に agent-toolkit ルールファイルを配置する。
 #
-# 会社マシンなど dotfiles 全体を入れられない環境向け。GitHub から最新のルールファイルを
+# 会社マシンなど dotfiles 全体を導入できない環境向け。GitHub から最新のルールファイルを
 # 一時ステージングディレクトリへダウンロードし、原子的リネームで配布先を差し替える。
 #
 # cmd からの使い方 (Claude Code をインストールしたあとで実行する):
@@ -15,7 +15,7 @@ $baseUrl = if ($env:DOTFILES_RULES_URL) { $env:DOTFILES_RULES_URL } else { 'http
 $targetDir = Join-Path $HOME '.claude/rules/agent-toolkit'
 $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # ステージング先は rules/ の外に置く。
-# rules/ 配下に作ると Claude Code が再帰的に読み込んでしまい、差し替え中に二重ロードされる危険がある。
+# rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 $stageRoot = Join-Path $HOME '.claude/rules-stage'
 
 # 配布対象ファイル一覧 (install-claude.sh の FILES と一致させること)
@@ -35,7 +35,7 @@ function Invoke-Download {
 }
 
 # agent-toolkit プラグインを user scope でインストール・更新する。
-# 併せて旧 edit-guardrails プラグインを除去する (agent-toolkit へ改名・統合されたため)。
+# 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 function Install-AgentToolkitPlugin {
     Write-Output ''
     Write-Output 'agent-toolkit プラグインを user scope にインストール・更新します...'
@@ -89,7 +89,7 @@ function Main {
 
         Install-AgentToolkitPlugin
     } finally {
-        # 差し替え前にエラー終了した場合は既存環境を復元する。
+        # 差し替え前にエラー終了した場合、既存環境を復元する。
         if (-not $replaced -and $oldDir -and (Test-Path -LiteralPath $oldDir) -and -not (Test-Path -LiteralPath $targetDir)) {
             try { Move-Item -LiteralPath $oldDir -Destination $targetDir -ErrorAction Stop; $oldDir = $null } catch { $null = $_ }
         }

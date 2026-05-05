@@ -9,23 +9,19 @@ user-invocable: false
 
 # agent-toolkit ルールの SSOT 同期
 
-## 目的
-
-`~/dotfiles/` リポジトリのagent-toolkitルール配布は、
-配布元ディレクトリ `.chezmoi-source/dot_claude/rules/agent-toolkit/` がSSOTとなる。
+配布元ディレクトリ `.chezmoi-source/dot_claude/rules/agent-toolkit/` がSSOT。
 chezmoi経由の配布と `claudize` コマンドはディレクトリ全体を同期するため、
-ファイルの追加・削除・リネーム時にそれら経路のコード修正は不要である。
+ファイルの追加・削除・リネーム時にそれら経路のコード修正は不要。
 
-ただし `install-claude.sh` / `install-claude.ps1` はリモートインストーラー（`curl ... | bash`のワンライナー実行を想定）で、
+`install-claude.sh` / `install-claude.ps1` はリモートインストーラー（`curl ... | bash`のワンライナー実行を想定）で、
 配布経路を介さずGitHub Raw経由で個別ファイルを取得する。
-依存を減らすためリポジトリを丸ごとcloneせず、配布対象のファイル名を配列としてスクリプト内に持つ構造になっている。
-この1箇所のみ、配布対象ファイルの増減に合わせて手動で更新する必要がある。
+依存を減らすためリポジトリを丸ごとcloneせず、配布対象のファイル名を配列としてスクリプト内に持つ構造のため、
+配布対象ファイルの増減に合わせて手動で更新する。
 
-## 前提確認
+## 前提
 
-作業を始める前に、編集するリポジトリが `~/dotfiles`（または同等の本家dotfilesチェックアウト）であるか確認する。
+編集するリポジトリが `~/dotfiles`（または同等の本家dotfilesチェックアウト）であることを確認する。
 他プロジェクトの `.claude/rules/` は配布先であり原本ではない。
-本スキルは本家dotfilesリポジトリの編集でのみ使う。
 他プロジェクトで`.claude/rules/`配下を編集しても、次回の配布で上書きされるため恒久化しない。
 
 配布元ディレクトリ: `.chezmoi-source/dot_claude/rules/agent-toolkit/`

@@ -1,7 +1,7 @@
 """Windowsレジストリ設定をwinregで直接書き込むモジュール。
 
 `chezmoi apply`後処理（`pytools.post_apply`）からWindows環境でのみ呼ばれる。
-書き込み対象は`_REGISTRY_SETTINGS`をSSOTとして`HKEY_CURRENT_USER`配下のみを扱う。
+書き込み対象は`_REGISTRY_SETTINGS`をSSOTとし、`HKEY_CURRENT_USER`配下のみを扱う。
 """
 
 import dataclasses
@@ -21,8 +21,8 @@ _IS_WINDOWS = os.name == "nt"
 class _RegistrySpec:
     """書き込み対象のレジストリ値定義。
 
-    `value_type` は winreg モジュールの定数名（例: ``"REG_DWORD"``）を保持する。
-    モジュールロードを Windows 限定にするため winreg 定数を直接参照しない。
+    `value_type` はwinregモジュールの定数名（例: ``"REG_DWORD"``）を保持する。
+    モジュールロードをWindows限定にするためwinreg定数を直接参照しない。
     """
 
     description: str
@@ -95,7 +95,7 @@ def _apply_all(specs: Sequence[_RegistrySpec]) -> None:
 
 
 def _write_value(wr: typing.Any, spec: _RegistrySpec) -> None:
-    r"""`spec` を HKCU 配下に書き込む。
+    r"""`spec` をHKCU配下に書き込む。
 
     親キーが未作成のパス（`...\\Bags\\AllFolders\\Shell` など）を含むため、
     中間キーをまとめて作成する `CreateKeyEx` を使う（`OpenKey` では `FileNotFoundError` になる）。

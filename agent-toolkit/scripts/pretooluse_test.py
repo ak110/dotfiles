@@ -1,7 +1,6 @@
 """agent-toolkit/scripts/pretooluse.py のテスト。
 
-PreToolUse 統合フック (mojibake / ps1 EOL 等) のテスト。
-独立スクリプトなので subprocess で起動し exit code・stderr・stdout を検証する。
+subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
 import json
@@ -39,13 +38,13 @@ def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) 
 
 
 class TestMojibakeCheck:
-    """文字化け (U+FFFD) 検出。"""
+    """文字化け（U+FFFD）検出。"""
 
     def test_write_with_mojibake(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
         assert result.returncode == 2
         assert "U+FFFD" in result.stderr
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # LLM宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 
@@ -326,7 +325,7 @@ class TestColloquialCheck:
 
     def test_does_not_block(self, deny_substring: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "x.md", "content": deny_substring}})
-        assert result.returncode == 0  # warn のみ
+        assert result.returncode == 0  # warnのみ
 
     def test_clean_text_no_warn(self):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": "x = 1\n"}})
@@ -492,9 +491,9 @@ class TestGeneralBehavior:
     @pytest.mark.parametrize(
         "payload",
         [
-            # Write/Edit/MultiEdit 以外は全て通す
+            # Write/Edit/MultiEdit以外は全て通す
             {"tool_name": "Bash", "tool_input": {"command": "echo \ufffd"}},
-            # tool_input が欠落していても通す
+            # tool_inputが欠落していても通す
             {"tool_name": "Write"},
             # 正常な日本語は通す
             {"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "こんにちは世界"}},
@@ -505,16 +504,16 @@ class TestGeneralBehavior:
         assert result.returncode == 0
 
     def test_invalid_json(self):
-        """不正 JSON はフックを無効化 (安全側)。"""
+        """不正JSONはフックを無効化（安全側）。"""
         result = _run("this is not json")
         assert result.returncode == 0
 
 
 class TestManifestSsot:
-    """plugin.json と marketplace.json の SSOT 整合性。
+    """plugin.jsonとmarketplace.jsonのSSOT整合性。
 
-    version / description / name を 2 箇所で重複管理しているため、
-    片方だけ更新して配布されない事故を防ぐためのハード チェック。
+    version / description / nameを2箇所で重複管理しているため、
+    片方だけ更新して配布されない事故を防ぐためのハードチェック。
     """
 
     def test_plugin_manifest_matches_marketplace(self):
@@ -525,8 +524,8 @@ class TestManifestSsot:
         assert len(entries) == 1, f"marketplace.json に {plugin_manifest['name']} のエントリが 1 件ではない"
         entry = entries[0]
 
-        # SSOT の 3 フィールドが完全一致することを要求する。
-        # 不一致が出たら .claude/rules/agent-toolkit.md を参照して両側を揃えること。
+        # SSOTの3フィールドが完全一致することを要求する。
+        # 不一致が出たら.claude/rules/agent-toolkit.mdを参照して両側を揃えること。
         assert entry["version"] == plugin_manifest["version"], (
             f"version 不一致: plugin.json={plugin_manifest['version']} marketplace.json={entry['version']}"
         )
@@ -537,9 +536,9 @@ class TestManifestSsot:
 
 
 class TestBashGitCommitWarning:
-    """git commit 未検証警告。
+    """git commit未検証警告。
 
-    セッション状態の test_executed を参照し、テスト未実行時に警告する。
+    セッション状態のtest_executedを参照し、テスト未実行時に警告する。
     """
 
     @pytest.fixture(name="state_dir")
@@ -568,7 +567,7 @@ class TestBashGitCommitWarning:
 
     @staticmethod
     def _make_repo_with_staged(tmp_path: pathlib.Path, files: dict[str, str]) -> pathlib.Path:
-        """staged 状態のファイルを含む git リポジトリを作成する。"""
+        """staged状態のファイルを含むgitリポジトリを作成する。"""
         repo = tmp_path / "repo"
         repo.mkdir()
         subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
@@ -644,7 +643,7 @@ class TestBashGitCommitWarning:
         (repo / "doc.md").write_text("# v1")
         subprocess.run(["git", "add", "doc.md"], cwd=str(repo), capture_output=True, check=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        # tracked .md を作業ツリー上でのみ変更 (index には反映しない)
+        # tracked .mdを作業ツリー上でのみ変更（indexには反映しない）
         (repo / "doc.md").write_text("# v2")
         result = self._invoke("git commit -am 'update'", "commit-all", state_dir, cwd=str(repo))
         assert result.returncode == 0
@@ -652,7 +651,7 @@ class TestBashGitCommitWarning:
 
 
 class TestBashGitLogDecorate:
-    """git log --decorate 自動付与。"""
+    """git log --decorate自動付与。"""
 
     def test_adds_decorate(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}})
@@ -673,7 +672,7 @@ class TestBashGitLogDecorate:
         data = json.loads(result.stdout)
         updated = data["hookSpecificOutput"]["updatedInput"]["command"]
         assert "git log --decorate" in updated
-        # git status 部分は変更されない
+        # git status部分は変更されない
         assert updated.startswith("git status")
 
     def test_non_log_git_command_unaffected(self):
@@ -683,7 +682,7 @@ class TestBashGitLogDecorate:
 
 
 class TestBashCodexExecNudge:
-    """codex exec 未決事項の念押し。"""
+    """codex exec未決事項の念押し。"""
 
     def test_nudge_on_initial_exec(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec --dangerously-bypass plan.md prompt"}})
@@ -703,7 +702,7 @@ class TestBashCodexExecNudge:
 
 
 class TestBashAmendRebaseBlock:
-    """git amend / rebase の log 未確認ブロック。"""
+    """git amend / rebaseのlog未確認ブロック。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -742,23 +741,23 @@ class TestBashAmendRebaseBlock:
         assert result.returncode == 0
 
     def test_normal_commit_not_blocked(self, state_dir: dict[str, str]):
-        """通常の git commit は amend/rebase ブロックの対象外。"""
+        """通常のgit commitはamend/rebaseブロックの対象外。"""
         result = self._invoke("git commit -m 'test'", "normal", state_dir)
         assert result.returncode == 0
 
 
 class TestBashUvRunPythonBlock:
-    """`uv run python <path>` 形式の起動ブロック。
+    """`uv run python <path>`形式の起動ブロック。
 
-    `[tool.uv]` のみで `[project]` セクションが無い cwd で `uv run python <path>`
-    を実行すると、uv が cwd をプロジェクト解決対象として扱い `.venv` と `uv.lock`
-    を生成する副作用がある。エージェントが PEP 723 スクリプトを誤起動する事故を
+    `[tool.uv]`のみで`[project]`セクションが無いcwdで`uv run python <path>`
+    を実行すると、uvがcwdをプロジェクト解決対象として扱い`.venv`と`uv.lock`
+    を生成する副作用がある。エージェントがPEP 723スクリプトを誤起動する事故を
     予防的にブロックするためのテスト。
     """
 
     @staticmethod
     def _make_python_project(tmp_path: pathlib.Path) -> str:
-        """`[project]` セクション付き pyproject.toml を作成し cwd 文字列を返す。"""
+        """`[project]`セクション付きpyproject.tomlを作成しcwd文字列を返す。"""
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.0.0"\n',
             encoding="utf-8",
@@ -767,7 +766,7 @@ class TestBashUvRunPythonBlock:
 
     @staticmethod
     def _make_non_python_project(tmp_path: pathlib.Path) -> str:
-        """`[tool.uv]` のみ持つ pyproject.toml を作成し cwd 文字列を返す。"""
+        """`[tool.uv]`のみ持つpyproject.tomlを作成しcwd文字列を返す。"""
         (tmp_path / "pyproject.toml").write_text(
             '[tool.uv]\nexclude-newer = "2025-01-01"\n',
             encoding="utf-8",
@@ -779,19 +778,19 @@ class TestBashUvRunPythonBlock:
         return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
 
     def test_script_option_allowed(self, tmp_path: pathlib.Path):
-        """`--script` 経由は cwd の依存解決を行わないため許容する。"""
+        """`--script`経由はcwdの依存解決を行わないため許容する。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run --script /tmp/foo.py", cwd)
         assert result.returncode == 0
 
     def test_no_project_option_allowed(self, tmp_path: pathlib.Path):
-        """`--no-project` 経由は cwd の依存解決を行わないため許容する。"""
+        """`--no-project`経由はcwdの依存解決を行わないため許容する。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run --no-project python -c 'print(1)'", cwd)
         assert result.returncode == 0
 
     def test_python_project_allowed(self, tmp_path: pathlib.Path):
-        """`[project]` セクション付き cwd では `uv run python -c '...'` を許容する。"""
+        """`[project]`セクション付きcwdでは`uv run python -c '...'`を許容する。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 0
@@ -804,24 +803,24 @@ class TestBashUvRunPythonBlock:
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
 
     def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
-        """pyproject.toml が無い cwd でも block する (Python プロジェクトと認識できないため)。"""
+        """pyproject.tomlが無いcwdでもblockする（Pythonプロジェクトと認識できないため）。"""
         result = self._invoke("uv run python /tmp/foo.py", str(tmp_path))
         assert result.returncode == 2
 
     def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
-        """`uv run python --script s.py` は `--script` が python の引数となるため例外扱いしない。"""
+        """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --script s.py", cwd)
         assert result.returncode == 2
 
     def test_no_project_after_python_blocked(self, tmp_path: pathlib.Path):
-        """`uv run python --no-project s.py` は同上の理由で例外扱いしない。"""
+        """`uv run python --no-project s.py`は同上の理由で例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --no-project s.py", cwd)
         assert result.returncode == 2
 
     def test_cd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
-        """payload cwd が Python プロジェクトでも、先行 `cd` で実行時 cwd が変わる場合は block。"""
+        """payload cwdがPythonプロジェクトでも、先行`cd`で実行時cwdが変わる場合はblock。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("cd /tmp && uv run python /tmp/foo.py", cwd)
         assert result.returncode == 2
@@ -832,7 +831,7 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 2
 
     def test_uv_directory_option_blocked(self, tmp_path: pathlib.Path):
-        """`uv --directory` はプロジェクト解決対象を payload cwd から外すため block。"""
+        """`uv --directory`はプロジェクト解決対象をpayload cwdから外すためblock。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --directory /tmp run python /tmp/foo.py", cwd)
         assert result.returncode == 2
@@ -843,25 +842,25 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 2
 
     def test_uv_run_project_option_blocked(self, tmp_path: pathlib.Path):
-        """run サブコマンドオプション位置の `--project=` も block 対象。"""
+        """runサブコマンドオプション位置の`--project=`もblock対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run --project=/tmp python /tmp/foo.py", cwd)
         assert result.returncode == 2
 
     def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
-        """cwd 変更があっても `--no-project` 例外が優先するため許容する。"""
+        """cwd変更があっても`--no-project`例外が優先するため許容する。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("cd /tmp && uv run --no-project python -c 'print(1)'", cwd)
         assert result.returncode == 0
 
     def test_unrelated_command_unaffected(self, tmp_path: pathlib.Path):
-        """`uv run pytest` などは対象外 (`python` トークンを含まない)。"""
+        """`uv run pytest`などは対象外（`python`トークンを含まない）。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run pytest tests/", cwd)
         assert result.returncode == 0
 
     def test_uvx_unaffected(self, tmp_path: pathlib.Path):
-        """`uvx` は別コマンドのため対象外。"""
+        """`uvx`は別コマンドのため対象外。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uvx ruff check .", cwd)
         assert result.returncode == 0

@@ -1,4 +1,4 @@
-"""Quartアプリ生成とAPIハンドラ。"""
+"""Quartアプリ生成とAPIハンドラ群。"""
 
 import asyncio
 import contextlib
@@ -29,7 +29,7 @@ def safe_base_path(raw: str) -> str:
 
     リバースプロキシ前段が`X-Forwarded-Prefix`を破棄しない構成での悪意ある値の
     HTML/JS/JSON埋め込みを防ぐため、文字種・連続スラッシュ・末尾スラッシュを厳格に検査する。
-    不正値や空値は空文字列として返し、呼び出し元がそのままURL前置として扱えるようにする。
+    不正値や空値は空文字列として返す。呼び出し元はそのままURL前置として扱える。
     """
     if not raw:
         return ""
@@ -44,7 +44,7 @@ def safe_base_path(raw: str) -> str:
 
 
 def resolve_request_target(local_host: str, allowed_remote_hosts: set[str]) -> tuple[str, str] | quart.Response:
-    """`/api/file`・`/api/raw`共通: hostとpathを取り出して許可リスト検証する。
+    """`/api/file`・`/api/raw`共通でhostとpathを取り出して許可リスト検証する。
 
     `host`未指定時は`local_host`を採用する。許可リスト外のhostは400で拒否する
     （サーバーが0.0.0.0等で公開された場合に、クライアントが任意SSH先へ
@@ -70,7 +70,7 @@ def create_app(
     """Quartアプリを生成する。
 
     `root`はMarkdownの探索対象ディレクトリ（resolve済み絶対パス）。
-    `hostname`はローカル分のファイルエントリーに付与する`host`ラベルおよび
+    `hostname`はローカル分のファイルエントリに付与する`host`ラベルおよび
     リモートホストとの一意性検査に使う。`None`のとき`socket.gethostname()`を使う。
     `remote_hosts`が空でない場合、各ホストへSSH越しにwatchを起動して差分イベントを配信する。
     `ssh_runner=None`のときは`default_ssh_runner`を使う（`/api/file`/`/api/raw`の

@@ -24,11 +24,11 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
 
-    # 1. リポジトリを fake_home/dotfiles に複製 (git clone 分岐を回避)
+    # 1. リポジトリを fake_home/dotfiles に複製（git clone 分岐を回避）
     fake_dotfiles = fake_home / "dotfiles"
     _copy_repo(REPO_ROOT, fake_dotfiles)
 
-    # 2. システムの chezmoi を fake_home/.local/bin に配置 (ダウンロード分岐を回避)
+    # 2. システムの chezmoi を fake_home/.local/bin に配置（ダウンロード分岐を回避）
     chezmoi_bin = shutil.which("chezmoi")
     assert chezmoi_bin is not None
     local_bin = fake_home / ".local" / "bin"
@@ -61,8 +61,8 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
     """リポジトリを複製。.venv や巨大ディレクトリは除外して高速化。"""
 
-    # .git は chezmoi init が内部で使うわけではないので不要
-    # .venv / node_modules などテスト無関係な巨大ディレクトリは除外
+    # .git は chezmoi init が内部で使うわけではないので不要。
+    # .venv / node_modules などテスト無関係な巨大ディレクトリは除外する。
     def _ignore(_dir: str, names: list[str]) -> list[str]:
         del _dir  # noqa
         return [n for n in names if n in {".venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".git"}]

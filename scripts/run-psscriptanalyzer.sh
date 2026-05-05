@@ -2,8 +2,8 @@
 # PSScriptAnalyzer 呼び出しラッパー。
 #
 # 動作:
-#   - pwsh 未導入環境: 警告を出力して正常終了 (ローカル dev 環境向け)
-#   - pwsh 導入済み:   PSScriptAnalyzer モジュールを必要に応じて導入し Invoke-ScriptAnalyzer を実行
+#   - pwsh 未導入環境: 警告を出力して正常終了（ローカル dev 環境向け）
+#   - pwsh 導入済み:   PSScriptAnalyzer モジュールを必要に応じて導入し Invoke-ScriptAnalyzer を実行する
 #
 # CI (test-linux) では pwsh を事前導入する前提のため、検証漏れは CI で担保する。
 set -eu
@@ -25,7 +25,7 @@ done
 paths=${paths%,}
 
 # リポジトリルートに PSScriptAnalyzerSettings.psd1 があれば利用する
-# (pre-commit はリポジトリルートから呼び出される前提)。
+# （pre-commit はリポジトリルートから呼び出される前提）。
 settings_arg=""
 if [ -f "$(pwd)/PSScriptAnalyzerSettings.psd1" ]; then
     settings_esc=${PWD//\'/\'\'}
@@ -39,7 +39,7 @@ exec pwsh -NoProfile -NonInteractive -Command "
         Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck | Out-Null
     }
     Import-Module PSScriptAnalyzer
-    # Invoke-ScriptAnalyzer -Path は String 単体しか受けないため、ファイルごとに実行する
+    # Invoke-ScriptAnalyzer -Path は String 単体しか受け取れないため、ファイルごとに実行する。
     \$results = @($paths) | ForEach-Object { Invoke-ScriptAnalyzer -Path \$_ -Severity @('Error','Warning') $settings_arg }
     if (\$results) {
         \$results | Format-Table -AutoSize

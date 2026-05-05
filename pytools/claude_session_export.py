@@ -1,5 +1,5 @@
 # PYTHON_ARGCOMPLETE_OK
-"""Claude Codeセッション履歴（JSONL）をmarkdownに変換するCLIツール。"""
+"""Claude CodeセッションのJSONL履歴をmarkdownに変換するCLIツール。"""
 
 import argparse
 import datetime
@@ -451,7 +451,7 @@ def iter_turns(records: list[dict], *, is_subagent: bool = False) -> Iterator[Tu
     """レコードから会話ターンを時系列順に生成する。
 
     Args:
-        records: JSONLレコードのリスト。
+        records: JSONLレコードの一覧。
         is_subagent: サブエージェントの場合True（isSidechainフィルターを適用しない）。
     """
     # isSidechainフィルター（メインセッションのみ）

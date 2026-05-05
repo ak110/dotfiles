@@ -32,8 +32,6 @@ description: >
   --output-dir DIR     出力先ディレクトリ（未指定時はstdout）
 ```
 
-標準出力に直接表示する場合はstdoutへ出力される（`--output-dir`省略時）。
-
 ### 実行例
 
 最小（現在のセッションをstdoutへ出力）:

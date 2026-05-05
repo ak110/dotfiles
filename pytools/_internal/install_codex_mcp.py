@@ -1,7 +1,7 @@
 """codex MCPサーバーをuser scopeに自動登録する。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
-`claude mcp add --scope=user codex codex mcp-server`を冪等に実行する。
+`claude mcp add --scope=user codex codex mcp-server`をべき等に実行する。
 前提条件を満たさない場合は完全にスキップする。
 """
 
@@ -29,10 +29,10 @@ def _main() -> None:
 
 
 def run() -> bool:
-    """Codex MCPサーバーを user scope に登録する。
+    """Codex MCPサーバーをuser scopeに登録する。
 
     Returns:
-        新たに登録した場合 True。既登録・CLI不在などでスキップした場合 False。
+        新たに登録した場合True。既登録・CLI不在などでスキップした場合False。
     """
     if shutil.which("claude") is None:
         logger.info(log_format.format_status("codex-mcp", "claude CLI 未検出のためスキップ"))
@@ -50,8 +50,8 @@ def run() -> bool:
     args = ["mcp", "add", "--scope=user", _CODEX_NAME, _CODEX_COMMAND, *_CODEX_ARGS]
     result = claude_common.run_claude(args)
     if result is None or result.returncode != 0:
-        # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で
-        # 失敗するケースがある。この場合は実際には登録済みなので成功扱いにする
+        # タイムアウトで list が失敗 → 未登録と誤判定 → add が "already exists" で失敗するケースがある。
+        # "already exists" エラーは登録済みを意味するため、スキップ扱いにする。
         stderr = result.stderr.strip() if result else ""
         if result is not None and "already exists" in result.stderr:
             logger.info(log_format.format_status("codex-mcp", "登録済み (add が already exists を返却)"))
@@ -63,11 +63,11 @@ def run() -> bool:
 
 
 def _is_codex_registered_from_file() -> bool | None:
-    """.claude.jsonを直接読み取り、codex MCPサーバーの登録状態を判定する。
+    """`~/.claude.json`を直接読み取り、codex MCPサーバーの登録状態を判定する。
 
     Returns:
         True: mcpServersにcodexキーが存在する（登録済み）。
-        False: mcpServersは存在するがcodexキーが無い（未登録）。
+        False: mcpServersは存在するがcodexキーがない（未登録）。
         None: 読み取り失敗（CLIフォールバックが必要）。
     """
     try:

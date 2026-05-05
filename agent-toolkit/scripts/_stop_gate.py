@@ -27,7 +27,7 @@ _COMPLETION_KEYWORDS: tuple[str, ...] = (
 
 # バックグラウンド待機中・非同期待機中を示す語。
 # これらを含むターンは「真のセッション終了」ではなく一時停止と判断し、
-# block を抑止する。
+# blockを抑止する。
 _WAITING_KEYWORDS: tuple[str, ...] = (
     "待ちます",
     "完了を待",
@@ -41,22 +41,22 @@ _WAITING_KEYWORDS: tuple[str, ...] = (
     "起動を待",
 )
 
-# 非同期待機系ツール名。これらの tool_use で直前アシスタントターンが終端している場合は
+# 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
 # 「真のセッション終了」ではないと判断する。
-# Bash は run_in_background フラグで別途判定するため、ここには含めない。
+# Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monitor"})
 
 
 def is_real_session_end(transcript_path: str) -> bool:
-    """Transcript を解析して「真のセッション終了」かどうかを判定する。
+    """transcriptを解析して「真のセッション終了」かどうかを判定する。
 
-    以下の条件をすべて満たす場合に True を返す。
+    以下の条件をすべて満たす場合にTrueを返す。
     - 直前アシスタントターンに作業完了の言い切り文言が含まれる
     - 直前アシスタントターンが質問を含まない
     - 直前アシスタントターンが待機語を含まない
-    - 直前アシスタントターンの最後の tool_use が非同期待機系でない
+    - 直前アシスタントターンの最後のtool_useが非同期待機系でない
 
-    transcript を読み取れない異常系では False を返す（安全側に倒す）。
+    transcriptを読み取れない異常系ではFalseを返す（安全側に倒す）。
     """
     _wait_for_end_turn(transcript_path)
     if not _is_assistant_task_completed(transcript_path):
@@ -69,12 +69,12 @@ def is_real_session_end(transcript_path: str) -> bool:
 
 
 def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
-    """Stop hook 起動と Claude Code 側 transcript flush との race を吸収する。
+    """Stop hook起動とClaude Code側transcriptフラッシュとのレース状態を吸収する。
 
-    Claude Code は assistant 最終メッセージの transcript 書き込みと Stop hook 起動が
-    並行することがあり、hook が読んだ時点で最終 assistant エントリが未到着の場合がある。
-    末尾走査で最新 assistant エントリ（非 sidechain）の `stop_reason` が `end_turn` であれば
-    flush 完了とみなし即時戻る。未到着なら短時間ポーリングし、`timeout` 経過で諦める。
+    Claude Codeはassistant最終メッセージのtranscript書き込みとStop hook起動が
+    並行することがあり、hookが読んだ時点で最終assistantエントリが未到着の場合がある。
+    末尾走査で最新assistantエントリ（非sidechain）の`stop_reason`が`end_turn`であれば
+    フラッシュ完了とみなして即時戻る。未到着なら短時間ポーリングし、`timeout`経過で終了する。
     """
     deadline = time.monotonic() + timeout
     poll = 0.05
@@ -94,7 +94,7 @@ def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
             message = entry.get("message")
             if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
                 return
-            # 最新 assistant エントリが end_turn ではない（tool_use 等）→ race の可能性あり、
+            # 最新assistantエントリがend_turnではない（tool_use等）→レース状態の可能性あり、
             # ポーリングを継続して最終エントリの到着を待つ。
             break
         if time.monotonic() >= deadline:
@@ -103,9 +103,9 @@ def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
 
 
 def _is_assistant_task_completed(transcript_path: str) -> bool:
-    """直前のアシスタントターンに作業完了の言い切り文言が含まれるか判定する。
+    """直前のアシスタントターンに作業完了の言い切り文言が含まれる場合に真を返す。
 
-    キーワードは `_COMPLETION_KEYWORDS` 参照。
+    キーワードは`_COMPLETION_KEYWORDS`参照。
     """
     for message in _iter_latest_assistant_messages(transcript_path):
         content = message.get("content")
@@ -125,22 +125,21 @@ def _is_assistant_task_completed(transcript_path: str) -> bool:
 
 
 def _is_assistant_asking_question(transcript_path: str) -> bool:
-    """直前のアシスタントターンがユーザーへの質問を含んでいるかを確認する。
+    """直前のアシスタントターンがユーザーへの質問を含む場合に真を返す。
 
-    以下のいずれかが成立する場合 True を返す。
-    - AskUserQuestion ツール呼び出しが含まれている
-    - テキストに ? または ？ または 「ですか。」が含まれている（位置は問わない）
+    以下のいずれかが成立する場合に真を返す。
+    - AskUserQuestionツール呼び出しが含まれている
+    - テキストに?または？または「ですか。」が含まれている（位置は問わない）
 
-    「ですか。」を含める理由:「この案でよいですか。」のように `?` を付けずに
+    「ですか。」を含める理由:「この案でよいですか。」のように`?`を付けずに
     ユーザー確認を求めるケースを拾うため。
 
     末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
-    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に `?` が来ず、
-    false positive でコミットを強行する挙動を避けるため。
+    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に`?`が来ず、
+    false positiveでコミットを強行する挙動を避けるため。
 
-    同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
-    1 ターンとして統合して判定する。transcript が未フラッシュで最新エントリが
-    存在しない場合の対処も含む `_iter_latest_assistant_messages` に走査を委譲する。
+    同一`message.id`を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
+    1ターンとして統合して判定する。走査の詳細は`_iter_latest_assistant_messages`を参照。
     """
     for message in _iter_latest_assistant_messages(transcript_path):
         content = message.get("content")
@@ -164,13 +163,12 @@ def _is_assistant_asking_question(transcript_path: str) -> bool:
 
 
 def _is_assistant_waiting(transcript_path: str) -> bool:
-    """直前のアシスタントターンが待機中を示す語を含んでいるかを確認する。
+    """直前のアシスタントターンが待機中を示す語を含む場合に真を返す。
 
-    `_WAITING_KEYWORDS` のいずれかを含むテキストブロックがあれば True を返す。
+    `_WAITING_KEYWORDS`のいずれかを含むテキストブロックがあれば真を返す。
     バックグラウンド待機・非同期処理待ちの誤発動を防ぐためのゲート。
 
-    マッチングは大文字小文字を無視する（`keyword.lower() in text.lower()`）。
-    英語キーワード「background」が「Background」「BACKGROUND」などにも一致する。
+    大文字小文字を区別しないため、英語キーワードは大小様々な表記に一致する。
     """
     for message in _iter_latest_assistant_messages(transcript_path):
         content = message.get("content")
@@ -190,11 +188,11 @@ def _is_assistant_waiting(transcript_path: str) -> bool:
 
 
 def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
-    """直前アシスタントターンの最後の tool_use が非同期待機系かを判定する。
+    """直前アシスタントターンの最後のtool_useが非同期待機系の場合に真を返す。
 
-    `_ASYNC_WAIT_TOOLS` に含まれるツール名、または `Bash` かつ
-    `input.run_in_background == true` の場合に True を返す。
-    バックグラウンド処理中の Stop hook 誤発動を防ぐためのゲート。
+    `_ASYNC_WAIT_TOOLS`に含まれるツール名、または`Bash`かつ
+    `input.run_in_background == true`の場合に真を返す。
+    バックグラウンド処理中のStop hook誤発動を防ぐためのゲート。
     """
     last_tool_use: dict | None = None
     for message in _iter_latest_assistant_messages(transcript_path):
@@ -206,9 +204,9 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
                 continue
             if block.get("type") == "tool_use":
                 last_tool_use = block
-        # 最初に得た（最新の）メッセージの tool_use のみ対象。
-        # ターン内で最後に出現した tool_use を使うため、
-        # メッセージを跨いで探さない。
+        # 最初に得た（最新の）メッセージのtool_useのみ対象。
+        # ターン内で最後に出現したtool_useを使うため、
+        # メッセージをまたいで探さない。
         if last_tool_use is not None:
             break
     if last_tool_use is None:
@@ -224,17 +222,17 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
 
 
 def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
-    """直前のアシスタントターンに属する message dict を新しい順に生成する。
+    """直前のアシスタントターンに属するmessage dictを新しい順に生成する。
 
-    以下の制約で 1 ターンを画定する。
+    以下の制約で1ターンを画定する。
     - sidechain（subagent）のエントリは除外する
-    - 同一 `message.id` を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
-      1 ターンとして統合する
-    - アシスタント以外のエントリ・異なる `message.id` のアシスタントエントリが
-      間に介在した時点でターン境界とみなし走査を終える
-    - 最大 3 エントリまでさかのぼる（それ以降は走査しない）
+    - 同一`message.id`を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
+      1ターンとして統合する
+    - アシスタント以外のエントリ・異なる`message.id`のアシスタントエントリが
+      間に介在した時点でターン境界とみなして走査を終える
+    - 最大3エントリまでさかのぼる
 
-    transcript 読み取りに失敗した場合は空のイテレーターを返す（安全側）。
+    transcript読み取りに失敗した場合は空のイテレーターを返す。
     """
     try:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
@@ -242,7 +240,7 @@ def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Ite
         return
     first_msg_id: str | None = None
     checked_count = 0
-    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出たか
+    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出た場合に真
     for line in reversed(lines):
         try:
             entry = json.loads(line)
@@ -250,11 +248,11 @@ def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Ite
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             if first_msg_id is not None:
-                # 別エントリが間に介在 → 同一ターンの探索終了
+                # 別エントリが間に介在 → 同一ターンの探索終了。
                 saw_non_assistant = True
             continue
         if saw_non_assistant:
-            # 直前のアシスタントエントリとの間に別エントリが介在 → 別ターン
+            # 直前のアシスタントエントリとの間に別エントリが介在 → 別ターン。
             return
         message = entry.get("message")
         if not isinstance(message, dict):
@@ -263,7 +261,7 @@ def _iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Ite
         if first_msg_id is None:
             first_msg_id = msg_id
         elif msg_id and first_msg_id and msg_id != first_msg_id:
-            # message.id が両方設定されており異なる → 別ターン
+            # message.idが両方設定されており異なる → 別ターン。
             return
         checked_count += 1
         if checked_count > 3:

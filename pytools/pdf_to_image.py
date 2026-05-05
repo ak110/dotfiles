@@ -21,7 +21,6 @@ def _main():
 
 
 def _convert(pdf_path: pathlib.Path, fmt: str) -> None:
-    """1つのPDFを画像に変換してページごとに保存する。"""
     images = convert_from_path(pdf_path)
     save_dir = pdf_path.parent / pdf_path.stem
     save_dir.mkdir(parents=True, exist_ok=True)

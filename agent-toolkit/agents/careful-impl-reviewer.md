@@ -35,6 +35,10 @@ background: true
   レビュー時には行わない。実装時の補助でありレビュー時の対象外。
 - 指摘は必ず`path:L123`形式の根拠を含める。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
+- プラグインのbump漏れを指摘する前に、対象プラグインの`.claude-plugin/plugin.json`について
+  `git log`相当で未プッシュ範囲のversion更新有無を確認し、
+  既にbumpが含まれているなら追加bumpを指摘しない（プラグインリポジトリのbump手順により
+  未プッシュ範囲は1bumpへ統合される運用のため）。
 
 ## 担当観点
 

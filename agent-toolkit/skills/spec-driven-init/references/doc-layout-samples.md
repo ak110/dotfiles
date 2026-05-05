@@ -1,7 +1,7 @@
 # 現行版ドキュメント構成サンプル集
 
-`spec-driven-init`で初版構成を決める際に参考にするサンプルを示す。
-各テンプレートの書式詳細は`agent-toolkit:spec-driven`の`references/templates.md`を踏襲する（本ファイルでは再掲しない）。
+初版構成を決める際に参考にするサンプル。
+各テンプレートの書式詳細は`agent-toolkit:spec-driven`の`references/templates.md`に従う。
 
 ## 共通方針
 
@@ -34,7 +34,7 @@ docs/
 
 運用ヒント:
 
-- 機能が増えて`overview.md`が肥大化したら「サンプル2: トピック追加構成」へ移行する
+- 機能が増えて`overview.md`が肥大化したら「サンプル2: トピック追加構成」へ切り替える
 - `design.md`と`overview.md`の境界が曖昧になりがちな場合は、
  「外部から確認できる仕様（overview）」「設計判断と理由（design）」で割る
 
@@ -62,7 +62,7 @@ docs/
 
 運用ヒント:
 
-- `_template.md`を置いておくと新規ファイル作成時の出発点になる（書式詳細は`spec-driven`の`templates.md`を踏襲）
+- `_template.md`を置いておくと新規ファイル作成時の出発点になる（書式詳細は`spec-driven`の`templates.md`に従う）
 - 横断/機能の判定に迷う仕様は、まず機能ドキュメント側に書き、複数機能で参照され始めた時点で
   横断ドキュメントへ抽出する
 - `docs/v{next}/`は`spec-driven`スキルが管理するため、本構成では設けない

@@ -32,7 +32,7 @@
 ## hadolint
 
 - `hadolint`でlintする。プロジェクト全体で抑止したいルールはDockerfile冒頭に
-  `# hadolint global ignore=DL3007`のように記載する
+  `# hadolint global ignore=DL3007`のように記述する
 - 個別行の抑止は直前行に`# hadolint ignore=DL3008`を置く
 
 ## 実行時設定

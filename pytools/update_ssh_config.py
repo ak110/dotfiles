@@ -15,14 +15,12 @@ from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
-# 鍵タイプ + base64データを抽出する正規表現
 # options内のクォート文字列に鍵タイプが含まれる場合でも、
 # base64データの長さ(32文字以上)で誤認を防ぐ
 _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})")
 
 
 def _main() -> None:
-    """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
 
@@ -64,7 +62,6 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
         logger.info(log_format.format_status(short, "変更なし"))
         return False
 
-    # 初回のみバックアップを作成
     backup_path = config_path.with_suffix(".bk")
     if config_path.exists() and not backup_path.exists():
         shutil.copy2(config_path, backup_path)
@@ -81,7 +78,6 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
         ファイル内容が変化したかどうか。
     """
     ak_path = ssh_dir / "authorized_keys"
-    # 既存ファイル読み込み
     existing_lines: list[str] = []
     known_keys: set[str] = set()
     if ak_path.exists():
@@ -100,7 +96,7 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
         for line in source.read_text(encoding="utf-8").splitlines():
             key_data = _extract_key_data(line)
             if key_data is None:
-                continue  # 空行・コメント行はスキップ
+                continue
             if key_data not in known_keys:
                 existing_lines.append(line)
                 known_keys.add(key_data)
@@ -109,7 +105,6 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
     if added == 0 and existing_lines == original_lines:
         logger.info(log_format.format_status(short, "変更なし (追加鍵 0 件)"))
         return False
-    # 出力
     content = "\n".join(existing_lines) + "\n" if existing_lines else ""
     claude_common.atomic_write_text(ak_path, content, mode=0o600)
     logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))

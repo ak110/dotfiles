@@ -6,7 +6,7 @@
 """Markdownの1行表示幅を半角換算で検査する独立スクリプト。
 
 writing-standards SKILL.mdの「1行の表示幅は半角換算で127までを上限」規約を機械化する。
-textlintやmarkdownlintには全角2・半角1で判定する既製ルールが無いため本スクリプトを設ける。
+textlintやmarkdownlintには全角2・半角1で判定する既製ルールがないため本スクリプトを設ける。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import sys
 import unicodedata
 
 _DEFAULT_WIDTH = 127
-# 先頭抜粋の最大半角換算幅。違反行を見やすく示すための切り詰め幅。
+# 先頭抜粋の最大半角換算幅。違反行を見やすく示す切り詰め幅。
 _EXCERPT_WIDTH = 60
 
 
@@ -49,7 +49,7 @@ def _main() -> int:
 
 
 def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
-    """1ファイルを検査し違反行のメッセージ一覧を返す。"""
+    """1ファイルを検査して違反行のメッセージ一覧を返す。"""
     text = path.read_text(encoding="utf-8")
     in_fence = False
     fence_marker = ""
@@ -75,13 +75,13 @@ def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
 
 
 def _is_fence(line: str) -> bool:
-    """フェンス開閉行かを判定する。先頭の連続スペースは無視する。"""
+    """フェンス開閉行かどうかを判定する。先頭の連続スペースは無視する。"""
     stripped = line.lstrip()
     return stripped.startswith("```") or stripped.startswith("~~~")
 
 
 def _display_width(text: str) -> int:
-    """半角換算の表示幅を返す。全角は2、半角は1とする。"""
+    """半角換算の表示幅を返す。全角を2、半角を1として計算する。"""
     return sum(_char_width(c) for c in text)
 
 
@@ -100,7 +100,7 @@ def _truncate(text: str, max_width: int) -> str:
 
 
 def _char_width(c: str) -> int:
-    """1文字の半角換算幅を返す。Ambiguousは全角端末を想定して2とする。"""
+    """1文字の半角換算幅を返す。Ambiguous文字は全角端末を想定して2とする。"""
     return 2 if unicodedata.east_asian_width(c) in ("F", "W", "A") else 1
 
 

@@ -1,7 +1,7 @@
 """ユーザー側PATHからシステム側PATHと重複するエントリを除去する（Windowsのみ）。
 
 WindowsのPATHはシステム（HKLM）側とユーザー（HKCU）側に分かれて格納される。
-重複登録はPATH肥大化や補完候補のノイズに繋がるため、本ステップで自動的に整理する。
+重複登録はPATH肥大化や補完候補のノイズにつながるため、本ステップで自動的に整理する。
 """
 
 import logging
@@ -49,14 +49,14 @@ def run() -> bool:
 
 
 def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str]]:
-    """ユーザー側 PATH からシステム側と重複するエントリを除いた文字列を返す。
+    """ユーザー側PATHからシステム側と重複するエントリを除いた文字列を返す。
 
     比較は各エントリを `ntpath.expandvars` で環境変数展開し `PureWindowsPath`
     で表記正規化したキーで行う。残すエントリは元の生値（プレースホルダーを含む）
     のまま保持する。
 
     Returns:
-        `(整理後の PATH 文字列, 削除した元エントリ一覧)` のタプル。
+        `(整理後のPATH文字列, 削除した元エントリ一覧)` のタプル。
     """
     system_keys = {key for key in (_normalize_entry(entry) for entry in _split(system_value)) if key}
     kept: list[str] = []
@@ -76,7 +76,7 @@ def _split(path_value: str) -> list[str]:
 
 
 def _normalize_entry(entry: str) -> str:
-    """比較キーを返す。
+    """比較用の正規化キーを返す。
 
     `ntpath.expandvars` で環境変数を展開し `PureWindowsPath` を通したうえで
     小文字化することで、区切り文字方向・末尾区切り・大文字小文字差を吸収する。

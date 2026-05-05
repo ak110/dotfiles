@@ -276,7 +276,7 @@ fi
 # claude の所在は環境によって異なる:
 #   - ~/.claude/local/claude: Claude Code 公式インストーラー (migrate-installer)
 #     が生成する固定パス。PATH には通っていないので絶対パスで呼ぶ
-#   - PATH 上の claude: npm global など別経路で入れた場合 (~/.local/bin/claude 等)
+#   - PATH 上の claude: npm global など別経路で導入した場合 (~/.local/bin/claude 等)
 # 両方に対応するため、ガードでは OR で判定し、本体では公式版があればそれを優先する。
 if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
     claude() {
