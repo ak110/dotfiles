@@ -47,8 +47,18 @@ jobs:
         with:
           path: dotfiles
       - name: ~/dotfiles に配置
-        shell: bash
-        run: mv dotfiles ~/dotfiles
+        # Windows runnerはチェックアウト先（D:）と $env:USERPROFILE（C:）が別ボリュームのため、
+        # GNU mvでクロスドライブ移動するとシンボリックリンクの再作成に失敗する。
+        # robocopyの /SL でsymlinkを保持しつつコピーし、元ディレクトリを削除して移動を実現する。
+        shell: pwsh
+        run: |
+          $src = "$env:GITHUB_WORKSPACE\dotfiles"
+          $dst = "$env:USERPROFILE\dotfiles"
+          robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
+          $rc = $LASTEXITCODE
+          if ($rc -ge 8) { exit $rc }
+          Remove-Item -Recurse -Force $src
+          exit 0
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
       - name: chezmoi インストール
         shell: bash
