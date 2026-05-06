@@ -12,7 +12,7 @@
 - chezmoi管理によるホーム配下（`~/.*`）の一括デプロイ
 - LinuxとWindowsの両対応
 - Python製コマンドラインツール群（`pytools`）の同梱
-- Claude Code用の共通ルール・プラグインの配布
+- Claude Code/Codex用の共通ルール・スキル・プラグインの配布
 - サプライチェーン攻撃対策設定のグローバル適用（uv/npmの公開待機、`pinact`によるGitHub Actionsのコミットハッシュ固定）
 
 ## 前提条件
@@ -65,5 +65,5 @@ update-dotfiles
 ## ドキュメント
 
 - [docs/index.md](docs/index.md) — ドキュメント入口
-- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（Claude Code設定・pytools・SSH・セキュリティ）
+- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
 - [docs/development/development.md](docs/development/development.md) — 開発者向け

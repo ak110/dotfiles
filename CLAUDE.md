@@ -24,6 +24,8 @@
 - `.claude`を含むディレクトリが3系統あり、配布元・デプロイ先・リポジトリ専用と役割が異なる
  （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）。
   指示の対象を必ず確認する。詳細は「固有差分」の「ディレクトリ構造の注意」参照
+- `.chezmoi-source/dot_codex/`はCodex用の配布元であり、`~/.codex/`へデプロイされる。
+  Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
   配布先`~/.claude/`配下のClaude Code設定系ファイルと同等として扱う。
   編集着手前に`agent-toolkit:writing-standards`スキルと、その`references/claude-common.md`を含む
@@ -140,6 +142,7 @@ version bumpは不要。編集が即時反映される。
 | `agent-toolkit/agents/`配下 | 全プロジェクト編集者 | スキル・サブエージェントの指示本体 |
 | `agent-toolkit/agents/`配下のfrontmatterコメント | dotfiles編集者 | 連携先や注意事項などの編集用メタ情報 |
 | `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者 | 常時自動ロードされる行動原則 |
+| `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
 | `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
 | `.chezmoi-source/dot_claude/`配下 | dotfiles利用者 | 配布先`~/.claude/`相当のClaude Code設定 |
 | `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
@@ -168,7 +171,7 @@ type判定の一般指針は`agent.md`の「Git操作時の確認チェックリ
 
 ### ディレクトリ構造の注意
 
-本リポジトリには`.claude`を含むディレクトリが3系統あり、取り違えると影響範囲が全く異なる事故につながる。
+本リポジトリにはClaude Code/Codex設定ディレクトリが複数あり、取り違えると影響範囲が全く異なる事故につながる。
 指示があった際はどの階層を指すか必ず確認する。
 
 - `.chezmoi-source/dot_claude/` — 配布元。chezmoiが`~/.claude/`にデプロイする。
@@ -177,6 +180,15 @@ type判定の一般指針は`agent.md`の「Git操作時の確認チェックリ
   ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`である
 - `.claude/`（本リポジトリルート）— dotfilesリポ自身のClaude Codeプロジェクト設定。
   配布対象外で、このリポジトリで作業するClaudeにしか影響しない
+- `.chezmoi-source/dot_codex/` — 配布元。chezmoiが`~/.codex/`にデプロイする。
+  `AGENTS.md`はCodex向けの薄いアダプターとして維持し、共有ルール・スキルは
+  `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へシンボリックリンクする
+- `AGENTS.md`（本リポジトリルート）— Codex用プロジェクト設定。
+  `CLAUDE.md`へのシンボリックリンクとし、プロジェクト固有知見は`CLAUDE.md`へ集約する
+- `.claude/`（本リポジトリルート）のプロジェクト専用ルール・スキルは配布対象外である。
+  dotfiles専用スキルをCodex側でも明示検出させたい場合は、
+  `.agents/skills`を`.claude/skills`へのシンボリックリンクにする。
+  `~/.codex/skills`にはグローバルに使うスキルだけを置く
 
 chezmoiはドットプレフィックスのディレクトリ（`.claude/`など）を自動無視するため`.chezmoi-source/dot_claude/`と衝突しない。
 

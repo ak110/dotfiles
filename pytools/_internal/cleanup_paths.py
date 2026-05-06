@@ -33,7 +33,11 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
             logger.debug("%s は存在しないためスキップ", target)
             continue
         try:
-            target.resolve().relative_to(base_resolved)
+            if target.is_symlink():
+                # シンボリックリンク自体の削除はリンク先を削除しないため、親ディレクトリだけを確認する。
+                target.parent.resolve().relative_to(base_resolved)
+            else:
+                target.resolve().relative_to(base_resolved)
         except ValueError:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue

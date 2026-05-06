@@ -47,6 +47,16 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # empirical-prompt-tuning を refine-prompt へ改名。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
     ],
+    Path.home() / ".codex": [
+        # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
+        # Claude Code向けMarkdownルールとは互換性がない。
+        # 共有ルールは .codex/agent-toolkit/rules へ移動済み。
+        Path("rules/agent-toolkit"),
+        # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills へ移動済み。
+        # ~/.codex/skills はグローバルに使うスキルだけを置く。
+        Path("skills/sync-platform-pair"),
+        Path("skills/sync-rule-ssot"),
+    ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ へ移動。
         # .chezmoi-source/bin/ 配布から除外済み。

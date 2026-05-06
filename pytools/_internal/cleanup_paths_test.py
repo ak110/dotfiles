@@ -39,18 +39,20 @@ class TestCleanupPaths:
         removed = cleanup_paths(tmp_path / "not_exists", (Path("a"),))
         assert removed == 0
 
-    def test_path_outside_base_is_skipped(self, tmp_path: Path):
-        """シンボリックリンク経由で base_dir 外を削除しようとしたらスキップする。"""
+    def test_symlink_outside_base_is_unlinked_without_deleting_target(self, tmp_path: Path):
+        """base_dir内のシンボリックリンクはリンク先を削除せずリンク自体だけ削除する。"""
         outside = tmp_path / "outside"
         outside.mkdir()
         (outside / "do_not_delete.txt").write_text("important", encoding="utf-8")
         base = tmp_path / "claude"
         base.mkdir()
-        (base / "linked").symlink_to(outside)
+        link = base / "linked"
+        link.symlink_to(outside)
 
-        cleanup_paths(base, (Path("linked"),))
+        removed = cleanup_paths(base, (Path("linked"),))
 
-        # シンボリックリンク先は base 外なので守られる
+        assert removed == 1
+        assert not link.exists()
         assert outside.exists()
         assert (outside / "do_not_delete.txt").exists()
 

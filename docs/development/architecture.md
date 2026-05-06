@@ -5,6 +5,10 @@
 
 - `.chezmoiroot`でソースステート（`.chezmoi-source/`）とプロジェクトインフラを分離する
 - `.chezmoi-source/`内がchezmoiのソースディレクトリ（`dot_`プレフィックス→`~/.*`にデプロイ）
+- `.chezmoi-source/dot_claude/` — Claude Code用のユーザー設定。`~/.claude/`へデプロイする
+- `.chezmoi-source/dot_codex/` — Codex用のユーザー設定。`~/.codex/`へデプロイする。
+  agent-toolkitのMarkdownルールとスキルは原則としてClaude Code側原本へのシンボリックリンクで共有する。
+  `~/.codex/rules`はCodexの承認ルール用ディレクトリのため、Markdownルール共有には使わない
 - `pytools/` — Pythonコマンドラインツール群（`uv tool install`でインストール）
 - `scripts/` — リポジトリ開発専用のスクリプト置き場（pre-commit/Makefileから呼ばれる。配布対象外）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
