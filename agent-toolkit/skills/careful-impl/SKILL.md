@@ -112,6 +112,8 @@ description: >
 修正再実装モードで`careful-implementer`へ委譲する。
 修正の再実装が完了したら検証タスクを新規起動して合格を確認し、
 直前の未プッシュコミットへ`git commit --amend`で統合する。
+amend完了後は`git status`で作業ツリーが空であることを確認する。
+pre-commit hookのstash処理で意図しない差分が残ることがあるため、取り残しを検出した場合は内容を確認して再amendする。
 
 ### 再レビュー（followupモード）
 
