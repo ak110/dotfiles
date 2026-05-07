@@ -39,8 +39,7 @@
 	recurseSubmodules = false
 	# pruneTags = true は意図的に無効化している。
 	# バックグラウンドの自動fetch（VS Code Git拡張など）が発火した際、
-	# リモートに存在しないローカル限定のタグ（tidy-unpushed-commitsスキルの退避タグなど）
-	# も併せて削除してしまう事故があったため。
+	# リモートに存在しないローカル限定のタグも併せて削除してしまう事故があったため。
 	# リモートで削除されたタグをローカルから削除したいときは
 	# 都度 `git fetch --prune-tags` を明示的に実行する。
 	all = true

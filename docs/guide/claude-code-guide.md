@@ -69,7 +69,7 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 
 ### 3. Claude Codeの推奨設定
 
-以下の設定を適用しておく。
+以下の設定を適用しておくのがおすすめ。
 
 #### `~/.claude/settings.json`
 
@@ -112,7 +112,6 @@ claude-plugins-officialから以下を導入。
 claude mcp add --scope=user codex codex mcp-server
 ```
 
-dotfiles利用者は`update-dotfiles`/`chezmoi apply`の後処理で自動登録される（既登録時はスキップ）。
 codex CLI自体のセットアップは別途実施。
 
 ## 構成と機能
@@ -135,7 +134,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `git log`に`--decorate`を自動挿入
 - `codex exec`実行前に未決事項の確認を促す
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
-- plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告（セッションあたり1回）
+- plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告
 - plan-modeスキル呼び出し済みのとき、`~/.claude/plans/*.md`の構成崩れを検査して警告
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 
@@ -148,7 +147,6 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/careful-impl` — 計画ファイルの`実装方式`が`careful-impl`の場合に呼び出す。
   サブエージェント分散実装と全コミット完了後の集約レビューを行う
-- `/tidy-unpushed-commits` — 未プッシュコミットのsquash・reorder・メッセージ書き直し
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

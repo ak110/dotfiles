@@ -91,7 +91,7 @@ description: >
 - ツールチェイン周りの修正の場合は以下のメンテナンスも確認する（気付きにくい）
   - `pyfltr/docs/guide/recommended.md`
   - `pyfltr/docs/guide/recommended-nonpython.md`
-- 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:tidy-unpushed-commits`の問題を
+- 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
   発見したらdotfiles側を修正する（マスター）
 - `docs/development/development.md`の「サプライチェーン攻撃対策」節は、
   Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする。
