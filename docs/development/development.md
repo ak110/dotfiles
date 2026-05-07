@@ -20,8 +20,8 @@ make setup-pwsh  # Ubuntu/Debian
 
 ```bash
 make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
-make update   # 依存アップグレード＋全チェック（pinactによるアクション更新含む）
-make test     # 全チェック
+make test     # 全チェック実行（これを通過すればコミット可能）
+make update   # 依存更新
 ```
 
 ## サプライチェーン攻撃対策

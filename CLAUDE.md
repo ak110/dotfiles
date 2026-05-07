@@ -9,10 +9,8 @@
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `uvx pyfltr run-for-agent`
-  - ドキュメントなどのみの変更の場合は省略可（pre-commitで実行されるため）
-  - テストコードの単体実行なども極力`uvx pyfltr run-for-agent <path>`を使う（pytestを直接呼び出さない）
-  - 修正後の再実行時は、対象ファイルや対象ツールを必要に応じて限定して実行する（最終検証はCIに委ねる前提）
-    - 例: `pyfltr run-for-agent --commands=mypy,ruff-check path/to/file`
+  - テストコードの単体実行なども極力`pyfltr run-for-agent <path>`を使う（直接呼び出さない）
+  - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
 
 ## アーキテクチャの参照先
 
