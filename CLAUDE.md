@@ -181,6 +181,11 @@ type判定の一般指針は`agent.md`の「Git操作時の確認チェックリ
 - `.chezmoi-source/dot_codex/` — 配布元。chezmoiが`~/.codex/`にデプロイする。
   `AGENTS.md`はCodex向けの薄いアダプターとして維持し、共有ルール・スキルは
   `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へシンボリックリンクする
+- `.chezmoi-source/dot_config/` — 配布元。chezmoiが`~/.config/`にデプロイする。
+  `git`・`uv`・`pyfltr`等のXDG準拠ツール設定を配布する。
+  ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは
+  `.chezmoi-source/dot_config/<tool>/`である。
+  配布先`~/.config/`配下を直接編集すると`chezmoi apply`で巻き戻る
 - `AGENTS.md`（本リポジトリルート）— Codex用プロジェクト設定。
   `CLAUDE.md`へのシンボリックリンクとし、プロジェクト固有知見は`CLAUDE.md`へ集約する
 - `.claude/`（本リポジトリルート）のプロジェクト専用ルール・スキルは配布対象外である。

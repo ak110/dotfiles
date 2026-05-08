@@ -69,6 +69,19 @@
   list（例: `[]`）を渡すと毎回初期要素として混入する。
   環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、
   `None`なら環境変数から初期化、それ以外はそのまま使う
+- `argparse`のオプションへ後から解決経路（環境変数・設定ファイル等）を追加する場合も、
+  `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する。
+  `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、
+  CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える。
+  既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
+  parse段階の型変換と既定値解決を分離する
+- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
+  `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで
+  `appauthor=False`を明示する（`appname`単独指定は不可）。
+  Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
+  配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる。
+  Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない。
+  全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
     - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため
@@ -113,6 +126,19 @@
   - `asyncio_mode = "strict"`を推奨（マーカーの付け忘れを検出できる）
   - テスト関数には`@pytest.mark.asyncio`を明示する
   - 非同期fixtureには`@pytest_asyncio.fixture`を使う（`@pytest.fixture` + `async def`では動作しない）
+
+### 環境変数・XDGディレクトリのテスト隔離
+
+環境変数フォールバックやXDG設定ファイル読み込みを行うCLIをテストする場合、
+テスト環境のホームディレクトリやXDG変数が漏れ込むと結果が不安定になる。
+
+- `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける。
+  対象は対応する独自環境変数・`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等、
+  `platformdirs`が参照し得る全変数を網羅する
+- 設定経路を1本でも漏らすと開発者ホームの実設定を読み込んでしまうため、
+  当該CLIの設定解決経路を洗い出してから一括で隔離するfixtureに集約する
+- 隔離fixtureは`autouse=True`で当該テストモジュールに適用するか、
+  `@pytest.mark.usefixtures(...)`で明示適用する
 
 ### ロギング出力の検証
 
