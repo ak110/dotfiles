@@ -23,17 +23,23 @@ _KEY_MAP: dict[str, str] = {
 
 
 def default_config_path() -> pathlib.Path:
-    """設定ファイルの既定パスを返す。
+    r"""設定ファイルの既定パスを返す。
 
     環境変数`CLAUDE_PLANS_VIEWER_CONFIG`が設定されていればそれを優先する
     （テスト容易性確保とユーザーの強制上書き用）。
-    未設定なら`platformdirs.user_config_dir("pytools")`配下の
-    `claude-plans-viewer.toml`を返す。
+    未設定なら`platformdirs.user_config_dir("pytools", appauthor=False)`配下の
+    `claude-plans-viewer.toml`を返す。Linuxでは
+    `~/.config/pytools/claude-plans-viewer.toml`、
+    Windowsでは`%LOCALAPPDATA%\pytools\claude-plans-viewer.toml`になる。
+
+    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
+    appauthorとしても付与され`%LOCALAPPDATA%\pytools\pytools\...`に
+    なる挙動を回避するため。
     """
     override = os.environ.get(ENV_CONFIG)
     if override:
         return pathlib.Path(override)
-    return pathlib.Path(platformdirs.user_config_dir("pytools")) / "claude-plans-viewer.toml"
+    return pathlib.Path(platformdirs.user_config_dir("pytools", appauthor=False)) / "claude-plans-viewer.toml"
 
 
 def load_config(path: pathlib.Path | None = None) -> dict[str, Any]:
