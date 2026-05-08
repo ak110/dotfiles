@@ -26,8 +26,8 @@
   Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
   配布先`~/.claude/`配下のClaude Code設定系ファイルと同等として扱う。
-  編集着手前に`agent-toolkit:writing-standards`スキルと、その`references/claude-common.md`を含む
-  必読リファレンスを参照する
+  編集着手前に`agent-toolkit:writing-standards`と`agent-toolkit:claude-code-standards`の両スキルを呼び出す。
+  後者のスキル配下の`references/claude-common.md`を含む必読リファレンスを参照する
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
   配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する

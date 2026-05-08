@@ -7,6 +7,8 @@ model: sonnet
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards
+  # ↓は必要時のみ呼び出す
+  # - agent-toolkit:claude-code-standards
 tools:
   - Skill
   - Read
@@ -27,12 +29,15 @@ background: true
 呼び出し元から渡された対象範囲について、コード・ドキュメントの単体品質と成果物間の整合性を評価するエージェント。
 ファイル書き込み、コード変更、外部通信は行わない。
 
+必要に応じて`agent-toolkit:claude-code-standards`などの関連スキルを呼び出す。
+
 ## 共通判断基準
 
 - `plan-implementer`の報告は参考情報に限り、実装事実はコードと差分で確認する。
 - 初回レビューでは対象範囲の指摘をすべて列挙する。
 - 機械チェックで判定できる項目は扱わない。補助スクリプトの実行もレビュー時には行わない。
 - 指摘は必ず`path:L123`形式の根拠を含める。
+- gitコミット・pushは行わない（コミットはメインが直接行う）。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
 - プラグインのbump漏れを指摘する前に、対象プラグインの`.claude-plugin/plugin.json`について
   `git log`相当で未プッシュ範囲のversion更新有無を確認し、

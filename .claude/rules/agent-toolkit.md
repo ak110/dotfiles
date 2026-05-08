@@ -56,6 +56,13 @@ paths:
 複数回bumpを試みる代わりに既存bumpへ統合する形で運用する。
 ただし既存bumpがPATCHで後続編集がMINOR相当の場合は`agent_toolkit_bump.py minor`で既存bumpを上書き格上げする。
 
+### plan modeでの取り扱い
+
+plan modeでの計画フェーズではbump要否や既存bumpとの差分を調査しない。
+種別（PATCH/MINOR/MAJOR）のみ`### エージェント判断`へ記述し、
+実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する。
+ツール側で既存bumpとの統合を吸収するため、計画フェーズで`git log`を確認する必要は無い。
+
 ### PATCH／MINOR／MAJORの使い分け
 
 - PATCH（`+0.0.1`）: 軽微な修正（メッセージ変更、スタイル調整、バグ修正、検出漏れの修正など）
@@ -136,7 +143,7 @@ flowchart TB
       T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
       CM -->|レビュー無し| END[完了]
       CM -->|レビュー有り・全コミット完了| R1[plan-spec-reviewer / plan-impl-reviewer<br/>初回モード並列・全体差分対象]
-      R1 -->|指摘あり<br/>メインが統合| T2[plan-implementer<br/>修正再実装]
+      R1 -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
       T2 --> CFix[メインがamend統合<br/>修正反映]
       CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>followupモード並列]
       R2 -->|missing / partial / regression| T2
@@ -153,7 +160,7 @@ flowchart TB
 
 `agent-toolkit`プラグインのhookは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
 パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`である。
-パス規則の一般論は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
+パス規則の一般論は`agent-toolkit/skills/claude-code-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節を参照する。
 
 フラグを追加・変更する際は本表を必ず更新し、書き込み元と読み取り元の対応関係を保つ。

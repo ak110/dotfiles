@@ -13,7 +13,7 @@
    プロジェクトの初期状態によらず一定の品質水準を維持する
 3. 知識の補完 — LLMの学習データに含まれない情報を補う。
    Claude Code関連の仕様は改訂が頻繁なため、
-   `writing-standards`スキル配下の`references/claude-*.md`で現行仕様を参照できるようにする。
+   `claude-code-standards`スキル配下の`references/claude-*.md`で現行仕様を参照できるようにする。
    個人製作のツール（pyfltr・pytilpackなど）はそもそも学習データに含まれないため、
    `pyfltr-usage`・`pytilpack-usage`等のスキルでモジュール構成・APIのリファレンスを提供する
 
@@ -149,11 +149,15 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 該当作業に着手したとき自動的にロードされる。手動で呼び出すこともできる。
 
 - `/coding-standards` — コードの新規作成・修正・レビュー時の品質基準とテスト方針
-- `/writing-standards` — ドキュメントやClaude Code設定系ファイルの品質基準
+- `/writing-standards` — Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
+- `/claude-code-standards` — Claude Code設定系ファイル
+ （`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連）固有の品質基準。
+  `writing-standards`と併用する
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/plan-impl` — `ExitPlanMode`直後、計画ファイルがある場合に呼び出す。
   実装・検証・コミットを実行し、計画ファイルの`レビュー方式`が`レビュー有り`の場合は
-  サブエージェント分散実装と全コミット完了後の集約レビューも行う
+  全コミット完了後の集約レビューも実施する。
+  実装サブエージェント委譲の判定指針はplan-implスキル本文に記載する
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

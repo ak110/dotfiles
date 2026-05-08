@@ -1,7 +1,7 @@
 """Claude Code agent-toolkit: LLM宛てメッセージ整形共通モジュール。"""
 
 # LLM宛てメッセージの共通サフィックス。
-# 詳細はskills/writing-standards/references/claude-hooks.mdを参照。
+# 詳細はskills/claude-code-standards/references/claude-hooks.mdを参照。
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 
 

@@ -78,7 +78,7 @@ flowchart LR
 - コメント・ログメッセージ・ドキュメント・コミットメッセージなど全ての文章を日本語で書く（プロジェクト方針が無い場合）
 - 対話型UI向けでも、LLMに直接渡るhook出力（`reason`・`additionalContext`・exit 2のstderr等）は
   プロジェクト方針で英語表記を固定する場合がある。
-  Claude Code関連の出力先別の方針は`agent-toolkit:writing-standards`スキルの
+  Claude Code関連の出力先別の方針は`agent-toolkit:claude-code-standards`スキルの
   `references/claude-hooks.md`の「メッセージの記述言語」節に従う
 - LLMエージェントの発話は応答本文・拡張思考がコンテキストへ残り後続生成の文体・言語へ影響するため、
   敬体や英語混在を避けて統制する

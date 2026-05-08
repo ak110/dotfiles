@@ -7,6 +7,7 @@ model: sonnet
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards
+  # - agent-toolkit:claude-code-standards
 tools:
   - Skill
   - Read
@@ -30,6 +31,8 @@ background: true
 計画ファイルや対象範囲などに従い、コード・ドキュメントの変更・検証を実施する。
 指示されていない設計変更や範囲外のファイル変更は行わない。
 
+必要に応じて`agent-toolkit:claude-code-standards`などの関連スキルを呼び出す。
+
 ## 判断基準
 
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない。
@@ -49,6 +52,7 @@ background: true
 - 警告抑制コメント（`# noqa`・`# type: ignore[...]`・`# pylint: disable=...`等）は最終手段とする。
   やむを得ず追加する場合は抑制理由をコメント本文に併記し、`unplanned`の`[即時相談候補]`としてメイン側へ報告する。
 - 正常完了時は`completed`を返す。
+- gitコミット・pushは行わない（コミットはメインが直接行う）。
 
 ## モデル別の昇格基準
 
