@@ -2,12 +2,13 @@
 name: writing-reviewer
 description: >
   ドラフト後の自然な日本語表現を検証するサブエージェント。
-  `agent-toolkit:careful-impl`不使用かつ`agent-toolkit:plan-mode`経由で計画ファイル合意済みの場合に、
+  `agent-toolkit:plan-impl`の`レビュー無し`かつ`agent-toolkit:plan-mode`経由で計画ファイル合意済みの場合に、
   `writing-standards`スキルの「ドラフト後検証」工程でメインエージェントから起動される。
 model: sonnet
 skills:
   - agent-toolkit:writing-standards
 tools:
+  - Skill
   - Read
   - Grep
   - Glob
@@ -16,7 +17,7 @@ user-invocable: false
 background: true
 # 編集時の注意点:
 # 対比集 references/tone-examples.md はコンテキスト汚染回避のため読み込まない。
-# careful-impl-reviewer と担当観点が重複しないよう、自然な日本語表現に観点を限定する。
+# plan-impl-reviewer と担当観点が重複しないよう、自然な日本語表現に観点を限定する。
 ---
 
 # writing-reviewer
@@ -35,7 +36,7 @@ background: true
 ## 担当観点
 
 自然な日本語表現の妥当性のみを評価する。
-コード単体品質・成果物間の整合性は`careful-impl-reviewer`の担当のため重複指摘しない。
+コード単体品質・成果物間の整合性は`plan-impl-reviewer`の担当のため重複指摘しない。
 
 - 自然な日本語表現の妥当性
 - 対象読者と文体の整合（エンドユーザー向け・開発者向け・LLMエージェント向け文書・LLMエージェントの発話で`styles.md`の方針に沿うか）

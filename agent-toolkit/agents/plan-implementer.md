@@ -1,29 +1,30 @@
 ---
-name: careful-implementer
+name: plan-implementer
 description: >
   タスク単位の実装または検証を担うサブエージェント。
-  `agent-toolkit:careful-impl`スキルの実装工程でメインから起動される。
+  親から指定されたプロンプトに従い実装または検証を行う。
 model: sonnet
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards
 tools:
+  - Skill
   - Read
-  - Edit
-  - Write
-  - Bash
   - Grep
   - Glob
+  - Bash
+  - Edit
+  - Write
 user-invocable: false
 background: true
 # 編集時の注意点:
-# このエージェントはspec-driven*, plan-mode, careful-implスキルなどを呼び出さないため、
+# このエージェントはspec-driven*, plan-mode, plan-implスキルなどを呼び出さないため、
 # それらの知識を持たないことに注意。
 # サブエージェント間の共通記述（## 共通判断基準など）は別コンテキスト実行のため統合しない
 # （統合するとコンテキスト汚染や指示の取りこぼしが発生する）。
 ---
 
-# careful-implementer
+# plan-implementer
 
 呼び出し元から渡されたタスクを実装または検証するエージェント。
 計画ファイルや対象範囲などに従い、コード・ドキュメントの変更・検証を実施する。

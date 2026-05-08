@@ -39,11 +39,11 @@ description: >
 
 ドラフト後検証はメインエージェントが起動条件に応じて使い分ける。
 
-- `agent-toolkit:careful-impl`使用時: `careful-impl-reviewer`が`writing-standards`観点を担うため、
+- `agent-toolkit:plan-impl`の`レビュー有り`使用時: `plan-impl-reviewer`が`writing-standards`観点を担うため、
   `writing-reviewer`を重複起動しない
-- `careful-impl`不使用かつ`agent-toolkit:plan-mode`経由で計画ファイル合意済みの場合:
-  プロジェクトにtextlint設定がある場合は`writing-reviewer`起動前にtextlintを単発実行する
- （例: `uvx pyfltr run-for-agent --commands=textlint <対象パス>`）。
+- `agent-toolkit:plan-impl`の`レビュー無し`使用時かつ`agent-toolkit:plan-mode`経由で計画ファイル合意済みの場合の追加手順。
+  textlint設定があれば`writing-reviewer`起動前にtextlintを単発実行する。
+  例: `uvx pyfltr run-for-agent --commands=textlint <対象パス>`
   `writing-reviewer`は機械チェック項目を扱わないため、textlint違反がpre-commitで初めて露見する事象を防ぐ。
   そのうえでメインエージェントから`writing-reviewer`サブエージェントをAgentツールで起動する。
   対象範囲（ファイル・差分）と計画ファイルパスをプロンプトで渡す。

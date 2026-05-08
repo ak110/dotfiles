@@ -105,7 +105,7 @@ paths:
 
 - `spec-driven`（任意）: 大規模バージョンアップを想定した次版ドキュメント管理とワークフロー誘導
 - `plan-mode`: 計画ファイルの作成・codexレビュー
-- `careful-impl`: 計画合意後のセルフレビュー付き計画実行（`実装方式: careful-impl`の計画でのみ起動）
+- `plan-impl`: 計画合意後の計画実行。`レビュー方式: レビュー有り`の計画ではサブエージェントによる集約レビューも実施する
 
 `spec-driven`が有効な場合は同スキルの誘導に従い、それ以外は直接`plan-mode`から始める。
 
@@ -120,8 +120,9 @@ paths:
   条件付き表現（「`～`設定が有効な場合、」など）で書く
 
 `plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過する。
-計画ファイルの`実装方式`項目が`careful-impl`の場合のみ`careful-impl`へ引き継がれる
-（`careful-impl不使用`の場合はメインが計画ファイルの「検証手順」「コミット方針」に従って直接実装・検証・コミットを行う）。
+通過後は常に`plan-impl`スキルへ引き継ぐ。
+計画ファイルの`レビュー方式`項目が`レビュー有り`の場合は集約レビュー工程も実施し、
+`レビュー無し`の場合は実装・検証・コミットのみで完了する。
 引き継ぎ時にコンテキストが途絶している前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
 
 ```mermaid
@@ -130,19 +131,20 @@ flowchart TB
     subgraph PM["plan-mode スキル"]
       P[計画ファイル作成<br/>codexレビュー]
     end
-    subgraph PI["careful-impl スキル（実装方式が careful-impl の場合のみ）"]
+    subgraph PI["plan-impl スキル"]
       direction TB
-      T[careful-implementer<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
-      CM -->|全コミット完了| R1[careful-spec-reviewer / careful-impl-reviewer<br/>初回モード並列・全体差分対象]
-      R1 -->|指摘あり<br/>メインが統合| T2[careful-implementer<br/>修正再実装]
+      T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
+      CM -->|レビュー無し| END[完了]
+      CM -->|レビュー有り・全コミット完了| R1[plan-spec-reviewer / plan-impl-reviewer<br/>初回モード並列・全体差分対象]
+      R1 -->|指摘あり<br/>メインが統合| T2[plan-implementer<br/>修正再実装]
       T2 --> CFix[メインがamend統合<br/>修正反映]
-      CFix --> R2[careful-spec-reviewer / careful-impl-reviewer<br/>followupモード並列]
+      CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>followupモード並列]
       R2 -->|missing / partial / regression| T2
-      R1 -->|指摘なし| END[完了]
+      R1 -->|指摘なし| END
       R2 -->|対応済み| END
     end
     SD -.->|作業テーマごとに誘導| PM
-    PM -->|ExitPlanMode<br/>実装方式が careful-impl の場合のみ| PI
+    PM -->|ExitPlanMode| PI
 
     classDef sd stroke-dasharray: 4 2
 ```
