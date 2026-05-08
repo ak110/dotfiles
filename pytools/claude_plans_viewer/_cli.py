@@ -9,6 +9,7 @@ import pathlib
 import signal
 import stat
 import sys
+from typing import Any
 
 import hypercorn.asyncio
 import hypercorn.config
@@ -16,7 +17,7 @@ import quart
 import watchdog.observers
 
 from pytools._internal.cli import enable_completion
-from pytools.claude_plans_viewer import _app, _local, _state
+from pytools.claude_plans_viewer import _app, _config, _local, _state
 
 logger = logging.getLogger(__name__)
 
@@ -35,40 +36,81 @@ ENV_REMOTE_HOSTS = "CLAUDE_PLANS_VIEWER_REMOTE_HOSTS"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """コマンドライン引数を解析する。
 
-    各オプションの既定値は環境変数経由で解決する。
-    優先順位はCLI引数 > 環境変数 > 組み込み既定値。
+    解決の優先順位は「CLI引数 > 環境変数 > 設定ファイル > 組み込み既定値」。
+    設定ファイルは`_config.load_config()`が返すsnake_case辞書を採用する。
+    TOML構文エラーは`_config.load_config()`が`ValueError`を送出する。
     """
-    parser = argparse.ArgumentParser(description="Serve ~/.claude/plans Markdown via local HTTP.")
+    parser = argparse.ArgumentParser(
+        description="Serve ~/.claude/plans Markdown via local HTTP.",
+        epilog=(f"設定ファイル: 既定 {_config.default_config_path()}、環境変数 {_config.ENV_CONFIG} で上書き可。"),
+    )
     parser.add_argument(
         "--root",
-        default=os.environ.get(ENV_ROOT, DEFAULT_ROOT),
-        help=f"Markdownのルートディレクトリ（環境変数 {ENV_ROOT}、既定: {DEFAULT_ROOT}）",
+        default=os.environ.get(ENV_ROOT),
+        help=(f"Markdownのルートディレクトリ（環境変数 {ENV_ROOT}、設定ファイルからも参照、既定: {DEFAULT_ROOT}）"),
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get(ENV_HOST, DEFAULT_HOST),
-        help=f"bindアドレス（環境変数 {ENV_HOST}、既定: {DEFAULT_HOST}）",
+        default=os.environ.get(ENV_HOST),
+        help=f"bindアドレス（環境変数 {ENV_HOST}、設定ファイルからも参照、既定: {DEFAULT_HOST}）",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get(ENV_PORT, DEFAULT_PORT)),
-        help=f"ポート（環境変数 {ENV_PORT}、既定: {DEFAULT_PORT}）",
+        default=os.environ.get(ENV_PORT),
+        help=f"ポート（環境変数 {ENV_PORT}、設定ファイルからも参照、既定: {DEFAULT_PORT}）",
     )
     parser.add_argument(
         "--remote-host",
         action="append",
         default=None,
         metavar="HOST",
-        help=(f"SSH経由で監視するリモートホスト（複数指定可、`user@host`形式可、環境変数 {ENV_REMOTE_HOSTS} はコロン区切り）"),
+        help=(
+            f"SSH経由で監視するリモートホスト（複数指定可、`user@host`形式可、"
+            f"環境変数 {ENV_REMOTE_HOSTS} はコロン区切り、設定ファイルからも参照）"
+        ),
     )
     enable_completion(parser)
     args = parser.parse_args(argv)
-    # `action="append"`はCLI未指定時にNone固定のため、ここで環境変数→既定値の順に解決する。
-    if args.remote_host is None:
-        env_hosts = os.environ.get(ENV_REMOTE_HOSTS, "")
-        args.remote_host = [h for h in env_hosts.split(":") if h] if env_hosts else []
+    config = _config.load_config()
+    _resolve_defaults(args, config)
     return args
+
+
+def _resolve_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    """`args`のうち未設定の項目を「設定ファイル → 組み込み既定値」の順で補完する。
+
+    `argparse`の`default`には環境変数の値だけを渡しているため、CLI引数・環境変数の
+    いずれも未指定だった項目は`None`で残る。本関数はその欠落を設定ファイル値で
+    補い、最後に組み込み既定値へフォールバックする。`--port`はCLI引数経由なら
+    `argparse`の`type=int`で`int`化済みだが、環境変数経由（`str`）と
+    設定ファイル経由（TOMLの`int`）双方の経路を統一するため最終段階でも
+    `int()`を適用する。
+    """
+    if args.root is None:
+        args.root = config.get("root", DEFAULT_ROOT)
+    if args.host is None:
+        args.host = config.get("host", DEFAULT_HOST)
+    if args.port is None:
+        args.port = config.get("port", DEFAULT_PORT)
+    args.port = int(args.port)
+    args.remote_host = _resolve_remote_hosts(args.remote_host, config.get("remote_hosts"))
+
+
+def _resolve_remote_hosts(cli_value: list[str] | None, config_value: Any) -> list[str]:
+    """`--remote-host`の最終値を解決する。
+
+    `action="append"`はCLI未指定時にNone固定となるため、ここで
+    「環境変数（コロン区切り）→ 設定ファイル（リスト）→ 空リスト」の順に解決する。
+    """
+    if cli_value is not None:
+        return cli_value
+    env_hosts = os.environ.get(ENV_REMOTE_HOSTS, "")
+    if env_hosts:
+        return [h for h in env_hosts.split(":") if h]
+    if isinstance(config_value, list):
+        return [str(h) for h in config_value]
+    return []
 
 
 async def serve(app: quart.Quart, host: str, port: int) -> None:
@@ -154,7 +196,11 @@ def _main(argv: list[str] | None = None) -> int:
     # `propagate`は既定でTrueのためrootの`basicConfig`ハンドラーへも伝搬し二重出力になる。
     # hypercorn側のフォーマット（タイムスタンプ・PID付き）を活かすため、伝搬を止める。
     logging.getLogger("hypercorn.error").propagate = False
-    args = parse_args(argv)
+    try:
+        args = parse_args(argv)
+    except ValueError as e:
+        logger.error("設定エラー: %s", e)
+        return 1
     root = pathlib.Path(args.root).expanduser().resolve()
     if not root.is_dir():
         logger.error("ディレクトリが見つかりません: %s", root)

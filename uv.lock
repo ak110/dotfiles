@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-04T13:15:03.167197779Z"
+exclude-newer = "2026-05-07T03:46:37.204683848Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1445,6 +1445,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pdf2image" },
     { name = "pillow" },
+    { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pytilpack", extra = ["quart"] },
@@ -1476,6 +1477,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "pdf2image" },
     { name = "pillow" },
+    { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.46.0" },

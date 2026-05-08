@@ -1,0 +1,7 @@
+# claude-plans-viewer の設定ファイル
+# euryale 限定で配布される（配布制御は .chezmoi-source/.chezmoiignore で行う）
+# 配布先 (~/.config/pytools/claude-plans-viewer.toml) を直接編集すると
+# 次回 `chezmoi apply` で上書きされるため、編集する場合は
+# .chezmoi-source/dot_config/pytools/claude-plans-viewer.toml を編集する。
+host = "localhost"
+remote-hosts = ["circe", "stheno"]

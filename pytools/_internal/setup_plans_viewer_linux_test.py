@@ -47,10 +47,15 @@ def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[st
     return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
 
 
-def test_unit_content_binds_to_localhost():
-    """ユニット本文が localhost にバインドし、外部 IP を直書きしないこと。"""
-    assert "--host=localhost" in _UNIT_CONTENT
+def test_unit_excludes_host_specific_args():
+    """ユニット本文にホスト固有の引数（待受アドレス・リモートホスト）と外部 IP を直書きしないこと。
+
+    待受アドレス・リモートホストは `~/.config/pytools/claude-plans-viewer.toml`
+    経由で与える設計のため、unit 側には `--host=` も `--remote-host=` も含まない。
+    """
     assert "192.168." not in _UNIT_CONTENT
+    assert "--host=" not in _UNIT_CONTENT
+    assert "--remote-host=" not in _UNIT_CONTENT
 
 
 class TestRunPlatformGuard:

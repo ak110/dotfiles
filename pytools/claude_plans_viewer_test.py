@@ -17,7 +17,7 @@ import pytest
 import watchdog.events
 from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
-from pytools.claude_plans_viewer import _app, _assets, _cli, _local, _remote, _state
+from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _local, _remote, _state
 
 # `schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
 # debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
@@ -254,11 +254,30 @@ class TestPwaAssets:
         assert 'addEventListener("fetch"' not in sw_js
 
 
+@pytest.fixture(name="_parse_args_isolate_env")
+def _parse_args_isolate_env_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """`parse_args`関連テスト用の環境隔離。
+
+    `CLAUDE_PLANS_VIEWER_CONFIG`を`tmp_path / "config.toml"`（未作成）に向け、
+    既存の`CLAUDE_PLANS_VIEWER_*`環境変数を解除する。これにより配布先の
+    `~/.config/pytools/claude-plans-viewer.toml`や利用者環境の環境変数の
+    影響を受けず、テストが期待する解決経路を通せる。
+    """
+    monkeypatch.setenv(_config.ENV_CONFIG, str(tmp_path / "config.toml"))
+    monkeypatch.delenv(_cli.ENV_ROOT, raising=False)
+    monkeypatch.delenv(_cli.ENV_HOST, raising=False)
+    monkeypatch.delenv(_cli.ENV_PORT, raising=False)
+    monkeypatch.delenv(_cli.ENV_REMOTE_HOSTS, raising=False)
+
+
+@pytest.mark.usefixtures("_parse_args_isolate_env")
 class TestParseArgs:
     """_parse_args の環境変数フォールバック検証。
 
     「CLI引数 > 環境変数 > 組み込み既定値」の優先順位を固定するため、
     monkeypatch で環境変数を明示的に設定/解除した上で解決結果を検査する。
+    設定ファイル経由の影響を排除するため、module-level fixture
+    `_parse_args_isolate_env`で`CLAUDE_PLANS_VIEWER_CONFIG`を未作成パスへ向ける。
     """
 
     def test_defaults_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
@@ -315,6 +334,145 @@ class TestParseArgs:
         assert args.host == "127.0.0.1"
         assert args.port == 54321
         assert args.remote_host == ["cli1", "cli2"]
+
+
+@pytest.mark.usefixtures("_parse_args_isolate_env")
+class TestParseArgsConfigFile:
+    """設定ファイル経由の解決と優先順位（CLI引数 > 環境変数 > 設定ファイル > 既定値）を検証する。
+
+    全テストで`CLAUDE_PLANS_VIEWER_CONFIG`を`tmp_path`配下に向け、
+    環境変数群も`monkeypatch`で隔離する（共通fixture`_parse_args_isolate_env`を参照）。
+    設定ファイルのキーはkebab-case（`remote-hosts`）であり、
+    `_config.load_config`がsnake_caseへ正規化する。
+    """
+
+    def test_missing_config_falls_back_to_defaults(self, tmp_path: Path):
+        """設定ファイル不在時は組み込み既定値を採用する。"""
+        # `_parse_args_isolate_env`が指す`tmp_path / "config.toml"`は未作成のため不在経路を通る。
+        assert not (tmp_path / "config.toml").exists()
+
+        args = _cli.parse_args([])
+
+        assert args.root == _cli.DEFAULT_ROOT
+        assert args.host == _cli.DEFAULT_HOST
+        assert args.port == _cli.DEFAULT_PORT
+        assert args.remote_host == []
+
+    def test_config_file_values_applied(self, tmp_path: Path):
+        """設定ファイルの値が反映される（kebab-caseキーがsnake_caseへ正規化される）。"""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'root = "/tmp/plans-config"\nhost = "127.0.0.5"\nport = 30000\nremote-hosts = ["confhost1", "user@confhost2"]\n',
+            encoding="utf-8",
+        )
+
+        args = _cli.parse_args([])
+
+        assert args.root == "/tmp/plans-config"
+        assert args.host == "127.0.0.5"
+        assert args.port == 30000
+        assert args.remote_host == ["confhost1", "user@confhost2"]
+
+    def test_env_overrides_config_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        """環境変数は設定ファイルより優先する。"""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'root = "/tmp/plans-config"\nhost = "127.0.0.5"\nport = 30000\nremote-hosts = ["confhost"]\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv(_cli.ENV_ROOT, "/tmp/plans-env")
+        monkeypatch.setenv(_cli.ENV_HOST, "127.0.0.7")
+        monkeypatch.setenv(_cli.ENV_PORT, "31000")
+        monkeypatch.setenv(_cli.ENV_REMOTE_HOSTS, "envhost1:envhost2")
+
+        args = _cli.parse_args([])
+
+        assert args.root == "/tmp/plans-env"
+        assert args.host == "127.0.0.7"
+        assert args.port == 31000
+        assert args.remote_host == ["envhost1", "envhost2"]
+
+    def test_cli_overrides_config_file(self, tmp_path: Path):
+        """CLI引数は設定ファイルより優先する。"""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'root = "/tmp/plans-config"\nhost = "127.0.0.5"\nport = 30000\nremote-hosts = ["confhost"]\n',
+            encoding="utf-8",
+        )
+
+        args = _cli.parse_args(
+            [
+                "--root",
+                "/tmp/plans-cli",
+                "--host",
+                "127.0.0.9",
+                "--port",
+                "32000",
+                "--remote-host",
+                "clihost",
+            ]
+        )
+
+        assert args.root == "/tmp/plans-cli"
+        assert args.host == "127.0.0.9"
+        assert args.port == 32000
+        assert args.remote_host == ["clihost"]
+
+    def test_unknown_key_logs_warning_and_is_ignored(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """未知キーは警告ログを記録して無視する（typo検出のため）。"""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'root = "/tmp/plans-config"\nunknown-key = "ignored"\n',
+            encoding="utf-8",
+        )
+
+        with caplog.at_level("WARNING", logger=_config.logger.name):
+            args = _cli.parse_args([])
+
+        assert args.root == "/tmp/plans-config"
+        assert any(record.levelname == "WARNING" and "unknown-key" in record.message for record in caplog.records), (
+            caplog.records
+        )
+
+    def test_remote_hosts_non_list_logs_warning_and_is_ignored(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """`remote-hosts`が非リストの場合は警告ログを記録して無視する。"""
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            'remote-hosts = "single"\n',
+            encoding="utf-8",
+        )
+
+        with caplog.at_level("WARNING", logger=_config.logger.name):
+            args = _cli.parse_args([])
+
+        assert args.remote_host == []
+        assert any(record.levelname == "WARNING" and "remote-hosts" in record.message for record in caplog.records), (
+            caplog.records
+        )
+
+    def test_invalid_toml_raises_value_error(self, tmp_path: Path):
+        """TOML構文エラーは`ValueError`を送出して早期失敗する。"""
+        config_path = tmp_path / "config.toml"
+        # 閉じ括弧のないリストは`tomllib`が`TOMLDecodeError`を送出する。
+        config_path.write_text("host = [unterminated\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="設定ファイルのTOMLが不正です"):
+            _cli.parse_args([])
+
+    def test_env_config_path_redirects_load_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        """`CLAUDE_PLANS_VIEWER_CONFIG`で読み込み先を切り替えられる。"""
+        primary = tmp_path / "primary.toml"
+        primary.write_text('root = "/tmp/plans-primary"\n', encoding="utf-8")
+        alternate = tmp_path / "alternate.toml"
+        alternate.write_text('root = "/tmp/plans-alternate"\n', encoding="utf-8")
+
+        monkeypatch.setenv(_config.ENV_CONFIG, str(primary))
+        args_primary = _cli.parse_args([])
+        assert args_primary.root == "/tmp/plans-primary"
+
+        monkeypatch.setenv(_config.ENV_CONFIG, str(alternate))
+        args_alternate = _cli.parse_args([])
+        assert args_alternate.root == "/tmp/plans-alternate"
 
 
 class TestIndexHtml:

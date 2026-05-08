@@ -22,3 +22,8 @@ post-apply-windows.ps1
 {{ if not (has (lower .chezmoi.hostname) (list "circe" "circe-container")) }}
 .config/pyfltr/config.toml
 {{ end }}
+
+# claude-plans-viewer の設定ファイル: euryale でのみ配布する
+{{ if ne (lower .chezmoi.hostname) "euryale" }}
+.config/pytools/claude-plans-viewer.toml
+{{ end }}

@@ -21,7 +21,10 @@ _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVIC
 
 # unit ファイル本文。ExecStart は systemd specifier %h を使い、
 # post_apply 実行時の Path.home() を埋め込まない。
-# bind は localhost に固定し、外部公開は逆プロキシ等の前段へ委ねる。
+# 待受アドレス・リモートホストはホスト固有値であり、
+# `~/.config/pytools/claude-plans-viewer.toml` 経由で指定する。
+# 当該設定ファイルは chezmoi が `_TARGET_HOSTNAME` (euryale) 限定で配布するため、
+# 本モジュールが対応するホストと配布対象ホストが一致する。
 _UNIT_CONTENT = """\
 [Unit]
 Description=Claude plans viewer
@@ -29,7 +32,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/claude-plans-viewer --host=localhost --remote-host=circe --remote-host=stheno
+ExecStart=%h/.local/bin/claude-plans-viewer
 Restart=on-failure
 RestartSec=5
 
