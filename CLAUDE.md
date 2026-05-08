@@ -128,6 +128,8 @@ version bumpは不要。編集が即時反映される。
 - dotfiles利用者: 本リポジトリ（chezmoiソース・`bin`・`pytools`等）を自分の環境にインストールして使う人
 - agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人。
   dotfiles利用者を含むがそれ以外もいる
+  - 配布ルール（`~/.claude/rules/agent-toolkit/`）は標準のインストールルートでプラグインと同時に配置されるため、
+    配布ルールも導入済みである前提で記述してよい
 - 全プロジェクト編集者: dotfilesを含むあらゆるプロジェクトで編集作業をするコーディングエージェント。
   配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント。
