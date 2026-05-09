@@ -155,6 +155,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
   `writing-standards`と併用する
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/plan-impl` — `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
+- `/careful-review` — 計画ファイルや対象範囲を指定して集約レビュー工程を実行する。
+  `/plan-impl`からの自動起動と、対象範囲を引数に指定する手動起動の双方に対応する
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

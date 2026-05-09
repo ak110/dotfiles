@@ -36,6 +36,9 @@ background: true
 ## 判断基準
 
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない。
+- `agent-toolkit/skills/writing-standards/references/tone-examples.md`と
+  `agent-toolkit/scripts/_colloquial_words.txt`は当該ファイルを編集対象とする場合のみ読み込む。
+  それ以外の編集ではメイン側からの指示が無くても独自に読み込まない（コンテキスト汚染を回避するため）。
 - タスク範囲外のファイル変更が必要な場合は`needs_escalation`を返す。
 - ドキュメントへの記述追加・修正時は、参照しているシンボル名・パス・設定キー・既定値・挙動仕様が
   現行実装と一致するか、追記対象のファイルから1段階遡って確認してから記述する。

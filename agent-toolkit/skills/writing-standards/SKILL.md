@@ -37,18 +37,30 @@ Claude Code設定ファイル（`CLAUDE.md`・`.claude/rules/`・`.claude/skills
 
 ### ドラフト後検証
 
-ドラフト後検証はメインエージェントが起動条件に応じて使い分ける。
+ドラフト後検証は`agent-toolkit:careful-review`スキルへ集約する。
+`agent-toolkit:plan-impl`の`レビュー有り`使用時は同スキルから自動的にcareful-reviewが呼び出される。
+それ以外の場合は`/agent-toolkit:careful-review <対象範囲>`で手動起動する。
 
-- `agent-toolkit:plan-impl`の`レビュー有り`使用時: `plan-impl-reviewer`が`writing-standards`観点を担うため、
-  `writing-reviewer`を重複起動しない
-- `agent-toolkit:plan-impl`の`レビュー無し`使用時かつ`agent-toolkit:plan-mode`経由で計画ファイル合意済みの場合の追加手順。
-  textlint設定があれば`writing-reviewer`起動前にtextlintを単発実行する。
-  例: `uvx pyfltr run-for-agent --commands=textlint <対象パス>`
-  `writing-reviewer`は機械チェック項目を扱わないため、textlint違反がpre-commitで初めて露見する事象を防ぐ。
-  そのうえでメインエージェントから`writing-reviewer`サブエージェントをAgentツールで起動する。
-  対象範囲（ファイル・差分）と計画ファイルパスをプロンプトで渡す。
-  詳細仕様は`writing-reviewer`の本文（特に出力節）に従う
-- `plan-mode`未経由の軽微編集（誤字修正・1〜数行の文言調整）では起動しない
+textlint設定がある場合は、careful-review起動前にtextlintを単発実行して機械チェック違反を解消する。
+
+```sh
+uvx pyfltr run-for-agent --commands=textlint <対象パス>
+```
+
+careful-review経由のレビューは機械チェック項目を扱わないため、事前のtextlint実行で
+pre-commitで初めて違反が露見する事象を防ぐ。
+
+`plan-mode`未経由の軽微編集（誤字修正・1〜数行の文言調整）ではcareful-reviewを起動しない。
+
+### 対比集と辞書ファイルのアクセスポリシー
+
+コンテキスト汚染を避けるため、以下のファイルはメインエージェントから直接Readしない。
+
+- `agent-toolkit/skills/writing-standards/references/tone-examples.md`
+- `agent-toolkit/scripts/_colloquial_words.txt`
+
+確認が必要な場合はExploreサブエージェント経由で参照する。
+修正が必要な場合は`plan-implementer`経由で行う。
 
 ## 構成・構造
 

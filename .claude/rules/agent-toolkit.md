@@ -67,16 +67,21 @@ flowchart TB
       direction TB
       T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
       CM -->|レビュー無し| END[完了]
-      CM -->|レビュー有り・全コミット完了| R1[plan-spec-reviewer / plan-impl-reviewer<br/>初回モード並列・全体差分対象]
-      R1 -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
-      T2 --> CFix[メインがamend統合<br/>修正反映]
+      CM -->|レビュー有り・全コミット完了| CR
+    end
+    subgraph CRS["careful-review スキル"]
+      direction TB
+      CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋自然な日本語表現<br/>初回モード並列・全体差分対象]
+      CR -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
+      T2 --> CFix[メインがコミット統合<br/>amend or 新規コミット]
       CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>followupモード並列]
       R2 -->|missing / partial / regression| T2
-      R1 -->|指摘なし| END
+      CR -->|指摘なし| END
       R2 -->|対応済み| END
     end
     SD -.->|作業テーマごとに誘導| PM
     PM -->|ExitPlanMode| PI
+    User[ユーザー手動起動] -.->|/agent-toolkit:careful-review| CR
 
     classDef sd stroke-dasharray: 4 2
 ```
