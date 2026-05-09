@@ -154,10 +154,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
  （`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連）固有の品質基準。
   `writing-standards`と併用する
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
-- `/plan-impl` — `ExitPlanMode`直後、計画ファイルがある場合に呼び出す。
-  実装・検証・コミットを実行し、計画ファイルの`レビュー方式`が`レビュー有り`の場合は
-  全コミット完了後の集約レビューも実施する。
-  実装サブエージェント委譲の判定指針はplan-implスキル本文に記載する
+- `/plan-impl` — `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

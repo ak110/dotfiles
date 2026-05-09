@@ -14,7 +14,7 @@ STYLES_TEMPLATE = "# 記述スタイル\n"
 
 def _setup_template(tmp_path: Path) -> Path:
     """テンプレートディレクトリを作成し、配布対象ファイルを配置する。"""
-    template_dir = tmp_path / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
+    template_dir = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
     template_dir.mkdir(parents=True)
     (template_dir / "agent.md").write_text(AGENT_TEMPLATE, encoding="utf-8")
     (template_dir / "styles.md").write_text(STYLES_TEMPLATE, encoding="utf-8")

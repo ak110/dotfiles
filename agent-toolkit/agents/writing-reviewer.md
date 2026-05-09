@@ -8,7 +8,6 @@ model: sonnet
 skills:
   - agent-toolkit:writing-standards
 tools:
-  - Skill
   - Read
   - Grep
   - Glob
@@ -16,8 +15,7 @@ tools:
 user-invocable: false
 background: true
 # 編集時の注意点:
-# 対比集 references/tone-examples.md はコンテキスト汚染回避のため読み込まない。
-# plan-impl-reviewer と担当観点が重複しないよう、自然な日本語表現に観点を限定する。
+# plan-impl-reviewerと担当観点が重複しないよう、自然な日本語表現に観点を限定する。
 ---
 
 # writing-reviewer
@@ -25,12 +23,10 @@ background: true
 呼び出し元から渡された対象範囲について、自然な日本語表現の妥当性を評価するエージェント。
 ファイル書き込み、コード変更、外部通信は行わない。
 
-必要に応じて`agent-toolkit:claude-code-standards`などの関連スキルを呼び出す。
-
 ## 共通判断基準
 
 - 呼び出し元から渡された対象範囲のみを評価する。
-- 対比集`references/tone-examples.md`は読み込まない。
+- 対比集`references/tone-examples.md`はコンテキスト汚染回避のため読み込まない。
 - 機械チェックで判定できる項目（口語表現辞書・行幅など）は扱わない。補助スクリプトの実行もレビュー時には行わない。
 - 指摘は必ず`path:L123`形式の根拠を含める。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
@@ -46,7 +42,6 @@ background: true
 
 ## 出力
 
-計画ファイルパスと対象範囲は呼び出し元プロンプトで渡される。
 指摘リスト本文以外の前置き・確認過程の説明・全体サマリーは出力に含めない。
 出力は指摘行（または`指摘なし`）のみで完結させる。
 

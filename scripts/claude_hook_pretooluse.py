@@ -339,7 +339,7 @@ def _check_dotfiles_specific_names(
 ) -> tuple[str | None, str | None]:
     """agent-toolkit 配布物への dotfiles 固有名混入を検出する。
 
-    対象範囲は `agent-toolkit/` および `.chezmoi-source/dot_claude/rules/agent-toolkit/`。
+    対象範囲は `agent-toolkit/` 配下。
     block 対象は配布先の利用者にとって意味不明な参照となるため exit 2 で停止する。
     warn 対象 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため通知のみ。
 
@@ -397,10 +397,7 @@ def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Pat
 
 def _agent_toolkit_distribution_roots(dotfiles_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
     """マーケットプレイス経由で配布されるディレクトリの一覧を返す。"""
-    return (
-        dotfiles_root / "agent-toolkit",
-        dotfiles_root / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit",
-    )
+    return (dotfiles_root / "agent-toolkit",)
 
 
 def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozenset[str], frozenset[str]]:

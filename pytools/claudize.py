@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """Claude Code設定ファイルを配布・同期するコマンド。
 
-配布元ディレクトリ（`.chezmoi-source/dot_claude/rules/agent-toolkit/`）の内容を
+配布元ディレクトリ（`agent-toolkit/rules/`）の内容を
 プロジェクト配下の`.claude/rules/agent-toolkit/`へ完全に同期する。
 """
 
@@ -31,7 +31,7 @@ def _main() -> None:
     )
     enable_completion(parser)
     args = parser.parse_args()
-    template_dir = Path.home() / "dotfiles" / ".chezmoi-source" / "dot_claude" / "rules" / _RULES_DIRNAME
+    template_dir = Path.home() / "dotfiles" / "agent-toolkit" / "rules"
     target_dir = Path.cwd()
     _claudize(target_dir, template_dir, clean=args.clean)
 

@@ -37,10 +37,10 @@
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
-- `.chezmoi-source/dot_claude/rules/agent-toolkit/*.md`（配布ルール本体）を改訂する際、
+- `agent-toolkit/rules/*.md`（配布ルール本体）を改訂する際、
   `docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
   本体変更前に`grep`で参照箇所を確認する
-- `.chezmoi-source/dot_claude/rules/agent-toolkit/agent.md`のコミットメッセージ方針と
+- `agent-toolkit/rules/agent.md`のコミットメッセージ方針と
   `.gitmessage`は配布範囲が異なるため意図的に重複させている。SSOT化しない
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
@@ -90,7 +90,7 @@ PreToolUseフックを記述できる場所は2系統ある。
 `matcher`に新しいツール名を追加する必要があるか確認する。
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
-対象範囲は`agent-toolkit/`および`.chezmoi-source/dot_claude/rules/agent-toolkit/`配下。
+対象範囲は`agent-toolkit/`配下。
 ブロック対象の個人プロジェクト名固定リストには`gv`・`lc`・`smpr`・`glatasks`等が含まれる。
 スキル名・pytoolsコマンド名・scripts名はhook実行時に当該ディレクトリをスキャンして動的に取得するため、
 新規追加時の手動更新は不要。

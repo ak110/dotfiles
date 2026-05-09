@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-BASE_URL="${DOTFILES_RULES_URL:-https://raw.githubusercontent.com/ak110/dotfiles/master/.chezmoi-source/dot_claude/rules/agent-toolkit}"
+BASE_URL="${DOTFILES_RULES_URL:-https://raw.githubusercontent.com/ak110/dotfiles/master/agent-toolkit/rules}"
 TARGET_DIR="$HOME/.claude/rules/agent-toolkit"
 LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # ステージング先は rules/ の外に置く。

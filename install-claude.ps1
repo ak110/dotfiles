@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 #
 # テスト時は DOTFILES_RULES_URL 環境変数でベース URL を差し替え可能。
 
-$baseUrl = if ($env:DOTFILES_RULES_URL) { $env:DOTFILES_RULES_URL } else { 'https://raw.githubusercontent.com/ak110/dotfiles/master/.chezmoi-source/dot_claude/rules/agent-toolkit' }
+$baseUrl = if ($env:DOTFILES_RULES_URL) { $env:DOTFILES_RULES_URL } else { 'https://raw.githubusercontent.com/ak110/dotfiles/master/agent-toolkit/rules' }
 $targetDir = Join-Path $HOME '.claude/rules/agent-toolkit'
 $legacyDir = Join-Path $HOME '.claude/rules/agent-basics'
 # ステージング先は rules/ の外に置く。

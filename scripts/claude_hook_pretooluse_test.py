@@ -525,14 +525,14 @@ class TestPersonalFileMentionWarning:
 class TestAgentToolkitDotfilesNamesCheck:
     """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
 
-    対象は `agent-toolkit/` および `.chezmoi-source/dot_claude/rules/agent-toolkit/` 配下。
+    対象は `agent-toolkit/` 配下。
     block 対象は配布先利用者にとって意味不明な参照となるため exit 2 で停止する。
     warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
     """
 
     _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
     _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
-    _AT_RULES_DIR = _DOTFILES_ROOT / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
+    _AT_RULES_DIR = _DOTFILES_ROOT / "agent-toolkit" / "rules"
 
     @pytest.mark.parametrize(
         "name",
@@ -564,7 +564,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 
-    def test_block_in_chezmoi_source_rules(self):
+    def test_block_in_agent_toolkit_rules(self):
         target = str(self._AT_RULES_DIR / "agent.md")
         result = _run(
             {

@@ -1,6 +1,6 @@
 """install-claude.sh / install-claude.ps1 のテスト。
 
-ローカル HTTP サーバーを起動して `.chezmoi-source/dot_claude/rules/` を配信し、
+ローカル HTTP サーバーを起動して `agent-toolkit/rules/` を配信し、
 `$HOME` を差し替えた状態でスクリプトを実行して成果物を検証する。
 ネットワーク依存なしで決定的に動く。
 
@@ -22,7 +22,7 @@ import typing
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
-RULES_SRC = REPO_ROOT / ".chezmoi-source" / "dot_claude" / "rules" / "agent-toolkit"
+RULES_SRC = REPO_ROOT / "agent-toolkit" / "rules"
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
 
