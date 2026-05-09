@@ -52,7 +52,9 @@ mise経由で動く処理も同じ理由で中断する。
 
 ドキュメント修正等でLinuxから作業する場合は、以下のいずれかで対処する。
 
-- 一時的にダミー値を与えて実行する。例: `LOCALAPPDATA=/tmp/dummy git commit ...`
+- 全実行コマンドの先頭に`LOCALAPPDATA=/tmp/dummy`を付与する。
+  pre-commit経由のactionlint・markdownlint・textlint等もmise配下で動くため、
+  `LOCALAPPDATA=/tmp/dummy git commit ...`のように`git commit`時にも必須となる
 - mise依存のlint・buildタスクを呼ばず、該当箇所はスキップする
 
 ## ドキュメント章構成の統一
