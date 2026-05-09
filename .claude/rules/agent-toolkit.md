@@ -8,22 +8,22 @@ paths:
 # agent-toolkit (Claude Codeルールファイル + プラグイン)
 
 `agent-toolkit/`配下はClaude Codeプラグイン`agent-toolkit`として配布する。
-配布ルール（`~/.claude/rules/agent-toolkit/`）と併用される前提で、
-プラグイン本体に配布ルールと同等内容を書かない。
+ルールファイル（`~/.claude/rules/agent-toolkit/`）と併用される前提で、
+プラグインにルールファイルと同等内容を書かない。
 
 ## ファイル構成と参照方向
 
 編集対象と配置先は次の通り。
 
-- `agent-toolkit/`配下: プラグイン本体（スキル・サブエージェント・hookスクリプト・marketplace記述）
-- `agent-toolkit/rules/`配下: 配布ルール本体（`agent.md`・`styles.md`の2ファイル）
-- `~/.claude/rules/agent-toolkit/`: 配布先。直接編集不可
+- `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
+- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`・`styles.md`の2ファイル）
+- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先。直接編集不可
 
-参照方向はdotfilesリポジトリ→プラグイン配布物、およびプラグイン配布物↔配布ルールを許容する。
+参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
 
-- 常時自動ロードしたい一般指針（`completed`制約・並列点検・`run_in_background`既定など）は配布ルールへ置く
+- 常時自動ロードしたい一般指針（`completed`制約・並列点検・`run_in_background`既定など）はルールファイルへ置く
 - 特定タスクでのみ必要な指針はスキル本体（`agent-toolkit/skills/<name>/SKILL.md`）に残す
 
 ## 配布物としての記述方針
@@ -37,7 +37,7 @@ paths:
 - 配布先環境で異なる可能性のある条件は条件付き表現（「`～`設定が有効な場合、」など）で書く
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 
-配布物の出力文字列・hookメッセージ・docstringにはリポジトリ管理外の個人メモファイル名を含めない。
+配布物の出力文字列・フックメッセージ・docstringにはリポジトリ管理外の個人メモファイル名を含めない。
 検出対象は`scripts/claude_hook_pretooluse.py`の項目3が定義する。
 
 スキル・サブエージェント編集時は次を守る。
@@ -97,7 +97,7 @@ flowchart TB
 
 利用者に届く振る舞いが変わるものは必ずbumpする。
 
-- bumpが必要: hookスクリプト・entry pointロジック変更／checkの追加・削除／
+- bumpが必要: フックスクリプト・entry pointロジック変更／checkの追加・削除／
   `hooks/hooks.json`の`matcher`・`command`変更／依存・実行環境要件の変更／allowlistなどブロック条件の変更
 - bumpが不要: コメント・docstringのみ／`*_test.py`のみ／入出力が不変なリファクタリング／誤字・スタイル調整
 
@@ -144,7 +144,7 @@ flowchart TB
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインのhookは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
+`agent-toolkit`プラグインのフックは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
 パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`である。
 パス規則の一般論は`agent-toolkit/skills/claude-code-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節に従う。
