@@ -21,38 +21,7 @@ description: >
 Claude Code設定ファイル（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）も対象に含む。
 ただし当該ファイル編集時は`agent-toolkit:claude-code-standards`を併用し、Claude Code固有の追加原則を同スキルで補う。
 
-## 対象範囲とプロジェクト規約優先
-
-プロジェクト固有の規約（`CLAUDE.md`・`.claude/`配下など）が優先で、本スキルは不足分を補う。
-文体・対象読者・敬体常体・推奨表現・行動指示の述部・表記ルールは配布ルールの`styles.md`をSSOTとする。
-本スキルでは章構成・改訂運用・Markdown細則を扱う。
-
-## ドキュメント編集ワークフロー
-
-編集前→編集中→ドラフト後検証の3段階で進める。
-
-- 編集前: `styles.md`の「対象読者と文体」節で対象読者と粒度を確認し、既存の章構成と整合を見積もる
-- 編集中: `styles.md`の指針（文体の核・推奨表現・行動指示の述部・表記ルールなど）を順守する。
-  比喩動詞・営業フレーズなどの対比例が必要なときのみ`references/tone-examples.md`を条件付きで参照する
-
-### ドラフト後検証
-
-ドラフト後検証は`agent-toolkit:careful-review`スキルへ集約する。
-`agent-toolkit:plan-impl`の`レビュー有り`使用時は同スキルから自動的にcareful-reviewが呼び出される。
-それ以外の場合は`/agent-toolkit:careful-review <対象範囲>`で手動起動する。
-
-textlint設定がある場合は、careful-review起動前にtextlintを単発実行して機械チェック違反を解消する。
-
-```sh
-uvx pyfltr run-for-agent --commands=textlint <対象パス>
-```
-
-careful-review経由のレビューは機械チェック項目を扱わないため、事前のtextlint実行で
-pre-commitで初めて違反が露見する事象を防ぐ。
-
-`plan-mode`未経由の軽微編集（誤字修正・1〜数行の文言調整）ではcareful-reviewを起動しない。
-
-### 対比集と辞書ファイルのアクセスポリシー
+## 対比集と辞書ファイルのアクセスポリシー
 
 コンテキスト汚染を避けるため、以下のファイルはメインエージェントから直接Readしない。
 
