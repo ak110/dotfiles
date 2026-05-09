@@ -72,7 +72,7 @@ flowchart TB
     end
     subgraph CRS["careful-review スキル"]
       direction TB
-      CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋自然な日本語表現<br/>初回モード並列・全体差分対象]
+      CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋日本語表現<br/>初回モード並列・全体差分対象]
       CR -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
       T2 --> CFix[メインがコミット統合<br/>amend or 新規コミット]
       CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>followupモード並列]
@@ -179,7 +179,3 @@ flowchart TB
 
 push前にはbumpが必須である。
 同じバージョンでは`claude plugin update`が「最新です」と返すため、bumpしないと利用者へ配信されない。
-
-## 参考
-
-- 現行チェック内容: `agent-toolkit/scripts/pretooluse.py`モジュールdocstring
