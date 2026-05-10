@@ -6,7 +6,9 @@ description: >
   「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
 disable-model-invocation: true
 # 本SKILLを更新する場合、stop_advisor.py・claude_hook_stop.pyも同時に更新すること。
-# 同期メタ情報は CLAUDE.md の「振り返りHook/Skill」節を参照。
+# 同期メタ情報は dotfiles/.claude/rules/stop-review.md を参照。
+# 本ファイル修正後、次の依頼文をそのままコーディングエージェントへ渡すと同期漏れを抑えられる:
+# 「この変更を agent-toolkit/scripts/stop_advisor.py と scripts/claude_hook_stop.py へ反映してください」
 ---
 
 # セッション振り返り

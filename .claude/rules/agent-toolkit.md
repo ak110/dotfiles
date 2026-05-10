@@ -121,6 +121,10 @@ flowchart TB
 `scripts/agent_toolkit_bump.py`は既存bumpと同等以下の指定をno-op扱いするため、追加実行しても結果は変わらない。
 既存bumpがPATCHで後続編集がMINOR相当の場合は`agent_toolkit_bump.py minor`で既存bumpを上書き格上げする。
 
+レビュー時の判定: 計画でMINOR bumpを宣言しているにもかかわらず、当該コミット単体ではversion変更が無いケースがある。
+未プッシュコミット範囲（計画着手前から`HEAD`まで）に同等以上のbumpが既に含まれていれば、
+当該指摘は`addressed`相当として扱う。差分単体ではなくpush前の累積状態で判定する。
+
 ### plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査しない。

@@ -313,6 +313,10 @@ Git操作前には次の項目を確認する。
 JSONL出力で対象を確認した上で置換するワークフローを採用する。
 詳細手順とオプションは`agent-toolkit:pyfltr-usage`スキルの「grep&replace」節を参照する。
 
+文字数が増える置換（旧表現より新表現が長い書き換え）を実施した場合は、最終確認として行幅違反を検査する。
+検査には`agent-toolkit:writing-standards`スキル付属の`scripts/check_line_width.py`を使う。
+置換後にtextlintやmarkdownlintを通すだけでは127幅超過を検出できない場合がある。
+
 ### 禁止コマンド
 
 以下のコマンド・オプションはエージェントから実行しない。
