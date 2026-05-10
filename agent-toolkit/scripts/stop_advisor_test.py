@@ -113,7 +113,7 @@ class TestSessionReviewBlock:
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
         reason = decision["reason"]
-        # LLM宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
         assert "Auto-generated hook notice" in reason
         # 自己完結化の注意書きが含まれていること（履歴参照を避ける指示）。

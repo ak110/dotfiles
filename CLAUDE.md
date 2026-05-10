@@ -37,7 +37,7 @@
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
-- `agent-toolkit/rules/*.md`（配布ルール本体）を改訂する際、
+- `agent-toolkit/rules/*.md`（agent-toolkitのルールファイル）を改訂する際、
   `docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
   本体変更前に`grep`で参照箇所を確認する
 - `agent-toolkit/rules/agent.md`のコミットメッセージ方針と
@@ -159,7 +159,7 @@ type判定の一般指針は`agent.md`の「Git操作時の確認チェックリ
 
 - 配布物の振る舞いを変える変更は`feat`/`fix`/`perf`相当
   - `.chezmoi-source/`配下: dotfiles利用者の環境に展開されるため、利用者振る舞いを変える変更は機能変更に該当する
-  - `agent-toolkit/`配下のスキル・サブエージェント・配布ルール本体・`references/`:
+  - `agent-toolkit/`配下のスキル・サブエージェント・agent-toolkitのルールファイル・`references/`:
     プラグイン利用者のコーディングエージェントの振る舞いが変わる
   - `pytools/`・`bin/`配下: dotfiles利用者向けCLIツールのため、挙動変更はそのまま機能変更
 - 本リポジトリ専用設定の変更は`chore`相当
@@ -221,7 +221,7 @@ chezmoiはドットプレフィックスのディレクトリ（`.claude/`など
 
 - `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント全般が対象
 - `scripts/claude_hook_stop.py` — dotfiles個人環境専用。
-  agent-toolkit本体・配布ルール・pyfltrの振り返りを担当。
+  agent-toolkit本体・agent-toolkitのルールファイル・pyfltrの振り返りを担当。
   対象プロジェクトはセッションのcwdに応じて切り替わる
 - `.chezmoi-source/dot_claude/skills/session-review/SKILL.md` — ユーザー手動起動スキル
 

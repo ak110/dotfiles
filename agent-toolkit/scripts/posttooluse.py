@@ -32,7 +32,7 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
+    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 

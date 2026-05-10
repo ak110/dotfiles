@@ -59,7 +59,7 @@ _HOOK_ID = "agent-toolkit/pretooluse"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
+    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
@@ -402,7 +402,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
 # --- 口語表現混入check (warn) ---
 
 # モジュールロード時に1回だけコンパイルする。
-# 検出語そのものをLLMコンテキストへ持ち込まないよう、
+# 検出語そのものをコーディングエージェントのコンテキストへ持ち込まないよう、
 # 本ファイルからパターンの実体を文字列で参照しない。
 _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
@@ -411,7 +411,7 @@ _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.A
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
     """口語的な日本語表現の混入を検出して警告する（warn）。
 
-    検出した語そのものは出力に含めない（LLMコンテキスト汚染防止）。
+    検出した語そのものは出力に含めない（コーディングエージェントのコンテキスト汚染防止）。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """

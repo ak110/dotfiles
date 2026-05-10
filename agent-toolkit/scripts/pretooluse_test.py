@@ -44,7 +44,7 @@ class TestMojibakeCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": "hello \ufffd world"}})
         assert result.returncode == 2
         assert "U+FFFD" in result.stderr
-        # LLM宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 

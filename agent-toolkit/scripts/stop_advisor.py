@@ -26,7 +26,7 @@ _HOOK_ID = "agent-toolkit/stop_advisor"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
+    """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
@@ -164,7 +164,11 @@ def _main() -> int:
             " Target project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
             " — only knowledge from this session that helps future Claude work on this project"
             " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
-            " warnings/pitfalls, repeated user corrections; one concept per line, terse)."
+            " warnings/pitfalls, repeated user corrections,"
+            " coding agent behavior improvements"
+            " (cases where the agent's judgment, confirmation discipline, or plan granularity"
+            " could have been codified into rules to prevent recurrence);"
+            " one concept per line, terse)."
             " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
             " and list each item as '- <対象ファイル> — <提案内容>'."
             " If none, write '指摘無し' under the same heading."
@@ -175,7 +179,7 @@ def _main() -> int:
 
     if messages:
         # 複数通知は空行で区切って1blockにまとめる。
-        # LLM側はそれぞれの`[auto-generated: ...]`プレフィックスで通知の境界を識別する。
+        # コーディングエージェント側はそれぞれの`[auto-generated: ...]`プレフィックスで通知の境界を識別する。
         _block("\n\n".join(messages))
         return 0
 
