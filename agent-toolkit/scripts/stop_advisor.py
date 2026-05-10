@@ -172,7 +172,8 @@ def _main() -> int:
             " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
             " and list each item as '- <対象ファイル> — <提案内容>'."
             " If none, write '指摘無し' under the same heading."
-            " On user approval, draft and apply the diff via Edit."
+            " If the user opts to apply, first present the proposed change as a diff-formatted code block;"
+            " apply via Edit only after explicit user approval."
             " Output the suggestions only (no preamble or narration)."
         )
         messages.append(_llm_notice(body))
