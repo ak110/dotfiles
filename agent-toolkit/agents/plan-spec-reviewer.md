@@ -67,8 +67,8 @@ background: true
 
 - 「## 前回指摘」欄の各指摘行末尾に`（ユーザー判断: 不対応 — <理由>）`または
   `（メイン判断: 不対応 — <理由>）`が付いている
-- 「## 不対応指摘の所在」欄に短縮形`path:Lxxx`（ユーザー判断: 不対応 — <理由>）または
-  `path:Lxxx`（メイン判断: 不対応 — <理由>）の形式で列挙されている
+- 「## 不対応指摘の所在」欄に短縮形`path:xxx`（ユーザー判断: 不対応 — <理由>）または
+  `path:xxx`（メイン判断: 不対応 — <理由>）の形式で列挙されている
 
 判定区分: `addressed`（解消）／`partial`（一部残存）／`missing`（対応なし）／`regression`（回帰）
 
@@ -83,7 +83,7 @@ background: true
 指摘がない場合は本文を`指摘なし`だけにする。
 指摘がある場合は以下の形式で返す。
 
-- `path/to/file:L123` — {指摘内容}
+- `path/to/file:123` — {指摘内容}
 
 ### followupモード
 
@@ -93,12 +93,12 @@ background: true
 
 partial:
 
-- `path/to/file:L123` — {元の指摘内容} — {残存内容}
+- `path/to/file:123` — {元の指摘内容} — {残存内容}
 
 missing:
 
-- `path/to/file:L123` — {元の指摘内容}
+- `path/to/file:123` — {元の指摘内容}
 
 regression:
 
-- `path/to/file:L123` — {回帰内容}
+- `path/to/file:123` — {回帰内容}
