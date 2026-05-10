@@ -44,7 +44,7 @@ _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
-    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
+    """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。
 
     `tag` に `warn` 等を渡すとプレフィックスに並置する (`[auto-generated: ...][warn]`)。
     """
@@ -222,7 +222,7 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
     chezmoi の配布先のため、配布対象ファイルを編集すると次回 `chezmoi apply` で
     上書きされる。配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
     ただし `settings.json` など非 chezmoi 管理ファイルを機械的に判別するのは
-    難しく、誤判定でブロックすると作業が止まるため、警告のみ表示し判断は LLM に委ねる。
+    難しく、誤判定でブロックすると作業が止まるため、警告のみ表示し判断はコーディングエージェントに委ねる。
     """
     if not file_path:
         return None
@@ -296,7 +296,7 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
     対象ファイル自身の編集は作成・更新として警告をスキップする。
-    文脈依存の判断は LLM に委ね、hook は緩い警告のみを表示してブロックはしない。
+    文脈依存の判断はコーディングエージェントに委ね、hook は緩い警告のみを表示してブロックはしない。
     """
     messages: list[str] = []
     if not _is_claude_local_md(file_path):

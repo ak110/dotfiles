@@ -109,7 +109,7 @@ class TestPyfltrDetection:
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
         assert "pyfltr" in decision.get("reason", "")
-        # LLM 宛てメッセージ規約の検証
+        # コーディングエージェント宛てメッセージ規約の検証
         assert "[auto-generated: dotfiles/claude_hook_stop]" in decision["reason"]
         assert "Auto-generated hook notice" in decision["reason"]
 

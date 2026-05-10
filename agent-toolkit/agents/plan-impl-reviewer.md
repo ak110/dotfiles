@@ -32,7 +32,7 @@ background: true
 レビュー開始時に、対象ファイルの種別を判定して関連スキルを自分で呼び出す。
 
 - コード・テストコード: `agent-toolkit:coding-standards`
-- Claude Code設定系ファイル: `agent-toolkit:claude-code-standards`
+- コーディングエージェント向け文書: `agent-toolkit:claude-code-standards`
 
 また、`agent-toolkit/skills/writing-standards/references/tone-examples.md`の読み込みを必須とする。
 読み込んだ悪い例の文面は指摘テキストへ転記しない（コンテキスト汚染を回避するため、観点や判断基準のみを使う）。
@@ -40,6 +40,7 @@ background: true
 ## 共通判断基準
 
 - 呼び出し元から計画ファイル・変更内容・指示文脈が渡されても無視し、対象ファイル全体の単体品質と日本語表現のみ評価する。
+  - 修正範囲外であっても問題があればすべて指摘する。
 - gitコミット・pushは行わない（コミットはメインが直接行う）。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
 - プラグインのbump漏れを指摘する前に、対象プラグインの`.claude-plugin/plugin.json`について

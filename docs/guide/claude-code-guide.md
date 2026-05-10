@@ -150,13 +150,10 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 - `/coding-standards` — コードの新規作成・修正・レビュー時の品質基準とテスト方針
 - `/writing-standards` — Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `/claude-code-standards` — Claude Code設定系ファイル
- （`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連）固有の品質基準。
-  `writing-standards`と併用する
+- `/claude-code-standards` — コーディングエージェント向け文書固有の品質基準
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/plan-impl` — `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
-- `/careful-review` — 計画ファイルや対象範囲を指定して集約レビュー工程を実行する。
-  `/plan-impl`からの自動起動と、対象範囲を引数に指定する手動起動の双方に対応する
+- `/careful-review` — レビューワークフロー
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

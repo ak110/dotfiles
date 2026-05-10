@@ -52,7 +52,7 @@ _INTEGRATABLE_PROJECTS = frozenset({"dotfiles", "pyfltr"})
 
 
 def _llm_notice(body: str) -> str:
-    """LLM 宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
+    """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID)
 
 

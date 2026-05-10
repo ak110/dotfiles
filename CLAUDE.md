@@ -25,7 +25,7 @@
 - `.chezmoi-source/dot_codex/`はCodex用の配布元であり、`~/.codex/`へデプロイされる。
   Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
-  配布先`~/.claude/`配下のClaude Code設定系ファイルと同等として扱う。
+  配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う。
   編集着手前に`agent-toolkit:writing-standards`と`agent-toolkit:claude-code-standards`の両スキルを呼び出す。
   後者のスキル本体（SKILL.md）の共通原則および必読リファレンスを参照する
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
@@ -144,7 +144,7 @@ version bumpは不要。編集が即時反映される。
 | `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者 | 常時自動ロードされる行動原則 |
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
 | `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |
-| `.chezmoi-source/dot_claude/`配下 | dotfiles利用者 | 配布先`~/.claude/`相当のClaude Code設定 |
+| `.chezmoi-source/dot_claude/`配下 | dotfiles利用者 | 配布先`~/.claude/`相当のコーディングエージェント向け文書 |
 | `.claude/`（リポジトリ直下） | dotfiles編集者 | 本リポジトリ開発時のみ参照されるClaude Codeプロジェクト設定 |
 | `CLAUDE.md`（本ファイル） | dotfiles編集者 | 本リポジトリの修正方針・固有知見 |
 | `pytools/`・`bin/`・`scripts/` | dotfiles利用者・dotfiles編集者 | コマンドラインツールと開発スクリプト |

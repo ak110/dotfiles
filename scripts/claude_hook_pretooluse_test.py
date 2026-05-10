@@ -65,7 +65,7 @@ class TestHomeClaudeEditWarning:
         msg = _get_additional_context(result)
         assert "~/.claude/" in msg
         assert ".chezmoi-source/dot_claude/" in msg
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
         assert "Auto-generated hook notice" in msg
 
@@ -306,7 +306,7 @@ class TestPersonalFileMentionWarning:
         msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert "warn" in msg.lower()
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
         assert "Auto-generated hook notice" in msg
 
@@ -341,7 +341,7 @@ class TestPersonalFileMentionWarning:
         assert _LOCAL_MD in _get_additional_context(result)
 
     def test_backtick_wrapped_reference_also_warns(self):
-        """バックティック囲みでも警告は表示する (文脈依存のため最終判断は LLM に委ねる)。"""
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断はコーディングエージェントに委ねる)。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -412,7 +412,7 @@ class TestPersonalFileMentionWarning:
         assert "warn" in msg.lower()
 
     def test_triple_underscore_in_backticks_also_warns(self):
-        """バックティック囲みでも警告は表示する (文脈依存のため最終判断は LLM に委ねる)。"""
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断はコーディングエージェントに委ねる)。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -560,7 +560,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         )
         assert result.returncode == 2
         assert name in result.stderr
-        # LLM 宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
         assert "Auto-generated hook notice" in result.stderr
 

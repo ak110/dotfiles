@@ -1,7 +1,7 @@
 ---
 name: careful-review
 description: >
-  対象範囲を指定して集約レビュー工程を実行するスキル。
+  対象範囲を指定してレビューを実行するスキル。
   `agent-toolkit:plan-impl`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方に対応する。
 # 編集時の注意点:
 # サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身は
@@ -10,11 +10,11 @@ description: >
 # 計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
 ---
 
-# 集約レビュー工程
+# レビュー工程
 
 対象範囲（ファイル群または差分）の評価を2エージェントへ分担する。
 
-- `plan-spec-reviewer`: 計画適合性および成果物どうしの整合性
+- `plan-spec-reviewer`: 計画適合性および成果物間の整合性
 - `plan-impl-reviewer`: コード単体品質・ドキュメント単体品質・日本語表現
 
 両エージェントへ並列に委ね、指摘を統合する。
@@ -61,7 +61,7 @@ description: >
 - 対象が多い場合は次の3カテゴリに分けて並列起動する
   - コード・テストコード（`agent-toolkit:coding-standards`＋`agent-toolkit:writing-standards`）
   - 一般ドキュメント（`agent-toolkit:writing-standards`）
-  - Claude Code設定系ファイル（`agent-toolkit:writing-standards`＋`agent-toolkit:claude-code-standards`）
+  - コーディングエージェント向け文書（`agent-toolkit:writing-standards`＋`agent-toolkit:claude-code-standards`）
 - 各カテゴリの件数が少なすぎる（例: 1〜2ファイル）場合は、他のカテゴリと統合して起動する
 - 1カテゴリ内の件数が多い場合は、ファイル群をさらに分割して並列起動してよい
 
@@ -95,7 +95,9 @@ description: >
 ## 指摘の統合と修正依頼
 
 各レビュアーの戻り値を受け取りメインが指摘を統合する。
-計画に照らして妥当な修正であれば確認無しで修正してよい。必要に応じてユーザーへ確認して対応方針を決定する。
+計画やプロジェクトの基準に照らして妥当な修正であれば確認無しで修正してよい。
+指摘箇所が今回の計画の範囲外であっても問題点は原則修正する。
+必要に応じてユーザーへ確認して対応方針を決定する。
 
 対応不要と判断した指摘には行末尾に注記する。注記付き指摘は「修正指摘」欄に含めない。
 

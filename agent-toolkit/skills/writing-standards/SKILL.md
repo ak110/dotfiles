@@ -3,12 +3,10 @@ name: writing-standards
 description: >
   Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント、
   各種プログラムやスクリプトのコメントの新規作成・修正・計画・レビュー時に最初に必ず呼び出す。
-  Claude Code設定系ファイル（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連）の
-  編集時は`agent-toolkit:claude-code-standards`を併用して呼び出す。
 # 編集時の注意点:
 # コード編集時はcoding-standardsと本スキルの両方を読み込むが、
 # ドキュメントのみの編集時はwriting-standardsのみを読み込むことに注意。
-# Claude Code設定系ファイル固有のガイドはclaude-code-standardsスキルへ分離した。
+# コーディングエージェント向け文書固有のガイドはclaude-code-standardsスキルへ分離した。
 # 本スキルではClaude Code固有事項を扱わない。
 ---
 
@@ -18,7 +16,7 @@ description: >
 一般ドキュメント（Markdown・README・技術文書・API文書・CHANGELOGなどのドキュメント、
 各種プログラムやスクリプトのコメント）を対象とする。
 
-Claude Code設定ファイル（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）も対象に含む。
+コーディングエージェント向け文書（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）も対象に含む。
 ただし当該ファイル編集時は`agent-toolkit:claude-code-standards`を併用し、Claude Code固有の追加原則を同スキルで補う。
 
 ## 対比集と辞書ファイルのアクセスポリシー

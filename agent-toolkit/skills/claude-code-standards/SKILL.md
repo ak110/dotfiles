@@ -1,20 +1,21 @@
 ---
 name: claude-code-standards
 description: >
-  Claude Code設定ファイル（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の
+  コーディングエージェント向け文書（`CLAUDE.md`・`.claude/rules/`・`.claude/skills/`・hooks関連ファイルなど）の
   新規作成・修正・計画・レビュー時に`agent-toolkit:writing-standards`と必ず併用して呼び出す。
 # 編集時の注意点:
 # 一般ドキュメント品質方針はwriting-standardsが担当する。
-# 本スキルはClaude Code設定ファイル固有の追加事項のみを扱う補完スキル。
+# 本スキルはコーディングエージェント向け文書固有の追加事項のみを扱う補完スキル。
 # 単独では不足するため、必ずwriting-standardsと両方読み込む前提で記述する。
 ---
 
-# Claude Code設定ファイル品質
+# コーディングエージェント向け文書品質
 
-`CLAUDE.md`・`.claude/*`・skills・agents・hooks・pluginsなどのClaude Code設定ファイルが対象となる。
-これらはコーディングエージェントのコンテキストへ直接投入されるため、通常のMarkdown品質基準に加えて専用の記述原則が必要となる。
-本スキルはClaude Code固有事項のみを補い、一般ドキュメント品質方針（章構成・改訂運用・Markdown細則・
-README規約・技術文書の書き方など）は`agent-toolkit:writing-standards`が担当する。
+コーディングエージェント向け文書は、コーディングエージェントのコンテキストへ直接投入されるため、
+通常のMarkdown品質基準に加えて専用の記述原則が必要となる。
+本スキルはコーディングエージェント向け文書の固有事項のみを補う。
+一般ドキュメント品質方針（章構成・改訂運用・Markdown細則・README規約・技術文書の書き方など）は
+`agent-toolkit:writing-standards`が担当する。
 両者を必ず併用する。
 
 ## 公式スキル
@@ -38,8 +39,8 @@ README規約・技術文書の書き方など）は`agent-toolkit:writing-standa
 
 ## 読者像
 
-本ファイル群の対象文書（`SKILL.md`・Agent定義・`CLAUDE.md`・`.claude/rules/`配下・hooks関連ファイル）は
-コーディングエージェントが直接読み込む対象である。人間の読者を想定した説明文・前置き・装飾は書かない。
+本ファイル群の対象文書はコーディングエージェントが直接読み込む対象である。
+人間の読者を想定した説明文・前置き・装飾は書かない。
 対象文書は以下の前提で記述する。
 
 - 読者はコーディングエージェントである。冒頭の概要・自己紹介・「本書では…を扱う」のような書き手目線の前置きは省く
