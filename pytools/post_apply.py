@@ -20,6 +20,7 @@ from pytools._internal import (
     log_format,
     setup_bin_path,
     setup_mise,
+    setup_msys_env,
     setup_plans_viewer_linux,
     setup_registry,
     sync_agent_toolkit_rules,
@@ -143,6 +144,7 @@ StepReturn = bool | tuple[bool, list[str]]
 
 _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("bin PATH 登録 (Windows)", setup_bin_path.run),
+    ("MSYS 環境変数 (Windows)", setup_msys_env.run),
     ("Claude 設定", update_claude_settings.run),
     ("VSCode 設定", update_vscode_settings.run),
     ("SSH config", update_ssh_config.run),

@@ -118,6 +118,12 @@ class TestSessionReviewBlock:
         assert "Auto-generated hook notice" in reason
         # 自己完結化の注意書きが含まれていること（履歴参照を避ける指示）。
         assert "stand alone" in reason
+        # 観察源リスト→4チェックの2段手順が含まれていること。
+        assert "Step 1" in reason
+        assert "Step 2" in reason
+        assert "observation sources" in reason
+        assert "user interruption" in reason
+        assert "blocked by hooks" in reason
 
     def test_no_completion_approves(self, tmp_path: pathlib.Path):
         """完了文言がないアシスタントターンは振り返り提案を発火しない。"""
@@ -636,6 +642,43 @@ class TestWaitingKeywordSuppressesBlock:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestGitLogCheckedReset:
+    """Stop時に`git_log_checked`を全エントリクリアする。"""
+
+    @pytest.mark.parametrize(
+        ("initial", "expected"),
+        [
+            # cwd別辞書 → 全エントリクリア
+            ({"/repo/a": True, "/repo/b": True}, {}),
+            # 旧形式bool True → False（後方互換）
+            (True, {}),
+        ],
+    )
+    def test_reset_on_stop(self, tmp_path: pathlib.Path, initial: object, expected: object):
+        _write_state(tmp_path, "log-reset", {"git_log_checked": initial})
+        transcript = _write_transcript(tmp_path, "hello")
+        _run(
+            {"session_id": "log-reset", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        state_path = tmp_path / "claude-agent-toolkit-log-reset.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state.get("git_log_checked") == expected
+
+    def test_no_change_when_empty(self, tmp_path: pathlib.Path):
+        """空dictや`False`のときはStopで書き換えない。"""
+        _write_state(tmp_path, "log-empty", {"git_log_checked": {}, "marker": 1})
+        transcript = _write_transcript(tmp_path, "hello")
+        _run(
+            {"session_id": "log-empty", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        state_path = tmp_path / "claude-agent-toolkit-log-empty.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state.get("git_log_checked") == {}
+        assert state.get("marker") == 1
 
 
 class TestGitStatusDisplay:

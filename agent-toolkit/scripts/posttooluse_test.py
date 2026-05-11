@@ -208,10 +208,31 @@ class TestEdgeCases:
 
 
 class TestGitLogChecked:
-    """git_log_checked 状態の管理。"""
+    """git_log_checked 状態の管理。
 
-    def test_git_log_sets_checked(self, tmp_path: pathlib.Path):
+    cwdを伴うpayloadではcwd別辞書`{cwd: True}`で記録する。
+    cwd空文字列環境では旧形式の単一bool値で記録し後方互換を保つ。
+    Write / Edit / MultiEditは編集の事実が裏で他コミットを動かしている可能性に備え、
+    辞書全体をクリアする（cwd別の細粒度リセットは行わない）。
+    """
+
+    def test_git_log_sets_checked_dict_when_cwd_present(self, tmp_path: pathlib.Path):
         sid = "log-check"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline -5"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("git_log_checked") == {"/repo/a": True}
+
+    def test_git_log_sets_legacy_bool_when_cwd_absent(self, tmp_path: pathlib.Path):
+        """cwd未指定では旧形式の単一bool値で記録する（後方互換）。"""
+        sid = "log-check-nocwd"
         _run(
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}},
             state_dir=tmp_path,
@@ -219,8 +240,53 @@ class TestGitLogChecked:
         state = _read_state(tmp_path, sid)
         assert state.get("git_log_checked") is True
 
-    def test_git_commit_resets_checked(self, tmp_path: pathlib.Path):
-        sid = "log-reset-commit"
+    @pytest.mark.parametrize(
+        ("label", "reset_command", "reset_cwd"),
+        [
+            ("commit", "git commit -m 'x'", "/repo/a"),
+            ("rebase", "GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "/repo/a"),
+            ("push", "git push origin master", "/repo/a"),
+        ],
+    )
+    def test_same_cwd_reset_removes_only_target_entry(
+        self, tmp_path: pathlib.Path, label: str, reset_command: str, reset_cwd: str
+    ):
+        """同cwdでのcommit/rebase/pushは該当cwdのみリセットする。"""
+        sid = f"log-reset-{label}"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/b",
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True, "/repo/b": True}
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": reset_command},
+                "cwd": reset_cwd,
+            },
+            state_dir=tmp_path,
+        )
+        # `/repo/a`のみリセットされ、`/repo/b`のエントリは残る。
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/b": True}
+
+    def test_legacy_bool_reset_back_to_false(self, tmp_path: pathlib.Path):
+        """旧形式bool値はcommit時に`False`へ戻す（従来挙動）。"""
+        sid = "log-legacy-reset"
         _run(
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
             state_dir=tmp_path,
@@ -232,50 +298,38 @@ class TestGitLogChecked:
         )
         assert _read_state(tmp_path, sid).get("git_log_checked") is False
 
-    def test_git_rebase_resets_checked(self, tmp_path: pathlib.Path):
-        sid = "log-reset-rebase"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
-            state_dir=tmp_path,
-        )
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2"}},
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("git_log_checked") is False
-
-    def test_git_push_resets_checked(self, tmp_path: pathlib.Path):
-        sid = "log-reset-push"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
-            state_dir=tmp_path,
-        )
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git push origin master"}},
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("git_log_checked") is False
-
-    def test_write_resets_checked(self, tmp_path: pathlib.Path):
-        sid = "log-reset-write"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
-            state_dir=tmp_path,
-        )
-        _run(
-            {"session_id": sid, "tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("git_log_checked") is False
-
-    def test_edit_resets_checked(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize(
+        ("edit_payload"),
+        [
+            {"tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},
+            {"tool_name": "Edit", "tool_input": {"file_path": "/tmp/x.txt"}},
+        ],
+    )
+    def test_edit_resets_dict(self, tmp_path: pathlib.Path, edit_payload: dict):
+        """Write/Editは辞書全体をクリアする。"""
         sid = "log-reset-edit"
         _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        _run({"session_id": sid, **edit_payload}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {}
+
+    def test_edit_resets_legacy_bool(self, tmp_path: pathlib.Path):
+        """旧形式bool値の場合もWrite/Editでリセットする（後方互換）。"""
+        sid = "log-reset-edit-legacy"
+        _run(
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
             state_dir=tmp_path,
         )
+        assert _read_state(tmp_path, sid).get("git_log_checked") is True
         _run(
-            {"session_id": sid, "tool_name": "Edit", "tool_input": {"file_path": "/tmp/x.txt"}},
+            {"session_id": sid, "tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("git_log_checked") is False
@@ -283,14 +337,24 @@ class TestGitLogChecked:
     def test_unrelated_bash_no_reset(self, tmp_path: pathlib.Path):
         sid = "log-no-reset"
         _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/a",
+            },
             state_dir=tmp_path,
         )
         _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo hello"}},
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "echo hello"},
+                "cwd": "/repo/a",
+            },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("git_log_checked") is True
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True}
 
 
 # plan file形式検査で使う各種Markdown断片。テスト全体で共用する。

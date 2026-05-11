@@ -704,7 +704,11 @@ class TestBashCodexExecNudge:
 
 
 class TestBashAmendRebaseBlock:
-    """git amend / rebaseのlog未確認ブロック。"""
+    """git amend / rebaseのlog未確認ブロック。
+
+    `git_log_checked`はcwd別辞書`{cwd: True}`で管理する。
+    cwd空文字列環境向けに旧形式の単一bool値も後方互換として受け入れる。
+    """
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -714,11 +718,17 @@ class TestBashAmendRebaseBlock:
         path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
         path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
-    def _invoke(self, command: str, session_id: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-        return _run(
-            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
-            env_overrides=env,
-        )
+    def _invoke(
+        self,
+        command: str,
+        session_id: str,
+        env: dict[str, str],
+        cwd: str = "",
+    ) -> subprocess.CompletedProcess[str]:
+        payload: dict = {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id}
+        if cwd:
+            payload["cwd"] = cwd
+        return _run(payload, env_overrides=env)
 
     def test_amend_blocked_without_log(self, state_dir: dict[str, str]):
         cmd = "git commit " + "--amend --no-edit"
@@ -731,13 +741,14 @@ class TestBashAmendRebaseBlock:
         assert result.returncode == 2
         assert "rebase" in result.stderr
 
-    def test_amend_allowed_with_log(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_amend_allowed_with_legacy_bool_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """旧形式bool値`True`はcwd空文字列環境向けの後方互換として受け入れる。"""
         self._write_state(tmp_path, "with-log", {"git_log_checked": True})
         cmd = "git commit " + "--amend --no-edit"
         result = self._invoke(cmd, "with-log", state_dir)
         assert result.returncode == 0
 
-    def test_rebase_allowed_with_log(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+    def test_rebase_allowed_with_legacy_bool_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         self._write_state(tmp_path, "with-log-rb", {"git_log_checked": True})
         result = self._invoke("GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "with-log-rb", state_dir)
         assert result.returncode == 0
@@ -746,6 +757,33 @@ class TestBashAmendRebaseBlock:
         """通常のgit commitはamend/rebaseブロックの対象外。"""
         result = self._invoke("git commit -m 'test'", "normal", state_dir)
         assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        ("label", "recorded_cwd", "payload_cwd", "expected_returncode"),
+        [
+            # 同cwd: 該当cwdのgit log確認があれば許可
+            ("same", "/repo/a", "/repo/a", 0),
+            # 別cwd: 別cwdの確認は流用できないためblock
+            ("other", "/repo/a", "/repo/b", 2),
+            # cwd空文字列のpayloadは辞書キーが取れないためblockに倒す
+            ("empty", "/repo/a", "", 2),
+        ],
+    )
+    def test_amend_per_cwd_judgement(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        label: str,
+        recorded_cwd: str,
+        payload_cwd: str,
+        expected_returncode: int,
+    ):
+        """`git_log_checked`辞書はcwd別に判定する。"""
+        sid = f"per-cwd-{label}"
+        self._write_state(tmp_path, sid, {"git_log_checked": {recorded_cwd: True}})
+        cmd = "git commit " + "--amend --no-edit"
+        result = self._invoke(cmd, sid, state_dir, cwd=payload_cwd)
+        assert result.returncode == expected_returncode
 
 
 class TestBashUvRunPythonBlock:

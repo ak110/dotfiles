@@ -116,8 +116,10 @@ def _main() -> int:
     # Stopのたびにgit_log_checkedをリセットする。
     # ユーザーが裏でpushしている可能性があるため、
     # 再開後のamend / rebaseには改めてlog確認を要求する。
-    if state.get("git_log_checked", False):
-        state["git_log_checked"] = False
+    # `git_log_checked`はcwd別辞書`{cwd: True}`を採用するため、
+    # 全エントリをまとめてクリアする。
+    if state.get("git_log_checked"):
+        state["git_log_checked"] = {}
         write_state(session_id, state)
 
     cwd = payload.get("cwd", "")
@@ -166,7 +168,13 @@ def _main() -> int:
             "session review: list improvement suggestions in Japanese."
             " Each suggestion must stand alone for readers without this session's conversation history"
             " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
-            " Before proposing, verify each candidate against the following four checks"
+            " Follow a two-step procedure."
+            " Step 1 (gather candidates from observation sources):"
+            " scan the session for"
+            " (i) user interruption / corrections,"
+            " (ii) Edit/Write that did not apply as expected, and"
+            " (iii) events blocked by hooks."
+            " Step 2 (filter): verify each candidate against the following four checks"
             " and list only items that pass all four:"
             " (a) trace back to the root cause rather than describing the surface symptom;"
             " (b) assess recurrence risk and impact — exclude one-off or incidental events;"

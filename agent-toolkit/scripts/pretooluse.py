@@ -103,7 +103,7 @@ def _main() -> int:
         cwd_raw = payload.get("cwd", "")
         cwd = cwd_raw if isinstance(cwd_raw, str) else ""
         # git amend / rebaseは直前にgit logを確認していなければブロック
-        if _check_bash_amend_rebase_without_log(command, session_id):
+        if _check_bash_amend_rebase_without_log(command, session_id, cwd):
             return 2
         # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
@@ -515,13 +515,17 @@ _GIT_AMEND_PATTERN = re.compile(r"\bgit\s+commit\b.*--amend\b")
 _GIT_REBASE_PATTERN = re.compile(r"\bgit\s+rebase\b")
 
 
-def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
+def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str) -> bool:
     """Git commit --amend / git rebaseをgit log未確認で実行しようとした場合にブロックする。
 
     amend / rebaseは既存コミットを書き換えるため、直前にgit log --decorateで
     コミット状態（特にプッシュ済みかどうか）を確認する必要がある。
     ファイル編集・commit・rebase・push・Stopが介在すると確認状態をリセットする。
     ユーザーが裏でpushしている可能性があるためリセット対象に含める。
+
+    `git_log_checked`はcwd別に管理する辞書`{cwd: True}`形式を採用する。
+    旧形式のbool値（`True` / `False`）はcwd空文字列環境向けの後方互換として
+    そのまま参照する。
     """
     amend_match = _GIT_AMEND_PATTERN.search(command)
     rebase_match = _GIT_REBASE_PATTERN.search(command)
@@ -530,7 +534,11 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str) -> bool:
     if not is_amend and not is_rebase:
         return False
     state = read_state(session_id)
-    if state.get("git_log_checked", False):
+    log_state = state.get("git_log_checked", False)
+    if isinstance(log_state, dict):
+        if cwd and log_state.get(cwd, False):
+            return False
+    elif log_state:
         return False
     op = "git commit --amend" if is_amend else "git rebase"
     print(

@@ -230,10 +230,16 @@ def _main() -> int:
                 write_state(session_id, state)
         return 0
 
-    # Write / Edit / MultiEdit: ファイル編集はgit log確認状態をリセットする
+    # Write / Edit / MultiEdit: ファイル編集はgit log確認状態を全エントリリセットする
+    # （cwd別判定の細粒度は維持せず、編集後は全cwdの再確認を要求する）。
     if tool_name in ("Write", "Edit", "MultiEdit"):
         state = read_state(session_id)
-        if state.get("git_log_checked", False):
+        log_state = state.get("git_log_checked", False)
+        if isinstance(log_state, dict):
+            if log_state:
+                state["git_log_checked"] = {}
+                write_state(session_id, state)
+        elif log_state:
             state["git_log_checked"] = False
             write_state(session_id, state)
         # plan file形式検査: ~/.claude/plans/直下の.mdのみ対象。
@@ -268,6 +274,9 @@ def _main() -> int:
     if not isinstance(command, str) or not command:
         return 0
 
+    cwd_raw = payload.get("cwd", "")
+    cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+
     state = read_state(session_id)
     changed = False
 
@@ -284,15 +293,31 @@ def _main() -> int:
         state["git_status_checked"] = True
         changed = True
 
-    # git log確認状態の管理
+    # git log確認状態の管理（cwd別の辞書`{cwd: True}`で記録する。
+    # cwd未取得時は旧形式のboolにフォールバックして従来挙動を維持する）。
     if _GIT_LOG_PATTERN.search(command):
-        if not state.get("git_log_checked", False):
+        if cwd:
+            log_state = state.get("git_log_checked")
+            if not isinstance(log_state, dict):
+                log_state = {}
+            if not log_state.get(cwd, False):
+                log_state[cwd] = True
+                state["git_log_checked"] = log_state
+                changed = True
+        elif not state.get("git_log_checked", False):
             state["git_log_checked"] = True
             changed = True
-    elif _GIT_LOG_RESET_PATTERN.search(command) and state.get("git_log_checked", False):
-        # commit / rebase / pushはgit log確認状態をリセットする
-        state["git_log_checked"] = False
-        changed = True
+    elif _GIT_LOG_RESET_PATTERN.search(command):
+        # commit / rebase / pushはgit log確認状態をリセットする。
+        log_state = state.get("git_log_checked", False)
+        if isinstance(log_state, dict):
+            if cwd and cwd in log_state:
+                del log_state[cwd]
+                state["git_log_checked"] = log_state
+                changed = True
+        elif log_state:
+            state["git_log_checked"] = False
+            changed = True
 
     if changed:
         write_state(session_id, state)
