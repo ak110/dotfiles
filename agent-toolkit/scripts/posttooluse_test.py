@@ -116,6 +116,10 @@ class TestTestExecution:
             "just check",
             "task test",
             "task validate",
+            # 環境変数代入接頭辞付き（境界値: 1個・2個連続・セグメント区切り直後）
+            "LOCALAPPDATA=/tmp/dummy uvx pyfltr run-for-agent",
+            "LOCALAPPDATA=x FOO=bar uvx pyfltr ci",
+            "cd /tmp && LOCALAPPDATA=x uvx pre-commit run",
         ],
     )
     def test_test_commands_detected(self, tmp_path: pathlib.Path, command: str):

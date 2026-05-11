@@ -36,6 +36,24 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
+# --- Bashコマンド前処理 ---
+
+# コマンド先頭またはセグメント区切り（`;`・`&`・`|`）直後の`KEY=VALUE`代入を捕捉する。
+# `_ENV_ASSIGN_PREFIX_PATTERN.sub`で代入連続を除去し、先頭の区切り文字＋空白は維持する。
+_ENV_ASSIGN_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+)+")
+
+
+def _strip_env_assignments(command: str) -> str:
+    """コマンド先頭・セグメント区切り直後の環境変数代入接頭辞（`KEY=VALUE`）を除去する。
+
+    用途: テスト実行検出やgit操作検出の正規表現が、`LOCALAPPDATA=/tmp/dummy uvx pyfltr ...`
+    のような環境変数代入接頭辞付きコマンドにマッチしない問題に追従する。
+    適用範囲: Bashコマンド文字列。`KEY=VALUE`の単純形式のみを対象とし、
+    クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ等の特殊形式は対象外とする。
+    """
+    return _ENV_ASSIGN_PREFIX_PATTERN.sub(r"\1\2", command)
+
+
 # --- テスト実行検出パターン ---
 
 _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -273,6 +291,9 @@ def _main() -> int:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
+
+    # 環境変数代入接頭辞（`LOCALAPPDATA=...`等）を除去してから検出パターンを適用する。
+    command = _strip_env_assignments(command)
 
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
