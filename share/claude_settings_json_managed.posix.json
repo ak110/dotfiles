@@ -22,5 +22,10 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "sh -c 'uv run --script ~/dotfiles/scripts/claude_status_line.py'",
+    "padding": 0
   }
 }
