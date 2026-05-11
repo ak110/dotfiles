@@ -525,7 +525,9 @@ class TestManifestSsot:
         entry = entries[0]
 
         # SSOTの3フィールドが完全一致することを要求する。
-        # 不一致が出たら.claude/rules/agent-toolkit.mdを参照して両側を揃えること。
+        # 不一致が出たらagent-toolkit/.claude-plugin/plugin.jsonと
+        # .claude-plugin/marketplace.json（plugins[]内name == "agent-toolkit"のエントリ）の
+        # version／description／nameを両側で揃えること。
         assert entry["version"] == plugin_manifest["version"], (
             f"version 不一致: plugin.json={plugin_manifest['version']} marketplace.json={entry['version']}"
         )

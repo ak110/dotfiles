@@ -1,7 +1,19 @@
-"""Claude Code agent-toolkit: コーディングエージェント宛てメッセージ整形共通モジュール。"""
+"""Claude Code agent-toolkit: コーディングエージェント宛てメッセージ整形共通モジュール。
 
-# コーディングエージェント宛てメッセージの共通サフィックス。
-# 詳細はskills/claude-code-standards/references/claude-hooks.mdを参照。
+LLMに行動を促すメッセージには`reason`（Stop/PostToolUse）または
+`hookSpecificOutput.additionalContext`（PreToolUse）を使う。
+`systemMessage`はユーザー向け情報通知専用でLLMに届かない。
+
+LLM宛て出力には自動生成を示すプレフィックスとサフィックスを必ず付ける。
+本モジュールの`llm_notice`関数が以下のフォーマットで整形する。
+
+- プレフィックス: `[auto-generated: <plugin>/<hook>]`（警告時は`[warn]`タグを並置）
+- サフィックス: `(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)`
+
+フィールドの詳細と規約の背景は
+`agent-toolkit/skills/claude-code-standards/references/claude-hooks.md`を参照する。
+"""
+
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 
 

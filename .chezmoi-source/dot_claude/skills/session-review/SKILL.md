@@ -5,8 +5,14 @@ description: >
   CLAUDE.mdへの学びの反映、pyfltr・agent-toolkitスキルの改善点を点検する。
   「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
 disable-model-invocation: true
-# 本SKILLを更新する場合、stop_advisor.py・claude_hook_stop.pyも同時に更新すること。
-# 同期メタ情報は dotfiles/.claude/rules/stop-review.md を参照。
+# 本スキルは3カ所の振り返りHook/Skillの1つ。他の2カ所はStopイベントで自動発火するhookで、
+# 本スキルはユーザー手動起動で動作する。3カ所の役割は次の通り。
+#   - `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント全般が対象
+#   - `scripts/claude_hook_stop.py` — dotfiles個人環境専用。
+#     agent-toolkit本体・agent-toolkitのルールファイル・pyfltrの振り返りを担当
+#   - 本スキル（`.chezmoi-source/dot_claude/skills/session-review/SKILL.md`） — ユーザー手動起動
+# 振り返りメッセージ全体に適用される共通指示（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は
+# `stop_advisor.py`側のreasonへ集約する。3カ所の内容を変更する際は同期漏れに注意する。
 # 本ファイル修正後、次の依頼文をそのままコーディングエージェントへ渡すと同期漏れを抑えられる:
 # 「.chezmoi-source/dot_claude/skills/session-review/SKILL.md を修正した。この変更を agent-toolkit/scripts/stop_advisor.py と scripts/claude_hook_stop.py へ反映して」
 ---

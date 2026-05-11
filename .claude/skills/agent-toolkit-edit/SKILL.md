@@ -1,8 +1,10 @@
 ---
-paths:
-  - "agent-toolkit/**"
-  - "~/.claude/rules/agent-toolkit/**"
-  - ".claude-plugin/marketplace.json"
+name: agent-toolkit-edit
+description: >
+  `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
+  `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
+  `.claude-plugin/marketplace.json`を編集するときに使う。
+  「agent-toolkit編集」「version bump」「marketplace管理」「セッション状態フラグ」などのキーワードでも起動する。
 ---
 
 # agent-toolkit (Claude Codeルールファイル + プラグイン)
@@ -16,8 +18,9 @@ paths:
 編集対象と配置先は次の通り。
 
 - `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
-- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`・`styles.md`の2ファイル）
-- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先。直接編集不可
+- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`（基本原則・運用方針）と`styles.md`（記述スタイル）の2ファイル）
+- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先。直接編集不可。
+  両ファイルとも常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 
@@ -148,8 +151,11 @@ flowchart TB
 
 ### install-claude.sh / install-claude.ps1
 
-`install-claude.sh`の`FILES`と`install-claude.ps1`の`$files`は手動同期が必要。
-`agent-toolkit/rules/`配下を編集した場合は両ファイルを同期する。
+`install-claude.sh`の`FILES`と`install-claude.ps1`の`$files`、および
+`agent-toolkit/rules/`配下のmdファイル一覧の3者は完全一致を保つ。
+`agent-toolkit/rules/`配下のmdファイルを追加・削除した際は、両スクリプトの配列要素を同じ内容に手動同期する。
+整合性は`agent-toolkit/scripts/install_script_ssot_test.py`が検査し、
+`uvx pyfltr run`で自動的に失敗する。
 ワンライナーインストーラーをGitHub API非依存で動かす方針のため自動同期手段は持たない。
 
 ## セッション状態フラグ
@@ -183,3 +189,49 @@ flowchart TB
 
 push前にはbumpが必須である。
 同じバージョンでは`claude plugin update`が「最新です」と返すため、bumpしないと利用者へ配信されない。
+
+## フック実装の配置先（個人フックと配布物）
+
+PreToolUseフックの配置先は2系統。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
+類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。判断に迷う場合はユーザーへ確認する。
+
+- `scripts/claude_hook_pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
+  dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け
+- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
+  汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け
+
+プラグインに配置した場合は本スキルの「バージョン更新」節の手順に従う。
+個人フックに配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
+`matcher`に新しいツール名を追加する必要があるか確認する。
+
+agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
+ブロック対象の個人プロジェクト名固定リストは当該スクリプト内で定義する。
+スキル名・pytoolsコマンド名・scripts名はhook実行時に当該ディレクトリをスキャンして動的に取得するため、
+新規追加時の手動更新は不要。
+OSSとして公開しているプロジェクト名はwarning通知に留める。
+
+## marketplace管理
+
+`update-dotfiles`（`chezmoi apply`後処理）は`pytools/_internal/install_claude_plugins.py`経由で
+agent-toolkitプラグインを自動インストール・更新する。marketplace配布は2段階の構成。
+
+- bootstrap経路: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
+- chezmoi apply経路: 後処理がdirectory型（dotfilesリポジトリの絶対パス直接参照）で維持し、
+  GitHub型登録が残存する環境では自動でdirectory型へマイグレーションする
+
+directory型を採用する理由は、dotfilesで編集した内容がpush/updateサイクルを介さずに即時反映される点にある。
+
+### ローカル編集の反映ワークフロー
+
+`agent-toolkit/`配下を編集したときの反映手順（chezmoi管理下）:
+
+1. `agent-toolkit/`配下のファイルを編集する
+2. `chezmoi apply`（または`update-dotfiles`）を実行する
+3. Claude Codeを再起動するか`/reload-plugins`を実行する
+
+version bumpは不要。編集が即時反映される。
+
+## コミットメッセージ方針と.gitmessage
+
+`agent-toolkit/rules/agent.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。
+SSOT化しない。

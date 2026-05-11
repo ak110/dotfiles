@@ -98,9 +98,14 @@ mise経由で動く処理も同じ理由で中断する。
 「開発コマンド」章にチェック実行コマンド（`uvx pyfltr run-for-agent`等）を内包する。
 独立した「チェックの実行」章は設けない。
 
-サプライチェーン攻撃対策章は各エコシステム固有の対策
+各章の本文は最小限とし、`Makefile`・CI設定・`.pre-commit-config.yaml`等の設定ファイルに書かれた内容を再掲しない。
+「開発コマンド」章は`make`コマンド一覧表程度に圧縮し、内部動作の説明はMakefile側のコメントへ委ねる。
+「サプライチェーン攻撃対策」章は各エコシステム固有の対策
 （uv/pnpm/cargo/dependabot等のロックファイル尊重・公開待機・ピン留め運用）を本文中に内包する。
-Pythonパッケージとして配布するプロジェクト（dotfiles・pyfltr・pytilpack・smpr）はUV_FROZEN=1常時有効化を含む共通文面で揃える。
+方針の要約（ロック尊重・公開待機・ピン留め運用の3点）と必須事項のみ本文に書き、
+適用経路（Makefile・CI・pre-commit等）の詳細は設定ファイル側のコメント・利用者向け案内（`docs/guide/security.md`等）に委ねる。
+Pythonパッケージとして配布するプロジェクト（dotfiles・pyfltr・pytilpack・smpr）は
+UV_FROZEN=1常時有効化を必須事項として共通文面で揃える。
 glatasksはPython依存を持たないためUV_FROZENの常時有効化は行わず、`exclude-newer`のみ採用する。
 
 コミットメッセージ規約は`agent-toolkit:agent.md`と`.gitmessage`にSSOTがあるためdevelopment.mdには再掲しない。

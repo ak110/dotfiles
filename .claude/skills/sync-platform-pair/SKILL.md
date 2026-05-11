@@ -1,9 +1,9 @@
 ---
 name: sync-platform-pair
 description: >
-  dotfilesリポジトリのLinux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
-  `.sh.tmpl`と`-windows.ps1.tmpl`など）を編集するときに使う。
-  「ペアファイル」「LinuxとWindows両対応」などのキーワードでも起動する。
+  Linux/Windowsペアファイル（`.sh`と`.cmd`、`.sh`と`.ps1`、
+  `.sh.tmpl`と`-windows.ps1.tmpl`、`*.posix.json`と`*.win32.json`など）を編集するときに使う。
+  「ペアファイル編集」「LinuxとWindows両対応」「.cmd更新」「.ps1更新」などのキーワードでも起動する。
 ---
 
 # Linux/Windowsペアファイル編集支援

@@ -6,46 +6,31 @@
 make setup
 ```
 
-### 任意: PowerShellスクリプトのローカル完全検証環境
-
-`.ps1.tmpl`検証は`pwsh`（PowerShell 7）と`PSScriptAnalyzer`モジュールに依存する。
-未導入でも`make test`は通過する（フックが警告を表示してスキップ）。検証漏れはCIが担保する。
-ローカルで完全検証する場合のみ導入。
-
-```bash
-make setup-pwsh  # Ubuntu/Debian
-```
+PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyzer`に依存する。
+未導入でも`make test`は通過し、検証漏れはCIで担保する。
+ローカルで完全検証する場合のみ`make setup-pwsh`を実行する。
 
 ## 開発コマンド
 
-```bash
-make format   # 整形 + 軽量lint + 自動修正（開発時の手動実行用）
-make test     # 全チェック実行（これを通過すればコミット可能）
-make update   # 依存更新
-```
+| コマンド | 用途 |
+| --- | --- |
+| `make format` | 整形・軽量lint・自動修正 |
+| `make test` | 全チェック実行（コミット可否判定） |
+| `make update` | 依存更新 |
+| `make update-actions` | GitHub Actionsのハッシュピン更新（pinact経由） |
+
+各コマンドの詳細は`Makefile`を参照する。
 
 ## サプライチェーン攻撃対策
 
-パッケージマネージャーに対するサプライチェーン攻撃を緩和するため、
-公開から一定期間が経っていないパッケージのインストールをブロックしている。
-グローバル設定はchezmoiで配布され、`chezmoi apply`/`update-dotfiles`実行時に自動適用される。
-利用者向けの一覧は[docs/guide/security.md](../guide/security.md)を参照。
+公開直後のパッケージインストールをブロックするグローバル設定をchezmoiで配布する。
+利用者向けの一覧は[docs/guide/security.md](../guide/security.md)を参照する。
 
-CI/`make`などの自動実行環境で`uv sync`/`uv run`が依存解決を再実行せず`uv.lock`をそのまま使うよう、
-環境変数`UV_FROZEN=1`を常時有効化している。
-意図しない再resolveでロックファイルが書き換わるリスクを抑え、
-グローバル設定の`exclude-newer`と組み合わせて二重防御として機能する。
+開発者・CI・pre-commitフックの3経路で以下3点の方針を貫徹する。
 
-- `make format`/`make test`/`make setup`は`Makefile`の`export UV_FROZEN := 1`で自動適用される
-- CIは`.github/workflows/*.yaml`の`env.UV_FROZEN`で自動適用される
-- `git commit`経由のpre-commitフックは`.pre-commit-config.yaml`のlocal hookのentryに`--frozen`を明示している
+- ロックファイル尊重: `uv.lock`を再resolveせず使用する（`UV_FROZEN=1`を環境変数で常時適用）
+- 公開待機: `exclude-newer`で公開から一定の期間を経たパッケージのみ採用する
+- ピン留め運用: GitHub Actionsはコミットハッシュで固定し、[pinact](https://github.com/suzuki-shunsuke/pinact)で更新を管理する
 
-開発者のシェルでは`UV_FROZEN`を設定しない前提なので、
-依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使用。
-`make update`も内部で自動的にUV_FROZENを外すため、そのまま実行できる。
-
-GitHub Actionsのアクションはコミットハッシュにピン留めして実行する
-（[pinact](https://github.com/suzuki-shunsuke/pinact)で管理）。
-ローカル更新は`make update-actions`（mise経由で`pinact run --update --min-age=1`を実行）で行い、
-CIは`pinact run --check`（バージョン固定）で検証する。
-pinactのCIバージョンを更新する場合は全プロジェクトのワークフローを一括更新。
+設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`を参照する。
+依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使用する。

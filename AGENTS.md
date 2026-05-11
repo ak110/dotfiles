@@ -35,10 +35,9 @@
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
-- `agent-toolkit/rules/*.md`を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
-  本体変更前に`grep`で参照箇所を確認する
-- `agent-toolkit/rules/agent.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させている。
-  SSOT化しない
+- `agent-toolkit/`配下・`agent-toolkit/rules/`配下・`.claude-plugin/marketplace.json`の編集時は
+  `agent-toolkit-edit`スキルを参照する。
+  marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
@@ -60,56 +59,6 @@
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
-
-## agent-toolkitルールファイルの構成
-
-`agent-toolkit/rules/`配下のルールファイルは`agent.md`（基本原則・運用方針）と`styles.md`（記述スタイル）の
-2ファイル構成。配布先`~/.claude/rules/agent-toolkit/`では両ファイルとも常時自動ロードされる。
-
-agent-toolkitプラグインが未導入の環境では[docs/guide/claude-code-guide.md](docs/guide/claude-code-guide.md)を案内する。
-
-本ルールファイルはデフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けである。
-
-## Claude Codeフック実装の配置先
-
-PreToolUseフックの配置先は2系統。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。判断に迷う場合はユーザーへ確認する。
-
-- `scripts/claude_hook_pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
-  dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け
-- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
-  汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け
-
-プラグインに配置した場合は`.claude/rules/agent-toolkit.md`の手順に従い`plugin.json`のバージョンを更新する。
-個人フックに配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
-`matcher`に新しいツール名を追加する必要があるか確認する。
-
-agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
-ブロック対象の個人プロジェクト名固定リストには`gv`・`lc`・`smpr`・`glatasks`等が含まれる。
-スキル名・pytoolsコマンド名・scripts名はhook実行時に当該ディレクトリをスキャンして動的に取得するため、
-新規追加時の手動更新は不要。
-OSSとして紹介する想定がある`pyfltr`・`pytilpack`はwarning通知に留める。
-
-## marketplace管理
-
-`update-dotfiles`（`chezmoi apply`後処理）は`pytools/_internal/install_claude_plugins.py`経由で
-agent-toolkitプラグインを自動インストール・更新する。marketplace配布は2段階の構成。
-
-- bootstrap経路: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
-- chezmoi apply経路: 後処理がdirectory型（dotfilesリポジトリの絶対パス直接参照）で維持し、
-  GitHub型登録が残存する環境では自動でdirectory型へマイグレーションする
-
-directory型を採用する理由は、dotfilesで編集した内容がpush/updateサイクルを介さずに即時反映される点にある。
-
-### ローカル編集の反映ワークフロー
-
-`agent-toolkit/`配下を編集したときの反映手順（chezmoi管理下）:
-
-1. `agent-toolkit/`配下のファイルを編集する
-2. `chezmoi apply`（または`update-dotfiles`）を実行する
-3. Claude Codeを再起動するか`/reload-plugins`を実行する
-
-version bumpは不要。編集が即時反映される。
 
 ## 固有差分
 

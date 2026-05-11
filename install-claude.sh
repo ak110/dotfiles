@@ -18,7 +18,10 @@ LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 
-# 配布対象ファイル一覧 (install-claude.ps1 の $files と一致させること)
+# 配布対象ファイル一覧。
+# `install-claude.ps1`の`$files`、および`agent-toolkit/rules/`配下のmdファイル一覧と一致させる。
+# 3者の整合性は`agent-toolkit/scripts/install_script_ssot_test.py`で自動検証する。
+# 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 FILES=(
     agent.md
     styles.md
