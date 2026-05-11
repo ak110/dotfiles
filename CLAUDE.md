@@ -20,14 +20,12 @@
 ## 注意点
 
 - `.claude`を含むディレクトリが3系統あり、配布元・デプロイ先・リポジトリ専用と役割が異なる
- （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）。
-  指示の対象を必ず確認する。詳細は「固有差分」の「ディレクトリ構造の注意」参照
-- `.chezmoi-source/dot_codex/`はCodex用の配布元であり、`~/.codex/`へデプロイされる。
+ （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）。指示の対象を必ず確認する。
+  詳細は「固有差分」の「ディレクトリ構造の注意」を参照
+- `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる。
   Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
-  配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う。
-  編集着手前に`agent-toolkit:writing-standards`と`agent-toolkit:claude-code-standards`の両スキルを呼び出す。
-  後者のスキル本体（SKILL.md）の共通原則および必読リファレンスを参照する
+  配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
   配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する
@@ -37,11 +35,10 @@
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
-- `agent-toolkit/rules/*.md`（agent-toolkitのルールファイル）を改訂する際、
-  `docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
+- `agent-toolkit/rules/*.md`を改訂する際、`docs/guide/claude-code-guide.md`に要約・ステップ数などが再掲されていることが多い。
   本体変更前に`grep`で参照箇所を確認する
-- `agent-toolkit/rules/agent.md`のコミットメッセージ方針と
-  `.gitmessage`は配布範囲が異なるため意図的に重複させている。SSOT化しない
+- `agent-toolkit/rules/agent.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させている。
+  SSOT化しない
 - spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
@@ -53,44 +50,41 @@
 - Pythonテストコードはソースモジュールの隣に同居方式で配置する。
   `pytools/`・`scripts/`・`agent-toolkit/`配下のいずれにおいても、
   ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く。
-  目的はテスト対象モジュールとテストコードの対応関係を見つけやすくすること。
   テスト共通ヘルパーは`pytools/_internal/_test_helpers.py`へ集約する。
   `pytools`パッケージ配布物にテストコードを含めないため、
   `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する。
   `scripts/`配下のスクリプト固有の補足:
-  - pytestはprependモードで`scripts/`を`sys.path`へ自動追加するため、
-    テスト側からスクリプトを直接importできる
-  - importしたい場合はファイル名をハイフン区切りではなくアンダースコア区切り（`<name>.py`）で命名する
-  - shebangを持つスクリプトは`chmod +x`で実行権限を付与する
-   （pre-commitの`check-shebang-scripts-are-executable`が強制し、付与漏れではコミットが失敗する）
+  - pytestはprependモードで`scripts/`を`sys.path`へ自動追加するため、テスト側からスクリプトを直接importできる
+  - importしたい場合はファイル名をアンダースコア区切り（`<name>.py`）で命名する
+  - shebangを持つスクリプトは`chmod +x`で実行権限を付与する（pre-commitの`check-shebang-scripts-are-executable`が強制する）
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして
   `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`を提供する。
   新規ヘルパーを書き起こす前に当モジュールの公開APIを確認し、重複定義を避ける
 
+## agent-toolkitルールファイルの構成
+
+`agent-toolkit/rules/`配下のルールファイルは`agent.md`（基本原則・運用方針）と`styles.md`（記述スタイル）の
+2ファイル構成。配布先`~/.claude/rules/agent-toolkit/`では両ファイルとも常時自動ロードされる。
+
+agent-toolkitプラグインが未導入の環境では[docs/guide/claude-code-guide.md](docs/guide/claude-code-guide.md)を案内する。
+
+本ルールファイルはデフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けである。
+
 ## Claude Codeフック実装の配置先
 
-PreToolUseフックを記述できる場所は2系統ある。
-新しいチェックや自動許可ロジックを追加するときはどちらへ配置するか判断する。
-判断に迷う場合は推測せずユーザーへ確認する。
+PreToolUseフックの配置先は2系統。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
+類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。判断に迷う場合はユーザーへ確認する。
 
-- `scripts/claude_hook_pretooluse.py`（個人フック）
-  - chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる
-  - dotfiles固有の運用前提に依存するチェックに適する
-   （例: `~/.claude/`がchezmoi配布先である前提、個人の命名規約・ディレクトリ構成など）
-- `agent-toolkit/`（プラグイン）
-  - `.claude-plugin/marketplace.json`経由で他者にも配布される
-  - 汎用的な制約・自動化に適する
-   （例: 一般的な文字化け検出、一般的なPowerShell互換性チェック）
-
-判断基準: 汎用的な機能はプラグイン、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似のチェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。
+- `scripts/claude_hook_pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
+  dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け
+- `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
+  汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け
 
 プラグインに配置した場合は`.claude/rules/agent-toolkit.md`の手順に従い`plugin.json`のバージョンを更新する。
 個人フックに配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
 `matcher`に新しいツール名を追加する必要があるか確認する。
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
-対象範囲は`agent-toolkit/`配下。
 ブロック対象の個人プロジェクト名固定リストには`gv`・`lc`・`smpr`・`glatasks`等が含まれる。
 スキル名・pytoolsコマンド名・scripts名はhook実行時に当該ディレクトリをスキャンして動的に取得するため、
 新規追加時の手動更新は不要。
@@ -99,18 +93,17 @@ OSSとして紹介する想定がある`pyfltr`・`pytilpack`はwarning通知に
 ## marketplace管理
 
 `update-dotfiles`（`chezmoi apply`後処理）は`pytools/_internal/install_claude_plugins.py`経由で
-agent-toolkitプラグインを自動インストール・更新する。
-marketplace配布は2段階の構成を取る。
+agent-toolkitプラグインを自動インストール・更新する。marketplace配布は2段階の構成。
 
-- bootstrap経路（GitHub型）: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
-- chezmoi apply経路（directory型）: 後処理がdirectory型（dotfilesリポジトリの絶対パス直接参照）で維持する。
+- bootstrap経路: `install-claude.sh`/`install-claude.ps1`がGitHub型として登録する
+- chezmoi apply経路: 後処理がdirectory型（dotfilesリポジトリの絶対パス直接参照）で維持し、
   GitHub型登録が残存する環境では自動でdirectory型へマイグレーションする
 
 directory型を採用する理由は、dotfilesで編集した内容がpush/updateサイクルを介さずに即時反映される点にある。
 
 ### ローカル編集の反映ワークフロー
 
-`agent-toolkit/`配下を編集したときの典型的な反映手順（chezmoi管理下）:
+`agent-toolkit/`配下を編集したときの反映手順（chezmoi管理下）:
 
 1. `agent-toolkit/`配下のファイルを編集する
 2. `chezmoi apply`（または`update-dotfiles`）を実行する
@@ -122,20 +115,17 @@ version bumpは不要。編集が即時反映される。
 
 ### ロールとファイル群の対応
 
-本リポジトリと配布物には以下の4ロールが関与する。
-ファイル群を編集する際は、対象読者を意識して文面を選ぶ。
+本リポジトリと配布物には4ロールが関与する。ファイル群を編集する際は対象読者を意識する。
 
-- dotfiles利用者: 本リポジトリ（chezmoiソース・`bin`・`pytools`等）を自分の環境にインストールして使う人
-- agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人。
-  dotfiles利用者を含むがそれ以外もいる
-  - 配布ルール（`~/.claude/rules/agent-toolkit/`）は標準のインストールルートでプラグインと同時に配置されるため、
-    配布ルールも導入済みである前提で記述してよい
-- 全プロジェクト編集者: dotfilesを含むあらゆるプロジェクトで編集作業をするコーディングエージェント。
+- dotfiles利用者: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
+- agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfiles利用者含む）。
+  配布ルール（`~/.claude/rules/agent-toolkit/`）も導入済み前提で記述してよい
+- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント。
   配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント。
-  全プロジェクト編集者がロードするものに加え、リポジトリ直下の`.claude/`と`CLAUDE.md`もロードする
+  全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`CLAUDE.md`もロードする
 
-各ファイル群の対象読者と役割は以下の通り。
+各ファイル群の対象読者と役割。
 
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |
@@ -155,61 +145,49 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 ### コミットメッセージtypeの判定例
 
 本リポジトリには配布物と本リポジトリ専用設定が混在するため、変更対象に応じてtypeを使い分ける。
-type判定の一般指針は`agent.md`の「Git操作時の確認チェックリスト」内Conventional Commits節を参照する。
 
 - 配布物の振る舞いを変える変更は`feat`/`fix`/`perf`相当
-  - `.chezmoi-source/`配下: dotfiles利用者の環境に展開されるため、利用者振る舞いを変える変更は機能変更に該当する
-  - `agent-toolkit/`配下のスキル・サブエージェント・agent-toolkitのルールファイル・`references/`:
+  - `.chezmoi-source/`配下: dotfiles利用者の環境に展開されるため、利用者振る舞いを変える変更は機能変更
+  - `agent-toolkit/`配下のスキル・サブエージェント・ルールファイル・`references/`:
     プラグイン利用者のコーディングエージェントの振る舞いが変わる
   - `pytools/`・`bin/`配下: dotfiles利用者向けCLIツールのため、挙動変更はそのまま機能変更
-- 本リポジトリ専用設定の変更は`chore`相当
-  - リポジトリ直下の`.claude/`・本ファイル（`CLAUDE.md`）はdotfiles編集者専用のため、
-    配布先振る舞いには影響しない
-- 配布物の利用者向け説明の変更は`docs`相当
-  - `README.md`・`docs/guide/`配下など、dotfiles利用者・agent-toolkit利用者向けの説明
+- 本リポジトリ専用設定の変更は`chore`相当（リポジトリ直下の`.claude/`・本ファイル）
+- 配布物の利用者向け説明の変更は`docs`相当（`README.md`・`docs/guide/`配下など）
 - 軽微な誤字修正・スタイル調整・コメント整形などは内容にかかわらず`chore`に倒してよい
 
 ### ディレクトリ構造の注意
 
-本リポジトリにはClaude Code/Codex設定ディレクトリが複数あり、取り違えると影響範囲が全く異なる事故につながる。
-指示があった際はどの階層を指すか必ず確認する。
+Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響範囲の異なる事故につながる。指示の対象を必ず確認する。
 
-- `.chezmoi-source/dot_claude/` — 配布元。chezmoiが`~/.claude/`にデプロイする。
-  ここを書き換えると`chezmoi apply`後に全環境へ反映される（グローバルユーザー設定の原本）
-- `~/.claude/` — デプロイ先（個人ホーム）。`chezmoi apply`で上書きされるため直接編集してはならない。
-  ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`である
-- `.claude/`（本リポジトリルート）— dotfilesリポ自身のClaude Codeプロジェクト設定。
-  配布対象外で、このリポジトリで作業するClaudeにしか影響しない
-- `.chezmoi-source/dot_codex/` — 配布元。chezmoiが`~/.codex/`にデプロイする。
-  `AGENTS.md`はCodex向けの薄いアダプターとして維持し、共有ルール・スキルは
-  `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へシンボリックリンクする
-- `.chezmoi-source/dot_config/` — 配布元。chezmoiが`~/.config/`にデプロイする。
-  `git`・`uv`・`pyfltr`等のXDG準拠ツール設定を配布する。
+- `.chezmoi-source/dot_claude/` — 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）
+- `~/.claude/` — デプロイ先。`chezmoi apply`で上書きされるため直接編集してはならない。
+  ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`
+- `.claude/`（本リポジトリルート）— dotfilesリポ自身のClaude Codeプロジェクト設定。配布対象外
+- `.chezmoi-source/dot_codex/` — Codex配布元。`~/.codex/`へデプロイ。
+  `AGENTS.md`はCodex向けアダプターで、共有ルール・スキルは`.chezmoi-source/dot_claude/`または
+  `agent-toolkit/`の原本へシンボリックリンクする
+- `.chezmoi-source/dot_config/` — XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元。
   ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは
-  `.chezmoi-source/dot_config/<tool>/`である。
-  配布先`~/.config/`配下を直接編集すると`chezmoi apply`で巻き戻る
-- `AGENTS.md`（本リポジトリルート）— Codex用プロジェクト設定。
-  `CLAUDE.md`へのシンボリックリンクとし、プロジェクト固有知見は`CLAUDE.md`へ集約する
-- `.claude/`（本リポジトリルート）のプロジェクト専用ルール・スキルは配布対象外である。
-  dotfiles専用スキルをCodex側でも明示検出させたい場合は、
-  `.agents/skills`を`.claude/skills`へのシンボリックリンクにする。
+  `.chezmoi-source/dot_config/<tool>/`。配布先を直接編集すると`chezmoi apply`で巻き戻る
+- `AGENTS.md`（本リポジトリルート）— Codex用プロジェクト設定。`CLAUDE.md`へのシンボリックリンク
+- `.claude/`（本リポジトリルート）のプロジェクト専用ルール・スキルは配布対象外。
+  Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする。
   `~/.codex/skills`にはグローバルに使うスキルだけを置く
 
-chezmoiはドットプレフィックスのディレクトリ（`.claude/`など）を自動無視するため`.chezmoi-source/dot_claude/`と衝突しない。
+chezmoiはドットプレフィックスのディレクトリを自動無視するため`.chezmoi-source/dot_claude/`と衝突しない。
 
 ### chezmoiの命名規則（早見表）
 
 `.chezmoi-source/`配下のファイル名は以下の規則で`~/`配下にデプロイされる
-（詳細はchezmoi公式: <https://www.chezmoi.io/reference/source-state-attributes/>）。
+（詳細は<https://www.chezmoi.io/reference/source-state-attributes/>）。
 
 - `dot_<name>` → `~/.<name>`（例: `dot_bashrc` → `~/.bashrc`）
 - `private_<name>` → パーミッション`600`／ディレクトリは`700`で配置
 - `executable_<name>` → 実行権限（`+x`）付きで配置
-- `<name>.tmpl` → Goテンプレートとして評価してから配置
-- `.tmpl`本文に`{{ ... }}`構文を文字列として残したい場合は文字列リテラルでエスケープする。
-  例: `{{ "{{ env.X }}" }}`と書くと配布先で`{{ env.X }}`が出力される。
-  展開結果は`chezmoi execute-template < <path>`で確認できる
+- `<name>.tmpl` → Goテンプレートとして評価してから配置。
+  `{{ ... }}`構文を文字列として残したい場合は文字列リテラルでエスケープする
+ （例: `{{ "{{ env.X }}" }}` → 配布先で`{{ env.X }}`）。展開結果は`chezmoi execute-template < <path>`で確認できる
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時に変更検知して実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed | grep <相対パス>`（配布対象確認）
-- pre-commitフックで`$HOME/dotfiles`チェックアウト時のみ`chezmoi apply`が自動実行される。
-  そのため`.chezmoi-source/`の編集は通常コミット前に配布先（`~/.*`配下）へ自動反映される
+- pre-commitフックで`$HOME/dotfiles`チェックアウト時のみ`chezmoi apply`が自動実行されるため、
+  `.chezmoi-source/`の編集は通常コミット前に配布先へ自動反映される
