@@ -33,6 +33,14 @@ disable-model-invocation: true
 - pyfltrの挙動・メッセージに関する改善提案
 - agent-toolkitのスキル・ルールに関する改善提案
 
+各候補は以下の4点を自己検証し、4点すべて通過したものだけを提示する。
+
+- (a) 表層の現象ではなく根本原因まで遡って分析する
+- (b) 再発リスクと影響度を見積もる（単発・偶発の事象は除外）
+- (c) 既存のCLAUDE.md・ルール・スキルで既に対処済みでないか確認する
+- (d) 追記先はコードに近い順（docstring/インラインコメント → CLAUDE.md/.claude/rules → .claude/skills）で
+  最適なものを選び、「書きやすい場所」に倒さない
+
 ## ステップ3: Show Proposed Changes
 
 ユーザーへ改善提案を提示する。
