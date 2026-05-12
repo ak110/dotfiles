@@ -485,6 +485,85 @@ class TestPlanModeSkillFirstCheck:
         assert self._has_warn(result, "plan-mode skill")
 
 
+class TestResponseLanguageCheck:
+    """直前メインエージェント応答の日本語文字比率検査の統合動作。"""
+
+    @staticmethod
+    def _write_transcript(tmp_path: pathlib.Path, text: str, *, is_sidechain: bool = False) -> pathlib.Path:
+        entry: dict = {
+            "type": "assistant",
+            "message": {
+                "id": "m1",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+                "stop_reason": "end_turn",
+            },
+        }
+        if is_sidechain:
+            entry["isSidechain"] = True
+        path = tmp_path / "transcript.jsonl"
+        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
+        if not result.stdout.strip():
+            return ""
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ""
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+    def test_warns_when_response_is_english(self, tmp_path: pathlib.Path):
+        """日本語比率0%・プレーンテキスト50文字以上の応答で警告が乗る。"""
+        transcript = self._write_transcript(tmp_path, "A" * 100)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+            }
+        )
+        assert result.returncode == 0
+        ctx = self._additional_context(result)
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in ctx
+        assert "written largely in English" in ctx
+
+    def test_no_warn_when_response_is_japanese(self, tmp_path: pathlib.Path):
+        """日本語比率高めの応答では日本語比率警告が出ない。"""
+        transcript = self._write_transcript(tmp_path, "これは日本語の応答です。" * 5)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+            }
+        )
+        assert result.returncode == 0
+        assert "written largely in English" not in self._additional_context(result)
+
+    def test_no_warn_for_sidechain(self, tmp_path: pathlib.Path):
+        """payloadのisSidechain=trueは検査対象外。"""
+        transcript = self._write_transcript(tmp_path, "A" * 100)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+                "isSidechain": True,
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_warn_without_transcript_path(self):
+        """transcript_path未指定なら検査スキップ。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
 class TestGeneralBehavior:
     """統合スクリプト共通の振る舞い。"""
 
