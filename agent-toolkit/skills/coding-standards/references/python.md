@@ -32,6 +32,11 @@
  （参照元を二度参照する手間が増え、リネーム時の追従漏れも起きやすいため）。
   例えば`x = cls.foo`と書いて`x`を使うより`cls.foo`を直接使う。
 - SQLAlchemyのNULLチェックは`.is_(None)`を使う
+- `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）。
+  数値型を厳格に限定するときは`type(x) is int`または
+  `isinstance(x, int) and not isinstance(x, bool)`で除外する。
+  `isinstance(value, type(reference))`形式の型一致チェックでも、
+  `reference`が`int`値のときに`bool`が素通りする
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
   - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う。
     `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
