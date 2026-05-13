@@ -11,6 +11,7 @@ import time
 
 import pytest
 from _stop_gate import (
+    _has_pending_subagents,
     _is_assistant_asking_question,
     _is_assistant_task_completed,
     _is_assistant_waiting,
@@ -45,6 +46,70 @@ def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reas
 def _user_entry(text: str) -> dict:
     """ユーザーエントリを生成する。"""
     return {"type": "user", "message": {"role": "user", "content": text}}
+
+
+def _user_async_launched_entry(tool_use_id: str, *, sidechain: bool = False) -> dict:
+    """background Agent起動を記録するuserエントリを生成する。
+
+    実transcriptフォーマットに合わせ、`toolUseResult.status == "async_launched"`と
+    `message.content`配列内の`tool_result`ブロックを持たせる。
+    """
+    return {
+        "type": "user",
+        "isSidechain": sidechain,
+        "toolUseResult": {"isAsync": True, "status": "async_launched", "agentId": "agent-x"},
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Async agent launched successfully"}],
+                }
+            ],
+        },
+    }
+
+
+def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed") -> dict:
+    """`<task-notification>`本文を持つuserエントリを生成する。"""
+    notification = (
+        "<task-notification>"
+        "<task-id>task-x</task-id>"
+        f"<tool-use-id>{tool_use_id}</tool-use-id>"
+        f"<status>{status}</status>"
+        "<summary>sub agent finished</summary>"
+        "</task-notification>"
+    )
+    return {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [{"type": "text", "text": notification}],
+        },
+    }
+
+
+def _user_foreground_agent_entry(tool_use_id: str) -> dict:
+    """foreground Agent完了を記録するuserエントリを生成する（参照用）。
+
+    `toolUseResult.status`が`completed`の同期完了パスを再現する。
+    """
+    return {
+        "type": "user",
+        "isSidechain": False,
+        "toolUseResult": {"status": "completed", "agentId": "agent-x"},
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Agent completed"}],
+                }
+            ],
+        },
+    }
 
 
 # 共通 fixture: 基本的な transcript の末尾に置くアシスタントターン
@@ -435,3 +500,92 @@ class TestIsRealSessionEnd:
             ],
         )
         assert is_real_session_end(str(t)) is False
+
+    def test_pending_background_subagent_returns_false(self, tmp_path: pathlib.Path):
+        """過去ターンに未完了 background Agent が残っている → False。
+
+        完了文言あり・質問なし・待機語なし・最後の tool_use は Bash の通常実行で
+        既存 4 条件は通過するが、background Agent が起動済みかつ完了通知未到着のため
+        新条件で False となるケース。
+        """
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _assistant_entry(
+                    [{"type": "tool_use", "id": "toolu_bg1", "name": "Agent", "input": {}}],
+                    msg_id="msg_launch",
+                    stop_reason="tool_use",
+                ),
+                _user_async_launched_entry("toolu_bg1"),
+                _user_entry("続きをお願いします"),
+                _assistant_entry(
+                    [
+                        {"type": "text", "text": _COMPLETION_TEXT},
+                        {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}},
+                    ]
+                ),
+            ],
+        )
+        assert is_real_session_end(str(t)) is False
+
+
+class TestHasPendingSubagents:
+    """`_has_pending_subagents` の単体テスト。"""
+
+    def test_launched_without_notification_returns_true(self, tmp_path: pathlib.Path):
+        """`async_launched` 1 件、対応する `<task-notification>` なし → True。"""
+        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_a")])
+        assert _has_pending_subagents(str(t)) is True
+
+    def test_launched_with_matching_notification_returns_false(self, tmp_path: pathlib.Path):
+        """`async_launched` 1 件、対応する `<task-notification>` あり → False。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_async_launched_entry("toolu_a"),
+                _user_task_notification_entry("toolu_a"),
+            ],
+        )
+        assert _has_pending_subagents(str(t)) is False
+
+    def test_multiple_launched_partial_notification_returns_true(self, tmp_path: pathlib.Path):
+        """複数の `async_launched` のうち 1 件のみ完了通知 → True。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_async_launched_entry("toolu_a"),
+                _user_async_launched_entry("toolu_b"),
+                _user_task_notification_entry("toolu_a"),
+            ],
+        )
+        assert _has_pending_subagents(str(t)) is True
+
+    @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+    def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
+        """`<status>` の値が `completed` / `failed` / `cancelled` のいずれでも完了扱い → False。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_async_launched_entry("toolu_a"),
+                _user_task_notification_entry("toolu_a", status=status),
+            ],
+        )
+        assert _has_pending_subagents(str(t)) is False
+
+    def test_sidechain_launched_is_ignored(self, tmp_path: pathlib.Path):
+        """sidechain 内の `async_launched` は無視 → False。"""
+        t = _write_transcript(
+            tmp_path,
+            [_user_async_launched_entry("toolu_a", sidechain=True)],
+        )
+        assert _has_pending_subagents(str(t)) is False
+
+    def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
+        """foreground Agent（`toolUseResult.status == "completed"`）は対象外 → False。"""
+        t = _write_transcript(tmp_path, [_user_foreground_agent_entry("toolu_a")])
+        assert _has_pending_subagents(str(t)) is False
+
+    def test_missing_file_returns_false(self):
+        """transcript 未存在 → False。"""
+        assert _has_pending_subagents("/nonexistent/transcript.jsonl") is False

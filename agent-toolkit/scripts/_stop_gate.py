@@ -1,7 +1,16 @@
-"""Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。"""
+"""Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
+
+判定はtranscript JSONLの内容のみを根拠とする。
+直前ターン単位の確認（完了文言・質問・待機語・最後のtool_useの種別）に加えて、
+`toolUseResult.status == "async_launched"`で起動済みかつ後続の`<task-notification>`内
+`<tool-use-id>`で完了通知が確認できないbackground Agentを、transcript全体から検出する。
+background起動のサブエージェントが動作中の状態でStop hookが誤発動するのを避けるため、
+本走査はターンをまたいで行う。
+"""
 
 import json
 import pathlib
+import re
 import time
 
 from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
@@ -47,6 +56,14 @@ _WAITING_KEYWORDS: tuple[str, ...] = (
 # Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monitor"})
 
+# `<task-notification>...</task-notification>`要素を非貪欲に切り出す正規表現。
+# `re.DOTALL`で本文中の改行も拾う。
+_TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
+
+# `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
+# `toolu_xxx`を抽出する正規表現。
+_TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
+
 
 def is_real_session_end(transcript_path: str) -> bool:
     """transcriptを解析して「真のセッション終了」かどうかを判定する。
@@ -56,6 +73,13 @@ def is_real_session_end(transcript_path: str) -> bool:
     - 直前アシスタントターンが質問を含まない
     - 直前アシスタントターンが待機語を含まない
     - 直前アシスタントターンの最後のtool_useが非同期待機系でない
+    - 未完了のbackground起動サブエージェント（Agent tool）が存在しない
+
+    最後の条件はtranscript全体を走査して判定する。
+    メイン側（`isSidechain`が真でない）userエントリのうち
+    `toolUseResult.status == "async_launched"`を持つものから起動済み`tool_use_id`集合を採取し、
+    後続のメイン側userエントリのtext content内に含まれる`<task-notification>`要素から
+    `<tool-use-id>`を抽出して除外する。残差が1件以上で「未完了サブエージェントあり」と判断する。
 
     transcriptを読み取れない異常系ではFalseを返す（安全側に倒す）。
     """
@@ -66,7 +90,9 @@ def is_real_session_end(transcript_path: str) -> bool:
         return False
     if _is_assistant_waiting(transcript_path):
         return False
-    return not _last_tool_use_is_async_wait(transcript_path)
+    if _last_tool_use_is_async_wait(transcript_path):
+        return False
+    return not _has_pending_subagents(transcript_path)
 
 
 def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
@@ -220,3 +246,86 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
         if isinstance(tool_input, dict) and tool_input.get("run_in_background") is True:
             return True
     return False
+
+
+def _has_pending_subagents(transcript_path: str) -> bool:
+    r"""transcript全体を走査して未完了のbackground Agentが存在する場合に真を返す。
+
+    検出スコープはメイン側（`isSidechain`が真でない）userエントリに限定する。
+    foreground起動のAgentはメインターン内で同期完了するため対象外。
+
+    起動の記録: `toolUseResult.status == "async_launched"`を持つuserエントリ。
+    `message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
+
+    完了の記録: メイン側userエントリのtext content内に含まれる`<task-notification>`要素から
+    `<tool-use-id>(toolu_[\\w]+)</tool-use-id>`を抽出する。
+    `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
+
+    起動集合から完了集合を差し引いて1件以上残れば真。
+    transcript読み取り失敗時は偽を返す（安全側に倒し、既存条件で抑止または通過させる）。
+    """
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return False
+    launched: set[str] = set()
+    completed: set[str] = set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "user" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        tool_use_result = entry.get("toolUseResult")
+        if isinstance(tool_use_result, dict) and tool_use_result.get("status") == "async_launched":
+            tool_use_id = _extract_tool_result_id(message)
+            if tool_use_id is not None:
+                launched.add(tool_use_id)
+        completed.update(_extract_task_notification_ids(message))
+    return bool(launched - completed)
+
+
+def _extract_tool_result_id(message: dict) -> str | None:
+    """userメッセージの`content`配列内の`tool_result`ブロックから`tool_use_id`を抽出する。"""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "tool_result":
+            continue
+        tool_use_id = block.get("tool_use_id")
+        if isinstance(tool_use_id, str):
+            return tool_use_id
+    return None
+
+
+def _extract_task_notification_ids(message: dict) -> set[str]:
+    """userメッセージの`content`内の`<task-notification>`要素から完了`tool_use_id`を抽出する。
+
+    `content`が文字列（旧フォーマット）でも配列（実transcriptフォーマット）でも処理する。
+    """
+    result: set[str] = set()
+    content = message.get("content")
+    if isinstance(content, str):
+        for notification in _TASK_NOTIFICATION_RE.findall(content):
+            result.update(_TOOL_USE_ID_RE.findall(notification))
+        return result
+    if not isinstance(content, list):
+        return result
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "text":
+            continue
+        text = block.get("text", "")
+        if not isinstance(text, str):
+            continue
+        for notification in _TASK_NOTIFICATION_RE.findall(text):
+            result.update(_TOOL_USE_ID_RE.findall(notification))
+    return result
