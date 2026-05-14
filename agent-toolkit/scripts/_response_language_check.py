@@ -1,7 +1,7 @@
-"""Claude Code agent-toolkit: メインエージェント応答の日本語比率検査。
+"""Claude Code agent-toolkit: メインエージェント応答の非ASCII文字比率検査。
 
 直前のアシスタントターン（非サブエージェント）のテキストブロックを集約し、
-コードブロック・インラインコード・URLを除いた地の文の日本語文字比率を判定する。
+コードブロック・インラインコード・URLを除いた地の文の非ASCII文字比率を判定する。
 比率が閾値未満なら警告メッセージを返し、PreToolUseのadditionalContext経由で
 コーディングエージェントへ通知する。
 """
@@ -14,9 +14,9 @@ from _transcript import iter_latest_assistant_messages
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
 _MIN_PLAIN_TEXT_LENGTH = 50
 
-# 日本語文字比率の閾値。地の文の文字数のうち日本語文字（ひらがな・カタカナ・漢字・
-# 半角カナ）がこの比率未満なら警告する。
-_MIN_JAPANESE_RATIO = 0.3
+# 非ASCII文字比率の閾値。地の文の文字数のうち非ASCII文字（日本語・全角記号など
+# `\x00-\x7f`の範囲外の文字）がこの比率未満なら警告する。
+_MIN_NON_ASCII_RATIO = 0.1
 
 # フェンス付きコードブロック（言語指定の有無を問わない、複数行対応）。
 _FENCED_CODE_PATTERN = re.compile(r"```[\s\S]*?```")
@@ -27,21 +27,16 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
 
-# 日本語文字（ひらがな U+3040-309F・カタカナ U+30A0-30FF・
-# CJK統合漢字 U+4E00-9FFF・CJK拡張A U+3400-4DBF・半角カナ U+FF65-FF9F）。
-_JAPANESE_CHAR_PATTERN = re.compile(r"[぀-ゟ゠-ヿ㐀-䶿一-鿿･-ﾟ]")
-
-# 比率の分母に含めるscript系文字（日本語文字 + ASCIIラテン英字）。
-# 数字・記号・空白は分母から除外することで、文体としての日本語／英語比率に近づける。
-_SCRIPT_CHAR_PATTERN = re.compile(r"[A-Za-z぀-ゟ゠-ヿ㐀-䶿一-鿿･-ﾟ]")
+# 非ASCII文字（`\x00-\x7f`の範囲外の文字すべて）。
+_NON_ASCII_CHAR_PATTERN = re.compile(r"[^\x00-\x7f]")
 
 
 def check(transcript_path: str) -> str | None:
-    """直前のメインエージェント応答の日本語文字比率を判定する。
+    """直前のメインエージェント応答の非ASCII文字比率を判定する。
 
     判定対象テキストはアシスタントターン内の`type == "text"`ブロックのみで、
     フェンス付きコードブロック・インラインコード・URLを除外する。
-    閾値以上または対象外条件（短文・script系文字皆無・transcript読み取り失敗）でNoneを返し、
+    閾値以上または対象外条件（短文・transcript読み取り失敗）でNoneを返し、
     閾値未満で警告メッセージ本文（英語）を返す。閾値はモジュール定数を参照する。
     """
     if not transcript_path:
@@ -49,18 +44,14 @@ def check(transcript_path: str) -> str | None:
     plain_text = _collect_plain_text(transcript_path)
     if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH:
         return None
-    script_chars = _SCRIPT_CHAR_PATTERN.findall(plain_text)
-    if not script_chars:
-        return None
-    japanese_chars = _JAPANESE_CHAR_PATTERN.findall(plain_text)
-    ratio = len(japanese_chars) / len(script_chars)
-    if ratio >= _MIN_JAPANESE_RATIO:
+    non_ascii_chars = _NON_ASCII_CHAR_PATTERN.findall(plain_text)
+    ratio = len(non_ascii_chars) / len(plain_text)
+    if ratio >= _MIN_NON_ASCII_RATIO:
         return None
     return (
         "your previous assistant turn appears to be written largely in English."
         " Per styles.md, conduct progress updates / decisions / status reports in Japanese,"
         " including short status sentences around tool calls."
-        " Do not switch to English just because the surrounding code identifiers or keywords are English."
     )
 
 

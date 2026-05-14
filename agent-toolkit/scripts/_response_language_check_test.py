@@ -29,31 +29,31 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _make_mixed(japanese_count: int, english_count: int) -> str:
-    """指定数の日本語ひらがな・英字を結合した文字列を返す。"""
-    return "あ" * japanese_count + "A" * english_count
+def _make_mixed(non_ascii_count: int, ascii_count: int) -> str:
+    """指定数の非ASCII文字（ひらがな）とASCII文字（英字）を結合した文字列を返す。"""
+    return "あ" * non_ascii_count + "A" * ascii_count
 
 
 class TestRatioBoundary:
-    """日本語文字比率の境界値テスト。比率 = 日本語文字数 / (日本語文字数 + 英字数)。"""
+    """非ASCII文字比率の境界値テスト。比率 = 非ASCII文字数 / プレーンテキスト全体文字数。"""
 
     @pytest.mark.parametrize(
-        ("japanese_count", "english_count", "expect_warn"),
+        ("non_ascii_count", "ascii_count", "expect_warn"),
         [
-            # ratio=0.0: 英字のみ → 警告
+            # ratio=0.00: ASCIIのみ → 警告
             (0, 50, True),
-            # ratio=0.28 (<0.30): 警告
-            (14, 36, True),
-            # ratio=0.30 ちょうど: 警告なし
-            (15, 35, False),
-            # ratio=0.32 (>0.30): 警告なし
-            (16, 34, False),
-            # ratio=1.0: 日本語のみ → 警告なし
+            # ratio=0.08 (<0.10): 警告
+            (4, 46, True),
+            # ratio=0.10 ちょうど: 警告なし
+            (5, 45, False),
+            # ratio=0.12 (>0.10): 警告なし
+            (6, 44, False),
+            # ratio=1.00: 非ASCIIのみ → 警告なし
             (50, 0, False),
         ],
     )
-    def test_ratio(self, tmp_path: pathlib.Path, japanese_count: int, english_count: int, expect_warn: bool):
-        text = _make_mixed(japanese_count, english_count)
+    def test_ratio(self, tmp_path: pathlib.Path, non_ascii_count: int, ascii_count: int, expect_warn: bool):
+        text = _make_mixed(non_ascii_count, ascii_count)
         path = _write_transcript(tmp_path, [_text_block(text)])
         result = check(path)
         assert (result is not None) is expect_warn
@@ -67,9 +67,9 @@ class TestPlainTextLengthBoundary:
         [
             # 49文字（下限未満）: 検査スキップ → None
             (49, False),
-            # 50文字（下限）: 検査実行 → 英字のみで警告
+            # 50文字（下限）: 検査実行 → ASCIIのみで警告
             (50, True),
-            # 51文字（下限超過）: 検査実行 → 英字のみで警告
+            # 51文字（下限超過）: 検査実行 → ASCIIのみで警告
             (51, True),
         ],
     )
@@ -81,7 +81,7 @@ class TestPlainTextLengthBoundary:
 
 
 class TestMasking:
-    """コードブロック・インラインコード・URLは比率分母から除外する。"""
+    """コードブロック・インラインコード・URLは地の文から除外する。"""
 
     def test_fenced_code_block_only_english(self, tmp_path: pathlib.Path):
         """フェンス付きコードブロック内が英字でも、地の文が日本語なら警告しない。"""
@@ -92,13 +92,13 @@ class TestMasking:
         assert check(path) is None
 
     def test_inline_code_only_english(self, tmp_path: pathlib.Path):
-        """インラインコード内の英字は分母から除外する。"""
+        """インラインコード内の英字は地の文から除外する。"""
         text = "これは日本語の説明です。コマンドは`grep -rn pattern path/to/files`で実行します。さらに日本語で続けます。"
         path = _write_transcript(tmp_path, [_text_block(text)])
         assert check(path) is None
 
     def test_url_only_english(self, tmp_path: pathlib.Path):
-        """URL文字列はscript系文字計算から除外する。"""
+        """URL文字列は地の文から除外する。"""
         text = (
             "詳細は https://example.com/very/long/path/to/some/document/page.html を参照してください。日本語で説明を続けます。"
         )
@@ -116,7 +116,7 @@ class TestSpecialInputs:
 
     def test_sidechain_only(self, tmp_path: pathlib.Path):
         """サブエージェント（isSidechain=true）の応答のみなら検査対象外。"""
-        text = "A" * 100  # 英字のみ100文字（メイン応答なら警告対象）
+        text = "A" * 100  # ASCIIのみ100文字（メイン応答なら警告対象）
         path = _write_transcript(tmp_path, [_text_block(text)], is_sidechain=True)
         assert check(path) is None
 
