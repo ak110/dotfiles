@@ -1,3 +1,3 @@
 @echo off
-rem NOTE: ‘Î‰‚·‚éLinux”Å ¨ bin/executable_ccusage
+rem NOTE: ‘Î‰‚·‚éLinux”Å ¨ bin/ccusage
 pnpx ccusage %*

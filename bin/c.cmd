@@ -1,4 +1,4 @@
 @echo off
-rem NOTE: ‘Î‰‚·‚éLinux”Å ¨ bin/executable_c
+rem NOTE: ‘Î‰‚·‚éLinux”Å ¨ bin/c
 cls
 if exist ".git" git status
