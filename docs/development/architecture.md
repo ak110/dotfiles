@@ -44,6 +44,7 @@
 | `bin/ccusage` | `bin/ccusage.cmd` |
 | `bin/claude-code-viewer` | `bin/claude-code-viewer.cmd` |
 | `bin/sonnet` | `bin/sonnet.cmd` |
+| `bin/sshr` | `bin/sshr.cmd` |
 | `bin/update-dotfiles` | `bin/update-dotfiles.cmd` |
 | `.chezmoi-source/run_after_post-apply.sh.tmpl` | `.chezmoi-source/run_after_post-apply-windows.ps1.tmpl` |
 | `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` |

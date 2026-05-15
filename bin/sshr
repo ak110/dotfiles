@@ -1,0 +1,19 @@
+#!/bin/bash
+# NOTE: 対応するWindows版 → bin/sshr.cmd
+# ssh自動再接続ラッパー。
+# - 引数はssh本体へ完全透過する
+# - exit 0で終了 → ループ脱出
+# - SIGINT (130) / SIGTERM (143) → 当該コードで終了
+# - その他のexit code → メッセージを表示して即座に再実行
+set -u
+
+while :; do
+    ssh "$@"
+    code=$?
+    case "$code" in
+        0 | 130 | 143)
+            exit "$code"
+            ;;
+    esac
+    echo "[sshr] 切断されました (exit=${code})。再接続します... (Ctrl+C で終了)" >&2
+done
