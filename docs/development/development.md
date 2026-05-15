@@ -23,14 +23,11 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 
 ## サプライチェーン攻撃対策
 
-公開直後のパッケージインストールをブロックするグローバル設定をchezmoiで配布する。
-利用者向けの一覧は[docs/guide/security.md](../guide/security.md)を参照する。
-
-開発者・CI・pre-commitフックの3経路で以下3点の方針を貫徹する。
+ロックファイル尊重・公開待機・ピン留め運用の3点を貫徹する。
 
 - ロックファイル尊重: `uv.lock`を再resolveせず使用する（`UV_FROZEN=1`を環境変数で常時適用）
 - 公開待機: `exclude-newer`で公開から一定の期間を経たパッケージのみ採用する
-- ピン留め運用: GitHub Actionsはコミットハッシュで固定し、[pinact](https://github.com/suzuki-shunsuke/pinact)で更新を管理する
+- ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`を参照する。
-依存の追加・更新は通常どおり`uv add`/`uv remove`/`uv lock --upgrade-package`を使用する。
+利用者向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。

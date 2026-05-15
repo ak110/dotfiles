@@ -69,23 +69,18 @@
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
 `completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
 
-補完スクリプトの再生成・検証:
+新しいCLIに補完を追加する場合は、CLIモジュールへのマーカー配置と`enable_completion()`呼び出しをコード側コメントに従い追加し、
+補完スクリプトを再生成する。
+
+### 補完スクリプトの再生成・検証
 
 ```bash
 uv run --script scripts/gen-completions.py          # 再生成
 uv run --script scripts/gen-completions.py --check  # 検証（pre-commitフックで自動実行）
 ```
 
-新しいCLIに補完を追加する場合:
-
-1. CLIモジュール先頭に`# PYTHON_ARGCOMPLETE_OK`マーカーを配置
-2. `parser.parse_args()`の直前で`pytools._internal.cli.enable_completion(parser)`を呼び出す処理を追加
-3. 補完スクリプトを再生成（上記コマンドを参照）
-
-手書き補完が必要な場合（`bin/`配下コマンドなど）は`completions/<name>.bash`を新規追加。
+手書き補完が必要な場合（`bin/`配下コマンドなど）は`completions/<name>.bash`を新規追加する。
 `_`プレフィックスのファイルは自動生成物の慣習として予約する。
-Windows専用CLI（`runAsAdmin`・`regExport`）はLinux環境では`ArgumentParser`生成前に終了するため、
-マーカーを付けず補完対象外としている。
 
 ## Windows PowerShellスクリプトの注意事項
 
