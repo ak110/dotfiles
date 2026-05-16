@@ -1,7 +1,7 @@
 """agent-toolkit/skills/writing-standards/scripts/check_line_width.py のテスト。
 
 Markdown 1行幅検査スクリプトをsubprocessで起動し、
-正常系・異常系・閾値切り替え・コードブロック除外・frontmatter対象化の挙動を検証する。
+正常系・異常系・閾値切り替え・コードブロック除外・表行除外・frontmatter対象化の挙動を検証する。
 """
 
 import pathlib
@@ -49,16 +49,16 @@ class TestCheckLineWidth:
         assert result.returncode == 1
         assert f"{path}:1 幅=128" in result.stderr
 
-    def test_table_row_is_checked(self, tmp_path: pathlib.Path):
-        # 表（Markdownテーブル）の行も対象。
+    def test_table_row_is_excluded(self, tmp_path: pathlib.Path):
+        # 表（Markdownテーブル、パイプ`|`で始まる行）は対象外。
         long_cell = "あ" * 70
         path = _write(
             tmp_path / "table.md",
             f"| col1 | col2 |\n| --- | --- |\n| {long_cell} | x |\n",
         )
         result = _run(str(path))
-        assert result.returncode == 1
-        assert f"{path}:3" in result.stderr
+        assert result.returncode == 0
+        assert result.stderr == ""
 
     def test_frontmatter_is_checked(self, tmp_path: pathlib.Path):
         # frontmatter（YAML）の長すぎる行も違反扱い。

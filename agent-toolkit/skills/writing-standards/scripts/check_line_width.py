@@ -7,6 +7,7 @@
 
 writing-standards SKILL.mdの「1行の表示幅は半角換算で127までを上限」規約を機械化する。
 textlintやmarkdownlintには全角2・半角1で判定する既製ルールがないため本スクリプトを設ける。
+フェンス付きコードブロックとMarkdown表（パイプ`|`で始まる行）は検査対象外とする。
 """
 
 from __future__ import annotations
@@ -67,6 +68,8 @@ def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
             continue
         if in_fence:
             continue
+        if _is_table_row(raw):
+            continue
         width = _display_width(raw)
         if width > max_width:
             excerpt = _truncate(raw, _EXCERPT_WIDTH)
@@ -78,6 +81,11 @@ def _is_fence(line: str) -> bool:
     """フェンス開閉行かどうかを判定する。先頭の連続スペースは無視する。"""
     stripped = line.lstrip()
     return stripped.startswith("```") or stripped.startswith("~~~")
+
+
+def _is_table_row(line: str) -> bool:
+    """Markdown表の行であるか判定する。パイプ`|`で始まる行を表として扱う。"""
+    return line.lstrip().startswith("|")
 
 
 def _display_width(text: str) -> int:
