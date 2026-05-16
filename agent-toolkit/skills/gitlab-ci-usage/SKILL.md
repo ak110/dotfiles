@@ -129,7 +129,7 @@ test:
 - プロジェクトの`/-/ci/lint`ページ: Web UIでの手動検証。`include`解決や変数込みの検証が可能。
   `include`先を含めた統合的な妥当性確認、最終確認に使用
 
-GitLab本体のlintは`include`や`workflow`評価までを行うため、
+GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 ローカルの構文チェックだけでは検知できない統合レベルの誤りを検出できる。
 
 ## トラブルシューティング指針

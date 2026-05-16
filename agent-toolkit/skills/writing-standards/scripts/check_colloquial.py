@@ -53,12 +53,15 @@ _EXCLUDED_DIRS = frozenset(
 # 検査対象から自動的に外すファイル群。
 # 辞書ファイル本体は自身を検査するとほぼ全行マッチするため除外する。
 # 対比集（`tone-examples.md`）は悪い例を意図的に記載しており、辞書ファイルと同等の理由で除外する。
+# 自テストファイルは辞書の置換候補定義を発火させる入力テキスト（違反語そのもの）を含むため除外する。
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
+_SELF_TEST = pathlib.Path(__file__).resolve().parent / "check_colloquial_test.py"
 _EXCLUDED_FILES = frozenset(
     {
         _colloquial_check.DENY_PATH.resolve(),
         _colloquial_check.ALLOW_PATH.resolve(),
         _TONE_EXAMPLES.resolve(),
+        _SELF_TEST.resolve(),
     }
 )
 
@@ -88,9 +91,8 @@ def _main() -> int:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for line_no, col, match_str, snippet in _colloquial_check.scan_text(text, deny_patterns, allow_patterns):
-            excerpt = snippet if len(snippet) <= _EXCERPT_LIMIT else snippet[:_EXCERPT_LIMIT] + "…"
-            print(f"{path}:{line_no}:{col} [{match_str}] {excerpt}", file=sys.stderr)
+        for hit in _colloquial_check.scan_text(text, deny_patterns, allow_patterns):
+            print(_format_hit_line(path, hit), file=sys.stderr)
             total += 1
     if total:
         print(
@@ -99,6 +101,21 @@ def _main() -> int:
         )
         return 1
     return 0
+
+
+def _format_hit_line(
+    path: pathlib.Path,
+    hit: tuple[int, int, str, str, str | None],
+) -> str:
+    """検出ヒットを表示用の1行へ整形する。
+
+    置換候補が与えられた場合は`[match] -> [候補] excerpt`形式で挿入する。
+    抜粋は`_EXCERPT_LIMIT`を超える長さで末尾を省略する。
+    """
+    line_no, col, match_str, snippet, replacement = hit
+    excerpt = snippet if len(snippet) <= _EXCERPT_LIMIT else snippet[:_EXCERPT_LIMIT] + "…"
+    suggestion = f" -> [{replacement}]" if replacement else ""
+    return f"{path}:{line_no}:{col} [{match_str}]{suggestion} {excerpt}"
 
 
 def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:

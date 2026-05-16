@@ -20,8 +20,19 @@ def _expand_pattern(pattern_str: str) -> str:
 
 
 def _read_patterns_text(path: pathlib.Path) -> list[str]:
-    """ファイルから（コンパイル前の）正規表現文字列を順に取り出す。"""
-    return [s for line in path.read_text(encoding="utf-8").splitlines() for s in [line.strip()] if s and not s.startswith("#")]
+    """ファイルから（コンパイル前の）正規表現文字列を順に取り出す。
+
+    タブ区切りで併記された置換候補列は除外し、パターン部のみを返す。
+    """
+    rows: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        head = stripped.split("\t", 1)[0]
+        if head:
+            rows.append(head)
+    return rows
 
 
 @pytest.fixture(name="deny_patterns", scope="module")
@@ -43,7 +54,7 @@ def _overlap_sample(deny_patterns) -> tuple[str, str]:
     """
     for raw in _read_patterns_text(_colloquial_check.ALLOW_PATH):
         sample = _expand_pattern(raw)
-        for dp in deny_patterns:
+        for dp, _ in deny_patterns:
             m = dp.search(sample)
             if m:
                 return sample, m.group(0)
@@ -63,7 +74,9 @@ class TestLoadPatterns:
         f.write_text("# header\n\n[xy]\n   \n# tail\n", encoding="utf-8")
         patterns = _colloquial_check.load_patterns(f)
         assert len(patterns) == 1
-        assert patterns[0].search("x")
+        compiled, replacement = patterns[0]
+        assert compiled.search("x")
+        assert replacement is None
 
     def test_skips_invalid_regex(self, tmp_path: pathlib.Path):
         f = tmp_path / "p.txt"
@@ -72,6 +85,24 @@ class TestLoadPatterns:
 
     def test_missing_file_returns_empty(self, tmp_path: pathlib.Path):
         assert not _colloquial_check.load_patterns(tmp_path / "missing.txt")
+
+    @pytest.mark.parametrize(
+        ("line", "expected_replacement"),
+        [
+            ("[xy]", None),  # タブ無し
+            ("[xy]\t候補", "候補"),  # 候補あり
+            ("[xy]\t", None),  # タブ末尾のみ（空のreplacement）
+            ("[xy]\t候補\t補足", "候補\t補足"),  # 複数タブ: 最初のタブまでがパターン
+        ],
+    )
+    def test_parses_replacement_column(self, tmp_path: pathlib.Path, line: str, expected_replacement: str | None):
+        f = tmp_path / "p.txt"
+        f.write_text(f"{line}\n", encoding="utf-8")
+        patterns = _colloquial_check.load_patterns(f)
+        assert len(patterns) == 1
+        compiled, replacement = patterns[0]
+        assert compiled.search("x")
+        assert replacement == expected_replacement
 
 
 class TestFirstHit:
@@ -104,7 +135,7 @@ class TestScanText:
         text = f"line1\n本文に{deny_sub}末尾\nline3"
         hits = _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
         assert hits, "検出が無い"
-        line_no, col, match_str, snippet = hits[0]
+        line_no, col, match_str, snippet, _ = hits[0]
         assert line_no == 2
         assert col >= 1
         assert match_str
@@ -115,6 +146,22 @@ class TestScanText:
 
     def test_empty_when_no_deny(self, allow_patterns):
         assert not _colloquial_check.scan_text("様々な内容の文字列", [], allow_patterns)
+
+    @pytest.mark.parametrize(
+        ("dict_line", "expected_replacement"),
+        [
+            ("[xy]", None),
+            ("[xy]\t候補", "候補"),
+        ],
+    )
+    def test_returns_replacement(self, tmp_path: pathlib.Path, dict_line: str, expected_replacement: str | None):
+        f = tmp_path / "p.txt"
+        f.write_text(f"{dict_line}\n", encoding="utf-8")
+        deny = _colloquial_check.load_patterns(f)
+        hits = _colloquial_check.scan_text("abc x def", deny, [])
+        assert hits
+        _, _, _, _, replacement = hits[0]
+        assert replacement == expected_replacement
 
 
 class TestMaskAllowed:

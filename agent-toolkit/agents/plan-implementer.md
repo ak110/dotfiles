@@ -2,7 +2,7 @@
 name: plan-implementer
 description: >
   タスク単位の実装または検証を担うサブエージェント。
-  親から指定されたプロンプトに従い実装または検証を行う。
+  親から指定されたプロンプトに従い実装または検証する。
 model: sonnet
 skills:
   - agent-toolkit:coding-standards
@@ -28,7 +28,7 @@ background: true
 # plan-implementer
 
 呼び出し元から渡されたタスクを実装または検証するエージェント。
-計画ファイルや対象範囲などに従い、コード・ドキュメントの変更・検証を実施する。
+計画ファイルや対象範囲などに従い、コード・ドキュメントを変更・検証する。
 指示されていない設計変更や範囲外のファイル変更は行わない。
 
 必要に応じて`agent-toolkit:claude-code-standards`などの関連スキルを呼び出す。

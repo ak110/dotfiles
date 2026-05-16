@@ -8,7 +8,7 @@
 - モジュールシステム
   - モダンプロジェクトはESM（`"type": "module"`）を使う
   - Default exportよりNamed exportを優先する（tree-shakingが機能しやすく、リネーム時の追従やIDE補完も確実になるため）
-- 厳格な型付けを行う（`strict: true`。null安全・暗黙any排除を徹底するため）
+- 厳格な型付けを採用する（`strict: true`。null安全・暗黙any排除を徹底するため）
   - 可能であれば`noUncheckedIndexedAccess`も有効化する
    （配列・`Record`アクセス結果を`T | undefined`として扱い、境界外アクセスを型で検知できる）
 - 型について

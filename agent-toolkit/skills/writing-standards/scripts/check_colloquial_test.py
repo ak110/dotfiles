@@ -2,6 +2,7 @@
 
 CLIスクリプトの動作確認。subprocess経由で起動しexit code・stderrを検証する。
 辞書ファイルから動的にサンプルを生成するため、テスト本体には口語表現を直接書かない。
+出力フォーマットの分岐（置換候補の有無）も実辞書とsubprocess経由で検証する。
 """
 
 import pathlib
@@ -12,9 +13,15 @@ import sys
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_colloquial.py"
-_DENY_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words.txt"
-_ALLOW_PATH = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_colloquial_words_allow.txt"
+_AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parents[3] / "scripts"
+_DENY_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words.txt"
+_ALLOW_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words_allow.txt"
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
+
+# 辞書パース処理は本番ロジックの`_colloquial_check.load_patterns`を共有する。
+# `check_colloquial.py`が同一の`sys.path`操作を実行するため副作用を許容する。
+sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
+import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _expand(pattern_str: str) -> str:
@@ -23,12 +30,11 @@ def _expand(pattern_str: str) -> str:
 
 @pytest.fixture(name="deny_substring")
 def _deny_substring() -> str:
-    """辞書ファイルからdenyリスト検出に当たる最短サンプルを動的生成する。"""
-    deny_patterns: list[re.Pattern[str]] = []
-    for line in _DENY_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            deny_patterns.append(re.compile(stripped))
+    """辞書ファイルからdenyリスト検出に当たる最短サンプルを動的生成する。
+
+    `load_patterns`経由でパターン部のみを取り出すため、タブ区切り行の置換候補列は混入しない。
+    """
+    deny_patterns = [pat for pat, _ in _colloquial_check.load_patterns(_DENY_PATH)]
     for line in _ALLOW_PATH.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -131,6 +137,26 @@ def test_tone_examples_file_is_skipped():
     result = _run(_TONE_EXAMPLES)
     assert result.returncode == 0
     assert result.stderr == ""
+
+
+def test_self_test_file_is_skipped():
+    """自テストファイルを直接渡しても検査されずexit 0（意図的に違反テキストを含むため）。"""
+    result = _run(pathlib.Path(__file__).resolve())
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
+def test_output_includes_replacement_when_available(tmp_path: pathlib.Path):
+    """辞書に置換候補列を持つパターンの検出時は出力に`-> [候補]`が含まれる。
+
+    辞書`_colloquial_words.txt`内の置換候補定義（`書き出 -> 出力`）に依存する統合検証。
+    辞書側の定義を変更した場合は本テストも見直す。
+    """
+    target = tmp_path / "doc.md"
+    target.write_text("設定を書き出す。\n", encoding="utf-8")
+    result = _run(target)
+    assert result.returncode == 1
+    assert "-> [出力]" in result.stderr
 
 
 def test_tone_examples_excluded_from_directory_scan(tmp_path: pathlib.Path):

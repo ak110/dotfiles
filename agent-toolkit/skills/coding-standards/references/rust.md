@@ -65,11 +65,11 @@
     - FFIでnul終端C文字列を割り当て無しで渡せるため
   - Rust 1.77+: `std::mem::offset_of!`マクロで`#[repr(C)]`構造体のフィールドオフセットを取得する
     - unsafe不要でメモリーレイアウト検査ができる
-  - Rust 1.80+: `std::sync::LazyLock`／`std::cell::LazyCell`で遅延初期化を行う
+  - Rust 1.80+: `std::sync::LazyLock`／`std::cell::LazyCell`で遅延初期化する
     - `lazy_static`／`once_cell`クレートへの依存を排除できる
   - Rust 1.82+: `extern`ブロック内の個別関数に`safe`／`unsafe`を付けてFFI安全性を明示する
     - 呼び出し側でunsafeブロックが必要か否かをコンパイラレベルで強制できるため
-  - Rust 1.82+: `impl Trait + use<...>`でprecise capturingを行う
+  - Rust 1.82+: `impl Trait + use<...>`でprecise capturingを表現する
     - 不要なlifetimeキャプチャを避けて戻り値型を厳密にできる
   - Edition 2024（Rust 1.85+）: let chains（`if let Some(x) = foo && x > 0 { ... }`）でネストを削減する
   - Edition 2024（Rust 1.85+）: asyncクロージャ（`async || { ... }`）と`AsyncFn`系トレイトを使う

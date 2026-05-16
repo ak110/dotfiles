@@ -2,7 +2,7 @@
 name: plan-impl-reviewer
 description: >
   コード・ドキュメントの単体品質と日本語表現を、対象ファイル単位で先入観なくレビューするサブエージェント。
-  親から指定されたプロンプトに従いレビューを行う。
+  親から指定されたプロンプトに従いレビューする。
 model: sonnet
 skills:
   - agent-toolkit:review-standards

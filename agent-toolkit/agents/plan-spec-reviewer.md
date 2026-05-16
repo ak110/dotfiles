@@ -2,7 +2,7 @@
 name: plan-spec-reviewer
 description: >
   計画ファイルと成果物（コード・ドキュメント）の仕様適合性、および成果物間の整合性をレビューするサブエージェント。
-  親から指定されたプロンプトに従いレビューを行う。
+  親から指定されたプロンプトに従いレビューする。
 model: sonnet
 skills:
   - agent-toolkit:review-standards

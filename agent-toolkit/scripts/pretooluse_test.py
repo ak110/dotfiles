@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 
+import _colloquial_check
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
@@ -291,12 +292,12 @@ class TestColloquialCheck:
 
     @classmethod
     def _patterns(cls, path: pathlib.Path) -> list[re.Pattern[str]]:
-        return [
-            re.compile(s)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            for s in [line.strip()]
-            if s and not s.startswith("#")
-        ]
+        """辞書ファイルからパターンのみを抽出する。
+
+        本番ロジック`_colloquial_check.load_patterns`と同じ解釈で
+        タブ区切りの置換候補列を除外し、パターン部だけを返す。
+        """
+        return [pat for pat, _ in _colloquial_check.load_patterns(path)]
 
     @pytest.fixture(name="deny_substring")
     def _deny_substring(self) -> str:
