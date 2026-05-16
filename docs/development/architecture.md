@@ -6,11 +6,9 @@
 - `.chezmoiroot`でソースステート（`.chezmoi-source/`）とプロジェクトインフラを分離する
 - `.chezmoi-source/`内がchezmoiのソースディレクトリ（`dot_`プレフィックス→`~/.*`にデプロイ）
 - `.chezmoi-source/dot_claude/` — Claude Code用のユーザー設定。`~/.claude/`へデプロイする
-- `.chezmoi-source/dot_codex/` — Codex用のユーザー設定。`~/.codex/`へデプロイする。
-  agent-toolkitのMarkdownルールとスキルは原則としてClaude Code側原本へのシンボリックリンクで共有する。
-  `~/.codex/rules`はCodexの承認ルール用ディレクトリのため、Markdownルール共有には使わない
+- `.chezmoi-source/dot_codex/` — Codex用のユーザー設定。`~/.codex/`へデプロイする
 - `pytools/` — Pythonコマンドラインツール群（`uv tool install`でインストール）
-- `scripts/` — リポジトリ開発専用のスクリプト置き場（pre-commit/Makefileから呼ばれる。配布対象外）
+- `scripts/` — リポジトリ内部から呼ばれるスクリプト置き場（pre-commit・Makefile・Claude Codeフック等。配布対象外）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
@@ -24,35 +22,19 @@
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/` — pre-commitやMakefileからしか呼ばれない開発者向けツール。chezmoiで配布しない。Linux前提で書いてよい
+- `scripts/` — pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場。
+  chezmoiで配布しない。Linux前提で書いてよい
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
-    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`
+    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`scripts/claude_hook_pretooluse.py`
 - `bin/` — ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す。
-  Linux/Windows両対応に注意し、Windows向けには`.cmd`版を併置する
+  両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
 判断に迷ったら「他者の環境で直接実行されるか」で切り分ける。pre-commit経由でしか動かないなら`scripts/`が適切。
 
-## プラットフォーム対応ファイル
-
-以下のファイルはLinux/Windowsで対になっている。一方を変更する場合はもう一方を確認。
-
-| Linux | Windows |
-| --- | --- |
-| `bin/c` | `bin/c.cmd` |
-| `bin/ccusage` | `bin/ccusage.cmd` |
-| `bin/claude-code-viewer` | `bin/claude-code-viewer.cmd` |
-| `bin/sonnet` | `bin/sonnet.cmd` |
-| `bin/sshr` | `bin/sshr.cmd` |
-| `bin/update-dotfiles` | `bin/update-dotfiles.cmd` |
-| `.chezmoi-source/run_after_post-apply.sh.tmpl` | `.chezmoi-source/run_after_post-apply-windows.ps1.tmpl` |
-| `share/claude_settings_json_managed.posix.json` | `share/claude_settings_json_managed.win32.json` |
-| `install.sh` | `install.ps1` |
-| `install-claude.sh` | `install-claude.ps1` |
-
 単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
-`bin/<name>`と`bin/<name>.cmd`を生成し、本ファイルのペア一覧を自動更新する。
+`bin/<name>`と`bin/<name>.cmd`を生成する。
 
 `bin/`直下のスクリプトを追加・移設・削除する際は、以下を同時に見直す。
 

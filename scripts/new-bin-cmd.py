@@ -5,20 +5,17 @@
 # ///
 """bin/配下のLinux/Windowsラッパースクリプトペアを生成するジェネレーター。
 
-`bin/<name>`（bash、UTF-8、LF、実行権限付き）と`bin/<name>.cmd`（CP932、CRLF）のペアを生成し、
-`docs/development/development.md`のプラットフォーム対応ファイル一覧へエントリをアルファベット順に挿入する。
-既存エントリがあればスキップする。
+`bin/<name>`（bash、UTF-8、LF、実行権限付き）と`bin/<name>.cmd`（CP932、CRLF）のペアを生成する。
+既存ファイルがあればスキップする。
 """
 
 import argparse
-import re
 import stat
 import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).parent.parent
 _BIN_DIR = _REPO_ROOT / "bin"
-_DEVELOPMENT_MD = _REPO_ROOT / "docs" / "development" / "development.md"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,7 +30,6 @@ def main(argv: list[str] | None = None) -> int:
 
     _generate_bash(name, command)
     _generate_cmd(name, command)
-    _update_development_md(name)
 
     return 0
 
@@ -58,32 +54,6 @@ def _generate_cmd(name: str, command: str) -> None:
     # CP932 エンコード + CRLF で直接書き込む（iconv 不要）
     path.write_bytes(content.encode("cp932"))
     print(f"生成: {path.relative_to(_REPO_ROOT)}")
-
-
-def _update_development_md(name: str) -> None:
-    """プラットフォーム対応ファイル一覧へエントリをアルファベット順に挿入する。"""
-    entry = f"- `bin/{name}` ↔ `bin/{name}.cmd`"
-    text = _DEVELOPMENT_MD.read_text(encoding="utf-8")
-
-    if entry in text.splitlines():
-        print(f"スキップ（既存）: development.md に bin/{name} は既に存在します")
-        return
-
-    # bin/* ペアのエントリ群を探す
-    block_re = re.compile(
-        r"((?:^- `bin/[^`]+` ↔ `bin/[^`]+\.cmd`\n)+)",
-        re.MULTILINE,
-    )
-    match = block_re.search(text)
-    if not match:
-        print(f"警告: development.md のプラットフォーム対応ファイル一覧が見つからない。手動で追加する: {entry}")
-        return
-
-    entries = sorted([e for e in match.group(1).splitlines() if e.strip()] + [entry])
-    new_block = "\n".join(entries) + "\n"
-    new_text = text[: match.start(1)] + new_block + text[match.end(1) :]
-    _DEVELOPMENT_MD.write_text(new_text, encoding="utf-8")
-    print(f"更新: docs/development/development.md に bin/{name} を追加")
 
 
 if __name__ == "__main__":

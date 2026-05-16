@@ -14,7 +14,7 @@
 
 ## アーキテクチャの参照先
 
-リポジトリ全体の構成・配布対象と開発対象の区別・プラットフォーム対応ファイル一覧・bash補完運用・PowerShellスクリプト注意事項・
+リポジトリ全体の構成・配布対象と開発対象の区別・プラットフォーム対応・bash補完運用・PowerShellスクリプト注意事項・
 ホーム配下編集前の確認手順は[docs/development/architecture.md](docs/development/architecture.md)に集約している。
 
 ## 注意点
@@ -34,7 +34,7 @@
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する。
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
-  リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成し、`development.md`のペア一覧も自動更新する
+  リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する
 - `agent-toolkit/`配下・`agent-toolkit/rules/`配下・`.claude-plugin/marketplace.json`の編集時は
   `agent-toolkit-edit`スキルを参照する。
   marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
