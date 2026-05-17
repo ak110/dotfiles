@@ -2,7 +2,7 @@
 name = "pytools"
 version = "0.1.0"
 description = "Personal command-line tools"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<4.0"
 dependencies = [
     "argcomplete>=3.6.3",
     "bashplotlib",
@@ -59,6 +59,10 @@ update-ssh-config = "pytools.update_ssh_config:_main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# サプライチェーン攻撃対策: 公開直後の新バージョンは1日待ってから取り込む
+exclude-newer = "1 day"
+
 [tool.hatch.build.targets.wheel]
 packages = ["pytools"]
 exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
@@ -66,6 +70,8 @@ exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
 [dependency-groups]
 dev = [
     "pyfltr[python]>=3.8.0",
+    "pytest-asyncio>=1.0",
+    "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
 ]
@@ -79,13 +85,19 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
+# profile_ipy/はIPython自動生成プロファイル、
+# *.cmdはCP932（Shift_JIS）でpyfltrのUTF-8前提と適合せず誤検出を招くため、
+# plugins/agent-toolkitはマーケットプレイス配布原本のシンボリックリンクのため検査対象外とする
 extend-exclude = ["*/profile_ipy/*", "*.cmd", "plugins/agent-toolkit"]
+# chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]
+# 上記shfmt対象と同じファイル群をshellcheckでも検査する
 shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",
     "textlint-rule-ja-no-abusage",
+    # コーディングエージェントのコンテキスト汚染対策として独自強化する辞書を追加する
     "textlint-rule-prh",
 ]
 
@@ -154,6 +166,11 @@ Stubbs = "Stubbs"
 configurables = "configurables"
 
 [tool.pytest.ini_options]
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 -n 4 --dist=loadfile"
+# -n 4による4プロセス並列実行で--dist=loadfileを併用し、モジュール単位でテストをworkerへ分配する。
+# モジュール固有の重い初期化（fixture）をworker内で共有してテスト起動オーバーヘッドを抑える
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 --dist=loadfile"
 log_level = "DEBUG"
 xfail_strict = true
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

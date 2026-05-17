@@ -57,6 +57,19 @@ mise経由で動く処理も同じ理由で中断する。
   `LOCALAPPDATA=/tmp/dummy git commit ...`のように`git commit`時にも必須となる
 - mise依存のlint・buildタスクを呼ばず、該当箇所はスキップする
 
+### 足回りファイルの推奨設定維持
+
+各プロジェクトの`pyproject.toml`・`.textlintrc.yaml`・`.markdownlint-cli2.yaml`・
+`.pre-commit-config.yaml`・`.github/workflows/`配下は、
+pyfltr配布の推奨ガイド（`~/pyfltr/docs/guide/recommended.md`・
+`~/pyfltr/docs/guide/recommended-nonpython.md`）に揃える。
+
+- 推奨設定を独自判断で緩和しない（ruff・pylint・textlint等のignore追加、lint設定の弱体化）
+- プロジェクト固有事情で推奨から逸脱する設定を入れる場合、該当箇所に理由を述べたコメントを直接記述する
+- lint違反が出た場合は根本原因（コード側）を修正する
+  - 設定でのignore追加は避ける
+- 推奨ガイド自体の改訂が必要と判断した場合は、`~/pyfltr`の推奨ガイドを先に更新してから各プロジェクトへ反映する
+
 ## ドキュメント章構成の統一
 
 各プロジェクトのREADME.md・CLAUDE.md・docs/development/development.mdは章構成・章順を揃える。
