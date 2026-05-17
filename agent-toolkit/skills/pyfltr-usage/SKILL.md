@@ -22,7 +22,7 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
   - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
 - pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）配下のCIジョブでは、
   `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
-- pyfltr自身を開発・検証するときに限り、`uv run --with-editable=. pyfltr ...`を使う。
+- pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う。
 
 ### 新規プロジェクトへの導入
 
