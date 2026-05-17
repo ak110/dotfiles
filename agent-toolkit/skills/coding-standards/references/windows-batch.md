@@ -1,14 +1,15 @@
 # Windowsバッチファイル記述スタイル
 
 - エンコーディング
-  - CP932で記述する。cmd.exeのバッチファイルパーサーはシステムACP（日本語WindowsではCP932）で動作する。
-    `chcp 65001`はコンソールI/Oのコードページを変更するだけでパーサーには影響しない
-  - Claude CodeのRead/Edit/WriteはUTF-8前提のため、CP932ファイルを直接扱えない。
-    `git show`もCP932バイト列をそのまま出力するため回避策にならない。
-    iconv経由で操作する
-    - 読み取り: `iconv -f cp932 -t utf-8 file.cmd`
-    - 編集: UTF-8に変換 → Edit/Writeで編集 → `iconv -f utf-8 -t cp932`でCP932に戻す
-    - 新規作成: UTF-8で記述 → `iconv -f utf-8 -t cp932`で変換
+  - CP932で記述する
+    - cmd.exeのバッチファイルパーサーはシステムACP（日本語WindowsではCP932）で動作する
+    - `chcp 65001`はコンソールI/Oのコードページを変更するだけでパーサーには影響しない
+  - Claude CodeのRead/Edit/WriteはUTF-8前提のため、CP932ファイルを直接扱えない
+    - `git show`もCP932バイト列をそのまま出力するため回避策にならない
+    - iconv経由で操作する
+      - 読み取り: `iconv -f cp932 -t utf-8 file.cmd`
+      - 編集: UTF-8に変換 → Edit/Writeで編集 → `iconv -f utf-8 -t cp932`でCP932に戻す
+      - 新規作成: UTF-8で記述 → `iconv -f utf-8 -t cp932`で変換
 - 改行コード
   - CRLFが必須。`.gitattributes`で`*.cmd text eol=crlf`を設定する
   - Writeツールは常にLFで書くため、新規作成後にBashで`sed -i 's/$/\r/' file.cmd`を実行してCRLFに変換する（iconv変換後に実施）

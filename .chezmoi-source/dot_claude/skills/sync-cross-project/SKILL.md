@@ -95,18 +95,18 @@ description: >
   発見したらdotfiles側を修正する（マスター）
 - `docs/development/development.md`の「サプライチェーン攻撃対策」節は、
   Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする。
-  UV_FROZEN方針を含む。
-  `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する。
-  変更時は他プロジェクトへの波及を確認する
+  - UV_FROZEN方針を含む
+  - `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する
+  - 変更時は他プロジェクトへの波及を確認する
 - README.md・CLAUDE.md・docs/development/development.md間で、
   共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
 - README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える。
   共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
 - README.md・CLAUDE.md・docs/development/development.mdを更新する際は、
   他プロジェクトと章構成・章順を揃える方針。
-  共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃える。
-  ただし、プロジェクト固有部分は無理に揃えず必要な情報を記述する。
-  単独プロジェクトでの章追加・章順変更を避け、他プロジェクトとの比較で逸脱を検出する
+  - 共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃える
+  - プロジェクト固有部分は無理に揃えず必要な情報を記述する
+  - 単独プロジェクトでの章追加・章順変更を避け、他プロジェクトとの比較で逸脱を検出する
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
@@ -126,9 +126,9 @@ description: >
 ### CI / リリース関連
 
 - CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針。
-  uv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、`pinact run --check`を直接呼び出せる。
-  Pythonバージョンマトリクスは`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
-  `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
+  - uv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、`pinact run --check`を直接呼び出せる
+  - Pythonバージョンマトリクスは`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ
+  - `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
 - container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりruner上で実行する
 - container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）

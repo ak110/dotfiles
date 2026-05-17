@@ -29,14 +29,14 @@
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - 単なる長い名前の別名でしかないローカル変数は定義しない
- （参照元を二度参照する手間が増え、リネーム時の追従漏れも起きやすいため）。
-  例えば`x = cls.foo`と書いて`x`を使うより`cls.foo`を直接使う。
+  - 参照元を二度参照する手間が増え、リネーム時の追従漏れも起きやすい
+  - 例: `x = cls.foo`と書いて`x`を使うより`cls.foo`を直接使う
 - SQLAlchemyのNULLチェックは`.is_(None)`を使う
-- `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）。
-  数値型を厳格に限定するときは`type(x) is int`または
-  `isinstance(x, int) and not isinstance(x, bool)`で除外する。
-  `isinstance(value, type(reference))`形式の型一致チェックでも、
-  `reference`が`int`値のときに`bool`が素通りする
+- `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
+  - 数値型を厳格に限定するときは`type(x) is int`または
+    `isinstance(x, int) and not isinstance(x, bool)`で除外する
+  - `isinstance(value, type(reference))`形式の型一致チェックでも、
+    `reference`が`int`値のときに`bool`が素通りする
 - Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
   - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う。
     `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
@@ -55,9 +55,9 @@
   - `pickle`／`shelve`は信頼できないデータに使わない（`json`や`msgpack`で代替）
   - `subprocess`は`shell=True`を避ける（引数はリスト形式で渡す。やむを得ない場合は`shlex.quote()`で引数をエスケープ）
   - `subprocess.run(..., capture_output=True)`の戻り値`proc.stdout`は静的解析（ty/mypy）で
-    `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る。
-    使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る。
-    `text=True`を指定する場合は`str`に推論されるが、その場合も`None`の可能性が残るため同様に限定する
+    `bytes | None`寄りに推論されるため、`.decode("utf-8")`で警告が出る
+    - 使う前に`assert isinstance(proc.stdout, bytes)`で型を限定すると以降の解析が通る
+    - `text=True`を指定する場合は`str`に推論されるが、`None`の可能性が残るため同様に限定する
   - YAML読み込みは`yaml.safe_load()`を使う（`yaml.load()`は任意コード実行の危険あり）
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
@@ -69,24 +69,24 @@
     - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
   - ユーティリティ集: `pytilpack`（便利ライブラリ）
     - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
-- `argparse`で`action="append"`を使う場合の既定値は`default=None`にする。
-  非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻し、
-  list（例: `[]`）を渡すと毎回初期要素として混入する。
-  環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、
-  `None`なら環境変数から初期化、それ以外はそのまま使う
+- `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
+  - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻する
+  - list（例: `[]`）を渡すと毎回初期要素として混入する
+  - 環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、
+    `None`なら環境変数から初期化、それ以外はそのまま使う
 - `argparse`のオプションへ後から解決経路（環境変数・設定ファイル等）を追加する場合も、
-  `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する。
-  `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、
-  CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える。
-  既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
-  parse段階の型変換と既定値解決を分離する
+  `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
+  - `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、
+    CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
+  - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
+    parse段階の型変換と既定値解決を分離する
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで
-  `appauthor=False`を明示する（`appname`単独指定は不可）。
-  Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
-  配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる。
-  Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない。
-  全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
+  `appauthor=False`を明示する（`appname`単独指定は不可）
+  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
+    配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
+  - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
+  - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
     - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため

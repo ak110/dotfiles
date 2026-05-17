@@ -15,11 +15,11 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 ### 既存プロジェクトでの通常運用
 
 - 通常運用は`uvx pyfltr ...`を使う。
-  v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
-  本体依存に統合されたため、`uvx pyfltr`単発で揃う。
-  cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される。
+  - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
+    本体依存に統合されたため、`uvx pyfltr`単発で揃う。
+  - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される。
 - pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える。
-  `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
+  - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
 - pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）配下のCIジョブでは、
   `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
 - pyfltr自身を開発・検証するときに限り、`uv run --with-editable=. pyfltr ...`を使う。
@@ -72,9 +72,8 @@ JSONL出力でコンテキスト効率に優れる。
     - `pyfltr replace PATTERN REPLACEMENT --exclude-file=path/to/skip.py [paths...]`でファイル単位除外
     - `matches.jsonl`から残したいファイル集合のみに編集した上で
       `pyfltr replace PATTERN REPLACEMENT --from-grep=matches.jsonl`に渡す。
-      `--from-grep`はマッチを含むファイル集合への限定のため、
-      同一ファイル内の一部マッチだけを除外したい場合は適用しない。
-      その場合は検索パターン側を限定するか手動編集で対処する
+      - `--from-grep`はマッチを含むファイル集合への限定のため、同一ファイル内の一部マッチだけを除外したい場合は適用しない
+      - その場合は検索パターン側を限定するか手動編集で対処する
 3. 適用前に`--dry-run`または`--show-changes`で差分を確認する
 4. 結果に問題があれば`pyfltr replace --list-history`／`--undo ID`で取り消す
 
@@ -227,23 +226,23 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
   意図的に抑止する場合以外は付けずに実行する
 - 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を限定する（全体再実行より早く原因切り分けできる）
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
-  対象ファイルが0件のときは解決処理自体を省略するため`skipped`で通過する。
-  対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る。
-  回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
-  当該ツールを`{tool} = false`で無効化する
+  - 対象ファイルが0件のときは解決処理自体を省略するため`skipped`で通過する
+  - 対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る
+  - 回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
+    当該ツールを`{tool} = false`で無効化する
 - 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
   `uvx pyfltr command-info --check <tool>`を使う。
   mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
-- 特定ディレクトリが`extend-exclude`等で除外されている場合、`uvx pyfltr run-for-agent`の検査対象から外れる。
-  除外を一時的に無視して特定ファイルをチェックしたいときは`--no-exclude`オプションを使う
- （例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）。
-  pyfltr自体の除外設定は`pyproject.toml`の`[tool.pyfltr]`またはツール固有の`extend-exclude`を参照する
-- コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下に
-  `command-timeout`（グローバル既定値、秒単位。既定600秒、`0`で無効化）と
-  `{command}-timeout`（per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、
-  `0`で当該per-toolを明示的に無効化）で調整できる。
-  pytest-xdist併用時のハング解析やコーディングエージェントによる観測でtimeout調整が必要になった場合に活用する。
-  ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
+- 特定ディレクトリが`extend-exclude`等で除外されている場合、`uvx pyfltr run-for-agent`の検査対象から外れる
+  - 除外を一時的に無視して特定ファイルをチェックしたいときは`--no-exclude`オプションを使う
+   （例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）
+  - pyfltr自体の除外設定は`pyproject.toml`の`[tool.pyfltr]`またはツール固有の`extend-exclude`を参照する
+- コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下で調整できる
+  - `command-timeout`: グローバル既定値、秒単位。既定600秒、`0`で無効化
+  - `{command}-timeout`: per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、
+    `0`で当該per-toolを明示的に無効化
+  - pytest-xdist併用時のハング解析やコーディングエージェントによる観測でtimeout調整が必要になった場合に活用する
+  - ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
 
 ## 詳細情報
 

@@ -30,7 +30,7 @@ background: true
 ## 共通判断基準
 
 - 整合性確認に必要なスキルは必要時に自分で呼び出す。
-  単体品質の指摘には立ち入らないため、`agent-toolkit:*-standards`などのスキルは通常呼び出し不要。
+  - 単体品質の指摘には立ち入らないため、`agent-toolkit:*-standards`などのスキルは通常呼び出し不要。
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する。
 - gitコミット・pushは行わない（コミットはメインが直接行う）。
 

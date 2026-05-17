@@ -22,13 +22,13 @@
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/` — pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場。
-  chezmoiで配布しない。Linux前提で書いてよい
+- `scripts/` — pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
+  - chezmoiで配布しない。Linux前提で書いてよい
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
     `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`scripts/claude_hook_pretooluse.py`
 - `bin/` — ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
-  `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す。
-  両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
+  `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
+  - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
 判断に迷ったら「他者の環境で直接実行されるか」で切り分ける。pre-commit経由でしか動かないなら`scripts/`が適切。

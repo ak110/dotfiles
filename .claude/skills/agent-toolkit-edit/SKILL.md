@@ -19,8 +19,8 @@ description: >
 
 - `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
 - `agent-toolkit/rules/`配下: ルールファイル（`agent.md`（基本原則・運用方針）と`styles.md`（記述スタイル）の2ファイル）
-- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先。直接編集不可。
-  両ファイルとも常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
+- `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。
+  - 両ファイルとも常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 
@@ -46,20 +46,21 @@ description: >
 スキル・サブエージェント編集時は次を守る。
 
 - SKILL.md本体に必要な情報は本体に直接書く。`references/`から別の`references/`を多段参照させない
-- サブエージェントやスキルなどの間で記述が重複する場合がある。
-  読み込まれるコンテキストが異なる場合があり、無理に共通化するのは過剰な複雑さを招く場合があるため。
-  このような場合は無理に共通化しない（不適切に統合するとコンテキスト汚染や指示漏れが起きる）
+- サブエージェントやスキルなどの間で記述が重複する場合があるが、
+  読み込まれるコンテキストが異なる場合があるため、無理に共通化しない
+  - 不適切に統合するとコンテキスト汚染や指示漏れを招く
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様（tool quirk）」「具体例」は再発リスクと影響度を踏まえて保持判断する
  （一過性で再発リスクの低いものは削除可）
 - agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式のプレフィックスを付与して統一する。
-  サブエージェント名（`plan-implementer`等）はAgentツールの`subagent_type`引数表記に揃えてプレフィックス無しを維持する。
-  スキルのリネームに限らず、当該参照表記を含む編集全般に本方針を適用する
+  - サブエージェント名（`plan-implementer`等）はAgentツールの`subagent_type`引数表記に揃えてプレフィックス無しを維持する
+  - スキルのリネームに限らず、当該参照表記を含む編集全般に本方針を適用する
 
 ## スキル間の連携
 
 `agent-toolkit:spec-driven`が有効な場合は同スキルの誘導に従い、無効な場合は`agent-toolkit:plan-mode`から始める。
-`agent-toolkit:plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、`agent-toolkit:plan-impl`スキルへ引き継ぐ。
+`agent-toolkit:plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
+`agent-toolkit:plan-impl`スキルへ引き継ぐ。
 計画ファイルの`レビュー方式`項目に`レビュー無し`が含まれている場合はレビュー工程をスキップし、
 それ以外は項目記載のスキル・エージェントへ引き継いでレビューを実施する（既定は`agent-toolkit:careful-review`スキル）。
 引き継ぎ時にコンテキストが途絶している前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
@@ -174,8 +175,8 @@ flowchart TB
   PreToolUse(Bash)の`git commit`未検証警告の抑制に使う
 - `git_status_checked` — PostToolUse(Bash)が`git status` / `git log` / `git diff`を観測して記録
 - `git_log_checked` — PostToolUse(Bash)が`git log`を観測して記録。
-  PreToolUse(Bash)のamend / rebase直前確認に使う。
-  commit / rebase / push / ファイル編集を観測した時点でリセットする
+  - PreToolUse(Bash)のamend / rebase直前確認に使う
+  - commit / rebase / push / ファイル編集を観測した時点でリセットする
 - `plan_mode_skill_invoked` — PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを観測して記録。
   PostToolUseのplan file形式検査の有効化、およびPreToolUseの最初ツール警告の抑制に使う
 - `plan_mode_warning_emitted` — PreToolUseが最初ツール警告を発火済みかを記録（1セッション1回限り）

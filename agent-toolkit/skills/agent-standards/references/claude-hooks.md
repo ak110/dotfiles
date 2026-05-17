@@ -7,8 +7,9 @@ Hookは現状Claude Code固有の概念である。本ファイル全体がClaud
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
 スキーマ詳細は本スキル本体（SKILL.md）の公式ドキュメント節または`plugin-dev:hook-development`スキルを参照する。
 
-- 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutに応答JSONを出力する。
-  exit codeは0で正常完了とする。stderr経由の表示はexit 2との組合せで使う代替経路
+- 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutに応答JSONを出力する
+  - exit codeは0で正常完了とする
+  - stderr経由の表示はexit 2との組合せで使う代替経路
 - `${CLAUDE_PLUGIN_ROOT}`: Claude Codeランタイムが現プラグインのルートディレクトリに置換する組み込み変数。
   `hooks.json`の`command`フィールドや、hookスクリプトから他リソースを参照するときに用いる
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`は
