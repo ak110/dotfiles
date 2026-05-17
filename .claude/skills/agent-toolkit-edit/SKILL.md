@@ -52,6 +52,9 @@ description: >
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様（tool quirk）」「具体例」は再発リスクと影響度を踏まえて保持判断する
  （一過性で再発リスクの低いものは削除可）
+- agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式のプレフィックスを付与して統一する。
+  サブエージェント名（`plan-implementer`等）はAgentツールの`subagent_type`引数表記に揃えてプレフィックス無しを維持する。
+  スキルのリネームに限らず、当該参照表記を含む編集全般に本方針を適用する
 
 ## スキル間の連携
 
@@ -63,17 +66,17 @@ description: >
 
 ```mermaid
 flowchart TB
-    SD["spec-driven スキル（任意）"]:::sd
-    subgraph PM["plan-mode スキル"]
+    SD["agent-toolkit:spec-driven スキル（任意）"]:::sd
+    subgraph PM["agent-toolkit:plan-mode スキル"]
       P[計画ファイル作成<br/>codexレビュー]
     end
-    subgraph PI["plan-impl スキル"]
+    subgraph PI["agent-toolkit:plan-impl スキル"]
       direction TB
       T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
       CM -->|レビュー無し| END[完了]
       CM -->|レビュー有り・全コミット完了| CR
     end
-    subgraph CRS["careful-review スキル"]
+    subgraph CRS["agent-toolkit:careful-review スキル"]
       direction TB
       CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋日本語表現<br/>初回モード並列・全体差分対象]
       CR -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
