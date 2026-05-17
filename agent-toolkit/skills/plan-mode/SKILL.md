@@ -107,7 +107,8 @@ description: >
 
 ## 7. 計画ファイルのcodexレビュー
 
-ユーザーに計画ファイルを提示する前に、`references/codex-review.md`を読み込み手順に従いcodexレビューする。
+ユーザーに計画ファイルを提示する前にcodexレビューする。
+先に`agent-toolkit:review-standards`スキルを呼び出し、続いて`references/codex-review.md`を読み込んで手順に従う。
 指摘があった場合は計画ファイルの該当セクションへ反映してから`ExitPlanMode`を呼び出す。
 
 ## 8. 計画の実行

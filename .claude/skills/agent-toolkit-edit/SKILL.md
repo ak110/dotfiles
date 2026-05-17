@@ -60,8 +60,8 @@ description: >
 
 `agent-toolkit:spec-driven`が有効な場合は同スキルの誘導に従い、無効な場合は`agent-toolkit:plan-mode`から始める。
 `agent-toolkit:plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、`agent-toolkit:plan-impl`スキルへ引き継ぐ。
-計画ファイルの`レビュー方式`が`レビュー有り`の場合はレビュー工程を実施し、
-`レビュー無し`の場合は実装・検証・コミットのみで完了する。
+計画ファイルの`レビュー方式`項目に`レビュー無し`が含まれている場合はレビュー工程をスキップし、
+それ以外は項目記載のスキル・エージェントへ引き継いでレビューを実施する（既定は`agent-toolkit:careful-review`スキル）。
 引き継ぎ時にコンテキストが途絶している前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
 
 ```mermaid
@@ -73,8 +73,8 @@ flowchart TB
     subgraph PI["agent-toolkit:plan-impl スキル"]
       direction TB
       T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
-      CM -->|レビュー無し| END[完了]
-      CM -->|レビュー有り・全コミット完了| CR
+      CM -->|レビュー無し指定| END[完了]
+      CM -->|レビュー実施・全コミット完了| CR
     end
     subgraph CRS["agent-toolkit:careful-review スキル"]
       direction TB
@@ -129,7 +129,7 @@ flowchart TB
 
 レビュー時の判定: 計画でMINOR bumpを宣言しているにもかかわらず、当該コミット単体ではversion変更が無いケースがある。
 未プッシュコミット範囲（計画着手前から`HEAD`まで）に同等以上のbumpが既に含まれていれば、
-当該指摘は`addressed`相当として扱う。差分単体ではなくpush前の累積状態で判定する。
+当該指摘は対応済み相当として扱う。差分単体ではなくpush前の累積状態で判定する。
 
 ### plan modeでの取り扱い
 
