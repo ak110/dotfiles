@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: hook間で共有するセッション状態ファイルのアクセスヘルパー。
 
-パス規則は`agent-toolkit/skills/claude-code-standards/references/claude-hooks.md`の
+パス規則は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節に記載がある。
 """
 

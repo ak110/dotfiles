@@ -1,6 +1,7 @@
 # spec-drivenフレームワーク共通定義
 
-spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）で共有する用語定義と配置規約。
+spec-driven系スキルで共有する用語定義と配置規約。
+対象は`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`の3スキル。
 
 ## ワークフロー全体像
 
@@ -16,9 +17,9 @@ flowchart LR
     PROMOTE -->|次版作業開始時| SD
 ```
 
-- `spec-driven-init`: 現行版ドキュメントが未整備のプロジェクトで最初に1回だけ使う
-- `spec-driven`: 次版ドキュメントの作成から計画・実装・検証・レビューの繰り返しを担う
-- `spec-driven-promote`: リリース後に次版ドキュメントを現行版へ統合するときに使う
+- `agent-toolkit:spec-driven-init`: 現行版ドキュメントが未整備のプロジェクトで最初に1回だけ使う
+- `agent-toolkit:spec-driven`: 次版ドキュメントの作成から計画・実装・検証・レビューの繰り返しを担う
+- `agent-toolkit:spec-driven-promote`: リリース後に次版ドキュメントを現行版へ統合するときに使う
 
 ## 用語定義
 
@@ -49,7 +50,7 @@ flowchart LR
 
 次版ドキュメント（`docs/v{next}/`配下）には本ルールを適用しない。
 実装中の議論は内部詳細を含めて記録してよい。
-ただし`spec-driven-promote`での統合時に、現行版へ持ち込む内容を外部仕様レベルへ整理する。
+ただし`agent-toolkit:spec-driven-promote`での統合時に、現行版へ持ち込む内容を外部仕様レベルへ整理する。
 
 ## 配置規約
 

@@ -61,6 +61,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # careful-impl スキルを plan-impl へ改名。配布元 symlink_careful-impl.tmpl は
         # symlink_plan-impl.tmpl へ改名済み。配布先の旧シンボリックリンクを除去する。
         Path("skills/careful-impl"),
+        # claude-code-standards スキルを agent-standards へ改名。配布元 symlink_claude-code-standards.tmpl は
+        # symlink_agent-standards.tmpl へ改名済み。配布先の旧シンボリックリンクを除去する。
+        Path("skills/claude-code-standards"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ へ移動。

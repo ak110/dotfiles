@@ -24,8 +24,9 @@ flowchart LR
 ```
 
 次版ドキュメントを現行版ドキュメントへ統合し、`docs/v{next}/`を削除する。
-現行版ドキュメントの構成は`CLAUDE.md`に記録された配置・命名規則に従う
-（`spec-driven-init`で確定した構成。未記録の場合は`docs/features/`・`docs/topics/`構成を既定として用いる）。
+現行版ドキュメントの構成は`CLAUDE.md`に記録された配置・命名規則に従う。
+配置は`agent-toolkit:spec-driven-init`で確定する。
+未記録の場合は`docs/features/`・`docs/topics/`構成を既定として用いる。
 
 ## 参照ファイル
 

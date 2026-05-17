@@ -32,7 +32,7 @@ background: true
 レビュー開始時に、対象ファイルの種別を判定して関連スキルを自分で呼び出す。
 
 - コード・テストコード: `agent-toolkit:coding-standards`
-- コーディングエージェント向け文書: `agent-toolkit:claude-code-standards`
+- コーディングエージェント向け文書: `agent-toolkit:agent-standards`
 
 また、`agent-toolkit/skills/writing-standards/references/tone-examples.md`の読み込みを必須とする。
 読み込んだ悪い例の文面は指摘テキストへ転記しない（コンテキスト汚染を回避するため、観点や判断基準のみを使う）。

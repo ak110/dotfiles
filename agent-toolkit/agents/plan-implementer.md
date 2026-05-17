@@ -7,7 +7,7 @@ model: sonnet
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards
-  # - agent-toolkit:claude-code-standards
+  # - agent-toolkit:agent-standards
 tools:
   - Skill
   - Read
@@ -31,7 +31,7 @@ background: true
 計画ファイルや対象範囲などに従い、コード・ドキュメントを変更・検証する。
 指示されていない設計変更や範囲外のファイル変更は行わない。
 
-必要に応じて`agent-toolkit:claude-code-standards`などの関連スキルを呼び出す。
+必要に応じて`agent-toolkit:agent-standards`などの関連スキルを呼び出す。
 
 ## 判断基準
 

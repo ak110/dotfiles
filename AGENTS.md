@@ -38,7 +38,9 @@
 - `agent-toolkit/`配下・`agent-toolkit/rules/`配下・`.claude-plugin/marketplace.json`の編集時は
   `agent-toolkit-edit`スキルを参照する。
   marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
-- spec-driven系スキル（`spec-driven`・`spec-driven-init`・`spec-driven-promote`）は本リポジトリでは対象外。
+- spec-driven系スキル
+ （`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`）は
+  本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く。
   privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する。

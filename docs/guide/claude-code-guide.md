@@ -13,9 +13,10 @@
    プロジェクトの初期状態によらず一定の品質水準を維持する
 3. 知識の補完 — LLMの学習データに含まれない情報を補う。
    Claude Code関連の仕様は改訂が頻繁なため、
-   `claude-code-standards`スキル配下の`references/claude-*.md`で現行仕様を参照できるようにする。
+   `agent-toolkit:agent-standards`スキル配下の`references/agent-skills.md`・`references/claude-hooks.md`で
+   現行仕様を参照できるようにする。
    個人製作のツール（pyfltr・pytilpackなど）はそもそも学習データに含まれないため、
-   `pyfltr-usage`・`pytilpack-usage`等のスキルでモジュール構成・APIのリファレンスを提供する
+   `agent-toolkit:pyfltr-usage`・`agent-toolkit:pytilpack-usage`等のスキルでモジュール構成・APIのリファレンスを提供する
 
 Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
@@ -111,7 +112,7 @@ claude-plugins-officialから以下を導入。
 
 ### 4. codex MCPサーバーのセットアップ（推奨）
 
-`plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
+`agent-toolkit:plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
 以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
 
 ```bash
@@ -152,7 +153,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 - `/coding-standards` — コードの新規作成・修正・レビュー時の品質基準とテスト方針
 - `/writing-standards` — Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `/claude-code-standards` — コーディングエージェント向け文書固有の品質基準
+- `/agent-standards` — コーディングエージェント向け文書固有の品質基準
 - `/commit` — git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/plan-impl` — `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー

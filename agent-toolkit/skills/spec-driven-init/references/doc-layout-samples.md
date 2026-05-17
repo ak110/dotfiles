@@ -40,7 +40,7 @@ docs/
 
 ## サンプル2: トピック追加構成
 
-複数機能を持つシステム向け。`spec-driven`既定の`docs/features/`・`docs/topics/`構成。
+複数機能を持つシステム向け。`agent-toolkit:spec-driven`既定の`docs/features/`・`docs/topics/`構成。
 
 配置ツリー:
 
@@ -62,10 +62,10 @@ docs/
 
 運用ヒント:
 
-- `_template.md`を置いておくと新規ファイル作成時の出発点になる（書式詳細は`spec-driven`の`templates.md`に従う）
+- `_template.md`を置いておくと新規ファイル作成時の出発点になる（書式詳細は`agent-toolkit:spec-driven`の`templates.md`に従う）
 - 横断/機能の判定に迷う仕様は、まず機能ドキュメント側に書き、複数機能で参照され始めた時点で
   横断ドキュメントへ抽出する
-- `docs/v{next}/`は`spec-driven`スキルが管理するため、本構成では設けない
+- `docs/v{next}/`は`agent-toolkit:spec-driven`スキルが管理するため、本構成では設けない
 
 ## サンプル3: Webシステム構成
 

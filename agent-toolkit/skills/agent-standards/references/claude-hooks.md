@@ -1,5 +1,7 @@
 # Claude Code Hook実装ガイドライン
 
+Hookは現状Claude Code固有の概念である。本ファイル全体がClaude Code固有事項を扱う。
+
 ## hookスクリプトの基本プロトコル
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。

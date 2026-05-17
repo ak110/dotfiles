@@ -6,14 +6,14 @@ description: >
 # 編集時の注意点:
 # コード編集時はcoding-standardsと本スキルの両方を読み込むが、
 # ドキュメントのみの編集時はwriting-standardsのみを読み込むことに注意。
-# コーディングエージェント向け文書固有のガイドはclaude-code-standardsスキルへ分離した。
+# コーディングエージェント向け文書固有のガイドはagent-standardsスキルへ分離した。
 # 本スキルではClaude Code固有事項を扱わない。
 ---
 
 # ドキュメント品質
 
 一般ドキュメント（Markdown・README・技術文書・API文書・CHANGELOG、コメント類）の品質指示。
-コーディングエージェント向け文書も対象に含むが、その編集時は`agent-toolkit:claude-code-standards`を併用する。
+コーディングエージェント向け文書も対象に含むが、その編集時は`agent-toolkit:agent-standards`を併用する。
 
 ## 対比集と辞書ファイルのアクセスポリシー
 

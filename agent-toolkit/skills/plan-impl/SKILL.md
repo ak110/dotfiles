@@ -76,4 +76,4 @@ description: >
 `agent-toolkit:careful-review`スキルへ引き継ぐ。
 対象範囲は計画全体（全コミット完了後の差分）、計画ファイルパスは本計画のものを渡す。
 不変参照点（`origin/<base-branch>`相当または計画着手前SHA）と一時ファイル一覧を併せて渡す。
-以降の起動・指摘統合・修正再実装・amend統合・followup再レビューは`careful-review`の手順に従う。
+以降の起動・指摘統合・修正再実装・amend統合・followup再レビューは`agent-toolkit:careful-review`の手順に従う。

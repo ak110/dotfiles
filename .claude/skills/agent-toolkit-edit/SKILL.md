@@ -55,8 +55,8 @@ description: >
 
 ## スキル間の連携
 
-`spec-driven`が有効な場合は同スキルの誘導に従い、無効な場合は`plan-mode`から始める。
-`plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、`plan-impl`スキルへ引き継ぐ。
+`agent-toolkit:spec-driven`が有効な場合は同スキルの誘導に従い、無効な場合は`agent-toolkit:plan-mode`から始める。
+`agent-toolkit:plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、`agent-toolkit:plan-impl`スキルへ引き継ぐ。
 計画ファイルの`レビュー方式`が`レビュー有り`の場合はレビュー工程を実施し、
 `レビュー無し`の場合は実装・検証・コミットのみで完了する。
 引き継ぎ時にコンテキストが途絶している前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
@@ -162,7 +162,7 @@ flowchart TB
 
 `agent-toolkit`プラグインのフックは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
 パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`である。
-パス規則の一般論は`agent-toolkit/skills/claude-code-standards/references/claude-hooks.md`の
+パス規則の一般論は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節に従う。
 
 フラグを追加・変更する際は本表を更新し、書き込み元と読み取り元の対応関係を保つ。

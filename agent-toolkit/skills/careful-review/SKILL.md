@@ -27,7 +27,7 @@ description: >
 - 計画ファイルパス: `~/.claude/plans/{ファイル名}.md`
 - 対象範囲: ファイルパス列挙、またはgit差分範囲（`<base>..HEAD`等）
 
-`plan-impl`経由起動時は両方が付与される。
+`agent-toolkit:plan-impl`経由起動時は両方が付与される。
 手動起動時は`/agent-toolkit:careful-review <引数>`の形式で計画ファイル・対象範囲・両方のいずれかを受け取る。
 
 ## 対象範囲の確定
@@ -61,7 +61,7 @@ description: >
 - 対象が多い場合は次の3カテゴリに分けて並列起動する
   - コード・テストコード（`agent-toolkit:coding-standards`＋`agent-toolkit:writing-standards`）
   - 一般ドキュメント（`agent-toolkit:writing-standards`）
-  - コーディングエージェント向け文書（`agent-toolkit:writing-standards`＋`agent-toolkit:claude-code-standards`）
+  - コーディングエージェント向け文書（`agent-toolkit:writing-standards`＋`agent-toolkit:agent-standards`）
 - 各カテゴリの件数が少なすぎる（例: 1〜2ファイル）場合は、他のカテゴリと統合して起動する
 - 1カテゴリ内の件数が多い場合は、ファイル群をさらに分割して並列起動してよい
 
