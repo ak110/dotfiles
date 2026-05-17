@@ -78,13 +78,13 @@ flowchart TB
     end
     subgraph CRS["agent-toolkit:careful-review スキル"]
       direction TB
-      CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋日本語表現<br/>初回モード並列・全体差分対象]
+      CR[plan-spec-reviewer 仕様適合性＋成果物間整合性<br/>plan-impl-reviewer コード・ドキュメント単体品質＋日本語表現<br/>新エージェント並列・全体差分対象]
       CR -->|指摘あり<br/>メインが統合| T2[plan-implementer または メイン直接<br/>修正再実装]
       T2 --> CFix[メインがコミット統合<br/>amend or 新規コミット]
-      CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>followupモード並列]
-      R2 -->|missing / partial / regression| T2
+      CFix --> R2[plan-spec-reviewer / plan-impl-reviewer<br/>修正で書き換えたファイル群を対象に新エージェント並列起動]
+      R2 -->|指摘あり| T2
       CR -->|指摘なし| END
-      R2 -->|対応済み| END
+      R2 -->|指摘なし| END
     end
     SD -.->|作業テーマごとに誘導| PM
     PM -->|ExitPlanMode| PI
