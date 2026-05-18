@@ -1,7 +1,7 @@
 {
   "name": "agent-toolkit",
-  "version": "0.54.1",
-  "description": "Claude Codeのガードレールとスキル集。危険な編集や不適切なコミットをフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
+  "version": "0.54.2",
+  "description": "Claude Codeの成果物の品質を向上させるプラグイン。不適切な動作をフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
   "author": {
     "name": "aki",
     "url": "https://github.com/ak110"
