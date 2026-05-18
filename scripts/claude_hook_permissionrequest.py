@@ -11,7 +11,9 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 自動許可の対象パス:
 
-1. Gitワークツリー配下の`.claude/`配下（`~/.claude/`配下を除く）
+1. Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
+   - パス構成要素に`.claude`または`.agents`を含むファイル
+   - ファイル名が`AGENTS.md`のファイル
 2. `~/.claude/plans/`配下
 
 各判定ロジックの詳細は対応する関数のdocstringを参照する。
@@ -36,6 +38,12 @@ _BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "
 
 # 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトのみ別途トークンレベルで許容する。
 _UNSAFE_METACHARS = frozenset("|&;`$()<")
+
+# パス構成要素として一致した場合に Git ワークツリー判定対象とするディレクトリ名。
+_AGENT_META_DIRS = frozenset({".claude", ".agents"})
+
+# ファイル名として一致した場合に Git ワークツリー判定対象とするファイル名。
+_AGENT_META_FILES = frozenset({"AGENTS.md"})
 
 
 def _main() -> int:
@@ -83,8 +91,9 @@ def _main() -> int:
 def should_allow(file_path: str) -> bool:
     """単一ファイルパスが自動許可対象か判定する。
 
-    `~/.claude/plans/` 配下、または Git ワークツリー配下の `.claude/` 配下のいずれかに
-    該当する場合 True を返す。
+    `~/.claude/plans/` 配下、または Git ワークツリー配下のコーディングエージェント向け文書
+    （パス構成要素に `.claude` か `.agents` を含むファイル、またはファイル名が `AGENTS.md`
+    のファイル。`~/.claude/` 配下を除く）のいずれかに該当する場合 True を返す。
     """
     target = _normalize_path(file_path)
     if target is None:
@@ -175,7 +184,7 @@ def _is_target_path(target: pathlib.Path) -> bool:
         return False
     if _is_under(target, home_claude / "plans"):
         return True
-    return _is_repo_claude_edit(target, home_claude)
+    return _is_repo_agent_meta_edit(target, home_claude)
 
 
 def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
@@ -187,12 +196,18 @@ def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
     return bool(rel.parts)
 
 
-def _is_repo_claude_edit(target: pathlib.Path, home_claude: pathlib.Path) -> bool:
-    """Git ワークツリー配下の `.claude/` 配下への編集か判定する。
+def _is_repo_agent_meta_edit(target: pathlib.Path, home_claude: pathlib.Path) -> bool:
+    """Git ワークツリー配下のコーディングエージェント向け文書への編集か判定する。
 
-    `~/.claude/` 配下は除外する (配布先誤編集の警告経路を維持するため)。
+    以下のいずれかに該当するパスを対象とする。
+
+    - パス構成要素に `.claude` または `.agents` を含むファイル
+    - ファイル名が `AGENTS.md` のファイル
+
+    `~/.claude/` 配下は除外する（配布先誤編集の警告経路を維持するため）。
     """
-    if ".claude" not in target.parts:
+    parts = set(target.parts)
+    if _AGENT_META_DIRS.isdisjoint(parts) and target.name not in _AGENT_META_FILES:
         return False
     try:
         target.relative_to(home_claude)

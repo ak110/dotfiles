@@ -67,6 +67,51 @@ class TestShouldAllow:
     def test_empty_path_rejected(self) -> None:
         assert hook.should_allow("") is False
 
+    @pytest.mark.parametrize(
+        ("relative_path", "expected"),
+        [
+            # AGENTS.md はリポジトリ直下・サブディレクトリのいずれも許可。
+            ("AGENTS.md", True),
+            ("subdir/AGENTS.md", True),
+            # `.agents/` 配下はパス構成要素一致で許可。
+            (".agents/skill.md", True),
+            (".agents/skills/foo.md", True),
+            ("subdir/.agents/foo.md", True),
+            # 名前が完全一致しないファイルは拒否（大文字小文字差異の境界）。
+            ("agents.md", False),
+            ("Agents.md", False),
+            ("AGENTS.MD", False),
+            ("AGENTS.md.bak", False),
+            ("MY_AGENTS.md", False),
+            # ディレクトリ名が完全一致しないものは拒否。
+            ("agents/foo.md", False),
+            (".agent/foo.md", False),
+        ],
+    )
+    def test_repo_path_allowance(self, home: pathlib.Path, repo: pathlib.Path, relative_path: str, expected: bool) -> None:
+        del home
+        assert hook.should_allow(str(repo / relative_path)) is expected
+
+    def test_home_claude_agents_md_not_allowed(self, home: pathlib.Path) -> None:
+        # `~/.claude/AGENTS.md` は配布先誤編集の警告経路維持のため拒否する。
+        assert hook.should_allow(str(home / ".claude" / "AGENTS.md")) is False
+
+    def test_home_claude_dot_agents_not_allowed(self, home: pathlib.Path) -> None:
+        # `~/.claude/.agents/` 配下も同様に拒否する。
+        assert hook.should_allow(str(home / ".claude" / ".agents" / "x.md")) is False
+
+    def test_agents_md_outside_git_worktree_not_allowed(self, home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+        del home
+        target = tmp_path / "no_git" / "AGENTS.md"
+        target.parent.mkdir(parents=True)
+        assert hook.should_allow(str(target)) is False
+
+    def test_dot_agents_outside_git_worktree_not_allowed(self, home: pathlib.Path, tmp_path: pathlib.Path) -> None:
+        del home
+        target = tmp_path / "no_git" / ".agents" / "x.md"
+        target.parent.mkdir(parents=True)
+        assert hook.should_allow(str(target)) is False
+
 
 class TestShouldAllowBash:
     """`should_allow_bash` の判定動作。"""
@@ -155,6 +200,35 @@ class TestShouldAllowBash:
         # shlex.split が ValueError を送出する形
         assert hook.should_allow_bash('rm "unterminated', str(home)) is False
 
+    @pytest.mark.parametrize(
+        ("command_template", "expected"),
+        [
+            # AGENTS.md・`.agents/` 配下への安全コマンドはすべて許可。
+            ("rm {repo}/AGENTS.md", True),
+            ("rm -f {repo}/AGENTS.md", True),
+            ("touch {repo}/AGENTS.md", True),
+            ("mv {repo}/AGENTS.md {repo}/sub/AGENTS.md", True),
+            ("echo hello > {repo}/AGENTS.md", True),
+            ("echo hello >> {repo}/AGENTS.md", True),
+            ("rm {repo}/.agents/skill.md", True),
+            ("touch {repo}/.agents/new.md", True),
+            ("mv {repo}/.agents/a.md {repo}/.agents/b.md", True),
+            # 一方が Git ワークツリー外（境界外）の場合は拒否。
+            ("mv {repo}/AGENTS.md {home}/AGENTS.md", False),
+            ("mv {repo}/.agents/a.md {home}/a.md", False),
+            ("cp {repo}/AGENTS.md {home}/AGENTS.md", False),
+        ],
+    )
+    def test_bash_agents_paths(
+        self,
+        home: pathlib.Path,
+        repo: pathlib.Path,
+        command_template: str,
+        expected: bool,
+    ) -> None:
+        cmd = command_template.format(home=home, repo=repo)
+        assert hook.should_allow_bash(cmd, str(repo)) is expected
+
 
 class TestEndToEnd:
     """サブプロセス経由で stdin / stdout の応答を検証する。"""
@@ -174,6 +248,21 @@ class TestEndToEnd:
         payload = {
             "tool_name": "Write",
             "tool_input": {"file_path": str(home / ".claude" / "plans" / "x.md"), "content": "x"},
+        }
+        code, stdout = self._run(payload)
+        assert code == 0
+        assert json.loads(stdout) == {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
+            }
+        }
+
+    def test_write_to_agents_md_returns_allow(self, home: pathlib.Path, repo: pathlib.Path) -> None:
+        del home
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(repo / "AGENTS.md"), "content": "x"},
         }
         code, stdout = self._run(payload)
         assert code == 0
