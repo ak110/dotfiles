@@ -306,11 +306,16 @@ def _process_target(
 ) -> list[EntryFailure]:
     """1 つの TARGET を処理する。失敗時は作業ディレクトリを削除し原本を戻す。
 
+    冒頭で末尾 Central Directory を欠いた破損 ZIP を ``ValueError`` で拒否する。
+    バックアップ・展開・ZIP 生成といった副作用を起こす前段で判定するため、
+    途中で libarchive が復号不能となって作業ディレクトリだけが残る事態を避けられる。
+
     アーカイブ内の個別エントリ警告・失敗は (エントリパス, severity, メッセージ)
     のリストとして返す。空でない場合、欠落の可能性があるためバックアップを保持する
     (``send2trash`` を呼ばない)。
     """
     logger.info("== %s ==", target)
+    _check_truncated_zip(target)
     parent = target.parent
     stem = _output_stem(target, rename_rules=compiled.rename_rules)
     is_archive = target.is_file()
@@ -320,14 +325,11 @@ def _process_target(
     if not dry_run:
         bk_root.mkdir(parents=True, exist_ok=True)
 
-    # 1. バックアップ作成 (元の名前のまま)
+    # 1. バックアップ作成 (元の名前のままアーカイブ・フォルダとも shutil.move で退避)
     if dry_run:
         logger.info("[dry-run] backup: %s -> %s", target, bk_entry)
     else:
-        if is_archive:
-            shutil.move(str(target), str(bk_entry))
-        else:
-            shutil.copytree(target, bk_entry)
+        shutil.move(str(target), str(bk_entry))
 
     # 2. 作業ディレクトリ作成
     if dry_run:
@@ -384,7 +386,7 @@ def _process_target(
         # ロールバック: 作業ディレクトリ削除 + 原本復元
         if not dry_run:
             shutil.rmtree(work_dir, ignore_errors=True)
-            if is_archive and bk_entry.exists() and not target.exists():
+            if bk_entry.exists() and not target.exists():
                 shutil.move(str(bk_entry), str(target))
         raise
 
@@ -417,6 +419,36 @@ def _process_target(
 
     logger.info("")
     return entry_failures
+
+
+def _check_truncated_zip(target: pathlib.Path) -> None:
+    r"""先頭が ``PK\\x03\\x04`` で末尾 EOCD を欠く ZIP を ``ValueError`` で拒否する。
+
+    ``zipfile.is_zipfile`` は末尾の End Of Central Directory record を必須とし、
+    EOCD を欠いた末尾切り詰め ZIP では ``False`` を返す。先頭 4 バイトが
+    ZIP ローカルファイルヘッダーのマジック ``PK\\x03\\x04`` と一致する場合は
+    本来 ZIP として生成されたファイルが途中で途絶した可能性が高く、後段の
+    libarchive へ渡しても復号途中で停止する。利用者に再取得を促すため、
+    バックアップ作成等の副作用を起こす前にここで明示的に拒否する。
+
+    判定はファイル拡張子に依存しない。先頭 4 バイトが一致しないファイル
+    (自己解凍 EXE・破損 tar 等) は対象外で、従来通り libarchive へ渡す。
+    ディレクトリ入力や読み取り失敗時は何もしない。
+    """
+    if not target.is_file():
+        return
+    if zipfile.is_zipfile(target):
+        return
+    try:
+        with target.open("rb") as fp:
+            head = fp.read(4)
+    except OSError:
+        return
+    if head == b"PK\x03\x04":
+        raise ValueError(
+            f"{target.name}: ZIP末尾のCentral Directoryが欠落している。"
+            "ファイルが途中で途絶している可能性があるため再取得すること"
+        )
 
 
 @functools.cache
@@ -459,7 +491,7 @@ def _load_libarchive() -> typing.Any:
 
 
 def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
-    """アーカイブ形式に応じて展開エンジンを切り替える。
+    r"""アーカイブ形式に応じて展開エンジンを切り替える。
 
     ZIPはPython標準の ``zipfile`` を使い、エンコーディング判定とパス検証を本ツール側で掌握する。
     Windows版libarchive-cは非UTF-8エントリ名（CP932等）をLatin-1相当でstr化するため、
@@ -470,6 +502,10 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
     ZIP以外（RAR / 7z / tar等）はlibarchive-cに委ねる。個別エントリの ``OSError`` は
     捕捉してスキップし、（エントリパス, severity, エラー文字列）のリストとして戻り値で返す。
     アーカイブ全体での致命的エラーは再送出する。
+
+    末尾 EOCD を欠いた破損 ZIP（先頭は ``PK\\x03\\x04`` だが ``is_zipfile`` が ``False``）
+    は ``_process_target`` 冒頭の ``_check_truncated_zip`` で事前に拒否されるため、
+    ここには到達しない。
     """
     if zipfile.is_zipfile(archive):
         return _extract_zip(archive, dest, compiled)

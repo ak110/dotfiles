@@ -528,8 +528,82 @@ class TestProcessDirectory:
         assert (tmp_path / "book.zip").exists()
         entries = _zip_entries(tmp_path / "book.zip")
         assert entries == {"01.txt", "02.txt"}
-        # 元ディレクトリはバックアップされたうえで作業ディレクトリが削除されている
+        # 元ディレクトリはバックアップへ退避され、入力位置から削除される
         assert (tmp_path / "bk" / "book").exists()
+        assert not src.exists()
+
+    def test_directory_input_send2trash(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """フォルダ入力でも警告・失敗が無ければバックアップが send2trash に渡る。"""
+        trashed: list[str] = []
+        monkeypatch.setattr(
+            "pytools.repack_archive.send2trash.send2trash",
+            lambda path: trashed.append(str(path)),
+        )
+        src = tmp_path / "book"
+        src.mkdir()
+        (src / "01.txt").write_bytes(b"1")
+        (src / "02.txt").write_bytes(b"2")
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            src,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=False,
+            dry_run=False,
+        )
+        assert len(trashed) == 1
+        assert trashed[0].endswith("book")
+
+
+class TestBrokenZip:
+    """末尾 EOCD を欠いた破損 ZIP を明示エラー化する挙動の検証。"""
+
+    @pytest.mark.parametrize("truncate_bytes", [22, 23])
+    def test_truncated_zip_raises(self, tmp_path: pathlib.Path, truncate_bytes: int) -> None:
+        """EOCD を含む末尾 ``truncate_bytes`` バイトを削った ZIP は ValueError で停止する。
+
+        EOCD の最小サイズは 22 バイト。22 バイトちょうど削れば EOCD のシグネチャが
+        消えて ``zipfile.is_zipfile`` が False を返す。先頭は ``PK\\x03\\x04`` のまま残るため、
+        本判定が ``ValueError`` を送出する境界を網羅する。
+        """
+        archive = tmp_path / "truncated.zip"
+        _make_zip(archive, {"img1.txt": b"one", "img2.txt": b"two"})
+        original = archive.read_bytes()
+        assert len(original) > truncate_bytes
+        archive.write_bytes(original[:-truncate_bytes])
+        # 前提: 先頭は PK\x03\x04 のままだが EOCD は欠落している
+        assert archive.read_bytes()[:4] == b"PK\x03\x04"
+        assert not zipfile.is_zipfile(archive)
+
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        with pytest.raises(ValueError, match="Central Directory"):
+            repack_archive._process_target(
+                archive,
+                config=config,
+                compiled=compiled,
+                backup_dir_override=None,
+                no_trash=True,
+                dry_run=False,
+            )
+        # 副作用が起きていないこと: 原本は元位置に残り、バックアップ・出力 ZIP は生成されない
+        assert archive.exists()
+        assert not (tmp_path / "bk").exists()
+        # 出力 ZIP は同じパスのため、サイズが切り詰め後のまま (= 上書きされていない)
+        assert archive.stat().st_size == len(original) - truncate_bytes
+
+    def test_non_pk_prefix_is_not_rejected(self, tmp_path: pathlib.Path) -> None:
+        """先頭が ``PK\\x03\\x04`` でない破損ファイルは判定で拒否されず後段に委ねる。"""
+        target = tmp_path / "garbage.zip"
+        target.write_bytes(b"not a zip file at all")
+        # 判定は素通り (後段の libarchive で扱われる)
+        repack_archive._check_truncated_zip(target)
 
 
 class TestFilenameEncoding:
