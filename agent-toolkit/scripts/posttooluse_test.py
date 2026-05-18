@@ -360,6 +360,53 @@ class TestGitLogChecked:
         )
         assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True}
 
+    @pytest.mark.parametrize(
+        ("label", "command", "payload_cwd", "expected_keys"),
+        [
+            # `git -C <dir>` でcwdを切り替えたlog記録は当該ディレクトリで記録される
+            ("dash_c_absolute", "git -C /repo/x log --oneline", "/elsewhere", ["/repo/x"]),
+            # `cd <dir>` 後のlog
+            ("cd_then_log", "cd /repo/x && git log --oneline", "/elsewhere", [os.path.normpath("/repo/x")]),
+            # `cd a; git -C b` の組合せ（a/b で記録）
+            (
+                "cd_and_dash_c",
+                "cd /repo && git -C x log --oneline",
+                "/elsewhere",
+                [os.path.normpath("/repo/x")],
+            ),
+            # 1つのBashコマンドで複数の log がある場合は各cwdで記録される
+            (
+                "multiple_log_per_segment",
+                "git -C /repo/a log; git -C /repo/b log",
+                "/elsewhere",
+                [os.path.normpath("/repo/a"), os.path.normpath("/repo/b")],
+            ),
+        ],
+    )
+    def test_effective_cwd_records_correct_keys(
+        self,
+        tmp_path: pathlib.Path,
+        label: str,
+        command: str,
+        payload_cwd: str,
+        expected_keys: list[str],
+    ) -> None:
+        """`git -C`・`cd`・両者併用で実効cwdが切り替わるケースで該当cwdに記録される。"""
+        sid = f"eff-{label}"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "cwd": payload_cwd,
+            },
+            state_dir=tmp_path,
+        )
+        recorded = _read_state(tmp_path, sid).get("git_log_checked")
+        assert isinstance(recorded, dict)
+        for key in expected_keys:
+            assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
+
 
 # plan file形式検査で使う各種Markdown断片。テスト全体で共用する。
 # 本体スクリプトの`_PLAN_REQUIRED_H2`から自動生成し、定義順序のドリフトを防ぐ。

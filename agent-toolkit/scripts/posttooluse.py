@@ -24,8 +24,9 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
@@ -71,17 +72,13 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     ),
 )
 
-# --- Git状態確認検出パターン ---
+# --- git関連サブコマンドの分類 ---
 
-_GIT_STATUS_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+(?:status|log|diff)\b")
+# `git status` / `git log` / `git diff` のいずれかを実行した場合に状態確認済みとみなす。
+_GIT_STATUS_SUBCOMMANDS: frozenset[str] = frozenset({"status", "log", "diff"})
 
-# --- git log確認パターン ---
-
-_GIT_LOG_PATTERN = re.compile(r"(?:^|[;&|]\s*)git\s+log\b")
-
-# --- git logリセットパターン（commit / rebase / push）---
-
-_GIT_LOG_RESET_PATTERN = re.compile(r"\bgit\s+(?:commit|rebase|push)\b")
+# git_log_checked をリセットするサブコマンド（既存コミットを書き換える・送出する系統）。
+_GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "push"})
 
 # --- plan-modeスキル呼び出し検出 ---
 
@@ -242,27 +239,37 @@ def _main() -> int:
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            state = read_state(session_id)
-            if not state.get("plan_mode_skill_invoked", False):
+
+            def _set_invoked(state: dict) -> dict | None:
+                if state.get("plan_mode_skill_invoked", False):
+                    return None
                 state["plan_mode_skill_invoked"] = True
-                write_state(session_id, state)
+                return state
+
+            update_state(session_id, _set_invoked)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集はgit log確認状態を全エントリリセットする
     # （cwd別判定の細粒度は維持せず、編集後は全cwdの再確認を要求する）。
     if tool_name in ("Write", "Edit", "MultiEdit"):
-        state = read_state(session_id)
-        log_state = state.get("git_log_checked", False)
-        if isinstance(log_state, dict):
-            if log_state:
+
+        def _reset_log(state: dict) -> dict | None:
+            log_state = state.get("git_log_checked", False)
+            if isinstance(log_state, dict):
+                if not log_state:
+                    return None
                 state["git_log_checked"] = {}
-                write_state(session_id, state)
-        elif log_state:
-            state["git_log_checked"] = False
-            write_state(session_id, state)
+                return state
+            if log_state:
+                state["git_log_checked"] = False
+                return state
+            return None
+
+        update_state(session_id, _reset_log)
         # plan file形式検査: ~/.claude/plans/直下の.mdのみ対象。
         # plan-modeスキル未呼び出し時はPreToolUse側の警告で先行催促済みのため、
         # 構造検査をスキップして二重警告を避ける。
+        state = read_state(session_id)
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
         if state.get("plan_mode_skill_invoked", False) and _is_plan_file(file_path):
@@ -298,51 +305,55 @@ def _main() -> int:
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
 
-    state = read_state(session_id)
-    changed = False
+    git_events = extract_git_events(command, cwd)
 
-    # テスト実行の検出
-    if not state.get("test_executed", False):
-        for pattern in _TEST_PATTERNS:
-            if pattern.search(command):
-                state["test_executed"] = True
-                changed = True
-                break
+    def _apply_bash_updates(state: dict) -> dict | None:
+        changed = False
+        # テスト実行の検出
+        if not state.get("test_executed", False):
+            for pattern in _TEST_PATTERNS:
+                if pattern.search(command):
+                    state["test_executed"] = True
+                    changed = True
+                    break
 
-    # Git状態確認の検出
-    if not state.get("git_status_checked", False) and _GIT_STATUS_PATTERN.search(command):
-        state["git_status_checked"] = True
-        changed = True
-
-    # git log確認状態の管理（cwd別の辞書`{cwd: True}`で記録する。
-    # cwd未取得時は旧形式のboolにフォールバックして従来挙動を維持する）。
-    if _GIT_LOG_PATTERN.search(command):
-        if cwd:
-            log_state = state.get("git_log_checked")
-            if not isinstance(log_state, dict):
-                log_state = {}
-            if not log_state.get(cwd, False):
-                log_state[cwd] = True
-                state["git_log_checked"] = log_state
-                changed = True
-        elif not state.get("git_log_checked", False):
-            state["git_log_checked"] = True
-            changed = True
-    elif _GIT_LOG_RESET_PATTERN.search(command):
-        # commit / rebase / pushはgit log確認状態をリセットする。
-        log_state = state.get("git_log_checked", False)
-        if isinstance(log_state, dict):
-            if cwd and cwd in log_state:
-                del log_state[cwd]
-                state["git_log_checked"] = log_state
-                changed = True
-        elif log_state:
-            state["git_log_checked"] = False
+        # Git状態確認の検出（status / log / diff）
+        if not state.get("git_status_checked", False) and any(
+            event.subcommand in _GIT_STATUS_SUBCOMMANDS for event in git_events
+        ):
+            state["git_status_checked"] = True
             changed = True
 
-    if changed:
-        write_state(session_id, state)
+        # git_log_checked: log で記録、commit / rebase / push でリセット。
+        # cwd別の辞書`{cwd: True}`で記録する。cwd空イベントは旧形式の単一bool値で記録する。
+        log_state = state.get("git_log_checked")
+        log_modified = False
+        for event in git_events:
+            if event.subcommand == "log":
+                if event.cwd:
+                    if not isinstance(log_state, dict):
+                        log_state = {}
+                    if not log_state.get(event.cwd, False):
+                        log_state[event.cwd] = True
+                        log_modified = True
+                elif not isinstance(log_state, dict) and not log_state:
+                    log_state = True
+                    log_modified = True
+            elif event.subcommand in _GIT_LOG_RESET_SUBCOMMANDS:
+                if isinstance(log_state, dict):
+                    if event.cwd and event.cwd in log_state:
+                        del log_state[event.cwd]
+                        log_modified = True
+                elif log_state:
+                    log_state = False
+                    log_modified = True
+        if log_modified:
+            state["git_log_checked"] = log_state
+            changed = True
 
+        return state if changed else None
+
+    update_state(session_id, _apply_bash_updates)
     return 0
 
 

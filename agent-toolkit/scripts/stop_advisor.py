@@ -23,7 +23,7 @@ import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
@@ -111,16 +111,18 @@ def _main() -> int:
         _approve()
         return 0
 
-    state = read_state(session_id)
-
     # Stopのたびにgit_log_checkedをリセットする。
     # ユーザーが裏でpushしている可能性があるため、
     # 再開後のamend / rebaseには改めてlog確認を要求する。
     # `git_log_checked`はcwd別辞書`{cwd: True}`を採用するため、
     # 全エントリをまとめてクリアする。
-    if state.get("git_log_checked"):
+    def _reset_git_log_checked(state: dict) -> dict | None:
+        if not state.get("git_log_checked"):
+            return None
         state["git_log_checked"] = {}
-        write_state(session_id, state)
+        return state
+
+    update_state(session_id, _reset_git_log_checked)
 
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
@@ -144,10 +146,14 @@ def _main() -> int:
 
     # --- 未コミット変更通知（1回限り）---
     if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-        block_count = state.get("uncommitted_block_count", 0)
-        if block_count == 0:
-            state["uncommitted_block_count"] = block_count + 1
-            write_state(session_id, state)
+
+        def _try_increment_uncommitted(state: dict) -> dict | None:
+            if state.get("uncommitted_block_count", 0) != 0:
+                return None
+            state["uncommitted_block_count"] = state.get("uncommitted_block_count", 0) + 1
+            return state
+
+        if update_state(session_id, _try_increment_uncommitted):
             messages.append(
                 _llm_notice(
                     "uncommitted changes detected."
@@ -158,12 +164,13 @@ def _main() -> int:
             )
 
     # --- セッション振り返り提案（1回限り）---
-    if not state.get("stop_advice_given", False):
-        # block前にstop_advice_givenを記録する。
-        # block後の再Stop時に同フラグで即スキップするため。
+    def _try_mark_stop_advice(state: dict) -> dict | None:
+        if state.get("stop_advice_given", False):
+            return None
         state["stop_advice_given"] = True
-        write_state(session_id, state)
+        return state
 
+    if update_state(session_id, _try_mark_stop_advice):
         body = (
             "session review: list improvement suggestions in Japanese."
             " Each suggestion must stand alone for readers without this session's conversation history"

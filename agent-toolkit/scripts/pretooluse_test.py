@@ -3,6 +3,8 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
+# pylint: disable=too-many-lines  # ハンドラ網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
+
 import json
 import os
 import pathlib
@@ -863,6 +865,39 @@ class TestBashAmendRebaseBlock:
         self._write_state(tmp_path, sid, {"git_log_checked": {recorded_cwd: True}})
         cmd = "git commit " + "--amend --no-edit"
         result = self._invoke(cmd, sid, state_dir, cwd=payload_cwd)
+        assert result.returncode == expected_returncode
+
+    @pytest.mark.parametrize(
+        ("label", "command", "payload_cwd", "recorded_cwd", "expected_returncode"),
+        [
+            # `git -C <dir>` でcwdを切り替えた先のlog確認は当該ディレクトリで判定する
+            ("dash_c_absolute_allowed", "git -C /repo/x commit --amend --no-edit", "/elsewhere", "/repo/x", 0),
+            ("dash_c_absolute_blocked", "git -C /repo/x commit --amend --no-edit", "/elsewhere", "/repo/y", 2),
+            # `cd <dir>` 後のamend
+            ("cd_then_amend_allowed", "cd /repo/x && git commit --amend --no-edit", "/elsewhere", "/repo/x", 0),
+            ("cd_then_amend_blocked", "cd /repo/x && git commit --amend --no-edit", "/elsewhere", "/repo/y", 2),
+            # `cd a; git -C b` の組合せ
+            ("cd_and_dash_c_allowed", "cd /repo && git -C x commit --amend --no-edit", "/elsewhere", "/repo/x", 0),
+            ("cd_and_dash_c_blocked", "cd /repo && git -C x commit --amend --no-edit", "/elsewhere", "/repo/y", 2),
+            # rebaseも同様に判定される
+            ("dash_c_rebase_allowed", "git -C /repo/x rebase main", "/elsewhere", "/repo/x", 0),
+            ("dash_c_rebase_blocked", "git -C /repo/x rebase main", "/elsewhere", "/repo/y", 2),
+        ],
+    )
+    def test_effective_cwd_resolution(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        label: str,
+        command: str,
+        payload_cwd: str,
+        recorded_cwd: str,
+        expected_returncode: int,
+    ) -> None:
+        """`git -C`・`cd`・両者併用で実効cwdが切り替わるケースを記録cwdと突合する。"""
+        sid = f"effective-{label}"
+        self._write_state(tmp_path, sid, {"git_log_checked": {recorded_cwd: True}})
+        result = self._invoke(command, sid, state_dir, cwd=payload_cwd)
         assert result.returncode == expected_returncode
 
 

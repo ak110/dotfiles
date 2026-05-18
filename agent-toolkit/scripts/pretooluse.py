@@ -50,8 +50,11 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_git_events,
+)
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import read_state, write_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
@@ -542,8 +545,14 @@ def _check_plan_mode_skill_first(
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             return None
-    state["plan_mode_warning_emitted"] = True
-    write_state(session_id, state)
+
+    def _set_warning(current: dict) -> dict | None:
+        if current.get("plan_mode_warning_emitted", False):
+            return None
+        current["plan_mode_warning_emitted"] = True
+        return current
+
+    update_state(session_id, _set_warning)
     return {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -579,9 +588,6 @@ _GIT_COMMIT_PATTERN = re.compile(r"\bgit\s+commit\b")
 
 # --- Bash: git amend / rebaseをlog未確認でブロック ---
 
-_GIT_AMEND_PATTERN = re.compile(r"\bgit\s+commit\b.*--amend\b")
-_GIT_REBASE_PATTERN = re.compile(r"\bgit\s+rebase\b")
-
 
 def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str) -> bool:
     """Git commit --amend / git rebaseをgit log未確認で実行しようとした場合にブロックする。
@@ -594,30 +600,35 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     `git_log_checked`はcwd別に管理する辞書`{cwd: True}`形式を採用する。
     旧形式のbool値（`True` / `False`）はcwd空文字列環境向けの後方互換として
     そのまま参照する。
+    判定は`extract_git_events`の結果を消費し、各git呼び出しの実効cwd
+    （`cd`・`pushd`・`git -C`の影響を反映）ごとに行う。
     """
-    amend_match = _GIT_AMEND_PATTERN.search(command)
-    rebase_match = _GIT_REBASE_PATTERN.search(command)
-    is_amend = amend_match is not None and _likely_real_command(command, amend_match.start())
-    is_rebase = rebase_match is not None and _likely_real_command(command, rebase_match.start())
-    if not is_amend and not is_rebase:
+    targets: list[tuple[str, str]] = []
+    for event in extract_git_events(command, cwd):
+        if event.subcommand == "commit" and "--amend" in event.subcommand_args:
+            targets.append((event.cwd, "git commit --amend"))
+        elif event.subcommand == "rebase":
+            targets.append((event.cwd, "git rebase"))
+    if not targets:
         return False
     state = read_state(session_id)
     log_state = state.get("git_log_checked", False)
-    if isinstance(log_state, dict):
-        if cwd and log_state.get(cwd, False):
-            return False
-    elif log_state:
-        return False
-    op = "git commit --amend" if is_amend else "git rebase"
-    print(
-        _llm_notice(
-            f"blocked: {op}."
-            f" Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
-            f" (especially, do NOT amend/rebase commits that have already been pushed)."
-        ),
-        file=sys.stderr,
-    )
-    return True
+    for event_cwd, op in targets:
+        if isinstance(log_state, dict):
+            if event_cwd and log_state.get(event_cwd, False):
+                continue
+        elif log_state:
+            continue
+        print(
+            _llm_notice(
+                f"blocked: {op}."
+                f" Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
+                f" (especially, do NOT amend/rebase commits that have already been pushed)."
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
 
 
 # --- Bash: uv run python <path>形式の起動ブロック ---
@@ -877,29 +888,28 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
 
 # --- Bash: git log --decorate自動付与 ---
 
-_GIT_LOG_PATTERN = re.compile(r"\bgit\s+log\b")
+_GIT_LOG_INSERT_REGEX = re.compile(r"\bgit\s+log\b")
 
 
 def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
-    """Git logに--decorateがない場合、自動で挿入したupdatedInputを返す。
+    r"""Git logに--decorateがない場合、自動で挿入したupdatedInputを返す。
 
-    複合コマンド（セミコロン・パイプ結合）内のgit logにも対応する。
-    git logから次のセミコロン・パイプ・行末までの範囲に--decorateが含まれるかを判定する。
+    `extract_git_events`の結果から`subcommand == "log"`かつ`subcommand_args`に
+    `--decorate`を含まない最初のイベントを対象とする。
+    コマンド本文上の挿入位置は同順に並ぶ`git\\s+log`マッチから取得する。
+    heredoc内のリテラル一致は`_likely_real_command`で除外する。
     """
-    match = _GIT_LOG_PATTERN.search(command)
-    if match is None or not _likely_real_command(command, match.start()):
+    log_events = [event for event in extract_git_events(command, "") if event.subcommand == "log"]
+    target_index = next(
+        (i for i, event in enumerate(log_events) if "--decorate" not in event.subcommand_args),
+        None,
+    )
+    if target_index is None:
         return None
-    # git logから次のセミコロン・パイプ・行末までのスコープを取得
-    rest = command[match.start() :]
-    scope_end = len(rest)
-    for delimiter in (";", "|", "&&"):
-        pos = rest.find(delimiter)
-        if pos != -1 and pos < scope_end:
-            scope_end = pos
-    scope = rest[:scope_end]
-    if "--decorate" in scope:
+    matches = [m for m in _GIT_LOG_INSERT_REGEX.finditer(command) if _likely_real_command(command, m.start())]
+    if target_index >= len(matches):
         return None
-    # git logをgit log --decorateに1箇所だけ置換
+    match = matches[target_index]
     updated_command = command[: match.end()] + " --decorate" + command[match.end() :]
     updated_input = dict(tool_input)
     updated_input["command"] = updated_command
