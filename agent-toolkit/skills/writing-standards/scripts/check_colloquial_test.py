@@ -108,6 +108,21 @@ def test_directory_recurses(tmp_path: pathlib.Path, deny_substring: str):
     assert str(skipped) not in result.stderr
 
 
+def test_directory_includes_md_tmpl(tmp_path: pathlib.Path, deny_substring: str):
+    """ディレクトリ走査時に`.md.tmpl`二重拡張子もmd相当として走査対象に含む。
+
+    `.tmpl`単独はテンプレート構文の誤検出が多いため対象外であることも確認する。
+    """
+    md_tmpl = tmp_path / "note.md.tmpl"
+    md_tmpl.write_text(f"概要は{deny_substring}該当する。\n", encoding="utf-8")
+    plain_tmpl = tmp_path / "raw.tmpl"
+    plain_tmpl.write_text(f"{deny_substring}\n", encoding="utf-8")
+    result = _run(tmp_path)
+    assert result.returncode == 1
+    assert str(md_tmpl) in result.stderr
+    assert str(plain_tmpl) not in result.stderr
+
+
 def test_directory_excludes_known_dirs(tmp_path: pathlib.Path, deny_substring: str):
     """`.git`等の既知の除外ディレクトリ配下はスキャン対象外。"""
     for excluded in (".git", ".venv", "node_modules", "__pycache__"):

@@ -29,7 +29,9 @@ import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,
 _EXCERPT_LIMIT = 100
 
 # ディレクトリ展開時に走査する拡張子。日本語が含まれうるテキストファイルを対象とする。
-_DEFAULT_EXTENSIONS = frozenset({".md", ".py", ".txt", ".yaml", ".yml", ".toml"})
+# `.md.tmpl`はchezmoiテンプレート由来の二重拡張子。`pathlib.Path.suffix`は最後の要素のみを返すため、
+# 末尾一致判定で複合拡張子も拾う。`.tmpl`単独はテンプレート構文を含み誤検出が多いため対象外とする。
+_DEFAULT_EXTENSIONS = frozenset({".md", ".py", ".txt", ".yaml", ".yml", ".toml", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
 _EXCLUDED_DIRS = frozenset(
@@ -136,7 +138,8 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
                     continue
                 if any(part in _EXCLUDED_DIRS for part in sub.parts):
                     continue
-                if sub.suffix.lower() not in _DEFAULT_EXTENSIONS:
+                name_lower = sub.name.lower()
+                if not any(name_lower.endswith(ext) for ext in _DEFAULT_EXTENSIONS):
                     continue
                 _add(expanded, seen, sub)
     return expanded
