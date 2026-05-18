@@ -38,6 +38,9 @@
 - `agent-toolkit/`配下・`agent-toolkit/rules/`配下・`.claude-plugin/marketplace.json`の編集時は
   `agent-toolkit-edit`スキルを参照する。
   marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
+- `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdownは配布後に
+  `~/.claude/rules/agent-toolkit/`・`~/.claude/skills/`相当として機能するコーディングエージェント向け文書のため、
+  編集時は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`スキルも併用して呼び出す
 - spec-driven系スキル
  （`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`）は
   本リポジトリでは対象外。

@@ -30,7 +30,7 @@ disable-model-invocation: true
 | 観点 | 対象範囲 | 評価基準 |
 | --- | --- | --- |
 | コード改善 | ソースコード・テストコード | `agent-toolkit:coding-standards`・`agent-toolkit:writing-standards`（コメント） |
-| ドキュメント整備 | 一般ドキュメント・README・技術文書・API文書・CHANGELOG | `agent-toolkit:writing-standards` |
+| ドキュメント整備 | 一般ドキュメント・README・技術文書・API文書 | `agent-toolkit:writing-standards` |
 | 足元整備 | 設定ファイル群とエージェント向け文書群（下記参照） | `agent-toolkit:agent-standards`・pyfltr推奨設定・各ツール公式ドキュメント |
 
 足元整備の対象範囲は次の2系統。
