@@ -58,24 +58,6 @@ class TestRender:
         data = {"workspace": {"current_dir": "/tmp/repo"}}
         assert claude_status_line.render(data) == f"{BLUE}/tmp/repo{RESET}"
 
-    @pytest.mark.parametrize(
-        ("session_id", "expected_visible"),
-        [
-            ("abcd1234", "abcd1234"),
-            ("abcd12345", "abcd1234"),
-            ("abcd12345678ef", "abcd1234"),
-            ("abc", "abc"),
-        ],
-    )
-    def test_session_id_truncated(self, session_id: str, expected_visible: str) -> None:
-        data = {"session_id": session_id}
-        assert claude_status_line.render(data) == f"{GRAY}({expected_visible}){RESET}"
-
-    @pytest.mark.parametrize("invalid", [None, "", 42, [], {}])
-    def test_session_id_invalid_omitted(self, invalid: Any) -> None:
-        data = {"session_id": invalid}
-        assert claude_status_line.render(data) == ""
-
     def test_output_style_named(self) -> None:
         data = {"output_style": {"name": "Explanatory"}}
         assert claude_status_line.render(data) == f"{MAGENTA}@Explanatory{RESET}"
@@ -100,7 +82,7 @@ class TestRender:
     )
     def test_context_percentage_color_threshold(self, value: float, expected_color: str) -> None:
         data = {"context_window": {"used_percentage": value}}
-        assert claude_status_line.render(data) == (f"{expected_color}ctx {value:.0f}%{RESET}")
+        assert claude_status_line.render(data) == (f"{expected_color}コンテキスト消費量: {value:.0f}%{RESET}")
 
     @pytest.mark.parametrize(
         ("value", "expected_color"),
@@ -117,7 +99,7 @@ class TestRender:
     )
     def test_five_hour_percentage_color_threshold(self, value: float, expected_color: str) -> None:
         data = {"rate_limits": {"five_hour": {"used_percentage": value}}}
-        assert claude_status_line.render(data) == (f"{expected_color}5h:{value:.0f}%{RESET}")
+        assert claude_status_line.render(data) == (f"{expected_color}5時間消費量: {value:.0f}%{RESET}")
 
     def test_null_numeric_fields_omitted(self) -> None:
         data = {
@@ -129,25 +111,24 @@ class TestRender:
 
     def test_cost_formatting(self) -> None:
         data = {"cost": {"total_cost_usd": 0.1234}}
-        assert claude_status_line.render(data) == f"{GRAY}$0.12{RESET}"
+        assert claude_status_line.render(data) == f"{GRAY}累計コスト: $0.12{RESET}"
 
     @pytest.mark.parametrize(
         ("ms", "expected"),
         [
-            (30 * 1000, "0:30"),
-            (12 * 60 * 1000 + 34 * 1000, "12:34"),
-            (3600 * 1000, "1:00:00"),
-            (3661 * 1000, "1:01:01"),
+            (30 * 1000, "0分30秒"),
+            (12 * 60 * 1000 + 34 * 1000, "12分34秒"),
+            (3600 * 1000, "1時間0分0秒"),
+            (3661 * 1000, "1時間1分1秒"),
         ],
     )
     def test_duration_formatting(self, ms: int, expected: str) -> None:
         data = {"cost": {"total_duration_ms": ms}}
-        assert claude_status_line.render(data) == f"{GRAY}{expected}{RESET}"
+        assert claude_status_line.render(data) == f"{GRAY}経過時間: {expected}{RESET}"
 
     def test_all_fields_combined(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOME", "/home/test")
         data = {
-            "session_id": "abcd1234efgh5678",
             "model": {"display_name": "claude-opus-4-7"},
             "effort": {"level": "xhigh"},
             "workspace": {"current_dir": "/home/test/dotfiles"},
@@ -159,11 +140,10 @@ class TestRender:
         expected = (
             f"{CYAN}[claude-opus-4-7|xhigh]{RESET} "
             f"{BLUE}~/dotfiles{RESET} "
-            f"{GRAY}(abcd1234){RESET} "
             f"{MAGENTA}@Explanatory{RESET}"
-            f" | {GREEN}ctx 42%{RESET}"
-            f" | {GRAY}$0.12{RESET}"
-            f" | {GRAY}12:34{RESET}"
-            f" | {YELLOW}5h:60%{RESET}"
+            f" | {GREEN}コンテキスト消費量: 42%{RESET}"
+            f" | {GRAY}累計コスト: $0.12{RESET}"
+            f" | {GRAY}経過時間: 12分34秒{RESET}"
+            f" | {YELLOW}5時間消費量: 60%{RESET}"
         )
         assert claude_status_line.render(data) == expected

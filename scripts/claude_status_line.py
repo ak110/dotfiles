@@ -5,9 +5,9 @@
 # ///
 """Claude Code statusLine: セッション状況を1行で可視化する。
 
-stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・session_id先頭8桁・
-output_style名（既定値以外）・コンテキスト使用率・累計コスト・経過時間・5時間使用率を
-パイプ区切りで標準出力へ出力する。欠落・null要素は省略する。
+stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・
+output_style名（既定値以外）・コンテキスト消費量・累計コスト・経過時間・5時間消費量を
+パイプ区切りで標準出力へ出力する。数値項目には日本語ラベルを付与する。欠落・null要素は省略する。
 """
 
 import json
@@ -25,7 +25,10 @@ CYAN = "\033[36m"
 GRAY = "\033[90m"
 
 _DEFAULT_OUTPUT_STYLE = "default"
-_SESSION_ID_DISPLAY_LEN = 8
+_LABEL_CONTEXT = "コンテキスト消費量"
+_LABEL_COST = "累計コスト"
+_LABEL_DURATION = "経過時間"
+_LABEL_FIVE_HOUR = "5時間消費量"
 
 
 def main() -> int:
@@ -48,7 +51,6 @@ def render(data: dict[str, Any]) -> str:
     model_name = _get_nested_str(data, "model", "display_name")
     effort_level = _get_nested_str(data, "effort", "level")
     cwd = _get_nested_str(data, "workspace", "current_dir")
-    session_id = _get_str(data, "session_id")
     style_name = _get_nested_str(data, "output_style", "name")
     if style_name == _DEFAULT_OUTPUT_STYLE:
         style_name = None
@@ -57,17 +59,17 @@ def render(data: dict[str, Any]) -> str:
     duration_ms = _get_nested_number(data, "cost", "total_duration_ms")
     five_hour_pct = _get_nested_number(data, "rate_limits", "five_hour", "used_percentage")
 
-    head = _build_head_segment(model_name, effort_level, cwd, session_id, style_name)
+    head = _build_head_segment(model_name, effort_level, cwd, style_name)
 
     tail: list[str] = []
     if ctx_pct is not None:
-        tail.append(_color(f"ctx {ctx_pct:.0f}%", _threshold_color(ctx_pct)))
+        tail.append(_color(f"{_LABEL_CONTEXT}: {ctx_pct:.0f}%", _threshold_color(ctx_pct)))
     if total_cost is not None:
-        tail.append(_color(f"${total_cost:.2f}", GRAY))
+        tail.append(_color(f"{_LABEL_COST}: ${total_cost:.2f}", GRAY))
     if duration_ms is not None:
-        tail.append(_color(_format_duration(duration_ms), GRAY))
+        tail.append(_color(f"{_LABEL_DURATION}: {_format_duration(duration_ms)}", GRAY))
     if five_hour_pct is not None:
-        tail.append(_color(f"5h:{five_hour_pct:.0f}%", _threshold_color(five_hour_pct)))
+        tail.append(_color(f"{_LABEL_FIVE_HOUR}: {five_hour_pct:.0f}%", _threshold_color(five_hour_pct)))
 
     segments = ([head] if head else []) + tail
     return " | ".join(segments)
@@ -77,18 +79,15 @@ def _build_head_segment(
     model_name: str | None,
     effort_level: str | None,
     cwd: str | None,
-    session_id: str | None,
     style_name: str | None,
 ) -> str:
-    """先頭の[モデル|effort] cwd (session) @style部分を組み立てる。"""
+    """先頭の[モデル|effort] cwd @style部分を組み立てる。"""
     parts: list[str] = []
     label = _build_model_label(model_name, effort_level)
     if label:
         parts.append(_color(f"[{label}]", CYAN))
     if cwd:
         parts.append(_color(_shorten_home(cwd), BLUE))
-    if session_id:
-        parts.append(_color(f"({session_id[:_SESSION_ID_DISPLAY_LEN]})", GRAY))
     if style_name:
         parts.append(_color(f"@{style_name}", MAGENTA))
     return " ".join(parts)
@@ -118,13 +117,13 @@ def _shorten_home(path: str) -> str:
 
 
 def _format_duration(ms: float) -> str:
-    """ミリ秒を`分:秒`または`時:分:秒`で整形する。"""
+    """ミリ秒を`分秒`または`時間分秒`の日本語形式へ整形する。"""
     seconds = int(ms / 1000)
     hours, rem = divmod(seconds, 3600)
     minutes, secs = divmod(rem, 60)
     if hours > 0:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
+        return f"{hours}時間{minutes}分{secs}秒"
+    return f"{minutes}分{secs}秒"
 
 
 def _threshold_color(percentage: float) -> str:
@@ -139,12 +138,6 @@ def _threshold_color(percentage: float) -> str:
 def _color(text: str, code: str) -> str:
     """ANSI色付きテキストを返す。"""
     return f"{code}{text}{RESET}"
-
-
-def _get_str(data: dict[str, Any], key: str) -> str | None:
-    """トップレベルから文字列値を取得する。型不一致・null・欠落・空文字でNoneを返す。"""
-    value = data.get(key)
-    return value if isinstance(value, str) and value else None
 
 
 def _get_nested_str(data: dict[str, Any], *keys: str) -> str | None:
