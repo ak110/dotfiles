@@ -30,6 +30,11 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     # 2026-04: 統合フック (claude_hook_pretooluse.py) に統合したため旧エントリを除去
     "claude_hook_check_mojibake.py",
     "claude_hook_check_ps1_eol.py",
+    # 2026-05: `uv run --script` を `uv run --no-project --script` に置き換えたため旧形式エントリを除去
+    "uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py",
+    "uv run --script ~/dotfiles/scripts/claude_hook_stop.py",
+    "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
+    "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
 )
 
 _MAX_VALUE_LEN = 60

@@ -5,14 +5,13 @@
 # ///
 """Claude Code statusLine: セッション状況を1行で可視化する。
 
-stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・gitブランチ・
-未ステージ変更行数・コンテキスト使用率・累計コスト・経過時間・5時間使用率を
+stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・session_id先頭8桁・
+output_style名（既定値以外）・コンテキスト使用率・累計コスト・経過時間・5時間使用率を
 パイプ区切りで標準出力へ出力する。欠落・null要素は省略する。
 """
 
 import json
 import pathlib
-import subprocess
 import sys
 from typing import Any
 
@@ -21,8 +20,12 @@ RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BLUE = "\033[34m"
+MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 GRAY = "\033[90m"
+
+_DEFAULT_OUTPUT_STYLE = "default"
+_SESSION_ID_DISPLAY_LEN = 8
 
 
 def main() -> int:
@@ -45,15 +48,16 @@ def render(data: dict[str, Any]) -> str:
     model_name = _get_nested_str(data, "model", "display_name")
     effort_level = _get_nested_str(data, "effort", "level")
     cwd = _get_nested_str(data, "workspace", "current_dir")
+    session_id = _get_str(data, "session_id")
+    style_name = _get_nested_str(data, "output_style", "name")
+    if style_name == _DEFAULT_OUTPUT_STYLE:
+        style_name = None
     ctx_pct = _get_nested_number(data, "context_window", "used_percentage")
     total_cost = _get_nested_number(data, "cost", "total_cost_usd")
     duration_ms = _get_nested_number(data, "cost", "total_duration_ms")
     five_hour_pct = _get_nested_number(data, "rate_limits", "five_hour", "used_percentage")
 
-    branch = _git_branch(cwd) if cwd else None
-    added, deleted = _git_numstat(cwd) if (cwd and branch) else (0, 0)
-
-    head = _build_head_segment(model_name, effort_level, cwd, branch, added, deleted)
+    head = _build_head_segment(model_name, effort_level, cwd, session_id, style_name)
 
     tail: list[str] = []
     if ctx_pct is not None:
@@ -73,21 +77,20 @@ def _build_head_segment(
     model_name: str | None,
     effort_level: str | None,
     cwd: str | None,
-    branch: str | None,
-    added: int,
-    deleted: int,
+    session_id: str | None,
+    style_name: str | None,
 ) -> str:
-    """先頭の[モデル|effort] cwd branch +N -N部分を組み立てる。"""
+    """先頭の[モデル|effort] cwd (session) @style部分を組み立てる。"""
     parts: list[str] = []
     label = _build_model_label(model_name, effort_level)
     if label:
         parts.append(_color(f"[{label}]", CYAN))
     if cwd:
         parts.append(_color(_shorten_home(cwd), BLUE))
-    if branch:
-        parts.append(_color(branch, GREEN))
-        if added > 0 or deleted > 0:
-            parts.append(f"{_color(f'+{added}', GREEN)} {_color(f'-{deleted}', RED)}")
+    if session_id:
+        parts.append(_color(f"({session_id[:_SESSION_ID_DISPLAY_LEN]})", GRAY))
+    if style_name:
+        parts.append(_color(f"@{style_name}", MAGENTA))
     return " ".join(parts)
 
 
@@ -138,47 +141,10 @@ def _color(text: str, code: str) -> str:
     return f"{code}{text}{RESET}"
 
 
-def _git_branch(cwd: str) -> str | None:
-    """gitブランチ名を取得する。git未管理または取得失敗時はNoneを返す。"""
-    result = _run_git(cwd, ["symbolic-ref", "--short", "HEAD"])
-    if result is None or result.returncode != 0:
-        return None
-    branch = result.stdout.strip()
-    return branch or None
-
-
-def _git_numstat(cwd: str) -> tuple[int, int]:
-    """`git diff --numstat`の集計（未ステージの追加・削除行数）を返す。"""
-    result = _run_git(cwd, ["diff", "--numstat"])
-    if result is None or result.returncode != 0:
-        return 0, 0
-    added = 0
-    deleted = 0
-    for line in result.stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        try:
-            added += int(parts[0])
-            deleted += int(parts[1])
-        except ValueError:
-            # バイナリ差分は`-`になるためスキップ
-            continue
-    return added, deleted
-
-
-def _run_git(cwd: str, args: list[str]) -> subprocess.CompletedProcess[str] | None:
-    """Git -C <cwd> ...を実行する。失敗時はNoneを返す。"""
-    try:
-        return subprocess.run(
-            ["git", "-C", cwd, *args],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
+def _get_str(data: dict[str, Any], key: str) -> str | None:
+    """トップレベルから文字列値を取得する。型不一致・null・欠落・空文字でNoneを返す。"""
+    value = data.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def _get_nested_str(data: dict[str, Any], *keys: str) -> str | None:

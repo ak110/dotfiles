@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }\""
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py; exit 0 }\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py; exit 0 }\""
           }
         ]
       }
@@ -25,7 +25,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_status_line.py }\"",
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_status_line.py }\"",
     "padding": 0
   }
 }

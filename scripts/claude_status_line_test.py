@@ -10,15 +10,9 @@ RED = claude_status_line.RED
 GREEN = claude_status_line.GREEN
 YELLOW = claude_status_line.YELLOW
 BLUE = claude_status_line.BLUE
+MAGENTA = claude_status_line.MAGENTA
 CYAN = claude_status_line.CYAN
 GRAY = claude_status_line.GRAY
-
-
-@pytest.fixture(autouse=True)
-def _stub_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    """git呼び出しを既定でgit未管理扱いへスタブする。個別テストで上書き可。"""
-    monkeypatch.setattr(claude_status_line, "_git_branch", lambda cwd: None)
-    monkeypatch.setattr(claude_status_line, "_git_numstat", lambda cwd: (0, 0))
 
 
 class TestRender:
@@ -64,21 +58,32 @@ class TestRender:
         data = {"workspace": {"current_dir": "/tmp/repo"}}
         assert claude_status_line.render(data) == f"{BLUE}/tmp/repo{RESET}"
 
-    def test_branch_without_changes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(claude_status_line, "_git_branch", lambda cwd: "main")
-        monkeypatch.setattr(claude_status_line, "_git_numstat", lambda cwd: (0, 0))
-        monkeypatch.setenv("HOME", "/home/test")
-        data = {"workspace": {"current_dir": "/tmp/repo"}}
-        assert claude_status_line.render(data) == (f"{BLUE}/tmp/repo{RESET} {GREEN}main{RESET}")
+    @pytest.mark.parametrize(
+        ("session_id", "expected_visible"),
+        [
+            ("abcd1234", "abcd1234"),
+            ("abcd12345", "abcd1234"),
+            ("abcd12345678ef", "abcd1234"),
+            ("abc", "abc"),
+        ],
+    )
+    def test_session_id_truncated(self, session_id: str, expected_visible: str) -> None:
+        data = {"session_id": session_id}
+        assert claude_status_line.render(data) == f"{GRAY}({expected_visible}){RESET}"
 
-    def test_branch_with_changes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(claude_status_line, "_git_branch", lambda cwd: "main")
-        monkeypatch.setattr(claude_status_line, "_git_numstat", lambda cwd: (12, 3))
-        monkeypatch.setenv("HOME", "/home/test")
-        data = {"workspace": {"current_dir": "/tmp/repo"}}
-        assert claude_status_line.render(data) == (
-            f"{BLUE}/tmp/repo{RESET} {GREEN}main{RESET} {GREEN}+12{RESET} {RED}-3{RESET}"
-        )
+    @pytest.mark.parametrize("invalid", [None, "", 42, [], {}])
+    def test_session_id_invalid_omitted(self, invalid: Any) -> None:
+        data = {"session_id": invalid}
+        assert claude_status_line.render(data) == ""
+
+    def test_output_style_named(self) -> None:
+        data = {"output_style": {"name": "Explanatory"}}
+        assert claude_status_line.render(data) == f"{MAGENTA}@Explanatory{RESET}"
+
+    @pytest.mark.parametrize("name", ["default", "", None, 42, []])
+    def test_output_style_omitted(self, name: Any) -> None:
+        data = {"output_style": {"name": name}}
+        assert claude_status_line.render(data) == ""
 
     @pytest.mark.parametrize(
         ("value", "expected_color"),
@@ -140,21 +145,22 @@ class TestRender:
         assert claude_status_line.render(data) == f"{GRAY}{expected}{RESET}"
 
     def test_all_fields_combined(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(claude_status_line, "_git_branch", lambda cwd: "master")
-        monkeypatch.setattr(claude_status_line, "_git_numstat", lambda cwd: (12, 3))
         monkeypatch.setenv("HOME", "/home/test")
         data = {
+            "session_id": "abcd1234efgh5678",
             "model": {"display_name": "claude-opus-4-7"},
             "effort": {"level": "xhigh"},
             "workspace": {"current_dir": "/home/test/dotfiles"},
+            "output_style": {"name": "Explanatory"},
             "context_window": {"used_percentage": 42},
             "cost": {"total_cost_usd": 0.12, "total_duration_ms": 754000},
             "rate_limits": {"five_hour": {"used_percentage": 60}},
         }
         expected = (
             f"{CYAN}[claude-opus-4-7|xhigh]{RESET} "
-            f"{BLUE}~/dotfiles{RESET} {GREEN}master{RESET}"
-            f" {GREEN}+12{RESET} {RED}-3{RESET}"
+            f"{BLUE}~/dotfiles{RESET} "
+            f"{GRAY}(abcd1234){RESET} "
+            f"{MAGENTA}@Explanatory{RESET}"
             f" | {GREEN}ctx 42%{RESET}"
             f" | {GRAY}$0.12{RESET}"
             f" | {GRAY}12:34{RESET}"

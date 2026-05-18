@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/pretooluse.py"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse.py"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse.py"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --script ${CLAUDE_PLUGIN_ROOT}/scripts/stop_advisor.py"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/stop_advisor.py"
           }
         ]
       }

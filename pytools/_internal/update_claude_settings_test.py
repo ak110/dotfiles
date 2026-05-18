@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from pytools._internal import update_claude_settings as mod
 from pytools._internal.update_claude_settings import _diff_lines, _list_diff_summary, _value_summary, update_claude_settings
 
@@ -469,3 +471,64 @@ class TestStripRemovedHooks:
         inner = result["hooks"]["PreToolUse"][0]["hooks"]
         assert len(inner) == 1
         assert inner[0]["command"] == "keep_me.py"
+
+    @pytest.mark.parametrize(
+        ("command", "should_be_removed"),
+        [
+            # 旧形式 (`uv run --script`): 除去対象
+            (
+                "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",
+                True,
+            ),
+            (
+                "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'",
+                True,
+            ),
+            (
+                'pwsh -c "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py"',
+                True,
+            ),
+            (
+                'pwsh -c "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py"',
+                True,
+            ),
+            # 新形式 (`uv run --no-project --script`): 保持
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",
+                False,
+            ),
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'",
+                False,
+            ),
+        ],
+    )
+    def test_no_project_substrings_default(self, tmp_path: Path, command: str, should_be_removed: bool):
+        """既定の除去パターンが旧 `uv run --script` 形式を除去し新 `--no-project` 形式を保持する。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "Write",
+                                "hooks": [{"type": "command", "command": command}],
+                            }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        if should_be_removed:
+            assert "PreToolUse" not in result.get("hooks", {})
+        else:
+            assert result["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == command
