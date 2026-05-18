@@ -617,6 +617,45 @@ class TestIndexHtml:
         toolbar_block = html_src.split("main .toolbar {", 1)[1].split("}", 1)[0]
         assert "position: sticky" not in toolbar_block
 
+    def test_index_html_force_resyncs_on_tab_activation(self):
+        """タブ復帰時にホスト状態とファイル一覧を強制再同期する契約。
+
+        Chromium系のバックグラウンドタブはタイマー・SSEコールバックを抑制するため、
+        SSE経由の自動更新だけではタブを前面へ戻した時点で蓄積イベントの処理が体感数秒ずれ込む。
+        `visibilitychange`（タブ可視性変化）と`window.focus`
+        （PWAウィンドウ単独でフォーカスのみ変動）の2系統で強制再同期する。
+        """
+        html_src = _assets.INDEX_HTML
+
+        # 2系統のリスナー登録が両方存在する。
+        assert 'addEventListener("visibilitychange"' in html_src
+        assert 'addEventListener("focus"' in html_src
+        # 強制再同期はホスト状態とファイル一覧の双方を呼ぶ`forceResync`に集約され、
+        # 上記2リスナーから発火する（onopen等の別経路と区別するため関数名一致まで確認する）。
+        assert "async function forceResync" in html_src
+        # `visibilitychange`時は`visible`化のみで発火する。
+        assert 'document.visibilityState === "visible"' in html_src
+
+    def test_index_html_has_paginated_render_contract(self):
+        """大量件数時の段階展開描画の契約。
+
+        フィルタ後の全件を保持しつつ、DOM化対象は先頭`VISIBLE_FILES_INITIAL`件のみへ制限する。
+        末尾の番兵要素を`IntersectionObserver`で監視し、可視化されるたびに表示上限を
+        `VISIBLE_FILES_STEP`件ずつ拡張する。フィルタ入力時は上限を初期値へ戻す。
+        """
+        html_src = _assets.INDEX_HTML
+
+        assert "const VISIBLE_FILES_INITIAL = 100" in html_src
+        assert "const VISIBLE_FILES_STEP = 100" in html_src
+        # `IntersectionObserver`を生成し、番兵要素に対して`observe`を呼ぶ。
+        assert "new IntersectionObserver" in html_src
+        assert "observe(sentinel)" in html_src
+        assert 'id="files-sentinel"' in html_src
+        # フィルタ入力時に表示上限を初期値へリセットする。
+        assert "visibleLimit = VISIBLE_FILES_INITIAL" in html_src
+        # `renderFiles`はフィルタ後件数と表示上限の小さい方までDOM化する。
+        assert "Math.min(visibleLimit, visibleFiles.length)" in html_src
+
 
 class TestSubscribers:
     """購読者管理(`_subscribe`・`_unsubscribe`・`_schedule_broadcast`)のテスト。"""

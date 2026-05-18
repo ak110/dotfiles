@@ -105,6 +105,9 @@ _INDEX_CSS = """\
     cursor: pointer;
   }
   .file:hover, .file.active { background: #eef2ff; }
+  /* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
+      IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
+  #files-sentinel { height: 1px; margin: 0; padding: 0; }
   .name { font-size: 13px; font-weight: 600; word-break: break-all; }
   .meta {
     margin-top: 4px;
@@ -205,6 +208,8 @@ _INDEX_CSS = """\
 # - ファイル一覧の取得・描画・フィルタ
 # - 選択中ファイルのプレビュー表示・コピー
 # - SSE経由のリアルタイム更新（refresh/host-status）
+# - タブ復帰時の強制再同期（バックグラウンドthrottling対策。`visibilitychange`/`focus`の2系統）
+# - 大量件数時の段階展開描画（番兵要素を`IntersectionObserver`で監視し、表示上限を100件単位で拡張）
 # - モバイル時のドロワー開閉と上部メタ表示
 # - ↑↓ナビゲーションボタンによる前後ファイル移動
 _INDEX_JS = """\
@@ -219,9 +224,18 @@ let selectedPath = null;
 let selectedMtime = null;
 // ホスト別の接続状態。connected / connecting / disconnected。
 let hostStatus = {};
-// renderFilesが最後に描画したエントリ列（フィルタ適用後）。
+// renderFilesが最後に描画したエントリ列（フィルタ適用後の全件）。
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。
+// DOM化対象は先頭から`visibleLimit`件のみで、超過分は番兵IntersectionObserverで段階拡張する。
 let visibleFiles = [];
+
+// 一覧描画件数の初期上限と拡張ステップ。
+// `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の比例コストが顕在化するため、
+// 初期はフィルタ後の先頭100件のみDOM化し、末尾の番兵が可視化されるたびに100件ずつ拡張する。
+const VISIBLE_FILES_INITIAL = 100;
+const VISIBLE_FILES_STEP = 100;
+let visibleLimit = VISIBLE_FILES_INITIAL;
+let sentinelObserver = null;
 
 const HOST_BADGE_LABELS = {
   connecting: "再接続中",
@@ -308,6 +322,13 @@ function navigateRelative(delta) {
   if (idx < 0) return;
   const next = idx + delta;
   if (next < 0 || next >= visibleFiles.length) return;
+  // 遷移先がDOM未描画領域なら、必要分まで表示上限をステップ単位で拡張してから再描画する。
+  // 段階展開（先頭`VISIBLE_FILES_INITIAL`件のみDOM化）と↑↓ナビゲーションの整合を取るための処理。
+  if (next >= visibleLimit) {
+    const required = next + 1;
+    visibleLimit = Math.ceil(required / VISIBLE_FILES_STEP) * VISIBLE_FILES_STEP;
+    renderFiles();
+  }
   const target = visibleFiles[next];
   openFile(target.host, target.path);
 }
@@ -355,9 +376,19 @@ function updateFileItem(item, file) {
 function renderFiles() {
   // ファイル一覧を差分更新する。innerHTMLの全消去ではなく既存ノードを再利用することで、
   // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
+  // DOM化対象はフィルタ後の先頭`visibleLimit`件のみ。未描画分は末尾の番兵を`IntersectionObserver`で
+  // 検出して段階拡張する（数百件規模の差分更新コストを抑えるため）。
   const q = document.getElementById("filter").value.toLowerCase();
   const root = document.getElementById("files");
+  const sentinel = document.getElementById("files-sentinel");
   visibleFiles = [];
+  for (const file of files) {
+    // ホスト名・パスのいずれかに部分一致するもののみ表示する
+    const haystack = (file.host + " " + file.path).toLowerCase();
+    if (!haystack.includes(q)) continue;
+    visibleFiles.push(file);
+  }
+  const renderCount = Math.min(visibleLimit, visibleFiles.length);
   // 既存ノードを`data-key`で索引化し、再利用候補とする。最終的に未参照のノードは削除する。
   const existing = new Map();
   for (const node of root.children) {
@@ -365,11 +396,8 @@ function renderFiles() {
     if (key) existing.set(key, node);
   }
   let cursor = root.firstChild;
-  for (const file of files) {
-    // ホスト名・パスのいずれかに部分一致するもののみ表示する
-    const haystack = (file.host + " " + file.path).toLowerCase();
-    if (!haystack.includes(q)) continue;
-    visibleFiles.push(file);
+  for (let i = 0; i < renderCount; i++) {
+    const file = visibleFiles[i];
     const key = fileKey(file);
     let item = existing.get(key);
     if (item) {
@@ -389,8 +417,32 @@ function renderFiles() {
   for (const node of existing.values()) {
     node.remove();
   }
+  // 番兵は未描画分が残る場合だけ表示する。`hidden`属性を付ければ`display: none`になり、
+  // IntersectionObserverの`isIntersecting`通知も止まる。
+  if (sentinel) {
+    sentinel.hidden = renderCount >= visibleFiles.length;
+  }
   updateNavButtons();
   updateMetaMobile();
+}
+
+function setupSentinelObserver() {
+  // 末尾の番兵が可視範囲に入ったら表示上限を1ステップ拡張する。
+  // `root`をaside（一覧をスクロールするコンテナー）に指定して、ビューポートではなく
+  // スクロールコンテナー内での可視性を判定する。
+  // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
+  const sentinel = document.getElementById("files-sentinel");
+  if (!sentinel || sentinelObserver) return;
+  const aside = document.querySelector("aside");
+  sentinelObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      if (visibleLimit >= visibleFiles.length) continue;
+      visibleLimit += VISIBLE_FILES_STEP;
+      renderFiles();
+    }
+  }, { root: aside || null, rootMargin: "400px 0px" });
+  sentinelObserver.observe(sentinel);
 }
 
 async function refreshFiles() {
@@ -512,6 +564,7 @@ async function main() {
   await refreshHostStatus();
   await refreshFiles();
   if (files.length > 0) await openFile(files[0].host, files[0].path);
+  setupSentinelObserver();
 
   eventSource = connectEvents();
 }
@@ -529,7 +582,32 @@ window.addEventListener("pageshow", (event) => {
   }
 });
 
-document.getElementById("filter").addEventListener("input", renderFiles);
+// 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
+async function forceResync() {
+  await refreshHostStatus();
+  await resyncFromServer();
+}
+
+// バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
+// 抑制するため、`EventSource.onmessage`のみに依存するとタブ復帰時に蓄積イベントの処理が体感数秒ずれ込む。
+// `visibilitychange`で`visible`化した瞬間（タブ可視性変化）と`window.focus`時
+// （PWAウィンドウ単独でフォーカスのみ変動するケース）の2系統で`forceResync`を発火する。
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    forceResync();
+  }
+});
+
+window.addEventListener("focus", () => {
+  forceResync();
+});
+
+document.getElementById("filter").addEventListener("input", () => {
+  // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
+  // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
+  visibleLimit = VISIBLE_FILES_INITIAL;
+  renderFiles();
+});
 document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
 document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
 document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
@@ -574,6 +652,8 @@ INDEX_HTML = (
       <input id="filter" placeholder="filter...">
     </div>
     <div id="files"></div>
+    <!-- 段階展開トリガー。`hidden`属性は描画件数が未描画分を残すときだけ外れる。 -->
+    <div id="files-sentinel" hidden></div>
   </aside>
   <main>
     <div class="toolbar">
