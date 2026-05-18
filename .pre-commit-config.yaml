@@ -13,7 +13,7 @@ repos:
       - id: fix-byte-order-marker
         # Windows PowerShell 5.1 は BOM のない .ps1 を ANSI（日本語環境では Shift-JIS）
         # として読んでしまい日本語文字列でパースエラーになる。そのため .ps1 / .ps1.tmpl の
-        # BOM は削らず保持する。
+        # BOM を保持する。
         exclude: '\.(cmd|ps1)(\.tmpl)?$'
       # シンタックス検証。
       - id: check-yaml

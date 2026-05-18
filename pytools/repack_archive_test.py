@@ -566,9 +566,9 @@ class TestBrokenZip:
 
     @pytest.mark.parametrize("truncate_bytes", [22, 23])
     def test_truncated_zip_raises(self, tmp_path: pathlib.Path, truncate_bytes: int) -> None:
-        """EOCD を含む末尾 ``truncate_bytes`` バイトを削った ZIP は ValueError で停止する。
+        """EOCD を含む末尾 ``truncate_bytes`` バイトを切り詰めた ZIP は ValueError で停止する。
 
-        EOCD の最小サイズは 22 バイト。22 バイトちょうど削れば EOCD のシグネチャが
+        EOCD の最小サイズは 22 バイト。22 バイトちょうど切り詰めれば EOCD のシグネチャが
         消えて ``zipfile.is_zipfile`` が False を返す。先頭は ``PK\\x03\\x04`` のまま残るため、
         本判定が ``ValueError`` を送出する境界を網羅する。
         """
