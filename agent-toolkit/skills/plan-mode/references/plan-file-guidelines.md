@@ -237,7 +237,9 @@
 - 計画でルール・スタイルガイド・運用方針などの記述規範を追記または改訂する場合、
   計画ファイル本文も当該規範の適用対象として整合させる。
   追加・改訂したルールに計画文面自体が違反したまま計画提出すると、実装段階で違反を引き継ぐ
-- 計画提出前に`agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`を実行し、口語表現の混入を検査する
+- 計画提出前に`agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`と
+  `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`を実行し、
+  口語表現の混入および行幅違反を検査する
   - 対象は計画ファイル本文と、未コミット変更があるファイル群（ステージ有無を問わない）
   - 本計画と同一コミットに同梱されるファイルに違反が残ると実装段階で巻き込み修正が必要となるため、一括解消する
   - 計画ファイル本体への検査は計画ファイル内のコードブロック内に限定する
