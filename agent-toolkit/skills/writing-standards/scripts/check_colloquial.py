@@ -136,7 +136,10 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             for sub in sorted(p.rglob("*")):
                 if not sub.is_file():
                     continue
-                if any(part in _EXCLUDED_DIRS for part in sub.parts):
+                # 除外判定は引数ディレクトリ`p`からの相対パス成分のみで行う。
+                # 絶対パス全体（`sub.parts`）で判定すると、引数ディレクトリ自身が`site`・`dist`等の
+                # 汎用名を含む場合に配下全体が誤って除外される。
+                if any(part in _EXCLUDED_DIRS for part in sub.relative_to(p).parts):
                     continue
                 name_lower = sub.name.lower()
                 if not any(name_lower.endswith(ext) for ext in _DEFAULT_EXTENSIONS):

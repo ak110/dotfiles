@@ -106,3 +106,55 @@ class TestCheckLineWidth:
         assert result.returncode == 1
         assert f"{bad}:1" in result.stderr
         assert str(good) not in result.stderr
+
+    def test_directory_recurses(self, tmp_path: pathlib.Path):
+        """ディレクトリを渡すと再帰的に対象拡張子のファイルを走査し違反を集約する。"""
+        sub = tmp_path / "docs"
+        sub.mkdir()
+        bad = _write(sub / "ng.md", "あ" * 64 + "\n")  # 128幅で違反
+        good = _write(sub / "ok.md", "短い文\n")
+        # 対象外拡張子は走査されない。
+        skipped = _write(sub / "ignore.txt", "あ" * 64 + "\n")
+        result = _run(str(tmp_path))
+        assert result.returncode == 1
+        assert f"{bad}:1 幅=128" in result.stderr
+        assert str(good) not in result.stderr
+        assert str(skipped) not in result.stderr
+
+    def test_directory_includes_md_tmpl(self, tmp_path: pathlib.Path):
+        """ディレクトリ走査時に`.md.tmpl`二重拡張子もmd相当として走査対象に含む。
+
+        `.tmpl`単独はテンプレート構文の誤検出を避けるため対象外であることも確認する。
+        """
+        md_tmpl = _write(tmp_path / "doc.md.tmpl", "あ" * 64 + "\n")
+        plain_tmpl = _write(tmp_path / "raw.tmpl", "あ" * 64 + "\n")
+        result = _run(str(tmp_path))
+        assert result.returncode == 1
+        assert f"{md_tmpl}:1" in result.stderr
+        assert str(plain_tmpl) not in result.stderr
+
+    def test_directory_excludes_known_dirs(self, tmp_path: pathlib.Path):
+        """`.git`等の既知の除外ディレクトリ配下はスキャン対象外。"""
+        for excluded in (".git", ".venv", "node_modules", "__pycache__"):
+            d = tmp_path / excluded
+            d.mkdir()
+            (d / "x.md").write_text("あ" * 64 + "\n", encoding="utf-8")
+        target = _write(tmp_path / "kept.md", "あ" * 64 + "\n")
+        result = _run(str(tmp_path))
+        assert result.returncode == 1
+        assert f"{target}:1" in result.stderr
+        for excluded in (".git", ".venv", "node_modules", "__pycache__"):
+            assert excluded not in result.stderr
+
+    def test_directory_argument_with_excluded_name_is_scanned(self, tmp_path: pathlib.Path):
+        """引数ディレクトリ自身の名前が除外集合と一致しても配下は走査する。
+
+        境界値: 除外判定は引数ディレクトリからの相対パス成分のみで行うべきで、
+        絶対パス全体に`site`等の汎用名が含まれても誤除外しない。
+        """
+        root = tmp_path / "site"
+        root.mkdir()
+        target = _write(root / "doc.md", "あ" * 64 + "\n")
+        result = _run(str(root))
+        assert result.returncode == 1
+        assert f"{target}:1" in result.stderr

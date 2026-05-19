@@ -138,6 +138,21 @@ def test_directory_excludes_known_dirs(tmp_path: pathlib.Path, deny_substring: s
         assert excluded not in result.stderr
 
 
+def test_directory_argument_with_excluded_name_is_scanned(tmp_path: pathlib.Path, deny_substring: str):
+    """引数ディレクトリ自身の名前が除外集合と一致しても配下は走査する。
+
+    境界値: 除外判定は引数ディレクトリからの相対パス成分のみで行うべきで、
+    絶対パス全体に`site`等の汎用名が含まれても誤除外しない。
+    """
+    root = tmp_path / "site"
+    root.mkdir()
+    target = root / "doc.md"
+    target.write_text(f"概要は{deny_substring}該当する。\n", encoding="utf-8")
+    result = _run(root)
+    assert result.returncode == 1
+    assert str(target) in result.stderr
+
+
 def test_dictionary_files_are_skipped():
     """辞書ファイル本体を直接渡しても検査されずexit 0（自己誘発検出を避ける）。"""
     result = _run(_DENY_PATH, _ALLOW_PATH)

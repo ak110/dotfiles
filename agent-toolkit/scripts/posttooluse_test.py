@@ -418,6 +418,7 @@ _PLAN_BODY: dict[str, str] = {
     "調査結果": "- x",
     "変更内容": "- y",
     "実行方法": "- w",
+    "進捗ログ": "初版時点では実装未着手のため空欄。",
     "計画ファイル（本ファイル）のパス": "`~/.claude/plans/xxx.md`",
 }
 
@@ -536,6 +537,27 @@ class TestPlanFormatCheck:
         msg = output["hookSpecificOutput"]["additionalContext"]
         assert "missing required H2 sections" in msg
         assert "対応方針" in msg
+
+    def test_missing_progress_log_is_warned(self, tmp_path: pathlib.Path):
+        """``進捗ログ`` セクション欠落も必須セクション違反として警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(omit=("進捗ログ",))
+        plan = _write_plan(plans, "missing-progress.md", content)
+        result = _run(
+            {
+                "session_id": "plan-miss-progress",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        assert "missing required H2 sections" in msg
+        assert "進捗ログ" in msg
 
     def test_out_of_order_is_warned(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
