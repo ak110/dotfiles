@@ -1,7 +1,7 @@
 ---
 name: spec-driven-promote
 description: >
-  次版ドキュメント（`docs/v{next}/`配下）を現行版ドキュメントへ統合する。
+  次版ドキュメントを現行版ドキュメントへ統合する。
   手動起動（`/agent-toolkit:spec-driven-promote`）または`spec-driven`からの明示呼び出しで使用する。
 ---
 
@@ -13,20 +13,23 @@ description: >
 
 ```mermaid
 flowchart LR
-    INIT["spec-driven-init\n現行版ドキュメントの初版整備"]
-    SD["spec-driven\n次版ドキュメント管理・\nワークフロー誘導"]
-    PROMOTE["spec-driven-promote\n次版→現行版の統合"]
+    INIT["spec-driven-init\n現行版ドキュメント初版整備"]
+    SD["spec-driven\n次版ドキュメント作成"]
+    IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
+    PROMOTE["spec-driven-promote\n次版→現行版統合"]
 
-    INIT -->|初版完成後| SD
-    SD -->|計画・実装・検証・レビューを繰り返す| SD
-    SD -->|リリース後| PROMOTE
-    PROMOTE -->|次版作業開始時| SD
+    INIT --> SD
+    SD --> IMPL
+    IMPL -.->|次テーマ| SD
+    IMPL -->|リリース後| PROMOTE
+    PROMOTE -.->|次バージョン| SD
 ```
 
-次版ドキュメントを現行版ドキュメントへ統合し、`docs/v{next}/`を削除する。
-現行版ドキュメントの構成は`CLAUDE.md`に記録された配置・命名規則に従う。
-配置は`agent-toolkit:spec-driven-init`で確定する。
-未記録の場合は`docs/features/`・`docs/topics/`構成を既定として用いる。
+次版ドキュメントを現行版ドキュメントへ統合し、次版ドキュメント配下を削除する。
+現行版・次版ドキュメントの構成は`CLAUDE.md`に記録された配置・命名規則に従う。
+配置は`agent-toolkit:spec-driven-init`および`agent-toolkit:spec-driven`で確定する。
+未記録の場合は`references/spec-driven-framework.md`の既定
+（現行版`docs/features/`・`docs/topics/`、次版`docs/v{next}/`）を用いる。
 
 ## 参照ファイル
 
@@ -36,16 +39,17 @@ flowchart LR
 ## 手順
 
 1. `agent-toolkit:spec-driven`スキルと`references/spec-driven-framework.md`を呼び出し、
-   用語・配置規約・現行版の記述レベルを把握する
-2. 昇格対象の`docs/v{next}/`を確認する。
-   `OVERVIEW.md`を除く`.md`ファイルを作業テーマドキュメントとして扱う
+   用語・配置規約・現行版の記述レベルを把握する。
+   `CLAUDE.md`記録または既定値から次版ドキュメントの配置先（以降「次版配置」）を解決しておく
+2. 次版配置を確認する。
+   次版総合ドキュメントを除く`.md`ファイルを作業テーマドキュメントとして扱う
 3. 各作業テーマドキュメントの「現行版ドキュメントの対応先」節から統合先を特定する。
    対応先のパスを`CLAUDE.md`記録の構成（機能ドキュメント／横断ドキュメント等）に照らして種別を判別する
 4. 次版ドキュメントの内容を、判別した種別の現行版ドキュメントへ統合する（後述の統合方針に従う）
 5. コード中の参照コメントを現行版ドキュメントのパスへ書き換える
-6. `docs/v{next}/`を削除する。
+6. 次版配置を削除する。
    先に手順5を済ませておくことで、参照元と新パスの突き合わせが容易になる
-7. `grep -r "docs/v{next}"`などで`docs/v{next}/`への参照が残っていないことを確認する
+7. `grep -r`などで次版配置のパスへの参照が残っていないことを確認する
 8. リンクと参照コメントの指し先が実在のファイルを指していることを検証する
 
 ## 統合方針
@@ -67,5 +71,5 @@ flowchart LR
   記述レベルの規定は`references/spec-driven-framework.md`を参照
 - 次版ドキュメントの「現行版ドキュメントの対応先」節は統合先を案内する次版固有の記述なので、
   現行版へ持ち込まない
-- `docs/v{next}/OVERVIEW.md`は次版作業の進行管理用ファイルなので統合せず、
-  手順6での`docs/v{next}/`削除時に併せて破棄する
+- 次版総合ドキュメントは次版作業の進行管理用ファイルなので統合せず、
+  手順6での次版配置の削除時に併せて破棄する

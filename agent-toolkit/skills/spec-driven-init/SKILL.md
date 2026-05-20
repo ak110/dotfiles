@@ -13,14 +13,16 @@ description: >
 
 ```mermaid
 flowchart LR
-    INIT["spec-driven-init\n現行版ドキュメントの初版整備"]
-    SD["spec-driven\n次版ドキュメント管理・\nワークフロー誘導"]
-    PROMOTE["spec-driven-promote\n次版→現行版の統合"]
+    INIT["spec-driven-init\n現行版ドキュメント初版整備"]
+    SD["spec-driven\n次版ドキュメント作成"]
+    IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
+    PROMOTE["spec-driven-promote\n次版→現行版統合"]
 
-    INIT -->|初版完成後| SD
-    SD -->|計画・実装・検証・レビューを繰り返す| SD
-    SD -->|リリース後| PROMOTE
-    PROMOTE -->|次版作業開始時| SD
+    INIT --> SD
+    SD --> IMPL
+    IMPL -.->|次テーマ| SD
+    IMPL -->|リリース後| PROMOTE
+    PROMOTE -.->|次バージョン| SD
 ```
 
 配置先はプロジェクト指定があればそれを採用し、無ければ規模・性質に応じて決定する。

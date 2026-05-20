@@ -7,18 +7,20 @@ spec-driven系スキルで共有する用語定義と配置規約。
 
 ```mermaid
 flowchart LR
-    INIT["spec-driven-init\n現行版ドキュメントの初版整備"]
-    SD["spec-driven\n次版ドキュメント管理・\nワークフロー誘導"]
-    PROMOTE["spec-driven-promote\n次版→現行版の統合"]
+    INIT["spec-driven-init\n現行版ドキュメント初版整備"]
+    SD["spec-driven\n次版ドキュメント作成"]
+    IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
+    PROMOTE["spec-driven-promote\n次版→現行版統合"]
 
-    INIT -->|初版完成後| SD
-    SD -->|計画・実装・検証・レビューを繰り返す| SD
-    SD -->|リリース後| PROMOTE
-    PROMOTE -->|次版作業開始時| SD
+    INIT --> SD
+    SD --> IMPL
+    IMPL -.->|次テーマ| SD
+    IMPL -->|リリース後| PROMOTE
+    PROMOTE -.->|次バージョン| SD
 ```
 
 - `agent-toolkit:spec-driven-init`: 現行版ドキュメントが未整備のプロジェクトで最初に1回だけ使う
-- `agent-toolkit:spec-driven`: 次版ドキュメントの作成から計画・実装・検証・レビューの繰り返しを担う
+- `agent-toolkit:spec-driven`: 作業テーマごとに次版ドキュメントを作成し、実装誘導のプロンプト例を出力する
 - `agent-toolkit:spec-driven-promote`: リリース後に次版ドキュメントを現行版へ統合するときに使う
 
 ## 用語定義
@@ -28,7 +30,8 @@ flowchart LR
   - 横断ドキュメント: 現行版ドキュメントのうち、複数機能に跨る共通事項や、
     個々の機能ドキュメントに含まれない補足事項を記述したドキュメント
 - 次版ドキュメント: 次期リリース作業中の仕様
-  - 次版総合ドキュメント: 作業テーマ別進捗と次に行うべき作業を記録する単一ドキュメント（`docs/v{next}/OVERVIEW.md`）
+  - 次版総合ドキュメント: 作業テーマ別進捗と次に行うべき作業を記録する単一ドキュメント
+   （既定配置例: `docs/v{next}/OVERVIEW.md`）
   - 作業テーマドキュメント: 次版ドキュメントのうち、個々の作業テーマに対応するドキュメント
 - 作業テーマ: 今回のリリースで加える変更の単位。例: `SSO追加`
 - 次期バージョン: 次期リリースのバージョン番号。例: `v3`、`v1.2`、`v2026-04-18`
@@ -49,7 +52,7 @@ flowchart LR
 - 書かないもの: 内部実装の構造、クラス・関数・変数名、ファイルパス、モジュール分割、
   内部データ構造などの実装詳細
 
-次版ドキュメント（`docs/v{next}/`配下）には本ルールを適用しない。
+次版ドキュメント（既定配置例: `docs/v{next}/`配下）には本ルールを適用しない。
 実装中の議論は内部詳細を含めて記録してよい。
 ただし`agent-toolkit:spec-driven-promote`での統合時に、現行版へ持ち込む内容を外部仕様レベルへ整理する。
 
