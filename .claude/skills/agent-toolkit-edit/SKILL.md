@@ -106,6 +106,9 @@ flowchart TB
 整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が検査し、
 `uvx pyfltr run`で自動的に失敗する。
 
+本スキル内で参照する`scripts/agent_toolkit_bump.py`はdotfilesリポジトリ直下の
+`scripts/`配下のスクリプトを指す（`agent-toolkit/scripts/`配下とは別）。
+
 ### 判定基準
 
 利用者に届く振る舞いが変わるものは必ずbumpする。

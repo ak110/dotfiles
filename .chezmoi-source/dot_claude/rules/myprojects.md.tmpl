@@ -22,7 +22,8 @@
 ツールチェインやドキュメント構成は極力揃える方針とする。
 
 全プロジェクトに反映する可能性のある変更時は、必ず`/sync-cross-project`スキルを使用する。
-同期対象マトリクス・意図的な差異・pnpm既知問題・運用ノウハウは同スキルに集約する。
+同期対象マトリクス・意図的な差異・同期作業に関わるpnpm既知問題・運用ノウハウは同スキルに集約する。
+依存管理一般のpnpm既知問題（v11以降のフィールド廃止など）は`agent-toolkit:coding-standards`スキルの依存管理節に集約する。
 
 ### プロジェクト一覧
 
@@ -56,6 +57,17 @@ mise経由で動く処理も同じ理由で中断する。
   pre-commit経由のactionlint・markdownlint・textlint等もmise配下で動くため、
   `LOCALAPPDATA=/tmp/dummy git commit ...`のように`git commit`時にも必須となる
 - mise依存のlint・buildタスクを呼ばず、該当箇所はスキップする
+
+加えて`~/gv`のRustコードはLinux環境で`cargo check`・`cargo clippy`・`cargo test`が
+ビルド段階で失敗する。`windows-future`等のWindows専用クレートが依存ツリーに含まれ、
+Linux向けターゲットでビルドが通らないため、これらのチェックは完了しない。
+Rustファイル変更を含むコミットはpre-commit hookも通せない。
+
+Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
+
+- Windows実機で`cargo`系チェックを実行してからpushする
+- `SKIP=<該当hook>`環境変数でpre-commit hookを部分的に無効化してコミットする
+- 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
 ### 足回りファイルの推奨設定維持
 
