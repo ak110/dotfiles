@@ -85,6 +85,20 @@ def _assistant_entry_completion_only() -> dict:
     }
 
 
+def _assistant_entry_with_skill(skill: str) -> dict:
+    """Skill tool_use を含む assistant エントリを生成する。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "作業が完了しました。"},
+                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill}},
+            ],
+        },
+    }
+
+
 def _user_entry(text: str = "hello") -> dict:
     return {"type": "user", "message": {"role": "user", "content": text}}
 
@@ -189,6 +203,58 @@ class TestPyfltrDetection:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+
+class TestSessionReviewSkillInvocation:
+    """reason が session-review スキル呼び出し誘導文を含むことのテスト。
+
+    pyfltr 単独検出時・agent-toolkit 単独検出時・両方検出時のいずれも、
+    reason に同じ誘導文（スキル名・Skill ツール名・`stop_advisor.py` の振り返り提案無視指示）
+    を含むことを境界として確認する。
+    """
+
+    def _get_reason(self, tmp_path: pathlib.Path, session_id: str, entries: list[dict]) -> str:
+        transcript = _write_transcript(tmp_path, entries)
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "block"
+        return decision["reason"]
+
+    def test_reason_invokes_session_review_skill_for_all_detections(self, tmp_path: pathlib.Path):
+        completion = _assistant_entry_completion_only()
+        pyfltr_only = [
+            _user_entry(),
+            _assistant_entry_with_bash("uv run pyfltr run foo.py"),
+            completion,
+        ]
+        agent_toolkit_only = [
+            _user_entry(),
+            _assistant_entry_with_skill("agent-toolkit:coding-standards"),
+            completion,
+        ]
+        both = [
+            _user_entry(),
+            _assistant_entry_with_bash("uv run pyfltr run foo.py"),
+            _assistant_entry_with_skill("agent-toolkit:coding-standards"),
+            completion,
+        ]
+
+        pyfltr_reason = self._get_reason(tmp_path, "skill-pyfltr-only", pyfltr_only)
+        agent_reason = self._get_reason(tmp_path, "skill-agent-toolkit-only", agent_toolkit_only)
+        both_reason = self._get_reason(tmp_path, "skill-both", both)
+
+        for reason in (pyfltr_reason, agent_reason, both_reason):
+            assert "session-review" in reason
+            assert "Skill" in reason
+            assert "agent-toolkit/stop_advisor" in reason
+            assert "pyfltr" in reason
+            assert "agent-toolkit" in reason
+
+        # 3つのreasonが完全に同一であることを確認する（検出種別によらず同一の誘導文を出力する設計のため）。
+        assert pyfltr_reason == agent_reason == both_reason
 
 
 class TestStateOnceLimit:

@@ -6,22 +6,21 @@
 r"""Claude Code Stopフック: dotfiles個人環境専用セッション振り返りプロンプト。
 
 pyfltrまたはagent-toolkitスキルを使用したセッションの終了時に、
-それぞれの動作に関する振り返りを促す。
+ユーザー手動起動スキル`session-review`の呼び出しを誘導する。
 対象はメインのtranscriptのみ（サブエージェント履歴は別ファイルのため対象外）。
 
 本hookは3カ所の振り返りHook/Skillの1つで、Stopイベントで並列発火する。
 3カ所の役割は次の通り。
 
-- `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント全般が対象
+- `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント章の振り返り提案を出力する
 - 本hook（`scripts/claude_hook_stop.py`） — dotfiles個人環境専用。
-  agent-toolkit本体・agent-toolkitのルールファイル・pyfltrの振り返りを担当。
-  対象プロジェクトはセッションのcwdに応じて切り替わる
-- `.chezmoi-source/dot_claude/skills/session-review/SKILL.md` — ユーザー手動起動スキル
+  pyfltrまたはagent-toolkitスキル使用検出時に`session-review`スキルの呼び出しを誘導する。
+  誘導文では同時発火する`stop_advisor.py`の「session review:」で始まる振り返り提案部分のみを
+  無視させ、`session-review`スキルの全章手順に従わせる
+  （`stop_advisor.py`の未コミット変更通知など他の通知には引き続き従う）
+- `.chezmoi-source/dot_claude/skills/session-review/SKILL.md` — ユーザー手動起動または
+  本hookからの呼び出しで動作。全章振り返り手順を担う
 
-振り返りメッセージ全体に適用される共通指示
-（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は
-`stop_advisor.py`側のreasonへ集約する。
-本hookでは当該章固有の指示と、cwdに応じた統合判定のみを記述する。
 3カ所の内容を変更する際は同期漏れに注意する。
 
 LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形する。
@@ -35,7 +34,6 @@ import contextlib
 import json
 import pathlib
 import re
-import subprocess
 import sys
 import tempfile
 import traceback
@@ -62,42 +60,10 @@ _AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
 # このスクリプトの hook 識別子。
 _HOOK_ID = "dotfiles/claude_hook_stop"
 
-# 章統合の対象となるプロジェクト名（git rev-parse --show-toplevel の basename）。
-# 個人環境専用 hook のため運用上のリポジトリ名をハードコードしてよい。
-_INTEGRATABLE_PROJECTS = frozenset({"dotfiles", "pyfltr"})
-
 
 def _llm_notice(body: str) -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID)
-
-
-def _detect_project(cwd: str) -> str | None:
-    """Cwd から現在のプロジェクト（リポジトリ名）を返す。
-
-    git 管理外・対象外プロジェクト・コマンド失敗時は None を返す。
-    SKILL.md の統合ルール
-    （pyfltr プロジェクト中なら pyfltr 章を、dotfiles プロジェクト中なら
-    agent-toolkit 章を、それぞれプロジェクトドキュメント章へ統合する）
-    の判定に使う。
-    """
-    if not cwd:
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=cwd,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    name = pathlib.Path(result.stdout.strip()).name
-    return name if name in _INTEGRATABLE_PROJECTS else None
 
 
 def _state_path(session_id: str) -> pathlib.Path:
@@ -235,42 +201,21 @@ def _main() -> int:
     state["advice_given"] = True
     _write_state(state_file, state)
 
-    cwd = payload.get("cwd", "")
-    project = _detect_project(cwd) if isinstance(cwd, str) else None
-
-    # 共通指示（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は
-    # 同時発火する `agent-toolkit/scripts/stop_advisor.py` の reason が出力するため、
-    # 本 hook では当該章固有の指示のみを記述する。
-    sections = []
-    if has_pyfltr:
-        if project == "pyfltr":
-            sections.append(
-                "pyfltr behavior/message issues: append items under the existing"
-                " '## プロジェクトドキュメント改善提案' heading"
-                " (do not create a separate '## pyfltr改善提案' heading)."
-            )
-        else:
-            sections.append(
-                "pyfltr review: list pyfltr behavior/message issues in Japanese under the heading '## pyfltr改善提案'."
-            )
-    if has_agent_toolkit:
-        if project == "dotfiles":
-            sections.append(
-                "agent-toolkit issues (skills/agents/hooks under `agent-toolkit/`,"
-                " including `skills/pyfltr-usage/SKILL.md`,"
-                " and rules under `~/.claude/rules/agent-toolkit/`):"
-                " append items under the existing"
-                " '## プロジェクトドキュメント改善提案' heading"
-                " (do not create a separate '## agent-toolkit改善提案' heading)."
-            )
-        else:
-            sections.append(
-                "agent-toolkit review: list issues in Japanese for the agent-toolkit plugin"
-                " (`agent-toolkit/`, including `skills/pyfltr-usage/SKILL.md`)"
-                " and `~/.claude/rules/agent-toolkit/` rules"
-                " under the heading '## agent-toolkit改善提案'."
-            )
-    _block(_llm_notice(" | ".join(sections)))
+    # 振り返りメッセージ全体に適用される手順詳細は `session-review` スキルが保持する。
+    # 本 hook はスキル呼び出しを誘導するのみで、同時発火する `stop_advisor.py` の
+    # `session review:` で始まる振り返り提案部分のみ無視させ、本スキルへ全章手順を委ねる。
+    # `stop_advisor.py` の未コミット変更通知など他の通知には引き続き従わせる。
+    body = (
+        "session-review handoff: invoke the `session-review` Skill via the Skill tool to run the session review."
+        " The skill provides the full procedure"
+        " (Reflect / Draft Additions / Show Proposed Changes / Apply with Approval)"
+        " and covers all three sections (project documentation, pyfltr, agent-toolkit);"
+        " follow it end-to-end."
+        " To avoid duplication, ignore only the message tagged `[auto-generated: agent-toolkit/stop_advisor]`"
+        " that begins with `session review:`;"
+        " still follow other notices from that hook such as uncommitted-changes warnings."
+    )
+    _block(_llm_notice(body))
     return 0
 
 

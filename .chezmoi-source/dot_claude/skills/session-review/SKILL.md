@@ -1,18 +1,16 @@
 ---
 name: session-review
 description: >
-  セッション終わりにユーザーが手動で実行する振り返りスキル。
-  CLAUDE.mdへの学びの反映、pyfltr・agent-toolkitスキルの改善点を点検する。
-  「セッション振り返り」「振り返り実行」「session-review」などのキーワードでユーザーが明示的に依頼したときに使用する。
-disable-model-invocation: true
-# 本スキルは3カ所の振り返りHook/Skillの1つ。他の2カ所はStopイベントで自動発火するhookで、
-# 本スキルはユーザー手動起動で動作する。3カ所の役割は次の通り。
-#   - `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント全般が対象
-#   - `scripts/claude_hook_stop.py` — dotfiles個人環境専用。
-#     agent-toolkit本体・agent-toolkitのルールファイル・pyfltrの振り返りを担当
-#   - 本スキル（`.chezmoi-source/dot_claude/skills/session-review/SKILL.md`） — ユーザー手動起動
-# 振り返りメッセージ全体に適用される共通指示（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）は
-# `stop_advisor.py`側のreasonへ集約する。3カ所の内容を変更する際は同期漏れに注意する。
+  ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動する。
+# 本スキルは3カ所の振り返りHook/Skillの1つ。3カ所の役割は次の通り。
+#   - `agent-toolkit/scripts/stop_advisor.py` — 配布物。Stopイベントで自動発火し、
+#     プロジェクトドキュメント章のセッション振り返り提案を出力する
+#   - `scripts/claude_hook_stop.py` — dotfiles個人環境専用。Stopイベントで自動発火し、
+#     pyfltrまたはagent-toolkitスキル使用検出時に本スキルの呼び出しを誘導する。
+#     誘導文では同時発火する`stop_advisor.py`の`session review:`で始まる振り返り提案部分のみを無視し、
+#     本スキルの全章手順に従うよう促す（`stop_advisor.py`の未コミット変更通知など他の通知には引き続き従う）
+#   - 本スキル — ユーザー手動起動または上記hookからの呼び出しで動作。全章振り返り手順を担う
+# 3カ所の内容を変更する際は同期漏れに注意する。
 # 本ファイル修正後、次の依頼文をそのままコーディングエージェントへ渡すと同期漏れを抑えられる:
 # 「.chezmoi-source/dot_claude/skills/session-review/SKILL.md を修正した。この変更を agent-toolkit/scripts/stop_advisor.py と scripts/claude_hook_stop.py へ反映して」
 ---
