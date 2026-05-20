@@ -145,6 +145,15 @@
 - 隔離fixtureは`autouse=True`で当該テストモジュールに適用するか、
   `@pytest.mark.usefixtures(...)`で明示適用する
 
+### monkeypatchによる関数差し替え
+
+- `monkeypatch.setattr`で差し替える代用関数は副作用と戻り値をlambda式に同居させず、
+  通常の`def`関数として定義して`return`文で戻り値を明示する
+  - lambda式に副作用と戻り値を同居させる書き方は、型検査と式評価の警告が同一行で重複する
+- 代用関数のシグネチャは対象APIへのキーワード引数追加に追従できるよう、末尾に`**kwargs`を含める
+  - 追加される引数名が事前に分かる場合は`<name>: object = None`形式の引数を併用してもよい
+  - 対象APIに新規キーワード引数を追加した際に複数の代用関数が一斉に破綻する事態を防ぐ
+
 ### ロギング出力の検証
 
 - `caplog` fixtureはroot loggerへ伝搬した記録のみ捕捉するため、`propagate=False`のloggerでは捕捉できない
