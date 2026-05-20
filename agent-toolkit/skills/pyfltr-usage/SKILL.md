@@ -62,7 +62,8 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 複数ファイルに跨る正規表現置換を扱うサブコマンド。
 `pyfltr grep`でマッチを確認し、必要に応じてファイル単位の除外を加えてから`pyfltr replace`で実行する。
 JSONL出力でコンテキスト効率に優れる。
-エージェント環境では`AI_AGENT`常時設定により`grep`／`replace`もJSONL出力が既定値となる。
+エージェント環境では`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
+いずれかが常時設定されるため、`grep`／`replace`もJSONL出力が既定値となる。
 
 代表的なワークフロー:
 
@@ -83,7 +84,8 @@ JSONL出力でコンテキスト効率に優れる。
 
 `--output-format=jsonl`を付けるとコーディングエージェント向けの構造化出力が得られる。
 stdoutにJSONLのみを書き、テキストログは抑止される。
-エージェント環境では`AI_AGENT`が常時設定されるため、`--output-format`未指定でも全サブコマンドが既定でjsonl出力になる。
+エージェント環境では`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
+いずれかが常時設定されるため、`--output-format`未指定でも全サブコマンドが既定でjsonl出力になる。
 text出力が必要な場合のみ`--output-format=text`を明示する（環境変数`PYFLTR_OUTPUT_FORMAT=text`でも同等）。
 エージェントからの呼び出しは可読性のため`run-for-agent`を推奨する。
 
