@@ -6,7 +6,7 @@
 ## プロンプト
 
 初回プロンプトは以下のテンプレートで構成する（MCP・CLI共通）。
-`{review_standards_body}`には`agent-toolkit:review-standards`のSKILL.mdのh1ヘッダ以降を埋め込む。
+`{review_standards_body}`には`agent-toolkit:review-standards`のSKILL.mdのH1見出し以降を埋め込む。
 
 ```text
 {plan_full_path} この計画ファイルをレビューして。
