@@ -58,6 +58,18 @@ def mask_allowed(text: str, allow_patterns: list[tuple[re.Pattern[str], str | No
     return masked
 
 
+_BLOCKQUOTE_LINE_RE = re.compile(r"(?m)^>.*$")
+
+
+def mask_blockquote_lines(text: str) -> str:
+    """Markdown引用ブロック（行頭`>`で始まる行）を同長の空白で置き換える。
+
+    ユーザー提示素材の原文転記が口語表現として誤検出される事態を避ける。
+    `mask_allowed`と同じ同長空白置換方式で、検出箇所のオフセット・行番号計算を変更しない。
+    """
+    return _BLOCKQUOTE_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
 def scan_text(
     text: str,
     deny_patterns: list[tuple[re.Pattern[str], str | None]],
@@ -71,7 +83,7 @@ def scan_text(
     """
     if not deny_patterns:
         return []
-    masked = mask_allowed(text, allow_patterns)
+    masked = mask_allowed(mask_blockquote_lines(text), allow_patterns)
     hits: list[tuple[int, int, str, str, str | None]] = []
     for dp, replacement in deny_patterns:
         for m in dp.finditer(masked):
@@ -95,5 +107,5 @@ def first_hit(
     """検出が1件でもあれば真を返す（hookのwarn判定用の高速経路）。"""
     if not deny_patterns:
         return False
-    masked = mask_allowed(text, allow_patterns)
+    masked = mask_allowed(mask_blockquote_lines(text), allow_patterns)
     return any(dp.search(masked) for dp, _ in deny_patterns)

@@ -1,6 +1,6 @@
 """agent-toolkit/scripts/_colloquial_check.py のテスト。
 
-load_patterns / scan_text / first_hit / mask_allowedの検証。
+load_patterns / scan_text / first_hit / mask_allowed / mask_blockquote_linesの検証。
 テスト本体に口語表現を直接書かないため、辞書ファイルから動的にサンプルを構築する。
 """
 
@@ -59,7 +59,7 @@ def _overlap_sample(deny_patterns) -> tuple[str, str]:
             if m:
                 return sample, m.group(0)
     pytest.skip("no allowlist pattern overlaps with denylist; cannot verify masking")
-    return "", ""  # unreachable; pytest.skipで関数は終了する
+    return "", ""  # 到達不能（`pytest.skip`で関数は終了する）
 
 
 class TestLoadPatterns:
@@ -175,3 +175,65 @@ class TestMaskAllowed:
         assert masked != text  # 少なくとも 1 箇所はマスクされている
         assert masked.startswith("abc")
         assert masked.endswith("xyz")
+
+
+class TestMaskBlockquoteLines:
+    """`mask_blockquote_lines` のテスト。"""
+
+    def test_replaces_blockquote_with_spaces(self):
+        text = "本文1\n> 引用文の例示\n本文2\n"
+        masked = _colloquial_check.mask_blockquote_lines(text)
+        assert len(masked) == len(text)
+        # 引用行が空白化され、他行は維持される
+        assert masked.splitlines() == ["本文1", " " * len("> 引用文の例示"), "本文2"]
+
+    def test_keeps_non_blockquote_unchanged(self):
+        text = "通常段落\nもう一行\n"
+        assert _colloquial_check.mask_blockquote_lines(text) == text
+
+    def test_blockquote_without_space_after_marker(self):
+        text = ">引用文\n本文\n"
+        masked = _colloquial_check.mask_blockquote_lines(text)
+        assert masked.splitlines() == [" " * len(">引用文"), "本文"]
+
+    def test_marker_in_middle_of_line_is_not_masked(self):
+        text = "比較 a > b の表記\n"
+        assert _colloquial_check.mask_blockquote_lines(text) == text
+
+    def test_empty_text(self):
+        assert _colloquial_check.mask_blockquote_lines("") == ""
+
+
+class TestBlockquoteSkipIntegration:
+    """`scan_text` / `first_hit` での引用行スキップ統合テスト。"""
+
+    @pytest.mark.parametrize(
+        ("template", "should_hit"),
+        [
+            # 行頭`>`+スペースの標準的な引用行はスキップされる
+            ("> {sub}\n", False),
+            # `>`直後にスペースが無い引用行もスキップされる
+            (">{sub}\n", False),
+            # 引用行直下の非引用行は通常通り検出される
+            ("> 別文\n本文に{sub}該当\n", True),
+            # `>`が行頭以外にある行は引用ブロックではないため検出対象
+            ("文中の > {sub}該当\n", True),
+        ],
+    )
+    def test_first_hit_blockquote_handling(self, deny_patterns, allow_patterns, overlap_sample, template, should_hit):
+        _, deny_sub = overlap_sample
+        text = template.format(sub=deny_sub)
+        assert _colloquial_check.first_hit(text, deny_patterns, allow_patterns) is should_hit
+
+    def test_scan_text_skips_blockquote_line(self, deny_patterns, allow_patterns, overlap_sample):
+        _, deny_sub = overlap_sample
+        text = f"> {deny_sub}該当\n"
+        assert not _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
+
+    def test_scan_text_detects_following_non_blockquote(self, deny_patterns, allow_patterns, overlap_sample):
+        _, deny_sub = overlap_sample
+        text = f"> 引用部の{deny_sub}該当\n本文の{deny_sub}該当\n"
+        hits = _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
+        assert hits, "本文側の検出が必要"
+        # 引用行（1行目）はスキップされ、本文（2行目）のみ検出される
+        assert all(line_no == 2 for line_no, _, _, _, _ in hits)

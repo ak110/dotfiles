@@ -117,7 +117,7 @@ class TestSessionReviewBlock:
         assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
         assert "Auto-generated hook notice" in reason
         # 自己完結化の注意書きが含まれていること（履歴参照を避ける指示）。
-        assert "stand alone" in reason
+        assert "fully self-contained" in reason
         # 観察源リスト→4チェックの2段手順が含まれていること。
         assert "Step 1" in reason
         assert "Step 2" in reason
@@ -241,7 +241,7 @@ class TestUncommittedChanges:
         reason = decision.get("reason", "")
         # 未コミット通知と振り返り提案の両方が含まれること。
         assert "uncommitted" in reason.lower()
-        assert "stand alone" in reason
+        assert "fully self-contained" in reason
         # 2通知それぞれに自動生成プレフィックスが付与されること（連結時の境界保持）。
         assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
         assert "Auto-generated hook notice" in reason
@@ -262,7 +262,7 @@ class TestUncommittedChanges:
         assert decision["decision"] == "block"
         reason = decision.get("reason", "")
         assert "uncommitted" in reason.lower()
-        assert "stand alone" not in reason
+        assert "fully self-contained" not in reason
         assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
 
     def test_approves_clean_repo(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
@@ -652,7 +652,7 @@ class TestGitLogCheckedReset:
         [
             # cwd別辞書 → 全エントリクリア
             ({"/repo/a": True, "/repo/b": True}, {}),
-            # 旧形式bool True → False（後方互換）
+            # 旧形式bool True → {} （全エントリクリアで現行形式へ収束）
             (True, {}),
         ],
     )
@@ -668,7 +668,7 @@ class TestGitLogCheckedReset:
         assert state.get("git_log_checked") == expected
 
     def test_no_change_when_empty(self, tmp_path: pathlib.Path):
-        """空dictや`False`のときはStopで書き換えない。"""
+        """空dictのときはStopで他のフィールドを書き換えない。"""
         _write_state(tmp_path, "log-empty", {"git_log_checked": {}, "marker": 1})
         transcript = _write_transcript(tmp_path, "hello")
         _run(

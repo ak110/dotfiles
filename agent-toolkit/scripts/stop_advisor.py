@@ -129,7 +129,7 @@ def _main() -> int:
     # 共通ゲート: 直前アシスタントターンが完了文言を含み、
     # かつ質問・待機語・非同期待機ツールがない状態でのみ通知候補とする。
     # 作業途中の一時停止・探索中・ユーザー確認待ち・バックグラウンド待機等での
-    # false positiveを避ける。
+    # 誤検出を避ける。
     real_end = is_real_session_end(transcript_path)
     if not real_end:
         _approve(cwd=cwd)
@@ -171,8 +171,16 @@ def _main() -> int:
     if update_state(session_id, _try_mark_stop_advice):
         body = (
             "session review: list improvement suggestions in Japanese."
-            " Each suggestion must stand alone for readers without this session's conversation history"
-            " (avoid history references like 'the earlier discussion'; describe the observed phenomenon directly)."
+            " Each suggestion must be fully self-contained: a reader without this session's"
+            " conversation history must be able to translate it into an implementation from the"
+            " one line alone."
+            " Required content per suggestion: the observed concrete event (command name, error"
+            " message, target file path, the exact incorrect judgment), the desired post-change"
+            " behavior, and the rationale."
+            " Forbidden implicit references: 'the earlier ~', 'the above ~', 'in this session ~',"
+            " 'similar ~', 'that occurrence ~', or any phrasing whose referent cannot be resolved"
+            " without conversation history."
+            " Split or omit any suggestion that cannot be made self-contained."
             " Follow a two-step procedure."
             " Step 1 (gather candidates from observation sources):"
             " scan the session for"

@@ -92,7 +92,10 @@ description: >
 
 ### 6-1. 参照テンプレート読み込み
 
-計画ファイルの骨子を書き始める直前に、`references/plan-file-guidelines.md`を読み込む。
+計画ファイルの初版Write直前に、`references/plan-file-guidelines.md`をReadで読み込む。
+Read未実施のままWriteへ進むと、テンプレート規定のH2セクション構成から外れた計画ファイルになりやすく、
+PostToolUseフックの構造検査で構造違反として警告される。
+簡易な指摘対応で計画規模が小さい場合でも省略しない。
 
 ### 6-2. 計画ファイル本体の作成
 
