@@ -46,6 +46,9 @@ description: >
   - この場合に限り、事前に`pre-commit run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、
     `git commit --no-verify`を使ってよい（stashによる事故を避けるための限定的な例外）
   - これ以外（検証省略・hook失敗の強行突破など）での`--no-verify`使用は禁止する
+- `git commit --amend`／`git commit --fixup=`を再実行する場合はステージ状態を確認する。
+  - pre-commitのstash/restore直後にステージ状態がワーキングツリーへ戻っていることがある
+  - `git status`で確認し、必要に応じて`git add`し直す
 
 ## コミットメッセージとリリース
 
