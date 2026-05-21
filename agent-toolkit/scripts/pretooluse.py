@@ -8,6 +8,7 @@ r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 任意ツールの実行前に以下のチェックを順に実行する。
 block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
 warn種別のcheckはstderrまたはstdoutに警告を表示しつつ処理を継続する。
+auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
 
 統合しているチェック:
 
@@ -21,7 +22,7 @@ Bash:
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
 - `git commit`未検証警告 (warn)
-- `git log --decorate`の自動付与提案 (warn)
+- `git log --decorate`の自動付与 (auto-fix)
 - `codex exec`の未決事項念押し (warn)
 
 Write / Edit / MultiEdit:
@@ -495,7 +496,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
                     f" Rewrite using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per agent.md language-style chapter."
+                    f" no metaphorical verbs) per agent.md 「言語表現」 chapter."
                     f" Target: {file_path}",
                     tag="warn",
                 ),
@@ -671,7 +672,7 @@ _PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]
 
 
 def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
-    """`uv run python <path>`形式の起動を非PythonプロジェクトでBlockする。
+    """`uv run python <path>`形式の起動を非Pythonプロジェクトでブロックする。
 
     判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
     """

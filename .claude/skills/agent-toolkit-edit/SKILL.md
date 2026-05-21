@@ -18,7 +18,7 @@ description: >
 編集対象と配置先は次の通り。
 
 - `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
-- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言葉遣いを単独で担う）。
+- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言語表現を単独で担う）。
   Codex向けの読み替えは`.chezmoi-source/dot_codex/AGENTS.md`内のマッピング表で扱う
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。
   - `agent.md`は常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする

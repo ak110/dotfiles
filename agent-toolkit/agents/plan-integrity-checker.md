@@ -15,7 +15,6 @@ tools:
   - Glob
   - Bash
 user-invocable: false
-background: true
 # 編集時の注意点:
 # 過去のコンテキスト（ユーザー発話・要件対話内容・grep等での参照確認）が必要な観点はメイン側で実施するため、
 # 本エージェントの担当観点へ含めない。

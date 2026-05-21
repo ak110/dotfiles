@@ -50,7 +50,7 @@ def check(transcript_path: str) -> str | None:
         return None
     return (
         "your previous assistant turn appears to be written largely in English."
-        " Per agent.md language-style chapter, conduct progress updates / decisions / status reports in Japanese,"
+        " Per agent.md 「言語表現」 chapter, conduct progress updates / decisions / status reports in Japanese,"
         " including short status sentences around tool calls."
     )
 

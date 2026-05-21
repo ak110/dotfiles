@@ -13,7 +13,6 @@ tools:
   - Glob
   - Bash
 user-invocable: false
-background: true
 # 編集時の注意点:
 # このエージェントはspec-driven*, plan-mode, plan-implスキルなどを呼び出さないため、
 # それらの知識を持たないことに注意。

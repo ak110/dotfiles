@@ -30,49 +30,49 @@ from pytools._internal import (
 
 logger = logging.getLogger(__name__)
 
-# chezmoi は配布元から削除されたファイルを destination から自動削除しないため、本テーブルで追跡する。
+# chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
     Path.home() / ".claude": [
-        # プロジェクトローカルへ移動済み（.chezmoi-source/dot_claude/ 配布から除外）。
+        # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # dotfiles ローカルの sync-cross-project skill に統合済み (15ca58b)。
+        # dotfiles ローカルの sync-cross-project skill が当該機能を担う (15ca58b)。
         Path("agents/cross-project-sync-checker.md"),
-        # agent-basics → agent-toolkit のディレクトリ名リネームに伴う旧ディレクトリ削除。
+        # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
         # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
         Path("rules/agent-basics"),
-        # careful-followup-reviewer を廃止し、再レビューを careful-spec-reviewer /
-        # careful-impl-reviewer の followup モードに統合。配布先から旧エージェント定義を削除する。
+        # 再レビューは careful-spec-reviewer / careful-impl-reviewer の followup モードが担うため、
+        # 配布先から旧エージェント定義を削除する。
         Path("agents/careful-followup-reviewer.md"),
-        # empirical-prompt-tuning を refine-prompt へ改名。配布先から旧スキルディレクトリを削除する。
+        # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
-        # styles.md の内容は agent.md「言葉遣い」章へ集約されているため、配布先から旧ルールファイルを削除する。
+        # styles.md の内容は agent.md「言語表現」章にあるため、配布先から旧ルールファイルを削除する。
         Path("rules/agent-toolkit/styles.md"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
         # Claude Code向けMarkdownルールとは互換性がない。
-        # 共有ルールは .codex/agent-toolkit/rules へ移動済み。
+        # 共有ルールは .codex/agent-toolkit/rules 配下に置く。
         Path("rules/agent-toolkit"),
-        # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills へ移動済み。
+        # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills に置く。
         # ~/.codex/skills はグローバルに使うスキルだけを置く。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # careful-impl スキルを plan-impl へ改名。配布元 symlink_careful-impl.tmpl は
-        # symlink_plan-impl.tmpl へ改名済み。配布先の旧シンボリックリンクを除去する。
+        # 現在のスキル名は plan-impl で、配布元 symlink は symlink_plan-impl.tmpl。
+        # 配布先の旧シンボリックリンクを除去する。
         Path("skills/careful-impl"),
-        # claude-code-standards スキルを agent-standards へ改名。配布元 symlink_claude-code-standards.tmpl は
-        # symlink_agent-standards.tmpl へ改名済み。配布先の旧シンボリックリンクを除去する。
+        # 現在のスキル名は agent-standards で、配布元 symlink は symlink_agent-standards.tmpl。
+        # 配布先の旧シンボリックリンクを除去する。
         Path("skills/claude-code-standards"),
     ],
     Path.home() / "bin": [
-        # pre-commit からしか呼ばれない開発者向けツールのため scripts/ へ移動。
-        # .chezmoi-source/bin/ 配布から除外済み。
+        # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
+        # .chezmoi-source/bin/ の配布対象外とする。
         Path("check-cmd-encoding"),
         Path("check-templates"),
         Path("run-psscriptanalyzer"),
-        # bin/ をリポジトリ直下へ移動し、~/dotfiles/bin を PATH に通す方式へ変更。
+        # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採る。
         # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
         Path("c"),
         Path("c.cmd"),
@@ -94,7 +94,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("sudoll"),
         Path("update-dotfiles"),
         Path("update-dotfiles.cmd"),
-        # pytools/ パッケージ化 (fe09fa3) 等に伴い .chezmoi-source/bin/ から除外した旧配布物。
+        # pytools/ パッケージ化 (fe09fa3) 以降 .chezmoi-source/bin/ の配布対象外となった旧配布物。
         # 現在は pytools/ の CLI として uv tool install 経由で ~/.local/bin 等に配置される。
         Path("check-image-sizes.py"),
         Path("dpkg-licenses"),
@@ -109,8 +109,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
 # ユーザーの独自編集を保護するため、内容が期待値と bytes 完全一致するときのみ削除する。
 _REMOVED_PATHS_IF_CONTENT: dict[Path, dict[Path, bytes]] = {
     Path.home() / ".claude": {
-        # `.chezmoi-source/dot_claude/CLAUDE.md` を除外済み。未編集の配布先を除去する。
-        # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため撤廃 (Giskard Phare)。
+        # `.chezmoi-source/dot_claude/CLAUDE.md` は配布対象外。未編集の配布先を除去する。
+        # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため不要 (Giskard Phare)。
         Path("CLAUDE.md"): ("# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()),
     },
     # claude-plans-viewer 自動起動セットアップ（旧 setup_plans_viewer_windows）で
