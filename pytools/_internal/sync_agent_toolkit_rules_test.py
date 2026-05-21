@@ -34,7 +34,8 @@ class TestRun:
         ("scenario_id", "files"),
         [
             ("single_file", ["agent.md"]),
-            ("multiple_files", ["agent.md", "styles.md"]),
+            # 配布元の実ファイルがagent.mdのみのため、複数同期の挙動はテスト専用のダミー名で検証する。
+            ("multiple_files", ["agent.md", "extra.md"]),
         ],
     )
     def test_creates_dst_when_missing(

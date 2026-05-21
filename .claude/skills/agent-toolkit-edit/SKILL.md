@@ -18,9 +18,10 @@ description: >
 編集対象と配置先は次の通り。
 
 - `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
-- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`（基本原則・運用方針）と`styles.md`（記述スタイル）の2ファイル）
+- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言葉遣いを単独で担う）。
+  Codex向けの読み替えは`.chezmoi-source/dot_codex/AGENTS.md`内のマッピング表で扱う
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）。
-  - 両ファイルとも常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
+  - `agent.md`は常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 
@@ -73,7 +74,7 @@ description: >
 flowchart TB
     SD["agent-toolkit:spec-driven スキル（任意）"]:::sd
     subgraph PM["agent-toolkit:plan-mode スキル"]
-      P[計画ファイル作成<br/>codexレビュー]
+      P[計画ファイル作成<br/>整合性チェック・codexレビュー並列起動]
     end
     subgraph PI["agent-toolkit:plan-impl スキル"]
       direction TB

@@ -33,11 +33,14 @@ def _main() -> None:
     args = parser.parse_args()
     template_dir = Path.home() / "dotfiles" / "agent-toolkit" / "rules"
     target_dir = Path.cwd()
-    _claudize(target_dir, template_dir, clean=args.clean)
+    claudize(target_dir, template_dir, clean=args.clean)
 
 
-def _claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> None:
-    """本体ロジック。テスト時にパスを差し替え可能にするため分離。"""
+def claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> None:
+    """`template_dir`配下のルールファイル群を`target_dir`配下の配布先へ同期する。
+
+    `clean=True`では配布先を削除する（旧`agent-basics`ディレクトリも併せて削除）。
+    """
     rules_dir = target_dir / ".claude" / "rules" / _RULES_DIRNAME
     legacy_rules_dir = target_dir / ".claude" / "rules" / _LEGACY_RULES_DIRNAME
 

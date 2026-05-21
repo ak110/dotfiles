@@ -1,6 +1,5 @@
 """`chezmoi apply`後処理のエントリポイント。
 
-実行順・対象ステップは`_DEFAULT_STEPS`をSSOTとする。
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
 """
 
@@ -48,6 +47,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("agents/careful-followup-reviewer.md"),
         # empirical-prompt-tuning を refine-prompt へ改名。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
+        # styles.md の内容は agent.md「言葉遣い」章へ集約されているため、配布先から旧ルールファイルを削除する。
+        Path("rules/agent-toolkit/styles.md"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、

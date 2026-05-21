@@ -126,10 +126,8 @@ class TestInstallClaude:
 
         rules_dir = home / ".claude" / "rules" / "agent-toolkit"
         assert (rules_dir / "agent.md").exists()
-        assert (rules_dir / "styles.md").exists()
         # 配布元と同一内容であること
         assert (rules_dir / "agent.md").read_text(encoding="utf-8") == (RULES_SRC / "agent.md").read_text(encoding="utf-8")
-        assert (rules_dir / "styles.md").read_text(encoding="utf-8") == (RULES_SRC / "styles.md").read_text(encoding="utf-8")
 
     def test_agent_basics_is_removed(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
         """旧 agent-basics ディレクトリが存在する場合は削除される。"""

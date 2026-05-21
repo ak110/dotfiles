@@ -5,11 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from pytools.claudize import _claudize
+from pytools.claudize import claudize
 
 # テスト用テンプレート本文
 AGENT_TEMPLATE = "# カスタム指示\n\n## 基本原則\n\n- ルール1\n"
-STYLES_TEMPLATE = "# 記述スタイル\n"
 
 
 def _setup_template(tmp_path: Path) -> Path:
@@ -17,7 +16,6 @@ def _setup_template(tmp_path: Path) -> Path:
     template_dir = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
     template_dir.mkdir(parents=True)
     (template_dir / "agent.md").write_text(AGENT_TEMPLATE, encoding="utf-8")
-    (template_dir / "styles.md").write_text(STYLES_TEMPLATE, encoding="utf-8")
     return template_dir
 
 
@@ -30,11 +28,10 @@ class TestRuleDistribution:
         target = tmp_path / "project"
         target.mkdir()
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
 
         rules_dir = target / ".claude" / "rules" / "agent-toolkit"
         assert (rules_dir / "agent.md").read_text(encoding="utf-8") == AGENT_TEMPLATE
-        assert (rules_dir / "styles.md").read_text(encoding="utf-8") == STYLES_TEMPLATE
 
     def test_extra_files_are_removed(self, tmp_path: Path):
         """配布先に余分なファイルがあっても同期で削除される。"""
@@ -47,7 +44,7 @@ class TestRuleDistribution:
         stale = rules_dir / "obsolete.md"
         stale.write_text("# 旧ルール\n", encoding="utf-8")
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
 
         assert not stale.exists(), "配布元に存在しないファイルが削除されていない"
         assert (rules_dir / "agent.md").exists()
@@ -62,7 +59,7 @@ class TestRuleDistribution:
         legacy_dir.mkdir(parents=True)
         (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
 
         assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
         assert (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").exists()
@@ -74,10 +71,10 @@ class TestRuleDistribution:
         target = tmp_path / "project"
         target.mkdir()
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
         expected_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
         actual_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
 
         assert actual_agent == expected_agent
@@ -89,7 +86,7 @@ class TestRuleDistribution:
         target.mkdir()
 
         with pytest.raises(SystemExit):
-            _claudize(target, template_dir)
+            claudize(target, template_dir)
 
 
 class TestClean:
@@ -101,14 +98,14 @@ class TestClean:
         target = tmp_path / "project"
         target.mkdir()
 
-        _claudize(target, template_dir)
+        claudize(target, template_dir)
 
         # 旧ディレクトリも生成して削除対象に含める
         legacy_dir = target / ".claude" / "rules" / "agent-basics"
         legacy_dir.mkdir(parents=True)
         (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
-        _claudize(target, template_dir, clean=True)
+        claudize(target, template_dir, clean=True)
 
         assert not (target / ".claude" / "rules" / "agent-toolkit").exists()
         assert not legacy_dir.exists()
@@ -123,6 +120,6 @@ class TestClean:
         target = tmp_path / "project"
         target.mkdir()
 
-        _claudize(target, template_dir, clean=True)
+        claudize(target, template_dir, clean=True)
 
         assert any("削除対象なし" in r.message for r in caplog.records)

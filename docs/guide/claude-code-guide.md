@@ -8,7 +8,7 @@
    検証からコミットまでの流れの自動化など、Claude Codeの具体的な動作を変更する。
    auto mode下でも確認・計画工程を省略しない方針を維持する
 2. 品質水準の維持 — コードスタイルや設計が乱れたプロジェクトでは
-   コーディングエージェントも既存コードに引きずられて同水準のコードを生成する（割れ窓理論）。
+   コーディングエージェントも既存コードの影響を受けて同水準のコードを生成する（割れ窓理論）。
    各言語のモダンなイディオム・禁止パターン・セキュリティ注意点・テスト方針を明示し、
    プロジェクトの初期状態によらず一定の品質水準を維持する
 3. 知識の補完 — LLMの学習データに含まれない情報を補う。
@@ -25,7 +25,7 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 agent-toolkitはルールファイルとプラグインの2つのコンポーネントで構成される。
 
 - ルールファイル — `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
-  自動読み込みされ、行動原則・運用方針・記述スタイルなどの共通指示を提供する
+  自動読み込みされ、行動原則・運用方針・言葉遣いなどの共通指示を提供する
 - プラグイン — Claude Codeのuser scopeにインストールするプラグイン。
   フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
 
@@ -61,7 +61,7 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 - Windows:
 
     ```cmd
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude.ps1 | iex"
     ```
 
 ルールファイルが`~/.claude/rules/agent-toolkit/`へ配置され、
@@ -76,7 +76,7 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 
 ### 3. Claude Codeの推奨設定
 
-以下の設定を適用しておくのがおすすめ。
+以下の設定を適用することを推奨する。
 
 #### `~/.claude/settings.json`
 
@@ -112,7 +112,7 @@ claude-plugins-officialから以下を導入。
 
 ### 4. codex MCPサーバーのセットアップ（推奨）
 
-`agent-toolkit:plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提としている。
+`agent-toolkit:plan-mode`スキルはcodex MCPによる計画ファイルレビューを前提とする。
 以下のコマンドで登録しておくと、計画ファイル作成時のレビューが自動で利用できる。
 
 ```bash
@@ -126,9 +126,8 @@ codex CLI自体のセットアップは別途実施。
 ### 常時有効な仕組み
 
 ルールファイル（`~/.claude/rules/agent-toolkit/`配下）は自動ロードされる。
-`agent.md`が基本原則・運用方針・検証とコミットの流れを、
-`styles.md`が記述スタイル指針を提供する。
-`styles.md`の文体の核はJIS規格・公的な標準仕様書のスタイルとし、
+`agent.md`が基本原則・運用方針・言葉遣い・検証とコミットの流れを提供する。
+文体の核はJIS規格・公的な標準仕様書のスタイルとし、
 対話型UI向けの敬体はNHKの案内放送原稿のスタイルを例外として割り当てる。
 
 agent-toolkitプラグインは以下のフックを常時有効化する。

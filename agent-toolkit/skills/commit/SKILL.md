@@ -38,9 +38,10 @@ description: >
 - pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される。
   - 別リポジトリ・別セッションには適用されない
   - 複数プロジェクト横断作業ではリポジトリごとに個別確認する
-- 複数プロジェクト横断作業中の`git commit --amend`／`git commit --fixup=`は、
-  プロジェクトごとに直前で`git log --oneline --decorate`を改めて確認する。
-  hookの`git_log_checked`状態は単一フラグでcwd差を区別しないため、前のプロジェクトでの確認は引き継がれない
+- `git commit --amend`／`git commit --fixup=`の直前には常に`git log --oneline --decorate`を実行する。
+  同一プロジェクト内でも他コマンド（`git status`・`git add`等）の介在で
+  hookの`git_log_checked`フラグがリセットされフラグ保持に頼れない場合がある。
+  プロジェクトをまたぐ／またがないによらず毎回確認する
 - ユーザーが別途更新したファイルなどを見つけた場合は、コミットが混ざらないよう注意する。
   - pre-commitが自動的にstashを実行するため作業ミスが発生しやすい
   - この場合に限り、事前に`pre-commit run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、

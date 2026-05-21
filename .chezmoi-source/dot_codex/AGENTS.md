@@ -57,10 +57,28 @@
 ## Codex互換レイヤー
 
 - 実装・レビュー・ドキュメント編集などの実作業に着手する前に、
-  `~/.codex/agent-toolkit/rules/agent.md`と`~/.codex/agent-toolkit/rules/styles.md`が存在する場合は読む
+  `~/.codex/agent-toolkit/rules/agent.md`が存在する場合は読む
 - 該当作業に対応するスキルが`~/.codex/skills/`に存在する場合は、その`SKILL.md`を読む
 - プロジェクト直下に`.agents/skills/`が存在する場合は、作業内容に該当する`SKILL.md`を読む
 - プロジェクト直下に`AGENTS.md`が存在せず`CLAUDE.md`が存在する場合は、作業前に`CLAUDE.md`を読む
 - プロジェクト直下に`.claude/rules/`が存在する場合は、作業内容に該当するルールファイルを読む
 - `~/.codex/agent-toolkit/rules/`と`~/.codex/skills/`のdotfiles配布物は、
   Claude Code側の原本へのシンボリックリンクとして扱う
+
+### Claude Code固有ツールの読み替え
+
+`~/.codex/agent-toolkit/rules/agent.md`およびagent-toolkit配下のスキル本文・サブエージェント定義は、
+Claude Code固有のツール名で記述される。
+Codexで利用する場合は次の対応表に従って読み替える。
+
+| Claude Code | Codex相当 |
+| --- | --- |
+| `TaskCreate`・`TaskUpdate`・`TaskList`・`TaskGet` | `update_plan`で計画状態を管理する |
+| `Task`ツール（サブエージェント起動） | `spawn_agent`で別エージェントへ委譲する |
+| `AskUserQuestion` | ネイティブ機能を利用（ユーザーへ直接質問する） |
+| `Skill`（スキル呼び出し） | ネイティブ機能を利用（参照すべきガイドはユーザー指示またはスラッシュコマンドで呼び出す） |
+| `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
+| `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
+| `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
+| `EnterPlanMode`・`ExitPlanMode` | ネイティブ機能を利用 |
+| `ScheduleWakeup`・`CronCreate`・`Monitor`・`SendMessage`・`TeamCreate` | 同等手段なし。該当する自動化・通知・並列協調処理は手動運用または利用者操作で代替する |

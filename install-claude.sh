@@ -24,7 +24,6 @@ STAGE_ROOT="$HOME/.claude/rules-stage"
 # 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 FILES=(
     agent.md
-    styles.md
 )
 
 STAGE_DIR=""

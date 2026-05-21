@@ -7,8 +7,9 @@ description: >
   対象がコードかドキュメントかを問わず適用する。
   成果物を読んで理解する場面、機械チェック単独実行の場面ではトリガー不要。
 # 編集時の注意点:
-# レビュアー側の判断指針のみを扱う。著者向け規約はcoding-standards・writing-standards・
-# agent-standards側に置く。
+# レビュアー側の判断指針のみを扱う。
+# レビュー工程管理（起動・分担・指摘統合・再レビュー）はcareful-reviewスキルが扱う。
+# 著者向け規約はcoding-standards・writing-standards・agent-standards側に置く。
 # 機械チェックが扱う項目は本スキルでも非対象とする方針のため、
 # 検出語そのものを本文へ転記してはならない（コンテキスト汚染を招く）。
 ---

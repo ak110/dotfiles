@@ -23,8 +23,7 @@ $stageRoot = Join-Path $HOME '.claude/rules-stage'
 # 3者の整合性は`agent-toolkit/scripts/install_script_ssot_test.py`で自動検証する。
 # 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 $files = @(
-    'agent.md',
-    'styles.md'
+    'agent.md'
 )
 
 function Invoke-Download {
