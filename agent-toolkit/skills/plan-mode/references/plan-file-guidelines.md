@@ -252,14 +252,17 @@
 - 計画でルール・スタイルガイド・運用方針などの記述規範を追記または改訂する場合、
   計画ファイル本文も当該規範の適用対象として整合させる。
   追加・改訂したルールに計画文面自体が違反したまま計画提出すると、実装段階で違反を引き継ぐ
-- 計画提出前に`agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`と
-  `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`を実行し、
-  口語表現の混入および行幅違反を検査する
-  - 対象は計画ファイル本文と、未コミット変更があるファイル群（ステージ有無を問わない）
-  - 本計画と同一コミットに同梱されるファイルに違反が残ると実装段階で巻き込み修正が必要となるため、一括解消する
-  - 計画ファイル本体への検査は計画ファイル内のコードブロック内に限定する
-   （本文中のfalse positiveはエージェント側の判断で除外する）
-  - 未コミット変更があるファイル群に対する検査は全文対象のままとする
+- 計画提出前に計画ファイル本文の機械チェックを実行する
+  - プロジェクトがpyfltrを採用している場合は
+    `uvx pyfltr run-for-agent --work-dir=. <計画ファイルパス>` を実行する。
+    カレントディレクトリをプロジェクトルートにすることで `.textlintrc.yaml`・`.markdownlint-cli2.yaml` が解決され、
+    プロジェクト規約のtextlint・markdownlint・colloquialが計画ファイル本文へ一括実行される。
+    `pre-commit` コマンドはリポジトリ外パスでエラーになるが、他コマンドの結果を主軸として扱う
+  - pyfltr非採用、またはtextlint/markdownlint設定が無いプロジェクトでは
+    `agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`と
+    `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`を計画ファイル本文へ直接実行する
+  - 機械チェック適合性の判定対象は、計画ファイル内のコードブロック内（成果物の想定文面）に限定する
+   （コードブロック外の本文中のfalse positiveはエージェント側の判断で除外する）
 - 計画範囲外のファイルで違反を検知した場合、自己判断で書き換えず修正方針をユーザーへ提示し、合意を得てから着手する
 - ユーザーへの確認事項は計画提出前に対話で結論を確定させる
   - 「実装時に確認する」「コミット時に判断する」のように結論確定を先送りしない
