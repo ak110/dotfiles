@@ -355,7 +355,7 @@ def _process_target(
 
         # 4. 画像変換 (rename_rules はアーカイブ内エントリへ適用しない)
         if not dry_run:
-            events = imageconverter.convert_directory(
+            result = imageconverter.convert_directory(
                 work_dir,
                 output_type=config.image.output_type,
                 max_width=config.image.max_width,
@@ -365,7 +365,7 @@ def _process_target(
                 remove_failed=True,
                 log_root=target.parent,
             )
-            for path, severity, msg in events:
+            for path, severity, msg in result.events:
                 rel_path = path.relative_to(work_dir).as_posix()
                 entry_failures.append((rel_path, severity, msg))
 

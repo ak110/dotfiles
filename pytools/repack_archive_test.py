@@ -426,12 +426,17 @@ class TestImageConversionBackupRetention:
         assert (tmp_path / "bk" / "sample.zip").exists()
         assert not trashed
 
-    def test_completely_broken_image_error_keeps_backup(
+    def test_completely_broken_image_is_skipped_as_non_image(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """完全に破損した PNG は変換失敗となるが、原本バックアップは保持される。"""
+        """完全に破損した PNG はシグネチャ判定で非画像と扱われ、削除・失敗集計の対象外となる。
+
+        `PIL.Image.open()` のシグネチャ判定で読み込めないファイルは
+        非画像扱いでイベント非記録・削除なしとなる。
+        失敗集計が空になるためバックアップは `send2trash` でゴミ箱送りされる。
+        """
         trashed: list[str] = []
         monkeypatch.setattr(
             "pytools.repack_archive.send2trash.send2trash",
@@ -451,13 +456,13 @@ class TestImageConversionBackupRetention:
             no_trash=False,
             dry_run=False,
         )
-        # バックアップは保持される
-        assert (tmp_path / "bk" / "sample.zip").exists()
-        assert not trashed
-        # 出力 ZIP は生成されるが破損した画像は除外される
+        # 失敗が無いためバックアップはゴミ箱送りされる
+        assert len(trashed) == 1
+        assert trashed[0].endswith("sample.zip")
+        # 非画像扱いで削除されないため、原本のバイト列がそのまま出力 ZIP に含まれる
         entries = _zip_entries(tmp_path / "sample.zip")
         assert "readme.txt" in entries
-        assert "img.png" not in entries
+        assert "img.png" in entries
 
     def test_clean_run_trashes_backup(
         self,
