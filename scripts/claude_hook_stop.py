@@ -6,22 +6,21 @@
 r"""Claude Code Stopフック: dotfiles個人環境専用セッション振り返りプロンプト。
 
 pyfltrまたはagent-toolkitスキルを使用したセッションの終了時に、
-ユーザー手動起動スキル`session-review`の呼び出しを誘導する。
+個人環境向け拡張章を担う`session-review-dotfiles`スキルの追加呼び出しを誘導する。
 対象はメインのtranscriptのみ（サブエージェント履歴は別ファイルのため対象外）。
 
-本hookは3カ所の振り返りHook/Skillの1つで、Stopイベントで並列発火する。
-3カ所の役割は次の通り。
+本hookはdotfiles個人環境側の2カ所同期対象の1つで、Stopイベントで並列発火する
+配布物hook（`agent-toolkit/scripts/stop_advisor.py`）と責務を分離している。
 
-- `agent-toolkit/scripts/stop_advisor.py` — 配布物。プロジェクトドキュメント章の振り返り提案を出力する
+- `agent-toolkit/scripts/stop_advisor.py` — 配布物。`agent-toolkit:session-review`スキルの
+  呼び出し誘導を担う（プロジェクトドキュメント章を対象とする標準フロー）
 - 本hook（`scripts/claude_hook_stop.py`） — dotfiles個人環境専用。
-  pyfltrまたはagent-toolkitスキル使用検出時に`session-review`スキルの呼び出しを誘導する。
-  誘導文では同時発火する`stop_advisor.py`の「session review:」で始まる振り返り提案部分のみを
-  無視させ、`session-review`スキルの全章手順に従わせる
-  （`stop_advisor.py`の未コミット変更通知など他の通知には引き続き従う）
-- `.chezmoi-source/dot_claude/skills/session-review/SKILL.md` — ユーザー手動起動または
-  本hookからの呼び出しで動作。全章振り返り手順を担う
+  pyfltrまたはagent-toolkitスキル使用検出時に`session-review-dotfiles`スキルの
+  追加呼び出しを誘導する（pyfltr・agent-toolkitの2拡張章を追加するため）
+- `.chezmoi-source/dot_claude/skills/session-review-dotfiles/SKILL.md` —
+  ユーザー手動起動または本hookからの呼び出しで動作。dotfiles拡張章を担う
 
-3カ所の内容を変更する際は同期漏れに注意する。
+本hookと`session-review-dotfiles/SKILL.md`の2カ所は同期対象。
 
 LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形する。
 プレフィックス／サフィックス規約と出力先フィールド（`reason`・`additionalContext`）の詳細は
@@ -201,19 +200,15 @@ def _main() -> int:
     state["advice_given"] = True
     _write_state(state_file, state)
 
-    # 振り返りメッセージ全体に適用される手順詳細は `session-review` スキルが保持する。
-    # 本 hook はスキル呼び出しを誘導するのみで、同時発火する `stop_advisor.py` の
-    # `session review:` で始まる振り返り提案部分のみ無視させ、本スキルへ全章手順を委ねる。
-    # `stop_advisor.py` の未コミット変更通知など他の通知には引き続き従わせる。
+    # 振り返り手順全体は `agent-toolkit:session-review` スキルが保持し、その呼び出し誘導は
+    # 同時発火する `stop_advisor.py` が担う。本 hook は dotfiles 拡張章を担う
+    # `session-review-dotfiles` スキルの追加呼び出しのみを誘導する責務分離設計を採る。
     body = (
-        "session-review handoff: invoke the `session-review` Skill via the Skill tool to run the session review."
-        " The skill provides the full procedure"
-        " (Reflect / Draft Additions / Show Proposed Changes / Apply with Approval)"
-        " and covers all three sections (project documentation, pyfltr, agent-toolkit);"
-        " follow it end-to-end."
-        " To avoid duplication, ignore only the message tagged `[auto-generated: agent-toolkit/stop_advisor]`"
-        " that begins with `session review:`;"
-        " still follow other notices from that hook such as uncommitted-changes warnings."
+        "session-review handoff (dotfiles extension): in addition to the"
+        " `agent-toolkit:session-review` Skill invoked via the `[auto-generated: agent-toolkit/stop_advisor]`"
+        " notice, also invoke the `session-review-dotfiles` Skill via the Skill tool."
+        " The dotfiles skill adds pyfltr and agent-toolkit improvement sections on top of the"
+        " project documentation section covered by `agent-toolkit:session-review`."
     )
     _block(_llm_notice(body))
     return 0

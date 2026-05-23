@@ -49,6 +49,10 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/empirical-prompt-tuning"),
         # styles.md の内容は agent.md「言語表現」章にあるため、配布先から旧ルールファイルを削除する。
         Path("rules/agent-toolkit/styles.md"),
+        # 現在の配布元は session-review-dotfiles（dotfiles 個人環境側）と
+        # agent-toolkit プラグイン側の session-review に分かれている。
+        # 旧配布先ディレクトリを削除する。
+        Path("skills/session-review"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
@@ -65,6 +69,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 現在のスキル名は agent-standards で、配布元 symlink は symlink_agent-standards.tmpl。
         # 配布先の旧シンボリックリンクを除去する。
         Path("skills/claude-code-standards"),
+        # 現在のシンボリックリンク名は session-review-dotfiles。
+        # 配布先の旧シンボリックリンクを除去する。
+        Path("skills/session-review"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、

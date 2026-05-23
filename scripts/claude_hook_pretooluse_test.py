@@ -538,7 +538,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         "name",
         [
             "sync-cross-project",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
-            "session-review",  # 個人スキル名
+            "session-review-dotfiles",  # 個人スキル名
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "claude-session-export",  # pytools コマンド名 (project.scripts)
             "psgrep",  # pytools コマンド名

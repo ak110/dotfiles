@@ -116,14 +116,11 @@ class TestSessionReviewBlock:
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/stop_advisor]" in reason
         assert "Auto-generated hook notice" in reason
-        # 自己完結化の注意書きが含まれていること（履歴参照を避ける指示）。
-        assert "fully self-contained" in reason
-        # 観察源リスト→4チェックの2段手順が含まれていること。
-        assert "Step 1" in reason
-        assert "Step 2" in reason
-        assert "observation sources" in reason
-        assert "user interruption" in reason
-        assert "blocked by hooks" in reason
+        # スキル呼び出し誘導文の主要要素が含まれていること。
+        assert "agent-toolkit:session-review" in reason
+        assert "Skill" in reason
+        assert "Reflect" in reason
+        assert "Apply with Approval" in reason
 
     def test_no_completion_approves(self, tmp_path: pathlib.Path):
         """完了文言がないアシスタントターンは振り返り提案を発火しない。"""
@@ -241,7 +238,7 @@ class TestUncommittedChanges:
         reason = decision.get("reason", "")
         # 未コミット通知と振り返り提案の両方が含まれること。
         assert "uncommitted" in reason.lower()
-        assert "fully self-contained" in reason
+        assert "agent-toolkit:session-review" in reason
         # 2通知それぞれに自動生成プレフィックスが付与されること（連結時の境界保持）。
         assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
         assert "Auto-generated hook notice" in reason
@@ -262,7 +259,7 @@ class TestUncommittedChanges:
         assert decision["decision"] == "block"
         reason = decision.get("reason", "")
         assert "uncommitted" in reason.lower()
-        assert "fully self-contained" not in reason
+        assert "agent-toolkit:session-review" not in reason
         assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
 
     def test_approves_clean_repo(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):

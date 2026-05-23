@@ -206,11 +206,11 @@ class TestPyfltrDetection:
 
 
 class TestSessionReviewSkillInvocation:
-    """reason が session-review スキル呼び出し誘導文を含むことのテスト。
+    """reason が session-review-dotfiles スキル呼び出し誘導文を含むことのテスト。
 
     pyfltr 単独検出時・agent-toolkit 単独検出時・両方検出時のいずれも、
-    reason に同じ誘導文（スキル名・Skill ツール名・`stop_advisor.py` の振り返り提案無視指示）
-    を含むことを境界として確認する。
+    reason に同じ誘導文（拡張章スキル名・Skill ツール名・配布物hookで誘導される
+    `agent-toolkit:session-review`との併用案内）を含むことを境界として確認する。
     """
 
     def _get_reason(self, tmp_path: pathlib.Path, session_id: str, entries: list[dict]) -> str:
@@ -247,7 +247,8 @@ class TestSessionReviewSkillInvocation:
         both_reason = self._get_reason(tmp_path, "skill-both", both)
 
         for reason in (pyfltr_reason, agent_reason, both_reason):
-            assert "session-review" in reason
+            assert "session-review-dotfiles" in reason
+            assert "agent-toolkit:session-review" in reason
             assert "Skill" in reason
             assert "agent-toolkit/stop_advisor" in reason
             assert "pyfltr" in reason

@@ -9,8 +9,8 @@ Claude Codeが停止しようとするタイミングで発火する。
 未コミット変更通知とセッション振り返り提案の2種類の通知を、
 共通ゲート`_stop_gate.is_real_session_end`の判定通過後にまとめて出力する。
 
-セッション振り返り提案ではプロジェクトドキュメント章のみを対象とし、
-reasonには文面フォーマット指示（自己完結性・行フォーマット・空時の「指摘無し」・出力スタイル）も含めて出力する。
+セッション振り返り提案では`agent-toolkit:session-review`スキルの呼び出しを誘導する。
+具体的な手順（観察源・自己検証4点・提示フォーマット・適用承認）はスキル本体が保持する。
 """
 
 import json
@@ -170,45 +170,11 @@ def _main() -> int:
 
     if update_state(session_id, _try_mark_stop_advice):
         body = (
-            "session review: list improvement suggestions in Japanese."
-            " Each suggestion must be fully self-contained: a reader without this session's"
-            " conversation history must be able to translate it into an implementation from the"
-            " one line alone."
-            " Required content per suggestion: the observed concrete event (command name, error"
-            " message, target file path, the exact incorrect judgment), the desired post-change"
-            " behavior, and the rationale."
-            " Forbidden implicit references: 'the earlier ~', 'the above ~', 'in this session ~',"
-            " 'similar ~', 'that occurrence ~', or any phrasing whose referent cannot be resolved"
-            " without conversation history."
-            " Split or omit any suggestion that cannot be made self-contained."
-            " Follow a two-step procedure."
-            " Step 1 (gather candidates from observation sources):"
-            " scan the session for"
-            " (i) user interruption / corrections,"
-            " (ii) Edit/Write that did not apply as expected, and"
-            " (iii) events blocked by hooks."
-            " Step 2 (filter): verify each candidate against the following four checks"
-            " and list only items that pass all four:"
-            " (a) trace back to the root cause rather than describing the surface symptom;"
-            " (b) assess recurrence risk and impact — exclude one-off or incidental events;"
-            " (c) confirm the issue is not already addressed by existing CLAUDE.md, rules, or skills;"
-            " (d) select the most appropriate target by proximity-to-code priority"
-            " (in-code docstring/comment → CLAUDE.md / .claude/rules → .claude/skills),"
-            " not the most convenient place to write."
-            " Target project documentation in general (CLAUDE.md, README.md, docs/, etc.)"
-            " — only knowledge from this session that helps future Claude work on this project"
-            " (observation domains: bash commands, code style/patterns, test approaches, environment quirks,"
-            " warnings/pitfalls, repeated user corrections,"
-            " coding agent behavior improvements"
-            " (cases where the agent's judgment, confirmation discipline, or plan granularity"
-            " could have been codified into rules to prevent recurrence);"
-            " one concept per line, terse)."
-            " Output format: start with the heading '## プロジェクトドキュメント改善提案'"
-            " and list each item as '- <対象ファイル> — <提案内容>'."
-            " If none, write '指摘無し' under the same heading."
-            " If the user opts to apply, first present the proposed change as a diff-formatted code block;"
-            " apply via Edit only after explicit user approval."
-            " Output the suggestions only (no preamble or narration)."
+            "session-review handoff: invoke the `agent-toolkit:session-review` Skill via the Skill tool"
+            " to run the session review."
+            " The skill provides the full procedure"
+            " (Reflect / Draft Additions / Show Proposed Changes / Apply with Approval)"
+            " for the project documentation section; follow it end-to-end."
         )
         messages.append(_llm_notice(body))
 
