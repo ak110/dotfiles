@@ -38,10 +38,16 @@ description: >
 - pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される。
   - 別リポジトリ・別セッションには適用されない
   - 複数プロジェクト横断作業ではリポジトリごとに個別確認する
-- `git commit --amend`／`git commit --fixup=`の直前には常に`git log --oneline --decorate`を実行する。
+- `git commit --amend`／`git commit --fixup=`／`git rebase -i --autosquash`等の
+  履歴書き換え系コマンド直前に常に`git log --oneline --decorate`を実行する。
   同一プロジェクト内でも他コマンド（`git status`・`git add`等）の介在で
   hookの`git_log_checked`フラグがリセットされフラグ保持に頼れない場合がある。
   プロジェクトをまたぐ／またがないによらず毎回確認する
+- `git commit --fixup=<sha>`を実行する直前は、計画ファイルや過去ログに記載されたSHAを
+  そのまま指定せず、現在の履歴上で対象コミットを再特定する。
+  amend／rebase／fixup統合により対象コミットのSHAが変動している可能性があるため、
+  `git log --oneline --decorate`の出力から件名で照合したうえで、
+  `git show --stat <sha>`を実行してファイル集合が計画作成時点の対象と一致するか確認する
 - ユーザーが別途更新したファイルなどを見つけた場合は、コミットが混ざらないよう注意する。
   - pre-commitが自動的にstashを実行するため作業ミスが発生しやすい
   - この場合に限り、事前に`pre-commit run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、

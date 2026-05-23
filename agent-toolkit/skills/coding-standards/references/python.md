@@ -80,6 +80,23 @@
     CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
   - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
     parse段階の型変換と既定値解決を分離する
+- CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名にせず
+  `main`として公開する
+  - pytestで`pytest.raises(SystemExit)`を用いて終了コードを検証する場合、
+    private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招く。
+    一括disableで抑止すると本来の保護検知が失われる
+  - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する。
+    成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が
+    `Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
+  - 推奨形:
+
+    ```python
+    def main() -> None:
+        has_error = run_process()
+        exit_code = 1 if has_error else 0
+        sys.exit(exit_code)
+    ```
+
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで
   `appauthor=False`を明示する（`appname`単独指定は不可）
@@ -153,11 +170,15 @@
 - 代用関数のシグネチャは対象APIへのキーワード引数追加に追従できるよう、末尾に`**kwargs`を含める
   - 追加される引数名が事前に分かる場合は`<name>: object = None`形式の引数を併用してもよい
   - 対象APIに新規キーワード引数を追加した際に複数の代用関数が一斉に破綻する事態を防ぐ
+- 対象APIへ引数を委譲する代用関数の`*args`・`**kwargs`の型注釈は`typing.Any`を使う
+  - 委譲先の呼び出し（`original_save(self, *args, **kwargs)`等）で型検査器が型不一致を報告するため
+  - 該当検査器: pyright（`reportArgumentType`）・ty（`invalid-argument-type`）・mypy（`arg-type`）
+  - 引数を委譲せず即`raise`等の単純なモックは`object`型でもよい
 
 ### ロギング出力の検証
 
 - `caplog` fixtureはroot loggerへ伝搬した記録のみ捕捉するため、`propagate=False`のloggerでは捕捉できない
-- `capsys`で捕捉する場合も、`StreamHandler(sys.stdout)`をfixture setup時に追加すると
+- `capsys`で捕捉する場合も、`StreamHandler(sys.stdout)`をfixtureセットアップ時に追加すると
   capsysのstdout差し替えタイミングとstream参照が一致せず失敗しやすい
 - 対処: 検証対象loggerへ記録蓄積用の`logging.Handler`サブクラスを直接追加し、
   fixture終了時に`removeHandler`で取り除くパターンが安定する
