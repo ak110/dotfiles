@@ -22,6 +22,7 @@ from pytools._internal import (
     setup_msys_env,
     setup_plans_viewer_linux,
     setup_registry,
+    setup_sendto_shortcuts,
     sync_agent_toolkit_rules,
     update_claude_settings,
     update_npmrc,
@@ -168,6 +169,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("libarchive (Windows)", install_libarchive_windows.run),
     ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),
+    ("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
     ("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),
 ]

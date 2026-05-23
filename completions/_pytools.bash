@@ -49,3 +49,4 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete randfile
 complete -o nospace -o default -o bashdefault -F _python_argcomplete releaser
 complete -o nospace -o default -o bashdefault -F _python_argcomplete rename2hash
 complete -o nospace -o default -o bashdefault -F _python_argcomplete repack-archive
+complete -o nospace -o default -o bashdefault -F _python_argcomplete touch-file

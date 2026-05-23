@@ -54,6 +54,7 @@ releaser = "pytools.releaser:_main"
 rename2hash = "pytools.rename2hash:_main"
 repack-archive = "pytools.repack_archive:_main"
 runAsAdmin = "pytools.run_as_admin:_main"
+touch-file = "pytools.touch_file:_main"
 update-ssh-config = "pytools.update_ssh_config:_main"
 
 [build-system]
