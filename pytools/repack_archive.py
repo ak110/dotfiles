@@ -1,6 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
-"""アーカイブを gv 向けに前処理して無圧縮 ZIP へ再パックする。
+"""アーカイブ・PDF を gv 向けに前処理して無圧縮 ZIP へ再パックする。
 
+アーカイブとディレクトリに加え、直接渡された PDF は各ページを画像へラスタライズしてから再パックする。
 設定は YAML ファイルで与え、ignore パターン・リネームルール・画像変換オプションを
 一元管理する。
 """
@@ -25,6 +26,8 @@ import pytilpack.zipfile
 import send2trash
 import tqdm
 import yaml
+from pdf2image import convert_from_path
+from pdf2image.exceptions import PDFInfoNotInstalledError
 
 from pytools import imageconverter, rename
 from pytools._internal.cli import enable_completion, setup_logging
@@ -138,7 +141,7 @@ class _CompiledRules:
 
 def main() -> None:
     """アーカイブをgv向けに前処理して無圧縮ZIPへ再パックするエントリポイント。"""
-    parser = argparse.ArgumentParser(description="アーカイブを gv 向けに前処理する")
+    parser = argparse.ArgumentParser(description="アーカイブ・PDF を gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
     parser.add_argument(
         "-b", "--backup-dir", type=pathlib.Path, help="バックアップ先 (既定: 対象ファイルのあるディレクトリ/bk)"
@@ -248,6 +251,7 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
 
     rename適用後の出力stemベースで衝突を検出する。
     """
+    target_set = set(targets)
     seen_outputs: dict[pathlib.Path, pathlib.Path] = {}
     seen_stems: dict[pathlib.Path, pathlib.Path] = {}
     for target in targets:
@@ -255,6 +259,12 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
             raise FileNotFoundError(f"TARGET が存在しません: {target}")
         stem = _output_stem(target, rename_rules=compiled.rename_rules)
         output_path = target.parent / f"{stem}.zip"
+        # TARGET 群のいずれでもないパスの出力 ZIP が既存の場合、無関係なファイルを
+        # 上書きしないよう拒否する。PDF・ディレクトリ・リネーム適用時は入力と出力が
+        # 別ファイルになり得る。TARGET 自身 (アーカイブ入力など) はバックアップ退避後に
+        # 出力するため対象外。
+        if output_path not in target_set and output_path.exists():
+            raise FileExistsError(f"出力 ZIP が既存ファイルと衝突します: {output_path}")
         prior_out = seen_outputs.get(output_path)
         if prior_out is not None and prior_out != target:
             raise ValueError(f"出力 ZIP が衝突します: {prior_out} と {target} は同じ {output_path} を生成しようとしています")
@@ -308,6 +318,9 @@ def _process_target(
 ) -> list[EntryFailure]:
     """1 つの TARGET を処理する。失敗時は作業ディレクトリを削除し原本を戻す。
 
+    TARGET はアーカイブ・ディレクトリ・PDF のいずれか。PDF は各ページを画像へ
+    ラスタライズしてから後続の画像変換・平坦化・無圧縮 ZIP 化処理へ渡す。
+
     冒頭で末尾 Central Directory を欠いた破損 ZIP を ``ValueError`` で拒否する。
     バックアップ・展開・ZIP 生成といった副作用を起こす前段で判定するため、
     途中で libarchive が復号不能となって作業ディレクトリだけが残る事態を避けられる。
@@ -321,6 +334,7 @@ def _process_target(
     parent = target.parent
     stem = _output_stem(target, rename_rules=compiled.rename_rules)
     is_archive = target.is_file()
+    is_pdf = is_archive and target.suffix.lower() == ".pdf"
 
     bk_root = backup_dir_override if backup_dir_override is not None else parent / _BACKUP_DIR_NAME
     bk_entry = bk_root / target.name
@@ -343,8 +357,13 @@ def _process_target(
     source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から取得する
     entry_failures: list[EntryFailure] = []
     try:
-        # 3. 選択的展開 / コピー
-        if is_archive:
+        # 3. 選択的展開 / コピー / PDF ラスタライズ
+        if is_pdf:
+            if dry_run:
+                logger.info("[dry-run] render pdf %s -> %s", source_for_extract, work_dir)
+            else:
+                _render_pdf(source_for_extract, work_dir, config.image)
+        elif is_archive:
             if dry_run:
                 logger.info("[dry-run] extract %s -> %s", source_for_extract, work_dir)
             else:
@@ -451,6 +470,35 @@ def _check_truncated_zip(target: pathlib.Path) -> None:
             f"{target.name}: ZIP末尾のCentral Directoryが欠落している。"
             "ファイルが途中で途絶している可能性があるため再取得すること"
         )
+
+
+def _render_pdf(pdf: pathlib.Path, dest: pathlib.Path, image_config: _ImageConfig) -> None:
+    """PDF の各ページを画像へラスタライズして ``dest`` 直下へ保存する。
+
+    高さを ``image_config.max_height`` に合わせて描画し、幅は比率を保つ。横長ページで
+    ``max_width`` を超える幅の縮小と、出力形式変換・JPEG 品質・メタデータ除去は後続の
+    ``imageconverter`` が担当するため、ここではロスレスな PNG 中間ファイルとして保存する。
+    ページ名はゼロ埋め連番とし、最終 ZIP で自然順に並ぶようにする。
+
+    Poppler (pdftoppm) 未導入時は導入手順を含む ``RuntimeError`` を送出する。
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        images = convert_from_path(str(pdf), size=(None, image_config.max_height))
+    except PDFInfoNotInstalledError as e:
+        raise RuntimeError(
+            "PDF を画像化するには Poppler (pdftoppm) のインストールが必要です。\n"
+            "  Debian/Ubuntu: apt-get install poppler-utils\n"
+            "  macOS: brew install poppler\n"
+            "  Windows: poppler のバイナリを入手して PATH へ追加してください。"
+        ) from e
+    with tqdm.tqdm(total=len(images), desc="render", unit="page", ascii=True, ncols=100) as pbar:
+        for i, image in enumerate(images):
+            try:
+                image.save(dest / f"{i + 1:04d}.png", "PNG")
+            finally:
+                image.close()
+            pbar.update(1)
 
 
 @functools.cache

@@ -91,6 +91,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
+      # repack-archive の PDF 入力テストで pdftoppm を使うため、apt 導入用に root で実行する
+      # （既定ユーザーは非 root・sudo 無し）
+      options: --user root
     defaults:
       run:
         shell: bash
@@ -119,6 +122,12 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
+
+      - name: Poppler インストール
+        # repack-archive の PDF 入力テストが pdftoppm を必要とする
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends poppler-utils
 
       - name: Test with pyfltr
         env:

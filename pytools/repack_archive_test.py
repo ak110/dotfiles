@@ -12,6 +12,7 @@
 import io
 import logging
 import pathlib
+import shutil
 import struct
 import zipfile
 
@@ -25,6 +26,12 @@ def _make_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name, data in entries.items():
             zf.writestr(name, data)
+
+
+def _make_pdf(path: pathlib.Path, pages: list[tuple[tuple[int, int], str]]) -> None:
+    """指定サイズ・色の各ページから複数ページ PDF を生成する。"""
+    images = [PIL.Image.new("RGB", size, color=color) for size, color in pages]
+    images[0].save(path, "PDF", save_all=True, append_images=images[1:])
 
 
 class _Cp932ZipInfo(zipfile.ZipInfo):
@@ -87,6 +94,24 @@ class TestPreflight:
         compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
         with pytest.raises(FileExistsError):
             repack_archive._preflight_check([archive], compiled=compiled, backup_dir=None)
+
+    def test_existing_output_rejected_when_path_differs(self, tmp_path: pathlib.Path) -> None:
+        """入力と異なるパスの出力 ZIP が既存なら拒否する (ディレクトリ入力)。"""
+        src = tmp_path / "book"
+        src.mkdir()
+        (src / "01.txt").write_bytes(b"1")
+        (tmp_path / "book.zip").write_bytes(b"existing")
+        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
+        with pytest.raises(FileExistsError):
+            repack_archive._preflight_check([src], compiled=compiled, backup_dir=None)
+
+    def test_same_path_output_not_rejected(self, tmp_path: pathlib.Path) -> None:
+        """入力と出力が同一パスのアーカイブ入力は既存出力チェックで誤拒否しない。"""
+        archive = tmp_path / "foo.zip"
+        _make_zip(archive, {"a.txt": b"a"})
+        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
+        # 出力 foo.zip は入力自身であり拒否されない (例外を送出しない)
+        repack_archive._preflight_check([archive], compiled=compiled, backup_dir=None)
 
 
 class TestProcessArchive:
@@ -827,3 +852,32 @@ class TestMainFailureSummary:
         summary = "\n".join(r.getMessage() for r in caplog.records)
         assert "失敗したターゲット" in summary
         assert str(bad) in summary
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="Poppler (pdftoppm) 未導入")
+class TestProcessPdf:
+    """PDF 直接入力をページ画像へ再パックする挙動の検証。"""
+
+    def test_pdf_input_repacks_pages(self, tmp_path: pathlib.Path) -> None:
+        """複数ページ PDF が連番 JPEG として自然順で再パックされ、バックアップが残る。"""
+        pdf = tmp_path / "book.pdf"
+        # 縦長 (幅が max_width 以内) と横長 (幅が max_width 超過で縮小経路) を混在させる
+        _make_pdf(pdf, [((600, 800), "white"), ((1200, 400), "red")])
+        config = repack_archive.RepackConfig()
+        compiled = repack_archive._compile_rules(config, tmp_path)
+        repack_archive._process_target(
+            pdf,
+            config=config,
+            compiled=compiled,
+            backup_dir_override=None,
+            no_trash=True,
+            dry_run=False,
+        )
+        output = tmp_path / "book.zip"
+        assert output.exists()
+        with zipfile.ZipFile(output) as zf:
+            ordered = [info.filename for info in zf.infolist()]
+        # 既定の出力形式は jpeg。ページはゼロ埋め連番で自然順に並ぶ
+        assert ordered == ["0001.jpg", "0002.jpg"]
+        # バックアップは元の PDF 名のまま保持される
+        assert (tmp_path / "bk" / "book.pdf").exists()
