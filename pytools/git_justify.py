@@ -6,6 +6,7 @@ import datetime
 import os
 import random
 import subprocess
+import sys
 
 import businesstimedelta
 import holidays
@@ -29,7 +30,8 @@ businesshrs = businesstimedelta.Rules(
 )
 
 
-def _main() -> None:
+def main() -> None:
+    """Gitのコミット日時を営業時間内に整列するエントリポイント。"""
     now = datetime.datetime.now()
     parser = argparse.ArgumentParser(
         description="Justify git commits",
@@ -56,10 +58,11 @@ def _main() -> None:
         print(f"Set {commit[:7]} to {date:%Y-%m-%d %H:%M:%S}")
 
     if input("Do you want to continue? [y/N]: ").lower() != "y":
-        return
+        sys.exit(0)
 
     for commit, date in zip(commits, dates, strict=True):
         _set_commit_date(commit, date, branch=f"{start_commit}..{end_commit}")
+    sys.exit(0)
 
 
 def _get_commits(start_commit: str, end_commit: str) -> list[str]:
@@ -113,4 +116,4 @@ def _set_commit_date(commit_hash: str, new_date: datetime.datetime, branch: str)
 
 
 if __name__ == "__main__":
-    _main()
+    main()

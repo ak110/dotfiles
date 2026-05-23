@@ -220,7 +220,7 @@ def _check_plan_format(file_path: str) -> list[str]:
     return violations
 
 
-def _main() -> int:
+def main() -> int:
     """エントリポイント。exit codeは常に0。"""
     try:
         payload = json.loads(sys.stdin.read())
@@ -360,7 +360,7 @@ def _main() -> int:
 
 if __name__ == "__main__":
     try:
-        sys.exit(_main())
+        sys.exit(main())
     except Exception:  # noqa: BLE001 -- plugin が破損して編集できなくなる事故を避けるため
         traceback.print_exc()
         sys.exit(0)

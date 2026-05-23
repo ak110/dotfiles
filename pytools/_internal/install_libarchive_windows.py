@@ -42,10 +42,11 @@ _INSTALL_DIR = pathlib.Path.home() / ".local" / "lib" / "libarchive"
 _HTTP_TIMEOUT = 60.0
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> bool:
@@ -179,4 +180,4 @@ def _persist_libarchive_env_var() -> bool:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

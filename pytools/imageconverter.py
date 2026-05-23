@@ -108,7 +108,8 @@ def _truncated_images_enabled() -> typing.Iterator[None]:
         PIL.ImageFile.LOAD_TRUNCATED_IMAGES = prev
 
 
-def _main() -> None:
+def main() -> None:
+    """画像を一括変換するエントリポイント。"""
     parser = argparse.ArgumentParser(description="画像変換")
     parser.add_argument("--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?")
     parser.add_argument("--max-width", default=2048, type=int)
@@ -386,4 +387,4 @@ def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

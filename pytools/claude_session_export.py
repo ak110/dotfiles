@@ -43,7 +43,8 @@ class RenderOptions:
 # --- CLI ---
 
 
-def _main() -> None:
+def main() -> None:
+    """セッション履歴をmarkdownに変換するエントリポイント。"""
     parser = argparse.ArgumentParser(
         description="Claude Codeセッション履歴をmarkdownに変換する",
     )
@@ -106,6 +107,7 @@ def _main() -> None:
         sys.exit(1)
 
     export_sessions(paths, output_dir, options)
+    sys.exit(0)
 
 
 # --- パスエンコーディング ---
@@ -679,4 +681,4 @@ def _find_session_dir(records: list[dict]) -> pathlib.Path | None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

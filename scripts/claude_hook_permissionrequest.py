@@ -46,7 +46,7 @@ _AGENT_META_DIRS = frozenset({".claude", ".agents"})
 _AGENT_META_FILES = frozenset({"AGENTS.md"})
 
 
-def _main() -> int:
+def main() -> int:
     """エントリポイント。exit code 0 を返す。"""
     try:
         payload = json.loads(sys.stdin.read())
@@ -275,7 +275,7 @@ def _extract_path_args(args: list[str]) -> list[str]:
 
 if __name__ == "__main__":
     try:
-        sys.exit(_main())
+        sys.exit(main())
     except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
         traceback.print_exc()
         sys.exit(0)

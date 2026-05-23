@@ -69,7 +69,7 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def _main() -> int:
+def main() -> int:
     """エントリポイント。
 
     exit code契約:
@@ -953,7 +953,7 @@ def _check_bash_codex_exec(command: str) -> dict | None:
 
 if __name__ == "__main__":
     try:
-        sys.exit(_main())
+        sys.exit(main())
     except Exception:  # noqa: BLE001 -- pluginが破損して編集できなくなる事故を避けるため広範に捕捉
         # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースはstderrに出力する。
         traceback.print_exc()

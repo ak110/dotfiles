@@ -10,13 +10,15 @@ import fnmatch
 import logging
 import pathlib
 import shutil
+import sys
 
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """ディレクトリツリーを差分同期するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ディレクトリを同期する")
     parser.add_argument("src", type=pathlib.Path, help="コピー元ディレクトリ")
     parser.add_argument("dst", type=pathlib.Path, help="コピー先ディレクトリ")
@@ -29,6 +31,7 @@ def _main() -> None:
     setup_logging()
     excludes = _load_excludes(args.exclude)
     clone(args.src, args.dst, excludes=excludes, mirror=args.mirror, top_only=args.top_only, dry_run=args.dry_run)
+    sys.exit(0)
 
 
 def _load_excludes(path: pathlib.Path | None) -> list[str]:
@@ -115,4 +118,4 @@ def clone(
 
 
 if __name__ == "__main__":
-    _main()
+    main()

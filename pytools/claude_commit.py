@@ -20,7 +20,8 @@ descriptionは日本語で書く。
 """
 
 
-def _main() -> None:
+def main() -> None:
+    """claudeでコミットメッセージを生成しgit commitを実行するエントリポイント。"""
     setup_logging()
 
     parser = argparse.ArgumentParser(description="claudeでコミットメッセージを生成してgit commitを実行する。")
@@ -87,6 +88,7 @@ def _main() -> None:
     )
 
     _run_claude(prompt, git_root=git_root, model=args.model, effort=args.effort)
+    sys.exit(0)
 
 
 def _get_git_root() -> Path:
@@ -247,4 +249,4 @@ def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) 
 
 
 if __name__ == "__main__":
-    _main()
+    main()

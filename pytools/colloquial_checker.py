@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """口語的な日本語表現を検査するCLIのラッパー。
 
-agent-toolkitプラグイン同梱の`check_colloquial.py`をimportして`_main()`を呼び出す。
+agent-toolkitプラグイン同梱の`check_colloquial.py`をimportして`main()`を呼び出す。
 """
 
 from __future__ import annotations
@@ -25,7 +25,8 @@ _SCRIPT_PATH = (
 )
 
 
-def _main() -> int:
+def main() -> int:
+    """口語的な日本語表現を検査するラッパーのエントリポイント。"""
     # シェル補完（argcomplete）は pytools 側で完結させるため、check_colloquialと同形の
     # 最小parserを用意して`enable_completion`に渡す。argcompleteは`_ARGCOMPLETE`が
     # 設定された補完起動時のみ完了候補を出力して exit し、通常実行では no-op となる。
@@ -37,8 +38,8 @@ def _main() -> int:
     assert spec is not None and spec.loader is not None
     module: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return int(module._main())  # pylint: disable=protected-access
+    return int(module.main())
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    sys.exit(main())

@@ -9,6 +9,7 @@ dotfiles apply全体の失敗にはしない。
 import json
 import logging
 import shutil
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -46,10 +47,11 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
 )
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> tuple[bool, list[str]]:
@@ -537,4 +539,4 @@ def _warn_if_missing(target_versions: dict[str, str]) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

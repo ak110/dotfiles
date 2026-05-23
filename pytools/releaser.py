@@ -42,10 +42,11 @@ _ACCEPTABLE_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
 
 
 class _ReleaserError(Exception):
-    """releaserが扱う想定済みエラー。`_main()`で捕捉し`sys.exit(1)`へ集約する。"""
+    """releaserが扱う想定済みエラー。`main()`で捕捉し`sys.exit(1)`へ集約する。"""
 
 
-def _main() -> None:
+def main() -> None:
+    """GitHub Actionsのリリースワークフローを安全に起動するエントリポイント。"""
     setup_logging(fmt="%(levelname)s: %(message)s")
     parser = _build_parser()
     enable_completion(parser)
@@ -53,11 +54,12 @@ def _main() -> None:
     try:
         if args.bump is None:
             _show_unreleased(parser)
-            return
-        _run_release_flow(args.bump.upper())
+        else:
+            _run_release_flow(args.bump.upper())
     except _ReleaserError as e:
         logger.error("%s", e)
         sys.exit(1)
+    sys.exit(0)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -459,4 +461,4 @@ def _sync_local_repo() -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

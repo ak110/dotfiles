@@ -21,7 +21,8 @@ _LEGACY_RULES_DIRNAME = "agent-basics"
 _RULES_DIRNAME = "agent-toolkit"
 
 
-def _main() -> None:
+def main() -> None:
+    """Claude Code設定ファイルを配布・同期するエントリポイント。"""
     setup_logging(verbose=True)
     parser = argparse.ArgumentParser(description="Claude Code設定ファイルを配布・同期する。")
     parser.add_argument(
@@ -34,6 +35,7 @@ def _main() -> None:
     template_dir = Path.home() / "dotfiles" / "agent-toolkit" / "rules"
     target_dir = Path.cwd()
     claudize(target_dir, template_dir, clean=args.clean)
+    sys.exit(0)
 
 
 def claudize(target_dir: Path, template_dir: Path, *, clean: bool = False) -> None:
@@ -89,4 +91,4 @@ def _clean_rules_dir(rules_dir: Path) -> bool:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

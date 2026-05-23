@@ -37,7 +37,7 @@ def test_markdown_viewer_integration(
     exit_code: int,
     expected_substr: str | None,
 ) -> None:
-    """公開インターフェース`_main`経由でMarkdownレンダリング・HTML生成・ブラウザ起動を検査する。
+    """公開インターフェース`main`経由でMarkdownレンダリング・HTML生成・ブラウザ起動を検査する。
 
     `webbrowser.open`は無効化して実ブラウザの立ち上げを抑制する。
     `tempfile.tempdir`を`tmp_path`配下へ差し替えて、生成された一時HTMLがテスト終了時に
@@ -58,7 +58,7 @@ def test_markdown_viewer_integration(
 
     monkeypatch.setattr(_cli.webbrowser, "open", _fake_open)
 
-    ret = markdown_viewer._main([str(source)])
+    ret = markdown_viewer.main([str(source)])
     assert ret == exit_code
 
     if exit_code == 0:

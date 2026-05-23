@@ -25,7 +25,8 @@ _CLAUDE_ADAPTER_BODY = "# CLAUDE.md\n\n@AGENTS.md\n"
 _SKILLS_LINK_TARGET = "../.claude/skills"
 
 
-def _main() -> None:
+def main() -> None:
+    """AGENTS.md実体・CLAUDE.mdアダプター構成へ収束させるエントリポイント。"""
     setup_logging(verbose=True)
     parser = argparse.ArgumentParser(
         description=("AGENTS.md実体・CLAUDE.md=@AGENTS.mdアダプター・.agents/skillsシンボリックリンクの3点へ収束させる。")
@@ -38,6 +39,7 @@ def _main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
     _codexize(Path.cwd(), clean=args.clean)
+    sys.exit(0)
 
 
 def _codexize(target_dir: Path, *, clean: bool = False) -> None:
@@ -276,4 +278,4 @@ def _remove_symlink(link_path: Path, expected_target: str) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

@@ -1,6 +1,6 @@
 """imageconverter モジュールの単体テスト。"""
 
-# `_main` など内部実装の関数を直接呼び出すため protected-access を許可する。
+# `main` 経由でCLI挙動を検証する。内部実装の関数を直接呼び出すため protected-access を許可する。
 # pylint: disable=protected-access
 
 import io
@@ -47,7 +47,7 @@ def _make_corrupt_text_png(path: pathlib.Path) -> None:
 
 
 def _argv(*targets: str) -> list[str]:
-    """`_main()` テスト用の `sys.argv` を組み立てる。"""
+    """`main()` テスト用の `sys.argv` を組み立てる。"""
     return ["py-imageconverter", *targets]
 
 
@@ -245,7 +245,7 @@ def test_main_recursive_glob_no_duplicate_processing(tmp_path: pathlib.Path, mon
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", _argv("**/*"))
     with pytest.raises(SystemExit) as exc:
-        imageconverter._main()
+        imageconverter.main()
     assert exc.value.code == 0
     assert (sub / "a.jpg").exists()
     assert not (sub / "a.png").exists()
@@ -288,5 +288,5 @@ def test_main_exit_code(
         monkeypatch.setattr(PIL.Image.Image, "save", selective_save)
 
     with pytest.raises(SystemExit) as exc:
-        imageconverter._main()
+        imageconverter.main()
     assert exc.value.code == expected_code

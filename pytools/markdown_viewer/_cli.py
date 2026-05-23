@@ -37,12 +37,11 @@ def _output_path(source: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(tempfile.gettempdir()) / "markdown-viewer" / f"{digest}.html"
 
 
-def _main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """エントリポイント。
 
     `pyproject.toml`の`[project.scripts]`から
-    `markdown-viewer = "pytools.markdown_viewer:_main"`の形で参照されるため、
-    関数名はアンダースコア付きのまま維持する（変更すると配布物との互換が破綻する）。
+    `markdown-viewer = "pytools.markdown_viewer:main"`の形で参照される。
     """
     setup_logging()
     args = parse_args(argv)

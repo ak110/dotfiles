@@ -1,4 +1,10 @@
-"""Windows 専用のユーティリティ関数。"""
+"""Windows 専用のユーティリティ関数。
+
+Windows専用標準モジュール（winreg・msvcrt・ctypes.windll等）はLinux上の型チェッカ
+（pyright・ty・mypy）が属性アクセスを`reportAttributeAccessIssue`等として誤検出するため、
+`importlib.import_module()`経由で`typing.Any`型として取り扱う方針とする。
+実行はWindows限定のため、`Any`型で動的アクセスして型解析を回避する。
+"""
 
 import logging
 import typing
@@ -7,15 +13,17 @@ logger = logging.getLogger(__name__)
 
 
 def import_winreg() -> typing.Any:
-    """winregモジュールをAny型で読み込む。
-
-    winregはWindows専用の標準モジュールで、Linux上でpyrightを実行すると
-    全属性アクセスが `reportAttributeAccessIssue` として検出される。
-    実行はWindows限定のため、`Any` 経由でアクセスする。
-    """
+    """winregモジュールをAny型で読み込む。詳細はモジュールdocstring参照。"""
     import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     return importlib.import_module("winreg")
+
+
+def import_msvcrt() -> typing.Any:
+    """msvcrtモジュールをAny型で読み込む。詳細はモジュールdocstring参照。"""
+    import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    return importlib.import_module("msvcrt")
 
 
 def read_user_env_var(name: str) -> tuple[str | None, int]:
@@ -61,10 +69,7 @@ def write_user_env_var(name: str, value: str, reg_type: int) -> None:
 def broadcast_environment_change() -> None:
     """Explorer等に環境変数変更を通知する（`WM_SETTINGCHANGE` / `Environment`）。
 
-    `ctypes.windll` はWindows専用で、Linux上でpyright/tyなどの型チェッカをかけると
-    `ctypes has no member windll` と誤検出される。getattr経由で取得して型チェック対象から外す
-    （実行はWindowsのみ）。
-
+    `ctypes.windll`はWindows専用属性のためモジュールdocstringの方針に従いgetattrで取得する。
     通知失敗は致命的でないため、例外は吸収してログ出力に留める。
     """
     try:

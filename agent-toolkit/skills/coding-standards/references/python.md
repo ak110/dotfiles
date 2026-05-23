@@ -97,6 +97,18 @@
         sys.exit(exit_code)
     ```
 
+    `-> int`を返して呼び出し側で`sys.exit(main())`に渡す形も同等の推奨形とする。
+    成功パスを含めて`sys.exit`が常時呼ばれる構造であれば、いずれの形式も許容する。
+
+    ```python
+    def main() -> int:
+        has_error = run_process()
+        return 1 if has_error else 0
+
+    if __name__ == "__main__":
+        sys.exit(main())
+    ```
+
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで
   `appauthor=False`を明示する（`appname`単独指定は不可）

@@ -97,7 +97,8 @@ def _block(reason: str) -> None:
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
 
 
-def _main() -> int:
+def main() -> int:
+    """Stop hookでセッション終了時通知を出力するエントリポイント。"""
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
@@ -190,7 +191,7 @@ def _main() -> int:
 
 if __name__ == "__main__":
     try:
-        sys.exit(_main())
+        sys.exit(main())
     except Exception:  # noqa: BLE001
         traceback.print_exc()
         _approve()

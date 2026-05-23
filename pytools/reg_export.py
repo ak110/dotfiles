@@ -22,7 +22,8 @@ _HIVES = {
 }
 
 
-def _main() -> None:
+def main() -> None:
+    """Windowsレジストリキーを.reg形式でエクスポートするエントリポイント。"""
     if sys.platform != "win32":
         print("reg-export は Windows 専用です", file=sys.stderr)
         sys.exit(1)
@@ -36,6 +37,7 @@ def _main() -> None:
         sys.stdout.write(text)
     else:
         args.output.write_text(text, encoding="utf-16")
+    sys.exit(0)
 
 
 def export_key(key_path: str) -> str:
@@ -88,4 +90,4 @@ def _format_value(value, vtype: int, winreg_mod) -> str:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

@@ -10,13 +10,15 @@ import hashlib
 import io
 import logging
 import pathlib
+import sys
 
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """ファイルをMD5ハッシュ名へリネームするエントリポイント。"""
     parser = argparse.ArgumentParser(description="ファイルを MD5 ハッシュ名へリネームする")
     parser.add_argument("-r", "--recursive", action="store_true")
     parser.add_argument("-f", "--log-file", type=pathlib.Path, help="リネームログの追記先")
@@ -38,6 +40,7 @@ def _main() -> None:
     finally:
         if log_fp is not None:
             log_fp.close()
+    sys.exit(0)
 
 
 def rename_to_hash(
@@ -85,4 +88,4 @@ def _md5_of_file(path: pathlib.Path) -> str:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

@@ -136,7 +136,8 @@ class _CompiledRules:
         return False
 
 
-def _main() -> None:
+def main() -> None:
+    """アーカイブをgv向けに前処理して無圧縮ZIPへ再パックするエントリポイント。"""
     parser = argparse.ArgumentParser(description="アーカイブを gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
     parser.add_argument(
@@ -193,6 +194,7 @@ def _main() -> None:
             logger.warning("  %s :: %s: %s", tp, ep, err)
     if failed_targets or error_entries:
         sys.exit(1)
+    sys.exit(0)
 
 
 def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Path]) -> pathlib.Path | None:
@@ -689,4 +691,4 @@ def _write_uncompressed_zip(work_dir: pathlib.Path, zip_path: pathlib.Path) -> N
 
 
 if __name__ == "__main__":
-    _main()
+    main()

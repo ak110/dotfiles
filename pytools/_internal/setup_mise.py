@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -34,10 +35,11 @@ def _is_windows() -> bool:
     return os.name == "nt"
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> bool:
@@ -257,4 +259,4 @@ def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[st
 
 
 if __name__ == "__main__":
-    _main()
+    main()

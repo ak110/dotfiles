@@ -28,34 +28,34 @@ dependencies = [
 ]
 
 [project.scripts]
-check-image-sizes = "pytools.check_image_sizes:_main"
-ccommit = "pytools.claude_commit:_main"
-claude-plans-viewer = "pytools.claude_plans_viewer:_main"
-claude-session-export = "pytools.claude_session_export:_main"
-claudize = "pytools.claudize:_main"
-clonedir = "pytools.clonedir:_main"
-codexize = "pytools.codexize:_main"
-colloquial-checker = "pytools.colloquial_checker:_main"
-dateRelocator = "pytools.date_relocator:_main"
-deletehomonym = "pytools.delete_homonym:_main"
-dirsize = "pytools.dirsize:_main"
-dotfiles-post-apply = "pytools.post_apply:_main"
-git-justify = "pytools.git_justify:_main"
-markdown-viewer = "pytools.markdown_viewer:_main"
-mvdir = "pytools.mvdir:_main"
-psgrep = "pytools.psgrep:_main"
-py-imageconverter = "pytools.imageconverter:_main"
-py-pdf-to-image = "pytools.pdf_to_image:_main"
-py-rename = "pytools.rename:_main"
-py-rmdirs = "pytools.rmdirs:_main"
-randfile = "pytools.randfile:_main"
-regExport = "pytools.reg_export:_main"
-releaser = "pytools.releaser:_main"
-rename2hash = "pytools.rename2hash:_main"
-repack-archive = "pytools.repack_archive:_main"
-runAsAdmin = "pytools.run_as_admin:_main"
-touch-file = "pytools.touch_file:_main"
-update-ssh-config = "pytools.update_ssh_config:_main"
+check-image-sizes = "pytools.check_image_sizes:main"
+ccommit = "pytools.claude_commit:main"
+claude-plans-viewer = "pytools.claude_plans_viewer:main"
+claude-session-export = "pytools.claude_session_export:main"
+claudize = "pytools.claudize:main"
+clonedir = "pytools.clonedir:main"
+codexize = "pytools.codexize:main"
+colloquial-checker = "pytools.colloquial_checker:main"
+dateRelocator = "pytools.date_relocator:main"
+deletehomonym = "pytools.delete_homonym:main"
+dirsize = "pytools.dirsize:main"
+dotfiles-post-apply = "pytools.post_apply:main"
+git-justify = "pytools.git_justify:main"
+markdown-viewer = "pytools.markdown_viewer:main"
+mvdir = "pytools.mvdir:main"
+psgrep = "pytools.psgrep:main"
+py-imageconverter = "pytools.imageconverter:main"
+py-pdf-to-image = "pytools.pdf_to_image:main"
+py-rename = "pytools.rename:main"
+py-rmdirs = "pytools.rmdirs:main"
+randfile = "pytools.randfile:main"
+regExport = "pytools.reg_export:main"
+releaser = "pytools.releaser:main"
+rename2hash = "pytools.rename2hash:main"
+repack-archive = "pytools.repack_archive:main"
+runAsAdmin = "pytools.run_as_admin:main"
+touch-file = "pytools.touch_file:main"
+update-ssh-config = "pytools.update_ssh_config:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -112,7 +112,9 @@ disable = [
     "line-too-long",
     "logging-fstring-interpolation",
     "logging-not-lazy",
+    "missing-class-docstring",
     "missing-function-docstring",
+    "missing-module-docstring",
     "no-else-return",
     "too-few-public-methods",
     "too-many-arguments",

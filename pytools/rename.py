@@ -10,6 +10,7 @@ import dataclasses
 import logging
 import pathlib
 import re
+import sys
 import typing
 
 from pytools._internal.cli import enable_completion, setup_logging
@@ -36,7 +37,8 @@ class RenameRule:
         return is_dir
 
 
-def _main() -> None:
+def main() -> None:
+    """正規表現でファイル・ディレクトリをリネームするエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("-d", "--dry-run", action="store_true")
@@ -84,7 +86,7 @@ def _main() -> None:
             overwrite=args.overwrite,
             dry_run=args.dry_run,
         )
-        return
+        sys.exit(0)
 
     if not args.pattern or args.replacement is None:
         parser.error("pattern と replacement を指定するか、-f でパターンファイルを指定してください")
@@ -121,6 +123,7 @@ def _main() -> None:
                 src_path.rename(dst_path)
         except OSError as e:
             print(f"{src_path}: rename failed ({e})")
+    sys.exit(0)
 
 
 def load_pattern_file(path: pathlib.Path, *, ignore_case: bool = False) -> list[RenameRule]:
@@ -251,4 +254,4 @@ def rename_tree(
 
 
 if __name__ == "__main__":
-    _main()
+    main()

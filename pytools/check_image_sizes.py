@@ -4,6 +4,7 @@
 import argparse
 import logging
 import pathlib
+import sys
 
 import numpy as np
 import tqdm
@@ -15,13 +16,15 @@ from pytools.imageconverter import open_image_with_exif
 logger = logging.getLogger(__name__)
 
 
-def _main():
+def main() -> None:
+    """フォルダ内画像ファイルのサイズ分布を調べるエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("target_dir", type=pathlib.Path)
     enable_completion(parser)
     args = parser.parse_args()
     setup_logging(verbose=True)
     _do_dir(args.target_dir)
+    sys.exit(0)
 
 
 def _do_dir(target_dir: pathlib.Path) -> None:
@@ -49,4 +52,4 @@ def _do_dir(target_dir: pathlib.Path) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

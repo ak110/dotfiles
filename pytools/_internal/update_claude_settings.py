@@ -45,10 +45,11 @@ _MAX_INLINE_DIFF = 3
 _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> bool:
@@ -248,4 +249,4 @@ def _union_list(existing: list, managed: list) -> list:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

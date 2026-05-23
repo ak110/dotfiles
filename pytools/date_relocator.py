@@ -9,13 +9,15 @@ import argparse
 import datetime
 import logging
 import pathlib
+import sys
 
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """ファイルを更新日時に基づいてディレクトリへ再配置するエントリポイント。"""
     parser = argparse.ArgumentParser(description="更新日時に応じてファイルを再配置する")
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
@@ -27,6 +29,7 @@ def _main() -> None:
             logger.warning("%s はディレクトリではありません", target)
             continue
         relocate(target, dry_run=args.dry_run)
+    sys.exit(0)
 
 
 def relocate(target: pathlib.Path, *, dry_run: bool = False) -> None:
@@ -48,4 +51,4 @@ def relocate(target: pathlib.Path, *, dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

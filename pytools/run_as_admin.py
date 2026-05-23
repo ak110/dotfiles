@@ -11,7 +11,8 @@ import sys
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """コマンドを管理者権限で起動するエントリポイント。"""
     if sys.platform != "win32":
         print("run-as-admin は Windows 専用です", file=sys.stderr)
         sys.exit(1)
@@ -22,6 +23,7 @@ def _main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     run_elevated(args.command, args.args, wait=args.wait)
+    sys.exit(0)
 
 
 def run_elevated(command: str, args: list[str], *, wait: bool = False) -> None:
@@ -40,4 +42,4 @@ def run_elevated(command: str, args: list[str], *, wait: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

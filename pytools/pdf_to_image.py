@@ -3,6 +3,7 @@
 
 import argparse
 import pathlib
+import sys
 
 import tqdm.contrib
 from pdf2image import convert_from_path
@@ -10,7 +11,8 @@ from pdf2image import convert_from_path
 from pytools._internal.cli import enable_completion
 
 
-def _main():
+def main() -> None:
+    """PDFを画像に変換するエントリポイント。"""
     parser = argparse.ArgumentParser(description="PDFを画像に変換する")
     parser.add_argument("pdf_files", nargs="+", type=pathlib.Path, help="変換するPDFファイル")
     parser.add_argument("--format", default="png", choices=("png", "jpeg"), help="出力フォーマット")
@@ -18,6 +20,7 @@ def _main():
     args = parser.parse_args()
     for pdf_path in args.pdf_files:
         _convert(pdf_path, args.format)
+    sys.exit(0)
 
 
 def _convert(pdf_path: pathlib.Path, fmt: str) -> None:
@@ -31,4 +34,4 @@ def _convert(pdf_path: pathlib.Path, fmt: str) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

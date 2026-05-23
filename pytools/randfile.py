@@ -10,6 +10,7 @@ import argparse
 import logging
 import pathlib
 import secrets
+import sys
 
 import tqdm
 
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 _CHUNK = 1 << 20  # 1 MiB
 
 
-def _main() -> None:
+def main() -> None:
+    """ランダムバイト列のファイルを生成するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ランダムバイトのファイルを生成する")
     parser.add_argument("filename", nargs="?", type=pathlib.Path, default=pathlib.Path("randfile.dat"))
     parser.add_argument("size", nargs="?", type=int, default=1024, help="生成サイズ (バイト)")
@@ -28,6 +30,7 @@ def _main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
     create(args.filename, args.size, force=args.force)
+    sys.exit(0)
 
 
 def create(path: pathlib.Path, size: int, *, force: bool = False) -> None:
@@ -44,4 +47,4 @@ def create(path: pathlib.Path, size: int, *, force: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

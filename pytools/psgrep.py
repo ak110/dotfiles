@@ -17,7 +17,8 @@ from pytools._internal.cli import enable_completion, setup_logging
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """実行中プロセスのパスを検索するエントリポイント。"""
     parser = argparse.ArgumentParser(description="プロセスの実行ファイルパスを検索する")
     parser.add_argument("pattern", type=str, help="検索パターン")
     parser.add_argument("--regex", action="store_true", help="正規表現マッチ (既定は部分一致/ワイルドカード)")
@@ -55,4 +56,4 @@ def grep(pattern: str, *, regex: bool = False, ignore_case: bool = False) -> lis
 
 
 if __name__ == "__main__":
-    _main()
+    main()

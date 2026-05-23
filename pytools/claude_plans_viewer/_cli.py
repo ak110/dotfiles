@@ -184,12 +184,11 @@ async def watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
         shutdown_event.set()
 
 
-def _main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """エントリポイント。
 
     `pyproject.toml`の`[project.scripts]`から
-    `claude-plans-viewer = "pytools.claude_plans_viewer:_main"`の形で参照されるため、
-    関数名はアンダースコア付きのまま維持する（変更すると配布物との互換が破綻する）。
+    `claude-plans-viewer = "pytools.claude_plans_viewer:main"`の形で参照される。
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # hypercornは`hypercorn.error`に独自フォーマット付きハンドラーを設定するが、

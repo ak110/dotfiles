@@ -4,13 +4,15 @@
 import argparse
 import logging
 import pathlib
+import sys
 
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """ディレクトリをマージするエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("src_dir", type=pathlib.Path)
     parser.add_argument("dest_dir", type=pathlib.Path)
@@ -18,6 +20,7 @@ def _main() -> None:
     args = parser.parse_args()
     setup_logging(verbose=True)
     _move_dir(args.src_dir, args.dest_dir)
+    sys.exit(0)
 
 
 def _move_dir(src_dir, dest_dir):
@@ -35,4 +38,4 @@ def _move_dir(src_dir, dest_dir):
 
 
 if __name__ == "__main__":
-    _main()
+    main()

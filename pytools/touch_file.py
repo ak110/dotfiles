@@ -11,14 +11,15 @@ import logging
 import os
 import pathlib
 import sys
-import typing
 
+from pytools._internal import winutils
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
 
 
-def _main() -> None:
+def main() -> None:
+    """ファイル・ディレクトリの更新日時を変更するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ファイル・ディレクトリの更新日時を変更する。")
     parser.add_argument("targets", nargs="+", type=pathlib.Path, help="対象ファイルまたはディレクトリ")
     parser.add_argument(
@@ -54,6 +55,7 @@ def _main() -> None:
     # 結果を確認できるようキー入力待ちで停止する (C# 版踏襲)。
     if interactive and sys.platform == "win32":
         _wait_keypress()
+    sys.exit(0)
 
 
 def _print_targets(targets: list[pathlib.Path]) -> None:
@@ -95,15 +97,9 @@ def touch_path(path: pathlib.Path, time: datetime.datetime) -> None:
 
 
 def _wait_keypress() -> None:
-    """Windows でキー入力待ちを行う。msvcrt 未導入環境では no-op。
-
-    `msvcrt` は Windows 専用の標準モジュールで、Linux 上の型チェッカが属性アクセスを
-    `reportAttributeAccessIssue` 等として誤検出するため、`importlib` 経由で `Any` 型として扱う。
-    """
-    import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
+    """Windows でキー入力待ちを行う。msvcrt 未導入環境では no-op。"""
     try:
-        msvcrt: typing.Any = importlib.import_module("msvcrt")
+        msvcrt = winutils.import_msvcrt()
     except ImportError:
         return
     print("終了するには何かキーを押してください . . .")
@@ -111,4 +107,4 @@ def _wait_keypress() -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

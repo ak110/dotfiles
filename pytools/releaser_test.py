@@ -11,9 +11,9 @@ import yaml
 
 from pytools.releaser import (
     _build_parser,
-    _main,
     _ReleaserError,
     _validate_release_workflow_dict,
+    main,
 )
 
 
@@ -99,11 +99,11 @@ class TestParser:
 
 
 class TestMainSmoke:
-    """_main()のsmokeテスト。"""
+    """main()のsmokeテスト。"""
 
     def test_help(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch.object(sys, "argv", ["releaser", "--help"]), pytest.raises(SystemExit) as exc_info:
-            _main()
+            main()
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "release.yaml" in captured.out
@@ -119,8 +119,9 @@ class TestMainSmoke:
         _make_commit(tmp_path, "first")
         subprocess.run(["git", "-C", str(tmp_path), "tag", "v0.1.0"], check=True)
         _make_commit(tmp_path, "second")
-        with patch.object(sys, "argv", ["releaser"]):
-            _main()
+        with patch.object(sys, "argv", ["releaser"]), pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "v0.1.0" in captured.out
         assert "second" in captured.out
@@ -134,8 +135,9 @@ class TestMainSmoke:
         _setup_git_repo(tmp_path)
         monkeypatch.chdir(tmp_path)
         _make_commit(tmp_path, "init")
-        with patch.object(sys, "argv", ["releaser"]):
-            _main()
+        with patch.object(sys, "argv", ["releaser"]), pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "見つかりません" in captured.out
 

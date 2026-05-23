@@ -6,6 +6,7 @@
 
 import logging
 import re
+import sys
 from pathlib import Path
 
 from pytools._internal import log_format
@@ -19,10 +20,11 @@ _LINE = f"{_KEY}={_VALUE}"
 _PATTERN = re.compile(rf"^{re.escape(_KEY)}=.*$", re.MULTILINE)
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run(npmrc_path: Path | None = None) -> bool:
@@ -59,4 +61,4 @@ def run(npmrc_path: Path | None = None) -> bool:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

@@ -48,7 +48,8 @@ _EXCLUDED_DIRS = frozenset(
 )
 
 
-def _main() -> int:
+def main() -> int:
+    """Markdownの1行表示幅を半角換算で検査するエントリポイント。"""
     parser = argparse.ArgumentParser(
         description="Markdownの1行表示幅（半角換算）を検査する。",
     )
@@ -113,8 +114,11 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
 
 
 def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
-    """1ファイルを検査して違反行のメッセージ一覧を返す。"""
-    text = path.read_text(encoding="utf-8")
+    """1ファイルを検査して違反行のメッセージ一覧を返す。読み込み失敗時は空リストを返す。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
     in_fence = False
     fence_marker = ""
     violations: list[str] = []
@@ -176,4 +180,4 @@ def _char_width(c: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    sys.exit(main())

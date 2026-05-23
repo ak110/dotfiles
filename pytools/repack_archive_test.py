@@ -819,7 +819,7 @@ class TestMainFailureSummary:
         monkeypatch.setattr("sys.argv", ["repack-archive", "--no-trash", str(good), str(bad)])
         caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
         with pytest.raises(SystemExit) as exc_info:
-            repack_archive._main()
+            repack_archive.main()
         assert exc_info.value.code == 1
 
         # 良い target は出力 ZIP が残り、失敗 target はサマリーに列挙される

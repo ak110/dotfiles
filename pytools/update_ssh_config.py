@@ -8,6 +8,7 @@
 import logging
 import re
 import shutil
+import sys
 from pathlib import Path
 
 from pytools._internal import claude_common, log_format
@@ -20,9 +21,11 @@ logger = logging.getLogger(__name__)
 _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})")
 
 
-def _main() -> None:
+def main() -> None:
+    """SSHのconfigとauthorized_keysを生成・更新するエントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> bool:
@@ -128,4 +131,4 @@ def _ensure_trailing_newline(text: str) -> str:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

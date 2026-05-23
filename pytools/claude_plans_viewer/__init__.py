@@ -17,4 +17,4 @@ watchdogで監視して左ペインへ統合表示する。
 """
 
 from pytools.claude_plans_viewer._app import create_app  # noqa: F401  (再export)
-from pytools.claude_plans_viewer._cli import _main  # noqa: F401  (entry-point再export)
+from pytools.claude_plans_viewer._cli import main  # noqa: F401  (entry-point再export)

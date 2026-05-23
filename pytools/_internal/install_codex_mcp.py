@@ -8,6 +8,7 @@
 import json
 import logging
 import shutil
+import sys
 
 from pytools._internal import claude_common, log_format
 from pytools._internal.cli import setup_logging
@@ -22,10 +23,11 @@ _CODEX_ARGS = ("mcp-server",)
 _CLAUDE_CONFIG_PATH = claude_common.CLAUDE_CONFIG_PATH
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run() -> bool:
@@ -94,4 +96,4 @@ def _is_codex_registered() -> bool:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

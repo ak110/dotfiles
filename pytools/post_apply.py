@@ -175,7 +175,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
 ]
 
 
-def _main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
+def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
     """エントリポイント。"""
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     logging.basicConfig(format="  %(message)s", level="INFO")
@@ -190,6 +190,7 @@ def _main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = Non
     if failed:
         logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
         sys.exit(1)
+    sys.exit(0)
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:
@@ -247,4 +248,4 @@ def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tupl
 
 
 if __name__ == "__main__":
-    _main()
+    main()

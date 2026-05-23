@@ -115,22 +115,23 @@ class TestRun:
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
     def test_main_exits_1_on_failure(self):
-        """失敗があれば _main() は SystemExit(1) で終了する。"""
+        """失敗があれば main() は SystemExit(1) で終了する。"""
         fake_results = [
             post_apply._StepResult(name="ok", ok=True, changed=False),
             post_apply._StepResult(name="broken", ok=False, changed=False),
         ]
         with pytest.raises(SystemExit) as exc_info:
-            post_apply._main(runner=lambda: (fake_results, []))
+            post_apply.main(runner=lambda: (fake_results, []))
         assert exc_info.value.code == 1
 
     def test_main_exits_0_on_success(self):
-        """全て成功なら _main() は正常終了 (SystemExit を送出しない)。"""
+        """全て成功なら main() は SystemExit(0) で正常終了する。"""
         fake_results = [
             post_apply._StepResult(name="ok", ok=True, changed=False),
         ]
-        # SystemExit が出ないことを確認
-        post_apply._main(runner=lambda: (fake_results, []))  # pylint: disable=protected-access
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: (fake_results, []))
+        assert exc_info.value.code == 0
 
 
 class TestPluginRecommendations:
@@ -144,8 +145,8 @@ class TestPluginRecommendations:
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = ["claude plugin install a --scope=user"]
-        with caplog.at_level("INFO", logger=post_apply.logger.name):
-            post_apply._main(runner=lambda: (fake_results, fake_recommendations))
+        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
@@ -168,8 +169,8 @@ class TestPluginRecommendations:
             "claude plugin install b --scope=user",
             "claude plugin disable c --scope=user",
         ]
-        with caplog.at_level("INFO", logger=post_apply.logger.name):
-            post_apply._main(runner=lambda: (fake_results, fake_recommendations))
+        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
@@ -192,8 +193,8 @@ class TestPluginRecommendations:
             "claude plugin install a --scope=user",
             "claude plugin disable b --scope=user",
         ]
-        with caplog.at_level("INFO", logger=post_apply.logger.name):
-            post_apply._main(runner=lambda: (fake_results, fake_recommendations))
+        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
         stdout_lines = capsys.readouterr().out.splitlines()
         assert "claude plugin install a --scope=user && ^" in stdout_lines
         assert "claude plugin disable b --scope=user" in stdout_lines
@@ -207,8 +208,8 @@ class TestPluginRecommendations:
     ):
         """推奨コマンドが空なら案内を出力しない。"""
         fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
-        with caplog.at_level("INFO", logger=post_apply.logger.name):
-            post_apply._main(runner=lambda: (fake_results, []))
+        with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: (fake_results, []))
         messages = [record.getMessage() for record in caplog.records]
         assert not any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()

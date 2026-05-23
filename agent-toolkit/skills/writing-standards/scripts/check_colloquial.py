@@ -68,7 +68,8 @@ _EXCLUDED_FILES = frozenset(
 )
 
 
-def _main() -> int:
+def main() -> int:
+    """口語的な日本語表現の混入を検査するエントリポイント。"""
     parser = argparse.ArgumentParser(
         description="口語的な日本語表現の混入を検査する。",
     )
@@ -158,4 +159,4 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    sys.exit(main())

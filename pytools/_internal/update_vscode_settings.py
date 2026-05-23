@@ -14,6 +14,7 @@ import logging
 import os
 import platform
 import socket
+import sys
 from pathlib import Path
 
 import pytilpack.jsonc
@@ -40,10 +41,11 @@ _MARKDOWN_STYLE_URL = "https://cdn.jsdelivr.net/gh/ak110/dotfiles@master/share/v
 _LEGACY_KEYS_FOR_MACHINE_SCOPE: tuple[str, ...] = ("markdown.styles",)
 
 
-def _main() -> None:
+def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
     setup_logging()
     run()
+    sys.exit(0)
 
 
 def run(
@@ -204,4 +206,4 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
 
 
 if __name__ == "__main__":
-    _main()
+    main()

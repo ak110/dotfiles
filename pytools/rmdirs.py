@@ -5,11 +5,13 @@ import argparse
 import pathlib
 import re
 import shutil
+import sys
 
 from pytools._internal.cli import enable_completion
 
 
-def _main() -> None:
+def main() -> None:
+    """正規表現でディレクトリを削除するエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("-d", "--dry-run", action="store_true")
@@ -42,6 +44,7 @@ def _main() -> None:
                 shutil.rmtree(path)
         except Exception as e:
             print(f"{path}: rmtree failed ({e})")
+    sys.exit(0)
 
 
 def _match(regex_list: list[re.Pattern], value: str) -> bool:
@@ -49,4 +52,4 @@ def _match(regex_list: list[re.Pattern], value: str) -> bool:
 
 
 if __name__ == "__main__":
-    _main()
+    main()

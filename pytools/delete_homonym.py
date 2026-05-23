@@ -12,6 +12,7 @@ import io
 import logging
 import pathlib
 import re
+import sys
 
 from pytools._internal.cli import enable_completion, setup_logging
 
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 _HASH_RE = re.compile(r"^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
-def _main() -> None:
+def main() -> None:
+    """同名ファイルを検出して重複を削除するエントリポイント。"""
     parser = argparse.ArgumentParser(description="同名ファイルの重複を削除する")
     parser.add_argument("-r", "--recursive", action="store_true")
     parser.add_argument("-n", "--no-hash-only", action="store_true", help="ハッシュ名以外も対象にする")
@@ -44,6 +46,7 @@ def _main() -> None:
     finally:
         if log_fp is not None:
             log_fp.close()
+    sys.exit(0)
 
 
 def delete_homonym(
@@ -101,4 +104,4 @@ def _delete(
 
 
 if __name__ == "__main__":
-    _main()
+    main()
