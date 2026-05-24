@@ -29,31 +29,39 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _make_mixed(non_ascii_count: int, ascii_count: int) -> str:
-    """指定数の非ASCII文字（ひらがな）とASCII文字（英字）を結合した文字列を返す。"""
-    return "あ" * non_ascii_count + "A" * ascii_count
+def _make_mixed(japanese_count: int, english_word_count: int) -> str:
+    """指定数の日本語文字（ひらがな）とスペース区切りの英単語を結合した文字列を返す。
+
+    語数比が japanese_count / (japanese_count + english_word_count) となる文字列を生成する。
+    英単語は連続英字列1つを1語として数えるため、スペースで区切って独立させる。
+    """
+    japanese = "あ" * japanese_count
+    words = " ".join(["word"] * english_word_count)
+    if japanese and words:
+        return japanese + " " + words
+    return japanese or words
 
 
 class TestRatioBoundary:
-    """非ASCII文字比率の境界値テスト。比率 = 非ASCII文字数 / プレーンテキスト全体文字数。"""
+    """語数比の境界値テスト。比率 = 日本語文字数 / (日本語文字数 + 英単語数)。"""
 
     @pytest.mark.parametrize(
-        ("non_ascii_count", "ascii_count", "expect_warn"),
+        ("japanese_count", "english_word_count", "expect_warn"),
         [
-            # ratio=0.00: ASCIIのみ → 警告
-            (0, 50, True),
-            # ratio=0.08 (<0.10): 警告
-            (4, 46, True),
-            # ratio=0.10 ちょうど: 警告なし
-            (5, 45, False),
-            # ratio=0.12 (>0.10): 警告なし
-            (6, 44, False),
-            # ratio=1.00: 非ASCIIのみ → 警告なし
+            # ratio=0.00: 英単語のみ → 警告
+            (0, 20, True),
+            # ratio=0.2857 (<0.30): 警告
+            (14, 35, True),
+            # ratio=0.30 ちょうど: 警告なし
+            (15, 35, False),
+            # ratio=0.40 (>0.30): 警告なし
+            (20, 30, False),
+            # ratio=1.00: 日本語のみ → 警告なし
             (50, 0, False),
         ],
     )
-    def test_ratio(self, tmp_path: pathlib.Path, non_ascii_count: int, ascii_count: int, expect_warn: bool):
-        text = _make_mixed(non_ascii_count, ascii_count)
+    def test_ratio(self, tmp_path: pathlib.Path, japanese_count: int, english_word_count: int, expect_warn: bool):
+        text = _make_mixed(japanese_count, english_word_count)
         path = _write_transcript(tmp_path, [_text_block(text)])
         result = check(path)
         assert (result is not None) is expect_warn
@@ -67,9 +75,9 @@ class TestPlainTextLengthBoundary:
         [
             # 49文字（下限未満）: 検査スキップ → None
             (49, False),
-            # 50文字（下限）: 検査実行 → ASCIIのみで警告
+            # 50文字（下限）: 検査実行 → 英単語のみ（語数比0.0）で警告
             (50, True),
-            # 51文字（下限超過）: 検査実行 → ASCIIのみで警告
+            # 51文字（下限超過）: 検査実行 → 英単語のみ（語数比0.0）で警告
             (51, True),
         ],
     )
@@ -105,13 +113,34 @@ class TestMasking:
         path = _write_transcript(tmp_path, [_text_block(text)])
         assert check(path) is None
 
+    def test_bare_english_identifiers_do_not_trigger(self, tmp_path: pathlib.Path):
+        """裸の英識別子が多数並んでも、語数比で日本語が優勢なら誤発火しない。
+
+        各識別子は連続英字列1語として数えるため、文字数では英字が嵩んでも
+        語数比では日本語が分子を占める。文字数比方式での誤発火を解消する回帰ケース。
+        """
+        text = (
+            "クラス構成を順に確認する。"
+            " ResponseLanguageChecker TranscriptReader PreToolUseHandler"
+            " PostToolUseHandler SessionStateManager JapaneseRatioCalculator"
+            " EnglishWordTokenizer MaskedPlainTextExtractor NonAsciiCharacterMatcher."
+        )
+        path = _write_transcript(tmp_path, [_text_block(text)])
+        assert check(path) is None
+
 
 class TestSpecialInputs:
-    """空応答・サブエージェントのみ・transcript不在等の異常系。"""
+    """空応答・サブエージェントのみ・記号のみ・transcript不在等の異常系。"""
 
     def test_empty_response(self, tmp_path: pathlib.Path):
         """テキストブロックが空でも例外を送出せずにNoneを返す。"""
         path = _write_transcript(tmp_path, [])
+        assert check(path) is None
+
+    def test_symbols_only(self, tmp_path: pathlib.Path):
+        """日本語も英単語も無い記号・数字列は分母ゼロのため判定対象外としてNoneを返す。"""
+        text = "12345 67890 !@#$% ^&*() 13579 24680 +++++ ===== ///// ..... ----- &&&&&"
+        path = _write_transcript(tmp_path, [_text_block(text)])
         assert check(path) is None
 
     def test_sidechain_only(self, tmp_path: pathlib.Path):
