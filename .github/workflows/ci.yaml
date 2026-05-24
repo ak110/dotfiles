@@ -111,6 +111,10 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: safe.directory の設定
+        # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
+        # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: GitHub Actions のピン留め検証
         run: pinact run --check
