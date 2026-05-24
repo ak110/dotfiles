@@ -46,6 +46,10 @@
   本リポジトリでは対象外。
   `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く
+  - 単一ファイル（`<name>.py`）のほか、サブパッケージ（`<name>/`配下に実装を分割）形態も取る
+  - サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートする
+  - `project.scripts`はパッケージ名の`main`（再エクスポート先）を参照する
+  - リネーム・再配置時はサブパッケージ配下も対象に含める
 - privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
 - エージェント・hook・自動化など手で起動しないスクリプトは`scripts/`配下へ置く
  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）

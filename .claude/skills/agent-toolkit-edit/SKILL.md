@@ -143,7 +143,8 @@ flowchart TB
 ### plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査しない。
-種別（PATCH／MINOR／MAJOR）のみ`### エージェント判断`へ記述し、
+種別（PATCH／MINOR／MAJOR）のみ`### エージェント判断`へ記述し、具体的なversion数値（`1.1.0→1.2.0`等）は書かない。
+実装時に既存の未プッシュbumpへ統合されると計画文面の数値が実体と乖離するためである。
 実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する。
 ツール側で既存bumpとの統合を吸収するため、計画フェーズで`git log`を確認する必要はない。
 

@@ -46,6 +46,10 @@
   - 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
     別ルールで重複指摘するため、両方併記が必要。
     `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で書く
+  - `sorted(iterable, key=str)`で`Path`等をソートすると型検査器tyが要素型を誤推論し型エラーを報告する
+    - 検出例は`invalid-assignment`・`unresolved-attribute`
+    - `key=lambda x: str(x)`はpylintの`unnecessary-lambda`（W0108）を招き両立しない
+    - 内包表記でリスト化してから`list.sort(key=str)`を使い、`sorted`の戻り値型推論を回避する
 - Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を記述できる
  （フォーマッターが自動整形する場合あり）
 - 入力バリデーション: API境界や外部入力は`pydantic` v2で型駆動バリデーションする
@@ -108,6 +112,9 @@
     if __name__ == "__main__":
         sys.exit(main())
     ```
+
+  - `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
+    - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
 
 - `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
   `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで
