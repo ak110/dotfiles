@@ -207,4 +207,4 @@ PostToolUseフックの構造検査で構造違反として警告される。
 
 `ExitPlanMode`でユーザーに計画ファイルを提示し、承認を得てから実行に進む。
 ExitPlanMode前に記述漏れがないか最終確認し、メインが`agent-toolkit:plan-impl`を呼び出して計画ファイルへ引き継ぐ。
-レビュー実施有無は計画ファイルの`レビュー方式`項目で分岐し、`agent-toolkit:plan-impl`側で処理される。
+レビュー実施有無は計画ファイルの`## 実行方法`のレビューステップで分岐し、`agent-toolkit:plan-impl`側で処理される。

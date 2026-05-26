@@ -66,8 +66,8 @@ description: >
 `agent-toolkit:spec-driven`が有効な場合は同スキルの誘導に従い、無効な場合は`agent-toolkit:plan-mode`から始める。
 `agent-toolkit:plan-mode`が作成した計画ファイルは`ExitPlanMode`を合意ゲートとして通過し、
 `agent-toolkit:plan-impl`スキルへ引き継ぐ。
-計画ファイルの`レビュー方式`項目に`レビュー無し`が含まれている場合はレビュー工程をスキップし、
-それ以外は項目記載のスキル・エージェントへ引き継いでレビューを実施する（既定は`agent-toolkit:careful-review`スキル）。
+計画ファイルの`## 実行方法`のレビューステップに「レビューは実施しない」と記載されている場合はレビュー工程をスキップする。
+それ以外は記載のスキル・エージェントへ引き継いでレビューを実施する（既定は`agent-toolkit:careful-review`スキル）。
 引き継ぎ時にコンテキストが途絶している前提で、計画ファイルが唯一の入力源として自立するよう漏れなく記述する。
 
 ```mermaid
@@ -79,7 +79,7 @@ flowchart TB
     subgraph PI["agent-toolkit:plan-impl スキル"]
       direction TB
       T[plan-implementer または メイン直接<br/>実装・検証] --> CM[メインがコミット<br/>中間／単一]
-      CM -->|レビュー無し指定| END[完了]
+      CM -->|レビュー実施しない指定| END[完了]
       CM -->|レビュー実施・全コミット完了| CR
     end
     subgraph CRS["agent-toolkit:careful-review スキル"]
