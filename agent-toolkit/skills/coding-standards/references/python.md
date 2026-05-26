@@ -37,19 +37,6 @@
     `isinstance(x, int) and not isinstance(x, bool)`で除外する
   - `isinstance(value, type(reference))`形式の型一致チェックでも、
     `reference`が`int`値のときに`bool`が素通りする
-- Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
-  - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う。
-    `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるためあくまで最終手段とする
-  - 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
-    pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
-    抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
-  - 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
-    別ルールで重複指摘するため、両方併記が必要。
-    `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で書く
-  - `sorted(iterable, key=str)`で`Path`等をソートすると型検査器tyが要素型を誤推論し型エラーを報告する
-    - 検出例は`invalid-assignment`・`unresolved-attribute`
-    - `key=lambda x: str(x)`はpylintの`unnecessary-lambda`（W0108）を招き両立しない
-    - 内包表記でリスト化してから`list.sort(key=str)`を使い、`sorted`の戻り値型推論を回避する
 - Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を記述できる
  （フォーマッターが自動整形する場合あり）
 - 入力バリデーション: API境界や外部入力は`pydantic` v2で型駆動バリデーションする
@@ -134,6 +121,26 @@
   - Python 3.14+: PEP 750テンプレート文字列（`t"..."`）は構造を保持した`Template`を返す
     - f-stringと異なり生成済み文字列ではないため、対応レンダラと組み合わせたSQL／HTML生成で使う
     - `t"..."`自体は注入対策にならない。安全性は後段のレンダラやAPI側に依存する
+
+## 静的解析の誤検出と抑制
+
+- Lintエラーの対策は、可能な限り`assert`や`del`などの通常の構文を使う
+  - Linter側のバグなどで回避が難しい、あるいは必要以上の複雑さを招く場合のみ`# type: ignore[xxx]`などを使う
+  - `mypy`・`pyright`・`pylint`などが重複検出するケースも多く、無視コメントが入り乱れるため最終手段とする
+- 動的に`sys.path.insert()`してから内部モジュールをimportする箇所では、
+  pylintは`wrong-import-position`に加えて`import-error`も誤発火する。
+  抑制コメントは`# pylint: disable=wrong-import-position,import-error`の両方併記とする
+- 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
+  別ルールで重複指摘する。
+  `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で両方併記する
+- `sorted(iterable, key=str)`で`Path`等をソートすると型検査器tyが要素型を誤推論し型エラーを報告する
+  - 検出例は`invalid-assignment`・`unresolved-attribute`
+  - `key=lambda x: str(x)`はpylintの`unnecessary-lambda`（W0108）を招き両立しない
+  - 内包表記でリスト化してから`list.sort(key=str)`を使い、`sorted`の戻り値型推論を回避する
+- `object`型の引数を`isinstance(x, dict)`で判定すると、型検査器tyは型引数を`Never`と推論する
+  - 後続の`x.get("key")`で`invalid-argument-type`（`Expected Never, found Literal["key"]`）を報告する
+  - 引数型を`typing.Any`にして回避する（`mypy`・`pyright`・`ty`・`pylint`・`ruff-check`の全通過を確認済み）
+  - JSON応答やセッション記録など外部由来の任意値を`dict`判定して処理するヘルパーで再発しやすい
 
 ## テストコード（pytest）
 

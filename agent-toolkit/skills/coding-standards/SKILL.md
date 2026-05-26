@@ -18,6 +18,7 @@ description: >
 - TypeScript/TSX: `references/typescript.md`
 - Rust: `references/rust.md`
 - C#: `references/csharp.md`
+- Bash/sh・bash・sh.tmpl: `references/bash.md`
 - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
 - Windowsバッチ/cmd・bat: `references/windows-batch.md`
 - Dockerfile: `references/dockerfiles.md`
