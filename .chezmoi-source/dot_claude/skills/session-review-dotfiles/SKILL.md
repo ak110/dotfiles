@@ -35,22 +35,18 @@ description: >
 自己完結性の要件（観測した具体事象・改善後の振る舞いと根拠の明記、暗黙参照表現の禁止）は
 `agent-toolkit:session-review`スキルのステップ3に従う。
 
-## 1. pyfltr
+### pyfltr改善提案
 
 対象: pyfltr本体の挙動・メッセージ。
-反映はユーザーが別途行う前提のため、提案までにとどめる。
 
-pyfltrプロジェクトで作業中の場合に限り、`agent-toolkit:session-review`スキルの
-プロジェクトドキュメント章へ統合する。
+pyfltrプロジェクトで作業中の場合は、`agent-toolkit:session-review`スキルのプロジェクトドキュメント章へ統合する。
 
-## 2. agent-toolkit
+### agent-toolkit改善提案
 
 対象: `agent-toolkit`プラグイン（スキル・フック・サブエージェント。`skills/pyfltr-usage/SKILL.md`を含む）と
 `~/.claude/rules/agent-toolkit/`配下のルール。
-反映はユーザーが別途行う前提のため、提案までにとどめる。
 
-dotfilesプロジェクトで作業中の場合に限り、`agent-toolkit:session-review`スキルの
-プロジェクトドキュメント章へ統合する。
+dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-review`スキルのプロジェクトドキュメント章へ統合する。
 
 ## ステップ4の適用範囲
 
