@@ -150,6 +150,7 @@ PostToolUseフックの構造検査で構造違反として警告される。
   実装後の機械チェックを通過する形で書く。主な検査対象は次のとおり。
   - textlint `ja-technical-writing/sentence-length`の120字上限
   - textlint `ja-technical-writing/max-kanji-continuous-len`の漢字7文字連続上限
+  - textlint `ja-technical-writing/ja-no-redundant-expression`の冗長表現（「〜を実行する」等のサ変動詞冗長形）
   - markdownlint `MD013/line-length`の半角換算127幅上限
    （pyfltr未採用環境では`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`で代替）
 
