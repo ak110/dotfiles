@@ -38,6 +38,6 @@
     ]
   },
   "showClearContextOnPlanAccept": true,
-  "showThinkingSummaries": true,
+  "showThinkingSummaries": false,
   "viewMode": "verbose"
 }
