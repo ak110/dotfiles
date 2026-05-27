@@ -20,17 +20,14 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
   - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される。
 - pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える。
   - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
-- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）配下のCIジョブでは、
-  `uvx pyfltr ci`ではなくイメージ同梱の`pyfltr ci`を直接呼び出すことを推奨する。
+- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す。
 - pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う。
 
 ### 新規プロジェクトへの導入
 
-pyfltr関連設定は、原則として下記の公式推奨例をそのまま採用する。
-独自の順序やオプション構成は避け、推奨例との差分は必要最小限にとどめる。
+pyfltr関連設定は原則として下記の公式推奨例をそのまま採用し、独自の順序やオプション構成は避ける。
 推奨例は`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsを一貫した構成で揃える。
-複数プロジェクト間の差分を抑えて保守コストを下げる目的がある。
-既存プロジェクトで推奨例と乖離した設定を見つけた場合も、揃える方向の提案を優先する。
+既存プロジェクトで乖離した設定を見つけた場合も、揃える方向の提案を優先する。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
 - 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
@@ -56,14 +53,15 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 の3段構成を一般化した仕組みである。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
 
+コミット前検証は対象ファイル・対象ツールを必要に応じて限定する（最終検証はCIに委ねる前提）。
+公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合は全体で実行する。
+末尾のsummary行で`failed`の有無と`diagnostics`数を確認する。
+
 ## grep&replace
 
 `pyfltr grep`と`pyfltr replace`は、コードベース横断のキーワード書き換え・参照除去のように
 複数ファイルに跨る正規表現置換を扱うサブコマンド。
 `pyfltr grep`でマッチを確認し、必要に応じてファイル単位の除外を加えてから`pyfltr replace`で実行する。
-JSONL出力でコンテキスト効率に優れる。
-エージェント環境では`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
-いずれかが常時設定されるため、`grep`／`replace`もJSONL出力が既定値となる。
 
 代表的なワークフロー:
 
@@ -82,31 +80,23 @@ JSONL出力でコンテキスト効率に優れる。
 
 ## JSONL出力
 
-`--output-format=jsonl`を付けるとコーディングエージェント向けの構造化出力が得られる。
-stdoutにJSONLのみを書き、テキストログは抑止される。
-エージェント環境では`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`の
-いずれかが常時設定されるため、`--output-format`未指定でも全サブコマンドが既定でjsonl出力になる。
+エージェント環境（`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境）では、
+全サブコマンドが既定でJSONL出力になる。stdoutにJSONLのみを書き、テキストログは抑止される。
 text出力が必要な場合のみ`--output-format=text`を明示する（環境変数`PYFLTR_OUTPUT_FORMAT=text`でも同等）。
 エージェントからの呼び出しは可読性のため`run-for-agent`を推奨する。
 
-> 注記: mypy / pyright / pylint / ty を併用していると、同じ型エラーが複数の`diagnostic`行に
-> 別ツール名で重複出力されることがある。
-> 1件の問題に対する複数ツールの報告として扱い、修正計画を重複させない。
-> 単一ツールに限定して実行したい場合は`--commands=mypy`等で指定する。
+> 注記: mypy / pyright / pylint / ty 併用時は同じ型エラーが複数の`diagnostic`行に別ツール名で重複し得る。
+> 1件の問題への複数ツール報告として扱い、修正計画を重複させない。
+> 単一ツールに限定するには`--commands=mypy`等で指定する。
 
 ### messageの切り詰め仕様
 
 `failed`かつ`diagnostics=0`のとき、`command.message`に生出力の抜粋が入る。
-切り詰めは「先頭ブロック + `... (truncated)` + 末尾ブロック」のハイブリッド方式で、
-`jsonl-message-max-chars`（既定2000文字）を`head : tail = 1 : 4`で配分する。
-冒頭にエラー要約を表示するツール（editorconfig-checker等）と
-末尾にスタックトレースを表示するツール（pytest／mypy等）の双方を取りこぼさない。
-
-切り詰めが起きると`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
-`archive`にはアーカイブ内の相対パスが入る。
-具体的には`tools/<command>/output.log`または`tools/<command>/diagnostics.jsonl`の形式で、
-`run_id`配下のアーカイブディレクトリと組み合わせれば直接参照できる。
-`show-run`サブコマンドを介した取得手順は次節「再実行・調査の手段」を参照。
+切り詰めは「先頭ブロック + `... (truncated)` + 末尾ブロック」のハイブリッド方式である。
+`jsonl-message-max-chars`（既定2000文字）を`head : tail = 1 : 4`で配分し、冒頭の要約と末尾のトレースを共に残す。
+切り詰め時は`command.truncated`に`{lines, chars, head_chars, tail_chars, archive}`が入る。
+`archive`の相対パス（`tools/<command>/output.log`等）を`run_id`配下と組み合わせれば全文を直接参照できる。
+全文取得手順は次節「再実行・調査の手段」を参照。
 
 ### messages[].fixフィールドの値
 
@@ -125,35 +115,21 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 
 ### 再実行・調査の手段
 
-失敗ツールの再実行や全文ログの取得には以下の3手段がある。状況に応じて使い分ける。
+失敗ツールの再実行や全文ログ取得には3手段がある。
 
-#### command.retry_command で失敗ファイルだけ再実行
-
-`run-for-agent`のJSONL出力では、失敗した`command`レコードに`retry_command`フィールドが入る。
-失敗ファイルだけに限定した再実行コマンドが文字列として格納されているため、そのままシェルで実行できる。
-特定の失敗ツール1件のみを素早く再現したい場合に最も軽量。
-
-#### --only-failed で失敗ツール全体を再実行
-
-`uvx pyfltr run-for-agent --only-failed`で、直前runの失敗ツール・失敗ファイルのみをまとめて再実行する。
-個別に`retry_command`をコピーする手間を省きたい場合に使う。
-参照runを明示する場合は`--from-run RUN_ID`を併用する（前方一致または`latest`を指定可）。
-
-#### show-run でアーカイブから全文ログを取得
-
-`message`が切り詰められた場合や、確定したrunを後から再確認したい場合は実行アーカイブから取得する。
-`header.run_id`または`summary`の前後に出る`run_id`を控えておく。
+- `command.retry_command`: JSONL出力の失敗`command`レコードに入る、失敗ファイル限定の再実行コマンド文字列
+  - そのままシェルで実行でき、特定の失敗ツール1件の再現に最も軽量
+- `--only-failed`: 直前runの失敗ツール・失敗ファイルのみまとめて再実行する
+  - 参照runは`--from-run RUN_ID`で明示できる（前方一致または`latest`）
+- `show-run`: 切り詰められた`message`や確定済みrunを実行アーカイブから取得する
+  - `header.run_id`または`summary`前後の`run_id`を控えて指定する
 
 ```bash
-# 単一ツールの output.log 全文を表示
-uvx pyfltr show-run RUN_ID --commands=TOOL --output
-
-# 複数ツールの diagnostics.jsonl をまとめて表示
-uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
+uvx pyfltr show-run RUN_ID --commands=TOOL --output    # 単一ツールのoutput.log全文
+uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagnostics.jsonl
 ```
 
-`--commands`はカンマ区切りで複数指定可（旧 `--tool` は廃止）。
-`--output`との併用は単一ツール指定のみ許容される。最新runを参照する場合は`RUN_ID`に`latest`を指定できる。
+`--commands`はカンマ区切りで複数指定可、`--output`併用は単一ツール指定のみ、`RUN_ID`に`latest`で最新runを参照する。
 
 ### statusフィールドの意味
 
@@ -169,49 +145,11 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check
 - `formatted`が`run`系の繰り返しでも消えない場合はformatter/linter間の設定矛盾を疑い、
   `pyproject.toml`の`[tool.ruff-format]`と`[tool.ruff-check]`を突き合わせる
 
-## 効率的なワークフロー
-
-### 実行範囲の使い分け
-
-コミット前検証は対象ファイルや対象ツールを必要に応じて限定して実行する（最終検証はCIに委ねる前提）。
-
-```bash
-uvx pyfltr run-for-agent --commands=mypy path/to/file
-```
-
-`--commands`で特定ツールに限定する、または対象ファイルを指定することで出力量を抑え、
-`diagnostic`行から修正対象を取得する。
-
-公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合や、
-状況全体を把握したい場合は全体で実行する。
-
-```bash
-uvx pyfltr run-for-agent
-```
-
-末尾のsummary行で`failed`の有無と`diagnostics`数を確認する。
-`run-for-agent`は前段で自動fixを適用するため、autofixで解消できる違反はここで消える。
-
-## `--commands`オプション
-
-カンマ区切りで実行するツールを指定する。全サブコマンドで使用可能。
-
-```bash
-uvx pyfltr run-for-agent --commands=mypy,ruff-check
-```
-
-以下のエイリアスも利用できる。
-
-- `format`: 全formatter（pre-commit、ruff-format、prettier、uv-sort、shfmt、cargo-fmt、dotnet-format等）
-- `lint`: 全linter（ruff-check、mypy、pylint、pyright、ty、markdownlint、textlint等。Rust／dotnet系も含む）
-- `test`: 全tester（pytest、vitest、cargo-test、dotnet-test等）
-- `fast`: fastサブコマンド対象のコマンド
-
 ## 主要なCLIオプション
 
 | オプション | 説明 |
 | -- | -- |
-| `--commands=<list>` | 実行ツールをカンマ区切りで指定 |
+| `--commands=<list>` | 実行ツールをカンマ区切りで指定（全サブコマンド共通、対象ファイル限定も併用可） |
 | `--no-fix` | `run`／`fast`で自動付与されるfixステージを抑止 |
 | `--fail-fast` | 1ツールでもエラーが出た時点で残りを打ち切る |
 | `--only-failed` | 直前runの失敗ツール・失敗ファイルのみ再実行する |
@@ -220,37 +158,35 @@ uvx pyfltr run-for-agent --commands=mypy,ruff-check
 | `--human-readable` | ツールの構造化出力（JSON等）を無効化し元のテキスト出力を使う |
 | `--no-exclude` / `--no-gitignore` | ファイル除外設定を無効化 |
 
+`--commands`にはエイリアスも指定できる。
+
+- `format`: 全formatter（pre-commit、ruff-format、prettier、uv-sort、shfmt、cargo-fmt、dotnet-format等）
+- `lint`: 全linter（ruff-check、mypy、pylint、pyright、ty、markdownlint、textlint等。Rust／dotnet系も含む）
+- `test`: 全tester（pytest、vitest、cargo-test、dotnet-test等）
+- `fast`: fastサブコマンド対象のコマンド
+
 ## トラブルシューティング
 
 - エラー内容が`diagnostic`行だけでは把握しづらい場合、
   `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
 - `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
   意図的に抑止する場合以外は付けずに実行する
-- 特定ツールのみ再実行したい場合は`--commands=<ツール名>`で対象を限定する（全体再実行より早く原因切り分けできる）
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
-  - 対象ファイルが0件のときは解決処理自体を省略するため`skipped`で通過する
-  - 対象ファイルがある状態で解決に失敗した場合は`resolution_failed`が出る
-  - 回避策は`bin-runner`を`direct`に切り替えてシステムにインストール済みのバイナリを使うか、
-    当該ツールを`{tool} = false`で無効化する
-- 特定ツールの解決状況（enable/runner/executable）を実機で即座に確認したい場合は
-  `uvx pyfltr command-info --check <tool>`を使う。
-  mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
-- 特定ディレクトリが`extend-exclude`等で除外されている場合、`uvx pyfltr run-for-agent`の検査対象から外れる
-  - 除外を一時的に無視して特定ファイルをチェックしたいときは`--no-exclude`オプションを使う
-   （例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）
-  - pyfltr自体の除外設定は`pyproject.toml`の`[tool.pyfltr]`またはツール固有の`extend-exclude`を参照する
+  - 対象ファイルが0件のときは解決処理を省略するため`skipped`で通過し、対象がある状態で失敗すると`resolution_failed`が出る
+  - 回避策は`bin-runner`を`direct`に切り替えてシステムのバイナリを使うか、当該ツールを`{tool} = false`で無効化する
+- 特定ツールの解決状況（enable/runner/executable）は`uvx pyfltr command-info --check <tool>`で即座に確認できる
+  - mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
+- 特定ディレクトリが`extend-exclude`等で除外されると`uvx pyfltr run-for-agent`の検査対象から外れる
+  - 除外を一時的に無視するには`--no-exclude`を使う（例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）
 - コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下で調整できる
   - `command-timeout`: グローバル既定値、秒単位。既定600秒、`0`で無効化
-  - `{command}-timeout`: per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、
-    `0`で当該per-toolを明示的に無効化
-  - pytest-xdist併用時のハング解析やコーディングエージェントによる観測でtimeout調整が必要になった場合に活用する
+  - `{command}-timeout`: per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、`0`で当該per-toolを無効化
   - ハング由来の停止はJSONLの`command.hints`の`status.timeout`注記で識別できる
 
 ## 詳細情報
 
-pyfltrの設定リファレンス、カスタムコマンドの追加方法、pre-commit連携の設定例などの詳細情報が必要な場合は、
-[llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得する。
-llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含まれており、各ページへのリンクから必要なページを個別に取得する。
+設定リファレンス・カスタムコマンドの追加方法・pre-commit連携の詳細が必要な場合は、
+[llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得し、各ページへのリンクから個別に取得する。
 主要なページは以下の構成。
 
 - 設定（基本設定・プリセット・並列実行）: `guide/configuration/index.md`
@@ -259,8 +195,6 @@ llms.txtにはサブコマンド一覧・対応ツール・設定の基本が含
 - 推奨設定（Pythonプロジェクト・タスクランナー・CI）: `guide/recommended/index.md`
 - 非Python推奨設定（TypeScript／JS・Rust・.NET）: `guide/recommended-nonpython/index.md`
 
-カスタムコマンドを設定する際は、`{command}-severity`（`"error"` / `"warning"`）と
-`{command}-hints`（文字列配列）が指定できる。
+カスタムコマンドでは`{command}-severity`（`"error"` / `"warning"`）と`{command}-hints`（文字列配列）を指定できる。
 `severity = "warning"`はパイプラインを止めずに警告通知する用途に使う。
-`{command}-path`・`{command}-args`・`{command}-fix-args`に含まれる`~`は、
-subprocess引数組み立て直前にホームディレクトリへ展開される。
+`{command}-path`・`{command}-args`・`{command}-fix-args`に含まれる`~`はsubprocess起動直前にホームディレクトリへ展開される。
