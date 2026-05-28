@@ -7,9 +7,11 @@
 import asyncio
 import base64
 import dataclasses
+import io
 import json
 import os
 import re
+import sys
 import typing
 from pathlib import Path
 
@@ -17,7 +19,7 @@ import pytest
 import watchdog.events
 from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
-from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _local, _remote, _state
+from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _console_title, _local, _remote, _state
 
 # `schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
 # debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
@@ -473,6 +475,53 @@ class TestParseArgsConfigFile:
         monkeypatch.setenv(_config.ENV_CONFIG, str(alternate))
         args_alternate = _cli.parse_args([])
         assert args_alternate.root == "/tmp/plans-alternate"
+
+
+class TestBuildConsoleTitle:
+    """`build_console_title`のタイトル組み立てを検証する。"""
+
+    @pytest.mark.parametrize(
+        ("remote_hosts", "expected"),
+        [
+            ([], "claude-plans-viewer :28765"),
+            (["myhost"], "claude-plans-viewer :28765 (myhost)"),
+            (["myhost", "host2"], "claude-plans-viewer :28765 (myhost, host2)"),
+        ],
+    )
+    def test_format(self, remote_hosts: list[str], expected: str):
+        """リモートホスト件数に応じてホスト名を付加する。"""
+        assert _cli.build_console_title(28765, remote_hosts) == expected
+
+
+class _FakeTtyStream(io.StringIO):
+    """`isatty`の結果を制御できるテキストストリーム。"""
+
+    def __init__(self, *, isatty: bool):
+        super().__init__()
+        self._isatty = isatty
+
+    def isatty(self) -> bool:
+        return self._isatty
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="OSC方式の出力検証はnon-Windows限定")
+class TestConsoleTitle:
+    """`console_title`がOSC制御シーケンスを出力することを検証する（non-Windows）。"""
+
+    def test_writes_set_and_restore_when_tty(self):
+        """ターミナル接続時は開始でタイトル設定、終了で空タイトルへの復元を書く。"""
+        stream = _FakeTtyStream(isatty=True)
+        title = "claude-plans-viewer :28765"
+        with _console_title.console_title(title, stream=stream):
+            assert stream.getvalue() == f"\033]2;{title}\a"
+        assert stream.getvalue() == f"\033]2;{title}\a\033]2;\a"
+
+    def test_writes_nothing_when_not_tty(self):
+        """ターミナル未接続時は何も書かない。"""
+        stream = _FakeTtyStream(isatty=False)
+        with _console_title.console_title("claude-plans-viewer :28765", stream=stream):
+            pass
+        assert not stream.getvalue()
 
 
 class TestIndexHtml:

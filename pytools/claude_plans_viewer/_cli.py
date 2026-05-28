@@ -17,7 +17,7 @@ import quart
 import watchdog.observers
 
 from pytools._internal.cli import enable_completion
-from pytools.claude_plans_viewer import _app, _config, _local, _state
+from pytools.claude_plans_viewer import _app, _config, _console_title, _local, _state
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +184,17 @@ async def watch_stdin_eof(shutdown_event: asyncio.Event) -> None:
         shutdown_event.set()
 
 
+def build_console_title(port: int, remote_hosts: list[str]) -> str:
+    """起動ターミナルのウィンドウタイトル文字列を組み立てる。
+
+    リモートホストは起動ログと同じ`", ".join(...)`表記で列挙する。
+    """
+    title = f"claude-plans-viewer :{port}"
+    if remote_hosts:
+        title += f" ({', '.join(remote_hosts)})"
+    return title
+
+
 def main(argv: list[str] | None = None) -> int:
     """エントリポイント。
 
@@ -222,7 +233,8 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
         if args.remote_host:
             logger.info("Remote hosts: %s (watchdog)", ", ".join(args.remote_host))
-        asyncio.run(serve(app, args.host, args.port))
+        with _console_title.console_title(build_console_title(args.port, args.remote_host)):
+            asyncio.run(serve(app, args.host, args.port))
     finally:
         observer.stop()
         observer.join()
