@@ -28,7 +28,7 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
 )
 
 
-def is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。"""
     if path.suffix != ".md":
         return False
@@ -69,10 +69,10 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
         # src_pathだけ参照すると.md以外として除外されて自動リロードが機能しない。
         if isinstance(event, watchdog.events.FileMovedEvent):
             dest = pathlib.Path(str(event.dest_path))
-            if not (is_watched_path(src, self.root) or is_watched_path(dest, self.root)):
+            if not (_is_watched_path(src, self.root) or _is_watched_path(dest, self.root)):
                 return
         else:
-            if not is_watched_path(src, self.root):
+            if not _is_watched_path(src, self.root):
                 return
         loop = self.state.loop
         if loop is None:
@@ -191,7 +191,7 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
     return target
 
 
-def resolve_css_path() -> pathlib.Path | None:
+def _resolve_css_path() -> pathlib.Path | None:
     """リポジトリ内の`share/vscode/markdown.css`のパスを返す。見つからなければNone。"""
     # dotfilesは通常~/dotfiles配下に置かれる。
     candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
@@ -207,7 +207,7 @@ def resolve_css_path() -> pathlib.Path | None:
 
 async def read_css() -> str:
     """配布物のCSSを読み込む。見つからなければフォールバックを返す。"""
-    path = resolve_css_path()
+    path = _resolve_css_path()
     if path is not None:
         # read_textはブロッキングI/Oのためスレッドプールで実行する。
         return await asyncio.to_thread(path.read_text, encoding="utf-8")

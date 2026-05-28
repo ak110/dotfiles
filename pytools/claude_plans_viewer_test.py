@@ -27,7 +27,7 @@ _QUEUE_GET_TIMEOUT_SEC = _state._BROADCAST_DEBOUNCE_SEC + 0.7
 
 
 class TestListFiles:
-    """_list_files のテスト。"""
+    """list_files のテスト。"""
 
     def test_sorts_by_mtime_desc(self, tmp_path: Path):
         """mtime降順で返ること。"""
@@ -65,7 +65,7 @@ class TestListFiles:
 
 
 class TestResolveUnderRoot:
-    """_resolve_under_root のテスト。"""
+    """resolve_under_root のテスト。"""
 
     def test_valid_md_path(self, tmp_path: Path):
         """root配下の.mdを正常に解決する。"""
@@ -99,7 +99,7 @@ class TestResolveUnderRoot:
 
 
 class TestMarkdownToHtml:
-    """_markdown_to_html のテスト。"""
+    """markdown_to_html のテスト。"""
 
     def test_renders_basic_markdown(self):
         """見出し・コードブロック・表が反映される。"""
@@ -184,28 +184,25 @@ class TestMarkdownCache:
         assert len(cache) == 0
 
 
-class TestResolveCssPath:
-    """_resolve_css_path のテスト。
+class TestReadCss:
+    """read_css のテスト。
 
     editable install前提でリポジトリ配下の`share/vscode/markdown.css`を返すことを確認する。
     本テストはdotfilesリポジトリ内で実行される前提で、配布CSSの所在を固定する。
     """
 
-    def test_returns_repo_css(self):
-        path = _local.resolve_css_path()
-
-        assert path is not None
-        assert path.name == "markdown.css"
-        assert path.is_file()
-        assert path.parent.name == "vscode"
-        assert path.parent.parent.name == "share"
-
     @pytest.mark.asyncio
     async def test_read_css_nonempty(self):
-        """_read_cssがCSS本文を返す（空でない）。"""
+        """read_cssがリポジトリ内CSSの本文を返す（フォールバックではない）。
+
+        フォールバックCSS（`_assets.FALLBACK_CSS`）が返るとeditable installの解決経路が
+        破綻している兆候となるため、フォールバックと一致しないことで区別する。
+        """
         css = await _local.read_css()
 
         assert css.strip()
+        # フォールバックCSSが返った場合は実CSSの解決経路が破綻している。
+        assert css != _assets.FALLBACK_CSS
 
 
 class TestPwaAssets:
@@ -274,7 +271,7 @@ def _parse_args_isolate_env_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 @pytest.mark.usefixtures("_parse_args_isolate_env")
 class TestParseArgs:
-    """_parse_args の環境変数フォールバック検証。
+    """parse_args の環境変数フォールバック検証。
 
     「CLI引数 > 環境変数 > 組み込み既定値」の優先順位を固定するため、
     monkeypatch で環境変数を明示的に設定/解除した上で解決結果を検査する。
@@ -707,11 +704,11 @@ class TestIndexHtml:
 
 
 class TestSubscribers:
-    """購読者管理(`_subscribe`・`_unsubscribe`・`_schedule_broadcast`)のテスト。"""
+    """購読者管理(`subscribe`・`unsubscribe`・`schedule_broadcast`)のテスト。"""
 
     @pytest.mark.asyncio
     async def test_subscribe_unsubscribe_roundtrip(self):
-        """_subscribeで登録し_unsubscribeで解除できること。重複解除もエラーにならないこと。"""
+        """subscribeで登録しunsubscribeで解除できること。重複解除もエラーにならないこと。"""
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
         assert q in state.subscribers
@@ -722,7 +719,7 @@ class TestSubscribers:
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_delivers_refresh(self):
-        """`_schedule_broadcast`後にキューから"refresh"が取得できること（debounce経由で届く）。"""
+        """`schedule_broadcast`後にキューから"refresh"が取得できること（debounce経由で届く）。"""
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
         try:
@@ -734,7 +731,7 @@ class TestSubscribers:
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_coalesces_via_debounce(self):
-        """`_schedule_broadcast`を連続で呼んでもdebounce窓内は1件にまとめられること。"""
+        """`schedule_broadcast`を連続で呼んでもdebounce窓内は1件にまとめられること。"""
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
         try:
@@ -747,7 +744,7 @@ class TestSubscribers:
 
     @pytest.mark.asyncio
     async def test_schedule_broadcast_many_calls(self):
-        """`_schedule_broadcast`を短時間に10回呼んでも、debounce窓満了後にキューは1件であること。"""
+        """`schedule_broadcast`を短時間に10回呼んでも、debounce窓満了後にキューは1件であること。"""
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
         try:
@@ -760,7 +757,7 @@ class TestSubscribers:
 
 
 class TestWatchdogHandler:
-    """_PlansEventHandler のイベントフィルタリングテスト。"""
+    """PlansEventHandler のイベントフィルタリングテスト。"""
 
     @pytest.mark.asyncio
     async def test_md_event_broadcasts(self, tmp_path: Path):
@@ -1035,7 +1032,7 @@ class TestEventsEndpoint:
         """接続時のContent-Type、配信フォーマット、debounce挙動を一連で検証する。
 
         ストリーミング応答のため`TestHTTPConnection.receive()`でチャンクを逐次読み取る。
-        `_schedule_broadcast`を2回連続で呼んでもdebounceで1件に畳まれることを確認する。
+        `schedule_broadcast`を2回連続で呼んでもdebounceで1件に畳まれることを確認する。
         """
         app = _app.create_app(tmp_path, hostname="test")
         # test_client経由の呼び出しでは`before_serving`が発火しないため、loop参照を手動注入する。
@@ -1080,7 +1077,7 @@ class TestEventsEndpoint:
 
 
 class TestBroadcastStateDataclass:
-    """`_BroadcastState`のフィールド既定値の契約を固定する。"""
+    """`BroadcastState`のフィールド既定値の契約を固定する。"""
 
     def test_defaults(self):
         """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態は空。"""
@@ -1109,9 +1106,11 @@ class TestBroadcastStateDataclass:
 class _FakeSshRunner:
     """テスト用SshRunner。
 
-    現在は`/api/file`/`/api/raw`のリモート参照経路（read）専用。
+    `/api/file`/`/api/raw`のリモート参照経路（read）専用。
     `read_responses`は`(host, rel)`→`(本文, mtime_epoch)`の辞書、
     または`(host, rel)`→本文（mtimeは1000.0固定）の辞書。
+    `mtime_epoch`を`None`にすると応答ペイロードからキー自体を除去し、
+    フォールバック経路でmtime欠落時の挙動（キャッシュバイパス）を再現できる。
     `failing_hosts`に含めたホストへの呼び出しは`RuntimeError`を送出する。
     呼び出し履歴は`calls`に`(host, op, args)`タプルで蓄積される。
     """
@@ -1119,7 +1118,7 @@ class _FakeSshRunner:
     def __init__(
         self,
         *,
-        read_responses: dict[tuple[str, str], str | tuple[str, float]] | None = None,
+        read_responses: dict[tuple[str, str], str | tuple[str, float | None]] | None = None,
         failing_hosts: set[str] | None = None,
     ) -> None:
         self._read_responses = read_responses or {}
@@ -1137,18 +1136,19 @@ class _FakeSshRunner:
                 body, mtime = entry
             else:
                 body, mtime = entry, 1_000.0
-            return json.dumps(
-                {
-                    "data": base64.b64encode(body.encode("utf-8")).decode("ascii"),
-                    "mtime_epoch": mtime,
-                },
-                ensure_ascii=False,
-            )
+            payload: dict[str, typing.Any] = {
+                "data": base64.b64encode(body.encode("utf-8")).decode("ascii"),
+            }
+            # `mtime_epoch`が`None`のときはキー自体を含めず、ヘルパー側が`mtime_epoch`を
+            # 付与せずに応答するケースを再現する（`fetch_remote_file`はキャッシュをバイパスする）。
+            if mtime is not None:
+                payload["mtime_epoch"] = mtime
+            return json.dumps(payload, ensure_ascii=False)
         raise ValueError(f"unknown op: {op}")
 
 
 async def _aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:
-    """インメモリーの行リストを`_RemoteWatcher._process_stream`へ供給するためのヘルパー。"""
+    """インメモリーの行リストを`RemoteWatcher._process_stream`へ供給するためのヘルパー。"""
     for line in lines:
         yield line
 
@@ -1156,15 +1156,19 @@ async def _aiter_lines(lines: list[str]) -> typing.AsyncIterator[str]:
 def _seed_remote_cache(state: _state.BroadcastState, host: str, items: list[dict[str, typing.Any]]) -> None:
     """テスト用に`state.remote_files`へ直接エントリを書き込む。
 
-    `_RemoteWatcher._process_stream`を経由せずに`/api/files`merge挙動を検証するための土台。
+    `RemoteWatcher._process_stream`を経由せずに`/api/files`merge挙動を検証するための土台。
     """
     state.remote_files[host] = [_state.make_file_entry(host, item) for item in items]
 
 
 class TestRemoteWatcher:
-    """`_RemoteWatcher._process_stream`の行処理ユニットテスト。
+    """`RemoteWatcher._process_stream`の行処理ユニットテスト。
 
     純粋な行ジェネレーターを引数化することで、subprocess・SSHを介さず分岐網羅する。
+    `_process_stream`・`_set_status`・`_backoff`等の`RemoteWatcher`内部状態を直接参照する。
+    公開経路（`run()`）経由ではSSH/subprocess起動と再接続ループを伴うため、
+    各イベント分岐とstate遷移を網羅検証できない。
+    例外的に最小限の直接テストへ限定する。
     """
 
     @pytest.mark.asyncio
@@ -1319,9 +1323,10 @@ class TestRemoteWatcher:
     async def test_set_status_disconnected_emits_sse_after_snapshot(self):
         """`_set_status`経由のdisconnected遷移とSSE配信を検証する。
 
-        `run`本体の再接続ループは同期テストが困難なため手動確認に委ねる。
-        本テストでは`_set_status`を直接呼び出してhost_statusの遷移と
-        host-statusのSSE配信が想定通り動くことを確認する。
+        `run`本体の再接続ループはSSH/subprocess起動とバックオフ待機を含み、
+        単体テストの所要時間と決定性の制約内で網羅検証できないため、
+        `_set_status`を直接呼び出してhost_statusの遷移と
+        host-statusのSSE配信を確認する形に限定する。
         """
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
@@ -1479,11 +1484,11 @@ class TestRemoteWatcherRpc:
 
 
 class TestFetchRemoteFile:
-    """`fetch_remote_file`のRPC優先・fallback分岐とmtime同梱の挙動を検証する。"""
+    """`fetch_remote_file`のRPC優先・フォールバック分岐とmtime同梱の挙動を検証する。"""
 
     @pytest.mark.asyncio
     async def test_uses_watcher_rpc_when_connected(self):
-        """watcherが接続中ならRPCで取得し、fallback`ssh_runner`は呼ばれない。"""
+        """watcherが接続中ならRPCで取得し、フォールバック経路の`ssh_runner`は呼ばれない。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         _attach_fake_connection(watcher)
@@ -1510,12 +1515,12 @@ class TestFetchRemoteFile:
 
         assert text == "# remote\n"
         assert mtime == 42.0
-        # fallback経路は使われない。
+        # フォールバック経路は使われない。
         assert not runner.calls
 
     @pytest.mark.asyncio
     async def test_falls_back_when_watcher_disconnected(self):
-        """watcher未接続時はfallback`ssh_runner`経由で取得し、mtimeも返す。"""
+        """watcher未接続時はフォールバック経路の`ssh_runner`で取得し、mtimeも返す。"""
         runner = _FakeSshRunner(read_responses={("host1", "foo.md"): ("# fallback\n", 7.0)})
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -1530,7 +1535,7 @@ class TestFetchRemoteFile:
 
     @pytest.mark.asyncio
     async def test_falls_back_on_rpc_error_response(self):
-        """watcherが`ok=False`を返した場合もfallback経由で救済する。"""
+        """watcherが`ok=False`を返した場合もフォールバック経由で救済する。"""
         runner = _FakeSshRunner(read_responses={("host1", "foo.md"): ("# fallback\n", 8.0)})
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -1549,15 +1554,22 @@ class TestFetchRemoteFile:
 
         assert text == "# fallback\n"
         assert mtime == 8.0
-        # fallback経路が1回だけ呼ばれる。
+        # フォールバック経路が1回だけ呼ばれる。
         read_calls = [c for c in runner.calls if c[1] == "read"]
         assert len(read_calls) == 1
 
     @pytest.mark.asyncio
     async def test_returns_none_mtime_when_missing_in_payload(self):
-        """応答に`mtime_epoch`が欠落していると`mtime`は`None`になる（キャッシュバイパス目的）。"""
-        # _FakeSshRunnerのreadはmtimeを必ず付ける仕様のため、テストは`_decode_read_payload`を直接検証する。
-        text, mtime = _remote._decode_read_payload({"data": base64.b64encode(b"hello").decode("ascii")})
+        """応答に`mtime_epoch`が欠落していると`mtime`は`None`になる（キャッシュバイパス目的）。
+
+        フォールバック経路（`ssh_runner`単発呼び出し）でヘルパーが`mtime_epoch`キーを返さない
+        ケースを`_FakeSshRunner`で再現し、`fetch_remote_file`の戻り値`mtime`が`None`になることを
+        公開インターフェース経由で確認する。
+        """
+        runner = _FakeSshRunner(read_responses={("host1", "foo.md"): ("hello", None)})
+        # watcher=Noneでフォールバック経路（RPC不在）を強制する。
+        text, mtime = await _remote.fetch_remote_file("host1", "foo.md", runner, None)
+
         assert text == "hello"
         assert mtime is None
 
@@ -1774,17 +1786,22 @@ class TestRemoteHostIntegration:
 
 
 class TestBuildRemoteCommand:
-    """`build_remote_command_argv`はPOSIXシェル非依存・cmd.exe互換であること。
+    """`_build_remote_command_argv`はPOSIXシェル非依存・cmd.exe互換であること。
 
     Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`・heredoc・`head -c`等の
     POSIX組み込みが解釈できない。リモート起動コマンドはこれらに依存せず、
     クォート境界はダブルクォートのみで表現する不変条件を持つ。
+
+    本クラスのテストはprivate関数`_build_remote_command_argv`を直接検証する。
+    公開経路（`default_ssh_runner`・`RemoteWatcher._connect`）経由ではSSH/subprocessの
+    実起動が必要で、Windowsシェル互換性の境界条件を網羅検証できない。
+    例外的に最小限の直接テストへ限定する。
     """
 
     @pytest.mark.parametrize("op,args", [("serve", []), ("read", ["YWJjLm1k"])])
     def test_excludes_posix_shell_idioms(self, op: str, args: list[str]):
         """argv連結文字列にPOSIXシェル組み込み・heredoc・パイプ等が含まれない。"""
-        argv = _remote.build_remote_command_argv(op, args)
+        argv = _remote._build_remote_command_argv(op, args)
         joined = " ".join(argv)
         # POSIXシェル非依存に必須となる禁止トークン。
         for token in ("bash ", "bash\t", "head ", "mkdir ", "<<", "<<<", "<<-", "exec ", " | ", "&&", "||"):
@@ -1804,13 +1821,13 @@ class TestBuildRemoteCommand:
             assert ch not in bootstrap, f"bootstrap contains forbidden char {ch!r}: {bootstrap!r}"
 
     def test_op_and_args_appended_at_tail(self):
-        """`op`と`args`はargv末尾に未加工のまま追加される（helperはsys.argvで読み取る）。"""
-        argv = _remote.build_remote_command_argv("read", ["YWJjLm1k"])
+        """`op`と`args`はargv末尾に未加工のまま追加される（ヘルパーはsys.argvで読み取る）。"""
+        argv = _remote._build_remote_command_argv("read", ["YWJjLm1k"])
         assert argv[-2:] == ["read", "YWJjLm1k"]
 
     def test_uses_double_quote_boundaries_only(self):
         """空白を含む要素は両端ダブルクォートで囲み、シングルクォート境界は使わない。"""
-        argv = _remote.build_remote_command_argv("serve", [])
+        argv = _remote._build_remote_command_argv("serve", [])
         for elem in argv:
             if " " not in elem:
                 continue
@@ -1819,9 +1836,9 @@ class TestBuildRemoteCommand:
 
 
 class _FakeProcessForTerminate:
-    """`terminate_process`の段階的フォールバック検証用の擬似Process。
+    """`_terminate_process`の段階的フォールバック検証用の擬似Process。
 
-    `exits_on`で「どの段階で終了するか」を制御し、helperがstdin EOF / SIGTERM /
+    `exits_on`で「どの段階で終了するか」を制御し、ヘルパーがstdin EOF / SIGTERM /
     SIGKILLのいずれで停止するかを再現する。`wait()`はreturncodeが入るまで待つ。
     """
 
@@ -1872,13 +1889,20 @@ class _FakeProcessForTerminate:
 
 
 class TestTerminateProcess:
-    """`terminate_process`の段階的フォールバック挙動を検証する。"""
+    """`_terminate_process`の段階的フォールバック挙動を検証する。
+
+    本クラスのテストはprivate関数`_terminate_process`を直接検証する。
+    段階的停止経路（stdin close→terminate→kill）は実プロセス起動を伴わないと
+    各フォールバック段を選択的に発火できず、公開経路（`RemoteWatcher.run`の
+    キャンセル経路）では実SSH/subprocess起動が必要となる。
+    例外的に最小限の直接テストへ限定する。
+    """
 
     @pytest.mark.asyncio
     async def test_stdin_close_triggers_graceful_exit(self):
         """stdin closeで停止経路に乗る場合、terminate/killは呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="stdin_close")
-        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.1)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.1)
         assert proc.returncode == 0
         assert not proc.terminate_called
         assert not proc.kill_called
@@ -1887,7 +1911,7 @@ class TestTerminateProcess:
     async def test_terminate_after_stdin_unresponsive(self):
         """stdin closeで応答が無ければterminateで停止し、killは呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="terminate")
-        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
         assert proc.returncode == -15
         assert proc.terminate_called
         assert not proc.kill_called
@@ -1896,7 +1920,7 @@ class TestTerminateProcess:
     async def test_kill_when_process_is_unresponsive(self):
         """terminateにも応答しないプロセスはkillで打ち切られる。"""
         proc = _FakeProcessForTerminate(exits_on="kill")
-        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
         assert proc.returncode == -9
         assert proc.terminate_called
         assert proc.kill_called
@@ -1906,21 +1930,27 @@ class TestTerminateProcess:
         """既に終了済みのプロセスはstdin close・terminate・killいずれも呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="never")
         proc.returncode = 0
-        await _remote.terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
         assert not proc.terminate_called
         assert not proc.kill_called
         assert not proc.stdin.is_closing()
 
 
 class TestRemoteStreamLimit:
-    """`asyncio.create_subprocess_exec`既定StreamReader上限超過時の挙動。"""
+    """`asyncio.create_subprocess_exec`既定StreamReader上限超過時の挙動。
+
+    本クラスのテストはprivate関数`_iter_stream_lines`を`asyncio.StreamReader`へ直接渡して
+    検証する。`limit`引上げ後の挙動は実subprocess起動を伴う公開経路（`RemoteWatcher._connect`）
+    では再現コストが高く、`asyncio.StreamReader`を直接構成する直接テストの方が安定する。
+    例外的に最小限の直接テストへ限定する。
+    """
 
     @pytest.mark.asyncio
     async def test_iter_stream_lines_handles_oversized_line(self):
         """64KiB既定上限を超える1行をlimit引き上げ後のStreamReaderで読み取れる。
 
         modules内に専用モジュールを足さず、`asyncio.StreamReader`に対し
-        `iter_stream_lines`の前提（`readline()`が分離記号を見つけるまで読み続ける）が
+        `_iter_stream_lines`の前提（`readline()`が分離記号を見つけるまで読み続ける）が
         `limit`引数で制御可能であることを直接確認する。
         既定limit=64KiBではvalueErrorが上がる挙動を再現したうえで、
         REMOTE_STREAM_LIMIT_BYTES適用時に同じ行が完了することを示す。
@@ -1940,7 +1970,7 @@ class TestRemoteStreamLimit:
 
         async def _consume() -> list[str]:
             collected: list[str] = []
-            async for line in _remote.iter_stream_lines(big_reader):
+            async for line in _remote._iter_stream_lines(big_reader):
                 collected.append(line)
             return collected
 

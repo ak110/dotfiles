@@ -84,12 +84,12 @@ def _read_payload(rel_b64: str) -> dict[str, typing.Any]:
     }
 
 
-def list_files() -> None:
+def _list_files() -> None:
     """`list`サブコマンド: `~/.claude/plans`配下の`.md`ファイル一覧をJSON文字列でstdoutへ出力する。"""
     json.dump(_scan_entries(), sys.stdout, ensure_ascii=False)
 
 
-def read_file(rel_b64: str) -> None:
+def _read_file(rel_b64: str) -> None:
     """`read`サブコマンド: 指定相対パスのファイル本文と`mtime_epoch`をJSON文字列でstdoutへ出力する。
 
     応答形式（fallback経路用、単発SSH呼び出し）:
@@ -199,7 +199,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
     return observer
 
 
-def watch_files() -> int:
+def _watch_files() -> int:
     """`watch`サブコマンド: `~/.claude/plans`配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する。
 
     行プロトコル（行区切りJSON）:
@@ -239,10 +239,10 @@ def _handle_request(req: dict[str, typing.Any]) -> dict[str, typing.Any]:
         return {"type": "response", "id": req_id, "ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-def serve() -> int:
+def _serve() -> int:
     """`serve`サブコマンド: watchの行ストリームに加え、stdinのRPCリクエストへ応答する常駐モード。
 
-    watch行プロトコルは`watch_files`と共通。
+    watch行プロトコルは`_watch_files`と共通。
     RPCプロトコル（行区切りJSON）:
         リクエスト（stdin）: {"id":<int>, "op":"read", "path":"<base64>"}
         応答（stdout）:
@@ -293,18 +293,18 @@ def main() -> int:
         return 2
     op = sys.argv[1]
     if op == "list":
-        list_files()
+        _list_files()
         return 0
     if op == "read":
         if len(sys.argv) < 3:
             sys.stderr.write("missing path\n")
             return 2
-        read_file(sys.argv[2])
+        _read_file(sys.argv[2])
         return 0
     if op == "watch":
-        return watch_files()
+        return _watch_files()
     if op == "serve":
-        return serve()
+        return _serve()
     sys.stderr.write(f"unknown operation: {op}\n")
     return 2
 

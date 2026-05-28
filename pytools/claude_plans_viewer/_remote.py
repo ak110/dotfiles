@@ -71,7 +71,7 @@ REMOTE_BOOTSTRAP = (
 )
 
 
-def build_remote_command_argv(op: str, args: list[str]) -> list[str]:
+def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     """SSH経由でリモートヘルパーを起動するargv要素列を返す。
 
     SSHは末尾の各要素を空白で連結してリモートシェルへ渡すため、
@@ -110,7 +110,7 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     短いPython bootstrap経由で`exec`する。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。
     """
-    cmd = ["ssh", *SSH_BASE_OPTIONS, host, *build_remote_command_argv(op, args)]
+    cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
     proc = await asyncio.to_thread(
         subprocess.run,
         cmd,
@@ -257,12 +257,12 @@ class RemoteWatcher:
                 proc = await self._connect()
                 self._proc = proc
                 assert proc.stdout is not None
-                await self._process_stream(iter_stream_lines(proc.stdout))
+                await self._process_stream(_iter_stream_lines(proc.stdout))
                 await self._set_status("disconnected")
             except asyncio.CancelledError:
                 self._fail_pending(asyncio.CancelledError("watcher cancelled"))
                 if proc is not None:
-                    await terminate_process(proc)
+                    await _terminate_process(proc)
                 self._proc = None
                 self._connected = False
                 raise
@@ -273,7 +273,7 @@ class RemoteWatcher:
             finally:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
                 if proc is not None:
-                    await terminate_process(proc)
+                    await _terminate_process(proc)
                 self._proc = None
                 self._connected = False
             # 指数バックオフ（上限・±20%ジッタ）。リトライ上限なし。
@@ -287,7 +287,7 @@ class RemoteWatcher:
             *SSH_BASE_OPTIONS,
             *SSH_WATCH_OPTIONS,
             self.host,
-            *build_remote_command_argv("serve", []),
+            *_build_remote_command_argv("serve", []),
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -306,7 +306,7 @@ class RemoteWatcher:
     async def _process_stream(self, lines: LineSource) -> None:
         """行ストリームを受け取り、type別にハンドラへ振り分ける。
 
-        テスト容易性のため`LineSource`を引数化し、本番は`iter_stream_lines`を渡す。
+        テスト容易性のため`LineSource`を引数化し、本番は`_iter_stream_lines`を渡す。
         """
         async for line in lines:
             line = line.strip()
@@ -386,7 +386,7 @@ class RemoteWatcher:
             await _state.deliver_host_status(self.state, self.host, status)
 
 
-async def iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
+async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
     """`StreamReader`から1行ずつ取り出す非同期イテレータ。
 
     `readline()`はEOFで空bytesを返すため、その時点で打ち切る。
@@ -403,7 +403,7 @@ async def iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterato
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
 
-async def terminate_process(
+async def _terminate_process(
     proc: _async_subprocess.Process,
     grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
 ) -> None:
@@ -436,7 +436,7 @@ async def terminate_process(
 async def _wait_with_timeout(proc: _async_subprocess.Process, timeout: float) -> bool:
     """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。
 
-    `terminate_process`はキャンセル経路からも呼ばれるため、
+    `_terminate_process`はキャンセル経路からも呼ばれるため、
     `CancelledError`は吸収して段階的処理を継続する。
     """
     if proc.returncode is not None:

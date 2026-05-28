@@ -43,7 +43,7 @@ def safe_base_path(raw: str) -> str:
     return candidate
 
 
-def resolve_request_target(local_host: str, allowed_remote_hosts: set[str]) -> tuple[str, str] | quart.Response:
+def _resolve_request_target(local_host: str, allowed_remote_hosts: set[str]) -> tuple[str, str] | quart.Response:
     """`/api/file`・`/api/raw`共通でhostとpathを取り出して許可リスト検証する。
 
     `host`未指定時は`local_host`を採用する。許可リスト外のhostは400で拒否する
@@ -221,7 +221,7 @@ def create_app(
 
     @app.get("/api/file")
     async def api_file() -> quart.Response:
-        resolved = resolve_request_target(resolved_hostname, allowed_remote_hosts)
+        resolved = _resolve_request_target(resolved_hostname, allowed_remote_hosts)
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
@@ -245,7 +245,7 @@ def create_app(
     async def api_raw() -> quart.Response:
         # クライアントのコピーボタン用に生Markdownを返す。`/api/file`はHTMLレンダリング結果を返すため
         # 経路を分離し、`Cache-Control`扱いやテストを単純に保つ。
-        resolved = resolve_request_target(resolved_hostname, allowed_remote_hosts)
+        resolved = _resolve_request_target(resolved_hostname, allowed_remote_hosts)
         if isinstance(resolved, quart.Response):
             return resolved
         host, rel = resolved
