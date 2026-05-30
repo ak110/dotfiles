@@ -44,7 +44,7 @@
 - spec-driven系スキル
  （`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`）は
   本リポジトリでは対象外。
-  `docs/features/`・`docs/topics/`の運用を採らないため、機能追加時も起動しない
+  `docs/features/`・`docs/topics/`の運用を採用しないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く
   - 単一ファイル（`<name>.py`）のほか、サブパッケージ（`<name>/`配下に実装を分割）形態も取る
   - サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートする

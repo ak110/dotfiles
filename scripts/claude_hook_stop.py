@@ -203,13 +203,15 @@ def main() -> int:
 
     # 振り返り手順全体は `agent-toolkit:session-review` スキルが保持し、その呼び出し誘導は
     # 同時発火する `stop_advisor.py` が担う。本 hook は dotfiles 拡張章を担う
-    # `session-review-dotfiles` スキルの追加呼び出しのみを誘導する責務分離設計を採る。
+    # `session-review-dotfiles` スキルの追加呼び出しのみを誘導する責務分離設計を採用する。
     body = (
-        "session-review handoff (dotfiles extension): in addition to the"
-        " `agent-toolkit:session-review` Skill invoked via the `[auto-generated: agent-toolkit/stop_advisor]`"
-        " notice, also invoke the `session-review-dotfiles` Skill via the Skill tool."
-        " The dotfiles skill adds pyfltr and agent-toolkit improvement sections on top of the"
-        " project documentation section covered by `agent-toolkit:session-review`."
+        "session-review handoff (dotfiles extension): you MUST invoke BOTH the"
+        " `agent-toolkit:session-review` Skill (announced by the `[auto-generated: agent-toolkit/stop_advisor]`"
+        " notice) AND the `session-review-dotfiles` Skill via the Skill tool; do not finish after only one."
+        " Read both skills, then report their sections as a single combined review of at most 3 sections"
+        " (project documentation, pyfltr, agent-toolkit). Sections that do not apply are dropped or merged"
+        " into the project documentation section as the dotfiles skill specifies"
+        " (e.g. pyfltr unused, or working inside the dotfiles or pyfltr project itself)."
     )
     _block(_llm_notice(body))
     return 0

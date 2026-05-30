@@ -1,12 +1,13 @@
 """update_claude_settings モジュールのテスト。"""
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
 
 from pytools._internal import update_claude_settings as mod
-from pytools._internal.update_claude_settings import _diff_lines, _list_diff_summary, _value_summary, update_claude_settings
+from pytools._internal.update_claude_settings import update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PROD_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.json"
@@ -275,127 +276,112 @@ class TestMergeRecursive:
         assert pretooluse[1]["matcher"] == "Bash"
 
 
-class TestValueSummary:
-    """_value_summary のテスト。"""
+class TestDiffLogging:
+    """update_claude_settings の差分ログ出力を公開経路経由で検証する。
 
-    def test_string(self):
-        assert _value_summary("hello") == '"hello"'
+    値の要約・リスト差分・再帰差分は内部実装のため、設定更新時に logger へ
+    出力される差分行を通じてまとめて検証する。
+    """
 
-    def test_number(self):
-        assert _value_summary(42) == "42"
+    @staticmethod
+    def _update_and_capture(
+        tmp_path: Path,
+        managed: dict,
+        existing: dict,
+        caplog: pytest.LogCaptureFixture,
+        *,
+        removed_env_keys: tuple[str, ...] = (),
+    ) -> list[str]:
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps(managed, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+        with caplog.at_level(logging.INFO, logger="pytools._internal.update_claude_settings"):
+            update_claude_settings(managed_path, target_path, removed_env_keys=removed_env_keys)
+        return caplog.messages
 
-    def test_bool(self):
-        assert _value_summary(True) == "true"
+    def test_scalar_changes_are_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """文字列・数値・真偽値のスカラー変更が old → new 形式で6スペース付き出力される。"""
+        existing = {"s": "english", "n": 1, "b": False}
+        managed = {"s": "japanese", "n": 42, "b": True}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        text = "\n".join(messages)
+        assert 's: "english" → "japanese"' in text
+        assert "n: 1 → 42" in text
+        assert "b: false → true" in text
+        assert any(line.startswith("      s:") for line in messages)
 
-    def test_none(self):
-        assert _value_summary(None) == "null"
+    def test_new_key_value_summaries(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """新規キーの値が dict/list サマリーと長文切り詰めで出力される。"""
+        existing: dict = {}
+        managed = {"d": {"a": 1, "b": 2}, "l": [1, 2, 3], "long": "x" * 100}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        text = "\n".join(messages)
+        assert "d: (新規) {...} (2 keys)" in text
+        assert "l: (新規) [...] (3 件)" in text
+        long_line = next(line for line in messages if line.startswith("      ") and "long: (新規)" in line)
+        assert long_line.endswith("...")  # 60文字上限で切り詰められる
 
-    def test_dict(self):
-        assert _value_summary({"a": 1, "b": 2}) == "{...} (2 keys)"
+    def test_nested_dict_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """ネストした dict の変更が親.子のパス付きで出力される。"""
+        existing = {"permissions": {"allow": ["Bash"], "defaultMode": "plan"}}
+        managed = {"permissions": {"defaultMode": "auto"}}
+        text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog))
+        assert 'permissions.defaultMode: "plan" → "auto"' in text
 
-    def test_list(self):
-        assert _value_summary([1, 2, 3]) == "[...] (3 件)"
+    def test_string_list_union_shows_inline_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """文字列リストの union 追加が件数と追加要素付きで出力される。"""
+        existing = {"items": ["a", "b"]}
+        managed = {"items": ["a", "b", "c"]}
+        text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog))
+        assert "items: 2 → 3 件" in text
+        assert '+"c"' in text
 
-    def test_long_string_is_truncated(self):
-        long_str = "x" * 100
-        result = _value_summary(long_str)
-        assert len(result) < 100
-        assert result.endswith("...")
+    def test_many_list_additions_show_count_only(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """差分件数が上限を超えるリストは件数のみ出力される（追加要素のインライン表示なし）。"""
+        existing = {"items": ["a"]}
+        managed = {"items": ["a", "b", "c", "d", "e"]}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        items_line = next(line for line in messages if line.startswith("      ") and "items:" in line)
+        assert "1 → 5 件" in items_line
+        assert "+" not in items_line
 
-    def test_short_string_is_not_truncated(self):
-        short_str = "x" * 10
-        result = _value_summary(short_str)
-        assert not result.endswith("...")
+    def test_dict_element_list_shows_count_only(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """dict を要素に持つリスト（hooks 等）の差分は件数のみ出力される（インライン表示なし）。
 
+        inner hooks には除去対象外の command を持たせる（空だと _strip_removed_hooks が
+        matcher ごと除去してしまうため）。
+        """
+        existing = {"hooks": {"PreToolUse": [{"matcher": "A", "hooks": [{"type": "command", "command": "a.py"}]}]}}
+        managed = {"hooks": {"PreToolUse": [{"matcher": "B", "hooks": [{"type": "command", "command": "b.py"}]}]}}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        hooks_line = next(line for line in messages if line.startswith("      ") and "PreToolUse:" in line)
+        assert "1 → 2 件" in hooks_line
+        assert "+" not in hooks_line
 
-class TestListDiffSummary:
-    """_list_diff_summary のテスト。"""
+    def test_removed_env_key_shows_deletion(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """env キー除去で env が削除され、削除差分が出力される。"""
+        existing = {"env": {"OLD": "1"}}
+        managed: dict = {}
+        text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog, removed_env_keys=("OLD",)))
+        assert "env:" in text
+        assert "→ (削除)" in text
 
-    def test_same_count(self):
-        result = _list_diff_summary(["a", "b"], ["a", "c"])
-        assert result.startswith("2 → 2 件")
-        assert '+"c"' in result
-        assert '-"b"' in result
+    def test_no_change_logs_no_diff_rows(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """差分が無い場合は変更なしのみで差分行（6スペース始まり）が出力されない。"""
+        existing = {"language": "japanese"}
+        managed = {"language": "japanese"}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        assert any("変更なし" in m for m in messages)
+        assert not [m for m in messages if m.startswith("      ")]
 
-    def test_item_added(self):
-        result = _list_diff_summary(["a", "b"], ["a", "b", "c"])
-        assert result.startswith("2 → 3 件")
-        assert '+"c"' in result
-
-    def test_item_removed(self):
-        result = _list_diff_summary(["a", "b", "c"], ["a", "b"])
-        assert result.startswith("3 → 2 件")
-        assert '-"c"' in result
-
-    def test_many_added_no_inline(self):
-        before = ["a"]
-        after = ["a", "b", "c", "d", "e"]
-        result = _list_diff_summary(before, after)
-        assert result == "1 → 5 件"  # 差分4件で _MAX_INLINE_DIFF=3 超えるため件数のみ
-
-    def test_dict_list_no_inline(self):
-        """dict を含むリストは件数のみ表示する。"""
-        before = [{"x": 1}]
-        after = [{"x": 1}, {"x": 2}]
-        result = _list_diff_summary(before, after)
-        assert result == "1 → 2 件"
-        assert "+" not in result
-
-    def test_no_change(self):
-        result = _list_diff_summary(["a", "b"], ["b", "a"])
-        # 順序変化のみ（set差分なし）は件数のみ
-        assert result == "2 → 2 件"
-
-
-class TestDiffLines:
-    """_diff_lines のテスト。"""
-
-    def test_scalar_changed(self):
-        lines = _diff_lines({"lang": "english"}, {"lang": "japanese"})
-        assert len(lines) == 1
-        assert 'lang: "english" → "japanese"' in lines[0]
-
-    def test_key_added(self):
-        lines = _diff_lines({}, {"lang": "japanese"})
-        assert len(lines) == 1
-        assert "lang: (新規)" in lines[0]
-
-    def test_key_removed(self):
-        lines = _diff_lines({"lang": "english"}, {})
-        assert len(lines) == 1
-        assert "lang:" in lines[0]
-        assert "→ (削除)" in lines[0]
-
-    def test_no_diff_returns_empty(self):
-        assert not _diff_lines({"a": 1}, {"a": 1})
-
-    def test_dict_recursive(self):
-        before = {"permissions": {"allow": ["Bash"], "defaultMode": "plan"}}
-        after = {"permissions": {"allow": ["Bash"], "defaultMode": "auto"}}
-        lines = _diff_lines(before, after)
-        assert len(lines) == 1
-        assert "permissions.defaultMode" in lines[0]
-        assert '"plan" → "auto"' in lines[0]
-
-    def test_list_shows_summary(self):
-        before = {"items": ["a", "b"]}
-        after = {"items": ["a", "b", "c"]}
-        lines = _diff_lines(before, after)
-        assert len(lines) == 1
-        assert "items:" in lines[0]
-        assert "2 → 3 件" in lines[0]
-
-    def test_indent_prefix(self):
-        """差分行は6スペースインデント。"""
-        lines = _diff_lines({"x": 1}, {"x": 2})
-        assert lines[0].startswith("      ")
-
-    def test_sorted_keys(self):
-        """キーはアルファベット順に出力される。"""
-        before: dict = {}
-        after = {"z": 1, "a": 2, "m": 3}
-        lines = _diff_lines(before, after)
-        keys = [line.split(":")[0].strip() for line in lines]
+    def test_diff_rows_sorted_by_key(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        """差分行はキーのアルファベット順で出力される。"""
+        existing: dict = {}
+        managed = {"z": 1, "a": 2, "m": 3}
+        messages = self._update_and_capture(tmp_path, managed, existing, caplog)
+        diff_rows = [m for m in messages if m.startswith("      ")]
+        keys = [m.split(":")[0].strip() for m in diff_rows]
         assert keys == ["a", "m", "z"]
 
 
@@ -532,3 +518,125 @@ class TestStripRemovedHooks:
             assert "PreToolUse" not in result.get("hooks", {})
         else:
             assert result["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == command
+
+
+class TestStripRemovedEnvKeys:
+    """配布元から削除された env キーの自動除去テスト。"""
+
+    @pytest.mark.parametrize(
+        ("existing_env", "removed_keys", "expected_env"),
+        [
+            # 削除対象キーあり → 除去される
+            (
+                {"OLD_KEY": "1", "KEEP_KEY": "keep"},
+                ("OLD_KEY",),
+                {"KEEP_KEY": "keep"},
+            ),
+            # 削除対象キーなし（別の env キーのみ） → 無変更
+            (
+                {"OTHER_KEY": "value"},
+                ("OLD_KEY",),
+                {"OTHER_KEY": "value"},
+            ),
+            # 削除後 env が空 dict → env キーごと除去される
+            (
+                {"OLD_KEY": "1"},
+                ("OLD_KEY",),
+                None,  # env キーごと消える
+            ),
+        ],
+    )
+    def test_env_key_removal(
+        self,
+        tmp_path: Path,
+        existing_env: dict,
+        removed_keys: tuple[str, ...],
+        expected_env: dict | None,
+    ):
+        """env キーの除去・無変更・空後のキー消去を検証する。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"env": existing_env}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_env_keys=removed_keys)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        if expected_env is None:
+            assert "env" not in result
+        else:
+            assert result["env"] == expected_env
+
+    def test_no_env_key_is_noop(self, tmp_path: Path):
+        """env キー自体なし → 無変更。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"language": "japanese"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_env_keys=("OLD_KEY",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert "env" not in result
+        assert result["language"] == "japanese"
+
+    def test_non_dict_env_is_untouched(self, tmp_path: Path):
+        """env が dict でない場合、削除対象キーを渡しても env は無変更のまま保持される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"env": "invalid"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_env_keys=("OLD_KEY",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["env"] == "invalid"
+
+    def test_empty_removed_env_keys_is_noop(self, tmp_path: Path):
+        """removed_env_keys が空タプルの場合、既存の env は無変更のまま保持される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text("{}", encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"env": {"FOO": "bar", "BAZ": "qux"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_env_keys=())
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["env"] == {"FOO": "bar", "BAZ": "qux"}
+
+    def test_agent_teams_removed_and_managed_env_preserved(self, tmp_path: Path):
+        """update_claude_settings 経由で CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS が消え、
+        managed の env (CLAUDE_CODE_NO_FLICKER 等) は保持される。
+        """
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1", "CLAUDE_CODE_NO_FLICKER": "1"}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        # removed_env_keys は既定値（_REMOVED_ENV_KEYS）を使用
+        update_claude_settings(managed_path, target_path)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in result["env"]
+        assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"

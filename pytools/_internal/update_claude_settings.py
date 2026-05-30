@@ -37,6 +37,14 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
 )
 
+# settings.json の env 配下から除去するキー。
+# share/claude_settings_json_managed.* から廃止した env キーを列挙する。
+# dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
+_REMOVED_ENV_KEYS: tuple[str, ...] = (
+    # 2026-05: Claude Code の実験的エージェントチーム機能フラグを廃止
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+)
+
 _MAX_VALUE_LEN = 60
 _MAX_INLINE_DIFF = 3
 
@@ -80,15 +88,17 @@ def update_claude_settings(
     settings_path: Path,
     overrides: list[Path] | None = None,
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
+    removed_env_keys: tuple[str, ...] = _REMOVED_ENV_KEYS,
 ) -> bool:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
     `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
-    マージ前に `settings_path` から `removed_hook_substrings` に該当するhookエントリを
-    除去することで、配布元から削除されたhookが残り続けるのを防ぐ。
+    マージ前に `settings_path` から `removed_hook_substrings` に該当する hooks エントリと
+    `removed_env_keys` に該当する env キーを除去することで、配布元から削除された
+    エントリが残り続けるのを防ぐ。
 
     Returns:
-        実際にファイルを書き換えた場合True。
+        実際にファイルを書き換えた場合は `True`。
     """
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
@@ -98,6 +108,7 @@ def update_claude_settings(
 
     original = copy.deepcopy(data)
     _strip_removed_hooks(data, removed_hook_substrings)
+    _strip_removed_env_keys(data, removed_env_keys)
     _merge(data, managed)
 
     short = log_format.home_short(settings_path)
@@ -170,7 +181,7 @@ def _value_summary(value: object) -> str:
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
-    """`data["hooks"][event][*]["hooks"]` から `substrings` を含むcommandを除去する。
+    """`data["hooks"][event][*]["hooks"]` から `substrings` を含む `command` を除去する。
 
     エントリが空になったらmatcherエントリ自体も除去する。さらにevent配列ごと空に
     なったらeventキーごと除去する。
@@ -208,6 +219,23 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
             hooks_root[event_name] = kept_matchers
         else:
             del hooks_root[event_name]
+
+
+def _strip_removed_env_keys(data: dict, keys: tuple[str, ...]) -> None:
+    """`data["env"]` から `keys` に含まれるキーを除去する。
+
+    除去後に `env` が空 dict になった場合は `env` キー自体も除去する。
+    `data` に `env` キーが無い、または `env` が dict でない場合は何もしない。
+    """
+    if not keys:
+        return
+    env = data.get("env")
+    if not isinstance(env, dict):
+        return
+    for key in keys:
+        env.pop(key, None)
+    if not env:
+        del data["env"]
 
 
 def _merge(data: dict, managed: dict) -> None:

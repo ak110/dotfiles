@@ -80,7 +80,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("check-cmd-encoding"),
         Path("check-templates"),
         Path("run-psscriptanalyzer"),
-        # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採る。
+        # bin/ はリポジトリ直下に置き、~/dotfiles/bin を PATH に通す方式を採用する。
         # 旧配布物 (~/bin/ 配下) を削除する。Linux 用と Windows 用 (.cmd) を共通キーで列挙する。
         Path("c"),
         Path("c.cmd"),
