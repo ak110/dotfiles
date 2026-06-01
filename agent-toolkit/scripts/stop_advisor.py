@@ -10,7 +10,7 @@ Claude Codeが停止しようとするタイミングで発火する。
 共通ゲート`_stop_gate.is_real_session_end`の判定通過後にまとめて出力する。
 
 セッション振り返り提案では`agent-toolkit:session-review`スキルの呼び出しを誘導する。
-具体的な手順（観察源・自己検証4点・提示フォーマット・適用承認）はスキル本体が保持する。
+具体的な手順（観察源・自己検証4点・提示フォーマット・反映案内）はスキル本体が保持する。
 """
 
 import json
@@ -174,7 +174,7 @@ def main() -> int:
             "session-review handoff: invoke the `agent-toolkit:session-review` Skill via the Skill tool"
             " to run the session review."
             " The skill provides the full procedure"
-            " (Reflect / Draft Additions / Show Proposed Changes / Apply with Approval)"
+            " (Reflect / Draft Additions / Show Proposed Changes)"
             " for the project documentation section; follow it end-to-end."
         )
         messages.append(_llm_notice(body))

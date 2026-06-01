@@ -59,6 +59,5 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 ## ステップ4の適用範囲
 
-`agent-toolkit:session-review`スキルのステップ4（Apply with Approval）は
-プロジェクトドキュメント改善提案のみを対象とする。
-本スキルが追加するpyfltr章・agent-toolkit章は適用対象外（ユーザー側で別途反映する）。
+各章の改善提案の反映に`agent-toolkit:apply-feedback`スキルを使う旨を、
+章ごとの対象リポジトリ（pyfltr章は`~/pyfltr`、agent-toolkit章は`~/dotfiles`）とともにユーザーに案内する。

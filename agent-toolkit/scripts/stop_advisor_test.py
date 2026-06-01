@@ -120,7 +120,6 @@ class TestSessionReviewBlock:
         assert "agent-toolkit:session-review" in reason
         assert "Skill" in reason
         assert "Reflect" in reason
-        assert "Apply with Approval" in reason
 
     def test_no_completion_approves(self, tmp_path: pathlib.Path):
         """完了文言がないアシスタントターンは振り返り提案を発火しない。"""
