@@ -12,6 +12,8 @@
   - `typing.List`ではなく`list`を使う。`dict`やその他も同様
   - `typing.Optional`ではなく`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
+  - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない。
+    サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
 - docstringはGoogle Style
   - 自明なArgs, Returns, Raisesは省略する
   - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でも
