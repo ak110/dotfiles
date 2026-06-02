@@ -19,6 +19,6 @@ set ec=%ERRORLEVEL%
 rem ssh.exeが変更したコードページを起動時の値へ復元する
 chcp %origcp% >nul
 if "%ec%"=="0" exit /b 0
-powershell -NoProfile -Command "$e=[char]27; @('[?1000l','[?1002l','[?1003l','[?1006l','[?1015l','[?1049l','[0m','[?25h') | %% { [Console]::Error.Write($e+$_) }"
+powershell -NoProfile -Command "$e=[char]27; @('[?1000l','[?1002l','[?1003l','[?1004l','[?1006l','[?1015l','[?2004l','[?1049l','[0m','[?25h') | %% { [Console]::Error.Write($e+$_) }"
 echo [sshr] 切断されました (exit=%ec%)。再接続します... (Ctrl+C で終了) 1>&2
 goto loop

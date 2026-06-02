@@ -96,7 +96,7 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 
 claude-plugins-officialから以下を導入。
 
-- 推奨: `context7`・`typescript-lsp`
+- 推奨: `context7`・`typescript-lsp`（`npm install -g typescript-language-server typescript`が必要）
 - 任意: `claude-md-management`・`skill-creator`
 - 無効: `pyright-lsp`（Claude Codeがインストールを推奨するが誤動作が発生するため、インストール後に`Disable`）
 
