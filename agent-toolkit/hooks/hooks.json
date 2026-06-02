@@ -42,6 +42,17 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/permissionrequest.py"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "idle_prompt",

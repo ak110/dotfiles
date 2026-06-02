@@ -1,13 +1,13 @@
-"""scripts/claude_hook_permissionrequest.py の判定ロジックテスト。"""
+"""agent-toolkit/scripts/permissionrequest.py の判定ロジックテスト。"""
 
 import json
 import pathlib
 import subprocess
 
-import claude_hook_permissionrequest as hook
+import permissionrequest as hook
 import pytest
 
-_SCRIPT_PATH = pathlib.Path(__file__).resolve().parent / "claude_hook_permissionrequest.py"
+_SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "permissionrequest.py"
 
 
 @pytest.fixture(name="home")

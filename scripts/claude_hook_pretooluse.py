@@ -99,7 +99,7 @@ def main() -> int:
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
-        # （`scripts/claude_hook_permissionrequest.py`）で別途処理する。
+        # （`agent-toolkit/scripts/permissionrequest.py`）で別途処理する。
         print(
             json.dumps(
                 {

@@ -3,7 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-r"""Claude Code PermissionRequestフック: 信頼領域への書き込みを自動許可する。
+r"""Claude Code plugin agent-toolkit: PermissionRequestフック。
 
 PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 （`.claude/`配下の編集確認ダイアログ等）を上書きできないため、
@@ -237,7 +237,7 @@ def _is_inside_git_worktree(target: pathlib.Path) -> bool:
 def _split_redirects(tokens: list[str]) -> tuple[list[str], list[str] | None]:
     """`>` / `>>` トークンを抽出してリダイレクト先パスと残りのトークンに分ける。
 
-    リダイレクト直後にトークンがない不正な構文の場合は `(_, None)` を返す。
+    リダイレクト直後にトークンがない不正な構文の場合は `([], None)` を返す。
     """
     redirects: list[str] = []
     remaining: list[str] = []

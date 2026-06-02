@@ -35,6 +35,8 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --script ~/dotfiles/scripts/claude_hook_stop.py",
     "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
     "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
+    # 2026-06: agent-toolkitプラグイン側へ移動したため旧エントリを除去
+    "claude_hook_permissionrequest.py",
 )
 
 # settings.json の env 配下から除去するキー。
