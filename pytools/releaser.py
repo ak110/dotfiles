@@ -3,7 +3,7 @@
 
 引数として`patch`/`minor`/`major`を渡すと、未コミット検査・既定ブランチ確認・
 push・CI完了待機を経てrelease.yamlをworkflow_dispatchで起動する。
-引数無しの場合はヘルプと未リリースコミット一覧を表示する。
+省略時はヘルプと未リリースコミット一覧を表示する。
 """
 
 import argparse
@@ -111,6 +111,8 @@ def _show_unreleased(parser: argparse.ArgumentParser) -> None:
         ["git", "log", "--oneline", "--decorate", f"{tag}..HEAD"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     output = result.stdout.rstrip("\n")
@@ -125,6 +127,8 @@ def _is_git_repo() -> bool:
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     return result.returncode == 0
@@ -135,6 +139,8 @@ def _get_git_root() -> Path:
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -148,6 +154,8 @@ def _get_latest_release_tag() -> str | None:
         ["git", "describe", "--tags", "--abbrev=0", "--match=v[0-9]*"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -168,6 +176,8 @@ def _get_current_branch() -> str:
         ["git", "branch", "--show-current"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     branch = result.stdout.strip()
@@ -182,6 +192,8 @@ def _get_default_branch() -> str:
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -196,6 +208,8 @@ def _ensure_clean_working_tree() -> None:
         ["git", "status", "--porcelain"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     if result.stdout.strip():
@@ -208,6 +222,8 @@ def _push_to_remote() -> None:
         ["git", "rev-list", "@{u}..HEAD", "--count"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -233,8 +249,7 @@ def _wait_for_ci(git_root: Path) -> None:
         # ブランチフィルターやpath-filterで対象外の場合、push後にrunが登録されない。
         # CIなしと同等の扱いとし、警告のみで処理を継続する。
         logger.warning(
-            "コミット %s に対するCI runが見つかりません。"
-            "ブランチフィルター等の対象外の可能性があるためCI待機をスキップします。",
+            "コミット %s に対するCI runが見つかりません。ブランチフィルター等の対象外の可能性があるためCI待機をスキップする。",
             sha[:7],
         )
         return
@@ -258,6 +273,8 @@ def _get_head_sha() -> str:
         ["git", "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return result.stdout.strip()
@@ -279,6 +296,8 @@ def _get_release_workflow_name() -> str:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -299,6 +318,8 @@ def _list_runs_for_commit(sha: str) -> list[dict[str, Any]]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return json.loads(result.stdout)
@@ -402,6 +423,8 @@ def _list_release_runs() -> list[dict[str, Any]]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return json.loads(result.stdout)

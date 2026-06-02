@@ -64,6 +64,8 @@ def main() -> None:
             ["git", "log", "-1", "--format=%B"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
         head_message = result.stdout.strip()
@@ -97,6 +99,8 @@ def _get_git_root() -> Path:
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return Path(result.stdout.strip())
@@ -120,6 +124,8 @@ def _get_format_instructions(git_root: Path | None = None) -> str:
         ["git", "config", "--get", "commit.template"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,  # returncode=1 は設定未定義を意味するため正常
     )
     if result.returncode == 0 and result.stdout.strip():
@@ -144,7 +150,14 @@ def _get_names(*, scope: str) -> list[str]:
         cmd = ["git", "ls-files", "--others", "--exclude-standard"]
     else:
         raise ValueError(f"unknown scope: {scope}")
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+    )
     return [f for f in result.stdout.splitlines() if f]
 
 
@@ -156,7 +169,14 @@ def _get_stat(*, scope: str) -> str:
         cmd = ["git", "diff", "--stat"]
     else:
         raise ValueError(f"unknown scope: {scope}")
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+    )
     return result.stdout
 
 

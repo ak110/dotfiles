@@ -133,6 +133,8 @@ def _read_upstream_version() -> str | None:
         ["git", "show", f"@{{u}}:{rel.as_posix()}"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(_REPO_ROOT),
         check=False,
     )
