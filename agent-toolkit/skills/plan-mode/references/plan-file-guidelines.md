@@ -280,14 +280,10 @@
     各セクションのテーブルセル・箇条書き・コードブロック内に散在する旧前提値を漏れなく更新する
   - 更新前に旧前提値を`grep`等で全件列挙し、本文と従属箇所の双方を突き合わせて追従漏れを防ぐ
 - 計画提出前に計画ファイル本文の機械チェックを実行する
-  - プロジェクトがpyfltrを採用している場合は
-    `uvx pyfltr run-for-agent --work-dir=. <計画ファイルパス>` を実行する。
-    カレントディレクトリをプロジェクトルートにすることで `.textlintrc.yaml`・`.markdownlint-cli2.yaml` が解決され、
-    プロジェクト規約のtextlint・markdownlint・colloquialが計画ファイル本文へ一括実行される。
+  - `uvx pyfltr run-for-agent --work-dir=. <計画ファイルパス>` を実行する。
+    カレントディレクトリをプロジェクトルートにすることで `.textlintrc.yaml`・`.markdownlint-cli2.yaml` が解決される。
+    これによりプロジェクト規約のtextlint・markdownlint・colloquialが計画ファイル本文へ一括実行される。
     `pre-commit` コマンドはリポジトリ外パスでエラーになるが、他コマンドの結果を主軸として扱う
-  - pyfltr非採用、またはtextlint/markdownlint設定が無いプロジェクトでは
-    `agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`と
-    `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`を計画ファイル本文へ直接実行する
   - 機械チェック適合性の判定対象は、計画ファイル内のコードブロック内（成果物の想定文面）に限定する
    （コードブロック外の本文中の誤検出はエージェント側の判断で除外する）
 - 計画範囲外のファイルで違反を検知した場合、自己判断で書き換えず修正方針をユーザーへ提示し、合意を得てから着手する

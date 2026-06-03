@@ -145,7 +145,7 @@ PostToolUseフックの構造検査で構造違反として警告される。簡
   - textlint `ja-technical-writing/max-kanji-continuous-len`の漢字7文字連続上限
   - textlint `ja-technical-writing/ja-no-redundant-expression`の冗長表現（「〜を実行する」等のサ変動詞冗長形）
   - markdownlint `MD013/line-length`の半角換算127幅上限
-   （pyfltr未採用環境では`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`で代替）
+  - `agent-toolkit/skills/writing-standards/scripts/check_colloquial.py`の口語表現チェック
 
   括弧書きを含む長文や、半角識別子・コード片を多用する行は計画策定時点で分割する。
   実装段階で違反が発覚した場合、文意を変えない範囲での分割は許容する
