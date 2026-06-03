@@ -1155,3 +1155,32 @@ class TestBashUvRunPythonBlock:
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uvx ruff check .", cwd)
         assert result.returncode == 0
+
+
+class TestCodexMcpSandbox:
+    """codex MCP sandbox自動修正。"""
+
+    def test_sandbox_auto_fix(self):
+        """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
+        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}})
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert updated["prompt"] == "hello"
+        assert "自動修正" in out["systemMessage"]
+
+    def test_sandbox_wrong_value_auto_fix(self):
+        """sandboxが不正な値の場合も自動修正される。"""
+        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello", "sandbox": "network-only"}})
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert "自動修正" in out["systemMessage"]
+
+    def test_sandbox_correct_no_fix(self):
+        """sandboxが既にdanger-full-accessの場合は修正しない。"""
+        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"}})
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
