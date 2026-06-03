@@ -155,10 +155,20 @@ uv run --script path/to/writing-standards/scripts/check_colloquial.py path/to/fi
 
 ## Markdown記述スタイル
 
+Markdown要素はセマンティック（意味的役割）に沿って使う。
+視覚効果や機械チェック違反の回避を目的に、本来の意味と異なる要素を使わない。
 行幅・句点位置などの細則はmarkdownlint・textlintで自動検証される。
 頻出textlint違反パターンは`references/textlint-violations.md`を参照する。
 
-- `**`は強調したい箇所のみとし、箇条書きの見出しなどでの使用は禁止する
+セマンティック原則の具体例:
+
+- 強調（`**`）は語句強調にのみ使う。見出し代替（箇条書きの見出しなど）として使わない
+  - 見出しが必要な場合は`###`等の見出しを使う
+- インラインコード（バッククォート）をtextlintの漢字連続・句読点違反などを回避する手段として使わない
+  - 違反が出る場合は表記そのものを見直す
+
+機械検証規範:
+
 - markdownlintが通るように書く。特に注意するルール:
   - `MD022`: 見出しの前後に空行を置く／`MD031`: フェンスドコードブロックの前後に空行を置く
   - `MD040`: フェンスドコードブロックに言語を指定する
@@ -168,6 +178,9 @@ uv run --script path/to/writing-standards/scripts/check_colloquial.py path/to/fi
 - 箇条書きは1項目1文で書き、複数文は別項目分割かサブバレット階層化で表す
   - 120字超の単文や半角識別子・コマンド名を含む列挙は`ja-technical-writing/sentence-length`・
     `preset-jtf-style 1.1.3.箇条書き`違反を招くため、最初から別項目化・サブバレット化で予防する
+
+その他:
+
 - 図はMermaid記法で書く
 - 別のMarkdownファイルへのリンクは用途で書き分ける
   - Markdownソースのまま読まれる想定（`README.md`・GitHub閲覧前提のdocs等）は
