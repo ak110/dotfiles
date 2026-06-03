@@ -531,7 +531,8 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         ctx = self._additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in ctx
-        assert "written largely in English" in ctx
+        assert "英語主体" in ctx
+        assert "evaluate relevance" not in ctx
 
     def test_no_warn_when_response_is_japanese(self, tmp_path: pathlib.Path):
         """日本語比率高めの応答では日本語比率警告が出ない。"""
@@ -544,7 +545,7 @@ class TestResponseLanguageCheck:
             }
         )
         assert result.returncode == 0
-        assert "written largely in English" not in self._additional_context(result)
+        assert "英語主体" not in self._additional_context(result)
 
     def test_no_warn_for_sidechain(self, tmp_path: pathlib.Path):
         """payloadのisSidechain=trueは検査対象外。"""
@@ -565,6 +566,141 @@ class TestResponseLanguageCheck:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestLanguageEscalation:
+    """言語検査のエスカレーション（連続英語ターン → ブロック）。
+
+    セッション状態を介してexit code 2でツール呼び出しをブロックする。
+    """
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @staticmethod
+    def _write_transcript(tmp_path: pathlib.Path, text: str, msg_id: str = "m1") -> pathlib.Path:
+        entry = {
+            "type": "assistant",
+            "message": {
+                "id": msg_id,
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+                "stop_reason": "end_turn",
+            },
+        }
+        path = tmp_path / "transcript.jsonl"
+        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        return path
+
+    def _invoke(
+        self,
+        tmp_path: pathlib.Path,
+        env: dict[str, str],
+        session_id: str,
+        text: str,
+        msg_id: str = "m1",
+    ) -> subprocess.CompletedProcess[str]:
+        transcript = self._write_transcript(tmp_path, text, msg_id)
+        return _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+                "session_id": session_id,
+            },
+            env_overrides=env,
+        )
+
+    @staticmethod
+    def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
+        if not result.stdout.strip():
+            return ""
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return ""
+        return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+    def test_first_english_warns(self, tmp_path: pathlib.Path):
+        """1回目の英語検出はexit 0 + additionalContextで警告する。"""
+        env = self._state_env(tmp_path)
+        result = self._invoke(tmp_path, env, "esc-first", "A" * 100, msg_id="m1")
+        assert result.returncode == 0
+        ctx = self._additional_context(result)
+        assert "英語主体" in ctx
+        assert "evaluate relevance" not in ctx
+
+    def test_second_english_blocks(self, tmp_path: pathlib.Path):
+        """2回連続英語でexit 2 + stderrでブロックする。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-block"
+        # 1回目: warn
+        r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
+        assert r1.returncode == 0
+        # 2回目: block
+        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
+        assert r2.returncode == 2
+        assert "2ターン連続" in r2.stderr
+        assert "evaluate relevance" not in r2.stderr
+
+    def test_japanese_resets_counter(self, tmp_path: pathlib.Path):
+        """日本語応答が間に入るとカウンタがリセットされる。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-reset"
+        # 1回目: 英語 → warn
+        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
+        # 2回目: 日本語 → pass（カウンタリセット）
+        self._invoke(tmp_path, env, sid, "これは日本語の応答です。" * 5, msg_id="m2")
+        # 3回目: 英語 → warn（カウンタは1に戻っているのでブロックではない）
+        r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
+        assert r3.returncode == 0
+        ctx = self._additional_context(r3)
+        assert "英語主体" in ctx
+
+    def test_same_msg_id_no_double_count(self, tmp_path: pathlib.Path):
+        """同一message IDの並列ツール呼び出しはカウンタを1回のみ増加する。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-parallel"
+        # 同じmsg_idで2回呼び出し（並列ツール呼び出しのシミュレーション）
+        r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
+        assert r1.returncode == 0
+        r2 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
+        assert r2.returncode == 0  # 同一IDなのでカウンタ増加なし、ブロックしない
+
+    def test_block_then_next_english_reblocks(self, tmp_path: pathlib.Path):
+        """ブロック後の次ターン英語で再ブロックする。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-reblock"
+        # 1回目: warn
+        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
+        # 2回目: block
+        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
+        assert r2.returncode == 2
+        # 3回目: 再block（カウンタが1に設定されているため、次の英語で再度≧2）
+        r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
+        assert r3.returncode == 2
+        assert "2ターン連続" in r3.stderr
+
+    def test_warn_no_suffix(self, tmp_path: pathlib.Path):
+        """warn時のadditionalContextに共通サフィックスが含まれないことを検証する。"""
+        env = self._state_env(tmp_path)
+        result = self._invoke(tmp_path, env, "esc-suffix-warn", "A" * 100, msg_id="m1")
+        assert result.returncode == 0
+        ctx = self._additional_context(result)
+        assert ctx  # 警告が出ていること
+        assert "Auto-generated hook notice" not in ctx
+        assert "evaluate relevance" not in ctx
+
+    def test_block_no_suffix(self, tmp_path: pathlib.Path):
+        """block時のstderrに共通サフィックスが含まれないことを検証する。"""
+        env = self._state_env(tmp_path)
+        sid = "esc-suffix-block"
+        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
+        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
+        assert r2.returncode == 2
+        assert "Auto-generated hook notice" not in r2.stderr
+        assert "evaluate relevance" not in r2.stderr
 
 
 class TestGeneralBehavior:

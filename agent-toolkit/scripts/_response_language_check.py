@@ -7,6 +7,7 @@
 コーディングエージェントへ通知する。
 """
 
+import enum
 import re
 
 from _transcript import iter_latest_assistant_messages
@@ -37,39 +38,78 @@ _JAPANESE_CHAR_PATTERN = re.compile(r"[^\x00-\x7f]")
 _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")
 
 
+class CheckOutcome(enum.Enum):
+    """言語検査の判定結果。"""
+
+    WARN = "warn"
+    PASS = "pass"
+    SKIP = "skip"
+
+
+# hookメッセージ英語規定（agent-toolkit/skills/agent-standards/references/claude-hooks.md）の例外。
+# 英語化を矯正する指示を英語で伝えると英語傾向を助長するため日本語にする。
+WARNING_BODY = (
+    "直前のアシスタント応答が英語主体で記述されている。"
+    "ユーザーは英語の発話を読まないため、日本語で言い直すこと。"
+    "agent.md「言語表現」章に従い、進捗報告・判断・ステータス更新を"
+    "ツール呼び出し前後の短文ステータスも含めて日本語で記述すること。"
+)
+
+BLOCK_BODY = "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、日本語での応答に切り替えること。"
+
+
 def check(transcript_path: str) -> str | None:
-    """直前のメインエージェント応答の語数比を判定する。
+    """直前のメインエージェント応答の語数比を判定する（後方互換ラッパー）。
+
+    WARNのときのみ警告本文を返し、PASS・SKIPではNoneを返す。
+    判定ロジックの詳細は`detailed_check()`を参照する。
+    """
+    outcome, body, _ = detailed_check(transcript_path)
+    if outcome is CheckOutcome.WARN:
+        return body
+    return None
+
+
+def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
+    """直前のメインエージェント応答の語数比を判定し、3値で結果を返す。
 
     判定対象テキストはアシスタントターン内の`type == "text"`ブロックのみで、
     フェンス付きコードブロック・インラインコード・URLを除外する。
     語数比は日本語文字数 ÷（日本語文字数 ＋ 英単語数）で求める。
-    閾値以上、または対象外条件（短文・日本語と英単語がともにゼロ・transcript読み取り失敗）でNoneを返し、
-    閾値未満で警告メッセージ本文（英語）を返す。閾値はモジュール定数を参照する。
+    閾値はモジュール定数を参照する。
+
+    Returns:
+        (判定結果, 警告本文またはNone, message ID)のタプル。
+        SKIPまたはPASSの場合、警告本文はNoneを返す。
+        message IDはtranscriptから取得できなかった場合は空文字列を返す。
     """
     if not transcript_path:
-        return None
-    plain_text = _collect_plain_text(transcript_path)
+        return (CheckOutcome.SKIP, None, "")
+    plain_text, msg_id = _collect_plain_text(transcript_path)
     if len(plain_text) < _MIN_PLAIN_TEXT_LENGTH:
-        return None
+        return (CheckOutcome.SKIP, None, msg_id)
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
     denominator = japanese_count + english_word_count
     if denominator == 0:
-        return None
+        return (CheckOutcome.SKIP, None, msg_id)
     ratio = japanese_count / denominator
     if ratio >= _MIN_JAPANESE_WORD_RATIO:
-        return None
-    return (
-        "your previous assistant turn appears to be written largely in English."
-        " Per agent.md 「言語表現」 chapter, conduct progress updates / decisions / status reports in Japanese,"
-        " including short status sentences around tool calls."
-    )
+        return (CheckOutcome.PASS, None, msg_id)
+    return (CheckOutcome.WARN, WARNING_BODY, msg_id)
 
 
-def _collect_plain_text(transcript_path: str) -> str:
-    """直前アシスタントターンのテキストブロックを連結し、コード・URLをマスクした地の文を返す。"""
+def _collect_plain_text(transcript_path: str) -> tuple[str, str]:
+    """直前アシスタントターンのテキストブロックを連結し、コード・URLをマスクした地の文とmessage IDを返す。
+
+    テキストが空の場合は("", "")を返す。
+    """
     texts: list[str] = []
+    msg_id = ""
     for message in iter_latest_assistant_messages(transcript_path):
+        raw_id = message.get("id", "")
+        if not msg_id:
+            msg_id = raw_id if isinstance(raw_id, str) else ""
         content = message.get("content")
         if not isinstance(content, list):
             continue
@@ -82,9 +122,9 @@ def _collect_plain_text(transcript_path: str) -> str:
             if isinstance(text, str) and text:
                 texts.append(text)
     if not texts:
-        return ""
+        return ("", "")
     joined = "\n".join(texts)
     masked = _FENCED_CODE_PATTERN.sub(" ", joined)
     masked = _INLINE_CODE_PATTERN.sub(" ", masked)
     masked = _URL_PATTERN.sub(" ", masked)
-    return masked
+    return (masked, msg_id)
