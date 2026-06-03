@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# NOTE: 対応するWindows版 → bin/open-repo.cmd
+# リモートURLのホスト部分でGitHub/GitLabを判定し、対応するCLIでブラウザを開く。
+# - SSH形式（git@HOST:path）→ github.com なら gh browse、gitlab.com なら glab repo view --web
+# - HTTPS形式（https://HOST/path）→ SSH形式と同様
+# - 引数はすべて委譲先へ完全透過する
+set -euo pipefail
+
+remote_url="$(git remote get-url origin)"
+
+# ホスト部分を抽出する
+case "$remote_url" in
+    git@*:*)
+        # SSH形式: git@HOST:path → @ と : の間がホスト
+        host="${remote_url#git@}"
+        host="${host%%:*}"
+        ;;
+    https://*/*)
+        # HTTPS形式: https://HOST/path → :// と次の / の間がホスト
+        host="${remote_url#https://}"
+        host="${host%%/*}"
+        ;;
+    *)
+        echo "open-repo: 未対応のURL形式です: ${remote_url}" >&2
+        exit 1
+        ;;
+esac
+
+case "$host" in
+    github.com)
+        exec gh browse "$@"
+        ;;
+    gitlab.com)
+        exec glab repo view --web "$@"
+        ;;
+    *)
+        echo "open-repo: 未対応のホストです: ${host}" >&2
+        exit 1
+        ;;
+esac
