@@ -112,6 +112,8 @@
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
+- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う。
+  `asyncio.get_event_loop()`はPythonバージョンによって挙動が異なり非推奨。
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
     - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため
