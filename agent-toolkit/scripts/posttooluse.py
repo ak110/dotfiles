@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / Skillの実行後にイベントを検出し、
+Bash / Write / Edit / MultiEdit / Skill / Readの実行後にイベントを検出し、
 セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
@@ -15,6 +15,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 2. Git状態確認 (Bash) とgit log確認状態のリセット (commit/rebase/push/編集後)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
 4. plan-modeスキル呼び出し検出 (Skill)
+5. codex-review.md読み込み検出 (Read)
 """
 
 import json
@@ -248,6 +249,20 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_invoked)
+        return 0
+
+    # Read: codex-review.md読み込み検出
+    if tool_name == "Read":
+        file_path_raw = tool_input.get("file_path")
+        if isinstance(file_path_raw, str) and file_path_raw.endswith("codex-review.md"):
+
+            def _set_codex_review_read(state: dict) -> dict | None:
+                if state.get("codex_review_read", False):
+                    return None
+                state["codex_review_read"] = True
+                return state
+
+            update_state(session_id, _set_codex_review_read)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集はgit log確認状態を全エントリリセットする

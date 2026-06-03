@@ -1157,12 +1157,59 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
 
 
+class TestCodexReviewNotRead:
+    """codex-review.md未読時のブロック。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    def test_blocked_when_not_read(self, state_dir: dict[str, str]):
+        """codex-review.md未読時にcodex MCP呼び出しがブロックされる。"""
+        result = _run(
+            {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "no-review"},
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "codex-review.md" in result.stderr
+
+    def test_allowed_when_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """codex-review.md読み込み済みの場合は通過する。"""
+        self._write_state(tmp_path, "with-review", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "with-review",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+
 class TestCodexMcpSandbox:
     """codex MCP sandbox自動修正。"""
 
-    def test_sandbox_auto_fix(self):
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    def test_sandbox_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
-        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}})
+        self._write_state(tmp_path, "fix1", {"codex_review_read": True})
+        result = _run(
+            {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
+            env_overrides=state_dir,
+        )
         assert result.returncode == 0
         out = json.loads(result.stdout)
         updated = out["hookSpecificOutput"]["updatedInput"]
@@ -1170,17 +1217,33 @@ class TestCodexMcpSandbox:
         assert updated["prompt"] == "hello"
         assert "自動修正" in out["systemMessage"]
 
-    def test_sandbox_wrong_value_auto_fix(self):
+    def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが不正な値の場合も自動修正される。"""
-        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello", "sandbox": "network-only"}})
+        self._write_state(tmp_path, "fix2", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "network-only"},
+                "session_id": "fix2",
+            },
+            env_overrides=state_dir,
+        )
         assert result.returncode == 0
         out = json.loads(result.stdout)
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
         assert "自動修正" in out["systemMessage"]
 
-    def test_sandbox_correct_no_fix(self):
+    def test_sandbox_correct_no_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが既にdanger-full-accessの場合は修正しない。"""
-        result = _run({"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"}})
+        self._write_state(tmp_path, "fix3", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "fix3",
+            },
+            env_overrides=state_dir,
+        )
         assert result.returncode == 0
         assert result.stdout.strip() == ""

@@ -889,3 +889,56 @@ class TestPlanFormatSsot:
         assert defined_h2 == _PLAN_REQUIRED_H2, (
             f"plan-file-guidelines.md のセクション定義順 {defined_h2} が _PLAN_REQUIRED_H2 {_PLAN_REQUIRED_H2} と一致しない"
         )
+
+
+class TestCodexReviewReadTracking:
+    """codex-review.md読み込み追跡。"""
+
+    def test_read_codex_review_sets_flag(self, tmp_path: pathlib.Path):
+        """codex-review.mdをReadすると状態フラグが設定される。"""
+        sid = "codex-review-read"
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/home/aki/dotfiles/agent-toolkit/skills/plan-mode/references/codex-review.md"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["codex_review_read"] is True
+
+    def test_read_other_file_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """codex-review.md以外のファイルでは状態フラグが設定されない。"""
+        sid = "other-read"
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/home/aki/dotfiles/agent-toolkit/rules/agent.md"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        if state_file.exists():
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            assert not state.get("codex_review_read", False)
+
+    def test_read_flag_idempotent(self, tmp_path: pathlib.Path):
+        """フラグが既に設定されている場合は冗長な書き込みをしない。"""
+        sid = "codex-review-idem"
+        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_file.write_text(json.dumps({"codex_review_read": True}), encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/path/to/codex-review.md"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        assert state["codex_review_read"] is True
