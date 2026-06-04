@@ -33,6 +33,28 @@ if ($currentHash -ne $cachedHash) {
     }
 }
 
+# dotfiles-media-remote は pythonw.exe -m pytools.media_remote serve として起動する。
+# プロセス名は pythonw のため Stop-Process -Name で識別できない。
+# serve 起動時に %LOCALAPPDATA%\dotfiles\media-remote\pid へ記録された PID を読み取り、
+# 当該プロセスが pythonw.exe かつコマンドラインに pytools.media_remote を含むことを
+# CIM で確認したうえで停止する。
+$mediaRemotePythonw = Join-Path $env:USERPROFILE '.local\share\uv\tools\pytools\Scripts\pythonw.exe'
+$mediaRemotePidFile = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\pid'
+$mediaRemoteWasRunning = $false
+if ($currentHash -ne $cachedHash -and (Test-Path $mediaRemotePidFile)) {
+    try {
+        $mediaRemotePid = [int]((Get-Content $mediaRemotePidFile -Encoding UTF8 -Raw).Trim())
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$mediaRemotePid" -ErrorAction SilentlyContinue
+        if ($proc -and $proc.Name -eq 'pythonw.exe' -and $proc.CommandLine -like '*pytools.media_remote*') {
+            $mediaRemoteWasRunning = $true
+            Write-Host '  [pytools] dotfiles-media-remote を一時停止'
+            Stop-Process -Id $mediaRemotePid -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Host "  [pytools] dotfiles-media-remote 停止処理をスキップ: $_"
+    }
+}
+
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if ($currentHash -ne $cachedHash) {
     Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
@@ -86,4 +108,12 @@ if (Test-Path $postApplyBin) {
 if ($viewerWasRunning -and (Test-Path $viewerBin)) {
     Write-Host '  [pytools] claude-plans-viewer を再起動'
     Start-Process -FilePath $viewerBin -WindowStyle Hidden
+}
+
+# 再インストール前に停止した media-remote を再起動する（stheno のみ）。
+# 自動起動は post-apply 側のショートカット配置に委ねるが、再インストール中の停止からの
+# 復帰だけは本節で担当する。
+if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno' -and (Test-Path $mediaRemotePythonw)) {
+    Write-Host '  [pytools] dotfiles-media-remote を再起動'
+    Start-Process -FilePath $mediaRemotePythonw -WindowStyle Hidden -ArgumentList @('-m', 'pytools.media_remote', 'serve')
 }

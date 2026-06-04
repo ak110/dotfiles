@@ -20,6 +20,7 @@ dependencies = [
     "pydantic>=2",
     "pytilpack[quart]>=1.46.0",
     "pyyaml",
+    "qrcode>=8.0",
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
@@ -39,6 +40,7 @@ colloquial-checker = "pytools.colloquial_checker:main"
 dateRelocator = "pytools.date_relocator:main"
 deletehomonym = "pytools.delete_homonym:main"
 dirsize = "pytools.dirsize:main"
+dotfiles-media-remote = "pytools.media_remote:main"
 dotfiles-post-apply = "pytools.post_apply:main"
 EcoUtilities = "pytools.ecoutilities:main"
 git-justify = "pytools.git_justify:main"
