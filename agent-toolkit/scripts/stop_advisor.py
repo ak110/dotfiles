@@ -176,6 +176,8 @@ def main() -> int:
             " The skill provides the full procedure"
             " (Reflect / Draft Additions / Show Proposed Changes)"
             " for the project documentation section; follow it end-to-end."
+            " Focus on preventing misjudgments and strengthening autonomous decision-making"
+            " rather than smoothing the workflow."
         )
         messages.append(_llm_notice(body))
 
