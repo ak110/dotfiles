@@ -9,21 +9,7 @@ description: >
 
 現行版ドキュメントが未整備のプロジェクトで1回だけ実行する。
 
-## ワークフロー全体像
-
-```mermaid
-flowchart LR
-    INIT["spec-driven-init\n現行版ドキュメント初版整備"]
-    SD["spec-driven\n次版ドキュメント作成"]
-    IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
-    PROMOTE["spec-driven-promote\n次版→現行版統合"]
-
-    INIT --> SD
-    SD --> IMPL
-    IMPL -.->|次テーマ| SD
-    IMPL -->|リリース後| PROMOTE
-    PROMOTE -.->|次バージョン| SD
-```
+ワークフロー全体像は`agent-toolkit:spec-driven`スキルの「ワークフロー全体像」節を参照する。
 
 配置先はプロジェクト指定があればそれを採用し、無ければ規模・性質に応じて決定する。
 

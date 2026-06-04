@@ -3,25 +3,7 @@
 spec-driven系スキルで共有する用語定義と配置規約。
 対象は`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`の3スキル。
 
-## ワークフロー全体像
-
-```mermaid
-flowchart LR
-    INIT["spec-driven-init\n現行版ドキュメント初版整備"]
-    SD["spec-driven\n次版ドキュメント作成"]
-    IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
-    PROMOTE["spec-driven-promote\n次版→現行版統合"]
-
-    INIT --> SD
-    SD --> IMPL
-    IMPL -.->|次テーマ| SD
-    IMPL -->|リリース後| PROMOTE
-    PROMOTE -.->|次バージョン| SD
-```
-
-- `agent-toolkit:spec-driven-init`: 現行版ドキュメントが未整備のプロジェクトで最初に1回だけ使う
-- `agent-toolkit:spec-driven`: 作業テーマごとに次版ドキュメントを作成し、実装誘導のプロンプト例を出力する
-- `agent-toolkit:spec-driven-promote`: リリース後に次版ドキュメントを現行版へ統合するときに使う
+ワークフロー全体像は`agent-toolkit:spec-driven`スキルの「ワークフロー全体像」節を参照する。
 
 ## 用語定義
 

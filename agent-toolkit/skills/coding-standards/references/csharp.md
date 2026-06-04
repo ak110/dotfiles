@@ -5,43 +5,20 @@
 - .NETバージョン
   - 現行のLTS以降を前提にする
   - プロジェクト設定では`<Nullable>enable</Nullable>`と`<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`を有効にする
-- 命名規則
-  - `PascalCase`: クラス・メソッド・プロパティ・publicフィールド
-  - `camelCase`: ローカル変数・パラメーター
-  - `_camelCase`: privateフィールド
-  - インターフェースは`I`プレフィックス（`IFoo`）
-- 型について
-  - `var`はローカル変数の右辺から型が自明な場合に使う
-  - Nullable参照型（`string?`）を活用し、null許容性を型で明示する
-  - nullチェックは`is null`／`is not null`を使う（`==`はオーバーロードされる可能性があるため）
-  - 不要な値の破棄は`_`（discard）で表現する
-- データ／制御フロー
-  - 公開フィールドより自動実装プロパティ（`{ get; init; }`）を使う
-  - 不変データは`record`／`record struct`で表現する
-  - 初期化必須のプロパティには`required`（C# 11+）を付ける（コンパイル時に初期化漏れを検出できるため）
-  - 分岐にはパターンマッチング（`switch`式・`is`パターン）を積極的に使う
 - 非同期処理
-  - I/Oには`async`／`await`を使い、`.Result`／`.Wait()`でブロックしない（デッドロックの原因）
-  - `ConfigureAwait(false)`はUIに依存しないライブラリ・ユーティリティ層で付ける
-    - WinForms／WPF／Blazor等のSynchronizationContextに依存するアプリケーション層では付けない
-     （UIスレッドへの復帰が必要なため）
   - `async void`は使わない（例外が捕捉できないため）
     - 例外としてWinForms／WPFのイベントハンドラのみ許容し、その場合はハンドラ内で必ず例外をキャッチする
-  - 非同期メソッド名は`Async`サフィックスを付け、`CancellationToken`を末尾引数で受け取り伝播させる
+  - `ConfigureAwait(false)`はUIに依存しないライブラリ・ユーティリティ層で付ける
+    - WinForms／WPF／Blazor等のSynchronizationContextに依存するアプリケーション層では付けない
 - 例外処理
-  - 例外は例外的状況にのみ使う（通常の制御フローには使わない）
-  - `catch (Exception)`で例外を無視せず、具体的な型でキャッチする
   - 広域キャッチが正当な場面（フックコールバック、`WndProc`、ワーカースレッドの最終防御層など）の対処:
     - `catch (Exception ex) when (...)`で`when`フィルタを使う
     - もしくは`#pragma warning disable CA1031`をローカルに付け、コメントで理由を明記する
   - 再スローは`throw;`を使う。`throw ex;`はスタックトレースが失われるため使わない
 - リソース管理
-  - `IDisposable`は`using`宣言／ステートメントで確実に解放する
-  - `IAsyncDisposable`には`await using`を使う
   - イベントハンドラは`+=`で購読したら対応する`-=`で必ず解除する
    （解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
-- LINQは可読性を損なわない範囲で使う。ホットパスでは割り当てコストに注意する
-  - EF Coreでは`Include`でeager loadingを明示するか`Select`で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
+- EF Coreでは`Include`でeager loadingを明示するか`Select`で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
 - ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには`<summary>`を必ず記述する
 - セキュリティ上の危険パターン
   - SQLはパラメーター化クエリを使う（`SqlCommand.Parameters`／Dapper／EF Coreのパラメーター）
@@ -73,16 +50,8 @@
 ## テストコード（xUnit）
 
 - テストフレームワークは`xUnit`を優先する（.NETのデファクト）
-- テスト関数は`[Fact]`または`[Theory]`で書く
-- パラメーター化は`[Theory]` + `[InlineData]`／`[MemberData]`／`[ClassData]`を使う
-- アサーションは`Assert.Equal`／`Assert.True`など標準APIを使う
-  - より読みやすい記述が必要な場合は`FluentAssertions`を検討する
-- 非同期テストは`async Task`を返す。`async void`は使わない（例外が捕捉できない）
 - 非同期処理の完了待ちは`ManualResetEventSlim`／`CountdownEvent`／`TaskCompletionSource`等のイベント駆動同期を使う
   - `Thread.Sleep`／`Task.Delay`による固定待機は避ける
-- セットアップ／ティアダウン
-  - コンストラクタ = 各テスト前、`IDisposable.Dispose` = 各テスト後
-  - クラス単位の共有は`IClassFixture<T>`、コレクション単位は`ICollectionFixture<T>`を使う
 - モック／スタブには`NSubstitute`または`Moq`を使う
   - 外部依存はインターフェース経由で注入し、テスト時に差し替える
 - 時刻は`TimeProvider`（.NET 8以降）を注入し、テストでは`FakeTimeProvider`で固定する

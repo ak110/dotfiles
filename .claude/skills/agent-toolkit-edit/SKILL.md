@@ -18,7 +18,6 @@ description: >
 - `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言語表現を単独で担う）。
   Codex向けの読み替えは`.chezmoi-source/dot_codex/AGENTS.md`内のマッピング表で扱う
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
-  - `agent.md`は常時自動ロードされ、デフォルトのシステムプロンプトやsuperpowersスキルの動作を上書きする位置付けとする
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。

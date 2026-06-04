@@ -69,9 +69,6 @@ deploy:
   script: ./deploy.sh
 ```
 
-`needs`を使うとstage順に制約されず依存順で先行実行できる。
-`artifacts: true`は既定値だが、明示すると意図が伝わりやすい。
-
 ### `include`による設定分割
 
 ```yaml
@@ -101,9 +98,6 @@ test:
   script: uv run pytest
 ```
 
-先頭に`.`を付けたジョブはhidden jobとなり単体実行されない。
-`extends`は配列で複数指定もでき、後方優先で上書きされる。
-
 ### `parallel:matrix`
 
 ```yaml
@@ -114,9 +108,6 @@ test:
         OS: ["ubuntu", "alpine"]
   script: ./test.sh
 ```
-
-組み合わせの各セルが独立ジョブとして展開される。
-ジョブ名には変数値が付与されるため、`needs`で指すときは展開後の名前を意識する。
 
 ## lint / 検証
 
