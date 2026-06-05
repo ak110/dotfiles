@@ -4,6 +4,7 @@
 
 import ctypes
 import pathlib
+import subprocess
 from collections.abc import Callable
 from typing import Any
 
@@ -197,6 +198,71 @@ def test_serve_subcommand_rejects_non_windows(tmp_path: pathlib.Path, monkeypatc
     monkeypatch.setattr(_cli.sys, "platform", "linux")
     token_path = tmp_path / "token.txt"
     assert _cli.main(["serve", "--token-file", str(token_path)]) == 1
+
+
+def test_doctor_subcommand_rejects_non_windows(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(_cli.sys, "platform", "linux")
+    token_path = tmp_path / "token.txt"
+    assert _cli.main(["doctor", "--token-file", str(token_path)]) == 1
+
+
+def test_doctor_subcommand_renders_all_sections(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """Windowsモック実行でlisten・process・profile・firewall・url・recommendationsが揃って出力される。"""
+    monkeypatch.setattr(_cli.sys, "platform", "win32")
+    # PIDファイルを事前配置（プロセスセクションで参照される）。
+    pid_path = _cli.default_pid_path()
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text("4242", encoding="utf-8")
+
+    token_path = tmp_path / "token.txt"
+    token_path.write_text(VALID_TOKEN + "\n", encoding="utf-8")
+
+    # 各PowerShell呼び出しのスクリプト内容で分岐してダミー出力を返す。
+    def fake_run(
+        cmd: list[str],
+        *,
+        timeout: float | None = None,
+        cwd: pathlib.Path | None = None,
+        tag: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del timeout, cwd, tag, kwargs
+        script = " ".join(cmd)
+        if "Get-NetTCPConnection" in script:
+            stdout = "0.0.0.0:29123 (PID=4242)\n"
+        elif "Get-CimInstance" in script:
+            stdout = "PID=4242 CommandLine=dotfiles-media-remote.exe serve\n"
+        elif "Get-NetConnectionProfile" in script:
+            stdout = "Ethernet: Private\nWi-Fi: Public\n"
+        elif "Get-NetFirewallRule" in script:
+            stdout = "NONE\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(_cli.claude_common, "run_subprocess", fake_run)
+    monkeypatch.setattr(_cli, "detect_local_ip", lambda: "192.168.1.10")
+
+    exit_code = _cli.main(["doctor", "--token-file", str(token_path), "--port", "29123"])
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    # 全セクション見出しが含まれる。
+    for header in ("== listen ==", "== process ==", "== profile ==", "== firewall ==", "== url ==", "== recommendations =="):
+        assert header in out
+    # listenの実体・プロセス情報・FW規則なし表示・URL組み立て結果。
+    assert "0.0.0.0:29123" in out
+    assert "PID=4242" in out
+    assert "該当するFW規則なし" in out
+    assert f"http://192.168.1.10:29123/?t={VALID_TOKEN}" in out
+    # 推奨修復: FW規則未登録 + Publicプロファイル該当の2件が出る。
+    assert "New-NetFirewallRule" in out
+    assert "Set-NetConnectionProfile" in out
+    # listen中なのでサーバー起動コマンドは推奨されない。
+    assert "Start-Process" not in out
 
 
 def test_assets_index_html_references_all_keys():
