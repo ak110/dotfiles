@@ -322,6 +322,7 @@ class TestCompletionKeyword:
             ("itashimashita", "実装が完了いたしました。"),
             ("itashimashita_kanji", "実装が完了致しました。"),
             ("desu", "作業は以上で完了です。"),
+            ("sagyo_shuryo", "作業終了。"),
         ],
     )
     def test_completion_keyword_triggers_block(

@@ -137,6 +137,9 @@
 - 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
   別ルールで重複指摘する。
   `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で両方併記する
+- `ty`と`mypy`は型不一致抑制コメントの構文が別系統。
+  `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
+  プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
 - `sorted(iterable, key=str)`で`Path`等をソートすると型検査器tyが要素型を誤推論し型エラーを報告する
   - 検出例は`invalid-assignment`・`unresolved-attribute`
   - `key=lambda x: str(x)`はpylintの`unnecessary-lambda`（W0108）を招き両立しない
@@ -184,16 +187,19 @@
   - テスト関数には`@pytest.mark.asyncio`を明示する
   - 非同期fixtureには`@pytest_asyncio.fixture`を使う（`@pytest.fixture` + `async def`では動作しない）
 
-### 環境変数・XDGディレクトリのテスト隔離
+### 環境変数・設定ディレクトリのテスト隔離
 
-環境変数フォールバックやXDG設定ファイルを読み込むCLIをテストする場合、
-テスト環境のホームディレクトリやXDG変数が漏れ込むと結果が不安定になる。
+環境変数フォールバックや設定ディレクトリを読み込むCLIをテストする場合、
+テスト環境のホームディレクトリや設定ディレクトリ変数が漏れ込むと結果が不安定になる。
 
 - `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける。
-  対象は対応する独自環境変数・`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等、
-  `platformdirs`が参照し得る全変数を網羅する
+  対象は対応する独自環境変数に加え、次の両系統を網羅する。
+  POSIX系設定ディレクトリ変数（`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等）。
+  Windows系設定ディレクトリ変数（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`等）。
+  `platformdirs`が参照し得る全変数を含める
 - 設定経路を1本でも漏らすと開発者ホームの実設定を読み込んでしまうため、
-  当該CLIの設定解決経路を洗い出してから一括で隔離するfixtureに集約する
+  当該CLIの設定解決経路をプラットフォーム横断で洗い出してから一括で隔離するfixtureに集約する。
+  当該CLIが特定OS専用でも、テスト実行環境のOSと参照変数のOSが一致しない場合に隔離漏れが発生する
 - 隔離fixtureは`autouse=True`で当該テストモジュールに適用するか、
   `@pytest.mark.usefixtures(...)`で明示適用する
 
