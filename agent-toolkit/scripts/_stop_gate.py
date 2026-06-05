@@ -1,11 +1,9 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
 判定はtranscript JSONLの内容のみを根拠とする。
-直前ターン単位の確認（完了文言・質問・待機語・最後のtool_useの種別）に加えて、
-`toolUseResult.status == "async_launched"`で起動済みかつ後続の`<task-notification>`内
-`<tool-use-id>`で完了通知が確認できないbackground Agentを、transcript全体から検出する。
-background起動のサブエージェントが動作中の状態でStop hookが誤発動するのを避けるため、
-本走査はターンをまたいで行う。
+本モジュールは構造的な継続判定（`is_pending_async_work`）と
+スキル起動履歴の検出（`has_session_review_skill_invoked`）を提供する。
+完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 """
 
 import json
@@ -15,45 +13,8 @@ import time
 
 from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
 
-# 作業完了を示す言い切り文言。
-# 誤検出削減を最優先するため検出範囲を狭く限定し、過去形・現在形の言い切りに限定する。
-# 「〜を完了します」（未来形）「〜すれば完了です」（条件形）のような文は
-# 作業途中でも出現しうるため対象外とする。
-_COMPLETION_KEYWORDS: tuple[str, ...] = (
-    "push しました",
-    "pushした。",
-    "pushしました",
-    "コミットした。",
-    "コミット完了",
-    "完了。",
-    "完了いたしました",
-    "完了した。",
-    "完了しています。",
-    "完了しました",
-    "完了です",
-    "反映しました",
-    "完了致しました",
-    "作業終了。",
-)
-
-# バックグラウンド待機中・非同期待機中を示す語。
-# これらを含むターンは「真のセッション終了」ではなく一時停止と判断し、
-# blockを抑止する。
-_WAITING_KEYWORDS: tuple[str, ...] = (
-    "待ちます",
-    "完了を待",
-    "通知を待",
-    "バックグラウンド",
-    "background",
-    "待機します",
-    "待機中",
-    "完了するまで待",
-    "終了を待",
-    "起動を待",
-)
-
 # 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
-# 「真のセッション終了」ではないと判断する。
+# セッション継続中と判断する。
 # Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monitor"})
 
@@ -66,38 +27,68 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
 
 
-def is_real_session_end(transcript_path: str) -> bool:
-    """transcriptを解析して「真のセッション終了」かどうかを判定する。
+def is_pending_async_work(transcript_path: str) -> bool:
+    """セッションが構造的に継続中の場合に真を返す。
 
-    以下の条件をすべて満たす場合にTrueを返す。
-    - 直前アシスタントターンに作業完了の言い切り文言が含まれる
-    - 直前アシスタントターンが質問を含まない
-    - 直前アシスタントターンが待機語を含まない
-    - 直前アシスタントターンの最後のtool_useが非同期待機系でない
-    - 未完了のbackground起動サブエージェント（Agent tool）が存在しない
+    以下のいずれかの場合に真を返す。
+    - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
+      `Monitor`、または`Bash`かつ`input.run_in_background == true`）
+    - 未完了のbackground起動サブエージェント（Agent tool）が存在する
 
-    最後の条件はtranscript全体を走査して判定する。
+    後者はtranscript全体を走査して判定する。
     メイン側（`isSidechain`が真でない）userエントリのうち
-    `toolUseResult.status == "async_launched"`を持つものから起動済み`tool_use_id`集合を採取し、
+    `toolUseResult.status == "async_launched"`を持つものから起動済み`tool_use_id`集合を抽出し、
     後続のメイン側userエントリのtext content内に含まれる`<task-notification>`要素から
     `<tool-use-id>`を抽出して除外する。残差が1件以上で「未完了サブエージェントあり」と判断する。
 
-    transcriptを読み取れない異常系ではFalseを返す（安全側に倒す）。
+    transcriptを読み取れない異常系では偽を返す（Stop抑止しないStopを抑止しない方向で動作する）。
     """
     _wait_for_end_turn(transcript_path)
-    if not _is_assistant_task_completed(transcript_path):
-        return False
-    if _is_assistant_asking_question(transcript_path):
-        return False
-    if _is_assistant_waiting(transcript_path):
-        return False
     if _last_tool_use_is_async_wait(transcript_path):
+        return True
+    return _has_pending_subagents(transcript_path)
+
+
+def has_session_review_skill_invoked(transcript_path: str, skill_name: str) -> bool:
+    """メイン側assistantエントリの`Skill`ツール呼び出しで指定スキルが起動された痕跡を検出する。
+
+    対象はメインのtranscript（`isSidechain`が真でないエントリ）に限定する。
+    `Skill`ツールの`input.skill`が`skill_name`と完全一致する呼び出しを1件でも検出すれば真を返す。
+
+    transcriptを読み取れない異常系では偽を返す（Stop抑止しないStopを抑止しない方向で動作する）。
+    """
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
         return False
-    return not _has_pending_subagents(transcript_path)
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_use" or block.get("name") != "Skill":
+                continue
+            tool_input = block.get("input")
+            if not isinstance(tool_input, dict):
+                continue
+            if tool_input.get("skill") == skill_name:
+                return True
+    return False
 
 
 def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
-    """Stop hook起動とClaude Code側transcriptフラッシュとのレース状態を吸収する。
+    """Stop hook起動とClaude Code側transcriptフラッシュとのレース状態に対処する。
 
     Claude Codeはassistant最終メッセージのtranscript書き込みとStop hook起動が
     並行することがあり、hookが読んだ時点で最終assistantエントリが未到着の場合がある。
@@ -128,91 +119,6 @@ def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
         if time.monotonic() >= deadline:
             return
         time.sleep(poll)
-
-
-def _is_assistant_task_completed(transcript_path: str) -> bool:
-    """直前のアシスタントターンに作業完了の言い切り文言が含まれる場合に真を返す。
-
-    キーワードは`_COMPLETION_KEYWORDS`参照。
-    """
-    for message in _iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "text":
-                continue
-            text = block.get("text", "")
-            if not isinstance(text, str):
-                continue
-            if any(keyword in text for keyword in _COMPLETION_KEYWORDS):
-                return True
-    return False
-
-
-def _is_assistant_asking_question(transcript_path: str) -> bool:
-    """直前のアシスタントターンがユーザーへの質問を含む場合に真を返す。
-
-    以下のいずれかが成立する場合に真を返す。
-    - AskUserQuestionツール呼び出しが含まれている
-    - テキストに?または？または「ですか。」が含まれている（位置は問わない）
-
-    「ですか。」を含める理由:「この案でよいですか。」のように`?`を付けずに
-    ユーザー確認を求めるケースを拾うため。
-
-    末尾判定にしない理由: アシスタントが質問文の後に補足・締めの文を書くケース
-    （例:「…どうしますか？ お手数ですがご確認ください。」）で末尾に`?`が来ず、
-    false positiveでコミットを強行する挙動を避けるため。
-
-    同一`message.id`を持つ複数エントリ（テキストとツール呼び出しが分割される等）は
-    1ターンとして統合して判定する。走査の詳細は`_iter_latest_assistant_messages`を参照。
-    """
-    for message in _iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            return False
-        texts: list[str] = []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "tool_use" and block.get("name") == "AskUserQuestion":
-                return True
-            if block.get("type") == "text":
-                text = block.get("text", "")
-                if isinstance(text, str) and text.strip():
-                    texts.append(text)
-        if texts:
-            joined = "\n".join(texts)
-            return "?" in joined or "？" in joined or "ですか。" in joined
-        # テキストなしエントリ → 同一ターンの前のエントリを確認する（ループ継続）
-    return False
-
-
-def _is_assistant_waiting(transcript_path: str) -> bool:
-    """直前のアシスタントターンが待機中を示す語を含む場合に真を返す。
-
-    `_WAITING_KEYWORDS`のいずれかを含むテキストブロックがあれば真を返す。
-    バックグラウンド待機・非同期処理待ちの誤発動を防ぐためのゲート。
-
-    大文字小文字を区別しないため、英語キーワードは大小様々な表記に一致する。
-    """
-    for message in _iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "text":
-                continue
-            text = block.get("text", "")
-            if not isinstance(text, str):
-                continue
-            if any(keyword.lower() in text.lower() for keyword in _WAITING_KEYWORDS):
-                return True
-    return False
 
 
 def _last_tool_use_is_async_wait(transcript_path: str) -> bool:

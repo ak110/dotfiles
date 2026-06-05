@@ -9,8 +9,14 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import Any
+
+import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_stop.py"
+
+_EXTENSION_SKILL = "session-review-dotfiles"
+_TARGET_SESSION_REVIEW = "agent-toolkit:session-review"
 
 
 def _run(
@@ -42,11 +48,6 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(result.stdout)
 
 
-def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / f"claude-dotfiles-stop-{session_id}.json"
-    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
     """dict のリストを JSONL 形式の transcript として保存する。"""
     transcript = tmp_path / "transcript.jsonl"
@@ -67,34 +68,52 @@ def _assistant_entry_with_bash(command: str, *, run_in_background: bool = False)
         "message": {
             "role": "assistant",
             "content": [
-                {"type": "text", "text": "作業が完了しました。"},
+                {"type": "text", "text": "Bashを実行します。"},
                 {"type": "tool_use", "id": "x", "name": "Bash", "input": tool_input},
             ],
+            "stop_reason": "end_turn",
         },
     }
 
 
-def _assistant_entry_completion_only() -> dict:
-    """完了文言のみの assistant エントリを生成する（ツールなし）。"""
+def _assistant_text_only(text: str = "作業を継続します。") -> dict:
+    """テキストのみのend_turnアシスタントエントリを生成する。"""
     return {
         "type": "assistant",
         "message": {
             "role": "assistant",
-            "content": [{"type": "text", "text": "作業が完了しました。"}],
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": "end_turn",
         },
     }
 
 
-def _assistant_entry_with_skill(skill: str) -> dict:
+def _assistant_with_skill(skill: str) -> dict:
     """Skill tool_use を含む assistant エントリを生成する。"""
     return {
         "type": "assistant",
         "message": {
             "role": "assistant",
             "content": [
-                {"type": "text", "text": "作業が完了しました。"},
+                {"type": "text", "text": "スキルを起動します。"},
                 {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill}},
             ],
+            "stop_reason": "end_turn",
+        },
+    }
+
+
+def _assistant_with_async_tool(tool_name: str) -> dict:
+    """非同期待機系tool_useで終わるアシスタントエントリを生成する。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "サブエージェントを起動します。"},
+                {"type": "tool_use", "id": "x", "name": tool_name, "input": {}},
+            ],
+            "stop_reason": "end_turn",
         },
     }
 
@@ -103,59 +122,62 @@ def _user_entry(text: str = "hello") -> dict:
     return {"type": "user", "message": {"role": "user", "content": text}}
 
 
-class TestPyfltrDetection:
-    """pyfltr 使用検出ロジックのテスト。"""
+def _transcript_pyfltr_then_text(tmp_path: pathlib.Path) -> pathlib.Path:
+    """過去ターンでpyfltrを実行し、最終ターンはテキストのみで終了するtranscript。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            _user_entry(),
+            _assistant_entry_with_bash("uv run pyfltr run foo.py"),
+            _user_entry("結果を確認しました"),
+            _assistant_text_only(),
+        ],
+    )
+
+
+def _transcript_agent_toolkit_skill_then_text(tmp_path: pathlib.Path) -> pathlib.Path:
+    """過去ターンでagent-toolkit:coding-standardsを起動し、最終ターンはテキストのみのtranscript。"""
+    return _write_transcript(
+        tmp_path,
+        [
+            _user_entry(),
+            _assistant_with_skill("agent-toolkit:coding-standards"),
+            _user_entry("確認しました"),
+            _assistant_text_only(),
+        ],
+    )
+
+
+class TestUsageDetection:
+    """pyfltr / agent-toolkit 使用検出ロジックのテスト（block発火条件として）。"""
 
     def test_detects_uv_run_pyfltr(self, tmp_path: pathlib.Path):
         """uv run pyfltr ... の形式を検出して block する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run-for-agent some_file.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
+        transcript = _transcript_pyfltr_then_text(tmp_path)
         result = _run(
             {"session_id": "detect-uv-pyfltr", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
-        assert "pyfltr" in decision.get("reason", "")
-        # コーディングエージェント宛てメッセージ規約の検証
         assert "[auto-generated: dotfiles/claude_hook_stop]" in decision["reason"]
         assert "Auto-generated hook notice" in decision["reason"]
+        assert _EXTENSION_SKILL in decision["reason"]
+        assert _TARGET_SESSION_REVIEW in decision["reason"]
 
-    def test_detects_plain_pyfltr(self, tmp_path: pathlib.Path):
-        """単純な pyfltr コマンドを検出して block する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("pyfltr run foo.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
-        result = _run(
-            {"session_id": "detect-plain-pyfltr", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-
-    def test_no_pyfltr_approves(self, tmp_path: pathlib.Path):
-        """pyfltr を使用していないセッションは approve する。"""
+    def test_no_pyfltr_or_agent_toolkit_approves(self, tmp_path: pathlib.Path):
+        """pyfltr も agent-toolkit も検出されないセッションは approve する。"""
         transcript = _write_transcript(
             tmp_path,
             [
                 _user_entry(),
                 _assistant_entry_with_bash("echo hello"),
-                _assistant_entry_completion_only(),
+                _user_entry("確認"),
+                _assistant_text_only(),
             ],
         )
         result = _run(
-            {"session_id": "no-pyfltr", "transcript_path": str(transcript)},
+            {"session_id": "no-detection", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
@@ -168,7 +190,8 @@ class TestPyfltrDetection:
             [
                 _user_entry(),
                 _assistant_entry_with_bash("uv run mypyfltr something"),
-                _assistant_entry_completion_only(),
+                _user_entry("確認"),
+                _assistant_text_only(),
             ],
         )
         result = _run(
@@ -194,7 +217,8 @@ class TestPyfltrDetection:
                         ],
                     },
                 },
-                _assistant_entry_completion_only(),
+                _user_entry("確認"),
+                _assistant_text_only(),
             ],
         )
         result = _run(
@@ -205,243 +229,91 @@ class TestPyfltrDetection:
         assert decision["decision"] == "approve"
 
 
-class TestSessionReviewSkillInvocation:
-    """reason が session-review-dotfiles スキル呼び出し誘導文を含むことのテスト。
+class TestStopGateDelegation:
+    """`is_pending_async_work` と `has_session_review_skill_invoked` への委譲テスト。
 
-    pyfltr 単独検出時・agent-toolkit 単独検出時・両方検出時のいずれも、
-    reason に同じ誘導文（拡張章スキル名・Skill ツール名・配布物hookで誘導される
-    `agent-toolkit:session-review`との併用案内）を含むことを境界として確認する。
+    同値分割: {pyfltr/agent-toolkit使用検出あり/なし} × {機械ゲート通過/不通過} ×
+    {対象スキル起動済み/未起動}。
     """
 
-    def _get_reason(self, tmp_path: pathlib.Path, session_id: str, entries: list[dict]) -> str:
+    @pytest.mark.parametrize(
+        ("detected", "pending", "skill_invoked", "expected"),
+        [
+            # 使用検出なし → approve（その他の条件は無関係）
+            (False, False, False, "approve"),
+            (False, True, False, "approve"),
+            (False, False, True, "approve"),
+            # 使用検出あり・機械ゲート通過（pending=True）→ approve
+            (True, True, False, "approve"),
+            (True, True, True, "approve"),
+            # 使用検出あり・機械ゲート不通過・対象スキル起動済み → approve
+            (True, False, True, "approve"),
+            # 使用検出あり・機械ゲート不通過・対象スキル未起動 → block
+            (True, False, False, "block"),
+        ],
+    )
+    def test_decision_matrix(
+        self,
+        tmp_path: pathlib.Path,
+        detected: bool,
+        pending: bool,
+        skill_invoked: bool,
+        expected: str,
+    ):
+        entries: list[dict[str, Any]] = [_user_entry()]
+        if detected:
+            entries.append(_assistant_entry_with_bash("uv run pyfltr run foo.py"))
+            entries.append(_user_entry("結果を確認"))
+        if skill_invoked:
+            entries.append(_assistant_with_skill(_EXTENSION_SKILL))
+            entries.append(_user_entry("続き"))
+        if pending:
+            entries.append(_assistant_with_async_tool("Agent"))
+        else:
+            entries.append(_assistant_text_only())
         transcript = _write_transcript(tmp_path, entries)
+        sid = f"matrix-{detected}-{pending}-{skill_invoked}"
         result = _run(
-            {"session_id": session_id, "transcript_path": str(transcript)},
+            {"session_id": sid, "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        return decision["reason"]
-
-    def test_reason_invokes_session_review_skill_for_all_detections(self, tmp_path: pathlib.Path):
-        completion = _assistant_entry_completion_only()
-        pyfltr_only = [
-            _user_entry(),
-            _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-            completion,
-        ]
-        agent_toolkit_only = [
-            _user_entry(),
-            _assistant_entry_with_skill("agent-toolkit:coding-standards"),
-            completion,
-        ]
-        both = [
-            _user_entry(),
-            _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-            _assistant_entry_with_skill("agent-toolkit:coding-standards"),
-            completion,
-        ]
-
-        pyfltr_reason = self._get_reason(tmp_path, "skill-pyfltr-only", pyfltr_only)
-        agent_reason = self._get_reason(tmp_path, "skill-agent-toolkit-only", agent_toolkit_only)
-        both_reason = self._get_reason(tmp_path, "skill-both", both)
-
-        for reason in (pyfltr_reason, agent_reason, both_reason):
-            assert "session-review-dotfiles" in reason
-            assert "agent-toolkit:session-review" in reason
-            assert "Skill" in reason
-            assert "agent-toolkit/stop_advisor" in reason
-            assert "pyfltr" in reason
-            assert "agent-toolkit" in reason
-
-        # 3つのreasonが完全に同一であることを確認する（検出種別によらず同一の誘導文を出力する設計のため）。
-        assert pyfltr_reason == agent_reason == both_reason
+        assert decision["decision"] == expected
 
 
-class TestStateOnceLimit:
-    """1 セッション 1 回の制限テスト。"""
+class TestRepeatBlocks:
+    """同一transcriptで複数回Stopしても、対象スキル未起動なら毎回blockする。"""
 
-    def test_second_stop_approves(self, tmp_path: pathlib.Path):
-        """advice_given = true の状態では即 approve する。"""
-        _write_state(tmp_path, "once", {"advice_given": True})
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
-        result = _run(
-            {"session_id": "once", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_first_stop_blocks_second_approves(self, tmp_path: pathlib.Path):
-        """1 回目は block し、2 回目は approve する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
+    def test_block_repeats_each_stop(self, tmp_path: pathlib.Path):
+        transcript = _transcript_pyfltr_then_text(tmp_path)
         first = _run(
-            {"session_id": "two-stops", "transcript_path": str(transcript)},
+            {"session_id": "repeat", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         second = _run(
-            {"session_id": "two-stops", "transcript_path": str(transcript)},
+            {"session_id": "repeat", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         assert _parse_decision(first)["decision"] == "block"
-        assert _parse_decision(second)["decision"] == "approve"
+        assert _parse_decision(second)["decision"] == "block"
 
 
-class TestStopGateDelegation:
-    """_stop_gate.is_real_session_end への委譲テスト。"""
+class TestReasonContents:
+    """block時のreason本文に必要な要素が含まれることを確認する。"""
 
-    def test_waiting_keyword_approves(self, tmp_path: pathlib.Path):
-        """待機語を含むアシスタントターンは pyfltr 使用があっても approve する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                {
-                    "type": "assistant",
-                    "message": {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "text", "text": "作業が完了しました。バックグラウンドで処理中です。完了を待ちます。"}
-                        ],
-                    },
-                },
-            ],
-        )
+    def test_reason_invokes_both_skills(self, tmp_path: pathlib.Path):
+        transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
         result = _run(
-            {"session_id": "stop-gate-waiting", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_no_completion_keyword_approves(self, tmp_path: pathlib.Path):
-        """完了文言がないアシスタントターンは approve する。
-
-        pyfltr 使用は transcript 内の過去のターンで検出される。
-        直前アシスタントターンは完了文言なしのため is_real_session_end が False を返す。
-        """
-        # 完了文言を含まないアシスタントターン（pyfltr 呼び出しも完了文言なし）
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "msg_pyfltr_call",
-                        "role": "assistant",
-                        "content": [
-                            {"type": "text", "text": "pyfltr を実行します。"},
-                            {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "uv run pyfltr run foo.py"}},
-                        ],
-                    },
-                },
-                _user_entry("結果を確認中"),
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "msg_investigating",
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": "調査を続けます。"}],
-                    },
-                },
-            ],
-        )
-        result = _run(
-            {"session_id": "stop-gate-no-completion", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_async_agent_tool_approves(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Agent のターンは pyfltr 使用があっても approve する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                {
-                    "type": "assistant",
-                    "message": {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "text", "text": "作業が完了しました。"},
-                            {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
-                        ],
-                    },
-                },
-            ],
-        )
-        result = _run(
-            {"session_id": "stop-gate-agent", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_bash_background_approves(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Bash+run_in_background=True のターンは approve する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                {
-                    "type": "assistant",
-                    "message": {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "text", "text": "作業が完了しました。"},
-                            {
-                                "type": "tool_use",
-                                "id": "x",
-                                "name": "Bash",
-                                "input": {"command": "long_task.sh", "run_in_background": True},
-                            },
-                        ],
-                    },
-                },
-            ],
-        )
-        result = _run(
-            {"session_id": "stop-gate-bg-bash", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
-
-    def test_completion_without_waiting_blocks(self, tmp_path: pathlib.Path):
-        """完了文言あり・待機語なし・非同期ツールなし・pyfltr 使用ありは block する。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
-        result = _run(
-            {"session_id": "stop-gate-pass", "transcript_path": str(transcript)},
+            {"session_id": "reason", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "block"
+        reason = decision["reason"]
+        assert _EXTENSION_SKILL in reason
+        assert _TARGET_SESSION_REVIEW in reason
+        assert "Skill" in reason
+        assert "activation policy" in reason
 
 
 class TestEdgeCases:
@@ -484,14 +356,7 @@ class TestHomeIndependent:
     def test_runs_with_home_outside_repo(self, tmp_path: pathlib.Path):
         fake_home = tmp_path / "fake-home"
         fake_home.mkdir()
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                _user_entry(),
-                _assistant_entry_with_bash("uv run pyfltr run-for-agent some_file.py"),
-                _assistant_entry_completion_only(),
-            ],
-        )
+        transcript = _transcript_pyfltr_then_text(tmp_path)
         result = _run(
             {"session_id": "home-independent", "transcript_path": str(transcript)},
             state_dir=tmp_path,

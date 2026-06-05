@@ -6,11 +6,12 @@
 """Claude Code plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。
-未コミット変更通知とセッション振り返り提案の2種類の通知を、
-共通ゲート`_stop_gate.is_real_session_end`の判定通過後にまとめて出力する。
+セッションが構造的に継続中（非同期待機ツールまたは未完了background Agentあり）の場合と、
+セッション中に既に`agent-toolkit:session-review`スキルが起動された場合はapproveする。
+それ以外では、未コミット変更の有無に応じた通知とセッション振り返り誘導を1blockにまとめて返す。
 
-セッション振り返り提案では`agent-toolkit:session-review`スキルの呼び出しを誘導する。
-具体的な手順（観察源・自己検証4点・提示フォーマット・反映案内）はスキル本体が保持する。
+終了判定の言語的部分（完了文言・質問・待機表明の判別）と振り返り手順は
+`agent-toolkit:session-review`スキル本体の「起動方針」節へ全面委譲する。
 """
 
 import json
@@ -22,10 +23,16 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import is_real_session_end  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    has_session_review_skill_invoked,
+    is_pending_async_work,
+)
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/stop_advisor"
+
+# 振り返り誘導の対象スキル名。
+_SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -127,67 +134,40 @@ def main() -> int:
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
 
-    # 共通ゲート: 直前アシスタントターンが完了文言を含み、
-    # かつ質問・待機語・非同期待機ツールがない状態でのみ通知候補とする。
-    # 作業途中の一時停止・探索中・ユーザー確認待ち・バックグラウンド待機等での
-    # 誤検出を避ける。
-    real_end = is_real_session_end(transcript_path)
-    if not real_end:
+    # 構造的にセッション継続中ならapprove。
+    # 非同期待機ツールまたは未完了background Agentが存在するケース。
+    if is_pending_async_work(transcript_path):
         _approve(cwd=cwd)
         return 0
 
-    # 各通知は1セッション1回までに制限する。理由:
-    #   - Claude Codeはblockを受信すると再度Stopを試みるため、
-    #     同一メッセージの繰り返しに意味がない。
-    #   - 質問検出のtranscriptフラッシュタイミング問題
-    #     （未フラッシュ時の質問検出失敗）も2回目以降のStopで自然に通過する。
-    messages: list[str] = []
-
-    # --- 未コミット変更通知（1回限り）---
-    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-
-        def _try_increment_uncommitted(state: dict) -> dict | None:
-            if state.get("uncommitted_block_count", 0) != 0:
-                return None
-            state["uncommitted_block_count"] = state.get("uncommitted_block_count", 0) + 1
-            return state
-
-        if update_state(session_id, _try_increment_uncommitted):
-            messages.append(
-                _llm_notice(
-                    "uncommitted changes detected."
-                    " Ask the user whether to commit the changes, or explain"
-                    " why they should not be committed."
-                    " Do not commit without user confirmation."
-                )
-            )
-
-    # --- セッション振り返り提案（1回限り）---
-    def _try_mark_stop_advice(state: dict) -> dict | None:
-        if state.get("stop_advice_given", False):
-            return None
-        state["stop_advice_given"] = True
-        return state
-
-    if update_state(session_id, _try_mark_stop_advice):
-        body = (
-            "session-review handoff: invoke the `agent-toolkit:session-review` Skill via the Skill tool"
-            " to run the session review."
-            " The skill provides the full procedure"
-            " (Reflect / Draft Additions / Show Proposed Changes)"
-            " for the project documentation section; follow it end-to-end."
-            " Focus on preventing misjudgments and strengthening autonomous decision-making"
-            " rather than smoothing the workflow."
-        )
-        messages.append(_llm_notice(body))
-
-    if messages:
-        # 複数通知は空行で区切って1blockにまとめる。
-        # コーディングエージェント側はそれぞれの`[auto-generated: ...]`プレフィックスで通知の境界を識別する。
-        _block("\n\n".join(messages))
+    # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
+    if has_session_review_skill_invoked(transcript_path, _SESSION_REVIEW_SKILL):
+        _approve(cwd=cwd)
         return 0
 
-    _approve(cwd=cwd)
+    messages: list[str] = []
+
+    # --- 未コミット変更通知（毎回提示）---
+    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
+        messages.append(
+            _llm_notice(
+                "uncommitted changes detected."
+                " Ask the user whether to commit the changes, or explain"
+                " why they should not be committed."
+                " Do not commit without user confirmation."
+            )
+        )
+
+    # --- セッション振り返り誘導（毎回提示）---
+    # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
+    messages.append(
+        _llm_notice(
+            f"Invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
+            " and follow its activation policy section to decide whether to proceed with the review."
+        )
+    )
+
+    _block("\n\n".join(messages))
     return 0
 
 

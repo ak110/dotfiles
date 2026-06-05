@@ -1,7 +1,7 @@
 """agent-toolkit/scripts/_stop_gate.py のテスト。
 
-各ヘルパー関数の単体テストと`is_real_session_end`の統合テスト。
-transcript JSONLファイルを作成して関数を呼ぶ形式。
+公開関数`is_pending_async_work`と`has_session_review_skill_invoked`の
+振る舞いを境界値・同値分割で網羅する。
 """
 
 import json
@@ -10,15 +10,7 @@ import threading
 import time
 
 import pytest
-from _stop_gate import (
-    _has_pending_subagents,
-    _is_assistant_asking_question,
-    _is_assistant_task_completed,
-    _is_assistant_waiting,
-    _last_tool_use_is_async_wait,
-    _wait_for_end_turn,
-    is_real_session_end,
-)
+from _stop_gate import has_session_review_skill_invoked, is_pending_async_work
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
@@ -91,9 +83,10 @@ def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed"
 
 
 def _user_foreground_agent_entry(tool_use_id: str) -> dict:
-    """foreground Agent完了を記録するuserエントリを生成する（参照用）。
+    """foreground Agent完了を記録するuserエントリを生成する。
 
     `toolUseResult.status`が`completed`の同期完了パスを再現する。
+    `is_pending_async_work`がforeground Agentを未完了扱いしないことの確認に使う。
     """
     return {
         "type": "user",
@@ -112,354 +105,165 @@ def _user_foreground_agent_entry(tool_use_id: str) -> dict:
     }
 
 
-# 共通 fixture: 基本的な transcript の末尾に置くアシスタントターン
-_COMPLETION_TEXT = "作業が完了しました。"
-_NO_COMPLETION_TEXT = "調査を続けます。"
-_QUESTION_TEXT = "実装が完了しました。どうしますか？"
-_WAITING_TEXT_JA = "バックグラウンドで実行中です。完了を待ちます。"
-_WAITING_TEXT_EN = "Running in background. Waiting for completion."
-
-
-class TestIsAssistantTaskCompleted:
-    """完了文言検出の単体テスト。"""
-
-    def test_detects_completion_keyword(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        assert _is_assistant_task_completed(str(t)) is True
-
-    def test_no_completion_keyword(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _NO_COMPLETION_TEXT}])],
-        )
-        assert _is_assistant_task_completed(str(t)) is False
-
-    def test_missing_file_returns_false(self):
-        assert _is_assistant_task_completed("/nonexistent/transcript.jsonl") is False
-
-
-class TestIsAssistantAskingQuestion:
-    """質問検出の単体テスト。"""
-
-    def test_halfwidth_question_mark(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _QUESTION_TEXT}])],
-        )
-        assert _is_assistant_asking_question(str(t)) is True
-
-    def test_ask_user_question_tool(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "AskUserQuestion", "input": {}},
-                    ]
-                ),
+def _skill_entry(skill_name: str, *, sidechain: bool = False) -> dict:
+    """Skill tool_use を含む assistant エントリを生成する。"""
+    entry: dict = {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill_name}},
             ],
-        )
-        assert _is_assistant_asking_question(str(t)) is True
-
-    def test_no_question(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        assert _is_assistant_asking_question(str(t)) is False
+        },
+    }
+    if sidechain:
+        entry["isSidechain"] = True
+    return entry
 
 
-class TestIsAssistantWaiting:
-    """待機語検出の単体テスト。"""
+_TEXT = "作業途中です。"
+_TARGET_SKILL = "agent-toolkit:session-review"
+_OTHER_SKILL = "agent-toolkit:coding-standards"
+_EXTENSION_SKILL = "extension-skill-example"
+
+
+def _bash_no_bg() -> dict:
+    """非同期でないBash tool_useブロックを返す（最終ターンの末尾を構造的にtool_useで終端するため）。"""
+    return {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}}
+
+
+class TestIsPendingAsyncWork:
+    """`is_pending_async_work` の判定を網羅するテスト。
+
+    tool_use 種別 × {Agent / ScheduleWakeup / Monitor / Bash背景 / Bash前景 / その他 / なし}
+    と未完了backgroundAgent × {なし / 起動のみ / 起動と通知ペア} の同値分割で組み合わせを検証する。
+    """
 
     @pytest.mark.parametrize(
-        "waiting_text",
+        ("tool_block", "expected"),
         [
-            "バックグラウンドで実行中です。完了を待ちます。",
-            "タスクが完了するまで待ちます。",
-            "通知を待機中です。",
-            "background process running",
-            "待機します。",
+            ({"type": "tool_use", "id": "x", "name": "Agent", "input": {}}, True),
+            ({"type": "tool_use", "id": "x", "name": "ScheduleWakeup", "input": {}}, True),
+            ({"type": "tool_use", "id": "x", "name": "Monitor", "input": {}}, True),
+            (
+                {
+                    "type": "tool_use",
+                    "id": "x",
+                    "name": "Bash",
+                    "input": {"command": "x", "run_in_background": True},
+                },
+                True,
+            ),
+            (
+                {
+                    "type": "tool_use",
+                    "id": "x",
+                    "name": "Bash",
+                    "input": {"command": "x", "run_in_background": False},
+                },
+                False,
+            ),
+            (
+                {"type": "tool_use", "id": "x", "name": "Read", "input": {"file_path": "/tmp/x"}},
+                False,
+            ),
+            (None, False),
         ],
     )
-    def test_detects_waiting_keyword(self, tmp_path: pathlib.Path, waiting_text: str):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": waiting_text}])],
+    def test_tool_use_kinds(self, tmp_path: pathlib.Path, tool_block: dict | None, expected: bool):
+        content: list[dict] = [{"type": "text", "text": _TEXT}]
+        if tool_block is not None:
+            content.append(tool_block)
+        t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry(content)])
+        assert is_pending_async_work(str(t)) is expected
+
+    @pytest.mark.parametrize(
+        ("pending_entries", "expected"),
+        [
+            ([], False),
+            ([_user_async_launched_entry("toolu_bg1")], True),
+            (
+                [
+                    _user_async_launched_entry("toolu_bg1"),
+                    _user_task_notification_entry("toolu_bg1"),
+                ],
+                False,
+            ),
+            (
+                [
+                    _user_async_launched_entry("toolu_bg1"),
+                    _user_async_launched_entry("toolu_bg2"),
+                    _user_task_notification_entry("toolu_bg1"),
+                ],
+                True,
+            ),
+        ],
+    )
+    def test_pending_background_agent(self, tmp_path: pathlib.Path, pending_entries: list[dict], expected: bool):
+        """直前ターンの最後のtool_useはRead（非同期でない）。
+
+        background Agentの起動・通知の有無のみで結果が決まることを検証する。
+        """
+        entries: list[dict] = [_user_entry("hello")]
+        entries.extend(pending_entries)
+        entries.append(_user_entry("続きをお願いします"))
+        entries.append(
+            _assistant_entry(
+                [
+                    {"type": "text", "text": _TEXT},
+                    {"type": "tool_use", "id": "x", "name": "Read", "input": {"file_path": "/tmp/x"}},
+                ]
+            )
         )
-        assert _is_assistant_waiting(str(t)) is True
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is expected
 
-    def test_no_waiting_keyword(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        assert _is_assistant_waiting(str(t)) is False
+    @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+    def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
+        """`<status>`の値が`completed`／`failed`／`cancelled`のいずれでも完了扱い。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_a"),
+            _user_task_notification_entry("toolu_a", status=status),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
 
-    def test_missing_file_returns_false(self):
-        assert _is_assistant_waiting("/nonexistent/transcript.jsonl") is False
+    def test_sidechain_async_launched_is_ignored(self, tmp_path: pathlib.Path):
+        """sidechain内の`async_launched`は未完了扱いしない。"""
+        entries = [
+            _user_entry("hello"),
+            _user_async_launched_entry("toolu_a", sidechain=True),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
 
-
-class TestLastToolUseIsAsyncWait:
-    """非同期待機系ツール検出の単体テスト。"""
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "ScheduleWakeup", "Monitor"])
-    def test_async_wait_tool_names(self, tmp_path: pathlib.Path, tool_name: str):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": tool_name, "input": {}},
-                    ]
-                ),
-            ],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is True
-
-    def test_bash_run_in_background_true(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {
-                            "type": "tool_use",
-                            "id": "x",
-                            "name": "Bash",
-                            "input": {"command": "sleep 10", "run_in_background": True},
-                        },
-                    ]
-                ),
-            ],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is True
-
-    def test_bash_run_in_background_false(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {
-                            "type": "tool_use",
-                            "id": "x",
-                            "name": "Bash",
-                            "input": {"command": "echo hello", "run_in_background": False},
-                        },
-                    ]
-                ),
-            ],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is False
-
-    def test_bash_no_run_in_background_key(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo hello"}},
-                    ]
-                ),
-            ],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is False
-
-    def test_regular_tool_not_async(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Read", "input": {"file_path": "/tmp/x"}},
-                    ]
-                ),
-            ],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is False
-
-    def test_no_tool_use_returns_false(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        assert _last_tool_use_is_async_wait(str(t)) is False
-
-    def test_missing_file_returns_false(self):
-        assert _last_tool_use_is_async_wait("/nonexistent/transcript.jsonl") is False
-
-
-class TestWaitForEndTurn:
-    """`_wait_for_end_turn` のポーリング挙動の単体テスト。"""
-
-    def test_returns_immediately_when_end_turn_present(self, tmp_path: pathlib.Path):
-        """末尾 assistant が end_turn → 即時戻る（poll 待ちなし）。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        start = time.monotonic()
-        _wait_for_end_turn(str(t), timeout=0.3)
-        assert time.monotonic() - start < 0.05
-
-    def test_times_out_when_end_turn_never_arrives(self, tmp_path: pathlib.Path):
-        """末尾 assistant が tool_use のみ → timeout まで待って戻る。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "x"}}],
-                    stop_reason="tool_use",
-                ),
-            ],
-        )
-        start = time.monotonic()
-        _wait_for_end_turn(str(t), timeout=0.15)
-        elapsed = time.monotonic() - start
-        assert 0.1 <= elapsed < 0.5
-
-
-class TestIsRealSessionEnd:
-    """`is_real_session_end` の AND 条件を網羅するテスト。"""
-
-    def test_all_conditions_pass(self, tmp_path: pathlib.Path):
-        """完了文言あり・質問なし・待機語なし・非同期待機ツールなし → True。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}},
-                    ]
-                ),
-            ],
-        )
-        assert is_real_session_end(str(t)) is True
-
-    def test_no_completion_keyword_returns_false(self, tmp_path: pathlib.Path):
-        """完了文言なし → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _NO_COMPLETION_TEXT}])],
-        )
-        assert is_real_session_end(str(t)) is False
-
-    def test_question_returns_false(self, tmp_path: pathlib.Path):
-        """質問あり → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _QUESTION_TEXT}])],
-        )
-        assert is_real_session_end(str(t)) is False
-
-    def test_waiting_keyword_returns_false(self, tmp_path: pathlib.Path):
-        """待機語あり → False（完了文言を含んでいても）。"""
-        text = _COMPLETION_TEXT + " " + _WAITING_TEXT_JA
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": text}])],
-        )
-        assert is_real_session_end(str(t)) is False
-
-    def test_async_tool_agent_returns_false(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Agent → False（完了文言を含んでいても）。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
-                    ]
-                ),
-            ],
-        )
-        assert is_real_session_end(str(t)) is False
-
-    def test_bash_background_returns_false(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Bash+run_in_background=True → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {
-                            "type": "tool_use",
-                            "id": "x",
-                            "name": "Bash",
-                            "input": {"command": "long_task.sh", "run_in_background": True},
-                        },
-                    ]
-                ),
-            ],
-        )
-        assert is_real_session_end(str(t)) is False
+    def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
+        """foreground Agent（`toolUseResult.status == "completed"`）は未完了扱いしない。"""
+        entries = [
+            _user_entry("hello"),
+            _user_foreground_agent_entry("toolu_a"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
 
     def test_missing_transcript_returns_false(self):
-        """transcript が存在しない → False。"""
-        assert is_real_session_end("/nonexistent/transcript.jsonl") is False
-
-    def test_completion_text_only_no_tool(self, tmp_path: pathlib.Path):
-        """完了文言あり・ツールなし・待機語なし・質問なし → True。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])],
-        )
-        assert is_real_session_end(str(t)) is True
-
-    def test_waiting_english_background_returns_false(self, tmp_path: pathlib.Path):
-        """英語の待機語 'background' → False。"""
-        text = _COMPLETION_TEXT + " " + _WAITING_TEXT_EN
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": text}])],
-        )
-        assert is_real_session_end(str(t)) is False
-
-    def test_schedule_wakeup_returns_false(self, tmp_path: pathlib.Path):
-        """最後の tool_use が ScheduleWakeup → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "ScheduleWakeup", "input": {}},
-                    ]
-                ),
-            ],
-        )
-        assert is_real_session_end(str(t)) is False
+        """transcript が存在しない → False（Stop抑止しない）。"""
+        assert is_pending_async_work("/nonexistent/transcript.jsonl") is False
 
     def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path):
-        """assistant 最終 (end_turn) エントリが遅延 flush されるケースを吸収する。
+        """assistant 最終 (end_turn) エントリが遅延 flush されるケースに対処する。
 
         Stop hook 起動時点で transcript に未到着のレースを再現する。
         最初は tool_use のみが書かれた状態でファイル存在、別スレッドで遅延後に
-        end_turn エントリを追記する。`is_real_session_end` がポーリングで吸収して True を返すこと。
+        end_turn エントリを追記する。`is_pending_async_work` がポーリングで末尾の到着を待ち、
+        最終的に False を返すこと。
         """
         t = _write_transcript(
             tmp_path,
@@ -476,116 +280,53 @@ class TestIsRealSessionEnd:
         def append_end_turn() -> None:
             time.sleep(0.1)
             with t.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(_assistant_entry([{"type": "text", "text": _COMPLETION_TEXT}])) + "\n")
+                f.write(json.dumps(_assistant_entry([{"type": "text", "text": _TEXT}])) + "\n")
 
         thread = threading.Thread(target=append_end_turn)
         thread.start()
         try:
-            assert is_real_session_end(str(t)) is True
+            # end_turn到着後の最終ターンは text のみ → tool_useなし → 非同期待機なし → False
+            assert is_pending_async_work(str(t)) is False
         finally:
             thread.join()
 
-    def test_monitor_returns_false(self, tmp_path: pathlib.Path):
-        """最後の tool_use が Monitor → False。"""
+
+class TestHasSessionReviewSkillInvoked:
+    """`has_session_review_skill_invoked` の境界値テスト。"""
+
+    def test_no_skill_invocation_returns_false(self, tmp_path: pathlib.Path):
+        t = _write_transcript(tmp_path, [_user_entry("hello")])
+        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
+
+    def test_target_skill_invocation_returns_true(self, tmp_path: pathlib.Path):
         t = _write_transcript(
             tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Monitor", "input": {}},
-                    ]
-                ),
-            ],
+            [_user_entry("hello"), _skill_entry(_TARGET_SKILL)],
         )
-        assert is_real_session_end(str(t)) is False
+        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is True
 
-    def test_pending_background_subagent_returns_false(self, tmp_path: pathlib.Path):
-        """過去ターンに未完了 background Agent が残っている → False。
-
-        完了文言あり・質問なし・待機語なし・最後の tool_use は Bash の通常実行で
-        既存 4 条件は通過するが、background Agent が起動済みかつ完了通知未到着のため
-        新条件で False となるケース。
-        """
+    def test_other_skill_only_returns_false(self, tmp_path: pathlib.Path):
         t = _write_transcript(
             tmp_path,
-            [
-                _user_entry("hello"),
-                _assistant_entry(
-                    [{"type": "tool_use", "id": "toolu_bg1", "name": "Agent", "input": {}}],
-                    msg_id="msg_launch",
-                    stop_reason="tool_use",
-                ),
-                _user_async_launched_entry("toolu_bg1"),
-                _user_entry("続きをお願いします"),
-                _assistant_entry(
-                    [
-                        {"type": "text", "text": _COMPLETION_TEXT},
-                        {"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": "echo done"}},
-                    ]
-                ),
-            ],
+            [_user_entry("hello"), _skill_entry(_OTHER_SKILL)],
         )
-        assert is_real_session_end(str(t)) is False
+        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
 
-
-class TestHasPendingSubagents:
-    """`_has_pending_subagents` の単体テスト。"""
-
-    def test_launched_without_notification_returns_true(self, tmp_path: pathlib.Path):
-        """`async_launched` 1 件、対応する `<task-notification>` なし → True。"""
-        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_a")])
-        assert _has_pending_subagents(str(t)) is True
-
-    def test_launched_with_matching_notification_returns_false(self, tmp_path: pathlib.Path):
-        """`async_launched` 1 件、対応する `<task-notification>` あり → False。"""
+    def test_sidechain_invocation_ignored(self, tmp_path: pathlib.Path):
         t = _write_transcript(
             tmp_path,
-            [
-                _user_async_launched_entry("toolu_a"),
-                _user_task_notification_entry("toolu_a"),
-            ],
+            [_user_entry("hello"), _skill_entry(_TARGET_SKILL, sidechain=True)],
         )
-        assert _has_pending_subagents(str(t)) is False
+        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
 
-    def test_multiple_launched_partial_notification_returns_true(self, tmp_path: pathlib.Path):
-        """複数の `async_launched` のうち 1 件のみ完了通知 → True。"""
+    def test_distinct_skill_name_lookup(self, tmp_path: pathlib.Path):
+        """引数で渡したスキル名のみを検出し、別名は検出しない。"""
         t = _write_transcript(
             tmp_path,
-            [
-                _user_async_launched_entry("toolu_a"),
-                _user_async_launched_entry("toolu_b"),
-                _user_task_notification_entry("toolu_a"),
-            ],
+            [_user_entry("hello"), _skill_entry(_EXTENSION_SKILL)],
         )
-        assert _has_pending_subagents(str(t)) is True
-
-    @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
-    def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
-        """`<status>` の値が `completed` / `failed` / `cancelled` のいずれでも完了扱い → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [
-                _user_async_launched_entry("toolu_a"),
-                _user_task_notification_entry("toolu_a", status=status),
-            ],
-        )
-        assert _has_pending_subagents(str(t)) is False
-
-    def test_sidechain_launched_is_ignored(self, tmp_path: pathlib.Path):
-        """sidechain 内の `async_launched` は無視 → False。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_async_launched_entry("toolu_a", sidechain=True)],
-        )
-        assert _has_pending_subagents(str(t)) is False
-
-    def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
-        """foreground Agent（`toolUseResult.status == "completed"`）は対象外 → False。"""
-        t = _write_transcript(tmp_path, [_user_foreground_agent_entry("toolu_a")])
-        assert _has_pending_subagents(str(t)) is False
+        assert has_session_review_skill_invoked(str(t), _EXTENSION_SKILL) is True
+        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
 
     def test_missing_file_returns_false(self):
-        """transcript 未存在 → False。"""
-        assert _has_pending_subagents("/nonexistent/transcript.jsonl") is False
+        assert has_session_review_skill_invoked("/nonexistent/transcript.jsonl", "x") is False

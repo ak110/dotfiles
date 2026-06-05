@@ -29,12 +29,11 @@ LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整
 `sys.path`に追加して解決する。プラグイン無効化時もファイル自体は存在しimportは成立する。
 """
 
-import contextlib
+import collections.abc
 import json
 import pathlib
 import re
 import sys
-import tempfile
 import traceback
 
 # agent-toolkit の共通ゲートモジュールを import する。
@@ -45,7 +44,8 @@ sys.path.insert(
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_real_session_end,  # type: ignore[import]
+    has_session_review_skill_invoked,
+    is_pending_async_work,
 )
 
 # `\bpyfltr\b` に相当する正規表現。
@@ -59,36 +59,16 @@ _AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
 # このスクリプトの hook 識別子。
 _HOOK_ID = "dotfiles/claude_hook_stop"
 
+# 拡張章スキル名。本hookと同期対象のSKILL.md側でも参照される。
+_EXTENSION_SKILL = "session-review-dotfiles"
+
 
 def _llm_notice(body: str) -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス / サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID)
 
 
-def _state_path(session_id: str) -> pathlib.Path:
-    """セッション状態ファイルのパスを返す。
-
-    plugin 側の `claude-agent-toolkit-{session_id}.json` と分離して責務境界を明確にする。
-    tempdir を使う理由はセッション状態が揮発で構わず、OS 再起動時に自動消去されるためである。
-    """
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-dotfiles-stop-{session_id}.json"
-
-
-def _read_state(path: pathlib.Path) -> dict:
-    """状態ファイルを読み込む。ファイル未作成・破損時は空 dict を返す。"""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _write_state(path: pathlib.Path, state: dict) -> None:
-    """状態ファイルを書き込む。書き込み失敗は無視する。"""
-    with contextlib.suppress(OSError):
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-
-def _iter_tool_use_blocks(transcript_path: str):
+def _iter_tool_use_blocks(transcript_path: str) -> collections.abc.Iterator[dict]:
     """Transcript 内のメイン assistant エントリから tool_use ブロックを yield する。
 
     サブエージェント（isSidechain）は別ファイルのため対象外。
@@ -172,46 +152,31 @@ def main() -> int:
         _approve()
         return 0
 
-    state_file = _state_path(session_id)
-    state = _read_state(state_file)
-
-    # セッション 1 回制限: 既に発火済みなら即 approve する。
-    if state.get("advice_given", False):
-        _approve()
-        return 0
-
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if not transcript_path:
         _approve()
         return 0
 
-    has_pyfltr = _has_pyfltr_usage(transcript_path)
-    has_agent_toolkit = _has_agent_toolkit_usage(transcript_path)
-
-    if not has_pyfltr and not has_agent_toolkit:
+    if not _has_pyfltr_usage(transcript_path) and not _has_agent_toolkit_usage(transcript_path):
         _approve()
         return 0
 
-    if not is_real_session_end(transcript_path):
+    if is_pending_async_work(transcript_path):
         _approve()
         return 0
 
-    # 発火: block 前に advice_given を記録する。
-    state["advice_given"] = True
-    _write_state(state_file, state)
+    if has_session_review_skill_invoked(transcript_path, _EXTENSION_SKILL):
+        _approve()
+        return 0
 
-    # 振り返り手順全体は `agent-toolkit:session-review` スキルが保持し、その呼び出し誘導は
-    # 同時発火する `stop_advisor.py` が担う。本 hook は dotfiles 拡張章を担う
-    # `session-review-dotfiles` スキルの追加呼び出しのみを誘導する責務分離設計を採用する。
+    # 振り返り手順全体は `session-review-dotfiles` スキルおよび併用する
+    # `agent-toolkit:session-review` スキルが保持する。本 hook は両スキルの併用呼び出しのみを誘導し、
+    # 終了判定の基準もスキル本体の起動方針節へ委譲する。
     body = (
-        "session-review handoff (dotfiles extension): you MUST invoke BOTH the"
-        " `agent-toolkit:session-review` Skill (announced by the `[auto-generated: agent-toolkit/stop_advisor]`"
-        " notice) AND the `session-review-dotfiles` Skill via the Skill tool; do not finish after only one."
-        " Read both skills, then report their sections as a single combined review of at most 3 sections"
-        " (project documentation, pyfltr, agent-toolkit). Sections that do not apply are dropped or merged"
-        " into the project documentation section as the dotfiles skill specifies"
-        " (e.g. pyfltr unused, or working inside the dotfiles or pyfltr project itself)."
+        f"Invoke the `{_EXTENSION_SKILL}` Skill via the Skill tool together with the"
+        " `agent-toolkit:session-review` Skill, and produce a single combined review of both sections."
+        " Follow each skill's activation policy section to decide whether to proceed with the review."
     )
     _block(_llm_notice(body))
     return 0
