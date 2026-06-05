@@ -48,6 +48,29 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def _decision_kind(decision: dict) -> str:
+    """approve / context のいずれかを返す。"""
+    if decision.get("decision") == "approve":
+        return "approve"
+    hook_output = decision.get("hookSpecificOutput")
+    if (
+        isinstance(hook_output, dict)
+        and hook_output.get("hookEventName") == "Stop"
+        and isinstance(hook_output.get("additionalContext"), str)
+    ):
+        return "context"
+    raise AssertionError(f"unexpected decision payload: {decision!r}")
+
+
+def _additional_context(decision: dict) -> str:
+    hook_output = decision.get("hookSpecificOutput")
+    assert isinstance(hook_output, dict)
+    assert hook_output.get("hookEventName") == "Stop"
+    body = hook_output.get("additionalContext")
+    assert isinstance(body, str)
+    return body
+
+
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
     """dict のリストを JSONL 形式の transcript として保存する。"""
     transcript = tmp_path / "transcript.jsonl"
@@ -149,21 +172,21 @@ def _transcript_agent_toolkit_skill_then_text(tmp_path: pathlib.Path) -> pathlib
 
 
 class TestUsageDetection:
-    """pyfltr / agent-toolkit 使用検出ロジックのテスト（block発火条件として）。"""
+    """pyfltr / agent-toolkit 使用検出ロジックのテスト（context発火条件として）。"""
 
     def test_detects_uv_run_pyfltr(self, tmp_path: pathlib.Path):
-        """uv run pyfltr ... の形式を検出して block する。"""
+        """uv run pyfltr ... の形式を検出して additionalContext を返す。"""
         transcript = _transcript_pyfltr_then_text(tmp_path)
         result = _run(
             {"session_id": "detect-uv-pyfltr", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        assert "[auto-generated: dotfiles/claude_hook_stop]" in decision["reason"]
-        assert "Auto-generated hook notice" in decision["reason"]
-        assert _EXTENSION_SKILL in decision["reason"]
-        assert _TARGET_SESSION_REVIEW in decision["reason"]
+        body = _additional_context(decision)
+        assert "[auto-generated: dotfiles/claude_hook_stop]" in body
+        assert "Auto-generated hook notice" in body
+        assert _EXTENSION_SKILL in body
+        assert _TARGET_SESSION_REVIEW in body
 
     def test_no_pyfltr_or_agent_toolkit_approves(self, tmp_path: pathlib.Path):
         """pyfltr も agent-toolkit も検出されないセッションは approve する。"""
@@ -248,8 +271,8 @@ class TestStopGateDelegation:
             (True, True, True, "approve"),
             # 使用検出あり・機械ゲート不通過・対象スキル起動済み → approve
             (True, False, True, "approve"),
-            # 使用検出あり・機械ゲート不通過・対象スキル未起動 → block
-            (True, False, False, "block"),
+            # 使用検出あり・機械ゲート不通過・対象スキル未起動 → context
+            (True, False, False, "context"),
         ],
     )
     def test_decision_matrix(
@@ -278,13 +301,13 @@ class TestStopGateDelegation:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == expected
+        assert _decision_kind(decision) == expected
 
 
-class TestRepeatBlocks:
-    """同一transcriptで複数回Stopしても、対象スキル未起動なら毎回blockする。"""
+class TestRepeatContext:
+    """同一transcriptで複数回Stopしても、対象スキル未起動なら毎回additionalContextを返す。"""
 
-    def test_block_repeats_each_stop(self, tmp_path: pathlib.Path):
+    def test_context_repeats_each_stop(self, tmp_path: pathlib.Path):
         transcript = _transcript_pyfltr_then_text(tmp_path)
         first = _run(
             {"session_id": "repeat", "transcript_path": str(transcript)},
@@ -294,26 +317,25 @@ class TestRepeatBlocks:
             {"session_id": "repeat", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        assert _parse_decision(first)["decision"] == "block"
-        assert _parse_decision(second)["decision"] == "block"
+        assert _decision_kind(_parse_decision(first)) == "context"
+        assert _decision_kind(_parse_decision(second)) == "context"
 
 
-class TestReasonContents:
-    """block時のreason本文に必要な要素が含まれることを確認する。"""
+class TestContextContents:
+    """context発火時のadditionalContext本文に必要な要素が含まれることを確認する。"""
 
-    def test_reason_invokes_both_skills(self, tmp_path: pathlib.Path):
+    def test_context_invokes_both_skills(self, tmp_path: pathlib.Path):
         transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
         result = _run(
-            {"session_id": "reason", "transcript_path": str(transcript)},
+            {"session_id": "context", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        reason = decision["reason"]
-        assert _EXTENSION_SKILL in reason
-        assert _TARGET_SESSION_REVIEW in reason
-        assert "Skill" in reason
-        assert "activation policy" in reason
+        body = _additional_context(decision)
+        assert _EXTENSION_SKILL in body
+        assert _TARGET_SESSION_REVIEW in body
+        assert "Skill" in body
+        assert "activation policy" in body
 
 
 class TestEdgeCases:
@@ -363,4 +385,4 @@ class TestHomeIndependent:
             home=fake_home,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
+        assert _decision_kind(decision) == "context"

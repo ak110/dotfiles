@@ -150,6 +150,23 @@ class TestPlatformOverride:
         assert result["language"] == "japanese"
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
 
+    def test_override_adds_required_minimum_version(self, tmp_path: Path):
+        """オーバーライド経由でトップレベルの`requiredMinimumVersion`がユーザー設定へ合成される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+        override_path = tmp_path / "override.json"
+        override_path.write_text(
+            json.dumps({"requiredMinimumVersion": "2.1.163"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+
+        update_claude_settings(managed_path, target_path, overrides=[override_path])
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["requiredMinimumVersion"] == "2.1.163"
+        assert result["language"] == "japanese"
+
     def test_override_replaces_scalar(self, tmp_path: Path):
         """オーバーライドはベースのスカラー値を上書きする。"""
         managed_path = tmp_path / "managed.json"

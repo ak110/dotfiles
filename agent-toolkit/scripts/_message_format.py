@@ -1,7 +1,9 @@
 """Claude Code agent-toolkit: コーディングエージェント宛てメッセージ整形共通モジュール。
 
-LLMに行動を促すメッセージには`reason`（Stop/PostToolUse）または
-`hookSpecificOutput.additionalContext`（PreToolUse）を使う。
+LLMに行動を促すメッセージはイベント種別に関わらず`hookSpecificOutput.additionalContext`を
+主経路として使う。`reason`はStop/PostToolUseで`decision: "block"`を併用する場合の
+補足理由欄として位置付ける（Stop/SubagentStopでは停止を防いでターン継続を強制し、
+PostToolUseではblock理由を直前のツール結果に添えて返す）。
 `systemMessage`はユーザー向け情報通知専用でLLMに届かない。
 
 LLM宛て出力には自動生成を示すプレフィックスとサフィックスを必ず付ける。

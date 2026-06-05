@@ -8,7 +8,8 @@
 Claude Codeが停止しようとするタイミングで発火する。
 セッションが構造的に継続中（非同期待機ツールまたは未完了background Agentあり）の場合と、
 セッション中に既に`agent-toolkit:session-review`スキルが起動された場合はapproveする。
-それ以外では、未コミット変更の有無に応じた通知とセッション振り返り誘導を1blockにまとめて返す。
+それ以外では、未コミット変更の有無に応じた通知とセッション振り返り誘導を
+`hookSpecificOutput.additionalContext`へまとめて返す。
 
 終了判定の言語的部分（完了文言・質問・待機表明の判別）と振り返り手順は
 `agent-toolkit:session-review`スキル本体の「起動方針」節へ全面委譲する。
@@ -100,8 +101,18 @@ def _approve(cwd: str = "") -> None:
     print(json.dumps(output, ensure_ascii=False))
 
 
-def _block(reason: str) -> None:
-    print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+def _emit_context(body: str) -> None:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "Stop",
+                    "additionalContext": body,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def main() -> int:
@@ -167,7 +178,7 @@ def main() -> int:
         )
     )
 
-    _block("\n\n".join(messages))
+    _emit_context("\n\n".join(messages))
     return 0
 
 

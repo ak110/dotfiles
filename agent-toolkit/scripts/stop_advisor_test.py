@@ -42,6 +42,16 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def _additional_context(decision: dict) -> str:
+    """`hookSpecificOutput.additionalContext`本文を取り出す。"""
+    hook_output = decision.get("hookSpecificOutput")
+    assert isinstance(hook_output, dict)
+    assert hook_output.get("hookEventName") == "Stop"
+    body = hook_output.get("additionalContext")
+    assert isinstance(body, str)
+    return body
+
+
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
@@ -168,50 +178,49 @@ class TestApproveConditions:
         assert decision["decision"] == "approve"
 
 
-class TestBlockConditions:
-    """block条件: 機械ゲート通過かつスキル未起動 → 毎回block。"""
+class TestContextConditions:
+    """context条件: 機械ゲート通過かつスキル未起動 → 毎回additionalContextを返す。"""
 
-    def test_clean_repo_blocks_review_only(
+    def test_clean_repo_context_review_only(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
-        """未コミット変更なし → 振り返り誘導のみのblock。"""
+        """未コミット変更なし → 振り返り誘導のみのadditionalContext。"""
         repo = make_clean_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
-            {"session_id": "clean-block", "transcript_path": str(transcript), "cwd": str(repo)},
+            {"session_id": "clean-context", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        reason = decision["reason"]
-        assert _SESSION_REVIEW_SKILL in reason
-        assert "Skill" in reason
-        assert "activation policy" in reason
-        assert "uncommitted" not in reason.lower()
+        assert "decision" not in decision
+        body = _additional_context(decision)
+        assert _SESSION_REVIEW_SKILL in body
+        assert "Skill" in body
+        assert "activation policy" in body
+        assert "uncommitted" not in body.lower()
         # 振り返り誘導1件のみのため、自動生成プレフィックスは1個。
-        assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
-        assert "Auto-generated hook notice" in reason
+        assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
+        assert "Auto-generated hook notice" in body
 
-    def test_dirty_repo_blocks_with_both_messages(
+    def test_dirty_repo_context_with_both_messages(
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
-        """未コミット変更あり → 未コミット通知と振り返り誘導の両方を1blockで返す。"""
+        """未コミット変更あり → 未コミット通知と振り返り誘導の両方を1回のadditionalContextで返す。"""
         repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
-            {"session_id": "dirty-block", "transcript_path": str(transcript), "cwd": str(repo)},
+            {"session_id": "dirty-context", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
-        reason = decision["reason"]
-        assert "uncommitted" in reason.lower()
-        assert _SESSION_REVIEW_SKILL in reason
+        body = _additional_context(decision)
+        assert "uncommitted" in body.lower()
+        assert _SESSION_REVIEW_SKILL in body
         # 2通知それぞれにプレフィックスが付与される。
-        assert reason.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
+        assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
 
-    def test_repeats_block_each_stop(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
-        """同一transcriptで2回連続Stopしても、スキル未起動なら毎回blockする。"""
+    def test_repeats_context_each_stop(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
+        """同一transcriptで2回連続Stopしても、スキル未起動なら毎回additionalContextを返す。"""
         repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         first = _run(
@@ -222,8 +231,8 @@ class TestBlockConditions:
             {"session_id": "repeat", "transcript_path": str(transcript), "cwd": str(repo)},
             state_dir=tmp_path,
         )
-        assert _parse_decision(first)["decision"] == "block"
-        assert _parse_decision(second)["decision"] == "block"
+        assert _additional_context(_parse_decision(first))
+        assert _additional_context(_parse_decision(second))
 
 
 class TestUncommittedTimesAfterReview:
@@ -259,17 +268,17 @@ class TestEdgeCases:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
-    def test_missing_transcript_blocks(self, tmp_path: pathlib.Path):
-        """transcriptが存在しない → 機械ゲートはFalse、スキル痕跡なし → block。
+    def test_missing_transcript_emits_context(self, tmp_path: pathlib.Path):
+        """transcriptが存在しない → 機械ゲートはFalse、スキル痕跡なし → additionalContextを返す。
 
-        フックは安全側で動作し、現状の未コミット状態に応じてblockを返す。
+        フックは安全側で動作し、振り返り誘導本文を返す。
         """
         result = _run(
             {"session_id": "no-transcript", "transcript_path": "/nonexistent/file"},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "block"
+        assert _SESSION_REVIEW_SKILL in _additional_context(decision)
 
     def test_empty_session_id_approves(self, tmp_path: pathlib.Path):
         result = _run({"session_id": "", "transcript_path": "/x"}, state_dir=tmp_path)

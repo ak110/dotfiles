@@ -50,6 +50,10 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 先にClaude Codeをインストール。
 インストーラーは`claude` CLIの存在を前提としており、未検出時はエラー終了する。
 
+Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。
+プラグイン単体の利用者にはバージョン検査の強制機構はないため非強制の前提条件として扱う。
+dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
+
 ツールキットのインストールには以下のワンライナーを実行。
 
 - Linux:
