@@ -60,7 +60,11 @@
 - Pythonテストコードはソースモジュールの隣に同居方式で配置する
   - `pytools/`・`scripts/`・`agent-toolkit/`配下のいずれにおいても、
     ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く
-  - テスト共通ヘルパーは`pytools/_internal/_test_helpers.py`へ集約する
+  - テスト共通ヘルパーの集約方針は配布物境界に応じて区別する
+    - `pytools/`配下のテストは共通ヘルパーを`pytools/_internal/_test_helpers.py`へ集約する
+    - `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照しない。
+      共通化が必要な場合は`agent-toolkit/scripts/`配下に独自ヘルパーを置く
+    - `scripts/`配下のテストは`pytools/_internal/_test_helpers.py`を必要に応じて参照してよい
   - `pytools`パッケージ配布物にテストコードを含めないため、
     `[tool.hatch.build.targets.wheel]`の`exclude`で`*_test.py`と`_test_helpers.py`を除外する
   - `scripts/`配下のスクリプト固有の補足:
