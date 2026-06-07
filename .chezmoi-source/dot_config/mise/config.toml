@@ -1,0 +1,25 @@
+[tools]
+"aqua:aws/aws-cli" = "latest"
+"npm:@google/gemini-cli" = "latest"
+"npm:@openai/codex" = "latest"
+"npm:aws-cdk" = "latest"
+actionlint = "latest"
+chezmoi = "latest"
+dotnet = "latest"
+editorconfig-checker = "latest"
+fzf = "latest"
+gcloud = "latest"
+gh = "latest"
+git-cliff = "latest"
+glab = "latest"
+glow = "latest"
+jq = "latest"
+node = "lts"
+pinact = "latest"
+ripgrep = "latest"
+shellcheck = "latest"
+shfmt = "latest"
+typos = "latest"
+
+[settings]
+idiomatic_version_file_enable_tools = ["node"]

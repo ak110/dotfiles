@@ -350,6 +350,9 @@ if command -v pyfltr &>/dev/null; then
         eval "$(pyfltr generate-shell-completion bash)"
     fi
 fi
+if command -v chezmoi &>/dev/null; then
+    eval "$(chezmoi completion bash)"
+fi
 
 # ~/dotfiles/completions/*.bash をまとめて読み込む。
 # pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完をここに集約する。
