@@ -353,6 +353,22 @@ fi
 if command -v chezmoi &>/dev/null; then
     eval "$(chezmoi completion bash)"
 fi
+if command -v gh &>/dev/null; then
+    eval "$(gh completion -s bash)"
+fi
+if command -v mise &>/dev/null; then
+    eval "$(mise completion bash)"
+fi
+# fzf --bash は補完に加えて Ctrl-R 履歴検索・Ctrl-T/Alt-C のキーバインドも有効化する。
+if command -v fzf &>/dev/null; then
+    eval "$(fzf --bash)"
+fi
+if command -v glab &>/dev/null; then
+    eval "$(glab completion -s bash)"
+fi
+if command -v pinact &>/dev/null; then
+    eval "$(pinact completion bash)"
+fi
 
 # ~/dotfiles/completions/*.bash をまとめて読み込む。
 # pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完をここに集約する。

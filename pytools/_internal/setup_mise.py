@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 # 新規インストールが実行されると数十秒かかるため余裕を持たせる。
 _MISE_TIMEOUT = 300
 
+# `mise install` のタイムアウト (秒)。aqua/npm バックエンドの初回ダウンロードや
+# 複数ツールの一括インストールで時間がかかるため、通常コマンドより長めに取る。
+_MISE_INSTALL_TIMEOUT = 600
+
 # Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は
 # `%LOCALAPPDATA%\mise\shims` のまま REG_EXPAND_SZ で保持する。
 _WINDOWS_SHIMS_ENTRY = r"%LOCALAPPDATA%\mise\shims"
@@ -56,6 +60,7 @@ def run() -> bool:
     changed = False
     changed |= _ensure_working_tree_trusted(mise_bin)
     changed |= _ensure_global_node(mise_bin)
+    changed |= _ensure_tools_installed(mise_bin)
     if _is_windows():
         changed |= _ensure_windows_user_path_has_shims()
     return changed
@@ -88,7 +93,7 @@ def _find_mise_binary() -> Path | None:
 def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
     """Chezmoi workingTree直下の `mise.toml` を `mise trust` 対象にする。
 
-    未trustのままではmise CLIが毎回警告を表示して設定を無視するため、べき等にtrustする。
+    未trustのままではmise CLIが毎回警告を表示して設定を無視するため、冪等にtrustする。
     workingTreeは `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定ならCLI単体実行
     とみなしてスキップ）。既にtrust済みであっても `mise trust` は重複登録しない仕様のため、
     事前チェックは行わず毎回実行する。副作用がないため、成功時はchanged判定も常にTrueを
@@ -173,6 +178,25 @@ def _list_item_is_node(item: object) -> bool:
     return isinstance(name, str) and name == "node"
 
 
+def _ensure_tools_installed(mise_bin: Path) -> bool:
+    """`mise install` で global/working-tree 設定のツールを取得する。
+
+    終了コード非ゼロ・タイムアウト・例外はすべて吸収し、後続ステップを止めない。
+    インストール差分の厳密判定は出力からは行えないため、`changed` の冪等性ではなく
+    実行事実の記録を優先する設計とし、結果に関わらず常に True を返す。
+    """
+    result = _run_mise(mise_bin, ["install"], timeout=_MISE_INSTALL_TIMEOUT)
+    if result is None:
+        logger.info(log_format.format_status("mise", "`install` がタイムアウトまたは例外で中断"))
+        return True
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        logger.info(log_format.format_status("mise", f"`install` に失敗: {stderr}"))
+        return True
+    logger.info(log_format.format_status("mise", "`install` を実行しました"))
+    return True
+
+
 def _ensure_windows_user_path_has_shims() -> bool:
     r"""HKCU\Environment\Path に mise の shims ディレクトリを追加する (Windows 専用).
 
@@ -250,12 +274,18 @@ def _append_entry(current_value: str, new_entry: str) -> str:
     return current_value + separator + new_entry
 
 
-def _run_mise(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+def _run_mise(
+    mise_bin: Path,
+    args: list[str],
+    *,
+    timeout: float = _MISE_TIMEOUT,
+) -> subprocess.CompletedProcess[str] | None:
     """`mise` CLIを呼び出す共通ヘルパー。
 
-    タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
+    タイムアウト・例外を吸収して `CompletedProcess` または `None` を返す。
+    非ゼロ終了の扱いは呼び出し元に委ねる。
     """
-    return claude_common.run_subprocess([str(mise_bin), *args], timeout=_MISE_TIMEOUT, tag="mise")
+    return claude_common.run_subprocess([str(mise_bin), *args], timeout=timeout, tag="mise")
 
 
 if __name__ == "__main__":

@@ -88,7 +88,11 @@ class TestEnsureGlobalNode:
     def test_node_already_set(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(
@@ -109,7 +113,11 @@ class TestEnsureGlobalNode:
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ]
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return responses.pop(0)
@@ -124,7 +132,11 @@ class TestEnsureGlobalNode:
     def test_ls_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
@@ -140,7 +152,11 @@ class TestEnsureGlobalNode:
             subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="fail"),
         ]
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return responses.pop(0)
@@ -155,7 +171,11 @@ class TestEnsureGlobalNode:
     def test_invalid_json_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="not json", stderr="")
@@ -183,6 +203,7 @@ class TestRun:
         monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
         monkeypatch.setattr(_setup_mise, "_ensure_global_node", fake_ensure_global_node)
         monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: False)
+        monkeypatch.setattr(_setup_mise, "_ensure_tools_installed", lambda _mise_bin: False)
 
         assert _setup_mise.run() is True
         assert called == [Path("/fake/mise")]
@@ -192,6 +213,7 @@ class TestRun:
         monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
         monkeypatch.setattr(_setup_mise, "_ensure_global_node", lambda _mise_bin: False)
         monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: True)
+        monkeypatch.setattr(_setup_mise, "_ensure_tools_installed", lambda _mise_bin: False)
 
         assert _setup_mise.run() is True
 
@@ -203,7 +225,11 @@ class TestEnsureWorkingTreeTrusted:
         monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -216,7 +242,11 @@ class TestEnsureWorkingTreeTrusted:
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -231,7 +261,11 @@ class TestEnsureWorkingTreeTrusted:
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
         calls: list[list[str]] = []
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin
             calls.append(args)
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -244,9 +278,63 @@ class TestEnsureWorkingTreeTrusted:
         (tmp_path / "mise.toml").write_text("", encoding="utf-8")
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
 
-        def fake_run(mise_bin: Path, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            **_kwargs: object,
+        ) -> subprocess.CompletedProcess[str] | None:
             del mise_bin, args
             return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
 
         monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
         assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
+
+
+class TestRunInstallStep:
+    """``run()`` 経由で `mise install` の終了コード差異が後続を止めないことを確認する。
+
+    `_ensure_tools_installed` は結果に関わらず常に True を返す設計のため、
+    `run()` 全体も True を返す。trust と node 設定は前段でスキップ／既存判定させ、
+    install ステップの呼び出し記録だけを焦点に置く。
+    """
+
+    @pytest.mark.parametrize(
+        "install_response",
+        [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom"),
+            None,
+        ],
+    )
+    def test_install_outcome_does_not_block_run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        install_response: subprocess.CompletedProcess[str] | None,
+    ):
+        install_calls: list[tuple[list[str], float]] = []
+
+        def fake_run(
+            mise_bin: Path,
+            args: list[str],
+            *,
+            timeout: float = _setup_mise._MISE_TIMEOUT,
+        ) -> subprocess.CompletedProcess[str] | None:
+            del mise_bin
+            if args == ["install"]:
+                install_calls.append((args, timeout))
+                return install_response
+            if args == ["ls", "--global", "--json"]:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps({"node": [{"version": "24"}]}, ensure_ascii=False),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+        monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
+        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        assert _setup_mise.run() is True
+        assert install_calls == [(["install"], _setup_mise._MISE_INSTALL_TIMEOUT)]
