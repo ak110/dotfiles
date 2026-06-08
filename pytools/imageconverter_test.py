@@ -1,8 +1,5 @@
 """imageconverter モジュールの単体テスト。"""
 
-# `main` 経由でCLI挙動を検証する。内部実装の関数を直接呼び出すため protected-access を許可する。
-# pylint: disable=protected-access
-
 import io
 import pathlib
 import struct

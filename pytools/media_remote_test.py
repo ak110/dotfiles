@@ -1,7 +1,5 @@
 """pytools.media_remoteのテスト。"""
 
-# pylint: disable=protected-access
-
 import ctypes
 import pathlib
 import subprocess

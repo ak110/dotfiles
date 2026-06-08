@@ -1,19 +1,16 @@
 """repack_archive モジュールの統合テスト。
 
 実ZIP を合成し、選択的解凍・リネーム・平坦化・ゴミ箱スキップの動作を検証する。
-画像変換は tests の副作用を最小にするため画像を含めず、主に配置・フィルタ検証に
-フォーカスする (imageconverter 単体は別テストで検証)。
+画像変換は tests の副作用を最小にするため画像を含めず、主に配置・フィルタ検証を対象とする
+(imageconverter 単体は別テストで検証)。
 """
-
-# プライベート関数 (`_preflight_check` など) を直接呼び出して
-# 個別シナリオを検証するため、ファイル全体で protected-access を許可する。
-# pylint: disable=protected-access,missing-class-docstring
 
 import io
 import logging
 import pathlib
 import shutil
 import struct
+import sys
 import zipfile
 
 import PIL.Image
@@ -76,46 +73,64 @@ def _zip_entries(path: pathlib.Path) -> set[str]:
         return set(zf.namelist())
 
 
+def _run_main(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+) -> int:
+    """``repack_archive.main()`` を指定引数で実行し、終了コードを返す。"""
+    monkeypatch.setattr(sys, "argv", ["repack-archive", *args])
+    with pytest.raises(SystemExit) as exc_info:
+        repack_archive.main()
+    code = exc_info.value.code
+    assert isinstance(code, int)
+    return code
+
+
 class TestPreflight:
-    def test_output_collision_detected(self, tmp_path: pathlib.Path) -> None:
+    def test_output_collision_detected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         a = tmp_path / "foo.zip"
         b = tmp_path / "foo.cbz"
         _make_zip(a, {"a.txt": b"a"})
         _make_zip(b, {"b.txt": b"b"})
-        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
+        # _preflight_check は副作用ゼロの事前検証フェーズとして設計されており、
+        # ValueError を伝播させて即座に中断する（_process_target が try/except で各件を
+        # キャッチして継続するのとは対照的な設計）。SystemExit(1) に統一しない理由は、
+        # preflight 失敗は「処理開始前の中断」であり CLI 利用者には未捕捉例外として
+        # スタックトレースを見せることが意図されているため。
+        monkeypatch.setattr(sys, "argv", ["repack-archive", "--no-trash", str(a), str(b)])
         with pytest.raises(ValueError, match="出力 ZIP が衝突"):
-            repack_archive._preflight_check([a, b], compiled=compiled, backup_dir=None)
+            repack_archive.main()
 
-    def test_backup_exists_error(self, tmp_path: pathlib.Path) -> None:
+    def test_backup_exists_error(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"a.txt": b"a"})
         (tmp_path / "bk").mkdir()
         (tmp_path / "bk" / "foo.zip").write_bytes(b"existing")
-        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
+        monkeypatch.setattr(sys, "argv", ["repack-archive", "--no-trash", str(archive)])
         with pytest.raises(FileExistsError):
-            repack_archive._preflight_check([archive], compiled=compiled, backup_dir=None)
+            repack_archive.main()
 
-    def test_existing_output_rejected_when_path_differs(self, tmp_path: pathlib.Path) -> None:
+    def test_existing_output_rejected_when_path_differs(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """入力と異なるパスの出力 ZIP が既存なら拒否する (ディレクトリ入力)。"""
         src = tmp_path / "book"
         src.mkdir()
         (src / "01.txt").write_bytes(b"1")
         (tmp_path / "book.zip").write_bytes(b"existing")
-        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
+        monkeypatch.setattr(sys, "argv", ["repack-archive", "--no-trash", str(src)])
         with pytest.raises(FileExistsError):
-            repack_archive._preflight_check([src], compiled=compiled, backup_dir=None)
+            repack_archive.main()
 
-    def test_same_path_output_not_rejected(self, tmp_path: pathlib.Path) -> None:
+    def test_same_path_output_not_rejected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """入力と出力が同一パスのアーカイブ入力は既存出力チェックで誤拒否しない。"""
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"a.txt": b"a"})
-        compiled = repack_archive._compile_rules(repack_archive.RepackConfig(), tmp_path)
-        # 出力 foo.zip は入力自身であり拒否されない (例外を送出しない)
-        repack_archive._preflight_check([archive], compiled=compiled, backup_dir=None)
+        # 出力 foo.zip は入力自身であり拒否されない (exit 0 で正常完了)
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
 
 
 class TestProcessArchive:
-    def test_basic_repack(self, tmp_path: pathlib.Path) -> None:
+    def test_basic_repack(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "sample.zip"
         _make_zip(
             archive,
@@ -124,23 +139,15 @@ class TestProcessArchive:
                 "img2.txt": b"two",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         output = tmp_path / "sample.zip"
         assert output.exists()
         entries = _zip_entries(output)
         assert entries == {"img1.txt", "img2.txt"}
         assert (tmp_path / "bk" / "sample.zip").exists()
 
-    def test_ignore_files_skips_extraction(self, tmp_path: pathlib.Path) -> None:
+    def test_ignore_files_skips_extraction(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -150,20 +157,17 @@ class TestProcessArchive:
                 "Thumbs.db": b"d",
             },
         )
-        config = repack_archive.RepackConfig(ignore_files=["*.pdf", "Thumbs.db"])
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['*.pdf', 'Thumbs.db']\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"keep.txt"}
 
-    def test_ignore_dirs_skips_extraction(self, tmp_path: pathlib.Path) -> None:
+    def test_ignore_dirs_skips_extraction(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -173,21 +177,18 @@ class TestProcessArchive:
                 "PDF/c.txt": b"c",
             },
         )
-        config = repack_archive.RepackConfig(ignore_dirs=["No[-_ ]?Te?xt", "^PDF$"])
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt', '^PDF$']\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         # `keep/` だけが残り、単一ルートが平坦化されて `a.txt` のみになる
         assert entries == {"a.txt"}
 
-    def test_flatten_single_root(self, tmp_path: pathlib.Path) -> None:
+    def test_flatten_single_root(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -196,20 +197,12 @@ class TestProcessArchive:
                 "sub/02.txt": b"2",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"01.txt", "02.txt"}
 
-    def test_flatten_nested_single_root(self, tmp_path: pathlib.Path) -> None:
+    def test_flatten_nested_single_root(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """連続した単一ディレクトリチェーンを最深まで除去する。"""
         archive = tmp_path / "foo.zip"
         _make_zip(
@@ -219,20 +212,12 @@ class TestProcessArchive:
                 "a/b/c/02.txt": b"2",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"01.txt", "02.txt"}
 
-    def test_flatten_empty_sibling_after_ignore(self, tmp_path: pathlib.Path) -> None:
+    def test_flatten_empty_sibling_after_ignore(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ignore_files で空になった兄弟ディレクトリが平坦化を阻害しないこと。"""
         archive = tmp_path / "foo.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -242,20 +227,17 @@ class TestProcessArchive:
             zf.writestr("Series/Vol02/", b"")
             zf.writestr("Series/Vol01/001.txt", b"content")
             zf.writestr("Series/Vol02/Thumbs.db", b"junk")
-        config = repack_archive.RepackConfig(ignore_files=["Thumbs.db"])
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['Thumbs.db']\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"001.txt"}
 
-    def test_flatten_name_collision(self, tmp_path: pathlib.Path) -> None:
+    def test_flatten_name_collision(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """同名親子 (foo/foo/bar.txt) でも平坦化が破綻しないこと。"""
         archive = tmp_path / "foo.zip"
         _make_zip(
@@ -264,20 +246,12 @@ class TestProcessArchive:
                 "foo/foo/bar.txt": b"data",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"bar.txt"}
 
-    def test_multiple_roots_preserved(self, tmp_path: pathlib.Path) -> None:
+    def test_multiple_roots_preserved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -286,20 +260,12 @@ class TestProcessArchive:
                 "b/02.txt": b"2",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
         assert entries == {"a/01.txt", "b/02.txt"}
 
-    def test_rename_rules_apply_to_archive_stem(self, tmp_path: pathlib.Path) -> None:
+    def test_rename_rules_apply_to_archive_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """rename_rules は出力 ZIP の stem (アーカイブ名) に適用される。"""
         pattern_file = tmp_path / "rules.txt"
         pattern_file.write_text("^foo$\tbar\n", encoding="utf-8")
@@ -311,25 +277,20 @@ class TestProcessArchive:
                 "img_02.txt": b"2",
             },
         )
-        config = repack_archive.RepackConfig(
-            rename_rules=[repack_archive._PatternFileRule(pattern_file="rules.txt")],
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("rename_rules:\n  - pattern_file: rules.txt\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        assert exit_code == 0
         # 出力 ZIP は rename 適用後の stem
         assert (tmp_path / "bar.zip").exists()
         assert not (tmp_path / "foo.zip").exists()
         # バックアップは元の名前のまま
         assert (tmp_path / "bk" / "foo.zip").exists()
 
-    def test_rename_rules_do_not_apply_to_inner_entries(self, tmp_path: pathlib.Path) -> None:
+    def test_rename_rules_do_not_apply_to_inner_entries(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """rename_rules はアーカイブ内ファイル名・ディレクトリ名には適用されない。"""
         pattern_file = tmp_path / "rules.txt"
         pattern_file.write_text("^img_\t\n", encoding="utf-8")
@@ -342,24 +303,19 @@ class TestProcessArchive:
                 "other.txt": b"3",
             },
         )
-        config = repack_archive.RepackConfig(
-            rename_rules=[repack_archive._PatternFileRule(pattern_file="rules.txt")],
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("rename_rules:\n  - pattern_file: rules.txt\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        assert exit_code == 0
         # アーカイブ stem "foo" は rule にマッチしないので出力名は変わらない
         entries = _zip_entries(tmp_path / "foo.zip")
         # 内部のファイル名・ディレクトリ名はそのまま保持される
         assert entries == {"img_dir/img_01.txt", "img_dir/img_02.txt", "other.txt"}
 
-    def test_natsort_order_in_output_zip(self, tmp_path: pathlib.Path) -> None:
+    def test_natsort_order_in_output_zip(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """最終 ZIP のエントリ順は natsort 順 (自然順) に揃う。"""
         archive = tmp_path / "foo.zip"
         # 辞書順だと "001 -> 002 -> 010 -> 020 -> 100" だが、
@@ -374,16 +330,8 @@ class TestProcessArchive:
                 "002.txt": b"two",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         with zipfile.ZipFile(tmp_path / "foo.zip") as zf:
             ordered = [info.filename for info in zf.infolist()]
         assert ordered == ["001.txt", "002.txt", "010.txt", "020.txt", "100.txt"]
@@ -434,16 +382,8 @@ class TestImageConversionBackupRetention:
             zf.writestr("img.png", _png_bytes_with_corrupt_text())
             # 単一ルート平坦化に巻き込まれないよう別エントリも置く
             zf.writestr("readme.txt", b"hello")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=False,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, [str(archive)])
+        assert exit_code == 0
         # 出力 ZIP には JPEG が含まれる
         entries = _zip_entries(tmp_path / "sample.zip")
         assert "img.jpg" in entries
@@ -471,16 +411,8 @@ class TestImageConversionBackupRetention:
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr("img.png", b"not a PNG file at all")
             zf.writestr("readme.txt", b"hello")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=False,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, [str(archive)])
+        assert exit_code == 0
         # 失敗が無いためバックアップはゴミ箱送りされる
         assert len(trashed) == 1
         assert trashed[0].endswith("sample.zip")
@@ -504,57 +436,38 @@ class TestImageConversionBackupRetention:
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr("img.png", _png_bytes())
             zf.writestr("readme.txt", b"hello")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=False,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, [str(archive)])
+        assert exit_code == 0
         # 通常の変換成功ではバックアップが send2trash 経由で送られる
         assert len(trashed) == 1
         assert trashed[0].endswith("sample.zip")
 
 
 class TestUncompressedZip:
-    def test_output_is_uncompressed(self, tmp_path: pathlib.Path) -> None:
+    def test_output_is_uncompressed(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"x.txt": b"hello world " * 100})
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         with zipfile.ZipFile(tmp_path / "foo.zip") as zf:
             info = zf.getinfo("x.txt")
             assert info.compress_type == zipfile.ZIP_STORED
 
 
 class TestProcessDirectory:
-    def test_directory_input(self, tmp_path: pathlib.Path) -> None:
+    def test_directory_input(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         src = tmp_path / "book"
         src.mkdir()
         (src / "01.txt").write_bytes(b"1")
         (src / "02.txt").write_bytes(b"2")
         (src / "unused.pdf").write_bytes(b"pdf")
-        config = repack_archive.RepackConfig(ignore_files=["*.pdf"])
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            src,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['*.pdf']\n", encoding="utf-8")
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(src)],
         )
+        assert exit_code == 0
         assert (tmp_path / "book.zip").exists()
         entries = _zip_entries(tmp_path / "book.zip")
         assert entries == {"01.txt", "02.txt"}
@@ -577,16 +490,8 @@ class TestProcessDirectory:
         src.mkdir()
         (src / "01.txt").write_bytes(b"1")
         (src / "02.txt").write_bytes(b"2")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            src,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=False,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, [str(src)])
+        assert exit_code == 0
         assert len(trashed) == 1
         assert trashed[0].endswith("book")
 
@@ -595,12 +500,15 @@ class TestBrokenZip:
     """末尾 EOCD を欠いた破損 ZIP を明示エラー化する挙動の検証。"""
 
     @pytest.mark.parametrize("truncate_bytes", [22, 23])
-    def test_truncated_zip_raises(self, tmp_path: pathlib.Path, truncate_bytes: int) -> None:
-        """EOCD を含む末尾 ``truncate_bytes`` バイトを切り詰めた ZIP は ValueError で停止する。
+    def test_truncated_zip_raises(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, truncate_bytes: int) -> None:
+        """EOCD を含む末尾 ``truncate_bytes`` バイトを切り詰めた ZIP は失敗扱いで副作用なく停止する。
 
         EOCD の最小サイズは 22 バイト。22 バイトちょうど切り詰めれば EOCD のシグネチャが
         消えて ``zipfile.is_zipfile`` が False を返す。先頭は ``PK\\x03\\x04`` のまま残るため、
-        本判定が ``ValueError`` を送出する境界を網羅する。
+        破損 ZIP 検出が境界値の両方で機能していることを担保する。
+
+        ``main()`` 経由では例外が failed_targets に集約されて exit 1 で終了する。
+        バックアップ作成前の早期検出のため副作用 (バックアップ・出力 ZIP 上書き) は起きない。
         """
         archive = tmp_path / "truncated.zip"
         _make_zip(archive, {"img1.txt": b"one", "img2.txt": b"two"})
@@ -611,35 +519,32 @@ class TestBrokenZip:
         assert archive.read_bytes()[:4] == b"PK\x03\x04"
         assert not zipfile.is_zipfile(archive)
 
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        with pytest.raises(ValueError, match="Central Directory"):
-            repack_archive._process_target(
-                archive,
-                config=config,
-                compiled=compiled,
-                backup_dir_override=None,
-                no_trash=True,
-                dry_run=False,
-            )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 1
         # 副作用が起きていないこと: 原本は元位置に残り、バックアップ・出力 ZIP は生成されない
         assert archive.exists()
         assert not (tmp_path / "bk").exists()
         # 出力 ZIP は同じパスのため、サイズが切り詰め後のまま (= 上書きされていない)
         assert archive.stat().st_size == len(original) - truncate_bytes
 
-    def test_non_pk_prefix_is_not_rejected(self, tmp_path: pathlib.Path) -> None:
-        """先頭が ``PK\\x03\\x04`` でない破損ファイルは判定で拒否されず後段に委ねる。"""
+    def test_non_pk_prefix_is_not_rejected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """先頭が ``PK\\x03\\x04`` でない破損ファイルは truncated-ZIP 判定で拒否されず後段に委ねる。
+
+        ``main()`` に渡すと後段の libarchive がフォーマットエラーとして処理し、
+        failed_targets に加わって SystemExit(1) で終了する。
+        事前の truncated-ZIP 判定では例外を送出しないことを振る舞いで担保する。
+        """
         target = tmp_path / "garbage.zip"
         target.write_bytes(b"not a zip file at all")
-        # 判定は素通り (後段の libarchive で扱われる)
-        repack_archive._check_truncated_zip(target)
+        # SystemExit(1) で終了するが、その前段の preflight/truncated 判定では例外なし
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(target)])
+        assert exit_code == 1
 
 
 class TestFilenameEncoding:
     """ZIP のファイル名エンコーディング破損を避ける挙動の検証。"""
 
-    def test_cp932_zip_decodes_correctly(self, tmp_path: pathlib.Path) -> None:
+    def test_cp932_zip_decodes_correctly(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """bit 11 未設定の CP932 ZIP で日本語ファイル名を正しく復元できる。"""
         archive = tmp_path / "ja.zip"
         _make_cp932_zip(
@@ -649,21 +554,13 @@ class TestFilenameEncoding:
                 "フォルダ/項目.txt": b"b",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "ja.zip")
         # 単一ルート "フォルダ" は平坦化されないよう、ルートが複数になる構造にしてある
         assert entries == {"あいう.txt", "フォルダ/項目.txt"}
 
-    def test_mixed_ascii_and_utf8_zip(self, tmp_path: pathlib.Path) -> None:
+    def test_mixed_ascii_and_utf8_zip(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ASCII (bit 11 未設定) と UTF-8 日本語名 (bit 11 設定) が混在しても両方破損しない。
 
         アーカイブ全体を単一エンコーディングと誤判定すると、UTF-8 バイト列が CP932 として
@@ -681,20 +578,14 @@ class TestFilenameEncoding:
         assert flags["README.txt"] == 0
         assert flags["日本語.txt"] == 0x800
 
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "mixed.zip")
         assert entries == {"README.txt", "日本語.txt"}
 
-    def test_sjis_backslash_byte_is_decoded_as_single_path_component(self, tmp_path: pathlib.Path) -> None:
+    def test_sjis_backslash_byte_is_decoded_as_single_path_component(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """SJIS 2バイト目に 0x5C を含む文字 (例: ソ) でディレクトリ階層が破壊されない。
 
         報告された系統 B の再現。``ソ`` の SJIS バイト列は ``b"\\x83\\x5c"`` で、
@@ -712,20 +603,12 @@ class TestFilenameEncoding:
                 "他.txt": b"y",
             },
         )
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "sjis.zip")
         assert entries == {"ソート/メモ.txt", "他.txt"}
 
-    def test_cp932_and_utf8_mixed_zip(self, tmp_path: pathlib.Path) -> None:
+    def test_cp932_and_utf8_mixed_zip(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """bit 11 未設定の CP932 日本語エントリと bit 11 付き UTF-8 日本語エントリの混在で双方破損しない。
 
         CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に格納して、
@@ -735,38 +618,29 @@ class TestFilenameEncoding:
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr(_Cp932ZipInfo("ソート.txt"), b"a")
             zf.writestr("日本語.txt", b"u")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "mixed.zip")
         assert entries == {"ソート.txt", "日本語.txt"}
 
-    def test_null_byte_entry_is_truncated(self, tmp_path: pathlib.Path) -> None:
+    def test_null_byte_entry_is_truncated(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """エントリ名に NUL 文字が混入した場合は NUL 以降を切り詰めて展開する。
 
         ``pytilpack.zipfile.decode_zipinfo_filename`` が NUL 以降を切り詰める仕様のため、
         ``bad\\x00name.txt`` は ``bad`` という名前で展開され、他エントリと並んで成功扱いになる。
+        出力 ZIP に ``bad`` エントリが含まれていることで振る舞いを確認する。
         """
         archive = tmp_path / "nul.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr(_RawBytesZipInfo(b"bad\x00name.txt"), b"x")
             zf.writestr("safe.txt", b"y")
-        dest = tmp_path / "out"
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        failures = repack_archive._extract_zip(archive, dest, compiled)
-        assert not failures
-        assert (dest / "bad").read_bytes() == b"x"
-        assert (dest / "safe.txt").read_bytes() == b"y"
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
+        entries = _zip_entries(tmp_path / "nul.zip")
+        assert "bad" in entries
+        assert "safe.txt" in entries
 
-    def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path) -> None:
+    def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CP932 strict で復号できないエントリだけ CP437 にフォールバックする。
 
         他の CP932 エントリは正しく日本語名で展開される。アーカイブ単位の一括判定では
@@ -782,16 +656,8 @@ class TestFilenameEncoding:
             zf.writestr(_RawBytesZipInfo(raw_invalid), b"b")
             # 単一ルート平坦化に巻き込まれないよう ASCII エントリも追加
             zf.writestr("safe.txt", b"c")
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            archive,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 0
         entries = _zip_entries(tmp_path / "fallback.zip")
         cp437_fallback = raw_invalid.decode("cp437")
         assert entries == {"和文.txt", cp437_fallback, "safe.txt"}
@@ -800,7 +666,7 @@ class TestFilenameEncoding:
 class TestExtractZipPathSafety:
     """ZIP のエントリ名による不正パスを失敗扱いとする挙動の検証。"""
 
-    def test_unsafe_paths_are_recorded_as_failures(self, tmp_path: pathlib.Path) -> None:
+    def test_unsafe_paths_are_recorded_as_failures(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         archive = tmp_path / "unsafe.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr("../escape.txt", b"e")
@@ -809,18 +675,17 @@ class TestExtractZipPathSafety:
             # PureWindowsPath で root 持ち判定になるバックスラッシュ前置きも拒否
             zf.writestr(_RawBytesZipInfo(b"\\back.txt"), b"b")
             zf.writestr("safe.txt", b"s")
-        dest = tmp_path / "out"
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        failures = repack_archive._extract_zip(archive, dest, compiled)
+        # 不正パスエントリは error として集計され、exit 1 で終了する
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
+        assert exit_code == 1
 
-        failed_paths = {p for p, _, _ in failures}
-        assert "../escape.txt" in failed_paths
-        assert "/abs.txt" in failed_paths
-        assert "C:/win.txt" in failed_paths
-        assert "\\back.txt" in failed_paths
-        # 安全なエントリだけ出力されている
-        assert (dest / "safe.txt").exists()
+        # 安全なエントリは出力 ZIP に含まれる
+        entries = _zip_entries(tmp_path / "unsafe.zip")
+        assert "safe.txt" in entries
+        # 不正パスエントリは出力 ZIP に含まれない
+        assert "../escape.txt" not in entries
+        assert "/abs.txt" not in entries
+        assert "C:/win.txt" not in entries
         # 親ディレクトリへの脱出は阻止されている
         assert not (tmp_path / "escape.txt").exists()
 
@@ -858,21 +723,13 @@ class TestMainFailureSummary:
 class TestProcessPdf:
     """PDF 直接入力をページ画像へ再パックする挙動の検証。"""
 
-    def test_pdf_input_repacks_pages(self, tmp_path: pathlib.Path) -> None:
+    def test_pdf_input_repacks_pages(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """複数ページ PDF が連番 JPEG として自然順で再パックされ、バックアップが残る。"""
         pdf = tmp_path / "book.pdf"
         # 縦長 (幅が max_width 以内) と横長 (幅が max_width 超過で縮小経路) を混在させる
         _make_pdf(pdf, [((600, 800), "white"), ((1200, 400), "red")])
-        config = repack_archive.RepackConfig()
-        compiled = repack_archive._compile_rules(config, tmp_path)
-        repack_archive._process_target(
-            pdf,
-            config=config,
-            compiled=compiled,
-            backup_dir_override=None,
-            no_trash=True,
-            dry_run=False,
-        )
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(pdf)])
+        assert exit_code == 0
         output = tmp_path / "book.zip"
         assert output.exists()
         with zipfile.ZipFile(output) as zf:

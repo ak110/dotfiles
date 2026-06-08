@@ -1,9 +1,9 @@
 """markdown_viewer統合テスト。"""
 
-# pylint: disable=protected-access
-
 import pathlib
 import tempfile
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import pytest
 
@@ -62,9 +62,9 @@ def test_markdown_viewer_integration(
     assert ret == exit_code
 
     if exit_code == 0:
-        # 出力先は入力絶対パスのSHA-256ハッシュで一意に定まるためテスト側から再計算できる
-        output = _cli._output_path(source.resolve())
-        assert opened == [output.as_uri()]
+        # ブラウザに渡されたfile URIからパスを復元して出力ファイルの内容を検証する
+        assert len(opened) == 1
+        output = pathlib.Path(url2pathname(urlparse(opened[0]).path))
         assert output.is_file()
         document = output.read_text(encoding="utf-8")
         assert "<base " in document

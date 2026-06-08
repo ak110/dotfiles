@@ -3,6 +3,7 @@
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 """
 
+import functools
 import importlib.util
 import json
 import os
@@ -19,11 +20,13 @@ _SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode"
 _PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
 
 
+@functools.cache
 def _load_posttooluse_module() -> types.ModuleType:
     """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
 
-    本体スクリプトの定数（`_PLAN_REQUIRED_H2`等）をテストから直接参照し、
-    順序ドリフトを防ぐ。
+    `TestPlanFormatSsot`で本体スクリプトの定数（`_PLAN_REQUIRED_H2`等）と
+    外部ドキュメントの整合性を検査するために使う。
+    引数注入では到達不能なモジュール内部状態の検査のため、importlibによる直接参照を例外的に許容する。
     """
     spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
     assert spec is not None and spec.loader is not None
@@ -32,9 +35,9 @@ def _load_posttooluse_module() -> types.ModuleType:
     return module
 
 
-_POSTTOOLUSE = _load_posttooluse_module()
-# SSOT共有のためprotected memberを直接参照する。
-_PLAN_REQUIRED_H2: tuple[str, ...] = _POSTTOOLUSE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
+# モジュールレベルでキャッシュ済みモジュールを参照し、_build_valid_plan で使う必須セクション順を取得する。
+# 引数注入では到達不能なモジュール内部状態の参照のため直接アクセスする。
+_POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
 def _run(
@@ -409,7 +412,6 @@ class TestGitLogChecked:
 
 
 # plan file形式検査で使う各種Markdown断片。テスト全体で共用する。
-# 本体スクリプトの`_PLAN_REQUIRED_H2`から自動生成し、定義順序のドリフトを防ぐ。
 # `## 対応方針`配下には判断材料H3を含めて妥当なplan構造を再現する。
 _PLAN_BODY: dict[str, str] = {
     "変更履歴": "- 初版",
@@ -429,16 +431,18 @@ def _build_valid_plan(
     overrides: dict[str, str] | None = None,
     prefix: str = "",
 ) -> str:
-    """`_PLAN_REQUIRED_H2`の順序に従い妥当なplan file内容を生成する。
+    """必須セクション順序に従い妥当なplan file内容を生成する。
 
     - `omit`: 指定したH2セクションを省略する（必須セクション欠落の検証用）。
     - `overrides`: 指定したH2セクションの本文を差し替える
       （コードフェンス・HTMLコメントなど特定本文での無視判定検証用）。
     - `prefix`: 戻り値の先頭に連結する文字列（YAMLフロントマターなどの検証用）。
     """
+    # 引数注入では到達不能なモジュール内部定数の参照のため直接アクセスする。
+    section_order: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access  # SSOT: posttooluse._PLAN_REQUIRED_H2と同期
     overrides = overrides or {}
     parts: list[str] = ["# タイトル", ""]
-    for h2 in _PLAN_REQUIRED_H2:
+    for h2 in section_order:
         if h2 in omit:
             continue
         parts.append(f"## {h2}")
@@ -870,8 +874,9 @@ class TestPlanFormatSsot:
 
     def test_required_and_optional_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 必須H2は全てplan-file-guidelines.md内の記述例とセクション定義に登場する。
-        for heading in _PLAN_REQUIRED_H2:
+        # 引数注入では到達不能なモジュール内部定数の整合検査のため直接参照する。
+        plan_required_h2: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
+        for heading in plan_required_h2:
             assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
 
     def test_section_definition_order_matches_required_h2(self):
@@ -883,11 +888,13 @@ class TestPlanFormatSsot:
         パターン上マッチしないため誤検出しない。
         """
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
+        # 引数注入では到達不能なモジュール内部定数の整合検査のため直接参照する。
+        plan_required_h2: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
         # 行頭H3のうち、丸括弧内のインラインコードがH2（`## ...`）形式のものだけ抽出。
         pattern = re.compile(r"^### .+?（`## ([^`]+)`）", re.MULTILINE)
         defined_h2 = tuple(pattern.findall(text))
-        assert defined_h2 == _PLAN_REQUIRED_H2, (
-            f"plan-file-guidelines.md のセクション定義順 {defined_h2} が _PLAN_REQUIRED_H2 {_PLAN_REQUIRED_H2} と一致しない"
+        assert defined_h2 == plan_required_h2, (
+            f"plan-file-guidelines.md のセクション定義順 {defined_h2} が _PLAN_REQUIRED_H2 {plan_required_h2} と一致しない"
         )
 
 

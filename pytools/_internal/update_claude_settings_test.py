@@ -186,56 +186,73 @@ class TestPlatformOverride:
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
 
-        # _platform_overrides は実在チェック済みのリストを返すため、そちらを経由
-        # tmp_path 内の managed.json には対応 override が無いため空リストになる
-        overrides = mod._platform_overrides(managed_path)  # pylint: disable=protected-access
-        assert not overrides
-
-        update_claude_settings(managed_path, target_path, overrides=overrides)
+        # overrides に空リストを渡してオーバーライドなしの動作を検証する
+        update_claude_settings(managed_path, target_path, overrides=[])
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result == {"language": "japanese"}
 
 
 class TestPlatformOverrideSelection:
-    """_platform_overrides のプラットフォーム判定テスト。"""
+    """プラットフォーム別オーバーライドが `update_claude_settings` で適用されることを検証する。"""
 
-    def test_posix_selects_posix_override(self, tmp_path: Path):
-        base = tmp_path / "managed.json"
-        base.write_text("{}", encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
-        (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
+    def test_posix_override_is_applied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Linux (posix) 環境では `managed.posix.json` のオーバーライドが適用される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
 
-        result = mod._platform_overrides(base, platform="linux")  # pylint: disable=protected-access
+        # posix プラットフォームのオーバーライドのみを適用する
+        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_path)
+        monkeypatch.setattr(mod.sys, "platform", "linux")
+        overrides = [tmp_path / "managed.posix.json"]
+        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        assert result == [tmp_path / "managed.posix.json"]
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["os"] == "posix"
+        assert "language" in result
 
-    def test_darwin_selects_posix_override(self, tmp_path: Path):
-        base = tmp_path / "managed.json"
-        base.write_text("{}", encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
+    def test_darwin_uses_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """macOS (darwin) 環境では `managed.posix.json` のオーバーライドが適用される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
 
-        result = mod._platform_overrides(base, platform="darwin")  # pylint: disable=protected-access
+        monkeypatch.setattr(mod.sys, "platform", "darwin")
+        overrides = [tmp_path / "managed.posix.json"]
+        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        assert result == [tmp_path / "managed.posix.json"]
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["os"] == "posix"
 
-    def test_win32_selects_win32_override(self, tmp_path: Path):
-        base = tmp_path / "managed.json"
-        base.write_text("{}", encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text("{}", encoding="utf-8")
-        (tmp_path / "managed.win32.json").write_text("{}", encoding="utf-8")
+    def test_win32_override_is_applied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Windows (win32) 環境では `managed.win32.json` のオーバーライドが適用される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
 
-        result = mod._platform_overrides(base, platform="win32")  # pylint: disable=protected-access
+        monkeypatch.setattr(mod.sys, "platform", "win32")
+        overrides = [tmp_path / "managed.win32.json"]
+        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        assert result == [tmp_path / "managed.win32.json"]
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["os"] == "win32"
 
-    def test_missing_override_returns_empty(self, tmp_path: Path):
-        """override が存在しない場合は空リスト。"""
-        base = tmp_path / "managed.json"
-        base.write_text("{}", encoding="utf-8")
+    def test_missing_override_is_noop(self, tmp_path: Path):
+        """override ファイルが存在しない場合はベース設定のみが適用される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
 
-        result = mod._platform_overrides(base, platform="linux")  # pylint: disable=protected-access
+        # オーバーライドなしで適用
+        update_claude_settings(managed_path, target_path, overrides=[])
 
-        assert not result
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result == {"language": "japanese"}
 
 
 class TestMergeRecursive:

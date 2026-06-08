@@ -1,10 +1,12 @@
 """pytools._internal.setup_msys_env のテスト (winreg 依存部はモック化)."""
 
-# pylint: disable=protected-access
-
 import pytest
 
 from pytools._internal import setup_msys_env as _setup_msys_env
+
+# 設定対象の変数名・値の期待値（モジュール実装と整合していること）。
+_EXPECTED_VAR_NAME = "MSYS"
+_EXPECTED_VAR_VALUE = "winsymlinks:nativestrict"
 
 
 class _FakeWinreg:
@@ -26,7 +28,7 @@ class TestRun:
         captured: dict = {"writes": [], "broadcasts": 0}
 
         def fake_read(name: str) -> tuple[str | None, int]:
-            assert name == _setup_msys_env._MSYS_VAR_NAME
+            assert name == _EXPECTED_VAR_NAME
             return existing_value, _FakeWinreg.REG_SZ
 
         def fake_write(name: str, value: str, reg_type: int) -> None:
@@ -50,7 +52,7 @@ class TestRun:
 
     def test_already_set_is_noop(self, monkeypatch: pytest.MonkeyPatch):
         """既に同値が設定済みなら書き込まない（冪等性）。"""
-        captured = self._patch_common(monkeypatch, existing_value=_setup_msys_env._MSYS_VAR_VALUE)
+        captured = self._patch_common(monkeypatch, existing_value=_EXPECTED_VAR_VALUE)
         assert _setup_msys_env.run() is False
         assert not captured["writes"]
         assert captured["broadcasts"] == 0
@@ -59,12 +61,12 @@ class TestRun:
         """未設定時は新規書き込みとブロードキャストを行う。"""
         captured = self._patch_common(monkeypatch, existing_value=None)
         assert _setup_msys_env.run() is True
-        assert captured["writes"] == [(_setup_msys_env._MSYS_VAR_NAME, _setup_msys_env._MSYS_VAR_VALUE, _FakeWinreg.REG_SZ)]
+        assert captured["writes"] == [(_EXPECTED_VAR_NAME, _EXPECTED_VAR_VALUE, _FakeWinreg.REG_SZ)]
         assert captured["broadcasts"] == 1
 
     def test_different_value_overwrites(self, monkeypatch: pytest.MonkeyPatch):
         """別値が設定されている場合は上書きする。"""
         captured = self._patch_common(monkeypatch, existing_value="winsymlinks:lnk")
         assert _setup_msys_env.run() is True
-        assert captured["writes"] == [(_setup_msys_env._MSYS_VAR_NAME, _setup_msys_env._MSYS_VAR_VALUE, _FakeWinreg.REG_SZ)]
+        assert captured["writes"] == [(_EXPECTED_VAR_NAME, _EXPECTED_VAR_VALUE, _FakeWinreg.REG_SZ)]
         assert captured["broadcasts"] == 1

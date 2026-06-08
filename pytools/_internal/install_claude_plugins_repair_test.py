@@ -1,8 +1,8 @@
 """pytools._internal.claude_marketplace の marketplace 修復ロジックのテスト。
 
 install-claude.sh bootstrap が残した旧 GitHub 型登録を directory 型へ
-自動マイグレーションする挙動を検証する。基本的な ``_check_marketplace_from_file``
-の動作は install_claude_plugins_test.py 側に残しており、本ファイルでは 2 ファイル同時検査・
+自動マイグレーションする挙動を検証する。基本的な marketplace ファイル検査の
+動作は install_claude_plugins_test.py 側に残しており、本ファイルでは 2 ファイル同時検査・
 修復に関するケースを扱う。
 """
 
@@ -14,23 +14,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 
-from ._test_helpers import _FakeResult
-
-
-def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """known_marketplaces.json に対象 marketplace のエントリを保存する。"""
-    path.write_text(
-        json.dumps({_claude_common.MARKETPLACE_NAME: entry}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを保存する。"""
-    path.write_text(
-        json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+from ._test_helpers import _FakeResult, write_known_entry, write_settings_entry
 
 
 @pytest.fixture(name="dotfiles_root")
@@ -59,96 +43,127 @@ def _marketplace_paths(
 
 
 class TestIsEntryHealthy:
-    """_is_entry_healthy の単体テスト。directory 型 + dotfiles 絶対パスの時だけ健全。"""
+    """marketplace エントリの健全性が is_directory_type_registered() の結果に反映されること。
 
-    def test_directory_type_with_dotfiles_path(self, dotfiles_root: pathlib.Path):
-        """directory 型 + dotfiles 絶対パスなら True。"""
-        entry: dict[str, object] = {
-            "source": {"source": "directory", "path": str(dotfiles_root)},
-            "installLocation": str(dotfiles_root),
-        }
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is True
+    directory 型 + dotfiles 絶対パスの時だけ健全 (True) であることを、
+    known_marketplaces.json に各エントリ形式を書いて確認する。
+    """
 
-    def test_github_type_is_legacy_unhealthy(self):
-        """旧 GitHub 型エントリ (ak110/dotfiles) は旧形式として False。"""
-        entry: dict[str, object] = {"source": {"source": "github", "repo": "ak110/dotfiles"}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is False
+    def test_directory_type_with_dotfiles_path(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+        dotfiles_root: pathlib.Path,
+    ):
+        """directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True。"""
+        known, _settings = marketplace_paths
+        write_known_entry(
+            known,
+            {
+                "source": {"source": "directory", "path": str(dotfiles_root)},
+                "installLocation": str(dotfiles_root),
+            },
+        )
+        assert _claude_marketplace.is_directory_type_registered() is True
 
-    def test_directory_type_with_other_path(self):
-        """別 path の directory 型は False。"""
-        entry: dict[str, object] = {"source": {"source": "directory", "path": "/somewhere/else"}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is False
+    def test_github_type_is_legacy_unhealthy(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """旧 GitHub 型エントリ (ak110/dotfiles) は旧形式として is_directory_type_registered が False。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_directory_type_with_relative_path(self):
-        """相対パスの directory 型は False (dotfiles 絶対パスと不一致)。"""
-        entry: dict[str, object] = {"source": {"source": "directory", "path": "dotfiles"}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is False
+    def test_directory_type_with_other_path(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """別 path の directory 型は is_directory_type_registered が False。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "directory", "path": "/somewhere/else"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_missing_source(self):
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy({}) is False
+    def test_directory_type_with_relative_path(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """相対パスの directory 型は is_directory_type_registered が False (dotfiles 絶対パスと不一致)。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "directory", "path": "dotfiles"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_source_not_dict(self):
-        """source が文字列など非 dict の場合は False。"""
-        entry: dict[str, object] = {"source": "directory"}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is False
+    def test_missing_source(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """source フィールドが無いエントリは is_directory_type_registered が False。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_missing_path(self):
-        entry: dict[str, object] = {"source": {"source": "directory"}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._is_entry_healthy(entry) is False
+    def test_source_not_dict(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """source が文字列など非 dict の場合は is_directory_type_registered が False。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": "directory"})
+        assert _claude_marketplace.is_directory_type_registered() is False
+
+    def test_missing_path(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ):
+        """source.path が無い場合は is_directory_type_registered が False。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "directory"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
 
 class TestCheckMarketplaceFromFile:
-    """_check_marketplace_from_file の 2 ファイル同時検査ケース。"""
+    """marketplace ファイル検査の 2 ファイル同時検査ケース。
+
+    各ファイル状態が is_directory_type_registered() / ensure_marketplace() の結果に正しく反映されることを確認する。
+    """
 
     def test_known_github_type_is_legacy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """known 側が旧 GitHub 型エントリならマイグレーション対象として False。"""
+        """known 側が旧 GitHub 型エントリなら is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
-        _write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is False
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_settings_github_type_is_legacy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """settings 側が旧 GitHub 型エントリなら False。"""
+        """settings 側が旧 GitHub 型エントリなら is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
-        _write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is False
+        write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_relative_path_entry_unhealthy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """相対パスを含む directory 型は False。"""
+        """相対パスを含む directory 型は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
-        _write_settings_entry(settings, {"source": {"source": "directory", "path": "home/aki/dotfiles"}})
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is False
+        write_settings_entry(settings, {"source": {"source": "directory", "path": "home/aki/dotfiles"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_both_files_healthy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """両ファイルとも directory 型 + dotfiles 絶対パスなら True。"""
+        """両ファイルとも directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True。"""
         known, settings = marketplace_paths
         entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        _write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
-        _write_settings_entry(settings, entry)
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is True
+        write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
+        write_settings_entry(settings, entry)
+        assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_only_known_registered_and_healthy(
         self,
@@ -157,15 +172,14 @@ class TestCheckMarketplaceFromFile:
     ):
         """片方のみ登録で残りが健全なら True (settings 未初期化の正常環境)。"""
         known, _settings = marketplace_paths
-        _write_known_entry(
+        write_known_entry(
             known,
             {
                 "source": {"source": "directory", "path": str(dotfiles_root)},
                 "installLocation": str(dotfiles_root),
             },
         )
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is True
+        assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_only_settings_registered_and_healthy(
         self,
@@ -174,23 +188,21 @@ class TestCheckMarketplaceFromFile:
     ):
         """known 未登録でも settings 側が健全なら True。"""
         _known, settings = marketplace_paths
-        _write_settings_entry(settings, {"source": {"source": "directory", "path": str(dotfiles_root)}})
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is True
+        write_settings_entry(settings, {"source": {"source": "directory", "path": str(dotfiles_root)}})
+        assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_other_path_entry_unhealthy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """directory 型でも別 path を指していれば False。"""
+        """directory 型でも別 path を指していれば is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
-        _write_known_entry(known, {"source": {"source": "directory", "path": "/elsewhere"}})
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._check_marketplace_from_file() is False
+        write_known_entry(known, {"source": {"source": "directory", "path": "/elsewhere"}})
+        assert _claude_marketplace.is_directory_type_registered() is False
 
 
 class TestRepairMarketplace:
-    """_repair_marketplace のテスト。CLI remove+add → 再検証 → 直接書き換え + refresh の多段修復。"""
+    """repair_marketplace のテスト。CLI remove+add → 再検証 → 直接書き換え + refresh の多段修復。"""
 
     def test_cli_success_updates_both_files(
         self,
@@ -204,8 +216,8 @@ class TestRepairMarketplace:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
-                _write_known_entry(known, {**healthy_entry, "installLocation": str(dotfiles_root)})
-                _write_settings_entry(settings, healthy_entry)
+                write_known_entry(known, {**healthy_entry, "installLocation": str(dotfiles_root)})
+                write_settings_entry(settings, healthy_entry)
             return _FakeResult(returncode=0)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
@@ -259,7 +271,7 @@ class TestRepairMarketplace:
         known, settings = marketplace_paths
 
         # 初期状態: settings 側が旧 GitHub 型で破損
-        _write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
 
         # CLI は全て成功を返すがファイルには触れない (問題の再現環境)
         calls: list[list[str]] = []
@@ -340,7 +352,7 @@ class TestRepairMarketplace:
         """原子的置換が失敗した場合 False を返す。"""
         known, _settings = marketplace_paths
         # 旧 GitHub 型エントリで破損した状態
-        _write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         monkeypatch.setattr(
             _claude_common.subprocess,
             "run",
@@ -356,7 +368,7 @@ class TestRepairMarketplace:
 
 
 class TestEnsureMarketplaceHealthy:
-    """_ensure_marketplace の健全状態時の挙動を検証する (回帰防止)。"""
+    """ensure_marketplace の健全状態時の挙動を検証する (回帰防止)。"""
 
     def test_healthy_state_no_repair_calls(
         self,
@@ -367,8 +379,8 @@ class TestEnsureMarketplaceHealthy:
         """両ファイル directory 型で正常なら subprocess も os.replace も呼ばれない。"""
         known, settings = marketplace_paths
         entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        _write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
-        _write_settings_entry(settings, entry)
+        write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
+        write_settings_entry(settings, entry)
 
         def fail_run(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.run should not be called: {cmd}")
@@ -394,14 +406,14 @@ class TestIsDirectoryTypeRegistered:
         """両ファイル directory 型で健全なら True。"""
         known, settings = marketplace_paths
         entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        _write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
-        _write_settings_entry(settings, entry)
+        write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
+        write_settings_entry(settings, entry)
         assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_legacy_github_type(self, marketplace_paths: tuple[pathlib.Path, pathlib.Path]):
         """旧 GitHub 型が残存している環境では False (マイグレーション前)。"""
         known, _settings = marketplace_paths
-        _write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_unregistered(self, marketplace_paths: tuple[pathlib.Path, pathlib.Path]):

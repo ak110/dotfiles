@@ -4,10 +4,6 @@
 失敗時の exit code を検証する。
 """
 
-# `_StepResult` など、パッケージ内部クラス (先頭 _) を
-# テストするため protected-access を全体で許可する。
-# pylint: disable=protected-access
-
 import pytest
 
 from pytools import post_apply
@@ -29,6 +25,15 @@ def _make_broken_step(name: str, calls: list[str]):
     def fn() -> bool:
         calls.append(name)
         raise RuntimeError("boom")
+
+    return fn
+
+
+def _make_plugin_step(recommendations: list[str]):
+    """推奨コマンドリストを返すステップ関数を返すヘルパー。"""
+
+    def fn() -> tuple[bool, list[str]]:
+        return True, recommendations
 
     return fn
 
@@ -116,21 +121,23 @@ class TestRun:
 
     def test_main_exits_1_on_failure(self):
         """失敗があれば main() は SystemExit(1) で終了する。"""
-        fake_results = [
-            post_apply._StepResult(name="ok", ok=True, changed=False),
-            post_apply._StepResult(name="broken", ok=False, changed=False),
+        calls: list[str] = []
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("ok", _make_step("ok", calls)),
+            ("broken", _make_broken_step("broken", calls)),
         ]
         with pytest.raises(SystemExit) as exc_info:
-            post_apply.main(runner=lambda: (fake_results, []))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         assert exc_info.value.code == 1
 
     def test_main_exits_0_on_success(self):
         """全て成功なら main() は SystemExit(0) で正常終了する。"""
-        fake_results = [
-            post_apply._StepResult(name="ok", ok=True, changed=False),
+        calls: list[str] = []
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("ok", _make_step("ok", calls)),
         ]
         with pytest.raises(SystemExit) as exc_info:
-            post_apply.main(runner=lambda: (fake_results, []))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         assert exc_info.value.code == 0
 
 
@@ -143,10 +150,12 @@ class TestPluginRecommendations:
         capsys: pytest.CaptureFixture[str],
     ):
         """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
-        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = ["claude plugin install a --scope=user"]
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("plugins", _make_plugin_step(fake_recommendations)),
+        ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
-            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
@@ -163,14 +172,16 @@ class TestPluginRecommendations:
     ):
         """bash 系では && \\ で連結し、最終行のみ継続記号なしで出力する。"""
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
-        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = [
             "claude plugin install a --scope=user",
             "claude plugin install b --scope=user",
             "claude plugin disable c --scope=user",
         ]
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("plugins", _make_plugin_step(fake_recommendations)),
+        ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
-            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         messages = [record.getMessage() for record in caplog.records]
         assert any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()
@@ -188,13 +199,15 @@ class TestPluginRecommendations:
     ):
         """Windows では && ^ で連結し、最終行のみ継続記号なしで出力する。"""
         monkeypatch.setattr(post_apply.sys, "platform", "win32")
-        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
         fake_recommendations = [
             "claude plugin install a --scope=user",
             "claude plugin disable b --scope=user",
         ]
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("plugins", _make_plugin_step(fake_recommendations)),
+        ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
-            post_apply.main(runner=lambda: (fake_results, fake_recommendations))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         stdout_lines = capsys.readouterr().out.splitlines()
         assert "claude plugin install a --scope=user && ^" in stdout_lines
         assert "claude plugin disable b --scope=user" in stdout_lines
@@ -207,9 +220,11 @@ class TestPluginRecommendations:
         capsys: pytest.CaptureFixture[str],
     ):
         """推奨コマンドが空なら案内を出力しない。"""
-        fake_results = [post_apply._StepResult(name="ok", ok=True, changed=False)]
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("ok", _make_step("ok", [], changed=False)),
+        ]
         with caplog.at_level("INFO", logger=post_apply.logger.name), pytest.raises(SystemExit):
-            post_apply.main(runner=lambda: (fake_results, []))
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
         messages = [record.getMessage() for record in caplog.records]
         assert not any("推奨プラグイン設定" in m for m in messages)
         stdout_lines = capsys.readouterr().out.splitlines()

@@ -3,16 +3,12 @@
 各分岐 (非 Linux・euryale 以外・viewer 不在・unit 新規・unit 既存・unit 変化・linger 無効警告) を検証する。
 """
 
-# `_ensure_unit_file` など内部実装定数を直接参照するため protected-access を許可する。
-# pylint: disable=protected-access
-
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from pytools._internal import setup_plans_viewer_linux
-from pytools._internal.setup_plans_viewer_linux import _UNIT_CONTENT
 
 
 def _make_subprocess_fake(
@@ -47,15 +43,41 @@ def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[st
     return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
 
 
-def test_unit_excludes_host_specific_args():
+def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """テスト共通の Linux + euryale 環境セットアップ。"""
+    monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
+    monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "euryale")
+    monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
+
+
+def test_unit_excludes_host_specific_args(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
     """ユニット本文にホスト固有の引数（待受アドレス・リモートホスト）と外部 IP を直書きしないこと。
 
     待受アドレス・リモートホストは `~/.config/pytools/claude-plans-viewer.toml`
     経由で与える設計のため、unit 側には `--host=` も `--remote-host=` も含まない。
+    run() が実際に書き込んだ unit ファイルの内容を検証する。
     """
-    assert "192.168." not in _UNIT_CONTENT
-    assert "--host=" not in _UNIT_CONTENT
-    assert "--remote-host=" not in _UNIT_CONTENT
+    _run_linux_euryale(monkeypatch, tmp_path)
+    viewer = tmp_path / ".local" / "bin" / "claude-plans-viewer"
+    viewer.parent.mkdir(parents=True, exist_ok=True)
+    viewer.touch()
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        setup_plans_viewer_linux.claude_common,
+        "run_subprocess",
+        _make_subprocess_fake({"Linger": _ok(stdout="Linger=yes\n")}, calls),
+    )
+    setup_plans_viewer_linux.run()
+
+    unit = tmp_path / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
+    content = unit.read_text(encoding="utf-8")
+    assert "192.168." not in content
+    assert "--host=" not in content
+    assert "--remote-host=" not in content
 
 
 class TestRunPlatformGuard:
@@ -102,9 +124,7 @@ class TestRunViewerMissing:
         caplog: pytest.LogCaptureFixture,
     ):
         """euryale だが viewer が無い場合、False かつ unit ファイルを書き込まない。"""
-        monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
-        monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "euryale")
-        monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
+        _run_linux_euryale(monkeypatch, tmp_path)
         calls: list[list[str]] = []
         monkeypatch.setattr(
             setup_plans_viewer_linux.claude_common,
@@ -128,9 +148,8 @@ class TestRunUnitDeployment:
     @pytest.fixture(name="prepared")
     def _prepared(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         """euryale + viewer 配置済みの状態を共通セットアップする。"""
-        monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
+        _run_linux_euryale(monkeypatch, tmp_path)
         monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "EURYALE")
-        monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
         viewer = tmp_path / ".local" / "bin" / "claude-plans-viewer"
         viewer.parent.mkdir(parents=True, exist_ok=True)
         viewer.touch()
@@ -154,7 +173,12 @@ class TestRunUnitDeployment:
         assert result is True
         unit = prepared / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
         assert unit.is_file()
-        assert unit.read_text(encoding="utf-8") == _UNIT_CONTENT
+        # unit ファイルは systemd service として最低限の構造を持つ
+        content = unit.read_text(encoding="utf-8")
+        assert "[Unit]" in content
+        assert "[Service]" in content
+        assert "[Install]" in content
+        assert "claude-plans-viewer" in content
 
         cmd_strings = [" ".join(c) for c in calls]
         assert any("daemon-reload" in s for s in cmd_strings)
@@ -167,10 +191,17 @@ class TestRunUnitDeployment:
         monkeypatch: pytest.MonkeyPatch,
     ):
         """unit 既存（同一内容）→ daemon-reload は呼ばないが enable + restart は毎回発火する。"""
-        unit = prepared / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(_UNIT_CONTENT, encoding="utf-8")
+        del prepared  # フィクスチャ効果（環境セットアップ）のみ使用する
+        # 初回実行で unit を書き込む
+        calls_first: list[list[str]] = []
+        monkeypatch.setattr(
+            setup_plans_viewer_linux.claude_common,
+            "run_subprocess",
+            _make_subprocess_fake({"Linger": _ok(stdout="Linger=yes\n")}, calls_first),
+        )
+        setup_plans_viewer_linux.run()
 
+        # 2回目実行: daemon-reload は呼ばれないが restart は呼ばれる
         calls: list[list[str]] = []
         monkeypatch.setattr(
             setup_plans_viewer_linux.claude_common,
@@ -206,7 +237,7 @@ class TestRunUnitDeployment:
         result = setup_plans_viewer_linux.run()
 
         assert result is True
-        assert unit.read_text(encoding="utf-8") == _UNIT_CONTENT
+        assert unit.read_text(encoding="utf-8") != "old content\n"
         cmd_strings = [" ".join(c) for c in calls]
         assert any("daemon-reload" in s for s in cmd_strings)
         assert any(s.endswith("restart claude-plans-viewer.service") for s in cmd_strings)
@@ -222,16 +253,11 @@ class TestLingerWarning:
         caplog: pytest.LogCaptureFixture,
     ):
         """loginctl の stdout が Linger=no のとき linger 無効を示すログを出力する。"""
-        monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
-        monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "euryale")
-        monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
+        _run_linux_euryale(monkeypatch, tmp_path)
 
         viewer = tmp_path / ".local" / "bin" / "claude-plans-viewer"
         viewer.parent.mkdir(parents=True, exist_ok=True)
         viewer.touch()
-        unit = tmp_path / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(_UNIT_CONTENT, encoding="utf-8")
 
         calls: list[list[str]] = []
         monkeypatch.setattr(

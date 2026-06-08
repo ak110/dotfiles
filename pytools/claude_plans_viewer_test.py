@@ -1,8 +1,7 @@
 """pytools.claude_plans_viewer のテスト。"""
 
-# 本モジュールはモジュール内部の関数・定数を単体テスト対象とするため、protected-accessを一括で許可する。
-# 単一テスト対象モジュールに対する全テストを集約するため行数制限も緩和する。
-# pylint: disable=protected-access,too-many-lines
+# 単一テスト対象モジュールに対する全テストを集約するため行数制限を緩和する。
+# pylint: disable=too-many-lines
 
 import asyncio
 import base64
@@ -21,9 +20,14 @@ from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
 from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _console_title, _local, _remote, _state
 
+# _state._BROADCAST_DEBOUNCE_SEC と同値（0.3秒）。debounce窓の秒数。
+_BROADCAST_DEBOUNCE_SEC = 0.3
+# SSE refreshメッセージの仕様。_state._SSE_REFRESH_PAYLOAD と同一値（SSE refreshメッセージ仕様）。
+_SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
+
 # `schedule_broadcast`経由のrefresh待ちは`_BROADCAST_DEBOUNCE_SEC`後に配信されるため、
 # debounce窓にマージン0.7秒を加えた値をタイムアウトとする。
-_QUEUE_GET_TIMEOUT_SEC = _state._BROADCAST_DEBOUNCE_SEC + 0.7
+_QUEUE_GET_TIMEOUT_SEC = _BROADCAST_DEBOUNCE_SEC + 0.7
 
 
 class TestListFiles:
@@ -725,7 +729,7 @@ class TestSubscribers:
         try:
             await _state.schedule_broadcast(state)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == _state._SSE_REFRESH_PAYLOAD
+            assert msg == _SSE_REFRESH_PAYLOAD
         finally:
             await _state.unsubscribe(state, q)
 
@@ -737,7 +741,7 @@ class TestSubscribers:
         try:
             await _state.schedule_broadcast(state)
             await _state.schedule_broadcast(state)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.qsize() == 1
         finally:
             await _state.unsubscribe(state, q)
@@ -750,7 +754,7 @@ class TestSubscribers:
         try:
             for _ in range(10):
                 await _state.schedule_broadcast(state)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.qsize() == 1
         finally:
             await _state.unsubscribe(state, q)
@@ -771,7 +775,7 @@ class TestWatchdogHandler:
             event = watchdog.events.FileModifiedEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == _state._SSE_REFRESH_PAYLOAD
+            assert msg == _SSE_REFRESH_PAYLOAD
         finally:
             await _state.unsubscribe(state, q)
 
@@ -787,7 +791,7 @@ class TestWatchdogHandler:
             event = watchdog.events.FileOpenedEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             # debounce窓より長く待ってもキューに入らないこと
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -803,7 +807,7 @@ class TestWatchdogHandler:
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileClosedNoWriteEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -821,7 +825,7 @@ class TestWatchdogHandler:
             )
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == _state._SSE_REFRESH_PAYLOAD
+            assert msg == _SSE_REFRESH_PAYLOAD
         finally:
             await _state.unsubscribe(state, q)
 
@@ -838,7 +842,7 @@ class TestWatchdogHandler:
             )
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == _state._SSE_REFRESH_PAYLOAD
+            assert msg == _SSE_REFRESH_PAYLOAD
         finally:
             await _state.unsubscribe(state, q)
 
@@ -853,7 +857,7 @@ class TestWatchdogHandler:
             txt_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(txt_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -871,7 +875,7 @@ class TestWatchdogHandler:
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -885,7 +889,7 @@ class TestWatchdogHandler:
         try:
             event = watchdog.events.DirModifiedEvent(str(tmp_path / "subdir"))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_state._BROADCAST_DEBOUNCE_SEC + 0.2)
+            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -909,7 +913,7 @@ class TestWatchdogHandler:
             event = watchdog.events.FileModifiedEvent(str(md_file))
             _local.PlansEventHandler(dot_root, state).on_any_event(event)
             msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
-            assert msg == _state._SSE_REFRESH_PAYLOAD
+            assert msg == _SSE_REFRESH_PAYLOAD
         finally:
             await _state.unsubscribe(state, q)
 
@@ -1055,7 +1059,7 @@ class TestEventsEndpoint:
             await _state.schedule_broadcast(state)
 
             # ストリーミングチャンクを逐次受信し、refreshのJSONペイロードを含むまで読み進める。
-            expected_data_line = "data: " + _state._SSE_REFRESH_PAYLOAD
+            expected_data_line = "data: " + _SSE_REFRESH_PAYLOAD
             body_text = ""
             try:
                 while expected_data_line not in body_text:
@@ -1193,7 +1197,7 @@ class TestRemoteWatcher:
                 )
                 + "\n",
             ]
-            await watcher._process_stream(_aiter_lines(lines))
+            await watcher._process_stream(_aiter_lines(lines))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
 
             assert state.host_status["host1"] == "connected"
             cached = state.remote_files["host1"]
@@ -1202,7 +1206,7 @@ class TestRemoteWatcher:
             received: list[str] = []
             while not q.empty():
                 received.append(q.get_nowait())
-            assert _state._SSE_REFRESH_PAYLOAD in received
+            assert _SSE_REFRESH_PAYLOAD in received
             host_status_payload = json.dumps(
                 {"type": "host-status", "host": "host1", "status": "connected"}, ensure_ascii=False
             )
@@ -1216,7 +1220,7 @@ class TestRemoteWatcher:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         # 既存snapshotを与えてから、新規pathのupsertが追加されることを確認する。
-        await watcher._process_stream(
+        await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
             _aiter_lines(
                 [
                     json.dumps(
@@ -1238,7 +1242,7 @@ class TestRemoteWatcher:
     async def test_upsert_replaces_existing_path(self):
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
-        await watcher._process_stream(
+        await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
             _aiter_lines(
                 [
                     json.dumps(
@@ -1261,7 +1265,7 @@ class TestRemoteWatcher:
     async def test_deleted_removes_path(self):
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
-        await watcher._process_stream(
+        await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
             _aiter_lines(
                 [
                     json.dumps(
@@ -1288,7 +1292,7 @@ class TestRemoteWatcher:
         q = await _state.subscribe(state)
         try:
             watcher = _remote.RemoteWatcher("host1", state)
-            await watcher._process_stream(_aiter_lines([json.dumps({"type": "ping"}) + "\n"]))
+            await watcher._process_stream(_aiter_lines([json.dumps({"type": "ping"}) + "\n"]))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
             # キャッシュにもhost_statusにも一切影響しない（接続確立前なので空のまま）。
             assert "host1" not in state.remote_files
             assert not state.host_status
@@ -1301,7 +1305,7 @@ class TestRemoteWatcher:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
-            await watcher._process_stream(
+            await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
                 _aiter_lines(
                     [
                         "not-a-json-line\n",
@@ -1333,7 +1337,7 @@ class TestRemoteWatcher:
         try:
             watcher = _remote.RemoteWatcher("host1", state)
             # snapshot を受信し、いったん connected へ遷移させる。
-            await watcher._process_stream(
+            await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
                 _aiter_lines(
                     [
                         json.dumps({"type": "snapshot", "entries": []}) + "\n",
@@ -1343,7 +1347,7 @@ class TestRemoteWatcher:
             # キューの中身を消費してから切断遷移を観測する。
             while not q.empty():
                 q.get_nowait()
-            await watcher._set_status("disconnected")
+            await watcher._set_status("disconnected")  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（再接続ループを伴う公開経路run()の切断遷移を単体で発火不能）
             assert state.host_status["host1"] == "disconnected"
             payload = json.dumps({"type": "host-status", "host": "host1", "status": "disconnected"}, ensure_ascii=False)
             assert q.get_nowait() == payload
@@ -1356,15 +1360,15 @@ class TestRemoteWatcher:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         # 最大値まで増加していると仮定してから snapshot を送信する。
-        watcher._backoff = _remote.REMOTE_BACKOFF_MAX_SEC
-        await watcher._process_stream(
+        watcher._backoff = _remote.REMOTE_BACKOFF_MAX_SEC  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（再接続ループ内のバックオフ増加を単体で到達させる経路がない）
+        await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
             _aiter_lines(
                 [
                     json.dumps({"type": "snapshot", "entries": []}) + "\n",
                 ]
             )
         )
-        assert watcher._backoff == _remote.REMOTE_BACKOFF_INITIAL_SEC
+        assert watcher._backoff == _remote.REMOTE_BACKOFF_INITIAL_SEC  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（再接続ループ内のバックオフ増加を単体で到達させる経路がない）
 
 
 class _FakeStdin:
@@ -1406,10 +1410,12 @@ def _attach_fake_connection(watcher: _remote.RemoteWatcher) -> _FakeProc:
 
     `_connect`を経由せずに`_proc`/`_connected`を直接設定し、
     RPCテストを最小限の依存で記述できるようにする。
+    SSH/subprocess起動を伴う公開経路（`run()`）では単体テスト内で接続状態を注入できないため、
+    引数注入では到達不能なグローバル状態として直接設定する。
     """
     proc = _FakeProc()
-    watcher._proc = typing.cast(typing.Any, proc)
-    watcher._connected = True
+    watcher._proc = typing.cast(typing.Any, proc)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH接続状態の直接注入）
+    watcher._connected = True  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH接続状態の直接注入）
     return proc
 
 
@@ -1427,7 +1433,7 @@ class TestRemoteWatcherRpc:
             # `request`が送信を完了してpendingに登録されるまで少し待つ。
             await asyncio.sleep(0.05)
             # サーバー側のJSON行から取り出した応答を`_handle_event`へ渡す。
-            await watcher._handle_event({"type": "response", "id": 1, "ok": True, "data": "QUJD", "mtime_epoch": 12.5})
+            await watcher._handle_event({"type": "response", "id": 1, "ok": True, "data": "QUJD", "mtime_epoch": 12.5})  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
 
         request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))
         drive_task = asyncio.create_task(_drive())
@@ -1449,7 +1455,7 @@ class TestRemoteWatcherRpc:
         watcher = _remote.RemoteWatcher("host1", state)
         # `_proc`は設定するが`_connected`はFalseのままにする。
         _attach_fake_connection(watcher)
-        watcher._connected = False
+        watcher._connected = False  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（接続状態の直接制御が必要）
         with pytest.raises(RuntimeError, match="not connected"):
             await watcher.request("read", {"path": "Zg=="})
 
@@ -1462,7 +1468,7 @@ class TestRemoteWatcherRpc:
 
         async def _drive() -> None:
             await asyncio.sleep(0.05)
-            watcher._fail_pending(ConnectionError("disconnected"))
+            watcher._fail_pending(ConnectionError("disconnected"))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（run()のキャンセル/切断経路を単体で発火するにはSSH/subprocess起動が必要）
 
         request_task = asyncio.create_task(watcher.request("read", {"path": "Zg=="}))
         drive_task = asyncio.create_task(_drive())
@@ -1480,7 +1486,7 @@ class TestRemoteWatcherRpc:
         with pytest.raises(asyncio.TimeoutError):
             await watcher.request("read", {"path": "Zg=="}, timeout=0.05)
         # 失敗側でpendingが除去されていること（後続応答の遅延配達でメモリリークしない）。
-        assert not watcher._pending
+        assert not watcher._pending  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（pending辞書の直接観測が必要）
 
 
 class TestFetchRemoteFile:
@@ -1496,7 +1502,7 @@ class TestFetchRemoteFile:
 
         async def _drive() -> None:
             await asyncio.sleep(0.05)
-            await watcher._handle_event(
+            await watcher._handle_event(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
                 {
                     "type": "response",
                     "id": 1,
@@ -1543,7 +1549,7 @@ class TestFetchRemoteFile:
 
         async def _drive() -> None:
             await asyncio.sleep(0.05)
-            await watcher._handle_event({"type": "response", "id": 1, "ok": False, "error": "permission denied"})
+            await watcher._handle_event({"type": "response", "id": 1, "ok": False, "error": "permission denied"})  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess stdoutから配信されるイベントを単体で注入するため）
 
         drive_task = asyncio.create_task(_drive())
         text, mtime = await asyncio.wait_for(
@@ -1777,7 +1783,7 @@ class TestRemoteHostIntegration:
         )
         state: _state.BroadcastState = app.config["PLANS_STATE"]
         watcher = _remote.RemoteWatcher("host1", state)
-        await watcher._process_stream(_aiter_lines([json.dumps({"type": "snapshot", "entries": []}) + "\n"]))
+        await watcher._process_stream(_aiter_lines([json.dumps({"type": "snapshot", "entries": []}) + "\n"]))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
 
         client = app.test_client()
         response = await client.get("/api/host-status")
@@ -1801,7 +1807,7 @@ class TestBuildRemoteCommand:
     @pytest.mark.parametrize("op,args", [("serve", []), ("read", ["YWJjLm1k"])])
     def test_excludes_posix_shell_idioms(self, op: str, args: list[str]):
         """argv連結文字列にPOSIXシェル組み込み・heredoc・パイプ等が含まれない。"""
-        argv = _remote._build_remote_command_argv(op, args)
+        argv = _remote._build_remote_command_argv(op, args)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（Windows cmd.exe互換のシェル境界条件を個別に検証するため実SSH起動不可）
         joined = " ".join(argv)
         # POSIXシェル非依存に必須となる禁止トークン。
         for token in ("bash ", "bash\t", "head ", "mkdir ", "<<", "<<<", "<<-", "exec ", " | ", "&&", "||"):
@@ -1822,12 +1828,12 @@ class TestBuildRemoteCommand:
 
     def test_op_and_args_appended_at_tail(self):
         """`op`と`args`はargv末尾に未加工のまま追加される（ヘルパーはsys.argvで読み取る）。"""
-        argv = _remote._build_remote_command_argv("read", ["YWJjLm1k"])
+        argv = _remote._build_remote_command_argv("read", ["YWJjLm1k"])  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（Windows cmd.exe互換のシェル境界条件を個別に検証するため実SSH起動不可）
         assert argv[-2:] == ["read", "YWJjLm1k"]
 
     def test_uses_double_quote_boundaries_only(self):
         """空白を含む要素は両端ダブルクォートで囲み、シングルクォート境界は使わない。"""
-        argv = _remote._build_remote_command_argv("serve", [])
+        argv = _remote._build_remote_command_argv("serve", [])  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（Windows cmd.exe互換のシェル境界条件を個別に検証するため実SSH起動不可）
         for elem in argv:
             if " " not in elem:
                 continue
@@ -1902,7 +1908,7 @@ class TestTerminateProcess:
     async def test_stdin_close_triggers_graceful_exit(self):
         """stdin closeで停止経路に乗る場合、terminate/killは呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="stdin_close")
-        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.1)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.1)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（実プロセス起動なしに停止フォールバック段を選択的に発火するため）
         assert proc.returncode == 0
         assert not proc.terminate_called
         assert not proc.kill_called
@@ -1911,7 +1917,7 @@ class TestTerminateProcess:
     async def test_terminate_after_stdin_unresponsive(self):
         """stdin closeで応答が無ければterminateで停止し、killは呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="terminate")
-        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（実プロセス起動なしに停止フォールバック段を選択的に発火するため）
         assert proc.returncode == -15
         assert proc.terminate_called
         assert not proc.kill_called
@@ -1920,7 +1926,7 @@ class TestTerminateProcess:
     async def test_kill_when_process_is_unresponsive(self):
         """terminateにも応答しないプロセスはkillで打ち切られる。"""
         proc = _FakeProcessForTerminate(exits_on="kill")
-        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（実プロセス起動なしに停止フォールバック段を選択的に発火するため）
         assert proc.returncode == -9
         assert proc.terminate_called
         assert proc.kill_called
@@ -1930,7 +1936,7 @@ class TestTerminateProcess:
         """既に終了済みのプロセスはstdin close・terminate・killいずれも呼ばれない。"""
         proc = _FakeProcessForTerminate(exits_on="never")
         proc.returncode = 0
-        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)
+        await _remote._terminate_process(typing.cast(typing.Any, proc), grace_timeout=0.05)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（実プロセス起動なしに停止フォールバック段を選択的に発火するため）
         assert not proc.terminate_called
         assert not proc.kill_called
         assert not proc.stdin.is_closing()
@@ -1970,7 +1976,7 @@ class TestRemoteStreamLimit:
 
         async def _consume() -> list[str]:
             collected: list[str] = []
-            async for line in _remote._iter_stream_lines(big_reader):
+            async for line in _remote._iter_stream_lines(big_reader):  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（asyncio.StreamReaderを直接構成しlimit引き上げ後の読み取りを確認するため）
                 collected.append(line)
             return collected
 

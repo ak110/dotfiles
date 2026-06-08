@@ -99,6 +99,7 @@ class TestRunTrustsWorkingTree:
             assert record["env_overrides"] == _EXPECTED_ENV_OVERRIDES
 
     def test_trust_skipped_without_env(self, mise_stub: _MiseSubprocessStub):
+        """CHEZMOI_WORKING_TREE が未設定のとき trust をスキップする。"""
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
         _setup_mise.run()
         assert not mise_stub.calls_for("trust")
@@ -205,7 +206,8 @@ class TestRunInstallStep:
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
         assert install_calls[0]["args"] == ["install"]
-        assert install_calls[0]["timeout"] == _setup_mise._MISE_INSTALL_TIMEOUT  # noqa: SLF001  # pylint: disable=protected-access
+        # インストール処理は通常コマンドより長いタイムアウト（600 秒）で呼ばれる
+        assert install_calls[0]["timeout"] == 600
         assert install_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
 
 

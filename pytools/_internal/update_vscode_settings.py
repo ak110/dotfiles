@@ -25,7 +25,6 @@ from pytools._internal.cli import setup_logging
 logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = platform.system() == "Windows"
-_DOTFILES_DIR = Path.home() / "dotfiles"
 
 # VSCode 標準 Markdown プレビューに渡すカスタム CSS の URL。User scope にのみ
 # 書き込む (Machine scope では上書き不要)。
@@ -52,6 +51,8 @@ def run(
     *,
     hostname: str | None = None,
     is_windows: bool | None = None,
+    home: Path | None = None,
+    environ: collections.abc.Mapping[str, str] | None = None,
 ) -> bool:
     """VSCode settings.json を更新する。
 
@@ -59,18 +60,20 @@ def run(
         hostname: Activity Bar 色生成に使うホスト名 (テスト用)。
         is_windows: 実行環境の判定オーバーライド (テスト用)。
             Windows (User scope) なら True、Linux (Machine scope) なら False。
+        home: ホームディレクトリのオーバーライド (テスト用)。
+        environ: 環境変数マッピングのオーバーライド (テスト用)。
 
     Returns:
         実際にファイルを書き換えたかどうか。
     """
     win = _IS_WINDOWS if is_windows is None else is_windows
-    settings_path = _settings_path(is_windows=win)
+    settings_path = _settings_path(is_windows=win, home=home, environ=environ)
     if settings_path is None:
         logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ"))
         return False
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
     # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
-    managed = _build_managed_settings(hostname=hostname, is_user_scope=win)
+    managed = _build_managed_settings(hostname=hostname, is_user_scope=win, home=home)
     legacy_keys: tuple[str, ...] = () if win else _LEGACY_KEYS_FOR_MACHINE_SCOPE
     return _apply(managed, settings_path, legacy_keys=legacy_keys)
 
@@ -141,7 +144,7 @@ def _hostname_color(*, hostname: str | None = None) -> str:
     return _HOST_COLORS[index]
 
 
-def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool) -> dict:
+def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool, home: Path | None = None) -> dict:
     """managed設定のdictを構築する。
 
     Args:
@@ -149,8 +152,10 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
         is_user_scope: TrueならUser scope（全マシン共通）、
             FalseならMachine scope（マシン固有）。`markdown.styles` は
             User scopeでのみ管理する。
+        home: ホームディレクトリのオーバーライド (テスト用)。
     """
-    share_vscode = _DOTFILES_DIR / "share" / "vscode"
+    dotfiles_dir = (home or Path.home()) / "dotfiles"
+    share_vscode = dotfiles_dir / "share" / "vscode"
     settings: dict = {
         "workbench.colorCustomizations": {
             "activityBar.background": _hostname_color(hostname=hostname),

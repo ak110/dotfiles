@@ -2,8 +2,8 @@
 
 import pathlib
 import subprocess
+import typing
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 
@@ -33,7 +33,7 @@ def _make_static_fake(
         timeout: float | None = None,
         cwd: pathlib.Path | None = None,
         tag: str | None = None,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> subprocess.CompletedProcess[str] | None:
         del timeout, cwd, tag, kwargs
         calls.append(list(cmd))
@@ -53,7 +53,7 @@ def _make_branching_fake(
         timeout: float | None = None,
         cwd: pathlib.Path | None = None,
         tag: str | None = None,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> subprocess.CompletedProcess[str] | None:
         del timeout, cwd, tag, kwargs
         calls.append(list(cmd))

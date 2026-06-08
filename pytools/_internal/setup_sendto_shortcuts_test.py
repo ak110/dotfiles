@@ -1,12 +1,9 @@
 """pytools._internal.setup_sendto_shortcuts のテスト。"""
 
-# `_SHORTCUTS` など内部実装定数を直接参照するため protected-access を許可する。
-# pylint: disable=protected-access
-
 import pathlib
 import subprocess
+import typing
 from collections.abc import Callable
-from typing import Any
 
 import pytest
 
@@ -32,7 +29,7 @@ def _make_static_fake(
         timeout: float | None = None,
         cwd: pathlib.Path | None = None,
         tag: str | None = None,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> subprocess.CompletedProcess[str] | None:
         del timeout, cwd, tag, kwargs
         calls.append(list(cmd))
@@ -54,7 +51,7 @@ def _make_branching_fake(
         timeout: float | None = None,
         cwd: pathlib.Path | None = None,
         tag: str | None = None,
-        **kwargs: Any,
+        **kwargs: typing.Any,
     ) -> subprocess.CompletedProcess[str] | None:
         del timeout, cwd, tag, kwargs
         calls.append(list(cmd))
@@ -237,7 +234,7 @@ class TestRunShortcutCreation:
             setup_sendto_shortcuts,
             "_SHORTCUTS",
             [
-                setup_sendto_shortcuts._Shortcut(
+                setup_sendto_shortcuts._Shortcut(  # noqa: SLF001 # pylint: disable=protected-access  # グローバル定数の差し替えに必要
                     lnk_name="O'Tool.lnk",
                     target_relative=pathlib.PurePath("O'Dir") / "tool.exe",
                 ),
@@ -271,11 +268,11 @@ class TestRunShortcutCreation:
             setup_sendto_shortcuts,
             "_SHORTCUTS",
             [
-                setup_sendto_shortcuts._Shortcut(
+                setup_sendto_shortcuts._Shortcut(  # noqa: SLF001 # pylint: disable=protected-access  # グローバル定数の差し替えに必要
                     lnk_name="Tool1.lnk",
                     target_relative=pathlib.PurePath(".local") / "bin" / "tool1.exe",
                 ),
-                setup_sendto_shortcuts._Shortcut(
+                setup_sendto_shortcuts._Shortcut(  # noqa: SLF001 # pylint: disable=protected-access  # グローバル定数の差し替えに必要
                     lnk_name="Tool2.lnk",
                     target_relative=pathlib.PurePath(".local") / "bin" / "tool2.exe",
                 ),

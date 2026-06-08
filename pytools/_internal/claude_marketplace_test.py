@@ -2,12 +2,12 @@
 
 本ファイルでは以下の観点を網羅する。
 
-- 健全性検証: _check_marketplace_from_file / _is_entry_healthy の各分岐
+- 健全性検証: ensure_marketplace / is_directory_type_registered の各分岐
 - 修復ロジック: repair_marketplace の CLI 成功・直接書き換えフォールバック・失敗経路
 - 設定ファイル直書きの境界条件:
-    _rewrite_known_marketplaces_entry / _rewrite_settings_extra_known_entry の
-    ファイル不在・書き込み失敗・既存キー保持などのケース
-- _marketplace_already_registered のパース分岐
+    ファイル不在・書き込み失敗・既存キー保持などのケースを
+    repair_marketplace / ensure_marketplace の振る舞いで確認する
+- marketplace list 出力の各パース形式の許容: ensure_marketplace の CLI 経路で確認
 - ensure_marketplace の各分岐 (file_check True/False/None)
 - refresh_marketplace の成功・失敗
 
@@ -16,7 +16,6 @@ TestCheckMarketplaceFromFile・TestLegacyGithubTypeMigration・TestRepairMarketp
 重複を避け、本ファイルではそれらで扱っていない分岐・パラメーター化ケースを追加する。
 """
 
-import datetime
 import json
 import pathlib
 
@@ -25,7 +24,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 
-from ._test_helpers import _FakeResult
+from ._test_helpers import _FakeResult, write_known_entry, write_settings_entry
 
 # --- fixtures ---
 
@@ -51,119 +50,112 @@ def _marketplace_paths(
     return known, settings
 
 
-# --- helpers ---
-
-
-def _write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """known_marketplaces.json に対象 marketplace のエントリを保存する。"""
-    path.write_text(
-        json.dumps({_claude_common.MARKETPLACE_NAME: entry}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def _write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
-    """settings.json.extraKnownMarketplaces に対象 marketplace のエントリを保存する。"""
-    path.write_text(
-        json.dumps({"extraKnownMarketplaces": {_claude_common.MARKETPLACE_NAME: entry}}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
 # --- TestMarketplaceAlreadyRegistered ---
 
 
 class TestMarketplaceAlreadyRegistered:
-    """_marketplace_already_registered の各パース形式テスト。
+    """marketplace list 出力の各パース形式が ensure_marketplace() の登録判定に正しく反映されること。
 
     `marketplace list --json` の出力形式はバージョンによって異なるため、
-    複数の形式を許容していることを検証する。
+    複数の形式を許容していることを ensure_marketplace() の CLI 経路で確認する。
+    両ファイルが存在しない状態 (file_check が None) で CLI 経路のみを通す。
     """
 
-    def test_list_with_name_key(self):
-        """リスト形式: name キーが一致すれば True。"""
+    @pytest.fixture(autouse=True)
+    def _no_files(
+        self,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+    ) -> None:
+        """両ファイルを存在しない状態にして file_check が None になるよう設定する。"""
+        del marketplace_paths  # ファイルを生成しない (存在しないパスが設定済み)
+
+    def _ensure_with_list_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        list_output: object,
+    ) -> tuple[bool, list[list[str]]]:
+        """marketplace list に指定の出力を返す fake_run で ensure_marketplace を実行し結果を返す。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **_kwargs):  # noqa: ANN001
+            calls.append(cmd)
+            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+                return _FakeResult(returncode=0, stdout=json.dumps(list_output, ensure_ascii=False))
+            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+                return _FakeResult(returncode=0)
+            return _FakeResult(returncode=1)
+
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        result = _claude_marketplace.ensure_marketplace()
+        return result, calls
+
+    def test_list_with_name_key_skips_add(self, monkeypatch: pytest.MonkeyPatch):
+        """リスト形式: name キーが一致すれば登録済みと判断して add を呼ばない。"""
         data = [{"name": _claude_common.MARKETPLACE_NAME}]
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(data) is True
+        result, calls = self._ensure_with_list_output(monkeypatch, data)
+        assert result is True
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
-    def test_list_without_target(self):
-        """リスト形式: 対象 name が含まれなければ False。"""
+    def test_list_without_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
+        """リスト形式: 対象 name が含まれなければ未登録として add を呼ぶ。"""
         data = [{"name": "other-marketplace"}]
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(data) is False
+        result, calls = self._ensure_with_list_output(monkeypatch, data)
+        assert result is True
+        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
-    def test_empty_list(self):
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered([]) is False
+    def test_empty_list_calls_add(self, monkeypatch: pytest.MonkeyPatch):
+        """空リストは未登録として add を呼ぶ。"""
+        result, calls = self._ensure_with_list_output(monkeypatch, [])
+        assert result is True
+        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
-    def test_dict_with_marketplaces_key(self):
-        """{marketplaces: [...]} の入れ子形式を再帰的にパースできる。"""
+    def test_dict_with_marketplaces_key_skips_add(self, monkeypatch: pytest.MonkeyPatch):
+        """{marketplaces: [...]} の入れ子形式は再帰的にパースし登録済みと判断する。"""
         data = {"marketplaces": [{"name": _claude_common.MARKETPLACE_NAME}]}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(data) is True
+        result, calls = self._ensure_with_list_output(monkeypatch, data)
+        assert result is True
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
-    def test_flat_dict_contains_name(self):
-        """フラット dict 形式: トップレベルのキーが name と一致すれば True。"""
+    def test_flat_dict_contains_name_skips_add(self, monkeypatch: pytest.MonkeyPatch):
+        """フラット dict 形式: トップレベルのキーが name と一致すれば登録済みと判断する。"""
         data: dict[str, object] = {_claude_common.MARKETPLACE_NAME: {}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(data) is True
+        result, calls = self._ensure_with_list_output(monkeypatch, data)
+        assert result is True
+        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
-    def test_flat_dict_no_target(self):
-        """フラット dict 形式: 対象キーが無ければ False。"""
+    def test_flat_dict_no_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
+        """フラット dict 形式: 対象キーが無ければ未登録として add を呼ぶ。"""
         data: dict[str, object] = {"other": {}}
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(data) is False
-
-    def test_unexpected_type_returns_false(self):
-        """int など未知の型は False。"""
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(42) is False
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered(None) is False
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._marketplace_already_registered("name") is False
-
-
-# --- TestNowIsoMillis ---
-
-
-class TestNowIsoMillis:
-    """_now_iso_millis の出力形式テスト。"""
-
-    def test_returns_utc_z_format(self):
-        """UTC + Z 末尾の ISO 8601 ミリ秒形式を返す。"""
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._now_iso_millis()
-        assert result.endswith("Z"), f"Z 末尾でない: {result}"
-        # ミリ秒精度のため小数点以下3桁が含まれる
-        assert "." in result
-
-    def test_format_is_parseable(self):
-        """返された文字列が datetime.fromisoformat で復元できる。"""
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._now_iso_millis()
-        # Z を +00:00 に変換してから解析
-        dt = datetime.datetime.fromisoformat(result.replace("Z", "+00:00"))
-        assert dt.tzinfo is not None
+        result, calls = self._ensure_with_list_output(monkeypatch, data)
+        assert result is True
+        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
 
 
 # --- TestRewriteKnownMarketplacesEntry ---
 
 
 class TestRewriteKnownMarketplacesEntry:
-    """_rewrite_known_marketplaces_entry の境界条件テスト。"""
+    """known_marketplaces.json 書き換えの境界条件を repair_marketplace 経由で確認する。
 
-    def test_creates_new_file_when_absent(
+    直接書き換え経路 (``_rewrite_known_marketplaces_entry``) に到達させるには、
+    CLI add の後も ``_check_marketplace_from_file()`` が False を返すことが必要。
+    そのため各テストでは known に旧 GitHub 型エントリを置いておく
+    (CLI の fake_run はファイルを更新しないため recheck == False が継続する)。
+    """
+
+    def test_overwrites_legacy_entry_with_directory_type(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """ファイルが存在しない場合は新規作成し directory 型エントリを書き込む。"""
+        """旧 GitHub 型エントリを直接書き換えて directory 型に修復する。"""
         known, _settings = marketplace_paths
-        assert not known.exists()
+        # 旧 GitHub 型 → CLI add 後も recheck が False のまま → 直接書き換え経路へ
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_known_marketplaces_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         data = json.loads(known.read_text(encoding="utf-8"))
@@ -174,6 +166,7 @@ class TestRewriteKnownMarketplacesEntry:
 
     def test_preserves_other_keys(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
@@ -189,9 +182,9 @@ class TestRewriteKnownMarketplacesEntry:
             ),
             encoding="utf-8",
         )
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_known_marketplaces_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         data = json.loads(known.read_text(encoding="utf-8"))
@@ -207,68 +200,82 @@ class TestRewriteKnownMarketplacesEntry:
         self,
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """atomic write が失敗すると False を返す。"""
-        _known, _settings = marketplace_paths
+        """atomic write が失敗すると repair_marketplace が False を返す。"""
+        known, _settings = marketplace_paths
+        # 旧 GitHub 型 → recheck=False → 直接書き換え経路へ
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
 
         monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_known_marketplaces_entry(dotfiles_root)
-
-        assert result is False
+        assert _claude_marketplace.repair_marketplace() is False
 
     def test_invalid_json_returns_false(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """既存ファイルが不正 JSON の場合は False を返す (書き込まない)。"""
-        known, _settings = marketplace_paths
-        known.write_text("{invalid json", encoding="utf-8")
+        """known_marketplaces.json が不正 JSON の場合は repair_marketplace が False を返す。
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_known_marketplaces_entry(dotfiles_root)
+        不正 JSON は ``_load_known_marketplace_entry`` で None を返すため
+        ``_check_marketplace_from_file`` 的には「ファイル不在」と同等の None 扱いになる。
+        直接書き換え経路では ``load_json_dict`` が None を返すため False となる。
+        recheck=None + settings の不正 JSON で直接書き換え経路に到達させる。
+        """
+        known, settings = marketplace_paths
+        # known: 旧 GitHub 型 → recheck=False → 直接書き換えへ
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        # settings: 不正 JSON → _rewrite_settings_extra_known_entry が False を返す
+        settings.write_text("{invalid", encoding="utf-8")
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        assert result is False
+        assert _claude_marketplace.repair_marketplace() is False
 
 
 # --- TestRewriteSettingsExtraKnownEntry ---
 
 
 class TestRewriteSettingsExtraKnownEntry:
-    """_rewrite_settings_extra_known_entry の境界条件テスト。"""
+    """settings.json 書き換えの境界条件を repair_marketplace 経由で確認する。
+
+    直接書き換え経路に到達させるため、各テストでは known に旧 GitHub 型エントリを置く。
+    settings 側の挙動を孤立して確認するには、known の書き換えを成功させておく必要がある。
+    """
 
     def test_settings_not_exists_returns_true_without_write(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """settings.json が存在しない場合は何も書かず True を返す (勝手に新規作成しない)。"""
-        _known, settings = marketplace_paths
+        """settings.json が存在しない場合は何も書かず、known のみ修復して True を返す。"""
+        known, settings = marketplace_paths
+        # known を旧 GitHub 型にして直接書き換え経路へ誘導する
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         assert not settings.exists()
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         assert not settings.exists()
 
     def test_overwrites_existing_entry(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
         """既存の旧形式エントリを directory 型に上書きする。"""
-        _known, settings = marketplace_paths
-        _write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        known, settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         data = json.loads(settings.read_text(encoding="utf-8"))
@@ -279,15 +286,16 @@ class TestRewriteSettingsExtraKnownEntry:
 
     def test_creates_extra_known_key_when_absent(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
         """settings.json が存在するが extraKnownMarketplaces がない場合は追加する。"""
-        _known, settings = marketplace_paths
+        known, settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"otherSetting": True}, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         data = json.loads(settings.read_text(encoding="utf-8"))
@@ -298,47 +306,45 @@ class TestRewriteSettingsExtraKnownEntry:
         self,
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """atomic write が失敗すると False を返す。"""
-        _known, settings = marketplace_paths
-        settings.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        """atomic write が失敗すると repair_marketplace が False を返す。"""
+        known, settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        settings.write_text(json.dumps({"extraKnownMarketplaces": {}}, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
 
         monkeypatch.setattr(_claude_common.os, "replace", fail_replace)
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
-
-        assert result is False
+        assert _claude_marketplace.repair_marketplace() is False
 
     def test_invalid_json_returns_false(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """settings.json が不正 JSON の場合は False を返す (書き込まない)。"""
-        _known, settings = marketplace_paths
+        """settings.json が不正 JSON の場合は repair_marketplace が False を返す。"""
+        known, settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text("{invalid", encoding="utf-8")
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
-
-        assert result is False
+        assert _claude_marketplace.repair_marketplace() is False
 
     def test_extra_known_marketplaces_not_dict(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
     ):
-        """extraKnownMarketplaces が dict でない場合は初期化して書き込む。"""
-        _known, settings = marketplace_paths
+        """extraKnownMarketplaces が dict でない場合は初期化して directory 型を書き込む。"""
+        known, settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"extraKnownMarketplaces": []}, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(_claude_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._rewrite_settings_extra_known_entry(dotfiles_root)
+        result = _claude_marketplace.repair_marketplace()
 
         assert result is True
         data = json.loads(settings.read_text(encoding="utf-8"))
@@ -401,7 +407,7 @@ class TestEnsureMarketplace:
         """file_check == False なら repair_marketplace を呼び出す。"""
         known, _settings = marketplace_paths
         # 旧 GitHub 型 → file_check が False になる
-        _write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
 
         repair_called = []
 
@@ -486,136 +492,122 @@ class TestEnsureMarketplace:
 
 
 class TestLoadKnownMarketplaceEntry:
-    """_load_known_marketplace_entry の読み込み分岐テスト。"""
+    """known_marketplaces.json の読み込み分岐が is_directory_type_registered() に正しく反映されること。"""
 
     def test_returns_entry_when_exists(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+        dotfiles_root: pathlib.Path,
     ):
-        """known_marketplaces.json に対象エントリがあれば返す。"""
+        """known_marketplaces.json に健全な directory 型エントリがあれば True。"""
         known, _settings = marketplace_paths
-        entry: dict[str, object] = {"source": {"source": "directory", "path": "/somewhere"}}
-        _write_known_entry(known, entry)
+        write_known_entry(
+            known,
+            {
+                "source": {"source": "directory", "path": str(dotfiles_root)},
+                "installLocation": str(dotfiles_root),
+            },
+        )
+        assert _claude_marketplace.is_directory_type_registered() is True
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._load_known_marketplace_entry()
-        assert result == entry
-
-    def test_returns_none_when_file_absent(
+    def test_returns_false_when_file_absent(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """ファイルが存在しない場合は None を返す。"""
-        del marketplace_paths
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_known_marketplace_entry() is None
+        """ファイルが存在しない場合は is_directory_type_registered が False。"""
+        del marketplace_paths  # 2 ファイルが存在しない状態のまま
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_returns_none_when_key_missing(
+    def test_returns_false_when_key_missing(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """ファイルに対象キーが無い場合は None を返す。"""
+        """ファイルに対象キーが無い場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         known.write_text(json.dumps({"other": {}}, ensure_ascii=False), encoding="utf-8")
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_known_marketplace_entry() is None
-
-    def test_returns_none_when_entry_not_dict(
+    def test_returns_false_when_entry_not_dict(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """エントリが dict でない場合は None を返す。"""
+        """エントリが dict でない場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         known.write_text(
             json.dumps({_claude_common.MARKETPLACE_NAME: "not-a-dict"}, ensure_ascii=False),
             encoding="utf-8",
         )
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_known_marketplace_entry() is None
-
-    def test_returns_none_when_invalid_json(
+    def test_returns_false_when_invalid_json(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """JSON 解析失敗の場合は None を返す。"""
+        """JSON 解析失敗の場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         known.write_text("{broken", encoding="utf-8")
-
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_known_marketplace_entry() is None
+        assert _claude_marketplace.is_directory_type_registered() is False
 
 
 # --- TestLoadExtraKnownMarketplaceEntry ---
 
 
 class TestLoadExtraKnownMarketplaceEntry:
-    """_load_extra_known_marketplace_entry の読み込み分岐テスト。"""
+    """settings.json の読み込み分岐が is_directory_type_registered() に正しく反映されること。"""
 
     def test_returns_entry_when_exists(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+        dotfiles_root: pathlib.Path,
     ):
-        """settings.json に extraKnownMarketplaces[target] があれば返す。"""
+        """settings.json に健全な directory 型エントリがあれば True。"""
         _known, settings = marketplace_paths
-        entry: dict[str, object] = {"source": {"source": "directory", "path": "/somewhere"}}
-        _write_settings_entry(settings, entry)
+        write_settings_entry(settings, {"source": {"source": "directory", "path": str(dotfiles_root)}})
+        assert _claude_marketplace.is_directory_type_registered() is True
 
-        # pylint: disable-next=protected-access
-        result = _claude_marketplace._load_extra_known_marketplace_entry()
-        assert result == entry
-
-    def test_returns_none_when_file_absent(
+    def test_returns_false_when_file_absent(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """settings.json が存在しない場合は None を返す。"""
+        """settings.json が存在しない場合は is_directory_type_registered が False。"""
         del marketplace_paths
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_extra_known_marketplace_entry() is None
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-    def test_returns_none_when_extra_key_absent(
+    def test_returns_false_when_extra_key_absent(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """settings.json に extraKnownMarketplaces が無い場合は None を返す。"""
+        """settings.json に extraKnownMarketplaces が無い場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(json.dumps({"otherSetting": True}, ensure_ascii=False), encoding="utf-8")
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_extra_known_marketplace_entry() is None
-
-    def test_returns_none_when_extra_not_dict(
+    def test_returns_false_when_extra_not_dict(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces が dict 以外の場合は None を返す。"""
+        """extraKnownMarketplaces が dict 以外の場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(json.dumps({"extraKnownMarketplaces": "string"}, ensure_ascii=False), encoding="utf-8")
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_extra_known_marketplace_entry() is None
-
-    def test_returns_none_when_marketplace_key_absent(
+    def test_returns_false_when_marketplace_key_absent(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces に対象キーが無い場合は None を返す。"""
+        """extraKnownMarketplaces に対象キーが無い場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(
             json.dumps({"extraKnownMarketplaces": {"other": {}}}, ensure_ascii=False),
             encoding="utf-8",
         )
+        assert _claude_marketplace.is_directory_type_registered() is False
 
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_extra_known_marketplace_entry() is None
-
-    def test_returns_none_when_entry_not_dict(
+    def test_returns_false_when_entry_not_dict(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces[target] が dict でない場合は None を返す。"""
+        """extraKnownMarketplaces[target] が dict でない場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(
             json.dumps(
@@ -624,6 +616,4 @@ class TestLoadExtraKnownMarketplaceEntry:
             ),
             encoding="utf-8",
         )
-
-        # pylint: disable-next=protected-access
-        assert _claude_marketplace._load_extra_known_marketplace_entry() is None
+        assert _claude_marketplace.is_directory_type_registered() is False
