@@ -1,5 +1,4 @@
 [tools]
-"aqua:aws/aws-cli" = "latest"
 "npm:@google/gemini-cli" = "latest"
 "npm:@openai/codex" = "latest"
 "npm:aws-cdk" = "latest"

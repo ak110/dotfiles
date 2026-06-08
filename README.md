@@ -38,6 +38,36 @@ Claude Code・Codex CLI・miseなどの周辺ツールは任意。
 
 ## インストール
 
+### GitHubトークンの設定（任意）
+
+mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）は、
+aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
+未認証では1時間あたり60リクエストのIPベース制限があり、`update-dotfiles`実行時に
+`API rate limit exceeded`で失敗することがあり、OSに依存せず発生し得る。
+
+回避には個人アクセストークンを発行し、ユーザー環境変数`GITHUB_TOKEN`へ設定する。
+
+1. <https://github.com/settings/personal-access-tokens> へアクセスする
+2. `Generate new token`をクリックする
+3. `Repository access`は`Public Repositories (read-only)`を選択する（追加スコープ設定は不要）
+4. `Generate token`をクリックしてトークンを発行する
+5. 表示されたトークンをコピーする
+6. ユーザー環境変数に登録する
+
+   Linuxの場合は`~/.env`に追記する（`~/.bashrc`はchezmoiの管理対象で上書きされるため使わない）。
+
+   ```bash
+   export GITHUB_TOKEN=<コピーしたトークン>
+   ```
+
+   Windows（PowerShell）の場合は以下を実行する。
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", "<コピーしたトークン>", "User")
+   ```
+
+7. 新しいターミナルを開き直して`update-dotfiles`を再実行する
+
 ### Linux
 
 ```bash
