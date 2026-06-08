@@ -284,8 +284,16 @@ def _run_mise(
 
     タイムアウト・例外を吸収して `CompletedProcess` または `None` を返す。
     非ゼロ終了の扱いは呼び出し元に委ねる。
+
+    miseの対話確認とTTY検出を抑止するため `MISE_YES=1`・`CI=1` を注入する。
+    aqua/npmバックエンドの初回ダウンロード時に確認プロンプトでブロックするのを防ぐ。
     """
-    return claude_common.run_subprocess([str(mise_bin), *args], timeout=timeout, tag="mise")
+    return claude_common.run_subprocess(
+        [str(mise_bin), *args],
+        timeout=timeout,
+        tag="mise",
+        env_overrides={"MISE_YES": "1", "CI": "1"},
+    )
 
 
 if __name__ == "__main__":

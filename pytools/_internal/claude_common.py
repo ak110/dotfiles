@@ -65,6 +65,7 @@ def run_subprocess(
     timeout: float | None = None,
     cwd: Path | None = None,
     tag: str | None = None,
+    env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | None:
     """サブプロセスをUTF-8 + `errors="replace"` で実行する共通ラッパー。
 
@@ -74,7 +75,17 @@ def run_subprocess(
     Windowsでは `text=True` の既定エンコーディングがcp932となり、CLIのUTF-8出力で
     UnicodeDecodeErrorが発生するため、エンコーディングをUTF-8に明示し、
     不正バイトが混入しても例外が発生しないよう `errors="replace"` を併用する。
+
+    対話入力は想定しない。標準入力は `subprocess.DEVNULL` に固定し、
+    CLIがプロンプト表示により無応答状態に陥る事象を防ぐ。
+
+    `env_overrides` を指定したときは現プロセスの環境をベースに該当キーを
+    上書きしたdictを `env` として渡す（`None` の既定では現プロセスの環境を継承する）。
     """
+    env: dict[str, str] | None = None
+    if env_overrides is not None:
+        env = os.environ.copy()
+        env.update(env_overrides)
     try:
         return subprocess.run(
             cmd,
@@ -85,6 +96,8 @@ def run_subprocess(
             encoding="utf-8",
             errors="replace",
             cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError) as e:
         label = tag or cmd[0]
@@ -149,7 +162,7 @@ def load_json_dict(
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag: str | None = None) -> bool:
-    """テキストファイルを同一ディレクトリのtempfile + ``os.replace`` で原子的に保存する。
+    """テキストファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
 
     Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
     ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
@@ -176,7 +189,7 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
             tmp_path = Path(tmp.name)
         if mode is not None and sys.platform != "win32":
             tmp_path.chmod(mode)
-        os.replace(tmp_path, path)
+        tmp_path.replace(path)
         return True
     except OSError as e:
         if tag is not None:
@@ -188,7 +201,7 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
 
 
 def atomic_write_json(path: Path, data: object, *, tag: str | None = None) -> bool:
-    """JSONファイルを同一ディレクトリのtempfile + ``os.replace`` で原子的に保存する。
+    """JSONファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
 
     Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
     ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。

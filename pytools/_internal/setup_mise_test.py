@@ -1,302 +1,190 @@
-"""pytools._internal.setup_mise のテスト (レジストリ / subprocess 依存部はモック化)."""
-
-# pylint: disable=protected-access
+"""pytools._internal.setup_mise のテスト。"""
 
 import json
 import subprocess
+import typing
 from pathlib import Path
 
 import pytest
 
+from pytools._internal import claude_common, winutils
 from pytools._internal import setup_mise as _setup_mise
 
-
-class TestHasGlobalNode:
-    """``_has_global_node`` が mise ls --global --json の各形式を正しく判定すること。"""
-
-    @pytest.mark.parametrize(
-        ("data", "expected"),
-        [
-            ({}, False),
-            ([], False),
-            ({"node": [{"version": "24"}]}, True),
-            ({"tools": {"node": [{}]}}, True),
-            ({"tools": {"python": [{}]}}, False),
-            ([{"name": "node"}], True),
-            ([{"name": "python"}, {"name": "node"}], True),
-            ([{"name": "python"}], False),
-            ([{"noname": "x"}], False),
-        ],
-    )
-    def test_various_formats(self, data: object, expected: bool):  # noqa: FBT001
-        assert _setup_mise._has_global_node(data) is expected
+# 非対話化のために `_run_mise` から注入される環境変数の期待値。
+_EXPECTED_ENV_OVERRIDES = {"MISE_YES": "1", "CI": "1"}
 
 
-class TestPathContainsShims:
-    """``_path_contains_shims`` が %LOCALAPPDATA% の展開・大小文字を吸収すること。"""
+class _MiseSubprocessStub:
+    """`claude_common.run_subprocess` を差し替えるスタブ。
 
-    def test_empty_path(self):
-        assert _setup_mise._path_contains_shims("", Path("C:/Users/x/AppData/Local/mise/shims")) is False
+    `mise <subcommand>` の呼び出しを `records` に蓄積し、登録された
+    `handlers` から前方一致でレスポンスを返す。
+    """
 
-    def test_literal_unexpanded_entry(self):
-        assert (
-            _setup_mise._path_contains_shims(
-                r"C:\Windows;%LOCALAPPDATA%\mise\shims",
-                Path(r"C:\Users\x\AppData\Local\mise\shims"),
-            )
-            is True
+    def __init__(self) -> None:
+        self.records: list[dict[str, typing.Any]] = []
+        self.handlers: dict[tuple[str, ...], subprocess.CompletedProcess[str] | None] = {}
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(claude_common, "run_subprocess", self._fake_run_subprocess)
+
+    def _fake_run_subprocess(
+        self,
+        cmd: list[str],
+        **kwargs: typing.Any,
+    ) -> subprocess.CompletedProcess[str] | None:
+        sub_args = tuple(cmd[1:])
+        self.records.append(
+            {
+                "args": list(sub_args),
+                "env_overrides": kwargs.get("env_overrides"),
+                "timeout": kwargs.get("timeout"),
+            }
         )
+        sorted_keys = list(self.handlers)
+        sorted_keys.sort(key=len, reverse=True)
+        for key in sorted_keys:
+            if sub_args[: len(key)] == key:
+                return self.handlers[key]
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    def test_case_insensitive_match(self, monkeypatch: pytest.MonkeyPatch):
-        # os.path.expandvars が os.environ を直接参照するため、
-        # 引数注入では制御できない。
-        monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\x\AppData\Local")
-        assert (
-            _setup_mise._path_contains_shims(
-                r"c:\users\x\appdata\local\MISE\SHIMS;C:\Windows",
-                Path(r"C:\Users\x\AppData\Local\mise\shims"),
-            )
-            is True
-        )
-
-    def test_not_present(self):
-        assert (
-            _setup_mise._path_contains_shims(
-                r"C:\Windows;C:\Users\x\AppData\Local\Programs\Python",
-                Path(r"C:\Users\x\AppData\Local\mise\shims"),
-            )
-            is False
-        )
+    def calls_for(self, *prefix: str) -> list[dict[str, typing.Any]]:
+        return [r for r in self.records if tuple(r["args"][: len(prefix)]) == prefix]
 
 
-class TestAppendEntry:
-    """``_append_entry`` のセパレータ処理テスト。"""
-
-    def test_empty(self):
-        assert _setup_mise._append_entry("", "X") == "X"
-
-    def test_no_trailing_separator(self):
-        assert _setup_mise._append_entry("A;B", "X") == "A;B;X"
-
-    def test_with_trailing_separator(self):
-        assert _setup_mise._append_entry("A;", "X") == "A;X"
+def _ls_response(payload: object) -> subprocess.CompletedProcess[str]:
+    """`mise ls --global --json` 用のレスポンスを生成する。"""
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(payload, ensure_ascii=False), stderr="")
 
 
-class TestEnsureGlobalNode:
-    """``_ensure_global_node`` の分岐を ``_run_mise`` monkeypatch で検証する。"""
-
-    def test_node_already_set(self, monkeypatch: pytest.MonkeyPatch):
-        calls: list[list[str]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps({"node": [{"version": "24"}]}, ensure_ascii=False),
-                stderr="",
-            )
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
-        assert calls == [["ls", "--global", "--json"]]
-
-    def test_node_missing_triggers_install(self, monkeypatch: pytest.MonkeyPatch):
-        calls: list[list[str]] = []
-        responses = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="{}", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-        ]
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return responses.pop(0)
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is True
-        assert calls == [
-            ["ls", "--global", "--json"],
-            ["use", "--global", "node@lts"],
-        ]
-
-    def test_ls_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        calls: list[list[str]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
-        assert calls == [["ls", "--global", "--json"]]
-
-    def test_install_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        calls: list[list[str]] = []
-        responses = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="fail"),
-        ]
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return responses.pop(0)
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
-        assert calls == [
-            ["ls", "--global", "--json"],
-            ["use", "--global", "node@lts"],
-        ]
-
-    def test_invalid_json_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        calls: list[list[str]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="not json", stderr="")
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_global_node(Path("/fake/mise")) is False
-        assert calls == [["ls", "--global", "--json"]]
+@pytest.fixture(name="mise_stub")
+def _mise_stub(monkeypatch: pytest.MonkeyPatch) -> _MiseSubprocessStub:
+    """既定で mise バイナリ検出済み・非 Windows・CHEZMOI_WORKING_TREE 未設定とする。"""
+    stub = _MiseSubprocessStub()
+    stub.install(monkeypatch)
+    monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
+    monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
+    monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
+    return stub
 
 
-class TestRun:
-    """``run`` のトップレベルフロー。"""
+class TestRunWithoutMise:
+    """mise バイナリ未検出時は何もしない。"""
 
-    def test_mise_not_found(self, monkeypatch: pytest.MonkeyPatch):
+    def test_skips_when_binary_missing(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: None)
         assert _setup_mise.run() is False
 
-    def test_mise_found_delegates_to_ensure_global_node(self, monkeypatch: pytest.MonkeyPatch):
-        called: list[Path] = []
 
-        def fake_ensure_global_node(mise_bin: Path) -> bool:
-            called.append(mise_bin)
-            return True
+class TestRunTrustsWorkingTree:
+    """`CHEZMOI_WORKING_TREE` と `mise.toml` 有無で `mise trust` 呼び出し有無が分かれる。"""
 
-        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
-        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
-        monkeypatch.setattr(_setup_mise, "_ensure_global_node", fake_ensure_global_node)
-        monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: False)
-        monkeypatch.setattr(_setup_mise, "_ensure_tools_installed", lambda _mise_bin: False)
-
-        assert _setup_mise.run() is True
-        assert called == [Path("/fake/mise")]
-
-    def test_trust_changed_propagates_to_run(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
-        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
-        monkeypatch.setattr(_setup_mise, "_ensure_global_node", lambda _mise_bin: False)
-        monkeypatch.setattr(_setup_mise, "_ensure_working_tree_trusted", lambda _mise_bin: True)
-        monkeypatch.setattr(_setup_mise, "_ensure_tools_installed", lambda _mise_bin: False)
-
-        assert _setup_mise.run() is True
-
-
-class TestEnsureWorkingTreeTrusted:
-    """``_ensure_working_tree_trusted`` の分岐テスト。"""
-
-    def test_env_not_set_skips(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
-        calls: list[list[str]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
-        assert not calls
-
-    def test_mise_toml_missing_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
-        calls: list[list[str]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
-        assert not calls
-
-    def test_invokes_trust_command(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_trust_invoked_when_toml_exists(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        mise_stub: _MiseSubprocessStub,
+    ):
         mise_toml = tmp_path / "mise.toml"
         mise_toml.write_text("[tools]\n", encoding="utf-8")
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
-        calls: list[list[str]] = []
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{"version": "24"}]})
 
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            calls.append(args)
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        assert _setup_mise.run() is True
 
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is True
-        assert calls == [["trust", str(mise_toml)]]
+        trust_calls = mise_stub.calls_for("trust")
+        assert trust_calls and trust_calls[0]["args"] == ["trust", str(mise_toml)]
+        # 全 mise CLI 呼び出しで非対話化 env_overrides が注入されていること
+        for record in mise_stub.records:
+            assert record["env_overrides"] == _EXPECTED_ENV_OVERRIDES
 
-    def test_command_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def test_trust_skipped_without_env(self, mise_stub: _MiseSubprocessStub):
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        _setup_mise.run()
+        assert not mise_stub.calls_for("trust")
+
+    def test_trust_skipped_when_toml_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        mise_stub: _MiseSubprocessStub,
+    ):
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))  # mise.toml は配置しない
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        _setup_mise.run()
+        assert not mise_stub.calls_for("trust")
+
+    def test_trust_failure_does_not_block_install(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        mise_stub: _MiseSubprocessStub,
+    ):
         (tmp_path / "mise.toml").write_text("", encoding="utf-8")
         monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        mise_stub.handlers[("trust",)] = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        _setup_mise.run()
+        assert mise_stub.calls_for("install")
 
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            **_kwargs: object,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin, args
-            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="boom")
 
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
-        assert _setup_mise._ensure_working_tree_trusted(Path("/fake/mise")) is False
+class TestRunNodeProvisioning:
+    """`mise ls --global --json` 結果に応じて `use --global node@lts` 発行が決まる。"""
+
+    @pytest.mark.parametrize(
+        ("ls_payload", "use_expected"),
+        [
+            ({}, True),
+            ([], True),
+            ({"node": [{"version": "24"}]}, False),
+            ({"tools": {"node": [{}]}}, False),
+            ({"tools": {"python": [{}]}}, True),
+            ([{"name": "node"}], False),
+            ([{"name": "python"}, {"name": "node"}], False),
+            ([{"name": "python"}], True),
+            ([{"noname": "x"}], True),
+        ],
+    )
+    def test_use_emitted_based_on_ls_payload(
+        self,
+        ls_payload: object,
+        use_expected: bool,  # noqa: FBT001
+        mise_stub: _MiseSubprocessStub,
+    ):
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response(ls_payload)
+        _setup_mise.run()
+        use_calls = mise_stub.calls_for("use", "--global")
+        if use_expected:
+            assert len(use_calls) == 1
+            assert use_calls[0]["args"] == ["use", "--global", "node@lts"]
+        else:
+            assert not use_calls
+
+    def test_ls_failure_skips_use(self, mise_stub: _MiseSubprocessStub):
+        mise_stub.handlers[("ls", "--global", "--json")] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="boom"
+        )
+        _setup_mise.run()
+        assert not mise_stub.calls_for("use", "--global")
+
+    def test_invalid_json_skips_use(self, mise_stub: _MiseSubprocessStub):
+        mise_stub.handlers[("ls", "--global", "--json")] = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not json", stderr=""
+        )
+        _setup_mise.run()
+        assert not mise_stub.calls_for("use", "--global")
+
+    def test_use_failure_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({})
+        mise_stub.handlers[("use", "--global", "node@lts")] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="fail"
+        )
+        assert _setup_mise.run() is True
+        assert mise_stub.calls_for("install")
 
 
 class TestRunInstallStep:
-    """``run()`` 経由で `mise install` の終了コード差異が後続を止めないことを確認する。
-
-    `_ensure_tools_installed` は結果に関わらず常に True を返す設計のため、
-    `run()` 全体も True を返す。trust と node 設定は前段でスキップ／既存判定させ、
-    install ステップの呼び出し記録だけを焦点に置く。
-    """
+    """`mise install` の結果は後続を止めず、タイムアウトと env_overrides が注入される。"""
 
     @pytest.mark.parametrize(
         "install_response",
@@ -308,33 +196,141 @@ class TestRunInstallStep:
     )
     def test_install_outcome_does_not_block_run(
         self,
-        monkeypatch: pytest.MonkeyPatch,
         install_response: subprocess.CompletedProcess[str] | None,
+        mise_stub: _MiseSubprocessStub,
     ):
-        install_calls: list[tuple[list[str], float]] = []
-
-        def fake_run(
-            mise_bin: Path,
-            args: list[str],
-            *,
-            timeout: float = _setup_mise._MISE_TIMEOUT,
-        ) -> subprocess.CompletedProcess[str] | None:
-            del mise_bin
-            if args == ["install"]:
-                install_calls.append((args, timeout))
-                return install_response
-            if args == ["ls", "--global", "--json"]:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps({"node": [{"version": "24"}]}, ensure_ascii=False),
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(_setup_mise, "_find_mise_binary", lambda: Path("/fake/mise"))
-        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: False)
-        monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
-        monkeypatch.setattr(_setup_mise, "_run_mise", fake_run)
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        mise_stub.handlers[("install",)] = install_response
         assert _setup_mise.run() is True
-        assert install_calls == [(["install"], _setup_mise._MISE_INSTALL_TIMEOUT)]
+        install_calls = mise_stub.calls_for("install")
+        assert len(install_calls) == 1
+        assert install_calls[0]["args"] == ["install"]
+        assert install_calls[0]["timeout"] == _setup_mise._MISE_INSTALL_TIMEOUT  # noqa: SLF001  # pylint: disable=protected-access
+        assert install_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+
+
+class _WinregFake:
+    """`winutils.import_winreg()` が返すモジュールのスタブ。"""
+
+    REG_SZ = 1
+    REG_EXPAND_SZ = 2
+
+
+@pytest.fixture(name="windows_env")
+def _windows_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mise_stub: _MiseSubprocessStub,
+) -> dict[str, typing.Any]:
+    """Windows 分岐のテスト用 fixture。
+
+    `_ensure_windows_user_path_has_shims` が利用する `winutils` 関数群と
+    レジストリの読み書きをスタブで差し替える。``state['existing']`` を
+    更新してから ``run()`` を呼び、``state['writes']`` を観測する。
+    """
+    # 前段（trust・ls・install）の影響を排して PATH 操作のみを観測する
+    mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+    monkeypatch.setattr(_setup_mise, "_is_windows", lambda: True)
+
+    localappdata = tmp_path / "AppData" / "Local"
+    shims_dir = localappdata / "mise" / "shims"
+    shims_dir.mkdir(parents=True)
+    monkeypatch.setenv("LOCALAPPDATA", str(localappdata))
+
+    state: dict[str, typing.Any] = {
+        "existing": ("", _WinregFake.REG_SZ),
+        "writes": [],
+        "broadcasts": 0,
+        "shims_dir": shims_dir,
+    }
+
+    def fake_read(name: str) -> tuple[str | None, int]:
+        del name
+        return state["existing"]
+
+    def fake_write(name: str, value: str, value_type: int) -> None:
+        state["writes"].append({"name": name, "value": value, "type": value_type})
+
+    def fake_broadcast() -> None:
+        state["broadcasts"] += 1
+
+    monkeypatch.setattr(winutils, "read_user_env_var", fake_read)
+    monkeypatch.setattr(winutils, "write_user_env_var", fake_write)
+    monkeypatch.setattr(winutils, "broadcast_environment_change", fake_broadcast)
+    monkeypatch.setattr(winutils, "import_winreg", lambda: _WinregFake)
+    return state
+
+
+class TestRunWindowsPathSetup:
+    """Windows 分岐: ユーザー PATH への shims 追加と既存検出を `run()` 経由で検証する。"""
+
+    def test_appends_shims_when_missing(self, windows_env: dict[str, typing.Any]):
+        windows_env["existing"] = (r"C:\Windows", _WinregFake.REG_SZ)
+        _setup_mise.run()
+        writes = windows_env["writes"]
+        assert len(writes) == 1
+        assert writes[0]["name"] == "Path"
+        assert writes[0]["value"] == r"C:\Windows;%LOCALAPPDATA%\mise\shims"
+        # REG_SZ で保持されていても REG_EXPAND_SZ へ昇格させる
+        assert writes[0]["type"] == _WinregFake.REG_EXPAND_SZ
+        assert windows_env["broadcasts"] == 1
+
+    def test_avoids_duplicate_separator(self, windows_env: dict[str, typing.Any]):
+        windows_env["existing"] = (r"C:\Windows;", _WinregFake.REG_EXPAND_SZ)
+        _setup_mise.run()
+        assert windows_env["writes"][0]["value"] == r"C:\Windows;%LOCALAPPDATA%\mise\shims"
+
+    def test_appends_from_empty(self, windows_env: dict[str, typing.Any]):
+        windows_env["existing"] = ("", _WinregFake.REG_EXPAND_SZ)
+        _setup_mise.run()
+        assert windows_env["writes"][0]["value"] == r"%LOCALAPPDATA%\mise\shims"
+
+    def test_already_registered_literal_entry(self, windows_env: dict[str, typing.Any]):
+        windows_env["existing"] = (
+            r"C:\Windows;%LOCALAPPDATA%\mise\shims",
+            _WinregFake.REG_EXPAND_SZ,
+        )
+        _setup_mise.run()
+        assert not windows_env["writes"]
+        assert windows_env["broadcasts"] == 0
+
+    def test_already_registered_expanded_case_insensitive(self, windows_env: dict[str, typing.Any]):
+        # %LOCALAPPDATA% 展開済みかつ大小不一致のエントリを既登録として認識する
+        expanded = str(windows_env["shims_dir"]).upper()
+        windows_env["existing"] = (f"C:\\WINDOWS;{expanded}", _WinregFake.REG_EXPAND_SZ)
+        _setup_mise.run()
+        assert not windows_env["writes"]
+
+    def test_not_present_when_other_paths(self, windows_env: dict[str, typing.Any]):
+        windows_env["existing"] = (
+            r"C:\Windows;C:\Users\x\AppData\Local\Programs\Python",
+            _WinregFake.REG_EXPAND_SZ,
+        )
+        _setup_mise.run()
+        assert len(windows_env["writes"]) == 1
+
+
+class TestNonInteractiveEnvInjection:
+    """全 mise CLI 呼び出しに `MISE_YES=1` ・ `CI=1` が注入されることを確認する。
+
+    aqua/npm バックエンドの初回ダウンロード時に確認プロンプトでブロックする事象を
+    防ぐため、trust・ls・install の各サブコマンドが env_overrides 付きで呼ばれる。
+    """
+
+    def test_all_mise_invocations_receive_env_overrides(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        mise_stub: _MiseSubprocessStub,
+    ):
+        (tmp_path / "mise.toml").write_text("[tools]\n", encoding="utf-8")
+        monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{"version": "24"}]})
+
+        _setup_mise.run()
+
+        assert mise_stub.calls_for("trust"), "mise trust が呼ばれていない"
+        assert mise_stub.calls_for("ls", "--global", "--json"), "mise ls が呼ばれていない"
+        assert mise_stub.calls_for("install"), "mise install が呼ばれていない"
+        for record in mise_stub.records:
+            assert record["env_overrides"] == _EXPECTED_ENV_OVERRIDES
