@@ -6,13 +6,21 @@
 """Claude Code plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。
-セッションが構造的に継続中（非同期待機ツールまたは未完了background Agentあり）の場合と、
-セッション中に既に`agent-toolkit:session-review`スキルが起動された場合はapproveする。
-それ以外では、未コミット変更の有無に応じた通知とセッション振り返り誘導を
-`hookSpecificOutput.additionalContext`へまとめて返す。
+approve・通知の分岐は以下のとおり。
+
+- 構造的にセッション継続中（非同期待機ツールまたは未完了background Agentあり）:
+  サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
+  git status表示を抑止する
+- 既に`agent-toolkit:session-review`スキルが起動済み:
+  再Stopまでにユーザーが裏で変更を加える可能性に備え、approveに加えて
+  git status表示を付与する
+- 上記いずれでもない通常終了: 未コミット変更があればgit status通知を付与し、
+  セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ載せる
 
 終了判定の言語的部分（完了文言・質問・待機表明の判別）と振り返り手順は
 `agent-toolkit:session-review`スキル本体の「起動方針」節へ全面委譲する。
+構造判定（非同期待機ツール残存・未完了background Agent検出）はhook側
+（`_stop_gate.py`）が担当し、判定レイヤーを分離する。
 """
 
 import json
@@ -148,7 +156,7 @@ def main() -> int:
     # 構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background Agentが存在するケース。
     if is_pending_async_work(transcript_path):
-        _approve(cwd=cwd)
+        _approve()
         return 0
 
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。

@@ -392,6 +392,23 @@ class TestGitStatusDisplay:
         assert decision["decision"] == "approve"
         assert "systemMessage" not in decision
 
+    def test_async_pending_dirty_repo_no_system_message(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        """非同期待機ツール残存などで構造的にセッション継続中は未コミット変更ありでもsystemMessageを抑止する。"""
+        repo = make_dirty_repo(tmp_path)
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_with_async_tool("Agent")],
+        )
+        result = _run(
+            {"session_id": "gs-async-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" not in decision
+
     def test_untracked_only_no_system_message(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
