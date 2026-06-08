@@ -48,6 +48,8 @@ description: >
 - agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式に統一する
   - サブエージェント名（`plan-implementer`等）はAgentツールの`subagent_type`引数表記に揃えプレフィックス無しを維持する
   - スキルのリネームに限らず、当該参照表記を含む編集全般に適用する
+  - プロジェクトローカルスキル（dotfilesリポジトリ直下`.claude/skills/`配下に置く`agent-toolkit-edit`自身など）は
+    プラグイン同梱ではないため、プラグイン接頭辞を付けず素のスキル名で参照する
 
 ## スキル間の連携
 
