@@ -80,5 +80,27 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
-| `EnterPlanMode`・`ExitPlanMode` | ネイティブ機能を利用 |
+| `EnterPlanMode`・`ExitPlanMode` | plan modeのエミュレーション節を参照 |
 | `ScheduleWakeup`・`CronCreate`・`Monitor`・`SendMessage`・`TeamCreate` | 同等手段なし。該当する自動化・通知・並列協調処理は手動運用または利用者操作で代替する |
+
+### plan modeのエミュレーション
+
+Claude Codeのplan modeは、計画立案中の意図しない変更を抑止する読み取り専用モードを提供する。
+Codexには同等のネイティブ機能が存在しないため、以下のエミュレーション運用を適用する。
+
+#### Claude Code側の動作（参考）
+
+- `EnterPlanMode`ツール呼び出し、またはユーザー操作によりplan modeへ突入する
+- plan mode中は`Edit`・`Write`・`Bash`などの編集系・破壊系ツールが抑制される。
+  `Read`・`Grep`・`Glob`・`WebFetch`・`AskUserQuestion`などの読み取り系および対話系は利用できる
+- 例外として、システムが指定する計画ファイルへの書き込みのみ許可される
+- `ExitPlanMode`ツール呼び出しで計画ファイルをユーザーへ提示し、承認を得てから実装へ移行する
+
+#### Codex側のエミュレーション運用
+
+- `EnterPlanMode`相当の合図として「plan modeを開始する」と宣言し、plan mode中である旨を以降の発話で維持する
+- plan mode中は計画ファイル以外への編集・破壊的操作・リモート送信・依存追加等を行わない。
+  調査・対話・計画ファイルへの追記のみ許容する
+- `ExitPlanMode`相当として、計画ファイルのパスを提示し、ユーザーへ承認を求める。
+  承認後に「plan modeを終了する」と宣言してから実装フェーズへ移行する
+- plan mode中でも、計画立案に必要な読み取り系コマンド（grep・find・lint・testなど副作用のない範囲）は事前確認なしで実行してよい
