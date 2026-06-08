@@ -140,10 +140,11 @@
 - `ty`と`mypy`は型不一致抑制コメントの構文が別系統。
   `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
   プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
-- `sorted(iterable, key=str)`で`Path`等をソートすると型検査器tyが要素型を誤推論し型エラーを報告する
+- `sorted(iterable, key=fn)`で型検査器tyが要素型を`fn`の引数protocol型へ誤って収束させる
+  - 具体例は`key=str`での文字列ソートと`key=len`でのコレクション長ソート
   - 検出例は`invalid-assignment`・`unresolved-attribute`
-  - `key=lambda x: str(x)`はpylintの`unnecessary-lambda`（W0108）を招き両立しない
-  - 内包表記でリスト化してから`list.sort(key=str)`を使い、`sorted`の戻り値型推論を回避する
+  - `key=lambda x: fn(x)`形式の回避はpylintの`unnecessary-lambda`（W0108）を招き両立しない
+  - 内包表記でリスト化してから`list.sort(key=fn)`を使い、`sorted`の戻り値型推論を回避する
 - `object`型の引数を`isinstance(x, dict)`で判定すると、型検査器tyは型引数を`Never`と推論する
   - 後続の`x.get("key")`で`invalid-argument-type`（`Expected Never, found Literal["key"]`）を報告する
   - 引数型を`typing.Any`にして回避する（`mypy`・`pyright`・`ty`・`pylint`・`ruff-check`の全通過を確認済み）
