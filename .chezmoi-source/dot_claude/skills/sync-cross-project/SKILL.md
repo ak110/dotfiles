@@ -78,9 +78,9 @@ description: >
 
 ## pnpmに関する既知の注意点
 
-- `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある。
+- `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある
   `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
-- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）。
+- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）
   env var経由の設定反映テストには`npm config get`を使う
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される
 
@@ -100,7 +100,7 @@ description: >
   - 変更時は他プロジェクトへの波及を確認する
 - README.md・CLAUDE.md・docs/development/development.md間で、
   共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
-- README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える。
+- README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える
   共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
 - README.md・CLAUDE.md・docs/development/development.mdを更新する際は、
   他プロジェクトと章構成・章順を揃える方針。
@@ -113,7 +113,7 @@ description: >
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能。
   cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
 - Makefileではなく`mise.toml`のタスクを使用する。pre-commitフレームワークは`uvx pre-commit`で呼び出す
-- `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている。
+- `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている
   新規Node系プロジェクトでも同様に設定する
 - `taiki-e/install-action@cargo-deny`はツール名タグ形式のためpinactでハッシュピン不可（gvの`.pinact.yaml`で除外済み）
 
@@ -125,7 +125,7 @@ description: >
 
 ### CI / リリース関連
 
-- CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針。
+- CI workflow（Python系・lint系のLinuxジョブ）は`ghcr.io/ak110/pyfltr:latest`イメージを`container:`として使う方針
   - uv / pnpm / Node.js / mise / pinactのセットアップステップは不要で、`pinact run --check`を直接呼び出せる
   - Pythonバージョンマトリクスは`env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ
   - `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）

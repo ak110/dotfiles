@@ -12,7 +12,7 @@
   - `typing.List`ではなく`list`を使う。`dict`やその他も同様
   - `typing.Optional`ではなく`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
-  - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない。
+  - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
 - docstringはGoogle Style
   - 自明なArgs, Returns, Raisesは省略する
@@ -78,7 +78,7 @@
   - pytestで`pytest.raises(SystemExit)`を用いて終了コードを検証する場合、
     private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招く。
     一括disableで抑止すると本来の保護検知が失われる
-  - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する。
+  - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する
     成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が
     `Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
   - 推奨形:
@@ -112,8 +112,8 @@
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
-- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う。
-  `asyncio.get_event_loop()`はPythonバージョンによって挙動が異なり非推奨。
+- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う
+  `asyncio.get_event_loop()`はPythonバージョンによって挙動が異なり非推奨
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
     - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため
@@ -137,7 +137,7 @@
 - 関数内importを意図的に行う箇所では、ruffの`PLC0415`とpylintの`import-outside-toplevel`が
   別ルールで重複指摘する。
   `# noqa: PLC0415  # pylint: disable=import-outside-toplevel`の形式で両方併記する
-- `ty`と`mypy`は型不一致抑制コメントの構文が別系統。
+- `ty`と`mypy`は型不一致抑制コメントの構文が別系統
   `ty`は`# ty: ignore[<rule>]`、`mypy`は`# type: ignore[<code>]`を要求する。
   プロジェクトで両方有効な場合は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`の形で同一行に併記する
 - `sorted(iterable, key=fn)`で型検査器tyが要素型を`fn`の引数protocol型へ誤って収束させる
@@ -152,15 +152,15 @@
 
 ## テストコード（pytest）
 
-- テストファイルの配置方式はプロジェクト方針に従う。
+- テストファイルの配置方式はプロジェクト方針に従う
   方針が無い場合は規模・配布形態を踏まえて以下のいずれかを選ぶ
-  - 同居方式: ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く。
+  - 同居方式: ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く
     対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる
-  - 集約方式: `tests/`配下に`<module>_test.py`をまとめる。
+  - 集約方式: `tests/`配下に`<module>_test.py`をまとめる
     配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい
 - テストコードは`pytest`で書く
 - 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使う
-  - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する。
+  - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する
     テスト本体で`if param == "...":`のようなシナリオごとの分岐は書かない
   - シナリオごとに処理が分岐する場合は独立したテスト関数に分割する。
     parametrizeで表現するのはデータ、関数本体が担うのはロジックであり、
@@ -193,7 +193,7 @@
 環境変数フォールバックや設定ディレクトリを読み込むCLIをテストする場合、
 テスト環境のホームディレクトリや設定ディレクトリ変数が漏れ込むと結果が不安定になる。
 
-- `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける。
+- `monkeypatch.setenv`／`monkeypatch.delenv`で関連する全環境変数を`tmp_path`配下へ向ける
   対象は対応する独自環境変数に加え、次の両系統を網羅する。
   POSIX系設定ディレクトリ変数（`HOME`・`XDG_CONFIG_HOME`・`XDG_CACHE_HOME`・`XDG_DATA_HOME`等）。
   Windows系設定ディレクトリ変数（`LOCALAPPDATA`・`APPDATA`・`USERPROFILE`・`PROGRAMDATA`等）。

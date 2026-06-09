@@ -2,9 +2,9 @@
 
 ## 基本
 
-- 冒頭に`# syntax=docker/dockerfile:1`を必ず記述する。
+- 冒頭に`# syntax=docker/dockerfile:1`を必ず記述する
   BuildKitの最新安定フロントエンドが使われ、`heredoc`・`--mount`等の機能が確実に有効になる
-- ベースイメージは`image:tag@sha256:...`形式でdigest pinする。
+- ベースイメージは`image:tag@sha256:...`形式でdigest pinする
   RenovateやDependabotで自動更新できるよう`tag`も併記する
 - マルチステージビルドで「変更頻度の低い基盤」と「変更頻度の高い成果物導入」を分離し、
   キャッシュの再利用効率を上げる

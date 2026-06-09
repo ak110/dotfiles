@@ -24,9 +24,9 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 
 agent-toolkitはルールファイルとプラグインの2つのコンポーネントで構成される。
 
-- ルールファイル — `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
+- ルールファイル — `~/.claude/rules/agent-toolkit/`に配置されるルールファイル
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
-- プラグイン — Claude Codeのuser scopeにインストールするプラグイン。
+- プラグイン — Claude Codeのuser scopeにインストールするプラグイン
   フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
 
 両者は相互依存しており、基本的に同時に導入する前提。
@@ -168,13 +168,10 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/spec-driven` — 大規模な機能追加・改修向けの次版ドキュメント作成と実装誘導プロンプト出力
 - `/export-for-resume` — 議論が発散したときの現状スナップショットを出力する
 
 ### 明示呼び出し専用のスキル
 
-- `/spec-driven-init` — 既存プロジェクトへのspec-driven導入（現行版ドキュメントの初版起こし）
-- `/spec-driven-promote` — 次版ドキュメントの作業版を現行版ドキュメントへマージ統合
 - `/overhaul-project` — プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
 
 ## 更新方法

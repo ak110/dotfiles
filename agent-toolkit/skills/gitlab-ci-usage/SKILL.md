@@ -117,7 +117,7 @@ test:
 - [`gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local):
   ローカルでジョブをシミュレート実行できるNode製CLI。構文チェックに加え、rulesの評価結果まで確認したい場合に使用
 - `/api/v4/ci/lint`: GitLab本体のCI Lint API（`content`フィールドにyaml全文を渡す）。CI内やスクリプトからの自動検証
-- プロジェクトの`/-/ci/lint`ページ: Web UIでの手動検証。
+- プロジェクトの`/-/ci/lint`ページ: Web UIでの手動検証
   - `include`解決や変数込みの検証が可能
   - `include`先を含めた統合的な妥当性確認、最終確認に使用
 

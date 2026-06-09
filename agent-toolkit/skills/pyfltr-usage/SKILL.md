@@ -14,14 +14,14 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 
 ### 既存プロジェクトでの通常運用
 
-- 通常運用は`uvx pyfltr ...`を使う。
+- 通常運用は`uvx pyfltr ...`を使う
   - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
-    本体依存に統合されたため、`uvx pyfltr`単発で揃う。
-  - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される。
-- pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える。
-  - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）。
-- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す。
-- pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う。
+    本体依存に統合されたため、`uvx pyfltr`単発で揃う
+  - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される
+- pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える
+  - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）
+- pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す
+- pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う
 
 ### 新規プロジェクトへの導入
 
@@ -169,7 +169,7 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 - エラー内容が`diagnostic`行だけでは把握しづらい場合、
   `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
-- `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
+- `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある
   意図的に抑止する場合以外は付けずに実行する
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
   - 対象ファイルが0件のときは解決処理を省略するため`skipped`で通過し、対象がある状態で失敗すると`resolution_failed`が出る

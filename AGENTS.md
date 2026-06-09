@@ -22,18 +22,18 @@
 - `.claude`を含むディレクトリが3系統あり、配布元・デプロイ先・リポジトリ専用と役割が異なる
  （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）。指示の対象を必ず確認する
   - 詳細は「固有差分」の「ディレクトリ構造の注意」を参照
-- `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる。
+- `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
   Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
   配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない。
   配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する
-- `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている。
+- `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている
   UTF-8前提のEdit/Writeツールでは文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
-- リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する。
+- リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する
   CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため
-- 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う。
+- 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う
   リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する
 - `agent-toolkit/`配下・`agent-toolkit/rules/`配下・`.claude-plugin/marketplace.json`の編集時は
   `agent-toolkit-edit`スキルを参照する。
@@ -41,10 +41,6 @@
 - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdownは配布後に
   `~/.claude/rules/agent-toolkit/`・`~/.claude/skills/`相当として機能するコーディングエージェント向け文書のため、
   編集時は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`スキルも併用して呼び出す
-- spec-driven系スキル
- （`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`）は
-  本リポジトリでは対象外。
-  `docs/features/`・`docs/topics/`の運用を採用しないため、機能追加時も起動しない
 - `pytools/`トップレベルには`project.scripts`から参照される公開CLIモジュールを置く
   - 単一ファイル（`<name>.py`）のほか、サブパッケージ（`<name>/`配下に実装を分割）形態も取る
   - サブパッケージは`__init__.py`が`_cli.py`の`main`を再エクスポートする
@@ -55,14 +51,14 @@
  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
 - Claude Codeのhook・statuslineから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
  （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
-- `pytools/`トップレベルの公開CLIモジュールは原則bash補完（argcomplete）に対応する。
+- `pytools/`トップレベルの公開CLIモジュールは原則bash補完（argcomplete）に対応する
   手順と例外は`docs/development/architecture.md`の「bash補完」節を参照する
 - Pythonテストコードはソースモジュールの隣に同居方式で配置する
   - `pytools/`・`scripts/`・`agent-toolkit/`配下のいずれにおいても、
     ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く
   - テスト共通ヘルパーの集約方針は配布物境界に応じて区別する
     - `pytools/`配下のテストは共通ヘルパーを`pytools/_internal/_test_helpers.py`へ集約する
-    - `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照しない。
+    - `agent-toolkit/`配下のテストは配布物独立性を保つため`pytools/_internal/`配下を参照しない
       共通化が必要な場合は`agent-toolkit/scripts/`配下に独自ヘルパーを置く
     - `scripts/`配下のテストは`pytools/_internal/_test_helpers.py`を必要に応じて参照してよい
   - `pytools`パッケージ配布物にテストコードを含めないため、
@@ -84,9 +80,9 @@
 - dotfiles利用者: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
 - agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfiles利用者含む）。
   配布ルール（`~/.claude/rules/agent-toolkit/`）も導入済み前提で記述してよい
-- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント。
+- 全プロジェクト編集者: あらゆるプロジェクトで編集作業をするコーディングエージェント
   配布物（`agent-toolkit`本体・`~/.claude/rules/agent-toolkit/`配下）を実行時にロードする
-- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント。
+- dotfiles編集者: 本リポジトリや`agent-toolkit`本体を修正するコーディングエージェント
   全プロジェクト編集者の対象に加え、リポジトリ直下の`.claude/`と`AGENTS.md`もロードする
  （Claude Codeは`CLAUDE.md`経由のfile importで読む）
 
