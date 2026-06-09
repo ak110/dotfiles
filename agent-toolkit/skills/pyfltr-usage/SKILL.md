@@ -76,6 +76,9 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 3. 適用前に`--dry-run`または`--show-changes`で差分を確認する
 4. 結果に問題があれば`pyfltr replace --list-history`／`--undo ID`で取り消す
 
+`-U`（multiline）オプション使用時は`.`が改行をまたぐため、単一行を想定するパターンには
+`.`の代わりに`[^\n]`を使う（例: `^(\s*[-*]\s[^\n]+?)。$`）。
+
 オプションの全容は`pyfltr grep --help`／`pyfltr replace --help`で確認する。
 
 ## JSONL出力

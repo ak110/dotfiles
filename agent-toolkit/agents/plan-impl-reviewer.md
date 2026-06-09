@@ -33,7 +33,8 @@ user-invocable: false
 - コード・テストコード: `agent-toolkit:coding-standards`
 - コーディングエージェント向け文書: `agent-toolkit:agent-standards`
 
-また、`agent-toolkit/skills/writing-standards/references/tone-examples.md`の読み込みを必須とする。
+また、`agent-toolkit/skills/writing-standards/references/tone-examples.md`をReadツールで直接読み込む。
+本エージェントはサブエージェントとして動作するため、さらに別のサブエージェントへ委譲しない。
 読み込んだ悪い例の文面は指摘テキストへ転記しない（コンテキスト汚染を回避するため、観点や判断基準のみを使う）。
 
 ## 共通判断基準
@@ -72,7 +73,7 @@ user-invocable: false
 
 ## 出力
 
-指摘リスト本文以外の前置き・確認過程の説明・全体サマリーは出力に含めない。
+指摘リスト本文以外の前置き・確認過程の説明・全体サマリー・参照ファイルの内容要約は出力に含めない。
 出力は指摘行（または`指摘なし`）のみで完結させる。
 
 指摘がない場合は本文を`指摘なし`だけにする。
