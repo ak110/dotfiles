@@ -113,6 +113,29 @@ def _write_transcript(tmp_path: pathlib.Path, entries: list[dict]) -> pathlib.Pa
     return transcript
 
 
+def _background_bash_launch_entry(tool_use_id: str) -> dict:
+    """背景Bash起動を記録するメイン側userエントリを生成する。"""
+    return {
+        "type": "user",
+        "isSidechain": False,
+        "toolUseResult": {
+            "stdout": "",
+            "stderr": "",
+            "backgroundTaskId": "bash-task-x",
+        },
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Background command launched"}],
+                }
+            ],
+        },
+    }
+
+
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
 
@@ -158,6 +181,70 @@ class TestApproveConditions:
         )
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
+
+    def test_pending_background_bash_approves(self, tmp_path: pathlib.Path):
+        """過去ターンで背景Bashを起動済み・完了通知未到着 → approveのみ。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                _assistant_text_only("バックグラウンドジョブを起動しました。"),
+                _background_bash_launch_entry("toolu_bash_pending"),
+                _user_entry("続き"),
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "bash-bg-pending", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "systemMessage" not in decision
+
+    def test_completed_background_bash_reaches_context(
+        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        """背景Bash完了通知到着済み → 通常の振り返り誘導パスへ進む。"""
+        repo = make_clean_repo(tmp_path)
+        bash_notify: dict[str, Any] = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "<task-notification>"
+                            "<task-id>bash-task-x</task-id>"
+                            "<tool-use-id>toolu_bash_done</tool-use-id>"
+                            "<status>completed</status>"
+                            "<summary>Background command completed</summary>"
+                            "</task-notification>"
+                        ),
+                    }
+                ],
+            },
+        }
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                _assistant_text_only("バックグラウンドジョブを起動しました。"),
+                _background_bash_launch_entry("toolu_bash_done"),
+                bash_notify,
+                _user_entry("続き"),
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "bash-bg-done", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+        body = _additional_context(decision)
+        assert _SESSION_REVIEW_SKILL in body
 
     def test_session_review_skill_invoked_approves(self, tmp_path: pathlib.Path):
         """過去のアシスタントターンで振り返りスキルが起動済み → approve。"""

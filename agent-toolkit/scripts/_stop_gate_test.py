@@ -63,6 +63,33 @@ def _user_async_launched_entry(tool_use_id: str, *, sidechain: bool = False) -> 
     }
 
 
+def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) -> dict:
+    """background Bash起動を記録するuserエントリを生成する。
+
+    実transcriptフォーマットに合わせ、`toolUseResult.backgroundTaskId`を持たせ、
+    `message.content`配列内の`tool_result`ブロックに対応`tool_use_id`を含める。
+    """
+    return {
+        "type": "user",
+        "isSidechain": sidechain,
+        "toolUseResult": {
+            "stdout": "",
+            "stderr": "",
+            "backgroundTaskId": "bash-task-x",
+        },
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Background command launched"}],
+                }
+            ],
+        },
+    }
+
+
 def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed") -> dict:
     """`<task-notification>`本文を持つuserエントリを生成する。"""
     notification = (
@@ -136,7 +163,8 @@ class TestIsPendingAsyncWork:
     """`is_pending_async_work` の判定を網羅するテスト。
 
     tool_use 種別 × {Agent / ScheduleWakeup / Monitor / Bash背景 / Bash前景 / その他 / なし}
-    と未完了backgroundAgent × {なし / 起動のみ / 起動と通知ペア} の同値分割で組み合わせを検証する。
+    と未完了background task（Agent・Bash双方）× {なし / 起動のみ / 起動と通知ペア} の
+    同値分割で組み合わせを検証する。
     """
 
     @pytest.mark.parametrize(
@@ -236,6 +264,50 @@ class TestIsPendingAsyncWork:
         entries = [
             _user_entry("hello"),
             _user_async_launched_entry("toolu_a", sidechain=True),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
+
+    @pytest.mark.parametrize(
+        ("pending_entries", "expected"),
+        [
+            ([_user_background_bash_entry("toolu_bash1")], True),
+            (
+                [
+                    _user_background_bash_entry("toolu_bash1"),
+                    _user_task_notification_entry("toolu_bash1"),
+                ],
+                False,
+            ),
+            (
+                [
+                    _user_async_launched_entry("toolu_ag1"),
+                    _user_background_bash_entry("toolu_bash1"),
+                    _user_task_notification_entry("toolu_ag1"),
+                ],
+                True,
+            ),
+        ],
+    )
+    def test_pending_background_bash(self, tmp_path: pathlib.Path, pending_entries: list[dict], expected: bool):
+        """background Bashの起動・完了通知の有無で判定が決まることを検証する。
+
+        3ケース目はAgent完了とBash未完了の混在で、Bash側のみ残ることを確認する。
+        """
+        entries: list[dict] = [_user_entry("hello")]
+        entries.extend(pending_entries)
+        entries.append(_user_entry("続き"))
+        entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is expected
+
+    def test_sidechain_background_bash_is_ignored(self, tmp_path: pathlib.Path):
+        """sidechain内の背景Bash起動は未完了扱いしない。"""
+        entries = [
+            _user_entry("hello"),
+            _user_background_bash_entry("toolu_bash1", sidechain=True),
             _user_entry("続き"),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]

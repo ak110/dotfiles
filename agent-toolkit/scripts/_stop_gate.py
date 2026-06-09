@@ -33,20 +33,22 @@ def is_pending_async_work(transcript_path: str) -> bool:
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `Monitor`、または`Bash`かつ`input.run_in_background == true`）
-    - 未完了のbackground起動サブエージェント（Agent tool）が存在する
+    - 未完了のbackground task（Agent・Bash双方）が存在する
 
     後者はtranscript全体を走査して判定する。
-    メイン側（`isSidechain`が真でない）userエントリのうち
-    `toolUseResult.status == "async_launched"`を持つものから起動済み`tool_use_id`集合を抽出し、
+    メイン側（`isSidechain`が真でない）userエントリのうち、
+    `toolUseResult.status == "async_launched"`（背景Agent起動）または
+    `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）ものから
+    起動済み`tool_use_id`集合を抽出し、
     後続のメイン側userエントリのtext content内に含まれる`<task-notification>`要素から
-    `<tool-use-id>`を抽出して除外する。残差が1件以上で「未完了サブエージェントあり」と判断する。
+    `<tool-use-id>`を抽出して除外する。残差が1件以上で「未完了background taskあり」と判断する。
 
-    transcriptを読み取れない異常系では偽を返す（Stop抑止しないStopを抑止しない方向で動作する）。
+    transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     """
     _wait_for_end_turn(transcript_path)
     if _last_tool_use_is_async_wait(transcript_path):
         return True
-    return _has_pending_subagents(transcript_path)
+    return _has_pending_background_tasks(transcript_path)
 
 
 def has_session_review_skill_invoked(transcript_path: str, skill_name: str) -> bool:
@@ -55,7 +57,7 @@ def has_session_review_skill_invoked(transcript_path: str, skill_name: str) -> b
     対象はメインのtranscript（`isSidechain`が真でないエントリ）に限定する。
     `Skill`ツールの`input.skill`が`skill_name`と完全一致する呼び出しを1件でも検出すれば真を返す。
 
-    transcriptを読み取れない異常系では偽を返す（Stop抑止しないStopを抑止しない方向で動作する）。
+    transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     """
     try:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
@@ -155,18 +157,22 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
     return False
 
 
-def _has_pending_subagents(transcript_path: str) -> bool:
-    r"""transcript全体を走査して未完了のbackground Agentが存在する場合に真を返す。
+def _has_pending_background_tasks(transcript_path: str) -> bool:
+    r"""transcript全体を走査して未完了のbackground task（Agent・Bash双方）が存在する場合に真を返す。
 
     検出スコープはメイン側（`isSidechain`が真でない）userエントリに限定する。
     foreground起動のAgentはメインターン内で同期完了するため対象外。
 
-    起動の記録: `toolUseResult.status == "async_launched"`を持つuserエントリ。
-    `message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
+    起動の記録: 次のいずれかを持つuserエントリ。
+    - `toolUseResult.status == "async_launched"`（背景Agent起動）
+    - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
+
+    いずれの場合も`message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
 
     完了の記録: メイン側userエントリのtext content内に含まれる`<task-notification>`要素から
     `<tool-use-id>(toolu_[\\w]+)</tool-use-id>`を抽出する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
+    Agent・Bashとも同一機構で通知されるため共通の抽出処理を用いる。
 
     起動集合から完了集合を差し引いて1件以上残れば真。
     transcript読み取り失敗時は偽を返す（安全側に倒し、既存条件で抑止または通過させる）。
@@ -188,7 +194,9 @@ def _has_pending_subagents(transcript_path: str) -> bool:
         if not isinstance(message, dict):
             continue
         tool_use_result = entry.get("toolUseResult")
-        if isinstance(tool_use_result, dict) and tool_use_result.get("status") == "async_launched":
+        if isinstance(tool_use_result, dict) and (
+            tool_use_result.get("status") == "async_launched" or isinstance(tool_use_result.get("backgroundTaskId"), str)
+        ):
             tool_use_id = _extract_tool_result_id(message)
             if tool_use_id is not None:
                 launched.add(tool_use_id)

@@ -8,7 +8,7 @@
 Claude Codeが停止しようとするタイミングで発火する。
 approve・通知の分岐は以下のとおり。
 
-- 構造的にセッション継続中（非同期待機ツールまたは未完了background Agentあり）:
+- 構造的にセッション継続中（非同期待機ツールまたは未完了background task（Agent・Bash双方）あり）:
   サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
   git status表示を抑止する
 - 既に`agent-toolkit:session-review`スキルが起動済み:
@@ -19,7 +19,7 @@ approve・通知の分岐は以下のとおり。
 
 終了判定の言語的部分（完了文言・質問・待機表明の判別）と振り返り手順は
 `agent-toolkit:session-review`スキル本体の「起動方針」節へ全面委譲する。
-構造判定（非同期待機ツール残存・未完了background Agent検出）はhook側
+構造判定（非同期待機ツール残存・未完了background task検出）はhook側
 （`_stop_gate.py`）が担当し、判定レイヤーを分離する。
 """
 
@@ -154,7 +154,7 @@ def main() -> int:
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
 
     # 構造的にセッション継続中ならapprove。
-    # 非同期待機ツールまたは未完了background Agentが存在するケース。
+    # 非同期待機ツールまたは未完了background task（Agent・Bash双方）が存在するケース。
     if is_pending_async_work(transcript_path):
         _approve()
         return 0
