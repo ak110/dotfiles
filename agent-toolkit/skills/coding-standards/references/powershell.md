@@ -27,5 +27,13 @@
 - セキュリティ上の危険パターン
   - `Invoke-Expression`はユーザー入力に対して使わない（コマンドインジェクションの危険があるため）
   - 外部入力を含むコマンド文字列を直接実行しない
+- COM操作
+  - PowerShell 5.1のCOM遅延バインディングでは型変換エラーやDISP_E_TYPEMISMATCH（HRESULT `0x80020005`）が返ることがある
+    - エラー例: `型 "int" の "2" 値を型 "Object" に変換できません`
+  - `Type.InvokeMember`・`[Type]::Missing`による省略引数補完・C#の`dynamic`は
+    同じ遅延バインディング経路を経由するため同様に失敗する
+  - Office等のPIA（Primary Interop Assembly）が利用可能な場合は早期バインディングへ切り替える
+    - `Add-Type -ReferencedAssemblies @('Microsoft.Office.Interop.PowerPoint', 'Office')`で
+      C#ヘルパーを動的コンパイルし、PIA型へキャストして呼び出す
 - 他で指定が無い場合のツール推奨:
   - 静的解析: PSScriptAnalyzer
