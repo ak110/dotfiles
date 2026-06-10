@@ -252,6 +252,23 @@ class TestUsageDetection:
         assert decision["decision"] == "approve"
 
 
+class TestStopHookActive:
+    """`stop_hook_active`が真の場合は再帰呼び出し抑止のため即座にapprove。"""
+
+    def test_stop_hook_active_approves(self, tmp_path: pathlib.Path):
+        transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
+        result = _run(
+            {
+                "session_id": "stop-hook-active",
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+
+
 class TestStopGateDelegation:
     """`is_pending_async_work` と `has_session_review_skill_invoked` への委譲テスト。
 
@@ -336,6 +353,7 @@ class TestContextContents:
         assert _TARGET_SESSION_REVIEW in body
         assert "Skill" in body
         assert "activation policy" in body
+        assert "Only if all three conditions hold" in body
 
 
 class TestEdgeCases:

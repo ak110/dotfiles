@@ -142,6 +142,28 @@ _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 class TestApproveConditions:
     """approve条件: 構造的継続中 or 振り返りスキル起動済み。"""
 
+    def test_stop_hook_active_approves(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
+        """`stop_hook_active`が真 → 構造判定・通知生成より前に即approve（再帰呼び出し抑止）。
+
+        dirty repoを入力に与えても`systemMessage`（git status）と`hookSpecificOutput`を
+        いずれも出力しないことを検証する。
+        """
+        repo = make_dirty_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "stop-hook-active",
+                "transcript_path": str(transcript),
+                "cwd": str(repo),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "hookSpecificOutput" not in decision
+        assert "systemMessage" not in decision
+
     @pytest.mark.parametrize("tool_name", ["Agent", "ScheduleWakeup", "Monitor"])
     def test_async_tool_approves(self, tmp_path: pathlib.Path, tool_name: str):
         """直前ターンの最後のtool_useが非同期待機系 → approve。"""
@@ -285,6 +307,7 @@ class TestContextConditions:
         assert "Skill" in body
         assert "activation policy" in body
         assert "uncommitted" not in body.lower()
+        assert "Only if all three conditions hold" in body
         # 振り返り誘導1件のみのため、自動生成プレフィックスは1個。
         assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
         assert "Auto-generated hook notice" in body
@@ -303,6 +326,7 @@ class TestContextConditions:
         body = _additional_context(decision)
         assert "uncommitted" in body.lower()
         assert _SESSION_REVIEW_SKILL in body
+        assert "Only if all three conditions hold" in body
         # 2通知それぞれにプレフィックスが付与される。
         assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
 

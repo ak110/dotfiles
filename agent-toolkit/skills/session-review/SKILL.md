@@ -3,8 +3,15 @@ name: session-review
 description: >
   ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動する。
 # 振り返り手順の本体は本スキルが保持する。`agent-toolkit/scripts/stop_advisor.py`は
-# 本スキルへの委譲文のみを誘導する設計のため、本スキルの編集時は
-# `stop_advisor.py`の誘導文の前提が変わっていないかを確認する。
+# 本スキルへの委譲文の前段に
+# `_message_format.SESSION_REVIEW_PRECHECK`（完了の言い切り・質問待ちなし・
+# バックグラウンド待機表明なしの3条件）を付与し、満たさない場合はスキル起動を
+# 抑止する設計のため、本スキルの編集時は`stop_advisor.py`の誘導文・precheck文言の前提が
+# 変わっていないかを確認する。「起動方針」節の3条件はprecheckと同一基準の
+# 多重チェックとして保持する。
+# 同等の前段precheck付与は将来`agent-toolkit:references/claude-hooks.md`の
+# 「Stop/SubagentStopフックの再帰呼び出し対策」節に従い追加されるSubagentStop hookでも
+# 維持する前提とする（本リポジトリ内ではSubagentStop hookは未登録）。
 ---
 
 # セッション振り返り

@@ -7,6 +7,12 @@ description: >
 # 本スキルは`agent-toolkit:session-review`スキルと併用される拡張章。
 # 4ステップ手順は`agent-toolkit:session-review`が担い、本スキルは拡張章のみを提供する。
 # 本ファイル修正時は`scripts/claude_hook_stop.py`の誘導文も同期させる。
+# 同hookは併用呼び出しの誘導文の前段に
+# `agent-toolkit/scripts/_message_format.SESSION_REVIEW_PRECHECK`（完了の言い切り・
+# 質問待ちなし・バックグラウンド待機表明なしの3条件）を付与し、満たさない場合は
+# スキル起動を抑止する設計のため、本スキルの編集時はprecheck文言の前提が
+# 変わっていないかを確認する。「起動方針」節の終了判定はprecheckと同一基準の
+# 多重チェックとして保持する。
 ---
 
 # セッション振り返り（dotfiles拡張章）

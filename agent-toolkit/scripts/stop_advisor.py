@@ -8,6 +8,8 @@
 Claude Codeが停止しようとするタイミングで発火する。
 approve・通知の分岐は以下のとおり。
 
+- `stop_hook_active`が真（直前の本hook呼び出しが当該ターンの終了を一度ブロックした再呼び出し）:
+  連続ブロック上限到達による強制終了を避けるため、構造判定・通知生成を行わず無条件approveのみ返す
 - 構造的にセッション継続中（非同期待機ツールまたは未完了background task（Agent・Bash双方）あり）:
   サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
   git status表示を抑止する
@@ -17,10 +19,12 @@ approve・通知の分岐は以下のとおり。
 - 上記いずれでもない通常終了: 未コミット変更があればgit status通知を付与し、
   セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ載せる
 
-終了判定の言語的部分（完了文言・質問・待機表明の判別）と振り返り手順は
-`agent-toolkit:session-review`スキル本体の「起動方針」節へ全面委譲する。
-構造判定（非同期待機ツール残存・未完了background task検出）はhook側
-（`_stop_gate.py`）が担当し、判定レイヤーを分離する。
+終了判定の言語的判定基準（完了文言・質問・待機表明の判別）は
+`agent-toolkit:session-review`スキル本体の「起動方針」節で定義する。
+本hookは誘導文の先頭に同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を
+事前チェックとして埋め込み、質問直後等の終了相当ケースでスキル起動を抑止する。
+構造判定（非同期待機ツール残存・未完了background task検出・
+`stop_hook_active`）はhook側（`_stop_gate.py`・本ファイル）が担当し、判定レイヤーを分離する。
 """
 
 import json
@@ -30,6 +34,7 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -136,6 +141,13 @@ def main() -> int:
         _approve()
         return 0
 
+    # Stop hookが直前のターンで既にブロック済みの再呼び出し。
+    # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
+    # 構造判定・通知生成・git status出力を行わず即座にapproveする。
+    if payload.get("stop_hook_active") is True:
+        _approve()
+        return 0
+
     # Stopのたびにgit_log_checkedをリセットする。
     # ユーザーが裏でpushしている可能性があるため、
     # 再開後のamend / rebaseには改めてlog確認を要求する。
@@ -179,9 +191,11 @@ def main() -> int:
 
     # --- セッション振り返り誘導（毎回提示）---
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
+    # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
+    # ケースではスキル起動自体を抑止する。
     messages.append(
         _llm_notice(
-            f"Invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
+            f"{SESSION_REVIEW_PRECHECK} Then invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
             " and follow its activation policy section to decide whether to proceed with the review."
         )
     )
