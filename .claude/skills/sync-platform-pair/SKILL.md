@@ -39,7 +39,7 @@ description: >
 
 - 改行はCRLF — `.gitattributes` で `*.ps1.tmpl` を `eol=crlf` 指定済み。PowerShell 5.1はLF改行のみだと構文解析に失敗する
   - Claude CodeのWriteツールは常にLFで書き込むため、エディター保存後にgit側でCRLFに正規化される前提
-  - このフックの `claude_hook_check_ps1_eol` がLFのみのペイロード書き込みを検出してブロックする
+  - agent-toolkitプラグインのPreToolUseフックがLFのみのペイロード書き込みを検出してブロックする
 - ファイル先頭で厳格モード — 全スクリプト冒頭に以下の2行を記述する
 
   ```powershell

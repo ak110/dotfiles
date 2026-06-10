@@ -16,10 +16,9 @@
   - `as`による型アサーションより型ガード（`is`／`satisfies`）を優先する（実行時の型不一致を防ぐため）
   - union型（`"a" | "b"`）を`enum`より優先する（tree-shakingしやすく、型のnarrowingも自然なため）
   - `switch`の網羅性チェックには`satisfies never`を使う
-- JSDocコメントを記述する
-  - ファイルの先頭に`@fileoverview`で概要を記述
-  - 関数・クラス・メソッドには機能を説明するコメントを記述
-  - 自明な`@param`や`@returns`は省略する
+- JSDocコメントは公開APIと非自明な関数・クラスに記述する
+  - コードから自明な内容は省略する（`@param`・`@returns`も同様）
+  - ファイル概要の`@fileoverview`は内容がファイル名から自明でない場合に記述する
 - エラーハンドリング
   - `catch`の引数は`unknown`として扱い、`instanceof`で型を特定する
 - `null`は使わず`undefined`を使い、APIから`null`が返される場合は`?? undefined`で変換する

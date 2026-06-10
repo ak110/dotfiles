@@ -90,7 +90,8 @@
 
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |
-| `agent-toolkit/agents/`配下 | 全プロジェクト編集者 | スキル・サブエージェントの指示本体 |
+| `agent-toolkit/skills/`配下 | 全プロジェクト編集者 | スキルの指示本体 |
+| `agent-toolkit/agents/`配下 | 全プロジェクト編集者 | サブエージェントの指示本体 |
 | `agent-toolkit/agents/`配下のfrontmatterコメント | dotfiles編集者 | 連携先や注意事項などの編集用メタ情報 |
 | `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者 | 常時自動ロードされる行動原則 |
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |

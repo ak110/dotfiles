@@ -200,4 +200,4 @@ version bumpは不要。編集が即時反映される。
 
 ## コミットメッセージ方針と.gitmessage
 
-`agent-toolkit/rules/agent.md`のコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。
+`agent-toolkit:commit`スキルのコミットメッセージ方針と`.gitmessage`は配布範囲が異なるため意図的に重複させる。SSOT化しない。

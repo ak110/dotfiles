@@ -19,7 +19,7 @@
   - イベントハンドラは`+=`で購読したら対応する`-=`で必ず解除する
    （解除し忘れると購読先オブジェクトがGC対象にならず、メモリーリークや多重発火の原因になるため）
 - EF Coreでは`Include`でeager loadingを明示するか`Select`で射影する（暗黙の遅延ロードによるN+1クエリを防ぐため）
-- ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには`<summary>`を必ず記述する
+- ドキュメントコメントはXMLドキュメント（`///`）で書き、公開APIには`<summary>`を記述する（内容が自明な場合は省略してよい）
 - セキュリティ上の危険パターン
   - SQLはパラメーター化クエリを使う（`SqlCommand.Parameters`／Dapper／EF Coreのパラメーター）
   - `Process.Start`は`ProcessStartInfo.ArgumentList`で引数を渡す（文字列結合は避ける）

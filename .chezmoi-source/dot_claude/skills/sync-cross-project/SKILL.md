@@ -100,13 +100,8 @@ description: >
   - 変更時は他プロジェクトへの波及を確認する
 - README.md・CLAUDE.md・docs/development/development.md間で、
   共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
-- README.mdのセクション構成や記載内容の粒度を変更する場合は全プロジェクトで揃える
-  共通構成は「概要・特徴・前提条件・インストール・ドキュメントリンク」
-- README.md・CLAUDE.md・docs/development/development.mdを更新する際は、
-  他プロジェクトと章構成・章順を揃える方針。
-  - 共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃える
-  - プロジェクト固有部分は無理に揃えず必要な情報を記述する
-  - 単独プロジェクトでの章追加・章順変更を避け、他プロジェクトとの比較で逸脱を検出する
+- README.md・CLAUDE.md・docs/development/development.mdの章構成・章順・共通文面は
+  myprojects.mdの「ドキュメント章構成の統一」章に従い、他プロジェクトとの比較で逸脱を検出する
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
