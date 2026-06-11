@@ -35,6 +35,8 @@ user-invocable: false
 ## 判断基準
 
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
+- 計画ファイル本文の`### エージェント判断`等に承認済みの例外条項・許容範囲が記載されている場合、実装方針を確定する前に該当条項を列挙し、適用可否を判断したうえで方針を決める
+  - 例外条項を素通りしてすべてを保守的な判断に倒さない（適用が妥当なケースに条項を活用しない判断は計画方針からの後退となる）
 - 以下の参照ファイルは当該ファイルが編集対象の場合のみ読み込む
   - `agent-toolkit/skills/writing-standards/references/tone-examples.md`
   - `agent-toolkit/scripts/_colloquial_words.txt`
