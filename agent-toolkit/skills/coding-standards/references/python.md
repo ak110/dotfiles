@@ -6,7 +6,8 @@
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない。定義元を特定しやすく、名前衝突も避けられるため）
   - `import xxx as yyy`の別名は`np`などの一般的なものを除き極力使わない（可読性を損なうため）
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
-    - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する（片方を関数内importにするのも局所対処であり、恒常化は避ける）
+    - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
+     （片方を関数内importにするのも局所対処であり、恒常化は避ける）
 - タイプヒントは可能な限り書く（静的解析・IDE補完・リファクタリング耐性を確保するため）
   - `typing.List`ではなく`list`を使う。`dict`やその他も同様
   - `typing.Optional`ではなく`| None`を使う
@@ -15,7 +16,8 @@
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
 - docstringはGoogle Style
   - 自明なArgs, Returns, Raisesは省略する
-  - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でもpublic関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる
+  - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でも
+    public関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる
     - 最小限の1行サマリーに留め、設計を歪めない範囲で関数を`_`接頭辞のprivate化に切り替える選択肢も検討する
 - ログは`logging`を使う
   - `logger = logging.getLogger(__name__)`でモジュールごとに取得
@@ -58,18 +60,33 @@
     - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
   - ユーティリティ集: `pytilpack`（便利ライブラリ）
     - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
+- PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
+  - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
+    プロジェクトをインストール対象として扱う
+  - スクリプトがプロジェクトへ依存しない場合は`uv run --no-project --script <path>`で
+    プロジェクトを参照せずに実行する
+  - `.python-version`ファイルが存在する場合、スクリプトの`requires-python`より
+    `.python-version`の指定が優先される
+    - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
+    - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で
+      明示指定する
 - `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
   - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻する
   - list（例: `[]`）を渡すと毎回初期要素として混入する
   - 環境変数フォールバックを実装するときは`parse_args`後に手動で解決し、`None`なら環境変数から初期化、それ以外はそのまま使う
-- `argparse`のオプションへ後から解決経路（環境変数・設定ファイル等）を追加する場合も、`add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
-  - `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
-  - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、parse段階の型変換と既定値解決を分離する
+- `argparse`のオプションへ後から解決経路（環境変数・設定ファイル等）を追加する場合も、
+  `add_argument`の`type`引数（`type=int`・`type=float`等）は維持する
+  - `type`を外して全経路を文字列で受け取り後段で変換する設計に変更すると、
+    CLI直接指定時の早期型エラーが失われ呼び出し側の検証コストが増える
+  - 既定値解決ロジックは別関数（例: `_resolve_default(args.value, env_key, config_key)`）へ吸収し、
+    parse段階の型変換と既定値解決を分離する
 - CLIエントリポイント関数（コマンドラインから直接呼ばれる関数）は`_main`等のprivate命名にせず`main`として公開する
-  - pytestで`pytest.raises(SystemExit)`を用いて終了コードを検証する場合、private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招く
+  - pytestで`pytest.raises(SystemExit)`を用いて終了コードを検証する場合、
+    private関数を直接呼ぶテストはpylintの`W0212: protected-access`を招く
     - 一括disableで抑止すると本来の保護検知が失われる
   - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する
-    - 成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が`Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
+    - 成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が
+      `Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
   - 推奨形:
 
     ```python
@@ -94,9 +111,11 @@
   - `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
     - `python -m <package>.<module>`はモジュール実行で`[project.scripts]`を経由せず、参照更新の確認にならない
 
-- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、`user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
+- `platformdirs`で設定・キャッシュ・データ等のディレクトリを取得するときは、
+  `user_config_dir`・`user_cache_dir`・`user_data_dir`等の呼び出しで`appauthor=False`を明示する
   - `appname`単独指定は不可
-  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
+  - Windowsの既定では`appauthor`が省略されると`appname`と同じ値が補完され、
+    配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
 - 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う
@@ -141,14 +160,17 @@
 
 - テストファイルの配置方式はプロジェクト方針に従う
   - 方針が無い場合は規模・配布形態を踏まえて以下のいずれかを選ぶ
-    - 同居方式: ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く（対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる）
-    - 集約方式: `tests/`配下に`<module>_test.py`をまとめる（配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
+    - 同居方式: ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く
+     （対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる）
+    - 集約方式: `tests/`配下に`<module>_test.py`をまとめる
+     （配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
 - テストコードは`pytest`で書く
 - 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使う
   - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する
     - テスト本体で`if param == "...":`のようなシナリオごとの分岐は書かない
   - シナリオごとに処理が分岐する場合は独立したテスト関数に分割する
-   （parametrizeで表現するのはデータ、関数本体が担うのはロジックであり、両者を混在させるとシナリオ追加・削除時にparametrizeリストと分岐節の双方を更新することになりSSOTを失う）
+   （parametrizeで表現するのはデータ、関数本体が担うのはロジックであり、
+   両者を混在させるとシナリオ追加・削除時にparametrizeリストと分岐節の双方を更新することになりSSOTを失う）
 - テスト関数内で使用しないfixture（副作用のみが必要な場合）は
   `@pytest.mark.usefixtures("fixture_name")`を使う
   - `@pytest.mark.parametrize(..., indirect=True)`との併用も可
