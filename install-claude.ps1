@@ -24,6 +24,7 @@ $stageRoot = Join-Path $HOME '.claude/rules-stage'
 # 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 $files = @(
     'agent.md'
+    'claude-code.md'
 )
 
 function Invoke-Download {
