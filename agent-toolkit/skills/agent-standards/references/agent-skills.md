@@ -35,6 +35,18 @@ SKILL.md本体は200行以内に収める。
 - 役割分担に沿う細則の切り出しとは別に、行数超過を理由に必須指示をreferences/へ移さない
   - references/はトリガー時のみ読み込まれ参照漏れが起きやすいため、必須指示は本体へ残す
 
+## サブエージェント実行とパス解決（Claude Code固有）
+
+SKILL.md内の文字列`${CLAUDE_SKILL_DIR}`は実行時にSKILL.md所在ディレクトリの絶対パスへ展開される。
+同梱ファイルや隣接スキルのファイルをインストール先非依存で参照する用途に使う。
+展開対象はSKILL.md本文に限る。
+
+YAMLのfrontmatterで`context: fork`を指定するとスキルをサブエージェントコンテキストで実行できる。
+あわせて`agent`フィールドでサブエージェント種別
+（`Explore`・`Plan`・`general-purpose`等）を指定する。
+`agent: Explore`または`agent: Plan`を指定したfork配下は親の`CLAUDE.md`・ルール群を継承しないため、
+依存する規範は`${CLAUDE_SKILL_DIR}`経由で実行時に明示的に読み込む。
+
 ## その他
 
 - `description`や本文にはfrontmatterで設定済みの仕様（例えば`disable-model-invocation: true`による
