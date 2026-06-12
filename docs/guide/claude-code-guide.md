@@ -169,6 +169,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `/export-for-resume` — 議論が発散したときの現状スナップショットを出力する
+- `/shell-exec` — 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
+- `/plan-codex-review` — 計画ファイルのcodexレビュー実行をhaikuのサブエージェントへ委譲する
 
 ### 明示呼び出し専用のスキル
 
