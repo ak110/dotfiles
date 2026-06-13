@@ -9,8 +9,7 @@
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
 - タイプヒントは可能な限り書く（静的解析・IDE補完・リファクタリング耐性を確保するため）
-  - `typing.List`ではなく`list`を使う。`dict`やその他も同様
-  - `typing.Optional`ではなく`| None`を使う
+  - `typing.List`・`typing.Optional`は使わず`list`・`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
   - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
@@ -32,14 +31,11 @@
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
 - 単なる長い名前の別名でしかないローカル変数は定義しない
-  - 参照元を二度参照する手間が増え、リネーム時の追従漏れも起きやすい
   - 例: `x = cls.foo`と書いて`x`を使うより`cls.foo`を直接使う
 - SQLAlchemyのNULLチェックは`.is_(None)`を使う
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
   - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`が素通りする
-- Python 3.14以降: PEP 758により`except ValueError, TypeError:`のようにかっこなしで複数例外を記述できる
- （フォーマッターが自動整形する場合あり）
 - 入力バリデーション: API境界や外部入力は型駆動でバリデーションする（`pydantic` v2等を活用する）
 - セキュリティ上の危険パターン
   - `eval()`／`exec()`／`compile()`はユーザー入力に対して使わない（`ast.literal_eval()`や専用パーサーで代替）
@@ -53,13 +49,8 @@
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
-- 他で指定が無い場合のツール推奨:
-  - パッケージマネージャー: `uv`（Rust製で高速、pip互換、Pythonバージョン管理も統合）
-  - pre-commitフック: `pre-commit`（コミット時の自動チェック）
-  - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
-    - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
-  - ユーティリティ集: `pytilpack`（便利ライブラリ）
-    - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
+- 他で指定が無い場合のツール推奨: パッケージマネージャーは`uv`、リンター／フォーマッターは`pyfltr`、
+  ユーティリティ集は`pytilpack`を使う（詳細は各専用スキルを参照）
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
@@ -121,10 +112,7 @@
 - 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う
   - `asyncio.get_event_loop()`はPythonバージョンによって挙動が異なり非推奨
 - 新しいPythonバージョンの機能を積極的に使う
-  - Python 3.12+: PEP 695型パラメーター構文（`def f[T](x: T) -> T:`／`type Alias[T] = list[T]`）を使う
-    - `TypeVar`宣言が不要になり、ジェネリック定義が簡潔になるため
-  - Python 3.12+: PEP 701のf-string拡張を活用する
-    - 複数行・ネストクォート・バックスラッシュが利用できるようになり可読性が上がる
+  - Python 3.12+: PEP 695型パラメーター構文・PEP 701 f-string拡張を使う
   - Python 3.13+: `typing.TypedDict`の`ReadOnly[...]`で不変フィールドを型レベルで表現する
   - Python 3.13+: `copy.replace(obj, field=value)`で変更コピーを生成する
     - 対応対象は`dataclass`／`namedtuple`／`__replace__()`定義クラスのみに限定される
@@ -159,11 +147,8 @@
 ## テストコード（pytest）
 
 - テストファイルの配置方式はプロジェクト方針に従う
-  - 方針が無い場合は規模・配布形態を踏まえて以下のいずれかを選ぶ
-    - 同居方式: ソース`<name>.py`に対して同一ディレクトリ内に`<name>_test.py`を置く
-     （対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる）
-    - 集約方式: `tests/`配下に`<module>_test.py`をまとめる
-     （配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
+  - 方針が無い場合: 同居方式（ソース`<name>.py`と同一ディレクトリの`<name>_test.py`）か
+    集約方式（`tests/<module>_test.py`）を規模・配布形態に応じて選ぶ
 - テストコードは`pytest`で書く
 - 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使う
   - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する

@@ -195,14 +195,3 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 設定リファレンス・カスタムコマンドの追加方法・pre-commit連携の詳細が必要な場合は、
 [llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得し、各ページへのリンクから個別に取得する。
-主要なページは以下の構成。
-
-- 設定（基本設定・プリセット・並列実行）: `guide/configuration/index.md`
-- ツール別設定（直接実行 / js-runner / bin-runnerのカテゴリ別設定・2段階実行・カスタムコマンド）:
-  `guide/configuration-tools/index.md`
-- 推奨設定（Pythonプロジェクト・タスクランナー・CI）: `guide/recommended/index.md`
-- 非Python推奨設定（TypeScript／JS・Rust・.NET）: `guide/recommended-nonpython/index.md`
-
-カスタムコマンドでは`{command}-severity`（`"error"` / `"warning"`）と`{command}-hints`（文字列配列）を指定できる。
-`severity = "warning"`はパイプラインを止めずに警告通知する用途に使う。
-`{command}-path`・`{command}-args`・`{command}-fix-args`に含まれる`~`はsubprocess起動直前にホームディレクトリへ展開される。
