@@ -58,4 +58,4 @@ description: >
 - 提案内容 — 不採用理由
 ```
 
-ユーザーの承認を得た後、`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
+ユーザーの承認を得た後、`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。

@@ -424,39 +424,22 @@ class TestPlanModeSkillFirstCheck:
         assert result.returncode == 0
         assert result.stdout == ""
 
-    def test_skipped_after_warning_emitted(self, tmp_path: pathlib.Path):
-        """警告は 1 セッション 1 回のみ。発火済みフラグで以後抑制される。"""
+    def test_warns_every_call_until_skill_invoked(self, tmp_path: pathlib.Path):
+        """plan-modeスキル未呼び出しの間は連続するツール呼び出しでも毎回警告する。"""
         env = self._state_env(tmp_path)
-        sid = "plan-warned"
-        _write_session_state(tmp_path, sid, {"plan_mode_warning_emitted": True})
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": sid,
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_warning_sets_emitted_flag(self, tmp_path: pathlib.Path):
-        """警告発火時、状態ファイルに ``plan_mode_warning_emitted`` が記録される。"""
-        env = self._state_env(tmp_path)
-        sid = "plan-flag-write"
-        _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": sid,
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state.get("plan_mode_warning_emitted") is True
+        sid = "plan-repeat"
+        payload = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
+            "session_id": sid,
+            "permission_mode": "plan",
+        }
+        r1 = _run(payload, env_overrides=env)
+        assert r1.returncode == 0
+        assert self._has_warn(r1, "plan-mode skill")
+        r2 = _run(payload, env_overrides=env)
+        assert r2.returncode == 0
+        assert self._has_warn(r2, "plan-mode skill")
 
     def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
         env = self._state_env(tmp_path)
@@ -486,6 +469,58 @@ class TestPlanModeSkillFirstCheck:
         )
         assert result.returncode == 0
         assert self._has_warn(result, "plan-mode skill")
+
+
+class TestPlanModeSkillOutsidePlanCheck:
+    """plan mode外でのplan-modeスキル呼び出しブロック。"""
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
+    def test_blocked_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": skill_name},
+                "session_id": "outside-plan",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "plan mode" in result.stderr
+        assert "EnterPlanMode" in result.stderr
+
+    def test_allowed_in_plan_mode(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": "inside-plan",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_other_skills_unaffected_outside_plan_mode(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "session_id": "other-skill",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 class TestResponseLanguageCheck:

@@ -132,7 +132,7 @@
 agent-toolkitプラグイン同梱のスキルは、該当作業の着手前に他の応答・サブエージェント起動・ファイル編集よりも先に呼び出す。
 Skillツール呼び出しはSKILL.mdを読み込むだけの読み取り専用操作であり、plan modeの編集禁止の対象外とする。
 
-- 計画・調査相談: `agent-toolkit:plan-mode`
+- 計画・調査相談: `EnterPlanMode`でplan modeへ移行後に`agent-toolkit:plan-mode`を呼び出す
 - コード・テストの新規・修正・レビュー: `agent-toolkit:coding-standards`と`agent-toolkit:writing-standards`
 - 一般ドキュメント編集: `agent-toolkit:writing-standards`
 - コーディングエージェント向け文書編集: `agent-toolkit:writing-standards`と`agent-toolkit:agent-standards`

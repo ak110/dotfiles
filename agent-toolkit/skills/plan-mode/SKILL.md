@@ -1,9 +1,8 @@
 ---
 name: plan-mode
 description: >
-  計画ファイル作成～実装プロセスを強化するスキル。
-  Claude Codeがplan modeに入った時、複雑な指示・多段階の作業が示された時、
-  またはバグ・障害・エラー・デグレードなどの調査相談時に最初に必ず呼び出すこと。
+  計画ファイル作成～実装プロセスを強化するスキル。plan mode下でのみ呼び出すスキルで、plan mode下では最初に必ず呼び出すこと。
+  複雑な指示・多段階の作業やバグ・障害・エラー・デグレードなどの調査相談時は、まず`EnterPlanMode`でplan modeへ移行する。
   単純な単一ファイルの修正指示や会話だけの質問には不要。
 # 編集時の注意点:
 # 本スキルはplan-implスキルや../agents/plan-*サブエージェントと連携する想定ではあるが、
@@ -27,7 +26,7 @@ Claude Code固有ツール（`TaskCreate`・`TaskUpdate`・`AskUserQuestion`・`
 - 分割実行・再入時: スキル再読み込み時に工程が登録済みなら、未完了工程を先頭から再走査して続行する（登録済みは再登録しない）
 - 暗黙スキップの禁止: いずれの工程も省略しない
   前段のメッセージや過去の調査・レビューで満たし済みの工程も、満たした根拠を1行報告してから`completed`にする
-- plan mode突入の自律実施: 現在plan mode下でない場合、最初の工程開始前に`EnterPlanMode`を呼んでplan modeへ突入する
+- plan mode移行の前提: pretooluseフックで強制される。呼び出し前に`EnterPlanMode`でplan modeへ移行する
   - Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従いエミュレーション開始を宣言する
 
 システムプロンプトのPlan Workflowが定義する調査・設計の段階は工程2〜5で実施する。
