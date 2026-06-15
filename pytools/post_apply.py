@@ -55,10 +55,6 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # agent-toolkit プラグイン側の session-review に分かれている。
         # 旧配布先ディレクトリを削除する。
         Path("skills/session-review"),
-        # spec-driven系3スキルを撤去（利用頻度が低いため）
-        Path("skills/spec-driven"),
-        Path("skills/spec-driven-init"),
-        Path("skills/spec-driven-promote"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
@@ -78,10 +74,6 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 現在のシンボリックリンク名は session-review-dotfiles。
         # 配布先の旧シンボリックリンクを除去する。
         Path("skills/session-review"),
-        # spec-driven系3スキルを撤去（利用頻度が低いため）
-        Path("skills/spec-driven"),
-        Path("skills/spec-driven-init"),
-        Path("skills/spec-driven-promote"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
