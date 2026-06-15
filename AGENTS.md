@@ -24,7 +24,9 @@
   - 指示の対象を必ず確認する
   - 詳細は「固有差分」の「ディレクトリ構造の注意」を参照
 - `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
-  - Claude Code側と共有できるルール・スキルはコピーせず、`symlink_*.tmpl`で原本へリンクする
+  - Claude Code側と共有できるルール・スキルはコピーせず、`post_apply`の専用ステップで原本へリンクする
+  - chezmoiの`symlink_`はWindowsで特権不足により失敗するため採用しない
+  - Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクションを生成する
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う
 - `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない
   - 配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
@@ -123,7 +125,9 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
   - ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`
 - `.claude/`（本リポジトリルート）— dotfilesリポ自身のClaude Codeプロジェクト設定。配布対象外
 - `.chezmoi-source/dot_codex/` — Codex配布元。`~/.codex/`へデプロイする
-  - `AGENTS.md`はCodex向けアダプターで、共有ルール・スキルは`.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へシンボリックリンクする
+  - `AGENTS.md`はCodex向けアダプターで、共有ルール・スキルは`pytools/_internal/setup_codex_links.py`が
+    `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
+   （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）
 - `.chezmoi-source/dot_config/` — XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
   - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
     - 配布先を直接編集すると`chezmoi apply`で巻き戻る

@@ -18,6 +18,7 @@ from pytools._internal import (
     install_libarchive_windows,
     log_format,
     setup_bin_path,
+    setup_codex_links,
     setup_media_remote,
     setup_mise,
     setup_msys_env,
@@ -65,14 +66,11 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # ~/.codex/skills はグローバルに使うスキルだけを置く。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # 現在のスキル名は plan-impl で、配布元 symlink は symlink_plan-impl.tmpl。
-        # 配布先の旧シンボリックリンクを除去する。
+        # 現在のスキル名は plan-impl。旧名 careful-impl の配布先リンクを除去する。
         Path("skills/careful-impl"),
-        # 現在のスキル名は agent-standards で、配布元 symlink は symlink_agent-standards.tmpl。
-        # 配布先の旧シンボリックリンクを除去する。
+        # 現在のスキル名は agent-standards。旧名 claude-code-standards の配布先リンクを除去する。
         Path("skills/claude-code-standards"),
-        # 現在のシンボリックリンク名は session-review-dotfiles。
-        # 配布先の旧シンボリックリンクを除去する。
+        # 現在のスキル名は session-review-dotfiles。旧名 session-review の配布先リンクを除去する。
         Path("skills/session-review"),
     ],
     Path.home() / "bin": [
@@ -165,6 +163,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("npm/pnpm サプライチェーン対策", update_npmrc.run),
     ("mise セットアップ", setup_mise.run),
     ("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run),
+    ("Codex リンクの同期", setup_codex_links.run),
     ("Claude Code plugin のインストール", install_claude_plugins.run),
     ("codex MCP サーバーの登録", install_codex_mcp.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
