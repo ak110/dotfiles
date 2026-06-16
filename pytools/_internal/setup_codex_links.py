@@ -21,6 +21,7 @@ _LINKS: dict[str, str] = {
     "skills/coding-standards": "agent-toolkit/skills/coding-standards",
     "skills/export-for-resume": "agent-toolkit/skills/export-for-resume",
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
+    "skills/feedback-add": ".chezmoi-source/dot_claude/skills/feedback-add",
     "skills/gitlab-ci-usage": "agent-toolkit/skills/gitlab-ci-usage",
     "skills/plan-codex-review": "agent-toolkit/skills/plan-codex-review",
     "skills/plan-impl": "agent-toolkit/skills/plan-impl",
