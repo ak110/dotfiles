@@ -71,12 +71,24 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
-`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、
-提示した3章合体markdownをそのまま`feedback-add` CLIへ渡してinbox投入する旨を案内する。
-案内文には`feedback-add --project-doc-repo "$(pwd)"`をheredocまたはパイプで起動する
-具体的なシェル例を1つ含める。
+`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、3章合体markdown提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
+採用分のみで再構成したmarkdownを`feedback-add` CLIへ標準入力で渡して投入する。
+
+- 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
+- いずれの提案も不採用となった場合は投入をスキップする
+- CLIは内部で`git pull --ff-only` → ファイル生成 → `git commit` → `git push`を実行するため、
+  別環境からの未取得コミットの取り込みとリモートへの反映までを自動で完了させる
+- 起動は次の形でheredocで直接実行する
+
+```sh
+feedback-add --project-doc-repo "$(pwd)" <<'EOF'
+<採用分のみで再構成した3章合体markdown>
+EOF
+```
+
 `--project-doc-repo`オプションは、プロジェクトドキュメント章の`target_repo`を
 カレントディレクトリ非依存で確定するために必須である。
+CLIの標準出力（投入件数・ファイル名）をそのままユーザーへ提示する。
 
 フラグファイル不在の環境では、各章の改善提案の反映に
 `agent-toolkit:apply-feedback`スキルを別セッションで使う旨を案内する。
