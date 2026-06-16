@@ -16,6 +16,9 @@ import pytest
 _HOME = pathlib.Path.home()
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_pretooluse.py"
+_DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
+_AT_RULES_DIR = _AT_DIR / "rules"
 
 # 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
 # テスト対象の「言及される名前」はプログラム的に組み立てる。
@@ -530,10 +533,6 @@ class TestAgentToolkitDotfilesNamesCheck:
     warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
     """
 
-    _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
-    _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
-    _AT_RULES_DIR = _DOTFILES_ROOT / "agent-toolkit" / "rules"
-
     @pytest.mark.parametrize(
         "name",
         [
@@ -551,7 +550,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         ],
     )
     def test_block_when_target_is_in_agent_toolkit(self, name: str):
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Write",
@@ -565,7 +564,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "Auto-generated hook notice" in result.stderr
 
     def test_block_in_agent_toolkit_rules(self):
-        target = str(self._AT_RULES_DIR / "agent.md")
+        target = str(_AT_RULES_DIR / "agent.md")
         result = _run(
             {
                 "tool_name": "Edit",
@@ -580,7 +579,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "glatasks" in result.stderr
 
     def test_block_in_multiedit(self):
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "MultiEdit",
@@ -598,7 +597,7 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
     def test_warn_when_target_is_in_agent_toolkit(self, name: str):
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Write",
@@ -612,7 +611,7 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     def test_block_takes_precedence_over_warn(self):
         """block と warn の両方が成立する場合は block を優先 (exit 2)。"""
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Write",
@@ -627,7 +626,7 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     def test_outside_distribution_silently_allowed(self):
         """配布範囲外のファイル (例: scripts/) では混入しても通す。"""
-        target = str(self._DOTFILES_ROOT / "scripts" / "fictional.py")
+        target = str(_DOTFILES_ROOT / "scripts" / "fictional.py")
         result = _run(
             {
                 "tool_name": "Write",
@@ -653,7 +652,7 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     def test_word_boundary_avoids_substring_match(self):
         """単語境界マッチで部分一致は検出しない (短い名前 `gv` / `lc` の誤検出回避)。"""
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Write",
@@ -667,7 +666,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.stdout == ""
 
     def test_clean_content_silently_allowed(self):
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Write",
@@ -682,7 +681,7 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     def test_old_string_not_inspected(self):
         """new_string のみが対象。old_string に違反語があっても通す。"""
-        target = str(self._AT_DIR / "skills" / "example" / "SKILL.md")
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
                 "tool_name": "Edit",
@@ -695,6 +694,105 @@ class TestAgentToolkitDotfilesNamesCheck:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestAgentToolkitEditSkillWarning:
+    """`agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告。"""
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @staticmethod
+    def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    def test_warns_when_skill_not_invoked(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "at-edit-warn",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "agent-toolkit-edit" in msg
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+
+    def test_silent_when_skill_invoked(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        sid = "at-edit-invoked"
+        self._write_state(tmp_path, sid, {"agent_toolkit_edit_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_silent_for_outside_agent_toolkit(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "/tmp/x.md", "content": "harmless"},
+                "session_id": "at-edit-outside",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_silent_for_non_target_tool(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")},
+                "session_id": "at-edit-read",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_silent_when_session_id_empty(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_edit_in_agent_toolkit_warns(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
+                "session_id": "at-edit-edit",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" in _get_additional_context(result)
 
 
 class TestGeneralBehavior:

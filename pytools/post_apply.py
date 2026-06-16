@@ -59,6 +59,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/session-review"),
         # 現在のスキル名は add-feedback。旧名 feedback-add の配布先ディレクトリを削除する。
         Path("skills/feedback-add"),
+        # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先ディレクトリを削除する。
+        Path("skills/process-feedback"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
@@ -77,6 +79,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/session-review"),
         # 現在のスキル名は add-feedback。旧名 feedback-add の配布先リンクを除去する。
         Path("skills/feedback-add"),
+        # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先リンクを除去する。
+        Path("skills/process-feedback"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、

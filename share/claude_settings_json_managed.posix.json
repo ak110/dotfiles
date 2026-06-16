@@ -13,6 +13,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_posttooluse.py; exit 0'"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

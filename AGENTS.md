@@ -28,8 +28,12 @@
   - chezmoiの`symlink_`はWindowsで特権不足により失敗するため採用しない
   - Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクションを生成する
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う
-- `.chezmoi-source/`配下のファイルを削除した場合、chezmoiは配布先を自動削除しない
+- `.chezmoi-source/`配下のファイルを削除・改名した場合、chezmoiは配布先を自動削除しない
   - 配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
+  - 改名時は次を必ず実施する
+    - `_REMOVED_PATHS`の`~/.claude`欄に旧パスを追記する
+    - Codex側にもリンクがある対象は`~/.codex`欄にも旧パスを追記する
+    - `pytools/_internal/setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
 - プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている
   - UTF-8前提のEdit/Writeツールでは文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
@@ -75,7 +79,7 @@
 
 ### ロールとファイル群の対応
 
-本リポジトリと配布物には4ロールが関与する。ファイル群を編集する際は対象読者を意識する。
+本リポジトリと配布物には複数のロールが関与する。ファイル群を編集する際は対象読者を意識する。
 
 - dotfiles利用者: chezmoiソース・`bin`・`pytools`等を自分の環境にインストールして使う人
 - agent-toolkit利用者: `agent-toolkit`プラグインをマーケットプレイス経由で使う人（dotfiles利用者含む）

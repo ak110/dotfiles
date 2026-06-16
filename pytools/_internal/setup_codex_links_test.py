@@ -145,18 +145,18 @@ def test_returns_false_when_dotfiles_root_unresolved(
     assert setup_codex_links.run() is False
 
 
-def test_links_contains_process_feedback() -> None:
-    """`_LINKS`辞書に`skills/process-feedback`エントリが含まれること。"""
-    # 配布マップ定数の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
-    # pylint: disable=protected-access
-    assert "skills/process-feedback" in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["skills/process-feedback"] == ".chezmoi-source/dot_claude/skills/process-feedback"
+# 以下のテストは配布マップ定数 `_LINKS` の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
+# pylint: disable=protected-access
+
+
+def test_links_contains_process_feedbacks() -> None:
+    """`_LINKS`辞書に`skills/process-feedbacks`エントリが含まれること。"""
+    assert "skills/process-feedbacks" in setup_codex_links._LINKS
+    assert setup_codex_links._LINKS["skills/process-feedbacks"] == ".chezmoi-source/dot_claude/skills/process-feedbacks"
 
 
 def test_links_contains_add_feedback() -> None:
     """`_LINKS`辞書に`skills/add-feedback`エントリが含まれること。"""
-    # 配布マップ定数の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
-    # pylint: disable=protected-access
     assert "skills/add-feedback" in setup_codex_links._LINKS
     assert setup_codex_links._LINKS["skills/add-feedback"] == ".chezmoi-source/dot_claude/skills/add-feedback"
 

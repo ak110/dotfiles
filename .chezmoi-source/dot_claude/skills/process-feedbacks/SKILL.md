@@ -1,5 +1,5 @@
 ---
-name: process-feedback
+name: process-feedbacks
 description: >
   ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
   採用は対象リポジトリへ反映してファイルを削除、見送りは rejected/ へ移動する。
@@ -35,7 +35,7 @@ description: >
 
 1. `target_repo`のディレクトリへカレントを移す
 2. 当該グループの全ファイル本文（frontmatterを除く提案本文）を結合した1つのmarkdownを
-   `agent-toolkit:apply-feedback`スキルへ渡して完全委譲する
+   `agent-toolkit:apply-feedback`スキルへ渡して委譲する
    - 結合形式は各ファイル本文の連結とし、各ファイルの開始位置を区切るため
      `## <filename>`形式の見出しを各本文の前に置く
    - `apply-feedback`は批判的検討・採否判定の提示・ユーザー承認の取得・`EnterPlanMode`移行・
@@ -46,6 +46,7 @@ description: >
 
 `apply-feedback`の検討結果提示の`### 採用`・`### 不採用`配下から、
 各ファイル（`## <filename>`見出しで対応付け）が採用か見送りかを判別する。
+`apply-feedback`が出力する`### 不採用`見出し配下のファイルは見送りとして扱う。
 
 判別が困難な場合は`AskUserQuestion`でユーザーへ確認する。
 

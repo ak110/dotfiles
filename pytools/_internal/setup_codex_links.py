@@ -28,7 +28,7 @@ _LINKS: dict[str, str] = {
     "skills/plan-mode": "agent-toolkit/skills/plan-mode",
     "skills/pyfltr-usage": "agent-toolkit/skills/pyfltr-usage",
     "skills/pytilpack-usage": "agent-toolkit/skills/pytilpack-usage",
-    "skills/process-feedback": ".chezmoi-source/dot_claude/skills/process-feedback",
+    "skills/process-feedbacks": ".chezmoi-source/dot_claude/skills/process-feedbacks",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/review-standards": "agent-toolkit/skills/review-standards",
     "skills/session-review-dotfiles": ".chezmoi-source/dot_claude/skills/session-review-dotfiles",
