@@ -153,12 +153,12 @@ def test_links_contains_process_feedback() -> None:
     assert setup_codex_links._LINKS["skills/process-feedback"] == ".chezmoi-source/dot_claude/skills/process-feedback"
 
 
-def test_links_contains_feedback_add() -> None:
-    """`_LINKS`辞書に`skills/feedback-add`エントリが含まれること。"""
+def test_links_contains_add_feedback() -> None:
+    """`_LINKS`辞書に`skills/add-feedback`エントリが含まれること。"""
     # 配布マップ定数の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
     # pylint: disable=protected-access
-    assert "skills/feedback-add" in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["skills/feedback-add"] == ".chezmoi-source/dot_claude/skills/feedback-add"
+    assert "skills/add-feedback" in setup_codex_links._LINKS
+    assert setup_codex_links._LINKS["skills/add-feedback"] == ".chezmoi-source/dot_claude/skills/add-feedback"
 
 
 def test_windows_creates_junction(

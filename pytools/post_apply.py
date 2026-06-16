@@ -57,6 +57,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # agent-toolkit プラグイン側の session-review に分かれている。
         # 旧配布先ディレクトリを削除する。
         Path("skills/session-review"),
+        # 現在のスキル名は add-feedback。旧名 feedback-add の配布先ディレクトリを削除する。
+        Path("skills/feedback-add"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
@@ -73,6 +75,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/claude-code-standards"),
         # 現在のスキル名は session-review-dotfiles。旧名 session-review の配布先リンクを除去する。
         Path("skills/session-review"),
+        # 現在のスキル名は add-feedback。旧名 feedback-add の配布先リンクを除去する。
+        Path("skills/feedback-add"),
     ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、

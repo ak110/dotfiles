@@ -3,7 +3,7 @@ name: process-feedback
 description: >
   ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
   採用は対象リポジトリへ反映してファイルを削除、見送りは rejected/ へ移動する。
-# 連携: agent-toolkit:apply-feedback スキルへ1件ずつ委譲する。
+# 連携: target_repoごとにグループ化し、各グループの全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 # フラグファイル ~/.config/agent-toolkit/feedback-inbox.enabled が存在する環境でのみ動作する。
 ---
 
@@ -21,53 +21,65 @@ description: >
 
 `~/private-notes`で`git pull --ff-only`を実行する。
 
-## ステップ2: 件数確認
+## ステップ2: 件数確認とグループ化
 
 `~/private-notes/feedback/inbox/`配下のファイル一覧を取得し、件数をユーザーに提示する。
 0件の場合は「処理対象なし」を1文示して終了する。
 
-## ステップ3: 各ファイルの処理委譲
+各ファイルを読み込み、frontmatterの`target_repo`ごとにグループ化する。
+グループ化後の件数（target_repo別の内訳）もユーザーに提示する。
 
-ファイルを名前順に1件ずつ処理する。
-各ファイルに対して以下を実施する。
+## ステップ3: target_repoグループ単位の一括処理委譲
 
-1. ファイルを読み込み、frontmatterから`target_repo`を取得する
-2. `target_repo`のディレクトリへカレントを移す
-3. ファイル本文（frontmatterを除く提案本文）を`agent-toolkit:apply-feedback`スキルへ渡して完全委譲する
+`target_repo`グループごとに以下を実施する。グループ間は順次処理する。
+
+1. `target_repo`のディレクトリへカレントを移す
+2. 当該グループの全ファイル本文（frontmatterを除く提案本文）を結合した1つのmarkdownを
+   `agent-toolkit:apply-feedback`スキルへ渡して完全委譲する
+   - 結合形式は各ファイル本文の連結とし、各ファイルの開始位置を区切るため
+     `## <filename>`形式の見出しを各本文の前に置く
    - `apply-feedback`は批判的検討・採否判定の提示・ユーザー承認の取得・`EnterPlanMode`移行・
      `agent-toolkit:plan-mode`に従う計画作成と実装・コミットまでを担う
+   - グループ内の全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
 
 ## ステップ4: 採否判別
 
-`apply-feedback`の検討結果提示の`### 採用`配下に`- 修正理由:`で始まる行が1件以上あるかを採否判別の根拠とする。
+`apply-feedback`の検討結果提示の`### 採用`・`### 不採用`配下から、
+各ファイル（`## <filename>`見出しで対応付け）が採用か見送りかを判別する。
 
-## ステップ5: 採用時の処理
+判別が困難な場合は`AskUserQuestion`でユーザーへ確認する。
 
-対象リポジトリへの反映コミットが完了したことを確認したうえで、以下を順に実施する。
+## ステップ5: 採用ファイルの処理
 
-1. `~/private-notes/feedback/inbox/<filename>`を削除する
+対象リポジトリへの反映コミットが完了したことを確認したうえで、当該target_repoの採用ファイル全件に対し以下を実施する。
+
+1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用ファイル分）
 2. `~/private-notes`で以下を順に実行する
 
 ```sh
-git add feedback/inbox/<filename>
-git commit -m "chore: process <filename> (adopted)"
+git add feedback/inbox/
+git commit -m "chore: process N feedback items (adopted)"
 git push
 ```
 
-## ステップ6: 見送り時の処理
+## ステップ6: 見送りファイルの処理
 
-以下を順に実施する。
+当該target_repoの見送りファイル全件に対し以下を実施する。
 
 1. `~/private-notes/feedback/inbox/<filename>`を
-   `~/private-notes/feedback/rejected/<filename>`へ移動する
+   `~/private-notes/feedback/rejected/<filename>`へ移動する（全見送りファイル分）
 2. `~/private-notes`で以下を順に実行する
 
 ```sh
-git add feedback/inbox/<filename> feedback/rejected/<filename>
-git commit -m "chore: process <filename> (rejected)"
+git add feedback/inbox/ feedback/rejected/
+git commit -m "chore: process N feedback items (rejected)"
 git push
 ```
+
+採用・見送りの双方が存在する場合は、両方を含めた単一コミットで反映してよい
+（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）。
 
 ## ステップ7: サマリー提示
 
-全件処理後に採用N件・見送りN件のサマリーをユーザーに提示する。
+全グループ処理後に採用N件・見送りN件のサマリーをユーザーに提示する。
+target_repo別の内訳も併記する。

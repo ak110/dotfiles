@@ -1,5 +1,5 @@
 ---
-name: feedback-add
+name: add-feedback
 description: >
   フリーフォーマットのフィードバック本文を章構成に整形し、
   `feedback-add` CLI経由で~/private-notes/feedback/inbox/へ投入する。
