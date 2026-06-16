@@ -9,15 +9,15 @@ Claude Codeが停止しようとするタイミングで発火する。
 approve・通知の分岐は以下のとおり。
 
 - `stop_hook_active`が真（直前の本hook呼び出しが当該ターンの終了を一度ブロックした再呼び出し）:
-  連続ブロック上限到達による強制終了を避けるため、構造判定・通知生成を行わず無条件approveのみ返す
+  連続ブロック上限到達による強制終了を避けるため、構造判定・通知生成をせず無条件approveのみ返す
 - 構造的にセッション継続中（非同期待機ツールまたは未完了background task（Agent・Bash双方）あり）:
   サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
   git status表示を抑止する
 - 既に`agent-toolkit:session-review`スキルが起動済み:
-  再Stopまでにユーザーが裏で変更を加える可能性に備え、approveに加えて
+  再Stop間にユーザーが変更を加える可能性に備え、approveに加えて
   git status表示を付与する
 - 上記いずれでもない通常終了: 未コミット変更があればgit status通知を付与し、
-  セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ載せる
+  セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ出力する
 
 終了判定の言語的判定基準（完了文言・質問・待機表明の判別）は
 `agent-toolkit:session-review`スキル本体の「起動方針」節で定義する。
@@ -143,13 +143,13 @@ def main() -> int:
 
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
-    # 構造判定・通知生成・git status出力を行わず即座にapproveする。
+    # 構造判定・通知生成・git status出力をせず即座にapproveする。
     if payload.get("stop_hook_active") is True:
         _approve()
         return 0
 
     # Stopのたびにgit_log_checkedをリセットする。
-    # ユーザーが裏でpushしている可能性があるため、
+    # セッション停止中にユーザーがpushしている可能性があるため、
     # 再開後のamend / rebaseには改めてlog確認を要求する。
     # `git_log_checked`はcwd別辞書`{cwd: True}`を採用するため、
     # 全エントリをまとめてクリアする。
@@ -195,7 +195,7 @@ def main() -> int:
     # ケースではスキル起動自体を抑止する。
     messages.append(
         _llm_notice(
-            f"{SESSION_REVIEW_PRECHECK} Then invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
+            f"{SESSION_REVIEW_PRECHECK} If so, invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
             " and follow its activation policy section to decide whether to proceed with the review."
         )
     )

@@ -307,7 +307,7 @@ class TestContextConditions:
         assert "Skill" in body
         assert "activation policy" in body
         assert "uncommitted" not in body.lower()
-        assert "Only if all three conditions hold" in body
+        assert "end the turn silently" in body
         # 振り返り誘導1件のみのため、自動生成プレフィックスは1個。
         assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 1
         assert "Auto-generated hook notice" in body
@@ -326,7 +326,7 @@ class TestContextConditions:
         body = _additional_context(decision)
         assert "uncommitted" in body.lower()
         assert _SESSION_REVIEW_SKILL in body
-        assert "Only if all three conditions hold" in body
+        assert "end the turn silently" in body
         # 2通知それぞれにプレフィックスが付与される。
         assert body.count("[auto-generated: agent-toolkit/stop_advisor]") == 2
 
@@ -346,7 +346,7 @@ class TestContextConditions:
         assert _additional_context(_parse_decision(second))
 
 
-class TestUncommittedTimesAfterReview:
+class TestUncommittedChangesAfterReview:
     """振り返りスキル起動済みなら未コミット変更があってもapprove（スキル起動が優先）。"""
 
     def test_skill_invoked_dirty_repo_approves(
