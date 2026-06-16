@@ -133,7 +133,11 @@
 agent-toolkitプラグイン同梱のスキルは、該当作業の着手前に他の応答・サブエージェント起動・ファイル編集よりも先に呼び出す。
 Skillツール呼び出しはSKILL.mdを読み込むだけの読み取り専用操作であり、plan modeの編集禁止の対象外とする。
 
-- 計画・調査相談: `EnterPlanMode`でplan modeへ移行後に`agent-toolkit:plan-mode`を呼び出す
+- 計画・調査相談: `EnterPlanMode`でplan modeへ移行後、原則として最初のツール呼び出しで`agent-toolkit:plan-mode`を呼び出す
+  - 例外: plan mode移行時点で固有の前処理を要するパターン（`agent-toolkit:apply-feedback`等）では、
+    先に該当スキルを呼び出してから`agent-toolkit:plan-mode`を続けて呼び出してよい
+  - 計画ファイル（`~/.claude/plans/*.md`）の編集に至った時点で`agent-toolkit:plan-mode`が未起動の場合は
+    pretooluseフックがブロックする。スキルを呼び出してから工程1（要件確認）からやり直す
 - コード・テストの新規・修正・レビュー: `agent-toolkit:coding-standards`と`agent-toolkit:writing-standards`
 - 一般ドキュメント編集: `agent-toolkit:writing-standards`
 - コーディングエージェント向け文書編集: `agent-toolkit:writing-standards`と`agent-toolkit:agent-standards`

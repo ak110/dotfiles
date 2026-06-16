@@ -347,106 +347,148 @@ class TestColloquialCheck:
 
 
 class TestPlanModeSkillFirstCheck:
-    """plan mode 中で最初のツール呼び出しが plan-mode スキル以外の場合の警告 (warn のみ)。"""
+    """plan mode 下で plan-mode スキル未起動のまま plan file 編集をブロックする検査。
+
+    plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
+    一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
+    Write/Edit/MultiEditのみがブロック対象となる。
+    """
 
     @staticmethod
-    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+    def _state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        if home_dir is not None:
+            env["HOME"] = str(home_dir)
+        return env
 
     @staticmethod
-    def _has_warn(result: subprocess.CompletedProcess[str], keyword: str) -> bool:
-        if not result.stdout.strip():
-            return False
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return False
-        ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
-        return keyword in ctx
+    def _make_plan(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
+        plans = home_dir / ".claude" / "plans"
+        plans.mkdir(parents=True, exist_ok=True)
+        plan = plans / name
+        plan.write_text("# t\n", encoding="utf-8")
+        return plan
 
-    def test_warns_in_plan_mode_with_non_skill_tool(self, tmp_path: pathlib.Path):
-        env = self._state_env(tmp_path)
+    def test_blocks_plan_file_write_without_skill(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": "plan-first-write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": "plan-write-block",
                 "permission_mode": "plan",
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        assert self._has_warn(result, "plan-mode skill")
-        assert self._has_warn(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
+        assert result.returncode == 2
+        assert "plan-mode" in result.stderr
+        assert "Phase 1" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
-    def test_warns_on_read_tool(self, tmp_path: pathlib.Path):
-        """matcher 拡張により Read 等の未登録ツールでも発火する。"""
-        env = self._state_env(tmp_path)
+    def test_blocks_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "edit.md")
+        env = self._state_env(tmp_path, home)
         result = _run(
             {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/etc/hostname"},
-                "session_id": "plan-first-read",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan), "old_string": "a", "new_string": "b"},
+                "session_id": "plan-edit-block",
                 "permission_mode": "plan",
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        assert self._has_warn(result, "plan-mode skill")
+        assert result.returncode == 2
 
-    def test_skipped_when_first_call_is_plan_mode_skill(self, tmp_path: pathlib.Path):
-        env = self._state_env(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
-                "session_id": "plan-skill-first",
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_skipped_when_skill_already_invoked(self, tmp_path: pathlib.Path):
-        env = self._state_env(tmp_path)
+    def test_allows_plan_file_when_skill_invoked(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
         sid = "plan-skill-flag"
         _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
                 "session_id": sid,
                 "permission_mode": "plan",
             },
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert result.stdout == ""
 
-    def test_warns_every_call_until_skill_invoked(self, tmp_path: pathlib.Path):
-        """plan-modeスキル未呼び出しの間は連続するツール呼び出しでも毎回警告する。"""
-        env = self._state_env(tmp_path)
-        sid = "plan-repeat"
-        payload = {
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-            "session_id": sid,
-            "permission_mode": "plan",
-        }
-        r1 = _run(payload, env_overrides=env)
-        assert r1.returncode == 0
-        assert self._has_warn(r1, "plan-mode skill")
-        r2 = _run(payload, env_overrides=env)
-        assert r2.returncode == 0
-        assert self._has_warn(r2, "plan-mode skill")
-
-    def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
-        env = self._state_env(tmp_path)
+    def test_allows_non_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
+        """plan file 以外の編集はスキル未起動でも通す。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        env = self._state_env(tmp_path, home)
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
+                "session_id": "plan-other-file",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_allows_read_in_plan_mode(self, tmp_path: pathlib.Path):
+        """Read は plan-mode スキル未起動でも一切ブロック・警告しない。"""
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/etc/hostname"},
+                "session_id": "plan-read",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_allows_bash_in_plan_mode(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "session_id": "plan-bash",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_allows_other_skill_in_plan_mode(self, tmp_path: pathlib.Path):
+        """`apply-feedback`等のplan mode下での他Skill呼び出しはブロックしない。"""
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:apply-feedback"},
+                "session_id": "plan-other-skill",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
+        """plan mode 外では plan file 編集でもブロックしない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
                 "session_id": "non-plan-mode",
                 "permission_mode": "default",
             },
@@ -454,21 +496,6 @@ class TestPlanModeSkillFirstCheck:
         )
         assert result.returncode == 0
         assert result.stdout == ""
-
-    def test_warns_when_first_call_is_other_skill(self, tmp_path: pathlib.Path):
-        """plan-mode 以外の Skill 呼び出しは最初の呼び出し扱いで警告する。"""
-        env = self._state_env(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:coding-standards"},
-                "session_id": "plan-other-skill",
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert self._has_warn(result, "plan-mode skill")
 
 
 class TestPlanModeSkillOutsidePlanCheck:

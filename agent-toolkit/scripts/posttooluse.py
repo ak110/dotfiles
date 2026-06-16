@@ -27,6 +27,7 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
@@ -101,28 +102,6 @@ _PLAN_REQUIRED_H2 = (
     "進捗ログ",
     "計画ファイル（本ファイル）のパス",
 )
-
-
-def _is_plan_file(file_path: str) -> bool:
-    """`~/.claude/plans/`直下のplan file（`*.md`）の場合に真を返す。
-
-    `.review.md` / `.codex.log`は副次ファイルのため除外する。
-    サブディレクトリ配下のファイルは対象外（直下のみ）。
-    """
-    if not file_path:
-        return False
-    try:
-        path = pathlib.Path(file_path).resolve()
-        plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve()
-        rel = path.relative_to(plans_dir)
-    except (OSError, ValueError):
-        return False
-    if len(rel.parts) != 1:
-        return False
-    name = rel.parts[0]
-    if name.endswith(".review.md") or name.endswith(".codex.log"):
-        return False
-    return name.endswith(".md")
 
 
 # コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
@@ -288,7 +267,7 @@ def main() -> int:
         state = read_state(session_id)
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
-        if state.get("plan_mode_skill_invoked", False) and _is_plan_file(file_path):
+        if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
             violations = _check_plan_format(file_path)
             if violations:
                 message = _llm_notice(

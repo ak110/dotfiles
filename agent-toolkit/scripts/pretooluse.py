@@ -63,6 +63,7 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
     extract_git_events,
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
@@ -147,11 +148,9 @@ def main() -> int:
     if _check_plan_mode_skill_outside_plan(tool_name, tool_input, permission_mode):
         return 2
 
-    # plan modeで最初のツール呼び出しがplan-modeスキル以外なら警告（任意ツール）
-    plan_mode_result = _check_plan_mode_skill_first(tool_name, tool_input, permission_mode, session_id)
-    if plan_mode_result is not None:
-        emit_json(plan_mode_result)
-        return 0
+    # plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合はブロック
+    if _check_plan_mode_skill_first(tool_name, tool_input, permission_mode, session_id):
+        return 2
 
     # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正
     if tool_name == "mcp__codex__codex":
@@ -606,12 +605,14 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     return False
 
 
-# --- plan mode中の最初のツール呼び出しがplan-modeスキル以外の場合の警告（warn）---
+# --- plan mode中のplan file編集をplan-modeスキル未起動の場合にブロック ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 # posttooluse.pyの同名定数と同期しておく。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
+
+_PLAN_FILE_EDIT_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 
 
 def _check_plan_mode_skill_first(
@@ -619,45 +620,42 @@ def _check_plan_mode_skill_first(
     tool_input: dict,
     permission_mode: str,
     session_id: str,
-) -> dict | None:
-    """Plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告を返す。
+) -> bool:
+    """Plan mode下でplan-modeスキル未起動のままplan fileを編集しようとした場合にブロックする。
 
     判定条件:
 
     - `permission_mode == "plan"`
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が偽
+    - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
+    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
 
-    例外: 当該呼び出しがSkillツールかつスキル名が`_PLAN_MODE_SKILL_NAMES`
-    に含まれる場合は警告しない。
-
-    `plan_mode_skill_invoked`が真になるまで毎ツール呼び出しで発火する
-    （plan-modeスキル呼び出しを強制するため、1セッション1回の制限は設けない）。
+    `apply-feedback`などplan mode移行直後に固有の前処理を要するパターンを許容するため、
+    plan file編集に至るまでは警告も表示しない。
     """
     if permission_mode != "plan":
-        return None
+        return False
     if not session_id:
-        return None
+        return False
+    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
+        return False
+    file_path_raw = tool_input.get("file_path")
+    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
+        return False
     state = read_state(session_id)
     if state.get("plan_mode_skill_invoked", False):
-        return None
-    if tool_name == "Skill":
-        skill_name = tool_input.get("skill")
-        if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
-            return None
-
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "additionalContext": _llm_notice(
-                "in plan mode, but the first tool call is not the plan-mode skill."
-                " Invoke `agent-toolkit:plan-mode` skill first to load the latest section"
-                " structure and review process guidance before drafting the plan.",
-                tag="warn",
-            ),
-        },
-    }
+        return False
+    print(
+        _llm_notice(
+            "blocked: attempting to edit a plan file without invoking `agent-toolkit:plan-mode` skill."
+            " Invoke the skill first and restart from Phase 1 (Initial Understanding)"
+            " before writing to the plan file.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _check_plan_mode_skill_outside_plan(

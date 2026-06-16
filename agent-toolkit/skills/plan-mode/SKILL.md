@@ -27,6 +27,9 @@ Claude Code固有ツール（`TaskCreate`・`TaskUpdate`・`AskUserQuestion`・`
   前段のメッセージや過去の調査・レビューで満たし済みの工程も、満たした根拠を1行報告してから`completed`にする
 - plan mode移行の前提: pretooluseフックで強制される。呼び出し前に`EnterPlanMode`でplan modeへ移行する
   - Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従いエミュレーション開始を宣言する
+- 本スキル未起動のまま計画ファイル（`~/.claude/plans/*.md`）の編集に至った場合、
+  pretooluseフックがブロックする。本スキルを呼び出したうえで工程1（バグ対応該当時）または
+  工程2（非該当時）から順に実施する
 
 システムプロンプトのPlan Workflowが定義する調査・設計の段階は工程2〜5で実施する。
 「計画して」「plan-modeに従って計画して」のような指示でも、plan mode中に調査・レビュー済みでも、
