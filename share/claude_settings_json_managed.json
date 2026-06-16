@@ -38,7 +38,7 @@
       "Read(./.env)"
     ]
   },
-  "showClearContextOnPlanAccept": true,
+  "showClearContextOnPlanAccept": false,
   "showThinkingSummaries": false,
   "viewMode": "verbose"
 }
