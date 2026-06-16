@@ -13,6 +13,12 @@ from typing import Any
 
 import pytest
 
+sys.path.insert(
+    0,
+    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
+)
+from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_stop.py"
 
 _EXTENSION_SKILL = "session-review-dotfiles"
@@ -353,7 +359,7 @@ class TestContextContents:
         assert _TARGET_SESSION_REVIEW in body
         assert "Skill" in body
         assert "activation policy" in body
-        assert "end the turn silently" in body
+        assert SESSION_REVIEW_PRECHECK in body
 
 
 class TestEdgeCases:
