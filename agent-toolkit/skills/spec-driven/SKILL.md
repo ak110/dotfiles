@@ -23,12 +23,16 @@ flowchart LR
     INIT["spec-driven-init\n現行版ドキュメント初版整備"]
     SD["spec-driven\n次版ドキュメント作成"]
     IMPL["plan-mode / plan-impl\nユーザーがプロンプト例を発話して起動"]
+    IMPL_AUTO["spec-driven-impl\nユーザー不在で自律実行"]
     PROMOTE["spec-driven-promote\n次版→現行版統合"]
 
     INIT --> SD
     SD --> IMPL
+    SD --> IMPL_AUTO
     IMPL -.->|次テーマ| SD
+    IMPL_AUTO -.->|次テーマ| SD
     IMPL -->|リリース後| PROMOTE
+    IMPL_AUTO -->|リリース後| PROMOTE
     PROMOTE -.->|次バージョン| SD
 ```
 
@@ -75,3 +79,9 @@ flowchart LR
 > - コード主要箇所に当該ドキュメントへの参照コメントを追加する
 > - 計画時の設計判断と却下した代替案を当該ドキュメントへ追記する
 > - 実装に合わせて現行版ドキュメントと次版総合ドキュメント（`<次版総合ドキュメントパス>`）を更新する
+
+ユーザー不在で自律実行する場合のプロンプト例
+（応答できる相手がいない場面で、`agent-toolkit:spec-driven-impl`へ引き継ぐ）:
+
+> `agent-toolkit:spec-driven-impl`スキルを使い、`<作業テーマドキュメントパス>`を実装してください。
+> 確認事項は`docs/v{next}/TBD.md`へ書き残して続行してください。
