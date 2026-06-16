@@ -145,6 +145,14 @@ def test_returns_false_when_dotfiles_root_unresolved(
     assert setup_codex_links.run() is False
 
 
+def test_links_contains_process_feedback() -> None:
+    """`_LINKS`辞書に`skills/process-feedback`エントリが含まれること。"""
+    # 配布マップ定数の中身を直接確認するためアンダースコアプレフィックス属性へアクセスする。
+    # pylint: disable=protected-access
+    assert "skills/process-feedback" in setup_codex_links._LINKS
+    assert setup_codex_links._LINKS["skills/process-feedback"] == ".chezmoi-source/dot_claude/skills/process-feedback"
+
+
 def test_windows_creates_junction(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

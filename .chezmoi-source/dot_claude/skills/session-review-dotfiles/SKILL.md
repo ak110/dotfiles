@@ -69,5 +69,15 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 ## ステップ4の適用範囲
 
-各章の改善提案の反映に`agent-toolkit:apply-feedback`スキルを使う旨を、
-章ごとの対象リポジトリ（pyfltr章は`~/pyfltr`、agent-toolkit章は`~/dotfiles`）とともにユーザーに案内する。
+本拡張章で示した提案の反映は原則として別セッションで行う。
+
+`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、
+提示した3章合体markdownをそのまま`feedback-add` CLIへ渡してinbox投入する旨を案内する。
+案内文には`feedback-add --project-doc-repo "$(pwd)"`をheredocまたはパイプで起動する
+具体的なシェル例を1つ含める。
+`--project-doc-repo`オプションは、プロジェクトドキュメント章の`target_repo`を
+カレントディレクトリ非依存で確定するために必須である。
+
+フラグファイル不在の環境では、各章の改善提案の反映に
+`agent-toolkit:apply-feedback`スキルを別セッションで使う旨を案内する。
+章ごとの対象リポジトリも併せて案内する（pyfltr章は`~/pyfltr`、agent-toolkit章は`~/dotfiles`）。

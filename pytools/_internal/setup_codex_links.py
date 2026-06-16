@@ -27,6 +27,7 @@ _LINKS: dict[str, str] = {
     "skills/plan-mode": "agent-toolkit/skills/plan-mode",
     "skills/pyfltr-usage": "agent-toolkit/skills/pyfltr-usage",
     "skills/pytilpack-usage": "agent-toolkit/skills/pytilpack-usage",
+    "skills/process-feedback": ".chezmoi-source/dot_claude/skills/process-feedback",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/review-standards": "agent-toolkit/skills/review-standards",
     "skills/session-review-dotfiles": ".chezmoi-source/dot_claude/skills/session-review-dotfiles",
@@ -61,8 +62,8 @@ def _process_link(dest: Path, target: Path) -> bool:
         logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
         return False
 
+    # is_symlink単独だとリンク切れも捕捉できる。
     if dest.exists() or dest.is_symlink():
-        # is_symlink単独だとリンク切れも捕捉できる。
         if _is_link_like(dest):
             if dest.resolve() == target.resolve():
                 return False

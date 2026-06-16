@@ -19,6 +19,7 @@ from pytools._internal import (
     log_format,
     setup_bin_path,
     setup_codex_links,
+    setup_feedback_inbox,
     setup_media_remote,
     setup_mise,
     setup_msys_env,
@@ -146,7 +147,7 @@ def _cleanup_removed_paths() -> bool:
     if total_removed == 0:
         logger.info(log_format.format_status("cleanup", "削除対象なし"))
     else:
-        logger.info(log_format.format_status("cleanup", f"{total_removed} 件を削除しました"))
+        logger.info(log_format.format_status("cleanup", f"{total_removed} 件を削除した"))
     return total_removed > 0
 
 
@@ -170,6 +171,7 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),
     ("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
+    ("フィードバック蓄積セットアップ (特定ホスト)", setup_feedback_inbox.run),
     ("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
     ("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),
