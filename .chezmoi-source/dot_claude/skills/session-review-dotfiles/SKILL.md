@@ -37,16 +37,17 @@ Stopフックから呼ばれた場合の終了判定基準は`agent-toolkit:sess
 ```markdown
 ## pyfltr改善提案
 
-- 対象ファイル — 提案内容
+- <提案内容>
 - ...
 
 ## agent-toolkit改善提案
 
-- 対象ファイル — 提案内容
+- <提案内容>
 - ...
 ```
 
-各項目はセクション見出し配下に「- 対象ファイル — 提案内容」の形で1項目1行・1コンセプトで簡潔に書く。
+各項目はセクション見出し配下に1項目1行・1コンセプトで書く。
+対象ファイル・対象節が特定できる場合は提案内容の冒頭で明示する。
 提案が無い章には同見出し配下に「提案無し」とのみ書く。
 当該セッションで利用しなかった項目（例: pyfltr未使用）はスキップしてよい。
 
@@ -71,23 +72,24 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
-`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、3章合体markdown提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
-採用分のみで再構成したmarkdownを`feedback-add` CLIへ標準入力で渡して投入する。
+`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
+採用分を対象リポジトリごとに`feedback-add`へ位置引数で渡して投入する。
 
 - 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
 - いずれの提案も不採用となった場合は投入をスキップする
 - CLIは内部で`git pull --ff-only` → ファイル生成 → `git commit` → `git push`を実行するため、
-  別環境からの未取得コミットの取り込みとリモートへの反映までを自動で完了させる
-- 起動は次の形でheredocで直接実行する
+  別環境からの未取得コミットの取り込みとリモートへの反映までを自動で完了する
+
+複数の対象リポジトリがある場合はリポジトリごとに呼び出す。
 
 ```sh
-feedback-add --project-doc-repo "$(pwd)" <<'EOF'
-<採用分のみで再構成した3章合体markdown>
-EOF
+feedback-add <repo-path> <message1> [<message2> ...]
 ```
 
-`--project-doc-repo`オプションは、プロジェクトドキュメント章の`target_repo`を
-カレントディレクトリ非依存で確定するために必須である。
+- pyfltr章の採用分: `<repo-path>`は`~/pyfltr`
+- agent-toolkit章の採用分: `<repo-path>`は`~/dotfiles`
+- プロジェクトドキュメント章の採用分: `<repo-path>`はカレントディレクトリ
+
 CLIの標準出力（投入件数・ファイル名）をそのままユーザーへ提示する。
 
 フラグファイル不在の環境では、各章の改善提案の反映に

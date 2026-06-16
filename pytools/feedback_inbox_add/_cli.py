@@ -8,89 +8,25 @@ import sys
 
 from pytools._internal.cli import enable_completion
 
-# 章見出しとsource識別子のマッピング
-_SECTION_SOURCES: dict[str, str] = {
-    "## プロジェクトドキュメント改善提案": "project-doc",
-    "## pyfltr改善提案": "pyfltr",
-    "## agent-toolkit改善提案": "agent-toolkit",
-}
-
-# 「提案無し」を示す本文パターン
-_NO_PROPOSAL_TEXT = "提案無し"
-
-
-def _source_target_repos(home: pathlib.Path) -> dict[str, str]:
-    """sourceごとのtarget_repoマップを返す（project-docを除く）。"""
-    return {
-        "pyfltr": str(home / "pyfltr"),
-        "agent-toolkit": str(home / "dotfiles"),
-    }
-
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(
-        description="stdinからmarkdownを読み込み、フィードバック項目をprivate-notesのinboxへ投入する。",
+        description="位置引数で受け取ったメッセージ群をprivate-notesのinboxへ投入する。",
     )
     parser.add_argument(
-        "--project-doc-repo",
-        metavar="PATH",
-        help="プロジェクトドキュメント改善提案章のtarget_repoとなるリポジトリパス。",
+        "repo_path",
+        metavar="REPO_PATH",
+        help="フィードバック対象リポジトリのパス（~展開可能）。",
+    )
+    parser.add_argument(
+        "messages",
+        metavar="MESSAGE",
+        nargs="+",
+        help="投入するフィードバックメッセージ（1個以上）。",
     )
     enable_completion(parser)
     return parser.parse_args(argv)
-
-
-def _parse_sections(markdown: str) -> dict[str, list[str]]:
-    """markdownを章単位にパースし、各章の箇条書き項目リストを返す。
-
-    キーはsource識別子。「提案無し」のみの章は結果に含めない。
-    `## `で始まる既知の見出し以外は無視する。`### `等のサブセクションも無視する。
-    """
-    result: dict[str, list[str]] = {}
-    current_source: str | None = None
-    current_items: list[str] = []
-
-    def _flush() -> None:
-        if current_source is None:
-            return
-        # 「提案無し」のみの章はスキップする
-        if len(current_items) == 1 and _NO_PROPOSAL_TEXT in current_items[0]:
-            return
-        if current_items:
-            result[current_source] = list(current_items)
-
-    for line in markdown.splitlines():
-        stripped = line.strip()
-        if stripped in _SECTION_SOURCES:
-            _flush()
-            current_source = _SECTION_SOURCES[stripped]
-            current_items = []
-        elif stripped.startswith("## "):
-            # 未知の章見出し: 現在章を区切るが新たな章は開始しない
-            _flush()
-            current_source = None
-            current_items = []
-        elif current_source is not None and stripped.startswith("- "):
-            current_items.append(stripped[2:])  # 先頭の "- " を除く
-
-    _flush()
-    return result
-
-
-def _split_item(item_text: str) -> tuple[str, str]:
-    """箇条書き項目テキストから対象ファイルと提案内容を分離する。
-
-    区切りは全角ダッシュ（—, U+2014）または ` - `（スペース込みのハイフン）を優先順で試みる。
-    区切りが見つからない場合は対象ファイルを空文字列として返す。
-    """
-    if "—" in item_text:
-        parts = item_text.split("—", maxsplit=1)
-        return parts[0].strip(), parts[1].strip()
-    if " - " in item_text:
-        parts = item_text.split(" - ", maxsplit=1)
-        return parts[0].strip(), parts[1].strip()
-    return "", item_text.strip()
 
 
 def _count_existing_inbox_files(inbox_dir: pathlib.Path, timestamp_prefix: str) -> int:
@@ -103,37 +39,39 @@ def _count_existing_inbox_files(inbox_dir: pathlib.Path, timestamp_prefix: str) 
 def _write_feedback_file(
     inbox_dir: pathlib.Path,
     filename: str,
-    source: str,
     target_repo: str,
-    target: str,
-    item_text: str,
+    message: str,
     created: str,
 ) -> None:
     """frontmatter付きフィードバックファイルを書き込む。"""
     inbox_dir.mkdir(parents=True, exist_ok=True)
-    content = f"---\ncreated: {created}\nsource: {source}\ntarget_repo: {target_repo}\ntarget: {target}\n---\n\n- {item_text}\n"
+    content = f"---\ncreated: {created}\ntarget_repo: {target_repo}\n---\n\n{message}\n"
     (inbox_dir / filename).write_text(content, encoding="utf-8")
 
 
-def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[bytes]:
+def _run_git(args: list[str], cwd: pathlib.Path) -> None:
     """gitコマンドをcwdで実行し、失敗時は例外を送出する。"""
-    return subprocess.run(["git", *args], cwd=cwd, check=True)
+    subprocess.run(["git", *args], cwd=cwd, check=True)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, *, home: pathlib.Path | None = None, now: datetime.datetime | None = None) -> None:
     """エントリポイント。
 
     `pyproject.toml`の`[project.scripts]`から
     `feedback-add = "pytools.feedback_inbox_add:main"`の形で参照される。
     """
     args = parse_args(argv)
+    if home is None:
+        home = pathlib.Path.home()
+    if now is None:
+        now = datetime.datetime.now()
 
-    flag_file = pathlib.Path.home() / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+    flag_file = home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
     if not flag_file.exists():
         print("feedback-inbox機能が無効です（フラグファイルが存在しません）。", file=sys.stderr)
         sys.exit(1)
 
-    private_notes = pathlib.Path.home() / "private-notes"
+    private_notes = home / "private-notes"
     if not private_notes.exists():
         print(
             "~/private-notesが見つかりません。GitHubからcloneしてから再実行してください。",
@@ -141,32 +79,12 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
-    markdown = sys.stdin.read()
-    sections = _parse_sections(markdown)
-
-    if not sections:
-        print("処理対象なし")
-        sys.exit(0)
-
-    # project-doc章がある場合は--project-doc-repoが必須
-    if "project-doc" in sections and not args.project_doc_repo:
-        print(
-            "プロジェクトドキュメント改善提案章があります。--project-doc-repo <path> でリポジトリパスを指定してください。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # pull前にtarget_repoマップを確定する
-    target_repo_map: dict[str, str] = _source_target_repos(pathlib.Path.home())
-    if args.project_doc_repo:
-        target_repo_map["project-doc"] = str(pathlib.Path(args.project_doc_repo).expanduser().resolve())
+    target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
 
     # pull: リモート最新状態へ合わせてから連番を決める
     inbox_dir = private_notes / "feedback" / "inbox"
     _run_git(["pull", "--ff-only"], cwd=private_notes)
 
-    # タイムスタンプと連番を決めてファイルを生成する
-    now = datetime.datetime.now()
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     created_iso = now.isoformat()
 
@@ -175,29 +93,23 @@ def main(argv: list[str] | None = None) -> None:
     counter = existing_count + 1
 
     generated_files: list[str] = []
-    for source, items in sections.items():
-        target_repo = target_repo_map[source]
-        for item_text in items:
-            target, _ = _split_item(item_text)
-            filename = f"{timestamp}-{counter:03d}.md"
-            _write_feedback_file(
-                inbox_dir=inbox_dir,
-                filename=filename,
-                source=source,
-                target_repo=target_repo,
-                target=target,
-                item_text=item_text,
-                created=created_iso,
-            )
-            generated_files.append(filename)
-            counter += 1
+    for message in args.messages:
+        filename = f"{timestamp}-{counter:03d}.md"
+        _write_feedback_file(
+            inbox_dir=inbox_dir,
+            filename=filename,
+            target_repo=target_repo,
+            message=message,
+            created=created_iso,
+        )
+        generated_files.append(filename)
+        counter += 1
 
-    # git操作: add → commit → push
     _run_git(["add", str(inbox_dir)], cwd=private_notes)
-    n = len(generated_files)
-    _run_git(["commit", "-m", f"chore: add {n} feedback items"], cwd=private_notes)
+    count = len(generated_files)
+    _run_git(["commit", "-m", f"chore: add {count} feedback {'item' if count == 1 else 'items'}"], cwd=private_notes)
     _run_git(["push"], cwd=private_notes)
 
     files_summary = ", ".join(generated_files)
-    print(f"{n}件投入: {files_summary}")
+    print(f"{count}件投入: {files_summary}")
     sys.exit(0)
