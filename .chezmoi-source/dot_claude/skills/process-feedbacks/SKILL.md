@@ -41,8 +41,36 @@ description: >
    - `apply-feedback`は批判的検討・採否判定の提示・ユーザー承認の取得・`EnterPlanMode`移行・
      `agent-toolkit:plan-mode`に従う計画作成と実装・コミットまでを担う
    - グループ内の全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
+3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
+   採否確定後に該当する後始末手順を含めるよう明示する。
+   後始末はapply-feedbackのplan-mode実装工程内で実施される
+   - 採用ファイルがある場合の手順（対象リポジトリへの反映コミット完了後に実施する）:
+     1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用ファイル分）
+     2. `~/private-notes`で以下を順に実行する
+
+        ```sh
+        git add feedback/inbox/
+        git commit -m "chore: process N feedback items (adopted)"
+        git push
+        ```
+
+   - 見送りファイルがある場合の手順:
+     1. `~/private-notes/feedback/inbox/<filename>`を
+        `~/private-notes/feedback/rejected/<filename>`へ移動する（全見送りファイル分）
+     2. `~/private-notes`で以下を順に実行する
+
+        ```sh
+        git add feedback/inbox/ feedback/rejected/
+        git commit -m "chore: process N feedback items (rejected)"
+        git push
+        ```
+
+   - 採用・見送りの双方が存在する場合は、両方を含めた単一コミットで反映してよい（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）
 
 ## ステップ4: 採否判別
+
+後始末はapply-feedbackのplan-mode実装工程内で完結するため、本ステップはステップ5のサマリー提示用に
+採否情報を集約する工程として実施する。
 
 `apply-feedback`の検討結果提示の`### 採用`・`### 不採用`配下から、
 各ファイル（`## <filename>`見出しで対応付け）が採用か見送りかを判別する。
@@ -50,37 +78,7 @@ description: >
 
 判別が困難な場合は`AskUserQuestion`でユーザーへ確認する。
 
-## ステップ5: 採用ファイルの処理
-
-対象リポジトリへの反映コミットが完了したことを確認したうえで、当該target_repoの採用ファイル全件に対し以下を実施する。
-
-1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用ファイル分）
-2. `~/private-notes`で以下を順に実行する
-
-```sh
-git add feedback/inbox/
-git commit -m "chore: process N feedback items (adopted)"
-git push
-```
-
-## ステップ6: 見送りファイルの処理
-
-当該target_repoの見送りファイル全件に対し以下を実施する。
-
-1. `~/private-notes/feedback/inbox/<filename>`を
-   `~/private-notes/feedback/rejected/<filename>`へ移動する（全見送りファイル分）
-2. `~/private-notes`で以下を順に実行する
-
-```sh
-git add feedback/inbox/ feedback/rejected/
-git commit -m "chore: process N feedback items (rejected)"
-git push
-```
-
-採用・見送りの双方が存在する場合は、両方を含めた単一コミットで反映してよい
-（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）。
-
-## ステップ7: サマリー提示
+## ステップ5: サマリー提示
 
 全グループ処理後に採用N件・見送りN件のサマリーをユーザーに提示する。
 target_repo別の内訳も併記する。
