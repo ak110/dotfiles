@@ -353,7 +353,7 @@ class TestContextContents:
         assert _TARGET_SESSION_REVIEW in body
         assert "Skill" in body
         assert "activation policy" in body
-        assert "Only if all three conditions hold" in body
+        assert "end the turn silently" in body
 
 
 class TestEdgeCases:
