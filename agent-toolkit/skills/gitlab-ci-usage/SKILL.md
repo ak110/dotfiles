@@ -109,6 +109,33 @@ test:
   script: ./test.sh
 ```
 
+### `rules:changes`とスケジュール実行
+
+`rules:changes`はGit pushイベントを伴わないパイプラインでは常にtrueと評価される。
+対象は`$CI_PIPELINE_SOURCE`が`schedule`・`tag`・`pipeline`・`web`・`api`・`trigger`の場合で、
+差分判定が成立しないため`changes`条件を通過する。
+
+`schedule`等を導入する際は、対象外としたいジョブを次のいずれかで限定する。
+
+対象外ジョブの`rules`先頭で`schedule`を除外する形式:
+
+```yaml
+job:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - changes: [src/**/*]
+```
+
+`schedule`で起動したいジョブのみ`if`で起動条件を限定する形式:
+
+```yaml
+scheduled-check:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script: ./check.sh
+```
+
 ## lint / 検証
 
 `.gitlab-ci.yml`の妥当性検証には以下の手段がある。

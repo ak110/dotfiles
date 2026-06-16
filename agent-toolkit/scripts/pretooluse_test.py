@@ -1282,3 +1282,126 @@ class TestCodexMcpSandbox:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == ""
+
+
+class TestBashAgentToolkitVersionBump:
+    """agent-toolkit/配下コミット時のversion bump漏れ警告。
+
+    pretooluse.pyがsubprocess経由で起動されるため、subprocess.runの差し替えではなく
+    実gitリポジトリを構築して判定動作を検証する（既存testパターンと整合する）。
+    """
+
+    @staticmethod
+    def _init_repo(repo: pathlib.Path) -> None:
+        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
+
+    @classmethod
+    def _make_repo(cls, tmp_path: pathlib.Path, staged: dict[str, str] | None = None) -> pathlib.Path:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        cls._init_repo(repo)
+        (repo / "seed.txt").write_text("seed")
+        subprocess.run(["git", "add", "seed.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        if staged:
+            for name, content in staged.items():
+                target = repo / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+                subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        return repo
+
+    @classmethod
+    def _make_repo_with_upstream(
+        cls,
+        tmp_path: pathlib.Path,
+        unpushed_files: dict[str, str],
+        staged: dict[str, str],
+    ) -> pathlib.Path:
+        """upstreamを持ち、unpushed_filesを含む未プッシュコミットがある状態を構築する。"""
+        upstream = tmp_path / "upstream.git"
+        subprocess.run(["git", "init", "--bare", str(upstream)], capture_output=True, check=True)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        cls._init_repo(repo)
+        (repo / "seed.txt").write_text("seed")
+        subprocess.run(["git", "add", "seed.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(upstream)], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "push", "-u", "origin", "HEAD:refs/heads/main"], cwd=str(repo), capture_output=True, check=True)
+        for name, content in unpushed_files.items():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "unpushed"], cwd=str(repo), capture_output=True, check=True)
+        for name, content in staged.items():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        return repo
+
+    @staticmethod
+    def _invoke(command: str, cwd: str) -> subprocess.CompletedProcess[str]:
+        return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd, "session_id": "vb-test"})
+
+    @staticmethod
+    def _has_version_bump_warning(result: subprocess.CompletedProcess[str]) -> bool:
+        if not result.stdout.strip():
+            return False
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+        return "plugin.json" in ctx and "version" in ctx
+
+    def test_non_commit_command_unaffected(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
+        result = self._invoke("git status", str(repo))
+        assert result.returncode == 0
+        assert not self._has_version_bump_warning(result)
+
+    def test_no_staged_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(tmp_path)
+        result = self._invoke("git commit -m 'x'", str(repo))
+        assert not self._has_version_bump_warning(result)
+
+    def test_outside_agent_toolkit_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(tmp_path, {"README.md": "# r\n"})
+        result = self._invoke("git commit -m 'docs'", str(repo))
+        assert not self._has_version_bump_warning(result)
+
+    def test_only_test_files_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(tmp_path, {"agent-toolkit/scripts/foo_test.py": "x = 1\n"})
+        result = self._invoke("git commit -m 'test'", str(repo))
+        assert not self._has_version_bump_warning(result)
+
+    def test_skill_change_warns(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
+        result = self._invoke("git commit -m 'skill'", str(repo))
+        assert result.returncode == 0
+        assert self._has_version_bump_warning(result)
+
+    def test_plugin_manifest_in_staged_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo(
+            tmp_path,
+            {
+                "agent-toolkit/skills/x/SKILL.md": "# x\n",
+                "agent-toolkit/.claude-plugin/plugin.json": '{"version": "1.0.1"}\n',
+            },
+        )
+        result = self._invoke("git commit -m 'skill+bump'", str(repo))
+        assert not self._has_version_bump_warning(result)
+
+    def test_unpushed_plugin_json_change_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo_with_upstream(
+            tmp_path,
+            unpushed_files={"agent-toolkit/.claude-plugin/plugin.json": '{"version": "1.0.1"}\n'},
+            staged={"agent-toolkit/skills/x/SKILL.md": "# x\n"},
+        )
+        result = self._invoke("git commit -m 'followup'", str(repo))
+        assert not self._has_version_bump_warning(result)

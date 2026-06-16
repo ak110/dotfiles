@@ -78,6 +78,9 @@ description: >
 
 判断に迷う場合はbumpする（pre-1.0であれば頻繁にMINORを更新しても問題ない）。種別の使い分けは次の通り。
 
+`git commit`時に`agent-toolkit/`配下の変更を含みつつ`plugin.json`の`version`未変更の場合、
+`agent-toolkit/scripts/pretooluse.py`の検知フックが`warn`を返す。bump不要に該当する場合は警告を無視して進める。
+
 - PATCH（`+0.0.1`）: 軽微な修正（メッセージ変更、スタイル調整、バグ修正、検出漏れの修正など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・descriptionが変わる規模など、規模の大きい変更に限定
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がない限り行わない

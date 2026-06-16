@@ -29,6 +29,7 @@ Bash:
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
 - `git commit`未検証警告 (warn)
+- `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
 - `codex exec`の未決事項念押し (warn)
 
@@ -179,6 +180,11 @@ def main() -> int:
             return 2
         # git commit未検証警告
         result = _check_bash_git_commit(command, session_id, cwd)
+        if result is not None:
+            emit_json(result)
+            return 0
+        # agent-toolkit/配下のコミット時にversion bump漏れを警告
+        result = _check_bash_agent_toolkit_version_bump(command, cwd)
         if result is not None:
             emit_json(result)
             return 0
@@ -935,6 +941,20 @@ def _cwd_is_python_project(cwd: str) -> bool:
     return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
 
 
+# --- Bash: git共通ヘルパー ---
+
+
+def _run_git_lines(args: list[str], cwd: str) -> list[str] | None:
+    """git出力を行リストで返す。失敗時はNone。"""
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
 # --- Bash: git commit未検証警告 ---
 
 
@@ -963,13 +983,7 @@ def _is_docs_only_commit(command: str, cwd: str) -> bool:
             tail = tail[:pos]
     include_working_tree = _GIT_COMMIT_INCLUDE_WORKTREE_PATTERN.search(tail) is not None
     args = ["git", "diff", "--name-only", "HEAD"] if include_working_tree else ["git", "diff", "--cached", "--name-only"]
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    if result.returncode != 0:
-        return False
-    files = [line for line in result.stdout.splitlines() if line.strip()]
+    files = _run_git_lines(args, cwd)
     if not files:
         return False
     return all(path.lower().endswith(".md") for path in files)
@@ -996,6 +1010,74 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> dict | No
             "permissionDecision": "allow",
             "additionalContext": _llm_notice(
                 "committing without running tests. Follow the verify-then-commit procedure in agent.md and run tests first.",
+                tag="warn",
+            ),
+        },
+    }
+
+
+# --- Bash: agent-toolkit/配下のversion bump漏れ警告 ---
+
+_AGENT_TOOLKIT_PREFIX = "agent-toolkit/"
+_AGENT_TOOLKIT_PLUGIN_MANIFEST = "agent-toolkit/.claude-plugin/plugin.json"
+_AGENT_TOOLKIT_TEST_SUFFIX = "_test.py"
+_AGENT_TOOLKIT_SCRIPTS_PREFIX = "agent-toolkit/scripts/"
+
+
+def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | None:
+    """agent-toolkit/配下の変更をコミットする際にversion bump漏れを警告する。
+
+    判定:
+
+    1. `git commit`を検出した場合のみ動作する
+    2. ステージ済みファイルに`agent-toolkit/`配下を含まない、または
+       `agent-toolkit/scripts/*_test.py`のみの場合は警告しない
+    3. ステージ済み差分に`agent-toolkit/.claude-plugin/plugin.json`を
+       含む場合は警告しない
+    4. 未プッシュ範囲（`@{u}..HEAD`）に`agent-toolkit/.claude-plugin/plugin.json`
+       を変更したコミットがある場合は警告しない（upstream未設定時はスキップ）
+    5. 上記いずれにも該当しない場合、warn JSONを返す
+    """
+    match = _GIT_COMMIT_PATTERN.search(command)
+    if match is None or not _likely_real_command(command, match.start()):
+        return None
+    if not cwd:
+        return None
+
+    staged = _run_git_lines(["git", "diff", "--cached", "--name-only"], cwd)
+    if staged is None or not staged:
+        return None
+    agent_toolkit_files = [p for p in staged if p.startswith(_AGENT_TOOLKIT_PREFIX)]
+    if not agent_toolkit_files:
+        return None
+    non_test_files = [
+        p
+        for p in agent_toolkit_files
+        if not (p.startswith(_AGENT_TOOLKIT_SCRIPTS_PREFIX) and p.endswith(_AGENT_TOOLKIT_TEST_SUFFIX))
+    ]
+    if not non_test_files:
+        return None
+    if _AGENT_TOOLKIT_PLUGIN_MANIFEST in staged:
+        return None
+
+    unpushed = _run_git_lines(
+        ["git", "rev-list", "@{u}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
+        cwd,
+    )
+    if unpushed:
+        return None
+
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "additionalContext": _llm_notice(
+                "agent-toolkit/ files are staged but"
+                " `agent-toolkit/.claude-plugin/plugin.json` `version` is unchanged"
+                " in this commit and the unpushed range."
+                " If user-facing behavior changes (hook script, skill, agent definition,"
+                " rule file, etc.), bump the `version` field in plugin.json"
+                " (and keep `.claude-plugin/marketplace.json` in sync) before committing.",
                 tag="warn",
             ),
         },

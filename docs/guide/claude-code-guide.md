@@ -143,6 +143,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - メインエージェント応答に占める日本語文字の比率が閾値未満のときに警告し、
   ツール呼び出し前後の短文ステータス報告が英語化する事象を抑制する
 - テスト未実行のままの`git commit`を警告
+- `agent-toolkit/`配下のファイルを含む`git commit`で`plugin.json`のversion未変更を警告
 - `git log`に`--decorate`を自動挿入
 - `codex exec`実行前に未決事項の確認を促す
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
