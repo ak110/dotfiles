@@ -3,12 +3,12 @@
 ## 言語スタイル
 
 - importについて
-  - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない。定義元を特定しやすく、名前衝突も避けられるため）
-  - `import xxx as yyy`の別名は`np`などの一般的なものを除き極力使わない（可読性を損なうため）
+  - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
+  - `import xxx as yyy`の別名は`np`などの一般的なものを除き極力使わない
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
-- タイプヒントは可能な限り書く（静的解析・IDE補完・リファクタリング耐性を確保するため）
+- タイプヒントは可能な限り書く
   - `typing.List`・`typing.Optional`は使わず`list`・`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
   - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
@@ -24,9 +24,9 @@
     - 頻繁に発生する例外に限り`logger.warning(f"〇〇失敗: {e}")`のように文字列化して出力する
   - 一度のエラーで複数回ログが出力されたり、逆に一度もログが出なかったりすることが無いよう注意する
 - 日付関連の処理は`datetime`を使う
-- ファイル関連の処理は`pathlib`を基本とする（型安全でOS間の差異を吸収できるため）
+- ファイル関連の処理は`pathlib`を基本とする
   - `os`モジュールのパス操作は使わず、ファイルの開閉は`Path.open`等の`pathlib`経由を優先する
-- テーブルデータの処理には`polars`を使う（高速・省メモリー・型安全・遅延評価対応）。`pandas`は使わない
+- テーブルデータの処理には`polars`を使う。`pandas`は使わない
 - 例外の再送出は`raise`（引数なし）を使い、`raise e`は使わない（スタックトレースが書き換わるため）
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
@@ -78,25 +78,13 @@
   - 関数本体は成功パスも含めて`sys.exit(exit_code)`を常時明示する
     - 成功パスで早期`return`して終了する設計では`pytest.raises(SystemExit)`が
       `Failed: DID NOT RAISE <class 'SystemExit'>`で失敗する
-  - 推奨形:
+  - 推奨形（`-> int`を返して`sys.exit(main())`に渡す形も同等に許容する）:
 
     ```python
     def main() -> None:
         has_error = run_process()
         exit_code = 1 if has_error else 0
         sys.exit(exit_code)
-    ```
-
-    `-> int`を返して呼び出し側で`sys.exit(main())`に渡す形も同等の推奨形とする。
-    成功パスを含めて`sys.exit`が常時呼ばれる構造であれば、いずれの形式も許容する。
-
-    ```python
-    def main() -> int:
-        has_error = run_process()
-        return 1 if has_error else 0
-
-    if __name__ == "__main__":
-        sys.exit(main())
     ```
 
   - `[project.scripts]`の`module:main`参照を変更・追加したら、登録したコマンド名で起動して確認する
@@ -109,8 +97,7 @@
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
-- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う
-  - `asyncio.get_event_loop()`はPythonバージョンによって挙動が異なり非推奨
+- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う（`asyncio.get_event_loop()`は非推奨）
 - 新しいPythonバージョンの機能を積極的に使う
   - Python 3.12+: PEP 695型パラメーター構文・PEP 701 f-string拡張を使う
   - Python 3.13+: `typing.TypedDict`の`ReadOnly[...]`で不変フィールドを型レベルで表現する
@@ -154,8 +141,6 @@
   - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する
     - テスト本体で`if param == "...":`のようなシナリオごとの分岐は書かない
   - シナリオごとに処理が分岐する場合は独立したテスト関数に分割する
-   （parametrizeで表現するのはデータ、関数本体が担うのはロジックであり、
-   両者を混在させるとシナリオ追加・削除時にparametrizeリストと分岐節の双方を更新することになりSSOTを失う）
 - テスト関数内で使用しないfixture（副作用のみが必要な場合）は
   `@pytest.mark.usefixtures("fixture_name")`を使う
   - `@pytest.mark.parametrize(..., indirect=True)`との併用も可
@@ -199,10 +184,8 @@
 
 - `monkeypatch.setattr`で差し替える代用関数は副作用と戻り値をlambda式に同居させず、
   通常の`def`関数として定義して`return`文で戻り値を明示する
-  - lambda式に副作用と戻り値を同居させる書き方は、型検査と式評価の警告が同一行で重複する
-- 代用関数のシグネチャは対象APIへのキーワード引数追加に追従できるよう、末尾に`**kwargs`を含める
+- 代用関数のシグネチャは末尾に`**kwargs`を含め、対象APIへのキーワード引数追加に追従できるようにする
   - 追加される引数名が事前に分かる場合は`<name>: object = None`形式の引数を併用してもよい
-  - 対象APIに新規キーワード引数を追加した際に複数の代用関数が一斉に破綻する事態を防ぐ
 - 対象APIへ引数を委譲する代用関数の`*args`・`**kwargs`の型注釈は`typing.Any`を使う
   - 委譲先の呼び出し（`original_save(self, *args, **kwargs)`等）で型検査器が型不一致を報告するため
   - 該当検査器: pyright（`reportArgumentType`）・ty（`invalid-argument-type`）・mypy（`arg-type`）
