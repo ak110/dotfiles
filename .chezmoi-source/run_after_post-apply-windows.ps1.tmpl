@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 
 # dotfiles 後処理エントリポイント (Windows)。
 # chezmoi apply 完了後に毎回実行する (run_after_* のため無条件実行)。
-# 全ステップは冪等かつ十分高速で、変更なしなら数秒で完了する。
+# 全ステップは冪等で、変更なしなら数秒で完了する。
 #
 # NOTE: 対応するLinux版 → run_after_post-apply.sh.tmpl
 #
-# 1. pytools を editable install する (pyproject.toml ハッシュでキャッシュ)
+# 1. pytools を editable install する (pyproject.toml ハッシュと期待シム実在の両方をキャッシュキーとする)
 # 2. dotfiles-post-apply.exe を実行する
 #    (Claude 設定 / SSH config / 旧配布物の削除 / npmrc を順に更新)
 
@@ -19,12 +19,26 @@ if (Test-Path $hashFile) {
     $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
 }
 
+# キャッシュ判定は「入力ハッシュ一致」と「期待シム実在」の両方を条件とする。
+# pyproject.toml のハッシュのみで判定すると、過去の uv tool install 部分失敗で
+# シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
+# post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
+$expectedShimDir = Join-Path $env:USERPROFILE '.local\bin'
+$expectedShims = @('dotfiles-post-apply.exe')
+function Test-ExpectedShims {
+    foreach ($name in $expectedShims) {
+        if (-not (Test-Path (Join-Path $expectedShimDir $name))) { return $false }
+    }
+    return $true
+}
+$needsReinstall = ($currentHash -ne $cachedHash) -or (-not (Test-ExpectedShims))
+
 $viewerBin = Join-Path $env:USERPROFILE '.local\bin\claude-plans-viewer.exe'
 # 再インストール時に claude-plans-viewer.exe や venv 内ファイルがロックされたまま
 # tool venv 再構築が部分失敗する事象が確認されているため、viewer が起動中なら
 # 先に停止させ、再インストール完了後に再度バックグラウンド起動する。
 $viewerWasRunning = $false
-if ($currentHash -ne $cachedHash) {
+if ($needsReinstall) {
     $viewerProcs = Get-Process -Name claude-plans-viewer -ErrorAction SilentlyContinue
     if ($viewerProcs) {
         $viewerWasRunning = $true
@@ -41,7 +55,7 @@ if ($currentHash -ne $cachedHash) {
 $mediaRemotePythonw = Join-Path $env:USERPROFILE '.local\share\uv\tools\pytools\Scripts\pythonw.exe'
 $mediaRemotePidFile = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\pid'
 $mediaRemoteWasRunning = $false
-if ($currentHash -ne $cachedHash -and (Test-Path $mediaRemotePidFile)) {
+if ($needsReinstall -and (Test-Path $mediaRemotePidFile)) {
     try {
         $mediaRemotePid = [int]((Get-Content $mediaRemotePidFile -Encoding UTF8 -Raw).Trim())
         $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$mediaRemotePid" -ErrorAction SilentlyContinue
@@ -56,11 +70,23 @@ if ($currentHash -ne $cachedHash -and (Test-Path $mediaRemotePidFile)) {
 }
 
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
-if ($currentHash -ne $cachedHash) {
-    Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
+if ($needsReinstall) {
+    if ($currentHash -ne $cachedHash) {
+        Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
+    } else {
+        Write-Host '  [pytools] 期待シムが欠落 → 再インストール'
+    }
     try {
-        uv tool install --editable "{{ .chezmoi.workingTree }}"
-        uv tool update-shell
+        # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
+        # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
+        # ハッシュ書き込みは uv tool install ・uv tool update-shell ・期待シム実在再確認のすべてが成功した場合のみ実行する。
+        & uv tool install --editable "{{ .chezmoi.workingTree }}"
+        if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
+        & uv tool update-shell
+        if ($LASTEXITCODE -ne 0) { throw "uv tool update-shell が失敗しました (exit=$LASTEXITCODE)" }
+        if (-not (Test-ExpectedShims)) {
+            throw '期待シムが生成されていません'
+        }
         if (-not (Test-Path $cacheDir)) {
             New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
         }
@@ -99,7 +125,7 @@ if (Test-Path $postApplyBin) {
     $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
     & $postApplyBin
 } else {
-    Write-Host "  [pytools] $postApplyBin が見つかりません。後処理をスキップします。"
+    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"
 }
 
 # 再インストール前に停止した viewer を再起動する。

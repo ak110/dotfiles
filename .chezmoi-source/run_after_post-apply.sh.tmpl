@@ -1,11 +1,11 @@
 #!/bin/bash
 # dotfiles 後処理エントリポイント。
 # chezmoi apply 完了後に毎回実行する (run_after_* のため無条件実行)。
-# 全ステップは冪等かつ十分高速で、変更なしなら数秒で完了する。
+# 全ステップは冪等で、変更なしなら数秒で完了する。
 #
 # NOTE: 対応するWindows版 → run_after_post-apply-windows.ps1.tmpl
 #
-# 1. pytools を editable install する (pyproject.toml ハッシュでキャッシュ)
+# 1. pytools を editable install する (pyproject.toml ハッシュと期待シム実在の両方をキャッシュキーとする)
 # 2. dotfiles-post-apply を実行する
 #    (Claude 設定 / SSH config / 旧配布物の削除 / npmrc を順に更新)
 
@@ -20,10 +20,35 @@ if [ -f "$hash_file" ]; then
     cached_hash=$(cat "$hash_file")
 fi
 
+# キャッシュ判定は「入力ハッシュ一致」と「期待シム実在」の両方を条件とする。
+# pyproject.toml のハッシュのみで判定すると、過去の uv tool install 部分失敗で
+# シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
+# post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
+expected_shim_dir="$HOME/.local/bin"
+expected_shims=("dotfiles-post-apply")
+test_expected_shims() {
+    for name in "${expected_shims[@]}"; do
+        if [ ! -x "$expected_shim_dir/$name" ]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
+needs_reinstall=0
+reason=""
 if [ "$current_hash" != "$cached_hash" ]; then
-    echo "  [pytools] pyproject.toml に変更あり → 再インストール"
-    if uv tool install --editable "{{ .chezmoi.workingTree }}"; then
+    needs_reinstall=1
+    reason="pyproject.toml に変更あり"
+elif ! test_expected_shims; then
+    needs_reinstall=1
+    reason="期待シムが欠落"
+fi
+
+if [ "$needs_reinstall" = 1 ]; then
+    echo "  [pytools] ${reason} → 再インストール"
+    if uv tool install --editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"
     else
@@ -39,5 +64,5 @@ if [ -x "$post_apply_bin" ]; then
     export CHEZMOI_WORKING_TREE='{{ .chezmoi.workingTree }}'
     exec "$post_apply_bin"
 else
-    echo "  [pytools] $post_apply_bin が見つかりません。後処理をスキップします。"
+    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ"
 fi
