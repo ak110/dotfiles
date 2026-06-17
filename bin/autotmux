@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+flag="$HOME/.config/dotfiles/tmux-auto-attach"
+
+usage() {
+    cat <<'EOF' >&2
+使い方: autotmux <on|off|status>
+
+SSH対話ログイン時のtmux自動アタッチをホスト単位で切り替えます。
+有効化フラグは ~/.config/dotfiles/tmux-auto-attach に作成されます。
+EOF
+}
+
+case "${1:-}" in
+on)
+    mkdir -p "$(dirname "$flag")"
+    : >"$flag"
+    echo "autotmux: on (${flag})"
+    ;;
+off)
+    rm -f "$flag"
+    echo "autotmux: off"
+    ;;
+status)
+    if [ -e "$flag" ]; then
+        echo "autotmux: on (${flag})"
+        exit 0
+    else
+        echo "autotmux: off"
+        exit 1
+    fi
+    ;;
+*)
+    usage
+    exit 2
+    ;;
+esac

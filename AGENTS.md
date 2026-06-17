@@ -143,6 +143,28 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 
 chezmoiはドットプレフィックスのディレクトリを自動無視するため`.chezmoi-source/dot_claude/`と衝突しない。
 
+### SSH対話ログイン時のtmux自動アタッチ
+
+ホスト単位でSSH対話ログイン時の`tmux`自動アタッチを有効化できる。
+既定は無効で、`~/.config/dotfiles/tmux-auto-attach`の有無で切り替える。
+
+- 有効化: `autotmux on`
+- 無効化: `autotmux off`
+- 状態確認: `autotmux status`（有効時0・無効時1で終了）
+
+自動アタッチは次の全条件を満たした場合のみ実行される。
+
+- 対話シェル
+- SSH経由（`$SSH_CONNECTION`または`$SSH_TTY`セット）
+- tmux外（`$TMUX`空）
+- 標準入力がTTY
+- IDE Remote統合ターミナル外（`$VSCODE_INJECTION`空・`$TERM_PROGRAM`非`vscode`・`$TERMINAL_EMULATOR`空）
+- `tmux`コマンド存在
+- フラグファイル存在
+
+tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終了する。
+フラグファイルはchezmoi管理対象外でホスト固有運用とする。
+
 ### chezmoiの命名規則（早見表）
 
 `.chezmoi-source/`配下のファイル名は以下の規則で`~/`配下にデプロイされる

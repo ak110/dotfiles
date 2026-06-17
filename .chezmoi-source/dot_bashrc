@@ -79,6 +79,23 @@ case $- in
 *) return ;;
 esac
 
+# SSH対話ログイン時にtmuxへ自動アタッチする
+# 有効化は ~/.config/dotfiles/tmux-auto-attach の存在で切り替える (autotmux on/off)
+if [ -z "$TMUX" ] &&
+    [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ] &&
+    [ -t 0 ] &&
+    [ -z "${VSCODE_INJECTION:-}" ] &&
+    [ "${TERM_PROGRAM:-}" != "vscode" ] &&
+    [ -z "${TERMINAL_EMULATOR:-}" ] &&
+    [ -e ~/.config/dotfiles/tmux-auto-attach ] &&
+    command -v tmux >/dev/null 2>&1; then
+    if tmux has-session -t main 2>/dev/null; then
+        exec tmux attach -t main
+    else
+        exec tmux new -s main
+    fi
+fi
+
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
 HISTCONTROL=ignoreboth
