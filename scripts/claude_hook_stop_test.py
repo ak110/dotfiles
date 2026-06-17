@@ -25,6 +25,12 @@ _EXTENSION_SKILL = "session-review-dotfiles"
 _TARGET_SESSION_REVIEW = "agent-toolkit:session-review"
 
 
+def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
+    """セッション状態ファイルを書き込む。"""
+    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
 def _run(
     payload: object,
     *,
@@ -276,10 +282,10 @@ class TestStopHookActive:
 
 
 class TestStopGateDelegation:
-    """`is_pending_async_work` と `has_session_review_skill_invoked` への委譲テスト。
+    """`is_pending_async_work` とsession_stateの`session_review_invoked`への委譲テスト。
 
     同値分割: {pyfltr/agent-toolkit使用検出あり/なし} × {機械ゲート通過/不通過} ×
-    {対象スキル起動済み/未起動}。
+    {対象スキル起動済み/未起動}。スキル起動状態はsession_stateの`session_review_invoked`辞書で表現する。
     """
 
     @pytest.mark.parametrize(
@@ -310,15 +316,14 @@ class TestStopGateDelegation:
         if detected:
             entries.append(_assistant_entry_with_bash("uv run pyfltr run foo.py"))
             entries.append(_user_entry("結果を確認"))
-        if skill_invoked:
-            entries.append(_assistant_with_skill(_EXTENSION_SKILL))
-            entries.append(_user_entry("続き"))
         if pending:
             entries.append(_assistant_with_async_tool("Agent"))
         else:
             entries.append(_assistant_text_only())
         transcript = _write_transcript(tmp_path, entries)
         sid = f"matrix-{detected}-{pending}-{skill_invoked}"
+        if skill_invoked:
+            _write_state(tmp_path, sid, {"session_review_invoked": {_EXTENSION_SKILL: True}})
         result = _run(
             {"session_id": sid, "transcript_path": str(transcript)},
             state_dir=tmp_path,

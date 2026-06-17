@@ -173,6 +173,78 @@ class TestAgentToolkitEditSkillRecording:
         assert state.get("other_flag") is True
 
 
+class TestSessionReviewDotfilesRecording:
+    """`session-review-dotfiles` スキル呼び出しを `session_review_invoked` 辞書へ記録する。"""
+
+    _SKILL = "session-review-dotfiles"
+
+    def test_records_invocation(self, tmp_path: pathlib.Path):
+        env = _state_env(tmp_path)
+        sid = "review-rec-1"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": self._SKILL},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        invoked = _read_state(tmp_path, sid).get("session_review_invoked")
+        assert isinstance(invoked, dict)
+        assert invoked.get(self._SKILL) is True
+
+    def test_no_rewrite_when_key_already_true(self, tmp_path: pathlib.Path):
+        env = _state_env(tmp_path)
+        sid = "review-rec-already"
+        path = _state_path(tmp_path, sid)
+        path.write_text(
+            json.dumps(
+                {"session_review_invoked": {self._SKILL: True}, "other": "keep"},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        mtime_before = path.stat().st_mtime_ns
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": self._SKILL},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert state == {"session_review_invoked": {self._SKILL: True}, "other": "keep"}
+        assert path.stat().st_mtime_ns == mtime_before
+
+    def test_merges_with_existing_key(self, tmp_path: pathlib.Path):
+        """既存の他キー（例: 配布物側スキル）と共存する。"""
+        env = _state_env(tmp_path)
+        sid = "review-rec-merge"
+        _state_path(tmp_path, sid).write_text(
+            json.dumps(
+                {"session_review_invoked": {"agent-toolkit:session-review": True}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": self._SKILL},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        invoked = _read_state(tmp_path, sid).get("session_review_invoked")
+        assert isinstance(invoked, dict)
+        assert invoked.get(self._SKILL) is True
+        assert invoked.get("agent-toolkit:session-review") is True
+
+
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 

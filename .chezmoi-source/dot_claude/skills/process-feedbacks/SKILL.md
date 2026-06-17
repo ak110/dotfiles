@@ -38,8 +38,9 @@ description: >
    `agent-toolkit:apply-feedback`スキルへ渡して委譲する
    - 結合形式は各ファイル本文の連結とし、各ファイルの開始位置を区切るため
      `## <filename>`形式の見出しを各本文の前に置く
-   - `apply-feedback`は批判的検討・採否判定の提示・ユーザー承認の取得・`EnterPlanMode`移行・
+   - `apply-feedback`は批判的検討・採否判定の提示・`EnterPlanMode`移行・
      `agent-toolkit:plan-mode`に従う計画作成と実装・コミットまでを担う
+   - 採否確定後の承認待ちは行わない（最終承認は`ExitPlanMode`が担う）
    - グループ内の全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。

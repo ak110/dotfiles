@@ -50,10 +50,8 @@ sys.path.insert(
 )
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    has_session_review_skill_invoked,
-    is_pending_async_work,
-)
+from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # `\bpyfltr\b` に相当する正規表現。
 # uv run pyfltr / pyfltr / uv run --script ... pyfltr など典型的な呼び出し形式を網羅する。
@@ -189,7 +187,12 @@ def main() -> int:
         _approve()
         return 0
 
-    if has_session_review_skill_invoked(transcript_path, _EXTENSION_SKILL):
+    # 振り返りスキル起動済みフラグはセッション状態ファイル経由で確認する。
+    # 観測は個人フックPostToolUseが`session_review_invoked`辞書へ記録する。
+    # 新規作業区切りでのリセットは配布物PostToolUse(EnterPlanMode)が担う。
+    state = read_state(session_id)
+    invoked = state.get("session_review_invoked")
+    if isinstance(invoked, dict) and invoked.get(_EXTENSION_SKILL) is True:
         _approve()
         return 0
 

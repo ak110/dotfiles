@@ -1,7 +1,6 @@
 """agent-toolkit/scripts/_stop_gate.py のテスト。
 
-公開関数`is_pending_async_work`と`has_session_review_skill_invoked`の
-振る舞いを境界値・同値分割で網羅する。
+公開関数`is_pending_async_work`の振る舞いを境界値・同値分割で網羅する。
 """
 
 import json
@@ -10,7 +9,7 @@ import threading
 import time
 
 import pytest
-from _stop_gate import has_session_review_skill_invoked, is_pending_async_work
+from _stop_gate import is_pending_async_work
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
@@ -132,26 +131,7 @@ def _user_foreground_agent_entry(tool_use_id: str) -> dict:
     }
 
 
-def _skill_entry(skill_name: str, *, sidechain: bool = False) -> dict:
-    """Skill tool_use を含む assistant エントリを生成する。"""
-    entry: dict = {
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill_name}},
-            ],
-        },
-    }
-    if sidechain:
-        entry["isSidechain"] = True
-    return entry
-
-
 _TEXT = "作業途中です。"
-_TARGET_SKILL = "agent-toolkit:session-review"
-_OTHER_SKILL = "agent-toolkit:coding-standards"
-_EXTENSION_SKILL = "extension-skill-example"
 
 
 def _bash_no_bg() -> dict:
@@ -361,44 +341,3 @@ class TestIsPendingAsyncWork:
             assert is_pending_async_work(str(t)) is False
         finally:
             thread.join()
-
-
-class TestHasSessionReviewSkillInvoked:
-    """`has_session_review_skill_invoked` の境界値テスト。"""
-
-    def test_no_skill_invocation_returns_false(self, tmp_path: pathlib.Path):
-        t = _write_transcript(tmp_path, [_user_entry("hello")])
-        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
-
-    def test_target_skill_invocation_returns_true(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _skill_entry(_TARGET_SKILL)],
-        )
-        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is True
-
-    def test_other_skill_only_returns_false(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _skill_entry(_OTHER_SKILL)],
-        )
-        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
-
-    def test_sidechain_invocation_ignored(self, tmp_path: pathlib.Path):
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _skill_entry(_TARGET_SKILL, sidechain=True)],
-        )
-        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
-
-    def test_distinct_skill_name_lookup(self, tmp_path: pathlib.Path):
-        """引数で渡したスキル名のみを検出し、別名は検出しない。"""
-        t = _write_transcript(
-            tmp_path,
-            [_user_entry("hello"), _skill_entry(_EXTENSION_SKILL)],
-        )
-        assert has_session_review_skill_invoked(str(t), _EXTENSION_SKILL) is True
-        assert has_session_review_skill_invoked(str(t), _TARGET_SKILL) is False
-
-    def test_missing_file_returns_false(self):
-        assert has_session_review_skill_invoked("/nonexistent/transcript.jsonl", "x") is False

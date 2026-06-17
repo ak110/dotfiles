@@ -77,4 +77,7 @@ description: >
 - <提案内容> — <不採用理由>
 ```
 
-ユーザーの承認を得た後、`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
+各提案の採否判定と理由を上記書式でユーザーへ提示したら、ユーザー応答を待たず続けて`EnterPlanMode`でplan modeへ移行する。
+移行後は`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
+計画の最終承認は`agent-toolkit:plan-mode`工程8の`ExitPlanMode`で得る。
+採否判定を変更したい場合はユーザー側の割り込みで提示する前提とする。

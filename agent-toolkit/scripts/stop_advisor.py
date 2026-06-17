@@ -36,11 +36,8 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    has_session_review_skill_invoked,
-    is_pending_async_work,
-)
+from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/stop_advisor"
@@ -172,7 +169,11 @@ def main() -> int:
         return 0
 
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
-    if has_session_review_skill_invoked(transcript_path, _SESSION_REVIEW_SKILL):
+    # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録する。
+    # 新規作業区切りでのリセットはPostToolUse(EnterPlanMode)が担う。
+    state = read_state(session_id)
+    invoked = state.get("session_review_invoked")
+    if isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True:
         _approve(cwd=cwd)
         return 0
 

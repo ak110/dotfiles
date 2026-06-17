@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / Skill / Readの実行後にイベントを検出し、
+Bash / Write / Edit / MultiEdit / Skill / Read / EnterPlanModeの実行後にイベントを検出し、
 セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
@@ -15,7 +15,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 2. Git状態確認 (Bash) とgit log確認状態のリセット (commit/rebase/push/編集後)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
 4. plan-modeスキル呼び出し検出 (Skill)
-5. codex-review.md読み込み検出 (Read)
+5. 振り返りスキル呼び出し検出 (Skill) — `session_review_invoked`辞書へ記録
+6. codex-review.md読み込み検出 (Read)
+7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 """
 
 import json
@@ -87,6 +89,9 @@ _GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "pus
 # Skillツールの`skill`引数として許容するスキル名。
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
+
+# Stop hookでの振り返り誘導抑止に使う配布物側の振り返りスキル名。観測したらsession_stateへ記録する。
+_SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
 # --- plan file形式検査の定数 ---
 
@@ -216,7 +221,19 @@ def main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    # Skill: plan-modeスキル呼び出し検出
+    # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
+    if tool_name == "EnterPlanMode":
+
+        def _reset_review_invoked(state: dict) -> dict | None:
+            if not state.get("session_review_invoked"):
+                return None
+            state["session_review_invoked"] = {}
+            return state
+
+        update_state(session_id, _reset_review_invoked)
+        return 0
+
+    # Skill: plan-modeスキル呼び出し検出と振り返りスキル呼び出し検出
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
@@ -228,6 +245,19 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_invoked)
+        if isinstance(skill_name, str) and skill_name in _SESSION_REVIEW_SKILL_NAMES:
+
+            def _set_review_invoked(state: dict) -> dict | None:
+                invoked = state.get("session_review_invoked")
+                if not isinstance(invoked, dict):
+                    invoked = {}
+                if invoked.get(skill_name) is True:
+                    return None
+                invoked[skill_name] = True
+                state["session_review_invoked"] = invoked
+                return state
+
+            update_state(session_id, _set_review_invoked)
         return 0
 
     # Read: codex-review.md読み込み検出

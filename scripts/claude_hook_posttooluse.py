@@ -5,13 +5,19 @@
 # ///
 """Claude Code PostToolUseフック: dotfiles個人環境専用のSkill呼び出し記録。
 
-`agent-toolkit-edit`スキル（dotfilesローカル配布対象外のため`agent-toolkit`プラグイン
-本体からは検出できない）の呼び出しをセッション状態へ記録する。
-書き込み先は`{tempdir}/claude-agent-toolkit-{session_id}.json`の
-`agent_toolkit_edit_skill_invoked`キーで、値を`True`に書き込む。
+dotfilesローカル配布対象外のため`agent-toolkit`プラグイン本体からは検出できない
+個人環境スキル呼び出しをセッション状態へ記録する。
 
-PreToolUse側（`claude_hook_pretooluse.py`）が当該フラグを参照し、
-`agent-toolkit/`配下の編集時にスキル未起動なら警告を発する。
+書き込み先は`{tempdir}/claude-agent-toolkit-{session_id}.json`。
+記録対象とキーは以下のとおり。
+
+- `agent-toolkit-edit`スキル: `agent_toolkit_edit_skill_invoked`キーへ`True`を書き込む。
+  PreToolUse側（`claude_hook_pretooluse.py`）が参照し、`agent-toolkit/`配下の編集時に
+  スキル未起動なら警告を発する。
+- `session-review-dotfiles`スキル: `session_review_invoked`辞書へスキル名をキーとして
+  `True`を書き込む。Stop hook側（`claude_hook_stop.py`）が参照し、当該キーが真なら
+  振り返り誘導を抑止する。当該辞書のEnterPlanMode観測時のリセットは配布物側
+  （`agent-toolkit/scripts/posttooluse.py`）が担当する。
 
 exit codeは常に0（PostToolUseはブロック不可）。
 """
@@ -29,6 +35,7 @@ sys.path.insert(
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
+_SESSION_REVIEW_DOTFILES_SKILL = "session-review-dotfiles"
 
 
 def main() -> int:
@@ -42,19 +49,39 @@ def main() -> int:
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
         return 0
-    if tool_input.get("skill") != _AGENT_TOOLKIT_EDIT_SKILL:
+    skill = tool_input.get("skill")
+    if not isinstance(skill, str):
         return 0
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
         return 0
 
-    def _set_invoked(state: dict) -> dict | None:
-        if state.get("agent_toolkit_edit_skill_invoked", False):
-            return None
-        state["agent_toolkit_edit_skill_invoked"] = True
-        return state
+    if skill == _AGENT_TOOLKIT_EDIT_SKILL:
 
-    update_state(session_id, _set_invoked)
+        def _set_edit_invoked(state: dict) -> dict | None:
+            if state.get("agent_toolkit_edit_skill_invoked", False):
+                return None
+            state["agent_toolkit_edit_skill_invoked"] = True
+            return state
+
+        update_state(session_id, _set_edit_invoked)
+        return 0
+
+    if skill == _SESSION_REVIEW_DOTFILES_SKILL:
+
+        def _set_review_invoked(state: dict) -> dict | None:
+            invoked = state.get("session_review_invoked")
+            if not isinstance(invoked, dict):
+                invoked = {}
+            if invoked.get(_SESSION_REVIEW_DOTFILES_SKILL) is True:
+                return None
+            invoked[_SESSION_REVIEW_DOTFILES_SKILL] = True
+            state["session_review_invoked"] = invoked
+            return state
+
+        update_state(session_id, _set_review_invoked)
+        return 0
+
     return 0
 
 

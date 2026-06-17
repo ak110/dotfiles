@@ -1,6 +1,6 @@
 """agent-toolkit/scripts/stop_advisor.py のテスト。
 
-`is_pending_async_work`と`has_session_review_skill_invoked`によるapprove条件、
+`is_pending_async_work`とsession_stateの`session_review_invoked`によるapprove条件、
 未コミット変更通知とセッション振り返り誘導の組み合わせを検証する。
 """
 
@@ -82,21 +82,6 @@ def _assistant_with_async_tool(tool_name: str) -> dict:
             "content": [
                 {"type": "text", "text": "作業を継続します。"},
                 {"type": "tool_use", "id": "x", "name": tool_name, "input": {}},
-            ],
-            "stop_reason": "end_turn",
-        },
-    }
-
-
-def _assistant_with_skill(skill: str) -> dict:
-    """Skill tool_useを含むアシスタントエントリを生成する。"""
-    return {
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "セッション振り返りを実施します。"},
-                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill}},
             ],
             "stop_reason": "end_turn",
         },
@@ -269,15 +254,12 @@ class TestApproveConditions:
         assert _SESSION_REVIEW_SKILL in body
 
     def test_session_review_skill_invoked_approves(self, tmp_path: pathlib.Path):
-        """過去のアシスタントターンで振り返りスキルが起動済み → approve。"""
-        transcript = _write_transcript(
+        """session_stateで振り返りスキル起動済み → approve。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("続けて"),
-                _assistant_text_only(),
-            ],
+            "review-already-done",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "review-already-done", "transcript_path": str(transcript)},
@@ -353,14 +335,11 @@ class TestUncommittedChangesAfterReview:
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
         repo = make_dirty_repo(tmp_path)
-        transcript = _write_transcript(
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("引き続き"),
-                _assistant_text_only(),
-            ],
+            "skill-dirty",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "skill-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -443,14 +422,11 @@ class TestGitStatusDisplay:
         """approve時かつ未コミット変更ありの場合、systemMessageでgit statusを表示する。"""
         repo = make_dirty_repo(tmp_path)
         # スキル起動済みでapproveパスに到達させる。
-        transcript = _write_transcript(
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("続き"),
-                _assistant_text_only(),
-            ],
+            "gs-dirty",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "gs-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -467,14 +443,11 @@ class TestGitStatusDisplay:
     ):
         """clean repoではsystemMessageを出力しない。"""
         repo = make_clean_repo(tmp_path)
-        transcript = _write_transcript(
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("続き"),
-                _assistant_text_only(),
-            ],
+            "gs-clean",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "gs-clean", "transcript_path": str(transcript), "cwd": str(repo)},
@@ -486,14 +459,11 @@ class TestGitStatusDisplay:
 
     def test_no_cwd_no_system_message(self, tmp_path: pathlib.Path):
         """cwd未指定時はsystemMessageを出力しない。"""
-        transcript = _write_transcript(
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("続き"),
-                _assistant_text_only(),
-            ],
+            "gs-nocwd",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "gs-nocwd", "transcript_path": str(transcript)},
@@ -526,14 +496,11 @@ class TestGitStatusDisplay:
         """untrackedファイルのみの場合はsystemMessageを出力しない。"""
         repo = make_clean_repo(tmp_path)
         (repo / "untracked.txt").write_text("new file")
-        transcript = _write_transcript(
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
             tmp_path,
-            [
-                _user_entry(),
-                _assistant_with_skill(_SESSION_REVIEW_SKILL),
-                _user_entry("続き"),
-                _assistant_text_only(),
-            ],
+            "gs-untracked",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
         )
         result = _run(
             {"session_id": "gs-untracked", "transcript_path": str(transcript), "cwd": str(repo)},

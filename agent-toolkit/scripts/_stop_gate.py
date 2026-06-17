@@ -1,8 +1,7 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
 判定はtranscript JSONLの内容のみを根拠とする。
-本モジュールは構造的な継続判定（`is_pending_async_work`）と
-スキル起動履歴の検出（`has_session_review_skill_invoked`）を提供する。
+本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 """
 
@@ -49,44 +48,6 @@ def is_pending_async_work(transcript_path: str) -> bool:
     if _last_tool_use_is_async_wait(transcript_path):
         return True
     return _has_pending_background_tasks(transcript_path)
-
-
-def has_session_review_skill_invoked(transcript_path: str, skill_name: str) -> bool:
-    """メイン側assistantエントリの`Skill`ツール呼び出しで指定スキルが起動された痕跡を検出する。
-
-    対象はメインのtranscript（`isSidechain`が真でないエントリ）に限定する。
-    `Skill`ツールの`input.skill`が`skill_name`と完全一致する呼び出しを1件でも検出すれば真を返す。
-
-    transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
-    """
-    try:
-        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError):
-        return False
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if entry.get("type") != "assistant" or entry.get("isSidechain"):
-            continue
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") != "tool_use" or block.get("name") != "Skill":
-                continue
-            tool_input = block.get("input")
-            if not isinstance(tool_input, dict):
-                continue
-            if tool_input.get("skill") == skill_name:
-                return True
-    return False
 
 
 def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
