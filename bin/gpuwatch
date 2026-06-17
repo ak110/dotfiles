@@ -1,2 +1,3 @@
-#!/bin/bash -eux
+#!/usr/bin/env bash
+set -euxo pipefail
 watch 'top -b | head ; vmstat --unit=M ; nvidia-smi'

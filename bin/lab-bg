@@ -1,2 +1,3 @@
-#!/bin/bash -eux
+#!/usr/bin/env bash
+set -euxo pipefail
 ~/dotfiles/bin/lab >/dev/null &

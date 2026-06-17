@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -ux
 
 # Shows you the largest objects in your repo's pack file.

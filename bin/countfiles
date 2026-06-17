@@ -1,4 +1,5 @@
-#!/bin/bash -eu
+#!/usr/bin/env bash
+set -euo pipefail
 for d in "$@"; do
     echo "$d: $(find "$d" -type f | wc -l)"
 done
