@@ -6,8 +6,10 @@
 """
 
 import json
+import os
 import pathlib
 import re
+import sys
 import time
 
 from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
@@ -24,6 +26,9 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 # `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
 # `toolu_xxx`を抽出する正規表現。
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
+
+# `AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数の真値集合。小文字一致で判定する。
+_DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
 def is_pending_async_work(transcript_path: str) -> bool:
@@ -45,9 +50,30 @@ def is_pending_async_work(transcript_path: str) -> bool:
     transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     """
     _wait_for_end_turn(transcript_path)
-    if _last_tool_use_is_async_wait(transcript_path):
-        return True
-    return _has_pending_background_tasks(transcript_path)
+    last_async = _last_tool_use_is_async_wait(transcript_path)
+    pending = last_async or _has_pending_background_tasks(transcript_path)
+    _emit_debug(transcript_path, pending)
+    return pending
+
+
+def _emit_debug(transcript_path: str, result: bool) -> None:
+    """環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみstderrへ判定根拠を1行出力する。
+
+    出力形式は`key=value`空白区切りとする。
+    Stop hookの誤判定時にlast_tool_use名・launched件数・残差件数・残差ID先頭3件から原因を切り分けるために用いる。
+    """
+    raw = os.environ.get("AGENT_TOOLKIT_STOP_GATE_DEBUG", "")
+    if raw.lower() not in _DEBUG_TRUTHY_VALUES:
+        return
+    last_tool = _describe_last_tool_use(transcript_path)
+    launched, completed = _describe_pending_background_tasks(transcript_path)
+    remainder = launched - completed
+    head_ids = ",".join(sorted(remainder)[:3]) if remainder else "-"
+    print(
+        f"_stop_gate result={result} last_tool={last_tool} "
+        f"launched={len(launched)} pending={len(remainder)} pending_ids={head_ids}",
+        file=sys.stderr,
+    )
 
 
 def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
@@ -84,12 +110,11 @@ def _wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
         time.sleep(poll)
 
 
-def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
-    """直前アシスタントターンの最後のtool_useが非同期待機系の場合に真を返す。
+def _get_last_tool_use_block(transcript_path: str) -> dict | None:
+    """最新assistantメッセージ内で最後に現れたtool_useブロックを返す。
 
-    `_ASYNC_WAIT_TOOLS`に含まれるツール名、または`Bash`かつ
-    `input.run_in_background == true`の場合に真を返す。
-    バックグラウンド処理中のStop hook誤発動を防ぐためのゲート。
+    最初に得た（最新の）メッセージのtool_useのみ対象とし、ターン内で最後に出現したtool_useを使う。
+    メッセージをまたいで探さない。tool_useが存在しない場合は`None`を返す。
     """
     last_tool_use: dict | None = None
     for message in _iter_latest_assistant_messages(transcript_path):
@@ -101,11 +126,19 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
                 continue
             if block.get("type") == "tool_use":
                 last_tool_use = block
-        # 最初に得た（最新の）メッセージのtool_useのみ対象。
-        # ターン内で最後に出現したtool_useを使うため、
-        # メッセージをまたいで探さない。
         if last_tool_use is not None:
             break
+    return last_tool_use
+
+
+def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
+    """直前アシスタントターンの最後のtool_useが非同期待機系の場合に真を返す。
+
+    `_ASYNC_WAIT_TOOLS`に含まれるツール名、または`Bash`かつ
+    `input.run_in_background == true`の場合に真を返す。
+    バックグラウンド処理中のStop hook誤発動を防ぐためのゲート。
+    """
+    last_tool_use = _get_last_tool_use_block(transcript_path)
     if last_tool_use is None:
         return False
     name = last_tool_use.get("name", "")
@@ -116,6 +149,23 @@ def _last_tool_use_is_async_wait(transcript_path: str) -> bool:
         if isinstance(tool_input, dict) and tool_input.get("run_in_background") is True:
             return True
     return False
+
+
+def _describe_last_tool_use(transcript_path: str) -> str:
+    """最新assistantターン末尾のtool_use名をデバッグ出力向けに整形して返す。
+
+    Bashの場合は`Bash(bg=True)`または`Bash(bg=False)`形式で返す。
+    tool_useが存在しない場合は`-`を返す。
+    """
+    last_tool_use = _get_last_tool_use_block(transcript_path)
+    if last_tool_use is None:
+        return "-"
+    name = last_tool_use.get("name", "")
+    if name == "Bash":
+        tool_input = last_tool_use.get("input")
+        bg = isinstance(tool_input, dict) and tool_input.get("run_in_background") is True
+        return f"Bash(bg={bg})"
+    return name or "-"
 
 
 def _has_pending_background_tasks(transcript_path: str) -> bool:
@@ -138,12 +188,24 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
     起動集合から完了集合を差し引いて1件以上残れば真。
     transcript読み取り失敗時は偽を返す（安全側に倒し、既存条件で抑止または通過させる）。
     """
+    launched, completed = _describe_pending_background_tasks(transcript_path)
+    return bool(launched - completed)
+
+
+def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], set[str]]:
+    """transcript全体から背景タスクの起動集合と完了集合を抽出する。
+
+    走査ルールは`_has_pending_background_tasks`のdocstringに記載した条件と同一。
+    本関数は集合自体を返し、`_has_pending_background_tasks`は残差判定のみ、
+    `_emit_debug`は集合サイズと残差ID列挙に使う。
+    transcript読み取り失敗時は空集合のペアを返す。
+    """
+    launched: set[str] = set()
+    completed: set[str] = set()
     try:
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
-        return False
-    launched: set[str] = set()
-    completed: set[str] = set()
+        return launched, completed
     for line in lines:
         try:
             entry = json.loads(line)
@@ -162,7 +224,7 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
             if tool_use_id is not None:
                 launched.add(tool_use_id)
         completed.update(_extract_task_notification_ids(message))
-    return bool(launched - completed)
+    return launched, completed
 
 
 def _extract_tool_result_id(message: dict) -> str | None:

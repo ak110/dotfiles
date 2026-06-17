@@ -341,3 +341,122 @@ class TestIsPendingAsyncWork:
             assert is_pending_async_work(str(t)) is False
         finally:
             thread.join()
+
+
+class TestDebugOutput:
+    """`AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数によるstderrデバッグ出力の検証。
+
+    Stop hookの誤判定時の原因切り分け手段として、判定根拠を1行出力する機能を確認する。
+    同値分割: 環境変数値 × 残差有無 で代表ケースを抽出する。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """環境変数の事前削除でテスト間の状態混入を防ぐ。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", raising=False)
+
+    def test_no_output_when_env_unset(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """環境変数が未設定の場合はstderr出力なし。"""
+        t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    @pytest.mark.parametrize("value", ["1", "true", "yes", "on", "TRUE", "True"])
+    def test_output_when_env_truthy(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        """環境変数が真値（小文字一致）の場合はstderrへ1行出力する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
+        t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert "_stop_gate result=False" in captured.err
+        assert "last_tool=-" in captured.err
+        assert "launched=0" in captured.err
+        assert "pending=0" in captured.err
+        assert "pending_ids=-" in captured.err
+
+    @pytest.mark.parametrize("value", ["0", "false", "no", "off", ""])
+    def test_no_output_when_env_falsy(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        """環境変数が偽値の場合はstderr出力なし。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
+        t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+    def test_output_with_pending_remainder(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """残差がある場合は`result=True`・残差件数・残差IDを出力する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _user_async_launched_entry("toolu_bg1"),
+                _user_async_launched_entry("toolu_bg2"),
+                _user_task_notification_entry("toolu_bg1"),
+                _user_entry("続き"),
+                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+            ],
+        )
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert "_stop_gate result=True" in captured.err
+        assert "last_tool=Bash(bg=False)" in captured.err
+        assert "launched=2" in captured.err
+        assert "pending=1" in captured.err
+        assert "pending_ids=toolu_bg2" in captured.err
+
+    def test_output_with_background_bash(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """直前tool_useが背景Bash（`run_in_background=true`）の場合は`Bash(bg=True)`を出力する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _assistant_entry(
+                    [
+                        {"type": "text", "text": _TEXT},
+                        {
+                            "type": "tool_use",
+                            "id": "x",
+                            "name": "Bash",
+                            "input": {"command": "echo bg", "run_in_background": True},
+                        },
+                    ]
+                ),
+            ],
+        )
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert "_stop_gate result=True" in captured.err
+        assert "last_tool=Bash(bg=True)" in captured.err
+
+    def test_output_with_async_wait_tool(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """直前tool_useが非同期待機系の場合は当該tool名を出力する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _assistant_entry(
+                    [
+                        {"type": "text", "text": _TEXT},
+                        {"type": "tool_use", "id": "x", "name": "Agent", "input": {}},
+                    ]
+                ),
+            ],
+        )
+        is_pending_async_work(str(t))
+        captured = capsys.readouterr()
+        assert "_stop_gate result=True" in captured.err
+        assert "last_tool=Agent" in captured.err

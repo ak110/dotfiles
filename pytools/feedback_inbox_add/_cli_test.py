@@ -144,6 +144,7 @@ class TestSingleMessage:
 
         captured = capsys.readouterr()
         assert "1件投入" in captured.out
+        assert "inbox: 計1件" in captured.out
 
 
 class TestMultipleMessages:
@@ -182,6 +183,35 @@ class TestMultipleMessages:
 
         captured = capsys.readouterr()
         assert "2件投入" in captured.out
+        assert "inbox: 計2件" in captured.out
+
+
+class TestInboxCount:
+    """既存inboxファイルがある状態で投入した際の件数表示の検証。"""
+
+    def test_inbox_count_includes_existing_files(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """既存3件＋新規投入2件の状態でinbox全件数として5件を出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        inbox = notes / "feedback" / "inbox"
+        for i in range(3):
+            (inbox / f"existing-{i:03d}.md").write_text("dummy\n", encoding="utf-8")
+
+        monkeypatch.setattr(_cli.subprocess, "run", _make_git_fake([]))
+
+        repo_path = str(tmp_path / "myrepo")
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main([repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "inbox: 計5件" in captured.out
 
 
 class TestMultilineMessage:

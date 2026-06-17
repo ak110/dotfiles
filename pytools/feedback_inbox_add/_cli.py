@@ -111,5 +111,7 @@ def main(argv: list[str] | None = None, *, home: pathlib.Path | None = None, now
     _run_git(["push"], cwd=private_notes)
 
     files_summary = ", ".join(generated_files)
+    inbox_total = sum(1 for p in inbox_dir.iterdir() if p.suffix == ".md")
     print(f"{count}件投入: {files_summary}")
+    print(f"inbox: 計{inbox_total}件")
     sys.exit(0)

@@ -2,7 +2,7 @@
 name: process-feedbacks
 description: >
   ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
-  採用は対象リポジトリへ反映してファイルを削除、見送りは rejected/ へ移動する。
+  採用は対象リポジトリへ反映してファイルを削除、不採用は rejected/ へ移動する。
 # 連携: target_repoごとにグループ化し、各グループの全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 # フラグファイル ~/.config/agent-toolkit/feedback-inbox.enabled が存在する環境でのみ動作する。
 ---
@@ -45,8 +45,8 @@ description: >
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
-   - 採用ファイルがある場合の手順（対象リポジトリへの反映コミット完了後に実施する）:
-     1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用ファイル分）
+   - 採用のファイルがある場合の手順（対象リポジトリへの反映コミット完了後に実施する）:
+     1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用のファイル分）
      2. `~/private-notes`で以下を順に実行する
 
         ```sh
@@ -55,9 +55,9 @@ description: >
         git push
         ```
 
-   - 見送りファイルがある場合の手順:
+   - 不採用のファイルがある場合の手順:
      1. `~/private-notes/feedback/inbox/<filename>`を
-        `~/private-notes/feedback/rejected/<filename>`へ移動する（全見送りファイル分）
+        `~/private-notes/feedback/rejected/<filename>`へ移動する（全不採用のファイル分）
      2. `~/private-notes`で以下を順に実行する
 
         ```sh
@@ -66,20 +66,16 @@ description: >
         git push
         ```
 
-   - 採用・見送りの双方が存在する場合は、両方を含めた単一コミットで反映してよい（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）
+   - 採用・不採用の双方が存在する場合は、両方を含めた単一コミットで反映してよい（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）
 
 ## ステップ4: 採否判別
 
-後始末はapply-feedbackのplan-mode実装工程内で完結するため、本ステップはステップ5のサマリー提示用に
-採否情報を集約する工程として実施する。
-
-`apply-feedback`の検討結果提示の`### 採用`・`### 不採用`配下から、
-各ファイル（`## <filename>`見出しで対応付け）が採用か見送りかを判別する。
-`apply-feedback`が出力する`### 不採用`見出し配下のファイルは見送りとして扱う。
+`apply-feedback`の検討結果提示は`### <ファイル名>: <提案要約>`の見出しごとにフィードバック1件を扱う。
+各見出し配下の`- 修正有無＋修正理由:`行のコロン直後の値の冒頭文言（「採用」または「不採用」）から採否を判別する。
 
 判別が困難な場合は`AskUserQuestion`でユーザーへ確認する。
 
 ## ステップ5: サマリー提示
 
-全グループ処理後に採用N件・見送りN件のサマリーをユーザーに提示する。
+全グループ処理後に採用N件・不採用N件のサマリーをユーザーに提示する。
 target_repo別の内訳も併記する。
