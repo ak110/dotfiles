@@ -40,6 +40,7 @@ body {
   padding: 1rem;
   word-break: break-all;
   overflow-wrap: anywhere;
+  text-autospace: normal; /* 和欧混植時の字間自動調整（未対応ブラウザでは無視） */
 }
 
 /* ========================================
