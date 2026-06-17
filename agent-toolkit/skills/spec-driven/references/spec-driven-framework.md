@@ -1,7 +1,14 @@
 # spec-drivenフレームワーク共通定義
 
 spec-driven系スキルで共有する用語定義と配置規約。
-対象は`agent-toolkit:spec-driven`・`agent-toolkit:spec-driven-init`・`agent-toolkit:spec-driven-promote`の3スキル。
+
+対象スキル:
+
+- `agent-toolkit:spec-driven`
+- `agent-toolkit:spec-driven-init`
+- `agent-toolkit:spec-driven-plan`
+- `agent-toolkit:spec-driven-promote`
+- `agent-toolkit:spec-driven-impl`
 
 ワークフロー全体像は`agent-toolkit:spec-driven`スキルの「ワークフロー全体像」節を参照する。
 
@@ -15,6 +22,8 @@ spec-driven系スキルで共有する用語定義と配置規約。
   - 次版総合ドキュメント: 作業テーマ別進捗と次に行うべき作業を記録する単一ドキュメント
    （既定配置例: `docs/v{next}/OVERVIEW.md`）
   - 作業テーマドキュメント: 次版ドキュメントのうち、個々の作業テーマに対応するドキュメント
+  - 計画ファイル: 作業テーマごとの実装計画。`agent-toolkit:spec-driven-plan`が作成する
+   （既定配置例: `docs/v{next}/plans/{作業テーマ名}.md`）
 - 作業テーマ: 今回のリリースで加える変更の単位。例: `SSO追加`
 - 次期バージョン: 次期リリースのバージョン番号。例: `v3`、`v1.2`、`v2026-04-18`
 - 利用者: 対象システムを呼び出す側
@@ -49,3 +58,4 @@ spec-driven系スキルで共有する用語定義と配置規約。
 - 次版ドキュメント:
   - `docs/v{next}/OVERVIEW.md` — 次版総合ドキュメント
   - `docs/v{next}/{作業テーマ名}.md` — 作業テーマドキュメント
+  - `docs/v{next}/plans/{作業テーマ名}.md` — 計画ファイル
