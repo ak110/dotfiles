@@ -498,15 +498,15 @@ class TestPlanModeSkillFirstCheck:
         assert result.stdout == ""
 
 
-class TestPlanModeSkillOutsidePlanCheck:
-    """plan mode外でのplan-modeスキル呼び出しブロック。"""
+class TestPlanModeSkillCallSites:
+    """plan-modeスキル呼び出しの素通り保証。"""
 
     @staticmethod
     def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
         return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
 
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
-    def test_blocked_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
+    def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
         env = self._state_env(tmp_path)
         result = _run(
             {
@@ -517,9 +517,8 @@ class TestPlanModeSkillOutsidePlanCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "plan mode" in result.stderr
-        assert "EnterPlanMode" in result.stderr
+        assert result.returncode == 0
+        assert result.stdout == ""
 
     def test_allowed_in_plan_mode(self, tmp_path: pathlib.Path):
         env = self._state_env(tmp_path)

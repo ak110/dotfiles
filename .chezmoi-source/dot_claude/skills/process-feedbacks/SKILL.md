@@ -29,6 +29,9 @@ description: >
 各ファイルを読み込み、frontmatterの`target_repo`ごとにグループ化する。
 グループ化後の件数（target_repo別の内訳）もユーザーに提示する。
 
+ステップ2で取得した一覧のみを本セッションの処理対象として固定する。
+起動以降にinboxへ追加されたファイルは本セッションでは扱わず、次回起動時の処理対象とする。
+
 ## ステップ3: target_repoグループ単位の一括処理委譲
 
 `target_repo`グループごとに以下を実施する。グループ間は順次処理する。
@@ -47,10 +50,10 @@ description: >
    後始末はapply-feedbackのplan-mode実装工程内で実施される
    - 採用のファイルがある場合の手順（対象リポジトリへの反映コミット完了後に実施する）:
      1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用のファイル分）
-     2. `~/private-notes`で以下を順に実行する
+     2. `~/private-notes`で以下を順に実行する（git addは削除した個別ファイルのみを指定する）
 
         ```sh
-        git add feedback/inbox/
+        git add feedback/inbox/<filename1> feedback/inbox/<filename2> ...
         git commit -m "chore: process N feedback items (adopted)"
         git push
         ```
@@ -58,10 +61,10 @@ description: >
    - 不採用のファイルがある場合の手順:
      1. `~/private-notes/feedback/inbox/<filename>`を
         `~/private-notes/feedback/rejected/<filename>`へ移動する（全不採用のファイル分）
-     2. `~/private-notes`で以下を順に実行する
+     2. `~/private-notes`で以下を順に実行する（git addは移動した個別ファイルのみを指定する）
 
         ```sh
-        git add feedback/inbox/ feedback/rejected/
+        git add feedback/inbox/<filename1> feedback/rejected/<filename1> ...
         git commit -m "chore: process N feedback items (rejected)"
         git push
         ```
