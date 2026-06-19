@@ -14,19 +14,20 @@ description: >
 `~/.config/agent-toolkit/feedback-inbox.enabled`が存在しない場合は、
 フィードバック蓄積機能が無効である旨を1文示して終了する。
 
-`~/private-notes`が存在しない場合は、手動で`~/private-notes`をcloneしてから
+`~/private-notes`が存在しない場合は、手動で`~/private-notes`をクローンしてから
 再度実行する旨を案内して終了する。
 
-## ステップ1: リモート同期
+## ステップ1: 事前準備の確認
 
-`~/private-notes`で`git pull --ff-only`を実行する。
+`dotfiles-fb`の状態変更系サブコマンド（`add`・`adopt`・`reject`・`rm`・`edit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
+`list`サブコマンドはローカル状態のみを参照するためpullを実行しない。
 
 ## ステップ2: 件数確認とグループ化
 
-`~/private-notes/feedback/inbox/`配下のファイル一覧を取得し、件数をユーザーに提示する。
+`dotfiles-fb list`を実行し、標準出力を解釈して件数をユーザーに提示する。
 0件の場合は「処理対象なし」を1文示して終了する。
 
-各ファイルを読み込み、frontmatterの`target_repo`ごとにグループ化する。
+`dotfiles-fb list`の出力からfrontmatterの`target_repo`ごとにグループ化する。
 グループ化後の件数（target_repo別の内訳）もユーザーに提示する。
 
 ステップ2で取得した一覧のみを本セッションの処理対象として固定する。
@@ -48,28 +49,8 @@ description: >
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
-   - 採用のファイルがある場合の手順（対象リポジトリへの反映コミット完了後に実施する）:
-     1. `~/private-notes/feedback/inbox/<filename>`を削除する（全採用のファイル分）
-     2. `~/private-notes`で以下を順に実行する（git addは削除した個別ファイルのみを指定する）
-
-        ```sh
-        git add feedback/inbox/<filename1> feedback/inbox/<filename2> ...
-        git commit -m "chore: process N feedback items (adopted)"
-        git push
-        ```
-
-   - 不採用のファイルがある場合の手順:
-     1. `~/private-notes/feedback/inbox/<filename>`を
-        `~/private-notes/feedback/rejected/<filename>`へ移動する（全不採用のファイル分）
-     2. `~/private-notes`で以下を順に実行する（git addは移動した個別ファイルのみを指定する）
-
-        ```sh
-        git add feedback/inbox/<filename1> feedback/rejected/<filename1> ...
-        git commit -m "chore: process N feedback items (rejected)"
-        git push
-        ```
-
-   - 採用・不採用の双方が存在する場合は、両方を含めた単一コミットで反映してよい（コミットメッセージは`chore: process N feedback items (adopted: A, rejected: B)`形式とする）
+   - 採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
+   - 不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
 
 ## ステップ4: 採否判別
 

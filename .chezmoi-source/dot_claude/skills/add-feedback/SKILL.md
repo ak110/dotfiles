@@ -2,8 +2,8 @@
 name: add-feedback
 description: >
   フリーフォーマットのフィードバック本文をリポジトリごとに振り分け、
-  `feedback-add` CLIへ位置引数で渡して~/private-notes/feedback/inbox/へ投入する。
-# 連携: `feedback-add` CLI（pytools.feedback_inbox_add）に位置引数で投入する。
+  `dotfiles-fb add` CLIへ位置引数で渡して~/private-notes/feedback/inbox/へ投入する。
+# 連携: `dotfiles-fb add` CLI（pytools.dotfiles_fb）に位置引数で投入する。
 # フラグファイル ~/.config/agent-toolkit/feedback-inbox.enabled が存在する環境でのみ動作する。
 ---
 
@@ -48,10 +48,10 @@ description: >
 
 ## ステップ4: 投入
 
-target_repoごとに、対応するメッセージ群を位置引数で渡して`feedback-add`を呼び出す。
+target_repoごとに、対応するメッセージ群を位置引数で渡して`dotfiles-fb add`を呼び出す。
 
 ```sh
-feedback-add <repo-path> <message1> [<message2> ...]
+dotfiles-fb add <repo-path> <message1> [<message2> ...]
 ```
 
 - `<repo-path>`: target_repoの絶対パスまたは`~`展開可能パス
@@ -60,4 +60,4 @@ feedback-add <repo-path> <message1> [<message2> ...]
 
 ## ステップ5: 結果の提示
 
-`feedback-add` CLIの標準出力をそのままユーザーへ提示する。
+`dotfiles-fb add` CLIの標準出力をそのままユーザーへ提示する。

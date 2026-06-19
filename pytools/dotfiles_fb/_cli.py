@@ -1,0 +1,320 @@
+"""~/private-notesのフィードバック項目を操作するCLIエントリポイント。
+
+サブコマンド構成。
+- add: inboxへフィードバックを投入する
+- list: inboxの全件をtarget_repoごとにグループ化して出力する
+- adopt: 採用としてinboxから削除しコミット・push
+- reject: 不採用としてrejected/へ移動しコミット・push
+- rm: 単純削除しコミット・push
+- edit: $EDITORで対象ファイルを編集しコミット・push
+"""
+
+import argparse
+import datetime
+import os
+import pathlib
+import subprocess
+import sys
+from collections.abc import Iterable
+
+from pytools._internal.cli import enable_completion
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """サブコマンド付きargparseパーサを構築する。"""
+    parser = argparse.ArgumentParser(
+        description="~/private-notesのフィードバック項目を操作する。",
+    )
+    sub = parser.add_subparsers(dest="subcommand", required=True)
+
+    add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
+    add.add_argument("repo_path", metavar="REPO_PATH", help="フィードバック対象リポジトリのパス（~展開可能）。")
+    add.add_argument("messages", metavar="MESSAGE", nargs="+", help="投入するフィードバックメッセージ（1個以上）。")
+
+    sub.add_parser("list", help="inboxの全件をtarget_repoごとに出力する")
+
+    adopt = sub.add_parser("adopt", help="採用としてinboxから削除しコミット・push")
+    adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
+
+    reject = sub.add_parser("reject", help="不採用としてrejected/へ移動しコミット・push")
+    reject.add_argument("filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。")
+
+    rm = sub.add_parser("rm", help="inboxから単純削除しコミット・push")
+    rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
+
+    edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
+    edit.add_argument("filename", metavar="FILENAME", help="編集対象のinboxファイル名。")
+
+    enable_completion(parser)
+    return parser
+
+
+def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
+    """フラグファイルとprivate-notesディレクトリの存在を確認し、private-notesパスを返す。"""
+    flag_file = home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+    if not flag_file.exists():
+        print("feedback-inbox機能が無効です（フラグファイルが存在しません）。", file=sys.stderr)
+        sys.exit(1)
+    private_notes = home / "private-notes"
+    if not private_notes.exists():
+        print(
+            "~/private-notesが見つかりません。GitHubからcloneしてから再実行してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return private_notes
+
+
+def _run_git(args: list[str], cwd: pathlib.Path) -> None:
+    """gitコマンドをcwdで実行し、失敗時は例外を送出する。"""
+    subprocess.run(["git", *args], cwd=cwd, check=True)
+
+
+def _pull(private_notes: pathlib.Path) -> None:
+    """private-notesリポジトリで`git pull --ff-only`を実行する。"""
+    _run_git(["pull", "--ff-only"], cwd=private_notes)
+
+
+def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterable[str]) -> None:
+    """指定パスをaddしcommit・pushする。"""
+    rel_list = list(rel_paths)
+    _run_git(["add", *rel_list], cwd=private_notes)
+    _run_git(["commit", "-m", message], cwd=private_notes)
+    _run_git(["push"], cwd=private_notes)
+
+
+def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
+    r"""ファイル名が基準ディレクトリ直下の単純名であることを検証して絶対パスを返す。
+
+    `/`・`\\`・`..`・絶対パス・空文字列・カレント参照は早期に拒否する。
+    """
+    parts = pathlib.Path(filename).parts
+    if (
+        filename in ("", ".", "..")
+        or "/" in filename
+        or "\\" in filename
+        or ".." in parts
+        or pathlib.PurePath(filename).is_absolute()
+    ):
+        print(f"不正なファイル名: {filename}", file=sys.stderr)
+        sys.exit(2)
+    path = base_dir / filename
+    base_resolved = base_dir.resolve()
+    try:
+        path.resolve().relative_to(base_resolved)
+    except ValueError:
+        print(f"ファイル名が基準ディレクトリ外を指しています: {filename}", file=sys.stderr)
+        sys.exit(2)
+    return path
+
+
+def _max_existing_seq(inbox_dir: pathlib.Path, timestamp_prefix: str) -> int:
+    """同一タイムスタンププレフィックスを持つinboxファイルの最大連番を返す。
+
+    例えば`{prefix}-001.md`と`{prefix}-003.md`が存在する場合は3を返す。
+    非連続連番でも新規生成側で既存ファイルへ衝突しないよう最大値を基準にする。
+    """
+    if not inbox_dir.exists():
+        return 0
+    max_seq = 0
+    for p in inbox_dir.iterdir():
+        if not p.name.startswith(f"{timestamp_prefix}-"):
+            continue
+        try:
+            seq = int(p.stem.rsplit("-", 1)[-1])
+        except ValueError:
+            continue
+        max_seq = max(max_seq, seq)
+    return max_seq
+
+
+def _cmd_add(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+    """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
+    target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _pull(private_notes)
+    timestamp = now.strftime("%Y%m%d-%H%M%S")
+    created_iso = now.isoformat()
+    counter = _max_existing_seq(inbox_dir, timestamp) + 1
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    generated: list[str] = []
+    for message in args.messages:
+        filename = f"{timestamp}-{counter:03d}.md"
+        content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n---\n\n{message}\n"
+        (inbox_dir / filename).write_text(content, encoding="utf-8")
+        generated.append(filename)
+        counter += 1
+    count = len(generated)
+    _commit_and_push(
+        private_notes,
+        f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
+        [str(inbox_dir.relative_to(private_notes))],
+    )
+    files_summary = ", ".join(generated)
+    inbox_total = sum(1 for p in inbox_dir.iterdir() if p.suffix == ".md")
+    print(f"{count}件投入: {files_summary}")
+    print(f"inbox: 計{inbox_total}件")
+
+
+def _parse_target_repo(text: str) -> str:
+    """フィードバックファイル本文先頭のfrontmatterからtarget_repoを抽出する。"""
+    if not text.startswith("---\n"):
+        return "(unknown)"
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return "(unknown)"
+    for line in text[4:end].splitlines():
+        if line.startswith("target_repo:"):
+            return line.split(":", 1)[1].strip()
+    return "(unknown)"
+
+
+def _cmd_list(_args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """listサブコマンド: inbox全件をtarget_repoごとにグループ化して出力。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    if not inbox_dir.exists():
+        return
+    entries: dict[str, list[tuple[str, str]]] = {}
+    for path in sorted(inbox_dir.iterdir()):
+        if path.suffix != ".md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        target_repo = _parse_target_repo(text)
+        entries.setdefault(target_repo, []).append((path.name, text))
+    for repo, items in entries.items():
+        print(f"## target_repo: {repo}")
+        for name, text in items:
+            print(f"### {name}")
+            print(text)
+            print()
+
+
+def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> None:
+    """ファイル名群の検証のみ行う（pull前の早期拒否用）。"""
+    for f in filenames:
+        _validate_filename(f, base_dir)
+
+
+def _resolve_inbox_targets(filenames: list[str], inbox_dir: pathlib.Path) -> list[pathlib.Path]:
+    """inbox配下のファイル名群を検証・解決し、未存在があればexit 2する。"""
+    paths = [_validate_filename(f, inbox_dir) for f in filenames]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"inboxに存在しません: {p.name}", file=sys.stderr)
+        sys.exit(2)
+    return paths
+
+
+def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """adoptサブコマンド: 採用としてinboxから削除しcommit・push。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _validate_filenames_only(args.filenames, inbox_dir)
+    _pull(private_notes)
+    paths = _resolve_inbox_targets(args.filenames, inbox_dir)
+    for p in paths:
+        p.unlink()
+    count = len(paths)
+    rel = [str(p.relative_to(private_notes)) for p in paths]
+    _commit_and_push(
+        private_notes,
+        f"chore: process {count} feedback {'item' if count == 1 else 'items'} (adopted)",
+        rel,
+    )
+    print(f"{count}件採用処理: {', '.join(p.name for p in paths)}")
+
+
+def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """rejectサブコマンド: 不採用としてrejected/へ移動しcommit・push。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    rejected_dir = private_notes / "feedback" / "rejected"
+    _validate_filenames_only(args.filenames, inbox_dir)
+    _pull(private_notes)
+    src_paths = _resolve_inbox_targets(args.filenames, inbox_dir)
+    rejected_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[pathlib.Path] = []
+    for src in src_paths:
+        dst = rejected_dir / src.name
+        src.rename(dst)
+        moved.append(src)
+        moved.append(dst)
+    count = len(src_paths)
+    rel = [str(p.relative_to(private_notes)) for p in moved]
+    _commit_and_push(
+        private_notes,
+        f"chore: process {count} feedback {'item' if count == 1 else 'items'} (rejected)",
+        rel,
+    )
+    print(f"{count}件不採用処理: {', '.join(p.name for p in src_paths)}")
+
+
+def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """rmサブコマンド: inboxから単純削除しcommit・push。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _validate_filenames_only(args.filenames, inbox_dir)
+    _pull(private_notes)
+    paths = _resolve_inbox_targets(args.filenames, inbox_dir)
+    for p in paths:
+        p.unlink()
+    count = len(paths)
+    rel = [str(p.relative_to(private_notes)) for p in paths]
+    _commit_and_push(
+        private_notes,
+        f"chore: remove {count} feedback {'item' if count == 1 else 'items'}",
+        rel,
+    )
+    print(f"{count}件削除: {', '.join(p.name for p in paths)}")
+
+
+def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """editサブコマンド: $EDITORで対象ファイルを編集しcommit・push（差分なしなら無動作）。"""
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        print("$EDITORが未設定のため編集できません。", file=sys.stderr)
+        sys.exit(1)
+    inbox_dir = private_notes / "feedback" / "inbox"
+    path = _validate_filename(args.filename, inbox_dir)
+    if not path.exists():
+        print(f"inboxに存在しません: {path.name}", file=sys.stderr)
+        sys.exit(2)
+    _pull(private_notes)
+    before = path.read_bytes()
+    subprocess.run([editor, str(path)], check=True)
+    after = path.read_bytes()
+    if before == after:
+        print("差分なし。")
+        return
+    rel = str(path.relative_to(private_notes))
+    _commit_and_push(private_notes, "chore: edit feedback item", [rel])
+    print(f"編集反映: {path.name}")
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    home: pathlib.Path | None = None,
+    now: datetime.datetime | None = None,
+) -> None:
+    """エントリポイント。
+
+    `pyproject.toml`の`[project.scripts]`から
+    `dotfiles-fb = "pytools.dotfiles_fb:main"`の形で参照される。
+    """
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if home is None:
+        home = pathlib.Path.home()
+    if now is None:
+        now = datetime.datetime.now()
+    private_notes = _ensure_environment(home)
+    dispatch = {
+        "add": lambda: _cmd_add(args, private_notes, now),
+        "list": lambda: _cmd_list(args, private_notes),
+        "adopt": lambda: _cmd_adopt(args, private_notes),
+        "reject": lambda: _cmd_reject(args, private_notes),
+        "rm": lambda: _cmd_rm(args, private_notes),
+        "edit": lambda: _cmd_edit(args, private_notes),
+    }
+    dispatch[args.subcommand]()
+    sys.exit(0)

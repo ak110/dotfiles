@@ -73,7 +73,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
 `~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
-採用分を対象リポジトリごとに`feedback-add`へ位置引数で渡して投入する。
+採用分を対象リポジトリごとに`dotfiles-fb add`へ位置引数で渡して投入する。
 
 - 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
 - いずれの提案も不採用となった場合は投入をスキップする
@@ -83,7 +83,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 複数の対象リポジトリがある場合はリポジトリごとに呼び出す。
 
 ```sh
-feedback-add <repo-path> <message1> [<message2> ...]
+dotfiles-fb add <repo-path> <message1> [<message2> ...]
 ```
 
 - pyfltr章の採用分: `<repo-path>`は`~/pyfltr`
