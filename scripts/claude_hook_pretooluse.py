@@ -305,13 +305,35 @@ def _has_triple_underscore_filename(file_path: str) -> bool:
     return bool(_SHORT_UNDERSCORE_RUN.search(name))
 
 
+def _is_under_claude_plans(file_path: str) -> bool:
+    """書き込み先パスが ``~/.claude/plans/`` 配下かを判定する (言及チェック除外用)。
+
+    plans/ 配下は版管理外の計画ファイル領域で、版管理経由でのファイル名漏洩リスクが
+    存在しないため警告を抑止する設計とする。
+    """
+    if not file_path:
+        return False
+    try:
+        resolved = pathlib.Path(file_path).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
+    plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False)
+    try:
+        resolved.relative_to(plans_dir)
+        return True
+    except ValueError:
+        return False
+
+
 def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """個人用 / ローカル専用ファイルの言及の警告メッセージを返す (該当しなければ None)。
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
-    対象ファイル自身の編集は作成・更新として警告をスキップする。
+    対象ファイル自身の編集および書き込み先が ``~/.claude/plans/`` 配下の場合は警告をスキップする。
     文脈依存の判断はコーディングエージェントに委ね、hook は緩い警告のみを表示してブロックはしない。
     """
+    if _is_under_claude_plans(file_path):
+        return None
     messages: list[str] = []
     if not _is_claude_local_md(file_path):
         for field, value in fields:

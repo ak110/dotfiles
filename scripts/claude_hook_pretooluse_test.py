@@ -285,7 +285,7 @@ class TestPersonalFileMentionWarning:
     """個人用 / ローカル専用ファイル言及検出 (allow + additionalContext 警告)。
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` (3連アンダースコア) を含むトークン。
-    バックティック囲みの言及と、対象ファイル自身の編集は除外される。
+    バックティック囲みの言及・対象ファイル自身の編集・``~/.claude/plans/`` 配下への書き込みは除外される。
     """
 
     # ``___`` を含むトークンもプログラム的に組み立てる（本テストファイル自身が警告を
@@ -523,6 +523,47 @@ class TestPersonalFileMentionWarning:
         msg = _get_additional_context(result)
         assert _LOCAL_MD in msg
         assert self._TRIPLE_STEM in msg
+
+    # --- ~/.claude/plans/ 配下への書き込みは版管理外のため警告を抑止 ---
+
+    def test_claude_plans_path_suppresses_local_md_warning(self):
+        """`~/.claude/plans/` 配下への書き込みでは `CLAUDE.local.md` 言及を警告しない。"""
+        plans_path = str(pathlib.Path.home() / ".claude" / "plans" / "sample-plan.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": plans_path, "content": f"See {_LOCAL_MD} for context."},
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_claude_plans_path_suppresses_triple_underscore_warning(self):
+        """`~/.claude/plans/` 配下への書き込みでは 3〜7 連続アンダースコア語の言及も警告しない。"""
+        plans_path = str(pathlib.Path.home() / ".claude" / "plans" / "sample-plan.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": plans_path,
+                    "old_string": "before",
+                    "new_string": f"reference to {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_outside_claude_plans_still_warns(self):
+        """plans/ 配下外への書き込みは引き続き警告する（抑止条件の境界確認）。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "docs/guide.md", "content": f"See {_LOCAL_MD}."},
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in _get_additional_context(result)
 
 
 class TestAgentToolkitDotfilesNamesCheck:
