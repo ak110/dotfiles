@@ -9,8 +9,7 @@ description: >
 
 # agent-toolkit (Claude Codeルールファイル + プラグイン)
 
-`agent-toolkit/`配下はClaude Codeプラグイン`agent-toolkit`として配布する。
-ルールファイル（`~/.claude/rules/agent-toolkit/`）と併用される前提で、プラグインにルールファイルと同等内容を書かない。
+`agent-toolkit/`配下はClaude Codeプラグインとして配布し、ルールファイル（`~/.claude/rules/agent-toolkit/`）と同等内容をプラグインに書かない。
 
 ## ファイル構成と参照方向
 
@@ -32,6 +31,7 @@ description: >
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 - 配布物（スキル・サブエージェント・hookスクリプト・コード）のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、利用者環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物の出力文字列・フックメッセージ・docstringにリポジトリ管理外の個人メモファイル名を含めない
+- 配布物文面は計画段階（plan modeの提案文・改訂案・例示文など）にも本節の方針を事前適用し、dotfiles固有名の混入を後段の機械検出（`scripts/claude_hook_pretooluse.py`）まで持ち越さない
 
 スキル・サブエージェント編集時は次を守る。
 
