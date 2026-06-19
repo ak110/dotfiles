@@ -7,6 +7,7 @@
 - reject: 不採用としてrejected/へ移動しコミット・push
 - rm: 単純削除しコミット・push
 - edit: $EDITORで対象ファイルを編集しコミット・push
+- process-loop: inboxが空になるまで`claude /process-feedbacks`を繰り返し起動する
 """
 
 import argparse
@@ -21,7 +22,7 @@ from pytools._internal.cli import enable_completion
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """サブコマンド付きargparseパーサを構築する。"""
+    """サブコマンド付きargparseパーサーを構築する。"""
     parser = argparse.ArgumentParser(
         description="~/private-notesのフィードバック項目を操作する。",
     )
@@ -44,6 +45,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
     edit.add_argument("filename", metavar="FILENAME", help="編集対象のinboxファイル名。")
+
+    loop = sub.add_parser(
+        "process-loop",
+        help="inboxが空になるまで`claude /process-feedbacks`を繰り返し起動する",
+    )
+    loop.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        metavar="N",
+        help="反復上限回数（既定: 無制限）。",
+    )
 
     enable_completion(parser)
     return parser
@@ -86,7 +99,7 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
 def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     r"""ファイル名が基準ディレクトリ直下の単純名であることを検証して絶対パスを返す。
 
-    `/`・`\\`・`..`・絶対パス・空文字列・カレント参照は早期に拒否する。
+    `/`・`\`・`..`・絶対パス・空文字列・カレント参照は早期に拒否する。
     """
     parts = pathlib.Path(filename).parts
     if (
@@ -106,6 +119,22 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
         print(f"ファイル名が基準ディレクトリ外を指しています: {filename}", file=sys.stderr)
         sys.exit(2)
     return path
+
+
+def _count_inbox(inbox_dir: pathlib.Path) -> int:
+    """inbox配下の`*.md`ファイル件数を返す。"""
+    if not inbox_dir.exists():
+        return 0
+    return sum(1 for p in inbox_dir.iterdir() if p.suffix == ".md")
+
+
+def _shorten_home(path: pathlib.Path, home: pathlib.Path) -> str:
+    """$HOME配下のパスを`~/...`へ短縮する。外なら絶対パスのまま返す。"""
+    try:
+        rel = path.relative_to(home)
+    except ValueError:
+        return str(path)
+    return f"~/{rel}"
 
 
 def _max_existing_seq(inbox_dir: pathlib.Path, timestamp_prefix: str) -> int:
@@ -128,7 +157,12 @@ def _max_existing_seq(inbox_dir: pathlib.Path, timestamp_prefix: str) -> int:
     return max_seq
 
 
-def _cmd_add(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+def _cmd_add(
+    args: argparse.Namespace,
+    private_notes: pathlib.Path,
+    now: datetime.datetime,
+    home: pathlib.Path,
+) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
     target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
     inbox_dir = private_notes / "feedback" / "inbox"
@@ -150,10 +184,10 @@ def _cmd_add(args: argparse.Namespace, private_notes: pathlib.Path, now: datetim
         f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
         [str(inbox_dir.relative_to(private_notes))],
     )
-    files_summary = ", ".join(generated)
-    inbox_total = sum(1 for p in inbox_dir.iterdir() if p.suffix == ".md")
-    print(f"{count}件投入: {files_summary}")
-    print(f"inbox: 計{inbox_total}件")
+    print(f"{count}件投入:")
+    for filename in generated:
+        print(f"  {_shorten_home(inbox_dir / filename, home)}")
+    print(f"inbox: 計{_count_inbox(inbox_dir)}件")
 
 
 def _parse_target_repo(text: str) -> str:
@@ -275,10 +309,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     inbox_dir = private_notes / "feedback" / "inbox"
     path = _validate_filename(args.filename, inbox_dir)
+    _pull(private_notes)
     if not path.exists():
         print(f"inboxに存在しません: {path.name}", file=sys.stderr)
         sys.exit(2)
-    _pull(private_notes)
     before = path.read_bytes()
     subprocess.run([editor, str(path)], check=True)
     after = path.read_bytes()
@@ -288,6 +322,32 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     rel = str(path.relative_to(private_notes))
     _commit_and_push(private_notes, "chore: edit feedback item", [rel])
     print(f"編集反映: {path.name}")
+
+
+def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """process-loopサブコマンド: inboxが空になるまでclaude /process-feedbacksを繰り返し起動する。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    iteration = 0
+    while True:
+        remaining = _count_inbox(inbox_dir)
+        if remaining == 0:
+            if iteration == 0:
+                print("inboxは空です。処理対象なし。")
+            else:
+                print(f"inboxが空になりました（{iteration}回実行）。")
+            return
+        if args.max_iterations is not None and iteration >= args.max_iterations:
+            print(f"反復上限{args.max_iterations}回に達しました（inbox残{remaining}件）。")
+            return
+        iteration += 1
+        print(f"[反復 {iteration}] inbox残{remaining}件、claudeを起動します")
+        result = subprocess.run(["claude", "/process-feedbacks"], check=False)
+        if result.returncode != 0:
+            print(
+                f"claudeがexit code {result.returncode}で終了しました。反復を中断します。",
+                file=sys.stderr,
+            )
+            sys.exit(result.returncode)
 
 
 def main(
@@ -309,12 +369,13 @@ def main(
         now = datetime.datetime.now()
     private_notes = _ensure_environment(home)
     dispatch = {
-        "add": lambda: _cmd_add(args, private_notes, now),
+        "add": lambda: _cmd_add(args, private_notes, now, home),
         "list": lambda: _cmd_list(args, private_notes),
         "adopt": lambda: _cmd_adopt(args, private_notes),
         "reject": lambda: _cmd_reject(args, private_notes),
         "rm": lambda: _cmd_rm(args, private_notes),
         "edit": lambda: _cmd_edit(args, private_notes),
+        "process-loop": lambda: _cmd_process_loop(args, private_notes),
     }
     dispatch[args.subcommand]()
     sys.exit(0)

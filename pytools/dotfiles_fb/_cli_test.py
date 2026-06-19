@@ -145,7 +145,8 @@ class TestAddSingleMessage:
             assert call["kwargs"].get("cwd") == notes
 
         captured = capsys.readouterr()
-        assert "1件投入" in captured.out
+        assert "1件投入:\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
 
 
@@ -181,7 +182,9 @@ class TestAddMultipleMessages:
         assert "chore: add 2 feedback items" in commit_cmd
 
         captured = capsys.readouterr()
-        assert "2件投入" in captured.out
+        assert "2件投入:\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
 
 
@@ -600,3 +603,117 @@ class TestPathTraversalRejection:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "不正なファイル名" in captured.err or "基準ディレクトリ外" in captured.err
+
+
+class TestProcessLoopEmptyInbox:
+    """process-loopサブコマンド: inbox空時はclaude未起動でexit 0。"""
+
+    def test_empty_inbox_skips_claude(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inboxが最初から空ならclaudeが一度も呼ばれず`inboxは空`が出力される。"""
+        _setup_flag_and_notes(tmp_path)
+        calls: list[_GitCall] = []
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inboxは空です" in captured.out
+        claude_calls = [c for c in calls if c["cmd"][:1] == ["claude"]]
+        assert claude_calls == []
+
+
+class TestProcessLoopSingleIteration:
+    """process-loopサブコマンド: claude起動でinboxが空になれば1回で終了。"""
+
+    def test_single_iteration_when_inbox_drains(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """claudeのfakeがinboxを空にすると1回の反復でループを抜ける。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        inbox_path = _write_inbox_file(notes, "fb-001.md")
+        claude_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[:1] == ["claude"]:
+                claude_calls.append(list(cmd))
+                inbox_path.unlink()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert claude_calls == [["claude", "/process-feedbacks"]]
+        captured = capsys.readouterr()
+        assert "[反復 1] inbox残1件" in captured.out
+        assert "inboxが空になりました（1回実行）" in captured.out
+
+
+class TestProcessLoopMaxIterations:
+    """process-loopサブコマンド: --max-iterationsで反復上限を強制。"""
+
+    def test_max_iterations_caps_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """claudeがinboxを空にしなくても上限回数で停止する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_inbox_file(notes, "fb-001.md")
+        claude_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[:1] == ["claude"]:
+                claude_calls.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop", "--max-iterations", "2"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert len(claude_calls) == 2
+        captured = capsys.readouterr()
+        assert "反復上限2回に達しました（inbox残1件）" in captured.out
+
+
+class TestProcessLoopClaudeFailure:
+    """process-loopサブコマンド: claude非0終了時に同じexit codeで中断する。"""
+
+    def test_claude_failure_exits_with_returncode(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """claudeのfakeが非0を返すとprocess-loopは同じexit codeで停止する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_inbox_file(notes, "fb-001.md")
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[:1] == ["claude"]:
+                return subprocess.CompletedProcess(cmd, returncode=42, stdout=b"", stderr=b"")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop"], home=tmp_path)
+
+        assert exc_info.value.code == 42
+        captured = capsys.readouterr()
+        assert "claudeがexit code 42で終了しました" in captured.err
