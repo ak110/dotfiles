@@ -287,6 +287,9 @@ if [ -e "$(which code)" ]; then
 fi
 
 # Claude Code
+# auto-compaction発動閾値を1Mコンテキストの約40%（≒400kトークン）に前倒しする。
+# settings.jsonのenvブロックでは反映されない既知問題があるためシェル側でexportする。
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=40
 # 終了時に画面をクリアするラッパー関数。
 # エイリアスではなく関数にしているのは、claude 本体の終了コードを保持しつつ
 # 終了後に clear を実行する必要があるため。
