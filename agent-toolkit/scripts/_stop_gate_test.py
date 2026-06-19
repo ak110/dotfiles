@@ -90,7 +90,7 @@ def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) ->
 
 
 def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed") -> dict:
-    """`<task-notification>`本文を持つuserエントリを生成する。"""
+    """`<task-notification>`本文を持つuserエントリを生成する（旧形式）。"""
     notification = (
         "<task-notification>"
         "<task-id>task-x</task-id>"
@@ -104,6 +104,32 @@ def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed"
         "message": {
             "role": "user",
             "content": [{"type": "text", "text": notification}],
+        },
+    }
+
+
+def _attachment_task_notification_entry(
+    tool_use_id: str, *, status: str = "completed", command_mode: str = "task-notification", sidechain: bool = False
+) -> dict:
+    """`<task-notification>`本文を持つattachmentエントリを生成する（Claude Code 2.1系以降の新形式）。
+
+    `command_mode`を`task-notification`以外に上書きすると、走査対象から外れる否定ケースを再現できる。
+    """
+    notification = (
+        "<task-notification>"
+        "<task-id>task-x</task-id>"
+        f"<tool-use-id>{tool_use_id}</tool-use-id>"
+        f"<status>{status}</status>"
+        "<summary>sub agent finished</summary>"
+        "</task-notification>"
+    )
+    return {
+        "type": "attachment",
+        "isSidechain": sidechain,
+        "attachment": {
+            "type": "queued_command",
+            "prompt": notification,
+            "commandMode": command_mode,
         },
     }
 
@@ -249,6 +275,77 @@ class TestIsPendingAsyncWork:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t)) is False
+
+    @pytest.mark.parametrize(
+        ("pending_entries", "expected"),
+        [
+            # 新形式単独で完了通知を受信し、起動と完了が紐付く
+            (
+                [
+                    _user_async_launched_entry("toolu_a"),
+                    _attachment_task_notification_entry("toolu_a"),
+                ],
+                False,
+            ),
+            # 旧user形式と新attachment形式の混在で双方の完了が完了集合へ追加される
+            (
+                [
+                    _user_async_launched_entry("toolu_old"),
+                    _user_async_launched_entry("toolu_new"),
+                    _user_task_notification_entry("toolu_old"),
+                    _attachment_task_notification_entry("toolu_new"),
+                ],
+                False,
+            ),
+            # `commandMode`が`task-notification`以外のattachmentエントリは完了集合へ寄与しない
+            (
+                [
+                    _user_async_launched_entry("toolu_a"),
+                    _attachment_task_notification_entry("toolu_a", command_mode="prompt"),
+                ],
+                True,
+            ),
+            # `isSidechain`が真のattachmentエントリは完了集合へ寄与しない
+            (
+                [
+                    _user_async_launched_entry("toolu_a"),
+                    _attachment_task_notification_entry("toolu_a", sidechain=True),
+                ],
+                True,
+            ),
+            # `attachment`がdictでないエントリは防御ガードで無視され、起動が残るため未完了扱い
+            (
+                [
+                    _user_async_launched_entry("toolu_a"),
+                    {"type": "attachment", "attachment": "not-a-dict"},
+                ],
+                True,
+            ),
+            # `attachment.prompt`が文字列でないエントリは防御ガードで無視される
+            (
+                [
+                    _user_async_launched_entry("toolu_a"),
+                    {
+                        "type": "attachment",
+                        "attachment": {"commandMode": "task-notification", "prompt": None},
+                    },
+                ],
+                True,
+            ),
+        ],
+    )
+    def test_attachment_task_notification(self, tmp_path: pathlib.Path, pending_entries: list[dict], expected: bool):
+        """Claude Code 2.1系以降の新形式（`type=="attachment"`）完了通知の抽出経路を検証する。
+
+        旧形式との混在、`commandMode`非対象・`isSidechain`真・防御ガード（dictでない／strでない）を含めて
+        境界値・同値分割で網羅する。
+        """
+        entries: list[dict] = [_user_entry("hello")]
+        entries.extend(pending_entries)
+        entries.append(_user_entry("続き"))
+        entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is expected
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),

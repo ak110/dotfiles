@@ -40,12 +40,15 @@ def is_pending_async_work(transcript_path: str) -> bool:
     - 未完了のbackground task（Agent・Bash双方）が存在する
 
     後者はtranscript全体を走査して判定する。
-    メイン側（`isSidechain`が真でない）userエントリのうち、
+    起動集合は非sidechainの`type=="user"`エントリのうち、
     `toolUseResult.status == "async_launched"`（背景Agent起動）または
-    `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）ものから
-    起動済み`tool_use_id`集合を抽出し、
-    後続のメイン側userエントリのtext content内に含まれる`<task-notification>`要素から
-    `<tool-use-id>`を抽出して除外する。残差が1件以上で「未完了background taskあり」と判断する。
+    `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）ものから抽出する。
+    完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出する。
+    完了通知エントリは次の2形式が併存する。
+    - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
+    - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
+      `attachment.prompt`文字列に含まれる`<task-notification>`要素（Claude Code 2.1系以降）
+    起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
 
     transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     """
@@ -171,7 +174,7 @@ def _describe_last_tool_use(transcript_path: str) -> str:
 def _has_pending_background_tasks(transcript_path: str) -> bool:
     r"""transcript全体を走査して未完了のbackground task（Agent・Bash双方）が存在する場合に真を返す。
 
-    検出スコープはメイン側（`isSidechain`が真でない）userエントリに限定する。
+    検出スコープは非sidechainエントリに限定する（`isSidechain`が真のエントリは除外）。
     foreground起動のAgentはメインターン内で同期完了するため対象外。
 
     起動の記録: 次のいずれかを持つuserエントリ。
@@ -180,8 +183,12 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
 
     いずれの場合も`message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
 
-    完了の記録: メイン側userエントリのtext content内に含まれる`<task-notification>`要素から
+    完了の記録: 次の2形式の`<task-notification>`要素から
     `<tool-use-id>(toolu_[\\w]+)</tool-use-id>`を抽出する。
+    - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロック
+    - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
+      `attachment.prompt`文字列（Claude Code 2.1系以降で観測される形式）
+
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bashとも同一機構で通知されるため共通の抽出処理を用いる。
 
@@ -211,19 +218,34 @@ def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], 
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
             continue
-        if entry.get("type") != "user" or entry.get("isSidechain"):
+        if entry.get("isSidechain"):
             continue
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        tool_use_result = entry.get("toolUseResult")
-        if isinstance(tool_use_result, dict) and (
-            tool_use_result.get("status") == "async_launched" or isinstance(tool_use_result.get("backgroundTaskId"), str)
-        ):
-            tool_use_id = _extract_tool_result_id(message)
-            if tool_use_id is not None:
-                launched.add(tool_use_id)
-        completed.update(_extract_task_notification_ids(message))
+        entry_type = entry.get("type")
+        if entry_type == "user":
+            message = entry.get("message")
+            if not isinstance(message, dict):
+                continue
+            tool_use_result = entry.get("toolUseResult")
+            if isinstance(tool_use_result, dict) and (
+                tool_use_result.get("status") == "async_launched" or isinstance(tool_use_result.get("backgroundTaskId"), str)
+            ):
+                tool_use_id = _extract_tool_result_id(message)
+                if tool_use_id is not None:
+                    launched.add(tool_use_id)
+            completed.update(_extract_task_notification_ids(message))
+        elif entry_type == "attachment":
+            # Claude Code 2.1系以降、background task完了通知はattachmentエントリ経由で記録される。
+            # attachment.commandMode == "task-notification"のエントリのみが完了通知本文を持つ。
+            attachment = entry.get("attachment")
+            if not isinstance(attachment, dict):
+                continue
+            if attachment.get("commandMode") != "task-notification":
+                continue
+            prompt = attachment.get("prompt")
+            if not isinstance(prompt, str):
+                continue
+            for notification in _TASK_NOTIFICATION_RE.findall(prompt):
+                completed.update(_TOOL_USE_ID_RE.findall(notification))
     return launched, completed
 
 
