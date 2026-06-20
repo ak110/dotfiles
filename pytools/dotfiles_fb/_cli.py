@@ -7,7 +7,10 @@
 - reject: 不採用としてrejected/へ移動しコミット・push
 - rm: 単純削除しコミット・push
 - edit: $EDITORで対象ファイルを編集しコミット・push
-- process-loop: inboxが空になるまで`claude /process-feedbacks`を繰り返し起動する
+- commit: 外部編集後のinbox配下未コミット変更をコミット・push
+- enable: feedback-inboxフラグファイルを作成する
+- disable: feedback-inboxフラグファイルを削除する
+- process-loop: 対象リポのinboxが0件になるまで`claude /process-feedbacks`を繰り返し起動する
 """
 
 import argparse
@@ -31,6 +34,12 @@ def _build_parser() -> argparse.ArgumentParser:
     add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
     add.add_argument("repo_path", metavar="REPO_PATH", help="フィードバック対象リポジトリのパス（~展開可能）。")
     add.add_argument("messages", metavar="MESSAGE", nargs="+", help="投入するフィードバックメッセージ（1個以上）。")
+    add.add_argument(
+        "--source",
+        metavar="NAME",
+        default=None,
+        help="投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-review）。",
+    )
 
     list_ = sub.add_parser("list", help="inboxの全件をtarget_repoごとに出力する")
     list_.add_argument(
@@ -52,9 +61,23 @@ def _build_parser() -> argparse.ArgumentParser:
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
     edit.add_argument("filename", metavar="FILENAME", help="編集対象のinboxファイル名。")
 
+    sub.add_parser(
+        "commit",
+        help="外部編集後にinbox配下の未コミット変更をコミット・push（差分なしなら無動作）",
+    )
+
+    sub.add_parser(
+        "enable",
+        help="feedback-inboxフラグファイルを作成する（chezmoi apply再評価で上書きされ得る）",
+    )
+    sub.add_parser(
+        "disable",
+        help="feedback-inboxフラグファイルを削除する（chezmoi apply再評価で上書きされ得る）",
+    )
+
     loop = sub.add_parser(
         "process-loop",
-        help="inboxが空になるまで`claude /process-feedbacks`を繰り返し起動する",
+        help="対象リポのinbox件数が0件になるまで`claude /process-feedbacks`を繰り返し起動する",
     )
     loop.add_argument(
         "--max-iterations",
@@ -63,15 +86,25 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="反復上限回数（既定: 無制限）。",
     )
+    loop.add_argument(
+        "--target-repo",
+        metavar="PATH",
+        default=None,
+        help="対象リポジトリのパス（~展開可能）。既定は`git rev-parse --show-toplevel`の取得値。",
+    )
 
     enable_completion(parser)
     return parser
 
 
+def _flag_path(home: pathlib.Path) -> pathlib.Path:
+    """feedback-inboxの有効化フラグファイルの絶対パスを返す。"""
+    return home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+
+
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     """フラグファイルとprivate-notesディレクトリの存在を確認し、private-notesパスを返す。"""
-    flag_file = home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-    if not flag_file.exists():
+    if not _flag_path(home).exists():
         print("feedback-inbox機能が無効です（フラグファイルが存在しません）。", file=sys.stderr)
         sys.exit(1)
     private_notes = home / "private-notes"
@@ -177,10 +210,11 @@ def _cmd_add(
     created_iso = now.isoformat()
     counter = _max_existing_seq(inbox_dir, timestamp) + 1
     inbox_dir.mkdir(parents=True, exist_ok=True)
+    source_line = f"source: {args.source}\n" if args.source else ""
     generated: list[str] = []
     for message in args.messages:
         filename = f"{timestamp}-{counter:03d}.md"
-        content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n---\n\n{message}\n"
+        content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         generated.append(filename)
         counter += 1
@@ -217,6 +251,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     完全一致するエントリのみを出力する。
     """
     inbox_dir = private_notes / "feedback" / "inbox"
+    _pull(private_notes)
     if not inbox_dir.exists():
         return
     filter_repo: str | None = None
@@ -339,24 +374,99 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print(f"編集反映: {path.name}")
 
 
+def _cmd_commit(private_notes: pathlib.Path) -> None:
+    """commitサブコマンド: 外部編集後のinbox配下未コミット変更をコミット・push。
+
+    inbox配下に未コミット変更が無い場合は早期return。
+    """
+    _pull(private_notes)
+    inbox_rel = "feedback/inbox"
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--", inbox_rel],
+        cwd=private_notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if not status.stdout.strip():
+        print("差分なし。")
+        return
+    _commit_and_push(private_notes, "chore: edit feedback items externally", [inbox_rel])
+    print("外部編集分をコミット・pushしました。")
+
+
+def _cmd_enable(home: pathlib.Path) -> None:
+    """enableサブコマンド: feedback-inboxフラグファイルを作成する。"""
+    path = _flag_path(home)
+    if path.exists():
+        print(f"既に有効です: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")
+    print(f"有効化しました: {path}")
+    print("次回`chezmoi apply`実行時に`setup_feedback_inbox.py`がホスト判定で上書きする場合があります。")
+
+
+def _cmd_disable(home: pathlib.Path) -> None:
+    """disableサブコマンド: feedback-inboxフラグファイルを削除する。"""
+    path = _flag_path(home)
+    if not path.exists():
+        print(f"既に無効です: {path}")
+        return
+    path.unlink()
+    print(f"無効化しました: {path}")
+    print("次回`chezmoi apply`実行時に`setup_feedback_inbox.py`がホスト判定で上書きする場合があります。")
+
+
+def _resolve_target_repo(value: str | None) -> str:
+    """`--target-repo`の値（未指定時はgit rev-parse --show-toplevelの取得値）を絶対パスへ正規化して返す。"""
+    if value is not None:
+        return str(pathlib.Path(value).expanduser().resolve())
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return str(pathlib.Path(result.stdout.strip()).resolve())
+
+
+def _count_inbox_for_repo(inbox_dir: pathlib.Path, target_repo: str) -> int:
+    """frontmatterの`target_repo`が指定値と一致するinboxファイル件数を返す。"""
+    if not inbox_dir.exists():
+        return 0
+    count = 0
+    for path in inbox_dir.iterdir():
+        if path.suffix != ".md":
+            continue
+        if _parse_target_repo(path.read_text(encoding="utf-8")) == target_repo:
+            count += 1
+    return count
+
+
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """process-loopサブコマンド: inboxが空になるまでclaude /process-feedbacksを繰り返し起動する。"""
+    """process-loopサブコマンド: 対象リポのinboxが0件になるまでclaude /process-feedbacksを繰り返し起動する。
+
+    `--target-repo`未指定時は`git rev-parse --show-toplevel`の値を既定とし、
+    件数判定と内部`claude /process-feedbacks`起動引数で同フィルタを使う。
+    """
     inbox_dir = private_notes / "feedback" / "inbox"
+    target_repo = _resolve_target_repo(args.target_repo)
     iteration = 0
     while True:
-        remaining = _count_inbox(inbox_dir)
+        remaining = _count_inbox_for_repo(inbox_dir, target_repo)
         if remaining == 0:
             if iteration == 0:
-                print("inboxは空です。処理対象なし。")
+                print(f"対象リポのinboxは空です（target_repo={target_repo}）。処理対象なし。")
             else:
-                print(f"inboxが空になりました（{iteration}回実行）。")
+                print(f"対象リポのinboxが空になりました（{iteration}回実行、target_repo={target_repo}）。")
             return
         if args.max_iterations is not None and iteration >= args.max_iterations:
-            print(f"反復上限{args.max_iterations}回に達しました（inbox残{remaining}件）。")
+            print(f"反復上限{args.max_iterations}回に達しました（対象リポinbox残{remaining}件）。")
             return
         iteration += 1
-        print(f"[反復 {iteration}] inbox残{remaining}件、claudeを起動します")
-        result = subprocess.run(["claude", "/process-feedbacks"], check=False)
+        print(f"[反復 {iteration}] 対象リポinbox残{remaining}件、claudeを起動します")
+        result = subprocess.run(["claude", "/process-feedbacks", target_repo], check=False)
         if result.returncode != 0:
             print(
                 f"claudeがexit code {result.returncode}で終了しました。反復を中断します。",
@@ -378,6 +488,12 @@ def main(
         home = pathlib.Path.home()
     if now is None:
         now = datetime.datetime.now()
+    if args.subcommand == "enable":
+        _cmd_enable(home)
+        sys.exit(0)
+    if args.subcommand == "disable":
+        _cmd_disable(home)
+        sys.exit(0)
     private_notes = _ensure_environment(home)
     dispatch = {
         "add": lambda: _cmd_add(args, private_notes, now, home),
@@ -386,6 +502,7 @@ def main(
         "reject": lambda: _cmd_reject(args, private_notes),
         "rm": lambda: _cmd_rm(args, private_notes),
         "edit": lambda: _cmd_edit(args, private_notes),
+        "commit": lambda: _cmd_commit(private_notes),
         "process-loop": lambda: _cmd_process_loop(args, private_notes),
     }
     dispatch[args.subcommand]()

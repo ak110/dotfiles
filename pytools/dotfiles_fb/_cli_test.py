@@ -1,6 +1,8 @@
 """pytools.dotfiles_fb._cli のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
+add/list/adopt/reject/rm/edit/process-loopなど既存サブコマンドの単体テストを集約する。
+commit/enable/disable/--source等の拡張機能テストは`_cli_extras_test.py`に分離する。
 """
 
 import datetime
@@ -13,7 +15,7 @@ import pytest
 
 from pytools.dotfiles_fb import _cli
 
-type _GitCall = dict[str, Any]
+_GitCall = dict[str, Any]
 
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
@@ -22,13 +24,17 @@ _FIXED_ISO = _FIXED_DT.isoformat()
 
 def _make_subprocess_fake(
     calls: list[_GitCall],
-) -> Callable[..., subprocess.CompletedProcess[bytes]]:
-    """subprocess.runのfakeを返す。呼び出し引数をcallsへ記録する。"""
+) -> Callable[..., subprocess.CompletedProcess[Any]]:
+    """subprocess.runのfakeを返す。呼び出し引数をcallsへ記録する。
 
-    def fake(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    `text=True`が指定された場合は`stdout`/`stderr`を空文字列で返し、それ以外は空バイト列で返す。
+    """
+
+    def fake(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         del args
         calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+        empty: Any = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake
 
@@ -669,7 +675,7 @@ class TestPathTraversalRejection:
 
 
 class TestProcessLoopEmptyInbox:
-    """process-loopサブコマンド: inbox空時はclaude未起動でexit 0。"""
+    """process-loopサブコマンド: 対象リポのinbox空時はclaude未起動でexit 0。"""
 
     def test_empty_inbox_skips_claude(
         self,
@@ -677,23 +683,23 @@ class TestProcessLoopEmptyInbox:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inboxが最初から空ならclaudeが一度も呼ばれず`inboxは空`が出力される。"""
+        """対象リポのinboxが最初から空ならclaudeが一度も呼ばれない。"""
         _setup_flag_and_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop"], home=tmp_path)
+            _cli.main(["process-loop", "--target-repo=/repo/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "inboxは空です" in captured.out
+        assert "対象リポのinboxは空です" in captured.out
         claude_calls = [c for c in calls if c["cmd"][:1] == ["claude"]]
         assert claude_calls == []
 
 
 class TestProcessLoopSingleIteration:
-    """process-loopサブコマンド: claude起動でinboxが空になれば1回で終了。"""
+    """process-loopサブコマンド: claude起動で対象リポinboxが空になれば1回で終了。"""
 
     def test_single_iteration_when_inbox_drains(
         self,
@@ -701,9 +707,9 @@ class TestProcessLoopSingleIteration:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeのfakeがinboxを空にすると1回の反復でループを抜ける。"""
+        """claudeのfakeが対象リポinboxを空にすると1回の反復でループを抜ける。"""
         notes = _setup_flag_and_notes(tmp_path)
-        inbox_path = _write_inbox_file(notes, "fb-001.md")
+        inbox_path = _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
@@ -715,13 +721,13 @@ class TestProcessLoopSingleIteration:
         monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop"], home=tmp_path)
+            _cli.main(["process-loop", "--target-repo=/repo/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "/process-feedbacks"]]
+        assert claude_calls == [["claude", "/process-feedbacks", "/repo/foo"]]
         captured = capsys.readouterr()
-        assert "[反復 1] inbox残1件" in captured.out
-        assert "inboxが空になりました（1回実行）" in captured.out
+        assert "[反復 1] 対象リポinbox残1件" in captured.out
+        assert "対象リポのinboxが空になりました（1回実行" in captured.out
 
 
 class TestProcessLoopMaxIterations:
@@ -733,9 +739,9 @@ class TestProcessLoopMaxIterations:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeがinboxを空にしなくても上限回数で停止する。"""
+        """claudeが対象リポinboxを空にしなくても上限回数で停止する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
@@ -746,12 +752,12 @@ class TestProcessLoopMaxIterations:
         monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", "--max-iterations=2"], home=tmp_path)
+            _cli.main(["process-loop", "--max-iterations=2", "--target-repo=/repo/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 2
         captured = capsys.readouterr()
-        assert "反復上限2回に達しました（inbox残1件）" in captured.out
+        assert "反復上限2回に達しました（対象リポinbox残1件）" in captured.out
 
 
 class TestProcessLoopClaudeFailure:
@@ -765,7 +771,7 @@ class TestProcessLoopClaudeFailure:
     ) -> None:
         """claudeのfakeが非0を返すとprocess-loopは同じexit codeで停止する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             if cmd[:1] == ["claude"]:
@@ -775,8 +781,64 @@ class TestProcessLoopClaudeFailure:
         monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop"], home=tmp_path)
+            _cli.main(["process-loop", "--target-repo=/repo/foo"], home=tmp_path)
 
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
         assert "claudeがexit code 42で終了しました" in captured.err
+
+
+class TestProcessLoopTargetRepoFilter:
+    """process-loopサブコマンド: --target-repoで対象外フィードバックは件数に含めない。"""
+
+    def test_target_repo_filters_count(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """対象外リポのフィードバックは件数判定から除外され、claudeは起動しない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_inbox_file(notes, "fb-other.md", target_repo="/repo/other")
+        calls: list[_GitCall] = []
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop", "--target-repo=/repo/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "対象リポのinboxは空です" in captured.out
+        claude_calls = [c for c in calls if c["cmd"][:1] == ["claude"]]
+        assert claude_calls == []
+
+
+class TestProcessLoopDefaultUsesGitToplevel:
+    """process-loopサブコマンド: --target-repo未指定時はgit rev-parseで現リポを取得する。"""
+
+    def test_default_target_repo_resolved_via_git(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--target-repo未指定なら`git rev-parse --show-toplevel`を呼び結果をclaude引数に渡す。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        inbox_path = _write_inbox_file(notes, "fb-001.md", target_repo="/repo/auto")
+        claude_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = "/repo/auto\n" if kwargs.get("text") else b"/repo/auto\n"
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
+            if cmd[:1] == ["claude"]:
+                claude_calls.append(list(cmd))
+                inbox_path.unlink()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert claude_calls == [["claude", "/process-feedbacks", "/repo/auto"]]

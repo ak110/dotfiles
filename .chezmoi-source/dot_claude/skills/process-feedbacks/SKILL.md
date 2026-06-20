@@ -19,33 +19,35 @@ description: >
 
 ## ステップ1: 事前準備の確認
 
-`dotfiles-fb`の状態変更系サブコマンド（`add`・`adopt`・`reject`・`rm`・`edit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
-`list`サブコマンドはローカル状態のみを参照するためpullを実行しない。
+`dotfiles-fb`の全サブコマンド（`add`・`list`・`adopt`・`reject`・`rm`・`edit`・`commit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
 
 ## ステップ2: 件数確認とグループ化
 
-`dotfiles-fb list`を実行し、標準出力を解釈して件数をユーザーに提示する。
+`/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポとして扱う。
+引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポとして扱う（既定）。
+
+`dotfiles-fb list --target-repo=<対象リポパス>`を実行し、標準出力を解釈して件数をユーザーに提示する。
 0件の場合は「処理対象なし」を1文示して終了する。
 
 `dotfiles-fb list`の出力からfrontmatterの`target_repo`ごとにグループ化する。
-グループ化後の件数（target_repo別の内訳）もユーザーに提示する。
+`--target-repo`でフィルタしているため通常は1グループになるが、表記揺れ等で複数グループになり得る前提で扱う。
+グループ化後の件数もユーザーに提示する。
 
 ステップ2で取得した一覧のみを本セッションの処理対象として固定する。
 起動以降にinboxへ追加されたファイルは本セッションでは扱わず、次回起動時の処理対象とする。
 
-`/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は、
-`dotfiles-fb list --target-repo=<repo-path>`でフィルタする。
-引数なしの場合は従来通り全件を処理対象とする。
+別リポジトリ対象が必要な場合は`/process-feedbacks <repo-path>`で明示する。
 
 ## ステップ3: target_repoグループ単位の一括処理委譲
 
 `target_repo`グループごとに以下を実施する。グループ間は順次処理する。
 
 1. `target_repo`のディレクトリへカレントを移す
-2. 当該グループの全ファイル本文（frontmatterを除く提案本文）を結合した1つのmarkdownを
+2. 当該グループの全ファイル本文（frontmatter保持）を結合した1つのmarkdownを
    `agent-toolkit:apply-feedback`スキルへ渡して委譲する
    - 結合形式は各ファイル本文の連結とし、各ファイルの開始位置を区切るため
      `## <filename>`形式の見出しを各本文の前に置く
+   - frontmatterは保持することで`source: session-review`などの投入元情報をapply-feedback側で参照できるようにする
    - `apply-feedback`は批判的検討・採否判定の提示・`EnterPlanMode`移行・
      `agent-toolkit:plan-mode`に従う計画作成と実装・コミットまでを担う
    - 採否確定後の承認待ちは行わない（最終承認は`ExitPlanMode`が担う）
