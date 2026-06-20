@@ -77,8 +77,6 @@
   - 新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
 - `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる
   - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
-  - PowerShellの`$ErrorActionPreference = 'Stop'`はネイティブexeの非ゼロ終了を例外化しないため、
-    `uv`等の外部コマンド直後で`$LASTEXITCODE`を明示判定し非ゼロなら`throw`する
   - `pyproject.toml`の`[project.scripts]`にpost-apply処理継続に必須のCLIを追加・改名した場合の対応。
     両テンプレートの変数定義節にある`$expectedShims`・`expected_shims`定数を同一値に更新する
 

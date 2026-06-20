@@ -26,25 +26,27 @@ if ($missing.Count -gt 0) {
     Write-Error ("前提条件が未インストールです: {0}`n" -f ($missing -join ', ') +
         "README の「前提条件(要インストール)」セクションを参照してインストールしてください:`n" +
         "  https://github.com/ak110/dotfiles#前提条件要インストール")
-    exit 1
 }
 
 # chezmoi が無ければ winget で導入する（winget 自体は Windows 10/11 標準搭載）
 if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
     Write-Host 'chezmoi をインストールします...'
     winget install --id=twpayne.chezmoi -e --source=winget
+    if ($LASTEXITCODE -ne 0) { throw "winget install が失敗しました (exit=$LASTEXITCODE)" }
 }
 
 $dotfilesDir = Join-Path $env:USERPROFILE 'dotfiles'
 if (-not (Test-Path $dotfilesDir)) {
     Write-Host "$dotfilesDir にリポジトリを clone します..."
     git clone https://github.com/ak110/dotfiles.git $dotfilesDir
+    if ($LASTEXITCODE -ne 0) { throw "git clone が失敗しました (exit=$LASTEXITCODE)" }
 }
 
 # chezmoi 管理対象の既存ファイルをバックアップする。
 $backupDir = Join-Path $env:USERPROFILE (".dotfiles-backup\{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $count = 0
 $managed = & chezmoi managed --source=$dotfilesDir
+if ($LASTEXITCODE -ne 0) { throw "chezmoi managed が失敗しました (exit=$LASTEXITCODE)" }
 foreach ($target in $managed) {
     if (-not $target) { continue }
     $src = Join-Path $env:USERPROFILE $target
@@ -61,3 +63,4 @@ if ($count -gt 0) {
 }
 
 chezmoi init --verbose --source=$dotfilesDir --apply
+if ($LASTEXITCODE -ne 0) { throw "chezmoi init が失敗しました (exit=$LASTEXITCODE)" }
