@@ -13,7 +13,7 @@ import pytest
 
 from pytools.dotfiles_fb import _cli
 
-_GitCall = dict[str, Any]
+type _GitCall = dict[str, Any]
 
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
@@ -314,6 +314,69 @@ class TestListMultipleRepos:
         captured = capsys.readouterr()
         assert "## target_repo: /repo/foo" in captured.out
         assert "## target_repo: /repo/bar" in captured.out
+
+
+class TestListTargetRepoFilter:
+    """listサブコマンド: --target-repo指定で該当グループのみ出力する。"""
+
+    def test_filter_matches_single_group(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """複数target_repo混在でも--target-repo指定値と一致するグループのみ出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_inbox_file(notes, "fb-002.md", target_repo="/repo/bar")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--target-repo=/repo/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "## target_repo: /repo/foo" in captured.out
+        assert "/repo/bar" not in captured.out
+
+    def test_filter_expands_tilde(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """~プレフィックス指定がtmp_path配下の絶対パスへ展開され、対応するエントリが出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        target = str((tmp_path / "myrepo").resolve())
+        _write_inbox_file(notes, "fb-001.md", target_repo=target)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--target-repo=~/myrepo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"## target_repo: {target}" in captured.out
+        assert "### fb-001.md" in captured.out
+
+    def test_filter_no_match_outputs_nothing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """一致するエントリが存在しない場合、標準出力は空になる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--target-repo=/repo/nomatch"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
 
 
 class TestAdoptSingle:
@@ -683,7 +746,7 @@ class TestProcessLoopMaxIterations:
         monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", "--max-iterations", "2"], home=tmp_path)
+            _cli.main(["process-loop", "--max-iterations=2"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 2

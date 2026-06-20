@@ -32,7 +32,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add.add_argument("repo_path", metavar="REPO_PATH", help="フィードバック対象リポジトリのパス（~展開可能）。")
     add.add_argument("messages", metavar="MESSAGE", nargs="+", help="投入するフィードバックメッセージ（1個以上）。")
 
-    sub.add_parser("list", help="inboxの全件をtarget_repoごとに出力する")
+    list_ = sub.add_parser("list", help="inboxの全件をtarget_repoごとに出力する")
+    list_.add_argument(
+        "--target-repo",
+        metavar="PATH",
+        default=None,
+        help="対象リポジトリのパスでフィルタする（~展開可能）。",
+    )
 
     adopt = sub.add_parser("adopt", help="採用としてinboxから削除しコミット・push")
     adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
@@ -204,17 +210,26 @@ def _parse_target_repo(text: str) -> str:
     return "(unknown)"
 
 
-def _cmd_list(_args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """listサブコマンド: inbox全件をtarget_repoごとにグループ化して出力。"""
+def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """listサブコマンド: inbox全件をtarget_repoごとにグループ化して出力。
+
+    `--target-repo`指定時は、~展開と絶対パス正規化を施した値とfrontmatterの`target_repo`が
+    完全一致するエントリのみを出力する。
+    """
     inbox_dir = private_notes / "feedback" / "inbox"
     if not inbox_dir.exists():
         return
+    filter_repo: str | None = None
+    if args.target_repo is not None:
+        filter_repo = str(pathlib.Path(args.target_repo).expanduser().resolve())
     entries: dict[str, list[tuple[str, str]]] = {}
     for path in sorted(inbox_dir.iterdir()):
         if path.suffix != ".md":
             continue
         text = path.read_text(encoding="utf-8")
         target_repo = _parse_target_repo(text)
+        if filter_repo is not None and target_repo != filter_repo:
+            continue
         entries.setdefault(target_repo, []).append((path.name, text))
     for repo, items in entries.items():
         print(f"## target_repo: {repo}")
@@ -356,11 +371,7 @@ def main(
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
 ) -> None:
-    """エントリポイント。
-
-    `pyproject.toml`の`[project.scripts]`から
-    `dotfiles-fb = "pytools.dotfiles_fb:main"`の形で参照される。
-    """
+    """エントリポイント。"""
     parser = _build_parser()
     args = parser.parse_args(argv)
     if home is None:
