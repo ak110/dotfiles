@@ -21,6 +21,9 @@
 - Bashで`run_in_background=true`した長時間ジョブの完了判定では、最終サマリー欠落とゲート判定の早期成立に注意する
   - `tail -N`は集計行（`passed`/`failed`サマリーなど）が欠落し得るため、Monitorで全行取得するか最終マーカーを`grep -q`で待つ
   - 出力ファイルパスのサイズ・存在をwhileループでポーリングしない
+- `gh workflow run`・`git push --tags`・`gh release create`等の不可逆操作は`run_in_background=true`を採用しない
+  - Claude Codeの自動background判定で空ログのまま停止した場合の再起動が二重実行に直結する
+  - 同判定でforeground想定の起動が停止した場合は同一コマンドの再実行ではなく`gh run list`等の状態確認で進捗を把握する
 - 同一メッセージ内に複数のツール呼び出しを並べると、先頭がhookブロックやエラーでキャンセルされた際に
   後続の独立した`Edit`・`Write`・`Bash`も連鎖キャンセルされる
   - 各ツールの成否を確かめ、未反映の編集を完了扱いにせず`git diff`・`Read`で個別確認してから次へ進む
