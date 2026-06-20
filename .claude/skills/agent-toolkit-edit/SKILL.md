@@ -9,12 +9,10 @@ description: >
 
 # agent-toolkit (Claude Codeルールファイル + プラグイン)
 
-`agent-toolkit/`配下はClaude Codeプラグインとして配布し、ルールファイル（`~/.claude/rules/agent-toolkit/`）と同等内容をプラグインに書かない。
-
 ## ファイル構成と参照方向
 
 - `agent-toolkit/`配下: プラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）
-- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言語表現を単独で担う）
+- `agent-toolkit/rules/`配下: ルールファイル（`agent.md`が基本原則・運用方針・言語表現を単独で担い、プラグイン側で同等内容を書かない）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
@@ -32,6 +30,8 @@ description: >
 - 配布物（スキル・サブエージェント・hookスクリプト・コード）のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、利用者環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物の出力文字列・フックメッセージ・docstringにリポジトリ管理外の個人メモファイル名を含めない
 - 配布物文面は計画段階（plan modeの提案文・改訂案・例示文など）にも本節の方針を事前適用し、dotfiles固有名の混入を後段の機械検出（`scripts/claude_hook_pretooluse.py`）まで持ち越さない
+- 素材原文（フィードバック・PR説明・Issue本文等）反映計画では、`## 変更内容`のdiff改訂後文面の確定前に+側文字列の固有名照合を実施し計画段階で一般化表現へ置き換える
+  - 照合対象は`scripts/claude_hook_pretooluse.py`の固有名ブロック対象（個人プロジェクト名固定リスト・pytools名・scripts名・スキル名）
 
 スキル・サブエージェント編集時は次を守る。
 
