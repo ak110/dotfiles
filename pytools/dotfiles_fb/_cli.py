@@ -466,7 +466,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
             return
         iteration += 1
         print(f"[反復 {iteration}] 対象リポinbox残{remaining}件、claudeを起動します")
-        result = subprocess.run(["claude", "/process-feedbacks", target_repo], check=False)
+        result = subprocess.run(
+            ["claude", "--permission-mode=auto", "/process-feedbacks", target_repo],
+            check=False,
+        )
         if result.returncode != 0:
             print(
                 f"claudeがexit code {result.returncode}で終了しました。反復を中断します。",

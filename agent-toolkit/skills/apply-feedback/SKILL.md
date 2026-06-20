@@ -80,7 +80,9 @@ description: >
 
 ファイル名は親が結合mdへ付与した`## <filename>`見出しの値をそのまま用いる。
 
-各提案の採否判定と理由を上記書式でユーザーへ提示したら、ユーザー応答を待たず続けて`EnterPlanMode`でplan modeへ移行する。
+各提案の採否判定と理由を上記書式でユーザーへ提示したら、ユーザー応答を待たず続けて計画作成へ移行する。
+Claude Code側permission modeが`plan`でない場合は`EnterPlanMode`を呼ばず直接`agent-toolkit:plan-mode`スキルへ進む。
+permission modeが`plan`の場合は`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`スキルへ進む。
 移行後は`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
-計画の最終承認は`agent-toolkit:plan-mode`工程8の`ExitPlanMode`で得る。
+plan mode下の場合の最終承認は`agent-toolkit:plan-mode`工程8の`ExitPlanMode`で得る。
 採否判定を変更したい場合はユーザー側の割り込みで提示する前提とする。

@@ -724,7 +724,7 @@ class TestProcessLoopSingleIteration:
             _cli.main(["process-loop", "--target-repo=/repo/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "/process-feedbacks", "/repo/foo"]]
+        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks", "/repo/foo"]]
         captured = capsys.readouterr()
         assert "[反復 1] 対象リポinbox残1件" in captured.out
         assert "対象リポのinboxが空になりました（1回実行" in captured.out
@@ -829,7 +829,8 @@ class TestProcessLoopDefaultUsesGitToplevel:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 stdout: Any = "/repo/auto\n" if kwargs.get("text") else b"/repo/auto\n"
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
+                stderr: Any = "" if kwargs.get("text") else b""
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stderr)
             if cmd[:1] == ["claude"]:
                 claude_calls.append(list(cmd))
                 inbox_path.unlink()
@@ -841,4 +842,4 @@ class TestProcessLoopDefaultUsesGitToplevel:
             _cli.main(["process-loop"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "/process-feedbacks", "/repo/auto"]]
+        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks", "/repo/auto"]]
