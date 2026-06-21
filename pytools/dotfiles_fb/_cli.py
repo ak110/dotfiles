@@ -10,6 +10,7 @@
 - commit: 外部編集後のinbox配下未コミット変更をコミット・push
 - enable: feedback-inboxフラグファイルを作成する
 - disable: feedback-inboxフラグファイルを削除する
+- status: feedback-inboxの有効状態を判定する（正常0・無効1）
 - process-loop: 対象リポのinboxが0件になるまで`claude /process-feedbacks`を繰り返し起動する
 """
 
@@ -19,6 +20,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import typing
 from collections.abc import Iterable
 
 from pytools._internal.cli import enable_completion
@@ -74,6 +76,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "disable",
         help="feedback-inboxフラグファイルを削除する（chezmoi apply再評価で上書きされ得る）",
     )
+    sub.add_parser(
+        "status",
+        help="feedback-inboxの有効状態を判定する（正常時exit 0、無効時exit 1で原因を標準エラー出力へ書く）",
+    )
 
     loop = sub.add_parser(
         "process-loop",
@@ -102,19 +108,25 @@ def _flag_path(home: pathlib.Path) -> pathlib.Path:
     return home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
 
 
+def _check_environment(home: pathlib.Path) -> tuple[int, str]:
+    """feedback-inboxの有効状態を判定し、(exit_code, message)を返す。
+
+    正常時は(0, 有効案内)、フラグファイル不在・private-notes不在時は(1, 原因案内)。
+    """
+    if not _flag_path(home).exists():
+        return 1, "feedback-inbox機能が無効です（フラグファイルが存在しません）。"
+    if not (home / "private-notes").exists():
+        return 1, "~/private-notesが見つかりません。GitHubからクローンしてから再実行してください。"
+    return 0, "feedback-inboxは有効です。"
+
+
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     """フラグファイルとprivate-notesディレクトリの存在を確認し、private-notesパスを返す。"""
-    if not _flag_path(home).exists():
-        print("feedback-inbox機能が無効です（フラグファイルが存在しません）。", file=sys.stderr)
-        sys.exit(1)
-    private_notes = home / "private-notes"
-    if not private_notes.exists():
-        print(
-            "~/private-notesが見つかりません。GitHubからcloneしてから再実行してください。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    return private_notes
+    code, message = _check_environment(home)
+    if code != 0:
+        print(message, file=sys.stderr)
+        sys.exit(code)
+    return home / "private-notes"
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
@@ -418,6 +430,14 @@ def _cmd_disable(home: pathlib.Path) -> None:
     print("次回`chezmoi apply`実行時に`setup_feedback_inbox.py`がホスト判定で上書きする場合があります。")
 
 
+def _cmd_status(home: pathlib.Path) -> typing.NoReturn:
+    """statusサブコマンド: feedback-inboxの有効状態を判定し終了コードで通知する。"""
+    code, message = _check_environment(home)
+    stream = sys.stdout if code == 0 else sys.stderr
+    print(message, file=stream)
+    sys.exit(code)
+
+
 def _resolve_target_repo(value: str | None) -> str:
     """`--target-repo`の値（未指定時はgit rev-parse --show-toplevelの取得値）を絶対パスへ正規化して返す。"""
     if value is not None:
@@ -497,6 +517,8 @@ def main(
     if args.subcommand == "disable":
         _cmd_disable(home)
         sys.exit(0)
+    if args.subcommand == "status":
+        _cmd_status(home)
     private_notes = _ensure_environment(home)
     dispatch = {
         "add": lambda: _cmd_add(args, private_notes, now, home),

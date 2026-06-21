@@ -1,6 +1,6 @@
 """pytools.dotfiles_fb._cli の拡張サブコマンド・オプションのテスト。
 
-`add --source`・`list`のpull実行・`commit`・`enable`・`disable`の単体テストを集約する。
+`add --source`・`list`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
 既存サブコマンドのテストは`_cli_test.py`に分離する。
 共通ヘルパーは`_cli_test.py`から再利用する。
 """
@@ -203,3 +203,47 @@ class TestDisableSubcommand:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "既に無効です" in captured.out
+
+
+class TestStatusSubcommand:
+    """statusサブコマンド: 有効状態をexit codeと出力先で通知する。"""
+
+    def test_status_disabled_when_flag_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """フラグファイル不在時はexit 1で標準エラー出力に無効案内を出力する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["status"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "feedback-inbox機能が無効" in captured.err
+        assert captured.out == ""
+
+    def test_status_disabled_when_notes_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """フラグありかつprivate-notes不在時はexit 1で標準エラー出力にクローン案内を出力する。"""
+        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.touch()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["status"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "private-notesが見つかりません" in captured.err
+        assert "クローン" in captured.err
+        assert captured.out == ""
+
+    def test_status_enabled_when_both_present(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """フラグとprivate-notesが両方揃っている場合はexit 0で標準出力に有効案内を出力する。"""
+        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.touch()
+        (tmp_path / "private-notes").mkdir()
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["status"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "feedback-inboxは有効" in captured.out
+        assert captured.err == ""

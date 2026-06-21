@@ -4,20 +4,16 @@ description: >
   ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
   採用は対象リポジトリへ反映してファイルを削除、不採用は rejected/ へ移動する。
 # 連携: 対象リポのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
-# フラグファイル ~/.config/agent-toolkit/feedback-inbox.enabled が存在する環境でのみ動作する。
+# `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---
 
 # フィードバック消化
 
-## 起動方針
-
-`~/.config/agent-toolkit/feedback-inbox.enabled`が存在しない場合は、
-フィードバック蓄積機能が無効である旨を1文示して終了する。
-
-`~/private-notes`が存在しない場合は、手動で`~/private-notes`をクローンしてから
-再度実行する旨を案内して終了する。
-
 ## ステップ1: 事前準備の確認
+
+最初に`dotfiles-fb status`を実行する。
+非ゼロ終了の場合は標準エラー出力をユーザーへ提示して終了する。
+正常終了の場合は出力を破棄して次のステップへ進む。
 
 `dotfiles-fb`の全サブコマンド（`add`・`list`・`adopt`・`reject`・`rm`・`edit`・`commit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
 

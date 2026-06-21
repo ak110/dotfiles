@@ -94,7 +94,7 @@ class TestPrivateNotesMissing:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "clone" in captured.err
+        assert "クローン" in captured.err
 
 
 class TestNoSubcommand:

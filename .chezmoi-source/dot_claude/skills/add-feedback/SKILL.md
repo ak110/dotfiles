@@ -4,18 +4,16 @@ description: >
   フリーフォーマットのフィードバック本文をリポジトリごとに振り分け、
   `dotfiles-fb add` CLIへ位置引数で渡して~/private-notes/feedback/inbox/へ投入する。
 # 連携: `dotfiles-fb add` CLI（pytools.dotfiles_fb）に位置引数で投入する。
-# フラグファイル ~/.config/agent-toolkit/feedback-inbox.enabled が存在する環境でのみ動作する。
+# `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---
 
 # フィードバック投入
 
-## 起動方針
+## ステップ0: 事前準備の確認
 
-`~/.config/agent-toolkit/feedback-inbox.enabled`が存在しない場合は、
-フィードバック蓄積機能が無効である旨を1文示して終了する。
-
-`~/private-notes`が存在しない場合は、手動で`~/private-notes`をクローンしてから
-再度実行する旨を1文示して終了する。
+最初に`dotfiles-fb status`を実行する。
+非ゼロ終了の場合は標準エラー出力をユーザーへ提示して終了する。
+正常終了の場合は出力を破棄して次のステップへ進む。
 
 ## ステップ1: 入力の確認
 

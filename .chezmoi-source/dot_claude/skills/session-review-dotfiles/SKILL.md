@@ -78,7 +78,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
-`~/.config/agent-toolkit/feedback-inbox.enabled`が存在する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
+`dotfiles-fb status`が正常終了する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
 採用分を対象リポジトリごとに`dotfiles-fb add`へ`--source=session-review`付きで投入する。
 
 - 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
@@ -99,6 +99,6 @@ dotfiles-fb add --source=session-review <repo-path> <message1> [<message2> ...]
 
 CLIの標準出力（投入件数・ファイル名）をそのままユーザーへ提示する。
 
-フラグファイル不在の環境では、各章の改善提案の反映に
+`dotfiles-fb status`が非ゼロ終了する環境では、各章の改善提案の反映に
 `agent-toolkit:apply-feedback`スキルを別セッションで使う旨を案内する。
 章ごとの対象リポジトリも併せて案内する（pyfltr章は`~/pyfltr`、agent-toolkit章は`~/dotfiles`）。
