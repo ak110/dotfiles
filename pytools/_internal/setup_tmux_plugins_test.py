@@ -13,7 +13,7 @@ def _make_plugin(plugins_dir: Path, *, pin_is_tag: bool) -> setup_tmux_plugins._
         return setup_tmux_plugins._Plugin(  # pylint: disable=protected-access
             dest=plugins_dir / "tmux",
             origin="https://github.com/catppuccin/tmux.git",
-            pin="v2.1.2",
+            pin="v2.3.0",
             pin_is_tag=True,
         )
     return setup_tmux_plugins._Plugin(  # pylint: disable=protected-access
@@ -36,13 +36,8 @@ def _install_env(
 
     def fake_run(
         cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: Path | None = None,
-        tag: str | None = None,
-        env_overrides: dict[str, str] | None = None,
+        **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        del timeout, cwd, tag, env_overrides
         calls.append(cmd)
         stdout = ""
         if cmd[:4] == ["git", "-C", str(plugin.dest), "remote"]:
@@ -119,7 +114,7 @@ def test_clones_tag_pin_when_dest_missing(tag_env: tuple[Path, list[list[str]]])
             "--depth",
             "1",
             "--branch",
-            "v2.1.2",
+            "v2.3.0",
             "https://github.com/catppuccin/tmux.git",
             str(plugins_dir / "tmux"),
         ],
@@ -144,7 +139,7 @@ def test_updates_tag_when_origin_matches(tag_env: tuple[Path, list[list[str]]]) 
     assert setup_tmux_plugins.run() is True
     assert calls == [
         ["git", "-C", str(plugins_dir / "tmux"), "remote", "get-url", "origin"],
-        ["git", "-C", str(plugins_dir / "tmux"), "fetch", "--depth", "1", "origin", "v2.1.2"],
+        ["git", "-C", str(plugins_dir / "tmux"), "fetch", "--depth", "1", "origin", "v2.3.0"],
         ["git", "-C", str(plugins_dir / "tmux"), "checkout", "FETCH_HEAD"],
     ]
 
@@ -159,13 +154,8 @@ def test_skips_when_origin_mismatched(
 
     def fake_run(
         cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: Path | None = None,
-        tag: str | None = None,
-        env_overrides: dict[str, str] | None = None,
+        **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        del timeout, cwd, tag, env_overrides
         calls.append(cmd)
         return subprocess.CompletedProcess(
             args=cmd,

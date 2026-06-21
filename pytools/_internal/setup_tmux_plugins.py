@@ -37,8 +37,14 @@ _PLUGINS: tuple[_Plugin, ...] = (
     _Plugin(
         dest=_TMUX_PLUGINS_DIR / "tmux",
         origin="https://github.com/catppuccin/tmux.git",
-        pin="v2.1.2",
+        pin="v2.3.0",
         pin_is_tag=True,
+    ),
+    _Plugin(
+        dest=_TMUX_PLUGINS_DIR / "tmux-cpu",
+        origin="https://github.com/tmux-plugins/tmux-cpu.git",
+        pin="master",
+        pin_is_tag=False,
     ),
 )
 
