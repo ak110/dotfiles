@@ -1,8 +1,8 @@
 ---
 name: process-feedbacks
 description: >
-  ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
-  採用は対象リポジトリへ反映してファイルを削除、不採用は rejected/ へ移動する。
+  ~/private-notes/feedback/配下のフィードバックを順に処理し、
+  採用は対象リポジトリへ反映してファイルを削除、不採用も同様に削除する。
 # 連携: 対象リポのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 # `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---

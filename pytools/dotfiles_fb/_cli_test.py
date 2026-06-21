@@ -46,20 +46,20 @@ def _setup_flag_and_notes(tmp_path: pathlib.Path) -> pathlib.Path:
     flag.touch()
     notes = tmp_path / "private-notes"
     notes.mkdir()
-    (notes / "feedback" / "inbox").mkdir(parents=True)
+    (notes / "feedback").mkdir(parents=True)
     return notes
 
 
-def _write_inbox_file(
+def _write_feedback_file(
     notes: pathlib.Path,
     filename: str,
     target_repo: str = "/repo/foo",
     body: str = "テスト本文",
 ) -> pathlib.Path:
-    """inbox配下に1ファイルを書き込み、絶対パスを返す。"""
-    inbox = notes / "feedback" / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    path = inbox / filename
+    """feedback配下に1ファイルを書き込み、絶対パスを返す。"""
+    feedback_dir = notes / "feedback"
+    feedback_dir.mkdir(parents=True, exist_ok=True)
+    path = feedback_dir / filename
     path.write_text(
         f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
@@ -131,8 +131,8 @@ class TestAddSingleMessage:
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
-        files = sorted(inbox.iterdir())
+        feedback_dir = notes / "feedback"
+        files = sorted(feedback_dir.iterdir())
         assert len(files) == 1
 
         content = files[0].read_text(encoding="utf-8")
@@ -144,7 +144,7 @@ class TestAddSingleMessage:
 
         git_cmds = [c["cmd"] for c in git_calls]
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
-        assert git_cmds[1] == ["git", "add", "feedback/inbox"]
+        assert git_cmds[1] == ["git", "add", "feedback"]
         assert git_cmds[2] == ["git", "commit", "-m", "chore: add 1 feedback item"]
         assert git_cmds[3] == ["git", "push"]
         for call in git_calls:
@@ -152,7 +152,7 @@ class TestAddSingleMessage:
 
         captured = capsys.readouterr()
         assert "1件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
 
 
@@ -178,8 +178,8 @@ class TestAddMultipleMessages:
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
-        files = sorted(inbox.iterdir())
+        feedback_dir = notes / "feedback"
+        files = sorted(feedback_dir.iterdir())
         assert len(files) == 2
         assert files[0].name == f"{_FIXED_TIMESTAMP}-001.md"
         assert files[1].name == f"{_FIXED_TIMESTAMP}-002.md"
@@ -189,8 +189,8 @@ class TestAddMultipleMessages:
 
         captured = capsys.readouterr()
         assert "2件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
 
 
@@ -212,7 +212,7 @@ class TestAddRepoPathExpansion:
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "feedback"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -251,7 +251,7 @@ class TestListSingle:
     ) -> None:
         """1件のフィードバックがtarget_repoグループ・ファイル名・本文の順で出力されること。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo", body="本文1")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo", body="本文1")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -286,7 +286,7 @@ class TestListMalformedFrontmatter:
         """異常frontmatter形式は`(unknown)`グループとして出力される。"""
         del label  # parametrize idのみ
         notes = _setup_flag_and_notes(tmp_path)
-        (notes / "feedback" / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
+        (notes / "feedback" / "malformed.md").write_text(content, encoding="utf-8")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -309,8 +309,8 @@ class TestListMultipleRepos:
     ) -> None:
         """target_repoが異なる複数のフィードバックがリポジトリ別にグループ化される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
-        _write_inbox_file(notes, "fb-002.md", target_repo="/repo/bar")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_feedback_file(notes, "fb-002.md", target_repo="/repo/bar")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -333,8 +333,8 @@ class TestListTargetRepoFilter:
     ) -> None:
         """複数target_repo混在でも--target-repo指定値と一致するグループのみ出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
-        _write_inbox_file(notes, "fb-002.md", target_repo="/repo/bar")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_feedback_file(notes, "fb-002.md", target_repo="/repo/bar")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -354,7 +354,7 @@ class TestListTargetRepoFilter:
         """~プレフィックス指定がtmp_path配下の絶対パスへ展開され、対応するエントリが出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
         target = str((tmp_path / "myrepo").resolve())
-        _write_inbox_file(notes, "fb-001.md", target_repo=target)
+        _write_feedback_file(notes, "fb-001.md", target_repo=target)
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
@@ -374,7 +374,7 @@ class TestListTargetRepoFilter:
     ) -> None:
         """一致するエントリが存在しない場合、標準出力は空になる。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -395,7 +395,7 @@ class TestAdoptSingle:
     ) -> None:
         """1件のadopt実行でinboxから削除されコミットメッセージが正しいこと。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -403,7 +403,7 @@ class TestAdoptSingle:
             _cli.main(["adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "fb-001.md").exists()
 
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (adopted)" in commit_cmd
@@ -419,9 +419,9 @@ class TestAdoptMultiple:
     ) -> None:
         """3件のadoptで全件削除と単一コミットが行われること。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
-        _write_inbox_file(notes, "fb-002.md")
-        _write_inbox_file(notes, "fb-003.md")
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        _write_feedback_file(notes, "fb-003.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -429,7 +429,7 @@ class TestAdoptMultiple:
             _cli.main(["adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "feedback"
         assert not (inbox / "fb-001.md").exists()
         assert not (inbox / "fb-002.md").exists()
         assert not (inbox / "fb-003.md").exists()
@@ -460,17 +460,17 @@ class TestAdoptMissing:
         assert "inboxに存在しません" in captured.err
 
 
-class TestRejectMoves:
-    """rejectサブコマンド: ファイルをrejected/へ移動する。"""
+class TestRejectDeletes:
+    """rejectサブコマンド: ファイルをinboxから削除する。"""
 
-    def test_files_moved_to_rejected(
+    def test_single_file_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rejectでファイルがinboxからrejected/へ移動しコミットされる。"""
+        """rejectでファイルがinboxから削除されコミット件名が正しいこと。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -478,31 +478,34 @@ class TestRejectMoves:
             _cli.main(["reject", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "rejected").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (rejected)" in commit_cmd
 
 
-class TestRejectCreatesDirectory:
-    """rejectサブコマンド: rejected/親ディレクトリが未作成でも自動生成される。"""
+class TestRejectMultiple:
+    """rejectサブコマンド: 複数件指定で単一コミットへまとめる。"""
 
-    def test_rejected_directory_auto_created(
+    def test_multiple_files_rejected_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rejected/ディレクトリが未作成でもrejectで自動生成される。"""
+        """2件のrejectで両方削除と単一コミットが行われること。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
-        assert not (notes / "feedback" / "rejected").exists()
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["reject", "fb-001.md"], home=tmp_path)
+            _cli.main(["reject", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
+        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
+        assert len(commit_cmds) == 1
+        assert "chore: process 2 feedback items (rejected)" in commit_cmds[0]
 
 
 class TestRmSingle:
@@ -515,7 +518,7 @@ class TestRmSingle:
     ) -> None:
         """rmで対象ファイルが削除されコミット件名が正しいこと。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -523,7 +526,7 @@ class TestRmSingle:
             _cli.main(["rm", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 feedback item" in commit_cmd
 
@@ -538,8 +541,8 @@ class TestRmMultiple:
     ) -> None:
         """2件のrmで両方削除と単一コミットが行われること。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
-        _write_inbox_file(notes, "fb-002.md")
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -563,7 +566,7 @@ class TestEditNoEditor:
     ) -> None:
         """$EDITORが未設定の場合はexit 1と案内が出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-001.md")
         monkeypatch.delenv("EDITOR", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
@@ -584,7 +587,7 @@ class TestEditWithChanges:
     ) -> None:
         """編集後にファイル差分があればコミット・pushが実行される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        path = _write_inbox_file(notes, "fb-001.md", body="編集前")
+        path = _write_feedback_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
 
         git_calls: list[_GitCall] = []
@@ -617,7 +620,7 @@ class TestEditNoChanges:
     ) -> None:
         """編集後にファイル差分がなければコミットされず案内のみ出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", body="本文")
+        _write_feedback_file(notes, "fb-001.md", body="本文")
         monkeypatch.setenv("EDITOR", "fake-editor")
 
         git_calls: list[_GitCall] = []
@@ -709,7 +712,7 @@ class TestProcessLoopSingleIteration:
     ) -> None:
         """claudeのfakeが対象リポinboxを空にすると1回の反復でループを抜ける。"""
         notes = _setup_flag_and_notes(tmp_path)
-        inbox_path = _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        inbox_path = _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
@@ -741,7 +744,7 @@ class TestProcessLoopMaxIterations:
     ) -> None:
         """claudeが対象リポinboxを空にしなくても上限回数で停止する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
@@ -771,7 +774,7 @@ class TestProcessLoopClaudeFailure:
     ) -> None:
         """claudeのfakeが非0を返すとprocess-loopは同じexit codeで停止する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-001.md", target_repo="/repo/foo")
+        _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             if cmd[:1] == ["claude"]:
@@ -799,7 +802,7 @@ class TestProcessLoopTargetRepoFilter:
     ) -> None:
         """対象外リポのフィードバックは件数判定から除外され、claudeは起動しない。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_inbox_file(notes, "fb-other.md", target_repo="/repo/other")
+        _write_feedback_file(notes, "fb-other.md", target_repo="/repo/other")
         calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
 
@@ -823,7 +826,7 @@ class TestProcessLoopDefaultUsesGitToplevel:
     ) -> None:
         """--target-repo未指定なら`git rev-parse --show-toplevel`を呼び結果をclaude引数に渡す。"""
         notes = _setup_flag_and_notes(tmp_path)
-        inbox_path = _write_inbox_file(notes, "fb-001.md", target_repo="/repo/auto")
+        inbox_path = _write_feedback_file(notes, "fb-001.md", target_repo="/repo/auto")
         claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:

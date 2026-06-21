@@ -17,6 +17,7 @@ from pytools.dotfiles_fb._cli_test import (
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
+    _write_feedback_file,
 )
 
 
@@ -40,7 +41,7 @@ class TestAddSourceOption:
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "feedback").iterdir()).read_text(encoding="utf-8")
         assert "source: session-review" in content
 
     def test_source_absent_when_not_given(
@@ -56,7 +57,7 @@ class TestAddSourceOption:
             _cli.main(["add", str(tmp_path / "myrepo"), "メッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "feedback").iterdir()).read_text(encoding="utf-8")
         assert "source:" not in content
 
 
@@ -97,7 +98,7 @@ class TestCommitSubcommand:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             if cmd[:3] == ["git", "status", "--porcelain"]:
-                stdout: Any = " M feedback/inbox/x.md\n" if kwargs.get("text") else b" M feedback/inbox/x.md\n"
+                stdout: Any = " M feedback/x.md\n" if kwargs.get("text") else b" M feedback/x.md\n"
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
@@ -110,7 +111,7 @@ class TestCommitSubcommand:
         git_cmds = [c["cmd"] for c in calls]
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
         assert git_cmds[1][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[2] == ["git", "add", "feedback/inbox"]
+        assert git_cmds[2] == ["git", "add", "feedback"]
         assert git_cmds[3] == ["git", "commit", "-m", "chore: edit feedback items externally"]
         assert git_cmds[4] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
@@ -247,3 +248,49 @@ class TestStatusSubcommand:
         captured = capsys.readouterr()
         assert "feedback-inboxは有効" in captured.out
         assert captured.err == ""
+
+
+class TestFeedbackFilenameCompleter:
+    """argcomplete補完関数の挙動を検証する。"""
+
+    def test_returns_md_files_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """feedback配下の`.md`のみ返し、他拡張子は除外する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        (notes / "feedback" / "note.txt").write_text("テキスト", encoding="utf-8")
+        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+
+        # pylint: disable-next=protected-access
+        result = _cli._feedback_filename_completer("")  # noqa: SLF001
+        assert result == ["fb-001.md"]
+
+    def test_returns_empty_when_feedback_dir_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """feedback配下が存在しない場合は空リストを返す。"""
+        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+
+        # pylint: disable-next=protected-access
+        result = _cli._feedback_filename_completer("")  # noqa: SLF001
+        assert result == []
+
+    def test_filters_by_prefix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """prefix一致のファイルのみ返す。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "20260101-001.md")
+        _write_feedback_file(notes, "20260201-001.md")
+        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+
+        # pylint: disable-next=protected-access
+        result = _cli._feedback_filename_completer("20260101")  # noqa: SLF001
+        assert result == ["20260101-001.md"]
