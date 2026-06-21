@@ -41,7 +41,7 @@
 
 ## Codex互換レイヤー
 
-- 実装・レビュー・ドキュメント編集などの実作業に着手する前に、`~/.codex/agent-toolkit/rules/agent.md`が存在する場合は読む
+- 実装・レビュー・ドキュメント編集などの実作業に着手する前に、`~/.codex/agent-toolkit/rules/agent.md`および`~/.codex/agent-toolkit/rules/styles.md`が存在する場合は読む
 - 該当作業に対応するスキルが`~/.codex/skills/`に存在する場合は、その`SKILL.md`を読む
 - プロジェクト直下に`.agents/skills/`が存在する場合は、作業内容に該当する`SKILL.md`を読む
 - プロジェクト直下に`AGENTS.md`が存在せず`CLAUDE.md`が存在する場合は、作業前に`CLAUDE.md`を読む
@@ -50,7 +50,7 @@
 
 ### Claude Code固有ツールの読み替え
 
-`~/.codex/agent-toolkit/rules/agent.md`およびagent-toolkit配下のスキル本文・サブエージェント定義は、
+`~/.codex/agent-toolkit/rules/`配下のルールファイルおよびagent-toolkit配下のスキル本文・サブエージェント定義は、
 Claude Code固有のツール名で記述される。
 Codexで利用する場合は次の対応表に従って読み替える。
 

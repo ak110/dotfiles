@@ -25,6 +25,7 @@ $stageRoot = Join-Path $HOME '.claude/rules-stage'
 $files = @(
     'agent.md'
     'claude-code.md'
+    'styles.md'
 )
 
 function Invoke-Download {

@@ -25,6 +25,7 @@ STAGE_ROOT="$HOME/.claude/rules-stage"
 FILES=(
     agent.md
     claude-code.md
+    styles.md
 )
 
 STAGE_DIR=""

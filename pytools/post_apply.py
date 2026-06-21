@@ -51,8 +51,6 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("agents/careful-followup-reviewer.md"),
         # 現在のスキル名は refine-prompt。配布先から旧スキルディレクトリを削除する。
         Path("skills/empirical-prompt-tuning"),
-        # styles.md の内容は agent.md「言語表現」章にあるため、配布先から旧ルールファイルを削除する。
-        Path("rules/agent-toolkit/styles.md"),
         # 現在の配布元は session-review-dotfiles（dotfiles 個人環境側）と
         # agent-toolkit プラグイン側の session-review に分かれている。
         # 旧配布先ディレクトリを削除する。
