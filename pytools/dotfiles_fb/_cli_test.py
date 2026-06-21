@@ -678,7 +678,7 @@ class TestPathTraversalRejection:
 
 
 class TestProcessLoopEmptyInbox:
-    """process-loopサブコマンド: 対象リポのinbox空時はclaude未起動でexit 0。"""
+    """process-loopサブコマンド: 対象リポジトリのinbox空時はclaude未起動でexit 0。"""
 
     def test_empty_inbox_skips_claude(
         self,
@@ -686,7 +686,7 @@ class TestProcessLoopEmptyInbox:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対象リポのinboxが最初から空ならclaudeが一度も呼ばれない。"""
+        """対象リポジトリのinboxが最初から空ならclaudeが一度も呼ばれない。"""
         _setup_flag_and_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
@@ -696,13 +696,13 @@ class TestProcessLoopEmptyInbox:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "対象リポのinboxは空です" in captured.out
+        assert "対象リポジトリのinboxは空です" in captured.out
         claude_calls = [c for c in calls if c["cmd"][:1] == ["claude"]]
         assert claude_calls == []
 
 
 class TestProcessLoopSingleIteration:
-    """process-loopサブコマンド: claude起動で対象リポinboxが空になれば1回で終了。"""
+    """process-loopサブコマンド: claude起動で対象リポジトリのinboxが空になれば1回で終了。"""
 
     def test_single_iteration_when_inbox_drains(
         self,
@@ -710,7 +710,7 @@ class TestProcessLoopSingleIteration:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeのfakeが対象リポinboxを空にすると1回の反復でループを抜ける。"""
+        """claudeのfakeが対象リポジトリのinboxを空にすると1回の反復でループを抜ける。"""
         notes = _setup_flag_and_notes(tmp_path)
         inbox_path = _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
@@ -729,8 +729,8 @@ class TestProcessLoopSingleIteration:
         assert exc_info.value.code == 0
         assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks", "/repo/foo"]]
         captured = capsys.readouterr()
-        assert "[反復 1] 対象リポinbox残1件" in captured.out
-        assert "対象リポのinboxが空になりました（1回実行" in captured.out
+        assert "[反復 1] 対象リポジトリのinbox残1件" in captured.out
+        assert "対象リポジトリのinboxが空になりました（1回実行" in captured.out
 
 
 class TestProcessLoopMaxIterations:
@@ -742,7 +742,7 @@ class TestProcessLoopMaxIterations:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeが対象リポinboxを空にしなくても上限回数で停止する。"""
+        """claudeが対象リポジトリのinboxを空にしなくても上限回数で停止する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="/repo/foo")
         claude_calls: list[list[str]] = []
@@ -760,7 +760,7 @@ class TestProcessLoopMaxIterations:
         assert exc_info.value.code == 0
         assert len(claude_calls) == 2
         captured = capsys.readouterr()
-        assert "反復上限2回に達しました（対象リポinbox残1件）" in captured.out
+        assert "反復上限2回に達しました（対象リポジトリのinbox残1件）" in captured.out
 
 
 class TestProcessLoopClaudeFailure:
@@ -800,7 +800,7 @@ class TestProcessLoopTargetRepoFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対象外リポのフィードバックは件数判定から除外され、claudeは起動しない。"""
+        """対象外リポジトリのフィードバックは件数判定から除外され、claudeは起動しない。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-other.md", target_repo="/repo/other")
         calls: list[_GitCall] = []
@@ -811,13 +811,13 @@ class TestProcessLoopTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "対象リポのinboxは空です" in captured.out
+        assert "対象リポジトリのinboxは空です" in captured.out
         claude_calls = [c for c in calls if c["cmd"][:1] == ["claude"]]
         assert claude_calls == []
 
 
 class TestProcessLoopDefaultUsesGitToplevel:
-    """process-loopサブコマンド: --target-repo未指定時はgit rev-parseで現リポを取得する。"""
+    """process-loopサブコマンド: --target-repo未指定時はgit rev-parseで現リポジトリを取得する。"""
 
     def test_default_target_repo_resolved_via_git(
         self,

@@ -3,7 +3,7 @@ name: process-feedbacks
 description: >
   ~/private-notes/feedback/配下のフィードバックを順に処理し、
   採用は対象リポジトリへ反映してファイルを削除、不採用も同様に削除する。
-# 連携: 対象リポのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
+# 連携: 対象リポジトリのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 # `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---
 
@@ -19,10 +19,10 @@ description: >
 
 ## ステップ2: 件数確認
 
-`/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポとして扱う。
-引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポとして扱う（既定）。
+`/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポジトリとして扱う。
+引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポジトリとして扱う（既定）。
 
-`dotfiles-fb list --target-repo=<対象リポパス>`を実行し、件数を1文でユーザーに提示する。
+`dotfiles-fb list --target-repo=<対象リポジトリパス>`を実行し、件数を1文でユーザーに提示する。
 0件の場合は「処理対象なし」と示して終了する。
 
 ステップ2で取得した一覧のみを本セッションの処理対象として固定する。

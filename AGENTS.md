@@ -132,7 +132,7 @@ Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響
 - `.chezmoi-source/dot_claude/` — 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）
 - `~/.claude/` — デプロイ先。`chezmoi apply`で上書きされるため直接編集してはならない
   - ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`
-- `.claude/`（本リポジトリルート）— dotfilesリポ自身のClaude Codeプロジェクト設定。配布対象外
+- `.claude/`（本リポジトリルート）— dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
 - `.chezmoi-source/dot_codex/` — Codex配布元。`~/.codex/`へデプロイする
   - `AGENTS.md`はCodex向けアダプターで、共有ルール・スキルは`pytools/_internal/setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する

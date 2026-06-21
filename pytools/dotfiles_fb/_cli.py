@@ -11,7 +11,7 @@
 - enable: feedback-inboxフラグファイルを作成する
 - disable: feedback-inboxフラグファイルを削除する
 - status: feedback-inboxの有効状態を判定する（正常0・無効1）
-- process-loop: 対象リポのinboxが0件になるまで`claude /process-feedbacks`を繰り返し起動する
+- process-loop: 対象リポジトリのinboxが0件になるまで`claude /process-feedbacks`を繰り返し起動する
 """
 
 import argparse
@@ -91,7 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     loop = sub.add_parser(
         "process-loop",
-        help="対象リポのinbox件数が0件になるまで`claude /process-feedbacks`を繰り返し起動する",
+        help="対象リポジトリのinbox件数が0件になるまで`claude /process-feedbacks`を繰り返し起動する",
     )
     loop.add_argument(
         "--max-iterations",
@@ -479,7 +479,7 @@ def _count_feedback_for_repo(feedback_dir: pathlib.Path, target_repo: str) -> in
 
 
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """process-loopサブコマンド: 対象リポのinboxが0件になるまでclaude /process-feedbacksを繰り返し起動する。
+    """process-loopサブコマンド: 対象リポジトリのinboxが0件になるまでclaude /process-feedbacksを繰り返し起動する。
 
     `--target-repo`未指定時は`git rev-parse --show-toplevel`の値を既定とし、
     件数判定と内部`claude /process-feedbacks`起動引数で同フィルタを使う。
@@ -491,15 +491,15 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
         remaining = _count_feedback_for_repo(feedback_dir, target_repo)
         if remaining == 0:
             if iteration == 0:
-                print(f"対象リポのinboxは空です（target_repo={target_repo}）。処理対象なし。")
+                print(f"対象リポジトリのinboxは空です（target_repo={target_repo}）。処理対象なし。")
             else:
-                print(f"対象リポのinboxが空になりました（{iteration}回実行、target_repo={target_repo}）。")
+                print(f"対象リポジトリのinboxが空になりました（{iteration}回実行、target_repo={target_repo}）。")
             return
         if args.max_iterations is not None and iteration >= args.max_iterations:
-            print(f"反復上限{args.max_iterations}回に達しました（対象リポinbox残{remaining}件）。")
+            print(f"反復上限{args.max_iterations}回に達しました（対象リポジトリのinbox残{remaining}件）。")
             return
         iteration += 1
-        print(f"[反復 {iteration}] 対象リポinbox残{remaining}件、claudeを起動します")
+        print(f"[反復 {iteration}] 対象リポジトリのinbox残{remaining}件、claudeを起動します")
         result = subprocess.run(
             ["claude", "--permission-mode=auto", "/process-feedbacks", target_repo],
             check=False,
