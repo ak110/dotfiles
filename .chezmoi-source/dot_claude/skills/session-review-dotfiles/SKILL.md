@@ -79,6 +79,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
 `dotfiles-fb status`が正常終了する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
+提案提示と同一ターン内で続けて`AskUserQuestion`を発行し、ユーザーの追加発話や別コマンド呼び出しを待たず採否確認から投入まで連続実行する。
 採用分を対象リポジトリごとに`dotfiles-fb add`へ`--source=session-review`付きで投入する。
 
 - 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
