@@ -1,6 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "autoMemoryEnabled": false,
+  "autoMode": {
+    "allow": [
+      "Session-Owned Amend: `git commit --amend` を実行する対象が、同一セッション内でエージェント自身が作成したコミット（pre-session HEADではないコミット）であることを transcript から確認できる場合、レビュー指摘修正後の統合を含むあらゆるフローで無条件に許容する。本許可は対象コミットがエージェント作成であることを transcript で確認できる場合に限定し、pre-session HEAD・ユーザー作成コミットへのamendは対象外。"
+    ]
+  },
   "effortLevel": "medium",
   "enabledPlugins": {
     "pr-review-toolkit@claude-plugins-official": false,

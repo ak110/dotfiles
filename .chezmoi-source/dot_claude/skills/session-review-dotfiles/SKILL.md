@@ -76,6 +76,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 
 ## ステップ4の適用範囲
 
+本拡張章は`agent-toolkit:session-review`スキルのステップ4を完全に上書きする。
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
 `dotfiles-fb status`が正常終了する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
