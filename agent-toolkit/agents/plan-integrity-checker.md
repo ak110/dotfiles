@@ -29,8 +29,8 @@ user-invocable: false
 
 ## 担当観点
 
-`agent-toolkit:plan-mode`スキル工程6-2の観点A〜Jのうち、過去のコンテキスト参照を要しない次の観点を担当する。
-観点記号・名称は`agent-toolkit:plan-mode`スキルで固定された呼称をそのまま用いる。
+`agent-toolkit:plan-mode`スキル配下の`references/integrity-checks.md`が定める観点A〜Jのうち、過去のコンテキスト参照を要しない次の観点を担当する。
+観点記号・名称は同referencesの記述を典拠とする。
 
 - 観点B（変更内容とエージェント判断の相互照合）
 - 観点C（計画対象ファイル内の方針整合）

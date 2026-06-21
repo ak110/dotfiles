@@ -1,8 +1,5 @@
 """pytools.claude_plans_viewer のテスト。"""
 
-# 単一テスト対象モジュールに対する全テストを集約するため行数制限を緩和する。
-# pylint: disable=too-many-lines
-
 import asyncio
 import base64
 import dataclasses
@@ -50,7 +47,7 @@ class TestListFiles:
         pattern = re.compile(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}$")
         for entry in entries:
             assert pattern.match(entry.mtime), entry.mtime
-        # `_FileEntry`はサイズを保持しない。
+        # `FileEntry`はサイズを保持しない。
         assert not hasattr(entries[0], "size")
         # `mtime_epoch`・`host`を保持すること（クライアント側mtime変化検知・多ホスト識別に使用）。
         assert hasattr(entries[0], "mtime_epoch")
@@ -127,6 +124,43 @@ class TestMarkdownToHtml:
         assert "<img" not in html.lower()
         # エスケープされた形で残ること
         assert "&lt;script&gt;" in html
+
+    def test_highlights_fenced_code_with_language(self):
+        """言語指定ありフェンスはPygmentsの`<span class>`が出力される。"""
+        src = '```python\nprint("hi")\n```\n'
+
+        html = _local.markdown_to_html(src)
+
+        assert 'class="codehilite language-python"' in html
+        # Pygmentsのトークンクラスが含まれる（具体クラスはPygmentsバージョン依存だが`<span class`が出ること自体は安定）。
+        assert "<span class=" in html
+
+    def test_falls_back_to_plain_pre_without_language(self):
+        """言語指定なしフェンスはmarkdown-it既定の素通し描画にフォールバックする。"""
+        src = "```\nplain\n```\n"
+
+        html = _local.markdown_to_html(src)
+
+        assert "<pre><code>plain\n</code></pre>" in html
+        assert "codehilite" not in html
+
+    def test_falls_back_to_plain_pre_for_unknown_language(self):
+        """未知言語フェンスもフォールバックして既定描画になる。"""
+        src = "```nosuchlang\nplain\n```\n"
+
+        html = _local.markdown_to_html(src)
+
+        assert "<pre><code" in html
+        assert "codehilite" not in html
+
+
+class TestReadPygmentsCss:
+    """`read_pygments_css`のテスト。"""
+
+    def test_returns_codehilite_style_defs(self):
+        """`.codehilite`スコープのスタイル定義を含む文字列を返す。"""
+        css = _local.read_pygments_css()
+        assert ".codehilite" in css
 
 
 class TestMarkdownCache:

@@ -7,8 +7,12 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-06-20T18:14:22.419046998Z"
 exclude-newer-span = "P1D"
+
+[options.exclude-newer-package]
+pytilpack = false
+pyfltr = false
 
 [[package]]
 name = "aiofiles"
@@ -1854,6 +1858,7 @@ dependencies = [
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
+    { name = "pygments" },
     { name = "pytilpack", extra = ["quart"] },
     { name = "pyyaml" },
     { name = "qrcode" },
@@ -1889,6 +1894,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2" },
+    { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.46.0" },
     { name = "pyyaml" },
     { name = "qrcode", specifier = ">=8.0" },

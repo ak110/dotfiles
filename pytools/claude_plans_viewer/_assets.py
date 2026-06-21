@@ -17,12 +17,12 @@ FAVICON_SVG = """\
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
   class="icon icon-tabler icons-tabler-outline icon-tabler-clipboard-list">
   <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-  <!-- white outline / backing -->
+  <!-- 白い縁取り（背景レイヤー） -->
   <g stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="white">
     <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
     <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
   </g>
-  <!-- original stroke -->
+  <!-- 本来のストローク色 -->
   <g stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
     <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
     <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
@@ -640,6 +640,7 @@ INDEX_HTML = (
 <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#4f46e5">
 <link rel="stylesheet" href="__BASE_PATH_HTML__/static/markdown.css">
+<link rel="stylesheet" href="__BASE_PATH_HTML__/static/pygments.css">
 <style>
 """
     + _INDEX_CSS
@@ -649,7 +650,7 @@ INDEX_HTML = (
 <div id="app">
   <aside>
     <div class="toolbar">
-      <input id="filter" placeholder="filter...">
+      <input id="filter" placeholder="検索...">
     </div>
     <div id="files"></div>
     <!-- 段階展開トリガー。`hidden`属性は描画件数が未描画分を残すときだけ外れる。 -->

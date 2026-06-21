@@ -143,6 +143,14 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/static/pygments.css")
+    async def pygments_css() -> quart.Response:
+        return quart.Response(
+            _local.read_pygments_css(),
+            content_type="text/css; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/favicon.svg")
     async def favicon() -> quart.Response:
         return quart.Response(

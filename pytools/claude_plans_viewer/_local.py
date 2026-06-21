@@ -3,13 +3,41 @@
 import asyncio
 import collections
 import datetime
+import html as html_lib
 import pathlib
 import typing
 
 import markdown_it
+import pygments
 import watchdog.events
+from pygments.formatters.html import HtmlFormatter
+from pygments.lexers import get_lexer_by_name
+from pygments.util import ClassNotFound
 
 from pytools.claude_plans_viewer import _assets, _state
+
+# Pygmentsはmarkdown-itの`highlight`コールバックから呼ぶ。
+# `nowrap=True`で`<span>`列のみを返し、markdown-itの既定`<pre><code>`ラッパー相当を
+# `_highlight_code`側で組み立てる（言語クラスを付与しつつXSS耐性をPygmentsのエスケープに委ねるため）。
+_PYGMENTS_FORMATTER = HtmlFormatter(nowrap=True)
+_PYGMENTS_CSS_CLASS = "codehilite"
+
+
+def _highlight_code(code: str, name: str, _attrs: str) -> str:
+    """markdown-itのフェンスコードブロックをPygmentsでハイライトする。
+
+    言語指定なし・未知言語フェンスは空文字を返し、markdown-it既定の素通し描画にフォールバックする。
+    """
+    if not name:
+        return ""
+    try:
+        lexer = get_lexer_by_name(name, stripall=False)
+    except ClassNotFound:
+        return ""
+    escaped_lang = html_lib.escape(name, quote=True)
+    body = pygments.highlight(code, lexer, _PYGMENTS_FORMATTER).rstrip("\n")
+    return f'<pre><code class="{_PYGMENTS_CSS_CLASS} language-{escaped_lang}">{body}\n</code></pre>\n'
+
 
 # Markdownレンダリング結果LRUキャッシュの上限。
 # エントリ数とバイト数の二重上限のうち、先に到達した側で古い順に削除する。
@@ -82,10 +110,12 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
 
 
 def make_md_renderer() -> markdown_it.MarkdownIt:
-    """Raw HTMLを無効化したMarkdownレンダラを返す。"""
+    """Raw HTMLを無効化しPygmentsハイライトを注入したMarkdownレンダラを返す。"""
     # CommonMarkプリセットは`html`オプションの既定値が`True`でraw HTMLを通すため、
     # 明示的に`False`へ上書きしてXSS経路を塞ぐ。表拡張は別途`enable("table")`で有効化する。
-    return markdown_it.MarkdownIt("commonmark", {"html": False}).enable("table")
+    # `highlight`コールバックの戻り値はそのままHTMLとして埋め込まれるため、Pygmentsのエスケープ済み
+    # 出力のみを返す（生のユーザー入力を経由させない）。
+    return markdown_it.MarkdownIt("commonmark", {"html": False, "highlight": _highlight_code}).enable("table")
 
 
 def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
@@ -193,13 +223,15 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
 
 def _resolve_css_path() -> pathlib.Path | None:
     """リポジトリ内の`share/vscode/markdown.css`のパスを返す。見つからなければNone。"""
-    # dotfilesは通常~/dotfiles配下に置かれる。
-    candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
+    # editable install前提でこのスクリプトはリポジトリ配下に置かれる。
+    # `pytools/claude_plans_viewer/_local.py`の位置を起点とするとリポジトリルートは2階層上。
+    # `$HOME`と`~/dotfiles`が一致しないCIチェックアウトや別配置環境でも整合させるため、
+    # `Path(__file__)`起点を一次解決経路とする。
+    candidate = pathlib.Path(__file__).resolve().parents[2] / "share" / "vscode" / "markdown.css"
     if candidate.is_file():
         return candidate
-    # editable installであればこのスクリプトがリポジトリ配下に置かれるため、こちらも解決できる。
-    # `pytools/claude_plans_viewer/_local.py`の位置を起点とするとリポジトリルートは2階層上。
-    candidate = pathlib.Path(__file__).resolve().parents[2] / "share" / "vscode" / "markdown.css"
+    # フォールバック: pipインストール等で本ファイルがsite-packages配下にある場合、`~/dotfiles`配下を参照する。
+    candidate = pathlib.Path.home() / "dotfiles" / "share" / "vscode" / "markdown.css"
     if candidate.is_file():
         return candidate
     return None
@@ -212,3 +244,8 @@ async def read_css() -> str:
         # read_textはブロッキングI/Oのためスレッドプールで実行する。
         return await asyncio.to_thread(path.read_text, encoding="utf-8")
     return _assets.FALLBACK_CSS
+
+
+def read_pygments_css() -> str:
+    """Pygmentsのスタイルシートを返す。"""
+    return _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")
