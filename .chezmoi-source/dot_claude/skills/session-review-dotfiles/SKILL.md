@@ -62,6 +62,12 @@ Stopフックから呼ばれた場合の終了判定基準は`agent-toolkit:sess
 提案が無い章には同見出し配下に「提案無し」とのみ書く。
 取捨対象は「起動方針」節の規定に従う。
 
+### 同一ターン内発行
+
+提示後は次ターンへ持ち越さず、本ターン内で`AskUserQuestion`を発行する。
+ユーザーの追加発話・別コマンド呼び出し・別スキル起動を待たない。
+`dotfiles-fb status`が非ゼロ終了する環境では本ターン内で案内文を1段落で示して終了する。
+
 自己完結性の要件（観測した具体事象・改善後の振る舞いと根拠の明記、暗黙参照表現の禁止）は
 `agent-toolkit:session-review`スキルのステップ3に従う。
 本拡張章の提案も同スキルのステップ2自己検証(c)に従う。
@@ -84,9 +90,8 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 本拡張章は`agent-toolkit:session-review`スキルのステップ4を完全に上書きする。
 本拡張章で示した提案の反映は原則として別セッションで行う。
 
-`dotfiles-fb status`が正常終了する場合、提案提示後にメインが`AskUserQuestion`で各提案の採否を確認する。
-`AskUserQuestion`は提案提示と同一ターン内で続けて発行し、ユーザーの追加発話や別コマンド呼び出しを待たない。
-採用分を対象リポジトリごとに`dotfiles-fb add`へ`--source=session-review`付きで投入する。
+`dotfiles-fb status`が正常終了する場合、「提示フォーマット」節の規定に従い同一ターンで`AskUserQuestion`を発行して各提案の採否を確認する。
+採用分は対象リポジトリごとに`dotfiles-fb add`へ`--source=session-review`付きで投入する。
 
 - 提案件数が`AskUserQuestion`の上限（1問あたり最大4件）を超える場合は複数問に分割する
 - いずれの提案も不採用となった場合は投入をスキップする
