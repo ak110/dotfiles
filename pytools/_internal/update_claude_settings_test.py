@@ -45,7 +45,15 @@ def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
     target_path = tmp_path / "target.json"
     if existing is not None:
         target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
-    update_claude_settings(managed_path, target_path)
+    # テストを実装定数（_REMOVED_HOOK_COMMAND_SUBSTRINGS等）の変更から隔離するため、
+    # 削除対象引数を空タプルで明示する。デフォルト値検証は別途専用テストで担う。
+    update_claude_settings(
+        managed_path,
+        target_path,
+        removed_hook_substrings=(),
+        removed_env_keys=(),
+        removed_list_item_substrings=(),
+    )
     return json.loads(target_path.read_text(encoding="utf-8"))
 
 
@@ -192,66 +200,77 @@ class TestPlatformOverride:
         assert result == {"language": "japanese"}
 
 
+def _setup_run_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed_settings: dict) -> Path:
+    """`run()` 経由テスト向けに 4 つのモジュール定数パスを差し替える。
+
+    `_MANAGED_SETTINGS_PATH` には `managed_settings` を書き込む。
+    `_MANAGED_CONFIG_PATH` には空 dict を書き込む。
+    `_SETTINGS_PATH`・`_CONFIG_PATH` は未作成のまま返す。
+    """
+    managed_settings_path = tmp_path / "managed_settings.json"
+    managed_settings_path.write_text(json.dumps(managed_settings, ensure_ascii=False), encoding="utf-8")
+    managed_config_path = tmp_path / "managed_config.json"
+    managed_config_path.write_text(json.dumps({}), encoding="utf-8")
+    settings_path = tmp_path / "settings.json"
+    config_path = tmp_path / "claude.json"
+    monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+    monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
+    monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
+    monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
+    return settings_path
+
+
 class TestPlatformOverrideSelection:
-    """プラットフォーム別オーバーライドが `update_claude_settings` で適用されることを検証する。"""
+    """`run()` 経由でのプラットフォーム別オーバーライド適用を検証する統合テスト。
 
-    def test_posix_override_is_applied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Linux (posix) 環境では `managed.posix.json` のオーバーライドが適用される。"""
-        managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
-        target_path = tmp_path / "target.json"
+    `sys.platform` をパッチして `_platform_overrides()` の選択ロジックを通す。
+    オーバーライドファイル選択・読み込み・マージ結果反映までを一連で検証する。
+    """
 
-        # posix プラットフォームのオーバーライドのみを適用する
-        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_path)
+    def test_linux_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Linux (posix) 環境では `managed_settings.posix.json` が適用される。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
+        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(mod.sys, "platform", "linux")
-        overrides = [tmp_path / "managed.posix.json"]
-        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        result = json.loads(target_path.read_text(encoding="utf-8"))
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["os"] == "posix"
-        assert "language" in result
+        assert result["language"] == "english"
 
-    def test_darwin_uses_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """macOS (darwin) 環境では `managed.posix.json` のオーバーライドが適用される。"""
-        managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        target_path = tmp_path / "target.json"
-
+    def test_darwin_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """macOS (darwin) 環境でも `managed_settings.posix.json` が適用される。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
+        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(mod.sys, "platform", "darwin")
-        overrides = [tmp_path / "managed.posix.json"]
-        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        result = json.loads(target_path.read_text(encoding="utf-8"))
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["os"] == "posix"
 
-    def test_win32_override_is_applied(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """Windows (win32) 環境では `managed.win32.json` のオーバーライドが適用される。"""
-        managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
-        (tmp_path / "managed.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
-        target_path = tmp_path / "target.json"
-
+    def test_win32_applies_win32_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Windows (win32) 環境では `managed_settings.win32.json` が適用される。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
+        (tmp_path / "managed_settings.posix.json").write_text(json.dumps({"os": "posix"}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "managed_settings.win32.json").write_text(json.dumps({"os": "win32"}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(mod.sys, "platform", "win32")
-        overrides = [tmp_path / "managed.win32.json"]
-        update_claude_settings(managed_path, target_path, overrides=overrides)
 
-        result = json.loads(target_path.read_text(encoding="utf-8"))
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["os"] == "win32"
 
-    def test_missing_override_is_noop(self, tmp_path: Path):
-        """override ファイルが存在しない場合はベース設定のみが適用される。"""
-        managed_path = tmp_path / "managed.json"
-        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
-        target_path = tmp_path / "target.json"
+    def test_missing_override_applies_base_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """対応オーバーライドファイルが存在しない場合はベース設定のみが適用される。"""
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "japanese"})
+        monkeypatch.setattr(mod.sys, "platform", "linux")
 
-        # オーバーライドなしで適用
-        update_claude_settings(managed_path, target_path, overrides=[])
+        mod.run()
 
-        result = json.loads(target_path.read_text(encoding="utf-8"))
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result == {"language": "japanese"}
 
 
@@ -674,3 +693,115 @@ class TestStripRemovedEnvKeys:
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in result["env"]
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
+
+
+class TestStripRemovedListItems:
+    """配布元から削除された配列項目の自動削除テスト。"""
+
+    def test_strip_removed_list_items_removes_matching(self, tmp_path: Path):
+        """登録した部分文字列を含む配列要素が削除される。"""
+        mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": ["OLD_RULE_MARKER で始まる旧ルール文面", "新ルール文面"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_list_item_substrings=mappings)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == ["新ルール文面"]
+
+    def test_strip_removed_list_items_preserves_others(self, tmp_path: Path):
+        """部分文字列を含まない要素（利用者の独自追加項目）は保持される。"""
+        mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": ["利用者独自ルール1", "利用者独自ルール2"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_list_item_substrings=mappings)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == ["利用者独自ルール1", "利用者独自ルール2"]
+
+    def test_strip_removed_list_items_missing_path(self, tmp_path: Path):
+        """対象パスが存在しない場合は例外を送出せず処理が継続する。"""
+        mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+
+        update_claude_settings(managed_path, target_path, removed_list_item_substrings=mappings)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result == {"language": "japanese"}
+
+    def test_strip_removed_list_items_non_list_target(self, tmp_path: Path):
+        """パス先が list でない場合は何もしない。"""
+        mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"autoMode": {"allow": "not a list"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, removed_list_item_substrings=mappings)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == "not a list"
+
+    def test_run_applies_list_items_to_settings_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """`run()`経由で settings.json 側にのみ削除マッピングが適用される。
+
+        .claude.json 側の同名構造（仮にあった場合）は保持されることを検証する回帰テスト。
+        """
+        managed_settings_path = tmp_path / "managed_settings.json"
+        managed_settings_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        managed_config_path = tmp_path / "managed_config.json"
+        managed_config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        settings_path = tmp_path / "settings.json"
+        old_rule_marker = mod._REMOVED_LIST_ITEM_SUBSTRINGS[0][1]  # pylint: disable=protected-access
+        settings_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": [f"{old_rule_marker} 旧ルール文面", "新ルール文面"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        config_path = tmp_path / "claude.json"
+        config_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": [f"{old_rule_marker} を含む config 側項目"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
+        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
+
+        mod.run()
+
+        # settings 側は旧ルール文面が削除される
+        settings_result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert settings_result["autoMode"]["allow"] == ["新ルール文面"]
+        # config 側は削除されない（仮に同名構造があっても保持される）
+        config_result = json.loads(config_path.read_text(encoding="utf-8"))
+        assert config_result["autoMode"]["allow"] == [f"{old_rule_marker} を含む config 側項目"]

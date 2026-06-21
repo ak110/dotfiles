@@ -16,7 +16,7 @@ from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
-_DOTFILES_DIR = Path.home() / "dotfiles"
+_DOTFILES_DIR = Path(__file__).resolve().parents[2]
 _MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_PATH = _DOTFILES_DIR / "share" / "claude_json_managed.json"
@@ -47,6 +47,18 @@ _REMOVED_ENV_KEYS: tuple[str, ...] = (
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
 )
 
+# settings.json 配下のリスト要素から除去する部分文字列のペア。
+# ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。
+# share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
+# union マージは削除を反映しないため、ここで明示的に除去する。
+_REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
+    # 2026-06: Session-Owned Amend ルールに置き換えたため旧文面を除去
+    (
+        "autoMode.allow",
+        "agent-toolkit:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
+    ),
+)
+
 _MAX_VALUE_LEN = 60
 _MAX_INLINE_DIFF = 3
 
@@ -63,13 +75,18 @@ def main() -> None:
 
 
 def run() -> bool:
-    """Claude 設定ファイル 2 本をマージ更新する。
+    """Claude 設定ファイル 2 件をマージ更新する。
 
     Returns:
         いずれかのファイルを実際に書き換えたかどうか。呼び出し側がログ集計に使う。
     """
     overrides = _platform_overrides(_MANAGED_SETTINGS_PATH)
-    changed_settings = update_claude_settings(_MANAGED_SETTINGS_PATH, _SETTINGS_PATH, overrides=overrides)
+    changed_settings = update_claude_settings(
+        _MANAGED_SETTINGS_PATH,
+        _SETTINGS_PATH,
+        overrides=overrides,
+        removed_list_item_substrings=_REMOVED_LIST_ITEM_SUBSTRINGS,
+    )
     changed_config = update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
     return changed_settings or changed_config
 
@@ -91,13 +108,18 @@ def update_claude_settings(
     overrides: list[Path] | None = None,
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
     removed_env_keys: tuple[str, ...] = _REMOVED_ENV_KEYS,
+    removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
 ) -> bool:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
     `overrides` が与えられた場合は、`managed_path` の内容に上乗せしてからマージする。
-    マージ前に `settings_path` から `removed_hook_substrings` に該当する hooks エントリと
-    `removed_env_keys` に該当する env キーを除去することで、配布元から削除された
-    エントリが残り続けるのを防ぐ。
+    マージ前に `settings_path` から `removed_hook_substrings` に該当する hooks エントリ、
+    `removed_env_keys` に該当する env キー、`removed_list_item_substrings` に該当する
+    配列要素を除去することで、配布元から削除されたエントリが残り続けるのを防ぐ。
+
+    `removed_list_item_substrings` の既定値は空タプル。settings.json 専用の配列項目を
+    対象とする場合は呼び出し元で明示指定する（managed JSON が当該配列を管理していない
+    .claude.json などで誤削除が起きるのを防ぐため）。
 
     Returns:
         実際にファイルを書き換えた場合は `True`。
@@ -111,6 +133,7 @@ def update_claude_settings(
     original = copy.deepcopy(data)
     _strip_removed_hooks(data, removed_hook_substrings)
     _strip_removed_env_keys(data, removed_env_keys)
+    _strip_removed_list_items(data, removed_list_item_substrings)
     _merge(data, managed)
 
     short = log_format.home_short(settings_path)
@@ -238,6 +261,29 @@ def _strip_removed_env_keys(data: dict, keys: tuple[str, ...]) -> None:
         env.pop(key, None)
     if not env:
         del data["env"]
+
+
+def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...]) -> None:
+    """ドット区切りパスで辿った配列から部分文字列マッチで要素を除去する。
+
+    パス途中のキーが存在しない場合や、対象が list でない場合は何もしない。
+    除去後に配列が空になっても配列キー自体は保持する（managed 側で再追加される想定）。
+    """
+    if not mappings:
+        return
+    for path, substring in mappings:
+        keys = path.split(".")
+        target = data
+        for key in keys[:-1]:
+            if not isinstance(target, dict):
+                break
+            target = target.get(key)
+        if not isinstance(target, dict):
+            continue
+        array = target.get(keys[-1])
+        if not isinstance(array, list):
+            continue
+        target[keys[-1]] = [item for item in array if not (isinstance(item, str) and substring in item)]
 
 
 def _merge(data: dict, managed: dict) -> None:
