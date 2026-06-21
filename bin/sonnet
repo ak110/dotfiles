@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 # NOTE: 対応するWindows版 → bin/sonnet.cmd
-exec claude --model=sonnet --permission-mode=acceptEdits "$@"
+exec claude --model=sonnet --permission-mode=auto "$@"

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# NOTE: 対応する Windows 版 → bin/opus.cmd
+exec claude --model=opus --permission-mode=auto "$@"
