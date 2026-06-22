@@ -12,11 +12,17 @@ import pytest
 
 
 def _expand_pattern(pattern_str: str) -> str:
-    """文字クラス`[...]`を先頭文字に置換する簡易展開。
+    """辞書パターンから自己マッチサンプルを生成する簡易展開。
 
-    辞書のパターン記法は文字クラスのみのため、この方法でマッチサンプルを得ることができる。
+    辞書のパターン記法で使われる構造を順に潰す。
+    `[...]`を先頭文字へ、`(A|B|...)`を先頭選択肢へ置換し、
+    エスケープされていない`?`・`*`を除去してオプション要素を保持する。
     """
-    return re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], pattern_str)
+    s = re.sub(r"\(\?(?:<?[=!]|:)[^)]*\)", "", pattern_str)
+    s = re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], s)
+    s = re.sub(r"\(([^)]+)\)", lambda m: m.group(1).split("|")[0], s)
+    s = re.sub(r"(?<!\\)[?*]", "", s)
+    return s
 
 
 def _read_patterns_text(path: pathlib.Path) -> list[str]:
@@ -146,6 +152,19 @@ class TestScanText:
 
     def test_empty_when_no_deny(self, allow_patterns):
         assert not _colloquial_check.scan_text("様々な内容の文字列", [], allow_patterns)
+
+    @pytest.mark.parametrize("raw_pattern", _read_patterns_text(_colloquial_check.DENY_PATH))
+    def test_every_deny_entry_self_matches(self, deny_patterns, allow_patterns, raw_pattern):
+        """denylist各エントリが自身の展開サンプルで必ず検出される。
+
+        辞書再編・文字クラス展開規則の変更で当該パターンが意図せず無効化されても
+        本テストが回帰を検出する。
+        """
+        sample = _expand_pattern(raw_pattern)
+        if _colloquial_check.mask_allowed(sample, allow_patterns) != sample:
+            pytest.skip(f"sample masked by allowlist: {raw_pattern}")
+        text = f"。{sample}。"
+        assert _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
 
     @pytest.mark.parametrize(
         ("dict_line", "expected_replacement"),
