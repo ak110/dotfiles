@@ -10,7 +10,7 @@ agent-toolkitプラグイン同梱の辞書ファイル（`agent-toolkit/scripts
 対象ファイルから検出された口語表現を列挙する。
 検出辞書をエージェントのコンテキストへ持ち込まない設計のため、
 検出語そのものはstderr出力に含まれない。
-危険語彙を含む隔離ファイル（`references/tone-examples.md`）も同じ理由で検査対象から除外する。
+危険語彙を含む隔離ファイル（`writing-standards/references/tone-examples.md`および`agent-standards/references/self-rationalization-loop-indicators.md`）も同じ理由で検査対象から除外する。
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ _EXCERPT_LIMIT = 100
 
 # ディレクトリ展開時に走査する拡張子。日本語が含まれうるテキストファイルを対象とする。
 # `.md.tmpl`はchezmoiテンプレート由来の二重拡張子。`pathlib.Path.suffix`は最後の要素のみを返すため、
-# 末尾一致判定で複合拡張子も拾う。`.tmpl`単独はテンプレート構文を含み誤検出が多いため対象外とする。
+# 末尾一致判定で複合拡張子も対象に含める。`.tmpl`単独はテンプレート構文を含み誤検出が多いため対象外とする。
 _DEFAULT_EXTENSIONS = frozenset({".md", ".py", ".txt", ".yaml", ".yml", ".toml", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
@@ -54,15 +54,20 @@ _EXCLUDED_DIRS = frozenset(
 
 # 検査対象から自動的に外すファイル群。
 # 辞書ファイル本体は自身を検査するとほぼ全行マッチするため除外する。
-# 危険語彙を含む隔離ファイル（`tone-examples.md`）は悪い例を意図的に記載しており、辞書ファイルと同等の理由で除外する。
+# 危険語彙を含む隔離ファイル（`tone-examples.md`・`self-rationalization-loop-indicators.md`）は
+# 悪い例を意図的に記載しており、辞書ファイルと同等の理由で除外する。
 # 自テストファイルは辞書の置換候補定義を発火させる入力テキスト（違反語そのもの）を含むため除外する。
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
+_SELF_RATIONALIZATION = (
+    pathlib.Path(__file__).resolve().parents[2] / "agent-standards" / "references" / "self-rationalization-loop-indicators.md"
+)
 _SELF_TEST = pathlib.Path(__file__).resolve().parent / "check_colloquial_test.py"
 _EXCLUDED_FILES = frozenset(
     {
         _colloquial_check.DENY_PATH.resolve(),
         _colloquial_check.ALLOW_PATH.resolve(),
         _TONE_EXAMPLES.resolve(),
+        _SELF_RATIONALIZATION.resolve(),
         _SELF_TEST.resolve(),
     }
 )
