@@ -57,6 +57,7 @@
  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
 - Claude Codeのhook・statuslineから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
  （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
+- `scripts/claude_hook_*.py`等の編集時は`agent-toolkit/scripts/`配下のヘルパー（`_plan_file.py`等）を既存類似先例として再利用する
 - `pytools/`トップレベルの公開CLIモジュールはbash補完（argcomplete）に対応する
   - 手順と例外は`docs/development/architecture.md`の「bash補完」節を参照する
 - Pythonテストコードはソースモジュールの隣に同居方式で配置する
