@@ -7,6 +7,7 @@
 
 import pathlib
 import subprocess
+import typing
 from typing import Any
 
 import pytest
@@ -296,8 +297,32 @@ class TestFeedbackFilenameCompleter:
         assert result == ["20260101-001.md"]
 
 
+def _editor_fake_run(
+    action: typing.Callable[[pathlib.Path], int],
+) -> typing.Callable[..., subprocess.CompletedProcess[Any]]:
+    """エディター呼び出し時にactionを実行し戻り値をreturncodeとするsubprocess.run差し替えを返す。
+
+    fake-editor以外のコマンドは終了コード0で成功扱いとする。
+    """
+
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        empty: Any = "" if kwargs.get("text") else b""
+        if cmd[0] == "fake-editor":
+            returncode = action(pathlib.Path(cmd[1]))
+            return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=empty, stderr=empty)
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    return fake_run
+
+
 class TestAddViaEditor:
-    """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。"""
+    """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
+
+    `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
+    捕捉する。エラー経路のテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
+    検証焦点は`_collect_message_via_editor`の早期None返却にあり、git経路到達有無は
+    別経路（feedbackディレクトリへのファイル生成有無）で間接確認する。
+    """
 
     def test_editor_path_generates_file_with_content(
         self,
@@ -308,13 +333,11 @@ class TestAddViaEditor:
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("エディター経由の本文\n", encoding="utf-8")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        def write_body(tmp: pathlib.Path) -> int:
+            tmp.write_text("エディター経由の本文\n", encoding="utf-8")
+            return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_body))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
@@ -335,13 +358,11 @@ class TestAddViaEditor:
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("   \n\n", encoding="utf-8")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        def write_blanks(tmp: pathlib.Path) -> int:
+            tmp.write_text("   \n\n", encoding="utf-8")
+            return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_blanks))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
@@ -378,19 +399,12 @@ class TestAddViaEditor:
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[0] == "fake-editor":
-                empty1: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=2, stdout=empty1, stderr=empty1)
-            empty2: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty2, stderr=empty2)
-
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(lambda _tmp: 2))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "エディターがexit code 2" in captured.err
+        assert "終了コード2" in captured.err
         assert not list((notes / "feedback").iterdir())

@@ -237,7 +237,7 @@ def _max_existing_seq(feedback_dir: pathlib.Path, timestamp_prefix: str) -> int:
 def _collect_message_via_editor() -> str | None:
     """$EDITORで一時ファイルを開き、保存内容をstripして返す。
 
-    EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
+    $EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
     原因をstderrへ出力する。一時ファイルは終了時に必ず削除する。
     """
     editor = os.environ.get("EDITOR")
@@ -249,7 +249,7 @@ def _collect_message_via_editor() -> str | None:
     try:
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
-            print(f"エディターがexit code {result.returncode}で終了しました。", file=sys.stderr)
+            print(f"エディターが終了コード{result.returncode}で終了しました。", file=sys.stderr)
             return None
         message = tmp_path.read_text(encoding="utf-8").strip()
         if not message:
