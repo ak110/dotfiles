@@ -1,12 +1,12 @@
 ---
 name: overhaul-project
 description: >
-  プロジェクト全体を網羅的に点検し、コード改善（リファクタリング）・ドキュメント整備・足元整備の3観点で
+  プロジェクト全体を網羅的に点検し、コード改善（リファクタリング）・ドキュメント整備・足元整備の観点で
   まとめて改善するワークフロー。ユーザー手動起動専用（`/agent-toolkit:overhaul-project`）。
 disable-model-invocation: true
 # 編集時の注意点:
 # 本スキルはユーザー手動起動専用。disable-model-invocation: trueでモデル側からの自動起動を抑止する。
-# plan-mode必須の独立スキルで、3観点（コード・ドキュメント・足元）の網羅点検を担う。
+# plan-mode必須の独立スキルで、改善観点（コード・ドキュメント・足元）の網羅点検を担う。
 # 各観点の品質基準は呼び出し先スキル（coding-standards・writing-standards・agent-standards・review-standards）
 # へ委ね、本スキル本体には統合ワークフロー固有の進め方のみを記述する。
 ---
@@ -15,7 +15,7 @@ disable-model-invocation: true
 
 ## 目的とスコープ
 
-ユーザー手動起動を契機に、コード改善・ドキュメント整備・足元整備の3観点で
+ユーザー手動起動を契機に、コード改善・ドキュメント整備・足元整備の観点で
 プロジェクト全体の改善候補を洗い出し、計画化と実装まで進める。
 
 ## 起動条件と前提
@@ -52,7 +52,7 @@ disable-model-invocation: true
 ## 進め方
 
 1. `EnterPlanMode`でplan modeへ移行したうえで`agent-toolkit:plan-mode`を呼び出し、計画ファイル作成プロセスへ入る
-2. 3観点ごとに並列スキャンを実施し、改善候補を洗い出す
+2. 改善観点ごとに並列スキャンを実施し、改善候補を洗い出す
 3. 候補一覧をユーザーへ提示し、優先順位・採否・破壊的変更の取り扱いを確定する
 4. 確定した方針を計画ファイルへ転記し、`ExitPlanMode`で承認を得る
 5. `agent-toolkit:plan-impl`へ引き継いで実装・検証・コミットを進める
@@ -60,7 +60,7 @@ disable-model-invocation: true
 
 ## サブエージェント活用
 
-3観点を独立タスクに分割し、Exploreサブエージェントで並列スキャンする。
+改善観点を独立タスクに分割し、Exploreサブエージェントで並列スキャンする。
 
 - 観点ごとに別エージェントを起動し、独立する2件以上は`run_in_background=true`で同時実行する
 - モデル選定はclaude-code.md「サブエージェントの活用」節の判断軸に従う
