@@ -17,9 +17,6 @@ _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parents[3] / "scripts"
 _DENY_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words.txt"
 _ALLOW_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words_allow.txt"
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
-_SELF_RATIONALIZATION = (
-    pathlib.Path(__file__).resolve().parents[2] / "agent-standards" / "references" / "self-rationalization-loop-indicators.md"
-)
 
 # 辞書パース処理は本番ロジックの`_colloquial_check.load_patterns`を共有する。
 # `check_colloquial.py`が同一の`sys.path`操作を実行するため副作用を許容する。
@@ -172,18 +169,6 @@ def test_tone_examples_file_is_skipped():
     assert result.stderr == ""
 
 
-def test_self_rationalization_file_is_skipped():
-    """自己合理化ループ判定指標ファイルを直接渡しても検査されずexit 0。
-
-    隔離ファイルとして危険語彙を意図的に列挙するため、`tone-examples.md`と同等に除外対象とする。
-    """
-    if not _SELF_RATIONALIZATION.exists():
-        pytest.skip("self-rationalization-loop-indicators.mdが未配置のためスキップ")
-    result = _run(_SELF_RATIONALIZATION)
-    assert result.returncode == 0
-    assert result.stderr == ""
-
-
 def test_self_test_file_is_skipped():
     """自テストファイルを直接渡しても検査されずexit 0（意図的に違反テキストを含むため）。"""
     result = _run(pathlib.Path(__file__).resolve())
@@ -220,17 +205,4 @@ def test_tone_examples_excluded_from_directory_scan(tmp_path: pathlib.Path):
     clean.write_text("# header\n\nplain content.\n", encoding="utf-8")
     result = _run(tmp_path)
     assert str(tone_link) not in result.stderr
-    assert result.returncode == 0
-
-
-def test_self_rationalization_excluded_from_directory_scan(tmp_path: pathlib.Path):
-    """ディレクトリ走査時に自己合理化ループ判定指標ファイルが除外される。"""
-    if not _SELF_RATIONALIZATION.exists():
-        pytest.skip("self-rationalization-loop-indicators.mdが未配置のためスキップ")
-    link = tmp_path / "self-rationalization-loop-indicators.md"
-    link.symlink_to(_SELF_RATIONALIZATION)
-    clean = tmp_path / "clean.md"
-    clean.write_text("# header\n\nplain content.\n", encoding="utf-8")
-    result = _run(tmp_path)
-    assert str(link) not in result.stderr
     assert result.returncode == 0

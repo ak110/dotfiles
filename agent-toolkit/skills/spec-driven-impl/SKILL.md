@@ -9,7 +9,7 @@ description: >
 # 編集時の注意点:
 # 本スキル実行中は`agent.md`・`agent-toolkit:plan-mode`・`agent-toolkit:plan-impl`の
 # ユーザー確認規範をオーバーライドする。対象は本文「2. ユーザー確認規範のオーバーライド」節で列挙する。
-# サブエージェントはいかなる理由でも停止・別セッション送り・スコープ縮退を選択しない。
+# サブエージェントは`agent.md`「縮退表明は発行しない」項に従う。
 # `EnterPlanMode`/`ExitPlanMode`は使用しない（plan modeの編集制約と整合しないため）。
 # 各計画ファイルの処理は`spec-driven-implementer`サブエージェントへ委譲し、メイン側のコンテキスト消費を抑える。
 ---
@@ -43,8 +43,7 @@ description: >
 - `agent-toolkit:plan-mode`の要件対話・認識合わせ・恒久化検討・リファクタリング検討の各ユーザー確認
 - `agent-toolkit:plan-impl`「2.5サブエージェント完了報告の検収」のうちユーザー確認を要する分岐
 
-サブエージェント（`spec-driven-implementer`および配下の`plan-implementer`等）はあらゆる理由で停止・別セッション送り・スコープ縮退を選択しない。
-具体的な禁止対象は`agent.md`「縮退表明は発行しない」項の規定に従う。
+サブエージェント（`spec-driven-implementer`および配下の`plan-implementer`等）は`agent.md`「縮退表明は発行しない」項の規定に従う。
 計画ファイル記載の全変更を実装・検証・コミットまで完遂する。
 計画ファイルに記載された破壊的操作・外部送信（`git push`・外部APIへの送信・データ削除等）も通常工程として実行し、停止理由としない。
 確認事項はTBD.mdへQブロックとして記録し続行根拠とする（停止判断の根拠としない）。

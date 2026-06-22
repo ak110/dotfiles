@@ -120,15 +120,16 @@ description: >
 ### コンテキスト汚染の回避
 
 - 悪い例の記述可否は、コンテキスト汚染リスクの有無で判断する
-  - 汚染リスクが高い悪い例（口語の検出語・俗語・禁止パターンの具体的な語句など、生成確率を上げる語彙）は本文に書かず、
-    `references/`配下の隔離ファイルへ置く。本文で具体例が必要な場合は抽象化した表現にとどめる
+  - 汚染リスクが高い悪い例（生成確率を上げる語彙）は本文に書かず`references/`配下の隔離ファイルへ置く
   - 汚染リスクが低い対比例（語順・主述・構成・冗長性など、危険な語彙に依存しない構造レベルの良否）は本文に直接書いてよい
-- 機械チェック用辞書（NGワード・正規表現リストなど）の検出語そのものを、
-  スキルの本文・テストコード・hookの警告メッセージへ転記しない（生成確率を上げる逆効果になるため）
+- 機械チェック用辞書の検出語そのものをスキル本文・テストコード・hookメッセージへ転記しない（生成確率を上げる逆効果のため）
 - `references/`配下の隔離ファイルは、危険語彙・禁止パターンを含む悪い例の格納専用とする
   - メインエージェントから直接読み込ませない（確認はExploreサブエージェント・修正は`plan-implementer`経由）
   - サブエージェントは悪い例文面を成果物・指摘・出力へ転記しない
   - 機械チェックスクリプトの検査対象から除外する
+  - 隔離ファイルを新規追加する場合は機械チェック除外を同時に整備する
+    - `check_colloquial.py`の`_EXCLUDED_FILES`と対応する`check_colloquial_test.py`の2件テストパターン
+    - `pyproject.toml`の`[tool.pyfltr] extend-exclude`
 
 ### 既知情報・冗長記述の排除
 
@@ -153,7 +154,6 @@ description: >
 - `references/agent-skills.md`: スキル編集時
 - `references/claude-hooks.md`: hook・hookから呼び出されるスクリプトの編集時（Claude Code固有）
 - `references/auto-mode.md`: Claude Code auto modeのカスタムルール編集時（Claude Code固有）
-- `references/self-rationalization-loop-indicators.md`: 自己合理化ループの判定指標（`agent.md`「縮退表明」項からの参照先）
 
 ## Claude Code固有事項
 
