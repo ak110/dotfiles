@@ -618,3 +618,56 @@ class TestCodexReviewReadTracking:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
+
+
+class TestTextlintViolationsReadTracking:
+    """textlint-violations.md読み込み追跡。"""
+
+    def test_read_textlint_violations_sets_flag(self, tmp_path: pathlib.Path):
+        """配布元パスのtextlint-violations.mdをReadすると状態フラグが設定される。"""
+        sid = "textlint-read-source"
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {
+                    "file_path": "/home/foo/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md"
+                },
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["textlint_violations_read"] is True
+
+    def test_read_textlint_violations_distributed_path_sets_flag(self, tmp_path: pathlib.Path):
+        """配布先パスのtextlint-violations.mdをReadすると状態フラグが設定される。"""
+        sid = "textlint-read-dist"
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/home/foo/.claude/skills/writing-standards/references/textlint-violations.md"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        assert state["textlint_violations_read"] is True
+
+    def test_read_other_file_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """textlint-violations.md以外のファイルでは状態フラグが設定されない。"""
+        sid = "textlint-other-read"
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/fake/rules/agent.md"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        if state_file.exists():
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            assert not state.get("textlint_violations_read", False)

@@ -407,7 +407,12 @@ class TestPlanModeSkillFirstCheck:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "plan-skill-flag"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        # textlint_violations_readも併せて設定する（独立checkとの干渉回避）
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+        )
         result = _run(
             {
                 "tool_name": "Write",
@@ -481,15 +486,18 @@ class TestPlanModeSkillFirstCheck:
         assert result.stdout == ""
 
     def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
-        """plan mode 外では plan file 編集でもブロックしない。"""
+        """plan mode 外では plan-mode スキル未起動による plan file 編集ブロックは発火しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
+        sid = "non-plan-mode"
+        # textlint_violations_readを設定して独立checkとの干渉を回避
+        _write_session_state(tmp_path, sid, {"textlint_violations_read": True})
         result = _run(
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": "# t\n"},
-                "session_id": "non-plan-mode",
+                "session_id": sid,
                 "permission_mode": "default",
             },
             env_overrides=env,
@@ -541,6 +549,124 @@ class TestPlanModeSkillCallSites:
                 "tool_name": "Skill",
                 "tool_input": {"skill": "agent-toolkit:coding-standards"},
                 "session_id": "other-skill",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
+class TestTextlintViolationsReadFirstCheck:
+    """plan file 編集前に textlint-violations.md 未読の場合のブロック検査。
+
+    `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
+    Write/Edit/MultiEditのみがブロック対象となる。plan file以外の操作は
+    一切ブロック・警告しない。
+    """
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        if home_dir is not None:
+            env["HOME"] = str(home_dir)
+        return env
+
+    @staticmethod
+    def _make_plan(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
+        plans = home_dir / ".claude" / "plans"
+        plans.mkdir(parents=True, exist_ok=True)
+        plan = plans / name
+        plan.write_text("# t\n", encoding="utf-8")
+        return plan
+
+    def test_blocks_plan_file_write_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "tv-write-block"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "textlint-violations.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "edit.md")
+        env = self._state_env(tmp_path, home)
+        sid = "tv-edit-block"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan), "old_string": "a", "new_string": "b"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+
+    def test_blocks_plan_file_multiedit_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "multi.md")
+        env = self._state_env(tmp_path, home)
+        sid = "tv-multi-block"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [{"old_string": "a", "new_string": "b"}],
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+
+    def test_allows_plan_file_when_flag_set(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "tv-flag-set"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
+        """plan file以外の編集はフラグ未設定でも通す。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        env = self._state_env(tmp_path, home)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
+                "session_id": "tv-other-file",
                 "permission_mode": "default",
             },
             env_overrides=env,
