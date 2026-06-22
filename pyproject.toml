@@ -173,6 +173,8 @@ aci = "aci"
 Stubbs = "Stubbs"
 # IPythonの正当な用語（設定項目の複数形）
 configurables = "configurables"
+# tmux catppuccinテーマプラグインの変数名プレフィックス（@thm_fg等）
+thm = "thm"
 
 [tool.pytest.ini_options]
 # -n 4による4プロセス並列実行で--dist=loadfileを併用し、モジュール単位でテストをworkerへ分配する。
