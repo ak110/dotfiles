@@ -146,14 +146,14 @@ description: >
 - 短い権威表現（用語・規範用語）で長文説明を置き換える場合、
   独立した第三者のコーディングエージェントが用語1語のみから同一行動を取れるかを確認する。
   エージェントの行動に影響する規範の置き換えではサブエージェント検証を推奨する
-- コーディングエージェントが当然実行・解釈できる手順詳細（読み取り・処理順序・判断ステップ等）を
-  1段ずつ書き下さず、目的・対象の指示にとどめる
+- 当然実行・解釈できる手順詳細を1段ずつ書き下さず、目的・対象の指示にとどめる
 
 ## タスク固有で読み込む補足情報
 
 - `references/agent-skills.md`: スキル編集時
 - `references/claude-hooks.md`: hook・hookから呼び出されるスクリプトの編集時（Claude Code固有）
 - `references/auto-mode.md`: Claude Code auto modeのカスタムルール編集時（Claude Code固有）
+- `references/self-rationalization-loop-indicators.md`: 自己合理化ループの判定指標（`agent.md`「縮退表明」項からの参照先）
 
 ## Claude Code固有事項
 
