@@ -234,21 +234,28 @@ def _max_existing_seq(feedback_dir: pathlib.Path, timestamp_prefix: str) -> int:
     return max_seq
 
 
-def _collect_message_via_editor() -> str:
+def _collect_message_via_editor() -> str | None:
     """$EDITORで一時ファイルを開き、保存内容をstripして返す。
 
-    $EDITOR未設定時はexit 1で案内する。
-    一時ファイルは終了時に必ず削除する。
+    EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
+    原因をstderrへ出力する。一時ファイルは終了時に必ず削除する。
     """
     editor = os.environ.get("EDITOR")
     if not editor:
-        print("$EDITORが未設定のためエディター経路を使えません。", file=sys.stderr)
-        sys.exit(1)
+        print("$EDITORが未設定のためエディター経路を利用できません。", file=sys.stderr)
+        return None
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
         tmp_path = pathlib.Path(f.name)
     try:
-        subprocess.run([editor, str(tmp_path)], check=True)
-        return tmp_path.read_text(encoding="utf-8").strip()
+        result = subprocess.run([editor, str(tmp_path)], check=False)
+        if result.returncode != 0:
+            print(f"エディターがexit code {result.returncode}で終了しました。", file=sys.stderr)
+            return None
+        message = tmp_path.read_text(encoding="utf-8").strip()
+        if not message:
+            print("本文が空のため投入を中止しました。", file=sys.stderr)
+            return None
+        return message
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -265,8 +272,7 @@ def _cmd_add(
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
-        if not message:
-            print("本文が空のため投入を中止しました。", file=sys.stderr)
+        if message is None:
             sys.exit(1)
         messages = [message]
     _pull(private_notes)
