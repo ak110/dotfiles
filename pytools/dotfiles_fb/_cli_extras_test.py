@@ -294,3 +294,77 @@ class TestFeedbackFilenameCompleter:
         # pylint: disable-next=protected-access
         result = _cli._feedback_filename_completer("20260101")  # noqa: SLF001
         assert result == ["20260101-001.md"]
+
+
+class TestAddViaEditor:
+    """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。"""
+
+    def test_editor_path_generates_file_with_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """messages省略時にエディターが呼ばれ書き込み内容がfeedbackへ保存される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text("エディター経由の本文\n", encoding="utf-8")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        files = list((notes / "feedback").iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "エディター経由の本文" in content
+
+    def test_editor_empty_save_aborts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """エディター保存内容がstrip後に空の場合はexit 1で投入中止する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text("   \n\n", encoding="utf-8")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "本文が空" in captured.err
+        assert not list((notes / "feedback").iterdir())
+
+    def test_editor_missing_env_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """$EDITOR未設定時はexit 1で案内が出力される。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.delenv("EDITOR", raising=False)
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "EDITOR" in captured.err

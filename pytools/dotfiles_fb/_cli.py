@@ -20,6 +20,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import typing
 from collections.abc import Iterable
 
@@ -35,7 +36,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
     add.add_argument("repo_path", metavar="REPO_PATH", help="フィードバック対象リポジトリのパス（~展開可能）。")
-    add.add_argument("messages", metavar="MESSAGE", nargs="+", help="投入するフィードバックメッセージ（1個以上）。")
+    add.add_argument(
+        "messages",
+        metavar="MESSAGE",
+        nargs="*",
+        help="投入するフィードバックメッセージ（省略時は$EDITORで編集する）。",
+    )
     add.add_argument(
         "--source",
         metavar="NAME",
@@ -228,6 +234,25 @@ def _max_existing_seq(feedback_dir: pathlib.Path, timestamp_prefix: str) -> int:
     return max_seq
 
 
+def _collect_message_via_editor() -> str:
+    """$EDITORで一時ファイルを開き、保存内容をstripして返す。
+
+    $EDITOR未設定時はexit 1で案内する。
+    一時ファイルは終了時に必ず削除する。
+    """
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        print("$EDITORが未設定のためエディター経路を使えません。", file=sys.stderr)
+        sys.exit(1)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
+        tmp_path = pathlib.Path(f.name)
+    try:
+        subprocess.run([editor, str(tmp_path)], check=True)
+        return tmp_path.read_text(encoding="utf-8").strip()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def _cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -237,6 +262,13 @@ def _cmd_add(
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
     target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
     feedback_dir = private_notes / "feedback"
+    messages = list(args.messages)
+    if not messages:
+        message = _collect_message_via_editor()
+        if not message:
+            print("本文が空のため投入を中止しました。", file=sys.stderr)
+            sys.exit(1)
+        messages = [message]
     _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     created_iso = now.isoformat()
@@ -244,7 +276,7 @@ def _cmd_add(
     feedback_dir.mkdir(parents=True, exist_ok=True)
     source_line = f"source: {args.source}\n" if args.source else ""
     generated: list[str] = []
-    for message in args.messages:
+    for message in messages:
         filename = f"{timestamp}-{counter:03d}.md"
         content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
         (feedback_dir / filename).write_text(content, encoding="utf-8")
