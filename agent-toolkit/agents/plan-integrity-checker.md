@@ -20,6 +20,9 @@ user-invocable: false
 # 本エージェントの担当観点へ含めない。
 # このエージェントはplan-mode, plan-implスキルなどを呼び出さないため、
 # それらの知識を持たないことに注意。
+# model: sonnet固定の理由: 観点A〜Jの定義に従う照合作業は確定手順の実行のため。
+# tools制限の理由: 計画ファイル本文の整合性点検は閲覧・調査のみで完結し、
+#   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
 ---
 
 # plan-integrity-checker
