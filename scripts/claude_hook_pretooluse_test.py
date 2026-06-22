@@ -836,6 +836,101 @@ class TestAgentToolkitEditSkillWarning:
         assert "agent-toolkit-edit" in _get_additional_context(result)
 
 
+class TestPlanFileBumpDeclarationWarning:
+    """計画ファイル Write 時の `agent-toolkit/` 編集に対する bump 宣言欠落警告。"""
+
+    _PLAN_PATH = str(_HOME / ".claude" / "plans" / "sample-plan.md")
+    _MISSING = "# 計画\n\n## 変更内容\n\nagent-toolkit/skills/foo を更新\n\n## 実行方法\n\n- 検証を実行\n"
+
+    @staticmethod
+    def _write(file_path: str, content: str) -> subprocess.CompletedProcess[str]:
+        return _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": content}})
+
+    @pytest.mark.parametrize(
+        "plan_body",
+        [
+            "- scripts/agent_toolkit_bump.py patch を実行",
+            "- bump不要（コメント修正のみのため）",
+        ],
+    )
+    def test_valid_declarations_no_warning(self, plan_body: str):
+        """`agent_toolkit_bump.py` 呼び出しまたは `bump不要` 宣言があれば警告なし。"""
+        content = f"# 計画\n\n## 変更内容\n\nagent-toolkit/skills/foo を更新\n\n## 実行方法\n\n{plan_body}\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_missing_declaration_warns(self):
+        """`agent-toolkit/` 参照ありで両方欠落の場合に警告する。"""
+        result = self._write(self._PLAN_PATH, self._MISSING)
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "agent_toolkit_bump.py" in msg
+        assert "bump不要" in msg
+        assert "warn" in msg.lower()
+
+    def test_no_agent_toolkit_reference(self):
+        """`## 変更内容` に `agent-toolkit/` 参照が無ければ警告なし。"""
+        content = "# 計画\n\n## 変更内容\n\nscripts/foo.py を更新\n\n## 実行方法\n\n- 検証を実行\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            ".claude/CLAUDE.md",
+            ".claude/plans/sample-plan.review.md",
+            ".claude/plans/sample-plan.codex.log",
+            ".claude/plans/sub/foo.md",
+        ],
+    )
+    def test_non_plan_paths_skipped(self, rel: str):
+        """計画ファイル判定対象外のパスは検査スキップ（副次ファイル・サブディレクトリ含む）。"""
+        result = self._write(str(_HOME / rel), self._MISSING)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_edit_tool_skipped(self):
+        """Edit は計画ファイル本文全域を取得できないため対象外。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": self._PLAN_PATH, "old_string": "x", "new_string": self._MISSING},
+            }
+        )
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_multiedit_tool_skipped(self):
+        """MultiEdit も同様に対象外。"""
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": self._PLAN_PATH,
+                    "edits": [{"old_string": "x", "new_string": self._MISSING}],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_changes_section_missing_no_warning(self):
+        """`## 変更内容` セクション欠落は `agent-toolkit/` 参照なしとみなす。"""
+        content = "# 計画\n\n## 実行方法\n\n- 検証を実行\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" not in _get_additional_context(result)
+
+    def test_plan_section_missing_warns(self):
+        """`## 実行方法` セクション欠落かつ `agent-toolkit/` 参照ありは警告対象。"""
+        content = "# 計画\n\n## 変更内容\n\nagent-toolkit/foo を更新\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" in _get_additional_context(result)
+
+
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 

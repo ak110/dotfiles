@@ -16,6 +16,7 @@
 3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
+6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみ。
@@ -43,6 +44,7 @@ sys.path.insert(
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
@@ -103,6 +105,9 @@ def main() -> int:
     skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root)
     if skill_warning is not None:
         warnings.append(skill_warning)
+    plan_bump_warning = _plan_file_bump_declaration_warning(tool_name, fields, file_path)
+    if plan_bump_warning is not None:
+        warnings.append(plan_bump_warning)
 
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
@@ -440,6 +445,64 @@ def _agent_toolkit_edit_skill_warning(
         " Invoke the skill to load bump policy, 200-line guideline,"
         " and editing workflow before proceeding."
     )
+
+
+def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """計画ファイル Write 時の agent-toolkit/ 編集に対する bump 宣言欠落の警告メッセージを返す。
+
+    対象は Write のみ。Edit / MultiEdit の new_string では計画ファイル本文全域を
+    取得できないため判定対象外とする。
+    対象パスは `is_plan_file` の判定に従い、`.review.md` / `.codex.log` /
+    サブディレクトリ配下は対象外とする。
+    判定対象セクションは `## 変更内容` と `## 実行方法`。
+    """
+    if tool_name != "Write":
+        return None
+    if not is_plan_file(file_path):
+        return None
+    for _field, value in fields:
+        sections = _split_markdown_h2_sections(value)
+        changes = sections.get("変更内容", "")
+        plan = sections.get("実行方法", "")
+        if "agent-toolkit/" not in changes:
+            continue
+        if "agent_toolkit_bump.py" in plan:
+            continue
+        if "bump不要" in plan:
+            continue
+        return (
+            "plan file references `agent-toolkit/` paths under `## 変更内容` but"
+            " `## 実行方法` is missing both an `agent_toolkit_bump.py` invocation"
+            " and an explicit `bump不要` declaration."
+            " Per the `agent-toolkit-edit` skill (plan mode handling), include"
+            " `scripts/agent_toolkit_bump.py {patch|minor|major}` before the"
+            " verification step, or state `bump不要` in the body when no bump applies."
+        )
+    return None
+
+
+def _split_markdown_h2_sections(text: str) -> dict[str, str]:
+    """Markdown 本文を `## ` 見出しで分割し見出し名→本文の dict を返す。
+
+    `### ` 以下の深い見出しは本文側に含める（`## ` で始まる行は 3 文字目が空白で
+    `### ` を排除済みのため追加条件は不要）。
+    同名見出しが複数ある場合は後の値で上書きする。
+    最初の `## ` 見出しより前のコンテンツ（`# タイトル` 行等）は dict に含めず破棄する。
+    """
+    sections: dict[str, str] = {}
+    current_name: str | None = None
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if current_name is not None:
+                sections[current_name] = "\n".join(current_lines)
+            current_name = line[3:].strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+    if current_name is not None:
+        sections[current_name] = "\n".join(current_lines)
+    return sections
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:
