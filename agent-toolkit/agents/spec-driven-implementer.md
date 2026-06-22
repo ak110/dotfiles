@@ -24,6 +24,7 @@ user-invocable: false
   - 対象は`agent-toolkit:plan-mode`の各ユーザー確認
   - 対象は`agent-toolkit:plan-impl`「2.5サブエージェント完了報告の検収」のユーザー確認分岐
   - 上記対象を`docs/v{next}/TBD.md`への追記・暫定判断・続行の組み合わせに置換する
+  - TBD.mdの目的は`agent-toolkit:spec-driven-impl`スキル「5. TBD.md書式」節に従いユーザー確認事項の記録に限定する
 - 子サブエージェント起動の許容
   - `agent-toolkit:plan-impl`が規定する`plan-implementer`等の起動を本エージェントから行ってよい
 - 停止禁止
@@ -40,11 +41,15 @@ user-invocable: false
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
 - ユーザー確認が必要な場面は本エージェントの前提に従いTBD.mdへ質問ブロックを追記し暫定判断で続行する
 - 計画ファイルの`## 進捗ログ`へ`agent-toolkit:plan-impl`規定どおり逐次追記する
-- 正常完了時は`completed`を返す
+- `completed`返却は、担当計画ファイルの`## 変更内容`の全項目の実装完遂を必要条件とする
+  - 一部未完了で計画ファイル単位のコミットを作成する経路は禁止する
+  - 未完了項目がある場合は`needs_escalation`を返し、呼び出し元`agent-toolkit:spec-driven-impl`の検収へ判断を委ねる
 - gitコミットは行う（呼び出し元`agent-toolkit:spec-driven-impl`の運用上1計画ファイル1コミット）
 - pushは行わない
 
 ## 出力
 
 本文は呼び出し元`agent-toolkit:spec-driven-impl`が検収できる形式で返す。
-正常完了報告と、TBD.md追記内容の要約を含める。
+正常完了報告には、計画ファイルの`## 変更内容`の全項目を列挙したチェックリスト形式の`changed`欄を含める。
+各項目の完了状態をチェックボックス（`[x]`・`[ ]`）で示す。
+TBD.md追記内容の要約も含める。
