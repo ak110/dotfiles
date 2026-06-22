@@ -79,6 +79,8 @@
   - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
   - `pyproject.toml`の`[project.scripts]`にpost-apply処理継続に必須のCLIを追加・改名した場合の対応。
     両テンプレートの変数定義節にある`$expectedShims`・`expected_shims`定数を同一値に更新する
+- `process-feedbacks`スキル完了後はコミット作成に加えて`git push`まで実施する（dotfilesリポジトリ運用ルール）
+  - フィードバック投入元（feedback-inbox）の整合性を保つため、ローカルに留めず即時公開する
 
 ## 固有差分
 
