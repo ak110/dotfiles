@@ -94,11 +94,13 @@ shellcheck = true
 shfmt = true
 # profile_ipy/はIPython自動生成プロファイル、
 # *.cmdはCP932（Shift_JIS）でpyfltrのUTF-8前提と適合せず誤検出を招くため、
-# plugins/agent-toolkitはマーケットプレイス配布原本のシンボリックリンクのためいずれも検査対象外とする
+# plugins/agent-toolkitはマーケットプレイス配布原本のシンボリックリンク、
+# tone-examples.mdは危険語彙を含む隔離ファイルのためいずれも検査対象外とする
 extend-exclude = [
     "*/profile_ipy/*",
     "*.cmd",
     "plugins/agent-toolkit",
+    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]

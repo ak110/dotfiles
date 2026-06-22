@@ -19,7 +19,7 @@ _ALLOW_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words_allow.txt"
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
 
 # 辞書パース処理は本番ロジックの`_colloquial_check.load_patterns`を共有する。
-# `check_colloquial.py`が同一の`sys.path`操作を実行するため副作用を許容する。
+# `check_colloquial.py`が同一の`sys.path`への追加を実行するため、本ファイルでも同じ追加操作を行う。
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
 import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -28,7 +28,7 @@ def _expand(pattern_str: str) -> str:
     return re.sub(r"\[([^\]]+)\]", lambda m: m.group(1)[0], pattern_str)
 
 
-@pytest.fixture(name="deny_substring")
+@pytest.fixture(name="deny_substring", scope="session")
 def _deny_substring() -> str:
     """辞書ファイルからdenyリスト検出に当たる最短サンプルを動的生成する。
 

@@ -69,7 +69,7 @@ _EXCLUDED_FILES = frozenset(
 
 
 def main() -> int:
-    """口語的な日本語表現の混入を検査するエントリポイント。"""
+    """引数を解析し、検査対象ファイルを展開して口語表現を検出する。"""
     parser = argparse.ArgumentParser(
         description="口語的な日本語表現の混入を検査する。",
     )
@@ -110,9 +110,9 @@ def _format_hit_line(
     path: pathlib.Path,
     hit: tuple[int, int, str, str, str | None],
 ) -> str:
-    """検出ヒットを表示用の1行へ整形する。
+    """検出ヒットを`path:line_no:col [match]{ -> [候補]} excerpt`形式の1行へ整形する。
 
-    置換候補が与えられた場合は`[match] -> [候補] excerpt`形式で挿入する。
+    置換候補が無い場合は` -> [候補]`部分を省略する。
     抜粋は`_EXCERPT_LIMIT`を超える長さで末尾を省略する。
     """
     line_no, col, match_str, snippet, replacement = hit
