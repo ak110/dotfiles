@@ -1576,6 +1576,8 @@ class TestAskUserQuestionScopeEscalationCheck:
             ("残コンテキスト", "context-shortage"),
             ("対応を後回し", "defer-onset"),
             ("優先順位を相談", "priority-consult"),
+            ("優先順位判断を委ね", "priority-consult"),
+            ("範囲を決め", "priority-consult"),
             ("対象件数が多い", "scope-volume"),
         ],
     )

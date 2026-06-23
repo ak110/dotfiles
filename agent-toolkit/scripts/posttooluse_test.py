@@ -512,3 +512,63 @@ class TestGitLogChecked:
         assert isinstance(recorded, dict)
         for key in expected_keys:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
+
+
+class TestReadHandler:
+    """Read系判定（codex-review.md / textlint-violations.md）。
+
+    POSIX区切り・Windows区切り双方のfile_pathに対して同等にセッション状態フラグを立てることを検証する。
+    Windows環境ではClaude Codeがバックスラッシュ区切りのパスをfile_path引数に渡すため、
+    posttooluse.py側で`replace("\\", "/")`による正規化を経てから判定する。
+    """
+
+    @pytest.mark.parametrize(
+        ("file_path", "expected_flag"),
+        [
+            ("/home/user/dotfiles/agent-toolkit/skills/plan-mode/references/codex-review.md", "codex_review_read"),
+            (
+                r"C:\Users\user\dotfiles\agent-toolkit\skills\plan-mode\references\codex-review.md",
+                "codex_review_read",
+            ),
+            (
+                "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
+                "textlint_violations_read",
+            ),
+            (
+                r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
+                "textlint_violations_read",
+            ),
+        ],
+    )
+    def test_read_sets_flag_for_both_posix_and_windows_paths(
+        self,
+        tmp_path: pathlib.Path,
+        file_path: str,
+        expected_flag: str,
+    ) -> None:
+        """POSIX区切り・Windows区切りいずれの`file_path`でも対応するフラグが立つ。"""
+        sid = f"read-{expected_flag}-{len(file_path)}"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Read",
+                "tool_input": {"file_path": file_path},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get(expected_flag) is True
+
+    def test_read_unrelated_path_does_not_set_flags(self, tmp_path: pathlib.Path) -> None:
+        """無関係ファイルのReadではどのフラグも立たない。"""
+        sid = "read-unrelated"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/tmp/random.txt"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_review_read") is not True
+        assert state.get("textlint_violations_read") is not True

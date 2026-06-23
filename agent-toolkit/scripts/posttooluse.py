@@ -264,7 +264,9 @@ def main() -> int:
     if tool_name == "Read":
         file_path_raw = tool_input.get("file_path")
         if isinstance(file_path_raw, str):
-            if file_path_raw.endswith("codex-review.md"):
+            # Windowsからのバックスラッシュ区切りを正規化してから判定する
+            file_path_normalized = file_path_raw.replace("\\", "/")
+            if file_path_normalized.endswith("codex-review.md"):
 
                 def _set_codex_review_read(state: dict) -> dict | None:
                     if state.get("codex_review_read", False):
@@ -273,7 +275,7 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _set_codex_review_read)
-            if file_path_raw.endswith("writing-standards/references/textlint-violations.md"):
+            if file_path_normalized.endswith("writing-standards/references/textlint-violations.md"):
 
                 def _set_textlint_violations_read(state: dict) -> dict | None:
                     if state.get("textlint_violations_read", False):

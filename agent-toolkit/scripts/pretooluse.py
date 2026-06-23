@@ -86,7 +86,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("split-execution", re.compile(r"分割(して|で)(進|対応|実装|完了|処理)")),
     ("context-shortage", re.compile(r"残(り)?コンテキスト")),
     ("defer-onset", re.compile(r"(着手|対応|実装)(を)?(延期|後回し|別途|別計画)")),
-    ("priority-consult", re.compile(r"優先順位を(相談|確認|聞)")),
+    ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
     ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
 )
 
