@@ -50,3 +50,6 @@
   分断後は内部の引用符類が地の文として扱われ、
   `ja-technical-writing/no-unmatched-pair`が`Cannot find a pairing character`を報告する
   - 属性値全体をインラインコードで囲まず、属性名と中身の文字列を分けて記述して回避する
+- Markdownのコードブロック外側fenceに4バッククォートを採用するとtextlintは外側fenceを認識しない。
+  内側文面は地の文として処理されsentence-length等の違反として誤検出される
+  - 外側fenceは3バッククォートを既定とする。内側に3バッククォートを含むコードブロックを書く場合のみ4バッククォートを採用する
