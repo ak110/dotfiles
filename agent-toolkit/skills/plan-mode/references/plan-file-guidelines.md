@@ -196,5 +196,5 @@
   - 新節の配置先を相対参照（「〜近傍」「〜の後」等）で示す場合、参照先節と新節が同じ親節（H2）配下に位置するかを`grep -n '^## ' <対象ファイル>`等で確認する
 - 計画ファイル本文のdiffコードブロック内側に3バッククォートを含む場合は外側を4バッククォートで包む
 - 計画ファイル本文は作文段階で`agent-toolkit:writing-standards`「Markdown記述スタイル」節の規定を事前適用する
-- 初版Write前に本文と`## 変更内容`配下のdiff +側文面を対象リポジトリ直下の一時ファイルへ出力し機械チェックする
-  - `uvx pyfltr run-for-agent --no-fix <一時ファイル>`と`agent-toolkit:writing-standards`配下`scripts/check_line_width.py <一時ファイル>`を実行する。対象リポジトリ配下に置かないと`textlint`・`markdownlint`設定が継承されず`skipped`扱いとなる
+- 初版Write前にも本文と`## 変更内容`配下のdiff +側文面について同等の機械チェックを実施できる
+ （具体手順はSKILL.md工程7ステップ1を参照）
