@@ -48,5 +48,5 @@
 - Markdownのインラインコード内にエスケープバッククォート（バックスラッシュとバッククォートの並び）を含めると、
   textlintはコード範囲を内側のエスケープバッククォートで分断されたものと解釈する。
   分断後は内部の引用符類が地の文として扱われ、
-  `ja-technical-writing/no-unmatched-pair`が`Cannot find a pairing character`を報告する。
+  `ja-technical-writing/no-unmatched-pair`が`Cannot find a pairing character`を報告する
   - 属性値全体をインラインコードで囲まず、属性名と中身の文字列を分けて記述して回避する
