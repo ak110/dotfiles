@@ -17,6 +17,7 @@
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
+7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみ。
@@ -90,6 +91,10 @@ def main() -> int:
     dotfiles_block, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
     if dotfiles_block is not None:
         print(_llm_notice(dotfiles_block), file=sys.stderr)
+        return 2
+    plan_diff_block = _check_plan_file_dotfiles_specific_names(tool_name, fields, file_path)
+    if plan_diff_block is not None:
+        print(_llm_notice(plan_diff_block), file=sys.stderr)
         return 2
 
     # --- warn 系 check ---
@@ -445,6 +450,87 @@ def _agent_toolkit_edit_skill_warning(
         " Invoke the skill to load bump policy, 200-line guideline,"
         " and editing workflow before proceeding."
     )
+
+
+# H3見出し行に出現する最初のバッククォート1個のインラインコード値を抽出する。
+# `.*?` で非貪欲マッチし、複数のインラインコードを含むH3でも先頭の値を採用する。
+_H3_INLINE_CODE = re.compile(r"^### .*?`([^`]+)`")
+# diff言語指定フェンスの開始（3個以上の連続バッククォート）。
+_DIFF_FENCE_OPEN = re.compile(r"^(`{3,})diff\s*$")
+# 終了フェンス候補（連続バッククォート行）。
+_FENCE_CLOSE = re.compile(r"^`+\s*$")
+
+
+def _extract_plan_file_diff_plus_lines(changes_section: str) -> list[str]:
+    """計画ファイルの`## 変更内容`配下から`agent-toolkit/`パス指示H3配下のdiff +行を抽出する。
+
+    - `###`で始まるH3行に出現するバッククォート1個のインラインコード値を現在の対象パスとして記憶する
+    - 対象パスに`agent-toolkit/`を含む場合に限り、配下の`diff`言語指定フェンスブロック内へ入る
+    - diffフェンスは3個以上の連続バッククォートで開く
+    - 終了フェンスは開始フェンスと同じ長さ以上の連続バッククォートで判定する
+    - 先頭1文字が`+`かつ先頭2文字が`++`でない行のみを返す
+    """
+    result: list[str] = []
+    current_path = ""
+    in_diff = False
+    fence_len = 0
+
+    for line in changes_section.splitlines():
+        if in_diff:
+            if _FENCE_CLOSE.match(line) and len(line.rstrip()) >= fence_len:
+                in_diff = False
+                fence_len = 0
+            elif line.startswith("+") and not line.startswith("++"):
+                result.append(line)
+        else:
+            m_h3 = _H3_INLINE_CODE.match(line)
+            if m_h3:
+                current_path = m_h3.group(1)
+                continue
+            if "agent-toolkit/" in current_path:
+                m_fence = _DIFF_FENCE_OPEN.match(line)
+                if m_fence:
+                    in_diff = True
+                    fence_len = len(m_fence.group(1))
+
+    return result
+
+
+def _check_plan_file_dotfiles_specific_names(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    r"""計画ファイル`## 変更内容`配下のdiff +行へのdotfiles固有名混入を検出する。
+
+    対象は`Write`のみ。対象パスは`is_plan_file`の判定に従う。
+    `## 変更内容`配下の`agent-toolkit/`パスを示すH3見出し配下のdiffブロック+行を検査し、
+    block名集合の名前が`\b<name>\b`でマッチする場合にブロックメッセージを返す。
+    """
+    if tool_name != "Write":
+        return None
+    if not is_plan_file(file_path):
+        return None
+    dotfiles_root = pathlib.Path(__file__).resolve().parent.parent
+    block_names, _warn_names = _build_dotfiles_specific_names(dotfiles_root)
+    for _field, value in fields:
+        sections = _split_markdown_h2_sections(value)
+        changes = sections.get("変更内容", "")
+        plus_lines = _extract_plan_file_diff_plus_lines(changes)
+        if not plus_lines:
+            continue
+        combined = "\n".join(plus_lines)
+        hits: list[str] = []
+        for name in sorted(block_names):
+            if re.search(rf"\b{re.escape(name)}\b", combined):
+                hits.append(name)
+        if hits:
+            return (
+                "plan file diff (+lines) under `## 変更内容` references"
+                " dotfiles-specific identifiers in agent-toolkit/ paths."
+                f" Hits: {'; '.join(hits)}."
+                " Replace with generalized wording before adding to the plan."
+                " These names (personal skill names, pytools commands, scripts,"
+                " personal project names) leak repository internals into the distribution."
+                f" Target: {file_path}"
+            )
+    return None
 
 
 def _plan_file_bump_declaration_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
