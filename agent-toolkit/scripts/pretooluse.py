@@ -33,6 +33,10 @@ Bash:
 - `git log --decorate`の自動付与 (auto-fix)
 - `codex exec`の未決事項念押し (warn)
 
+AskUserQuestion:
+
+- 縮退誘発フレーズ（作業量・残コンテキスト等を根拠とした分割可否相談・進め方確認）の検出 (block)
+
 Write / Edit / MultiEdit:
 
 - 文字化け（U+FFFD）検出 (block)
@@ -71,6 +75,20 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/pretooluse"
+
+# AskUserQuestion向け縮退誘発フレーズ検出パターン。
+# agent.md「セッション分割・別計画化は禁止する」節で禁止される、
+# 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診を機械検出する。
+_SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("workload", re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)")),
+    ("single-session", re.compile(r"1?セッション(内|で)(の|に)?(完遂|完了|終わら|収まら|終わり)")),
+    ("approach-confirm", re.compile(r"進め方を(確認|相談|決め|聞|教え)")),
+    ("split-execution", re.compile(r"分割(して|で)(進|対応|実装|完了|処理)")),
+    ("context-shortage", re.compile(r"残(り)?コンテキスト")),
+    ("defer-onset", re.compile(r"(着手|対応|実装)(を)?(延期|後回し|別途|別計画)")),
+    ("priority-consult", re.compile(r"優先順位を(相談|確認|聞)")),
+    ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
+)
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -151,6 +169,23 @@ def main() -> int:
     # textlint-violations.md未読のままplan fileを編集しようとした場合はブロック
     if _check_textlint_violations_read_first(tool_name, tool_input, session_id):
         return 2
+
+    # AskUserQuestion: 縮退誘発フレーズ検出
+    if tool_name == "AskUserQuestion":
+        category = _check_askuserquestion_scope_escalation(tool_input)
+        if category is not None:
+            print(
+                _llm_notice(
+                    f"blocked: AskUserQuestionに縮退誘発フレーズ（カテゴリ: {category}）を検出。"
+                    f"agent-toolkit/rules/agent.md「セッション分割・別計画化は禁止する」節を参照。"
+                    f"カテゴリ定義は`agent-toolkit:agent-standards`配下"
+                    f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。",
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        flush_pending_language_warning()
+        return 0
 
     # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正
     if tool_name == "mcp__codex__codex":
@@ -1193,6 +1228,51 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
         },
         "systemMessage": "[agent-toolkit] codex MCPのsandboxをdanger-full-accessに自動修正しました。",
     }
+
+
+def _check_askuserquestion_scope_escalation(tool_input: dict) -> str | None:
+    """AskUserQuestion入力から縮退誘発フレーズを検出して該当カテゴリ識別子を返す。
+
+    対象は`questions[].question`、`questions[].header`、
+    `questions[].options[].label`、`questions[].options[].description`の各テキスト。
+    検出時は最初に一致したパターンのカテゴリ識別子を返す。未検出時はNone。
+    入力の構造が想定外（questionsが配列でないなど）の場合は検査不能としてNoneを返す。
+    検出フレーズ本文はメッセージへ転記せず、カテゴリ識別子のみで通知する
+    （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従う）。
+    """
+    questions = tool_input.get("questions")
+    if not isinstance(questions, list):
+        return None
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        for field in ("question", "header"):
+            text = question.get(field)
+            if isinstance(text, str):
+                category = _match_scope_escalation(text)
+                if category is not None:
+                    return category
+        options = question.get("options")
+        if not isinstance(options, list):
+            continue
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            for field in ("label", "description"):
+                text = option.get(field)
+                if isinstance(text, str):
+                    category = _match_scope_escalation(text)
+                    if category is not None:
+                        return category
+    return None
+
+
+def _match_scope_escalation(text: str) -> str | None:
+    """テキストへ`_SCOPE_ESCALATION_PHRASES`を照合し、最初に一致したカテゴリ識別子を返す。"""
+    for category, pattern in _SCOPE_ESCALATION_PHRASES:
+        if pattern.search(text) is not None:
+            return category
+    return None
 
 
 if __name__ == "__main__":

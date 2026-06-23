@@ -1557,3 +1557,138 @@ class TestBashAgentToolkitVersionBump:
         )
         result = self._invoke("git commit -m 'followup'", str(repo))
         assert not self._has_version_bump_warning(result)
+
+
+class TestAskUserQuestionScopeEscalationCheck:
+    """AskUserQuestion向け縮退誘発フレーズ検出ブロック。
+
+    フレーズ本文の代わりにパターンマッチ最小単位（正規表現の最短一致）を
+    テスト入力に用いる（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    """
+
+    @pytest.mark.parametrize(
+        ("text", "category"),
+        [
+            ("作業量で多い", "workload"),
+            ("セッションで完遂", "single-session"),
+            ("進め方を確認", "approach-confirm"),
+            ("分割して進める", "split-execution"),
+            ("残コンテキスト", "context-shortage"),
+            ("対応を後回し", "defer-onset"),
+            ("優先順位を相談", "priority-consult"),
+            ("対象件数が多い", "scope-volume"),
+        ],
+    )
+    def test_question_text_blocks(self, text: str, category: str):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": text,
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "縮退誘発フレーズ" in result.stderr
+        assert category in result.stderr
+
+    def test_header_blocks(self):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "ok?",
+                            "header": "進め方を確認",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "縮退誘発フレーズ" in result.stderr
+
+    def test_option_label_blocks(self):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "approach?",
+                            "options": [
+                                {"label": "セッションで完遂", "description": "do all at once"},
+                                {"label": "ok", "description": "ok"},
+                            ],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "縮退誘発フレーズ" in result.stderr
+
+    def test_option_description_blocks(self):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "approach?",
+                            "options": [
+                                {"label": "ok", "description": "進め方を確認"},
+                            ],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "縮退誘発フレーズ" in result.stderr
+
+    def test_normal_question_allowed(self):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "どのライブラリを採用するか？",
+                            "options": [
+                                {"label": "ライブラリA", "description": "高速だが学習コストが高い"},
+                                {"label": "ライブラリB", "description": "標準的"},
+                            ],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_empty_questions_allowed(self):
+        result = _run({"tool_name": "AskUserQuestion", "tool_input": {"questions": []}})
+        assert result.returncode == 0
+
+    def test_empty_options_allowed(self):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [{"question": "どうするか？", "options": []}],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_missing_questions_allowed(self):
+        result = _run({"tool_name": "AskUserQuestion", "tool_input": {}})
+        assert result.returncode == 0
