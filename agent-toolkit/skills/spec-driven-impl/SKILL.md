@@ -84,6 +84,7 @@ description: >
 
 - 計画ファイル: `docs/v{next}/plans/{theme}.md`
 - 多論点計画の場合は`plan-impl`のタスク分解を論点単位で細かく行ってください
+- 実装過程でテーマ仕様（`docs/v{next}/{theme}.md`）・次版総合ドキュメント（`docs/v{next}/OVERVIEW.md`）側の追記・修正が必要と判明した場合は、同サブエージェント内で当該仕様ファイルも更新してください
 ```
 
 ### 完了報告の検収

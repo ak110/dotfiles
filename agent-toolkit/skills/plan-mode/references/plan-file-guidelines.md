@@ -194,7 +194,7 @@
 - 計画ファイル本文で対象位置・対象量を示す際、改訂で変動する絶対数値（行番号・行範囲・行数・件数）の直書きを避け、節名・小見出し・冒頭文引用などの相対参照で特定する（`## 調査結果`の確定値は対象外）
   - 新節の配置先を相対参照（「〜近傍」「〜の後」等）で示す場合、参照先節と新節が同じ親節（H2）配下に位置するかを`grep -n '^## ' <対象ファイル>`等で確認する
 - 計画ファイル本文のdiffコードブロック内側に3バッククォートを含む場合は外側を4バッククォートで包む
-- 計画ファイル初版Write前に、計画ファイル本文と`## 変更内容`配下のdiff +側文面を対象リポジトリ直下の一時ファイルへ出力し機械チェックする
-  - `uvx pyfltr run-for-agent --no-fix <一時ファイル>`（markdown対象のため非該当lintは自動でskippedとなる）
-  - `agent-toolkit:writing-standards`配下`scripts/check_line_width.py <一時ファイル>`
+- 計画ファイル本文は作文段階で`agent-toolkit:writing-standards`「Markdown記述スタイル」節の規定を事前適用する
+- 初版Write前に本文と`## 変更内容`配下のdiff +側文面を対象リポジトリ直下の一時ファイルへ出力し機械チェックする
+  - `uvx pyfltr run-for-agent --no-fix <一時ファイル>`および`agent-toolkit:writing-standards`配下`scripts/check_line_width.py <一時ファイル>`
   - 対象リポジトリ配下に置かないと`textlint`・`markdownlint`設定が継承されず`skipped`扱いとなる
