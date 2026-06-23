@@ -12,8 +12,9 @@ allowed-tools: mcp__codex__codex mcp__codex__codex-reply Bash(codex exec*)
 
 codexレビューを1ラウンド実行して指摘全文を報告する。
 
-`mcp__codex__codex` / `mcp__codex__codex-reply`が利用可能ならMCPツール版を優先する。
-利用不可ならCLIフォールバック版を使う。
+`mcp__codex__codex` / `mcp__codex__codex-reply`が利用可能な環境では常時MCPツール版を使う。
+CLIフォールバック版はMCPが利用不可な環境専用とする。
+CLI実行が失敗した場合は再試行可否のユーザー確認で判断停止せず、MCP利用可能性を再点検したうえで利用可能なら経路を切替えて続行する。
 
 ## プロンプト構築
 
