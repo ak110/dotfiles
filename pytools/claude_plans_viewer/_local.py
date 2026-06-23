@@ -19,7 +19,7 @@ from pytools.claude_plans_viewer import _assets, _state
 # Pygmentsはmarkdown-itの`highlight`コールバックから呼ぶ。
 # `nowrap=True`で`<span>`列のみを返し、markdown-itの既定`<pre><code>`ラッパー相当を
 # `_highlight_code`側で組み立てる（言語クラスを付与しつつXSS耐性をPygmentsのエスケープに委ねるため）。
-_PYGMENTS_FORMATTER = HtmlFormatter(nowrap=True)
+_PYGMENTS_FORMATTER = HtmlFormatter(nowrap=True, style="monokai")
 _PYGMENTS_CSS_CLASS = "codehilite"
 
 
