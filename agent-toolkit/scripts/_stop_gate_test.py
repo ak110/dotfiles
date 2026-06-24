@@ -89,6 +89,59 @@ def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) ->
     }
 
 
+def _assistant_sendmessage_entry(tool_use_id: str, *, sidechain: bool = False) -> dict:
+    """SendMessage呼び出しを記録するassistantエントリを生成する。
+
+    `_collect_sendmessage_tool_use_ids`がSendMessage tool_use idを収集するための
+    非sidechain assistantエントリを再現する。
+    """
+    return {
+        "type": "assistant",
+        "isSidechain": sidechain,
+        "message": {
+            "id": "msg_sm",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "SendMessage",
+                    "input": {"message": "続きを再開してください"},
+                }
+            ],
+            "stop_reason": "tool_use",
+        },
+    }
+
+
+def _user_sendmessage_bg_resume_entry(tool_use_id: str, *, sidechain: bool = False, text_format: str = "list") -> dict:
+    """SendMessage背景再開を記録するuserエントリを生成する。
+
+    `text_format="list"`のとき`content`はリスト形式のtextブロック、
+    `text_format="str"`のとき`content`は文字列形式で返す。
+    `_extract_sendmessage_bg_resume_id`が両形式を正しく処理することを検証するために用いる。
+    """
+    resume_text = "Agent aecb02dc74cf84e99 resumed from transcript in the background with your message."
+    if text_format == "str":
+        content: str | list[dict] = resume_text
+    else:
+        content = [{"type": "text", "text": resume_text}]
+    return {
+        "type": "user",
+        "isSidechain": sidechain,
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": content,
+                }
+            ],
+        },
+    }
+
+
 def _user_task_notification_entry(tool_use_id: str, *, status: str = "completed") -> dict:
     """`<task-notification>`本文を持つuserエントリを生成する（旧形式）。"""
     notification = (
@@ -438,6 +491,133 @@ class TestIsPendingAsyncWork:
             assert is_pending_async_work(str(t)) is False
         finally:
             thread.join()
+
+    def test_sendmessage_bg_resume_detected(self, tmp_path: pathlib.Path):
+        """SendMessage呼び出しと対応する背景再開tool_resultが存在する場合に`True`を返す。
+
+        誤発動防止のコア観点。SendMessage起動直後のStop hookで継続中と判定されることを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_entry("toolu_sm1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is True
+
+    def test_sendmessage_bg_resume_completed_by_notification(self, tmp_path: pathlib.Path):
+        """SendMessage背景再開後に同`tool_use_id`の完了通知を受信した場合は`False`を返す。
+
+        完了済み相殺の観点。`launched - completed`が空になり抑止しないことを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_entry("toolu_sm1"),
+            _user_task_notification_entry("toolu_sm1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
+
+    def test_sendmessage_bg_resume_str_content_detected(self, tmp_path: pathlib.Path):
+        """tool_result contentが文字列形式の背景再開エントリも`True`を返す。
+
+        content形式バリエーション（文字列形式）の観点。
+        `_extract_sendmessage_bg_resume_id`が両形式を処理することを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_entry("toolu_sm1", text_format="str"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is True
+
+    def test_sendmessage_sync_only_returns_false(self, tmp_path: pathlib.Path):
+        """マーカーを含まない同期SendMessage tool_resultのみの場合は`False`を返す。
+
+        過剰抑止防止の観点。同期応答はマーカー文字列を持たないため起動集合へ加算されない。
+        """
+        sync_result_entry = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_sm1",
+                        "content": [{"type": "text", "text": "Agent received your message."}],
+                    }
+                ],
+            },
+        }
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            sync_result_entry,
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
+
+    def test_marker_in_other_tool_result_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
+        """SendMessage呼び出しなしでマーカー文字列が他ツールtool_resultに含まれる場合は`False`を返す。
+
+        誤検知防止の観点。SendMessage tool_use id集合が空のため、マーカーが他ツール出力に
+        あっても起動集合へ加算されないことを確認する。
+        """
+        marker_in_read_result = {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_read1",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "File content: resumed from transcript in the background with your message.",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+        entries = [
+            _user_entry("hello"),
+            _assistant_entry(
+                [{"type": "tool_use", "id": "toolu_read1", "name": "Read", "input": {"file_path": "/tmp/x"}}],
+                stop_reason="tool_use",
+            ),
+            marker_in_read_result,
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
+
+    def test_sidechain_sendmessage_bg_resume_is_ignored(self, tmp_path: pathlib.Path):
+        """sidechain内のSendMessage呼び出し・背景再開tool_resultは対象外で`False`を返す。
+
+        既存仕様（sidechain除外）の観点。sidechainエントリは起動集合へ加算されないことを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1", sidechain=True),
+            _user_sendmessage_bg_resume_entry("toolu_sm1", sidechain=True),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
 
 
 class TestDebugOutput:

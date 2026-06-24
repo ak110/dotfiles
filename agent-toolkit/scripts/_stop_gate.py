@@ -3,6 +3,15 @@
 判定はtranscript JSONLの内容のみを根拠とする。
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
+
+background task起動の検出条件は次の3種を統合して扱う。
+- `toolUseResult.status == "async_launched"`（背景Agent初回起動）
+- `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
+- `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつtext本文に
+  `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+
+SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
+テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
 """
 
 import json
@@ -27,6 +36,12 @@ _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>"
 # `toolu_xxx`を抽出する正規表現。
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
 
+# SendMessage背景再開時のtool_result text先頭に現れる固有マーカー。
+# `Agent ... resumed from transcript in the background with your message.`形式で
+# 出力されるため、`resumed from transcript in the background`を一致条件とする。
+# 同期SendMessage応答は本文言を含まないため、背景再開ケースのみ加算される。
+_SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
+
 # `AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数の真値集合。小文字一致で判定する。
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
@@ -37,12 +52,15 @@ def is_pending_async_work(transcript_path: str) -> bool:
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `Monitor`、または`Bash`かつ`input.run_in_background == true`）
-    - 未完了のbackground task（Agent・Bash双方）が存在する
+    - 未完了のbackground task（Agent・Bash・SendMessage背景再開）が存在する
 
     後者はtranscript全体を走査して判定する。
-    起動集合は非sidechainの`type=="user"`エントリのうち、
-    `toolUseResult.status == "async_launched"`（背景Agent起動）または
-    `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）ものから抽出する。
+    起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
+    - `toolUseResult.status == "async_launched"`（背景Agent起動）
+    - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
+    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
+      text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
+
     完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出する。
     完了通知エントリは次の2形式が併存する。
     - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
@@ -172,7 +190,7 @@ def _describe_last_tool_use(transcript_path: str) -> str:
 
 
 def _has_pending_background_tasks(transcript_path: str) -> bool:
-    r"""transcript全体を走査して未完了のbackground task（Agent・Bash双方）が存在する場合に真を返す。
+    r"""transcript全体を走査して未完了のbackground task（Agent・Bash・SendMessage背景再開）が存在する場合に真を返す。
 
     検出スコープは非sidechainエントリに限定する（`isSidechain`が真のエントリは除外）。
     foreground起動のAgentはメインターン内で同期完了するため対象外。
@@ -180,8 +198,12 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
     起動の記録: 次のいずれかを持つuserエントリ。
     - `toolUseResult.status == "async_launched"`（背景Agent起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
+    - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
+      text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
 
-    いずれの場合も`message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
+    前2者は`message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
+    SendMessage背景再開は`toolUseResult`側に識別子を持たないため、
+    transcript全体から収集したSendMessage tool_use idの集合に`tool_use_id`が含まれるかで限定する。
 
     完了の記録: 次の2形式の`<task-notification>`要素から
     `<tool-use-id>(toolu_[\\w]+)</tool-use-id>`を抽出する。
@@ -190,7 +212,7 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
       `attachment.prompt`文字列（Claude Code 2.1系以降で観測される形式）
 
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
-    Agent・Bashとも同一機構で通知されるため共通の抽出処理を用いる。
+    Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知されるため共通の抽出処理を用いる。
 
     起動集合から完了集合を差し引いて1件以上残れば真。
     transcript読み取り失敗時は偽を返す（安全側に倒し、既存条件で抑止または通過させる）。
@@ -206,6 +228,11 @@ def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], 
     本関数は集合自体を返し、`_has_pending_background_tasks`は残差判定のみ、
     `_emit_debug`は集合サイズと残差ID列挙に使う。
     transcript読み取り失敗時は空集合のペアを返す。
+
+    走査は2段構成とする。
+    第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合を構築する。
+    第2段の既存ループ内で、`toolUseResult`条件に該当しないuserエントリに対して
+    SendMessage集合を参照したテキストマーカー判定を追加し、背景再開のtool_resultを起動集合へ加算する。
     """
     launched: set[str] = set()
     completed: set[str] = set()
@@ -213,6 +240,7 @@ def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], 
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
         return launched, completed
+    sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
     for line in lines:
         try:
             entry = json.loads(line)
@@ -232,6 +260,10 @@ def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], 
                 tool_use_id = _extract_tool_result_id(message)
                 if tool_use_id is not None:
                     launched.add(tool_use_id)
+            else:
+                resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
+                if resumed_id is not None:
+                    launched.add(resumed_id)
             completed.update(_extract_task_notification_ids(message))
         elif entry_type == "attachment":
             # Claude Code 2.1系以降、background task完了通知はattachmentエントリ経由で記録される。
@@ -247,6 +279,64 @@ def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], 
             for notification in _TASK_NOTIFICATION_RE.findall(prompt):
                 completed.update(_TOOL_USE_ID_RE.findall(notification))
     return launched, completed
+
+
+def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
+    """transcript全行から非sidechain assistantのSendMessage tool_use idを集合として返す。"""
+    ids: set[str] = set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
+                continue
+            block_id = block.get("id")
+            if isinstance(block_id, str):
+                ids.add(block_id)
+    return ids
+
+
+def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) -> str | None:
+    """SendMessage由来のtool_resultにSendMessage背景再開マーカーが含まれる場合に`tool_use_id`を返す。"""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "tool_result":
+            continue
+        tool_use_id = block.get("tool_use_id")
+        if not isinstance(tool_use_id, str) or tool_use_id not in sendmessage_ids:
+            continue
+        inner = block.get("content")
+        if isinstance(inner, str):
+            if _SENDMESSAGE_BG_RESUME_MARKER in inner:
+                return tool_use_id
+            continue
+        if not isinstance(inner, list):
+            continue
+        for text_block in inner:
+            if not isinstance(text_block, dict):
+                continue
+            if text_block.get("type") != "text":
+                continue
+            text = text_block.get("text", "")
+            if isinstance(text, str) and _SENDMESSAGE_BG_RESUME_MARKER in text:
+                return tool_use_id
+    return None
 
 
 def _extract_tool_result_id(message: dict) -> str | None:
