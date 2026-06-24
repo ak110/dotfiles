@@ -89,7 +89,7 @@ _PLAN_BODY: dict[str, str] = {
     "背景": "説明。",
     "対応方針": "### ユーザー合意済み事項\n\n- a",
     "調査結果": "- x",
-    "変更内容": "- y",
+    "変更内容": "### 対象ファイル一覧\n\n- y",
     "実行方法": "- w",
     "進捗ログ": "初版時点では実装未着手のため空欄。",
     "計画ファイル（本ファイル）のパス": "`~/.claude/plans/xxx.md`",
@@ -538,6 +538,74 @@ class TestPlanFormatCheck:
             state_dir=tmp_path,
         )
         assert result.stdout == ""
+
+    def test_valid_plan_with_h3_passes_silently(self, tmp_path: pathlib.Path):
+        """## 変更内容 配下の先頭H3が「対象ファイル一覧」のとき違反なし。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(
+            overrides={"変更内容": "### 対象ファイル一覧\n\n- z"},
+        )
+        plan = _write_plan(plans, "h3-valid.md", content)
+        result = _run(
+            {
+                "session_id": "h3-valid",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_no_h3_under_changes_section_is_warned(self, tmp_path: pathlib.Path):
+        """## 変更内容 配下にH3が存在しないとき違反として警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(
+            overrides={"変更内容": "- no h3 here"},
+        )
+        plan = _write_plan(plans, "h3-missing.md", content)
+        result = _run(
+            {
+                "session_id": "h3-miss",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        assert "the first H3 under '## 変更内容' must be '対象ファイル一覧'" in msg
+        assert "(no H3 present)" in msg
+
+    def test_wrong_first_h3_under_changes_section_is_warned(self, tmp_path: pathlib.Path):
+        """## 変更内容 配下の先頭H3が「対象ファイル一覧」以外のとき違反として警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(
+            overrides={"変更内容": "### 対象ファイル\n\n- z"},
+        )
+        plan = _write_plan(plans, "h3-wrong.md", content)
+        result = _run(
+            {
+                "session_id": "h3-wrong",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        assert "the first H3 under '## 変更内容' must be '対象ファイル一覧'" in msg
+        found_section = msg.split("found:", 1)[1]
+        assert "'対象ファイル'" in found_section
+        assert "'対象ファイル一覧'" not in found_section
 
 
 class TestPlanFormatSsot:

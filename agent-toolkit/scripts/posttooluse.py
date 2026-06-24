@@ -166,6 +166,64 @@ def _extract_h2_sections(content: str) -> list[str]:
     return headings
 
 
+def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
+    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
+
+    _extract_h2_sections と同様に以下の領域内の見出し行は除外する。
+
+    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
+    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）
+    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
+
+    指定したH2が存在しない場合は空リストを返す。
+    """
+    headings: list[str] = []
+    lines = content.splitlines()
+    i = 0
+    # フロントマター: 1 行目が `---` のときのみ検出対象とする
+    if lines and lines[0].rstrip() == "---":
+        i = 1
+        while i < len(lines):
+            if lines[i].rstrip() in ("---", "..."):
+                i += 1
+                break
+            i += 1
+
+    fence_marker: str | None = None
+    in_html_comment = False
+    in_target_h2 = False
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if in_html_comment:
+            if "-->" in line:
+                in_html_comment = False
+            continue
+        if fence_marker is not None:
+            stripped = line.strip()
+            if (
+                stripped
+                and stripped[0] == fence_marker[0]
+                and len(stripped) >= len(fence_marker)
+                and set(stripped) == {fence_marker[0]}
+            ):
+                fence_marker = None
+            continue
+        fence_match = _FENCE_PATTERN.match(line.lstrip())
+        if fence_match:
+            fence_marker = fence_match.group(1)
+            continue
+        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
+            in_html_comment = True
+            continue
+        if line.startswith("## "):
+            in_target_h2 = line[3:].strip() == h2_heading
+            continue
+        if in_target_h2 and line.startswith("### "):
+            headings.append(line[4:].strip())
+    return headings
+
+
 def _check_plan_format(file_path: str) -> list[str]:
     """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
@@ -174,6 +232,7 @@ def _check_plan_format(file_path: str) -> list[str]:
     - 必須H2の欠落
     - 必須H2の順序違反
     - 予期せぬH2
+    - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
 
     読み取り失敗時は空リストを返す。
     """
@@ -201,6 +260,15 @@ def _check_plan_format(file_path: str) -> list[str]:
             f"required H2 sections are out of order."
             f" Expected order among present: {expected_order}, but found: {present_required}."
         )
+
+    # 変更内容H2 配下の先頭H3が「対象ファイル一覧」かを検査する
+    # H2 欠落は上記 missing チェックで既に報告済みのため、存在する場合のみ検査する
+    if "変更内容" in headings:
+        h3_list = _extract_h3_under_h2(content, "変更内容")
+        first_h3 = h3_list[0] if h3_list else None
+        if first_h3 != "対象ファイル一覧":
+            actual = first_h3 if first_h3 is not None else "(no H3 present)"
+            violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
 
     return violations
 
