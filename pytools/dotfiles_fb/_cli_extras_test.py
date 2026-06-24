@@ -42,7 +42,7 @@ class TestAddSourceOption:
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "source: session-review" in content
 
     def test_source_absent_when_not_given(
@@ -58,7 +58,7 @@ class TestAddSourceOption:
             _cli.main(["add", str(tmp_path / "myrepo"), "メッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "source:" not in content
 
 
@@ -99,7 +99,7 @@ class TestCommitSubcommand:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             if cmd[:3] == ["git", "status", "--porcelain"]:
-                stdout: Any = " M feedback/x.md\n" if kwargs.get("text") else b" M feedback/x.md\n"
+                stdout: Any = " M feedback/inbox/x.md\n" if kwargs.get("text") else b" M feedback/inbox/x.md\n"
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
@@ -112,7 +112,7 @@ class TestCommitSubcommand:
         git_cmds = [c["cmd"] for c in calls]
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
         assert git_cmds[1][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[2] == ["git", "add", "feedback"]
+        assert git_cmds[2] == ["git", "add", "feedback/inbox"]
         assert git_cmds[3] == ["git", "commit", "-m", "chore: edit feedback items externally"]
         assert git_cmds[4] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
@@ -262,7 +262,7 @@ class TestFeedbackFilenameCompleter:
         """feedback配下の`.md`のみ返し、他拡張子は除外する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
-        (notes / "feedback" / "note.txt").write_text("テキスト", encoding="utf-8")
+        (notes / "feedback" / "inbox" / "note.txt").write_text("テキスト", encoding="utf-8")
         monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
 
         # pylint: disable-next=protected-access
@@ -343,7 +343,7 @@ class TestAddViaEditor:
             _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        files = list((notes / "feedback").iterdir())
+        files = list((notes / "feedback" / "inbox").iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "エディター経由の本文" in content
@@ -370,7 +370,7 @@ class TestAddViaEditor:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "本文が空" in captured.err
-        assert not list((notes / "feedback").iterdir())
+        assert not list((notes / "feedback" / "inbox").iterdir())
 
     def test_editor_missing_env_exits(
         self,
@@ -407,4 +407,4 @@ class TestAddViaEditor:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "終了コード2" in captured.err
-        assert not list((notes / "feedback").iterdir())
+        assert not list((notes / "feedback" / "inbox").iterdir())

@@ -3,9 +3,9 @@
 サブコマンド構成。
 - add: inboxへフィードバックを投入する
 - list: inboxの全件をtarget_repoごとにグループ化して出力する
-- adopt: 採用としてinboxから削除しコミット・push
-- reject: 不採用として単純削除しコミット・push
-- rm: 単純削除しコミット・push
+- adopt: 採用としてinboxからadopted/へ移動しコミット・push
+- reject: 不採用としてinboxからrejected/へ移動しコミット・push
+- rm: inboxから単純削除しコミット・push
 - edit: $EDITORで対象ファイルを編集しコミット・push
 - commit: 外部編集後のinbox配下未コミット変更をコミット・push
 - enable: feedback-inboxフラグファイルを作成する
@@ -18,6 +18,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -120,13 +121,20 @@ def _build_parser() -> argparse.ArgumentParser:
 def _feedback_filename_completer(prefix: str, **_: object) -> list[str]:
     """argcomplete用のフィードバックファイル名補完候補生成。
 
-    `~/private-notes/feedback/`配下の`*.md`ファイル名をprefix一致で返す。
+    `~/private-notes/feedback/inbox/`配下の`*.md`ファイル名をprefix一致で返す。
     ディレクトリ不在時は空リストを返す。
     """
-    feedback_dir = pathlib.Path.home() / "private-notes" / "feedback"
+    feedback_dir = pathlib.Path.home() / "private-notes" / "feedback" / "inbox"
     if not feedback_dir.exists():
         return []
     return sorted(p.name for p in feedback_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))
+
+
+def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
+    """feedback/配下の指定サブディレクトリパスを返す。必要時に作成する。"""
+    path = private_notes / "feedback" / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _flag_path(home: pathlib.Path) -> pathlib.Path:
@@ -268,7 +276,6 @@ def _cmd_add(
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
     target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
-    feedback_dir = private_notes / "feedback"
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
@@ -278,26 +285,26 @@ def _cmd_add(
     _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     created_iso = now.isoformat()
-    counter = _max_existing_seq(feedback_dir, timestamp) + 1
-    feedback_dir.mkdir(parents=True, exist_ok=True)
+    inbox_dir = _subdir(private_notes, "inbox")
+    counter = _max_existing_seq(inbox_dir, timestamp) + 1
     source_line = f"source: {args.source}\n" if args.source else ""
     generated: list[str] = []
     for message in messages:
         filename = f"{timestamp}-{counter:03d}.md"
         content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
-        (feedback_dir / filename).write_text(content, encoding="utf-8")
+        (inbox_dir / filename).write_text(content, encoding="utf-8")
         generated.append(filename)
         counter += 1
     count = len(generated)
     _commit_and_push(
         private_notes,
         f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
-        [str(feedback_dir.relative_to(private_notes))],
+        ["feedback"],
     )
     print(f"{count}件投入:")
     for filename in generated:
-        print(f"  {_shorten_home(feedback_dir / filename, home)}")
-    print(f"inbox: 計{_count_feedback(feedback_dir)}件")
+        print(f"  {_shorten_home(inbox_dir / filename, home)}")
+    print(f"inbox: 計{_count_feedback(inbox_dir)}件")
 
 
 def _parse_target_repo(text: str) -> str:
@@ -320,15 +327,15 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--target-repo`指定時は、~展開と絶対パス正規化を施した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     """
-    feedback_dir = private_notes / "feedback"
+    inbox_dir = private_notes / "feedback" / "inbox"
     _pull(private_notes)
-    if not feedback_dir.exists():
+    if not inbox_dir.exists():
         return
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = str(pathlib.Path(args.target_repo).expanduser().resolve())
     entries: dict[str, list[tuple[str, str]]] = {}
-    for path in sorted(feedback_dir.iterdir()):
+    for path in sorted(inbox_dir.iterdir()):
         if path.suffix != ".md":
             continue
         text = path.read_text(encoding="utf-8")
@@ -362,55 +369,54 @@ def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) 
 
 
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """adoptサブコマンド: 採用としてinboxから削除しcommit・push。"""
-    feedback_dir = private_notes / "feedback"
-    _validate_filenames_only(args.filenames, feedback_dir)
+    """adoptサブコマンド: 採用としてinboxからadopted/へ移動しcommit・push。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
-    paths = _resolve_feedback_targets(args.filenames, feedback_dir)
+    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+    adopted_dir = _subdir(private_notes, "adopted")
     for p in paths:
-        p.unlink()
+        shutil.move(str(p), str(adopted_dir / p.name))
     count = len(paths)
-    rel = [str(p.relative_to(private_notes)) for p in paths]
     _commit_and_push(
         private_notes,
         f"chore: process {count} feedback {'item' if count == 1 else 'items'} (adopted)",
-        rel,
+        ["feedback"],
     )
     print(f"{count}件採用処理: {', '.join(p.name for p in paths)}")
 
 
 def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """rejectサブコマンド: 不採用として単純削除しcommit・push。"""
-    feedback_dir = private_notes / "feedback"
-    _validate_filenames_only(args.filenames, feedback_dir)
+    """rejectサブコマンド: 不採用としてinboxからrejected/へ移動しcommit・push。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
-    paths = _resolve_feedback_targets(args.filenames, feedback_dir)
+    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+    rejected_dir = _subdir(private_notes, "rejected")
     for p in paths:
-        p.unlink()
+        shutil.move(str(p), str(rejected_dir / p.name))
     count = len(paths)
-    rel = [str(p.relative_to(private_notes)) for p in paths]
     _commit_and_push(
         private_notes,
         f"chore: process {count} feedback {'item' if count == 1 else 'items'} (rejected)",
-        rel,
+        ["feedback"],
     )
     print(f"{count}件不採用処理: {', '.join(p.name for p in paths)}")
 
 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: inboxから単純削除しcommit・push。"""
-    feedback_dir = private_notes / "feedback"
-    _validate_filenames_only(args.filenames, feedback_dir)
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
-    paths = _resolve_feedback_targets(args.filenames, feedback_dir)
+    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     for p in paths:
         p.unlink()
     count = len(paths)
-    rel = [str(p.relative_to(private_notes)) for p in paths]
     _commit_and_push(
         private_notes,
         f"chore: remove {count} feedback {'item' if count == 1 else 'items'}",
-        rel,
+        ["feedback"],
     )
     print(f"{count}件削除: {', '.join(p.name for p in paths)}")
 
@@ -421,8 +427,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not editor:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
         sys.exit(1)
-    feedback_dir = private_notes / "feedback"
-    path = _validate_filename(args.filename, feedback_dir)
+    inbox_dir = private_notes / "feedback" / "inbox"
+    path = _validate_filename(args.filename, inbox_dir)
     _pull(private_notes)
     if not path.exists():
         print(f"inboxに存在しません: {path.name}", file=sys.stderr)
@@ -444,9 +450,9 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
     inbox配下に未コミット変更が無い場合は早期return。
     """
     _pull(private_notes)
-    feedback_rel = "feedback"
+    inbox_rel = "feedback/inbox"
     status = subprocess.run(
-        ["git", "status", "--porcelain", "--", feedback_rel],
+        ["git", "status", "--porcelain", "--", inbox_rel],
         cwd=private_notes,
         check=True,
         capture_output=True,
@@ -455,7 +461,7 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
     if not status.stdout.strip():
         print("差分なし。")
         return
-    _commit_and_push(private_notes, "chore: edit feedback items externally", [feedback_rel])
+    _commit_and_push(private_notes, "chore: edit feedback items externally", [inbox_rel])
     print("外部編集分をコミット・pushしました。")
 
 
@@ -522,11 +528,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `--target-repo`未指定時は`git rev-parse --show-toplevel`の値を既定とし、
     件数判定と内部`claude /process-feedbacks`起動引数で同フィルタを使う。
     """
-    feedback_dir = private_notes / "feedback"
+    inbox_dir = private_notes / "feedback" / "inbox"
     target_repo = _resolve_target_repo(args.target_repo)
     iteration = 0
     while True:
-        remaining = _count_feedback_for_repo(feedback_dir, target_repo)
+        remaining = _count_feedback_for_repo(inbox_dir, target_repo)
         if remaining == 0:
             if iteration == 0:
                 print(f"対象リポジトリのinboxは空です（target_repo={target_repo}）。処理対象なし。")

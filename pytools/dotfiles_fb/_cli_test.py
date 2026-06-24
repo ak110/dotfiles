@@ -46,7 +46,7 @@ def _setup_flag_and_notes(tmp_path: pathlib.Path) -> pathlib.Path:
     flag.touch()
     notes = tmp_path / "private-notes"
     notes.mkdir()
-    (notes / "feedback").mkdir(parents=True)
+    (notes / "feedback" / "inbox").mkdir(parents=True)
     return notes
 
 
@@ -56,10 +56,10 @@ def _write_feedback_file(
     target_repo: str = "/repo/foo",
     body: str = "テスト本文",
 ) -> pathlib.Path:
-    """feedback配下に1ファイルを書き込み、絶対パスを返す。"""
-    feedback_dir = notes / "feedback"
-    feedback_dir.mkdir(parents=True, exist_ok=True)
-    path = feedback_dir / filename
+    """feedback/inbox配下に1ファイルを書き込み、絶対パスを返す。"""
+    inbox_dir = notes / "feedback" / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    path = inbox_dir / filename
     path.write_text(
         f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
@@ -131,8 +131,8 @@ class TestAddSingleMessage:
 
         assert exc_info.value.code == 0
 
-        feedback_dir = notes / "feedback"
-        files = sorted(feedback_dir.iterdir())
+        inbox_dir = notes / "feedback" / "inbox"
+        files = sorted(inbox_dir.iterdir())
         assert len(files) == 1
 
         content = files[0].read_text(encoding="utf-8")
@@ -152,7 +152,7 @@ class TestAddSingleMessage:
 
         captured = capsys.readouterr()
         assert "1件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
 
 
@@ -178,8 +178,8 @@ class TestAddMultipleMessages:
 
         assert exc_info.value.code == 0
 
-        feedback_dir = notes / "feedback"
-        files = sorted(feedback_dir.iterdir())
+        inbox_dir = notes / "feedback" / "inbox"
+        files = sorted(inbox_dir.iterdir())
         assert len(files) == 2
         assert files[0].name == f"{_FIXED_TIMESTAMP}-001.md"
         assert files[1].name == f"{_FIXED_TIMESTAMP}-002.md"
@@ -189,8 +189,8 @@ class TestAddMultipleMessages:
 
         captured = capsys.readouterr()
         assert "2件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/{files[0].name}\n" in captured.out
-        assert f"  ~/private-notes/feedback/{files[1].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
 
 
@@ -212,7 +212,7 @@ class TestAddRepoPathExpansion:
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback"
+        inbox = notes / "feedback" / "inbox"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -286,7 +286,7 @@ class TestListMalformedFrontmatter:
         """異常frontmatter形式は`(unknown)`グループとして出力される。"""
         del label  # parametrize idのみ
         notes = _setup_flag_and_notes(tmp_path)
-        (notes / "feedback" / "malformed.md").write_text(content, encoding="utf-8")
+        (notes / "feedback" / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
         monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -386,14 +386,14 @@ class TestListTargetRepoFilter:
 
 
 class TestAdoptSingle:
-    """adoptサブコマンド: 1件指定でinbox削除とコミットを行う。"""
+    """adoptサブコマンド: 1件指定でinboxからadopted/へ移動しコミットを行う。"""
 
     def test_single_file_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のadopt実行でinboxから削除されコミットメッセージが正しいこと。"""
+        """1件のadopt実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -403,7 +403,8 @@ class TestAdoptSingle:
             _cli.main(["adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
 
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (adopted)" in commit_cmd
@@ -417,7 +418,7 @@ class TestAdoptMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """3件のadoptで全件削除と単一コミットが行われること。"""
+        """3件のadoptで全件がadopted/へ移動し単一コミットが行われること。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
@@ -429,14 +430,36 @@ class TestAdoptMultiple:
             _cli.main(["adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "feedback"
+        inbox = notes / "feedback" / "inbox"
         assert not (inbox / "fb-001.md").exists()
         assert not (inbox / "fb-002.md").exists()
         assert not (inbox / "fb-003.md").exists()
+        adopted = notes / "feedback" / "adopted"
+        assert (adopted / "fb-001.md").exists()
+        assert (adopted / "fb-002.md").exists()
+        assert (adopted / "fb-003.md").exists()
 
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: process 3 feedback items (adopted)" in commit_cmds[0]
+
+
+class TestAdoptZeroArgs:
+    """adoptサブコマンド: ファイル名引数0件でexit 2となる（nargs="+"のargparse制約）。"""
+
+    def test_no_args_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """ファイル名引数なしでargparseがexit 2を返すこと。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["adopt"], home=tmp_path)
+
+        assert exc_info.value.code == 2
 
 
 class TestAdoptMissing:
@@ -461,14 +484,14 @@ class TestAdoptMissing:
 
 
 class TestRejectDeletes:
-    """rejectサブコマンド: ファイルをinboxから削除する。"""
+    """rejectサブコマンド: ファイルをinboxからrejected/へ移動する。"""
 
     def test_single_file_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rejectでファイルがinboxから削除されコミット件名が正しいこと。"""
+        """rejectでファイルがinboxから移動されrejected/に置かれコミット件名が正しいこと。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -478,8 +501,8 @@ class TestRejectDeletes:
             _cli.main(["reject", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "fb-001.md").exists()
-        assert not (notes / "feedback" / "rejected").exists()
+        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (rejected)" in commit_cmd
 
@@ -492,7 +515,7 @@ class TestRejectMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """2件のrejectで両方削除と単一コミットが行われること。"""
+        """2件のrejectで両方がrejected/へ移動し単一コミットが行われること。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
@@ -503,9 +526,33 @@ class TestRejectMultiple:
             _cli.main(["reject", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
+        inbox = notes / "feedback" / "inbox"
+        assert not (inbox / "fb-001.md").exists()
+        assert not (inbox / "fb-002.md").exists()
+        rejected = notes / "feedback" / "rejected"
+        assert (rejected / "fb-001.md").exists()
+        assert (rejected / "fb-002.md").exists()
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: process 2 feedback items (rejected)" in commit_cmds[0]
+
+
+class TestRejectZeroArgs:
+    """rejectサブコマンド: ファイル名引数0件でexit 2となる（nargs="+"のargparse制約）。"""
+
+    def test_no_args_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """ファイル名引数なしでargparseがexit 2を返すこと。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["reject"], home=tmp_path)
+
+        assert exc_info.value.code == 2
 
 
 class TestRmSingle:
@@ -526,7 +573,7 @@ class TestRmSingle:
             _cli.main(["rm", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 feedback item" in commit_cmd
 

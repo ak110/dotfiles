@@ -1,8 +1,8 @@
 ---
 name: process-feedbacks
 description: >
-  ~/private-notes/feedback/配下のフィードバックを順に処理し、
-  採用は対象リポジトリへ反映してファイルを削除、不採用も同様に削除する。
+  ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
+  採用は対象リポジトリへ反映してadopted/サブディレクトリへ移動、不採用はrejected/サブディレクトリへ移動する。
 # 連携: 対象リポジトリのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 # `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---
@@ -39,6 +39,7 @@ description: >
      `## <filename>`形式の見出しを各本文の前に置く
    - frontmatterは保持することで`source: session-review`などの投入元情報をapply-feedback側で参照できるようにする
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装・コミット・後始末（adopt/reject）まで担う
+   - 後始末（adopt/reject）はファイルを物理削除せず`adopted/`または`rejected/`サブディレクトリへ移動して履歴を保持する
    - 全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
