@@ -259,7 +259,7 @@ class TestFeedbackFilenameCompleter:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """feedback配下の`.md`のみ返し、他拡張子は除外する。"""
+        """inbox配下の`.md`のみ返し、他拡張子は除外する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         (notes / "feedback" / "inbox" / "note.txt").write_text("テキスト", encoding="utf-8")

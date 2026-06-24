@@ -58,12 +58,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="対象リポジトリのパスでフィルタする（~展開可能）。",
     )
 
-    adopt = sub.add_parser("adopt", help="採用としてinboxから削除しコミット・push")
+    adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。"
     ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
-    reject = sub.add_parser("reject", help="不採用として単純削除しコミット・push")
+    reject = sub.add_parser("reject", help="不採用としてinboxからrejected/へ移動しコミット・push")
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。"
     ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
@@ -207,7 +207,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
 
 
 def _count_feedback(feedback_dir: pathlib.Path) -> int:
-    """inbox配下の`*.md`ファイル件数を返す。"""
+    """指定ディレクトリ配下の`*.md`ファイル件数を返す。"""
     if not feedback_dir.exists():
         return 0
     return sum(1 for p in feedback_dir.iterdir() if p.suffix == ".md")
@@ -376,7 +376,7 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     adopted_dir = _subdir(private_notes, "adopted")
     for p in paths:
-        shutil.move(str(p), str(adopted_dir / p.name))
+        shutil.move(p, adopted_dir / p.name)
     count = len(paths)
     _commit_and_push(
         private_notes,
@@ -394,7 +394,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     rejected_dir = _subdir(private_notes, "rejected")
     for p in paths:
-        shutil.move(str(p), str(rejected_dir / p.name))
+        shutil.move(p, rejected_dir / p.name)
     count = len(paths)
     _commit_and_push(
         private_notes,
