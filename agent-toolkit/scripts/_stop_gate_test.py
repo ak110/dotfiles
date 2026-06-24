@@ -7,6 +7,7 @@ import json
 import pathlib
 import threading
 import time
+from typing import Literal
 
 import pytest
 from _stop_gate import is_pending_async_work
@@ -114,7 +115,9 @@ def _assistant_sendmessage_entry(tool_use_id: str, *, sidechain: bool = False) -
     }
 
 
-def _user_sendmessage_bg_resume_entry(tool_use_id: str, *, sidechain: bool = False, text_format: str = "list") -> dict:
+def _user_sendmessage_bg_resume_entry(
+    tool_use_id: str, *, sidechain: bool = False, text_format: Literal["list", "str"] = "list"
+) -> dict:
     """SendMessage背景再開を記録するuserエントリを生成する。
 
     `text_format="list"`のとき`content`はリスト形式のtextブロック、
@@ -224,6 +227,16 @@ class TestIsPendingAsyncWork:
     tool_use 種別 × {Agent / ScheduleWakeup / Monitor / Bash背景 / Bash前景 / その他 / なし}
     と未完了background task（Agent・Bash双方）× {なし / 起動のみ / 起動と通知ペア} の
     同値分割で組み合わせを検証する。
+
+    SendMessage背景再開テスト群は以下の観点を網羅する。
+
+    - SendMessage呼び出しと背景再開tool_resultが存在する場合に`True`を返す（誤発動防止のコア）
+    - 同`tool_use_id`の旧形式完了通知（user textブロック内`<task-notification>`）で`False`へ相殺される
+    - 同`tool_use_id`の新形式完了通知（`type=="attachment"`・`commandMode=="task-notification"`）でも`False`へ相殺される
+    - tool_result contentが文字列形式でも`True`を返す（content形式バリエーション）
+    - マーカーを含まない同期SendMessage tool_resultのみの場合は`False`を返す（過剰抑止防止）
+    - SendMessage呼び出しなしでマーカー文字列が他ツール出力に含まれる場合は`False`を返す（誤検知防止）
+    - sidechain内のSendMessage呼び出し・背景再開tool_resultは対象外で`False`を返す
     """
 
     @pytest.mark.parametrize(
@@ -517,6 +530,23 @@ class TestIsPendingAsyncWork:
             _assistant_sendmessage_entry("toolu_sm1"),
             _user_sendmessage_bg_resume_entry("toolu_sm1"),
             _user_task_notification_entry("toolu_sm1"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t)) is False
+
+    def test_sendmessage_bg_resume_completed_by_attachment_notification(self, tmp_path: pathlib.Path):
+        """SendMessage背景再開後に同`tool_use_id`の新形式完了通知（attachment形式）を受信した場合は`False`を返す。
+
+        完了済み相殺（attachment形式）の観点。`type=="attachment"`・`commandMode=="task-notification"`の
+        完了通知でも`launched - completed`から相殺されることを確認する。
+        """
+        entries = [
+            _user_entry("hello"),
+            _assistant_sendmessage_entry("toolu_sm1"),
+            _user_sendmessage_bg_resume_entry("toolu_sm1"),
+            _attachment_task_notification_entry("toolu_sm1"),
             _user_entry("続き"),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
