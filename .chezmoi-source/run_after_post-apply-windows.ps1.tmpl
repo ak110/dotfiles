@@ -34,38 +34,53 @@ function Test-ExpectedShims {
 $needsReinstall = ($currentHash -ne $cachedHash) -or (-not (Test-ExpectedShims))
 
 $viewerBin = Join-Path $env:USERPROFILE '.local\bin\claude-plans-viewer.exe'
-# 再インストール時に claude-plans-viewer.exe や venv 内ファイルがロックされたまま
-# tool venv 再構築が部分失敗する事象が確認されているため、viewer が起動中なら
-# 先に停止させ、再インストール完了後に再度バックグラウンド起動する。
-$viewerWasRunning = $false
-if ($needsReinstall) {
-    $viewerProcs = Get-Process -Name claude-plans-viewer -ErrorAction SilentlyContinue
-    if ($viewerProcs) {
-        $viewerWasRunning = $true
-        Write-Host '  [pytools] claude-plans-viewer を一時停止'
-        Stop-Process -InputObject $viewerProcs -Force
-    }
+# uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
+# `uv tool dir`の出力を一次情報源とし、取得失敗時はWindows既定配置へフォールバックする。
+$uvToolBaseDir = $null
+try {
+    $uvToolBaseDir = (& uv tool dir 2>$null | Select-Object -First 1)
+    # $ErrorActionPreference = 'Stop'はネイティブexeの非ゼロ終了を例外化しないため、
+    # uv呼び出し直後で$LASTEXITCODEを明示判定し非ゼロなら$uvToolBaseDirを破棄する。
+    if ($LASTEXITCODE -ne 0) { $uvToolBaseDir = $null }
+    elseif ($uvToolBaseDir) { $uvToolBaseDir = $uvToolBaseDir.Trim() }
+} catch {
+    $uvToolBaseDir = $null
 }
+if (-not $uvToolBaseDir) {
+    $uvToolBaseDir = Join-Path $env:APPDATA 'uv\tools'
+}
+$uvToolDir = Join-Path $uvToolBaseDir 'pytools'
+$mediaRemotePythonw = Join-Path $uvToolDir 'Scripts\pythonw.exe'
 
-# dotfiles-media-remote は pythonw.exe -m pytools.media_remote serve として起動する。
-# プロセス名は pythonw のため Stop-Process -Name で識別できない。
-# serve 起動時に %LOCALAPPDATA%\dotfiles\media-remote\pid へ記録された PID を読み取り、
-# 当該プロセスが pythonw.exe かつコマンドラインに pytools.media_remote を含むことを
-# CIM で確認したうえで停止する。
-$mediaRemotePythonw = Join-Path $env:USERPROFILE '.local\share\uv\tools\pytools\Scripts\pythonw.exe'
-$mediaRemotePidFile = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\pid'
+# 再インストール時にuv tool venv配下のexeが起動中だと、uvはディレクトリ削除に
+# アクセス拒否で失敗する。Win32_Process.ExecutablePathで
+# (1) uv tool venv配下を起動元とするプロセス、
+# (2) claude-plans-viewerシム（再起動時に.local\binから起動した親プロセス）を
+# 抽出し一括停止する。停止経路でclaude-plans-viewer・dotfiles-media-remoteの
+# 稼働状態を観測してフラグ変数を設定し、後続の再起動分岐から参照する。
+$viewerWasRunning = $false
 $mediaRemoteWasRunning = $false
-if ($needsReinstall -and (Test-Path $mediaRemotePidFile)) {
-    try {
-        $mediaRemotePid = [int]((Get-Content $mediaRemotePidFile -Encoding UTF8 -Raw).Trim())
-        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$mediaRemotePid" -ErrorAction SilentlyContinue
-        if ($proc -and $proc.Name -eq 'pythonw.exe' -and $proc.CommandLine -like '*pytools.media_remote*') {
+if ($needsReinstall) {
+    $prefix = $uvToolDir.TrimEnd('\') + '\'
+    $lockingProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        if (-not $_.ExecutablePath) { return $false }
+        if ($_.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        if ($_.ExecutablePath.Equals($viewerBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        return $false
+    })
+    foreach ($p in $lockingProcs) {
+        if ($p.CommandLine -like '*pytools.media_remote*') {
             $mediaRemoteWasRunning = $true
-            Write-Host '  [pytools] dotfiles-media-remote を一時停止'
-            Stop-Process -Id $mediaRemotePid -Force -ErrorAction SilentlyContinue
         }
-    } catch {
-        Write-Host "  [pytools] dotfiles-media-remote 停止処理をスキップ: $_"
+        if ($p.Name -eq 'claude-plans-viewer.exe' -or $p.CommandLine -like '*claude_plans_viewer*') {
+            $viewerWasRunning = $true
+        }
+        Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    if ($lockingProcs.Count -gt 0) {
+        # プロセス停止からファイルハンドル解放までの遅延を吸収するため短時間待機する。
+        Start-Sleep -Milliseconds 500
     }
 }
 
