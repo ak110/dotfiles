@@ -40,10 +40,11 @@ user-invocable: false
 
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
 - ユーザー確認が必要な場面は本エージェントの前提に従いTBD.mdへ質問ブロックを追記し暫定判断で続行する
+- 計画完遂時にTBD.mdの当該テーマ配下の質問ブロックを点検し、最終実装が暫定採用と一致した質問ブロックは削除する
 - 計画ファイルの`## 進捗ログ`へ`agent-toolkit:plan-impl`規定どおり逐次追記する
 - `completed`返却は、担当計画ファイルの`## 変更内容`の全項目の実装完遂を必要条件とする
   - 一部未完了で計画ファイル単位のコミットを作成する経路は禁止する
-  - 未完了項目がある場合は`needs_escalation`を返し、呼び出し元`agent-toolkit:spec-driven-impl`の検収へ判断を委ねる
+  - 未完了項目がある場合は`needs_escalation`を返し、呼び出し元`agent-toolkit:spec-driven-impl`が検収する
 - gitコミットは行う（呼び出し元`agent-toolkit:spec-driven-impl`の運用上1計画ファイル1コミット）
 - pushは行わない
 

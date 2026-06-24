@@ -68,6 +68,7 @@ description: >
 利用者に届く振る舞いが変わるものは必ずbumpする。
 
 - bumpが必要: フックスクリプト・entry pointロジック変更／checkの追加・削除／`hooks/hooks.json`の`matcher`・`command`変更／依存・実行環境要件の変更／allowlistなどブロック条件の変更
+- 同様にbumpが必要: スキル本体・ルールファイルの規範文面追加・改訂（description文言・規定・トリガーキーワードの追加等）
 - bumpが不要: コメント・docstringのみ／`*_test.py`のみ／入出力が不変なリファクタリング／誤字・スタイル調整
 
 判断に迷う場合はbumpする（pre-1.0であれば頻繁にMINORを更新しても問題ない）。種別の使い分けは次の通り。
