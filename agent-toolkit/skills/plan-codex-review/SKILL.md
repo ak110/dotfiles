@@ -45,6 +45,8 @@ H1見出し以降を埋め込む。
 
 ### MCPツール版
 
+`ToolSearch`でスキーマを取得した直後の最初のアクションとして該当MCPツールを呼び出す。プロンプト生成・パラメーター整形のための自己点検をツール呼び出し前に続けない。これは初回・継続を問わず、`mcp__codex__codex-reply`呼び出しも対象に含める。
+
 - 初回: `mcp__codex__codex`を以下の引数で呼び出す
   - `cwd`: `"{project_directory}"`
   - `sandbox`: `"danger-full-access"`
