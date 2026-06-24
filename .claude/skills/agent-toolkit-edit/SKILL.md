@@ -77,7 +77,9 @@ description: >
 `agent-toolkit/scripts/pretooluse.py`の検知フックが`warn`を返す。bump不要に該当する場合は警告を無視して進める。
 
 - PATCH（`+0.0.1`）: 軽微な修正（メッセージ変更、スタイル調整、バグ修正、検出漏れの修正など）
+  - スキル・ルールファイルへの数行〜1節規模の規範文追記・条件補強・例示追加もPATCHに該当する
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・descriptionが変わる規模など、規模の大きい変更に限定
+  - description文言変更・トリガーキーワード追加・節新設・複数節に跨る規範改訂はMINORに該当する
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がない限り行わない
 
 ### 未プッシュ範囲での統合
@@ -188,13 +190,7 @@ agent-toolkitプラグインを自動インストール・更新する。marketp
 
 ### ローカル編集の反映ワークフロー
 
-`agent-toolkit/`配下を編集したときの反映手順（chezmoi管理下）:
-
-1. `agent-toolkit/`配下のファイルを編集する
-2. `chezmoi apply`（または`update-dotfiles`）を実行する
-3. Claude Codeを再起動するか`/reload-plugins`を実行する
-
-version bumpは不要。編集が即時反映される。
+`agent-toolkit/`配下の編集は`chezmoi apply`（または`update-dotfiles`）でデプロイし、Claude Code再起動か`/reload-plugins`で反映する。version bumpは不要。
 
 ## コミットメッセージ方針と.gitmessage
 
