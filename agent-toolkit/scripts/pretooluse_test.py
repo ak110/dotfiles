@@ -1580,6 +1580,17 @@ class TestAskUserQuestionScopeEscalationCheck:
             ("範囲を決め", "priority-consult"),
             ("対象件数が多い", "scope-volume"),
             ("本計画外", "pattern-conformance"),
+            ("工程省略", "process-omission"),
+            ("工程を省略", "process-omission"),
+            ("割愛する", "process-omission"),
+            ("割愛します", "process-omission"),
+            ("規範違反として扱う", "process-omission"),
+            ("規範違反として認識", "process-omission"),
+            ("規範違反を扱う", "process-omission"),
+            ("規範違反を認識", "process-omission"),
+            ("規範違反と認識した上で", "process-omission"),
+            ("本計画の大規模スコープを踏まえ省略する", "process-omission"),
+            ("本計画範囲外として省略します", "process-omission"),
         ],
     )
     def test_question_text_blocks(self, text: str, category: str):

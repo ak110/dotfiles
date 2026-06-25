@@ -77,8 +77,9 @@ _REPLACEMENT_CHAR = "\ufffd"
 _HOOK_ID = "agent-toolkit/pretooluse"
 
 # AskUserQuestion向け縮退誘発フレーズ検出パターン。
-# agent.md「セッション分割・別計画化は禁止する」節で禁止される、
-# 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診を機械検出する。
+# agent.md「セッション分割・別計画化は禁止する」節および「縮退表明は発行しない」項目で禁止される、
+# 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
+# および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("workload", re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)")),
     ("single-session", re.compile(r"1?セッション(内|で)(の|に)?(完遂|完了|終わら|収まら|終わり)")),
@@ -89,6 +90,12 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
     ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
     ("pattern-conformance", re.compile(r"(既存パターン踏襲|本計画外|本計画スコープ外|広範改修要|現状維持)")),
+    (
+        "process-omission",
+        re.compile(
+            r"(規範違反(として|を)(扱う|認識)|規範違反と認識した上で|工程省略|工程を省略|割愛(する|します)|本計画[^、。\n]{0,20}省略(する|します))"
+        ),
+    ),
 )
 
 

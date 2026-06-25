@@ -1,6 +1,6 @@
 # 縮退誘発フレーズ集（隔離リファレンス）
 
-`agent-toolkit/rules/agent.md`「セッション分割・別計画化は禁止する」節と、
+`agent-toolkit/rules/agent.md`「セッション分割・別計画化は禁止する」節および「縮退表明は発行しない」項目、ならびに
 `agent-toolkit/scripts/pretooluse.py`の`AskUserQuestion`向け縮退誘発検出フックが対象とする禁止フレーズの典拠。
 
 `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、
@@ -27,3 +27,4 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | `priority-consult` | 優先順位の相談・委譲 | 「優先順位を相談したい」「優先順位を決めてください」 |
 | `scope-volume` | 対象件数・範囲の多さを根拠とした打診、またはAskUserQuestionの選択肢提示により対象範囲の判断をユーザーへ委譲する操作 | 「対象件数が多いため進め方を相談したい」「対象範囲を決めてほしい」 |
 | `pattern-conformance` | 既存パターン踏襲・本計画外を根拠とした規範違反・不良の対処見送り | 「既存パターン踏襲、本計画外」「現状維持のため見送り」「広範改修要のため対応外」 |
+| `process-omission` | 規範違反を明示認識せず工程を省略・割愛する宣言 | 「本計画の大規模スコープを踏まえ省略する」「工程を省略する」「割愛する」 |
