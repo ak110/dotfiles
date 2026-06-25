@@ -1793,7 +1793,7 @@ class TestScopeEscalationInDocEditCheck:
     def test_old_string_not_inspected_on_target(self):
         """対象ファイルでも`old_string`内のフレーズは検出しない（既存違反の修正を妨げない）。
 
-        `new_string`にはクリーンな置換後文面を入れ、フレーズが`old_string`にのみあることで
+        `new_string`にはクリーンな置換後文面を配置し、フレーズが`old_string`にのみあることで
         通過判定が`old_string`不検査に由来することを確認する。
         """
         text = _SCOPE_ESCALATION_INPUTS[0][0]

@@ -126,7 +126,7 @@ description: >
   - メインエージェントから直接読み込ませない（確認はExploreサブエージェント・修正は`plan-implementer`経由）
   - サブエージェントは悪い例文面を成果物・指摘・出力へ転記しない
   - 機械チェックスクリプトの検査対象から除外する
-  - 隔離ファイルを新規追加する場合は機械チェック除外を同時に整備する
+  - 隔離ファイルを新規追加する場合は既存例（`scope-escalation-phrases.md`等）と同じく対応する配置先スキルの`references/`配下へ配置し、機械チェック除外を同時に整備する
     - `check_colloquial.py`の`_EXCLUDED_FILES`と対応する`check_colloquial_test.py`の2件テストパターン
     - `pyproject.toml`の`[tool.pyfltr] extend-exclude`
 
