@@ -4,14 +4,14 @@
 
 ## コンセプト
 
-1. 標準動作のカスタマイズ — 判断基準が曖昧な場面での事前相談の徹底、lint抑制時のユーザー確認の必須化、
+1. 標準動作のカスタマイズ: 判断基準が曖昧な場面での事前相談の徹底、lint抑制時のユーザー確認の必須化、
    検証からコミットまでの流れの自動化など、Claude Codeの具体的な動作を変更する。
    auto mode下でも確認・計画工程を省略しない方針を維持する
-2. 品質水準の維持 — コードスタイルや設計が乱れたプロジェクトでは
+2. 品質水準の維持: コードスタイルや設計が乱れたプロジェクトでは
    コーディングエージェントも既存コードの影響を受けて同水準のコードを生成する（割れ窓理論）。
    各言語のモダンなイディオム・禁止パターン・セキュリティ注意点・テスト方針を明示し、
    プロジェクトの初期状態によらず一定の品質水準を維持する
-3. 知識の補完 — LLMの学習データに含まれない情報を補う。
+3. 知識の補完: LLMの学習データに含まれない情報を補う。
    Claude Code関連の仕様は改訂が頻繁なため、
    `agent-toolkit:agent-standards`スキル配下の`references/agent-skills.md`・`references/claude-hooks.md`で
    現行仕様を参照できるようにする。
@@ -24,9 +24,9 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 
 agent-toolkitはルールファイルとプラグインの2つのコンポーネントで構成される。
 
-- ルールファイル — `~/.claude/rules/agent-toolkit/`に配置されるルールファイル
+- ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
-- プラグイン — Claude Codeのuser scopeにインストールするプラグイン
+- プラグイン: Claude Codeのuser scopeにインストールするプラグイン。
   フック・スキルを提供し、場面に応じたオンデマンドの機能拡張を担う
 
 両者は相互依存しており、基本的に同時に導入する前提。
@@ -160,23 +160,23 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 
 該当作業に着手したとき自動的にロードされる。手動で呼び出すこともできる。
 
-- `/coding-standards` — コードの新規作成・修正・レビュー時の品質基準とテスト方針
-- `/writing-standards` — Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `/agent-standards` — コーディングエージェント向け文書固有の品質基準
-- `/commit` — git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
-- `/plan-mode` — plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
-- `/plan-impl` — `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
-- `/careful-review` — レビューワークフロー
-- `/pyfltr-usage` — pyfltrの使い方・出力解釈のリファレンス
-- `/pytilpack-usage` — pytilpackのモジュール構成とAPI参照のリファレンス
-- `/gitlab-ci-usage` — `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/export-for-resume` — 議論が発散したときの現状スナップショットを出力する
-- `/shell-exec` — 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
-- `/plan-codex-review` — 計画ファイルのcodexレビュー実行をhaikuのサブエージェントへ委譲する
+- `/coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
+- `/writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
+- `/agent-standards`: コーディングエージェント向け文書固有の品質基準
+- `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `/plan-mode`: plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
+- `/plan-impl`: `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
+- `/careful-review`: レビューワークフロー
+- `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
+- `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
+- `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
+- `/export-for-resume`: 議論が発散したときの現状スナップショットを出力する
+- `/shell-exec`: 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
+- `/plan-codex-review`: 計画ファイルのcodexレビュー実行をhaikuのサブエージェントへ委譲する
 
 ### 明示呼び出し専用のスキル
 
-- `/overhaul-project` — プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
+- `/overhaul-project`: プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
 
 ## 更新方法
 

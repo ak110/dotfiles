@@ -147,6 +147,18 @@ uv run --script path/to/writing-standards/scripts/check_colloquial.py path/to/fi
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、`references/tone-examples.md`の節名（比喩動詞・主観評価語など）で間接参照する。
 LLM口調（予告と総括・正面から系・空虚な形容・空虚な動詞・接続の型・弱い緩和と称賛）の禁止語彙・対比例は`references/tone-examples.md`の「LLM口調」節に従う。
 
+## emダッシュ・horizontal bar・2倍ダッシュチェック
+
+「emダッシュ・horizontal bar・2倍ダッシュは日本語の地の文・見出しで使わない」規定の機械検査として、`scripts/check_dash.py`の実行を必須とする。
+
+```sh
+uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
+```
+
+- 検出対象: U+2014（EM DASH）の単発・U+2015（HORIZONTAL BAR）の単発・U+2500（BOX DRAWINGS LIGHT HORIZONTAL）の2連続
+- 検査範囲: Markdown地の文と見出し。フェンス付きコードブロック内（バッククォート形式・チルダ形式の双方）・インラインコード（バッククォート囲み）内・URL内は除外する
+- 計画ファイル作成段階・実装段階での検出のため、`agent-toolkit:plan-mode`工程7のステップ1（機械チェック）で計画ファイル全体および`## 変更内容`配下のdiff +側一時ファイルへ自動適用する
+
 ## Markdown記述スタイル
 
 Markdown要素はセマンティック（意味的役割）に沿って使う。

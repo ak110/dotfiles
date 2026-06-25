@@ -15,7 +15,8 @@ description: >
 `/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポジトリとして扱う。
 引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポジトリとして扱う（既定）。
 
-`dotfiles-fb list --target-repo=<対象リポジトリパス>`を実行し、件数を1文でユーザーに提示する。
+`dotfiles-fb list --target-repo=<対象リポジトリパスまたは正規化リモートURL>`を実行し、件数を1文でユーザーに提示する。
+正規化リモートURLは`host/owner/repo`形式とする。
 0件の場合は「処理対象なし」と示して終了する。
 なお、feedback-inbox無効環境では`dotfiles-fb list`がフラグファイル不在を検出して非ゼロ終了する。
 その場合は標準エラー出力のエラーメッセージをユーザーへ提示して終了する。

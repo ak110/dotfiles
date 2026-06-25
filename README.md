@@ -94,6 +94,6 @@ update-dotfiles
 
 ## ドキュメント
 
-- [docs/index.md](docs/index.md) — ドキュメント入口
-- [docs/guide/index.md](docs/guide/index.md) — 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
-- [docs/development/development.md](docs/development/development.md) — 開発者向け
+- [docs/index.md](docs/index.md): ドキュメント入口
+- [docs/guide/index.md](docs/guide/index.md): 利用者向け（Claude Code/Codex設定・pytools・SSH・セキュリティ）
+- [docs/development/development.md](docs/development/development.md): 開発者向け

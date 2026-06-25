@@ -32,11 +32,25 @@ class TestAddSourceOption:
     ) -> None:
         """--source=session-review指定時、frontmatterにsource: session-reviewが含まれる。"""
         notes = _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(
-                ["add", "--source=session-review", str(tmp_path / "myrepo"), "メッセージ"],
+                ["add", "--source=session-review", str(myrepo), "メッセージ"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -52,10 +66,24 @@ class TestAddSourceOption:
     ) -> None:
         """--source未指定時、frontmatterにsource行が含まれない。"""
         notes = _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo"), "メッセージ"], home=tmp_path, now=_FIXED_DT)
+            _cli.main(["add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -299,10 +327,13 @@ class TestFeedbackFilenameCompleter:
 
 def _editor_fake_run(
     action: typing.Callable[[pathlib.Path], int],
+    myrepo: pathlib.Path | None = None,
+    remote_url: str = "https://github.com/example/myrepo.git",
 ) -> typing.Callable[..., subprocess.CompletedProcess[Any]]:
     """エディター呼び出し時にactionを実行し戻り値をreturncodeとするsubprocess.run差し替えを返す。
 
     fake-editor以外のコマンドは終了コード0で成功扱いとする。
+    myrepo指定時は`git -C <myrepo> remote get-url origin`にremote_urlを返す。
     """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -310,6 +341,9 @@ def _editor_fake_run(
         if cmd[0] == "fake-editor":
             returncode = action(pathlib.Path(cmd[1]))
             return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=empty, stderr=empty)
+        if myrepo is not None and cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            stdout: Any = f"{remote_url}\n" if kwargs.get("text") else f"{remote_url}\n".encode()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run
@@ -332,15 +366,17 @@ class TestAddViaEditor:
         """messages省略時にエディターが呼ばれ書き込み内容がfeedbackへ保存される。"""
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
 
         def write_body(tmp: pathlib.Path) -> int:
             tmp.write_text("エディター経由の本文\n", encoding="utf-8")
             return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_body))
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         files = list((notes / "feedback" / "inbox").iterdir())
@@ -357,15 +393,17 @@ class TestAddViaEditor:
         """エディター保存内容がstrip後に空の場合はexit 1で投入中止する。"""
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
 
         def write_blanks(tmp: pathlib.Path) -> int:
             tmp.write_text("   \n\n", encoding="utf-8")
             return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_blanks))
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -381,9 +419,24 @@ class TestAddViaEditor:
         """$EDITOR未設定時はexit 1で案内が出力される。"""
         _setup_flag_and_notes(tmp_path)
         monkeypatch.delenv("EDITOR", raising=False)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -398,11 +451,13 @@ class TestAddViaEditor:
         """エディターが非ゼロ終了したらexit 1で案内する。"""
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(lambda _tmp: 2))
+        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo")], home=tmp_path, now=_FIXED_DT)
+            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()

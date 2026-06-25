@@ -132,18 +132,18 @@ dotfiles利用者が他リポジトリで作業する場面にも影響する。
 
 Claude Code/Codex設定ディレクトリが複数あり、取り違えは影響範囲の異なる事故につながる。指示の対象を必ず確認する。
 
-- `.chezmoi-source/dot_claude/` — 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）
-- `~/.claude/` — デプロイ先。`chezmoi apply`で上書きされるため直接編集してはならない
+- `.chezmoi-source/dot_claude/`: 配布元。chezmoiが`~/.claude/`にデプロイする（グローバルユーザー設定の原本）
+- `~/.claude/`: デプロイ先。`chezmoi apply`で上書きされるため直接編集してはならない
   - ユーザーが「`~/.claude`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_claude/`
-- `.claude/`（本リポジトリルート）— dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
-- `.chezmoi-source/dot_codex/` — Codex配布元。`~/.codex/`へデプロイする
+- `.claude/`（本リポジトリルート）: dotfilesリポジトリ自身のClaude Codeプロジェクト設定。配布対象外
+- `.chezmoi-source/dot_codex/`: Codex配布元。`~/.codex/`へデプロイする
   - `AGENTS.md`はCodex向けアダプターで、共有ルール・スキルは`pytools/_internal/setup_codex_links.py`が
     `.chezmoi-source/dot_claude/`または`agent-toolkit/`の原本へリンクを生成する
    （Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）
-- `.chezmoi-source/dot_config/` — XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
+- `.chezmoi-source/dot_config/`: XDG準拠ツール設定（`git`・`uv`・`pyfltr`等）の配布元
   - ユーザーが「`~/.config/<tool>`の設定を変えて」と言った場合、実際に編集すべきは`.chezmoi-source/dot_config/<tool>/`
     - 配布先を直接編集すると`chezmoi apply`で巻き戻る
-- `AGENTS.md`（本リポジトリルート）— dotfiles編集者向けのSSOT。Claude Code／Codex双方がここを読む
+- `AGENTS.md`（本リポジトリルート）: dotfiles編集者向けのSSOT。Claude Code／Codex双方がここを読む
   - `CLAUDE.md`は`@AGENTS.md`をimportする1行のみのアダプター
 - `.claude/`（本リポジトリルート）のプロジェクト専用ルール・スキルは配布対象外
   - Codex側でも明示検出させたい場合は`.agents/skills`を`.claude/skills`へのシンボリックリンクにする

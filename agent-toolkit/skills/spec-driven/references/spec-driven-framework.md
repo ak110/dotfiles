@@ -53,9 +53,9 @@ spec-driven系スキルで共有する用語定義と配置規約。
 プロジェクト指定が無い場合の既定:
 
 - 現行版ドキュメント:
-  - `docs/features/{機能名}.md` — 機能ドキュメント
-  - `docs/topics/{トピック名}.md` — 横断ドキュメント
+  - `docs/features/{機能名}.md`: 機能ドキュメント
+  - `docs/topics/{トピック名}.md`: 横断ドキュメント
 - 次版ドキュメント:
-  - `docs/v{next}/OVERVIEW.md` — 次版総合ドキュメント
-  - `docs/v{next}/{作業テーマ名}.md` — 作業テーマドキュメント
-  - `docs/v{next}/plans/{作業テーマ名}.md` — 計画ファイル
+  - `docs/v{next}/OVERVIEW.md`: 次版総合ドキュメント
+  - `docs/v{next}/{作業テーマ名}.md`: 作業テーマドキュメント
+  - `docs/v{next}/plans/{作業テーマ名}.md`: 計画ファイル

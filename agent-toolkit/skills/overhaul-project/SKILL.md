@@ -68,14 +68,14 @@ disable-model-invocation: true
 
 ## 既存スキルとの連携
 
-- `agent-toolkit:plan-mode` — `EnterPlanMode`でplan modeへ移行後、起動直後に必ず呼び出す
-- `agent-toolkit:coding-standards` — コード改善に着手するとき
-- `agent-toolkit:writing-standards` — ドキュメント整備およびコメント記述時
-- `agent-toolkit:agent-standards` — エージェント向け文書整備時
-- `agent-toolkit:review-standards` — レビュー実施時
-- `agent-toolkit:pyfltr-usage` — 足元整備時
-- `agent-toolkit:plan-impl` — `ExitPlanMode`後の実装フェーズへ引き継ぐ
-- `agent-toolkit:careful-review` — レビューフェーズへ引き継ぐ
+- `agent-toolkit:plan-mode`: `EnterPlanMode`でplan modeへ移行後、起動直後に必ず呼び出す
+- `agent-toolkit:coding-standards`: コード改善に着手するとき
+- `agent-toolkit:writing-standards`: ドキュメント整備およびコメント記述時
+- `agent-toolkit:agent-standards`: エージェント向け文書整備時
+- `agent-toolkit:review-standards`: レビュー実施時
+- `agent-toolkit:pyfltr-usage`: 足元整備時
+- `agent-toolkit:plan-impl`: `ExitPlanMode`後の実装フェーズへ引き継ぐ
+- `agent-toolkit:careful-review`: レビューフェーズへ引き継ぐ
 
 ## 参考リソース
 

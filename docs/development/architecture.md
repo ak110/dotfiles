@@ -5,10 +5,10 @@
 
 - `.chezmoiroot`でソースステート（`.chezmoi-source/`）とプロジェクトインフラを分離する
 - `.chezmoi-source/`内がchezmoiのソースディレクトリ（`dot_`プレフィックス→`~/.*`にデプロイ）
-- `.chezmoi-source/dot_claude/` — Claude Code用のユーザー設定。`~/.claude/`へデプロイする
-- `.chezmoi-source/dot_codex/` — Codex用のユーザー設定。`~/.codex/`へデプロイする
-- `pytools/` — Pythonコマンドラインツール群（`uv tool install`でインストール）
-- `scripts/` — リポジトリ内部から呼ばれるスクリプト置き場（pre-commit・Makefile・Claude Codeフック等。配布対象外）
+- `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
+- `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
+- `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
+- `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（pre-commit・Makefile・Claude Codeフック等。配布対象外）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
@@ -22,11 +22,11 @@
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/` — pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
+- `scripts/`: pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
   - chezmoiで配布しない。Linux前提で書いてよい
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
     `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`scripts/claude_hook_pretooluse.py`
-- `bin/` — ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
+- `bin/`: ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`

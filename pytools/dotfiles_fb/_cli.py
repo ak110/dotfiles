@@ -2,7 +2,7 @@
 
 サブコマンド構成。
 - add: inboxへフィードバックを投入する
-- list: inboxの全件をtarget_repoごとにグループ化して出力する
+- list: inboxの全件を正規化リモートURLごとにグループ化して出力する
 - adopt: 採用としてinboxからadopted/へ移動しコミット・push
 - reject: 不採用としてinboxからrejected/へ移動しコミット・push
 - rm: inboxから単純削除しコミット・push
@@ -18,6 +18,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="subcommand", required=True)
 
     add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
-    add.add_argument("repo_path", metavar="REPO_PATH", help="フィードバック対象リポジトリのパス（~展開可能）。")
+    add.add_argument(
+        "repo_path",
+        metavar="REPO_PATH",
+        help="フィードバック対象リポジトリのローカルパス（リモートURLを自動取得して格納）。",
+    )
     add.add_argument(
         "messages",
         metavar="MESSAGE",
@@ -53,9 +58,9 @@ def _build_parser() -> argparse.ArgumentParser:
     list_ = sub.add_parser("list", help="inboxの全件をtarget_repoごとに出力する")
     list_.add_argument(
         "--target-repo",
-        metavar="PATH",
+        metavar="REPO",
         default=None,
-        help="対象リポジトリのパスでフィルタする（~展開可能）。",
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルタする。",
     )
 
     adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
@@ -109,9 +114,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     loop.add_argument(
         "--target-repo",
-        metavar="PATH",
+        metavar="REPO",
         default=None,
-        help="対象リポジトリのパス（~展開可能）。既定は`git rev-parse --show-toplevel`の取得値。",
+        help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
     )
 
     enable_completion(parser)
@@ -275,7 +280,7 @@ def _cmd_add(
     home: pathlib.Path,
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
-    target_repo = str(pathlib.Path(args.repo_path).expanduser().resolve())
+    target_repo = _resolve_repo_id(args.repo_path)
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
@@ -324,7 +329,7 @@ def _parse_target_repo(text: str) -> str:
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """listサブコマンド: inbox全件をtarget_repoごとにグループ化して出力。
 
-    `--target-repo`指定時は、~展開と絶対パス正規化を施した値とfrontmatterの`target_repo`が
+    `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     """
     inbox_dir = private_notes / "feedback" / "inbox"
@@ -333,7 +338,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         return
     filter_repo: str | None = None
     if args.target_repo is not None:
-        filter_repo = str(pathlib.Path(args.target_repo).expanduser().resolve())
+        filter_repo = _resolve_repo_id(args.target_repo)
     entries: dict[str, list[tuple[str, str]]] = {}
     for path in sorted(inbox_dir.iterdir()):
         if path.suffix != ".md":
@@ -496,17 +501,132 @@ def _cmd_status(home: pathlib.Path) -> typing.NoReturn:
     sys.exit(code)
 
 
-def _resolve_target_repo(value: str | None) -> str:
-    """`--target-repo`の値（未指定時はgit rev-parse --show-toplevelの取得値）を絶対パスへ正規化して返す。"""
+def _normalize_remote_url(url: str) -> str:
+    """リモートURLを`host/owner/repo`形式へ正規化して返す。
+
+    HTTPS形式・SSH短縮形式・SSH URI形式・既に正規化済みの`host/owner/repo`形式の4種を受理する。
+    受理外はValueErrorを送出する。出力は全体小文字化し`.git`サフィックスを除去する。
+    """
+    # HTTPS: https://github.com/owner/repo[.git]
+    m = re.match(r"https?://([^/:]+)/(.+)", url)
+    if m:
+        host = m.group(1)
+        path = m.group(2)
+        path = re.sub(r"\.git$", "", path)
+        return f"{host}/{path}".lower()
+
+    # SSH URI: ssh://git@github.com[:port]/owner/repo[.git]
+    m = re.match(r"ssh://[^@]+@([^/:]+)(?::\d+)?/(.+)", url)
+    if m:
+        host = m.group(1)
+        path = m.group(2)
+        path = re.sub(r"\.git$", "", path)
+        return f"{host}/{path}".lower()
+
+    # SSH shorthand: git@github.com:owner/repo[.git]
+    m = re.match(r"[^@]+@([^:]+):(.+)", url)
+    if m:
+        host = m.group(1)
+        path = m.group(2)
+        path = re.sub(r"\.git$", "", path)
+        return f"{host}/{path}".lower()
+
+    # Already normalized: host/owner/repo (2+ slashes, no scheme, no @)
+    if re.match(r"[^/]+/[^/]+/[^/]+$", url) and "://" not in url and "@" not in url:
+        return re.sub(r"\.git$", "", url).lower()
+
+    raise ValueError(f"リモートURLとして解析できません: {url!r}")
+
+
+def _resolve_local_worktree(value: str | None) -> pathlib.Path:
+    """ローカル作業ツリーのパスを解決して返す。
+
+    - `value`が実在するローカルパスなら`expanduser().resolve()`した結果を返す
+    - `value`が実在しないパスやURL文字列なら「ローカルパスが必要」旨をstderrへ出力してexit 2
+    - `value`省略時は`git rev-parse --show-toplevel`の出力を返す。失敗時もexit 2
+    """
     if value is not None:
-        return str(pathlib.Path(value).expanduser().resolve())
+        local_path = pathlib.Path(value).expanduser()
+        if not local_path.exists():
+            print(
+                f"ローカルパスとして存在しません（URLではなくローカルパスを指定してください）: {value}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        return local_path.resolve()
+
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
-        check=True,
         capture_output=True,
         text=True,
+        check=False,
     )
-    return str(pathlib.Path(result.stdout.strip()).resolve())
+    if result.returncode != 0:
+        print("git rev-parse --show-toplevel が失敗しました。gitリポジトリ内で実行してください。", file=sys.stderr)
+        sys.exit(2)
+    return pathlib.Path(result.stdout.strip())
+
+
+def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
+    """リポジトリ識別子（正規化リモートURL）を解決して返す。
+
+    - `value`がURLらしい文字列（スキームを持つ・`@`を含む・スラッシュ2個以上の3要素）なら直接正規化する
+    - ローカルパスとして判定した場合は`git -C <path> remote get-url origin`の出力を正規化する
+    - `value`省略時は`cwd`（省略時は`_resolve_local_worktree`で取得した作業ツリー）を使う
+    - パス不在・git未管理・remote未設定はexit 2で原因を標準エラー出力へ書く
+    """
+    if value is not None:
+        # ローカルパスとして実在すればremote URLを取得して正規化、それ以外はURL文字列として正規化を試みる
+        local_path = pathlib.Path(value).expanduser()
+        if local_path.exists():
+            local_path = local_path.resolve()
+            result = subprocess.run(
+                ["git", "-C", str(local_path), "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                print(
+                    f"リモートURLを取得できませんでした（git remote get-url origin）: {local_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            try:
+                return _normalize_remote_url(result.stdout.strip())
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                sys.exit(2)
+        try:
+            return _normalize_remote_url(value)
+        except ValueError:
+            print(
+                f"パスが存在せずリモートURLとしても解析できません: {value}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
+    # value省略時: ローカル作業ツリーを特定してからremoteを取得
+    if cwd is None:
+        cwd = _resolve_local_worktree(None)
+    result = subprocess.run(
+        ["git", "-C", str(cwd), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"リモートURLを取得できませんでした（git remote get-url origin）: {cwd}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    remote_url = result.stdout.strip()
+    try:
+        return _normalize_remote_url(remote_url)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
 
 
 def _count_feedback_for_repo(feedback_dir: pathlib.Path, target_repo: str) -> int:
@@ -525,19 +645,24 @@ def _count_feedback_for_repo(feedback_dir: pathlib.Path, target_repo: str) -> in
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: 対象リポジトリのinboxが0件になるまでclaude /process-feedbacksを繰り返し起動する。
 
-    `--target-repo`未指定時は`git rev-parse --show-toplevel`の値を既定とし、
-    件数判定と内部`claude /process-feedbacks`起動引数で同フィルタを使う。
+    件数判定には`_resolve_repo_id`で取得した正規化リモートURLを使う。
+    claudeへの起動引数には`--target-repo`指定値（未指定時は`git rev-parse --show-toplevel`の値）の
+    ローカルパス文字列を渡す。
     """
     inbox_dir = private_notes / "feedback" / "inbox"
-    target_repo = _resolve_target_repo(args.target_repo)
+
+    # ローカルパスと正規化リモートURLをそれぞれ取得する
+    local_path_str = str(_resolve_local_worktree(args.target_repo))
+    repo_id = _resolve_repo_id(args.target_repo)
+
     iteration = 0
     while True:
-        remaining = _count_feedback_for_repo(inbox_dir, target_repo)
+        remaining = _count_feedback_for_repo(inbox_dir, repo_id)
         if remaining == 0:
             if iteration == 0:
-                print(f"対象リポジトリのinboxは空です（target_repo={target_repo}）。処理対象なし。")
+                print(f"対象リポジトリのinboxは空です（target_repo={repo_id}）。処理対象なし。")
             else:
-                print(f"対象リポジトリのinboxが空になりました（{iteration}回実行、target_repo={target_repo}）。")
+                print(f"対象リポジトリのinboxが空になりました（{iteration}回実行、target_repo={repo_id}）。")
             return
         if args.max_iterations is not None and iteration >= args.max_iterations:
             print(f"反復上限{args.max_iterations}回に達しました（対象リポジトリのinbox残{remaining}件）。")
@@ -545,7 +670,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
         iteration += 1
         print(f"[反復 {iteration}] 対象リポジトリのinbox残{remaining}件、claudeを起動します")
         result = subprocess.run(
-            ["claude", "--permission-mode=auto", "/process-feedbacks", target_repo],
+            ["claude", "--permission-mode=auto", "/process-feedbacks", local_path_str],
             check=False,
         )
         if result.returncode != 0:
