@@ -43,6 +43,7 @@ Write / Edit / MultiEdit:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
 - シークレット / 鍵ファイルの直接編集 (block)
+- `agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`へのscope-escalationフレーズ転記検出 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -262,6 +263,8 @@ def main() -> int:
     if _check_lockfiles(tool_name, file_path):
         return 2
     if _check_secrets(tool_name, file_path):
+        return 2
+    if _check_scope_escalation_in_doc_edit(tool_name, fields, file_path):
         return 2
 
     # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
@@ -511,6 +514,53 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
             file=sys.stderr,
         )
         return True
+    return False
+
+
+# --- scope-escalationフレーズ転記check (block) ---
+
+# 対象ドキュメント判定パターン。
+# `agent-toolkit/rules/`配下の.mdと`agent-toolkit/skills/**/SKILL.md`を対象とし、
+# 途中に`references/`を含むパスは隔離ファイル扱いで除外する。
+_SCOPE_ESCALATION_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(^|/)agent-toolkit/rules/[^/]+\.md$"),
+    re.compile(r"(^|/)agent-toolkit/skills/(?:(?!.*/references/).)+/SKILL\.md$"),
+)
+
+
+def _is_scope_escalation_target_doc(file_path: str) -> bool:
+    """対象ドキュメント（agent-toolkit/rules配下とSKILL.md）への編集か判定する。"""
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    return any(p.search(normalized) is not None for p in _SCOPE_ESCALATION_DOC_TARGET_PATTERNS)
+
+
+def _check_scope_escalation_in_doc_edit(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
+    """対象ドキュメントへの編集時、新規書き込み側にscope-escalationフレーズ転記を検出した場合にblockする。
+
+    対象は`agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）。
+    判定は`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
+    `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、検出フレーズ本文は通知へ転記せず
+    カテゴリ識別子のみを通知する。
+    """
+    if not _is_scope_escalation_target_doc(file_path):
+        return False
+    for field, value in fields:
+        category = _match_scope_escalation(value)
+        if category is not None:
+            print(
+                _llm_notice(
+                    f"blocked: scope-escalation phrase (category: {category})"
+                    f" detected in {tool_name}.{field}. Target: {file_path}."
+                    f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
+                    f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
+                    f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。",
+                    tag="block",
+                ),
+                file=sys.stderr,
+            )
+            return True
     return False
 
 

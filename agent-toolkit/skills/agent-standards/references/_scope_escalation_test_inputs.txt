@@ -1,0 +1,31 @@
+# 縮退誘発フレーズ機械検出テスト用の最小マッチ入力（隔離フィクスチャ）
+#
+# 形式: <expected-category>\t<minimal-matching-text>
+# 1列目はpretooluse.pyの_SCOPE_ESCALATION_PHRASESカテゴリ識別子。
+# 同一カテゴリに対し正規表現のalternation分岐ごとの最小マッチ入力を複数行に列挙する。
+# 空行と`#`先頭行はスキップ。
+#
+# 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（agent-standardsスキル「コンテキスト汚染の回避」節）。
+# check_colloquial.pyの_EXCLUDED_FILESおよびpyproject.tomlの[tool.pyfltr] extend-excludeで機械チェック対象から除外する。
+workload	作業量で多い
+single-session	セッションで完遂
+approach-confirm	進め方を確認
+split-execution	分割して進める
+context-shortage	残コンテキスト
+defer-onset	対応を後回し
+priority-consult	優先順位を相談
+priority-consult	優先順位判断を委ね
+priority-consult	範囲を決め
+scope-volume	対象件数が多い
+pattern-conformance	本計画外
+process-omission	工程省略
+process-omission	工程を省略
+process-omission	割愛する
+process-omission	割愛します
+process-omission	規範違反として扱う
+process-omission	規範違反として認識
+process-omission	規範違反を扱う
+process-omission	規範違反を認識
+process-omission	規範違反と認識した上で
+process-omission	本計画の大規模スコープを踏まえ省略する
+process-omission	本計画範囲外として省略します

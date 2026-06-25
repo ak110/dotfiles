@@ -56,14 +56,19 @@ _EXCLUDED_DIRS = frozenset(
 # 辞書ファイル本体は自身を検査するとほぼ全行マッチするため除外する。
 # 危険語彙を含む隔離ファイル（`tone-examples.md`）は悪い例を意図的に記載しており、辞書ファイルと同等の理由で除外する。
 # 自テストファイルは辞書の置換候補定義を発火させる入力テキスト（違反語そのもの）を含むため除外する。
+# 縮退誘発フレーズの最小マッチ入力を集約した隔離フィクスチャ（`_scope_escalation_test_inputs.txt`）も同様に除外する。
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
 _SELF_TEST = pathlib.Path(__file__).resolve().parent / "check_colloquial_test.py"
+_SCOPE_ESCALATION_INPUTS = (
+    pathlib.Path(__file__).resolve().parents[2] / "agent-standards" / "references" / "_scope_escalation_test_inputs.txt"
+)
 _EXCLUDED_FILES = frozenset(
     {
         _colloquial_check.DENY_PATH.resolve(),
         _colloquial_check.ALLOW_PATH.resolve(),
         _TONE_EXAMPLES.resolve(),
         _SELF_TEST.resolve(),
+        _SCOPE_ESCALATION_INPUTS.resolve(),
     }
 )
 

@@ -17,6 +17,9 @@ _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parents[3] / "scripts"
 _DENY_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words.txt"
 _ALLOW_PATH = _AGENT_TOOLKIT_SCRIPTS / "_colloquial_words_allow.txt"
 _TONE_EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "references" / "tone-examples.md"
+_SCOPE_ESCALATION_INPUTS = (
+    pathlib.Path(__file__).resolve().parents[2] / "agent-standards" / "references" / "_scope_escalation_test_inputs.txt"
+)
 
 # 辞書パース処理は本番ロジックの`_colloquial_check.load_patterns`を共有する。
 # `check_colloquial.py`が同一の`sys.path`への追加を実行するため、本ファイルでも同じ追加操作を行う。
@@ -205,4 +208,26 @@ def test_tone_examples_excluded_from_directory_scan(tmp_path: pathlib.Path):
     clean.write_text("# header\n\nplain content.\n", encoding="utf-8")
     result = _run(tmp_path)
     assert str(tone_link) not in result.stderr
+    assert result.returncode == 0
+
+
+def test_scope_escalation_inputs_file_is_skipped():
+    """縮退誘発フレーズの隔離フィクスチャを直接渡しても検査されずexit 0。"""
+    if not _SCOPE_ESCALATION_INPUTS.exists():
+        pytest.skip("_scope_escalation_test_inputs.txtが未配置のためスキップ")
+    result = _run(_SCOPE_ESCALATION_INPUTS)
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
+def test_scope_escalation_inputs_excluded_from_directory_scan(tmp_path: pathlib.Path):
+    """ディレクトリ走査時に縮退誘発フレーズの隔離フィクスチャが除外される。"""
+    if not _SCOPE_ESCALATION_INPUTS.exists():
+        pytest.skip("_scope_escalation_test_inputs.txtが未配置のためスキップ")
+    inputs_link = tmp_path / "_scope_escalation_test_inputs.txt"
+    inputs_link.symlink_to(_SCOPE_ESCALATION_INPUTS)
+    clean = tmp_path / "clean.md"
+    clean.write_text("# header\n\nplain content.\n", encoding="utf-8")
+    result = _run(tmp_path)
+    assert str(inputs_link) not in result.stderr
     assert result.returncode == 0

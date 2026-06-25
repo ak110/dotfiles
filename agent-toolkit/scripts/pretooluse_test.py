@@ -1559,40 +1559,50 @@ class TestBashAgentToolkitVersionBump:
         assert not self._has_version_bump_warning(result)
 
 
+_SCOPE_ESCALATION_INPUTS_PATH = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "skills"
+    / "agent-standards"
+    / "references"
+    / "_scope_escalation_test_inputs.txt"
+)
+
+
+def _load_scope_escalation_inputs() -> list[tuple[str, str]]:
+    """隔離フィクスチャからテスト入力を読み込む。
+
+    フォーマット: `<expected-category>\\t<minimal-matching-text>`のタブ区切り。
+    空行と`#`先頭行はスキップする。
+    検出語そのものをテストコードへ転記しないため、本ファイルから動的に読み込む
+    （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    フィクスチャ不在時は空リストを返す（モジュールコレクション失敗を避けるため）。
+    各テストケースは入力リストが空ならparametrize側でskipされる。
+    """
+    if not _SCOPE_ESCALATION_INPUTS_PATH.exists():
+        return []
+    inputs: list[tuple[str, str]] = []
+    for raw in _SCOPE_ESCALATION_INPUTS_PATH.read_text(encoding="utf-8").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "\t" not in stripped:
+            continue
+        category, text = stripped.split("\t", 1)
+        inputs.append((text.strip(), category.strip()))
+    return inputs
+
+
+_SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()
+
+
 class TestAskUserQuestionScopeEscalationCheck:
     """AskUserQuestion向け縮退誘発フレーズ検出ブロック。
 
     フレーズ本文の代わりにパターンマッチ最小単位（正規表現の最短一致）を
-    テスト入力に用いる（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    隔離フィクスチャから動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
     """
 
-    @pytest.mark.parametrize(
-        ("text", "category"),
-        [
-            ("作業量で多い", "workload"),
-            ("セッションで完遂", "single-session"),
-            ("進め方を確認", "approach-confirm"),
-            ("分割して進める", "split-execution"),
-            ("残コンテキスト", "context-shortage"),
-            ("対応を後回し", "defer-onset"),
-            ("優先順位を相談", "priority-consult"),
-            ("優先順位判断を委ね", "priority-consult"),
-            ("範囲を決め", "priority-consult"),
-            ("対象件数が多い", "scope-volume"),
-            ("本計画外", "pattern-conformance"),
-            ("工程省略", "process-omission"),
-            ("工程を省略", "process-omission"),
-            ("割愛する", "process-omission"),
-            ("割愛します", "process-omission"),
-            ("規範違反として扱う", "process-omission"),
-            ("規範違反として認識", "process-omission"),
-            ("規範違反を扱う", "process-omission"),
-            ("規範違反を認識", "process-omission"),
-            ("規範違反と認識した上で", "process-omission"),
-            ("本計画の大規模スコープを踏まえ省略する", "process-omission"),
-            ("本計画範囲外として省略します", "process-omission"),
-        ],
-    )
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_question_text_blocks(self, text: str, category: str):
         result = _run(
             {
@@ -1706,3 +1716,152 @@ class TestAskUserQuestionScopeEscalationCheck:
     def test_missing_questions_allowed(self):
         result = _run({"tool_name": "AskUserQuestion", "tool_input": {}})
         assert result.returncode == 0
+
+
+class TestScopeEscalationInDocEditCheck:
+    """対象ドキュメント編集時のscope-escalationフレーズ転記検出ブロック。
+
+    対象は`agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）。
+    フレーズ本文は隔離フィクスチャから動的に読み込む。
+    """
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_write_blocks_on_target_doc(self, text: str, category: str):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/agent.md",
+                    "content": f"# header\n\n{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "scope-escalation" in result.stderr
+        assert category in result.stderr
+        # フレーズ本文は通知へ転記しない（コンテキスト汚染防止）
+        assert text not in result.stderr
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_edit_blocks_on_target_doc(self, text: str, category: str):
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "old_string": "old",
+                    "new_string": f"old {text}",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert text not in result.stderr
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_multiedit_blocks_on_target_doc(self, text: str, category: str):
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "edits": [
+                        {"old_string": "a", "new_string": "b"},
+                        {"old_string": "c", "new_string": f"c {text}"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert text not in result.stderr
+
+    def test_multilevel_skill_target_blocks(self):
+        """任意階層の`agent-toolkit/skills/**/SKILL.md`を対象に含む。"""
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/parent/child/SKILL.md",
+                    "content": f"{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+
+    def test_old_string_not_inspected_on_target(self):
+        """対象ファイルでも`old_string`内のフレーズは検出しない（既存違反の修正を妨げない）。
+
+        `new_string`にはクリーンな置換後文面を入れ、フレーズが`old_string`にのみあることで
+        通過判定が`old_string`不検査に由来することを確認する。
+        """
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        clean_replacement = "通常の置換後文面"
+        # 置換後文面にフレーズが残っていないことを確認（テスト前提の自己検査）
+        for input_text, _ in _SCOPE_ESCALATION_INPUTS:
+            assert input_text not in clean_replacement
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/agent.md",
+                    "old_string": text,
+                    "new_string": clean_replacement,
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "file_path",
+        [
+            "agent-toolkit/agents/plan-implementer.md",
+            "agent-toolkit/scripts/pretooluse.py",
+            "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
+            "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
+            "agent-toolkit/skills/x/y/references/SKILL.md",
+            "README.md",
+            "src/app.py",
+        ],
+    )
+    def test_non_target_doc_allows_phrase(self, file_path: str):
+        """対象外ドキュメントでは同一フレーズも通過する。"""
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": file_path,
+                    "content": f"{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_clean_content_on_target_allowed(self):
+        """対象ファイルでもフレーズを含まない内容は通過する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/agent.md",
+                    "content": "# header\n\nplain content.\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_absolute_path_target_blocks(self):
+        """絶対パス指定でも末尾マッチで対象判定される。"""
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "/home/user/dotfiles/agent-toolkit/rules/agent.md",
+                    "content": f"{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
