@@ -88,6 +88,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("defer-onset", re.compile(r"(着手|対応|実装)(を)?(延期|後回し|別途|別計画)")),
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
     ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
+    ("pattern-conformance", re.compile(r"(既存パターン踏襲|本計画外|本計画スコープ外|広範改修要|現状維持)")),
 )
 
 

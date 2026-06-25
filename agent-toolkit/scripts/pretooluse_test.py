@@ -1579,6 +1579,7 @@ class TestAskUserQuestionScopeEscalationCheck:
             ("優先順位判断を委ね", "priority-consult"),
             ("範囲を決め", "priority-consult"),
             ("対象件数が多い", "scope-volume"),
+            ("本計画外", "pattern-conformance"),
         ],
     )
     def test_question_text_blocks(self, text: str, category: str):
