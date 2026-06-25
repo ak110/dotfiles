@@ -9,6 +9,7 @@ description: >
 # フィードバック消化
 
 `dotfiles-fb`の全サブコマンド（`add`・`list`・`adopt`・`reject`・`rm`・`edit`・`commit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
+`adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
 
 ## ステップ1: 件数確認
 
