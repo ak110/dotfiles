@@ -16,6 +16,9 @@ approve・通知の分岐は以下のとおり。
 - 既に`agent-toolkit:session-review`スキルが起動済み:
   再Stop間にユーザーが変更を加える可能性に備え、approveに加えて
   git status表示を付与する
+- `session_review_extension_pending`フラグが真（個人フックPostToolUseが拡張章対象の
+  作業を観測済み）: 配布物側の振り返り誘導を抑制し、git status通知のみ（変更あり）または
+  approveのみ（変更なし）を返す。拡張章フックが配布物誘導と個人章を統合した誘導文を送出する
 - 上記いずれでもない通常終了: 未コミット変更があればgit status通知を付与し、
   セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ出力する
 
@@ -189,6 +192,17 @@ def main() -> int:
                 " Do not commit without user confirmation."
             )
         )
+
+    # 拡張章フックの存在を観測した場合、振り返り誘導の重複送出を避けるため
+    # 配布物側の誘導を抑制する（拡張章フック側が併用前提の誘導文を送出する設計）。
+    # フラグは個人フックPostToolUseが拡張章対象の作業を観測した時点で真にする。
+    extension_pending = state.get("session_review_extension_pending") is True
+    if extension_pending:
+        if messages:
+            _emit_context("\n\n".join(messages))
+        else:
+            _approve(cwd=cwd)
+        return 0
 
     # --- セッション振り返り誘導（毎回提示）---
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。

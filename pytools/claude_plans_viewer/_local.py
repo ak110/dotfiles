@@ -247,5 +247,19 @@ async def read_css() -> str:
 
 
 def read_pygments_css() -> str:
-    """Pygmentsのスタイルシートを返す。"""
-    return _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")
+    """Pygmentsのスタイルシートを返す。
+
+    pygmentsの基本ルール（`.codehilite { background: ...; color: ... }`）は除外し、
+    トークン別カラールール（`.codehilite .k`等）のみを返す。
+    背景と既定文字色はmarkdown.css側の`pre code`ルールへ委ね、
+    `<pre>`の`#1e1e1e`背景上に異色矩形が出現する事象を防ぐ。
+    """
+    raw = _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")
+    base_selector = f".{_PYGMENTS_CSS_CLASS}"
+    kept: list[str] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"{base_selector} {{") or stripped.startswith(f"{base_selector}{{"):
+            continue
+        kept.append(line)
+    return "\n".join(kept)

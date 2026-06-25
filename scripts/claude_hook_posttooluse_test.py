@@ -69,10 +69,12 @@ class TestAgentToolkitEditSkillRecording:
     def test_ignores_other_skill(self, tmp_path: pathlib.Path):
         env = _state_env(tmp_path)
         sid = "rec-other-skill"
+        # `agent-toolkit:plan-mode`は`session_review_extension_pending`の対象でもあるため、
+        # 当該フラグへ影響しない別系統のスキル名を使う。
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "tool_input": {"skill": "some-other-plugin:some-skill"},
                 "session_id": sid,
             },
             env=env,
@@ -198,9 +200,15 @@ class TestSessionReviewDotfilesRecording:
         env = _state_env(tmp_path)
         sid = "review-rec-already"
         path = _state_path(tmp_path, sid)
+        # `session_review_extension_pending`も予め真にしておくことで、本フックの両分岐とも
+        # mutatorが`None`を返し書き込みが発生しない状態にする。
         path.write_text(
             json.dumps(
-                {"session_review_invoked": {self._SKILL: True}, "other": "keep"},
+                {
+                    "session_review_invoked": {self._SKILL: True},
+                    "session_review_extension_pending": True,
+                    "other": "keep",
+                },
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -216,7 +224,11 @@ class TestSessionReviewDotfilesRecording:
         )
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
-        assert state == {"session_review_invoked": {self._SKILL: True}, "other": "keep"}
+        assert state == {
+            "session_review_invoked": {self._SKILL: True},
+            "session_review_extension_pending": True,
+            "other": "keep",
+        }
         assert path.stat().st_mtime_ns == mtime_before
 
     def test_merges_with_existing_key(self, tmp_path: pathlib.Path):
@@ -243,6 +255,55 @@ class TestSessionReviewDotfilesRecording:
         assert isinstance(invoked, dict)
         assert invoked.get(self._SKILL) is True
         assert invoked.get("agent-toolkit:session-review") is True
+
+
+class TestExtensionPendingRecording:
+    """`session_review_extension_pending`フラグの記録検証。"""
+
+    def test_agent_toolkit_prefix_skill_sets_flag(self, tmp_path: pathlib.Path):
+        """`agent-toolkit:`で始まるスキルを観測するとフラグが真になる。"""
+        env = _state_env(tmp_path)
+        sid = "ext-pending-prefix"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("session_review_extension_pending") is True
+
+    def test_session_review_dotfiles_sets_flag(self, tmp_path: pathlib.Path):
+        """`session-review-dotfiles`スキルを観測するとフラグが真になる。"""
+        env = _state_env(tmp_path)
+        sid = "ext-pending-dotfiles"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "session-review-dotfiles"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("session_review_extension_pending") is True
+
+    def test_non_target_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """対象外スキルを観測してもフラグは変化しない。"""
+        env = _state_env(tmp_path)
+        sid = "ext-pending-nontarget"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "other-skill"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "session_review_extension_pending" not in _read_state(tmp_path, sid)
 
 
 class TestGeneralBehavior:

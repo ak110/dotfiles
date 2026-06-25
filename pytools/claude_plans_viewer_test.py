@@ -156,6 +156,22 @@ class TestReadPygmentsCss:
         css = _local.read_pygments_css()
         assert ".codehilite" in css
 
+    def test_excludes_base_rule_line(self):
+        """`.codehilite { ... }`の単独セレクタ行（背景・文字色）は含まれない。"""
+        css = _local.read_pygments_css()
+        for line in css.splitlines():
+            stripped = line.strip()
+            assert not (stripped.startswith(".codehilite {") or stripped.startswith(".codehilite{")), (
+                f"基本ルール行が除外されていない: {line!r}"
+            )
+
+    def test_includes_token_specific_rules(self):
+        """トークン別カラールール（`.codehilite .k`等）は含まれる。"""
+        css = _local.read_pygments_css()
+        # `.codehilite .<token>`形式（スペース区切りで子孫セレクタを持つ行）が存在すること。
+        token_rules = [line for line in css.splitlines() if line.strip().startswith(".codehilite .")]
+        assert token_rules, "トークン別ルール（`.codehilite .<token>`形式）が見つからない"
+
 
 class TestMarkdownCache:
     """`MarkdownCache`のヒット/ミス/容量上限/`mtime_epoch`変化挙動を検証する。"""

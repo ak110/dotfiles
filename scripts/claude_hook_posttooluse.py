@@ -18,6 +18,10 @@ dotfilesローカル配布対象外のため`agent-toolkit`プラグイン本体
   `True`を書き込む。Stop hook側（`claude_hook_stop.py`）が参照し、当該キーが真なら
   振り返り誘導を抑止する。当該辞書のEnterPlanMode観測時のリセットは配布物側
   （`agent-toolkit/scripts/posttooluse.py`）が担当する。
+- `agent-toolkit:*`スキルおよび`session-review-dotfiles`スキル:
+  `session_review_extension_pending`キーへ`True`を書き込む。
+  配布物Stop hook（`agent-toolkit/scripts/stop_advisor.py`）が参照し、真の場合は
+  自身の振り返り誘導を抑制する（個人フックStop hookとの誘導重複を防ぐため）。
 
 exit codeは常に0（PostToolUseはブロック不可）。
 """
@@ -36,6 +40,14 @@ from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-i
 
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
 _SESSION_REVIEW_DOTFILES_SKILL = "session-review-dotfiles"
+_AGENT_TOOLKIT_PREFIX = "agent-toolkit:"
+
+
+def _set_extension_pending(state: dict) -> dict | None:
+    if state.get("session_review_extension_pending") is True:
+        return None
+    state["session_review_extension_pending"] = True
+    return state
 
 
 def main() -> int:
@@ -80,6 +92,11 @@ def main() -> int:
             return state
 
         update_state(session_id, _set_review_invoked)
+        update_state(session_id, _set_extension_pending)
+        return 0
+
+    if skill.startswith(_AGENT_TOOLKIT_PREFIX):
+        update_state(session_id, _set_extension_pending)
         return 0
 
     return 0

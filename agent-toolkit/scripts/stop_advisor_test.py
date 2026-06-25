@@ -349,6 +349,41 @@ class TestUncommittedChangesAfterReview:
         assert decision["decision"] == "approve"
 
 
+class TestExtensionPending:
+    """`session_review_extension_pending`フラグが真のとき振り返り誘導を抑制する。"""
+
+    def test_extension_pending_dirty_repo_emits_git_status_only(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        """フラグ真かつ未コミット変更あり → git status通知のみのadditionalContext（振り返り誘導なし）。"""
+        repo = make_dirty_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "ext-dirty", {"session_review_extension_pending": True})
+        result = _run(
+            {"session_id": "ext-dirty", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        body = _additional_context(decision)
+        assert "uncommitted" in body.lower()
+        assert _SESSION_REVIEW_SKILL not in body
+
+    def test_extension_pending_clean_repo_approves(
+        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
+    ):
+        """フラグ真かつ未コミット変更なし → approveのみ（additionalContextなし）。"""
+        repo = make_clean_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "ext-clean", {"session_review_extension_pending": True})
+        result = _run(
+            {"session_id": "ext-clean", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision["decision"] == "approve"
+        assert "hookSpecificOutput" not in decision
+
+
 class TestEdgeCases:
     """エッジケース。"""
 
