@@ -174,6 +174,8 @@ class TestAddSingleMessage:
         assert "1件投入:\n" in captured.out
         assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
+        assert "編集する場合:\n" in captured.out
+        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
 
 
 class TestAddMultipleMessages:
@@ -227,6 +229,9 @@ class TestAddMultipleMessages:
         assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
         assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
+        assert "編集する場合:\n" in captured.out
+        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
+        assert f"  dotfiles-fb edit {files[1].name}\n" in captured.out
 
 
 class TestAddRepoPathExpansion:

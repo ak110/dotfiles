@@ -310,6 +310,9 @@ def _cmd_add(
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
     print(f"inbox: 計{_count_feedback(inbox_dir)}件")
+    print("編集する場合:")
+    for filename in generated:
+        print(f"  dotfiles-fb edit {filename}")
 
 
 def _parse_target_repo(text: str) -> str:

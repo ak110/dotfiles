@@ -362,6 +362,7 @@ class TestAddViaEditor:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """messages省略時にエディターが呼ばれ書き込み内容がfeedbackへ保存される。"""
         notes = _setup_flag_and_notes(tmp_path)
@@ -383,6 +384,10 @@ class TestAddViaEditor:
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "エディター経由の本文" in content
+
+        captured = capsys.readouterr()
+        assert "編集する場合:\n" in captured.out
+        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
 
     def test_editor_empty_save_aborts(
         self,
