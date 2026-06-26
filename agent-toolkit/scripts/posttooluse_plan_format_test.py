@@ -607,7 +607,7 @@ class TestPlanFormatCheck:
         assert "'対象ファイル'" in found_section
         assert "'対象ファイル一覧'" not in found_section
 
-    # `## 変更内容`本文内の絶対行番号直書き検査のテスト入力。
+    # 計画ファイル本文の絶対行番号直書き検査のテスト入力。
     # SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。
     _LINE_TOKEN = "現行" + "L" + "66"  # `_LINE_TOKEN`: 行番号トークン
     _LINE_RANGE_HYPHEN = "148" + "-" + "151行"  # `_LINE_RANGE_HYPHEN`: ハイフン区切り行範囲
@@ -623,14 +623,26 @@ class TestPlanFormatCheck:
         """
         return f"### 対象ファイル一覧\n\n- y\n\n### 詳細\n\n{body}\n"
 
-    def test_change_section_line_number_pattern_is_warned(self, tmp_path: pathlib.Path):
-        """`## 変更内容`内に行番号トークンを含む場合に警告される。"""
+    @pytest.mark.parametrize(
+        ("session_id", "filename", "token_attr", "expected_match"),
+        [
+            ("lineno-token", "lineno-token.md", "_LINE_TOKEN", "L" + "66"),
+            ("lineno-range", "lineno-range.md", "_LINE_RANGE_HYPHEN", "148" + "-" + "151行"),
+            ("lineno-kara", "lineno-kara.md", "_LINE_RANGE_KARA", "148から151行"),
+            ("lineno-nth", "lineno-nth.md", "_LINE_NTH", "100行目"),
+        ],
+    )
+    def test_change_section_line_number_patterns_are_warned(
+        self, tmp_path: pathlib.Path, session_id: str, filename: str, token_attr: str, expected_match: str
+    ):
+        """`## 変更内容`内の各種行番号表記（トークン・範囲・N行目）が警告され、マッチ値が出力に含まれる。"""
         home, plans = self._home(tmp_path)
-        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_TOKEN)})
-        plan = _write_plan(plans, "lineno-token.md", content)
+        token = getattr(self, token_attr)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(token)})
+        plan = _write_plan(plans, filename, content)
         result = _run(
             {
-                "session_id": "lineno-token",
+                "session_id": session_id,
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": content},
             },
@@ -641,65 +653,9 @@ class TestPlanFormatCheck:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "absolute line-number references" in msg
-        assert "L" + "66" in msg
-
-    def test_change_section_range_pattern_is_warned(self, tmp_path: pathlib.Path):
-        """`## 変更内容`内にハイフン区切り行範囲を含む場合に警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_RANGE_HYPHEN)})
-        plan = _write_plan(plans, "lineno-range.md", content)
-        result = _run(
-            {
-                "session_id": "lineno-range",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
-
-    def test_change_section_kara_range_pattern_is_warned(self, tmp_path: pathlib.Path):
-        """`## 変更内容`内に「から」区切り行範囲を含む場合に警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_RANGE_KARA)})
-        plan = _write_plan(plans, "lineno-kara.md", content)
-        result = _run(
-            {
-                "session_id": "lineno-kara",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
-
-    def test_change_section_gyoume_pattern_is_warned(self, tmp_path: pathlib.Path):
-        """`## 変更内容`内にN行目表記を含む場合に警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_NTH)})
-        plan = _write_plan(plans, "lineno-nth.md", content)
-        result = _run(
-            {
-                "session_id": "lineno-nth",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+        assert "plan file body contains absolute line-number references" in msg
+        # マッチ値（`m.group()`）が`shown_str`経由でメッセージへ含まれることを検証する
+        assert repr(expected_match) in msg
 
     def test_research_section_line_number_is_allowed(self, tmp_path: pathlib.Path):
         """例外セクション`## 調査結果`内の行番号トークンは警告されない。"""
@@ -816,7 +772,7 @@ class TestPlanFormatCheck:
         )
         output = _parse_hook_output(result.stdout)
         assert output is not None
-        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+        assert "plan file body contains absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
 
     def test_change_section_line_number_with_frontmatter_skips_correctly(self, tmp_path: pathlib.Path):
         """フロントマター内に行番号トークンを含んでも本文の`## 変更内容`内の検出に影響しない。"""
@@ -862,6 +818,36 @@ class TestPlanFormatCheck:
         # 代表5件分のline表記と末尾の超過件数注記を検証する
         assert msg.count("line ") == 5
         assert "and 1 more." in msg
+
+    @pytest.mark.parametrize(
+        ("section", "body"),
+        [
+            ("対応方針", "- 現行" + "L" + "66"),
+            ("背景", "現行" + "L" + "66"),
+            ("進捗ログ", "- 現行" + "L" + "66"),
+        ],
+    )
+    def test_non_change_section_line_number_is_warned(self, tmp_path: pathlib.Path, section: str, body: str):
+        """`## 変更内容`以外のH2配下の行番号トークンも警告される（検査対象拡張の検証）。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={section: body})
+        plan = _write_plan(plans, f"{section}-warn.md", content)
+        result = _run(
+            {
+                "session_id": f"{section}-warn",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        assert "plan file body contains absolute line-number references" in msg
+        # マッチ値（`m.group()`）が`shown_str`経由でメッセージへ含まれることを検証する
+        assert repr("L" + "66") in msg
 
 
 class TestPlanFormatSsot:

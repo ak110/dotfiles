@@ -113,7 +113,7 @@ _PLAN_REQUIRED_H2 = (
 # コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 
-# `## 変更内容`本文内の絶対行番号直書きを検出するパターン群。
+# 計画ファイル本文内の絶対行番号直書きを検出するパターン群。
 # SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
 # （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
 # `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
@@ -225,6 +225,26 @@ def _extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, s
     return body
 
 
+# 絶対行番号検査の除外H2見出し（`## 調査結果`配下は確定値領域として除外する）。
+_LINE_NUMBER_EXEMPT_H2 = ("調査結果",)
+
+
+def _iter_plan_check_target_lines(content: str) -> Iterator[tuple[int, str]]:
+    """絶対行番号検査の対象となる本文行を行番号付きで生成する。
+
+    `_iter_markdown_body_lines`の出力を元に、`_LINE_NUMBER_EXEMPT_H2`へ列挙したH2配下の行を除外する。
+    H2見出し行自体は本文行として走査対象外とする。
+    """
+    current_h2: str | None = None
+    for lineno, line in _iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            current_h2 = line[3:].strip()
+            continue
+        if current_h2 in _LINE_NUMBER_EXEMPT_H2:
+            continue
+        yield lineno, line
+
+
 def _check_plan_format(file_path: str) -> list[str]:
     """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
@@ -234,7 +254,7 @@ def _check_plan_format(file_path: str) -> list[str]:
     - 必須H2の順序違反
     - 予期せぬH2
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
-    - `## 変更内容`本文中の絶対行番号の直書き
+    - 計画ファイル本文の絶対行番号の直書き（`## 調査結果`配下を除く）
       （`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の規範違反）
 
     読み取り失敗時は空リストを返す。
@@ -273,26 +293,25 @@ def _check_plan_format(file_path: str) -> list[str]:
             actual = first_h3 if first_h3 is not None else "(no H3 present)"
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
 
-        # 変更内容H2 配下本文の絶対行番号直書き検査
-        body = _extract_h2_section_body(content, "変更内容")
-        matches: list[tuple[int, str]] = []
-        for lineno, text in body:
-            for pattern in _LINE_NUMBER_PATTERNS:
-                m = pattern.search(text)
-                if m:
-                    matches.append((lineno, m.group()))
-                    break
-        if matches:
-            shown = matches[:5]
-            shown_str = "; ".join(f"line {ln}: {repr(s)}" for ln, s in shown)
-            overflow = len(matches) - len(shown)
-            tail = f"; and {overflow} more" if overflow > 0 else ""
-            violations.append(
-                "'## 変更内容' contains absolute line-number references"
-                " (per plan-file-guidelines.md absolute-numbers norm)."
-                " Use section names or heading references instead."
-                f" Matches: {shown_str}{tail}."
-            )
+    # 計画ファイル本文の絶対行番号直書き検査（`## 調査結果`配下を除く全節）
+    matches: list[tuple[int, str]] = []
+    for lineno, text in _iter_plan_check_target_lines(content):
+        for pattern in _LINE_NUMBER_PATTERNS:
+            m = pattern.search(text)
+            if m:
+                matches.append((lineno, m.group()))
+                break
+    if matches:
+        shown = matches[:5]
+        shown_str = "; ".join(f"line {ln}: {repr(s)}" for ln, s in shown)
+        overflow = len(matches) - len(shown)
+        tail = f"; and {overflow} more" if overflow > 0 else ""
+        violations.append(
+            "plan file body contains absolute line-number references outside '## 調査結果'"
+            " (per plan-file-guidelines.md absolute-numbers norm)."
+            " Use section names or heading references instead."
+            f" Matches: {shown_str}{tail}."
+        )
 
     return violations
 

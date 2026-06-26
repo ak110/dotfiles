@@ -39,6 +39,7 @@ description: >
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
+   - `dotfiles-fb adopt`・`dotfiles-fb reject`は対象リポジトリのレビュー完遂・`git push`完了後に実行する。両コマンドとも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、対象リポジトリ側がレビュー指摘で巻き戻った場合にフィードバック管理側だけが先行公開され整合性が崩れることを避ける
    - 採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
    - 不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
 

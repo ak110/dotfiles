@@ -126,6 +126,10 @@ description: >
   - 対象レビューは`agent-toolkit:plan-mode`工程5以降のcodexレビュー・`plan-integrity-checker`・`agent-toolkit:careful-review`
   - 不採用転換ではなく追記先変更として扱い、変更後の追記先・反映内容を計画ファイルの`## 変更履歴`へ記録する
   - ユーザーへの追加採否確認は不要とし、フィードバック原文の主旨が同等に達成されている限り採用扱いの後始末を継続してよい
+- 計画ファイル`## 実行方法`での後始末（`dotfiles-fb adopt`・`dotfiles-fb reject`）の順序
+  - 後始末は対象リポジトリのレビュー完遂・`git push`完了後に配置する。
+    両コマンドとも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、対象リポジトリ側がレビュー指摘で巻き戻った場合にフィードバック管理側だけが先行公開され整合性が崩れる
+  - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→`agent-toolkit:careful-review`→`git push`→`dotfiles-fb adopt`／`dotfiles-fb reject`とする
 - 全件の承認を得たうえで計画作成へ移行する
 
 Claude Code側permission modeが`plan`でない場合は`EnterPlanMode`を呼ばず直接`agent-toolkit:plan-mode`スキルへ進む。
