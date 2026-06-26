@@ -12,6 +12,14 @@ single-session	セッションで完遂
 approach-confirm	進め方を確認
 split-execution	分割して進める
 context-shortage	残コンテキスト
+context-shortage	ターン数が増える
+context-shortage	ターン数を踏まえ
+context-shortage	ターン数の自己推定
+context-shortage	ターン数の上限
+context-shortage	対話往復が増える
+context-shortage	対話往復を踏まえ
+context-shortage	対話往復の上限
+context-shortage	これ以上のターン
 defer-onset	対応を後回し
 priority-consult	優先順位を相談
 priority-consult	優先順位判断を委ね
@@ -29,3 +37,6 @@ process-omission	規範違反を認識
 process-omission	規範違反と認識した上で
 process-omission	本計画の大規模スコープを踏まえ省略する
 process-omission	本計画範囲外として省略します
+process-omission	規範違反を承知
+process-omission	規範違反は次回
+process-omission	規範チェックをスキップ

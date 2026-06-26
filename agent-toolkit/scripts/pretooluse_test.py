@@ -1622,6 +1622,35 @@ class TestAskUserQuestionScopeEscalationCheck:
         assert "縮退誘発フレーズ" in result.stderr
         assert category in result.stderr
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "このゲームのターン数はいくつですか",
+            "対話往復の標準的な手順を教えてください",
+            "ターン制ストラテジーの設計について相談したい",
+            "規範違反しないように気を付けます",
+            "規範チェックの結果を共有します",
+        ],
+    )
+    def test_question_text_does_not_block_unrelated(self, text: str):
+        """文脈無関係なフレーズでは縮退誘発フレーズ検出が誤発火しない。"""
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": text,
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "縮退誘発フレーズ" not in result.stderr
+
     def test_header_blocks(self):
         result = _run(
             {

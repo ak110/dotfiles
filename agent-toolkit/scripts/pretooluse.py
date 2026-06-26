@@ -86,7 +86,12 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("single-session", re.compile(r"1?セッション(内|で)(の|に)?(完遂|完了|終わら|収まら|終わり)")),
     ("approach-confirm", re.compile(r"進め方を(確認|相談|決め|聞|教え)")),
     ("split-execution", re.compile(r"分割(して|で)(進|対応|実装|完了|処理)")),
-    ("context-shortage", re.compile(r"残(り)?コンテキスト")),
+    (
+        "context-shortage",
+        re.compile(
+            r"(残(り)?コンテキスト|ターン数(が増|を踏まえ|の自己推定|の上限)|対話往復(が増|を踏まえ|の上限)|これ以上のターン)"
+        ),
+    ),
     ("defer-onset", re.compile(r"(着手|対応|実装)(を)?(延期|後回し|別途|別計画)")),
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
     ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
@@ -94,7 +99,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "process-omission",
         re.compile(
-            r"(規範違反(として|を)(扱う|認識)|規範違反と認識した上で|工程省略|工程を省略|割愛(する|します)|本計画[^、。\n]{0,20}省略(する|します))"
+            r"(規範違反(として|を)(扱う|認識)|規範違反と認識した上で|規範違反を承知|規範違反は次回|規範チェック[^、。\n]{0,10}スキップ|工程省略|工程を省略|割愛(する|します)|本計画[^、。\n]{0,20}省略(する|します))"
         ),
     ),
 )
