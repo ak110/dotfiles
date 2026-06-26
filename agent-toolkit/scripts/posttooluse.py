@@ -25,6 +25,7 @@ import pathlib
 import re
 import sys
 import traceback
+from collections.abc import Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -112,20 +113,34 @@ _PLAN_REQUIRED_H2 = (
 # コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 
+# `## 変更内容`本文内の絶対行番号直書きを検出するパターン群。
+# SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
+# （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
+# `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
+_LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<![A-Za-z])L\d+"),
+    re.compile(r"\d+行目"),
+    re.compile(r"\d+\s*-\s*\d+\s*行"),
+    re.compile(r"\d+から\d+行"),
+)
 
-def _extract_h2_sections(content: str) -> list[str]:
-    """Markdown本文からH2見出しのテキストを順に抽出する。
 
-    以下の領域内の`## `行は見出しとして扱わない。
+def _iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
+    """Markdown本文の有効行を、ファイル先頭基準1始まりの行番号付きで順に生成する。
+
+    以下の領域内の行は生成対象外とする（行番号もスキップされる）。
 
     - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
-    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける。ネスト対応）
+    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）。
+      開始・終了行自体も生成対象外
     - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
+
+    H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
+    H2/H3抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
     """
-    headings: list[str] = []
     lines = content.splitlines()
     i = 0
-    # フロントマター: 1 行目が `---` のときのみ検出対象とする (途中の `---` は区切り線)
+    # フロントマター: 1 行目が `---` のときのみ検出対象とする（途中の `---` は区切り線）
     if lines and lines[0].rstrip() == "---":
         i = 1
         while i < len(lines):
@@ -137,65 +152,11 @@ def _extract_h2_sections(content: str) -> list[str]:
     fence_marker: str | None = None  # 開きフェンスのマーカー文字列（同字種・同長以上で閉じる）
     in_html_comment = False
     while i < len(lines):
+        lineno = i + 1
         line = lines[i]
         i += 1
         if in_html_comment:
-            # 閉じタグ到達行は `-->` 以降を解析せず丸ごとスキップする (素朴な実装)
-            if "-->" in line:
-                in_html_comment = False
-            continue
-        if fence_marker is not None:
-            stripped = line.strip()
-            if (
-                stripped
-                and stripped[0] == fence_marker[0]
-                and len(stripped) >= len(fence_marker)
-                and set(stripped) == {fence_marker[0]}
-            ):
-                fence_marker = None
-            continue
-        fence_match = _FENCE_PATTERN.match(line.lstrip())
-        if fence_match:
-            fence_marker = fence_match.group(1)
-            continue
-        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:  # 複数行コメントの開始
-            in_html_comment = True
-            continue
-        if line.startswith("## "):
-            headings.append(line[3:].strip())
-    return headings
-
-
-def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
-    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
-
-    _extract_h2_sections と同様に以下の領域内の見出し行は除外する。
-
-    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
-    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）
-    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
-
-    指定したH2が存在しない場合は空リストを返す。
-    """
-    headings: list[str] = []
-    lines = content.splitlines()
-    i = 0
-    # フロントマター: 1 行目が `---` のときのみ検出対象とする
-    if lines and lines[0].rstrip() == "---":
-        i = 1
-        while i < len(lines):
-            if lines[i].rstrip() in ("---", "..."):
-                i += 1
-                break
-            i += 1
-
-    fence_marker: str | None = None
-    in_html_comment = False
-    in_target_h2 = False
-    while i < len(lines):
-        line = lines[i]
-        i += 1
-        if in_html_comment:
+            # 閉じタグ到達行は `-->` 以降を解析せず丸ごとスキップする（素朴な実装）
             if "-->" in line:
                 in_html_comment = False
             continue
@@ -216,12 +177,52 @@ def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
         if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
             in_html_comment = True
             continue
+        yield lineno, line
+
+
+def _extract_h2_sections(content: str) -> list[str]:
+    """Markdown本文からH2見出しのテキストを順に抽出する。
+
+    フロントマター・コードフェンス・複数行HTMLコメント内の`## `行は見出しとして扱わない。
+    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    """
+    return [line[3:].strip() for _, line in _iter_markdown_body_lines(content) if line.startswith("## ")]
+
+
+def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
+    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
+
+    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    指定したH2が存在しない場合は空リストを返す。
+    """
+    headings: list[str] = []
+    in_target_h2 = False
+    for _, line in _iter_markdown_body_lines(content):
         if line.startswith("## "):
             in_target_h2 = line[3:].strip() == h2_heading
             continue
         if in_target_h2 and line.startswith("### "):
             headings.append(line[4:].strip())
     return headings
+
+
+def _extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
+    """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
+
+    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    対象H2見出しが存在しない場合は空リストを返す。
+    対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
+    H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
+    """
+    body: list[tuple[int, str]] = []
+    in_target_h2 = False
+    for lineno, line in _iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            in_target_h2 = line[3:].strip() == h2_heading
+            continue
+        if in_target_h2:
+            body.append((lineno, line))
+    return body
 
 
 def _check_plan_format(file_path: str) -> list[str]:
@@ -233,6 +234,8 @@ def _check_plan_format(file_path: str) -> list[str]:
     - 必須H2の順序違反
     - 予期せぬH2
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
+    - `## 変更内容`本文中の絶対行番号の直書き
+      （`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の規範違反）
 
     読み取り失敗時は空リストを返す。
     """
@@ -269,6 +272,27 @@ def _check_plan_format(file_path: str) -> list[str]:
         if first_h3 != "対象ファイル一覧":
             actual = first_h3 if first_h3 is not None else "(no H3 present)"
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
+
+        # 変更内容H2 配下本文の絶対行番号直書き検査
+        body = _extract_h2_section_body(content, "変更内容")
+        matches: list[tuple[int, str]] = []
+        for lineno, text in body:
+            for pattern in _LINE_NUMBER_PATTERNS:
+                m = pattern.search(text)
+                if m:
+                    matches.append((lineno, m.group()))
+                    break
+        if matches:
+            shown = matches[:5]
+            shown_str = "; ".join(f"line {ln}: {repr(s)}" for ln, s in shown)
+            overflow = len(matches) - len(shown)
+            tail = f"; and {overflow} more" if overflow > 0 else ""
+            violations.append(
+                "'## 変更内容' contains absolute line-number references"
+                " (per plan-file-guidelines.md absolute-numbers norm)."
+                " Use section names or heading references instead."
+                f" Matches: {shown_str}{tail}."
+            )
 
     return violations
 

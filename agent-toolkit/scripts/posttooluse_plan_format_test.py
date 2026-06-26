@@ -607,6 +607,262 @@ class TestPlanFormatCheck:
         assert "'対象ファイル'" in found_section
         assert "'対象ファイル一覧'" not in found_section
 
+    # `## 変更内容`本文内の絶対行番号直書き検査のテスト入力。
+    # SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。
+    _LINE_TOKEN = "現行" + "L" + "66"  # `_LINE_TOKEN`: 行番号トークン
+    _LINE_RANGE_HYPHEN = "148" + "-" + "151行"  # `_LINE_RANGE_HYPHEN`: ハイフン区切り行範囲
+    _LINE_RANGE_KARA = "148から151行"  # `_LINE_RANGE_KARA`: 「から」区切り行範囲
+    _LINE_NTH = "100行目"  # `_LINE_NTH`: N行目表記
+    _ALPHA_PREFIX_TOKEN = "Graph" + "QL2"  # `_ALPHA_PREFIX_TOKEN`: 英字接頭（除外確認）
+    _COUNT_EXPR = "3件・5項目"  # `_COUNT_EXPR`: 件数表現（対象外）
+
+    def _change_section_with(self, body: str) -> str:
+        """`## 変更内容`配下の本文に追加文面を埋め込んだセクション内容を返す。
+
+        先頭H3は規約に従い「対象ファイル一覧」を維持する。
+        """
+        return f"### 対象ファイル一覧\n\n- y\n\n### 詳細\n\n{body}\n"
+
+    def test_change_section_line_number_pattern_is_warned(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内に行番号トークンを含む場合に警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_TOKEN)})
+        plan = _write_plan(plans, "lineno-token.md", content)
+        result = _run(
+            {
+                "session_id": "lineno-token",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        assert "absolute line-number references" in msg
+        assert "L" + "66" in msg
+
+    def test_change_section_range_pattern_is_warned(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内にハイフン区切り行範囲を含む場合に警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_RANGE_HYPHEN)})
+        plan = _write_plan(plans, "lineno-range.md", content)
+        result = _run(
+            {
+                "session_id": "lineno-range",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+
+    def test_change_section_kara_range_pattern_is_warned(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内に「から」区切り行範囲を含む場合に警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_RANGE_KARA)})
+        plan = _write_plan(plans, "lineno-kara.md", content)
+        result = _run(
+            {
+                "session_id": "lineno-kara",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+
+    def test_change_section_gyoume_pattern_is_warned(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内にN行目表記を含む場合に警告される。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._LINE_NTH)})
+        plan = _write_plan(plans, "lineno-nth.md", content)
+        result = _run(
+            {
+                "session_id": "lineno-nth",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+
+    def test_research_section_line_number_is_allowed(self, tmp_path: pathlib.Path):
+        """例外セクション`## 調査結果`内の行番号トークンは警告されない。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"調査結果": f"- {self._LINE_TOKEN}"})
+        plan = _write_plan(plans, "research-allowed.md", content)
+        result = _run(
+            {
+                "session_id": "research-allowed",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_line_number_inside_fence_is_allowed(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内のコードフェンス内に置かれた行番号トークンは警告されない。"""
+        home, plans = self._home(tmp_path)
+        body = f"```text\n{self._LINE_TOKEN}\n```"
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(body)})
+        plan = _write_plan(plans, "fence-allowed.md", content)
+        result = _run(
+            {
+                "session_id": "fence-allowed",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_line_number_inside_html_comment_is_allowed(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内の複数行HTMLコメント内に置かれた行番号トークンは警告されない。"""
+        home, plans = self._home(tmp_path)
+        body = f"<!--\n{self._LINE_TOKEN}\n-->"
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(body)})
+        plan = _write_plan(plans, "comment-allowed.md", content)
+        result = _run(
+            {
+                "session_id": "comment-allowed",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_graphql_is_not_false_positive(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内の英字接頭を伴うトークンは警告されない（負の後読みで除外）。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._ALPHA_PREFIX_TOKEN)})
+        plan = _write_plan(plans, "alpha-prefix.md", content)
+        result = _run(
+            {
+                "session_id": "alpha-prefix",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_count_expression_is_not_false_positive(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内の件数表現はパターン対象外で警告されない。"""
+        home, plans = self._home(tmp_path)
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(self._COUNT_EXPR)})
+        plan = _write_plan(plans, "count-expr.md", content)
+        result = _run(
+            {
+                "session_id": "count-expr",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_line_number_inside_single_line_html_comment_is_warned(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内の単一行HTMLコメント内の行番号トークンは警告される。
+
+        既存除外ロジックは複数行HTMLコメントのみを状態管理するため、
+        単一行コメント（`<!-- ... -->`を1行内で閉じる形）は本文行として走査される。
+        本テストは当該設計上の限界を明示する肯定テスト。
+        """
+        home, plans = self._home(tmp_path)
+        body = f"<!-- {self._LINE_TOKEN} -->"
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(body)})
+        plan = _write_plan(plans, "single-comment.md", content)
+        result = _run(
+            {
+                "session_id": "single-comment",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        assert "absolute line-number references" in output["hookSpecificOutput"]["additionalContext"]
+
+    def test_change_section_line_number_with_frontmatter_skips_correctly(self, tmp_path: pathlib.Path):
+        """フロントマター内に行番号トークンを含んでも本文の`## 変更内容`内の検出に影響しない。"""
+        home, plans = self._home(tmp_path)
+        # フロントマター内に行番号トークンを置く。本文には警告対象を含めない。
+        prefix = f"---\nfm: {self._LINE_TOKEN}\n---\n\n"
+        content = _build_valid_plan(prefix=prefix)
+        plan = _write_plan(plans, "frontmatter.md", content)
+        result = _run(
+            {
+                "session_id": "frontmatter",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        # フロントマター内のトークンは生成対象外で本文の検出にも回らない
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_change_section_line_number_truncates_at_five_matches(self, tmp_path: pathlib.Path):
+        """`## 変更内容`内に6件以上の行番号トークンを含む場合、最大5件まで列挙され`and N more`表記が付与される。"""
+        home, plans = self._home(tmp_path)
+        # 6件の行番号トークンを別行に配置する（同一行内では最初のマッチのみ取得するため）
+        tokens = "\n".join(f"- {self._LINE_TOKEN}" for _ in range(6))
+        content = _build_valid_plan(overrides={"変更内容": self._change_section_with(tokens)})
+        plan = _write_plan(plans, "truncate.md", content)
+        result = _run(
+            {
+                "session_id": "truncate",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        output = _parse_hook_output(result.stdout)
+        assert output is not None
+        msg = output["hookSpecificOutput"]["additionalContext"]
+        # 代表5件分のline表記と末尾の超過件数注記を検証する
+        assert msg.count("line ") == 5
+        assert "and 1 more." in msg
+
 
 class TestPlanFormatSsot:
     """期待セクション一覧が`plan-mode/references/plan-file-guidelines.md`に全て登場することを検査する。"""
