@@ -126,6 +126,10 @@ _LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\d+から\d+行"),
 )
 
+# `## 変更内容 > ### 対象ファイル一覧` 配下のチェックボックス箇条書きから相対パスを抽出するパターン。
+# `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
+_CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
+
 
 def _iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
     """Markdown本文の有効行を、ファイル先頭基準1始まりの行番号付きで順に生成する。
@@ -247,7 +251,71 @@ def _iter_plan_check_target_lines(content: str) -> Iterator[tuple[int, str]]:
         yield lineno, line
 
 
-def _check_plan_format(file_path: str) -> list[str]:
+def _extract_target_files_from_changes(content: str) -> list[str]:
+    """## 変更内容 > ### 対象ファイル一覧 配下のチェックボックス箇条書きから相対パスを抽出する。"""
+    body = _extract_h2_section_body(content, "変更内容")
+    paths: list[str] = []
+    in_target_h3 = False
+    for _, line in body:
+        if line.startswith("### "):
+            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
+            continue
+        if in_target_h3:
+            m = _CHECKBOX_PATTERN.match(line)
+            if m:
+                paths.append(m.group(1).strip())
+    return paths
+
+
+def _is_agent_facing_md(rel_path: str) -> bool:
+    """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。"""
+    p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
+    parts = p.parts
+    name = p.name
+    if not name.endswith(".md"):
+        return False
+    if len(parts) == 1 and name in ("AGENTS.md", "CLAUDE.md"):
+        return True
+    if "rules" in parts[:-1]:
+        return True
+    if len(parts) >= 3 and parts[-3] == "skills" and name == "SKILL.md":
+        return True
+    if "references" in parts[:-1] and "skills" in parts[:-1]:
+        return True
+    return "agents" in parts[:-1]
+
+
+def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
+    """対象ファイル一覧の各パスの行数を確認し、200行以上の対象種別ファイルがあれば警告メッセージを返す。"""
+    paths = _extract_target_files_from_changes(content)
+    if not paths:
+        return None
+    base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
+    over_limit: list[tuple[str, int]] = []
+    for rel in paths:
+        if not _is_agent_facing_md(rel):
+            continue
+        target = base / rel
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+        if line_count >= 200:
+            over_limit.append((rel, line_count))
+    if not over_limit:
+        return None
+    listed = ", ".join(f"{p} ({n} lines)" for p, n in over_limit)
+    return (
+        f"plan file contains target files with 200 or more lines: {listed}."
+        " Per agent-standards 'document size limit' section,"
+        " when post-revision projection reaches 215 lines,"
+        " assemble the final form and measure with `wc -l`."
+        " Confirm whether you have measured the final form."
+    )
+
+
+def _check_plan_format(file_path: str, cwd: str) -> list[str]:
     """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
     検出する違反:
@@ -258,6 +326,7 @@ def _check_plan_format(file_path: str) -> list[str]:
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
     - 計画ファイル本文の絶対行番号の直書き（`## 調査結果`配下を除く）
       （`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の規範違反）
+    - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが200行以上
 
     読み取り失敗時は空リストを返す。
     """
@@ -315,11 +384,15 @@ def _check_plan_format(file_path: str) -> list[str]:
             f" Matches: {shown_str}{tail}."
         )
 
+    line_count_warning = _check_target_file_line_counts(content, cwd)
+    if line_count_warning:
+        violations.append(line_count_warning)
+
     return violations
 
 
 def main() -> int:
-    """エントリポイント。exit codeは常に0。"""
+    """エントリポイント。終了コードは常に0。"""
     try:
         payload = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, ValueError):
@@ -423,7 +496,9 @@ def main() -> int:
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
-            violations = _check_plan_format(file_path)
+            cwd_raw = payload.get("cwd", "")
+            cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+            violations = _check_plan_format(file_path, cwd)
             if violations:
                 message = _llm_notice(
                     f"plan file {file_path} does not conform to the expected structure."
