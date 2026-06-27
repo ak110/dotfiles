@@ -51,6 +51,7 @@ Write / Edit / MultiEdit:
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）のみ。
 `old_string`は既存内容の修正・削除を妨げないため検査しない。
+Edit/MultiEditのscope-escalation checkはフレーズ出現回数の増加のみを検出する（既存保持時の誤検出を解消）。
 """
 
 import json
@@ -269,7 +270,7 @@ def main() -> int:
         return 2
     if _check_secrets(tool_name, file_path):
         return 2
-    if _check_scope_escalation_in_doc_edit(tool_name, fields, file_path):
+    if _check_scope_escalation_in_doc_edit(tool_name, tool_input, file_path):
         return 2
 
     # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
@@ -541,32 +542,78 @@ def _is_scope_escalation_target_doc(file_path: str) -> bool:
     return any(p.search(normalized) is not None for p in _SCOPE_ESCALATION_DOC_TARGET_PATTERNS)
 
 
-def _check_scope_escalation_in_doc_edit(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """対象ドキュメントへの編集時、新規書き込み側にscope-escalationフレーズ転記を検出した場合にblockする。
+def _match_scope_escalation_increase(old: str, new: str) -> str | None:
+    """new側でフレーズ出現回数がold側より増加したカテゴリ識別子を返す。
+
+    `_SCOPE_ESCALATION_PHRASES`を走査し、各パターンのfindall件数を比較する。
+    new側件数がold側件数を上回るカテゴリを最初に検出した時点で当該識別子を返す。
+    既存文字列の保持時はold=new同数となり通過する（既存保持部分での誤検出を防ぐ）。
+    増加が無い場合はNoneを返す。
+    """
+    for category, pattern in _SCOPE_ESCALATION_PHRASES:
+        if len(pattern.findall(new)) > len(pattern.findall(old)):
+            return category
+    return None
+
+
+def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    """対象ドキュメントへの編集時、フレーズ出現回数の増加を検出した場合にblockする。
 
     対象は`agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）。
-    判定は`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
+    Edit/MultiEditは`_match_scope_escalation_increase`でnew側件数 > old側件数のカテゴリを検出する。
+    既存文字列の保持時は件数同数で通過する（誤検出解消）。
+    Writeは`content`全文を検査する。
+    判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
     `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、検出フレーズ本文は通知へ転記せず
     カテゴリ識別子のみを通知する。
     """
     if not _is_scope_escalation_target_doc(file_path):
         return False
-    for field, value in fields:
-        category = _match_scope_escalation(value)
-        if category is not None:
-            print(
-                _llm_notice(
-                    f"blocked: scope-escalation phrase (category: {category})"
-                    f" detected in {tool_name}.{field}. Target: {file_path}."
-                    f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
-                    f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
-                    f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。",
-                    tag="block",
-                ),
-                file=sys.stderr,
-            )
-            return True
-    return False
+    detection: tuple[str, str] | None = None
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        if isinstance(content, str):
+            category = _match_scope_escalation(content)
+            if category is not None:
+                detection = ("content", category)
+    elif tool_name == "Edit":
+        old_string = tool_input.get("old_string") or ""
+        new_string = tool_input.get("new_string") or ""
+        if isinstance(new_string, str):
+            old_string = old_string if isinstance(old_string, str) else ""
+            category = _match_scope_escalation_increase(old_string, new_string)
+            if category is not None:
+                detection = ("new_string", category)
+    elif tool_name == "MultiEdit":
+        edits = tool_input.get("edits") or []
+        if isinstance(edits, list):
+            for index, edit in enumerate(edits):
+                if not isinstance(edit, dict):
+                    continue
+                old_string = edit.get("old_string") or ""
+                new_string = edit.get("new_string") or ""
+                if not isinstance(new_string, str):
+                    continue
+                old_string = old_string if isinstance(old_string, str) else ""
+                category = _match_scope_escalation_increase(old_string, new_string)
+                if category is not None:
+                    detection = (f"edits[{index}].new_string", category)
+                    break
+    if detection is None:
+        return False
+    field, category = detection
+    print(
+        _llm_notice(
+            f"blocked: scope-escalation phrase (category: {category})"
+            f" detected in {tool_name}.{field}. Target: {file_path}."
+            f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
+            f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
+            f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 # --- manifest手編集check (warn) ---

@@ -1894,3 +1894,85 @@ class TestScopeEscalationInDocEditCheck:
             }
         )
         assert result.returncode == 2
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_edit_preserves_existing_phrase_in_unchanged_region(self, text: str, category: str):
+        """Edit時、`old_string`と`new_string`双方に同一フレーズが既存文字列として保持される場合は通過する。
+
+        フレーズ出現回数の増加比較方式ではold=new同数のため検出されない。
+        旧仕様（new_string全文検査）では検出ブロックされる回帰ケース。
+        """
+        del category  # 未使用
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/agent.md",
+                    "old_string": f"既存記述。{text}。末尾A",
+                    "new_string": f"既存記述。{text}。末尾B",
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_multiedit_preserves_existing_phrase_in_unchanged_region(self, text: str, category: str):
+        """MultiEditでも既存文字列の保持部分のフレーズは検査対象外として通過する。"""
+        del category  # 未使用
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "edits": [
+                        {
+                            "old_string": f"前文。{text}。末尾A",
+                            "new_string": f"前文。{text}。末尾B",
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_edit_detects_phrase_addition_in_new_string(self, text: str, category: str):
+        """Edit時に純粋追加された新規フレーズはブロックする。
+
+        既存に0件、追加で1件出現する純粋追加パターンの陽性テスト。
+        """
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/agent.md",
+                    "old_string": "既存記述のみ",
+                    "new_string": f"既存記述のみ。{text}",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_multiedit_detects_phrase_addition_in_new_string(self, text: str, category: str):
+        """MultiEdit時に純粋追加された新規フレーズはブロックする。
+
+        edits内のold_stringにフレーズなし・new_stringにフレーズありの陽性テスト。
+        """
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "edits": [
+                        {
+                            "old_string": "既存記述のみ",
+                            "new_string": f"既存記述のみ。{text}",
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
