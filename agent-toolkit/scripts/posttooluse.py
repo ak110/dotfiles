@@ -116,6 +116,8 @@ _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 # 計画ファイル本文内の絶対行番号直書きを検出するパターン群。
 # SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
 # （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
+# 検査対象は計画ファイル本文内の行番号表記全般で、
+# 計画ファイル自体の本文内位置の指定と他ファイル参照箇所（改訂対象の節範囲・引用元位置など）の双方を含む。
 # `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
 _LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?<![A-Za-z])L\d+"),
