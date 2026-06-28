@@ -74,6 +74,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- hook自身の異常終了をホスト側プロセスへ波及させないため広範に捕捉（fail-open）
         traceback.print_exc()
         sys.exit(0)
