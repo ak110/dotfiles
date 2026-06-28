@@ -1630,6 +1630,8 @@ class TestAskUserQuestionScopeEscalationCheck:
             "ターン制ストラテジーの設計について相談したい",
             "規範違反しないように気を付けます",
             "規範チェックの結果を共有します",
+            "規模感を確認したい",
+            "品質維持を継続する方針",
         ],
     )
     def test_question_text_does_not_block_unrelated(self, text: str):

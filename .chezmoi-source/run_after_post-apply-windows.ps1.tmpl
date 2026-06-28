@@ -158,3 +158,27 @@ if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno' -and (Test-Path $
     Write-Host '  [pytools] dotfiles-media-remote を再起動'
     Start-Process -FilePath $mediaRemotePythonw -WindowStyle Hidden -ArgumentList @('-m', 'pytools.media_remote', 'serve')
 }
+
+# media-remote 対症療法: stheno ホストでは post-apply 実行ごとに dotfiles-media-remote を停止→再起動する。
+# 再インストール経路は既存節（再インストール時の停止→再起動）が担うため、本節はそれ以外の経路
+# （needsReinstall=$false）を対象として定常運用中のハング応答不能を回復する目的で実施する。
+# dotfiles-media-remote.exe のハング原因は未特定のため対症療法とする。
+if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
+    $mediaRemoteProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        if (-not $_.CommandLine) { return $false }
+        return $_.CommandLine -like '*pytools.media_remote*'
+    })
+    foreach ($p in $mediaRemoteProcs) {
+        Write-Host "  [pytools] dotfiles-media-remote (PID=$($p.ProcessId)) を停止"
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    if ($mediaRemoteProcs.Count -gt 0) {
+        Start-Sleep -Milliseconds 500
+    }
+    # VBSラッパー経由の再起動（既存のスタートアップ経路と同じ）。
+    $vbsPath = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\launch.vbs'
+    if (Test-Path $vbsPath) {
+        Write-Host '  [pytools] dotfiles-media-remote を再起動（対症療法）'
+        Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"") -WindowStyle Hidden
+    }
+}

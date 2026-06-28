@@ -40,3 +40,6 @@ process-omission	本計画範囲外として省略します
 process-omission	規範違反を承知
 process-omission	規範違反は次回
 process-omission	規範チェックをスキップ
+quality-tradeoff	規模が大きすぎる
+quality-tradeoff	品質を維持できない
+quality-tradeoff	品質維持が困難
