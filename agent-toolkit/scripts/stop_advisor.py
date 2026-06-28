@@ -17,10 +17,11 @@ approve・通知の分岐は以下のとおり。
   再Stop間にユーザーが変更を加える可能性に備え、approveに加えて
   git status表示を付与する
 - `session_review_extension_pending`フラグが真（個人フックPostToolUseが拡張章対象の
-  作業を観測済み）: 配布物側の振り返り誘導を抑制し、git status通知のみ（変更あり）または
-  approveのみ（変更なし）を返す。拡張章フックが配布物誘導と個人章を統合した誘導文を送出する
-- 上記いずれでもない通常終了: 未コミット変更があればgit status通知を付与し、
-  セッション振り返り誘導文を`hookSpecificOutput.additionalContext`へ出力する
+  作業を観測済み）: 配布物側の振り返り誘導を抑制し`approve`を返す
+  （未コミット変更があれば`systemMessage`でgit statusを併記する）。
+  拡張章フックが配布物誘導と個人章を統合した誘導文を送出する
+- 上記いずれでもない通常終了: `decision: "block"`＋`reason`でセッション振り返り誘導文を出力し、
+  未コミット変更があれば`systemMessage`でgit statusを付与する
 
 終了判定の言語的判定基準（完了文言・質問・待機表明の判別）は
 `agent-toolkit:session-review`スキル本体の「起動方針」節で定義する。
@@ -54,6 +55,14 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
+def _is_tracked_change(line: str) -> bool:
+    """Git status --porcelain / --shortの1行がtracked変更かどうかを返す。
+
+    untrackedファイル（`??`）は対象外とする。
+    """
+    return bool(line) and not line.startswith("??")
+
+
 def _has_uncommitted_changes(cwd: str) -> bool:
     """作業ディレクトリに未コミットの変更がある場合に真を返す。
 
@@ -75,7 +84,7 @@ def _has_uncommitted_changes(cwd: str) -> bool:
         return False
     if result.returncode != 0:
         return False
-    return any(line and not line.startswith("??") for line in result.stdout.splitlines())
+    return any(_is_tracked_change(line) for line in result.stdout.splitlines())
 
 
 def _git_status_for_display(cwd: str) -> str | None:
@@ -100,7 +109,7 @@ def _git_status_for_display(cwd: str) -> str | None:
     if not output:
         return None
     # untrackedファイルのみの場合は表示しない。
-    if all(line.startswith("??") for line in output.splitlines()):
+    if not any(_is_tracked_change(line) for line in output.splitlines()):
         return None
     return output
 
@@ -114,18 +123,18 @@ def _approve(cwd: str = "") -> None:
     print(json.dumps(output, ensure_ascii=False))
 
 
-def _emit_context(body: str) -> None:
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "Stop",
-                    "additionalContext": body,
-                }
-            },
-            ensure_ascii=False,
-        )
-    )
+def _emit_block_with_status(reason: str, cwd: str = "") -> None:
+    """振り返り誘導を`decision: "block"`＋`reason`で出力し、未コミット変更があれば`systemMessage`でgit statusを併記する。
+
+    `reason`をhookの応答に載せることでセッション終端ターンを継続させ、振り返りスキルを当該ターン内で強制起動する。
+    `stop_hook_active`保護で1回のみ発火する前提。
+    """
+    output: dict[str, str] = {"decision": "block", "reason": reason}
+    if cwd:
+        status = _git_status_for_display(cwd)
+        if status:
+            output["systemMessage"] = f"[git status]\n{status}"
+    print(json.dumps(output, ensure_ascii=False))
 
 
 def main() -> int:
@@ -180,42 +189,22 @@ def main() -> int:
         _approve(cwd=cwd)
         return 0
 
-    messages: list[str] = []
-
-    # --- 未コミット変更通知（毎回提示）---
-    if isinstance(cwd, str) and _has_uncommitted_changes(cwd):
-        messages.append(
-            _llm_notice(
-                "uncommitted changes detected."
-                " Ask the user whether to commit the changes, or explain"
-                " why they should not be committed."
-                " Do not commit without user confirmation."
-            )
-        )
-
     # 拡張章フックの存在を観測した場合、振り返り誘導の重複送出を避けるため
-    # 配布物側の誘導を抑制する（拡張章フック側が併用前提の誘導文を送出する設計）。
-    # フラグは個人フックPostToolUseが拡張章対象の作業を観測した時点で真にする。
+    # 配布物側の誘導を抑制する。
     extension_pending = state.get("session_review_extension_pending") is True
     if extension_pending:
-        if messages:
-            _emit_context("\n\n".join(messages))
-        else:
-            _approve(cwd=cwd)
+        _approve(cwd=cwd)
         return 0
 
     # --- セッション振り返り誘導（毎回提示）---
     # 終了判定の基準・振り返り手順はスキル本体の「起動方針」節に集約する。
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。
-    messages.append(
-        _llm_notice(
-            f"{SESSION_REVIEW_PRECHECK} If so, invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
-            " and follow its activation policy section to decide whether to proceed with the review."
-        )
+    reason = _llm_notice(
+        f"{SESSION_REVIEW_PRECHECK} If so, invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
+        " and follow its activation policy section to decide whether to proceed with the review."
     )
-
-    _emit_context("\n\n".join(messages))
+    _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
     return 0
 
 

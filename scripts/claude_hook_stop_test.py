@@ -61,24 +61,18 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 
 def _decision_kind(decision: dict) -> str:
-    """approve / context のいずれかを返す。"""
+    """approve / context のいずれかを返す。context は`decision: "block"`＋`reason`形式の振り返り誘導応答を指す。"""
     if decision.get("decision") == "approve":
         return "approve"
-    hook_output = decision.get("hookSpecificOutput")
-    if (
-        isinstance(hook_output, dict)
-        and hook_output.get("hookEventName") == "Stop"
-        and isinstance(hook_output.get("additionalContext"), str)
-    ):
+    if decision.get("decision") == "block" and isinstance(decision.get("reason"), str):
         return "context"
     raise AssertionError(f"unexpected decision payload: {decision!r}")
 
 
-def _additional_context(decision: dict) -> str:
-    hook_output = decision.get("hookSpecificOutput")
-    assert isinstance(hook_output, dict)
-    assert hook_output.get("hookEventName") == "Stop"
-    body = hook_output.get("additionalContext")
+def _block_reason(decision: dict) -> str:
+    """`decision: block`の`reason`本文を取り出す。"""
+    assert decision.get("decision") == "block"
+    body = decision.get("reason")
     assert isinstance(body, str)
     return body
 
@@ -187,16 +181,14 @@ class TestUsageDetection:
     """pyfltr / agent-toolkit 使用検出ロジックのテスト（context発火条件として）。"""
 
     def test_detects_uv_run_pyfltr(self, tmp_path: pathlib.Path):
-        """uv run pyfltr ... の形式を検出して additionalContext を返す。"""
+        """uv run pyfltr ... の形式を検出して`decision: "block"`＋`reason`を返す。"""
         transcript = _transcript_pyfltr_then_text(tmp_path)
         result = _run(
             {"session_id": "detect-uv-pyfltr", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        body = _additional_context(decision)
-        assert "[auto-generated: dotfiles/claude_hook_stop]" in body
-        assert "Auto-generated hook notice" in body
+        body = _block_reason(decision)
         assert _EXTENSION_SKILL in body
         assert _TARGET_SESSION_REVIEW in body
 
@@ -280,6 +272,28 @@ class TestStopHookActive:
         decision = _parse_decision(result)
         assert decision["decision"] == "approve"
 
+    def test_stop_hook_active_after_block_approves(self, tmp_path: pathlib.Path):
+        """`stop_hook_active`が真の場合、直前のblock後の再呼び出しでもapproveを返す。"""
+        transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
+        # 1回目: block を返す（stop_hook_active 未設定）
+        result_first = _run(
+            {"session_id": "active-after-block", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision_first = _parse_decision(result_first)
+        assert _decision_kind(decision_first) == "context"
+        # 2回目: stop_hook_active=True → approve のみ返す
+        result_second = _run(
+            {
+                "session_id": "active-after-block",
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        decision_second = _parse_decision(result_second)
+        assert decision_second["decision"] == "approve"
+
 
 class TestStopGateDelegation:
     """`is_pending_async_work` とsession_stateの`session_review_invoked`への委譲テスト。
@@ -330,10 +344,14 @@ class TestStopGateDelegation:
         )
         decision = _parse_decision(result)
         assert _decision_kind(decision) == expected
+        if expected == "context":
+            body = _block_reason(decision)
+            assert _EXTENSION_SKILL in body
+            assert _TARGET_SESSION_REVIEW in body
 
 
 class TestRepeatContext:
-    """同一transcriptで複数回Stopしても、対象スキル未起動なら毎回additionalContextを返す。"""
+    """同一transcriptで複数回Stopしても、対象スキル未起動なら毎回`decision: "block"`＋`reason`を返す。"""
 
     def test_context_repeats_each_stop(self, tmp_path: pathlib.Path):
         transcript = _transcript_pyfltr_then_text(tmp_path)
@@ -345,12 +363,16 @@ class TestRepeatContext:
             {"session_id": "repeat", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        assert _decision_kind(_parse_decision(first)) == "context"
-        assert _decision_kind(_parse_decision(second)) == "context"
+        first_decision = _parse_decision(first)
+        second_decision = _parse_decision(second)
+        assert _decision_kind(first_decision) == "context"
+        assert _decision_kind(second_decision) == "context"
+        assert _EXTENSION_SKILL in _block_reason(first_decision)
+        assert _EXTENSION_SKILL in _block_reason(second_decision)
 
 
 class TestContextContents:
-    """context発火時のadditionalContext本文に必要な要素が含まれることを確認する。"""
+    """context発火時の`reason`本文に必要な要素が含まれることを確認する。"""
 
     def test_context_invokes_both_skills(self, tmp_path: pathlib.Path):
         transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
@@ -359,7 +381,7 @@ class TestContextContents:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        body = _additional_context(decision)
+        body = _block_reason(decision)
         assert _EXTENSION_SKILL in body
         assert _TARGET_SESSION_REVIEW in body
         assert "Skill" in body
