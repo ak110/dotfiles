@@ -40,6 +40,7 @@
 ## 新規規範の文面に対するtextlint事前検証
 
 新規の節見出し・規範本文・バレット項目の文面案は`## 変更内容`へ転記する前に、計画作成段階で一時ファイル（scratchpad配下）へ出力する。
-出力したファイルに`uvx pyfltr run-for-agent --commands=textlint <一時ファイル>`を適用し、漢字連続違反・sentence-length違反の有無を確認する。
+出力したファイルに`uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <一時ファイル>`を適用する。
+漢字連続違反・sentence-length違反・markdownlint違反・typos違反・口語表現違反の有無を確認する。
 違反検出時は計画段階で文面を調整して再検証する。
 違反回避と日本語表現の自然さが両立しない場合は当該事項を計画ファイル`### エージェント判断`へ記録してから`## 変更内容`を確定する。
