@@ -107,7 +107,7 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 - 外来語の語尾には長音符を付ける（例:「ユーザー」「サーバー」「パラメーター」。3音以上の語は省略しない）
 - 技術用語・固有名詞・コード識別子は原典の表記を優先する
 - 技術用語化していない英単語の混在は文面確定前に1語ずつ点検し、検出時はカタカナ化または日本語化する
-- 文面案を執筆する前に`references/textlint-violations.md`を読み込み、頻出違反パターンを確認する
+- 文面案を執筆する前に`references/textlint-violations.md`を読み込み、頻出lint違反パターンを確認する
   - 計画ファイル（`~/.claude/plans/*.md`）の編集時はagent-toolkitのPreToolUseフックが読み込み未了をブロックする
 
 ## 改訂・保守
@@ -164,7 +164,7 @@ uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
 Markdown要素はセマンティック（意味的役割）に沿って使う。
 視覚効果や機械チェック違反の回避を目的に、本来の意味と異なる要素を使わない。
 行幅・句点位置などの細則はmarkdownlint・textlintで自動検証される。
-頻出textlint違反パターンは`references/textlint-violations.md`を参照する。
+頻出lint違反パターンは`references/textlint-violations.md`を参照する。
 
 - 強調（`**`）は語句強調にのみ使う。見出しが必要な場合は`###`等の見出しを使う
 - 形容詞・口語表現を`「」`で囲んで強調する書き方を避ける。語句強調が必要な場合は`**`を使い、引用が必要な場合のみかぎ括弧を使う
