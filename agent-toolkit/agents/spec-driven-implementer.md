@@ -47,7 +47,8 @@ user-invocable: false
 ## 判断基準
 
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
-- ユーザー確認が必要な場面は本エージェントの前提に従いTBD.mdへ質問ブロックを追記し暫定判断で続行する
+- ユーザー確認が必要な場面は本エージェントの前提に従いTBD.mdへ質問ブロックを追記し暫定判断で続行する。
+  対象は`agent-toolkit:spec-driven-impl`スキル配下`references/qblock-templates.md`「ユーザー作業必須雛形」適用範囲規定に該当する事象に限る
   - 質問ブロックは`agent-toolkit:spec-driven-impl`スキル「5. TBD.md書式」の3類型（選択式・YES/NO・ユーザー作業必須）から質問の性質に合わせて選ぶ
     - TBD.md追記前に同テーマ配下の既存Qブロックを走査し、重複判定は`agent-toolkit:spec-driven-impl`スキル「重複防止」サブ節の基準に従う。
       重複時は新規追加せず既存ブロックの`検知回数`サブバレットを更新する
