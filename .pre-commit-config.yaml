@@ -79,6 +79,11 @@ repos:
         types_or: [python, markdown, toml, shell, bash]
         require_serial: true
         language: system
+      - id: check-line-width
+        name: 127幅違反検査
+        entry: uv run --no-project agent-toolkit/skills/writing-standards/scripts/check_line_width.py
+        language: system
+        files: '\.md(\.tmpl)?$'
       # コミット時にローカルへも反映する（適用漏れ防止のため）。
       - id: chezmoi-apply
         name: chezmoi apply
