@@ -470,6 +470,15 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _set_textlint_violations_read)
+            if file_path_normalized.endswith("plan-mode/references/plan-file-guidelines.md"):
+
+                def _set_plan_file_guidelines_read(state: dict) -> dict | None:
+                    if state.get("plan_file_guidelines_read", False):
+                        return None
+                    state["plan_file_guidelines_read"] = True
+                    return state
+
+                update_state(session_id, _set_plan_file_guidelines_read)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集はgit log確認状態を全エントリリセットする

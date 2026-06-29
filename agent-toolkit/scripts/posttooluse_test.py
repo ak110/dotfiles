@@ -17,8 +17,6 @@ import types
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
-_SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
-_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
 
 
 @functools.cache
@@ -538,6 +536,14 @@ class TestReadHandler:
                 r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
                 "textlint_violations_read",
             ),
+            (
+                "/home/user/dotfiles/agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md",
+                "plan_file_guidelines_read",
+            ),
+            (
+                r"C:\Users\user\dotfiles\agent-toolkit\skills\plan-mode\references\plan-file-guidelines.md",
+                "plan_file_guidelines_read",
+            ),
         ],
     )
     def test_read_sets_flag_for_both_posix_and_windows_paths(
@@ -572,3 +578,4 @@ class TestReadHandler:
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_read") is not True
         assert state.get("textlint_violations_read") is not True
+        assert state.get("plan_file_guidelines_read") is not True

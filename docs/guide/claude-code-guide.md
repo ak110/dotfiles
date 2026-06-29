@@ -152,6 +152,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - plan mode中で最初のツール呼び出しがplan-modeスキル以外の場合に警告
 - `AskUserQuestion`の各フィールド（質問本文・ヘッダー・選択肢のラベルや説明）に作業量・残コンテキスト・既存パターン踏襲・工程省略宣言などを根拠とした縮退誘発フレーズが含まれる場合にブロック
 - plan-modeスキル呼び出し済みのとき、`~/.claude/plans/*.md`の構成崩れと計画ファイル本文（`## 調査結果`配下を除く）の絶対行番号の直書きを検査して警告
+- 計画ファイル編集前の参照ドキュメント（`references/textlint-violations.md`・`references/plan-file-guidelines.md`）未読をブロック
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 - Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に、
   確認ダイアログを自動許可

@@ -346,6 +346,21 @@ class TestColloquialCheck:
         assert "colloquial" not in result.stderr
 
 
+def _plan_file_state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
+    env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+    if home_dir is not None:
+        env["HOME"] = str(home_dir)
+    return env
+
+
+def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
+    plans = home_dir / ".claude" / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    plan = plans / name
+    plan.write_text("# t\n", encoding="utf-8")
+    return plan
+
+
 class TestPlanModeSkillFirstCheck:
     """plan mode 下で plan-mode スキル未起動のまま plan file 編集をブロックする検査。
 
@@ -354,20 +369,8 @@ class TestPlanModeSkillFirstCheck:
     Write/Edit/MultiEditのみがブロック対象となる。
     """
 
-    @staticmethod
-    def _state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
-        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        if home_dir is not None:
-            env["HOME"] = str(home_dir)
-        return env
-
-    @staticmethod
-    def _make_plan(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
-        plans = home_dir / ".claude" / "plans"
-        plans.mkdir(parents=True, exist_ok=True)
-        plan = plans / name
-        plan.write_text("# t\n", encoding="utf-8")
-        return plan
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
 
     def test_blocks_plan_file_write_without_skill(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -407,11 +410,15 @@ class TestPlanModeSkillFirstCheck:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "plan-skill-flag"
-        # textlint_violations_readも併せて設定する（独立checkとの干渉回避）
+        # textlint_violations_read・plan_file_guidelines_readも併せて設定する（独立checkとの干渉回避）
         _write_session_state(
             tmp_path,
             sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
         )
         result = _run(
             {
@@ -491,8 +498,12 @@ class TestPlanModeSkillFirstCheck:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "non-plan-mode"
-        # textlint_violations_readを設定して独立checkとの干渉を回避
-        _write_session_state(tmp_path, sid, {"textlint_violations_read": True})
+        # textlint_violations_read・plan_file_guidelines_readを設定して独立checkとの干渉を回避
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"textlint_violations_read": True, "plan_file_guidelines_read": True},
+        )
         result = _run(
             {
                 "tool_name": "Write",
@@ -509,9 +520,7 @@ class TestPlanModeSkillFirstCheck:
 class TestPlanModeSkillCallSites:
     """plan-modeスキル呼び出しの素通り保証。"""
 
-    @staticmethod
-    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+    _state_env = staticmethod(_plan_file_state_env)
 
     @pytest.mark.parametrize("skill_name", ["agent-toolkit:plan-mode", "plan-mode"])
     def test_allowed_outside_plan_mode(self, tmp_path: pathlib.Path, skill_name: str):
@@ -565,27 +574,19 @@ class TestTextlintViolationsReadFirstCheck:
     一切ブロック・警告しない。
     """
 
-    @staticmethod
-    def _state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
-        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        if home_dir is not None:
-            env["HOME"] = str(home_dir)
-        return env
-
-    @staticmethod
-    def _make_plan(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Path:
-        plans = home_dir / ".claude" / "plans"
-        plans.mkdir(parents=True, exist_ok=True)
-        plan = plans / name
-        plan.write_text("# t\n", encoding="utf-8")
-        return plan
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
 
     def test_blocks_plan_file_write_without_read(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "tv-write-block"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
+        )
         result = _run(
             {
                 "tool_name": "Write",
@@ -604,7 +605,11 @@ class TestTextlintViolationsReadFirstCheck:
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
         sid = "tv-edit-block"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
+        )
         result = _run(
             {
                 "tool_name": "Edit",
@@ -615,13 +620,19 @@ class TestTextlintViolationsReadFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 2
+        assert "textlint-violations.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_blocks_plan_file_multiedit_without_read(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home, "multi.md")
         env = self._state_env(tmp_path, home)
         sid = "tv-multi-block"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
+        )
         result = _run(
             {
                 "tool_name": "MultiEdit",
@@ -635,6 +646,8 @@ class TestTextlintViolationsReadFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 2
+        assert "textlint-violations.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_allows_plan_file_when_flag_set(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -644,7 +657,11 @@ class TestTextlintViolationsReadFirstCheck:
         _write_session_state(
             tmp_path,
             sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
         )
         result = _run(
             {
@@ -667,6 +684,132 @@ class TestTextlintViolationsReadFirstCheck:
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
                 "session_id": "tv-other-file",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
+class TestPlanFileGuidelinesReadFirstCheck:
+    """plan file 編集前に plan-file-guidelines.md 未読の場合のブロック検査。
+
+    `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
+    Write/Edit/MultiEditのみがブロック対象となる。plan file以外の操作は
+    一切ブロック・警告しない。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    def test_blocks_plan_file_write_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "pfg-write-block"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "plan-file-guidelines.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "edit.md")
+        env = self._state_env(tmp_path, home)
+        sid = "pfg-edit-block"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+        )
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan), "old_string": "a", "new_string": "b"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "plan-file-guidelines.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_plan_file_multiedit_without_read(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home, "multi.md")
+        env = self._state_env(tmp_path, home)
+        sid = "pfg-multi-block"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
+        )
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [{"old_string": "a", "new_string": "b"}],
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "plan-file-guidelines.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_allows_plan_file_when_flag_set(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "pfg-flag-set"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
+        """plan file以外の編集はフラグ未設定でも通す。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        env = self._state_env(tmp_path, home)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
+                "session_id": "pfg-other-file",
                 "permission_mode": "default",
             },
             env_overrides=env,
@@ -761,9 +904,7 @@ class TestLanguageEscalation:
     セッション状態を介してexit code 2でツール呼び出しをブロックする。
     """
 
-    @staticmethod
-    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+    _state_env = staticmethod(_plan_file_state_env)
 
     @staticmethod
     def _write_transcript(tmp_path: pathlib.Path, text: str, msg_id: str = "m1") -> pathlib.Path:
@@ -950,11 +1091,9 @@ class TestBashGitCommitWarning:
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        return _plan_file_state_env(tmp_path)
 
-    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
-        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    _write_state = staticmethod(_write_session_state)
 
     def _invoke(
         self,
@@ -1117,11 +1256,9 @@ class TestBashAmendRebaseBlock:
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        return _plan_file_state_env(tmp_path)
 
-    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
-        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    _write_state = staticmethod(_write_session_state)
 
     def _invoke(
         self,
@@ -1349,11 +1486,9 @@ class TestCodexReviewNotRead:
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        return _plan_file_state_env(tmp_path)
 
-    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
-        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    _write_state = staticmethod(_write_session_state)
 
     def test_blocked_when_not_read(self, state_dir: dict[str, str]):
         """codex-review.md未読時にcodex MCP呼び出しがブロックされる。"""
@@ -1384,11 +1519,9 @@ class TestCodexMcpSandbox:
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
-        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        return _plan_file_state_env(tmp_path)
 
-    def _write_state(self, tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
-        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    _write_state = staticmethod(_write_session_state)
 
     def test_sandbox_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
