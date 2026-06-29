@@ -76,7 +76,7 @@ class TestMojibakeCheck:
         assert result.returncode == 2
 
     def test_old_string_mojibake_is_allowed(self):
-        """old_string 内の文字化けは既存修復を妨げないため通す。"""
+        """old_string 内の文字化けは既存修復を妨げないため通過する。"""
         result = _run(
             {
                 "tool_name": "Edit",
@@ -118,7 +118,7 @@ class TestPs1EolCheck:
         assert result.returncode == 0
 
     def test_ps1_single_line_edit_allowed(self):
-        """改行を含まない 1 行の Edit は誤検出を避けて通す。"""
+        """改行を含まない 1 行の Edit は誤検出を避けて通過する。"""
         result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1", "old_string": "Old", "new_string": "New"}})
         assert result.returncode == 0
 
@@ -158,7 +158,7 @@ class TestLockfilesCheck:
         assert "cargo add" in result.stderr
 
     def test_normal_file_allowed(self):
-        """lockfile 名を部分的に含むだけのパスは通す (例: uv.lock.bak)。"""
+        """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "uv.lock.bak", "content": "x"}})
         assert result.returncode == 0
 
@@ -432,7 +432,7 @@ class TestPlanModeSkillFirstCheck:
         assert result.returncode == 0
 
     def test_allows_non_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
-        """plan file 以外の編集はスキル未起動でも通す。"""
+        """plan file 以外の編集はスキル未起動でも通過する。"""
         home = tmp_path / "home"
         home.mkdir()
         env = self._state_env(tmp_path, home)
@@ -675,7 +675,7 @@ class TestTextlintViolationsReadFirstCheck:
         assert result.returncode == 0
 
     def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
-        """plan file以外の編集はフラグ未設定でも通す。"""
+        """plan file以外の編集はフラグ未設定でも通過する。"""
         home = tmp_path / "home"
         home.mkdir()
         env = self._state_env(tmp_path, home)
@@ -801,7 +801,7 @@ class TestPlanFileGuidelinesReadFirstCheck:
         assert result.returncode == 0
 
     def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
-        """plan file以外の編集はフラグ未設定でも通す。"""
+        """plan file以外の編集はフラグ未設定でも通過する。"""
         home = tmp_path / "home"
         home.mkdir()
         env = self._state_env(tmp_path, home)
@@ -816,6 +816,703 @@ class TestPlanFileGuidelinesReadFirstCheck:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestPlanFileSizeLimitTargetWcLRecorded:
+    """plan file Write時の文書サイズ上限対象ファイルwc -l実測値記録漏れ検出。
+
+    `## 変更内容`に文書サイズ上限対象パスが列挙され、実ファイルが200行以上にもかかわらず
+    `## 調査結果`または`### エージェント判断`にwc -l実測値（±2許容）が未記載の場合にブロックする。
+    対象外パス・200行未満・Write以外のツール・plan file以外は一切ブロックしない。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _run_with_cwd(
+        payload: object,
+        cwd: pathlib.Path,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        text = json.dumps(payload, ensure_ascii=False)
+        env = os.environ.copy()
+        if env_overrides:
+            env.update(env_overrides)
+        return subprocess.run(
+            [sys.executable, str(_SCRIPT)],
+            input=text,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=str(cwd),
+        )
+
+    @staticmethod
+    def _all_prior_flags(tmp_path: pathlib.Path, session_id: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+
+    @staticmethod
+    def _make_target_file(base: pathlib.Path, rel: str, lines: int = 210) -> pathlib.Path:
+        target = base / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(f"line {i}" for i in range(lines)) + "\n", encoding="utf-8")
+        return target
+
+    def test_blocks_when_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """変更内容に対象パスがあり実ファイルが200行以上だが調査結果に基名未記載の場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-no-record"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "test-rule.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_number_deviation_exceeds_2(self, tmp_path: pathlib.Path):
+        """調査結果に基名はあるが記載行数が実測値から±3以上ずれている場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-wrong-count"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 100 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "test-rule.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_passes_when_file_under_200_lines(self, tmp_path: pathlib.Path):
+        """実ファイルが200行未満の場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-small-file"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=50)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_path_not_in_scope(self, tmp_path: pathlib.Path):
+        """文書サイズ上限対象外パスは200行以上でも通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-out-of-scope"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "some/other/file.md"
+        self._make_target_file(tmp_path, target_rel, lines=300)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_wc_l_recorded_in_survey_results(self, tmp_path: pathlib.Path):
+        """調査結果に実測値±2の数値が記載されている場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-correct-chosa"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 210 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_wc_l_recorded_in_agent_judgment(self, tmp_path: pathlib.Path):
+        """エージェント判断に実測値±2の数値が記載されている場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-agent-judgment"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = (
+            "## 変更内容\n\n"
+            f"- `{target_rel}` を変更する\n\n"
+            "## 調査結果\n\n調査内容。\n\n"
+            "### エージェント判断\n\ntest-rule.md: 209行。\n"
+        )
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_wc_l_recorded_in_agent_judgment_without_survey_results(self, tmp_path: pathlib.Path):
+        """`## 調査結果`が存在せず`### エージェント判断`のみに実測値±2の数値が記載されている場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-agent-judgment-only"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        # `## 調査結果`セクションを持たず、`### エージェント判断`のみに実測値を記載する
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n### エージェント判断\n\ntest-rule.md: 209行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_for_non_write_tool(self, tmp_path: pathlib.Path):
+        """Write以外のツール（Editなど）は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-non-write"
+        self._all_prior_flags(tmp_path, sid)
+
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "# t",
+                    "new_string": "# t",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_for_non_plan_file(self, tmp_path: pathlib.Path):
+        """plan file以外のWriteは通過する。"""
+        home = tmp_path / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        env = self._state_env(tmp_path, home)
+        # file_pathが計画ファイル外のため、本checkは先行する全checkで即時returnする（事前フラグ不要）
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "not-a-plan.md"), "content": content},
+                "session_id": "psl-not-plan",
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_number_deviation_is_2(self, tmp_path: pathlib.Path):
+        """記載値が実測値から±2の場合は通過する（上限境界値）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-dev-2-pass"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        # 208（実測値210から-2）で通過することを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 208 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_when_number_deviation_is_3(self, tmp_path: pathlib.Path):
+        """記載値が実測値から±3の場合はブロックする（上限+1境界値）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-dev-3-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        # 207（実測値210から-3）でブロックすることを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 207 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_passes_when_number_deviation_is_plus_2(self, tmp_path: pathlib.Path):
+        """記載値が実測値から+2の場合は通過する（上限境界値・正方向）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-dev-plus-2-pass"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        # 212（実測値210から+2）で通過することを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 212 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_when_number_deviation_is_plus_3(self, tmp_path: pathlib.Path):
+        """記載値が実測値から+3の場合はブロックする（上限+1境界値・正方向）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-dev-plus-3-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        # 213（実測値210から+3）でブロックすることを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 213 行。\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_agents_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりAGENTS.mdが対象となる場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-agents-md-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "some/dir/AGENTS.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "AGENTS.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_claude_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりCLAUDE.mdが対象となる場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-claude-md-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "some/dir/CLAUDE.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "CLAUDE.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_passes_when_changes_section_missing(self, tmp_path: pathlib.Path):
+        """`## 変更内容`セクションが存在しない場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-no-changes-section"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = "## 背景\n\n変更内容セクションなし。\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_target_file_does_not_exist(self, tmp_path: pathlib.Path):
+        """`## 変更内容`に対象パスが列挙されても実ファイルが存在しない場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-no-file"
+        self._all_prior_flags(tmp_path, sid)
+
+        # 実ファイルを作成しない
+        target_rel = "agent-toolkit/rules/nonexistent.md"
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_lines_just_below_200(self, tmp_path: pathlib.Path):
+        """実ファイルが199行（閾値未満）の場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-199-lines"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=199)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_when_lines_exactly_200(self, tmp_path: pathlib.Path):
+        """実ファイルが200行（閾値ちょうど）の場合は照合対象となりブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-200-lines"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/rules/test-rule.md"
+        self._make_target_file(tmp_path, target_rel, lines=200)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_skill_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`agent-toolkit/skills/foo/SKILL.md`相当のパスが対象として認識される場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-skill-md-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/skills/foo/SKILL.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "SKILL.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_references_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`agent-toolkit/skills/foo/references/bar.md`相当のパスが対象として認識される場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-references-md-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/skills/foo/references/bar.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "bar.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_agents_definition_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`agent-toolkit/agents/foo.md`相当のパスが対象として認識される場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-agents-def-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/agents/foo.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "foo.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_when_chezmoi_dot_claude_rules_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`.chezmoi-source/dot_claude/rules/foo.md`相当のパスが対象として認識される場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-chezmoi-rules-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = ".chezmoi-source/dot_claude/rules/foo.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "foo.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_passes_when_all_files_have_wc_l_recorded(self, tmp_path: pathlib.Path):
+        """`## 変更内容`に複数ファイルが列挙されており全ファイルの行数が`## 調査結果`に記載済みの場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-multi-all-recorded"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel1 = "agent-toolkit/rules/test-rule1.md"
+        target_rel2 = "agent-toolkit/rules/test-rule2.md"
+        self._make_target_file(tmp_path, target_rel1, lines=210)
+        self._make_target_file(tmp_path, target_rel2, lines=210)
+
+        content = (
+            "## 変更内容\n\n"
+            f"- `{target_rel1}` を変更する\n"
+            f"- `{target_rel2}` を変更する\n\n"
+            "## 調査結果\n\n"
+            "test-rule1.md は 210 行。\ntest-rule2.md は 210 行。\n"
+        )
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_when_first_file_recorded_but_second_missing(self, tmp_path: pathlib.Path):
+        """`## 変更内容`に複数ファイルが列挙され先頭ファイルは記載済みでも後続ファイルが未記載の場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-multi-second-missing"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel1 = "agent-toolkit/rules/test-rule1.md"
+        target_rel2 = "agent-toolkit/rules/test-rule2.md"
+        self._make_target_file(tmp_path, target_rel1, lines=210)
+        self._make_target_file(tmp_path, target_rel2, lines=210)
+
+        content = (
+            "## 変更内容\n\n"
+            f"- `{target_rel1}` を変更する\n"
+            f"- `{target_rel2}` を変更する\n\n"
+            "## 調査結果\n\n"
+            "test-rule1.md は 210 行。\n"
+        )
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "test-rule2.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
 
 class TestResponseLanguageCheck:
