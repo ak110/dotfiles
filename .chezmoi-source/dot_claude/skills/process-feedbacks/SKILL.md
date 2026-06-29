@@ -8,8 +8,10 @@ description: >
 
 # フィードバック消化
 
-`dotfiles-fb`の全サブコマンド（`add`・`list`・`adopt`・`reject`・`rm`・`edit`・`commit`）が内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
-`adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
+`dotfiles-fb`の全サブコマンド（`add`・`list`・`adopt`・`reject`・`rm`・`edit`・`commit`）が
+内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
+`adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、
+対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
 
 ## ステップ1: 件数確認
 
@@ -39,7 +41,10 @@ description: >
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
-   - `dotfiles-fb adopt`・`dotfiles-fb reject`は対象リポジトリのレビュー完遂・`git push`完了後に実行する。両コマンドとも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、対象リポジトリ側がレビュー指摘で巻き戻った場合にフィードバック管理側だけが先行公開され整合性が崩れることを避ける
+   - `dotfiles-fb adopt`・`dotfiles-fb reject`は対象リポジトリのレビュー完遂・`git push`完了後に
+     実行する。両コマンドとも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、
+     対象リポジトリ側がレビュー指摘で巻き戻った場合に
+     フィードバック管理側だけが先行公開され整合性が崩れることを避ける
    - 採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
    - 不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
 

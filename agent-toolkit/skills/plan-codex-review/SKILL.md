@@ -2,7 +2,8 @@
 name: plan-codex-review
 description: >
   plan-modeスキルのcodexレビュー工程から呼び出す。
-  呼び出し時は次の情報を引数に渡す。計画ファイルの絶対パス、プロジェクトルートの絶対パス、初回か継続かの別、継続時は`threadId`（MCP版）または`SESSION_ID`（CLI版）、追加のレビュー観点（任意）
+  呼び出し時は次の情報を引数に渡す。計画ファイルの絶対パス、プロジェクトルートの絶対パス、
+  初回か継続かの別、継続時は`threadId`（MCP版）または`SESSION_ID`（CLI版）、追加のレビュー観点（任意）
 context: fork
 agent: Explore
 allowed-tools: mcp__codex__codex mcp__codex__codex-reply Bash(codex exec*)
@@ -14,7 +15,8 @@ codexレビューを1ラウンド実行して指摘全文を報告する。
 
 `mcp__codex__codex` / `mcp__codex__codex-reply`が利用可能な環境では常時MCPツール版を使う。
 CLIフォールバック版はMCPが利用不可な環境専用とする。
-CLI実行が失敗した場合は再試行可否のユーザー確認で判断停止せず、MCP利用可能性を再点検したうえで利用可能なら経路を切り替えて続行する。
+CLI実行が失敗した場合は再試行可否のユーザー確認で判断停止せず、
+MCP利用可能性を再点検したうえで利用可能なら経路を切り替えて続行する。
 
 ## プロンプト構築
 
@@ -50,7 +52,9 @@ H1見出し以降を埋め込む。
 
 ### MCPツール版
 
-`ToolSearch`でスキーマを取得した直後の最初のアクションとして該当MCPツールを呼び出す。プロンプト生成・パラメーター整形のための自己点検をツール呼び出し前に続けない。これは初回・継続を問わず、`mcp__codex__codex-reply`呼び出しも対象に含める。
+`ToolSearch`でスキーマを取得した直後の最初のアクションとして該当MCPツールを呼び出す。
+プロンプト生成・パラメーター整形のための自己点検をツール呼び出し前に続けない。
+これは初回・継続を問わず、`mcp__codex__codex-reply`呼び出しも対象に含める。
 
 - 初回: `mcp__codex__codex`を以下の引数で呼び出す
   - `cwd`: `"{project_directory}"`

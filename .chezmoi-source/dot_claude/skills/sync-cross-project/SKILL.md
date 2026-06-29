@@ -73,7 +73,8 @@ description: >
 
 - `textlint-rule-prh`（dotfilesのみ）: Claude Codeのコンテキスト汚染を防ぐためtextlint系を特に厳しくする方針
 - `--dist=loadfile`（pytest、dotfilesのみ）: テストのファイル単位のセットアップ/ティアダウンに依存するため
-- pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースからドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
+- pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから
+  ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
 
 ## pnpmに関する既知の注意点
 
@@ -90,13 +91,17 @@ description: >
 - ツールチェイン周りの修正の場合は以下のメンテナンスも確認する（気付きにくい）
   - `pyfltr/docs/guide/recommended.md`
   - `pyfltr/docs/guide/recommended-nonpython.md`
-- 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を発見したらdotfiles側を修正する（マスター）
-- `docs/development/development.md`の「サプライチェーン攻撃対策」節は、Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする
+- 他プロジェクト作業中に`~/.claude/rules/agent-toolkit/*`や`/agent-toolkit:*`スキルの問題を
+  発見したらdotfiles側を修正する（マスター）
+- `docs/development/development.md`の「サプライチェーン攻撃対策」節は、
+  Python系（dotfiles・pyfltr・pytilpack・smpr）間で概ね共通文面とする
   - UV_FROZEN方針を含む
   - `exclude-newer`の参照先など一部はプロジェクト固有差分を許容する
   - 変更時は他プロジェクトへの波及を確認する
-- README.md・CLAUDE.md・docs/development/development.md間で、共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
-- README.md・CLAUDE.md・docs/development/development.mdの章構成・章順・共通文面はmyprojects.mdの「ドキュメント章構成の統一」章に従い、他プロジェクトとの比較で逸脱を検出する
+- README.md・CLAUDE.md・docs/development/development.md間で、
+  共通化が可能な節（役割分担・コミットメッセージ等）が出てきた場合も同様に揃える
+- README.md・CLAUDE.md・docs/development/development.mdの章構成・章順・共通文面は
+  myprojects.mdの「ドキュメント章構成の統一」章に従い、他プロジェクトとの比較で逸脱を検出する
 
 ### gv / lc（Windows用プロジェクト）の特殊事情
 
@@ -122,7 +127,8 @@ description: >
 - container非対応のジョブ（Windows runner必須・chezmoi検証・Docker Compose依存など）は従来どおりruner上で実行する
 - container化したジョブのキャッシュは`actions/cache`で`/cache`配下を一括キャッシュする方式に統一する
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
-- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、PowerShell系（gv / lc）が`check-suites` API方式
+- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
+  PowerShell系（gv / lc）が`check-suites` API方式
 - リリース時のバージョニング基準は以下のとおり（セマンティックバージョニングとは異なる）
   - バグ修正・軽微な機能追加: パッチ（CI定義上は「PATCH」）
   - 大きめの機能追加・軽微な破壊的変更: マイナー

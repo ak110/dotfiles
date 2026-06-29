@@ -22,7 +22,8 @@
 - エラーハンドリング
   - `try`／`catch`／`finally`を使う
   - non-terminating errorをキャッチするために`-ErrorAction Stop`を指定する
-  - ネイティブexe（`powercfg`・`reg`・`git`・`winget`・`chezmoi`・`uv`等）の呼び出し直後で`$LASTEXITCODE`を判定し非ゼロなら`throw`する
+  - ネイティブexe（`powercfg`・`reg`・`git`・`winget`・`chezmoi`・`uv`等）の呼び出し直後で
+    `$LASTEXITCODE`を判定し非ゼロなら`throw`する
     - `$ErrorActionPreference = 'Stop'`はネイティブexeの非ゼロ終了を例外化しないため必要となる
     - 例外: `try/catch`で意図的に失敗を抑止する`best-effort`呼び出しは判定対象外
 - パス操作
