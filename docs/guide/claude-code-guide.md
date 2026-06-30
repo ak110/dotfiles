@@ -54,7 +54,7 @@ Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Cl
 プラグイン単体の利用者にはバージョン検査の強制機構はないため非強制の前提条件として扱う。
 dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
 
-ツールキットのインストールには以下のワンライナーを実行。
+ツールキットのインストールには以下のワンライナーを実行する。
 
 - Linux:
 
@@ -98,7 +98,7 @@ agent-toolkitプラグインがuser scopeへインストール・更新される
 
 #### `/plugin`コマンド
 
-claude-plugins-officialから以下を導入。
+claude-plugins-officialから以下を導入する。
 
 - 推奨: `context7`・`typescript-lsp`（`npm install -g typescript-language-server typescript`が必要）
 - 任意: `claude-md-management`・`skill-creator`
@@ -182,7 +182,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 ### 明示呼び出し専用のスキル
 
 - `/overhaul-project`: プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
-- `/quality-sweep`: `plan-impl-reviewer`観点で既存不良を網羅的に検出し`claude`サブエージェントへ分担修正する
+- `/quality-sweep`: `plan-impl-reviewer`観点で既存不良を網羅的に検出し`claude`サブエージェントへ修正を分担委譲する
 
 ## 更新方法
 
