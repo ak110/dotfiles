@@ -119,6 +119,67 @@ def _build_parser() -> argparse.ArgumentParser:
         help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
     )
 
+    tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
+    tbd_add.add_argument(
+        "repo_path",
+        metavar="REPO_PATH",
+        help="対象リポジトリのローカルパス（リモートURLを自動取得して格納）。",
+    )
+    tbd_add.add_argument(
+        "--scope",
+        metavar="NAME",
+        default=None,
+        help="呼び出し元固有のスコープ識別子（任意。frontmatterにscope: <NAME>として記録）。",
+    )
+    tbd_add.add_argument(
+        "--question-type",
+        choices=("free", "yesno", "choice"),
+        default="free",
+        help="質問種別（既定: free）。",
+    )
+    tbd_add.add_argument(
+        "--choices",
+        metavar="A,B,C",
+        default=None,
+        help="question-type=choice時の選択肢（カンマ区切り）。",
+    )
+    tbd_add.add_argument(
+        "messages",
+        metavar="MESSAGE",
+        nargs="*",
+        help="投入するTBDメッセージ（省略時は$EDITORで編集する）。",
+    )
+
+    tbd_list = sub.add_parser("tbd-list", help="TBDをtarget_repoごとに出力する")
+    tbd_list.add_argument(
+        "--target-repo",
+        metavar="REPO",
+        default=None,
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルタする。",
+    )
+    tbd_list.add_argument(
+        "--status",
+        choices=("all", "answered", "unanswered"),
+        default="all",
+        help="回答状況でフィルタする（既定: all）。",
+    )
+
+    tbd_answer = sub.add_parser(
+        "tbd-answer",
+        help="未回答TBDを1件ずつ画面表示し$EDITORで回答する",
+    )
+    tbd_answer.add_argument(
+        "--target-repo",
+        metavar="REPO",
+        default=None,
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルタする。",
+    )
+
+    tbd_edit = sub.add_parser("tbd-edit", help="$EDITORでTBDを編集してcommit・push")
+    tbd_edit.add_argument(
+        "filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。"
+    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
     enable_completion(parser)
     return parser
 
@@ -684,6 +745,203 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
             sys.exit(result.returncode)
 
 
+def _tbd_subdir(private_notes: pathlib.Path) -> pathlib.Path:
+    """tbd/inbox配下のディレクトリパスを返す。必要時に作成する。"""
+    path = private_notes / "tbd" / "inbox"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
+    """argcomplete用のTBDファイル名補完候補生成。
+
+    `~/private-notes/tbd/inbox/`配下の`*.md`ファイル名をprefix一致で返す。
+    """
+    tbd_dir = pathlib.Path.home() / "private-notes" / "tbd" / "inbox"
+    if not tbd_dir.exists():
+        return []
+    return sorted(p.name for p in tbd_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))
+
+
+def _is_tbd_answered(text: str) -> bool:
+    """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
+    marker = "\n## 回答\n"
+    idx = text.find(marker)
+    if idx < 0:
+        return False
+    body = text[idx + len(marker) :]
+    next_h2 = body.find("\n## ")
+    if next_h2 >= 0:
+        body = body[:next_h2]
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("<!--") and stripped.endswith("-->"):
+            continue
+        return True
+    return False
+
+
+def _cmd_tbd_add(
+    args: argparse.Namespace,
+    private_notes: pathlib.Path,
+    now: datetime.datetime,
+    home: pathlib.Path,
+) -> None:
+    """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。"""
+    target_repo = _resolve_repo_id(args.repo_path)
+    messages = list(args.messages)
+    if not messages:
+        message = _collect_message_via_editor()
+        if message is None:
+            sys.exit(1)
+        messages = [message]
+    if args.question_type == "choice" and not args.choices:
+        print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
+        sys.exit(2)
+    _pull(private_notes)
+    timestamp = now.strftime("%Y%m%d-%H%M%S")
+    created_iso = now.isoformat()
+    tbd_dir = _tbd_subdir(private_notes)
+    counter = _max_existing_seq(tbd_dir, timestamp) + 1
+    fm_extra = ""
+    if args.scope:
+        fm_extra += f"scope: {args.scope}\n"
+    fm_extra += f"question_type: {args.question_type}\n"
+    if args.question_type == "choice":
+        fm_extra += f"choices: {args.choices}\n"
+    generated: list[str] = []
+    for message in messages:
+        filename = f"{timestamp}-{counter:03d}.md"
+        content = (
+            f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{fm_extra}---\n\n"
+            f"## 質問\n\n{message}\n\n## 回答\n\n"
+            "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+        )
+        (tbd_dir / filename).write_text(content, encoding="utf-8")
+        generated.append(filename)
+        counter += 1
+    count = len(generated)
+    _commit_and_push(
+        private_notes,
+        f"chore: add {count} tbd {'item' if count == 1 else 'items'}",
+        ["tbd"],
+    )
+    print(f"{count}件投入:")
+    for filename in generated:
+        print(f"  {_shorten_home(tbd_dir / filename, home)}")
+
+
+def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """tbd-listサブコマンド: TBDをtarget_repoごとに出力。"""
+    tbd_dir = private_notes / "tbd" / "inbox"
+    _pull(private_notes)
+    if not tbd_dir.exists():
+        return
+    filter_repo: str | None = None
+    if args.target_repo is not None:
+        filter_repo = _resolve_repo_id(args.target_repo)
+    entries: dict[str, list[tuple[str, str, bool]]] = {}
+    for path in sorted(tbd_dir.iterdir()):
+        if path.suffix != ".md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        target_repo = _parse_target_repo(text)
+        if filter_repo is not None and target_repo != filter_repo:
+            continue
+        answered = _is_tbd_answered(text)
+        if args.status == "answered" and not answered:
+            continue
+        if args.status == "unanswered" and answered:
+            continue
+        entries.setdefault(target_repo, []).append((path.name, text, answered))
+    for repo, items in entries.items():
+        print(f"## target_repo: {repo}")
+        for name, text, answered in items:
+            label = "answered" if answered else "unanswered"
+            print(f"### {name} [{label}]")
+            print(text)
+            print()
+
+
+def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """tbd-answerサブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。"""
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        print("$EDITORが未設定のため回答経路を利用できません。", file=sys.stderr)
+        sys.exit(1)
+    tbd_dir = private_notes / "tbd" / "inbox"
+    _pull(private_notes)
+    if not tbd_dir.exists():
+        print("未回答のTBDはありません。")
+        return
+    filter_repo: str | None = None
+    if args.target_repo is not None:
+        filter_repo = _resolve_repo_id(args.target_repo)
+    targets: list[pathlib.Path] = []
+    for path in sorted(tbd_dir.iterdir()):
+        if path.suffix != ".md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if filter_repo is not None and _parse_target_repo(text) != filter_repo:
+            continue
+        if _is_tbd_answered(text):
+            continue
+        targets.append(path)
+    if not targets:
+        print("未回答のTBDはありません。")
+        return
+    edited: list[str] = []
+    for path in targets:
+        print(f"--- {path.name} ---")
+        print(path.read_text(encoding="utf-8"))
+        before = path.read_bytes()
+        result = subprocess.run([editor, str(path)], check=False)
+        if result.returncode != 0:
+            print(
+                f"エディターが終了コード{result.returncode}で終了しました。中断します。",
+                file=sys.stderr,
+            )
+            break
+        after = path.read_bytes()
+        if before != after:
+            edited.append(path.name)
+    if not edited:
+        print("差分なし。")
+        return
+    count = len(edited)
+    _commit_and_push(
+        private_notes,
+        f"chore: answer {count} tbd {'item' if count == 1 else 'items'}",
+        ["tbd"],
+    )
+    print(f"{count}件回答反映: {', '.join(edited)}")
+
+
+def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """tbd-editサブコマンド: $EDITORでTBDを編集してcommit・push。"""
+    editor = os.environ.get("EDITOR")
+    if not editor:
+        print("$EDITORが未設定のため編集できません。", file=sys.stderr)
+        sys.exit(1)
+    tbd_dir = private_notes / "tbd" / "inbox"
+    path = _validate_filename(args.filename, tbd_dir)
+    _pull(private_notes)
+    if not path.exists():
+        print(f"tbd/inboxに存在しません: {path.name}", file=sys.stderr)
+        sys.exit(2)
+    before = path.read_bytes()
+    subprocess.run([editor, str(path)], check=True)
+    after = path.read_bytes()
+    if before == after:
+        print("差分なし。")
+        return
+    rel = str(path.relative_to(private_notes))
+    _commit_and_push(private_notes, "chore: edit tbd item", [rel])
+    print(f"編集反映: {path.name}")
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -715,6 +973,10 @@ def main(
         "edit": lambda: _cmd_edit(args, private_notes),
         "commit": lambda: _cmd_commit(private_notes),
         "process-loop": lambda: _cmd_process_loop(args, private_notes),
+        "tbd-add": lambda: _cmd_tbd_add(args, private_notes, now, home),
+        "tbd-list": lambda: _cmd_tbd_list(args, private_notes),
+        "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),
+        "tbd-edit": lambda: _cmd_tbd_edit(args, private_notes),
     }
     dispatch[args.subcommand]()
     sys.exit(0)

@@ -1199,3 +1199,207 @@ class TestProcessLoopUrlInput:
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2
+
+
+def _setup_tbd_env(tmp_path: pathlib.Path) -> pathlib.Path:
+    """フラグファイルとprivate-notes・tbd/inboxディレクトリを準備する。"""
+    flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.touch()
+    notes = tmp_path / "private-notes"
+    (notes / "tbd" / "inbox").mkdir(parents=True)
+    return notes
+
+
+def _write_tbd_file(
+    notes: pathlib.Path,
+    filename: str,
+    target_repo: str = "github.com/example/foo",
+    question: str = "テスト質問",
+    answer: str = "",
+) -> pathlib.Path:
+    """tbd/inbox配下に1ファイルを書き込み、絶対パスを返す。"""
+    tbd_dir = notes / "tbd" / "inbox"
+    tbd_dir.mkdir(parents=True, exist_ok=True)
+    path = tbd_dir / filename
+    path.write_text(
+        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\nquestion_type: free\n---\n\n"
+        f"## 質問\n\n{question}\n\n## 回答\n\n{answer}",
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestIsTbdAnswered:
+    """_is_tbd_answeredの判定パターン検証。"""
+
+    def test_html_comment_only_is_unanswered(self) -> None:
+        """HTMLコメントのみの回答節は未回答扱い。"""
+        text = "---\nfoo: bar\n---\n\n## 質問\n\nq\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
+        assert _cli._is_tbd_answered(text) is False  # noqa: SLF001
+
+    def test_text_present_is_answered(self) -> None:
+        """非空文字列がある場合は回答済み扱い。"""
+        text = "## 質問\n\nq\n\n## 回答\n\nはい\n"
+        assert _cli._is_tbd_answered(text) is True  # noqa: SLF001
+
+    def test_no_answer_section_is_unanswered(self) -> None:
+        """`## 回答`節が無い場合は未回答扱い。"""
+        text = "## 質問\n\nq\n"
+        assert _cli._is_tbd_answered(text) is False  # noqa: SLF001
+
+
+class TestTbdAdd:
+    """tbd-addサブコマンドの基本動作検証。"""
+
+    def test_single_message_generates_one_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """単一メッセージで1ファイルが生成され、frontmatter・本文構造が正しい。"""
+        notes = _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+            empty: Any = "" if kw.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                ["tbd-add", str(myrepo), "--scope", "theme1", "未確認の挙動"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+
+        files = sorted((notes / "tbd" / "inbox").iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "scope: theme1" in content
+        assert "question_type: free" in content
+        assert "## 質問\n\n未確認の挙動" in content
+        assert "## 回答" in content
+
+    def test_choice_requires_choices(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """question-type=choice時に--choices未指定でexit 2。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:5] == ["git", "-C", str(myrepo), "remote", "get-url"]:
+                stdout: Any = "https://github.com/example/myrepo.git\n" if kw.get("text") else b""
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+            empty: Any = "" if kw.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                ["tbd-add", str(myrepo), "--question-type", "choice", "q"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 2
+
+
+class TestTbdList:
+    """tbd-listサブコマンドのフィルタ動作検証。"""
+
+    def test_status_filter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=unansweredで未回答のみが出力される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["tbd-list", "--status", "unanswered"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
+
+
+class TestTbdEdit:
+    """tbd-editサブコマンドの境界条件検証。"""
+
+    def test_rejects_traversal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """パストラバーサル系のファイル名でexit 2。"""
+        _setup_tbd_env(tmp_path)
+        monkeypatch.setenv("EDITOR", "vi")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["tbd-edit", "../escape.md"], home=tmp_path)
+        assert exc_info.value.code == 2
+
+    def test_no_diff_skips_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """編集差分なしの場合はcommit・pushしない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
+        monkeypatch.setenv("EDITOR", "vi")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["tbd-edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "差分なし" in captured.out
+        commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+        assert commit_calls == []
+
+
+class TestTbdAnswer:
+    """tbd-answerサブコマンドの空集合・差分なし時の挙動検証。"""
+
+    def test_no_unanswered_prints_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未回答ゼロ時は案内のみでcommitしない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
+        monkeypatch.setenv("EDITOR", "vi")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["tbd-answer"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "未回答のTBDはありません" in captured.out
+        commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+        assert commit_calls == []

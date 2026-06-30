@@ -378,6 +378,7 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
 # それ以外（個人非公開・特定プラットフォーム専用）は block する。
 _PERSONAL_PROJECTS_BLOCK: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
 _PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
+_EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"dotfiles-fb"})
 
 
 def _check_dotfiles_specific_names(
@@ -632,7 +633,9 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
     block |= _PERSONAL_PROJECTS_BLOCK
     # warn 対象が誤って block に混入した場合は warn を優先する（保守的措置）。
     block -= _PERSONAL_PROJECTS_WARN
-    return frozenset(block), _PERSONAL_PROJECTS_WARN
+    # 存在検査付きで参照することを許容する外部 CLI 名は block・warn のいずれからも除外する。
+    block -= _EXTERNAL_CLI_ALLOWED
+    return frozenset(block), _PERSONAL_PROJECTS_WARN - _EXTERNAL_CLI_ALLOWED
 
 
 def _list_subdirs(path: pathlib.Path) -> set[str]:
