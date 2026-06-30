@@ -143,7 +143,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "hookSpecificOutput" not in decision
         assert "systemMessage" not in decision
 
@@ -167,7 +167,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision_second = _parse_decision(result_second)
-        assert decision_second["decision"] == "approve"
+        assert "decision" not in decision_second
 
     @pytest.mark.parametrize("tool_name", ["Agent", "ScheduleWakeup", "Monitor"])
     def test_async_tool_approves(self, tmp_path: pathlib.Path, tool_name: str):
@@ -181,7 +181,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_bash_background_approves(self, tmp_path: pathlib.Path):
         """直前ターンの最後のtool_useがBash+run_in_background=True → approve。"""
@@ -207,7 +207,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_pending_background_bash_approves(self, tmp_path: pathlib.Path):
         """過去ターンで背景Bashを起動済み・完了通知未到着 → approveのみ。"""
@@ -226,7 +226,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" not in decision
 
     def test_completed_background_bash_reaches_context(
@@ -286,7 +286,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
 
 class TestContextConditions:
@@ -363,7 +363,7 @@ class TestUncommittedChangesAfterReview:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
 
 class TestExtensionPending:
@@ -381,7 +381,7 @@ class TestExtensionPending:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision.get("decision") == "approve"
+        assert "decision" not in decision
         assert "reason" not in decision
         assert "systemMessage" in decision
         assert "git status" in decision["systemMessage"]
@@ -399,7 +399,7 @@ class TestExtensionPending:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "hookSpecificOutput" not in decision
 
 
@@ -410,7 +410,7 @@ class TestEdgeCases:
         result = _run("not json", state_dir=tmp_path)
         assert result.returncode == 0
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_missing_transcript_emits_context(self, tmp_path: pathlib.Path):
         """transcriptが存在しない → 機械ゲートはFalse、スキル痕跡なし → `decision: block`＋`reason`を返す。
@@ -428,7 +428,7 @@ class TestEdgeCases:
     def test_empty_session_id_approves(self, tmp_path: pathlib.Path):
         result = _run({"session_id": "", "transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
 
 class TestGitLogCheckedReset:
@@ -488,7 +488,7 @@ class TestGitStatusDisplay:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" in decision
         assert "git status" in decision["systemMessage"]
         assert "file.txt" in decision["systemMessage"]
@@ -509,7 +509,7 @@ class TestGitStatusDisplay:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" not in decision
 
     def test_no_cwd_no_system_message(self, tmp_path: pathlib.Path):
@@ -525,7 +525,7 @@ class TestGitStatusDisplay:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" not in decision
 
     def test_async_pending_dirty_repo_no_system_message(
@@ -542,7 +542,7 @@ class TestGitStatusDisplay:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" not in decision
 
     def test_untracked_only_no_system_message(
@@ -562,5 +562,5 @@ class TestGitStatusDisplay:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
         assert "systemMessage" not in decision

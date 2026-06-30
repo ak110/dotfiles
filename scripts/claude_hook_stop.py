@@ -135,7 +135,7 @@ def _has_agent_toolkit_usage(transcript_path: str) -> bool:
 
 
 def _approve() -> None:
-    print(json.dumps({"decision": "approve"}, ensure_ascii=False))
+    print(json.dumps({}, ensure_ascii=False))
 
 
 def _emit_block(reason: str) -> None:

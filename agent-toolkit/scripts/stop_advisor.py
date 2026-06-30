@@ -115,7 +115,7 @@ def _git_status_for_display(cwd: str) -> str | None:
 
 
 def _approve(cwd: str = "") -> None:
-    output: dict[str, str] = {"decision": "approve"}
+    output: dict[str, str] = {}
     if cwd:
         status = _git_status_for_display(cwd)
         if status:

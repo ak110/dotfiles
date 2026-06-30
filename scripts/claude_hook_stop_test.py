@@ -62,7 +62,7 @@ def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 def _decision_kind(decision: dict) -> str:
     """approve / context のいずれかを返す。context は`decision: "block"`＋`reason`形式の振り返り誘導応答を指す。"""
-    if decision.get("decision") == "approve":
+    if "decision" not in decision:
         return "approve"
     if decision.get("decision") == "block" and isinstance(decision.get("reason"), str):
         return "context"
@@ -208,7 +208,7 @@ class TestUsageDetection:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_pyfltr_substring_not_matched(self, tmp_path: pathlib.Path):
         """pyfltr をトークンとして含まない文字列（例: mypyfltr）は検出しない。"""
@@ -226,7 +226,7 @@ class TestUsageDetection:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_sidechain_not_detected(self, tmp_path: pathlib.Path):
         """subagent (isSidechain=true) の Bash 呼び出しは検出対象外。"""
@@ -253,7 +253,7 @@ class TestUsageDetection:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
 
 class TestStopHookActive:
@@ -270,7 +270,7 @@ class TestStopHookActive:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_stop_hook_active_after_block_approves(self, tmp_path: pathlib.Path):
         """`stop_hook_active`が真の場合、直前のblock後の再呼び出しでもapproveを返す。"""
@@ -292,7 +292,7 @@ class TestStopHookActive:
             state_dir=tmp_path,
         )
         decision_second = _parse_decision(result_second)
-        assert decision_second["decision"] == "approve"
+        assert "decision" not in decision_second
 
 
 class TestStopGateDelegation:
@@ -396,7 +396,7 @@ class TestEdgeCases:
         result = _run("not json", state_dir=tmp_path)
         assert result.returncode == 0
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_missing_transcript_approves(self, tmp_path: pathlib.Path):
         result = _run(
@@ -404,17 +404,17 @@ class TestEdgeCases:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_empty_session_id_approves(self, tmp_path: pathlib.Path):
         result = _run({"session_id": "", "transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
     def test_missing_session_id_approves(self, tmp_path: pathlib.Path):
         result = _run({"transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
-        assert decision["decision"] == "approve"
+        assert "decision" not in decision
 
 
 class TestHomeIndependent:
