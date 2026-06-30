@@ -20,7 +20,7 @@ description: >
 
 言語別リファレンス:
 
-- Python: `references/python.md`
+- Python: `references/python.md`と`references/python-references.md`
 - TypeScript/TSX: `references/typescript.md`
 - Rust: `references/rust.md`
 - C#: `references/csharp.md`

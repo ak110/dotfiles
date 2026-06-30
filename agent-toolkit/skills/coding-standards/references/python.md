@@ -9,7 +9,8 @@
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
 - タイプヒントは可能な限り書く
-  - `typing.List`・`typing.Optional`は使わず`list`・`| None`を使う
+  - `typing.List`ではなく`list`を使う。`dict`や`tuple`・`set`等も同様
+  - `typing.Optional`ではなく`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
   - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
@@ -49,8 +50,12 @@
   - SQLは必ずパラメーター化クエリを使う（f-stringやformat等で組み立てない）
   - 一時ファイルは`tempfile`モジュールを使う（予測可能なパスへの手動作成は競合・権限昇格のリスクあり）
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
-- 他で指定が無い場合のツール推奨: パッケージマネージャーは`uv`、リンター／フォーマッターは`pyfltr`、
-  ユーティリティ集は`pytilpack`を使う（詳細は各専用スキルを参照）
+- 他で指定が無い場合のツール推奨:
+  - パッケージマネージャー: `uv`（pip互換、Pythonバージョン管理も統合）
+  - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
+    - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
+  - ユーティリティ集: `pytilpack`（便利ライブラリ）
+    - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
@@ -98,14 +103,6 @@
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
 - 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う（`asyncio.get_event_loop()`は非推奨）
-- 新しいPythonバージョンの機能を積極的に使う
-  - Python 3.12+: PEP 695型パラメーター構文・PEP 701 f-string拡張を使う
-  - Python 3.13+: `typing.TypedDict`の`ReadOnly[...]`で不変フィールドを型レベルで表現する
-  - Python 3.13+: `copy.replace(obj, field=value)`で変更コピーを生成する
-    - 対応対象は`dataclass`／`namedtuple`／`__replace__()`定義クラスのみに限定される
-  - Python 3.14+: PEP 750テンプレート文字列（`t"..."`）は構造を保持した`Template`を返す
-    - f-stringと異なり生成済み文字列ではないため、対応レンダラと組み合わせたSQL／HTML生成で使う
-    - `t"..."`自体は注入対策にならない。安全性は後段のレンダラやAPI側に依存する
 
 ## 静的解析の誤検出と抑制
 
@@ -134,8 +131,11 @@
 ## テストコード（pytest）
 
 - テストファイルの配置方式はプロジェクト方針に従う
-  - 方針が無い場合: 同居方式（ソース`<name>.py`と同一ディレクトリの`<name>_test.py`）か
-    集約方式（`tests/<module>_test.py`）を規模・配布形態に応じて選ぶ
+  - 方針が無い場合は規模・配布形態を踏まえて以下のいずれかを選ぶ
+    - 同居方式: ソース`<name>.py`と同一ディレクトリの`<name>_test.py`
+      （対応関係を辿りやすい一方、配布パッケージにテストを含めないための除外設定が必要になる）
+    - 集約方式: `tests/<module>_test.py`にまとめる
+      （配布除外を設定不要で実現できる一方、ソースとテストの対応関係を辿りにくい）
 - テストコードは`pytest`で書く
 - 網羅性のため、必要に応じて`@pytest.mark.parametrize`を使う
   - 用途は同一ロジックを異なる入力データで反復実行する場合に限定する
