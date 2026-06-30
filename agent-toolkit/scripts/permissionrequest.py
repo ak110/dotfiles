@@ -11,10 +11,11 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 自動許可の対象パス:
 
-1. Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
-   - パス構成要素に`.claude`または`.agents`を含むファイル
-   - ファイル名が`AGENTS.md`のファイル
-2. `~/.claude/plans/`配下
+- `~/.claude/plans/`配下
+- scratchpadディレクトリ配下（パス構成要素として`scratchpad`を含み、`/tmp/`または`~/`配下）
+- Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
+  - パス構成要素に`.claude`または`.agents`を含むファイル
+  - ファイル名が`AGENTS.md`のファイル
 
 各判定ロジックの詳細は対応する関数のdocstringを参照する。
 予期せぬ例外は0にフォールバックする（フックが破損して編集できなくなる事故を避けるため）。
@@ -91,9 +92,13 @@ def main() -> int:
 def should_allow(file_path: str) -> bool:
     """単一ファイルパスが自動許可対象か判定する。
 
-    `~/.claude/plans/` 配下、または Git ワークツリー配下のコーディングエージェント向け文書
-    （パス構成要素に `.claude` か `.agents` を含むファイル、またはファイル名が `AGENTS.md`
-    のファイル。`~/.claude/` 配下を除く）のいずれかに該当する場合 True を返す。
+    対象は次のいずれか。
+
+    - `~/.claude/plans/` 配下
+    - scratchpad ディレクトリ配下（パス構成要素として `scratchpad` を含み、 `/tmp/` または `~/` 配下）
+    - Git ワークツリー配下のコーディングエージェント向け文書
+      （パス構成要素に `.claude` か `.agents` を含むファイル、またはファイル名が `AGENTS.md`
+      のファイル。 `~/.claude/` 配下を除く）
     """
     target = _normalize_path(file_path)
     if target is None:
@@ -184,6 +189,8 @@ def _is_target_path(target: pathlib.Path) -> bool:
         return False
     if _is_under(target, home_claude / "plans"):
         return True
+    if _is_scratchpad_path(target):
+        return True
     return _is_repo_agent_meta_edit(target, home_claude)
 
 
@@ -194,6 +201,22 @@ def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
     except ValueError:
         return False
     return bool(rel.parts)
+
+
+def _is_scratchpad_path(target: pathlib.Path) -> bool:
+    """パス構成要素として `scratchpad` を含み、かつ `/tmp/` または home 配下か判定する。
+
+    「パス構成要素として含む」とは `target.parts` 内に `"scratchpad"` が要素として
+    現れることを指す。ファイル名の一部（`scratchpad-notes.md` 等）は対象外とする。
+    """
+    if "scratchpad" not in target.parts:
+        return False
+    try:
+        tmp_root = pathlib.Path("/tmp").resolve(strict=False)
+        home_root = pathlib.Path.home().resolve(strict=False)
+    except (ValueError, OSError, RuntimeError):
+        return False
+    return _is_under(target, tmp_root) or _is_under(target, home_root)
 
 
 def _is_repo_agent_meta_edit(target: pathlib.Path, home_claude: pathlib.Path) -> bool:

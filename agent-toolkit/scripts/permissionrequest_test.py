@@ -112,6 +112,23 @@ class TestShouldAllow:
         target.parent.mkdir(parents=True)
         assert hook.should_allow(str(target)) is False
 
+    def test_scratchpad_component_under_tmp_allowed(self, home: pathlib.Path) -> None:
+        del home
+        assert hook.should_allow("/tmp/claude-1000/xxx/scratchpad/foo.md") is True
+
+    def test_scratchpad_component_under_home_allowed(self, home: pathlib.Path) -> None:
+        assert hook.should_allow(str(home / ".claude" / "scratchpad" / "bar.md")) is True
+
+    def test_scratchpad_no_component_in_tmp_not_allowed(self, home: pathlib.Path) -> None:
+        del home
+        assert hook.should_allow("/tmp/random/foo.md") is False
+
+    def test_scratchpad_outside_tmp_and_home_not_allowed(self) -> None:
+        assert hook.should_allow("/var/scratchpad/foo.md") is False
+
+    def test_scratchpad_in_filename_only_not_allowed(self, home: pathlib.Path) -> None:
+        assert hook.should_allow(str(home / "scratchpad-but-not-dir.md")) is False
+
 
 class TestShouldAllowBash:
     """`should_allow_bash` の判定動作。"""
@@ -229,6 +246,22 @@ class TestShouldAllowBash:
         cmd = command_template.format(home=home, repo=repo)
         assert hook.should_allow_bash(cmd, str(repo)) is expected
 
+    def test_rm_in_scratchpad_under_tmp_allowed(self, home: pathlib.Path) -> None:
+        del home
+        assert hook.should_allow_bash("rm /tmp/claude-1000/xxx/scratchpad/foo.md", "/tmp") is True
+
+    def test_mv_within_scratchpad_under_tmp_allowed(self, home: pathlib.Path) -> None:
+        del home
+        cmd = "mv /tmp/claude-1000/xxx/scratchpad/a.md /tmp/claude-1000/xxx/scratchpad/b.md"
+        assert hook.should_allow_bash(cmd, "/tmp") is True
+
+    def test_mv_scratchpad_to_outside_rejected(self, home: pathlib.Path) -> None:
+        cmd = f"mv /tmp/claude-1000/xxx/scratchpad/a.md {home}/dotfiles/other.md"
+        assert hook.should_allow_bash(cmd, "/tmp") is False
+
+    def test_rm_scratchpad_outside_tmp_and_home_rejected(self) -> None:
+        assert hook.should_allow_bash("rm /var/scratchpad/foo.md", "/var") is False
+
 
 class TestEndToEnd:
     """サブプロセス経由で stdin / stdout の応答を検証する。"""
@@ -315,3 +348,19 @@ class TestEndToEnd:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
+    def test_file_tools_scratchpad_return_allow(self, home: pathlib.Path, tool_name: str) -> None:
+        del home
+        payload = {
+            "tool_name": tool_name,
+            "tool_input": {"file_path": "/tmp/claude-1000/xxx/scratchpad/foo.md"},
+        }
+        code, stdout = self._run(payload)
+        assert code == 0
+        assert json.loads(stdout) == {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
+            }
+        }
