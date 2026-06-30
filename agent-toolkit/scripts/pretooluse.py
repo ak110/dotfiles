@@ -123,6 +123,14 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "quality-tradeoff",
         re.compile(r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難))"),
     ),
+    (
+        "next-cycle-defer",
+        re.compile(
+            r"(次(サイクル|セッション|計画)(で|に)(再評価|再検討|対応|送り)"
+            r"|(スコープ|テーマ|計画)を超える"
+            r"|現行アーキテクチャ(の)?(大幅|根本)(な?)(見直し|改修))"
+        ),
+    ),
 )
 
 

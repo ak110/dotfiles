@@ -2749,6 +2749,8 @@ class TestAskUserQuestionScopeEscalationCheck:
             "規範チェックの結果を共有します",
             "規模感を確認したい",
             "品質維持を継続する方針",
+            "次サイクルの作業を計画する",
+            "現行設計の見直しを検討する",
         ],
     )
     def test_question_text_does_not_block_unrelated(self, text: str):

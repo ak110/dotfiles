@@ -43,3 +43,7 @@ process-omission	規範チェックをスキップ
 quality-tradeoff	規模が大きすぎる
 quality-tradeoff	品質を維持できない
 quality-tradeoff	品質維持が困難
+next-cycle-defer	次サイクルで再評価
+next-cycle-defer	次セッションに対応
+next-cycle-defer	スコープを超える
+next-cycle-defer	現行アーキテクチャの大幅な見直し
