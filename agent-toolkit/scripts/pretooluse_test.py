@@ -3391,7 +3391,7 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        # EditはH2節順検査の判定に入るがcontentフィールドがないため通過する。
+        # 別checkでブロックされ得るが、本テストの関心はH2節順違反メッセージが出ないこと
         assert "H2 section order" not in result.stderr
 
     def test_allows_multi_edit_tool(self, tmp_path: pathlib.Path):
@@ -3411,7 +3411,7 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        # MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。
+        # 別checkでブロックされ得るが、本テストの関心はH2節順違反メッセージが出ないこと
         assert "H2 section order" not in result.stderr
 
     def test_allows_non_plan_file(self, tmp_path: pathlib.Path):

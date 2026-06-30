@@ -27,12 +27,19 @@ def extract_h2_sections(content: str) -> list[str]:
     headings: list[str] = []
     fence_marker: str | None = None
     for line in content.splitlines():
-        fence_match = _FENCE_PATTERN.match(line.lstrip())
+        stripped = line.lstrip()
+        fence_match = _FENCE_PATTERN.match(stripped)
         if fence_match:
+            candidate = fence_match.group(1)
             if fence_marker is None:
-                fence_marker = fence_match.group(1)
-            elif line.lstrip().startswith(fence_marker):
+                # 開きフェンス: infoストリング許容
+                fence_marker = candidate
+                continue
+            if stripped.startswith(fence_marker) and not stripped[len(fence_marker) :].strip():
+                # 閉じフェンス: 開きと同じ字種・同等以上の長さ・後続は空白のみ
                 fence_marker = None
+                continue
+            # fence_markerと異なる字種のフェンスはフェンス内テキスト扱い
             continue
         if fence_marker is not None:
             continue

@@ -49,6 +49,18 @@ class TestExtractH2Sections:
         content = "~~~\n## フェンス内\n~~~\n## 実在\n"
         assert _plan_format.extract_h2_sections(content) == ["実在"]
 
+    def test_h2_inside_fence_with_info_string_is_excluded(self):
+        """info string付きフェンス（```python等）の中身もフェンス内として除外する。"""
+        content = "```python\n## フェンス内\n```\n## 実在\n"
+        assert _plan_format.extract_h2_sections(content) == ["実在"]
+
+    def test_inner_info_string_fence_does_not_close_outer(self):
+        """フェンス内に出現する info string 付きフェンスを閉じ判定にしない。"""
+        content = "```\n```python\n## フェンス内\n```\n## 外側\n"
+        # 1行目 ``` で開き、2行目 ```python は閉じ判定にならず、4行目 ``` で閉じる
+        # 5行目 ## 外側 が抽出される
+        assert _plan_format.extract_h2_sections(content) == ["外側"]
+
 
 class TestCheckH2Order:
     """check_h2_order の各違反パターンを検査する。"""
