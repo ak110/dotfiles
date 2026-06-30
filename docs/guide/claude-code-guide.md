@@ -40,14 +40,14 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 ### 1. uvのインストール
 
 プラグインは[uv](https://docs.astral.sh/uv/)に依存する。
-事前にインストールが必要。
+事前にインストールしておく。
 
 - Linux: `curl -fsSL https://astral.sh/uv/install.sh | sh`
 - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### 2. ツールキットのインストール
 
-先にClaude Codeをインストール。
+先にClaude Codeをインストールしておく。
 インストーラーは`claude` CLIの存在を前提としており、未検出時はエラー終了する。
 
 Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。
@@ -72,7 +72,7 @@ dotfiles配布の管理設定では`requiredMinimumVersion`で強制する。
 agent-toolkitプラグインがuser scopeへインストール・更新される。
 再実行すると最新版へ同期される。
 
-インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化が必要。
+インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
 1. Claude Code内で`/plugin`を実行
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
@@ -123,7 +123,7 @@ claude-plugins-officialから以下を導入。
 claude mcp add --scope=user codex codex mcp-server
 ```
 
-codex CLI自体のセットアップは別途実施。
+codex CLI自体のセットアップは別途実施する。
 
 ## 構成と機能
 
@@ -182,10 +182,11 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 ### 明示呼び出し専用のスキル
 
 - `/overhaul-project`: プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
+- `/quality-sweep`: `plan-impl-reviewer`観点で既存不良を網羅的に検出し`claude`サブエージェントへ分担修正する
 
 ## 更新方法
 
-ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化。
+ルールファイル・プラグインとも頻繁に更新されるため、定期的に最新化する。
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
