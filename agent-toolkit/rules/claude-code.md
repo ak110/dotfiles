@@ -80,6 +80,10 @@
     スキル本文のコンテキスト消費が機械的な大量編集と重なると`autocompact thrashing`を誘発する
   - `claude`エージェントタイプは規範スキルを読み込まない。
     呼び出し元プロンプトで関連規範（`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`等）を明示引用する
+- `plan-implementer`への委譲タスクで対象ファイル数が概ね4件超かつ
+  併読する規範スキル本文が3スキル以上に及ぶ構成では`autocompact thrashing`の誘発リスクが高い
+  - 3スキル以上の例として`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`・対象スキルの併読がある
+  - タスクの分割または`subagent_type: claude`への切替（規範スキル読込を省略し起動プロンプトで関連規範を明示引用）を選ぶ
 - サブエージェントは自身のタスクの編集対象外へ影響しうる操作をしない
   - 作業ツリー全体の状態を変更するgit操作（`git stash`・`git checkout`・`git reset`・`git clean`等）が該当する
    （並列実行中の他タスクの編集に影響するため）

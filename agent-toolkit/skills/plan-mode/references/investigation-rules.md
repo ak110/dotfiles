@@ -43,6 +43,9 @@
   読取側を更新せず書き手のみ更新するとサブエージェントが独立コンテキストで旧書式のまま動作する
 - 編集対象スキル本体・サブエージェント定義のfrontmatterコメント（`#`行）の
   同期指示（「意図的重複」「同期要件」等）を確認し同期先ファイルを`## 変更内容`へ組み込む
+- agent-toolkitプラグインのversion bumpを計画する場合は
+  `agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`の双方を対象ファイル一覧へ含める。
+  両者の整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が強制する
 
 確認結果は`## 調査結果`に、追従更新箇所は`## 変更内容`に反映する。
 

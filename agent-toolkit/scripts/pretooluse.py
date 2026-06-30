@@ -65,6 +65,7 @@ import shlex
 import subprocess
 import sys
 import traceback
+from collections.abc import Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -228,6 +229,10 @@ def main() -> int:
 
     # plan fileのWrite時にH2節順違反がある場合はブロック
     if _check_plan_file_h2_section_order(tool_name, tool_input):
+        return 2
+
+    # plan fileのWrite/Edit/MultiEdit時に絶対行番号トークン直書きをブロック
+    if _check_plan_file_absolute_line_numbers(tool_name, tool_input):
         return 2
 
     # AskUserQuestion: 縮退誘発フレーズ検出
@@ -941,14 +946,19 @@ def _check_plan_file_prelint_passed(
 ) -> bool:
     """Plan fileのWrite時にscratchpad事前lint検査未実施をブロックする。
 
-    判定条件:
+    ブロック条件（すべて満たすとき`True`を返してWriteをブロックする）:
 
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - `tool_name`が`Write`
     - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
     - `tool_input["content"]`が文字列
-    - `_plan_file.compute_prelint_hashes`で算出した2種類のSHA256のいずれも
-      セッション状態の`plan_prelint_passed`に未登録
+    - `_plan_file.compute_prelint_hashes`で算出した2種類のSHA256のうち、
+      `plan_prelint_passed`（pyfltr成功記録）と
+      `plan_prelint_passed_line_width`（check_line_width.py成功記録）の双方に
+      一致するハッシュが登録されていない
+
+    pyfltrとcheck_line_widthの双方の成功記録が必要。
+    pyfltrのみ成功・check_line_widthのみ成功の状態ではブロックされる。
     """
     # テスト時のバイパス: 環境変数で明示指定された場合のみ。プロダクションでは未設定のため副作用なし
     if os.environ.get("AGENT_TOOLKIT_PRELINT_TEST_BYPASS") == "1":
@@ -968,21 +978,85 @@ def _check_plan_file_prelint_passed(
     if not isinstance(passed, list):
         passed = []
     passed_set = set(passed)
+    passed_lw = state.get("plan_prelint_passed_line_width", [])
+    if not isinstance(passed_lw, list):
+        passed_lw = []
+    passed_lw_set = set(passed_lw)
     full_sha, stripped_sha = compute_prelint_hashes(content)
-    if full_sha in passed_set or stripped_sha in passed_set:
+    pyfltr_ok = full_sha in passed_set or stripped_sha in passed_set
+    line_width_ok = full_sha in passed_lw_set or stripped_sha in passed_lw_set
+    if pyfltr_ok and line_width_ok:
         return False
     print(
         _llm_notice(
             "blocked: attempting to write a plan file without prior lint check."
-            " Output the plan body (excluding `text` code blocks inside `## 背景`) to a scratchpad file,"
-            " then run `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <scratchpad_path>`"
-            " until it passes, then retry the Write."
+            " Output the plan body (excluding fenced code blocks inside `## 背景`) to a scratchpad file,"
+            " then run BOTH"
+            " `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <scratchpad_path>`"
+            " and the `check_line_width.py` script bundled with `agent-toolkit:writing-standards`"
+            " until both pass, then retry the Write."
             " See plan-mode/references/plan-file-guidelines.md for details.",
             tag="block",
         ),
         file=sys.stderr,
     )
     return True
+
+
+# --- plan file edit適用後内容の構築（Write/Edit/MultiEdit共通）---
+
+
+def _materialize_post_edit_content(tool_name: str, tool_input: dict, file_path: str) -> str | None:
+    """Write/Edit/MultiEdit適用後の計画ファイル内容を構築して返す。
+
+    - Write: `tool_input["content"]`が文字列ならそのまま返す。文字列でない場合はNoneを返す
+    - Edit: 既存ファイル本文を読み、`old_string`を`new_string`へ置換した内容を返す
+      `replace_all`が真なら全マッチを置換する
+    - MultiEdit: 既存ファイル本文を読み、`edits[]`を順次適用した内容を返す
+
+    既存ファイル読み込みに失敗した場合の挙動:
+
+    - Edit: 既存内容が空のため、`new_string`を単独で返す
+    - MultiEdit: 既存内容が空のため、`edits[]`を空文字列に対して順次適用した結果（通常は空文字列）を返す
+    """
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        return content if isinstance(content, str) else None
+
+    try:
+        existing = pathlib.Path(file_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        existing = ""
+
+    if tool_name == "Edit":
+        old_string = tool_input.get("old_string")
+        new_string = tool_input.get("new_string")
+        if not isinstance(old_string, str) or not isinstance(new_string, str):
+            return None
+        replace_all = bool(tool_input.get("replace_all"))
+        if not existing:
+            return new_string
+        if replace_all:
+            return existing.replace(old_string, new_string)
+        return existing.replace(old_string, new_string, 1)
+
+    if tool_name == "MultiEdit":
+        edits = tool_input.get("edits") or []
+        if not isinstance(edits, list):
+            return None
+        result = existing
+        for edit in edits:
+            if not isinstance(edit, dict):
+                continue
+            old_string = edit.get("old_string")
+            new_string = edit.get("new_string")
+            if not isinstance(old_string, str) or not isinstance(new_string, str):
+                continue
+            replace_all = bool(edit.get("replace_all"))
+            result = result.replace(old_string, new_string) if replace_all else result.replace(old_string, new_string, 1)
+        return result
+
+    return None
 
 
 # --- plan fileのH2節順検査 ---
@@ -998,7 +1072,7 @@ def _check_plan_file_h2_section_order(
 
     - `tool_name`が`_PLAN_FILE_EDIT_TOOLS`に含まれる
     - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
-    - `tool_input["content"]`が文字列
+    - 適用後contentの構築に成功
     - `_plan_format.check_h2_order`が1件以上の違反を返す
     """
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
@@ -1006,8 +1080,8 @@ def _check_plan_file_h2_section_order(
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
         return False
-    content = tool_input.get("content")
-    if not isinstance(content, str):
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
+    if content is None:
         return False
     violations = _plan_format.check_h2_order(content)
     if not violations:
@@ -1018,6 +1092,84 @@ def _check_plan_file_h2_section_order(
             f"blocked: plan file H2 section order violation: {violation_str}"
             f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
             " Fix the section order and retry the Write.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- plan file本文の絶対行番号トークン検査（PreToolUse移管） ---
+
+# SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
+# （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
+# `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
+_LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<![A-Za-z])L\d+"),
+    re.compile(r"\d+行目"),
+    re.compile(r"\d+\s*-\s*\d+\s*行"),
+    re.compile(r"\d+から\d+行"),
+)
+_LINE_NUMBER_EXEMPT_H2: tuple[str, ...] = ("調査結果",)
+
+
+def _iter_absolute_line_number_violations(content: str) -> Iterator[tuple[int, str]]:
+    """計画ファイル本文から`## 調査結果`配下を除いて行番号トークンを抽出する。
+
+    `_plan_format.iter_markdown_body_lines`の出力を元にフロントマター・コードフェンス・
+    複数行HTMLコメント内を除外する。`_LINE_NUMBER_EXEMPT_H2`配下も走査対象外とする。
+
+    Yields:
+        (行番号, マッチ文字列) のタプル。
+    """
+    current_h2: str | None = None
+    for lineno, line in _plan_format.iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            current_h2 = line[3:].strip()
+            continue
+        if current_h2 in _LINE_NUMBER_EXEMPT_H2:
+            continue
+        for pattern in _LINE_NUMBER_PATTERNS:
+            m = pattern.search(line)
+            if m:
+                yield lineno, m.group()
+                break
+
+
+def _check_plan_file_absolute_line_numbers(
+    tool_name: str,
+    tool_input: dict,
+) -> bool:
+    r"""Plan fileのWrite/Edit/MultiEdit時に絶対行番号トークン直書きをブロックする。
+
+    判定条件:
+
+    - `tool_name`が`_PLAN_FILE_EDIT_TOOLS`に含まれる
+    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
+    - 適用後content（Write: `tool_input["content"]` / Edit・MultiEdit: 既存＋edit適用後）に
+      `## 調査結果`外の絶対行番号トークン（`L\d+`等）が含まれる
+    """
+    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
+        return False
+    file_path_raw = tool_input.get("file_path")
+    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
+        return False
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
+    if content is None:
+        return False
+    matches = list(_iter_absolute_line_number_violations(content))
+    if not matches:
+        return False
+    shown = matches[:5]
+    shown_str = "; ".join(f"line {ln}: {s!r}" for ln, s in shown)
+    overflow = len(matches) - len(shown)
+    tail = f"; and {overflow} more" if overflow > 0 else ""
+    print(
+        _llm_notice(
+            "blocked: plan file body contains absolute line-number references outside '## 調査結果'"
+            " (per plan-file-guidelines.md absolute-numbers norm)."
+            " Use section names or heading references instead."
+            f" Matches: {shown_str}{tail}.",
             tag="block",
         ),
         file=sys.stderr,

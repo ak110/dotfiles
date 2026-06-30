@@ -1,6 +1,5 @@
 # check_colloquial.py: 口語表現検出（agent-toolkit:writing-standardsスキル付属）
-# ホスト circe / circe-container でのみ有効化される
-# （配布制御は ~/dotfiles/.chezmoi-source/.chezmoiignore で行う）
+# 全ホストへ配布する
 [tool.pyfltr.custom-commands.colloquial]
 type = "linter"
 path = "uv"

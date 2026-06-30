@@ -1129,9 +1129,11 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert result.returncode == 0
 
     def test_passes_for_non_write_tool(self, tmp_path: pathlib.Path):
-        """Write以外のツール（Editなど）は通過する。"""
+        """Write以外のツール（Editなど）は本検査の対象外。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
+        # H2節順検査がEdit/MultiEditにも適用されるため、plan初期内容をvalid H2にする
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
         env = self._state_env(tmp_path, home)
         sid = "psl-non-write"
         self._all_prior_flags(tmp_path, sid)
@@ -1141,8 +1143,8 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
                 "tool_name": "Edit",
                 "tool_input": {
                     "file_path": str(plan),
-                    "old_string": "# t",
-                    "new_string": "# t",
+                    "old_string": "# タイトル",
+                    "new_string": "# タイトル",
                 },
                 "session_id": sid,
                 "permission_mode": "default",
@@ -1651,8 +1653,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
 class TestPlanFilePrelintPassed:
     """plan file Write時の事前lint検査未実施ブロック検査。
 
-    `plan_prelint_passed`セッション状態に登録済みのSHA256と一致するcontentのみWriteを許可する。
-    全文SHA256または`## 背景`配下`text`コードブロック内容除去後SHA256のいずれかが一致すれば通過。
+    `plan_prelint_passed`（pyfltr成功記録）と`plan_prelint_passed_line_width`（check_line_width.py成功記録）
+    の双方に登録済みのSHA256と一致するcontentのみWriteを許可する。
+    全文SHA256または`## 背景`配下フェンスブロック除去後SHA256のいずれかが両方のセットに登録されている必要がある。
     """
 
     @staticmethod
@@ -1714,7 +1717,9 @@ class TestPlanFilePrelintPassed:
             "## 計画ファイル（本ファイル）のパス\n\nx\n"
         )
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(content)]
+        sha = self._sha(content)
+        state["plan_prelint_passed"] = [sha]
+        state["plan_prelint_passed_line_width"] = [sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -1744,7 +1749,9 @@ class TestPlanFilePrelintPassed:
             "## 計画ファイル（本ファイル）のパス\n\nx\n"
         )
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(content))]
+        stripped_sha = self._sha(self._strip_bg_text(content))
+        state["plan_prelint_passed"] = [stripped_sha]
+        state["plan_prelint_passed_line_width"] = [stripped_sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -1801,18 +1808,26 @@ class TestPlanFilePrelintPassed:
     def test_allows_edit_and_multiedit(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home)
+        # H2節順検査がEdit/MultiEditにも適用されるため、初期内容をvalid H2にする
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
         env = self._state_env(tmp_path, home)
         sid = "prelint-edit"
         _write_session_state(tmp_path, sid, self._bypass_other_blocks())
         for tool, ti in [
-            ("Edit", {"file_path": str(plan), "old_string": "a", "new_string": "b"}),
-            ("MultiEdit", {"file_path": str(plan), "edits": [{"old_string": "a", "new_string": "b"}]}),
+            ("Edit", {"file_path": str(plan), "old_string": "# タイトル", "new_string": "# タイトル"}),
+            (
+                "MultiEdit",
+                {
+                    "file_path": str(plan),
+                    "edits": [{"old_string": "# タイトル", "new_string": "# タイトル"}],
+                },
+            ),
         ]:
             result = _run(
                 {"tool_name": tool, "tool_input": ti, "session_id": sid, "permission_mode": "default"},
                 env_overrides=env,
             )
-            # Edit/MultiEditは本checkの対象外（他checkは事前にbypassフラグで通過済み）
+            # Edit/MultiEditは本prelint checkの対象外（Write専用）
             assert result.returncode == 0, f"{tool} should not be blocked by prelint check"
 
     def test_allows_when_content_not_string(self, tmp_path: pathlib.Path):
@@ -1882,7 +1897,9 @@ class TestPlanFilePrelintPassed:
             "## 計画ファイル（本ファイル）のパス\n\nx\n"
         )
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(original))]
+        stripped_sha = self._sha(self._strip_bg_text(original))
+        state["plan_prelint_passed"] = [stripped_sha]
+        state["plan_prelint_passed_line_width"] = [stripped_sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -1904,7 +1921,9 @@ class TestPlanFilePrelintPassed:
         original = "# t\n\n## 背景\n\n説明A\n\n```text\nX\n```\n\n## 対応方針\n\ny\n"
         modified = "# t\n\n## 背景\n\n説明B\n\n```text\nX\n```\n\n## 対応方針\n\ny\n"
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(original))]
+        stripped_sha = self._sha(self._strip_bg_text(original))
+        state["plan_prelint_passed"] = [stripped_sha]
+        state["plan_prelint_passed_line_width"] = [stripped_sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -1926,7 +1945,9 @@ class TestPlanFilePrelintPassed:
         original = "# t\n\n## 背景\n\n```bash\nA\n```\n\n## 対応方針\n\nz\n"
         modified = "# t\n\n## 背景\n\n```bash\nB\n```\n\n## 対応方針\n\nz\n"
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(original))]
+        stripped_sha = self._sha(self._strip_bg_text(original))
+        state["plan_prelint_passed"] = [stripped_sha]
+        state["plan_prelint_passed_line_width"] = [stripped_sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -1948,7 +1969,9 @@ class TestPlanFilePrelintPassed:
         original = "# t\n\n## 調査結果\n\n```text\nA\n```\n\n## 対応方針\n\nw\n"
         modified = "# t\n\n## 調査結果\n\n```text\nB\n```\n\n## 対応方針\n\nw\n"
         state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(original))]
+        stripped_sha = self._sha(self._strip_bg_text(original))
+        state["plan_prelint_passed"] = [stripped_sha]
+        state["plan_prelint_passed_line_width"] = [stripped_sha]
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
@@ -3427,3 +3450,319 @@ class TestCheckPlanFileH2SectionOrder:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+def _absnum_state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path) -> dict[str, str]:
+    """絶対行番号検査テスト用の環境変数。事前lint検査はバイパスする。"""
+    return _plan_file_state_env(tmp_path, home_dir)
+
+
+def _absnum_prior_flags(state_dir: pathlib.Path, sid: str) -> None:
+    """絶対行番号検査の前提となるセッション状態フラグを書き込む。"""
+    _write_session_state(
+        state_dir,
+        sid,
+        {
+            "plan_mode_skill_invoked": True,
+            "textlint_violations_read": True,
+            "plan_file_guidelines_read": True,
+        },
+    )
+
+
+# 絶対行番号検査用の正規計画テンプレート。`## 変更内容`配下に違反トークンを置けるよう余白を確保する。
+_ABSNUM_BASE_PLAN = (
+    "# タイトル\n\n"
+    "## 変更履歴\n\nx\n\n"
+    "## 背景\n\nx\n\n"
+    "## 対応方針\n\nx\n\n"
+    "## 調査結果\n\nx\n\n"
+    "## 変更内容\n\n"
+    "### 対象ファイル一覧\n\nx\n\n"
+    "### 詳細\n\n{body}\n\n"
+    "## 実行方法\n\nx\n\n"
+    "## 進捗ログ\n\nx\n\n"
+    "## 計画ファイル（本ファイル）のパス\n\nx\n"
+)
+
+
+class TestCheckPlanFileAbsoluteLineNumbers:
+    """plan file Write/Edit/MultiEdit時の絶対行番号トークン直書きブロック検査。
+
+    posttooluseから移管された既存挙動の完全互換を維持する:
+    - 検出パターン: L\\d+ / N行目 / N-N行 / NからN行
+    - 除外H2: `## 調査結果`配下
+    - 除外領域: コードフェンス内 / 複数行HTMLコメント内 / フロントマター内
+    - 単一行HTMLコメント内は検出対象（既存仕様継承）
+    - 上限5件・「; and N more」省略表記
+    """
+
+    _state_env = staticmethod(_absnum_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+    _prior_flags = staticmethod(_absnum_prior_flags)
+
+    _LINE_TOKEN = "現行" + "L" + "66"
+    _LINE_RANGE_HYPHEN = "148" + "-" + "151行"
+    _LINE_RANGE_KARA = "148から151行"
+    _LINE_NTH = "100行目"
+    _ALPHA_PREFIX_TOKEN = "Graph" + "QL2"
+    _COUNT_EXPR = "3件・5項目"
+
+    @pytest.mark.parametrize(
+        ("session_id", "token", "expected_match"),
+        [
+            ("absnum-token", _LINE_TOKEN, "L" + "66"),
+            ("absnum-range", _LINE_RANGE_HYPHEN, "148" + "-" + "151行"),
+            ("absnum-kara", _LINE_RANGE_KARA, "148から151行"),
+            ("absnum-nth", _LINE_NTH, "100行目"),
+        ],
+    )
+    def test_write_with_absolute_line_number_blocks(
+        self, tmp_path: pathlib.Path, session_id: str, token: str, expected_match: str
+    ):
+        """`## 変更内容`配下の各種行番号トークンがWriteでブロックされる。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        self._prior_flags(tmp_path, session_id)
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {token}")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": session_id,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
+        assert repr(expected_match) in result.stderr
+
+    def test_write_in_research_section_is_allowed(self, tmp_path: pathlib.Path):
+        """`## 調査結果`配下の行番号トークンはブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-research"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.replace("## 調査結果\n\nx\n", f"## 調査結果\n\n- {self._LINE_TOKEN}\n").format(body="x")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_write_inside_code_fence_is_allowed(self, tmp_path: pathlib.Path):
+        """コードフェンス内の行番号トークンはブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-fence"
+        self._prior_flags(tmp_path, sid)
+        body = f"```text\n{self._LINE_TOKEN}\n```"
+        content = _ABSNUM_BASE_PLAN.format(body=body)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_write_inside_multiline_html_comment_is_allowed(self, tmp_path: pathlib.Path):
+        """複数行HTMLコメント内の行番号トークンはブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-multicomment"
+        self._prior_flags(tmp_path, sid)
+        body = f"<!--\n{self._LINE_TOKEN}\n-->"
+        content = _ABSNUM_BASE_PLAN.format(body=body)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_write_inside_single_line_html_comment_is_blocked(self, tmp_path: pathlib.Path):
+        """単一行HTMLコメント内の行番号トークンはブロックされる（既存挙動継承）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-singlecomment"
+        self._prior_flags(tmp_path, sid)
+        body = f"<!-- {self._LINE_TOKEN} -->"
+        content = _ABSNUM_BASE_PLAN.format(body=body)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
+
+    def test_alpha_prefix_is_not_false_positive(self, tmp_path: pathlib.Path):
+        """英字接頭のトークン（`GraphQL2`等）はブロックされない（負の後読み）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-alpha"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._ALPHA_PREFIX_TOKEN}")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_count_expression_is_not_false_positive(self, tmp_path: pathlib.Path):
+        """件数表現はパターン対象外でブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-count"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._COUNT_EXPR}")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_frontmatter_token_does_not_affect_body_check(self, tmp_path: pathlib.Path):
+        """フロントマター内の行番号トークンは本文の検出に影響しない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-frontmatter"
+        self._prior_flags(tmp_path, sid)
+        prefix = f"---\nfm: {self._LINE_TOKEN}\n---\n\n"
+        content = prefix + _ABSNUM_BASE_PLAN.format(body="x")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_truncates_at_five_matches(self, tmp_path: pathlib.Path):
+        """6件以上の行番号トークンを含む場合、最大5件まで列挙され`and N more`表記が付く。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-truncate"
+        self._prior_flags(tmp_path, sid)
+        tokens = "\n".join(f"- {self._LINE_TOKEN}" for _ in range(6))
+        content = _ABSNUM_BASE_PLAN.format(body=tokens)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert result.stderr.count("line ") == 5
+        assert "and 1 more." in result.stderr
+
+    def test_edit_introduces_violation_blocks(self, tmp_path: pathlib.Path):
+        """Edit適用後のcontentに違反が混入する場合はブロックされる。"""
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan = plans_dir / "test.md"
+        plan.write_text(_ABSNUM_BASE_PLAN.format(body="placeholder-content"), encoding="utf-8")
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-edit"
+        self._prior_flags(tmp_path, sid)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "placeholder-content",
+                    "new_string": f"changed-{self._LINE_TOKEN}",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
+
+    def test_multiedit_introduces_violation_blocks(self, tmp_path: pathlib.Path):
+        """MultiEdit適用後のcontentに違反が混入する場合はブロックされる。"""
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan = plans_dir / "test.md"
+        plan.write_text(_ABSNUM_BASE_PLAN.format(body="placeholder-content"), encoding="utf-8")
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-multiedit"
+        self._prior_flags(tmp_path, sid)
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [
+                        {"old_string": "placeholder-content", "new_string": f"changed-{self._LINE_TOKEN}"},
+                    ],
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
+
+    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
+        """plan fileでないパスへの書き込みは検査対象外。"""
+        env = self._state_env(tmp_path, tmp_path / "home")
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._LINE_TOKEN}")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "absnum-nonplan",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0

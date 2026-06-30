@@ -102,6 +102,53 @@ class TestCheckH2Order:
         assert not _plan_format.check_h2_order(content)
 
 
+class TestIterMarkdownBodyLines:
+    """iter_markdown_body_lines の除外領域とフェンス判定を検査する。"""
+
+    def test_skips_frontmatter(self) -> None:
+        content = "---\nkey: value\n---\n\nbody line\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "key: value" not in rendered
+        assert "body line" in rendered
+
+    def test_skips_code_fence_content(self) -> None:
+        content = "before\n```text\ninside\n```\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "before" in rendered
+        assert "after" in rendered
+        assert "inside" not in rendered
+
+    def test_skips_multiline_html_comment(self) -> None:
+        content = "before\n<!--\nhidden\n-->\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "before" in rendered
+        assert "after" in rendered
+        assert "hidden" not in rendered
+
+    def test_keeps_single_line_html_comment_line(self) -> None:
+        content = "before\n<!-- visible -->\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "<!-- visible -->" in rendered
+
+    def test_long_backtick_fence_close(self) -> None:
+        """4文字以上のバックティックフェンスでも閉じ判定が機能する。"""
+        content = "````text\ninner\n````\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "after" in rendered
+        assert "inner" not in rendered
+
+    def test_tilde_fence_close(self) -> None:
+        content = "~~~text\ninner\n~~~\nafter\n"
+        rendered = [line for _, line in _plan_format.iter_markdown_body_lines(content)]
+        assert "after" in rendered
+        assert "inner" not in rendered
+
+    def test_lineno_starts_at_one(self) -> None:
+        content = "first\nsecond\nthird\n"
+        pairs = list(_plan_format.iter_markdown_body_lines(content))
+        assert pairs == [(1, "first"), (2, "second"), (3, "third")]
+
+
 class TestPlanFormatSsot:
     """PLAN_REQUIRED_H2がplan-file-guidelines.mdと整合することを検査する。"""
 

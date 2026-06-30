@@ -105,15 +105,17 @@ description: >
 ### plan modeでの取り扱い
 
 計画フェーズではbump要否や既存bumpとの差分を調査しない。
-種別（PATCH／MINOR／MAJOR）のみ`### エージェント判断`へ記述し、具体的なversion数値（`1.1.0→1.2.0`等）は書かない
-（実装時に既存の未プッシュbumpへ統合されると計画文面の数値が実体と乖離するため）。実装フェーズで
-`scripts/agent_toolkit_bump.py {種別}`を実行する。ツール側が既存bumpとの統合を吸収するため`git log`確認は不要。
-計画ファイルに具体的な数値が記述されていても、既存の未プッシュbumpへ吸収済みの場合は計画適合とみなす。
-検証ではversion数値の一致を確認せず、bump種別の整合のみを確認する。
+種別（PATCH／MINOR／MAJOR）のみ`### エージェント判断`へ記述し、具体的なversion数値は書かない。
+実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する。
+ツール側が既存bumpとの統合を吸収するため`git log`確認は不要である。
+検証ではbump種別の整合のみを確認する。
 
 計画ファイル本文の`## 実行方法`には、検証ステップの手前へ
 `scripts/agent_toolkit_bump.py {patch|minor|major}`の実行ステップを必ず含める。
 bump不要に該当する場合のみ省略可で、その旨を計画ファイル本文へ明示する。
+version bumpを伴う計画では、
+`agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`を
+`## 変更内容`の対象ファイル一覧へ必ず含める。
 
 ## 同期先ドキュメント
 

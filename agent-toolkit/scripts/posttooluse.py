@@ -25,12 +25,12 @@ import pathlib
 import re
 import sys
 import traceback
-from collections.abc import Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_format import iter_markdown_body_lines  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
@@ -85,6 +85,13 @@ _PRELINT_BASH_FULLMATCH = re.compile(
     r"(?:uvx[ \t]+)?pyfltr[ \t]+run-for-agent[ \t]+--commands=textlint,markdownlint,typos,colloquial[ \t]+(\S+)",
 )
 
+# check_line_width.py単独実行のBashコマンドを完全一致型で識別する。
+# scratchpad配下の計画ファイル本文に対する127幅検査の成功を別キーで記録する。
+_LINE_WIDTH_BASH_FULLMATCH = re.compile(
+    r"(?:uvx?[ \t]+(?:run[ \t]+(?:--no-project[ \t]+)?--script[ \t]+)?|python3?[ \t]+)"
+    r"\S*check_line_width\.py[ \t]+(\S+)",
+)
+
 # pyfltrの標準出力サマリー行（exit:0）を成功判定根拠とする。
 _PYFLTR_SUCCESS_PATTERN = re.compile(r'"kind"\s*:\s*"summary"\s*,\s*"exit"\s*:\s*0\b')
 
@@ -107,100 +114,29 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
 # --- plan file形式検査の定数 ---
 
-# コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
-_FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
-
-# 計画ファイル本文内の絶対行番号直書きを検出するパターン群。
-# SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
-# （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
-# 検査対象は計画ファイル本文内の行番号表記全般で、
-# 計画ファイル自体の本文内位置の指定と他ファイル参照箇所（改訂対象の節範囲・引用元位置など）の双方を含む。
-# `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
-_LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(?<![A-Za-z])L\d+"),
-    re.compile(r"\d+行目"),
-    re.compile(r"\d+\s*-\s*\d+\s*行"),
-    re.compile(r"\d+から\d+行"),
-)
-
 # `## 変更内容 > ### 対象ファイル一覧` 配下のチェックボックス箇条書きから相対パスを抽出するパターン。
 # `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
 _CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
-
-
-def _iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
-    """Markdown本文の有効行を、ファイル先頭基準1始まりの行番号付きで順に生成する。
-
-    以下の領域内の行は生成対象外とする（行番号もスキップされる）。
-
-    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
-    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）。
-      開始・終了行自体も生成対象外
-    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
-
-    H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
-    H2/H3抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
-    """
-    lines = content.splitlines()
-    i = 0
-    # フロントマター: 1 行目が `---` のときのみ検出対象とする（途中の `---` は区切り線）
-    if lines and lines[0].rstrip() == "---":
-        i = 1
-        while i < len(lines):
-            if lines[i].rstrip() in ("---", "..."):
-                i += 1
-                break
-            i += 1
-
-    fence_marker: str | None = None  # 開きフェンスのマーカー文字列（同字種・同長以上で閉じる）
-    in_html_comment = False
-    while i < len(lines):
-        lineno = i + 1
-        line = lines[i]
-        i += 1
-        if in_html_comment:
-            # 閉じタグ到達行は `-->` 以降を解析せず丸ごとスキップする（素朴な実装）
-            if "-->" in line:
-                in_html_comment = False
-            continue
-        if fence_marker is not None:
-            stripped = line.strip()
-            if (
-                stripped
-                and stripped[0] == fence_marker[0]
-                and len(stripped) >= len(fence_marker)
-                and set(stripped) == {fence_marker[0]}
-            ):
-                fence_marker = None
-            continue
-        fence_match = _FENCE_PATTERN.match(line.lstrip())
-        if fence_match:
-            fence_marker = fence_match.group(1)
-            continue
-        if "<!--" in line and "-->" not in line.split("<!--", 1)[1]:
-            in_html_comment = True
-            continue
-        yield lineno, line
 
 
 def _extract_h2_sections(content: str) -> list[str]:
     """Markdown本文からH2見出しのテキストを順に抽出する。
 
     フロントマター・コードフェンス・複数行HTMLコメント内の`## `行は見出しとして扱わない。
-    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    除外領域の定義は`iter_markdown_body_lines`に従う。
     """
-    return [line[3:].strip() for _, line in _iter_markdown_body_lines(content) if line.startswith("## ")]
+    return [line[3:].strip() for _, line in iter_markdown_body_lines(content) if line.startswith("## ")]
 
 
 def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
     """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
 
-    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    除外領域の定義は`iter_markdown_body_lines`に従う。
     指定したH2が存在しない場合は空リストを返す。
     """
     headings: list[str] = []
     in_target_h2 = False
-    for _, line in _iter_markdown_body_lines(content):
+    for _, line in iter_markdown_body_lines(content):
         if line.startswith("## "):
             in_target_h2 = line[3:].strip() == h2_heading
             continue
@@ -212,40 +148,20 @@ def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
 def _extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
     """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
 
-    除外領域の定義は`_iter_markdown_body_lines`に従う。
+    除外領域の定義は`iter_markdown_body_lines`に従う。
     対象H2見出しが存在しない場合は空リストを返す。
     対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
     H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
     """
     body: list[tuple[int, str]] = []
     in_target_h2 = False
-    for lineno, line in _iter_markdown_body_lines(content):
+    for lineno, line in iter_markdown_body_lines(content):
         if line.startswith("## "):
             in_target_h2 = line[3:].strip() == h2_heading
             continue
         if in_target_h2:
             body.append((lineno, line))
     return body
-
-
-# 絶対行番号検査の除外H2見出し（`## 調査結果`配下は確定値領域として除外する）。
-_LINE_NUMBER_EXEMPT_H2 = ("調査結果",)
-
-
-def _iter_plan_check_target_lines(content: str) -> Iterator[tuple[int, str]]:
-    """絶対行番号検査の対象となる本文行を行番号付きで生成する。
-
-    `_iter_markdown_body_lines`の出力を元に、`_LINE_NUMBER_EXEMPT_H2`へ列挙したH2配下の行を除外する。
-    H2見出し行自体は本文行として走査対象外とする。
-    """
-    current_h2: str | None = None
-    for lineno, line in _iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            current_h2 = line[3:].strip()
-            continue
-        if current_h2 in _LINE_NUMBER_EXEMPT_H2:
-            continue
-        yield lineno, line
 
 
 def _extract_target_files_from_changes(content: str) -> list[str]:
@@ -318,12 +234,11 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
     検出する違反:
 
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
-    - 計画ファイル本文の絶対行番号の直書き（`## 調査結果`配下を除く）
-      （`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の規範違反）
     - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが200行以上
 
     読み取り失敗時は空リストを返す。
     H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
+    絶対行番号の直書き検査もPreToolUseへ移管済み。
     """
     try:
         content = pathlib.Path(file_path).read_text(encoding="utf-8")
@@ -339,26 +254,6 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
         if first_h3 != "対象ファイル一覧":
             actual = first_h3 if first_h3 is not None else "(no H3 present)"
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
-
-    # 計画ファイル本文の絶対行番号直書き検査（`## 調査結果`配下を除く全節）
-    matches: list[tuple[int, str]] = []
-    for lineno, text in _iter_plan_check_target_lines(content):
-        for pattern in _LINE_NUMBER_PATTERNS:
-            m = pattern.search(text)
-            if m:
-                matches.append((lineno, m.group()))
-                break
-    if matches:
-        shown = matches[:5]
-        shown_str = "; ".join(f"line {ln}: {repr(s)}" for ln, s in shown)
-        overflow = len(matches) - len(shown)
-        tail = f"; and {overflow} more" if overflow > 0 else ""
-        violations.append(
-            "plan file body contains absolute line-number references outside '## 調査結果'"
-            " (per plan-file-guidelines.md absolute-numbers norm)."
-            " Use section names or heading references instead."
-            f" Matches: {shown_str}{tail}."
-        )
 
     line_count_warning = _check_target_file_line_counts(content, cwd)
     if line_count_warning:
@@ -592,6 +487,39 @@ def main() -> int:
                         passed_set.add(full_sha)
                         passed_set.add(stripped_sha)
                         state["plan_prelint_passed"] = sorted(passed_set)
+                        changed = True
+
+        # check_line_width.py 単独実行の成功記録: 完全一致型で識別し、終了コード0時に別キーへハッシュ登録する
+        line_width_match = _LINE_WIDTH_BASH_FULLMATCH.fullmatch(command.strip())
+        if line_width_match:
+            tool_response = payload.get("tool_response") or {}
+            if not isinstance(tool_response, dict):
+                tool_response = {}
+            interrupted = bool(tool_response.get("interrupted"))
+            exit_code_raw = tool_response.get("exit_code")
+            try:
+                exit_code = int(exit_code_raw) if exit_code_raw is not None else 0
+            except (TypeError, ValueError):
+                exit_code = -1
+            if not interrupted and exit_code == 0:
+                lint_target = line_width_match.group(1).strip("'\"")
+                lint_path = pathlib.Path(lint_target)
+                if not lint_path.is_absolute() and cwd:
+                    lint_path = pathlib.Path(cwd) / lint_path
+                try:
+                    file_content = lint_path.read_text(encoding="utf-8")
+                except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
+                    file_content = None
+                if file_content is not None:
+                    passed_lw = state.get("plan_prelint_passed_line_width", [])
+                    if not isinstance(passed_lw, list):
+                        passed_lw = []
+                    passed_lw_set = set(passed_lw)
+                    full_sha, stripped_sha = compute_prelint_hashes(file_content)
+                    if full_sha not in passed_lw_set or stripped_sha not in passed_lw_set:
+                        passed_lw_set.add(full_sha)
+                        passed_lw_set.add(stripped_sha)
+                        state["plan_prelint_passed_line_width"] = sorted(passed_lw_set)
                         changed = True
 
         return state if changed else None
