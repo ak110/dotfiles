@@ -6,6 +6,7 @@ plan file形式検査・SSOT検査・codex-review.md読み込み追跡は
 """
 
 import functools
+import hashlib
 import importlib.util
 import json
 import os
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import types
 
+import _plan_file
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
@@ -510,6 +512,235 @@ class TestGitLogChecked:
         assert isinstance(recorded, dict)
         for key in expected_keys:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
+
+
+class TestPrelintSuccessRecord:
+    """Bash経由のpyfltr事前lint検査成功記録。
+
+    対象パターンBashが`{"kind":"summary","exit":0,...}`を含む出力で成功した場合、
+    対象scratchpadファイルの全文SHA256と`## 背景`配下`text`コードブロック除去後SHA256を
+    `plan_prelint_passed`リストへ追加する。
+    """
+
+    _SUCCESS_OUTPUT = '{"kind":"summary","exit":0,"foo":1}'
+
+    @staticmethod
+    def _sha(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _strip_bg_text(content: str) -> str:
+        return _plan_file.strip_background_text_blocks(content)
+
+    def _make_lint_file(self, tmp_path: pathlib.Path, content: str = "# plan\n") -> pathlib.Path:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        target = scratch / "plan-prelint.md"
+        target.write_text(content, encoding="utf-8")
+        return target
+
+    def test_success_records_two_hashes(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-success"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        recorded = state.get("plan_prelint_passed", [])
+        assert isinstance(recorded, list)
+        content = target.read_text(encoding="utf-8")
+        assert self._sha(content) in recorded
+        assert self._sha(self._strip_bg_text(content)) in recorded
+
+    def test_uvx_prefix_also_matched(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-uvx"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        recorded = state.get("plan_prelint_passed", [])
+        assert recorded  # 非空
+
+    def test_no_success_marker_no_record(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-no-marker"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                },
+                "tool_response": {"output": "no summary line here"},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_interrupted_no_record(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-interrupted"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT, "interrupted": True},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_non_zero_exit_summary_no_record(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-exit1"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                },
+                "tool_response": {"output": '{"kind":"summary","exit":1}'},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_missing_file_no_record(self, tmp_path: pathlib.Path):
+        sid = "prelint-missing"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {tmp_path}/missing.md",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_unrelated_bash_no_record(self, tmp_path: pathlib.Path):
+        sid = "prelint-unrelated"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls -la"},
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    @pytest.mark.parametrize(
+        "command_suffix",
+        [
+            "&& echo ok",
+            "|| echo fail",
+            "; echo trail",
+            "| cat",
+            "& sleep 1",
+        ],
+    )
+    def test_shell_operator_compound_no_record(self, tmp_path: pathlib.Path, command_suffix: str):
+        target = self._make_lint_file(tmp_path)
+        sid = f"prelint-compound-{command_suffix[:2]}"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": (
+                        f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target} {command_suffix}"
+                    ),
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_newline_separated_no_record(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-newline"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": (f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}\necho done"),
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
+
+    def test_extra_suffix_no_record(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-suffix"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target} --extra-flag",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert "plan_prelint_passed" not in state
 
 
 class TestReadHandler:

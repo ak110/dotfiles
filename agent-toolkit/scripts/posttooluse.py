@@ -30,7 +30,7 @@ from collections.abc import Iterator
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
@@ -76,6 +76,17 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"(?:test|check|validate)\b"
     ),
 )
+
+# --- 事前lint検査の成功記録パターン ---
+
+# scratchpad配下への計画ファイル本文事前lint検査用Bashコマンドを完全一致型で識別する。
+# 改行・シェル演算子・後続文字列を許容しないことで、lint失敗を後続処理で覆す経路を防ぐ。
+_PRELINT_BASH_FULLMATCH = re.compile(
+    r"(?:uvx[ \t]+)?pyfltr[ \t]+run-for-agent[ \t]+--commands=textlint,markdownlint,typos,colloquial[ \t]+(\S+)",
+)
+
+# pyfltrの標準出力サマリー行（exit:0）を成功判定根拠とする。
+_PYFLTR_SUCCESS_PATTERN = re.compile(r'"kind"\s*:\s*"summary"\s*,\s*"exit"\s*:\s*0\b')
 
 # --- git関連サブコマンドの分類 ---
 
@@ -584,6 +595,39 @@ def main() -> int:
         if log_modified:
             state["git_log_checked"] = log_state
             changed = True
+
+        # 事前lint検査の成功記録: 完全一致型で許可パターン以外の余計な構文（シェル演算子・改行・後続文字列）を全て除外する
+        # （lint失敗を後続処理で成功終了へ覆す形を防ぐため）
+        prelint_match = _PRELINT_BASH_FULLMATCH.fullmatch(command.strip())
+        if prelint_match:
+            tool_response = payload.get("tool_response") or {}
+            if not isinstance(tool_response, dict):
+                tool_response = {}
+            interrupted = bool(tool_response.get("interrupted"))
+            output = tool_response.get("output") or tool_response.get("stdout") or ""
+            if not isinstance(output, str):
+                output = ""
+            pyfltr_succeeded = bool(_PYFLTR_SUCCESS_PATTERN.search(output))
+            if not interrupted and pyfltr_succeeded:
+                lint_target = prelint_match.group(1).strip("'\"")
+                lint_path = pathlib.Path(lint_target)
+                if not lint_path.is_absolute() and cwd:
+                    lint_path = pathlib.Path(cwd) / lint_path
+                try:
+                    file_content = lint_path.read_text(encoding="utf-8")
+                except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
+                    file_content = None
+                if file_content is not None:
+                    passed = state.get("plan_prelint_passed", [])
+                    if not isinstance(passed, list):
+                        passed = []
+                    passed_set = set(passed)
+                    full_sha, stripped_sha = compute_prelint_hashes(file_content)
+                    if full_sha not in passed_set or stripped_sha not in passed_set:
+                        passed_set.add(full_sha)
+                        passed_set.add(stripped_sha)
+                        state["plan_prelint_passed"] = sorted(passed_set)
+                        changed = True
 
         return state if changed else None
 
