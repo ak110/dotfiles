@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "stop_advisor.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "stop_advisor.py"
 
 
 def _run(

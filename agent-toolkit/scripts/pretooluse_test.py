@@ -1093,7 +1093,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         )
         assert result.returncode == 0
 
-    def test_passes_when_wc_l_recorded_in_agent_judgment_without_survey_results(self, tmp_path: pathlib.Path):
+    def test_passes_when_wc_l_recorded_in_agent_judgment_under_changes_section(self, tmp_path: pathlib.Path):
         """`### エージェント判断`が`## 調査結果`配下でなく`## 変更内容`配下にある場合でも通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
@@ -1347,7 +1347,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "CLAUDE.md" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
-    def test_passes_when_changes_section_missing(self, tmp_path: pathlib.Path):
+    def test_passes_when_path_backquote_missing(self, tmp_path: pathlib.Path):
         """`## 変更内容`にバッククォートパスが存在しない場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
@@ -3272,6 +3272,7 @@ class TestCheckPlanFileH2SectionOrder:
 
     @staticmethod
     def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        """H2節順検査の前提条件となるセッション状態フラグを書き込む。"""
         _write_session_state(
             tmp_path,
             session_id,
@@ -3373,7 +3374,7 @@ class TestCheckPlanFileH2SectionOrder:
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_allows_non_write_tool(self, tmp_path: pathlib.Path):
-        """Write以外のツールはH2節順検査の対象外で通過する。"""
+        """Edit/MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -3390,8 +3391,27 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        # EditはH2節順検査の対象外だが、plan_mode_skill未設定等のblockが発火する場合もある。
-        # ここではH2節順blockが出ないことのみを検査する
+        # EditはH2節順検査の判定に入るがcontentフィールドがないため通過する。
+        assert "H2 section order" not in result.stderr
+
+    def test_allows_multi_edit_tool(self, tmp_path: pathlib.Path):
+        """MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [{"old_string": "x", "new_string": "y"}],
+                },
+                "session_id": "h2order-multiedit",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        # MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。
         assert "H2 section order" not in result.stderr
 
     def test_allows_non_plan_file(self, tmp_path: pathlib.Path):

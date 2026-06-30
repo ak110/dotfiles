@@ -41,7 +41,8 @@ user-invocable: false
 読み込んだ悪い例の文面は指摘テキストへ転記しない（コンテキスト汚染を回避するため、観点や判断基準のみを使う）。
 
 - レビュー対象がコード（`.py`・`.ts`・`.tsx`・`.rs`・`.cs`等の言語ソース）の場合、
-  レビュー前に対象言語の`agent-toolkit/skills/coding-standards/references/<lang>.md`を必ず読む
+  レビュー前に`agent-toolkit/skills/coding-standards/SKILL.md`を読む。
+  対象言語向けに列挙されたreferences群を全て読む。
   - 対象言語referencesに記載された言語固有規範・新構文・誤指摘されやすい構文情報を
     レビュー判定の前提として用いる
   - 読み込みを省略した状態で構文系の指摘を出力しない

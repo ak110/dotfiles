@@ -1,7 +1,7 @@
 """_plan_format モジュールの単体テスト。
 
 H2見出し抽出・H2節順検査・SSOT整合性を検査する。
-フェンス内H2除外はPostToolUse側の`_iter_markdown_body_lines`が担うため本モジュールのテスト対象外。
+フェンス内H2除外は本モジュールの`extract_h2_sections`が担う。
 """
 
 import pathlib
@@ -32,14 +32,22 @@ class TestExtractH2Sections:
         assert _plan_format.extract_h2_sections(content) == ["AAA", "BBB"]
 
     def test_empty_content_returns_empty(self):
-        assert _plan_format.extract_h2_sections("") == []
+        assert not _plan_format.extract_h2_sections("")
 
     def test_no_h2_returns_empty(self):
-        assert _plan_format.extract_h2_sections("# タイトルのみ\n\nテキスト\n") == []
+        assert not _plan_format.extract_h2_sections("# タイトルのみ\n\nテキスト\n")
 
     def test_trailing_whitespace_stripped(self):
         content = "## 背景  \n\nテキスト\n"
         assert _plan_format.extract_h2_sections(content) == ["背景"]
+
+    def test_h2_inside_backtick_fence_is_excluded(self):
+        content = "```\n## フェンス内\n```\n## 実在\n"
+        assert _plan_format.extract_h2_sections(content) == ["実在"]
+
+    def test_h2_inside_tilde_fence_is_excluded(self):
+        content = "~~~\n## フェンス内\n~~~\n## 実在\n"
+        assert _plan_format.extract_h2_sections(content) == ["実在"]
 
 
 class TestCheckH2Order:
@@ -76,6 +84,10 @@ class TestCheckH2Order:
     def test_empty_content_reports_all_missing(self):
         violations = _plan_format.check_h2_order("")
         assert any("missing required H2 sections" in v for v in violations)
+
+    def test_h2_inside_fence_not_counted_as_unexpected(self):
+        content = _VALID_CONTENT + "\n```\n## フェンス内\n```\n"
+        assert not _plan_format.check_h2_order(content)
 
 
 class TestPlanFormatSsot:

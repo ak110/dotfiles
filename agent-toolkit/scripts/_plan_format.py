@@ -1,6 +1,6 @@
 """計画ファイルのH2節順検査の共通モジュール。
 
-PreToolUseのWriteブロック判定とPostToolUseの警告出力で共有する。
+PreToolUseのWrite/Edit/MultiEditブロック判定で使う。
 SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`の
 「セクション構成と記述要件」節。
 """
@@ -18,12 +18,28 @@ PLAN_REQUIRED_H2: tuple[str, ...] = (
     "計画ファイル（本ファイル）のパス",
 )
 
-_H2_PATTERN = re.compile(r"^## (.+?)\s*$", re.MULTILINE)
+_FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
+_H2_PATTERN = re.compile(r"^## (.+?)\s*$")
 
 
 def extract_h2_sections(content: str) -> list[str]:
-    """本文からH2見出しの一覧を抽出する。"""
-    return _H2_PATTERN.findall(content)
+    """本文からH2見出しの一覧を抽出する（コードフェンス内は除外する）。"""
+    headings: list[str] = []
+    fence_marker: str | None = None
+    for line in content.splitlines():
+        fence_match = _FENCE_PATTERN.match(line.lstrip())
+        if fence_match:
+            if fence_marker is None:
+                fence_marker = fence_match.group(1)
+            elif line.lstrip().startswith(fence_marker):
+                fence_marker = None
+            continue
+        if fence_marker is not None:
+            continue
+        m = _H2_PATTERN.match(line)
+        if m:
+            headings.append(m.group(1))
+    return headings
 
 
 def check_h2_order(content: str) -> list[str]:

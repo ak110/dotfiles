@@ -12,6 +12,7 @@ import subprocess
 import sys
 import types
 
+import _plan_format
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
@@ -82,7 +83,7 @@ def _build_valid_plan(
     prefix: str = "",
 ) -> str:
     """必須セクション順序に従い妥当なplan file内容を生成する。"""
-    section_order: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
+    section_order: tuple[str, ...] = _plan_format.PLAN_REQUIRED_H2
     overrides = overrides or {}
     parts: list[str] = ["# タイトル", ""]
     for h2 in section_order:

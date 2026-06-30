@@ -992,16 +992,16 @@ def _check_plan_file_h2_section_order(
     tool_name: str,
     tool_input: dict,
 ) -> bool:
-    """Plan fileのWrite時にH2節順違反をブロックする。
+    """Plan fileのWrite/Edit/MultiEdit時にH2節順違反をブロックする。
 
     判定条件:
 
-    - `tool_name`が`Write`
+    - `tool_name`が`_PLAN_FILE_EDIT_TOOLS`に含まれる
     - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
     - `tool_input["content"]`が文字列
     - `_plan_format.check_h2_order`が1件以上の違反を返す
     """
-    if tool_name != "Write":
+    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
         return False
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
