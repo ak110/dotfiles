@@ -1,6 +1,6 @@
 """agent-toolkit/scripts/_colloquial_check.py のテスト。
 
-load_patterns / scan_text / first_hit / mask_allowed / mask_blockquote_linesの検証。
+load_patterns / scan_text / first_hit / mask_allowed / mask_blockquote_lines / mask_fenced_code_blocksの検証。
 テスト本体に口語表現を直接書かないため、辞書ファイルから動的にサンプルを構築する。
 """
 
@@ -223,6 +223,44 @@ class TestMaskBlockquoteLines:
         assert _colloquial_check.mask_blockquote_lines("") == ""
 
 
+class TestMaskFencedCodeBlocks:
+    """`mask_fenced_code_blocks` のテスト。"""
+
+    def test_replaces_backtick_fenced_block_inner_lines(self):
+        text = "本文1\n```\n内側の文\n```\n本文2\n"
+        masked = _colloquial_check.mask_fenced_code_blocks(text)
+        assert len(masked) == len(text)
+        assert masked.splitlines() == ["本文1", "```", " " * len("内側の文"), "```", "本文2"]
+
+    def test_replaces_tilde_fenced_block_inner_lines(self):
+        text = "~~~\n内側\n~~~\n"
+        masked = _colloquial_check.mask_fenced_code_blocks(text)
+        assert masked.splitlines() == ["~~~", " " * len("内側"), "~~~"]
+
+    def test_close_requires_same_marker_char(self):
+        # 開始がバッククォートなのでチルダでは閉じない（テキスト末尾までマスク継続）
+        text = "```\n内側\n~~~\n後続\n"
+        masked = _colloquial_check.mask_fenced_code_blocks(text)
+        assert masked.splitlines() == ["```", " " * len("内側"), " " * len("~~~"), " " * len("後続")]
+
+    def test_close_allows_longer_marker(self):
+        text = "```\n内側\n````\n後続\n"
+        masked = _colloquial_check.mask_fenced_code_blocks(text)
+        assert masked.splitlines() == ["```", " " * len("内側"), "````", "後続"]
+
+    def test_unclosed_fence_masks_until_end(self):
+        text = "```\n内側1\n内側2\n"
+        masked = _colloquial_check.mask_fenced_code_blocks(text)
+        assert masked.splitlines() == ["```", " " * len("内側1"), " " * len("内側2")]
+
+    def test_text_without_fence_unchanged(self):
+        text = "通常段落\nもう一行\n"
+        assert _colloquial_check.mask_fenced_code_blocks(text) == text
+
+    def test_empty_text(self):
+        assert _colloquial_check.mask_fenced_code_blocks("") == ""
+
+
 class TestBlockquoteSkipIntegration:
     """`scan_text` / `first_hit` での引用行スキップ統合テスト。"""
 
@@ -256,3 +294,25 @@ class TestBlockquoteSkipIntegration:
         assert hits, "本文側の検出が必要"
         # 引用行（1行目）はスキップされ、本文（2行目）のみ検出される
         assert all(line_no == 2 for line_no, _, _, _, _ in hits)
+
+
+class TestFencedCodeSkipIntegration:
+    """`scan_text` / `first_hit` でのフェンス付きコードブロックスキップ統合テスト。"""
+
+    def test_first_hit_skips_inside_fence(self, deny_patterns, allow_patterns, overlap_sample):
+        _, deny_sub = overlap_sample
+        text = f"```\n{deny_sub}該当\n```\n"
+        assert _colloquial_check.first_hit(text, deny_patterns, allow_patterns) is False
+
+    def test_scan_text_skips_inside_fence(self, deny_patterns, allow_patterns, overlap_sample):
+        _, deny_sub = overlap_sample
+        text = f"```\n{deny_sub}該当\n```\n"
+        assert not _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
+
+    def test_scan_text_detects_outside_fence(self, deny_patterns, allow_patterns, overlap_sample):
+        _, deny_sub = overlap_sample
+        text = f"```\nフェンス内の{deny_sub}該当\n```\n本文の{deny_sub}該当\n"
+        hits = _colloquial_check.scan_text(text, deny_patterns, allow_patterns)
+        assert hits, "フェンス外側の検出が必要"
+        # フェンス内（2行目）はスキップされ、本文（4行目）のみ検出される
+        assert all(line_no == 4 for line_no, _, _, _, _ in hits)

@@ -378,6 +378,11 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
 # それ以外（個人非公開・特定プラットフォーム専用）は block する。
 _PERSONAL_PROJECTS_BLOCK: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
 _PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
+# 配布物文面で参照する外部 CLI 名の許容リスト。
+# 配布物側が `command -v` 等で存在検査を行い、CLI 不在時に安全にフォールバックする
+# 分岐構造を取る場合に限り登録する。block / warn のいずれからも除外され、
+# 配布物文面 (`agent-toolkit/` 配下) への記述が許可される。
+# 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_BLOCK` との非衝突など) を確認する。
 _EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"dotfiles-fb"})
 
 

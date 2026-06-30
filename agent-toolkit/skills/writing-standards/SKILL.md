@@ -150,7 +150,8 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 uv run --script path/to/writing-standards/scripts/check_colloquial.py path/to/file.md
 ```
 
-- 検出範囲: `.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`（コードブロック内のコメントも含む）
+- 検出範囲: `.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`
+  （Markdown引用ブロック`>`・フェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象に含む）
 
 コンテキスト汚染回避のため、`references/tone-examples.md`と`agent-toolkit/scripts/_colloquial_words.txt`は
 メインから直接Readしない。
@@ -170,9 +171,8 @@ uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
 ```
 
 - 検出対象: U+2014（EM DASH）の単発・U+2015（HORIZONTAL BAR）の単発・U+2500（BOX DRAWINGS LIGHT HORIZONTAL）の2連続
-- 検査範囲: Markdown地の文と見出し。
-  フェンス付きコードブロック内（バッククォート形式・チルダ形式の双方）・
-  インラインコード（バッククォート囲み）内・URL内は除外する
+- 検査範囲: Markdown地の文と見出し
+  （フェンス付きコードブロック・インラインコード・URL内は除外する）
 - 計画ファイル作成段階・実装段階での検出のため、`agent-toolkit:plan-mode`工程7のステップ1（機械チェック）で
   計画ファイル全体および`## 変更内容`配下のdiff +側一時ファイルへ自動適用する
 

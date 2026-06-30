@@ -70,6 +70,45 @@ def mask_blockquote_lines(text: str) -> str:
     return _BLOCKQUOTE_LINE_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
+_FENCE_LINE_RE = re.compile(r"^(`{3,}|~{3,})")
+
+
+def mask_fenced_code_blocks(text: str) -> str:
+    """Markdownフェンス付きコードブロック内の行を同長の空白で置き換える。
+
+    `mask_blockquote_lines`と同じく、ユーザー提示素材の原文転記が口語表現として
+    誤検出される事態を避ける。開始フェンスは行頭の三連以上の連続バッククォート
+    または連続チルダ。終了フェンスは開始と同種かつ同長以上の連続マーカー行。
+    開閉フェンス行自体は維持し、内側の行のみ同長空白へ置換する。
+    オフセット・行番号は変更しない。
+    """
+    out: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\n").rstrip("\r")
+        tail = line[len(body) :]
+        if not in_fence:
+            m = _FENCE_LINE_RE.match(body)
+            if m:
+                marker = m.group(1)
+                in_fence = True
+                fence_char = marker[0]
+                fence_len = len(marker)
+            out.append(line)
+            continue
+        close = re.match(rf"^{re.escape(fence_char)}{{{fence_len},}}\s*$", body)
+        if close:
+            in_fence = False
+            fence_char = ""
+            fence_len = 0
+            out.append(line)
+        else:
+            out.append(" " * len(body) + tail)
+    return "".join(out)
+
+
 def scan_text(
     text: str,
     deny_patterns: list[tuple[re.Pattern[str], str | None]],
@@ -83,7 +122,7 @@ def scan_text(
     """
     if not deny_patterns:
         return []
-    masked = mask_allowed(mask_blockquote_lines(text), allow_patterns)
+    masked = mask_allowed(mask_fenced_code_blocks(mask_blockquote_lines(text)), allow_patterns)
     hits: list[tuple[int, int, str, str, str | None]] = []
     for dp, replacement in deny_patterns:
         for m in dp.finditer(masked):
@@ -107,5 +146,5 @@ def first_hit(
     """検出が1件でもあれば真を返す（hookのwarn判定用の高速経路）。"""
     if not deny_patterns:
         return False
-    masked = mask_allowed(mask_blockquote_lines(text), allow_patterns)
+    masked = mask_allowed(mask_fenced_code_blocks(mask_blockquote_lines(text)), allow_patterns)
     return any(dp.search(masked) for dp, _ in deny_patterns)
