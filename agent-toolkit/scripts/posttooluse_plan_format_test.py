@@ -1,43 +1,21 @@
 """agent-toolkit/scripts/posttooluse.py のplan file形式検査関連テスト。
 
-`posttooluse_test.py`本体から計画ファイル形式検査・SSOT検査・codex-review.md読み込み検出を分割した。
-共通ヘルパー（`_run`・`_read_state`・`_load_posttooluse_module`）は分割先で複製する。
+`posttooluse_test.py`本体から計画ファイル形式検査・codex-review.md読み込み検出を分割した。
+共通ヘルパー（`_run`・`_read_state`）は分割先で複製する。
 ハンドラ網羅と機械チェック上限のバランス確保が分割の動機。
+H2節順検査（必須H2欠落・順序違反・予期せぬH2）はPreToolUseへ移管済み（`_plan_format.py`・`pretooluse.py`参照）。
 """
 
-import functools
-import importlib.util
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
-import types
 
+import _plan_format
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
-_SKILL_MD = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
-_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
-
-
-@functools.cache
-def _load_posttooluse_module() -> types.ModuleType:
-    """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
-
-    `TestPlanFormatSsot`で本体スクリプトの定数（`_PLAN_REQUIRED_H2`等）と
-    外部ドキュメントの整合性を検査するために使う。
-    引数注入では到達不能なモジュール内部状態の検査のため、importlibによる直接参照を例外的に許容する。
-    """
-    spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
 def _run(
@@ -109,8 +87,7 @@ def _build_valid_plan(
       （コードフェンス・HTMLコメントなど特定本文での無視判定検証用）。
     - `prefix`: 戻り値の先頭に連結する文字列（YAMLフロントマターなどの検証用）。
     """
-    # 引数注入では到達不能なモジュール内部定数の参照のため直接アクセスする。
-    section_order: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access  # SSOT: posttooluse._PLAN_REQUIRED_H2と同期
+    section_order: tuple[str, ...] = _plan_format.PLAN_REQUIRED_H2
     overrides = overrides or {}
     parts: list[str] = ["# タイトル", ""]
     for h2 in section_order:
@@ -169,145 +146,6 @@ class TestPlanFormatCheck:
         )
         assert result.returncode == 0
         assert result.stdout.strip() == ""
-
-    def test_missing_required_section_is_warned(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        # 調査結果セクションを欠落させた変種。
-        content = _build_valid_plan(omit=("調査結果",))
-        plan = _write_plan(plans, "missing.md", content)
-        result = _run(
-            {
-                "session_id": "plan-miss",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "missing required H2 sections" in msg
-        assert "調査結果" in msg
-        assert "[auto-generated: agent-toolkit/posttooluse][warn]" in msg
-
-    def test_missing_response_policy_is_warned(self, tmp_path: pathlib.Path):
-        """``対応方針`` セクション欠落も必須セクション違反として警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(omit=("対応方針",))
-        plan = _write_plan(plans, "missing-policy.md", content)
-        result = _run(
-            {
-                "session_id": "plan-miss-policy",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "missing required H2 sections" in msg
-        assert "対応方針" in msg
-
-    def test_missing_progress_log_is_warned(self, tmp_path: pathlib.Path):
-        """``進捗ログ`` セクション欠落も必須セクション違反として警告される。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(omit=("進捗ログ",))
-        plan = _write_plan(plans, "missing-progress.md", content)
-        result = _run(
-            {
-                "session_id": "plan-miss-progress",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "missing required H2 sections" in msg
-        assert "進捗ログ" in msg
-
-    def test_out_of_order_is_warned(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        # 変更内容と調査結果を入れ替える。
-        content = (
-            "# タイトル\n\n"
-            "## 背景\n\n説明。\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 実行方法\n\n- w\n"
-        )
-        plan = _write_plan(plans, "order.md", content)
-        result = _run(
-            {
-                "session_id": "plan-order",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "out of order" in msg
-
-    def test_unexpected_section_is_warned(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        content = _VALID_PLAN + "\n## 備考\n\n自由記述。\n"
-        plan = _write_plan(plans, "extra.md", content)
-        result = _run(
-            {
-                "session_id": "plan-extra",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "unexpected H2" in msg
-        assert "備考" in msg
-
-    def test_history_not_at_top_is_warned(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        # 変更履歴を中間に置いた変種。
-        content = (
-            "# タイトル\n\n"
-            "## 背景\n\n説明。\n\n"
-            "## 対応方針\n\n- a\n\n"
-            "## 調査結果\n\n- x\n\n"
-            "## 変更履歴\n\n1. 仮\n\n"
-            "## 変更内容\n\n- y\n\n"
-            "## 実行方法\n\n- w\n"
-        )
-        plan = _write_plan(plans, "hist.md", content)
-        result = _run(
-            {
-                "session_id": "plan-hist-mid",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "変更履歴" in msg
 
     def test_review_md_is_skipped(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
@@ -370,134 +208,6 @@ class TestPlanFormatCheck:
                 "session_id": "plan-sub",
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(plan), "content": "# 古い計画\n"},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_edit_tool_triggers_check(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        # 崩れたplanを生成し、EditツールからのHook通知を検証する。
-        content = "# タイトル\n\n## 背景\n\nx\n"
-        plan = _write_plan(plans, "edit.md", content)
-        result = _run(
-            {
-                "session_id": "plan-edit",
-                "tool_name": "Edit",
-                "tool_input": {"file_path": str(plan), "old_string": "x", "new_string": "y"},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        assert output["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-
-    def test_multiedit_tool_triggers_check(self, tmp_path: pathlib.Path):
-        home, plans = self._home(tmp_path)
-        content = "# タイトル\n"
-        plan = _write_plan(plans, "multi.md", content)
-        result = _run(
-            {
-                "session_id": "plan-multi",
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "edits": [{"old_string": "foo", "new_string": "bar"}],
-                },
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        output = _parse_hook_output(result.stdout)
-        assert output is not None
-        assert output["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-
-    def test_code_fence_h2_is_ignored(self, tmp_path: pathlib.Path):
-        """コードフェンス内の `## 見出し` は見出しとしてカウントしない。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={
-                "背景": "```markdown\n## 予期せぬ見出し\n```",
-            }
-        )
-        plan = _write_plan(plans, "fence.md", content)
-        result = _run(
-            {
-                "session_id": "plan-fence",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    @pytest.mark.parametrize(
-        ("outer", "inner"),
-        [
-            ("````", "```"),  # バックティック同士 (長さ違い)
-            ("~~~~", "```"),  # 外側チルダ・内側バックティック (字種一致チェックの回帰)
-        ],
-    )
-    def test_nested_code_fence_h2_is_ignored(self, tmp_path: pathlib.Path, outer: str, inner: str):
-        """外側フェンスが同字種・同長以上でのみ閉じ、内部の `##` を見出し扱いしない。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={
-                "背景": (f"{outer}markdown\n{inner}markdown\n## 予期せぬ見出し\n{inner}\n{outer}"),
-            }
-        )
-        plan = _write_plan(plans, "nested-fence.md", content)
-        result = _run(
-            {
-                "session_id": "plan-nested-fence",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    def test_html_comment_h2_is_ignored(self, tmp_path: pathlib.Path):
-        """複数行 HTML コメント内の `## 見出し` は見出しとしてカウントしない。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(
-            overrides={
-                "背景": ("<!--\n## ダミー\nコメントなので無視される想定。\n-->"),
-            }
-        )
-        plan = _write_plan(plans, "html-comment.md", content)
-        result = _run(
-            {
-                "session_id": "plan-html-comment",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-            },
-            state_dir=tmp_path / "state",
-            home_dir=home,
-            plan_mode_skill_invoked=True,
-        )
-        assert result.stdout.strip() == ""
-
-    @pytest.mark.parametrize("closer", ["---", "..."])
-    def test_frontmatter_h2_is_ignored(self, tmp_path: pathlib.Path, closer: str):
-        """ファイル先頭 YAML フロントマター内の `## 見出し` は見出しとしてカウントしない。"""
-        home, plans = self._home(tmp_path)
-        content = _build_valid_plan(prefix=f"---\ntitle: sample\nnote: |\n  ## ダミー\n{closer}\n\n")
-        plan = _write_plan(plans, "frontmatter.md", content)
-        result = _run(
-            {
-                "session_id": "plan-frontmatter",
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
             },
             state_dir=tmp_path / "state",
             home_dir=home,
@@ -848,35 +558,6 @@ class TestPlanFormatCheck:
         assert "plan file body contains absolute line-number references" in msg
         # マッチ値（`m.group()`）が`shown_str`経由でメッセージへ含まれることを検証する
         assert repr("L" + "66") in msg
-
-
-class TestPlanFormatSsot:
-    """期待セクション一覧が`plan-mode/references/plan-file-guidelines.md`に全て登場することを検査する。"""
-
-    def test_required_and_optional_h2_appear_in_plan_file_ref(self):
-        text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 引数注入では到達不能なモジュール内部定数の整合検査のため直接参照する。
-        plan_required_h2: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
-        for heading in plan_required_h2:
-            assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
-
-    def test_section_definition_order_matches_required_h2(self):
-        """`plan-file-guidelines.md`のセクション定義H3と`_PLAN_REQUIRED_H2`の順序が一致することを検査する。
-
-        セクション定義H3は`### XXX（`## YYY`）`形式で記述されており、
-        バッククォート内のH2名（YYY）が登場順に`_PLAN_REQUIRED_H2`と完全一致するべき。
-        記述例コードブロック内のH2や、サブH3定義（`### XXX（`### YYY`）`形式）は
-        パターン上マッチしないため誤検出しない。
-        """
-        text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        # 引数注入では到達不能なモジュール内部定数の整合検査のため直接参照する。
-        plan_required_h2: tuple[str, ...] = _POSTTOOLUSE_MODULE._PLAN_REQUIRED_H2  # noqa: SLF001  # pylint: disable=protected-access
-        # 行頭H3のうち、丸括弧内のインラインコードがH2（`## ...`）形式のものだけ抽出。
-        pattern = re.compile(r"^### .+?（`## ([^`]+)`）", re.MULTILINE)
-        defined_h2 = tuple(pattern.findall(text))
-        assert defined_h2 == plan_required_h2, (
-            f"plan-file-guidelines.md のセクション定義順 {defined_h2} が _PLAN_REQUIRED_H2 {plan_required_h2} と一致しない"
-        )
 
 
 class TestCodexReviewReadTracking:

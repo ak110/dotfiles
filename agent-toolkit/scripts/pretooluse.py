@@ -68,6 +68,7 @@ import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_git_events,
@@ -223,6 +224,10 @@ def main() -> int:
 
     # plan fileのWrite時にscratchpad事前lint検査未実施の場合はブロック
     if _check_plan_file_prelint_passed(tool_name, tool_input, session_id):
+        return 2
+
+    # plan fileのWrite時にH2節順違反がある場合はブロック
+    if _check_plan_file_h2_section_order(tool_name, tool_input):
         return 2
 
     # AskUserQuestion: 縮退誘発フレーズ検出
@@ -973,6 +978,46 @@ def _check_plan_file_prelint_passed(
             " then run `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <scratchpad_path>`"
             " until it passes, then retry the Write."
             " See plan-mode/references/plan-file-guidelines.md for details.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- plan fileのH2節順検査 ---
+
+
+def _check_plan_file_h2_section_order(
+    tool_name: str,
+    tool_input: dict,
+) -> bool:
+    """Plan fileのWrite時にH2節順違反をブロックする。
+
+    判定条件:
+
+    - `tool_name`が`Write`
+    - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
+    - `tool_input["content"]`が文字列
+    - `_plan_format.check_h2_order`が1件以上の違反を返す
+    """
+    if tool_name != "Write":
+        return False
+    file_path_raw = tool_input.get("file_path")
+    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
+        return False
+    content = tool_input.get("content")
+    if not isinstance(content, str):
+        return False
+    violations = _plan_format.check_h2_order(content)
+    if not violations:
+        return False
+    violation_str = " / ".join(violations)
+    print(
+        _llm_notice(
+            f"blocked: plan file H2 section order violation: {violation_str}"
+            f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
+            " Fix the section order and retry the Write.",
             tag="block",
         ),
         file=sys.stderr,

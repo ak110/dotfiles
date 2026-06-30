@@ -378,6 +378,22 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
 _PLAN_TEMPLATE_CONTENT = "# t\n"
 _PLAN_TEMPLATE_SHA = hashlib.sha256(_PLAN_TEMPLATE_CONTENT.encode("utf-8")).hexdigest()
 
+# H2節順検査も通過する最小限の正規計画ファイル内容。
+# `## 変更内容`配下に`### 対象ファイル一覧`を含め、PostToolUseのH3検査も通過させる。
+_VALID_H2_PLAN_CONTENT = (
+    "# タイトル\n\n"
+    "## 変更履歴\n\nx\n\n"
+    "## 背景\n\nx\n\n"
+    "## 対応方針\n\nx\n\n"
+    "## 調査結果\n\nx\n\n"
+    "## 変更内容\n\n"
+    "### 対象ファイル一覧\n\nx\n\n"
+    "## 実行方法\n\nx\n\n"
+    "## 進捗ログ\n\nx\n\n"
+    "## 計画ファイル（本ファイル）のパス\n\nx\n"
+)
+_VALID_H2_PLAN_SHA = hashlib.sha256(_VALID_H2_PLAN_CONTENT.encode("utf-8")).hexdigest()
+
 
 class TestPlanModeSkillFirstCheck:
     """plan mode 下で plan-mode スキル未起動のまま plan file 編集をブロックする検査。
@@ -436,13 +452,13 @@ class TestPlanModeSkillFirstCheck:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_PLAN_TEMPLATE_SHA],
+                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _PLAN_TEMPLATE_CONTENT},
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
                 "session_id": sid,
                 "permission_mode": "plan",
             },
@@ -524,13 +540,13 @@ class TestPlanModeSkillFirstCheck:
             {
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_PLAN_TEMPLATE_SHA],
+                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _PLAN_TEMPLATE_CONTENT},
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
                 "session_id": sid,
                 "permission_mode": "default",
             },
@@ -684,13 +700,13 @@ class TestTextlintViolationsReadFirstCheck:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_PLAN_TEMPLATE_SHA],
+                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _PLAN_TEMPLATE_CONTENT},
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
                 "session_id": sid,
                 "permission_mode": "default",
             },
@@ -811,13 +827,13 @@ class TestPlanFileGuidelinesReadFirstCheck:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_PLAN_TEMPLATE_SHA],
+                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _PLAN_TEMPLATE_CONTENT},
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
                 "session_id": sid,
                 "permission_mode": "default",
             },
@@ -954,7 +970,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "agent-toolkit/rules/test-rule.md"
         self._make_target_file(tmp_path, target_rel, lines=50)
 
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
             {
@@ -978,7 +1003,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "some/other/file.md"
         self._make_target_file(tmp_path, target_rel, lines=300)
 
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
             {
@@ -1002,7 +1036,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "agent-toolkit/rules/test-rule.md"
         self._make_target_file(tmp_path, target_rel, lines=210)
 
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 210 行。\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\ntest-rule.md は 210 行。\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
             {
@@ -1027,10 +1070,15 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._make_target_file(tmp_path, target_rel, lines=210)
 
         content = (
-            "## 変更内容\n\n"
-            f"- `{target_rel}` を変更する\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
             "## 調査結果\n\n調査内容。\n\n"
-            "### エージェント判断\n\ntest-rule.md: 209行。\n"
+            "### エージェント判断\n\ntest-rule.md: 209行。\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
         )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
@@ -1046,7 +1094,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert result.returncode == 0
 
     def test_passes_when_wc_l_recorded_in_agent_judgment_without_survey_results(self, tmp_path: pathlib.Path):
-        """`## 調査結果`が存在せず`### エージェント判断`のみに実測値±2の数値が記載されている場合は通過する。"""
+        """`### エージェント判断`が`## 調査結果`配下でなく`## 変更内容`配下にある場合でも通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -1055,8 +1103,18 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "agent-toolkit/rules/test-rule.md"
         self._make_target_file(tmp_path, target_rel, lines=210)
 
-        # `## 調査結果`セクションを持たず、`### エージェント判断`のみに実測値を記載する
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n### エージェント判断\n\ntest-rule.md: 209行。\n"
+        # `### エージェント判断`を`## 変更内容`配下に置き、`## 調査結果`配下でなくても認識されることを検証する
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "### エージェント判断\n\ntest-rule.md: 209行。\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
             {
@@ -1128,7 +1186,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._make_target_file(tmp_path, target_rel, lines=210)
 
         # 208（実測値210から-2）で通過することを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 208 行。\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            f"## 調査結果\n\ntest-rule.md は 208 行。\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         self._all_prior_flags(tmp_path, sid, content=content)
         result = self._run_with_cwd(
             {
@@ -1180,7 +1247,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._make_target_file(tmp_path, target_rel, lines=210)
 
         # 212（実測値210から+2）で通過することを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 212 行。\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            f"## 調査結果\n\ntest-rule.md は 212 行。\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1272,7 +1348,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_passes_when_changes_section_missing(self, tmp_path: pathlib.Path):
-        """`## 変更内容`セクションが存在しない場合は通過する。"""
+        """`## 変更内容`にバッククォートパスが存在しない場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -1282,7 +1358,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "agent-toolkit/rules/test-rule.md"
         self._make_target_file(tmp_path, target_rel, lines=210)
 
-        content = "## 背景\n\n変更内容セクションなし。\n\n## 調査結果\n\nなし\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            "## 変更内容\n\nファイル参照なし。\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1306,7 +1391,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         # 実ファイルを作成しない
         target_rel = "agent-toolkit/rules/nonexistent.md"
 
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1330,7 +1424,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         target_rel = "agent-toolkit/rules/test-rule.md"
         self._make_target_file(tmp_path, target_rel, lines=199)
 
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nなし\n\n"
+            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1486,11 +1589,17 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._make_target_file(tmp_path, target_rel2, lines=210)
 
         content = (
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\n"
+            "test-rule1.md は 210 行。\ntest-rule2.md は 210 行。\n\n"
             "## 変更内容\n\n"
             f"- `{target_rel1}` を変更する\n"
             f"- `{target_rel2}` を変更する\n\n"
-            "## 調査結果\n\n"
-            "test-rule1.md は 210 行。\ntest-rule2.md は 210 行。\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
         )
         result = self._run_with_cwd(
             {
@@ -1593,7 +1702,17 @@ class TestPlanFilePrelintPassed:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "prelint-full-sha"
-        content = "# title\n\n## 対応方針\n\n本文\n"
+        content = (
+            "# title\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\n本文\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         state = self._bypass_other_blocks()
         state["plan_prelint_passed"] = [self._sha(content)]
         _write_session_state(tmp_path, sid, state)
@@ -1613,7 +1732,17 @@ class TestPlanFilePrelintPassed:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "prelint-stripped-sha"
-        content = "# title\n\n## 背景\n\n```text\noriginal\n```\n\n## 対応方針\n\n本文\n"
+        content = (
+            "# title\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\n```text\noriginal\n```\n\n"
+            "## 対応方針\n\n本文\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         state = self._bypass_other_blocks()
         state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(content))]
         _write_session_state(tmp_path, sid, state)
@@ -1647,10 +1776,21 @@ class TestPlanFilePrelintPassed:
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
+        content = (
+            "# t\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "tool_input": {"file_path": str(plan), "content": content},
                 "session_id": "",
                 "permission_mode": "default",
             },
@@ -1719,8 +1859,28 @@ class TestPlanFilePrelintPassed:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "prelint-bdy1"
-        original = "# t\n\n## 背景\n\n```text\nA\n```\n\n## 対応方針\n\nx\n"
-        modified = "# t\n\n## 背景\n\n```text\nB\n```\n\n## 対応方針\n\nx\n"
+        original = (
+            "# t\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\n```text\nA\n```\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        modified = (
+            "# t\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\n```text\nB\n```\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
         state = self._bypass_other_blocks()
         state["plan_prelint_passed"] = [self._sha(self._strip_bg_text(original))]
         _write_session_state(tmp_path, sid, state)
@@ -3097,3 +3257,153 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
+
+
+class TestCheckPlanFileH2SectionOrder:
+    """plan file Write時のH2節順違反ブロック検査。
+
+    `_VALID_H2_PLAN_CONTENT`は全8必須H2節を正規順で含む最小正規計画ファイル。
+    H2節順違反がある場合にのみブロック（returncode 2）し、
+    Write以外・plan file以外・正規コンテンツは通過する。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
+            },
+        )
+
+    def test_allows_valid_h2_order(self, tmp_path: pathlib.Path):
+        """必須H2節が正規順に揃ったコンテンツは通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h2order-valid"
+        self._prior_flags(tmp_path, sid, _VALID_H2_PLAN_CONTENT)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_missing_required_h2(self, tmp_path: pathlib.Path):
+        """必須H2節が欠落するコンテンツはブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h2order-missing"
+        content = "# タイトル\n\n## 背景\n\nx\n"
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_out_of_order_h2(self, tmp_path: pathlib.Path):
+        """必須H2節が正規順と異なる場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h2order-order"
+        # 背景と対応方針を入れ替えて順序違反にする
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_blocks_unexpected_h2(self, tmp_path: pathlib.Path):
+        """許可外のH2節を含むコンテンツはブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h2order-unexpected"
+        content = _VALID_H2_PLAN_CONTENT + "\n## 予期せぬセクション\n\nx\n"
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_allows_non_write_tool(self, tmp_path: pathlib.Path):
+        """Write以外のツールはH2節順検査の対象外で通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "x",
+                    "new_string": "y",
+                },
+                "session_id": "h2order-edit",
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        # EditはH2節順検査の対象外だが、plan_mode_skill未設定等のblockが発火する場合もある。
+        # ここではH2節順blockが出ないことのみを検査する
+        assert "H2 section order" not in result.stderr
+
+    def test_allows_non_plan_file(self, tmp_path: pathlib.Path):
+        """plan file以外へのWriteはH2節順検査対象外で通過する。"""
+        content = "# タイトルのみ\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "h2order-nonplan",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""

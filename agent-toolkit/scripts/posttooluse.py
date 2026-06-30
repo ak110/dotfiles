@@ -107,20 +107,6 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
 # --- plan file形式検査の定数 ---
 
-# 期待セクション一覧のSSOTは`skills/plan-mode/references/plan-file-guidelines.md`の「セクション構成と記述要件」節。
-# plan-file-guidelines.md側を更新する場合は本定数も同期すること（SSOTテスト`TestPlanFormatSsot`で検査）。
-_PLAN_REQUIRED_H2 = (
-    "変更履歴",
-    "背景",
-    "対応方針",
-    "調査結果",
-    "変更内容",
-    "実行方法",
-    "進捗ログ",
-    "計画ファイル（本ファイル）のパス",
-)
-
-
 # コードフェンス開始/終了の判定に使う（CommonMark準拠で字種と長さを保持）。
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 
@@ -331,43 +317,22 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
 
     検出する違反:
 
-    - 必須H2の欠落
-    - 必須H2の順序違反
-    - 予期せぬH2
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
     - 計画ファイル本文の絶対行番号の直書き（`## 調査結果`配下を除く）
       （`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の規範違反）
     - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが200行以上
 
     読み取り失敗時は空リストを返す。
+    H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
     """
     try:
         content = pathlib.Path(file_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
     headings = _extract_h2_sections(content)
-    allowed = set(_PLAN_REQUIRED_H2)
     violations: list[str] = []
 
-    unexpected = [h for h in headings if h not in allowed]
-    if unexpected:
-        violations.append(f"unexpected H2 sections: {unexpected}. Allowed: {list(_PLAN_REQUIRED_H2)}.")
-
-    missing = [h for h in _PLAN_REQUIRED_H2 if h not in headings]
-    if missing:
-        violations.append(f"missing required H2 sections: {missing}.")
-
-    # 順序違反: 必須 H2 だけを抽出したときの順序が規定順と一致するか
-    present_required = [h for h in headings if h in _PLAN_REQUIRED_H2]
-    expected_order = [h for h in _PLAN_REQUIRED_H2 if h in headings]
-    if present_required != expected_order:
-        violations.append(
-            f"required H2 sections are out of order."
-            f" Expected order among present: {expected_order}, but found: {present_required}."
-        )
-
     # 変更内容H2 配下の先頭H3が「対象ファイル一覧」かを検査する
-    # H2 欠落は上記 missing チェックで既に報告済みのため、存在する場合のみ検査する
     if "変更内容" in headings:
         h3_list = _extract_h3_under_h2(content, "変更内容")
         first_h3 = h3_list[0] if h3_list else None
