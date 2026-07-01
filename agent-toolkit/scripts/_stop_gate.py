@@ -12,6 +12,13 @@ background task起動の検出条件は次の3種を統合して扱う。
 
 SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
 テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
+
+常時ログ（`append_stop_log`）と詳細stderr出力（`_emit_debug`）は責務を分離する。
+常時ログはINFO相当（呼び出し側が渡す最終判定ラベルと主要フラグ）を
+`{tempdir}/claude-agent-toolkit-stop-{session_id}.log`へ1行ずつ追記し、
+1MB超過時に`.log.1`へ1世代ローリングする。詳細stderr出力は
+環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみ発火するDEBUG相当
+（last_tool・launched・pending・pending_ids）で、原因切り分け用途に限定する。
 """
 
 import json
@@ -19,6 +26,7 @@ import os
 import pathlib
 import re
 import sys
+import tempfile
 import time
 
 from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
@@ -46,7 +54,7 @@ _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
-def is_pending_async_work(transcript_path: str) -> bool:
+def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     """セッションが構造的に継続中の場合に真を返す。
 
     以下のいずれかの場合に真を返す。
@@ -69,12 +77,108 @@ def is_pending_async_work(transcript_path: str) -> bool:
     起動集合から完了集合を差し引いて1件以上残れば「未完了background taskあり」と判断する。
 
     transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
+    `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
     """
     _wait_for_end_turn(transcript_path)
     last_async = _last_tool_use_is_async_wait(transcript_path)
-    pending = last_async or _has_pending_background_tasks(transcript_path)
+    launched, completed = _describe_pending_background_tasks(transcript_path)
+    remainder = launched - completed
+    pending = last_async or bool(remainder)
     _emit_debug(transcript_path, pending)
+    append_stop_log(
+        session_id,
+        "is_pending_async_work_result",
+        {
+            "result": pending,
+            "last_tool": _describe_last_tool_use(transcript_path),
+            "launched": len(launched),
+            "pending": len(remainder),
+            "pending_ids": ",".join(sorted(remainder)[:3]) if remainder else "-",
+        },
+    )
     return pending
+
+
+def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:
+    """transcript内のユーザーターンに`pattern`一致のスラッシュコマンド起動痕跡があるか確認する。
+
+    スラッシュコマンドはPostToolUse(Skill)側の`session_review_invoked`辞書記録の対象外
+    （ツール呼び出しとして記録されない）ため、transcript走査による代替検出手段とする。
+    非sidechainの`type=="user"`エントリの`message.content`を対象に走査する。
+    transcript読み取り失敗時は偽を返す。
+    """
+    try:
+        lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return False
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "user" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
+        if pattern.search(text):
+            return True
+    return False
+
+
+def _stop_log_path(session_id: str) -> pathlib.Path:
+    """常時ログの出力先パスを返す。
+
+    `{tempdir}/claude-agent-toolkit-stop-{session_id}.log`形式とする。
+    セッション状態ファイル（`_session_state.py`）と同じtempdir配下に置き、
+    hostごとに衝突しないようsession_idで分離する。
+    """
+    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-stop-{session_id}.log"
+
+
+def _rotate_stop_log(path: pathlib.Path, max_bytes: int = 1_000_000) -> None:
+    """ログサイズが`max_bytes`を超えた場合に`path.with_suffix(".log.1")`へリネームする。
+
+    1世代のみのローリングとする（既存の`.log.1`は上書き）。
+    ログファイルが存在しない、またはサイズが上限未満の場合は何もしない。
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return
+    if size <= max_bytes:
+        return
+    path.replace(path.with_suffix(".log.1"))
+
+
+def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes: int = 1_000_000) -> None:
+    """Stop hookの最終判定根拠を常時ログへ1行追記する。
+
+    `decision`は呼び出し側が渡す最終判定ラベル（`approve_no_pyfltr`・
+    `approve_pending_async`・`approve_review_invoked`・`approve_stop_hook_active`・
+    `block_session_review`など）。`context`は任意のkey-valueの辞書で、
+    `last_tool`・`launched`・`pending`・`pending_ids`・`session_review_invoked`・
+    `command_detected`等を呼び出し側が任意で埋める。
+
+    出力形式: `{ISO8601時刻} decision={...} k1=v1 k2=v2 ...`（1行）。
+    `session_id`が空の場合はログ書き込みをスキップする。
+    書き込み失敗（権限不足等）はStop hook本体の動作へ影響させないため無視する。
+    `max_bytes`はローテーション閾値の注入点で、テストから小さい値を渡してローテーション動作を検証できる。
+    """
+    if not session_id:
+        return
+    path = _stop_log_path(session_id)
+    _rotate_stop_log(path, max_bytes=max_bytes)
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    fields = " ".join(f"{key}={value}" for key, value in context.items())
+    line = f"{timestamp} decision={decision}" + (f" {fields}" if fields else "") + "\n"
+    try:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        return
 
 
 def _emit_debug(transcript_path: str, result: bool) -> None:
@@ -189,8 +293,8 @@ def _describe_last_tool_use(transcript_path: str) -> str:
     return name or "-"
 
 
-def _has_pending_background_tasks(transcript_path: str) -> bool:
-    r"""transcript全体を走査して未完了のbackground task（Agent・Bash・SendMessage背景再開）が存在する場合に真を返す。
+def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], set[str]]:
+    r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
     検出スコープは非sidechainエントリに限定する（`isSidechain`が真のエントリは除外）。
     foreground起動のAgentはメインターン内で同期完了するため対象外。
@@ -201,32 +305,15 @@ def _has_pending_background_tasks(transcript_path: str) -> bool:
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
 
-    前2者は`message.content`配列内の`tool_result`ブロックから`tool_use_id`を取得する。
-    SendMessage背景再開は`toolUseResult`側に識別子を持たないため、
-    transcript全体から収集したSendMessage tool_use idの集合に`tool_use_id`が含まれるかで限定する。
-
     完了の記録: 次の2形式の`<task-notification>`要素から
     `<tool-use-id>(toolu_[\\w]+)</tool-use-id>`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロック
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
       `attachment.prompt`文字列（Claude Code 2.1系以降で観測される形式）
 
+    起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知されるため共通の抽出処理を用いる。
-
-    起動集合から完了集合を差し引いて1件以上残れば真。
-    transcript読み取り失敗時は偽を返す（安全側に倒し、既存条件で抑止または通過させる）。
-    """
-    launched, completed = _describe_pending_background_tasks(transcript_path)
-    return bool(launched - completed)
-
-
-def _describe_pending_background_tasks(transcript_path: str) -> tuple[set[str], set[str]]:
-    """transcript全体から背景タスクの起動集合と完了集合を抽出する。
-
-    走査ルールは`_has_pending_background_tasks`のdocstringに記載した条件と同一。
-    本関数は集合自体を返し、`_has_pending_background_tasks`は残差判定のみ、
-    `_emit_debug`は集合サイズと残差ID列挙に使う。
     transcript読み取り失敗時は空集合のペアを返す。
 
     走査は2段構成とする。

@@ -289,6 +289,88 @@ class TestApproveConditions:
         assert "decision" not in decision
 
 
+class TestSessionReviewCommandInvocation:
+    """スラッシュコマンド起動痕跡（`/agent-toolkit:session-review`）による代替検出。"""
+
+    def test_command_invocation_in_transcript_approves(self, tmp_path: pathlib.Path):
+        """transcript内にコマンド起動痕跡があるとapprove（session_state未記録でも成立）。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("<command-name>/agent-toolkit:session-review</command-name>"),
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "command-invoked", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_no_command_invocation_blocks(self, tmp_path: pathlib.Path):
+        """コマンド起動痕跡が無い場合は通常通りblockされる。"""
+        transcript = _write_transcript(tmp_path, [_user_entry("通常の作業依頼"), _assistant_text_only()])
+        result = _run(
+            {"session_id": "command-not-invoked", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+
+
+class TestAppendStopLog:
+    """`append_stop_log`が最終判定分岐ごとに呼び出されることの検証（ログファイル1行確認）。"""
+
+    def _read_log_lines(self, tmp_path: pathlib.Path, session_id: str) -> list[str]:
+        path = tmp_path / f"claude-agent-toolkit-stop-{session_id}.log"
+        return path.read_text(encoding="utf-8").splitlines()
+
+    def test_stop_hook_active_logs_decision(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _run(
+            {
+                "session_id": "log-stop-hook-active",
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-stop-hook-active")
+        assert len(lines) == 1
+        assert "decision=approve_stop_hook_active" in lines[0]
+
+    def test_block_logs_decision(self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]):
+        repo = make_clean_repo(tmp_path)
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _run(
+            {"session_id": "log-block", "transcript_path": str(transcript), "cwd": str(repo)},
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-block")
+        # is_pending_async_work自身の"is_pending_async_work_result"行と、
+        # 最終判定"block_session_review"行の2行が記録される。
+        assert len(lines) == 2
+        assert "decision=is_pending_async_work_result" in lines[0]
+        assert "decision=block_session_review" in lines[1]
+
+    def test_review_invoked_logs_decision(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(
+            tmp_path,
+            "log-review-invoked",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
+        )
+        _run(
+            {"session_id": "log-review-invoked", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-review-invoked")
+        assert len(lines) == 2
+        assert "decision=is_pending_async_work_result" in lines[0]
+        assert "decision=approve_review_invoked" in lines[1]
+
+
 class TestContextConditions:
     """block条件: 機械ゲート通過かつスキル未起動 → 毎回`decision: block`＋`reason`を返す。"""
 

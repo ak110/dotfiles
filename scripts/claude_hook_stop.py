@@ -38,6 +38,15 @@ LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整
 `_message_format`モジュールのdocstringを参照する。
 参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
 `sys.path`に追加して解決する。プラグイン無効化時もファイル自体は存在しimportは成立する。
+
+対象スキル（`session-review-dotfiles`）は`session_review_invoked`辞書経由の起動済み
+フラグに加え、transcript内のユーザーターンに`<command-name>/session-review-dotfiles</command-name>`が
+含まれるスラッシュコマンド起動痕跡（`_stop_gate.has_command_invocation`）でも
+起動済み扱いとする。PostToolUse側のフラグ記録がスラッシュコマンド起動時のツール呼び出し
+扱いを取りこぼす場合の代替経路。
+
+各判定分岐の最終判定ラベルと根拠は`agent-toolkit/scripts/_stop_gate.append_stop_log`で
+常時ログへ記録する。
 """
 
 import collections.abc
@@ -56,7 +65,11 @@ sys.path.insert(
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    append_stop_log,
+    has_command_invocation,
+    is_pending_async_work,
+)
 
 # `\bpyfltr\b` に相当する正規表現。
 # uv run pyfltr / pyfltr / uv run --script ... pyfltr など典型的な呼び出し形式を網羅する。
@@ -65,6 +78,9 @@ _PYFLTR_PATTERN = re.compile(r"\bpyfltr\b")
 # agent-toolkit スキル呼び出しを検出する正規表現。
 # Skill ツールの input.skill フィールドに `agent-toolkit:` が含まれるケースを対象とする。
 _AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
+
+# transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
+_SESSION_REVIEW_DOTFILES_COMMAND_RE = re.compile(r"<command-name>/session-review-dotfiles</command-name>")
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "dotfiles/claude_hook_stop"
@@ -162,29 +178,40 @@ def main() -> int:
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、即座にapproveする。
     if payload.get("stop_hook_active") is True:
+        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
         _approve()
         return 0
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if not transcript_path:
+        append_stop_log(session_id, "approve_no_transcript", {})
         _approve()
         return 0
 
     if not _has_pyfltr_usage(transcript_path) and not _has_agent_toolkit_usage(transcript_path):
+        append_stop_log(session_id, "approve_no_pyfltr", {})
         _approve()
         return 0
 
-    if is_pending_async_work(transcript_path):
+    if is_pending_async_work(transcript_path, session_id):
+        append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
 
     # 振り返りスキル起動済みフラグはセッション状態ファイル経由で確認する。
-    # 観測は個人フックPostToolUseが`session_review_invoked`辞書へ記録する。
-    # 新規作業区切りでのリセットは配布物PostToolUse(EnterPlanMode)が担う。
+    # 観測は個人フックPostToolUseが`session_review_invoked`辞書へ記録するほか、
+    # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
     state = read_state(session_id)
     invoked = state.get("session_review_invoked")
-    if isinstance(invoked, dict) and invoked.get(_EXTENSION_SKILL) is True:
+    state_invoked = isinstance(invoked, dict) and invoked.get(_EXTENSION_SKILL) is True
+    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_DOTFILES_COMMAND_RE)
+    if state_invoked or command_invoked:
+        append_stop_log(
+            session_id,
+            "approve_review_invoked",
+            {"session_review_invoked": state_invoked, "command_detected": command_invoked},
+        )
         _approve()
         return 0
 
@@ -198,6 +225,7 @@ def main() -> int:
         " both the dotfiles-specific extension chapters and the standard agent-toolkit session review."
         " Follow each skill's activation policy section to decide whether to proceed with the review."
     )
+    append_stop_log(session_id, "block_session_review", {})
     _emit_block(_llm_notice(body))
     return 0
 

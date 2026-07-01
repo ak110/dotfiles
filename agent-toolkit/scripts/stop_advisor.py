@@ -29,10 +29,18 @@ approve・通知の分岐は以下のとおり。
 事前チェックとして埋め込み、質問直後等の終了相当ケースでスキル起動を抑止する。
 構造判定（非同期待機ツール残存・未完了background task検出・
 `stop_hook_active`）はhook側（`_stop_gate.py`・本ファイル）が担当し、判定レイヤーを分離する。
+
+対象スキルは`session_review_invoked`辞書経由の起動済みフラグに加え、
+transcript内のユーザーターンに`<command-name>/agent-toolkit:session-review</command-name>`が
+含まれるスラッシュコマンド起動痕跡（`_stop_gate.has_command_invocation`）でも起動済み扱いとする。
+PostToolUse側のフラグ記録がスラッシュコマンド起動時のツール呼び出し扱いを取りこぼす場合の代替経路。
+
+各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """
 
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import traceback
@@ -41,13 +49,20 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import is_pending_async_work  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    append_stop_log,
+    has_command_invocation,
+    is_pending_async_work,
+)
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/stop_advisor"
 
 # 振り返り誘導の対象スキル名。
 _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
+
+# transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
+_SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -154,6 +169,7 @@ def main() -> int:
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、
     # 構造判定・通知生成・git status出力をせず即座にapproveする。
     if payload.get("stop_hook_active") is True:
+        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
         _approve()
         return 0
 
@@ -176,16 +192,24 @@ def main() -> int:
 
     # 構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash双方）が存在するケース。
-    if is_pending_async_work(transcript_path):
+    if is_pending_async_work(transcript_path, session_id):
+        append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
 
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
-    # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録する。
-    # 新規作業区切りでのリセットはPostToolUse(EnterPlanMode)が担う。
+    # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、
+    # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
     state = read_state(session_id)
     invoked = state.get("session_review_invoked")
-    if isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True:
+    state_invoked = isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True
+    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
+    if state_invoked or command_invoked:
+        append_stop_log(
+            session_id,
+            "approve_review_invoked",
+            {"session_review_invoked": state_invoked, "command_detected": command_invoked},
+        )
         _approve(cwd=cwd)
         return 0
 
@@ -193,6 +217,7 @@ def main() -> int:
     # 配布物側の誘導を抑制する。
     extension_pending = state.get("session_review_extension_pending") is True
     if extension_pending:
+        append_stop_log(session_id, "approve_extension_pending", {})
         _approve(cwd=cwd)
         return 0
 
@@ -204,6 +229,7 @@ def main() -> int:
         f"{SESSION_REVIEW_PRECHECK} If so, invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
         " and follow its activation policy section to decide whether to proceed with the review."
     )
+    append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
     return 0
 

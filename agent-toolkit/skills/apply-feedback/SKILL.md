@@ -86,6 +86,7 @@ description: >
   - 多肢併採が想定される場合は`multiSelect: true`を許容する
   - 候補を生成できる場合は同一ターン内で候補提示まで進め、ユーザー往復回数を最小化する
   - 候補生成が不可能と判断した場合に限り、作業を中断してユーザーへ取扱（保留・不採用・原文貼付要求のいずれか）を確認する
+- 実装挙動異常の観測時は採否判定前に`agent-toolkit/skills/session-review/SKILL.md`ステップ2「事前調査の徹底」項目に従う
 
 調査範囲が広い場合は`Explore`サブエージェントへ委譲する。
 調査結果を踏まえて初めてステップ3の批判的検討へ移行する。
@@ -212,8 +213,7 @@ description: >
     対象リポジトリへの`git push`と後始末（`dotfiles-fb adopt`または`dotfiles-fb reject`）は全計画完遂後に一括実施する
   - 分割・統合いずれも技術判断としてエージェント自律で決定し、`AskUserQuestion`は発行しない
 
-Claude Code側permission modeが`plan`でない場合は`EnterPlanMode`を呼ばず直接`agent-toolkit:plan-mode`スキルへ進む。
-permission modeが`plan`の場合は`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`スキルへ進む。
-移行後は`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
+Claude Code側permission modeが`plan`の場合は`EnterPlanMode`でplan modeへ移行してから、
+それ以外の場合は直接、`agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
 plan mode下の場合の最終承認は`agent-toolkit:plan-mode`工程8の`ExitPlanMode`で得る。
 全件採用扱いで計画作成へ進んだ後に採否判定を変更したい場合は、ユーザー側の割り込みで提示する前提とする。

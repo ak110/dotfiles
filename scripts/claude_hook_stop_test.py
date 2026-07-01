@@ -389,6 +389,86 @@ class TestContextContents:
         assert SESSION_REVIEW_PRECHECK in body
 
 
+class TestSessionReviewDotfilesCommandInvocation:
+    """スラッシュコマンド起動痕跡（`/session-review-dotfiles`）による代替検出。"""
+
+    def test_command_invocation_in_transcript_approves(self, tmp_path: pathlib.Path):
+        """使用検出ありでもtranscript内にコマンド起動痕跡があればapprove。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry(),
+                _assistant_entry_with_bash("uv run pyfltr run foo.py"),
+                _user_entry("<command-name>/session-review-dotfiles</command-name>"),
+                _assistant_text_only(),
+            ],
+        )
+        result = _run(
+            {"session_id": "dotfiles-command-invoked", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_no_command_invocation_returns_context(self, tmp_path: pathlib.Path):
+        """コマンド起動痕跡が無い場合は通常通りcontextを返す。"""
+        transcript = _transcript_pyfltr_then_text(tmp_path)
+        result = _run(
+            {"session_id": "dotfiles-command-not-invoked", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert _decision_kind(decision) == "context"
+
+
+class TestAppendStopLog:
+    """`append_stop_log`が最終判定分岐ごとに呼び出されることの検証（ログファイル1行確認）。"""
+
+    def _read_log_lines(self, tmp_path: pathlib.Path, session_id: str) -> list[str]:
+        path = tmp_path / f"claude-agent-toolkit-stop-{session_id}.log"
+        return path.read_text(encoding="utf-8").splitlines()
+
+    def test_stop_hook_active_logs_decision(self, tmp_path: pathlib.Path):
+        transcript = _transcript_pyfltr_then_text(tmp_path)
+        _run(
+            {
+                "session_id": "log-stop-hook-active",
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-stop-hook-active")
+        assert len(lines) == 1
+        assert "decision=approve_stop_hook_active" in lines[0]
+
+    def test_no_usage_logs_decision(self, tmp_path: pathlib.Path):
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_entry_with_bash("echo hello"), _user_entry("確認"), _assistant_text_only()],
+        )
+        _run(
+            {"session_id": "log-no-usage", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-no-usage")
+        assert len(lines) == 1
+        assert "decision=approve_no_pyfltr" in lines[0]
+
+    def test_context_logs_decision(self, tmp_path: pathlib.Path):
+        transcript = _transcript_pyfltr_then_text(tmp_path)
+        _run(
+            {"session_id": "log-context", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        lines = self._read_log_lines(tmp_path, "log-context")
+        # is_pending_async_work自身の"is_pending_async_work_result"行と、
+        # 最終判定"block_session_review"行の2行が記録される。
+        assert len(lines) == 2
+        assert "decision=is_pending_async_work_result" in lines[0]
+        assert "decision=block_session_review" in lines[1]
+
+
 class TestEdgeCases:
     """エッジケース。"""
 

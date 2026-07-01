@@ -1,16 +1,18 @@
 """agent-toolkit/scripts/_stop_gate.py のテスト。
 
 公開関数`is_pending_async_work`の振る舞いを境界値・同値分割で網羅する。
+常時ログ関数（`append_stop_log`）およびコマンド起動検出関数（`has_command_invocation`）も対象とする。
 """
 
 import json
 import pathlib
+import re
 import threading
 import time
 from typing import Literal
 
 import pytest
-from _stop_gate import is_pending_async_work
+from _stop_gate import append_stop_log, has_command_invocation, is_pending_async_work
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
@@ -275,7 +277,7 @@ class TestIsPendingAsyncWork:
         if tool_block is not None:
             content.append(tool_block)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry(content)])
-        assert is_pending_async_work(str(t)) is expected
+        assert is_pending_async_work(str(t), "") is expected
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
@@ -316,7 +318,7 @@ class TestIsPendingAsyncWork:
             )
         )
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is expected
+        assert is_pending_async_work(str(t), "") is expected
 
     @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
     def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
@@ -329,7 +331,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_sidechain_async_launched_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内の`async_launched`は未完了扱いしない。"""
@@ -340,7 +342,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
@@ -411,7 +413,7 @@ class TestIsPendingAsyncWork:
         entries.append(_user_entry("続き"))
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is expected
+        assert is_pending_async_work(str(t), "") is expected
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
@@ -444,7 +446,7 @@ class TestIsPendingAsyncWork:
         entries.append(_user_entry("続き"))
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is expected
+        assert is_pending_async_work(str(t), "") is expected
 
     def test_sidechain_background_bash_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内の背景Bash起動は未完了扱いしない。"""
@@ -455,7 +457,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
         """foreground Agent（`toolUseResult.status == "completed"`）は未完了扱いしない。"""
@@ -466,11 +468,11 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_missing_transcript_returns_false(self):
         """transcript が存在しない → False（Stop抑止しない）。"""
-        assert is_pending_async_work("/nonexistent/transcript.jsonl") is False
+        assert is_pending_async_work("/nonexistent/transcript.jsonl", "") is False
 
     def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path):
         """assistant 最終 (end_turn) エントリが遅延 flush されるケースに対処する。
@@ -501,7 +503,7 @@ class TestIsPendingAsyncWork:
         thread.start()
         try:
             # end_turn到着後の最終ターンは text のみ → tool_useなし → 非同期待機なし → False
-            assert is_pending_async_work(str(t)) is False
+            assert is_pending_async_work(str(t), "") is False
         finally:
             thread.join()
 
@@ -518,7 +520,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is True
+        assert is_pending_async_work(str(t), "") is True
 
     def test_sendmessage_bg_resume_completed_by_notification(self, tmp_path: pathlib.Path):
         """SendMessage背景再開後に同`tool_use_id`の完了通知を受信した場合は`False`を返す。
@@ -534,7 +536,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_sendmessage_bg_resume_completed_by_attachment_notification(self, tmp_path: pathlib.Path):
         """SendMessage背景再開後に同`tool_use_id`の新形式完了通知（attachment形式）を受信した場合は`False`を返す。
@@ -551,7 +553,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_sendmessage_bg_resume_str_content_detected(self, tmp_path: pathlib.Path):
         """tool_result contentが文字列形式の背景再開エントリも`True`を返す。
@@ -567,7 +569,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is True
+        assert is_pending_async_work(str(t), "") is True
 
     def test_sendmessage_sync_only_returns_false(self, tmp_path: pathlib.Path):
         """マーカーを含まない同期SendMessage tool_resultのみの場合は`False`を返す。
@@ -595,7 +597,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_marker_in_other_tool_result_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
         """SendMessage呼び出しなしでマーカー文字列が他ツールtool_resultに含まれる場合は`False`を返す。
@@ -632,7 +634,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
     def test_sidechain_sendmessage_bg_resume_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内のSendMessage呼び出し・背景再開tool_resultは対象外で`False`を返す。
@@ -647,7 +649,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t)) is False
+        assert is_pending_async_work(str(t), "") is False
 
 
 class TestDebugOutput:
@@ -665,7 +667,7 @@ class TestDebugOutput:
     def test_no_output_when_env_unset(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """環境変数が未設定の場合はstderr出力なし。"""
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -676,7 +678,7 @@ class TestDebugOutput:
         """環境変数が真値（小文字一致）の場合はstderrへ1行出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert "_stop_gate result=False" in captured.err
         assert "last_tool=-" in captured.err
@@ -691,7 +693,7 @@ class TestDebugOutput:
         """環境変数が偽値の場合はstderr出力なし。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -711,7 +713,7 @@ class TestDebugOutput:
                 _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
             ],
         )
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Bash(bg=False)" in captured.err
@@ -741,7 +743,7 @@ class TestDebugOutput:
                 ),
             ],
         )
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Bash(bg=True)" in captured.err
@@ -763,7 +765,83 @@ class TestDebugOutput:
                 ),
             ],
         )
-        is_pending_async_work(str(t))
+        is_pending_async_work(str(t), "")
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Agent" in captured.err
+
+
+class TestAppendStopLog:
+    """`append_stop_log`のログ追記挙動を検証する。"""
+
+    def test_appends_one_line_with_decision_and_context(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """1行追記され、decisionとcontextのkey-valueが整形されて含まれる。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        append_stop_log("session-x", "approve_pending_async", {"last_tool": "Agent", "pending": 0})
+        path = tmp_path / "claude-agent-toolkit-stop-session-x.log"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        assert "decision=approve_pending_async" in lines[0]
+        assert "last_tool=Agent" in lines[0]
+        assert "pending=0" in lines[0]
+
+    def test_skips_when_session_id_empty(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """session_idが空の場合はログファイルを作成しない。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        append_stop_log("", "approve_pending_async", {})
+        assert not list(tmp_path.iterdir())
+
+    def test_multiple_calls_append(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """複数回の呼び出しが1行ずつ追記される。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        append_stop_log("session-y", "approve_no_pyfltr", {})
+        append_stop_log("session-y", "block_session_review", {})
+        path = tmp_path / "claude-agent-toolkit-stop-session-y.log"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+        assert "decision=approve_no_pyfltr" in lines[0]
+        assert "decision=block_session_review" in lines[1]
+
+    def test_rotates_when_max_bytes_exceeded(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`max_bytes`を小さくすると先行ログが`.log.1`へローテートされる。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        append_stop_log("session-z", "first", {})
+        # 先行ログが上限を超えた状態で追記するとローテーションが発生する。
+        append_stop_log("session-z", "second", {}, max_bytes=10)
+        path = tmp_path / "claude-agent-toolkit-stop-session-z.log"
+        rotated = tmp_path / "claude-agent-toolkit-stop-session-z.log.1"
+        assert rotated.exists()
+        assert "decision=first" in rotated.read_text(encoding="utf-8")
+        assert "decision=second" in path.read_text(encoding="utf-8")
+
+
+class TestHasCommandInvocation:
+    """`has_command_invocation`のtranscript走査を検証する。"""
+
+    def test_matches_user_command(self, tmp_path: pathlib.Path) -> None:
+        """ユーザーターンに指定パターンがあれば真を返す。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "message": {"content": "<command-name>/foo</command-name>"},
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
+    def test_no_match_returns_false(self, tmp_path: pathlib.Path) -> None:
+        """パターンに一致しなければ偽。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {"type": "user", "message": {"content": "no marker"}}
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
+
+    def test_sidechain_ignored(self, tmp_path: pathlib.Path) -> None:
+        """sidechainのユーザーエントリは対象外。"""
+        transcript = tmp_path / "t.jsonl"
+        entry = {
+            "type": "user",
+            "isSidechain": True,
+            "message": {"content": "<command-name>/foo</command-name>"},
+        }
+        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))

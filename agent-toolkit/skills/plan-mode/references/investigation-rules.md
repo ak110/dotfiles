@@ -43,6 +43,15 @@
   読取側を更新せず書き手のみ更新するとサブエージェントが独立コンテキストで旧書式のまま動作する
 - 編集対象スキル本体・サブエージェント定義のfrontmatterコメント（`#`行）の
   同期指示（「意図的重複」「同期要件」等）を確認し同期先ファイルを`## 変更内容`へ組み込む
+- 規範文書（`agent-toolkit/skills/*/references/*.md`・`agent-toolkit/rules/*.md`・
+  `agent-toolkit/skills/*/SKILL.md`等）を改訂する計画では、
+  当該規範を機械的に強制するhookスクリプト・機械検査スクリプト
+  （`agent-toolkit/scripts/pretooluse.py`・`agent-toolkit/skills/*/scripts/check_*.py`等）を
+  改訂箇所のキーワードで洗い出す。次のコマンドで検索し
+  `## 変更内容`対象ファイル一覧に必ず含める
+  - `grep -rn '<改訂箇所キーワード>' agent-toolkit/scripts/ agent-toolkit/skills/*/scripts/`
+  - キーワード候補: 改訂節の見出し語・条件式に使う識別子・機械強制の対象概念語など
+  - 該当スクリプトが見つからない場合はその旨を`### エージェント判断`へ記載する
 - agent-toolkitプラグインのversion bumpを計画する場合は
   `agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`の双方を対象ファイル一覧へ含める。
   両者の整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が強制する
