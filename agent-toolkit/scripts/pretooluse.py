@@ -995,6 +995,8 @@ def _check_plan_file_prelint_passed(
             " `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <scratchpad_path>`"
             " and the `check_line_width.py` script bundled with `agent-toolkit:writing-standards`"
             " until both pass, then retry the Write."
+            " Prefer `cp <scratchpad_path> <plan_path>` for the retry"
+            " only when the scratchpad content already passed BOTH pre-lint checks above."
             " See plan-mode/references/plan-file-guidelines.md for details.",
             tag="block",
         ),

@@ -2,7 +2,7 @@
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれ、
 対象ホストでのみ`~/.config/agent-toolkit/feedback-inbox.enabled`を配置する。
-対象外ホストでは同ファイルが存在する場合に削除する。
+対象外ホストでは何もしない（手動で有効化された設定を尊重する）。
 """
 
 import logging
@@ -18,15 +18,15 @@ _FLAG_PATH = pathlib.Path.home() / ".config" / "agent-toolkit" / "feedback-inbox
 
 
 def run() -> bool:
-    """対象ホストでフラグファイルを配置し、非対象ホストでは削除する。
+    """対象ホストでフラグファイルを配置する。対象外ホストでは何もしない。
 
     Returns:
-        フラグファイルの生成または削除を実施した場合True、何もしなかった場合False。
+        フラグファイルを新規生成した場合True、既存または対象外ホストの場合False。
     """
     hostname = socket.gethostname().lower().split(".")[0]
-    if hostname in _TARGET_HOSTS:
-        return _ensure_present()
-    return _ensure_absent()
+    if hostname not in _TARGET_HOSTS:
+        return False
+    return _ensure_present()
 
 
 def _ensure_present() -> bool:
@@ -41,20 +41,3 @@ def _ensure_present() -> bool:
     _FLAG_PATH.write_bytes(b"")
     logger.info(log_format.format_status("feedback-inbox", f"フラグファイルを生成: {_FLAG_PATH}"))
     return True
-
-
-def _ensure_absent() -> bool:
-    """対象外ホストでフラグファイルを削除する。
-
-    Returns:
-        削除した場合True、存在しないため何もしなかった場合False。
-    """
-    if not _FLAG_PATH.exists():
-        return False
-    try:
-        _FLAG_PATH.unlink()
-        logger.info(log_format.format_status("feedback-inbox", f"対象外ホストのため削除: {_FLAG_PATH}"))
-        return True
-    except OSError as e:
-        logger.warning(log_format.format_status("feedback-inbox", f"削除失敗: {e}"))
-        return False

@@ -90,11 +90,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser(
         "enable",
-        help="feedback-inboxフラグファイルを作成する（chezmoi apply再評価で上書きされ得る）",
+        help="feedback-inboxフラグファイルを作成する",
     )
     sub.add_parser(
         "disable",
-        help="feedback-inboxフラグファイルを削除する（chezmoi apply再評価で上書きされ得る）",
+        help="feedback-inboxフラグファイルを削除する",
     )
     sub.add_parser(
         "status",
@@ -543,7 +543,6 @@ def _cmd_enable(home: pathlib.Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"")
     print(f"有効化しました: {path}")
-    print("次回`chezmoi apply`実行時に`setup_feedback_inbox.py`がホスト判定で上書きする場合があります。")
 
 
 def _cmd_disable(home: pathlib.Path) -> None:
@@ -554,7 +553,6 @@ def _cmd_disable(home: pathlib.Path) -> None:
         return
     path.unlink()
     print(f"無効化しました: {path}")
-    print("次回`chezmoi apply`実行時に`setup_feedback_inbox.py`がホスト判定で上書きする場合があります。")
 
 
 def _cmd_status(home: pathlib.Path) -> typing.NoReturn:

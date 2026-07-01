@@ -15,6 +15,7 @@
   },
   "env": {
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7",
+    "CLAUDE_CODE_ENABLE_AUTO_MODE": "1",
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "3"
   },

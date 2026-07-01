@@ -191,7 +191,6 @@ class TestEnableSubcommand:
         assert flag.exists()
         captured = capsys.readouterr()
         assert "有効化しました" in captured.out
-        assert "chezmoi apply" in captured.out
 
     def test_enable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """既にフラグファイルが存在する場合は無動作で完了する。"""
@@ -223,7 +222,6 @@ class TestDisableSubcommand:
         assert not flag.exists()
         captured = capsys.readouterr()
         assert "無効化しました" in captured.out
-        assert "chezmoi apply" in captured.out
 
     def test_disable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが存在しない場合は無動作で完了する。"""

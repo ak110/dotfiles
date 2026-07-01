@@ -15,7 +15,7 @@ from pytools._internal import setup_feedback_inbox
     [
         pytest.param("stheno", False, True, True, id="target-host-flag-absent"),
         pytest.param("euryale", True, False, True, id="target-host-flag-present"),
-        pytest.param("other-host", True, True, False, id="non-target-host-flag-present"),
+        pytest.param("other-host", True, False, True, id="non-target-host-flag-present-kept"),
         pytest.param("other-host", False, False, False, id="non-target-host-flag-absent"),
         pytest.param("circe.local", False, True, True, id="fqdn-suffix-stripped"),
         pytest.param("STHENO", False, True, True, id="uppercase-hostname"),
@@ -30,7 +30,7 @@ def test_run(
     expected_return: bool,
     expected_flag_exists_after: bool,
 ) -> None:
-    """ホスト名とフラグ有無の組み合わせに応じてフラグ生成・削除・戻り値が正しく動作する。"""
+    """ホスト名とフラグ有無の組み合わせに応じてフラグ生成・戻り値が正しく動作する。"""
     flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
     if flag_exists_initially:
         flag.parent.mkdir(parents=True, exist_ok=True)

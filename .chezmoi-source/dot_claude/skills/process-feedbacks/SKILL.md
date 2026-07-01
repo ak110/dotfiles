@@ -47,7 +47,9 @@ description: >
      フィードバック管理側だけが先行公開され整合性が崩れることを避ける
    - 採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
    - 不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
+   - 保留ファイルがある場合: 後始末コマンドは実行せずinbox配下に残置する
+     （次回起動時に自動的に再評価対象となる）
 
 ## ステップ3: サマリー提示
 
-apply-feedback完了後、採用N件・不採用N件のサマリーをユーザーに提示する。
+apply-feedback完了後、採用N件・不採用N件・保留N件のサマリーをユーザーに提示する。
