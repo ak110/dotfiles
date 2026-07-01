@@ -63,7 +63,7 @@ def _write_feedback_file(
     inbox_dir.mkdir(parents=True, exist_ok=True)
     path = inbox_dir / filename
     path.write_text(
-        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -153,7 +153,7 @@ class TestAddSingleMessage:
         assert len(files) == 1
 
         content = files[0].read_text(encoding="utf-8")
-        assert f"created: {_FIXED_ISO}" in content
+        assert "created:" not in content.split("---\n\n", 1)[0]
         assert "target_repo: github.com/example/myrepo" in content
 
         body = content.split("---\n\n", 1)[1]
@@ -1287,6 +1287,7 @@ class TestTbdAdd:
         assert "target_repo: github.com/example/myrepo" in content
         assert "scope: theme1" in content
         assert "question_type: free" in content
+        assert "created:" not in content.split("---\n\n", 1)[0]
         assert "## 質問\n\n未確認の挙動" in content
         assert "## 回答" in content
 

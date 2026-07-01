@@ -350,14 +350,13 @@ def _cmd_add(
         messages = [message]
     _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    created_iso = now.isoformat()
     inbox_dir = _subdir(private_notes, "inbox")
     counter = _max_existing_seq(inbox_dir, timestamp) + 1
     source_line = f"source: {args.source}\n" if args.source else ""
     generated: list[str] = []
     for message in messages:
         filename = f"{timestamp}-{counter:03d}.md"
-        content = f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
+        content = f"---\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         generated.append(filename)
         counter += 1
@@ -800,7 +799,6 @@ def _cmd_tbd_add(
         sys.exit(2)
     _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    created_iso = now.isoformat()
     tbd_dir = _tbd_subdir(private_notes)
     counter = _max_existing_seq(tbd_dir, timestamp) + 1
     fm_extra = ""
@@ -813,7 +811,7 @@ def _cmd_tbd_add(
     for message in messages:
         filename = f"{timestamp}-{counter:03d}.md"
         content = (
-            f"---\ncreated: {created_iso}\ntarget_repo: {target_repo}\n{fm_extra}---\n\n"
+            f"---\ntarget_repo: {target_repo}\n{fm_extra}---\n\n"
             f"## 質問\n\n{message}\n\n## 回答\n\n"
             "<!-- ユーザーはこの行以降に回答を追記する -->\n"
         )
