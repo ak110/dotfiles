@@ -10,7 +10,7 @@ lint設定全体は次の目的に収束する。
 
 - LLM風の癖を排除したフォーマルな日本語表現の維持
   - 口語表現・比喩動詞・主観評価語・空虚な形容・接続の型などの混入を防ぐ
-  - 該当ルール例: `preset-ja-technical-writing`配下のルール、`scripts/check_colloquial.py`
+  - 該当ルール例: `preset-ja-technical-writing`配下のルール、pyfltr内蔵版`colloquial-check`
 - Markdownとしてセマンティックに正しい記述の維持
   - 強調・コードブロック・見出し階層の意味的役割を保つ
   - 該当ルール例: markdownlintの`MD022`・`MD031`・`MD040`等

@@ -43,7 +43,6 @@ user-invocable: false
   - 例外条項を素通りしてすべてを保守的な判断に偏らせない（適用が妥当なケースに条項を活用しない判断は計画方針からの後退となる）
 - 以下の参照ファイルは当該ファイルが編集対象の場合のみ読み込む
   - `agent-toolkit/skills/writing-standards/references/tone-examples.md`
-  - `agent-toolkit/scripts/_colloquial_words.txt`
   - それ以外の編集ではメイン側から指示がなくても独自に読み込まない（コンテキスト汚染を回避するため）
 - タスク範囲外のファイル変更が必要な場合は`needs_escalation`を返す
 - ドキュメントへの記述追加・修正時は、参照しているシンボル名・パス・設定キー・既定値・挙動仕様が現行実装と一致するか、
@@ -72,7 +71,7 @@ user-invocable: false
 - ドキュメント編集を含む実装タスクでは、完了報告前に対象ファイルに対して`uvx pyfltr run-for-agent --no-fix`を実行し、
   textlintの`sentence-length`等の違反が無いことを確認する
 - pretooluse hookの応答区分ごとに次の通り対応する
-  - 警告（warn）系check（colloquial・home-path・manifest手編集など）: 続行する
+  - 警告（warn）系check（colloquial-check・home-path・manifest手編集など）: 続行する
     - 警告はBash実行を停止しないため再試行不要
   - block系checkで境界調整・言い換えにより解消が可能（scope-escalationなど文面パターン検出系）: 次の試行を最大3回まで実施する
     - 試行方法1: Editのnew_string境界調整。既存文字列を含めない形へ置換対象を縮小し、追加部分のみを新規記述へ限定する

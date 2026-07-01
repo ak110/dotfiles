@@ -13,9 +13,9 @@ import re
 import subprocess
 import sys
 
-import _colloquial_check
 import _plan_file
 import pytest
+from pyfltr.colloquial import check as _colloquial_check
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
@@ -287,8 +287,8 @@ class TestColloquialCheck:
     辞書ファイルから動的にサンプルを生成するため、テスト本体には口語表現を直接書かない。
     """
 
-    _DENY_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words.txt"
-    _ALLOW_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "_colloquial_words_allow.txt"
+    _DENY_PATH = _colloquial_check.DENY_PATH
+    _ALLOW_PATH = _colloquial_check.ALLOW_PATH
 
     @staticmethod
     def _expand(pattern_str: str) -> str:

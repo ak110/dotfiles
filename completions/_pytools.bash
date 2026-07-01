@@ -34,7 +34,6 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete claude-sess
 complete -o nospace -o default -o bashdefault -F _python_argcomplete claudize
 complete -o nospace -o default -o bashdefault -F _python_argcomplete clonedir
 complete -o nospace -o default -o bashdefault -F _python_argcomplete codexize
-complete -o nospace -o default -o bashdefault -F _python_argcomplete colloquial-checker
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dateRelocator
 complete -o nospace -o default -o bashdefault -F _python_argcomplete deletehomonym
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dirsize

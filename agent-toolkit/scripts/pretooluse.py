@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pyfltr>=3.14.1"]
 # ///
 # pylint: disable=too-many-lines  # ハンドラ網羅のためチェック実装が多く、分割するとモジュール間の依存関係が複雑化するため許容する
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
@@ -68,7 +68,6 @@ import traceback
 from collections.abc import Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-import _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -77,6 +76,7 @@ from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
@@ -790,7 +790,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
                     f" Rewrite using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per agent.md 「言語表現」 chapter."
+                    f" no metaphorical verbs) per agent.md 「日本語の品質を保つ」 section."
                     f" Target: {file_path}",
                     tag="warn",
                 ),
@@ -992,7 +992,8 @@ def _check_plan_file_prelint_passed(
             "blocked: attempting to write a plan file without prior lint check."
             " Output the plan body (excluding fenced code blocks inside `## 背景`) to a scratchpad file,"
             " then run BOTH"
-            " `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial <scratchpad_path>`"
+            " `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check"
+            " --enable=colloquial-check <scratchpad_path>`"
             " and the `check_line_width.py` script bundled with `agent-toolkit:writing-standards`"
             " until both pass, then retry the Write."
             " Prefer `cp <scratchpad_path> <plan_path>` for the retry"

@@ -59,6 +59,10 @@ frontmatterおよびYAMLヘッダ行も行数に算入する。
   - 具体手順: `cp`で正本をscratchpadへ複製し、`Edit`で改訂を適用してから`wc -l`で実測する
   - 計画ファイルの`## 調査結果`に現行行数（`wc -l`実測値）、`## 変更内容`に実装段階での`wc -l`再確認手順を記載する
   - 既存ハードリミット超過時または改訂で超過する場合は、既存節縮減を本計画スコープへ含めて219行以下へ収める
+- 計画の対象ファイル一覧に本節の対象ファイル（`.md`）が含まれる場合、
+  改訂後見込みの試算に依らず対象ファイル現行の物理行数を`wc -l`で実測する
+  - 実測値が219行を超過している場合は追記量にかかわらず既存節縮減を本計画スコープへ組み込み、
+    219行以下への収束を実装完了条件に含める
 - 計画段階で改訂後の最終形を組み立て、行数増減を伴わない末尾追記計画も含めて
   `uvx pyfltr run-for-agent --no-fix`でtextlintの`sentence-length`（120字上限）等の違反を検査し解消する
 - 改訂後最終形の機械検査では、検査が参照する設定ファイル・本体内の相対パス参照先を含む関連ファイルをscratchpadへ同時コピーする
@@ -125,7 +129,7 @@ frontmatterおよびYAMLヘッダ行も行数に算入する。
   - 機械チェックスクリプトの検査対象から除外する
   - 隔離ファイルを新規追加する場合は既存例（`scope-escalation-phrases.md`等）と同じく
     対応する配置先スキルの`references/`配下へ配置し、機械チェック除外を同時に整備する
-    - `check_colloquial.py`の`_EXCLUDED_FILES`と対応する`check_colloquial_test.py`の2件テストパターン
+    - pyfltr内蔵`colloquial-check`の`colloquial-check-exclude`設定または`words_allow.txt`
     - `pyproject.toml`の`[tool.pyfltr] extend-exclude`
 
 ### 既知情報・冗長記述の排除

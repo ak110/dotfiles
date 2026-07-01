@@ -81,6 +81,11 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先リンクを除去する。
         Path("skills/process-feedback"),
     ],
+    Path.home() / ".config": [
+        # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため
+        # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
+        Path("pyfltr/config.toml"),
+    ],
     Path.home() / "bin": [
         # pre-commit からしか呼ばれない開発者向けツールのため scripts/ 配下に置き、
         # .chezmoi-source/bin/ の配布対象外とする。

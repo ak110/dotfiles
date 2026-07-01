@@ -25,7 +25,7 @@ _EXCERPT_LIMIT = 80
 _DEFAULT_EXTENSIONS = frozenset({".md", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
-# `check_line_width.py`・`check_colloquial.py`の`_EXCLUDED_DIRS`と同一集合。
+# `check_line_width.py`の`_EXCLUDED_DIRS`と同一集合。
 _EXCLUDED_DIRS = frozenset(
     {
         ".git",

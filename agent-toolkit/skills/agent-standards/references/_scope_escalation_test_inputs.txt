@@ -6,7 +6,7 @@
 # 空行と`#`先頭行はスキップ。
 #
 # 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（agent-standardsスキル「コンテキスト汚染の回避」節）。
-# check_colloquial.pyの_EXCLUDED_FILESおよびpyproject.tomlの[tool.pyfltr] extend-excludeで機械チェック対象から除外する。
+# pyproject.tomlの[tool.pyfltr] extend-excludeでpyfltr内蔵版colloquial-check含む機械チェック対象から除外する。
 workload	作業量で多い
 single-session	セッションで完遂
 approach-confirm	進め方を確認

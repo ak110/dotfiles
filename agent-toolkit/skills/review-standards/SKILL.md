@@ -34,7 +34,7 @@ description: >
 ## レビューの基本姿勢
 
 - 機械チェック（lint・format・textlint・型検査・スペル検査など）で判定できる項目は扱わない
-  - 補助スクリプト（`scripts/check_line_width.py`・`scripts/check_colloquial.py`等を含む）の実行もレビュー時には行わない
+  - 補助スクリプト（`scripts/check_line_width.py`等を含む）の実行もレビュー時には行わない
   - 行幅・行数など機械チェック・補助スクリプトで判定可能な定量項目は、
     レビュアーが推定値を算出して指摘しない
   - 行長判定は機械チェック（markdownlint MD013・`scripts/check_line_width.py`等）の判定結果に従う。

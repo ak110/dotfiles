@@ -37,7 +37,6 @@ claude-session-export = "pytools.claude_session_export:main"
 claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
 codexize = "pytools.codexize:main"
-colloquial-checker = "pytools.colloquial_checker:main"
 dateRelocator = "pytools.date_relocator:main"
 deletehomonym = "pytools.delete_homonym:main"
 dirsize = "pytools.dirsize:main"
@@ -76,7 +75,7 @@ exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
 
 [dependency-groups]
 dev = [
-    "pyfltr[python]>=3.8.0",
+    "pyfltr[python]>=3.14.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",

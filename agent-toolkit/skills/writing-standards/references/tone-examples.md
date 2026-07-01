@@ -10,7 +10,7 @@
   確認はExploreサブエージェント経由で行い、修正が必要な場合は`plan-implementer`経由で実施する
 - `plan-impl-reviewer`はReadツールで直接読み込む（日本語表現観点で参照する）
   読み込んだ悪い例の文面は指摘テキストへ転記しない
-- `check_colloquial.py`の検査対象から除外される（スクリプト側でハードコード除外する運用）
+- 口語表現チェックの検査対象から除外される（`pyproject.toml`の`[tool.pyfltr] extend-exclude`で対象パスを列挙する運用）
   そのため悪い例には辞書検出語が含まれてよい
 - 悪い例の文面はwriting-standardsの規定違反のままで構わない。観点を示すために必要なため意図的に違反させている
   書き換え案・解説文・観点説明文はwriting-standardsに準拠する

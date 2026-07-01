@@ -532,6 +532,8 @@ class TestPrelintSuccessRecord:
     def _strip_bg_text(content: str) -> str:
         return _plan_file.strip_background_text_blocks(content)
 
+    _LINT_COMMAND = "pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check"
+
     def _make_lint_file(self, tmp_path: pathlib.Path, content: str = "# plan\n") -> pathlib.Path:
         scratch = tmp_path / "scratch"
         scratch.mkdir()
@@ -546,7 +548,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                    "command": f"{self._LINT_COMMAND} {target}",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,
@@ -569,7 +571,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                    "command": f"uvx {self._LINT_COMMAND} {target}",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,
@@ -589,7 +591,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                    "command": f"{self._LINT_COMMAND} {target}",
                 },
                 "tool_response": {"output": "no summary line here"},
                 "session_id": sid,
@@ -608,7 +610,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                    "command": f"{self._LINT_COMMAND} {target}",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT, "interrupted": True},
                 "session_id": sid,
@@ -627,7 +629,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}",
+                    "command": f"{self._LINT_COMMAND} {target}",
                 },
                 "tool_response": {"output": '{"kind":"summary","exit":1}'},
                 "session_id": sid,
@@ -645,7 +647,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {tmp_path}/missing.md",
+                    "command": f"{self._LINT_COMMAND} {tmp_path}/missing.md",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,
@@ -690,9 +692,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": (
-                        f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target} {command_suffix}"
-                    ),
+                    "command": f"{self._LINT_COMMAND} {target} {command_suffix}",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,
@@ -711,7 +711,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": (f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target}\necho done"),
+                    "command": f"{self._LINT_COMMAND} {target}\necho done",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,
@@ -730,7 +730,7 @@ class TestPrelintSuccessRecord:
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": f"pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial {target} --extra-flag",
+                    "command": f"{self._LINT_COMMAND} {target} --extra-flag",
                 },
                 "tool_response": {"output": self._SUCCESS_OUTPUT},
                 "session_id": sid,

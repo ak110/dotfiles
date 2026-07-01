@@ -146,16 +146,13 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 
 ## 口語表現チェック
 
-口語的な日本語表現の混入を防ぐため、`scripts/check_colloquial.py`の実行を必須とする。
-
-```sh
-uv run --script path/to/writing-standards/scripts/check_colloquial.py path/to/file.md
-```
+口語的な日本語表現の混入を防ぐため、pyfltr内蔵の`colloquial-check`の実行を必須とする。
+実行コマンドは`uvx pyfltr run --commands=colloquial-check --enable=colloquial-check path/to/file.md`とする。
 
 - 検出範囲: `.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`
   （Markdown引用ブロック`>`・フェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象に含む）
 
-コンテキスト汚染回避のため、`references/tone-examples.md`と`agent-toolkit/scripts/_colloquial_words.txt`は
+コンテキスト汚染回避のため、`references/tone-examples.md`とpyfltr内蔵の辞書ファイルは
 メインから直接Readしない。
 確認はExploreサブエージェント経由、修正は`plan-implementer`経由で行う。
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、

@@ -82,7 +82,8 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
 # scratchpad配下への計画ファイル本文事前lint検査用Bashコマンドを完全一致型で識別する。
 # 改行・シェル演算子・後続文字列を許容しないことで、lint失敗を後続処理で覆す経路を防ぐ。
 _PRELINT_BASH_FULLMATCH = re.compile(
-    r"(?:uvx[ \t]+)?pyfltr[ \t]+run-for-agent[ \t]+--commands=textlint,markdownlint,typos,colloquial[ \t]+(\S+)",
+    r"(?:uvx[ \t]+)?pyfltr[ \t]+run-for-agent[ \t]+"
+    r"--commands=textlint,markdownlint,typos,colloquial-check[ \t]+--enable=colloquial-check[ \t]+(\S+)",
 )
 
 # check_line_width.py単独実行のBashコマンドを完全一致型で識別する。
