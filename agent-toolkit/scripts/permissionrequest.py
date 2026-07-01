@@ -13,12 +13,30 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 - `~/.claude/plans/`配下
 - scratchpadディレクトリ配下（パス構成要素として`scratchpad`を含み、`/tmp/`または`~/`配下）
+- `/tmp/`配下（一時ファイル領域として自動許可対象に含める）
 - Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
   - パス構成要素に`.claude`または`.agents`を含むファイル
   - ファイル名が`AGENTS.md`のファイル
 
 各判定ロジックの詳細は対応する関数のdocstringを参照する。
 予期せぬ例外は0にフォールバックする（フックが破損して編集できなくなる事故を避けるため）。
+
+Bashコマンド判定の設計方針:
+
+- 字句解析は`shlex.shlex(command, posix=True, punctuation_chars=True)`に
+  `whitespace_split = True`を設定して行う。空白の有無によらず`&&`・`||`・単独`&`・単独`|`を
+  独立トークンへ分割でき、引用符内の文字列は連結されたまま扱われる
+- `&&`・`||`はサブコマンドの区切りとして扱い、各サブコマンドを個別に判定して
+  すべてが許可条件を満たす場合にのみ全体を許可する
+- 単独`&`・単独`|`・`|&`・`>&`・`&>`等の複合演算子トークンも拒否する。
+  `&&`と`||`のみを許容する例外とする
+- 単独`&`はバックグラウンド実行指示、単独`|`はパイプ、`|&`はstdout+stderrパイプを表す
+- `>&`・`&>`はfd番号を伴わない場合、stdout+stderr結合リダイレクトの糖衣構文で同義に解釈される。
+  `2>&1`のようにfd番号が前置される場合はfd複製として扱われる
+- 読み取り系コマンド（`wc`等）はホワイトリスト方式で扱う。
+  `_BASH_READ_OPS`に列挙したコマンドのみ対象とし、
+  `_READ_OP_ALLOWED_OPTS`に列挙したbool系オプション以外の指定は拒否する
+  （値がパスとなり得るオプションの誤許可を避けるため）
 """
 
 import json
@@ -38,7 +56,37 @@ _FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 _BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "chown"})
 
 # 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトのみ別途トークンレベルで許容する。
-_UNSAFE_METACHARS = frozenset("|&;`$()<")
+# `&` は論理AND結合 `&&` を、`|` は論理OR結合 `||` を許容するため除外する。
+# 単独の `&`・`|`（バックグラウンド実行・パイプ）はトークンレベルで別途拒否する。
+_UNSAFE_METACHARS = frozenset(";`$()<")
+
+# Bash 自動許可の対象となる読み取り系コマンド（ホワイトリスト方式）。
+# `_READ_OP_ALLOWED_OPTS` に列挙したオプション以外を指定した場合は拒否する。
+_BASH_READ_OPS = frozenset({"wc"})
+
+# 読み取り系コマンドごとに許容するオプション（bool系のみ）。
+# 値がパスとなり得るオプション（`wc --files0-from=` 等）は含めない。
+_READ_OP_ALLOWED_OPTS: dict[str, frozenset[str]] = {
+    "wc": frozenset(
+        {
+            "-l",
+            "-c",
+            "-w",
+            "-m",
+            "-L",
+            "--lines",
+            "--words",
+            "--chars",
+            "--bytes",
+            "--max-line-length",
+        }
+    ),
+}
+
+# `/tmp` 全体を自動許可対象へ含めるためのルートパス文字列。
+# テストの `home`・`repo` fixture は `/tmp` 配下へ配置されるため、テスト側で本定数を
+# 一時的に差し替えて `/tmp` 全許可判定を無効化する運用を想定する。
+_TMP_ROOT_STR = "/tmp"
 
 # パス構成要素として一致した場合に Git ワークツリー判定対象とするディレクトリ名。
 _AGENT_META_DIRS = frozenset({".claude", ".agents"})
@@ -96,9 +144,10 @@ def should_allow(file_path: str) -> bool:
 
     - `~/.claude/plans/` 配下
     - scratchpad ディレクトリ配下（パス構成要素として `scratchpad` を含み、 `/tmp/` または `~/` 配下）
-    - Git ワークツリー配下のコーディングエージェント向け文書
-      （パス構成要素に `.claude` か `.agents` を含むファイル、またはファイル名が `AGENTS.md`
-      のファイル。 `~/.claude/` 配下を除く）
+    - `/tmp/` 配下（一時ファイル領域として自動許可対象に含める）
+    - Git ワークツリー配下のコーディングエージェント向け文書。
+      パス構成要素に `.claude` か `.agents` を含むファイル、またはファイル名が `AGENTS.md` のファイル。
+      `~/.claude/` 配下は除く
     """
     target = _normalize_path(file_path)
     if target is None:
@@ -110,18 +159,59 @@ def should_allow_bash(command: str, cwd: str) -> bool:
     """Bash コマンドの操作対象パスがすべて自動許可対象配下なら True を返す。
 
     安全に解析できないコマンド (危険メタ文字含む / shlex 失敗 / 対象外コマンド) は False。
+    `&&` / `||` で結合された複数サブコマンドは、すべてのサブコマンドが
+    個別に許可条件を満たす場合にのみ全体を許可する。
+    単独 `&`（バックグラウンド実行）・単独 `|`（パイプ）は拒否する。
     """
     if not command:
         return False
     if any(ch in _UNSAFE_METACHARS for ch in command):
         return False
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return False
+    tokens = _tokenize(command)
     if not tokens:
         return False
+    # 単独 `&`・単独 `|`・`|&`・`>&`・`&>` 等の複合演算子トークンも拒否する。
+    # `&&` と `||` のみを許容する例外とする。
+    # 各演算子の意味論はモジュール冒頭docstringの「Bashコマンド判定の設計方針」節を参照する。
+    if any(token not in ("&&", "||") and ("&" in token or "|" in token) for token in tokens):
+        return False
 
+    cwd_base = _resolve_cwd(cwd)
+    return all(_evaluate_subcommand(subcommand, cwd_base) for subcommand in _split_by_logical_ops(tokens))
+
+
+def _tokenize(command: str) -> list[str] | None:
+    """`command` を punctuation_chars 対応の shlex でトークン化する（失敗時は None）。
+
+    `posix=True` かつ `punctuation_chars=True` の `shlex.shlex` に
+    `whitespace_split = True` を設定し、空白の有無によらず `&&` / `||` / 単独 `&` /
+    単独 `|` を独立トークンへ分割する。空白なしのリダイレクト `>` / `>>` も同様に
+    独立トークン化される。引用符内の文字列は連結されたまま扱われる。
+    """
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _split_by_logical_ops(tokens: list[str]) -> list[list[str]]:
+    """`&&` / `||` トークンでサブコマンドのトークン列へ分割する。"""
+    subcommands: list[list[str]] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in ("&&", "||"):
+            subcommands.append(current)
+            current = []
+            continue
+        current.append(token)
+    subcommands.append(current)
+    return subcommands
+
+
+def _evaluate_subcommand(tokens: list[str], cwd_base: pathlib.Path | None) -> bool:
+    """単一サブコマンドの操作対象パスがすべて自動許可対象配下か判定する。"""
     redirect_targets, remaining = _split_redirects(tokens)
     if remaining is None:
         return False  # 不正なリダイレクト構文のため拒否する
@@ -131,15 +221,19 @@ def should_allow_bash(command: str, cwd: str) -> bool:
         cmd = remaining[0]
         if cmd in _BASH_FILE_OPS:
             paths.extend(_extract_path_args(remaining[1:]))
+        elif cmd in _BASH_READ_OPS:
+            extracted = _extract_read_op_paths(cmd, remaining[1:])
+            if extracted is None:
+                return False  # 許容外オプション指定のため拒否する
+            paths.extend(extracted)
         elif not redirect_targets:
-            # ファイル操作系でもリダイレクトでもないため拒否する。
+            # ファイル操作系・読み取り系でもリダイレクトでもないため拒否する。
             return False
         # else: リダイレクトのみで判定する（コマンド本体は問わない）
 
     if not paths:
         return False
 
-    cwd_base = _resolve_cwd(cwd)
     for path_arg in paths:
         target = _normalize_path(path_arg, cwd_base=cwd_base)
         if target is None or not _is_target_path(target):
@@ -185,11 +279,14 @@ def _is_target_path(target: pathlib.Path) -> bool:
     """正規化済みパスが自動許可対象配下か判定する。"""
     try:
         home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
+        tmp_root = pathlib.Path(_TMP_ROOT_STR).resolve(strict=False)
     except (ValueError, OSError):
         return False
     if _is_under(target, home_claude / "plans"):
         return True
     if _is_scratchpad_path(target):
+        return True
+    if _is_under(target, tmp_root):
         return True
     return _is_repo_agent_meta_edit(target, home_claude)
 
@@ -208,6 +305,10 @@ def _is_scratchpad_path(target: pathlib.Path) -> bool:
 
     「パス構成要素として含む」とは `target.parts` 内に `"scratchpad"` が要素として
     現れることを指す。ファイル名の一部（`scratchpad-notes.md` 等）は対象外とする。
+
+    ここでの `/tmp` は scratchpad 判定の対象範囲を限定する境界条件として用いる
+    リテラル指定であり、`/tmp` 全許可判定用の `_TMP_ROOT_STR`（テストで差し替え可能）
+    とは別概念として意図的に分離する。
     """
     if "scratchpad" not in target.parts:
         return False
@@ -292,6 +393,30 @@ def _extract_path_args(args: list[str]) -> list[str]:
                 continue
             if arg.startswith("-"):
                 continue
+        paths.append(arg)
+    return paths
+
+
+def _extract_read_op_paths(cmd: str, args: list[str]) -> list[str] | None:
+    """読み取り系コマンド `cmd` の引数からパスのみを抽出する（許容外オプションは None）。
+
+    `--` をオプション終端マーカーとして扱う（`_extract_path_args` と同じ挙動）。
+    `-` で始まる引数は `_READ_OP_ALLOWED_OPTS[cmd]` に含まれる場合のみスキップし、
+    含まれない場合は誤許可を避けるため None を返す。`--long=VALUE` 形式は `=` の前で照合する。
+    """
+    allowed = _READ_OP_ALLOWED_OPTS.get(cmd, frozenset())
+    paths: list[str] = []
+    after_double_dash = False
+    for arg in args:
+        if not after_double_dash:
+            if arg == "--":
+                after_double_dash = True
+                continue
+            if arg.startswith("-"):
+                bare = arg.split("=", 1)[0]
+                if bare in allowed:
+                    continue
+                return None
         paths.append(arg)
     return paths
 

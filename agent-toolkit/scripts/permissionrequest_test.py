@@ -10,6 +10,24 @@ import pytest
 _SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "permissionrequest.py"
 
 
+@pytest.fixture(name="_disable_tmp_root_allow", autouse=True)
+def _disable_tmp_root_allow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`/tmp` 全許可判定を無効化する。
+
+    `tmp_path` fixture 由来の `home`・`repo` は `/tmp` 配下に配置される。
+    実装の `/tmp` 全許可判定と衝突すると、対象外パスであっても自動的に許可され
+    既存テストの意図が損なわれる。テスト時のみ判定基準を存在しないパスへ差し替える。
+    `/tmp` 全許可を検証する個別テストではローカルに `_TMP_ROOT_STR` を復元する。
+
+    サブプロセス経由（`TestEndToEnd`）で `permissionrequest.py` を別プロセスとして
+    起動するテストには本 fixture の差し替えが届かない。当該プロセス内の
+    `_TMP_ROOT_STR` は既定値 `"/tmp"` のままとなるため、`TestEndToEnd` で
+    「拒否されるはず」を検証するテストでは `home`・`repo`（`/tmp` 配下）由来のパスを
+    使わず、`/tmp` 配下でない絶対パスを個別に指定する必要がある。
+    """
+    monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/__tmp_root_disabled__")
+
+
 @pytest.fixture(name="home")
 def _home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """`Path.home()` をテスト用一時ディレクトリへ差し替える。"""
@@ -119,9 +137,11 @@ class TestShouldAllow:
     def test_scratchpad_component_under_home_allowed(self, home: pathlib.Path) -> None:
         assert hook.should_allow(str(home / ".claude" / "scratchpad" / "bar.md")) is True
 
-    def test_scratchpad_no_component_in_tmp_not_allowed(self, home: pathlib.Path) -> None:
+    def test_arbitrary_path_under_tmp_allowed(self, home: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `/tmp/` 配下は scratchpad 構成要素の有無を問わず自動許可対象に含める
         del home
-        assert hook.should_allow("/tmp/random/foo.md") is False
+        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
+        assert hook.should_allow("/tmp/random/foo.md") is True
 
     def test_scratchpad_outside_tmp_and_home_not_allowed(self) -> None:
         assert hook.should_allow("/var/scratchpad/foo.md") is False
@@ -214,8 +234,120 @@ class TestShouldAllowBash:
         assert hook.should_allow_bash("rm x.md", "") is False
 
     def test_unmatched_quote_rejected(self, home: pathlib.Path) -> None:
-        # shlex.split が ValueError を送出する形
+        # `_tokenize` 内の `shlex.shlex` が ValueError を送出する形
         assert hook.should_allow_bash('rm "unterminated', str(home)) is False
+
+    def test_arbitrary_command_with_no_space_redirect_allowed(self, home: pathlib.Path) -> None:
+        # `shlex.shlex(punctuation_chars=True)` は空白なしリダイレクトも独立トークン化する。
+        # 対象配下パスへのリダイレクトなら任意コマンドも許容される。
+        cmd = f"some-unknown-cmd arg1 arg2>{home}/.claude/plans/x.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_and_composed_cp_and_wc_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"cp {plans}/a.md {plans}/b.md && wc -l {plans}/b.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_and_composed_without_spaces_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"cp {plans}/a.md {plans}/b.md&&wc -l {plans}/b.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_or_composed_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md || rm {plans}/b.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_and_composed_second_subcommand_outside_rejected(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md && rm {home}/elsewhere.md"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_wc_bool_options_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"wc -l -w {plans}/a.md", str(home)) is True
+
+    def test_wc_long_bool_option_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"wc --lines {plans}/a.md", str(home)) is True
+
+    def test_wc_long_bool_option_with_equals_rejected_when_unknown(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"wc --unknown=value {plans}/a.md", str(home)) is False
+
+    def test_wc_files0_from_option_rejected(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"wc --files0-from={plans}/list.txt", str(home)) is False
+
+    def test_wc_no_options_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"wc {plans}/a.md", str(home)) is True
+
+    def test_wc_outside_path_rejected(self, home: pathlib.Path) -> None:
+        assert hook.should_allow_bash(f"wc -l {home}/elsewhere.md", str(home)) is False
+
+    def test_background_ampersand_rejected(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"rm {plans}/a.md &", str(home)) is False
+
+    def test_quoted_ampersand_pair_not_split(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        # 引用符内の `&&` は `shlex.shlex(posix=True)` で外側の引用符が外れ、
+        # トークン列に `a && b` として現れる。単独 `&`・`|` を含む複合文字列は
+        # 「`&&` と `||` 以外で `&` または `|` を含むトークン」として拒否される。
+        cmd = f'echo "a && b" > {plans}/a.md'
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_unsafe_metachar_pipe_rejected_still(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md && rm {plans}/b.md | cat"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_unsafe_metachar_semicolon_rejected_still(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md && rm {plans}/b.md; echo done"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_unknown_read_op_rejected(self, home: pathlib.Path) -> None:
+        # head は `_BASH_READ_OPS` 未収載のため、既存の対象外コマンド拒否と同様に拒否する
+        plans = home / ".claude" / "plans"
+        assert hook.should_allow_bash(f"head -l {plans}/a.md", str(home)) is False
+
+    def test_unmatched_quote_in_shlex_returns_false(self, home: pathlib.Path) -> None:
+        # punctuation_chars 対応の shlex でも不正クォートは ValueError を送出し False を返す
+        plans = home / ".claude" / "plans"
+        cmd = f'rm "unterminated && wc -l {plans}/a.md'
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_pipe_ampersand_operator_rejected(self, home: pathlib.Path) -> None:
+        # `|&`（stdout+stderrパイプ）は複合演算子として1トークンで扱われ、拒否対象。
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md |& malicious_tool"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_gt_ampersand_operator_rejected(self, home: pathlib.Path) -> None:
+        # `>&`は複合演算子として1トークンで扱われ、拒否対象。
+        # bash仕様上、対象がfd番号の場合はfd複製、パス等の非fd番号対象なら結合リダイレクトとして解釈される。
+        # ここでは`2>& path`の形で検証する。bash実行時は曖昧なリダイレクトエラーとなる形だが、
+        # 本テストはトークン化と拒否判定のみを対象とし実行成否は問わない。
+        plans = home / ".claude" / "plans"
+        cmd = f"echo hi 2>& {plans}/log.txt"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_ampersand_gt_operator_rejected(self, home: pathlib.Path) -> None:
+        # `&>`はstdout+stderr結合リダイレクトの複合演算子として1トークンで扱われ、拒否対象。
+        plans = home / ".claude" / "plans"
+        cmd = f"echo hi &> {plans}/out.txt"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_rm_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # `/tmp/` 配下は一時ファイル領域として自動許可対象に含める
+        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
+        assert hook.should_allow_bash("rm /tmp/foo.txt", "/tmp") is True
+
+    def test_wc_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
+        assert hook.should_allow_bash("wc -l /tmp/foo.txt", "/tmp") is True
 
     @pytest.mark.parametrize(
         ("command_template", "expected"),
@@ -321,6 +453,19 @@ class TestEndToEnd:
             }
         }
 
+    def test_bash_cp_and_wc_in_scratchpad_and_plans_returns_allow(self, home: pathlib.Path) -> None:
+        scratchpad = home / ".claude" / "scratchpad"
+        scratchpad.mkdir(parents=True)
+        plans = home / ".claude" / "plans"
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": f"cp {scratchpad}/x.md {plans}/y.md && wc -l {plans}/y.md"},
+            "cwd": str(home),
+        }
+        code, stdout = self._run(payload)
+        assert code == 0
+        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
+
     def test_bash_ls_emits_nothing(self) -> None:
         # ls は対象外コマンドのため自動許可しない
         payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
@@ -331,8 +476,12 @@ class TestEndToEnd:
     def test_unrelated_path_emits_nothing(self, home: pathlib.Path) -> None:
         payload = {
             "tool_name": "Write",
-            "tool_input": {"file_path": str(home / "src" / "main.py"), "content": "x"},
+            # `home` は `tmp_path`（`/tmp` 配下）に配置されるため、`/tmp` 全許可判定と
+            # 衝突する。フックが自動許可の対象と判定しないパスを検証するため
+            # `/tmp` 配下でない絶対パスを直接指定する。
+            "tool_input": {"file_path": "/nonexistent/src/main.py", "content": "x"},
         }
+        del home
         code, stdout = self._run(payload)
         assert code == 0
         assert stdout == ""
