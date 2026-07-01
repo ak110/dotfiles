@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sys
 import unicodedata
 
@@ -46,6 +47,9 @@ _EXCLUDED_DIRS = frozenset(
         ".vscode",
     }
 )
+
+# フェンス開始の最小バッククォート/チルダ数。
+_FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 
 
 def main() -> int:
@@ -123,13 +127,14 @@ def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
     fence_marker = ""
     violations: list[str] = []
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        if _is_fence(raw):
-            stripped = raw.lstrip()
-            marker = stripped[:3]
+        m_fence = _FENCE_RE.match(raw)
+        if m_fence:
+            marker = m_fence.group(2)
             if not in_fence:
                 in_fence = True
+                # 開始フェンスの全長を保持し、閉じ判定に使う。
                 fence_marker = marker
-            elif marker == fence_marker:
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
                 in_fence = False
                 fence_marker = ""
             continue
@@ -142,12 +147,6 @@ def _check_file(path: pathlib.Path, max_width: int) -> list[str]:
             excerpt = _truncate(raw, _EXCERPT_WIDTH)
             violations.append(f"{path}:{lineno} 幅={width} {excerpt}")
     return violations
-
-
-def _is_fence(line: str) -> bool:
-    """フェンス開閉行かどうかを判定する。先頭の連続スペースは無視する。"""
-    stripped = line.lstrip()
-    return stripped.startswith("```") or stripped.startswith("~~~")
 
 
 def _is_table_row(line: str) -> bool:

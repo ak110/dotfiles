@@ -1105,7 +1105,7 @@ def _check_plan_file_h2_section_order(
 # --- plan file本文の絶対行番号トークン検査（PreToolUse移管） ---
 
 # SSOTは`skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
-# （改訂で変動する絶対数値の直書き禁止規範、`## 調査結果`の確定値は対象外）。
+# （改訂で変動する絶対数値の直書き禁止規範。`## 調査結果`配下は`_LINE_ALLOW_MARKER`付与行のみ対象外）。
 # `(?<![A-Za-z])`は英字接頭の識別子（`GraphQL2`等）を除外するための負の後読み。
 _LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?<![A-Za-z])L\d+"),
@@ -1113,14 +1113,16 @@ _LINE_NUMBER_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\d+\s*-\s*\d+\s*行"),
     re.compile(r"\d+から\d+行"),
 )
-_LINE_NUMBER_EXEMPT_H2: tuple[str, ...] = ("調査結果",)
+_LINE_ALLOW_MARKER = "<!-- line-ref-ok -->"
+_INVESTIGATION_HEADING = "調査結果"
 
 
 def _iter_absolute_line_number_violations(content: str) -> Iterator[tuple[int, str]]:
-    """計画ファイル本文から`## 調査結果`配下を除いて行番号トークンを抽出する。
+    """計画ファイル本文から行番号トークンを抽出する。
 
     `_plan_format.iter_markdown_body_lines`の出力を元にフロントマター・コードフェンス・
-    複数行HTMLコメント内を除外する。`_LINE_NUMBER_EXEMPT_H2`配下も走査対象外とする。
+    複数行HTMLコメント内を除外する。`## 調査結果`配下かつ`_LINE_ALLOW_MARKER`付与行は
+    抑止対象とし、`## 調査結果`外の節ではマーカー付与でも抑止しない。
 
     Yields:
         (行番号, マッチ文字列) のタプル。
@@ -1130,7 +1132,7 @@ def _iter_absolute_line_number_violations(content: str) -> Iterator[tuple[int, s
         if line.startswith("## "):
             current_h2 = line[3:].strip()
             continue
-        if current_h2 in _LINE_NUMBER_EXEMPT_H2:
+        if current_h2 == _INVESTIGATION_HEADING and _LINE_ALLOW_MARKER in line:
             continue
         for pattern in _LINE_NUMBER_PATTERNS:
             m = pattern.search(line)
@@ -1150,7 +1152,8 @@ def _check_plan_file_absolute_line_numbers(
     - `tool_name`が`_PLAN_FILE_EDIT_TOOLS`に含まれる
     - 対象の`file_path`が`~/.claude/plans/`直下の計画ファイル
     - 適用後content（Write: `tool_input["content"]` / Edit・MultiEdit: 既存＋edit適用後）に
-      `## 調査結果`外の絶対行番号トークン（`L\d+`等）が含まれる
+      絶対行番号トークン（`L\d+`等）が含まれる
+      （`## 調査結果`配下で`_LINE_ALLOW_MARKER`が付与された行は除く）
     """
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
         return False
@@ -1169,9 +1172,10 @@ def _check_plan_file_absolute_line_numbers(
     tail = f"; and {overflow} more" if overflow > 0 else ""
     print(
         _llm_notice(
-            "blocked: plan file body contains absolute line-number references outside '## 調査結果'"
+            "blocked: plan file body contains absolute line-number references"
             " (per plan-file-guidelines.md absolute-numbers norm)."
-            " Use section names or heading references instead."
+            " Use section names or heading references instead,"
+            " or annotate the token with '<!-- line-ref-ok -->' under '## 調査結果'."
             f" Matches: {shown_str}{tail}.",
             tag="block",
         ),

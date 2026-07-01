@@ -89,6 +89,32 @@ class TestCheckLineWidth:
         result = _run(str(path))
         assert result.returncode == 0
 
+    def test_nested_fence_with_shorter_inner_marker_is_ignored(self, tmp_path: pathlib.Path):
+        """開始4個・内側3個のネストしたフェンスで、内側フェンス内の127幅超過行は誤検出されない。
+
+        内側の閉じ候補（3個）は開始フェンス（4個）より短いため閉じ判定に使われず、
+        外側の閉じフェンス（4個）以降の地の文でのみ127幅超過が検出される。
+        """
+        path = _write(
+            tmp_path / "doc.md",
+            "````text\n```\n" + ("a" * 200) + "\n```\n````\nその後" + ("a" * 200) + "を含む\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:3 " not in result.stderr
+        assert f"{path}:6 " in result.stderr
+
+    def test_different_fence_kind_inside_is_ignored(self, tmp_path: pathlib.Path):
+        """開始3個のバッククォートフェンス内部に`~~~`（別種フェンス）が出現しても正しく無視される。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n~~~\n" + ("a" * 200) + "\n~~~\n```\nその後" + ("a" * 200) + "を含む\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:3 " not in result.stderr
+        assert f"{path}:6 " in result.stderr
+
     def test_width_option_overrides_threshold(self, tmp_path: pathlib.Path):
         # `--width=80`を指定すると80字超過が検出される。
         path = _write(tmp_path / "narrow.md", "a" * 81 + "\n")

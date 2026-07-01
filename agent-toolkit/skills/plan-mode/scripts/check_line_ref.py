@@ -3,12 +3,15 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""Markdownの地の文・見出し中のダッシュ系禁止文字を検査する独立スクリプト。
+"""計画ファイル本文の行番号への参照を検査する独立スクリプト。
 
-writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシュは
-日本語の地の文・見出しで使わない」規定を機械化する。
-検出対象はU+2014（EM DASH）・U+2015（HORIZONTAL BAR）・U+2500の2連続（2倍ダッシュ）。
-フェンス付きコードブロック内（バッククォート形式・チルダ形式）およびインラインコード内は除外する。
+plan-mode配下 plan-file-guidelines.mdの絶対数値の直書き回避規定
+（対象は行番号への参照全般）を機械化する。
+検出対象は`Lxx`・`Lxx-yy`形式・`xx行目`形式・`xx-yy行`形式・`xxからyy行`形式の行番号参照とし、
+`Lxx`形式はASCII英数字への否定先読み・後読みにより`HTML5`・`URL2`等の識別子内包を誤検出しない。
+除外条件はフェンス付きコードブロック内・インラインコード内・
+`## 調査結果`H2セクション配下かつ同一行に`<!-- line-ref-ok -->`コメントを持つ行。
+`## 調査結果`外の節ではマーカー付与に関わらず違反として報告する。
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ _EXCERPT_LIMIT = 80
 _DEFAULT_EXTENSIONS = frozenset({".md", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
-# `check_line_width.py`の`_EXCLUDED_DIRS`と同一集合。
+# `check_dash.py`の`_EXCLUDED_DIRS`と同一集合。
 _EXCLUDED_DIRS = frozenset(
     {
         ".git",
@@ -44,24 +47,32 @@ _EXCLUDED_DIRS = frozenset(
     }
 )
 
-# 検出対象の文字パターン。U+2500は2連続のみを対象とする。
-_DASH_PATTERN = re.compile(r"—|―|──")
-
-# 違反種別の表示名。
-_KIND_MAP = {
-    "—": "em-dash(U+2014)",
-    "―": "horizontal-bar(U+2015)",
-    "──": "double-dash(U+2500x2)",
-}
+# 検出対象のパターン集合。`agent-toolkit/scripts/pretooluse.py`の`_LINE_NUMBER_PATTERNS`と同範囲。
+# `L\d+`形式はASCII英数字への否定先読み・後読みで`HTML5`・`URL2`等の識別子内包を除外する。
+_LINE_REF_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<![A-Za-z0-9])L\d+(?:-\d+)?(?![A-Za-z0-9])"),
+    re.compile(r"\d+行目"),
+    re.compile(r"\d+\s*-\s*\d+\s*行"),
+    re.compile(r"\d+から\d+行"),
+)
 
 # フェンス開始の最小バッククォート/チルダ数。
 _FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 
+# H2見出し検出パターン。見出し語の先頭単語のみ取得する。
+_H2_HEADING_RE = re.compile(r"^##\s+(\S+)")
+
+# 個別抑止マーカーの有効範囲となるH2見出し名。
+_INVESTIGATION_HEADING = "調査結果"
+
+# 同一行での個別抑止マーカー。
+_LINE_ALLOW_MARKER = "<!-- line-ref-ok -->"
+
 
 def main() -> int:
-    """ダッシュ系禁止文字の検査エントリポイント。"""
+    """行番号への参照検査のエントリポイント。"""
     parser = argparse.ArgumentParser(
-        description="Markdownの地の文・見出し中のダッシュ系禁止文字を検査する。",
+        description="計画ファイル本文の行番号参照を検査する。",
     )
     parser.add_argument(
         "paths",
@@ -127,12 +138,13 @@ def _check_file(path: pathlib.Path) -> list[str]:
     violations: list[str] = []
     in_fence = False
     fence_marker = ""
+    in_investigation = False
 
     for lineno, raw in enumerate(text.splitlines(), start=1):
         # フェンス開閉判定。バッククォート3個以上またはチルダ3個以上。
-        m = _FENCE_RE.match(raw)
-        if m:
-            marker = m.group(2)
+        m_fence = _FENCE_RE.match(raw)
+        if m_fence:
+            marker = m_fence.group(2)
             if not in_fence:
                 in_fence = True
                 # 開始フェンスの全長を保持し、閉じ判定に使う。
@@ -145,15 +157,24 @@ def _check_file(path: pathlib.Path) -> list[str]:
         if in_fence:
             continue
 
-        # インラインコードを除去してからダッシュを検索する。
+        # H2見出し判定。`## 調査結果`配下かどうかの状態を更新する。
+        m_h2 = _H2_HEADING_RE.match(raw)
+        if m_h2:
+            in_investigation = m_h2.group(1) == _INVESTIGATION_HEADING
+            continue
+
+        # `## 調査結果`配下かつ同一行に個別抑止マーカーがあれば検査をスキップする。
+        if in_investigation and _LINE_ALLOW_MARKER in raw:
+            continue
+
+        # インラインコードを除去してから行番号参照を検索する。
         searchable = _strip_inline_code(raw)
-        for match in _DASH_PATTERN.finditer(searchable):
-            matched = match.group(0)
-            kind = _KIND_MAP[matched]
-            # インラインコードは同一文字数の空白で置換済みのため、除去後オフセット＝元行オフセット。
-            col = match.start() + 1
-            excerpt = raw if len(raw) <= _EXCERPT_LIMIT else raw[:_EXCERPT_LIMIT] + "…"
-            violations.append(f'{path}:{lineno}:{col}: {kind} "{excerpt}"')
+        for pattern in _LINE_REF_PATTERNS:
+            for match in pattern.finditer(searchable):
+                # インラインコードは同一文字数の空白で置換済みのため、除去後オフセット＝元行オフセット。
+                col = match.start() + 1
+                excerpt = raw if len(raw) <= _EXCERPT_LIMIT else raw[:_EXCERPT_LIMIT] + "…"
+                violations.append(f'{path}:{lineno}:{col}: line-ref "{excerpt}"')
 
     return violations
 

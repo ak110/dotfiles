@@ -155,6 +155,32 @@ class TestCheckDash:
         assert result.returncode == 0
         assert result.stderr == ""
 
+    def test_nested_fence_with_shorter_inner_marker_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """開始4個・内側3個のネストしたフェンスで、内側フェンス内の禁止文字は誤検出されない。
+
+        内側の閉じ候補（3個）は開始フェンス（4個）より短いため閉じ判定に使われず、
+        外側の閉じフェンス（4個）以降の地の文でのみ禁止文字が検出される。
+        """
+        path = _write(
+            tmp_path / "doc.md",
+            f"````text\n```\n{_EM_DASH}\n```\n````\nその後{_EM_DASH}を含む\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:3:" not in result.stderr
+        assert f"{path}:6:" in result.stderr
+
+    def test_different_fence_kind_inside_is_ignored(self, tmp_path: pathlib.Path) -> None:
+        """開始3個のバッククォートフェンス内部に`~~~`（別種フェンス）が出現しても無視される。"""
+        path = _write(
+            tmp_path / "doc.md",
+            f"```text\n~~~\n{_EM_DASH}\n~~~\n```\nその後{_EM_DASH}を含む\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:3:" not in result.stderr
+        assert f"{path}:6:" in result.stderr
+
     def test_inline_code_is_excluded(self, tmp_path: pathlib.Path) -> None:
         """インラインコード（バッククォートペア）内の禁止文字は無視する。"""
         path = _write(tmp_path / "doc.md", f"`{_EM_DASH}`の使い方\n")

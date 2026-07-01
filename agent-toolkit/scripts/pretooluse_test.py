@@ -3491,7 +3491,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
 
     posttooluseから移管された既存挙動の完全互換を維持する:
     - 検出パターン: L\\d+ / N行目 / N-N行 / NからN行
-    - 除外H2: `## 調査結果`配下
+    - 許容: `## 調査結果`配下かつ`<!-- line-ref-ok -->`マーカー付与行のみ
     - 除外領域: コードフェンス内 / 複数行HTMLコメント内 / フロントマター内
     - 単一行HTMLコメント内は検出対象（既存仕様継承）
     - 上限5件・「; and N more」省略表記
@@ -3539,12 +3539,33 @@ class TestCheckPlanFileAbsoluteLineNumbers:
         assert "absolute line-number references" in result.stderr
         assert repr(expected_match) in result.stderr
 
-    def test_write_in_research_section_is_allowed(self, tmp_path: pathlib.Path):
-        """`## 調査結果`配下の行番号トークンはブロックされない。"""
+    def test_write_in_research_section_with_marker_is_allowed(self, tmp_path: pathlib.Path):
+        """`## 調査結果`配下でマーカー付き行の行番号トークンはブロックされない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "absnum-research"
+        sid = "absnum-research-marker"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.replace(
+            "## 調査結果\n\nx\n", f"## 調査結果\n\n- {self._LINE_TOKEN} <!-- line-ref-ok -->\n"
+        ).format(body="x")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_write_in_research_section_without_marker_blocks(self, tmp_path: pathlib.Path):
+        """`## 調査結果`配下でもマーカー無しの行番号トークンはブロックされる。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-research-nomarker"
         self._prior_flags(tmp_path, sid)
         content = _ABSNUM_BASE_PLAN.replace("## 調査結果\n\nx\n", f"## 調査結果\n\n- {self._LINE_TOKEN}\n").format(body="x")
         result = _run(
@@ -3556,7 +3577,28 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
+
+    def test_write_outside_research_section_with_marker_blocks(self, tmp_path: pathlib.Path):
+        """`## 調査結果`外の節ではマーカー付与でも行番号トークンはブロックされる。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "absnum-outside-marker"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._LINE_TOKEN} <!-- line-ref-ok -->")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "absolute line-number references" in result.stderr
 
     def test_write_inside_code_fence_is_allowed(self, tmp_path: pathlib.Path):
         """コードフェンス内の行番号トークンはブロックされない。"""
