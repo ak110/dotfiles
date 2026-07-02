@@ -1,6 +1,6 @@
 """pytools.dotfiles_fb._cli の拡張サブコマンド・オプションのテスト。
 
-`add --source`・`list`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
+`add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
 既存サブコマンドのテストは`_cli_test.py`に分離する。
 共通ヘルパーは`_cli_test.py`から再利用する。
 """
@@ -46,7 +46,7 @@ class TestAddSourceOption:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(
@@ -80,7 +80,7 @@ class TestAddSourceOption:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
@@ -101,10 +101,31 @@ class TestListPullsBeforeRead:
         """list実行時に最初のgit呼び出しがpullであること。"""
         _setup_flag_and_notes(tmp_path)
         calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
+        assert git_cmds[0] == ["git", "pull", "--ff-only"]
+
+
+class TestShowAllPullsBeforeRead:
+    """showサブコマンド: --all指定時も出力前にgit pull --ff-onlyを実行する。"""
+
+    def test_show_all_pulls_before_reading(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """show --all実行時に最初のgit呼び出しがpullであること。"""
+        _setup_flag_and_notes(tmp_path)
+        calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -131,7 +152,7 @@ class TestCommitSubcommand:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["commit"], home=tmp_path)
@@ -164,7 +185,7 @@ class TestCommitSubcommand:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["commit"], home=tmp_path)
@@ -289,7 +310,7 @@ class TestFeedbackFilenameCompleter:
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         (notes / "feedback" / "inbox" / "note.txt").write_text("テキスト", encoding="utf-8")
-        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
 
         # pylint: disable-next=protected-access
         result = _cli._feedback_filename_completer("")  # noqa: SLF001
@@ -301,7 +322,7 @@ class TestFeedbackFilenameCompleter:
         tmp_path: pathlib.Path,
     ) -> None:
         """feedback配下が存在しない場合は空リストを返す。"""
-        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
 
         # pylint: disable-next=protected-access
         result = _cli._feedback_filename_completer("")  # noqa: SLF001
@@ -316,7 +337,7 @@ class TestFeedbackFilenameCompleter:
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "20260101-001.md")
         _write_feedback_file(notes, "20260201-001.md")
-        monkeypatch.setattr(_cli.pathlib.Path, "home", classmethod(lambda cls: tmp_path))
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
 
         # pylint: disable-next=protected-access
         result = _cli._feedback_filename_completer("20260101")  # noqa: SLF001
@@ -372,7 +393,7 @@ class TestAddViaEditor:
             tmp.write_text("エディター経由の本文\n", encoding="utf-8")
             return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
+        monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
@@ -403,7 +424,7 @@ class TestAddViaEditor:
             tmp.write_text("   \n\n", encoding="utf-8")
             return 0
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
+        monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
@@ -436,7 +457,7 @@ class TestAddViaEditor:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
@@ -457,7 +478,7 @@ class TestAddViaEditor:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        monkeypatch.setattr(_cli.subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
+        monkeypatch.setattr(subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)

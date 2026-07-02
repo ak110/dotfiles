@@ -1,7 +1,7 @@
 """pytools.dotfiles_fb._cli のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
-add/list/adopt/reject/rm/edit/process-loopなど既存サブコマンドの単体テストを集約する。
+add/list/show/adopt/reject/rm/edit/process-loopなど既存サブコマンドの単体テストを集約する。
 commit/enable/disable/--source等の拡張機能テストは`_cli_extras_test.py`に分離する。
 """
 
@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from pytools.dotfiles_fb import _cli
+from pytools.dotfiles_fb import _cli, _formatters, _repo, _tbd
 
 _GitCall = dict[str, Any]
 
@@ -138,7 +138,7 @@ class TestAddSingleMessage:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         repo_path = str(myrepo)
         message = "テストメッセージ"
@@ -206,7 +206,7 @@ class TestAddMultipleMessages:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         repo_path = str(myrepo)
 
@@ -260,7 +260,7 @@ class TestAddRepoPathExpansion:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
@@ -285,7 +285,7 @@ class TestListEmpty:
     ) -> None:
         """inbox空時は標準出力が空であること。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list"], home=tmp_path)
@@ -296,7 +296,7 @@ class TestListEmpty:
 
 
 class TestListSingle:
-    """listサブコマンド: 1件のフィードバックを出力する。"""
+    """listサブコマンド: 1件のフィードバックを1行で出力する。"""
 
     def test_single_entry(
         self,
@@ -304,19 +304,17 @@ class TestListSingle:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """1件のフィードバックがtarget_repoグループ・ファイル名・本文の順で出力されること。"""
+        """1件のフィードバックがfilename・target_repo・本文冒頭要約のtab区切り1行で出力されること。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "## target_repo: github.com/example/foo" in captured.out
-        assert "### fb-001.md" in captured.out
-        assert "本文1" in captured.out
+        assert captured.out == "fb-001.md\tgithub.com/example/foo\t本文1\n"
 
 
 class TestListMalformedFrontmatter:
@@ -338,23 +336,22 @@ class TestListMalformedFrontmatter:
         content: str,
         label: str,
     ) -> None:
-        """異常frontmatter形式は`(unknown)`グループとして出力される。"""
+        """異常frontmatter形式は`(unknown)`のtarget_repo欄として出力される。"""
         del label  # parametrize idのみ
         notes = _setup_flag_and_notes(tmp_path)
         (notes / "feedback" / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "## target_repo: (unknown)" in captured.out
-        assert "### malformed.md" in captured.out
+        assert captured.out.startswith("malformed.md\t(unknown)\t")
 
 
 class TestListMultipleRepos:
-    """listサブコマンド: 複数target_repo混在でグループ化される。"""
+    """listサブコマンド: 複数target_repo混在でも1件1行で全件出力される。"""
 
     def test_multiple_repos_grouped(
         self,
@@ -362,23 +359,25 @@ class TestListMultipleRepos:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target_repoが異なる複数のフィードバックがリポジトリ別にグループ化される。"""
+        """target_repoが異なる複数のフィードバックがそれぞれ1行で出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "## target_repo: github.com/example/foo" in captured.out
-        assert "## target_repo: github.com/example/bar" in captured.out
+        assert captured.out.splitlines() == [
+            "fb-001.md\tgithub.com/example/foo\tテスト本文",
+            "fb-002.md\tgithub.com/example/bar\tテスト本文",
+        ]
 
 
 class TestListTargetRepoFilter:
-    """listサブコマンド: --target-repo指定で該当グループのみ出力する。"""
+    """listサブコマンド: --target-repo指定で一致するエントリのみ出力する。"""
 
     def test_filter_matches_single_group(
         self,
@@ -386,18 +385,18 @@ class TestListTargetRepoFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """複数target_repo混在でも--target-repo指定値と一致するグループのみ出力される。"""
+        """複数target_repo混在でも--target-repo指定値と一致するエントリのみ出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list", "--target-repo=github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "## target_repo: github.com/example/foo" in captured.out
+        assert "github.com/example/foo" in captured.out
         assert "github.com/example/bar" not in captured.out
 
     def test_filter_expands_tilde(
@@ -425,15 +424,14 @@ class TestListTargetRepoFilter:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list", "--target-repo=~/myrepo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "## target_repo: github.com/example/myrepo" in captured.out
-        assert "### fb-001.md" in captured.out
+        assert captured.out == "fb-001.md\tgithub.com/example/myrepo\tテスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -444,7 +442,7 @@ class TestListTargetRepoFilter:
         """一致するエントリが存在しない場合、標準出力は空になる。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
@@ -454,134 +452,138 @@ class TestListTargetRepoFilter:
         assert captured.out == ""
 
 
-class TestCountEmpty:
-    """countサブコマンド: 空inboxの場合は0を出力する。"""
+class TestBodySummaryTruncation:
+    """_body_summary: 40文字境界での切り詰め動作を検証する。"""
 
-    def test_empty_inbox_outputs_zero(
+    def test_exactly_40_chars_not_truncated(self) -> None:
+        """本文冒頭行がちょうど40文字の場合は切り詰めず`...`を付与しない。"""
+        text = "---\ntarget_repo: github.com/example/foo\n---\n\n" + "あ" * 40 + "\n"
+        assert _formatters._body_summary(text) == "あ" * 40  # noqa: SLF001
+
+    def test_over_40_chars_truncated_with_ellipsis(self) -> None:
+        """本文冒頭行が40文字を超える場合は40文字で切り詰め`...`を付与する。"""
+        text = "---\ntarget_repo: github.com/example/foo\n---\n\n" + "い" * 41 + "\n"
+        assert _formatters._body_summary(text) == "い" * 40 + "..."  # noqa: SLF001
+
+    def test_multiline_body_uses_first_line_only(self) -> None:
+        """本文が複数行の場合は先頭行のみを要約対象とし改行以降は無視する。"""
+        text = "---\ntarget_repo: github.com/example/foo\n---\n\n先頭行\n2行目\n"
+        assert _formatters._body_summary(text) == "先頭行"  # noqa: SLF001
+
+
+class TestShowSingleFile:
+    """showサブコマンド: FILENAME指定で当該1件の本文のみを表示する。"""
+
+    def test_single_file_shows_only_that_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inbox空時は標準出力に0のみが出力されること。"""
+        """FILENAME指定時は当該1件のtarget_repoグループ・ファイル名・本文が出力され他件は出力されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["show", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "## target_repo: github.com/example/foo" in captured.out
+        assert "### fb-001.md" in captured.out
+        assert "本文1" in captured.out
+        assert "fb-002.md" not in captured.out
+        assert "本文2" not in captured.out
+
+    def test_missing_file_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+            _cli.main(["show", "nonexistent.md"], home=tmp_path)
 
-        assert exc_info.value.code == 0
+        assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert captured.out == "0\n"
+        assert "inboxに存在しません" in captured.err
 
-
-class TestCountSingleMatch:
-    """countサブコマンド: 対象リポジトリと一致する1件のみ存在する場合は1を出力する。"""
-
-    def test_single_match_outputs_one(
+    def test_target_repo_mismatch_suppresses_output(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """一致する1件のみ存在する場合、標準出力に1のみが出力されること。"""
+        """FILENAME指定と--target-repo不一致時は無出力でexit 0となる。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+            _cli.main(
+                ["show", "fb-001.md", "--target-repo=github.com/example/bar"],
+                home=tmp_path,
+            )
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "1\n"
+        assert captured.out == ""
 
 
-class TestCountMultipleMatches:
-    """countサブコマンド: 対象リポジトリと一致する複数件が存在する場合はその件数を出力する。"""
+class TestShowAll:
+    """showサブコマンド: --all指定でtarget_repoごとにグループ化した全件本文を表示する。"""
 
-    def test_multiple_matches_outputs_count(
+    def test_all_shows_every_entry_grouped(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """一致する複数件が存在する場合、標準出力に件数のみが出力されること。"""
+        """--all指定時は複数target_repoの全件がグループ化されて出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-003.md", target_repo="github.com/example/foo")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+            _cli.main(["show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "3\n"
+        assert "## target_repo: github.com/example/foo" in captured.out
+        assert "### fb-001.md" in captured.out
+        assert "本文1" in captured.out
+        assert "## target_repo: github.com/example/bar" in captured.out
+        assert "### fb-002.md" in captured.out
+        assert "本文2" in captured.out
 
 
-class TestCountExcludesOtherRepo:
-    """countサブコマンド: 対象外リポジトリの件は件数に含めない。"""
+class TestShowRequiresFilenameOrAll:
+    """showサブコマンド: FILENAME・--allのいずれも未指定の場合はエラー終了する。"""
 
-    def test_other_repo_entries_excluded(
+    def test_neither_specified_exits(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """一致リポジトリと不一致リポジトリが混在しても一致件のみ計上されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
-        _write_feedback_file(notes, "fb-003.md", target_repo="github.com/example/bar")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        """FILENAME・--allともに未指定の場合はexit 2で案内が出力される。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+            _cli.main(["show"], home=tmp_path)
 
-        assert exc_info.value.code == 0
+        assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert captured.out == "1\n"
-
-
-class TestCountDefaultUsesGitToplevel:
-    """countサブコマンド: --target-repo未指定時はカレント作業リポジトリを既定に使う。"""
-
-    def test_default_target_repo_resolved_via_git(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--target-repo未指定なら`git rev-parse --show-toplevel`の結果のリモートURLで件数判定する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        autorepo = tmp_path / "autorepo"
-        autorepo.mkdir()
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/auto")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/other")
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{autorepo}\n" if kwargs.get("text") else f"{autorepo}\n".encode()
-                stderr: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stderr)
-            if cmd == ["git", "-C", str(autorepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/auto.git\n" if kwargs.get("text") else b"https://github.com/example/auto.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["count"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "1\n"
+        assert "FILENAME" in captured.err
+        assert "--all" in captured.err
 
 
 class TestAdoptSingle:
@@ -596,7 +598,7 @@ class TestAdoptSingle:
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["adopt", "fb-001.md"], home=tmp_path)
@@ -623,7 +625,7 @@ class TestAdoptMultiple:
         _write_feedback_file(notes, "fb-002.md")
         _write_feedback_file(notes, "fb-003.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
@@ -653,7 +655,7 @@ class TestAdoptZeroArgs:
     ) -> None:
         """ファイル名引数なしでargparseがexit 2を返すこと。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["adopt"], home=tmp_path)
@@ -672,7 +674,7 @@ class TestAdoptMissing:
     ) -> None:
         """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["adopt", "nonexistent.md"], home=tmp_path)
@@ -694,7 +696,7 @@ class TestRejectDeletes:
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["reject", "fb-001.md"], home=tmp_path)
@@ -719,7 +721,7 @@ class TestRejectMultiple:
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["reject", "fb-001.md", "fb-002.md"], home=tmp_path)
@@ -746,7 +748,7 @@ class TestRejectZeroArgs:
     ) -> None:
         """ファイル名引数なしでargparseがexit 2を返すこと。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["reject"], home=tmp_path)
@@ -766,7 +768,7 @@ class TestRmSingle:
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["rm", "fb-001.md"], home=tmp_path)
@@ -790,7 +792,7 @@ class TestRmMultiple:
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["rm", "fb-001.md", "fb-002.md"], home=tmp_path)
@@ -845,7 +847,7 @@ class TestEditWithChanges:
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["edit", "fb-001.md"], home=tmp_path)
@@ -877,7 +879,7 @@ class TestEditNoChanges:
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["edit", "fb-001.md"], home=tmp_path)
@@ -913,7 +915,7 @@ class TestPathTraversalRejection:
     ) -> None:
         """不正なファイル名引数はexit 2でstderr案内を出力する。"""
         _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["adopt", bad], home=tmp_path)
@@ -950,7 +952,7 @@ class TestProcessLoopEmptyInbox:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
@@ -991,7 +993,7 @@ class TestProcessLoopSingleIteration:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
@@ -1031,7 +1033,7 @@ class TestProcessLoopMaxIterations:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", "--max-iterations=2", f"--target-repo={myrepo}"], home=tmp_path)
@@ -1069,7 +1071,7 @@ class TestProcessLoopClaudeFailure:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
@@ -1107,7 +1109,7 @@ class TestProcessLoopTargetRepoFilter:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
@@ -1150,7 +1152,7 @@ class TestProcessLoopDefaultUsesGitToplevel:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop"], home=tmp_path)
@@ -1181,12 +1183,12 @@ class TestNormalizeRemoteUrl:
     )
     def test_normalize_returns_expected(self, url: str, expected: str) -> None:
         """各URLフォーマットが期待する`host/owner/repo`形式へ変換されること。"""
-        assert _cli._normalize_remote_url(url) == expected  # noqa: SLF001
+        assert _repo._normalize_remote_url(url) == expected  # noqa: SLF001
 
     def test_invalid_url_raises_value_error(self) -> None:
         """解析不能な文字列はValueErrorを送出すること。"""
         with pytest.raises(ValueError, match="リモートURLとして解析できません"):
-            _cli._normalize_remote_url("not-a-url")  # noqa: SLF001
+            _repo._normalize_remote_url("not-a-url")  # noqa: SLF001
 
 
 class TestResolveRepoId:
@@ -1194,12 +1196,12 @@ class TestResolveRepoId:
 
     def test_url_input_resolved_directly(self) -> None:
         """URL形式の入力はgit呼び出しなしで正規化されること。"""
-        result = _cli._resolve_repo_id("https://github.com/owner/repo.git")  # noqa: SLF001
+        result = _repo._resolve_repo_id("https://github.com/owner/repo.git")  # noqa: SLF001
         assert result == "github.com/owner/repo"
 
     def test_normalized_url_input_resolved_directly(self) -> None:
         """`host/owner/repo`形式の入力はgit呼び出しなしで正規化されること。"""
-        result = _cli._resolve_repo_id("github.com/owner/repo")  # noqa: SLF001
+        result = _repo._resolve_repo_id("github.com/owner/repo")  # noqa: SLF001
         assert result == "github.com/owner/repo"
 
     def test_local_path_resolved_via_git(
@@ -1218,8 +1220,8 @@ class TestResolveRepoId:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
-        result = _cli._resolve_repo_id(str(myrepo))  # noqa: SLF001
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = _repo._resolve_repo_id(str(myrepo))  # noqa: SLF001
         assert result == "github.com/owner/repo"
 
     def test_none_resolved_from_cwd_via_git(
@@ -1241,8 +1243,8 @@ class TestResolveRepoId:
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
-        result = _cli._resolve_repo_id(None)  # noqa: SLF001
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = _repo._resolve_repo_id(None)  # noqa: SLF001
         assert result == "github.com/cwd/repo"
 
     def test_local_path_git_remote_failure_exits(
@@ -1261,9 +1263,9 @@ class TestResolveRepoId:
             empty = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         with pytest.raises(SystemExit) as exc_info:
-            _cli._resolve_repo_id(str(myrepo))  # noqa: SLF001
+            _repo._resolve_repo_id(str(myrepo))  # noqa: SLF001
         assert exc_info.value.code == 2
 
     def test_none_git_rev_parse_failure_exits(
@@ -1279,9 +1281,9 @@ class TestResolveRepoId:
             empty = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         with pytest.raises(SystemExit) as exc_info:
-            _cli._resolve_repo_id(None)  # noqa: SLF001
+            _repo._resolve_repo_id(None)  # noqa: SLF001
         assert exc_info.value.code == 2
 
     def test_none_git_remote_failure_exits(
@@ -1303,9 +1305,9 @@ class TestResolveRepoId:
             empty = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         with pytest.raises(SystemExit) as exc_info:
-            _cli._resolve_repo_id(None)  # noqa: SLF001
+            _repo._resolve_repo_id(None)  # noqa: SLF001
         assert exc_info.value.code == 2
 
 
@@ -1324,7 +1326,7 @@ class TestProcessLoopUrlInput:
         """
         _setup_flag_and_notes(tmp_path)
 
-        monkeypatch.setattr(_cli.subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
+        monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
@@ -1366,17 +1368,17 @@ class TestIsTbdAnswered:
     def test_html_comment_only_is_unanswered(self) -> None:
         """HTMLコメントのみの回答節は未回答扱い。"""
         text = "---\nfoo: bar\n---\n\n## 質問\n\nq\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n"
-        assert _cli._is_tbd_answered(text) is False  # noqa: SLF001
+        assert _tbd._is_tbd_answered(text) is False  # noqa: SLF001
 
     def test_text_present_is_answered(self) -> None:
         """非空文字列がある場合は回答済み扱い。"""
         text = "## 質問\n\nq\n\n## 回答\n\nはい\n"
-        assert _cli._is_tbd_answered(text) is True  # noqa: SLF001
+        assert _tbd._is_tbd_answered(text) is True  # noqa: SLF001
 
     def test_no_answer_section_is_unanswered(self) -> None:
         """`## 回答`節が無い場合は未回答扱い。"""
         text = "## 質問\n\nq\n"
-        assert _cli._is_tbd_answered(text) is False  # noqa: SLF001
+        assert _tbd._is_tbd_answered(text) is False  # noqa: SLF001
 
 
 class TestTbdAdd:
@@ -1401,7 +1403,7 @@ class TestTbdAdd:
             empty: Any = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(
@@ -1438,7 +1440,7 @@ class TestTbdAdd:
             empty: Any = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
-        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(
@@ -1450,7 +1452,7 @@ class TestTbdAdd:
 
 
 class TestTbdList:
-    """tbd-listサブコマンドのフィルタ動作検証。"""
+    """tbd-listサブコマンドのフィルター動作検証。"""
 
     def test_status_filter(
         self,
@@ -1462,7 +1464,7 @@ class TestTbdList:
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["tbd-list", "--status", "unanswered"], home=tmp_path)
@@ -1483,7 +1485,7 @@ class TestTbdEdit:
         """パストラバーサル系のファイル名でexit 2。"""
         _setup_tbd_env(tmp_path)
         monkeypatch.setenv("EDITOR", "vi")
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["tbd-edit", "../escape.md"], home=tmp_path)
@@ -1500,7 +1502,7 @@ class TestTbdEdit:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["tbd-edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
@@ -1525,7 +1527,7 @@ class TestTbdAnswer:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["tbd-answer"], home=tmp_path)

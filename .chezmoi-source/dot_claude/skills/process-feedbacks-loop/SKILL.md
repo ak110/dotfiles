@@ -21,7 +21,7 @@ description: >
 
 inbox件数が0になるまで反復する。反復回数の上限は設けない。
 
-1. `dotfiles-fb count --target-repo=<対象リポジトリ>`でinbox件数を取得する。
+1. `dotfiles-fb list --target-repo=<対象リポジトリ> | wc -l`でinbox件数を取得する。
 2. 件数が0の場合はステップ3へ進む。
 3. 件数が1以上の場合、`Agent`ツール（`subagent_type: claude`）で1反復分の処理を単独foreground委譲する。
    起動プロンプトには次の指示を含める。
