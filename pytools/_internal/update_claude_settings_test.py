@@ -669,10 +669,8 @@ class TestStripRemovedEnvKeys:
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result["env"] == {"FOO": "bar", "BAZ": "qux"}
 
-    def test_agent_teams_removed_and_managed_env_preserved(self, tmp_path: Path):
-        """update_claude_settings 経由で CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS が消え、
-        managed の env (CLAUDE_CODE_NO_FLICKER 等) は保持される。
-        """
+    def test_specified_env_key_removed_and_managed_env_preserved(self, tmp_path: Path):
+        """removed_env_keys で指定したキーが除去され、managed の env は保持される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),
@@ -681,17 +679,16 @@ class TestStripRemovedEnvKeys:
         target_path = tmp_path / "target.json"
         target_path.write_text(
             json.dumps(
-                {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1", "CLAUDE_CODE_NO_FLICKER": "1"}},
+                {"env": {"DEPRECATED_ENV_KEY": "1", "CLAUDE_CODE_NO_FLICKER": "1"}},
                 ensure_ascii=False,
             ),
             encoding="utf-8",
         )
 
-        # removed_env_keys は既定値（_REMOVED_ENV_KEYS）を使用
-        update_claude_settings(managed_path, target_path)
+        update_claude_settings(managed_path, target_path, removed_env_keys=("DEPRECATED_ENV_KEY",))
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
-        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" not in result["env"]
+        assert "DEPRECATED_ENV_KEY" not in result["env"]
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
 

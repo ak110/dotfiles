@@ -6,6 +6,7 @@ description: >
   初回か継続かの別、継続時は`threadId`（MCP版）または`SESSION_ID`（CLI版）、追加のレビュー観点（任意）
 context: fork
 agent: Explore
+model: haiku
 allowed-tools: mcp__codex__codex mcp__codex__codex-reply Bash(codex exec*)
 ---
 

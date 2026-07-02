@@ -42,10 +42,7 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
 # settings.json の env 配下から除去するキー。
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除しても利用者設定に残り続ける。ここで明示的に除去する。
-_REMOVED_ENV_KEYS: tuple[str, ...] = (
-    # 2026-05: Claude Code の実験的エージェントチーム機能フラグを廃止
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-)
+_REMOVED_ENV_KEYS: tuple[str, ...] = ()
 
 # settings.json 配下のリスト要素から除去する部分文字列のペア。
 # ドット区切りパスで対象配列を指定し、配列要素のうち部分文字列を含むものを除去する。

@@ -60,10 +60,11 @@
   - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき
    （例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
 - 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する
-  - 同スキルは`context: fork`と`agent: Explore`によりCLAUDE.md・ルール群を読み込まない`"haiku"`で実行される
+  - 同スキルは`context: fork`と`agent: Explore`でCLAUDE.md・ルール群を読み込まずに動作する
+  - `model: haiku`指定によりhaikuで実行される
   - 例外: 単発の参照コマンド1回で完結する操作は、委譲のオーバーヘッドが上回るためメイン直接実行も許容する
 - forkスキルとagents定義は以下の基準で使い分ける
-  - CLAUDE.mdを読み込まず`"haiku"`固定で実行してよい単純作業はforkスキル（`agent: Explore`指定）を使う
+  - CLAUDE.mdを読み込まず`"haiku"`で実行してよい単純作業はforkスキル（`agent: Explore`と`model: haiku`指定）を使う
   - 品質規範の継承・タスクごとのモデル選択・ファイル編集を要する作業はagents定義を使う
 - `foreground`／`background`起動の使い分け: 独立した複数タスクを同時に進める場合のみ`background`並列起動する
   - 並列起動時はメイン側の単一メッセージ内に複数のサブエージェント起動ブロックを並べる

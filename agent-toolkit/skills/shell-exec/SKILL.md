@@ -4,6 +4,7 @@ description: >
   メインのコンテキストを消費せずコマンドライン作業を実行する。
 context: fork
 agent: Explore
+model: haiku
 allowed-tools: Bash
 ---
 

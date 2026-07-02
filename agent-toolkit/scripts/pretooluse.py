@@ -788,7 +788,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
                     f" Rewrite using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per agent.md 「日本語の品質を保つ」 section."
+                    f" no metaphorical verbs) per styles.md 「日本語の品質を保つ」 section."
                     f" Target: {file_path}",
                     tag="warn",
                 ),

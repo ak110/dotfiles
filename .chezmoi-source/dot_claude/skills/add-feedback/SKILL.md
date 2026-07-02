@@ -3,6 +3,7 @@ name: add-feedback
 description: >
   フリーフォーマットのフィードバック本文をリポジトリごとに振り分け、
   `dotfiles-fb add` CLIへ位置引数で渡して~/private-notes/feedback/inbox/へ投入する。
+  「〇〇を改善提案にして」「〇〇をフィードバックにして」「〇〇をfeedbackに追加して」などのキーワードで起動する。
 # 連携: `dotfiles-fb add` CLI（pytools.dotfiles_fb）に位置引数で投入する。
 # `dotfiles-fb status` が正常終了する環境でのみ動作する。
 ---
