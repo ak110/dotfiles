@@ -605,8 +605,8 @@ class TestPlanModeSkillCallSites:
         assert result.stdout == ""
 
 
-class TestTextlintViolationsReadFirstCheck:
-    """plan file 編集前に textlint-violations.md 未読の場合のブロック検査。
+class TestPlanFileRequiredReadsFirstCheck:
+    """plan file 編集前に必須リファレンス未読の場合のブロック検査。
 
     `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
     Write/Edit/MultiEditのみがブロック対象となる。plan file以外の操作は
@@ -616,16 +616,13 @@ class TestTextlintViolationsReadFirstCheck:
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
-    def test_blocks_plan_file_write_without_read(self, tmp_path: pathlib.Path):
+    def test_blocks_when_both_unread(self, tmp_path: pathlib.Path):
+        """両方未読の場合、ブロックメッセージに両参照パスが含まれる。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "tv-write-block"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
-        )
+        sid = "req-both-unread"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Write",
@@ -637,13 +634,15 @@ class TestTextlintViolationsReadFirstCheck:
         )
         assert result.returncode == 2
         assert "textlint-violations.md" in result.stderr
+        assert "plan-file-guidelines.md" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
-    def test_blocks_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
+    def test_blocks_when_only_textlint_violations_unread(self, tmp_path: pathlib.Path):
+        """片方のみ未読の場合、当該参照パスのみメッセージに列挙される。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
-        sid = "tv-edit-block"
+        sid = "req-textlint-unread"
         _write_session_state(
             tmp_path,
             sid,
@@ -660,17 +659,19 @@ class TestTextlintViolationsReadFirstCheck:
         )
         assert result.returncode == 2
         assert "textlint-violations.md" in result.stderr
+        assert "plan-file-guidelines.md" not in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
-    def test_blocks_plan_file_multiedit_without_read(self, tmp_path: pathlib.Path):
+    def test_blocks_when_only_plan_file_guidelines_unread(self, tmp_path: pathlib.Path):
+        """片方のみ未読の場合、当該参照パスのみメッセージに列挙される。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "multi.md")
         env = self._state_env(tmp_path, home)
-        sid = "tv-multi-block"
+        sid = "req-guidelines-unread"
         _write_session_state(
             tmp_path,
             sid,
-            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
+            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
         )
         result = _run(
             {
@@ -685,14 +686,16 @@ class TestTextlintViolationsReadFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 2
-        assert "textlint-violations.md" in result.stderr
+        assert "plan-file-guidelines.md" in result.stderr
+        assert "textlint-violations.md" not in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
-    def test_allows_plan_file_when_flag_set(self, tmp_path: pathlib.Path):
+    def test_allows_plan_file_when_both_read(self, tmp_path: pathlib.Path):
+        """両方読了の場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "tv-flag-set"
+        sid = "req-both-read"
         _write_session_state(
             tmp_path,
             sid,
@@ -723,134 +726,7 @@ class TestTextlintViolationsReadFirstCheck:
             {
                 "tool_name": "Write",
                 "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": "tv-other-file",
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-
-class TestPlanFileGuidelinesReadFirstCheck:
-    """plan file 編集前に plan-file-guidelines.md 未読の場合のブロック検査。
-
-    `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
-    Write/Edit/MultiEditのみがブロック対象となる。plan file以外の操作は
-    一切ブロック・警告しない。
-    """
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    def test_blocks_plan_file_write_without_read(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "pfg-write-block"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": "# t\n"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "plan-file-guidelines.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
-
-    def test_blocks_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home, "edit.md")
-        env = self._state_env(tmp_path, home)
-        sid = "pfg-edit-block"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
-        )
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {"file_path": str(plan), "old_string": "a", "new_string": "b"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "plan-file-guidelines.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
-
-    def test_blocks_plan_file_multiedit_without_read(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home, "multi.md")
-        env = self._state_env(tmp_path, home)
-        sid = "pfg-multi-block"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
-        )
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "edits": [{"old_string": "a", "new_string": "b"}],
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "plan-file-guidelines.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
-
-    def test_allows_plan_file_when_flag_set(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "pfg-flag-set"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
-        """plan file以外の編集はフラグ未設定でも通過する。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        env = self._state_env(tmp_path, home)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": "pfg-other-file",
+                "session_id": "req-other-file",
                 "permission_mode": "default",
             },
             env_overrides=env,
