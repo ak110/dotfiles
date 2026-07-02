@@ -454,6 +454,136 @@ class TestListTargetRepoFilter:
         assert captured.out == ""
 
 
+class TestCountEmpty:
+    """countサブコマンド: 空inboxの場合は0を出力する。"""
+
+    def test_empty_inbox_outputs_zero(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox空時は標準出力に0のみが出力されること。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "0\n"
+
+
+class TestCountSingleMatch:
+    """countサブコマンド: 対象リポジトリと一致する1件のみ存在する場合は1を出力する。"""
+
+    def test_single_match_outputs_one(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """一致する1件のみ存在する場合、標準出力に1のみが出力されること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "1\n"
+
+
+class TestCountMultipleMatches:
+    """countサブコマンド: 対象リポジトリと一致する複数件が存在する場合はその件数を出力する。"""
+
+    def test_multiple_matches_outputs_count(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """一致する複数件が存在する場合、標準出力に件数のみが出力されること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo")
+        _write_feedback_file(notes, "fb-003.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "3\n"
+
+
+class TestCountExcludesOtherRepo:
+    """countサブコマンド: 対象外リポジトリの件は件数に含めない。"""
+
+    def test_other_repo_entries_excluded(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """一致リポジトリと不一致リポジトリが混在しても一致件のみ計上されること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
+        _write_feedback_file(notes, "fb-003.md", target_repo="github.com/example/bar")
+        monkeypatch.setattr(_cli.subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["count", "--target-repo=github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "1\n"
+
+
+class TestCountDefaultUsesGitToplevel:
+    """countサブコマンド: --target-repo未指定時はカレント作業リポジトリを既定に使う。"""
+
+    def test_default_target_repo_resolved_via_git(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--target-repo未指定なら`git rev-parse --show-toplevel`の結果のリモートURLで件数判定する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        autorepo = tmp_path / "autorepo"
+        autorepo.mkdir()
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/auto")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/other")
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{autorepo}\n" if kwargs.get("text") else f"{autorepo}\n".encode()
+                stderr: Any = "" if kwargs.get("text") else b""
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stderr)
+            if cmd == ["git", "-C", str(autorepo), "remote", "get-url", "origin"]:
+                stdout = (
+                    "https://github.com/example/auto.git\n" if kwargs.get("text") else b"https://github.com/example/auto.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(_cli.subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["count"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "1\n"
+
+
 class TestAdoptSingle:
     """adoptサブコマンド: 1件指定でinboxからadopted/へ移動しコミットを行う。"""
 

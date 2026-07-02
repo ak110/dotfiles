@@ -3,6 +3,7 @@
 サブコマンド構成。
 - add: inboxへフィードバックを投入する
 - list: inboxの全件を正規化リモートURLごとにグループ化して出力する
+- count: inboxのtarget_repo一致件数を整数1行で出力する
 - adopt: 採用としてinboxからadopted/へ移動しコミット・push
 - reject: 不採用としてinboxからrejected/へ移動しコミット・push
 - rm: inboxから単純削除しコミット・push
@@ -61,6 +62,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REPO",
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルタする。",
+    )
+
+    count = sub.add_parser("count", help="inboxのtarget_repo一致件数を整数1行で出力する")
+    count.add_argument(
+        "--target-repo",
+        metavar="REPO",
+        default=None,
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルタする。既定は現在の作業リポジトリ。",
     )
 
     adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
@@ -417,6 +426,14 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             print(f"### {name}")
             print(text)
             print()
+
+
+def _cmd_count(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """countサブコマンド: target_repo一致のinbox件数を整数1行で標準出力へ出力する。"""
+    inbox_dir = private_notes / "feedback" / "inbox"
+    _pull(private_notes)
+    repo_id = _resolve_repo_id(args.target_repo)
+    print(_count_feedback_for_repo(inbox_dir, repo_id))
 
 
 def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> None:
@@ -963,6 +980,7 @@ def main(
     dispatch = {
         "add": lambda: _cmd_add(args, private_notes, now, home),
         "list": lambda: _cmd_list(args, private_notes),
+        "count": lambda: _cmd_count(args, private_notes),
         "adopt": lambda: _cmd_adopt(args, private_notes),
         "reject": lambda: _cmd_reject(args, private_notes),
         "rm": lambda: _cmd_rm(args, private_notes),
