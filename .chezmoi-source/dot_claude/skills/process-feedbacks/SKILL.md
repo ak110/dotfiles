@@ -13,17 +13,16 @@ description: >
 `adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、
 対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
 
-## ステップ1: 件数確認
+## ステップ1: 全件取得
 
 `/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポジトリとして扱う。
 引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポジトリとして扱う（既定）。
 
-`dotfiles-fb list --target-repo=<対象リポジトリパスまたは正規化リモートURL> | wc -l`を実行し、
-件数を1文でユーザーに提示する。
+`dotfiles-fb show --all --target-repo=<対象リポジトリパスまたは正規化リモートURL>`を実行し全件本文を取得する。
 正規化リモートURLは`host/owner/repo`形式とする。
-0件の場合は「処理対象なし」と示して終了する。
-1件以上の場合は続けて`dotfiles-fb show --all --target-repo=<同上>`を実行し全件本文を取得する。
-なお、feedback-inbox無効環境では`dotfiles-fb list`・`dotfiles-fb show`のいずれもフラグファイル不在を検出して非ゼロ終了する。
+出力が空（`### <filename>`見出しが1件も存在しない）の場合は「処理対象なし」と示して終了する。
+1件以上の場合は`### <filename>`見出しの件数を1文でユーザーに提示する。
+なお、feedback-inbox無効環境では`dotfiles-fb show`がフラグファイル不在を検出して非ゼロ終了する。
 その場合は標準エラー出力のエラーメッセージをユーザーへ提示して終了する。
 
 ステップ1で取得した一覧のみを本セッションの処理対象として固定する。
