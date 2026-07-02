@@ -66,7 +66,7 @@ apply-feedback完了後、採用N件・不採用N件・保留N件のサマリー
 
 ## 連携スキル
 
-`process-feedbacks-loop`はステップ1で使う`dotfiles-fb show --all --status=answered`出力の
-`### <filename>`見出し件数を反復終了判定に用いる。
-本スキルのshowコマンドのオプションまたは出力構造を変更する計画では、
+`process-feedbacks-loop`はステップ1で使う`dotfiles-fb list --status=answered`出力の
+エントリ行の件数を反復終了判定に用いる。
+本スキルのshow・list呼び出しのオプションまたは出力構造を変更する計画では、
 `process-feedbacks-loop`ステップ2の終了判定条件との整合を同一計画内で確認する。

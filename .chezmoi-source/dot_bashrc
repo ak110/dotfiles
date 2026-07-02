@@ -81,7 +81,7 @@ esac
 
 # 対話シェル起動時に未回答TBDを通知する
 if command -v dotfiles-fb >/dev/null 2>&1 && dotfiles-fb status >/dev/null 2>&1; then
-    dotfiles-fb tbd-list --skip-pull --status=unanswered || :
+    dotfiles-fb list --type=tbd --status=unanswered --skip-pull || :
 fi
 
 # SSH対話ログイン時にtmuxへ自動アタッチする

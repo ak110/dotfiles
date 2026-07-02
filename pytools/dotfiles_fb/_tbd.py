@@ -17,6 +17,7 @@ from pytools.dotfiles_fb._common import (
     _validate_filename,
 )
 from pytools.dotfiles_fb._formatters import _parse_target_repo, _shorten_home
+from pytools.dotfiles_fb._list import _render_tbd_entries
 from pytools.dotfiles_fb._repo import _resolve_repo_id
 
 
@@ -88,28 +89,26 @@ def _cmd_tbd_add(
 
 
 def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """tbd-listサブコマンド: TBDをtarget_repoごとに出力。"""
+    """tbd-listサブコマンド: TBD inboxを1件1行（filename・target_repo・本文冒頭要約）で出力する。
+
+    出力形式は`list --type=tbd`と同一とし、target_repoグループ化・本文全文表示は行わない。
+    本文全文表示が必要な場合は`show --all --type=tbd`または`show <filename>`を使う。
+    """
     tbd_dir = private_notes / "tbd" / "inbox"
     if not args.skip_pull:
         _pull(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
-    entries: dict[str, list[tuple[str, str, bool]]] = {}
+    entries: list[tuple[pathlib.Path, str, str]] = []
     for path, target_repo, text in _iter_inbox_entries(tbd_dir, filter_repo):
         answered = _is_tbd_answered(text)
         if args.status == "answered" and not answered:
             continue
         if args.status == "unanswered" and answered:
             continue
-        entries.setdefault(target_repo, []).append((path.name, text, answered))
-    for repo, items in entries.items():
-        print(f"## target_repo: {repo}")
-        for name, text, answered in items:
-            label = "answered" if answered else "unanswered"
-            print(f"### {name} [{label}]")
-            print(text)
-            print()
+        entries.append((path, target_repo, text))
+    _render_tbd_entries(entries)
 
 
 def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

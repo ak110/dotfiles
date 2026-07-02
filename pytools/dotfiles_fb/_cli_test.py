@@ -537,6 +537,97 @@ class TestListSkipPull:
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
 
 
+class TestListStatusFilter:
+    """listサブコマンド: --statusでtbd側のみ回答状況を絞り込む。"""
+
+    def test_status_answered_excludes_unanswered_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=answered指定時に未回答TBDが除外される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--type=tbd", "--status=answered"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
+        assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
+
+    def test_status_unanswered_excludes_answered_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=unanswered指定時に回答済みTBDが除外される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
+
+    def test_status_all_outputs_every_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=all（既定）指定時に全TBDが出力される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--type=tbd"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
+
+    def test_status_answered_does_not_affect_feedback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=answered指定時にfeedback側は影響を受けず全件出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--status=answered"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# feedback\nfb-001.md\tgithub.com/example/foo\t本文1\n" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
+
+    def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
+        """--statusに不正値を指定するとargparseがexit 2で終了する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--status=invalid"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+
+
 class TestBodySummaryTruncation:
     """_body_summary: 40文字境界での切り詰め動作を検証する。"""
 

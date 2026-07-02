@@ -101,7 +101,7 @@ class TestTbdList:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=unansweredで未回答のみが出力される。"""
+        """--status=unansweredで未回答のみが1件1行（filename・target_repo・summary）形式で出力される。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
@@ -111,8 +111,7 @@ class TestTbdList:
             _cli.main(["tbd-list", "--status", "unanswered"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
+        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md\tgithub.com/example/foo\t[unanswered] q1\n"
 
 
 class TestTbdListSkipPull:

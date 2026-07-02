@@ -21,9 +21,9 @@ description: >
 
 inbox件数が0になるまで反復する。反復回数の上限は設けない。
 
-1. `dotfiles-fb show --all --status=answered --target-repo=<対象リポジトリ>`を実行する。
-   出力の`### <filename>`見出し件数がfeedback全件と回答済みTBDの合計となる（空出力＝0件）。
-   件数が0になるまで反復する。
+1. `dotfiles-fb list --target-repo=<対象リポジトリ> --status=answered`を実行する。
+   出力は1件1行のエントリ列で、feedback全件と回答済みTBDの合計を示す（空出力＝0件）。
+   件数はエントリ行を目視で数える。種別ヘッダ`# feedback`・`# tbd`はエントリ数に含めない。
    未回答TBDは`dotfiles-fb tbd-answer`（未回答TBDに回答を書き込む別サブコマンド）が別個に扱うため、
    本スキルのloop終了判定には含めない。
 2. 件数が0の場合はステップ3へ進む。

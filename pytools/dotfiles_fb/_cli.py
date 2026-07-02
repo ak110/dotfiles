@@ -2,7 +2,8 @@
 
 サブコマンド構成。
 - add: inboxへフィードバックを投入する
-- list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する（--typeで種別絞込）
+- list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
+  （--typeで種別絞込、--statusでtbd側のみ回答状況を絞込）
 - show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
   （--typeで種別絞込、--statusでtbd側のみ回答状況を絞込）
 - adopt: 採用としてinboxからadopted/へ移動しコミット・push
@@ -81,6 +82,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
     )
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    list_.add_argument(
+        "--status",
+        choices=("all", "answered", "unanswered"),
+        default="all",
+        help="回答状況でtbd側のみ絞り込む（既定: all、feedback側には作用しない）。",
+    )
     list_.add_argument(
         "--skip-pull",
         action="store_true",
