@@ -200,6 +200,8 @@ class RemoteWatcher:
         self._send_lock = asyncio.Lock()
         # snapshot受信後にTrueになり、接続切断時にFalseに戻る。
         self._connected = False
+        # stderr読取タスクのハンドル（詳細は`_connect`のコメント参照）。
+        self._stderr_task: asyncio.Task[None] | None = None
 
     def is_connected(self) -> bool:
         """RPCを送信可能な状態か（snapshot受信済みかつstdinが生存）を返す。"""
@@ -261,10 +263,6 @@ class RemoteWatcher:
                 await self._set_status("disconnected")
             except asyncio.CancelledError:
                 self._fail_pending(asyncio.CancelledError("watcher cancelled"))
-                if proc is not None:
-                    await _terminate_process(proc)
-                self._proc = None
-                self._connected = False
                 raise
             except Exception as e:  # noqa: BLE001
                 # 接続失敗・JSON解析失敗・stat不能などをまとめて拾い、ホスト単位で再接続継続する。
@@ -272,6 +270,7 @@ class RemoteWatcher:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
+                await self._cancel_stderr_task()
                 if proc is not None:
                     await _terminate_process(proc)
                 self._proc = None
@@ -301,7 +300,21 @@ class RemoteWatcher:
             limit=REMOTE_STREAM_LIMIT_BYTES,
         )
         # stdinはRPC通信路としてそのまま保持する（ヘルパー本体はリモート側dotfilesから読み込まれる）。
+        # helper起動失敗（`ModuleNotFoundError`・`FileNotFoundError`・依存解決失敗など）は
+        # stdoutが空EOFとなり原因ログが残らないため、stderrを常時読み取ってwarningへ転写する。
+        assert proc.stderr is not None
+        self._stderr_task = asyncio.create_task(_drain_stderr(self.host, proc.stderr))
         return proc
+
+    async def _cancel_stderr_task(self) -> None:
+        """stderr読取タスクを終了させる。切断・キャンセルのfinally経路から呼ぶ。"""
+        task = self._stderr_task
+        if task is None:
+            return
+        self._stderr_task = None
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     async def _process_stream(self, lines: LineSource) -> None:
         """行ストリームを受け取り、type別にハンドラへ振り分ける。
@@ -357,7 +370,7 @@ class RemoteWatcher:
     def _resolve_response(self, event: typing.Mapping[str, typing.Any]) -> None:
         """`type=response`イベントに対し、対応するpending Futureを解決する。
 
-        対応Futureが既に取り消されている・タイムアウト後の遅延応答である場合は黙って破棄する。
+        対応Futureが既に取り消されている・タイムアウト後の遅延応答である場合は破棄する。
         """
         req_id = event.get("id")
         if not isinstance(req_id, int):
@@ -390,12 +403,40 @@ async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterat
     """`StreamReader`から1行ずつ取り出す非同期イテレータ。
 
     `readline()`はEOFで空bytesを返すため、その時点で打ち切る。
+    snapshot行が`limit`（`REMOTE_STREAM_LIMIT_BYTES`）を超過した場合、
+    `StreamReader.readline`は内部で`LimitOverrunError`を`ValueError`へ変換して送出する
+    （CPython実装: `asyncio.streams.StreamReader.readline`）。
+    明示捕捉してwarningを残して打ち切らないと`run`の広範な`except Exception`で見過ごされ、
+    原因不明のリコネクトが続く。
     """
     while True:
-        chunk = await stream.readline()
+        try:
+            chunk = await stream.readline()
+        except ValueError as e:
+            logger.warning(
+                "リモートwatch snapshot行がlimit超過 limit=%d: %s",
+                REMOTE_STREAM_LIMIT_BYTES,
+                e,
+            )
+            return
         if not chunk:
             return
         yield chunk.decode("utf-8", errors="replace")
+
+
+async def _drain_stderr(host: str, stream: asyncio.StreamReader) -> None:
+    """stderrを行単位で読み続けてwarningへ転写する（詳細は`_connect`のコメント参照）。"""
+    try:
+        while True:
+            line = await stream.readline()
+            if not line:
+                return
+            text = line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                logger.warning("リモートwatch stderr host=%s: %s", host, text)
+    except Exception as e:  # noqa: BLE001
+        # CancelledErrorはBaseException派生のため`Exception`で拾わず、通常経路で再送出される。
+        logger.warning("リモートwatch stderr読取失敗 host=%s: %s", host, e)
 
 
 # 各停止段階で`proc.wait()`に与える既定タイムアウト（秒）。

@@ -110,10 +110,13 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(残(り)?コンテキスト|ターン数(が増|を踏まえ|の自己推定|の上限)|対話往復(が増|を踏まえ|の上限)|これ以上のターン)"
         ),
     ),
-    ("defer-onset", re.compile(r"(着手|対応|実装)(を)?(延期|後回し|別途|別計画)")),
+    ("defer-onset", re.compile(r"((着手|対応|実装)(を)?(延期|後回し|別途|別計画)|別作業(と|扱い|化))")),
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
     ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
-    ("pattern-conformance", re.compile(r"(既存パターン踏襲|本計画外|本計画スコープ外|広範改修要|現状維持)")),
+    (
+        "pattern-conformance",
+        re.compile(r"(既存パターン踏襲|本計画外|本計画スコープ外|広範改修要|現状維持|本タスク範囲外|本タスクスコープ外)"),
+    ),
     (
         "process-omission",
         re.compile(
@@ -122,12 +125,12 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "quality-tradeoff",
-        re.compile(r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難))"),
+        re.compile(r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難)|工数(対効果|見合い|見合わ))"),
     ),
     (
         "next-cycle-defer",
         re.compile(
-            r"(次(サイクル|セッション|計画)(で|に)(再評価|再検討|対応|送り)"
+            r"((次(サイクル|セッション|計画)|別セッション)(で|に)(再評価|再検討|対応|送り)"
             r"|(スコープ|テーマ|計画)を超える"
             r"|現行アーキテクチャ(の)?(大幅|根本)(な?)(見直し|改修))"
         ),

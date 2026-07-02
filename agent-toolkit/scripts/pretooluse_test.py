@@ -2810,6 +2810,11 @@ class TestAskUserQuestionScopeEscalationCheck:
             "品質維持を継続する方針",
             "次サイクルの作業を計画する",
             "現行設計の見直しを検討する",
+            # 新規リテラル追加分の誤検出予防
+            "別の作業と混同しないよう注意する",
+            "本タスクの詳細を検討する",
+            "工数の見積もりを更新する",
+            "セッションの内容を要約する",
         ],
     )
     def test_question_text_does_not_block_unrelated(self, text: str):

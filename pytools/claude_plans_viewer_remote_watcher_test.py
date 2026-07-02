@@ -271,6 +271,102 @@ class TestRemoteWatcher:
         assert watcher._backoff == _remote.REMOTE_BACKOFF_INITIAL_SEC  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（再接続ループ内のバックオフ増加を単体で到達させる経路がない）
 
 
+class TestIterStreamLinesLimitOverrun:
+    """`_iter_stream_lines`が`LimitOverrunError`を見過ごさず打ち切ることを確認する。
+
+    実運用では`RemoteWatcher._connect`が`limit=REMOTE_STREAM_LIMIT_BYTES`(8MiB)を渡すが、
+    テストでは`limit=64`の`StreamReader`へ64バイト超のchunkを流し込んで再現性を高める。
+    見過ごしたまま再接続ループへ抜けると原因不明のリコネクトが続くため、
+    明示的なwarningとイテレータ打ち切りを検証する。
+    """
+
+    @pytest.mark.asyncio
+    async def test_limit_overrun_logs_warning_and_terminates(self, caplog: pytest.LogCaptureFixture):
+        stream = asyncio.StreamReader(limit=64)
+        # 改行を含まない長いバイト列を流し込み、`readline`が`LimitOverrunError`を送出する条件を作る。
+        stream.feed_data(b"x" * 200)
+        stream.feed_eof()
+
+        collected: list[str] = []
+        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
+            async for line in _remote._iter_stream_lines(stream):  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_iter_stream_lines`はモジュール内部の非同期イテレータで公開経路がSSH/subprocess経由に限定される）
+                collected.append(line)
+
+        assert not collected
+        assert any("snapshot行がlimit超過" in r.message for r in caplog.records if r.levelname == "WARNING")
+
+
+class TestDrainStderr:
+    """`_drain_stderr`がhelper起動失敗の標準エラー出力をwarningへ転写することを確認する。
+
+    実運用ではリモート側`_remote_helper.py`不在・`uv`未導入・依存解決失敗などがstderr経由でのみ観測できる。
+    捕捉に失敗すると空EOFで見過ごされ原因不明のリコネクトが続くため、明示的なログ転写を検証する。
+    """
+
+    @pytest.mark.asyncio
+    async def test_stderr_lines_forwarded_to_warning(self, caplog: pytest.LogCaptureFixture):
+        stream = asyncio.StreamReader()
+        stream.feed_data(b"ModuleNotFoundError: No module named 'watchdog'\n")
+        stream.feed_data(b"\n")  # 空行はwarning対象外
+        stream.feed_data(b"Traceback (most recent call last):\n")
+        stream.feed_eof()
+
+        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
+            await _remote._drain_stderr("host1", stream)  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_drain_stderr`はモジュール内部のヘルパーでSSH/subprocess由来のstderrのみを扱う）
+
+        messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("host1" in m and "ModuleNotFoundError" in m for m in messages)
+        assert any("host1" in m and "Traceback" in m for m in messages)
+        # 空行はログ転写しない。
+        assert not any(m.endswith("host=host1: ") for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_stderr_read_exception_logged_and_returns(self, caplog: pytest.LogCaptureFixture):
+        """`readline`が例外を送出しても、`_drain_stderr`はwarningを記録して処理を終える。"""
+
+        class _BrokenStream:
+            async def readline(self) -> bytes:
+                raise RuntimeError("broken pipe")
+
+        with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
+            await _remote._drain_stderr("host1", typing.cast(typing.Any, _BrokenStream()))  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert any("stderr読取失敗" in r.message for r in caplog.records if r.levelname == "WARNING")
+
+
+class TestCancelStderrTask:
+    """`RemoteWatcher._cancel_stderr_task`のライフサイクル検証。
+
+    `_connect`は`_stderr_task`を生成し、`run`のfinally経路で`_cancel_stderr_task`を呼ぶ。
+    stderr読取タスク単体では次の2点を検証する。
+    - `_stderr_task=None`（`_connect`前）でも例外なく完了する
+    - 生存タスクが設定されていればcancelして待機する
+    """
+
+    @pytest.mark.asyncio
+    async def test_cancel_stderr_task_no_task_is_noop(self):
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        assert watcher._stderr_task is None  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_connect`前の初期状態確認）
+        # noopで例外を送出しないこと。
+        await watcher._cancel_stderr_task()  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_connect`前の直接呼び出し検証）
+        assert watcher._stderr_task is None  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（呼び出し後の状態確認）
+
+    @pytest.mark.asyncio
+    async def test_cancel_stderr_task_cancels_running_task(self):
+        state = _state.BroadcastState()
+        watcher = _remote.RemoteWatcher("host1", state)
+        stream = asyncio.StreamReader()
+        # EOFを与えず永続的に待機するタスクを設定する。
+        task = asyncio.create_task(_remote._drain_stderr("host1", stream))  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_connect`が生成するタスクを再現するため）
+        watcher._stderr_task = task  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_connect`経路と等価な直接注入）
+
+        await watcher._cancel_stderr_task()  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（キャンセル経路の単体検証）
+
+        assert watcher._stderr_task is None  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（キャンセル後の状態確認）
+        assert task.cancelled() or task.done()
+
+
 class _FakeStdin:
     """テスト用の擬似`StreamWriter`。`write`/`drain`/`is_closing`のみ実装する。
 

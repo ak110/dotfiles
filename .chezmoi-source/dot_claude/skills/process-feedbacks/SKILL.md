@@ -1,9 +1,9 @@
 ---
 name: process-feedbacks
 description: >
-  ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
-  採用は対象リポジトリへ反映してadopted/サブディレクトリへ移動、不採用はrejected/サブディレクトリへ移動する
-  （TBD側は`tbd-adopt`でtbd/adopted/へ移動）。
+  対象リポジトリごとに蓄積された未処理フィードバックとTBD回答済み項目を、
+  `dotfiles-fb`で取得して`agent-toolkit:apply-feedback`へ委譲する。
+  `dotfiles-fb adopt`・`reject`・`tbd-adopt`で採否確定後の履歴保持まで一貫して扱う。
 # 連携: 対象リポジトリのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 ---
 
@@ -13,7 +13,7 @@ description: >
 対象は`add`・`list`・`show`・`adopt`・`reject`・`rm`・`edit`・`commit`および
 `tbd-adopt`・`tbd-edit`等のtbd系サブコマンドを含む。
 手動での`git pull`実行は不要とする。
-`adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、
+`adopt`・`reject`は採否確定を管理側へ反映する（管理側リポジトリの操作は`dotfiles-fb`が内部で完結する）。
 対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
 
 ## ステップ1: 全件取得
@@ -28,8 +28,8 @@ feedback全件とTBD回答済みの本文を取得する。
 正規化リモートURLは`host/owner/repo`形式とする。
 出力が空（`### <filename>`見出しが1件も存在しない）の場合は「処理対象なし」と示して終了する。
 1件以上の場合は`### <filename>`見出しの件数を1文でユーザーに提示する。
-なお、feedback-inbox無効環境では`dotfiles-fb show`がフラグファイル不在を検出して非ゼロ終了する。
-その場合は標準エラー出力のエラーメッセージをユーザーへ提示して終了する。
+`dotfiles-fb show`が非ゼロ終了する場合（feedback-inbox無効化などが該当する）は、
+標準エラー出力のエラーメッセージをユーザーへ提示して終了する。
 
 ステップ1で取得した一覧のみを本セッションの処理対象として固定する。
 起動以降にinboxへ追加されたファイルは本セッションでは扱わず、次回起動時の処理対象とする。
@@ -43,22 +43,22 @@ feedback全件とTBD回答済みの本文を取得する。
      `## <filename>`形式の見出しを各本文の前に置く
    - frontmatterは保持することで`source: session-review`などの投入元情報をapply-feedback側で参照できるようにする
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装・コミット・後始末（adopt/reject）まで担う
-   - 後始末（adopt/reject）はファイルを物理削除せず`adopted/`または`rejected/`サブディレクトリへ移動して履歴を保持する
+   - 後始末（adopt/reject）では、`dotfiles-fb`が採否確定ファイルを履歴として保持する
    - 全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
    - `dotfiles-fb adopt`・`dotfiles-fb reject`・`dotfiles-fb tbd-adopt`は
      対象リポジトリのレビュー完遂・`git push`完了後に実行する。
-     いずれも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、
+     いずれも採否確定を管理側へ即時反映するため、
      対象リポジトリ側がレビュー指摘で巻き戻った場合に
-     フィードバック管理側だけが先行公開され整合性が崩れることを避ける
+     管理側だけが先行公開され整合性が崩れることを避ける
    - feedback側の採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
    - feedback側の不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
    - TBD側の回答済み採用ファイルがある場合: `dotfiles-fb tbd-adopt <filename1> <filename2> ...`を実行する。
      TBD側の不採用フローは本スキルでは扱わない（保留・削除は既存`tbd-edit`で対応する）
-   - 保留ファイルがある場合: 後始末コマンドは実行せずinbox配下に残置する
-     （次回起動時に自動的に再評価対象となる）
+   - 保留ファイルがある場合: 後始末コマンドは実行しない
+     （`dotfiles-fb`は次回`show`で自動的に再評価対象として提示する）
 
 ## ステップ3: サマリー提示
 
