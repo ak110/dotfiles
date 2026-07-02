@@ -46,7 +46,8 @@ disable-model-invocation: true
 
 ## 進め方
 
-1. `EnterPlanMode`でplan modeへ移行し、`agent-toolkit:plan-mode`を呼び出して計画ファイル作成プロセスへ入る
+1. `agent-toolkit:plan-mode`を呼び出し計画ファイル作成プロセスへ入る
+   （plan mode外の場合は先に`EnterPlanMode`でplan modeへ移行する）
 2. 計画ファイルで以下を確定する
    - 対象ディレクトリと除外パス
    - カテゴリ別の対象ファイル件数見積もりと分担単位

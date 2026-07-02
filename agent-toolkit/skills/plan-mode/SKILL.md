@@ -2,7 +2,8 @@
 name: plan-mode
 description: >
   計画ファイル作成～実装プロセスを強化するスキル。plan mode下では最初に必ず呼び出すこと。
-  複雑な指示・多段階の作業やバグ・障害・エラー・デグレードなどの調査相談時は、まず`EnterPlanMode`でplan modeへ移行する。
+  複雑な指示・多段階の作業やバグ・障害・エラー・デグレードなどの調査相談時に、
+  必要ならplan modeへ移行したうえで本スキルを起動する。
   単純な単一ファイルの修正指示や会話だけの質問には不要。
 # 編集時の注意点:
 # 本スキルはplan-implスキルや../agents/plan-*サブエージェントと連携する想定ではあるが、
@@ -24,9 +25,10 @@ description: >
   - 実施を回避する根拠として採用しない例:
     変更規模（対象ファイル数・変更行数・単一ファイル性など）・
     auto modeでの自律実行下・機械チェック通過・作業量見込み・所要時間見込み等
-- plan mode移行の前提: Claude Code側permission modeが`plan`の場合は呼び出し前に`EnterPlanMode`でplan modeへ移行する。
-  `plan`でない場合は`EnterPlanMode`を呼ばず本スキルから直接着手する
-  （Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従う）
+- plan mode移行の前提: 本スキルはplan mode下でも外でも起動できる。
+  plan mode下の場合は`ExitPlanMode`が計画ファイル承認ゲートとして機能する。
+  plan mode外の場合はユーザー承認を介さず、工程8で`agent-toolkit:plan-impl`へ引き継ぐ。
+  Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従う
 - 本スキル未起動のまま計画ファイル（`~/.claude/plans/*.md`）の編集に至った場合は、
   PreToolUseフックがブロックするため本スキルを呼び出したうえで工程1または2から順に実施する
 - 例外: plan mode移行後にユーザーから単純な即時実行の指示があった場合に限り、

@@ -21,7 +21,7 @@ disable-model-invocation: true
 ## 起動条件と前提
 
 - ユーザー手動起動専用（`/agent-toolkit:overhaul-project`）
-- plan-mode必須。起動直後に`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`を呼び出す
+- plan-mode必須。plan mode外で起動された場合は`EnterPlanMode`でplan modeへ移行してから`agent-toolkit:plan-mode`を呼び出す
 - 改善判定および記述ルールは呼び出し先スキルへ委ねる
 - リファクタリングで公開インターフェース変更などの破壊的変更が発生する場合、計画段階でユーザー確認を得る
 
@@ -51,7 +51,8 @@ disable-model-invocation: true
 
 ## 進め方
 
-1. `EnterPlanMode`でplan modeへ移行したうえで`agent-toolkit:plan-mode`を呼び出し、計画ファイル作成プロセスへ入る
+1. `agent-toolkit:plan-mode`を呼び出し計画ファイル作成プロセスへ入る
+   （plan mode外の場合は先に`EnterPlanMode`でplan modeへ移行する）
 2. 改善観点ごとに並列スキャンを実施し、改善候補を洗い出す
 3. 候補一覧をユーザーへ提示し、優先順位・採否・破壊的変更の取り扱いを確定する
 4. 確定した方針を計画ファイルへ転記し、`ExitPlanMode`で承認を得る
@@ -68,7 +69,7 @@ disable-model-invocation: true
 
 ## 既存スキルとの連携
 
-- `agent-toolkit:plan-mode`: `EnterPlanMode`でplan modeへ移行後、起動直後に必ず呼び出す
+- `agent-toolkit:plan-mode`: 起動直後に必ず呼び出す。plan mode外の場合は`EnterPlanMode`を先に呼ぶ
 - `agent-toolkit:coding-standards`: コード改善に着手するとき
 - `agent-toolkit:writing-standards`: ドキュメント整備およびコメント記述時
 - `agent-toolkit:agent-standards`: エージェント向け文書整備時
