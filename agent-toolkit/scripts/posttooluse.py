@@ -263,6 +263,32 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
     return violations
 
 
+def _record_bash_success_hash(lint_target: str, cwd: str, state: dict, state_key: str) -> bool:
+    """成功したBashコマンドの対象ファイルを読み込みハッシュを`state[state_key]`へ登録する。
+
+    ファイル読み込み失敗時、または既存ハッシュと重複する場合は登録せずFalseを返す。
+    登録した場合はTrueを返す（呼び出し元でstate変更フラグに反映するため）。
+    """
+    lint_path = pathlib.Path(lint_target).expanduser()
+    if not lint_path.is_absolute() and cwd:
+        lint_path = pathlib.Path(cwd) / lint_path
+    try:
+        file_content = lint_path.read_text(encoding="utf-8")
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
+        return False
+    passed = state.get(state_key, [])
+    if not isinstance(passed, list):
+        passed = []
+    passed_set = set(passed)
+    full_sha, stripped_sha = compute_prelint_hashes(file_content)
+    if full_sha in passed_set and stripped_sha in passed_set:
+        return False
+    passed_set.add(full_sha)
+    passed_set.add(stripped_sha)
+    state[state_key] = sorted(passed_set)
+    return True
+
+
 def main() -> int:
     """エントリポイント。終了コードは常に0。"""
     try:
@@ -471,24 +497,8 @@ def main() -> int:
             pyfltr_succeeded = bool(_PYFLTR_SUCCESS_PATTERN.search(output))
             if not interrupted and pyfltr_succeeded:
                 lint_target = prelint_match.group(1).strip("'\"")
-                lint_path = pathlib.Path(lint_target)
-                if not lint_path.is_absolute() and cwd:
-                    lint_path = pathlib.Path(cwd) / lint_path
-                try:
-                    file_content = lint_path.read_text(encoding="utf-8")
-                except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
-                    file_content = None
-                if file_content is not None:
-                    passed = state.get("plan_prelint_passed", [])
-                    if not isinstance(passed, list):
-                        passed = []
-                    passed_set = set(passed)
-                    full_sha, stripped_sha = compute_prelint_hashes(file_content)
-                    if full_sha not in passed_set or stripped_sha not in passed_set:
-                        passed_set.add(full_sha)
-                        passed_set.add(stripped_sha)
-                        state["plan_prelint_passed"] = sorted(passed_set)
-                        changed = True
+                if _record_bash_success_hash(lint_target, cwd, state, "plan_prelint_passed"):
+                    changed = True
 
         # check_line_width.py 単独実行の成功記録: 完全一致型で識別し、終了コード0時に別キーへハッシュ登録する
         line_width_match = _LINE_WIDTH_BASH_FULLMATCH.fullmatch(command.strip())
@@ -504,24 +514,8 @@ def main() -> int:
                 exit_code = -1
             if not interrupted and exit_code == 0:
                 lint_target = line_width_match.group(1).strip("'\"")
-                lint_path = pathlib.Path(lint_target)
-                if not lint_path.is_absolute() and cwd:
-                    lint_path = pathlib.Path(cwd) / lint_path
-                try:
-                    file_content = lint_path.read_text(encoding="utf-8")
-                except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
-                    file_content = None
-                if file_content is not None:
-                    passed_lw = state.get("plan_prelint_passed_line_width", [])
-                    if not isinstance(passed_lw, list):
-                        passed_lw = []
-                    passed_lw_set = set(passed_lw)
-                    full_sha, stripped_sha = compute_prelint_hashes(file_content)
-                    if full_sha not in passed_lw_set or stripped_sha not in passed_lw_set:
-                        passed_lw_set.add(full_sha)
-                        passed_lw_set.add(stripped_sha)
-                        state["plan_prelint_passed_line_width"] = sorted(passed_lw_set)
-                        changed = True
+                if _record_bash_success_hash(lint_target, cwd, state, "plan_prelint_passed_line_width"):
+                    changed = True
 
         return state if changed else None
 

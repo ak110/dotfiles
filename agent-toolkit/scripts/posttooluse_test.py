@@ -517,7 +517,7 @@ class TestGitLogChecked:
 class TestPrelintSuccessRecord:
     """Bash経由のpyfltr事前lint検査成功記録。
 
-    対象パターンBashが`{"kind":"summary","exit":0,...}`を含む出力で成功した場合、
+    対象パターンのBashが`{"kind":"summary","exit":0,...}`を含む出力で成功した場合、
     対象scratchpadファイルの全文SHA256と`## 背景`配下`text`コードブロック除去後SHA256を
     `plan_prelint_passed`リストへ追加する。
     """
@@ -741,6 +741,77 @@ class TestPrelintSuccessRecord:
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
         assert "plan_prelint_passed" not in state
+
+    def test_tilde_path_expanded_and_recorded(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "prelint-tilde"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f"{self._LINT_COMMAND} ~/scratch/plan-prelint.md",
+                },
+                "tool_response": {"output": self._SUCCESS_OUTPUT},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+            home_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        recorded = state.get("plan_prelint_passed", [])
+        assert isinstance(recorded, list)
+        content = target.read_text(encoding="utf-8")
+        assert self._sha(content) in recorded
+        assert self._sha(self._strip_bg_text(content)) in recorded
+
+
+class TestLineWidthSuccessRecord:
+    """Bash経由の`check_line_width.py`単独実行成功記録。
+
+    対象パターンのBashが終了コード0で成功した場合、対象scratchpadファイルの全文SHA256と
+    `## 背景`配下`text`コードブロック除去後SHA256を`plan_prelint_passed_line_width`リストへ追加する。
+    """
+
+    @staticmethod
+    def _sha(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _strip_bg_text(content: str) -> str:
+        return _plan_file.strip_background_text_blocks(content)
+
+    def _make_lint_file(self, tmp_path: pathlib.Path, content: str = "# plan\n") -> pathlib.Path:
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        target = scratch / "plan-prelint.md"
+        target.write_text(content, encoding="utf-8")
+        return target
+
+    def test_tilde_path_expanded_and_recorded(self, tmp_path: pathlib.Path):
+        target = self._make_lint_file(tmp_path)
+        sid = "line-width-tilde"
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "uv run --script check_line_width.py ~/scratch/plan-prelint.md",
+                },
+                "tool_response": {"exit_code": 0},
+                "session_id": sid,
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+            home_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        recorded = state.get("plan_prelint_passed_line_width", [])
+        assert isinstance(recorded, list)
+        content = target.read_text(encoding="utf-8")
+        assert self._sha(content) in recorded
+        assert self._sha(self._strip_bg_text(content)) in recorded
 
 
 class TestReadHandler:
