@@ -12,6 +12,13 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 
 各カテゴリは`agent-toolkit/scripts/pretooluse.py`の`_SCOPE_ESCALATION_PHRASES`定数の正規表現と対応する。
 フックはカテゴリ識別子をstderrへ出力し、検出フレーズ本文は転記しない。
+配布物フックが対象とする経路は次の2つとする。
+
+- `AskUserQuestion`の`question`・`option.label`・`option.description`
+- `Write`・`Edit`・`MultiEdit`による対象文書編集
+
+このほか、利用者環境固有のカスタムフックが同ヘルパーをimportして拡張する場合、
+`Bash`経由のCLI呼び出し文字列も検査対象へ加えることがある。
 
 `priority-consult`は「優先順位を相談したい」という発話形式に加え、
 `AskUserQuestion`の選択肢提示により全件vs一部vsスコープ変更などの優先順位判断をユーザーへ委譲する操作も検出対象とする。

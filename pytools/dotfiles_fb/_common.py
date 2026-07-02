@@ -104,6 +104,26 @@ def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None)
         yield path, entry_repo, text
 
 
+def _is_tbd_answered(text: str) -> bool:
+    """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
+    marker = "\n## 回答\n"
+    idx = text.find(marker)
+    if idx < 0:
+        return False
+    body = text[idx + len(marker) :]
+    next_h2 = body.find("\n## ")
+    if next_h2 >= 0:
+        body = body[:next_h2]
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("<!--") and stripped.endswith("-->"):
+            continue
+        return True
+    return False
+
+
 def _count_feedback(feedback_dir: pathlib.Path) -> int:
     """指定ディレクトリ配下の`*.md`ファイル件数を返す。"""
     if not feedback_dir.exists():

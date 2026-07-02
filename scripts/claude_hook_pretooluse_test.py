@@ -96,6 +96,7 @@ class TestHomeClaudeEditWarning:
             "settings.local.json",  # ローカル設定 (`.local.` を含む)
             "CLAUDE.local.md",  # ローカル メモ
             "rules/agent-toolkit/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
+            "scratchpad/foo.md",  # 一時作業ファイル領域 (chezmoi 管理外)
         ],
     )
     def test_silently_allowed(self, rel: str):

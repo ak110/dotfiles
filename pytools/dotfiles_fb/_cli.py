@@ -2,8 +2,9 @@
 
 サブコマンド構成。
 - add: inboxへフィードバックを投入する
-- list: inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
-- show: inboxの1件または全件（--all）の本文を表示する
+- list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する（--typeで種別絞込）
+- show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
+  （--typeで種別絞込、--statusでtbd側のみ回答状況を絞込）
 - adopt: 採用としてinboxからadopted/へ移動しコミット・push
 - reject: 不採用としてinboxからrejected/へ移動しコミット・push
 - rm: inboxから単純削除しコミット・push
@@ -17,6 +18,7 @@
 - tbd-list: TBD項目一覧を状態フィルターで出力する
 - tbd-answer: 未回答のTBD項目へ回答を書き込む
 - tbd-edit: `$EDITOR`でTBD項目を直接編集する
+- tbd-adopt: 回答済みTBD項目をtbd/inboxからtbd/adopted/へ移動しコミット・push
 
 ハンドラ実装は`_add`・`_list`・`_show`・`_mutations`・`_process_loop`・`_tbd`の各モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
@@ -37,6 +39,7 @@ from pytools.dotfiles_fb._process_loop import _cmd_process_loop
 from pytools.dotfiles_fb._show import _cmd_show
 from pytools.dotfiles_fb._tbd import (
     _cmd_tbd_add,
+    _cmd_tbd_adopt,
     _cmd_tbd_answer,
     _cmd_tbd_edit,
     _cmd_tbd_list,
@@ -70,15 +73,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-review）。",
     )
 
-    list_ = sub.add_parser("list", help="inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する")
+    list_ = sub.add_parser("list", help="feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する")
     list_.add_argument(
         "--target-repo",
         metavar="REPO",
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
     )
+    list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    list_.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
+    )
 
-    show = sub.add_parser("show", help="inboxの1件または全件（--all）の本文を表示する")
+    show = sub.add_parser("show", help="feedback/tbd inboxの1件または全件（--all）の本文を表示する")
     show.add_argument(
         "filename",
         metavar="FILENAME",
@@ -96,6 +105,18 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REPO",
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
+    )
+    show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    show.add_argument(
+        "--status",
+        choices=("all", "answered", "unanswered"),
+        default="all",
+        help="回答状況でtbd側のみ絞り込む（既定: all、feedback側には作用しない）。",
+    )
+    show.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
     )
 
     adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
@@ -198,6 +219,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="all",
         help="回答状況でフィルターする（既定: all）。",
     )
+    tbd_list.add_argument(
+        "--skip-pull",
+        action="store_true",
+        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
+    )
 
     tbd_answer = sub.add_parser(
         "tbd-answer",
@@ -213,6 +239,14 @@ def _build_parser() -> argparse.ArgumentParser:
     tbd_edit = sub.add_parser("tbd-edit", help="$EDITORでTBDを編集してcommit・push")
     tbd_edit.add_argument(
         "filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。"
+    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+
+    tbd_adopt = sub.add_parser(
+        "tbd-adopt",
+        help="回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push",
+    )
+    tbd_adopt.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="採用するTBDファイル名（1個以上）。"
     ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
     enable_completion(parser)
@@ -296,6 +330,7 @@ def main(
         "tbd-list": lambda: _cmd_tbd_list(args, private_notes),
         "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),
         "tbd-edit": lambda: _cmd_tbd_edit(args, private_notes),
+        "tbd-adopt": lambda: _cmd_tbd_adopt(args, private_notes),
     }
     dispatch[args.subcommand]()
     sys.exit(0)

@@ -79,6 +79,11 @@ case $- in
 *) return ;;
 esac
 
+# 対話シェル起動時に未回答TBDを通知する
+if command -v dotfiles-fb >/dev/null 2>&1 && dotfiles-fb status >/dev/null 2>&1; then
+    dotfiles-fb tbd-list --skip-pull --status=unanswered || :
+fi
+
 # SSH対話ログイン時にtmuxへ自動アタッチする
 # 有効化は ~/.config/dotfiles/tmux-auto-attach の存在で切り替える (autotmux on/off)
 if [ -z "$TMUX" ] &&

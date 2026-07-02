@@ -2,14 +2,17 @@
 name: process-feedbacks
 description: >
   ~/private-notes/feedback/inbox/配下のフィードバックを順に処理し、
-  採用は対象リポジトリへ反映してadopted/サブディレクトリへ移動、不採用はrejected/サブディレクトリへ移動する。
+  採用は対象リポジトリへ反映してadopted/サブディレクトリへ移動、不採用はrejected/サブディレクトリへ移動する
+  （TBD側は`tbd-adopt`でtbd/adopted/へ移動）。
 # 連携: 対象リポジトリのフィードバック全件をまとめて agent-toolkit:apply-feedback へ委譲する。
 ---
 
 # フィードバック消化
 
-`dotfiles-fb`の全サブコマンド（`add`・`list`・`show`・`adopt`・`reject`・`rm`・`edit`・`commit`）が
-内部で`git pull --ff-only`を実行するため、手動での`git pull`実行は不要とする。
+`dotfiles-fb`の全サブコマンドは内部で`git pull --ff-only`を実行する。
+対象は`add`・`list`・`show`・`adopt`・`reject`・`rm`・`edit`・`commit`および
+`tbd-adopt`・`tbd-edit`等のtbd系サブコマンドを含む。
+手動での`git pull`実行は不要とする。
 `adopt`・`reject`はさらに内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するが、
 対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
 
@@ -18,7 +21,10 @@ description: >
 `/process-feedbacks <repo-path>`の形式で対象リポジトリパスを引数として受け取った場合は当該パスを対象リポジトリとして扱う。
 引数なしの場合は`git rev-parse --show-toplevel`で取得した現リポジトリパスを対象リポジトリとして扱う（既定）。
 
-`dotfiles-fb show --all --target-repo=<対象リポジトリパスまたは正規化リモートURL>`を実行し全件本文を取得する。
+`dotfiles-fb show --all --status=answered --target-repo=<対象リポジトリパスまたは正規化リモートURL>`を実行し
+feedback全件とTBD回答済みの本文を取得する。
+出力は`# feedback`・`# tbd`種別ヘッダで区分けされる。
+`--status=answered`はTBD側のフィルターとして働き、feedback側の出力には影響しない。
 正規化リモートURLは`host/owner/repo`形式とする。
 出力が空（`### <filename>`見出しが1件も存在しない）の場合は「処理対象なし」と示して終了する。
 1件以上の場合は`### <filename>`見出しの件数を1文でユーザーに提示する。
@@ -42,12 +48,15 @@ description: >
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
-   - `dotfiles-fb adopt`・`dotfiles-fb reject`は対象リポジトリのレビュー完遂・`git push`完了後に
-     実行する。両コマンドとも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、
+   - `dotfiles-fb adopt`・`dotfiles-fb reject`・`dotfiles-fb tbd-adopt`は
+     対象リポジトリのレビュー完遂・`git push`完了後に実行する。
+     いずれも内部でfeedback-inboxリポジトリ側のcommit/pushまで実行するため、
      対象リポジトリ側がレビュー指摘で巻き戻った場合に
      フィードバック管理側だけが先行公開され整合性が崩れることを避ける
-   - 採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
-   - 不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
+   - feedback側の採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
+   - feedback側の不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
+   - TBD側の回答済み採用ファイルがある場合: `dotfiles-fb tbd-adopt <filename1> <filename2> ...`を実行する。
+     TBD側の不採用フローは本スキルでは扱わない（保留・削除は既存`tbd-edit`で対応する）
    - 保留ファイルがある場合: 後始末コマンドは実行せずinbox配下に残置する
      （次回起動時に自動的に再評価対象となる）
 

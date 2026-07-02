@@ -1,4 +1,4 @@
-"""tbd-add/tbd-list/tbd-answer/tbd-editサブコマンド実装。"""
+"""tbd-add/tbd-list/tbd-answer/tbd-edit/tbd-adoptサブコマンド実装。"""
 
 import argparse
 import datetime
@@ -10,6 +10,7 @@ import sys
 from pytools.dotfiles_fb._common import (
     _collect_message_via_editor,
     _commit_and_push,
+    _is_tbd_answered,
     _iter_inbox_entries,
     _max_existing_seq,
     _pull,
@@ -35,26 +36,6 @@ def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
     if not tbd_dir.exists():
         return []
     return sorted(p.name for p in tbd_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))
-
-
-def _is_tbd_answered(text: str) -> bool:
-    """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
-    marker = "\n## 回答\n"
-    idx = text.find(marker)
-    if idx < 0:
-        return False
-    body = text[idx + len(marker) :]
-    next_h2 = body.find("\n## ")
-    if next_h2 >= 0:
-        body = body[:next_h2]
-    for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("<!--") and stripped.endswith("-->"):
-            continue
-        return True
-    return False
 
 
 def _cmd_tbd_add(
@@ -109,7 +90,8 @@ def _cmd_tbd_add(
 def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """tbd-listサブコマンド: TBDをtarget_repoごとに出力。"""
     tbd_dir = private_notes / "tbd" / "inbox"
-    _pull(private_notes)
+    if not args.skip_pull:
+        _pull(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
@@ -205,3 +187,43 @@ def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None
     rel = str(path.relative_to(private_notes))
     _commit_and_push(private_notes, "chore: edit tbd item", [rel])
     print(f"編集反映: {path.name}")
+
+
+def _resolve_tbd_targets(filenames: list[str], tbd_inbox: pathlib.Path) -> list[pathlib.Path]:
+    """tbd/inbox配下のファイル名群を検証・解決し、未存在があればexit 2する。"""
+    paths = [_validate_filename(f, tbd_inbox) for f in filenames]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"tbd/inboxに存在しません: {p.name}", file=sys.stderr)
+        sys.exit(2)
+    return paths
+
+
+def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """tbd-adoptサブコマンド: 回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push。
+
+    全ファイルの存在を移動前に一括検証し、途中失敗による部分移動を防ぐ。
+    """
+    tbd_inbox = private_notes / "tbd" / "inbox"
+    tbd_adopted = private_notes / "tbd" / "adopted"
+    for filename in args.filenames:
+        _validate_filename(filename, tbd_inbox)
+    _pull(private_notes)
+    paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
+    tbd_adopted.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    rel_paths: list[str] = []
+    for src in paths:
+        dst = tbd_adopted / src.name
+        src.rename(dst)
+        moved.append(src.name)
+        rel_paths.append(str(src.relative_to(private_notes)))
+        rel_paths.append(str(dst.relative_to(private_notes)))
+    count = len(moved)
+    _commit_and_push(
+        private_notes,
+        f"chore: adopt {count} tbd {'item' if count == 1 else 'items'}",
+        rel_paths,
+    )
+    print(f"{count}件採用: {', '.join(moved)}")

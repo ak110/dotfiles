@@ -1,7 +1,7 @@
 ---
 name: process-feedbacks-loop
 description: >
-  ~/private-notes/feedback/inbox/配下のフィードバックが0件になるまで、
+  ~/private-notes/feedback/inbox/配下のフィードバックとTBD回答済み項目が0件になるまで、
   process-feedbacksによる消化とsession-review-dotfilesによる振り返りの投入を自動的に繰り返す。
   メインのコンテキスト消費を抑えるためサブエージェント委譲を可能な限り活用する。
 # 連携先スキル: agent-toolkit:apply-feedback・process-feedbacks・session-review-dotfiles・
@@ -21,8 +21,11 @@ description: >
 
 inbox件数が0になるまで反復する。反復回数の上限は設けない。
 
-1. `dotfiles-fb show --all --target-repo=<対象リポジトリ>`を実行し出力から`### <filename>`見出し件数を数える
-   （空出力＝0件、`###`行の件数＝件数）。
+1. `dotfiles-fb show --all --status=answered --target-repo=<対象リポジトリ>`を実行する。
+   出力の`### <filename>`見出し件数がfeedback全件と回答済みTBDの合計となる（空出力＝0件）。
+   件数が0になるまで反復する。
+   未回答TBDは`dotfiles-fb tbd-answer`（未回答TBDに回答を書き込む別サブコマンド）が別個に扱うため、
+   本スキルのloop終了判定には含めない。
 2. 件数が0の場合はステップ3へ進む。
 3. 件数が1以上の場合、`Agent`ツール（`subagent_type: claude`）で1反復分の処理を単独foreground委譲する。
    起動プロンプトには次の指示を含める。
