@@ -31,6 +31,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--type=all`（既定）指定時、該当部エントリが1件以上ある場合のみ種別ヘッダを出力する。
+    `--count`指定時は、フィルター適用後のfeedback件数とTBD件数の合計を整数のみで出力し、
+    種別ヘッダ・エントリ行は出力しない。
     """
     if not args.skip_pull:
         _pull(private_notes)
@@ -53,6 +55,10 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if args.status == "unanswered" and answered:
                 continue
             tbd_entries.append((path, target_repo, text))
+
+    if args.count:
+        print(len(feedback_entries) + len(tbd_entries))
+        return
 
     if feedback_entries:
         print("# feedback")

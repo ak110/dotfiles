@@ -628,6 +628,84 @@ class TestListStatusFilter:
         assert exc_info.value.code == 2
 
 
+class TestListCount:
+    """listサブコマンド: --count指定時は種別ヘッダ・エントリ行を抑制し件数のみ出力する。"""
+
+    def test_count_outputs_total_of_feedback_and_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--count指定時にfeedback件数とTBD件数の合計が整数1行で出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--count"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "3\n"
+
+    def test_count_suppresses_headers_and_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--count指定時は種別ヘッダ・エントリ行を出力しない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--count"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "1\n"
+
+    def test_count_with_status_filter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--countと--statusを併用すると、statusフィルター適用後の件数が出力される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--type=tbd", "--status=answered", "--count"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "1\n"
+
+    def test_count_empty_inbox_outputs_zero(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox空時は0を出力する。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["list", "--count"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "0\n"
+
+
 class TestBodySummaryTruncation:
     """_body_summary: 40文字境界での切り詰め動作を検証する。"""
 

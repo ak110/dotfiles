@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 
+from pytools.dotfiles_fb._common import _is_tbd_answered
 from pytools.dotfiles_fb._formatters import _parse_target_repo
 from pytools.dotfiles_fb._repo import _resolve_local_worktree, _resolve_repo_id
 
@@ -22,22 +23,48 @@ def _count_feedback_for_repo(feedback_dir: pathlib.Path, target_repo: str) -> in
     return count
 
 
+def _count_answered_tbd_for_repo(tbd_dir: pathlib.Path, target_repo: str) -> int:
+    """frontmatterの`target_repo`が指定値と一致し、回答済みのTBD inboxファイル件数を返す。"""
+    if not tbd_dir.exists():
+        return 0
+    count = 0
+    for path in tbd_dir.iterdir():
+        if path.suffix != ".md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if _parse_target_repo(text) != target_repo:
+            continue
+        if _is_tbd_answered(text):
+            count += 1
+    return count
+
+
+def _count_process_targets_for_repo(private_notes: pathlib.Path, target_repo: str) -> int:
+    """process-feedbacksスキルが1反復で扱うfeedback件数と回答済みTBD件数の合計を返す。
+
+    process-feedbacksスキル版とCLI版（本サブコマンド）で終了判定条件を揃えるため、
+    feedback inboxと回答済みTBD inboxの両方をカウント対象とする。
+    """
+    feedback_count = _count_feedback_for_repo(private_notes / "feedback" / "inbox", target_repo)
+    tbd_count = _count_answered_tbd_for_repo(private_notes / "tbd" / "inbox", target_repo)
+    return feedback_count + tbd_count
+
+
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: 対象リポジトリのinboxが0件になるまでclaude /process-feedbacksを繰り返し起動する。
 
     件数判定には`_resolve_repo_id`で取得した正規化リモートURLを使う。
+    件数はfeedback inboxと回答済みTBD inboxの合計とし、process-feedbacksスキル版と揃える。
     claudeへの起動引数には`--target-repo`指定値（未指定時は`git rev-parse --show-toplevel`の値）の
     ローカルパス文字列を渡す。
     """
-    inbox_dir = private_notes / "feedback" / "inbox"
-
     # ローカルパスと正規化リモートURLをそれぞれ取得する
     local_path_str = str(_resolve_local_worktree(args.target_repo))
     repo_id = _resolve_repo_id(args.target_repo)
 
     iteration = 0
     while True:
-        remaining = _count_feedback_for_repo(inbox_dir, repo_id)
+        remaining = _count_process_targets_for_repo(private_notes, repo_id)
         if remaining == 0:
             if iteration == 0:
                 print(f"対象リポジトリのinboxは空です（target_repo={repo_id}）。処理対象なし。")
