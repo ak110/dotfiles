@@ -33,7 +33,7 @@ set noerrorbells    " ビープ鳴らさない
 set hlsearch        " 検索結果文字列のハイライト
 set noshowmatch     " 括弧の対応を確認
 set noincsearch     " インクリメントサーチ
-set nowrap          " 折り返し
+set wrap            " 折り返し
 
 " タブ・インデント設定
 "set autoindent
