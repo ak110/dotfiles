@@ -25,6 +25,11 @@ mcp__codex__codex:
 
 - codex-review.md未読時のブロック (block)
 - `sandbox`パラメーターの`danger-full-access`自動修正 (auto-fix)
+- 全チェック通過時の強制承認 (auto-approve)
+
+mcp__codex__codex-reply:
+
+- 無条件の強制承認 (auto-approve)
 
 Bash:
 
@@ -250,7 +255,7 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正
+    # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正 + 強制承認
     if tool_name == "mcp__codex__codex":
         if _check_codex_review_not_read(session_id):
             return 2
@@ -258,7 +263,26 @@ def main() -> int:
         if result is not None:
             emit_json(result)
             return 0
-        flush_pending_language_warning()
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                },
+            }
+        )
+        return 0
+
+    # mcp__codex__codex-reply: 無条件の強制承認
+    if tool_name == "mcp__codex__codex-reply":
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                },
+            }
+        )
         return 0
 
     # Bashは専用ハンドラ

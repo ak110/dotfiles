@@ -2543,7 +2543,7 @@ class TestCodexReviewNotRead:
         assert "codex-review.md" in result.stderr
 
     def test_allowed_when_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """codex-review.md読み込み済みの場合は通過する。"""
+        """codex-review.md読み込み済みの場合は強制承認して通過する。"""
         self._write_state(tmp_path, "with-review", {"codex_review_read": True})
         result = _run(
             {
@@ -2554,7 +2554,9 @@ class TestCodexReviewNotRead:
             env_overrides=state_dir,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "updatedInput" not in out["hookSpecificOutput"]
 
 
 class TestCodexMcpSandbox:
@@ -2598,7 +2600,7 @@ class TestCodexMcpSandbox:
         assert "自動修正" in out["systemMessage"]
 
     def test_sandbox_correct_no_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが既にdanger-full-accessの場合は修正しない。"""
+        """sandboxが既にdanger-full-accessの場合は修正せず強制承認のみ返す。"""
         self._write_state(tmp_path, "fix3", {"codex_review_read": True})
         result = _run(
             {
@@ -2609,7 +2611,96 @@ class TestCodexMcpSandbox:
             env_overrides=state_dir,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "updatedInput" not in out["hookSpecificOutput"]
+
+
+class TestCodexMcpReply:
+    """mcp__codex__codex-reply強制承認。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    def test_reply_auto_approved(self, state_dir: dict[str, str]):
+        """codex-reply呼び出しは無条件で強制承認される。"""
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "abc", "prompt": "next"},
+                "session_id": "reply1",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+class TestCodexMcpLanguageWarningMerge:
+    """codex MCP強制承認時に保留言語警告が単一JSONへ統合されることを検証する。
+
+    `flush_pending_language_warning()`を廃止し`emit_json()`単独で承認とadditionalContextを
+    出力する回帰を防ぐ。stdoutが2件のJSONへ分裂しないこと・`additionalContext`に
+    警告本文が統合されることを確認する。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _write_state = staticmethod(_write_session_state)
+
+    @staticmethod
+    def _write_transcript(tmp_path: pathlib.Path, text: str) -> pathlib.Path:
+        entry = {
+            "type": "assistant",
+            "message": {
+                "id": "m-lang",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+                "stop_reason": "end_turn",
+            },
+        }
+        path = tmp_path / "transcript.jsonl"
+        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        return path
+
+    def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
+        """mcp__codex__codex分岐で保留警告が承認JSONへ統合される。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "codex-lang", {"codex_review_read": True})
+        transcript = self._write_transcript(tmp_path, "A" * 100)
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "transcript_path": str(transcript),
+                "session_id": "codex-lang",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        # stdoutは単一JSONオブジェクトとしてパースできる（2件分裂していない）
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
+
+    def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
+        """mcp__codex__codex-reply分岐で保留警告が承認JSONへ統合される。"""
+        env = self._state_env(tmp_path)
+        transcript = self._write_transcript(tmp_path, "A" * 100)
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "abc", "prompt": "next"},
+                "transcript_path": str(transcript),
+                "session_id": "reply-lang",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
 
 
 class TestBashAgentToolkitVersionBump:
