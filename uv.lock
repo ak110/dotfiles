@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-30T08:24:49.106709648Z"
+exclude-newer = "2026-07-01T17:36:24.874195212Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1832,7 +1832,7 @@ wheels = [
 
 [[package]]
 name = "pytilpack"
-version = "1.46.2"
+version = "1.47.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1840,9 +1840,9 @@ dependencies = [
     { name = "mcp" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/ab/a97e1232884843c4fe3637a04bc611e202b6ec389effc82ad2cac3b7ffbc/pytilpack-1.46.2.tar.gz", hash = "sha256:819bdeed69ab598991801c4f994975279b59da92d24f5d0ba8055c06e2c47a7a", size = 356499, upload-time = "2026-05-04T12:46:03.704Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/ef/33b9148f7131515ebfc2ac83b92b69e49141f6e88a81e2170d2d15ae6500/pytilpack-1.47.0.tar.gz", hash = "sha256:114d862b55e87a351acc36df146fa194fd076b22bff1d26918bdfb40caafeed1", size = 391936, upload-time = "2026-07-02T17:26:06.801Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/1a/c32f88666f7c1c59f4becbd3df522bf61ab7478cc4714088e8a93c6737cd/pytilpack-1.46.2-py3-none-any.whl", hash = "sha256:8e6a808c16e0646ef2af18bff0c676740792e8102cd218838b99cdcc44b13b96", size = 133825, upload-time = "2026-05-04T12:46:02.079Z" },
+    { url = "https://files.pythonhosted.org/packages/55/f7/65e14d17ec6e42f4b8cc6cede190dfe2882930dbe88226f091ffb3c2b100/pytilpack-1.47.0-py3-none-any.whl", hash = "sha256:0afdd02eee1a2f03772aa8f797093c5f2231918d3fbfe644ff83124b73173059", size = 138727, upload-time = "2026-07-02T17:26:05.178Z" },
 ]
 
 [package.optional-dependencies]
@@ -1912,7 +1912,7 @@ requires-dist = [
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pygments" },
-    { name = "pytilpack", extras = ["quart"], specifier = ">=1.46.0" },
+    { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
     { name = "qrcode", specifier = ">=8.0" },
     { name = "send2trash" },

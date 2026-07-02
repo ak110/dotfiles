@@ -78,7 +78,8 @@
     - importしたい場合はファイル名をアンダースコア区切り（`<name>.py`）で命名する
     - shebangを持つスクリプトは`chmod +x`で実行権限を付与する（pre-commitの`check-shebang-scripts-are-executable`が強制する）
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして以下を提供する
-  - `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・`load_json_dict()`
+  - `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・
+    `load_json_dict()`・`write_settings_hybrid()`
   - 新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
 - `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる
   - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する

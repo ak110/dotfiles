@@ -7,8 +7,11 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
+
+import pytilpack.jsonc
 
 from pytools._internal import log_format
 
@@ -198,6 +201,94 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
             with contextlib.suppress(OSError):
                 tmp_path.unlink()
         return False
+
+
+def _collect_value_only_updates(
+    original: object,
+    updated: object,
+    path: tuple[str | int, ...] = (),
+) -> dict[Sequence[str | int], object] | None:
+    """既存パスの値置換のみで済む差分を収集する。
+
+    `pytilpack.jsonc.edit` が扱える更新（既存パスの値書き換え）のみで
+    ``original`` から ``updated`` への変化を再現できる場合、
+    パス→新値のマッピングを返す。
+    構造変化（片方のみに存在するキー・list全体の差し替え・型変化）を
+    検出した場合は ``None`` を返し、呼び出し元にフォールバック（全書き換え）を促す。
+    ``list`` は要素同一（順序含む）でなければ構造変化として扱う。
+    """
+    if type(original) is not type(updated):
+        return None
+    if isinstance(original, dict):
+        assert isinstance(updated, dict)
+        original_dict = cast("dict[str | int, object]", original)
+        updated_dict = cast("dict[str | int, object]", updated)
+        if set(original_dict.keys()) != set(updated_dict.keys()):
+            return None
+        result: dict[Sequence[str | int], object] = {}
+        for key in original_dict:
+            sub = _collect_value_only_updates(original_dict[key], updated_dict[key], (*path, key))
+            if sub is None:
+                return None
+            result.update(sub)
+        return result
+    if isinstance(original, list):
+        if original != updated:
+            return None
+        return {}
+    if original == updated:
+        return {}
+    return {path: updated}
+
+
+def _atomic_edit_jsonc(
+    path: Path,
+    updates: Mapping[Sequence[str | int], object],
+    *,
+    tag: str | None = None,
+) -> bool:
+    """JSONCファイルの既存パスの値を書き換えてコメント・空行・インデントを維持する。
+
+    ``pytilpack.jsonc.edit`` で書き換えた結果を ``atomic_write_text`` で保存する。
+    ``updates`` が空の場合は書き込みをせず ``False`` を返す。
+    書き換え結果が元テキストと一致した場合も ``False`` を返す。
+    """
+    if not updates:
+        return False
+    original = path.read_text(encoding="utf-8")
+    updated = pytilpack.jsonc.edit(original, updates)
+    if updated == original:
+        return False
+    return atomic_write_text(path, updated, tag=tag)
+
+
+def write_settings_hybrid(
+    path: Path,
+    original: object,
+    data: object,
+    *,
+    tag: str | None = None,
+) -> bool:
+    """マージ結果を対象ファイルへ書き戻すハイブリッド経路。
+
+    既存パスの値置換のみで済む差分ならJSONCコメント・空行・インデントを維持する
+    経路（``_atomic_edit_jsonc``）で書き戻す。構造変化を含む場合や当該経路が
+    失敗した場合は全書き換え経路（``json.dumps`` + ``atomic_write_text``）へ
+    フォールバックする。両経路とも原子的書き込みで統一しており、書き込み失敗時は
+    ``False`` を返す。
+
+    ``pytilpack.jsonc.edit`` は元テキストの再パース時に、コンカレントな他プロセス
+    書き込みでパス構造が変化した場合に ``KeyError``・``IndexError``・``TypeError``・
+    ``ValueError`` を送出する。これらを捕捉して全書き換え経路へ倒す。
+    """
+    updates: Mapping[Sequence[str | int], object] | None
+    updates = _collect_value_only_updates(original, data) if path.exists() else None
+    if updates:
+        with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
+            if _atomic_edit_jsonc(path, updates, tag=tag):
+                return True
+    content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    return atomic_write_text(path, content, tag=tag)
 
 
 def atomic_write_json(path: Path, data: object, *, tag: str | None = None) -> bool:

@@ -11,7 +11,9 @@ import logging
 import sys
 from pathlib import Path
 
-from pytools._internal import log_format
+import pytilpack.jsonc
+
+from pytools._internal import claude_common, log_format
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -125,7 +127,9 @@ def update_claude_settings(
     for override_path in overrides or []:
         _merge(managed, json.loads(override_path.read_text(encoding="utf-8")))
 
-    data = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
+    # settings.jsonはJSONC形式（コメント・末尾カンマ許容）で書かれる場合があるため
+    # `pytilpack.jsonc.loads`でパースする。純JSONも受理する。
+    data = pytilpack.jsonc.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {}
 
     original = copy.deepcopy(data)
     _strip_removed_hooks(data, removed_hook_substrings)
@@ -138,7 +142,8 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
+        return False
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):
         logger.info(line)

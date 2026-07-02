@@ -19,7 +19,7 @@ dependencies = [
     "psutil",
     "pydantic>=2",
     "pygments",
-    "pytilpack[quart]>=1.46.0",
+    "pytilpack[quart]>=1.47.0",
     "pyyaml",
     "qrcode>=8.0",
     "send2trash",

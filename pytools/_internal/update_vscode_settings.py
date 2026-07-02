@@ -9,7 +9,6 @@ Linux Remote SSHではMachine scope（`~/.vscode-server/data/Machine/settings.js
 import collections.abc
 import copy
 import hashlib
-import json
 import logging
 import os
 import platform
@@ -19,7 +18,7 @@ from pathlib import Path
 
 import pytilpack.jsonc
 
-from pytools._internal import log_format
+from pytools._internal import claude_common, log_format
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -179,7 +178,9 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
 
     dict値は浅いマージ（既存キーを保持）、それ以外は上書き。
     VSCodeの`settings.json`はJSONC形式のため`pytilpack.jsonc.loads`でパースする。
-    書き込みは標準JSONで行う（コメントは保持しない）。
+    書き込みは`claude_common.write_settings_hybrid`へ委譲する。既存パスの値置換のみ
+    で済む場合はJSONCコメント・空行・インデントを維持したまま更新し、構造変化
+    （キー追加・list変更）を含む場合は全書き換えするためコメントは保持しない。
 
     ``legacy_keys`` はマージ前に`settings.json`から削除する。管理しなくなった
     キーの残骸（過去バージョンが書き込んだ無効な絶対パス等）を除去するための
@@ -205,7 +206,8 @@ def _apply(managed: dict, settings_path: Path, *, legacy_keys: tuple[str, ...] =
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if not claude_common.write_settings_hybrid(settings_path, original, data, tag=short):
+        return False
     logger.info(log_format.format_status(short, "更新しました"))
     return True
 

@@ -1,8 +1,12 @@
 """pytools._internal.claude_common のテスト。"""
 
+# pylint: disable=protected-access  # 内部ヘルパー関数の単体テスト目的で `_` プレフィックス関数へアクセスする
+
+import json
 import os
 import subprocess
 import typing
+from pathlib import Path
 
 import pytest
 
@@ -68,3 +72,118 @@ class TestRunSubprocess:
             if key in overrides:
                 continue
             assert env.get(key) == value
+
+
+class TestCollectValueOnlyUpdates:
+    """`_collect_value_only_updates` の分岐テスト。"""
+
+    def test_identical_returns_empty(self):
+        """同一値なら空dictを返す。"""
+        assert claude_common._collect_value_only_updates({"a": 1}, {"a": 1}) == {}  # noqa: SLF001
+
+    def test_scalar_change_returns_path_mapping(self):
+        """スカラー値の書き換えはpath→新値のマッピングを返す。"""
+        result = claude_common._collect_value_only_updates({"a": 1}, {"a": 2})  # noqa: SLF001
+        assert result == {("a",): 2}
+
+    def test_nested_scalar_change(self):
+        """ネスト先のスカラー変更もpathで表現される。"""
+        result = claude_common._collect_value_only_updates(  # noqa: SLF001
+            {"outer": {"inner": 1}},
+            {"outer": {"inner": 2}},
+        )
+        assert result == {("outer", "inner"): 2}
+
+    def test_key_addition_returns_none(self):
+        """キー追加を含む差分はNoneを返す（構造変化）。"""
+        assert claude_common._collect_value_only_updates({"a": 1}, {"a": 1, "b": 2}) is None  # noqa: SLF001
+
+    def test_key_deletion_returns_none(self):
+        """キー削除を含む差分はNoneを返す。"""
+        assert claude_common._collect_value_only_updates({"a": 1, "b": 2}, {"a": 1}) is None  # noqa: SLF001
+
+    def test_list_change_returns_none(self):
+        """list全体の差し替えはNoneを返す。"""
+        assert claude_common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2, 3]}) is None  # noqa: SLF001
+
+    def test_list_same_returns_empty(self):
+        """list同一なら空dictを返す。"""
+        assert claude_common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2]}) == {}  # noqa: SLF001
+
+    def test_type_change_returns_none(self):
+        """型変化（dict→scalarなど）はNoneを返す。"""
+        assert claude_common._collect_value_only_updates({"a": {"b": 1}}, {"a": "string"}) is None  # noqa: SLF001
+
+    def test_multiple_scalar_changes(self):
+        """複数のスカラー変更が同時に検出される。"""
+        result = claude_common._collect_value_only_updates(  # noqa: SLF001
+            {"a": 1, "b": 2, "c": {"d": 3}},
+            {"a": 10, "b": 2, "c": {"d": 30}},
+        )
+        assert result == {("a",): 10, ("c", "d"): 30}
+
+
+class TestAtomicEditJsonc:
+    """`_atomic_edit_jsonc` のテスト。"""
+
+    def test_empty_updates_returns_false(self, tmp_path: Path):
+        """updatesが空の場合、書き込みせずFalseを返す。"""
+        path = tmp_path / "target.jsonc"
+        path.write_text('{"a": 1}', encoding="utf-8")
+        assert claude_common._atomic_edit_jsonc(path, {}) is False  # noqa: SLF001
+        assert path.read_text(encoding="utf-8") == '{"a": 1}'
+
+    def test_preserves_comments(self, tmp_path: Path):
+        """コメントを維持したまま値を書き換える。"""
+        path = tmp_path / "target.jsonc"
+        path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
+        assert claude_common._atomic_edit_jsonc(path, {("a",): 2}) is True  # noqa: SLF001
+        text = path.read_text(encoding="utf-8")
+        assert "// コメント" in text
+        assert '"a": 2' in text
+
+
+class TestWriteSettingsHybrid:
+    """`write_settings_hybrid` の分岐と失敗経路のテスト。"""
+
+    def test_scalar_change_uses_jsonc_edit(self, tmp_path: Path):
+        """スカラー変更のみならJSONC編集経路でコメントを維持する。"""
+        path = tmp_path / "settings.json"
+        path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
+        assert claude_common.write_settings_hybrid(path, {"a": 1}, {"a": 2}) is True
+        text = path.read_text(encoding="utf-8")
+        assert "// コメント" in text
+        assert '"a": 2' in text
+
+    def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path):
+        """キー追加はJSONCで扱えないため全書き換え経路へ倒す。"""
+        path = tmp_path / "settings.json"
+        path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
+        assert claude_common.write_settings_hybrid(path, {"a": 1}, {"a": 1, "b": 2}) is True
+        text = path.read_text(encoding="utf-8")
+        assert "// コメント" not in text
+        assert json.loads(text) == {"a": 1, "b": 2}
+
+    def test_new_file_uses_full_write(self, tmp_path: Path):
+        """既存ファイル無しなら全書き換え経路で新規作成する。"""
+        path = tmp_path / "settings.json"
+        assert claude_common.write_settings_hybrid(path, {}, {"a": 1}) is True
+        assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+
+    def test_falls_back_when_jsonc_edit_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """jsonc.editが例外を送出した場合は全書き換え経路へフォールバックする。
+
+        コンカレントな他プロセス書き込みでパス構造が変化した場合を想定する。
+        """
+        path = tmp_path / "settings.json"
+        path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
+
+        def _raise(*_args: typing.Any, **_kwargs: typing.Any) -> str:
+            raise KeyError("path missing")
+
+        monkeypatch.setattr(claude_common.pytilpack.jsonc, "edit", _raise)
+        assert claude_common.write_settings_hybrid(path, {"a": 1}, {"a": 2}) is True
+        text = path.read_text(encoding="utf-8")
+        # フォールバック経路のため、コメントは失われるが値は書き込まれる
+        assert "// コメント" not in text
+        assert json.loads(text) == {"a": 2}

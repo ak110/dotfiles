@@ -109,6 +109,66 @@ class TestUpdateClaudeSettings:
         assert result["env"] == {"FOO": "bar", "CLAUDE_CODE_NO_FLICKER": "1"}
 
 
+class TestJsoncCommentPreservation:
+    """JSONCコメント維持経路のテスト。
+
+    既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
+    利用者が加えた行コメント・空行・独自インデントを維持する。
+    構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
+    """
+
+    def test_scalar_only_change_preserves_comments(self, tmp_path: Path):
+        """既存キーのスカラー値置換のみならコメントが維持される。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            '{\n  // ユーザーコメント\n  "language": "japanese"\n}\n',
+            encoding="utf-8",
+        )
+
+        update_claude_settings(
+            managed_path,
+            target_path,
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+
+        text = target_path.read_text(encoding="utf-8")
+        assert "// ユーザーコメント" in text
+        assert '"language": "english"' in text
+
+    def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path):
+        """新規キー追加を含む更新はコメント維持できず全書き換えへフォールバックする。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"language": "english", "newKey": "newValue"}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            '{\n  // ユーザーコメント\n  "language": "japanese"\n}\n',
+            encoding="utf-8",
+        )
+
+        update_claude_settings(
+            managed_path,
+            target_path,
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+
+        text = target_path.read_text(encoding="utf-8")
+        # フォールバック経路はJSONCコメントを保持しない
+        assert "// ユーザーコメント" not in text
+        # 変更後の値は反映される
+        result = json.loads(text)
+        assert result["language"] == "english"
+        assert result["newKey"] == "newValue"
+
+
 class TestProductionManagedSettings:
     """配布元の share/claude_settings_json_managed.json の内容を検証する。"""
 

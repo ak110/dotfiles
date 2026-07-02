@@ -247,6 +247,62 @@ class TestApply:
         assert result["b"] == 2
 
 
+class TestJsoncCommentPreservation:
+    """JSONCコメント維持経路のテスト。
+
+    既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
+    利用者が加えた行コメント・空行・独自インデントを維持する。
+    構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
+    """
+
+    def test_scalar_only_change_preserves_comments(self, tmp_path: Path) -> None:
+        """既存キーのスカラー値置換のみならコメントが維持される。"""
+        target = _make_settings_dir(tmp_path, is_windows=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # 既存設定を「マージ後にscalar差分のみ発生する」形へ調整する。
+        # workbench.colorCustomizations.activityBar.background の色だけ変わる想定。
+        managed = {
+            "workbench.colorCustomizations": {"activityBar.background": "#123456"},
+            "markdown-pdf.styles": ["/tmp/existing.css"],
+        }
+        existing_text = (
+            "{\n"
+            "  // ユーザーコメント\n"
+            '  "workbench.colorCustomizations": {\n'
+            '    "activityBar.background": "#000000"\n'
+            "  },\n"
+            '  "markdown-pdf.styles": ["/tmp/existing.css"]\n'
+            "}\n"
+        )
+        target.write_text(existing_text, encoding="utf-8")
+
+        mod._apply(managed, target)  # noqa: SLF001  # pylint: disable=protected-access
+
+        text = target.read_text(encoding="utf-8")
+        assert "// ユーザーコメント" in text
+        assert '"activityBar.background": "#123456"' in text
+
+    def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path) -> None:
+        """新規キー追加を含む更新はコメント維持できず全書き換えへフォールバックする。"""
+        target = _make_settings_dir(tmp_path, is_windows=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        managed = {
+            "workbench.colorCustomizations": {"activityBar.background": "#123456"},
+            "markdown-pdf.styles": ["/tmp/new.css"],
+        }
+        existing_text = '{\n  // ユーザーコメント\n  "editor.fontSize": 14\n}\n'
+        target.write_text(existing_text, encoding="utf-8")
+
+        mod._apply(managed, target)  # noqa: SLF001  # pylint: disable=protected-access
+
+        text = target.read_text(encoding="utf-8")
+        assert "// ユーザーコメント" not in text
+        result = json.loads(text)
+        assert result["editor.fontSize"] == 14
+        assert result["workbench.colorCustomizations"]["activityBar.background"] == "#123456"
+        assert result["markdown-pdf.styles"] == ["/tmp/new.css"]
+
+
 class TestBuildManagedSettings:
     """`run()` 経由で managed 設定のビルド結果を検証する。"""
 
