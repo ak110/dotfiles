@@ -24,6 +24,12 @@ defer-onset	対応を後回し
 defer-onset	別作業として扱う
 defer-onset	別作業扱いにする
 defer-onset	別作業化する
+defer-onset	別issue扱いにする
+defer-onset	別issue化する
+defer-onset	別チケット扱いにする
+defer-onset	別チケット化する
+defer-onset	別PR扱いにする
+defer-onset	別PR化する
 priority-consult	優先順位を相談
 priority-consult	優先順位判断を委ね
 priority-consult	範囲を決め
@@ -31,6 +37,8 @@ scope-volume	対象件数が多い
 pattern-conformance	本計画外
 pattern-conformance	本タスク範囲外
 pattern-conformance	本タスクスコープ外
+pattern-conformance	本作業範囲外
+pattern-conformance	本作業スコープ外
 process-omission	工程省略
 process-omission	工程を省略
 process-omission	割愛する
@@ -64,3 +72,11 @@ next-cycle-defer	今回対応外
 next-cycle-defer	今回対象外
 next-cycle-defer	影響が大きいため
 next-cycle-defer	影響大のため
+next-cycle-defer	後続作業に委ねる
+next-cycle-defer	後続対応で扱う
+next-cycle-defer	後続作業へ送る
+next-cycle-defer	後続PRで対応
+next-cycle-defer	後続チケットで扱う
+next-cycle-defer	後続issueで扱う
+next-cycle-defer	次回対応とする
+next-cycle-defer	次回対応に回す
