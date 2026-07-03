@@ -396,11 +396,11 @@ _VALID_H2_PLAN_SHA = hashlib.sha256(_VALID_H2_PLAN_CONTENT.encode("utf-8")).hexd
 
 
 class TestPlanModeSkillFirstCheck:
-    """plan mode 下で plan-mode スキル未起動のまま plan file 編集をブロックする検査。
+    """plan file編集全般で plan-mode スキル未起動をブロックする検査。
 
     plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
     一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
-    Write/Edit/MultiEditのみがブロック対象となる。
+    Write/Edit/MultiEditのみがブロック対象となる。`permission_mode`の値には依存しない。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -528,7 +528,7 @@ class TestPlanModeSkillFirstCheck:
         assert result.stdout == ""
 
     def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
-        """plan mode 外では plan-mode スキル未起動による plan file 編集ブロックは発火しない。"""
+        """plan mode 外でも plan-mode スキル未起動時は plan file 編集をブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -552,8 +552,8 @@ class TestPlanModeSkillFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        assert result.stdout == ""
+        assert result.returncode == 2
+        assert "plan-mode" in result.stderr
 
 
 class TestPlanModeSkillCallSites:
