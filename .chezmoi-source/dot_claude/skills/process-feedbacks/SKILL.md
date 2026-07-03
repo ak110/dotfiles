@@ -64,6 +64,9 @@ feedback全件とTBD回答済みの本文を取得する。
    - 保留ファイルがある場合: 後始末コマンドは実行しない
      （`dotfiles-fb`は次回`show`で自動的に再評価対象として提示する）
    - push後は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従いCI通過を確認してから後始末コマンドを実行する
+   - apply-feedback配下のplan-mode委譲では全工程を遵守すること
+     （工程2〜8。工程2は2.5・2.6・2.7を含む）。
+     auto mode下・単独foreground委譲下でも省略しない
 
 ## ステップ3: サマリー提示
 
