@@ -68,6 +68,10 @@ description: >
 
 ## バージョン更新
 
+本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
+`.chezmoi-source/`配下のchezmoi配布物・`bin/`配下のCLIラッパー・`scripts/`配下のヘルパースクリプトは
+本規定の対象外とし、`agent_toolkit_bump.py`も更新しない。
+
 ### SSOTの2ファイル
 
 `version`／`description`を以下2箇所で完全に同一文字列に保つ。

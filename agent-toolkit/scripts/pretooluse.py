@@ -135,12 +135,47 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "next-cycle-defer",
         re.compile(
-            r"((次(サイクル|セッション|計画)|別セッション)(で|に)(再評価|再検討|対応|送り)"
+            r"((次(サイクル|セッション|計画)|別セッション|独立(の)?セッション)(で|に)?(扱う|再評価|再検討|対応|送り)"
             r"|(スコープ|テーマ|計画)を超える"
+            r"|今回(の)?(スコープ|対応|対象)(外|から外)"
+            r"|(影響(が)?(大き|大)い|影響大)(ため|のため|により)"
             r"|現行アーキテクチャ(の)?(大幅|根本)(な?)(見直し|改修))"
         ),
     ),
 )
+
+
+# scope-escalation違反検出時に代替表現例をエラーメッセージへ添える辞書。
+# 各カテゴリごとに最大2件の代替表現例を保持する。
+# 代替表現の意図: 縮退・先送りに帰結する発話ではなく、規範に即した観測事象の記述・完遂宣言・
+# 根本対応の提示へ書き直すよう誘導する。
+_SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
+    "workload": ("観測可能な技術的制約を根拠に述べる", "同一セッション内で完遂する方針を述べる"),
+    "single-session": ("同一セッション内で完遂する方針を述べる", "計画分割の対象は同一セッション内に限定する"),
+    "approach-confirm": ("技術的最適案を第1選択肢に置いた選択肢を提示する", "自律実行できる範囲は自律決定する"),
+    "split-execution": ("同一セッション内での複数計画ファイル併用として提示する", "並列サブエージェント委譲として提示する"),
+    "context-shortage": ("公式仕様に基づく制約のみを根拠に述べる", "自己推定を根拠とした打診を発行しない"),
+    "defer-onset": ("同一計画内で対処項目として組み込む", "根本原因への対応方針を提示する"),
+    "priority-consult": ("技術的最適順序を第1提案として提示する", "自律判断で順序を決めて着手する"),
+    "scope-volume": ("並列サブエージェント委譲による分担案を提示する", "自律実行で完遂する方針を述べる"),
+    "pattern-conformance": ("既存違反も同一計画内で是正対象として組み込む", "根本対応案を主提案として提示する"),
+    "process-omission": ("各工程の実施義務を果たす", "各工程は実施対象として扱う"),
+    "quality-tradeoff": ("観測可能な技術的不成立の根拠を述べる", "同一計画内で完遂する方針を述べる"),
+    "next-cycle-defer": ("同一計画内で対処項目として組み込む", "同一セッション内で完遂する"),
+}
+
+
+def _format_scope_escalation_alternatives(category: str) -> str:
+    """scope-escalationカテゴリに対応する代替表現例を1行文字列で返す。
+
+    エラーメッセージ末尾へ添えるための整形ヘルパー。
+    対応するカテゴリが存在しない場合は空文字列を返す。
+    """
+    alternatives = _SCOPE_ESCALATION_ALTERNATIVES.get(category)
+    if not alternatives:
+        return ""
+    joined = "／".join(f"『{item}』" for item in alternatives)
+    return f" 代替表現例: {joined}。"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -247,7 +282,8 @@ def main() -> int:
                     f"blocked: AskUserQuestionに縮退誘発フレーズ（カテゴリ: {category}）を検出。"
                     f"agent-toolkit/rules/agent.md「セッション分割・別計画化は禁止する」節を参照。"
                     f"カテゴリ定義は`agent-toolkit:agent-standards`配下"
-                    f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。",
+                    f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。"
+                    f"{_format_scope_escalation_alternatives(category)}",
                 ),
                 file=sys.stderr,
             )
@@ -680,7 +716,8 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
             f" detected in {tool_name}.{field}. Target: {file_path}."
             f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
             f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
-            f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。",
+            f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。"
+            f"{_format_scope_escalation_alternatives(category)}",
             tag="block",
         ),
         file=sys.stderr,

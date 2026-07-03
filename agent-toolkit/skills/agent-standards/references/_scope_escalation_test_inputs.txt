@@ -57,3 +57,10 @@ next-cycle-defer	別セッションで再評価
 next-cycle-defer	別セッションに対応
 next-cycle-defer	スコープを超える
 next-cycle-defer	現行アーキテクチャの大幅な見直し
+next-cycle-defer	独立セッションで扱う
+next-cycle-defer	独立のセッションで扱う
+next-cycle-defer	今回スコープ外
+next-cycle-defer	今回対応外
+next-cycle-defer	今回対象外
+next-cycle-defer	影響が大きいため
+next-cycle-defer	影響大のため
