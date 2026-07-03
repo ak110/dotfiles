@@ -87,7 +87,19 @@
   後始末コマンドがフィードバック管理側へcommit/pushを伴う場合、
   対象リポジトリ側がレビュー指摘で巻き戻るとフィードバック管理側だけが先行公開され整合性が崩れるため
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
-  `agent-toolkit:careful-review`→`git push`→後始末（呼び出し元スキルが指定する具体コマンド）とする
+  `agent-toolkit:careful-review`→`git push`→push後CI通過確認→
+  後始末（呼び出し元スキルが指定する具体コマンド）とする
+  - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
+
+## 後始末コマンドの引数
+
+`dotfiles-fb adopt`・`reject`・`tbd-adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
+
+- `--note`: 採用時は反映概要、不採用時は不採用理由。1行に収める
+- `--commit`: 対象リポジトリの短縮commit hash（`git rev-parse --short HEAD`の値）。
+  管理側リポジトリのhashではなく対象リポジトリのhashを渡す
+- 対象ファイル末尾の`## 処理結果`節は`--note`・`--commit`の指定有無にかかわらず必ず追記される。
+  必須項目として採否と処理日時を記録し、指定された任意項目（`--commit`・`--note`）のみを追加行として書き込む
 
 ## 計画作成移行ルール
 

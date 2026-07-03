@@ -53,12 +53,17 @@ feedback全件とTBD回答済みの本文を取得する。
      いずれも採否確定を管理側へ即時反映するため、
      対象リポジトリ側がレビュー指摘で巻き戻った場合に
      管理側だけが先行公開され整合性が崩れることを避ける
-   - feedback側の採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ...`を実行する
-   - feedback側の不採用ファイルがある場合: `dotfiles-fb reject <filename1> <filename2> ...`を実行する
-   - TBD側の回答済み採用ファイルがある場合: `dotfiles-fb tbd-adopt <filename1> <filename2> ...`を実行する。
+   - feedback側の採用ファイルがある場合: `dotfiles-fb adopt <filename1> <filename2> ... --note <概要> --commit <sha>`を実行する
+   - feedback側の不採用ファイルがある場合:
+     `dotfiles-fb reject <filename1> <filename2> ... --note <不採用理由> --commit <sha>`を実行する
+   - TBD側の回答済み採用ファイルがある場合:
+     `dotfiles-fb tbd-adopt <filename1> <filename2> ... --note <概要> --commit <sha>`を実行する。
      TBD側の不採用フローは本スキルでは扱わない（保留・削除は既存`tbd-edit`で対応する）
+   - `--note`・`--commit`の詳細規定は
+     `agent-toolkit:apply-feedback`スキル配下`references/decision-format.md`「後始末コマンドの引数」節に従う
    - 保留ファイルがある場合: 後始末コマンドは実行しない
      （`dotfiles-fb`は次回`show`で自動的に再評価対象として提示する）
+   - push後は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従いCI通過を確認してから後始末コマンドを実行する
 
 ## ステップ3: サマリー提示
 

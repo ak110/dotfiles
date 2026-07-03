@@ -1,5 +1,6 @@
 """feedback/tbd共通の環境判定・git操作・ファイル名検証ヘルパー。"""
 
+import datetime
 import os
 import pathlib
 import subprocess
@@ -59,6 +60,37 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
     _run_git(["push"], cwd=private_notes)
+
+
+def _stamp_result(
+    path: pathlib.Path,
+    *,
+    outcome: str,
+    now: datetime.datetime,
+    commit: str | None = None,
+    note: str | None = None,
+) -> None:
+    """対象ファイル末尾へ`## 処理結果`節を追記する。
+
+    outcomeは`adopted`・`rejected`・`tbd-adopted`のいずれかを受け取る。
+    commit・noteは省略可能で、指定時のみ対応する箇条書き項目を追加する。
+    """
+    body = path.read_text(encoding="utf-8")
+    if not body.endswith("\n"):
+        body += "\n"
+    lines = [
+        "",
+        "## 処理結果",
+        "",
+        f"- 採否: {outcome}",
+        f"- 処理日時: {now.isoformat(timespec='seconds')}",
+    ]
+    if commit:
+        lines.append(f"- 対応commit: {commit}")
+    if note:
+        lines.append(f"- メモ: {note}")
+    body += "\n".join(lines) + "\n"
+    path.write_text(body, encoding="utf-8")
 
 
 def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:

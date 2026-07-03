@@ -1,13 +1,14 @@
 """adopt/reject/rm/edit/commitサブコマンド実装。"""
 
 import argparse
+import datetime
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
 
-from pytools.dotfiles_fb._common import _commit_and_push, _pull, _subdir, _validate_filename
+from pytools.dotfiles_fb._common import _commit_and_push, _pull, _stamp_result, _subdir, _validate_filename
 
 
 def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> None:
@@ -27,14 +28,18 @@ def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) 
     return paths
 
 
-def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """adoptサブコマンド: 採用としてinboxからadopted/へ移動しcommit・push。"""
+def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+    """adoptサブコマンド: 採用としてinboxからadopted/へ移動しcommit・push。
+
+    移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    """
     inbox_dir = private_notes / "feedback" / "inbox"
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     adopted_dir = _subdir(private_notes, "adopted")
     for p in paths:
+        _stamp_result(p, outcome="adopted", now=now, commit=args.commit, note=args.note)
         shutil.move(p, adopted_dir / p.name)
     count = len(paths)
     _commit_and_push(
@@ -45,14 +50,18 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     print(f"{count}件採用処理: {', '.join(p.name for p in paths)}")
 
 
-def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """rejectサブコマンド: 不採用としてinboxからrejected/へ移動しcommit・push。"""
+def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
+    """rejectサブコマンド: 不採用としてinboxからrejected/へ移動しcommit・push。
+
+    移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    """
     inbox_dir = private_notes / "feedback" / "inbox"
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     rejected_dir = _subdir(private_notes, "rejected")
     for p in paths:
+        _stamp_result(p, outcome="rejected", now=now, commit=args.commit, note=args.note)
         shutil.move(p, rejected_dir / p.name)
     count = len(paths)
     _commit_and_push(

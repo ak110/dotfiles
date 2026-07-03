@@ -117,6 +117,61 @@ class TestAdoptMissing:
         assert "inboxに存在しません" in captured.err
 
 
+class TestAdoptStampWithNoteAndCommit:
+    """adopt: --note・--commit指定時に`## 処理結果`節へ全項目が追記される。"""
+
+    def test_stamp_written_with_all_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="元本文")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                ["adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        assert "## 処理結果" in adopted_text
+        assert "- 採否: adopted" in adopted_text
+        assert "- 処理日時: " in adopted_text
+        assert "- 対応commit: abc1234" in adopted_text
+        assert "- メモ: 採用理由サマリー" in adopted_text
+
+
+class TestAdoptStampWithoutOptional:
+    """adopt: --note・--commit省略時も必須項目のみ追記される。"""
+
+    def test_stamp_written_with_required_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """引数省略時、`## 処理結果`節に採否・処理日時のみ追記され、対応commit・メモ行は含まれない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["adopt", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        assert "## 処理結果" in adopted_text
+        assert "- 採否: adopted" in adopted_text
+        assert "- 処理日時: " in adopted_text
+        assert "- 対応commit: " not in adopted_text
+        assert "- メモ: " not in adopted_text
+
+
 class TestRejectDeletes:
     """rejectサブコマンド: ファイルをinboxからrejected/へ移動する。"""
 
@@ -139,6 +194,30 @@ class TestRejectDeletes:
         assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (rejected)" in commit_cmd
+
+
+class TestRejectStampWithNote:
+    """reject: --note指定時に`## 処理結果`節へメモが追記される。"""
+
+    def test_reject_stamp_note_written(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--note指定時、rejected/配下のファイル末尾に採否・処理日時・メモが追記される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["reject", "fb-001.md", "--note", "不採用理由"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        rejected_text = (notes / "feedback" / "rejected" / "fb-001.md").read_text(encoding="utf-8")
+        assert "## 処理結果" in rejected_text
+        assert "- 採否: rejected" in rejected_text
+        assert "- メモ: 不採用理由" in rejected_text
 
 
 class TestRejectMultiple:

@@ -223,6 +223,38 @@ class TestTbdAdopt:
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: adopt 1 tbd item" in commit_cmd
 
+    def test_stamp_written_with_all_fields(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--note・--commit指定時、tbd/adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                [
+                    "tbd-adopt",
+                    f"{_FIXED_TIMESTAMP}-001.md",
+                    "--note",
+                    "TBD採用メモ",
+                    "--commit",
+                    "xyz9876",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        adopted_text = (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        assert "## 処理結果" in adopted_text
+        assert "- 採否: tbd-adopted" in adopted_text
+        assert "- 処理日時: " in adopted_text
+        assert "- 対応commit: xyz9876" in adopted_text
+        assert "- メモ: TBD採用メモ" in adopted_text
+
     def test_multiple_files_adopted_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,

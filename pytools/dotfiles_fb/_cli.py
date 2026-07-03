@@ -141,11 +141,35 @@ def _build_parser() -> argparse.ArgumentParser:
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。"
     ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    adopt.add_argument(
+        "--note",
+        metavar="TEXT",
+        default=None,
+        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+    )
+    adopt.add_argument(
+        "--commit",
+        metavar="SHA",
+        default=None,
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+    )
 
     reject = sub.add_parser("reject", help="不採用としてinboxからrejected/へ移動しコミット・push")
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。"
     ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    reject.add_argument(
+        "--note",
+        metavar="TEXT",
+        default=None,
+        help="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+    )
+    reject.add_argument(
+        "--commit",
+        metavar="SHA",
+        default=None,
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+    )
 
     rm = sub.add_parser("rm", help="inboxから単純削除しコミット・push")
     rm.add_argument(
@@ -270,6 +294,18 @@ def _build_parser() -> argparse.ArgumentParser:
     tbd_adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するTBDファイル名（1個以上）。"
     ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    tbd_adopt.add_argument(
+        "--note",
+        metavar="TEXT",
+        default=None,
+        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+    )
+    tbd_adopt.add_argument(
+        "--commit",
+        metavar="SHA",
+        default=None,
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+    )
 
     enable_completion(parser)
     return parser
@@ -342,8 +378,8 @@ def main(
         "add": lambda: _cmd_add(args, private_notes, now, home),
         "list": lambda: _cmd_list(args, private_notes),
         "show": lambda: _cmd_show(args, private_notes),
-        "adopt": lambda: _cmd_adopt(args, private_notes),
-        "reject": lambda: _cmd_reject(args, private_notes),
+        "adopt": lambda: _cmd_adopt(args, private_notes, now),
+        "reject": lambda: _cmd_reject(args, private_notes, now),
         "rm": lambda: _cmd_rm(args, private_notes),
         "edit": lambda: _cmd_edit(args, private_notes),
         "commit": lambda: _cmd_commit(private_notes),
@@ -352,7 +388,7 @@ def main(
         "tbd-list": lambda: _cmd_tbd_list(args, private_notes),
         "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),
         "tbd-edit": lambda: _cmd_tbd_edit(args, private_notes),
-        "tbd-adopt": lambda: _cmd_tbd_adopt(args, private_notes),
+        "tbd-adopt": lambda: _cmd_tbd_adopt(args, private_notes, now),
     }
     dispatch[args.subcommand]()
     sys.exit(0)

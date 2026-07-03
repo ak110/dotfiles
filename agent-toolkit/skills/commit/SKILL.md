@@ -93,6 +93,27 @@ Claude Code固有事項として、本体作業に着手する時点で
     `git commit --amend`／`git commit --fixup=`を再実行する
   - 最終応答前に`git status`がcleanであることを確認してから完了を宣言する
 
+## push後のCI通過確認
+
+`git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
+
+- 手順
+  - `git rev-parse HEAD`でpush対象shaを取得する
+  - `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
+  - 各run IDについて`gh run watch <run-id> --exit-status`で完了を待つ
+- run未登録・件数不足時の対処
+  - GitHub側の登録遅延に備え、初回0件時は数十秒待って再取得する
+  - `.github/workflows/`配下（`*.yml`・`*.yaml`両方）のpush起動条件を対象shaの変更パス・ブランチと照合する。
+    対象条件はbranches・paths・branches-ignore・paths-ignoreを含む。
+    起動対象がある想定なのに十分なrunが集まらない場合は原因を特定する
+    - 登録遅延の場合はrun登録・成功まで引き続き待つ
+    - ワークフロー無効化・トリガー未定義などでCIが実行不能な場合は、
+      ユーザーの明示判断（当該pushをCI通過確認なしで完了扱いとしてよい確認）を得てから完了扱いとする
+  - 判定困難な場合はユーザーへ確認する
+- CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
+- `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
+- GitHub Actionsが動作しないリポジトリ（feedback管理側のprivate-notes等）は本節の対象外とする
+
 ## コミットメッセージとリリース
 
 コミットメッセージ第1行（`git log --oneline`等で表示される行）は「件名」と呼ぶ。

@@ -14,6 +14,7 @@ from pytools.dotfiles_fb._common import (
     _iter_inbox_entries,
     _max_existing_seq,
     _pull,
+    _stamp_result,
     _validate_filename,
 )
 from pytools.dotfiles_fb._formatters import _parse_target_repo, _shorten_home
@@ -199,10 +200,11 @@ def _resolve_tbd_targets(filenames: list[str], tbd_inbox: pathlib.Path) -> list[
     return paths
 
 
-def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """tbd-adoptサブコマンド: 回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push。
 
     全ファイルの存在を移動前に一括検証し、途中失敗による部分移動を防ぐ。
+    移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
     """
     tbd_inbox = private_notes / "tbd" / "inbox"
     tbd_adopted = private_notes / "tbd" / "adopted"
@@ -214,6 +216,7 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path) -> Non
     moved: list[str] = []
     rel_paths: list[str] = []
     for src in paths:
+        _stamp_result(src, outcome="tbd-adopted", now=now, commit=args.commit, note=args.note)
         dst = tbd_adopted / src.name
         src.rename(dst)
         moved.append(src.name)
