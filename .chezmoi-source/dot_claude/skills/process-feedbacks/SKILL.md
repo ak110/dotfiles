@@ -69,6 +69,15 @@ feedback全件とTBD回答済みの本文を取得する。
 
 apply-feedback完了後、採用N件・不採用N件・保留N件のサマリーをユーザーに提示する。
 
+## ステップ4: 振り返り工程
+
+サマリー提示後、`agent-toolkit:session-review`スキルと
+`session-review-dotfiles`スキルの両方を起動して振り返り工程を完遂する。
+振り返り工程完遂前に完了を示す応答を発行しない。
+`process-feedbacks-loop`経由で起動された場合も本ステップを省略しない
+（`process-feedbacks-loop`側の起動プロンプトが同旨の指示を含む場合、
+本ステップと同一要求を扱う。SSOTは本ステップとする）。
+
 ## 連携スキル
 
 `process-feedbacks-loop`はステップ1で使う`dotfiles-fb list --status=answered`出力の
