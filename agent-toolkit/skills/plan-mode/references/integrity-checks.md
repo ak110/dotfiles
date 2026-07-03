@@ -39,6 +39,16 @@
   - 照合対象: 地の文・書式例（コードフェンス内）・AskUserQuestion条件文・置換指示の旧→新文面の各箇所
   - 確定用語そのままで転記されているか、また確定用語と異なる派生表現（語尾拡張・修飾語付与）が
     地の文に混入していないかを照合する
+- 先送り・縮退表現の混入検査:
+  計画ファイル本文全域を対象に、
+  `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`が定める
+  縮退誘発カテゴリの代表フレーズが混入していないか照合する
+  - 検出時は該当行とカテゴリ識別子（`next-cycle-defer`・`defer-onset`・`pattern-conformance`・
+    `process-omission`・`quality-tradeoff`等）を報告する。
+    フレーズ本文の指摘文への転記は避ける（コンテキスト汚染の回避）
+  - 違反許容領域は`## 背景`配下の原文転記領域と、`## 変更内容`配下でフレーズ集自体
+    （`scope-escalation-phrases.md`等）の改訂差分として旧・新文面を転記する箇所とする
+  - 禁止事項の一般名での説明・参照（「先送り・縮退表現を書かない」等の規範言及）は違反対象外とする
 
 メイン側担当部分:
 
