@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from pytools.dotfiles_fb import _cli, _formatters
+from pytools.dotfiles_fb import _add, _cli, _formatters
 
 _GitCall = dict[str, Any]
 
@@ -275,6 +275,163 @@ class TestAddRepoPathExpansion:
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
+
+
+class TestParseLeadingFrontmatter:
+    """_parse_leading_frontmatterの単体テスト（frontmatter判定と本文分離を検証する）。"""
+
+    def test_leading_frontmatter_overrides_target_repo(self) -> None:
+        """先頭frontmatterの`target_repo`がパース結果に含まれる。"""
+        message = "---\ntarget_repo: github.com/x/y\n---\n\n本文"
+        fm, body = _add._parse_leading_frontmatter(message)  # pylint: disable=protected-access  # noqa: SLF001
+        assert fm == {"target_repo": "github.com/x/y"}
+        assert body == "本文"
+
+    def test_leading_frontmatter_source_priority(self) -> None:
+        """先頭frontmatterに`source`が含まれる場合はパース結果に含まれる。"""
+        message = "---\ntarget_repo: github.com/x/y\nsource: session-review\n---\n\n本文"
+        fm, body = _add._parse_leading_frontmatter(message)  # pylint: disable=protected-access  # noqa: SLF001
+        assert fm == {"target_repo": "github.com/x/y", "source": "session-review"}
+        assert body == "本文"
+
+    def test_without_frontmatter_returns_original(self) -> None:
+        """先頭がfrontmatterでない場合は空dictと元メッセージを返す。"""
+        message = "普通の本文\n2行目"
+        fm, body = _add._parse_leading_frontmatter(message)  # pylint: disable=protected-access  # noqa: SLF001
+        assert not fm
+        assert body == message
+
+    def test_body_horizontal_rule_not_treated_as_frontmatter(self) -> None:
+        """本文中の水平線があるメッセージはfrontmatterと解釈せず本文が保持される。"""
+        message = "---\n\n本文開始\n\n---\n\n本文継続"
+        fm, body = _add._parse_leading_frontmatter(message)  # pylint: disable=protected-access  # noqa: SLF001
+        assert not fm
+        assert body == message
+
+    def test_frontmatter_without_closing_returns_original(self) -> None:
+        """先頭が3ハイフンで始まっても閉じ区切りがない場合は元メッセージを返す。"""
+        message = "---\ntarget_repo: github.com/x/y\n本文継続なし"
+        fm, body = _add._parse_leading_frontmatter(message)  # pylint: disable=protected-access  # noqa: SLF001
+        assert not fm
+        assert body == message
+
+
+class TestAddFrontmatterOverride:
+    """addサブコマンド: メッセージ先頭のfrontmatterがCLIオプションより優先されること。"""
+
+    def test_message_frontmatter_overrides_cli_target_repo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """メッセージ先頭frontmatterの`target_repo`がCLIオプションより優先される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "feedback" / "inbox"
+        files = list(inbox.iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/other/repo" in content
+        assert "source: session-review" in content
+        body = content.split("---\n\n", 1)[1]
+        assert body == "テスト本文\n"
+
+    def test_multiple_messages_mixed_frontmatter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数メッセージ混在時（一部のみfrontmatter付き）に各メッセージが独立判定される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        msg_with_fm = "---\ntarget_repo: github.com/override/repo\n---\n\nfm付き本文"
+        msg_plain = "frontmatter無し本文"
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "feedback" / "inbox"
+        files = sorted(inbox.iterdir())
+        assert len(files) == 2
+        content_first = files[0].read_text(encoding="utf-8")
+        content_second = files[1].read_text(encoding="utf-8")
+        assert "target_repo: github.com/override/repo" in content_first
+        assert content_first.split("---\n\n", 1)[1] == "fm付き本文\n"
+        assert "target_repo: github.com/example/myrepo" in content_second
+        assert content_second.split("---\n\n", 1)[1] == msg_plain + "\n"
+
+    def test_frontmatter_target_repo_only_falls_back_to_cli_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """frontmatterに`target_repo`のみで`source`未指定の場合、CLIオプション値を採用する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "feedback" / "inbox"
+        files = list(inbox.iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/other/repo" in content
+        assert "source: cli-source" in content
 
 
 class TestListEmpty:

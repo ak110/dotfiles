@@ -65,13 +65,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "messages",
         metavar="MESSAGE",
         nargs="*",
-        help="投入するフィードバックメッセージ（省略時は$EDITORで編集する）。",
+        help=(
+            "投入するフィードバックメッセージ（省略時は$EDITORで編集する）。"
+            "メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。"
+        ),
     )
     add.add_argument(
         "--source",
         metavar="NAME",
         default=None,
-        help="投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-review）。",
+        help=(
+            "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-review）。"
+            "メッセージ先頭のfrontmatterに source がある場合は本オプションより優先する。"
+        ),
     )
 
     list_ = sub.add_parser("list", help="feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する")
@@ -148,7 +154,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
     edit.add_argument(
-        "filename", metavar="FILENAME", help="編集対象のinboxファイル名。"
+        "filename",
+        metavar="FILENAME",
+        nargs="?",
+        default=None,
+        help="編集対象のinboxファイル名。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
     ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
 
     sub.add_parser(

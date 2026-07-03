@@ -17,13 +17,43 @@ from pytools.dotfiles_fb._formatters import _shorten_home
 from pytools.dotfiles_fb._repo import _resolve_repo_id
 
 
+def _parse_leading_frontmatter(message: str) -> tuple[dict[str, str], str]:
+    """メッセージ先頭のYAML frontmatterを解析してキー値と残り本文を返す。
+
+    先頭が3ハイフンで始まらない場合は空dictと元メッセージを返す。
+    frontmatter範囲は先頭区切りから次の区切りまで。
+    範囲内に「キー: 値」形式でない行が含まれる場合は本文中の水平線との衝突と判定し、
+    frontmatterと解釈せず空dictと元メッセージを返す（サイレントな本文欠落を予防する）。
+    """
+    lines = message.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}, message
+    body_start = None
+    parsed: dict[str, str] = {}
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            body_start = i + 1
+            break
+        if ":" not in line:
+            return {}, message
+        key, _, value = line.partition(":")
+        parsed[key.strip()] = value.strip()
+    if body_start is None:
+        return {}, message
+    body = "\n".join(lines[body_start:]).lstrip("\n")
+    return parsed, body
+
+
 def _cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
     now: datetime.datetime,
     home: pathlib.Path,
 ) -> None:
-    """addサブコマンド: メッセージをinboxへ投入してcommit・push。"""
+    """addサブコマンド: メッセージをinboxへ投入してcommit・push。
+
+    各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
+    """
     target_repo = _resolve_repo_id(args.repo_path)
     messages = list(args.messages)
     if not messages:
@@ -35,11 +65,14 @@ def _cmd_add(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     inbox_dir = _subdir(private_notes, "inbox")
     counter = _max_existing_seq(inbox_dir, timestamp) + 1
-    source_line = f"source: {args.source}\n" if args.source else ""
     generated: list[str] = []
     for message in messages:
+        fm, body = _parse_leading_frontmatter(message)
+        item_target_repo = fm.get("target_repo", target_repo)
+        item_source = fm.get("source", args.source)
+        item_source_line = f"source: {item_source}\n" if item_source else ""
         filename = f"{timestamp}-{counter:03d}.md"
-        content = f"---\ntarget_repo: {target_repo}\n{source_line}---\n\n{message}\n"
+        content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}---\n\n{body}\n"
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         generated.append(filename)
         counter += 1

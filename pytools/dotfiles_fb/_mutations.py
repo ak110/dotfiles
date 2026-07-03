@@ -81,14 +81,28 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """editサブコマンド: $EDITORで対象ファイルを編集しcommit・push（差分なしなら無動作）。"""
+    """editサブコマンド: $EDITORで対象ファイルを編集しcommit・push（差分なしなら無動作）。
+
+    無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
+    """
     editor = os.environ.get("EDITOR")
     if not editor:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
         sys.exit(1)
     inbox_dir = private_notes / "feedback" / "inbox"
-    path = _validate_filename(args.filename, inbox_dir)
-    _pull(private_notes)
+    if args.filename is None:
+        _pull(private_notes)
+        candidates = sorted(
+            (p for p in inbox_dir.iterdir() if p.suffix == ".md" and p.is_file()),
+            key=lambda p: p.name,
+        )
+        if not candidates:
+            print("inboxが空のため編集対象がありません。", file=sys.stderr)
+            sys.exit(2)
+        path = candidates[-1]
+    else:
+        path = _validate_filename(args.filename, inbox_dir)
+        _pull(private_notes)
     if not path.exists():
         print(f"inboxに存在しません: {path.name}", file=sys.stderr)
         sys.exit(2)

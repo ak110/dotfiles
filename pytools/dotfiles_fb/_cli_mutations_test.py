@@ -324,6 +324,58 @@ class TestEditNoChanges:
         assert "差分なし" in captured.out
 
 
+class TestEditNoArg:
+    """editサブコマンド: 無引数時はinbox配下のファイル名順最大値（最終追加分）を対象とする。"""
+
+    def test_edit_no_arg_selects_max_filename(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数ファイル存在時はファイル名順の最大値（最終追加分）が編集対象になる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "20240101-100000-001.md", body="旧")
+        latest = _write_feedback_file(notes, "20240201-100000-001.md", body="編集前")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        git_calls: list[_GitCall] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[0] == "fake-editor":
+                assert cmd[1] == str(latest)
+                latest.write_text("編集後\n", encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["edit"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
+        assert "chore: edit feedback item" in commit_cmd
+
+    def test_edit_no_arg_exits_on_empty_inbox(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox空の場合はexit 2でstderr案内を出力する。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["edit"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "inbox" in captured.err
+
+
 class TestPathTraversalRejection:
     """パストラバーサル系の不正引数は早期に拒否されること。"""
 
