@@ -6,6 +6,7 @@ description: >
 model: inherit
 skills:
   - agent-toolkit:plan-impl
+  - agent-toolkit:spec-driven-impl
 user-invocable: false
 ---
 
@@ -76,7 +77,27 @@ user-invocable: false
 
 ## 出力
 
-本文は呼び出し元`agent-toolkit:spec-driven-impl`が検収できる形式で返す。
-正常完了報告には、計画ファイルの`## 変更内容`の全項目を列挙したチェックリスト形式の`changed`欄を含める。
+本文は呼び出し元`agent-toolkit:spec-driven-impl`が検収できる形式で返す。該当しない項目は省略する。
+
+```markdown
+status: completed | needs_escalation
+summary: {1文の結果}
+changed:
+- [x] {計画`## 変更内容`の項目名1} — `path/to/file`
+- [x] {計画`## 変更内容`の項目名2} — `path/to/file`
+- [ ] {計画`## 変更内容`の項目名3} — 未着手（needs_escalation時のみ）
+verification:
+- `{command}` — pass | fail
+blockers:
+- {続行不能の理由}
+escalation_reason: {エスカレーション原因・該当ステップ・TBD.mdの集約Qブロック識別子}
+tbd_summary:
+- {TBD.md追記内容の要約}
+```
+
+`changed`欄は計画ファイルの`## 変更内容`の全項目を列挙したチェックリスト形式とし、
 各項目の完了状態をチェックボックス（`[x]`・`[ ]`）で示す。
-TBD.md追記内容の要約も含める。
+`escalation_reason`は「重複防止」サブ節の基準で3回以上検知した同一原因事象を単独Qブロックにまとめて
+`needs_escalation`を返す場合に記載する。
+記載内容はエスカレーション原因・該当ステップ・TBD.mdの集約Qブロック識別子とする。
+`tbd_summary`にはTBD.md追記内容の要約を含める。

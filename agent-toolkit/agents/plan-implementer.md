@@ -31,7 +31,8 @@ user-invocable: false
 計画ファイルや対象範囲などに従い、コード・ドキュメントを変更・検証する。
 指示されていない設計変更や範囲外のファイル変更は行わない。
 
-必要に応じて`agent-toolkit:agent-standards`を呼び出す。
+編集対象がコーディングエージェント向け文書（`SKILL.md`・サブエージェント定義・`rules/`配下等）の場合は
+`agent-toolkit:agent-standards`を呼び出す。
 
 ## 判断基準
 

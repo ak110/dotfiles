@@ -32,7 +32,10 @@ user-invocable: false
 ## 共通判断基準
 
 - 整合性確認に必要なスキルは必要時に自分で呼び出す
-  - 単体品質の指摘には立ち入らないため、`agent-toolkit:*-standards`などのスキルは呼び出し不要
+  - 対象がコードの場合、言語仕様への依存を照合する必要が生じた場合に限り`agent-toolkit:coding-standards`を呼び出す
+  - 対象がコーディングエージェント向け文書の場合、規範定義の参照が必要になった場合に限り
+    `agent-toolkit:agent-standards`を呼び出す
+  - 単体品質の指摘には立ち入らないため、上記に該当しない限り`agent-toolkit:*-standards`などのスキルは呼び出し不要
 - Bashは`git diff`、`git status`、`git log`、`ls`、`rg`相当の読み取り系操作に限定する
 - gitコミット・pushは行わない（コミットはメインが直接行う）
 - 重大度ラベルは`致命的`・`重大`・`軽微`の3段階固定とする。
