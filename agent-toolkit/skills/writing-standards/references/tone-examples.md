@@ -6,9 +6,7 @@
 
 ## 運用注記
 
-- メインエージェントから直接Readしない。コンテキスト汚染を避けるため、
-  確認はExploreサブエージェント経由で行い、修正が必要な場合は`plan-implementer`経由で実施する
-- `plan-impl-reviewer`はReadツールで直接読み込む（日本語表現観点で参照する）
+- 本ファイルの参照経路は`agent-toolkit:writing-standards`「口語表現チェック」節に集約する。
   読み込んだ悪い例の文面は指摘テキストへ転記しない
 - 口語表現チェックの検査対象から除外される（`pyproject.toml`の`[tool.pyfltr] extend-exclude`で対象パスを列挙する運用）
   そのため悪い例には辞書検出語が含まれてよい
