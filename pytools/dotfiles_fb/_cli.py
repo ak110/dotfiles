@@ -14,7 +14,7 @@
 - enable: feedback-inboxフラグファイルを作成する
 - disable: feedback-inboxフラグファイルを削除する
 - status: feedback-inboxの有効状態を判定する（正常0・無効1）
-- process-loop: 対象リポジトリのinboxが0件になるまで`claude /process-feedbacks`を繰り返し起動する
+- process-loop: 対象リポジトリのfeedback消化を`claude /process-feedbacks-loop`スキルへ委譲する
 - tbd-add: 新規TBD項目を追加する
 - tbd-list: TBD項目一覧を状態フィルターで出力する
 - tbd-answer: 未回答のTBD項目へ回答を書き込む
@@ -205,14 +205,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     loop = sub.add_parser(
         "process-loop",
-        help="対象リポジトリのinbox件数が0件になるまで`claude /process-feedbacks`を繰り返し起動する",
-    )
-    loop.add_argument(
-        "--max-iterations",
-        type=int,
-        default=None,
-        metavar="N",
-        help="反復上限回数（既定: 無制限）。",
+        help="対象リポジトリのfeedback消化を`claude /process-feedbacks-loop`スキルへ委譲する",
     )
     loop.add_argument(
         "--target-repo",
@@ -383,7 +376,7 @@ def main(
         "rm": lambda: _cmd_rm(args, private_notes),
         "edit": lambda: _cmd_edit(args, private_notes),
         "commit": lambda: _cmd_commit(private_notes),
-        "process-loop": lambda: _cmd_process_loop(args, private_notes),
+        "process-loop": lambda: _cmd_process_loop(args),
         "tbd-add": lambda: _cmd_tbd_add(args, private_notes, now, home),
         "tbd-list": lambda: _cmd_tbd_list(args, private_notes),
         "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),

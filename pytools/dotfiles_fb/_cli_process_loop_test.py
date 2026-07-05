@@ -13,77 +13,28 @@ from typing import Any
 import pytest
 
 from pytools.dotfiles_fb import _cli, _repo
-from pytools.dotfiles_fb._cli_test import (
-    _setup_flag_and_notes,
-    _write_feedback_file,
-)
+from pytools.dotfiles_fb._cli_test import _setup_flag_and_notes
 
 
-class TestProcessLoopEmptyInbox:
-    """process-loopサブコマンド: 対象リポジトリのinbox空時はclaude未起動でexit 0。"""
+class TestProcessLoopInvokesLoopSkill:
+    """process-loopサブコマンド: claudeを単発起動しprocess-feedbacks-loopスキルへ委譲する。"""
 
-    def test_empty_inbox_skips_claude(
+    def test_invokes_claude_once_with_loop_skill(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対象リポジトリのinboxが最初から空ならclaudeが一度も呼ばれない。"""
+        """claudeが`/process-feedbacks-loop <local_path_str>`引数で1回だけ起動されること。"""
         _setup_flag_and_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        claude_called = False
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            nonlocal claude_called
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/foo.git\n" if kwargs.get("text") else b"https://github.com/example/foo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd[:1] == ["claude"]:
-                claude_called = True
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "対象リポジトリのinboxは空です" in captured.out
-        assert not claude_called
-
-
-class TestProcessLoopSingleIteration:
-    """process-loopサブコマンド: claude起動で対象リポジトリのinboxが空になれば1回で終了。"""
-
-    def test_single_iteration_when_inbox_drains(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """claudeのfakeが対象リポジトリのinboxを空にすると1回の反復でループを抜ける。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        inbox_path = _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        claude_calls: list[list[str]] = []
-
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
         expected_local_path = str(myrepo.resolve())
+        claude_calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/foo.git\n" if kwargs.get("text") else b"https://github.com/example/foo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
             if cmd[:1] == ["claude"]:
                 claude_calls.append(list(cmd))
-                inbox_path.unlink()
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -93,49 +44,9 @@ class TestProcessLoopSingleIteration:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks", expected_local_path]]
+        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks-loop", expected_local_path]]
         captured = capsys.readouterr()
-        assert "[反復 1] 対象リポジトリのinbox残1件" in captured.out
-        assert "対象リポジトリのinboxが空になりました（1回実行" in captured.out
-
-
-class TestProcessLoopMaxIterations:
-    """process-loopサブコマンド: --max-iterationsで反復上限を強制。"""
-
-    def test_max_iterations_caps_loop(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """claudeが対象リポジトリのinboxを空にしなくても上限回数で停止する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        claude_calls: list[list[str]] = []
-
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/foo.git\n" if kwargs.get("text") else b"https://github.com/example/foo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd[:1] == ["claude"]:
-                claude_calls.append(list(cmd))
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", "--max-iterations=2", f"--target-repo={myrepo}"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert len(claude_calls) == 2
-        captured = capsys.readouterr()
-        assert "反復上限2回に達しました（対象リポジトリのinbox残1件）" in captured.out
+        assert "claudeを起動しprocess-feedbacks-loopスキルへ委譲します" in captured.out
 
 
 class TestProcessLoopClaudeFailure:
@@ -148,18 +59,12 @@ class TestProcessLoopClaudeFailure:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """claudeのfakeが非0を返すとprocess-loopは同じexit codeで停止する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _setup_flag_and_notes(tmp_path)
 
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/foo.git\n" if kwargs.get("text") else b"https://github.com/example/foo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
             if cmd[:1] == ["claude"]:
                 return subprocess.CompletedProcess(cmd, returncode=42, stdout=b"", stderr=b"")
             empty: Any = "" if kwargs.get("text") else b""
@@ -173,86 +78,6 @@ class TestProcessLoopClaudeFailure:
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
         assert "claudeがexit code 42で終了しました" in captured.err
-
-
-class TestProcessLoopTargetRepoFilter:
-    """process-loopサブコマンド: --target-repoで対象外フィードバックは件数に含めない。"""
-
-    def test_target_repo_filters_count(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """対象外リポジトリのフィードバックは件数判定から除外され、claudeは起動しない。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-other.md", target_repo="github.com/example/other")
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        claude_called = False
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            nonlocal claude_called
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/foo.git\n" if kwargs.get("text") else b"https://github.com/example/foo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd[:1] == ["claude"]:
-                claude_called = True
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "対象リポジトリのinboxは空です" in captured.out
-        assert not claude_called
-
-
-class TestProcessLoopDefaultUsesGitToplevel:
-    """process-loopサブコマンド: --target-repo未指定時はgit rev-parseで現リポジトリを取得する。"""
-
-    def test_default_target_repo_resolved_via_git(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """--target-repo未指定なら`git rev-parse --show-toplevel`を呼び、リモートURLで件数判定し結果をclaude引数に渡す。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        autorepo = tmp_path / "autorepo"
-        autorepo.mkdir()
-        expected_local_path = str(autorepo.resolve())
-        inbox_path = _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/auto")
-        claude_calls: list[list[str]] = []
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{autorepo}\n" if kwargs.get("text") else f"{autorepo}\n".encode()
-                stderr: Any = "" if kwargs.get("text") else b""
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stderr)
-            if cmd == ["git", "-C", str(autorepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/auto.git\n" if kwargs.get("text") else b"https://github.com/example/auto.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            if cmd[:1] == ["claude"]:
-                claude_calls.append(list(cmd))
-                inbox_path.unlink()
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks", expected_local_path]]
 
 
 class TestNormalizeRemoteUrl:
