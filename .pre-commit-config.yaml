@@ -79,6 +79,11 @@ repos:
         types_or: [python, markdown, toml, shell, bash]
         require_serial: true
         language: system
+      - id: check-doc-size
+        name: agent-toolkitドキュメントサイズ上限検査
+        entry: uv run --no-project agent-toolkit/scripts/check_doc_size.py
+        language: system
+        files: '^agent-toolkit/(skills/[^/]+/(SKILL\.md|references/.*\.md)|rules/.*\.md)$'
       - id: check-line-width
         name: 127幅違反検査
         entry: uv run --no-project agent-toolkit/skills/writing-standards/scripts/check_line_width.py

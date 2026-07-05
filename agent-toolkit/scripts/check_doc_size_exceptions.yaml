@@ -1,0 +1,6 @@
+# agent-toolkit文書サイズ上限（219行）の例外ファイル一覧。
+# 除外理由と縮減計画をコメントで併記する。
+exempt:
+  # 既存超過（277行）。トーン対比例が肥大しているため、次期改訂で
+  # references/tone-examples-*.md への分割または頻度の低い例の間引きで縮減予定。
+  - agent-toolkit/skills/writing-standards/references/tone-examples.md

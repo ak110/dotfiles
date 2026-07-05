@@ -26,6 +26,7 @@ FILES=(
     agent.md
     claude-code.md
     styles.md
+    terminology.md
 )
 
 STAGE_DIR=""

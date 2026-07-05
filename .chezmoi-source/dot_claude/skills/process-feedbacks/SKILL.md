@@ -37,11 +37,14 @@ feedback全件とTBD回答済みの本文を取得する。
 ## ステップ2: 全件をapply-feedbackへ一括委譲
 
 1. 対象リポジトリのディレクトリへカレントを移す
-2. 全ファイル本文（frontmatter保持）を結合した1つのmarkdownを
-   `agent-toolkit:apply-feedback`スキルへ渡して委譲する
-   - 結合形式は各ファイル本文の連結とし、各ファイルの開始位置を区切るため
-     `## <filename>`形式の見出しを各本文の前に置く
-   - frontmatterは保持することで`source: session-review`などの投入元情報をapply-feedback側で参照できるようにする
+2. ステップ1で取得した`dotfiles-fb show`の出力を
+   `agent-toolkit:apply-feedback`スキルへそのまま渡して委譲する
+   - `dotfiles-fb show --all`の出力は既に`### <filename>`見出しで区切られた結合形式であり、
+     追加の結合・整形は不要とする
+   - `~/private-notes/feedback/inbox/`配下への直接アクセス（`Read`・`cat`・`ls`等）は禁止する
+     （管理側の抽象化を破り、Windows等の環境依存で表示が壊れる可能性もあるため）
+   - frontmatterは出力に保持されており`source: session-review`などの投入元情報を
+     apply-feedback側で参照できる
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装・コミット・後始末（adopt/reject）まで担う
    - 後始末（adopt/reject）では、`dotfiles-fb`が採否確定ファイルを履歴として保持する
    - 全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）

@@ -26,6 +26,7 @@ $files = @(
     'agent.md'
     'claude-code.md'
     'styles.md'
+    'terminology.md'
 )
 
 function Invoke-Download {
