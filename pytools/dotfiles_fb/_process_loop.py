@@ -15,9 +15,10 @@ from pytools.dotfiles_fb._common import _count_pending_entries, _pull
 from pytools.dotfiles_fb._repo import _resolve_local_worktree, _resolve_repo_id
 
 # claudeがexit-sessionスキル経由でSIGTERMを受けて終了する場合のexit codeを含む正常終了集合。
-# 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当を表す
+# 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当、
+# 143はシェル経由でSIGTERM終了した場合の128+15を表す
 # （プラットフォーム分岐なしの緩い判定で十分と判断）。
-_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15})
+_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 
 # 主待機のタイムアウト秒（他端末からのfeedback投入を`git pull`で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0

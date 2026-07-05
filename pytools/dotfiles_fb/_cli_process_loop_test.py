@@ -221,14 +221,14 @@ class TestProcessLoopPromptAndEnv:
 class TestProcessLoopClaudeReturncode:
     """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""
 
-    @pytest.mark.parametrize("returncode", [0, -15, 15])
+    @pytest.mark.parametrize("returncode", [0, -15, 15, 143])
     def test_normal_returncode_continues_loop(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         returncode: int,
     ) -> None:
-        """`returncode`が`0`・`-15`・`15`のいずれかなら反復継続し、
+        """`returncode`が`0`・`-15`・`15`・`143`のいずれかなら反復継続し、
         次の待機で`KeyboardInterrupt`が送出されると正常終了すること。
         """
         _setup_flag_and_notes(tmp_path)
