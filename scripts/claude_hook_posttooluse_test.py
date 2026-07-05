@@ -306,6 +306,46 @@ class TestExtensionPendingRecording:
         assert "session_review_extension_pending" not in _read_state(tmp_path, sid)
 
 
+class TestAutonomousExitSkillRecording:
+    """`agent-toolkit:exit-session`スキル呼び出しを`autonomous_exit_invoked`へ記録する。"""
+
+    _SKILL = "agent-toolkit:exit-session"
+
+    def test_records_invocation_falls_through_to_extension_pending(self, tmp_path: pathlib.Path):
+        """`agent-toolkit:exit-session`は`_AGENT_TOOLKIT_PREFIX`分岐へフォールスルーする。
+
+        `autonomous_exit_invoked`に加え`session_review_extension_pending`も真になる。
+        """
+        env = _state_env(tmp_path)
+        sid = "exit-rec-fallthrough"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": self._SKILL},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert state.get("autonomous_exit_invoked") is True
+        assert state.get("session_review_extension_pending") is True
+
+    def test_other_skill_does_not_set_flag(self, tmp_path: pathlib.Path):
+        env = _state_env(tmp_path)
+        sid = "exit-other-skill"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("autonomous_exit_invoked") is not True
+
+
 class TestGeneralBehavior:
     """共通の振る舞い。"""
 

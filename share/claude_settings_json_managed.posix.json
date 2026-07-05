@@ -30,6 +30,10 @@
           {
             "type": "command",
             "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'"
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py; exit 0'"
           }
         ]
       }

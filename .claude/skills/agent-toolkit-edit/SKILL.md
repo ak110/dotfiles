@@ -156,7 +156,7 @@ version bumpを伴う計画では、
 `agent-toolkit`プラグインのフックは、セッション単位の状態ファイルを介してPreToolUseとPostToolUse間で情報を共有する。
 パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 規則の一般論は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の「セッション状態ファイル」節に従う。
-フラグを追加・変更する際は本表を更新し、書き込み元と読み取り元の対応関係を保つ。
+フラグを追加・変更する際は本一覧を更新し、書き込み元と読み取り元の対応関係を保つ。
 
 - `test_executed`: PostToolUse(Bash)が記録し、`git commit`未検証警告の抑制に使う
 - `git_status_checked`: PostToolUse(Bash)が`git status` / `git log` / `git diff`を観測して記録
@@ -172,6 +172,12 @@ version bumpを伴う計画では、
 - `session_review_extension_pending`: dotfiles個人フックPostToolUseが`agent-toolkit:*`または
   `session-review-dotfiles`スキル使用を記録し、配布物Stop hook（`stop_advisor.py`）が重複送出を抑制する
   - 書き込み元はdotfiles個人フック、読み取り元は配布物（個人フック不在時は未設定状態でも従来通り動作する）
+- `autonomous_exit_invoked`: dotfiles個人フックPostToolUseが`agent-toolkit:exit-session`スキル呼び出しを記録する。
+  dotfiles個人フックStop hook（`claude_hook_autonomous_exit.py`）が`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での
+  exit-session未呼出判定に使う
+  - リセットは行わない
+  - 新規セッションは別`session_id`の新規状態ファイルを使うため旧フラグは再読み取りされない
+  - 旧ファイル自体は`/tmp`配下に残留し得る
 
 ## 編集手順
 

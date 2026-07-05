@@ -22,6 +22,11 @@ dotfilesローカル配布対象外のため`agent-toolkit`プラグイン本体
   `session_review_extension_pending`キーへ`True`を書き込む。
   配布物Stop hook（`agent-toolkit/scripts/stop_advisor.py`）が参照し、真の場合は
   自身の振り返り誘導を抑制する（個人フックStop hookとの誘導重複を防ぐため）。
+- `agent-toolkit:exit-session`スキル: `autonomous_exit_invoked`キーへ`True`を書き込む。
+  個人フックStop hook（`claude_hook_autonomous_exit.py`）が参照し、
+  `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下でのexit-session未呼出判定に使う。
+  記録後は`_AGENT_TOOLKIT_PREFIX`分岐へフォールスルーし、
+  `session_review_extension_pending`記録も併せて行う。
 
 exit codeは常に0（PostToolUseはブロック不可）。
 """
@@ -40,6 +45,7 @@ from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-i
 
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
 _SESSION_REVIEW_DOTFILES_SKILL = "session-review-dotfiles"
+_AUTONOMOUS_EXIT_SKILL = "agent-toolkit:exit-session"
 _AGENT_TOOLKIT_PREFIX = "agent-toolkit:"
 
 
@@ -47,6 +53,13 @@ def _set_extension_pending(state: dict) -> dict | None:
     if state.get("session_review_extension_pending") is True:
         return None
     state["session_review_extension_pending"] = True
+    return state
+
+
+def _set_autonomous_exit_invoked(state: dict) -> dict | None:
+    if state.get("autonomous_exit_invoked") is True:
+        return None
+    state["autonomous_exit_invoked"] = True
     return state
 
 
@@ -94,6 +107,10 @@ def main() -> int:
         update_state(session_id, _set_review_invoked)
         update_state(session_id, _set_extension_pending)
         return 0
+
+    if skill == _AUTONOMOUS_EXIT_SKILL:
+        update_state(session_id, _set_autonomous_exit_invoked)
+        # `_AGENT_TOOLKIT_PREFIX`分岐（session_review_extension_pending記録）へフォールスルーする。
 
     if skill.startswith(_AGENT_TOOLKIT_PREFIX):
         update_state(session_id, _set_extension_pending)

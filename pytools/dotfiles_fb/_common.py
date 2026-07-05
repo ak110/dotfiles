@@ -156,6 +156,22 @@ def _is_tbd_answered(text: str) -> bool:
     return False
 
 
+def _count_pending_entries(
+    private_notes: pathlib.Path,
+    target_repo: str | None = None,
+) -> int:
+    """`process-loop`常駐ループ専用: feedback件数とTBD回答済み件数の合計を返す。
+
+    `--type`・`--status`フィルタは持たず、常駐ループの反復判定に必要な合計のみを返す
+    （`_list.py`の`_cmd_list`が持つフィルタ分岐との共通化は行わない）。
+    """
+    feedback_dir = private_notes / "feedback" / "inbox"
+    feedback_count = sum(1 for _ in _iter_inbox_entries(feedback_dir, target_repo))
+    tbd_dir = private_notes / "tbd" / "inbox"
+    tbd_count = sum(1 for _, _, text in _iter_inbox_entries(tbd_dir, target_repo) if _is_tbd_answered(text))
+    return feedback_count + tbd_count
+
+
 def _count_feedback(feedback_dir: pathlib.Path) -> int:
     """指定ディレクトリ配下の`*.md`ファイル件数を返す。"""
     if not feedback_dir.exists():

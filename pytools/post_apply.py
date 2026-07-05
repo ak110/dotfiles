@@ -60,6 +60,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/feedback-add"),
         # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先ディレクトリを削除する。
         Path("skills/process-feedback"),
+        # 現在は dotfiles-fb process-loop CLI が常駐ループを担うため、
+        # 旧 process-feedbacks-loop スキルの配布先ディレクトリを削除する。
+        Path("skills/process-feedbacks-loop"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、

@@ -1,6 +1,6 @@
 """pytools.dotfiles_fb._cli のprocess-loopサブコマンド・リポジトリID解決のテスト。
 
-process-loopサブコマンド、リモートURL正規化（`_normalize_remote_url`）、
+process-loopサブコマンド（常駐ループ）、リモートURL正規化（`_normalize_remote_url`）、
 リポジトリID解決（`_resolve_repo_id`）の単体テストを集約する。
 既存サブコマンドの残テストは`_cli_test.py`に、他サブコマンドの分割先は`_cli_show_test.py`・
 `_cli_mutations_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
@@ -8,76 +8,275 @@ process-loopサブコマンド、リモートURL正規化（`_normalize_remote_u
 
 import pathlib
 import subprocess
+import threading
 from typing import Any
 
 import pytest
+import watchdog.events
 
-from pytools.dotfiles_fb import _cli, _repo
+from pytools.dotfiles_fb import _cli, _process_loop, _repo
 from pytools.dotfiles_fb._cli_test import _setup_flag_and_notes
 
 
-class TestProcessLoopInvokesLoopSkill:
-    """process-loopサブコマンド: claudeを単発起動しprocess-feedbacks-loopスキルへ委譲する。"""
+def _fake_run_with_remote_url(
+    myrepo: pathlib.Path,
+    claude_calls: list[dict[str, Any]],
+    claude_returncode: int,
+) -> Any:
+    """claude呼び出し（コマンド・環境変数）を記録し、`git remote get-url origin`にはダミーURLを返すfake_runを構築する。"""
 
-    def test_invokes_claude_once_with_loop_skill(
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        if cmd[:1] == ["claude"]:
+            claude_calls.append({"cmd": list(cmd), "env": kwargs.get("env")})
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=claude_returncode, stdout=empty, stderr=empty)
+        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            stdout: Any = (
+                "https://github.com/example/myrepo.git\n" if kwargs.get("text") else b"https://github.com/example/myrepo.git\n"
+            )
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+        empty = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    return fake_run
+
+
+class TestChangeHandler:
+    """_ChangeHandler.on_any_event: 監視対象イベント判定の実動作を検証する。"""
+
+    def test_md_file_created_event_sets_change_event(self) -> None:
+        """`.md`拡張子・非ディレクトリのFileCreatedEventでchange_eventがsetされること。"""
+        change_event = threading.Event()
+        handler = _process_loop._ChangeHandler(change_event)  # pylint: disable=protected-access  # noqa: SLF001
+        event = watchdog.events.FileCreatedEvent("/tmp/dummy/inbox/entry.md")
+
+        handler.on_any_event(event)
+
+        assert change_event.is_set()
+
+    def test_directory_event_ignored(self) -> None:
+        """イベント種別フィルタを通過してもディレクトリイベントは無視されること。"""
+        change_event = threading.Event()
+        handler = _process_loop._ChangeHandler(change_event)  # pylint: disable=protected-access  # noqa: SLF001
+        event = watchdog.events.FileCreatedEvent("/tmp/dummy/inbox/subdir")
+        event.is_directory = True  # WATCHED_EVENT_TYPES判定を通過させたうえでディレクトリ判定分岐に到達させる
+
+        handler.on_any_event(event)
+
+        assert not change_event.is_set()
+
+    def test_non_md_file_event_ignored(self) -> None:
+        """`.md`以外の拡張子のファイルイベントは無視されchange_eventがsetされないこと。"""
+        change_event = threading.Event()
+        handler = _process_loop._ChangeHandler(change_event)  # pylint: disable=protected-access  # noqa: SLF001
+        event = watchdog.events.FileCreatedEvent("/tmp/dummy/inbox/entry.txt")
+
+        handler.on_any_event(event)
+
+        assert not change_event.is_set()
+
+
+class TestWaitForChanges:
+    """_wait_for_changes: watchdog監視の実動作（タイムアウト・変更検知・デバウンス）を検証する。"""
+
+    @staticmethod
+    def _make_private_notes(tmp_path: pathlib.Path) -> pathlib.Path:
+        private_notes = tmp_path / "private-notes"
+        (private_notes / "feedback" / "inbox").mkdir(parents=True)
+        (private_notes / "tbd" / "inbox").mkdir(parents=True)
+        return private_notes
+
+    def test_timeout_triggers_pull(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """変更検知イベント無しでタイムアウトに達した場合、`_pull`が呼ばれること。"""
+        private_notes = self._make_private_notes(tmp_path)
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
+        pull_calls: list[pathlib.Path] = []
+        monkeypatch.setattr(_process_loop, "_pull", pull_calls.append)
+
+        _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert pull_calls == [private_notes]
+
+    def test_change_event_skips_pull(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """タイムアウト前に`.md`ファイル変更を検知した場合、`_pull`が呼ばれないこと。"""
+        private_notes = self._make_private_notes(tmp_path)
+        inbox = private_notes / "feedback" / "inbox"
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
+        pull_calls: list[pathlib.Path] = []
+        monkeypatch.setattr(_process_loop, "_pull", pull_calls.append)
+
+        timer = threading.Timer(0.05, lambda: (inbox / "entry.md").write_text("x", encoding="utf-8"))
+        timer.start()
+        try:
+            _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
+        finally:
+            timer.cancel()
+
+        assert not pull_calls
+
+    def test_debounce_folds_additional_events(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで畳み込まれること。"""
+        private_notes = self._make_private_notes(tmp_path)
+        inbox = private_notes / "feedback" / "inbox"
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.3)
+        monkeypatch.setattr(
+            _process_loop,
+            "_pull",
+            lambda _path: pytest.fail("デバウンス経路では_pullを呼ばないこと"),
+        )
+
+        wait_calls: list[float | None] = []
+        real_wait = threading.Event.wait
+
+        def counting_wait(self: threading.Event, timeout: float | None = None) -> bool:
+            wait_calls.append(timeout)
+            return real_wait(self, timeout)
+
+        monkeypatch.setattr(threading.Event, "wait", counting_wait)
+
+        timer1 = threading.Timer(0.05, lambda: (inbox / "entry1.md").write_text("x", encoding="utf-8"))
+        timer2 = threading.Timer(0.2, lambda: (inbox / "entry2.md").write_text("y", encoding="utf-8"))
+        timer1.start()
+        timer2.start()
+        try:
+            _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
+        finally:
+            timer1.cancel()
+            timer2.cancel()
+
+        debounce_waits = [t for t in wait_calls if t == 0.3]
+        assert len(debounce_waits) >= 2
+
+
+class TestProcessLoopPromptAndEnv:
+    """process-loopサブコマンド: claude起動プロンプトと環境変数、正常終了時の反復継続を検証する。"""
+
+    def test_invokes_claude_with_prompt_env_and_continues_loop(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeが`/process-feedbacks-loop <local_path_str>`引数で1回だけ起動されること。"""
+        """プロンプトに`/process-feedbacks`と`/agent-toolkit:exit-session`を含み、
+        `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が付与され、`returncode=0`後は反復継続すること。
+        件数0到達後は`_wait_for_changes`が呼ばれ、待機解除後に件数再チェックへ戻ること。
+        2回目の`_wait_for_changes`呼び出しで`KeyboardInterrupt`を送出し常駐ループを正常終了する。
+        """
         _setup_flag_and_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        expected_local_path = str(myrepo.resolve())
-        claude_calls: list[list[str]] = []
+        claude_calls: list[dict[str, Any]] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] == ["claude"]:
-                claude_calls.append(list(cmd))
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        # 件数: 1回目は1件（claude起動）、2回目以降は0件（待機ループへ）
+        count_calls: list[int] = []
+
+        def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
+            del private_notes, target_repo
+            count_calls.append(len(count_calls))
+            return 1 if len(count_calls) == 1 else 0
+
+        wait_calls: list[int] = []
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+            del private_notes, target_repo_id
+            wait_calls.append(len(wait_calls))
+            if len(wait_calls) >= 2:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count_pending_entries)
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert claude_calls == [["claude", "--permission-mode=auto", "/process-feedbacks-loop", expected_local_path]]
+        assert len(claude_calls) == 1
+        prompt = claude_calls[0]["cmd"][2]
+        assert "/process-feedbacks" in prompt
+        assert "/agent-toolkit:exit-session" in prompt
+        assert claude_calls[0]["cmd"][:2] == ["claude", "--permission-mode=auto"]
+        assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
+        assert len(wait_calls) == 2
         captured = capsys.readouterr()
-        assert "claudeを起動しprocess-feedbacks-loopスキルへ委譲します" in captured.out
+        assert "Ctrl+Cを検知しました" in captured.out
 
 
-class TestProcessLoopClaudeFailure:
-    """process-loopサブコマンド: claude非0終了時に同じexit codeで中断する。"""
+class TestProcessLoopClaudeReturncode:
+    """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""
 
-    def test_claude_failure_exits_with_returncode(
+    @pytest.mark.parametrize("returncode", [0, -15, 15])
+    def test_normal_returncode_continues_loop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        returncode: int,
+    ) -> None:
+        """`returncode`が`0`・`-15`・`15`のいずれかなら反復継続し、
+        次の待機で`KeyboardInterrupt`が送出されると正常終了すること。
+        """
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, returncode))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1 if len(claude_calls) == 0 else 0)
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+            del private_notes, target_repo_id
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert len(claude_calls) == 1
+
+    def test_abnormal_returncode_exits_with_same_code(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """claudeのfakeが非0を返すとprocess-loopは同じexit codeで停止する。"""
+        """`returncode`が正常集合外なら、CLI自体が同じexit codeで終了すること。"""
         _setup_flag_and_notes(tmp_path)
-
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] == ["claude"]:
-                return subprocess.CompletedProcess(cmd, returncode=42, stdout=b"", stderr=b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 42))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        def fake_wait_for_changes(*_a: object, **_kw: object) -> None:
+            raise AssertionError("異常終了時は_wait_for_changesを呼ばないこと")
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
             _cli.main(["process-loop", f"--target-repo={myrepo}"], home=tmp_path)
 
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
-        assert "claudeがexit code 42で終了しました" in captured.err
+        assert "claudeがexit code 42で異常終了しました" in captured.err
 
 
 class TestNormalizeRemoteUrl:

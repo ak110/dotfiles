@@ -172,7 +172,7 @@ description: >
 
 `agent-toolkit:plan-mode`スキルに従い計画を作成して実行する。
 plan-modeスキル本文で規定される全工程を遵守する。
-auto mode下・process-feedbacks-loop経由の委譲下でも本規定を維持する。
+auto mode下・自律実行系CLI経由の委譲下でも本規定を維持する。
 多段委譲経路（`process-feedbacks`経由等）でも本規定を維持する。
 各工程の実施義務は`plan-mode/SKILL.md`
 「暗黙スキップ・明示バイパスの禁止」節の規定に従う。

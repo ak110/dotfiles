@@ -14,6 +14,7 @@ from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
+from pytools._internal.watchdog_events import WATCHED_EVENT_TYPES
 from pytools.claude_plans_viewer import _assets, _state
 
 # Pygmentsはmarkdown-itの`highlight`コールバックから呼ぶ。
@@ -44,16 +45,6 @@ def _highlight_code(code: str, name: str, _attrs: str) -> str:
 # 連続選択や前後ナビゲーションでヒットさせつつ、長時間運用でも有界に保つ値とする。
 MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
-
-# 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`は`/api/file`応答の`read_text`との間で
-# feedback loopになるため除外する。`FileClosedEvent`は`IN_CLOSE_WRITE`（書き込み後クローズ）を表す。
-WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
-    watchdog.events.FileCreatedEvent,
-    watchdog.events.FileModifiedEvent,
-    watchdog.events.FileDeletedEvent,
-    watchdog.events.FileMovedEvent,
-    watchdog.events.FileClosedEvent,
-)
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:

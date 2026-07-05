@@ -30,6 +30,10 @@
           {
             "type": "command",
             "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py; exit 0 }\""
+          },
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py; exit 0 }\""
           }
         ]
       }
