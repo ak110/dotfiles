@@ -35,7 +35,7 @@ jobs:
         run: |
           test -f ~/.bashrc
           test -f ~/.vimrc
-          test -f ~/.claude/rules/agent-toolkit/agent.md
+          test -f ~/.claude/rules/agent-toolkit/01-agent.md
           test -f ~/.ssh/config
           # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
           grep -qF '$HOME/dotfiles/bin' ~/.bashrc
@@ -74,7 +74,7 @@ jobs:
       - name: 主要ファイルの存在確認
         shell: pwsh
         run: |
-          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\agent.md")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) { exit 1 }
           if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) { exit 1 }
           $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
           if ($null -eq $envKey) { exit 1 }
