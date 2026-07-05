@@ -352,6 +352,11 @@ def main(
     now: datetime.datetime | None = None,
 ) -> None:
     """エントリポイント。"""
+    # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     parser = _build_parser()
     args = parser.parse_args(argv)
     if home is None:

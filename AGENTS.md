@@ -35,7 +35,7 @@
     - `_REMOVED_PATHS`の`~/.claude`欄に旧パスを追記する
     - Codex側にもリンクがある対象は`~/.codex`欄にも旧パスを追記する
     - `pytools/_internal/setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
-- プラットフォーム対応ファイル（Linux/Windowsのペア）は一方を変更したらもう一方も確認する
+- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`スキルを呼び出して両側を同期する
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている
   - UTF-8前提のEdit/Writeツールでは文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する

@@ -11,7 +11,7 @@
       "name": "agent-toolkit",
       "source": "./agent-toolkit",
       "description": "Claude Codeの成果物の品質を向上させるプラグイン。不適切な動作をフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
-      "version": "1.87.1",
+      "version": "1.88.0",
       "category": "safety",
       "keywords": [
         "hooks",

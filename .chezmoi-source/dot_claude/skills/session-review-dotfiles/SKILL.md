@@ -97,6 +97,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 ## ステップ4の適用範囲
 
 本拡張章は`agent-toolkit:session-review`スキルのステップ4を完全に上書きする。
+改善提案の投入は`dotfiles-fb add --source=session-review` CLIの直接実行で行い、`add-feedback`スキルは経由しない。
 
 `dotfiles-fb status`を実行し、出力が「有効」の場合は全提案を対象リポジトリごとに
 `dotfiles-fb add --source=session-review`へ位置引数で投入する。
