@@ -341,7 +341,7 @@ class TestCodexReviewReadTracking:
         result = _run(
             {
                 "tool_name": "Read",
-                "tool_input": {"file_path": "/fake/rules/agent.md"},
+                "tool_input": {"file_path": "/fake/rules/01-agent.md"},
                 "session_id": sid,
             },
             state_dir=tmp_path,
@@ -409,7 +409,7 @@ class TestTextlintViolationsReadTracking:
         result = _run(
             {
                 "tool_name": "Read",
-                "tool_input": {"file_path": "/fake/rules/agent.md"},
+                "tool_input": {"file_path": "/fake/rules/01-agent.md"},
                 "session_id": sid,
             },
             state_dir=tmp_path,

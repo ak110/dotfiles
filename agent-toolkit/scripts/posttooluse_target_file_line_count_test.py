@@ -214,9 +214,9 @@ class TestPlanFormatTargetFileLineCount:
     def test_mixed_only_agent_facing_warned(self, tmp_path: pathlib.Path):
         """対象種別ファイルのみ警告され、対象種別外は警告されない。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / "agent-toolkit" / "rules" / "agent.md")
+        self._make_200_line_file(home / "agent-toolkit" / "rules" / "01-agent.md")
         self._make_200_line_file(home / "src" / "main.py")
-        content = self._plan_with_files(["agent-toolkit/rules/agent.md", "src/main.py"])
+        content = self._plan_with_files(["agent-toolkit/rules/01-agent.md", "src/main.py"])
         plan = _write_plan(plans, "mixed.md", content)
         result = _run(
             {
@@ -233,7 +233,7 @@ class TestPlanFormatTargetFileLineCount:
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
         assert "plan file contains target files with 200 or more lines" in msg
-        assert "agent-toolkit/rules/agent.md" in msg
+        assert "agent-toolkit/rules/01-agent.md" in msg
         assert "src/main.py" not in msg
 
     def test_both_checkbox_variants_extracted(self, tmp_path: pathlib.Path):
@@ -287,8 +287,8 @@ class TestPlanFormatTargetFileLineCount:
         [
             ("AGENTS.md", "root-agents-md"),
             ("CLAUDE.md", "root-claude-md"),
-            ("agent-toolkit/rules/agent.md", "rules-direct"),
-            (".chezmoi-source/dot_claude/rules/agent-toolkit/claude-code.md", "rules-nested"),
+            ("agent-toolkit/rules/01-agent.md", "rules-direct"),
+            (".chezmoi-source/dot_claude/rules/agent-toolkit/02-claude-code.md", "rules-nested"),
             ("agent-toolkit/skills/plan-mode/SKILL.md", "skills-skill-md"),
             ("agent-toolkit/skills/plan-mode/references/norm-revision-checklist.md", "skills-references"),
             ("agent-toolkit/agents/plan-impl-reviewer.md", "agents"),

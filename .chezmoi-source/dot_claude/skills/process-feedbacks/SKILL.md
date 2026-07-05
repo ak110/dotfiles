@@ -48,6 +48,8 @@ feedback全件とTBD回答済みの本文を取得する。
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装・コミット・後始末（adopt/reject）まで担う
    - 後始末（adopt/reject）では、`dotfiles-fb`が採否確定ファイルを履歴として保持する
    - 全件を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
+   - 本スキル経由で`apply-feedback`→`plan-mode`とネスト起動される場合、
+     `plan-mode`スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない
 3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される

@@ -1,4 +1,4 @@
-# claude-code.md
+# 02-claude-code.md
 
 ## Claude Code固有事項
 
@@ -83,16 +83,17 @@
     元タスク・修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める
 - 並列起動のたびに各タスクの編集対象ファイル集合の重複を起動前に点検し、重複があればタスク境界を再設計する
   - 修正再実装ループでの再並列起動でも省略しない
-- 対象ファイルの違反件数または編集件数が概ね30件超かつ単純な反復編集の場合は
+- 対象ファイルの編集が定型パターンの反復であり規範適合性の判断を要さないタスクは
   `plan-implementer`ではなく`subagent_type: claude`を選び、スキル呼び出しを伴わない直接編集を指示する
   - `plan-implementer`は規範適合性の判断を伴う実装に適する。
     スキル本文のコンテキスト消費が機械的な大量編集と重なると`autocompact thrashing`を誘発する
   - `claude`エージェントタイプは規範スキルを読み込まない。
     呼び出し元プロンプトで関連規範（`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`等）を明示引用する
-- `plan-implementer`への委譲タスクで対象ファイル数が概ね4件超かつ
-  併読する規範スキル本文が3スキル以上に及ぶ構成では`autocompact thrashing`の誘発リスクが高い
-  - 3スキル以上の例として`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`・対象スキルの併読がある
-  - タスクの分割または`subagent_type: claude`への切替（規範スキル読込を省略し起動プロンプトで関連規範を明示引用）を選ぶ
+- `plan-implementer`への委譲タスクは、対象ファイル数や併読する規範スキル本文数などの
+  コンテキスト膨張要因が重なる構成ほど`autocompact thrashing`の誘発リスクが高い
+  - 併読対象の例として`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`・対象スキルがある
+  - タスクの分割、または前項と同様の`subagent_type: claude`への切替
+   （規範スキル読込を省略し起動プロンプトで関連規範を明示引用）を選ぶ
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を行わず、
   必要と判断した場合は実行せず完了報告で委譲元へ返却する
   - git操作: 作業ツリー全体の状態を変更するgit操作（`git stash`・`git checkout`・`git reset`・`git clean`等）を

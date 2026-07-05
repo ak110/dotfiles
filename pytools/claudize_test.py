@@ -15,7 +15,7 @@ def _setup_template(tmp_path: Path) -> Path:
     """テンプレートディレクトリを作成し、配布対象ファイルを配置する。"""
     template_dir = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
     template_dir.mkdir(parents=True)
-    (template_dir / "agent.md").write_text(AGENT_TEMPLATE, encoding="utf-8")
+    (template_dir / "01-agent.md").write_text(AGENT_TEMPLATE, encoding="utf-8")
     return template_dir
 
 
@@ -31,7 +31,7 @@ class TestRuleDistribution:
         claudize(target, template_dir)
 
         rules_dir = target / ".claude" / "rules" / "agent-toolkit"
-        assert (rules_dir / "agent.md").read_text(encoding="utf-8") == AGENT_TEMPLATE
+        assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == AGENT_TEMPLATE
 
     def test_extra_files_are_removed(self, tmp_path: Path):
         """配布先に余分なファイルがあっても同期で削除される。"""
@@ -47,7 +47,7 @@ class TestRuleDistribution:
         claudize(target, template_dir)
 
         assert not stale.exists(), "配布元に存在しないファイルが削除されていない"
-        assert (rules_dir / "agent.md").exists()
+        assert (rules_dir / "01-agent.md").exists()
 
     def test_legacy_agent_basics_dir_removed(self, tmp_path: Path):
         """旧 agent-basics ディレクトリが存在する場合は削除される。"""
@@ -57,12 +57,12 @@ class TestRuleDistribution:
 
         legacy_dir = target / ".claude" / "rules" / "agent-basics"
         legacy_dir.mkdir(parents=True)
-        (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
+        (legacy_dir / "01-agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
         claudize(target, template_dir)
 
         assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
-        assert (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").exists()
+        assert (target / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").exists()
 
     def test_idempotent(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
         """2回実行しても同じ結果になる。"""
@@ -72,10 +72,10 @@ class TestRuleDistribution:
         target.mkdir()
 
         claudize(target, template_dir)
-        expected_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
+        expected_agent = (target / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").read_text(encoding="utf-8")
 
         claudize(target, template_dir)
-        actual_agent = (target / ".claude" / "rules" / "agent-toolkit" / "agent.md").read_text(encoding="utf-8")
+        actual_agent = (target / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").read_text(encoding="utf-8")
 
         assert actual_agent == expected_agent
 
@@ -103,7 +103,7 @@ class TestClean:
         # 旧ディレクトリも生成して削除対象に含める
         legacy_dir = target / ".claude" / "rules" / "agent-basics"
         legacy_dir.mkdir(parents=True)
-        (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
+        (legacy_dir / "01-agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
         claudize(target, template_dir, clean=True)
 

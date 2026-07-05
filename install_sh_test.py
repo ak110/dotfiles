@@ -51,10 +51,11 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     )
 
     # 4. ルールファイルがデプロイされていること。
-    # rules側の配布対象はagent.mdの1ファイル。
+    # rules側の配布対象は01-agent.md・02-claude-code.md・03-styles.md・04-terminology.mdの4ファイル。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
+    # 代表として01-agent.mdの存在のみを検証する（4ファイル一致は install_script_ssot_test.py が担う）。
     rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
-    assert (rules_dir / "agent.md").exists(), "agent.md が chezmoi でデプロイされていない"
+    assert (rules_dir / "01-agent.md").exists(), "01-agent.md が chezmoi でデプロイされていない"
 
 
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:

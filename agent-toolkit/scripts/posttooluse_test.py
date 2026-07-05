@@ -293,6 +293,70 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
+class TestTaskInvocationFlags:
+    """Task起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
+
+    @pytest.mark.parametrize("subagent_type", ["plan-integrity-checker", "agent-toolkit:plan-integrity-checker"])
+    def test_plan_integrity_checker_flag(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = "task-plan-integrity-checker"
+        _run(
+            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_integrity_checker_invoked") is True
+
+    @pytest.mark.parametrize("subagent_type", ["naive-executor", "agent-toolkit:naive-executor"])
+    def test_naive_executor_flag(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = "task-naive-executor"
+        _run(
+            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("naive_executor_invoked") is True
+
+    @pytest.mark.parametrize("subagent_type", ["plan-impl-reviewer", "agent-toolkit:plan-impl-reviewer"])
+    def test_plan_impl_reviewer_flag(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = "task-plan-impl-reviewer"
+        _run(
+            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_impl_reviewer_invoked") is True
+
+    def test_codex_review_flag_via_skill(self, tmp_path: pathlib.Path):
+        sid = "codex-review-via-skill"
+        _run(
+            {"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:plan-codex-review"}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_review_invoked") is True
+
+    def test_codex_review_flag_via_mcp(self, tmp_path: pathlib.Path):
+        sid = "codex-review-via-mcp"
+        _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_review_invoked") is True
+
+    def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path):
+        sid = "task-other-subagent"
+        _run(
+            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": "claude"}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_integrity_checker_invoked") is not True
+        assert state.get("naive_executor_invoked") is not True
+        assert state.get("plan_impl_reviewer_invoked") is not True
+        assert state.get("codex_review_invoked") is not True
+
+
 class TestEdgeCases:
     """エッジケース。"""
 

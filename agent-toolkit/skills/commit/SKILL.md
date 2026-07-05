@@ -5,7 +5,7 @@ description: >
   またはコミットメッセージ案（計画ファイル・PR説明など）を書く時点で呼び出す。
   Conventional Commits規約・push前確認チェックリスト・リリースバージョン指定を含む。
 # 編集時の注意点:
-# 1計画=1コミット原則のSSOTは`agent-toolkit/rules/agent.md`「セッション分割・別計画化は禁止する」節。
+# 1計画=1コミット原則のSSOTは`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節。
 ---
 
 # コミット運用とコミットメッセージ

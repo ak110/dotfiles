@@ -3036,7 +3036,7 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/agent.md",
+                    "file_path": "agent-toolkit/rules/01-agent.md",
                     "content": f"# header\n\n{text}\n",
                 },
             }
@@ -3110,7 +3110,7 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/agent.md",
+                    "file_path": "agent-toolkit/rules/01-agent.md",
                     "old_string": text,
                     "new_string": clean_replacement,
                 },
@@ -3150,7 +3150,7 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/agent.md",
+                    "file_path": "agent-toolkit/rules/01-agent.md",
                     "content": "# header\n\nplain content.\n",
                 },
             }
@@ -3164,12 +3164,75 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "/home/user/dotfiles/agent-toolkit/rules/agent.md",
+                    "file_path": "/home/user/dotfiles/agent-toolkit/rules/01-agent.md",
                     "content": f"{text}\n",
                 },
             }
         )
         assert result.returncode == 2
+
+    def test_plan_file_target_blocks(self, tmp_path: pathlib.Path):
+        """計画ファイル（`~/.claude/plans/*.md`）もscope-escalation転記検出の対象に含まれる。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home)
+        env = _plan_file_state_env(tmp_path, home)
+        sid = "scope-esc-plan-file"
+        text, category = _SCOPE_ESCALATION_INPUTS[0]
+        content = _VALID_H2_PLAN_CONTENT.replace("## 対応方針\n\nx\n", f"## 対応方針\n\n{text}\n", 1)
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "scope-escalation" in result.stderr
+        assert category in result.stderr
+
+    def test_mitigation_in_adoption_references_apply_feedback(self):
+        """`mitigation-in-adoption`カテゴリはapply-feedback SKILL.mdの節を参照する。"""
+        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "mitigation-in-adoption")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "content": f"# header\n\n{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "apply-feedback/SKILL.md" in result.stderr
+        assert "採用時の反映内容の縮小禁止" in result.stderr
+
+    def test_other_category_references_01_agent_md(self):
+        """`mitigation-in-adoption`以外のカテゴリは01-agent.mdの節を参照する。"""
+        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "workload")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "content": f"# header\n\n{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "agent-toolkit/rules/01-agent.md" in result.stderr
+        assert "01-01-agent.md" not in result.stderr
+        assert "セッション分割・別計画化は禁止する" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_edit_preserves_existing_phrase_in_unchanged_region(self, text: str, category: str):
@@ -3183,7 +3246,7 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/agent.md",
+                    "file_path": "agent-toolkit/rules/01-agent.md",
                     "old_string": f"既存記述。{text}。末尾A",
                     "new_string": f"既存記述。{text}。末尾B",
                 },
@@ -3221,7 +3284,7 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/agent.md",
+                    "file_path": "agent-toolkit/rules/01-agent.md",
                     "old_string": "既存記述のみ",
                     "new_string": f"既存記述のみ。{text}",
                 },
@@ -3252,6 +3315,229 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
+
+
+class TestWorkaroundScratchpadGate:
+    """plan fileのWrite時、ワークアラウンド語検出に伴うscratchpad事前検討記録の未整備ブロック。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+    # scratchpadキーは計画ファイル自身のstemから導出するため、`_make_plan`が生成する
+    # 既定のplan file名（`test.md`）のstemに合わせる。
+    # フィードバック起因かどうかを問わず全ての計画ファイルへ一律適用できるため、
+    # 複数inbox問題（複数の採否確定ファイルが1計画ファイルに列挙されるケース）を検証するテストは不要になった。
+    _PLAN_STEM = "test"
+
+    @classmethod
+    def _prior_flags(cls, tmp_path: pathlib.Path, sid: str) -> None:
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+
+    @classmethod
+    def _changes_body_with_workaround(cls) -> str:
+        return "### 対象ファイル一覧\n\n- フォールバックとして代替経路を追加する\n"
+
+    @staticmethod
+    def _content(changes_body: str) -> str:
+        return (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            f"## 変更内容\n\n{changes_body}\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+
+    def test_no_workaround_terms_passes(self, tmp_path: pathlib.Path):
+        """ワークアラウンド語を含まない場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-clean"
+        self._prior_flags(tmp_path, sid)
+        content = self._content("### 対象ファイル一覧\n\nx\n")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_missing_scratchpad_blocks(self, tmp_path: pathlib.Path):
+        """ワークアラウンド語検出時にscratchpadファイルが不在の場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-missing"
+        self._prior_flags(tmp_path, sid)
+        content = self._content(self._changes_body_with_workaround())
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_incomplete_scratchpad_blocks(self, tmp_path: pathlib.Path):
+        """scratchpadファイルは存在するが必須項目の記入漏れがある場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-incomplete"
+        self._prior_flags(tmp_path, sid)
+        scratchpad_dir = tmp_path / "scratchpad"
+        scratchpad_dir.mkdir(parents=True, exist_ok=True)
+        (scratchpad_dir / f"workaround-check-{self._PLAN_STEM}.md").write_text("根本原因の候補: 未整理\n", encoding="utf-8")
+        content = self._content(self._changes_body_with_workaround())
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_complete_scratchpad_passes(self, tmp_path: pathlib.Path):
+        """scratchpadファイルに必須3項目が記入済みの場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-complete"
+        self._prior_flags(tmp_path, sid)
+        scratchpad_dir = tmp_path / "scratchpad"
+        scratchpad_dir.mkdir(parents=True, exist_ok=True)
+        (scratchpad_dir / f"workaround-check-{self._PLAN_STEM}.md").write_text(
+            "根本原因の候補: A\n根本対応が成立するか: 否\n成立しない場合の理由: 外部制約\n",
+            encoding="utf-8",
+        )
+        content = self._content(self._changes_body_with_workaround())
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+
+_PROCESS7_FLAGS = (
+    "plan_integrity_checker_invoked",
+    "naive_executor_invoked",
+    "plan_impl_reviewer_invoked",
+    "codex_review_invoked",
+)
+
+
+def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
+    return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+
+class TestProcess7CompletionCheck:
+    """ExitPlanMode / `agent-toolkit:plan-impl`起動時の工程7完了未達ブロック。"""
+
+    def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
+        """4フラグ全て真の場合はExitPlanModeを通過する。"""
+        sid = "process7-all-set"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize("missing_flag", _PROCESS7_FLAGS)
+    def test_missing_flag_blocks(self, tmp_path: pathlib.Path, missing_flag: str):
+        """4フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
+        sid = f"process7-missing-{missing_flag}"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: (flag != missing_flag) for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert missing_flag in result.stderr
+        assert "integrity-checks.md" in result.stderr
+
+    def test_no_plan_mode_context_passes(self, tmp_path: pathlib.Path):
+        """`plan_mode_skill_invoked`が偽の場合は検査対象外として通過する。"""
+        sid = "process7-no-plan-mode"
+        _write_session_state(tmp_path, sid, {})
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_plan_impl_skill_also_checked(self, tmp_path: pathlib.Path):
+        """`agent-toolkit:plan-impl`のSkill起動も同様に工程7完了未達をブロックする。"""
+        sid = "process7-plan-impl-skill"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-impl"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+
+class TestPlanModeFlagReset:
+    """`agent-toolkit:plan-mode`スキル起動時の工程7完了フラグリセット。"""
+
+    def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
+        """新計画着手時に工程7完了フラグが偽へリセットされる。"""
+        sid = "process7-reset"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        updated = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
+        for flag in _PROCESS7_FLAGS:
+            assert updated[flag] is False
 
 
 class TestCheckPlanFileH2SectionOrder:

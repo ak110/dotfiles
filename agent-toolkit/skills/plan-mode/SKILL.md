@@ -31,12 +31,15 @@ description: >
   - サブエージェント下でも本規範は等しく適用される。
     委譲プロンプトが実装・コミット・pushまでを一括指示する場合でも、
     工程3〜7の省略は禁止する。
-    `agent-toolkit/rules/agent.md`「品質最優先」節および
+    `agent-toolkit/rules/01-agent.md`「品質最優先」節および
     「サブエージェント設計・起動形態を理由に本節の規範を自身へ適用しない判断はしない」規定と一体で適用する
 - plan mode移行の前提: 本スキルはplan mode下でも外でも起動できる。
   plan mode下の場合は`ExitPlanMode`が計画ファイル承認ゲートとして機能する。
   plan mode外の場合はユーザー承認を介さず、工程8で`agent-toolkit:plan-impl`へ引き継ぐ。
   Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従う
+  - `process-feedbacks`・`apply-feedback`スキル経由で本スキルが呼び出される場合はplan mode外で実行する。
+    メイン側で`EnterPlanMode`を発行しない。
+    plan mode下での起動はユーザーの明示的な`EnterPlanMode`指示があった場合に限る
 - 本スキル未起動のまま計画ファイル（`~/.claude/plans/*.md`）の編集に至った場合は、
   PreToolUseフックがブロックするため本スキルを呼び出したうえで工程1または2から順に実施する
 - 例外: plan mode移行後にユーザーから単純な即時実行の指示があった場合に限り、

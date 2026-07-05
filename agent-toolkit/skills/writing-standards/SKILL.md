@@ -8,7 +8,7 @@ description: >
 # ドキュメントのみの編集時はwriting-standardsのみを読み込むことに注意。
 # コーディングエージェント向け文書固有のガイドはagent-standardsスキルへ分離した。
 # 本スキルではClaude Code固有事項を扱わない。
-# 対象読者と文体の基本方針は`agent-toolkit/rules/styles.md`「日本語の品質を保つ」節に集約。
+# 対象読者と文体の基本方針は`agent-toolkit/rules/03-styles.md`「日本語の品質を保つ」節に集約。
 ---
 
 # ドキュメント品質
@@ -56,7 +56,7 @@ description: >
 
 ## 日本語の書き方
 
-書き方の上位原則は`agent-toolkit/rules/styles.md`「日本語の品質を保つ」節に従う。
+書き方の上位原則は`agent-toolkit/rules/03-styles.md`「日本語の品質を保つ」節に従う。
 
 - 常体の語尾は規範述語（「〜とする」「〜ものとする」「〜してはならない」「〜できる」）を用いる。
   事実述語の形は文意に応じて自然な形（「〜する」「〜である」など）を選ぶ
@@ -128,7 +128,7 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 - 本文と連動する従属箇所（フォーマット例・コードブロック・目次・入口列挙・件数表記・要約・図ラベル）は本文変更時に同時更新する
 - 推奨例・違反例リストへの語の追加・削除では、同一ファイル本文中の当該語も`grep`で同時走査して自己整合を確認する
 - 新設する項目ラベル・見出しラベル・キーワードは対象ファイル内の類義表現を`grep -n`で照合し既存表記と揃える
-- 「原則として」「可能な限り」等の例外を許容する修飾語を削除する場合、担う意味を評価し例外条件を明示できるときのみ書き換える
+- 「原則として」「可能な限り」等の例外を許容する修飾語は削除するか、または例外条件を明示形に書き換える
 
 ## コメントの記述粒度
 
@@ -150,7 +150,7 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 - 検出範囲: `.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`
   （Markdown引用ブロック`>`・フェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象に含む）
 
-コンテキスト汚染回避のため、`references/tone-examples.md`とpyfltr内蔵の辞書ファイルは
+コンテキスト汚染回避のため、`references/tone-examples.md`・`references/tone-examples-llm-tone.md`とpyfltr内蔵の辞書ファイルは
 メインから直接Readしない。
 確認はExploreサブエージェント経由、修正は`plan-implementer`経由で行う。
 例外として`plan-impl-reviewer`サブエージェントは
@@ -158,7 +158,7 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、
 `references/tone-examples.md`の節名（比喩動詞・主観評価語など）で間接参照する。
 LLM口調（予告と総括・正面から系・空虚な形容・空虚な動詞・接続の型・弱い緩和と称賛）の禁止語彙・対比例は
-`references/tone-examples.md`の「LLM口調」節に従う。
+`references/tone-examples-llm-tone.md`に従う。
 
 ## emダッシュ・horizontal bar・2倍ダッシュチェック
 

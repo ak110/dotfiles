@@ -125,9 +125,11 @@ class TestInstallClaude:
         _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
         rules_dir = home / ".claude" / "rules" / "agent-toolkit"
-        assert (rules_dir / "agent.md").exists()
+        assert (rules_dir / "01-agent.md").exists()
         # 配布元と同一内容であること
-        assert (rules_dir / "agent.md").read_text(encoding="utf-8") == (RULES_SRC / "agent.md").read_text(encoding="utf-8")
+        assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(
+            encoding="utf-8"
+        )
 
     def test_agent_basics_is_removed(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
         """旧 agent-basics ディレクトリが存在する場合は削除される。"""
@@ -137,12 +139,12 @@ class TestInstallClaude:
 
         legacy_dir = home / ".claude" / "rules" / "agent-basics"
         legacy_dir.mkdir(parents=True)
-        (legacy_dir / "agent.md").write_text("# 旧配布\n", encoding="utf-8")
+        (legacy_dir / "01-agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
         _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
         assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
-        assert (home / ".claude" / "rules" / "agent-toolkit" / "agent.md").exists()
+        assert (home / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").exists()
 
     def test_extra_files_are_removed(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
         """配布先に余分なファイルがあってもステージング差し替えで消える。"""
@@ -158,7 +160,7 @@ class TestInstallClaude:
         _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
         assert not extra.exists(), "配布元に存在しないファイルが残っている"
-        assert (rules_dir / "agent.md").exists()
+        assert (rules_dir / "01-agent.md").exists()
 
     def test_stage_dir_cleaned_on_failure(self, kind: str, tmp_path: pathlib.Path):
         """ダウンロード失敗時に既存の agent-toolkit が保持され、ステージ領域が残らない。"""
@@ -169,7 +171,7 @@ class TestInstallClaude:
         # 既存環境を先に生成する
         rules_dir = home / ".claude" / "rules" / "agent-toolkit"
         rules_dir.mkdir(parents=True)
-        sentinel = rules_dir / "agent.md"
+        sentinel = rules_dir / "01-agent.md"
         sentinel.write_text("# 既存内容\n", encoding="utf-8")
 
         # 無効なURLを与えてダウンロードを失敗させる

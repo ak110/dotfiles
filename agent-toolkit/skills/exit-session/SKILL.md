@@ -4,7 +4,9 @@ description: >
   Claude Code本体プロセスへシグナルを送出して現セッションを自律終了する。
   自律実行系CLIから間接起動されたセッションにおいて完遂条件を満たしたときに呼び出し、
   ユーザー入力待ちを残さず終了させる。
-  「セッションを終了」「claudeを終了」「/exit相当」「自律終了」などのキーワードで起動する。
+  起動対象はSkill名の明示的指定、または`dotfiles-fb process-loop`等の
+  自律実行系CLIからの間接起動時に限る。
+  「終了」「やめる」等のユーザーの一般的な意思表示のみでは起動しない。
 allowed-tools: Bash
 ---
 
@@ -18,7 +20,8 @@ allowed-tools: Bash
 
 次のいずれかを満たすときに限り呼び出す。
 
-- ユーザーが明示的にセッション終了を指示した場合
+- ユーザーがSkill名を明示的に指定して本スキルを起動した場合
+  （「終了」「やめる」等の一般的な意思表示のみでは起動しない）
 - `dotfiles-fb process-loop`CLIなど自律実行系CLIから間接起動されたセッションで、
   当該CLIの1反復分の処理を完遂し後続処理を残さない状態に到達した場合
 
@@ -31,6 +34,12 @@ allowed-tools: Bash
 2. `Bash`ツールで`kill -TERM $PPID`を実行する
    - 採用シグナルは本スキル本文で固定する。現状は`TERM`
    - 発火後はClaude Code本体プロセスが停止するため、後続のツール呼び出し・発話は行わない
+
+## auto mode下で拒否される場合の対処
+
+`kill -TERM $PPID`がauto mode classifierに拒否される場合がある。
+対処は`agent-toolkit/skills/agent-standards/references/auto-mode.md`
+「既知の誤拒否パターンと対応」節のexit-session該当項を参照する。
 
 ## シグナル種別の見直し
 

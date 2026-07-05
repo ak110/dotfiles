@@ -23,10 +23,10 @@ STAGE_ROOT="$HOME/.claude/rules-stage"
 # 3者の整合性は`agent-toolkit/scripts/install_script_ssot_test.py`で自動検証する。
 # 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 FILES=(
-    agent.md
-    claude-code.md
-    styles.md
-    terminology.md
+    01-agent.md
+    02-claude-code.md
+    03-styles.md
+    04-terminology.md
 )
 
 STAGE_DIR=""

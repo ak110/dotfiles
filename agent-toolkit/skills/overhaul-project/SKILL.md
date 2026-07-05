@@ -64,7 +64,7 @@ disable-model-invocation: true
 改善観点を独立タスクに分割し、Exploreサブエージェントで並列スキャンする。
 
 - 観点ごとに別エージェントを起動し、独立する2件以上は`run_in_background=true`で同時実行する
-- モデル選定はclaude-code.md「サブエージェントの活用」節の判断軸に従う
+- モデル選定は02-claude-code.md「サブエージェントの活用」節の判断軸に従う
 - 実装フェーズの委譲判断・並列起動方針は`agent-toolkit:plan-impl`の標準ルールに従う
 
 ## 既存スキルとの連携

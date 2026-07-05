@@ -18,6 +18,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 5. 振り返りスキル呼び出し検出 (Skill) — `session_review_invoked`辞書へ記録
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
+8. Task呼び出し時のsubagent_type別セッション状態フラグ記録（plan-integrity-checker / naive-executor / plan-impl-reviewer）
+9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
 """
 
 import json
@@ -112,6 +114,20 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 # Stop hookでの振り返り誘導抑止に使う配布物側の振り返りスキル名。観測したらsession_stateへ記録する。
 _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
+
+# codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
+_CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
+
+# Taskツールのsubagent_type別セッション状態フラグ記録。
+# フルネームと短縮名の両方を許容する。
+_TASK_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
+    "plan-integrity-checker": "plan_integrity_checker_invoked",
+    "agent-toolkit:plan-integrity-checker": "plan_integrity_checker_invoked",
+    "naive-executor": "naive_executor_invoked",
+    "agent-toolkit:naive-executor": "naive_executor_invoked",
+    "plan-impl-reviewer": "plan_impl_reviewer_invoked",
+    "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
+}
 
 # --- plan file形式検査の定数 ---
 
@@ -342,6 +358,42 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_review_invoked)
+        if isinstance(skill_name, str) and skill_name in _CODEX_REVIEW_SKILL_NAMES:
+
+            def _set_codex_review_invoked(state: dict) -> dict | None:
+                if state.get("codex_review_invoked", False):
+                    return None
+                state["codex_review_invoked"] = True
+                return state
+
+            update_state(session_id, _set_codex_review_invoked)
+        return 0
+
+    # Task: subagent_type別セッション状態フラグ記録
+    if tool_name == "Task":
+        subagent_type = tool_input.get("subagent_type")
+        flag_key = _TASK_SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
+        if flag_key is not None:
+
+            def _set_task_flag(state: dict, flag_key: str = flag_key) -> dict | None:
+                if state.get(flag_key, False):
+                    return None
+                state[flag_key] = True
+                return state
+
+            update_state(session_id, _set_task_flag)
+        return 0
+
+    # mcp__codex__codex: codex-review起動検出
+    if tool_name == "mcp__codex__codex":
+
+        def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
+            if state.get("codex_review_invoked", False):
+                return None
+            state["codex_review_invoked"] = True
+            return state
+
+        update_state(session_id, _set_codex_review_invoked_via_mcp)
         return 0
 
     # Read: 規範ファイル読み込みのセッション状態フラグ化

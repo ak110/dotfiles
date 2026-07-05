@@ -33,9 +33,9 @@ class TestRun:
     @pytest.mark.parametrize(
         ("scenario_id", "files"),
         [
-            ("single_file", ["agent.md"]),
-            # 配布元の実ファイルがagent.mdのみのため、複数同期の挙動はテスト専用のダミー名で検証する。
-            ("multiple_files", ["agent.md", "extra.md"]),
+            ("single_file", ["01-agent.md"]),
+            # 配布元の実ファイルが01-agent.mdのみのため、複数同期の挙動はテスト専用のダミー名で検証する。
+            ("multiple_files", ["01-agent.md", "extra.md"]),
         ],
     )
     def test_creates_dst_when_missing(
@@ -80,29 +80,29 @@ class TestRun:
         dotfiles_root, home = env
         src = _src_dir(dotfiles_root)
         src.mkdir(parents=True)
-        (src / "agent.md").write_text("source-newer", encoding="utf-8")
+        (src / "01-agent.md").write_text("source-newer", encoding="utf-8")
         dst = _dst_dir(home)
         dst.mkdir(parents=True)
-        (dst / "agent.md").write_text("destination-untouched", encoding="utf-8")
-        st = (src / "agent.md").stat()
+        (dst / "01-agent.md").write_text("destination-untouched", encoding="utf-8")
+        st = (src / "01-agent.md").stat()
         os.utime(
-            dst / "agent.md",
+            dst / "01-agent.md",
             ns=(st.st_atime_ns + mtime_offset_ns, st.st_mtime_ns + mtime_offset_ns),
         )
 
         assert sync_agent_toolkit_rules.run() is True
 
-        assert (dst / "agent.md").read_text(encoding="utf-8") == expected_content
+        assert (dst / "01-agent.md").read_text(encoding="utf-8") == expected_content
 
     def test_deletes_surplus_files(self, env: tuple[Path, Path]) -> None:
         """(d) dst側の余剰ファイルがdelete=Trueで削除される。"""
         dotfiles_root, home = env
         src = _src_dir(dotfiles_root)
         src.mkdir(parents=True)
-        (src / "agent.md").write_text("a", encoding="utf-8")
+        (src / "01-agent.md").write_text("a", encoding="utf-8")
         dst = _dst_dir(home)
         dst.mkdir(parents=True)
-        (dst / "agent.md").write_text("a", encoding="utf-8")
+        (dst / "01-agent.md").write_text("a", encoding="utf-8")
         (dst / "stale.md").write_text("x", encoding="utf-8")
 
         assert sync_agent_toolkit_rules.run() is True

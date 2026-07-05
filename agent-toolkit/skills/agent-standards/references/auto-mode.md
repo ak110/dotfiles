@@ -39,6 +39,17 @@ auto modeは次の4区分でルールを判定する。
 しかし別判断軸（例:`autonomous post-review cleanup`）でamend統合フローのamendが拒否されるケースがある。
 レビュー指摘修正後にamendで統合する運用を採用する場合、該当範囲を狭く許容するカスタムルールを`autoMode.allow`に追加する。
 
+### exit-session `kill -TERM $PPID` の Interfere With Workloads 拒否
+
+auto mode classifierは`kill -TERM $PPID`を「エージェントが作成していない親プロセスの終了」とみなし拒否する。
+`agent-toolkit:exit-session`スキルは起動条件を厳密に絞る設計だが、既定classifierでは拒否対象となる。
+
+対応: `share/claude_settings_json_managed.json`の`autoMode.allow`配列へ以下の自然言語ルールを追加する。
+
+- 対象: `exit-session`スキルからの`kill -TERM $PPID`
+- ルール本文: 「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、自律実行系CLIからの間接起動セッションの
+  完遂条件を満たしたときの正当な自律終了操作であり許可する」
+
 ## カスタムルール記述の注意点
 
 - 適用対象（対象操作・対象コミットの性質・対象パスなど）を文面に明示する

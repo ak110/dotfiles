@@ -80,3 +80,22 @@ next-cycle-defer	後続チケットで扱う
 next-cycle-defer	後続issueで扱う
 next-cycle-defer	次回対応とする
 next-cycle-defer	次回対応に回す
+process-scale	膨大な工程を要するため簡略化する
+process-scale	工程が多すぎるため一部を省略する
+process-scale	セレモニーが重すぎるためバイパスする
+process-scale	工程数が多いため簡略化する
+process-scale	工程を圧縮する
+process-scale	plan-mode ceremonyを省略する
+mitigation-in-adoption	機械化は除外して部分採用する
+mitigation-in-adoption	Write検査は過剰のため除外する
+mitigation-in-adoption	軽減版として採用する
+mitigation-in-adoption	過剰部分を除外して採用する
+mitigation-in-adoption	縮退版として採用する
+mitigation-in-adoption	実効性の割にコスト高のため除外
+mitigation-in-adoption	実装コストが見合わないため除外
+async-wait	サブエージェントの完了通知を待つ
+async-wait	完了報告を待って続行する
+async-wait	サブエージェントの応答を待機する
+context-shortage	コンテキスト容量を超えるため
+context-shortage	実装完遂リスクが実装利益を上回るため
+context-shortage	次回サイクルへ持ち越し

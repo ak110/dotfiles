@@ -246,7 +246,7 @@ def _check_bash_dotfiles_fb_tbd_add_scope_escalation(command: str) -> str | None
         return None
     return (
         f"blocked: `dotfiles-fb tbd-add` includes a scope-escalation phrase (category: {category})."
-        " See agent-toolkit/rules/agent.md session-split prohibition section."
+        " See agent-toolkit/rules/01-agent.md session-split prohibition section."
     )
 
 

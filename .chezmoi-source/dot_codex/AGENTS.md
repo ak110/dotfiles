@@ -44,7 +44,7 @@
 ## Codex互換レイヤー
 
 - 実装・レビュー・ドキュメント編集などの実作業に着手する前に、
-  `~/.codex/agent-toolkit/rules/agent.md`および`~/.codex/agent-toolkit/rules/styles.md`が
+  `~/.codex/agent-toolkit/rules/01-agent.md`および`~/.codex/agent-toolkit/rules/03-styles.md`が
   存在する場合は読む
 - 該当作業に対応するスキルが`~/.codex/skills/`に存在する場合は、その`SKILL.md`を読む
 - プロジェクト直下に`.agents/skills/`が存在する場合は、作業内容に該当する`SKILL.md`を読む

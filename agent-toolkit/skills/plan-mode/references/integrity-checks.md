@@ -20,7 +20,7 @@
 - 計画ファイル本文の追記文面と既存規範文書の間で同一概念の判定基準を2箇所以上に記述する場合、
   `grep -rn`で全箇所を抽出して文言完全一致を照合する
   - 代替案として定義元1箇所へ集約し、読取側は委譲記述（「判定基準は定義元に従う」相当）のみへ統一する形を優先する
-  - やむを得ず読取側で再掲する場合は定義元と一字一句同一の表現に揃える
+  - 集約が公開インターフェース互換性の理由等で成立せず読取側で再掲する場合は定義元と一字一句同一の表現に揃える
 - `## 変更履歴`に記録された方針転換・修正内容が
   `## 変更内容`配下の文面・対象ファイル一覧・差分指示・サブエージェント起動プロンプト文面に同期反映されているか照合する
 - 既存規範の周辺品質サブ観点: 既存規範の改訂・拡張時は周辺の既存文面に不自然な表現の踏襲がないかを照合する
@@ -44,7 +44,7 @@
   `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`が定める
   縮退誘発カテゴリの代表フレーズが混入していないか照合する
   - 検出時は該当行とカテゴリ識別子（`next-cycle-defer`・`defer-onset`・`pattern-conformance`・
-    `process-omission`・`quality-tradeoff`等）を報告する。
+    `process-omission`・`quality-tradeoff`・`mitigation-in-adoption`等）を報告する。
     フレーズ本文の指摘文への転記は避ける（コンテキスト汚染の回避）
   - 違反許容領域は`## 背景`配下の原文転記領域と、`## 変更内容`配下でフレーズ集自体
     （`scope-escalation-phrases.md`等）の改訂差分として旧・新文面を転記する箇所とする
@@ -66,15 +66,15 @@
 `## 背景`配下の原文転記領域は本節の例外として違反を許容する。
 `## 変更内容`・`## 対応方針`配下のコードブロック内文面は次で点検する。
 
-- `agent-toolkit/rules/styles.md`「日本語の品質を保つ」節の上位原則
+- `agent-toolkit/rules/03-styles.md`「日本語の品質を保つ」節の上位原則
 - `agent-toolkit:writing-standards`「Markdown記述スタイル」節
 `## 変更内容`配下のコードブロック内の追記予定文面は計画ファイル本体の機械チェックでは実質的に検査対象外となるため、
 `agent-toolkit:plan-mode`スキル本文の工程7の改訂後最終形に対する機械チェック手順で検査する。
 
 ## 編集対象スキル固有規定の事前適用
 
-本節は`agent-toolkit:agent-standards`「文書サイズ上限」節の対象ファイル
- （`agent.md`・`claude-code.md`・各`SKILL.md`・サブエージェント定義・`references/`配下など）を扱う。
+本節は`agent-toolkit:agent-standards`「文書サイズ上限」節の対象ファイルを扱う。
+対象ファイルは`01-agent.md`・`02-claude-code.md`・各`SKILL.md`・サブエージェント定義・`references/`配下などとする。
 対象ファイルが計画ファイル`## 変更内容`の対象ファイル一覧へ含まれる場合は、計画ファイル本文の以下2点を機械的に検査する。
 
 - `agent-toolkit:agent-standards`「文書サイズ上限」節のSSOT規定（改訂後見込みが215行以上）に該当する計画では、
@@ -140,3 +140,18 @@
    - 検出違反は計画ファイル本文へ反映する。
      Claude Code側permission modeが`plan`なら`ExitPlanMode`を呼び出し、
      `plan`でなければ`ExitPlanMode`を呼ばず工程8へ進む
+
+## 工程7バイパスの機械検出
+
+工程7の4サブエージェント（`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）
+およびcodexレビューの起動は、次のセッション状態フラグとして記録される。
+
+- `plan_integrity_checker_invoked`
+- `naive_executor_invoked`
+- `plan_impl_reviewer_invoked`
+- `codex_review_invoked`
+
+記録は`agent-toolkit/scripts/posttooluse.py`が担う。
+`agent-toolkit/scripts/pretooluse.py`の`ExitPlanMode`ハンドラは、上記4フラグのいずれかが未起動の場合にブロックする。
+`Skill`ツールでの`agent-toolkit:plan-impl`スキル呼び出しハンドラも同様にブロックする。
+当該4フラグは新計画に着手する時点（`agent-toolkit:plan-mode`スキル起動時）にリセットする。

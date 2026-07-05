@@ -55,7 +55,7 @@ class TestHomeClaudeEditWarning:
         "rel",
         [
             "CLAUDE.md",
-            "rules/agent-toolkit/agent.md",
+            "rules/agent-toolkit/01-agent.md",
             "agents/foo.md",
             "skills/bar/SKILL.md",
             "agent-toolkit/hooks/hooks.json",
@@ -137,7 +137,7 @@ class TestHomeClaudeEditWarning:
         [
             "./.claude/CLAUDE.md",  # 冗長な `.` セグメント
             "foo/../.claude/CLAUDE.md",  # `..` で戻る
-            ".claude/./rules/agent-toolkit/agent.md",  # 途中の `.`
+            ".claude/./rules/agent-toolkit/01-agent.md",  # 途中の `.`
         ],
     )
     def test_warns_with_non_canonical_segments(self, rel: str):
@@ -606,7 +606,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "Auto-generated hook notice" in result.stderr
 
     def test_block_in_agent_toolkit_rules(self):
-        target = str(_AT_RULES_DIR / "agent.md")
+        target = str(_AT_RULES_DIR / "01-agent.md")
         result = _run(
             {
                 "tool_name": "Edit",
