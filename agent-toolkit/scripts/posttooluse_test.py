@@ -326,6 +326,16 @@ class TestTaskInvocationFlags:
         state = _read_state(tmp_path, sid)
         assert state.get("plan_impl_reviewer_invoked") is True
 
+    @pytest.mark.parametrize("subagent_type", ["agent-doc-validator", "agent-toolkit:agent-doc-validator"])
+    def test_agent_doc_validator_flag(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = "task-agent-doc-validator"
+        _run(
+            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("agent_doc_validator_invoked") is True
+
     def test_codex_review_flag_via_skill(self, tmp_path: pathlib.Path):
         sid = "codex-review-via-skill"
         _run(
@@ -354,7 +364,47 @@ class TestTaskInvocationFlags:
         assert state.get("plan_integrity_checker_invoked") is not True
         assert state.get("naive_executor_invoked") is not True
         assert state.get("plan_impl_reviewer_invoked") is not True
+        assert state.get("agent_doc_validator_invoked") is not True
         assert state.get("codex_review_invoked") is not True
+
+
+class TestCurrentPlanFilePathTracking:
+    """plan file編集時の`current_plan_file_path`記録。
+
+    pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定
+    （`_should_require_agent_doc_validator`）が計画ファイル本文を再読み込みする際に使う。
+    """
+
+    def test_write_records_current_plan_file_path(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        plan_path = plans_dir / "sample.md"
+        sid = "plan-path-write"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("current_plan_file_path") == str(plan_path)
+
+    def test_non_plan_file_write_does_not_record(self, tmp_path: pathlib.Path):
+        sid = "plan-path-non-plan"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "a.py"), "content": "x"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert "current_plan_file_path" not in state
 
 
 class TestEdgeCases:

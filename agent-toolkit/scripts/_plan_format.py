@@ -5,6 +5,7 @@ SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`の
 「セクション構成と記述要件」節。
 """
 
+import pathlib
 import re
 from collections.abc import Iterator
 
@@ -135,3 +136,78 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
             in_html_comment = True
             continue
         yield lineno, line
+
+
+# `## 変更内容 > ### 対象ファイル一覧` 配下のチェックボックス箇条書きから相対パスを抽出するパターン。
+# `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
+_CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
+
+
+def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
+    """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
+
+    除外領域の定義は`iter_markdown_body_lines`に従う。
+    対象H2見出しが存在しない場合は空リストを返す。
+    対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
+    H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
+    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    """
+    body: list[tuple[int, str]] = []
+    in_target_h2 = False
+    for lineno, line in iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            in_target_h2 = line[3:].strip() == h2_heading
+            continue
+        if in_target_h2:
+            body.append((lineno, line))
+    return body
+
+
+def extract_target_files_from_changes(content: str) -> list[str]:
+    """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
+
+    パス記述の慣例（インラインコード表記、`` `path` ``形式）に合わせ、
+    前後の全角空白を含む空白除去後にバッククォートを除去する。
+    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    """
+    body = extract_h2_section_body(content, "変更内容")
+    paths: list[str] = []
+    in_target_h3 = False
+    for _, line in body:
+        if line.startswith("### "):
+            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
+            continue
+        if in_target_h3:
+            m = _CHECKBOX_PATTERN.match(line)
+            if m:
+                paths.append(m.group(1).strip().strip("`"))
+    return paths
+
+
+def is_agent_facing_md(rel_path: str) -> bool:
+    """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。
+
+    対象は拡張子`.md`のファイルのうち、次のいずれかに該当するもの。
+    ルートの`AGENTS.md`・`CLAUDE.md`。パス部品に`rules`を含むもの
+    （`agent-toolkit/rules/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
+    末尾から3番目のパス部品が`skills`かつファイル名が`SKILL.md`のもの
+    （`agent-toolkit/skills/<name>/SKILL.md`・`.claude/skills/<name>/SKILL.md`・
+    `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
+    パス部品に`references`と`skills`の両方を含むもの。パス部品に`agents`を含むもの。
+    パス部品の完全一致で判定し、部分文字列一致は行わない。
+    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    """
+    p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
+    parts = p.parts
+    name = p.name
+    if not name.endswith(".md"):
+        return False
+    if len(parts) == 1 and name in ("AGENTS.md", "CLAUDE.md"):
+        return True
+    if "rules" in parts[:-1]:
+        return True
+    if len(parts) >= 3 and parts[-3] == "skills" and name == "SKILL.md":
+        return True
+    if "references" in parts[:-1] and "skills" in parts[:-1]:
+        return True
+    return "agents" in parts[:-1]

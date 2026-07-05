@@ -33,6 +33,7 @@ description: >
 トピック別リファレンス:
 
 - 文字エンコーディング詳細（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
+- 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）: `references/independent-html.md`
 
 ## コーディング品質（全言語共通）
 

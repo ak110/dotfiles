@@ -15,11 +15,15 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 2. Git状態確認 (Bash) とgit log確認状態のリセット (commit/rebase/push/編集後)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
 4. plan-modeスキル呼び出し検出 (Skill)
-5. 振り返りスキル呼び出し検出 (Skill) — `session_review_invoked`辞書へ記録
+5. 振り返りスキル呼び出し検出 (Skill)
+   （`session_review_invoked`辞書へ記録）
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
-8. Task呼び出し時のsubagent_type別セッション状態フラグ記録（plan-integrity-checker / naive-executor / plan-impl-reviewer）
+8. Task呼び出し時のsubagent_type別セッション状態フラグ記録
+   （plan-integrity-checker / naive-executor / plan-impl-reviewer / agent-doc-validator）
 9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
+10. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
+    （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
 """
 
 import json
@@ -32,7 +36,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_format import iter_markdown_body_lines  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_h2_sections,
+    extract_target_files_from_changes,
+    is_agent_facing_md,
+    iter_markdown_body_lines,
+)
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。
@@ -127,22 +136,11 @@ _TASK_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "agent-toolkit:naive-executor": "naive_executor_invoked",
     "plan-impl-reviewer": "plan_impl_reviewer_invoked",
     "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
+    "agent-doc-validator": "agent_doc_validator_invoked",
+    "agent-toolkit:agent-doc-validator": "agent_doc_validator_invoked",
 }
 
 # --- plan file形式検査の定数 ---
-
-# `## 変更内容 > ### 対象ファイル一覧` 配下のチェックボックス箇条書きから相対パスを抽出するパターン。
-# `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
-_CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
-
-
-def _extract_h2_sections(content: str) -> list[str]:
-    """Markdown本文からH2見出しのテキストを順に抽出する。
-
-    フロントマター・コードフェンス・複数行HTMLコメント内の`## `行は見出しとして扱わない。
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    """
-    return [line[3:].strip() for _, line in iter_markdown_body_lines(content) if line.startswith("## ")]
 
 
 def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
@@ -162,68 +160,15 @@ def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
     return headings
 
 
-def _extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
-    """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    対象H2見出しが存在しない場合は空リストを返す。
-    対象H2見出し行自体は本文行に含めず、次のH2見出し行に達した時点で収集を終える。
-    H3見出し行・箇条書き行を含む全ての非除外行を本文行として収集する。
-    """
-    body: list[tuple[int, str]] = []
-    in_target_h2 = False
-    for lineno, line in iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            in_target_h2 = line[3:].strip() == h2_heading
-            continue
-        if in_target_h2:
-            body.append((lineno, line))
-    return body
-
-
-def _extract_target_files_from_changes(content: str) -> list[str]:
-    """## 変更内容 > ### 対象ファイル一覧 配下のチェックボックス箇条書きから相対パスを抽出する。"""
-    body = _extract_h2_section_body(content, "変更内容")
-    paths: list[str] = []
-    in_target_h3 = False
-    for _, line in body:
-        if line.startswith("### "):
-            in_target_h3 = line[4:].strip() == "対象ファイル一覧"
-            continue
-        if in_target_h3:
-            m = _CHECKBOX_PATTERN.match(line)
-            if m:
-                paths.append(m.group(1).strip())
-    return paths
-
-
-def _is_agent_facing_md(rel_path: str) -> bool:
-    """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。"""
-    p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
-    parts = p.parts
-    name = p.name
-    if not name.endswith(".md"):
-        return False
-    if len(parts) == 1 and name in ("AGENTS.md", "CLAUDE.md"):
-        return True
-    if "rules" in parts[:-1]:
-        return True
-    if len(parts) >= 3 and parts[-3] == "skills" and name == "SKILL.md":
-        return True
-    if "references" in parts[:-1] and "skills" in parts[:-1]:
-        return True
-    return "agents" in parts[:-1]
-
-
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
     """対象ファイル一覧の各パスの行数を確認し、200行以上の対象種別ファイルがあれば警告メッセージを返す。"""
-    paths = _extract_target_files_from_changes(content)
+    paths = extract_target_files_from_changes(content)
     if not paths:
         return None
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     over_limit: list[tuple[str, int]] = []
     for rel in paths:
-        if not _is_agent_facing_md(rel):
+        if not is_agent_facing_md(rel):
             continue
         target = base / rel
         try:
@@ -261,7 +206,7 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
         content = pathlib.Path(file_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    headings = _extract_h2_sections(content)
+    headings = extract_h2_sections(content)
     violations: list[str] = []
 
     # 変更内容H2 配下の先頭H3が「対象ファイル一覧」かを検査する
@@ -454,6 +399,18 @@ def main() -> int:
         state = read_state(session_id)
         file_path_raw = tool_input.get("file_path")
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
+        if is_plan_file(file_path):
+            # 現在の計画ファイルパスを記録する。
+            # pretooluse.py側で`agent_doc_validator_invoked`の条件付き必須化を判定する際、
+            # 対象ファイル一覧の内容確認のため計画ファイルを再読み込みする用途に使う。
+
+            def _set_current_plan_file_path(current_state: dict, file_path: str = file_path) -> dict | None:
+                if current_state.get("current_plan_file_path") == file_path:
+                    return None
+                current_state["current_plan_file_path"] = file_path
+                return current_state
+
+            update_state(session_id, _set_current_plan_file_path)
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
             cwd_raw = payload.get("cwd", "")
             cwd = cwd_raw if isinstance(cwd_raw, str) else ""

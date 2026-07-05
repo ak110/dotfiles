@@ -3515,14 +3515,88 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 2
 
+    def test_agent_doc_validator_required_when_target_file_listed(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧にコーディングエージェント向け文書が含まれる場合、agent_doc_validator_invokedも必須化する。"""
+        plan_path = tmp_path / "plan.md"
+        plan_path.write_text(
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/agents/agent-doc-validator.md`\n",
+            encoding="utf-8",
+        )
+        sid = "process7-agent-doc-validator-required"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "agent_doc_validator_invoked" in result.stderr
+
+    def test_agent_doc_validator_not_required_when_target_file_absent(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧にコーディングエージェント向け文書が含まれない場合、agent_doc_validator_invokedを必須化しない。"""
+        plan_path = tmp_path / "plan.md"
+        plan_path.write_text(
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pytools/example.py`\n",
+            encoding="utf-8",
+        )
+        sid = "process7-agent-doc-validator-not-required"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_agent_doc_validator_required_via_fallback_when_target_list_section_missing(self, tmp_path: pathlib.Path):
+        """`### 対象ファイル一覧`節が無い場合は計画ファイル全文を走査対象とし、フォールバック判定で必須化する。"""
+        plan_path = tmp_path / "plan.md"
+        plan_path.write_text(
+            "## 変更内容\n\n`agent-toolkit/rules/01-agent.md`の該当節へ改訂内容を追記する。\n",
+            encoding="utf-8",
+        )
+        sid = "process7-agent-doc-validator-fallback"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "agent_doc_validator_invoked" in result.stderr
+
+    def test_agent_doc_validator_not_required_when_plan_file_path_missing(self, tmp_path: pathlib.Path):
+        """`current_plan_file_path`が存在しないファイルを指す場合は要否判定不能として必須化しない（安全側フォールバック）。"""
+        sid = "process7-agent-doc-validator-missing-plan-file"
+        state = {
+            "plan_mode_skill_invoked": True,
+            "current_plan_file_path": str(tmp_path / "does-not-exist.md"),
+        }
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
 
 class TestPlanModeFlagReset:
     """`agent-toolkit:plan-mode`スキル起動時の工程7完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時に工程7完了フラグが偽へリセットされる。"""
+        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
+        `current_plan_file_path`が消去される。
+        """
         sid = "process7-reset"
-        state = {"plan_mode_skill_invoked": True}
+        state = {
+            "plan_mode_skill_invoked": True,
+            "agent_doc_validator_invoked": True,
+            "current_plan_file_path": "/tmp/previous-plan.md",
+        }
         state.update({flag: True for flag in _PROCESS7_FLAGS})
         _write_session_state(tmp_path, sid, state)
         result = _run(
@@ -3538,6 +3612,8 @@ class TestPlanModeFlagReset:
         updated = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         for flag in _PROCESS7_FLAGS:
             assert updated[flag] is False
+        assert updated["agent_doc_validator_invoked"] is False
+        assert "current_plan_file_path" not in updated
 
 
 class TestCheckPlanFileH2SectionOrder:

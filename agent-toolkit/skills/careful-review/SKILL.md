@@ -12,7 +12,7 @@ description: >
 
 # レビュー工程
 
-対象範囲（ファイル群または差分）の評価を2エージェントへ分担する。
+対象範囲（ファイル群または差分）の評価を複数エージェントへ分担する。
 
 - `plan-spec-reviewer`: 計画適合性および成果物間の整合性
 - `plan-impl-reviewer`: コード単体品質・ドキュメント単体品質・日本語表現
@@ -49,6 +49,11 @@ description: >
 - 計画ファイルあり: 仕様適合性と成果物間の整合性を評価する
 - 計画ファイル無し: 仕様への適合性評価が成立しないため、成果物間の整合性のみ評価する
 
+対象範囲にコーディングエージェント向け文書カテゴリが含まれる場合、`agent-doc-validator`を
+`plan-impl-reviewer`・`plan-spec-reviewer`と並列に独立起動する。
+`plan-impl-reviewer`は単体品質を担当し、`agent-doc-validator`は
+`01-agent.md`および`agent-standards`スキル方針への適合性を担当する。両者の担当観点は独立する。
+
 ### plan-impl-reviewerの分割起動
 
 `plan-impl-reviewer`は対象ファイルの件数と種別に応じて分割起動を検討する。
@@ -73,6 +78,8 @@ description: >
 - `spec`（`plan-spec-reviewer`）: 計画ファイルと成果物の仕様適合性、および成果物間の整合性
   計画ファイル未提示の場合は仕様適合性をスキップし整合性のみ評価する
 - `impl`（`plan-impl-reviewer`）: コード単体品質・ドキュメント単体品質・日本語表現
+- `doc-validator`（`agent-doc-validator`）: `01-agent.md`方針および`agent-standards`スキル方針への適合性
+  （コーディングエージェント向け文書カテゴリを含む場合のみ起動）
 
 ```text
 以下の実装についてレビューを実施してください。

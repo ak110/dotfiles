@@ -108,7 +108,7 @@
      - 起動プロンプトに本ファイルの読み込み指示、計画ファイルパス、
        「計画文内・他ファイルとの整合」節の既存規範の周辺品質サブ観点点検対象の既存規範ファイルパスを記載する
    - 上記4サブエージェント（`codexレビュー`・`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）は、
-     いずれも省略と軽量化の対象外とする
+     いずれも省略と軽量化の対象外とする。条件成立時に起動する5件目の`agent-doc-validator`も同様に対象外とする
      - 時間・コンテキスト消費・autocompact thrashingのリスク・作業量見込みなどの自己推定を根拠に、
        省略・部分実施・単独foreground委譲下での例外扱いへ流用しない
    - サブエージェント`naive-executor`: 計画ファイルの愚直読解を委譲する
@@ -120,6 +120,12 @@
      コード・ドキュメント・日本語表現の単体品質を事前レビューする
      - 起動プロンプトに各一時ファイル絶対パスと正本パスの対応表、
        差分基準として計画着手前コミットSHAを記載する
+   - サブエージェント`agent-doc-validator`（条件付き起動）:
+     `## 変更内容`「対象ファイル一覧」にコーディングエージェント向け文書対象ファイル
+     （`agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
+     `agent-toolkit/skills/`配下、`.chezmoi-source/dot_claude/rules/`・
+     `.chezmoi-source/dot_claude/skills/`配下、`AGENTS.md`、`CLAUDE.md`）が含まれる計画の場合のみ起動し、
+     `01-agent.md`方針および`agent-standards`スキル方針への適合性を独立にレビューする
 2. 同一メッセージ内で「ユーザー発話・提示素材との照合」と
    「計画文内・他ファイルとの整合」のうちユーザー発話照合と横断grep確認部分をメイン側で並行実施する
 3. 全ての指摘が出揃った時点で
@@ -143,15 +149,22 @@
 
 ## 工程7バイパスの機械検出
 
-工程7の4サブエージェント（`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）
-およびcodexレビューの起動は、次のセッション状態フラグとして記録される。
+工程7の4サブエージェント（`codexレビュー`・`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）の
+起動は、次のセッション状態フラグとして記録される。5件目の`agent-doc-validator`は条件付きフラグとして扱う。
 
 - `plan_integrity_checker_invoked`
 - `naive_executor_invoked`
 - `plan_impl_reviewer_invoked`
 - `codex_review_invoked`
+- `agent_doc_validator_invoked`は条件付きで扱う。対象は`## 変更内容`「対象ファイル一覧」に
+  コーディングエージェント向け文書対象ファイルが含まれる計画とする。
+  該当ファイル群は`agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
+  `agent-toolkit/skills/`配下、`.chezmoi-source/dot_claude/rules/`・
+  `.chezmoi-source/dot_claude/skills/`配下、`AGENTS.md`、`CLAUDE.md`とする
 
 記録は`agent-toolkit/scripts/posttooluse.py`が担う。
-`agent-toolkit/scripts/pretooluse.py`の`ExitPlanMode`ハンドラは、上記4フラグのいずれかが未起動の場合にブロックする。
+`agent-toolkit/scripts/pretooluse.py`の`ExitPlanMode`ハンドラは、上記4フラグと条件成立時に加わる
+`agent_doc_validator_invoked`のいずれかが未起動の場合にブロックする。
 `Skill`ツールでの`agent-toolkit:plan-impl`スキル呼び出しハンドラも同様にブロックする。
-当該4フラグは新計画に着手する時点（`agent-toolkit:plan-mode`スキル起動時）にリセットする。
+当該4フラグと条件成立時に加わる`agent_doc_validator_invoked`は、
+新計画に着手する時点（`agent-toolkit:plan-mode`スキル起動時）にリセットする。

@@ -99,3 +99,12 @@ async-wait	サブエージェントの応答を待機する
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し
+approach-confirm	完遂か最小限か
+approach-confirm	完遂は時間がかかる
+approach-confirm	規範遵守で時間がかかる
+approach-confirm	どう進めるべきか指示
+quality-gate-count	hookブロックが繰り返される
+quality-gate-count	lint違反が膨大
+quality-gate-count	違反件数が多く進行困難
+quality-gate-count	ブロック回数を踏まえ
+quality-gate-count	修正量が多いため
