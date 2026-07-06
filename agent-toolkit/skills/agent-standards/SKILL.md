@@ -196,17 +196,17 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
   配布物Stop hook（`stop_advisor.py`）が重複送出抑制に使う（個人フック不在時は未設定のまま従来通り動作する）
 - `autonomous_exit_invoked`: dotfiles個人フックが`agent-toolkit:exit-session`呼び出しを記録。
   個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
-  （リセットせず、新規セッションは別`session_id`の状態ファイルを使うため旧フラグは再読み取りされない）
+  （リセットしない。新規セッションは別`session_id`の状態ファイルで旧フラグを再読み取りしない）
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
-- `plan_reviewer_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:plan-reviewer`起動を記録。工程7の完遂判定に使う
-- `naive_executor_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:naive-executor`起動を記録。工程7の完遂判定に使う
-- `plan_impl_reviewer_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:plan-impl-reviewer`起動を記録。工程7の完遂判定に使う
-- `codex_review_invoked`: PostToolUse(Skill)が`agent-toolkit:plan-codex-review`呼び出しまたは
-  `mcp__codex__codex`完了を記録。工程7の完遂判定に使う
-- `agent_doc_validator_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:agent-doc-validator`起動を記録。
-  コーディングエージェント向け文書対象ファイルを含む計画時のみ工程7の必須フラグとする
+- 工程7完遂判定フラグ群: `plan_reviewer_invoked` / `naive_executor_invoked` /
+  `plan_impl_reviewer_invoked` / `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、
+  `codex_review_invoked`はPostToolUse（Skill呼び出しまたは`mcp__codex__codex`完了）が記録する
+  （`agent_doc_validator_invoked`はコーディングエージェント向け文書対象時のみ必須）
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時に上記フラグの条件付き必須化判定で計画ファイル本文を再読込するために使う
+- 計画ファイル未作成時の直接編集検知フラグ群: `plan_file_written` / `direct_agent_toolkit_edit_count` /
+  `last_agent_toolkit_edit_path`はPreToolUse(Write/Edit/MultiEdit)が更新する
+  （plan-mode起動後の計画ファイル未作成でのagent-toolkit配下編集連続を検知、2件目でwarn・3件目でblock）
 
 ### 公式リファレンス
 

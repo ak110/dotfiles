@@ -13,6 +13,15 @@ approve・通知の分岐は以下のとおり。
 - 構造的にセッション継続中（非同期待機ツールまたは未完了background task（Agent・Bash双方）あり）:
   サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
   git status表示を抑止する
+- 直近アシスタントターン応答テキストにscope-escalationフレーズを検出:
+  `_scope_escalation._match_scope_escalation`で該当カテゴリを検出した場合、
+  `decision: "block"`＋矯正指示`reason`を返し、正規工程へ復帰させる。
+  Stop経路の照合対象は`_STOP_FOCUS_CATEGORIES`（`process-omission`単独）に限定する。
+  自由文脈テキスト全体を走査する経路のため、他カテゴリの日常的な報告文言との誤検出を回避する。
+  `fabricated-metrics`はPreToolUseの`AskUserQuestion`・`Write`・`Edit`経路のみで検出しStop経路の対象外とする。
+  振り返りスキル起動済み・拡張章pending等のapprove分岐より先に判定するため、
+  以降のセッションでもscope-escalation発話を検出時点で矯正する
+  （`stop_hook_active`真の場合は本分岐をバイパスして無条件approveする）
 - 既に`agent-toolkit:session-review`スキルが起動済み:
   再Stop間にユーザーが変更を加える可能性に備え、approveに加えて
   git status表示を付与する
@@ -48,11 +57,19 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _STOP_FOCUS_CATEGORIES,
+    _match_scope_escalation,
+)
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
     is_pending_async_work,
+)
+from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    assistant_text,
+    iter_latest_assistant_messages,
 )
 
 # このスクリプトの hook 識別子。
@@ -196,6 +213,30 @@ def main() -> int:
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0
+
+    # 直近アシスタントターンの応答テキストにscope-escalationフレーズを検出した場合、
+    # `decision: "block"`＋`reason`で矯正指示を返す。
+    # `stop_hook_active`ガードは既に上流で処理済みのため1回のみ発火する。
+    # 振り返りスキル起動済み・拡張章pending等のapprove分岐より前に判定するため、
+    # `session_review_invoked`真化以降のセッションでもscope-escalationフレーズを検出時点で矯正できる。
+    # transcript読み取り失敗（空パス・存在しないパス・OSエラー等）は
+    # `iter_latest_assistant_messages`が空イテレーターを返すため、
+    # 本checkは自動的にfail-openとなる。
+    if transcript_path:
+        for message in iter_latest_assistant_messages(transcript_path):
+            text = assistant_text(message)
+            category = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES)
+            if category is not None:
+                reason = _llm_notice(
+                    f"blocked: 直近の応答テキストに`{category}`カテゴリの縮退表明・工程バイパス誘発表現を検出。"
+                    "当該判断を撤回し、規範上の必須工程へ復帰したうえで作業を継続する。"
+                    "カテゴリ定義は`agent-toolkit:agent-standards`配下"
+                    "`references/scope-escalation-phrases.md`を参照する。",
+                    tag="block",
+                )
+                append_stop_log(session_id, "block_scope_escalation", {"category": category})
+                _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
+                return 0
 
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
     # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、

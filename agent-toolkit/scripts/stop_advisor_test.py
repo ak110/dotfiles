@@ -2,6 +2,11 @@
 
 `is_pending_async_work`とsession_stateの`session_review_invoked`によるapprove条件、
 未コミット変更通知とセッション振り返り誘導の組み合わせを検証する。
+
+scope-escalation検出テストの入力フレーズは
+`agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt`
+から動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節。
+検出語そのものをテストコード本文へ転記しない）。
 """
 
 import json
@@ -13,8 +18,19 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "stop_advisor.py"
+
+_SCOPE_ESCALATION_INPUTS = load_scope_escalation_inputs()
+
+
+def _pick_scope_escalation_text(category: str = "process-omission") -> str:
+    """指定カテゴリの最小マッチ入力を1件返す。フィクスチャ不在時は空文字列。"""
+    for text, cat in _SCOPE_ESCALATION_INPUTS:
+        if cat == category:
+            return text
+    return ""
 
 
 def _run(
@@ -646,3 +662,161 @@ class TestGitStatusDisplay:
         decision = _parse_decision(result)
         assert "decision" not in decision
         assert "systemMessage" not in decision
+
+
+class TestScopeEscalationDetection:
+    """直近アシスタントターンの応答テキストへのscope-escalation検出。
+
+    - 検出時は`decision: "block"`＋矯正指示`reason`を返す
+    - 非該当時は通常フロー（振り返り誘導block）へ進む
+    - `stop_hook_active`が真の場合は即approve（検出処理をバイパス）
+    - transcript読み取り失敗はfail-open（本checkは通過し通常フローへ進む）
+    """
+
+    def test_detects_scope_escalation_and_blocks(self, tmp_path: pathlib.Path):
+        """縮退表明フレーズを含む応答テキスト → blockで矯正指示を返す。"""
+        phrase = _pick_scope_escalation_text()
+        if not phrase:
+            pytest.skip("scope-escalation fixture not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        result = _run(
+            {"session_id": "escalation-detected", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        # カテゴリ名またはリファレンス誘導が本文に含まれる。
+        assert "scope-escalation-phrases" in body or "縮退表明" in body
+
+    def test_non_matching_text_falls_through_to_review_block(self, tmp_path: pathlib.Path):
+        """非該当テキスト → 通常の振り返り誘導blockへ進む（`session-review`が本文へ含まれる）。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only("通常の進捗を報告します。")])
+        result = _run(
+            {"session_id": "escalation-clean", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert _SESSION_REVIEW_SKILL in body
+
+    def test_stop_hook_active_bypasses_escalation_check(self, tmp_path: pathlib.Path):
+        """`stop_hook_active=True`ならescalation検出以前にapproveされる。"""
+        phrase = _pick_scope_escalation_text()
+        if not phrase:
+            pytest.skip("scope-escalation fixture not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        result = _run(
+            {
+                "session_id": "escalation-active",
+                "transcript_path": str(transcript),
+                "stop_hook_active": True,
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_transcript_read_failure_is_fail_open(self, tmp_path: pathlib.Path):
+        """存在しないtranscript_pathでも例外を送出せず、通常フローへ進む（振り返り誘導block）。"""
+        missing = tmp_path / "no-such-transcript.jsonl"
+        result = _run(
+            {"session_id": "escalation-fail-open", "transcript_path": str(missing)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        # 検出処理は空イテレーターとなり、後続の通常フロー（block_session_review）へ進む。
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert _SESSION_REVIEW_SKILL in body
+
+    def test_detects_scope_escalation_when_session_review_invoked(self, tmp_path: pathlib.Path):
+        """振り返りスキル起動済み状態でもscope-escalationフレーズを検出しblockする。
+
+        scope-escalation検出分岐がsession_review_invoked分岐より前に配置されているため、
+        以降のセッションでもscope-escalation発話は検出時点で矯正される。
+        """
+        phrase = _pick_scope_escalation_text()
+        if not phrase:
+            pytest.skip("scope-escalation fixture not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        _write_state(
+            tmp_path,
+            "escalation-after-review",
+            {"session_review_invoked": {_SESSION_REVIEW_SKILL: True}},
+        )
+        result = _run(
+            {"session_id": "escalation-after-review", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "scope-escalation-phrases" in body or "縮退表明" in body
+
+    @pytest.mark.parametrize(
+        "category",
+        [
+            "priority-consult",
+            "next-cycle-defer",
+            "approach-confirm",
+            "workload",
+            "split-execution",
+            "fabricated-metrics",
+        ],
+    )
+    def test_non_focus_categories_do_not_block(self, tmp_path: pathlib.Path, category: str):
+        """Stop経路の照合対象外カテゴリのフレーズは通常フロー（振り返り誘導block）へ進む。
+
+        `_STOP_FOCUS_CATEGORIES`（`process-omission`単独）以外の
+        カテゴリは自由文脈で誤検出リスクがあるためStop経路の対象外とする。
+        `fabricated-metrics`もStop経路の対象外に含まれる。
+        対象外カテゴリのフレーズはscope-escalation判定を通過し、
+        後続の通常フロー（`block_session_review`）へ進むことを検証する。
+        """
+        phrase = _pick_scope_escalation_text(category)
+        if not phrase:
+            pytest.skip(f"scope-escalation fixture for {category} not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        result = _run(
+            {"session_id": f"non-focus-{category}", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        # 通常フローへ進み、振り返り誘導blockが返る（scope-escalation矯正blockではない）。
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert _SESSION_REVIEW_SKILL in body
+        # scope-escalation矯正の本文は含まれない。
+        assert "縮退表明" not in body
+
+    def test_logs_block_scope_escalation(self, tmp_path: pathlib.Path):
+        """検出時に`append_stop_log`へ`block_scope_escalation`が記録される。"""
+        phrase = _pick_scope_escalation_text()
+        if not phrase:
+            pytest.skip("scope-escalation fixture not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        _run(
+            {"session_id": "escalation-log", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        log_path = tmp_path / "claude-agent-toolkit-stop-escalation-log.log"
+        assert log_path.exists()
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        assert any("block_scope_escalation" in line for line in lines)

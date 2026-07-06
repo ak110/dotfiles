@@ -15,6 +15,7 @@ import sys
 
 import _plan_file
 import pytest
+from _scope_escalation_test_helpers import load_scope_escalation_inputs as _load_scope_escalation_inputs
 from pyfltr.colloquial import check as _colloquial_check
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
@@ -2897,39 +2898,6 @@ class TestBashAgentToolkitVersionBump:
         assert not self._has_version_bump_warning(result)
 
 
-_SCOPE_ESCALATION_INPUTS_PATH = (
-    pathlib.Path(__file__).resolve().parents[1]
-    / "skills"
-    / "agent-standards"
-    / "references"
-    / "_scope_escalation_test_inputs.txt"
-)
-
-
-def _load_scope_escalation_inputs() -> list[tuple[str, str]]:
-    """隔離フィクスチャからテスト入力を読み込む。
-
-    フォーマット: `<expected-category>\\t<minimal-matching-text>`のタブ区切り。
-    空行と`#`先頭行はスキップする。
-    検出語そのものをテストコードへ転記しないため、本ファイルから動的に読み込む
-    （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
-    フィクスチャ不在時は空リストを返す（モジュールコレクション失敗を避けるため）。
-    各テストケースは入力リストが空ならparametrize側でskipされる。
-    """
-    if not _SCOPE_ESCALATION_INPUTS_PATH.exists():
-        return []
-    inputs: list[tuple[str, str]] = []
-    for raw in _SCOPE_ESCALATION_INPUTS_PATH.read_text(encoding="utf-8").splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if "\t" not in stripped:
-            continue
-        category, text = stripped.split("\t", 1)
-        inputs.append((text.strip(), category.strip()))
-    return inputs
-
-
 _SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()
 
 
@@ -4705,3 +4673,260 @@ class TestPlanFilePrelintPassedDiffMarkerPipeline:
         )
         assert "prior lint check" not in result.stderr
         assert result.returncode == 0
+
+
+class TestDirectAgentToolkitEditsAfterPlanMode:
+    """plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続を検知。
+
+    2件目でwarn（stderr出力＋通過）、3件目でblock。
+    直前と同一パスの繰り返しはincrementしない。
+    対象外パスへの編集はカウンタをリセットし通過する。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+
+    def _write_flag_state(self, tmp_path: pathlib.Path, sid: str, extra: dict | None = None) -> None:
+        state: dict = {
+            "plan_mode_skill_invoked": True,
+            "textlint_violations_read": True,
+            "plan_file_guidelines_read": True,
+        }
+        if extra:
+            state.update(extra)
+        _write_session_state(tmp_path, sid, state)
+
+    def _target(self, tmp_path: pathlib.Path, subpath: str) -> pathlib.Path:
+        # 対象パターン`agent-toolkit/skills/`を含む相対パスを組み立てる。
+        path = tmp_path / "agent-toolkit" / "skills" / subpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("stub\n", encoding="utf-8")
+        return path
+
+    def test_single_target_edit_does_not_warn(self, tmp_path: pathlib.Path):
+        sid = "direct-edit-single"
+        self._write_flag_state(tmp_path, sid)
+        target = self._target(tmp_path, "foo/SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "計画ファイル未作成" not in result.stderr
+
+    def test_second_target_edit_warns_and_continues(self, tmp_path: pathlib.Path):
+        sid = "direct-edit-warn"
+        self._write_flag_state(tmp_path, sid)
+        env = self._state_env(tmp_path)
+        for i, name in enumerate(("foo/SKILL.md", "bar/SKILL.md")):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            if i == 0:
+                assert result.returncode == 0
+                assert "[warn]" not in result.stderr
+            else:
+                # 2件目はwarnして通過する（returncode 0）。
+                assert result.returncode == 0
+                assert "[warn]" in result.stderr
+                assert "計画ファイル未作成" in result.stderr
+
+    def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
+        sid = "direct-edit-block"
+        self._write_flag_state(tmp_path, sid)
+        env = self._state_env(tmp_path)
+        for i, name in enumerate(("foo/SKILL.md", "bar/SKILL.md", "baz/SKILL.md")):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            if i < 2:
+                assert result.returncode == 0
+            else:
+                # 3件目でblockする。
+                assert result.returncode == 2
+                assert "[block]" in result.stderr
+                assert "計画ファイル未作成" in result.stderr
+
+    def test_block_persists_on_same_path_retry(self, tmp_path: pathlib.Path):
+        """block後にコーディングエージェントが同一パスを再試行してもblockを継続する。
+
+        block時は`direct_agent_toolkit_edit_count`と`last_agent_toolkit_edit_path`を
+        更新しない設計により、再試行時も再度3件目としてblockが返る。
+        block時に更新してしまうと、直前パス一致条件でカウンタ加算がスキップされ
+        blockが素通りする回避経路が発生するため、その回避を防ぐ。
+        """
+        sid = "direct-edit-block-retry"
+        self._write_flag_state(tmp_path, sid)
+        env = self._state_env(tmp_path)
+        # 1件目・2件目で異なるパスの編集を実行しwarn状態にする。
+        for name in ("foo/SKILL.md", "bar/SKILL.md"):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+        # 3件目でblock。同一パスで複数回再試行しても継続してblockされることを検証する。
+        third = self._target(tmp_path, "baz/SKILL.md")
+        for _ in range(3):
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(third), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 2
+            assert "[block]" in result.stderr
+            assert "計画ファイル未作成" in result.stderr
+        # block後もstateは更新されず、カウンタは2・直前パスは2件目のままである。
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_after = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state_after["direct_agent_toolkit_edit_count"] == 2
+        assert state_after["last_agent_toolkit_edit_path"].endswith("bar/SKILL.md")
+
+    def test_same_path_repeats_do_not_increment(self, tmp_path: pathlib.Path):
+        sid = "direct-edit-same"
+        self._write_flag_state(tmp_path, sid)
+        env = self._state_env(tmp_path)
+        target = self._target(tmp_path, "foo/SKILL.md")
+        for _ in range(5):
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+            assert "[warn]" not in result.stderr
+            assert "[block]" not in result.stderr
+
+    def test_non_target_path_edit_passes(self, tmp_path: pathlib.Path):
+        sid = "direct-edit-nontarget"
+        self._write_flag_state(tmp_path, sid)
+        other = tmp_path / "other.md"
+        other.write_text("stub\n", encoding="utf-8")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(other), "old_string": "stub", "new_string": "stub2"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path):
+        """`plan_mode_skill_invoked`が偽なら本checkの対象外。"""
+        sid = "direct-edit-nomode"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": False})
+        env = self._state_env(tmp_path)
+        # 3件連続でもブロックしない。
+        for name in ("foo/SKILL.md", "bar/SKILL.md", "baz/SKILL.md"):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+
+    def test_skipped_when_plan_file_written(self, tmp_path: pathlib.Path):
+        """計画ファイル作成済みフラグ`plan_file_written=True`なら本checkの対象外。"""
+        sid = "direct-edit-planwritten"
+        self._write_flag_state(tmp_path, sid, {"plan_file_written": True})
+        env = self._state_env(tmp_path)
+        for name in ("foo/SKILL.md", "bar/SKILL.md", "baz/SKILL.md"):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+
+    def test_plan_file_write_marks_written_and_resets_counter(self, tmp_path: pathlib.Path):
+        """warn状態まで進めた後、計画ファイル書込で`plan_file_written=True`とカウンタリセットを検証する。
+
+        `_mark_plan_written`（pretooluse.py内）の副作用として、
+        `direct_agent_toolkit_edit_count`と`last_agent_toolkit_edit_path`もリセットされる。
+        """
+        sid = "direct-edit-mark-plan-written"
+        home = tmp_path / "home"
+        self._write_flag_state(tmp_path, sid, {"plan_prelint_passed": [_VALID_H2_PLAN_SHA]})
+        env = self._state_env(tmp_path, home)
+        # 2件目でwarn状態にする。
+        for name in ("foo/SKILL.md", "bar/SKILL.md"):
+            target = self._target(tmp_path, name)
+            result = _run(
+                {
+                    "tool_name": "Edit",
+                    "tool_input": {"file_path": str(target), "old_string": "stub", "new_string": "stub2"},
+                    "session_id": sid,
+                    "permission_mode": "default",
+                },
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+        # warn状態でstate確認: カウンタが2、直前パス記録あり。
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state_pre = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state_pre["direct_agent_toolkit_edit_count"] == 2
+        assert state_pre["last_agent_toolkit_edit_path"] is not None
+        assert not state_pre.get("plan_file_written", False)
+        # 計画ファイルへの書き込みを実行する。
+        plan = _make_plan_file(home)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": _VALID_H2_PLAN_CONTENT},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        # `_mark_plan_written`の副作用でフラグが真、カウンタと直前パスがリセットされている。
+        state_post = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state_post["plan_file_written"] is True
+        assert state_post["direct_agent_toolkit_edit_count"] == 0
+        assert state_post["last_agent_toolkit_edit_path"] is None

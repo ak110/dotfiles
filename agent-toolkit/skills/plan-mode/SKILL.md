@@ -30,10 +30,20 @@ description: >
     変更規模（対象ファイル数・変更行数・単一ファイル性など）・
     auto modeでの自律実行下・機械チェック通過・作業量見込み・所要時間見込み等
   - サブエージェント下でも本規範は等しく適用される。
-    委譲プロンプトが実装・コミット・pushまでを一括指示する場合でも、
-    工程3〜7の省略は禁止する。
+    委譲プロンプトが実装・コミット・pushまでを一括指示する場合でも、全工程の省略は禁止する。
     `agent-toolkit/rules/01-agent.md`「品質最優先」節および
     「サブエージェント設計・起動形態を理由に本節の規範を自身へ適用しない判断はしない」規定と一体で適用する
+  - 多段委譲経路（`process-feedbacks`経由・`apply-feedback`経由等）でネスト起動された本スキルは、
+    上位スキルの工程遷移目標（振り返り工程の到達等）を各工程の完遂の免除根拠にしない。
+    上位スキルの後続工程は本スキルの全工程が完了して初めて実施可能となる
+  - `plan-impl`実行中の割り込みで工程4のみを再実施する場合も本規範を等しく適用する。
+    当該の工程4を完遂して初めて`plan-impl`の後続工程へ復帰可能となる
+  - 登録済み工程を実施せず先へ進める判断を発話・記録した時点で当該判断を無効とし、
+    直ちに正規の工程へ復帰する。当該発話・記録を`session-review`や恒久化の検討等の観測事象として扱う場合、
+    `agent-toolkit:agent-standards`配下`references/quality-first-exceptions.md`の
+    例外条件（`dotfiles-fb status`有効・根本原因の独立性・成果物品質への非影響・対応要件充足）を個別に確認する。
+    代表フレーズ集は`agent-toolkit:agent-standards`配下`references/scope-escalation-phrases.md`の
+    `process-omission`カテゴリを参照する。当該パターンの宣言を規範違反続行の正当化に用いない
 - plan mode移行の前提: 本スキルはplan mode下でも外でも起動できる。
   plan mode下の場合は`ExitPlanMode`が計画ファイル承認ゲートとして機能する。
   plan mode外の場合はユーザー承認を介さず、工程8で`agent-toolkit:plan-impl`へ引き継ぐ。

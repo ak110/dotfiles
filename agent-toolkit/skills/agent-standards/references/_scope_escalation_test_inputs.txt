@@ -1,7 +1,7 @@
 # 縮退誘発フレーズ機械検出テスト用の最小マッチ入力（隔離フィクスチャ）
 #
 # 形式: <expected-category>\t<minimal-matching-text>
-# 1列目はpretooluse.pyの_SCOPE_ESCALATION_PHRASESカテゴリ識別子。
+# 1列目は_scope_escalation.pyの_SCOPE_ESCALATION_PHRASESカテゴリ識別子。
 # 同一カテゴリに対し正規表現のalternation分岐ごとの最小マッチ入力を複数行に列挙する。
 # 空行と`#`先頭行はスキップ。
 #
@@ -59,6 +59,9 @@ process-omission	本計画範囲外として省略します
 process-omission	規範違反を承知
 process-omission	規範違反は次回
 process-omission	規範チェックをスキップ
+process-omission	session-reviewで観測事象として記録する
+process-omission	振り返りで観測事象として記録して続行する
+process-omission	観測事象として記録して続行する
 quality-tradeoff	規模が大きすぎる
 quality-tradeoff	品質を維持できない
 quality-tradeoff	品質維持が困難
@@ -123,3 +126,6 @@ fabricated-metrics	経過3時間
 fabricated-metrics	約50kトークン
 fabricated-metrics	3時間経過
 fabricated-metrics	5分経過
+fabricated-metrics	コンテキスト消費を踏まえ判断する
+fabricated-metrics	コンテキスト消費量を考慮して整理する
+fabricated-metrics	ここまでの消費を踏まえ次工程へ移る
