@@ -16,6 +16,15 @@ user-invocable: false
 呼び出し元`agent-toolkit:spec-driven-impl`から渡された計画ファイル1件を完遂する。
 工程は`agent-toolkit:plan-impl`に従う（実装・検証・コミット・レビューを含む）。
 
+## 必須参照
+
+本エージェントは起動時に次のファイルをRead読込する。読込省略時はユーザー確認可否の判定基準が
+入手できないため、`needs_escalation`を返す。
+本エージェントの`## 出力`節`status`欄は`completed | needs_escalation`のみを許容し、`blocked`を含まない。
+
+- `agent-toolkit/skills/spec-driven-impl/references/qblock-templates.md`:
+  ユーザー確認可否の判定基準・雛形の実体を規定する
+
 ## 前提
 
 本エージェントは`agent-toolkit:spec-driven-impl`配下で動作し、通常のサブエージェントと異なる次の前提を持つ。
