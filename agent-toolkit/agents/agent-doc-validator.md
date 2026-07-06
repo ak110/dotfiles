@@ -62,8 +62,8 @@ tools:
 
 加えて`agent-toolkit/rules/01-agent.md`「品質最優先」原則への適合性を評価する。
 
-計画ファイルと成果物の仕様適合性、コード単体品質、日本語表現は対象外
-（`plan-spec-reviewer`・`plan-impl-reviewer`の担当）。
+計画ファイルと成果物の仕様適合性は`plan-spec-reviewer`の担当、
+コード単体品質および日本語表現は`plan-impl-reviewer`の担当とし、いずれも本エージェントの対象外とする。
 
 ## 出力形式
 

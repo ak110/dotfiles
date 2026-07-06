@@ -5,7 +5,7 @@ Hookは現状Claude Code固有の概念である。本ファイル全体がClaud
 ## hookスクリプトの基本プロトコル
 
 matcher・出力フィールド・メッセージ標識の記述指示が前提とする最低限の実装規約を示す。
-スキーマ詳細は本スキル本体（SKILL.md）の公式ドキュメント節または`plugin-dev:hook-development`スキルを参照する。
+スキーマ詳細は本スキル本体（SKILL.md）の公式リファレンス節または`plugin-dev:hook-development`スキルを参照する。
 
 - 入出力: stdinに呼び出しペイロードのJSONが渡され、stdoutに応答JSONを出力する
   - exit codeは0で正常完了とする

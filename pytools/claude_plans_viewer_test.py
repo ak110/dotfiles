@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import os
 import re
 import sys
@@ -291,7 +292,7 @@ class TestPwaAssets:
     def test_service_worker_contract(self):
         """service worker定数がinstall・activateを登録し、fetchリスナーは持たないこと。
 
-        Chrome 93以降はno-opのfetchハンドラをDevToolsで警告対象とするため、
+        Chrome 93以降はno-opのfetchハンドラーをDevToolsで警告対象とするため、
         意図的にfetchリスナーを登録せず、install／activateのみでPWAインストール可能性を満たす。
         """
         sw_js = _assets.SERVICE_WORKER_JS
@@ -522,6 +523,42 @@ class TestParseArgsConfigFile:
         assert args_alternate.root == "/tmp/plans-alternate"
 
 
+@pytest.mark.usefixtures("_parse_args_isolate_env")
+class TestMainLoggingConfig:
+    """`main()`が構成する`logging`ハンドラーのフォーマットを検証する。"""
+
+    @pytest.fixture(autouse=True)
+    def _restore_root_logger(self):
+        """root loggerのハンドラー・レベルを退避し、テスト後に復元する。
+
+        `main()`は`logging.basicConfig(force=True)`でroot loggerを再初期化するため、
+        検証後に復元しないと他テストのログ捕捉（`caplog`等）へ副作用が及ぶ。
+        """
+        root_logger = logging.getLogger()
+        saved_handlers = root_logger.handlers[:]
+        saved_level = root_logger.level
+        yield
+        root_logger.handlers[:] = saved_handlers
+        root_logger.setLevel(saved_level)
+
+    def test_main_configures_logging_format_with_datetime_and_level(self, tmp_path: Path):
+        """`logging.basicConfig`の`format`引数に日時・ロガー名・レベルが含まれることを確認する。
+
+        `force=True`により、pytest実行環境で既存ハンドラーが付与済みでも再初期化される。
+        `main()`本体のhypercorn起動・observer起動はディレクトリ不在エラーで
+        早期returnさせることで回避する（`root`検証は`app`生成より前に実行されるため）。
+        """
+        result = _cli.main(["--root", str(tmp_path / "missing")])
+
+        assert result == 1
+        handler = logging.getLogger().handlers[0]
+        record = logging.LogRecord(
+            name="test-logger", level=logging.INFO, pathname=__file__, lineno=1, msg="hello", args=None, exc_info=None
+        )
+        formatted = handler.format(record)
+        assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} test-logger INFO hello$", formatted), formatted
+
+
 class TestBuildConsoleTitle:
     """`build_console_title`のタイトル組み立てを検証する。"""
 
@@ -595,7 +632,7 @@ class TestIndexHtml:
         """
         html_src = _assets.INDEX_HTML
 
-        # `onopen`・`onmessage`の両ハンドラが設定されていること。
+        # `onopen`・`onmessage`の両ハンドラーが設定されていること。
         assert "es.onopen" in html_src
         assert "es.onmessage" in html_src
         # 再同期の実体は`refreshFiles`を呼ぶ`resyncFromServer`に集約されていること。
@@ -638,7 +675,7 @@ class TestIndexHtml:
         assert html_src.count('class="toolbar"') >= 2
         # ボタン要素のid指定。
         assert 'id="copy-btn"' in html_src
-        # clickハンドラが`/api/raw`からfetchして`navigator.clipboard.writeText`へ渡す。
+        # clickハンドラーが`/api/raw`からfetchして`navigator.clipboard.writeText`へ渡す。
         # 多ホスト統合のため`host`と`path`の両クエリを組み立てる`fileQuery`を経由する。
         assert "/api/raw?" in html_src
         assert "navigator.clipboard.writeText" in html_src
@@ -691,7 +728,7 @@ class TestIndexHtml:
         # ボタン要素のid指定。
         assert 'id="prev-btn"' in html_src
         assert 'id="next-btn"' in html_src
-        # disabled制御を行う関数があり、prev/nextの両方を更新する。
+        # disabledを制御する関数があり、prev/nextの両方を更新する。
         assert "function updateNavButtons" in html_src
         assert "prevBtn.disabled" in html_src
         assert "nextBtn.disabled" in html_src

@@ -139,7 +139,10 @@ _HOOK_ID = "agent-toolkit/pretooluse"
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("workload", re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)")),
+    (
+        "workload",
+        re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)|作業残量(を考慮|が多い)"),
+    ),
     ("single-session", re.compile(r"1?セッション(内|で)(の|に)?(完遂|完了|終わら|収まら|終わり)")),
     (
         "approach-confirm",
@@ -209,7 +212,10 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "quality-tradeoff",
-        re.compile(r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難)|工数(対効果|見合い|見合わ))"),
+        re.compile(
+            r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難)|工数(対効果|見合い|見合わ)"
+            r"|時間的制約|時間コストを考慮|効率優先)"
+        ),
     ),
     (
         "next-cycle-defer",

@@ -41,7 +41,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     TOML構文エラーは`_config.load_config()`が`ValueError`を送出する。
     """
     parser = argparse.ArgumentParser(
-        description="Serve ~/.claude/plans Markdown via local HTTP.",
+        description="~/.claude/plans配下のMarkdownをローカルHTTPで配信する。",
         epilog=(f"設定ファイル: 既定 {_config.default_config_path()}、環境変数 {_config.ENV_CONFIG} で上書き可。"),
     )
     parser.add_argument(
@@ -201,7 +201,14 @@ def main(argv: list[str] | None = None) -> int:
     `pyproject.toml`の`[project.scripts]`から
     `claude-plans-viewer = "pytools.claude_plans_viewer:main"`の形で参照される。
     """
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # format: 日時・ロガー名・レベルを付与して運用診断性を向上させる。
+    # force=True: テスト実行環境でpytest側のログハンドラーが既存の場合に、
+    # 本ツールのフォーマット設定を上書き適用するため
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        force=True,
+    )
     # hypercornは`hypercorn.error`に独自フォーマット付きハンドラーを設定するが、
     # `propagate`は既定でTrueのためrootの`basicConfig`ハンドラーへも伝搬し二重出力になる。
     # hypercorn側のフォーマット（タイムスタンプ・PID付き）を活かすため、伝搬を止める。
@@ -230,9 +237,9 @@ def main(argv: list[str] | None = None) -> int:
     observer.schedule(_local.PlansEventHandler(root, state), str(root), recursive=True)
     observer.start()
     try:
-        logger.info("Serving %s at http://%s:%s/", root, args.host, args.port)
+        logger.info("%s を http://%s:%s/ で配信します", root, args.host, args.port)
         if args.remote_host:
-            logger.info("Remote hosts: %s (watchdog)", ", ".join(args.remote_host))
+            logger.info("リモートホスト: %s（watchdog）", ", ".join(args.remote_host))
         with _console_title.console_title(build_console_title(args.port, args.remote_host)):
             asyncio.run(serve(app, args.host, args.port))
     finally:
