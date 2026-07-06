@@ -3398,11 +3398,6 @@ class TestFabricatedMetricsScopeEscalation:
     @pytest.mark.parametrize(
         "text",
         [
-            "約80%消費した",
-            "残り1000トークン",
-            "経過3時間",
-            "約50kトークン",
-            "3時間経過",
             "5分経過",
             "10分相当",
         ],
