@@ -46,23 +46,14 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
         self._change_event.set()
 
 
-def _build_process_loop_prompt(local_path: pathlib.Path, *, autopilot: bool) -> str:
+def _build_process_loop_prompt(local_path: pathlib.Path) -> str:
     """claude起動プロンプトを構築する。
 
     `/process-feedbacks`実行 → 振り返り工程完遂 → 改善提案の`session-review-dotfiles`スキルによる投入完了後に限り
     `/agent-toolkit:exit-session`を呼ぶ順序制約を明示する。
-    `autopilot`が真の場合、`agent-toolkit:autopilot`スキル併用とTBD記録による続行を指示する行を追加する
-    （ユーザー確認事項発生時に常駐ループが停止する事態を避けるため）。
     """
-    autopilot_line = (
-        "本工程は`agent-toolkit:autopilot`スキルを併用してください。"
-        "process-feedbacks実行中のユーザー確認事項はTBD.mdへ記録して続行してください。\n"
-        if autopilot
-        else ""
-    )
     return (
         f"/process-feedbacks {local_path} を実行してください。\n"
-        f"{autopilot_line}"
         "process-feedbacksスキルのステップ4「振り返り工程」（session-review-dotfilesスキルを含む）まで完遂し、\n"
         "振り返り結果として得られた改善提案の session-review-dotfiles スキルによる投入まで完了した後、\n"
         "最後に /agent-toolkit:exit-session を呼び出してセッションを終了してください。\n"
@@ -107,7 +98,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     Ctrl+Cで常駐ループを終了する。
     """
     local_path = _resolve_local_worktree(args.target_repo)
-    prompt = _build_process_loop_prompt(local_path, autopilot=args.autopilot)
+    prompt = _build_process_loop_prompt(local_path)
     env = os.environ.copy()
     env["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)

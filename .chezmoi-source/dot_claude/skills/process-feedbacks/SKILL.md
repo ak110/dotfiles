@@ -2,10 +2,10 @@
 name: process-feedbacks
 description: >
   対象リポジトリごとに蓄積された未処理フィードバックとTBD回答済み項目を、
-  `dotfiles-fb`で取得して`agent-toolkit:apply-feedback`へ委譲する。
+  `dotfiles-fb`で取得して`agent-toolkit:apply-feedback`を呼び出して処理する。
   `dotfiles-fb adopt`・`reject`・`tbd-adopt`で採否確定後の履歴保持まで一貫して扱う。
 # 連携: 対象リポジトリの未処理フィードバックとTBD回答済み項目のうちステップ1で選定した対象を
-#   まとめて agent-toolkit:apply-feedback へ委譲する。
+#   まとめて agent-toolkit:apply-feedback へ引き渡す。
 ---
 
 # フィードバック消化
@@ -16,6 +16,8 @@ description: >
 手動での`git pull`実行は不要とする。
 `adopt`・`reject`は採否確定を管理側へ反映する（管理側リポジトリの操作は`dotfiles-fb`が内部で完結する）。
 対象リポジトリ（dotfiles等）側のcommit/pushは別途必要とする。
+ユーザーから特段の指示が無い場合も`agent-toolkit:autopilot`スキルを併用し、
+ユーザー確認事項は`TBD.md`へ記録して処理を続行するものとする。
 
 ## ステップ1: 全件取得
 
@@ -69,12 +71,12 @@ feedback全件とTBD回答済みの本文を取得する。
 
 起動以降にinboxへ追加されたファイルは本セッションでは扱わず、次回起動時の処理対象とする。
 
-## ステップ2: 選定対象をapply-feedbackへ一括委譲
+## ステップ2: 選定対象をapply-feedbackへ一括で引き渡す
 
 1. 対象リポジトリのディレクトリへカレントを移す
 2. ステップ1で選定した対象ファイル分の`### <filename>`ブロックのみを
-   `agent-toolkit:apply-feedback`スキルへそのまま渡して委譲する。
-   除外分の`### <filename>`ブロックは委譲対象から除去する
+   `agent-toolkit:apply-feedback`スキルへそのまま渡して起動する。
+   除外分の`### <filename>`ブロックは引き渡し対象から除去する
    - `dotfiles-fb show --all`の出力は既に`### <filename>`見出しで区切られた結合形式であり、
      選定対象ブロックの抽出以外の追加の結合・整形は不要とする
    - `~/private-notes/feedback/inbox/`配下への直接アクセス（`Read`・`cat`・`ls`等）は禁止する
@@ -83,13 +85,13 @@ feedback全件とTBD回答済みの本文を取得する。
      apply-feedback側で参照できる
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装・コミット・後始末（adopt/reject）まで担う
    - 後始末（adopt/reject）では、`dotfiles-fb`が採否確定ファイルを履歴として保持する
-   - 選定した対象を1度の`apply-feedback`セッションで処理する（1件ずつ委譲しない）
+   - 選定した対象を1度の`apply-feedback`呼び出しで処理する（1件ずつ呼び出さない）
      - ただし単一フィードバックが対象50ファイル以上の大規模な一括処理を要求する場合は、
        `agent-toolkit:apply-feedback`配下`references/plan-split.md`の分離処理規定に従い、
        当該フィードバックを他フィードバックから分離した独立計画として扱う
    - 本スキル経由で`apply-feedback`→`plan-mode`とネスト起動される場合、
      `plan-mode`スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない
-3. 委譲時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
+3. 起動時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`へ
    採否確定後に該当する後始末手順を含めるよう明示する。
    後始末はapply-feedbackのplan-mode実装工程内で実施される
    - `dotfiles-fb adopt`・`dotfiles-fb reject`・`dotfiles-fb tbd-adopt`は
@@ -108,7 +110,7 @@ feedback全件とTBD回答済みの本文を取得する。
    - 保留ファイルがある場合: 後始末コマンドは実行しない
      （`dotfiles-fb`は次回`show`で自動的に再評価対象として提示する）
    - push後は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従いCI通過を確認してから後始末コマンドを実行する
-   - apply-feedback配下のplan-mode委譲では全工程を遵守すること
+   - apply-feedback配下のplan-mode呼び出しでは全工程を遵守すること
      （工程2〜8。工程2は2.5・2.6・2.7を含む）。
      auto mode下・単独foreground委譲下でも省略しない
 
