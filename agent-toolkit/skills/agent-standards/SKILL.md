@@ -195,12 +195,12 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
   個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
   （リセットせず、新規セッションは別`session_id`の状態ファイルを使うため旧フラグは再読み取りされない）
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
-- `plan_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-reviewer`起動を記録。工程7の完遂判定に使う
-- `naive_executor_invoked`: PostToolUse(Agent)が`agent-toolkit:naive-executor`起動を記録。工程7の完遂判定に使う
-- `plan_impl_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-impl-reviewer`起動を記録。工程7の完遂判定に使う
+- `plan_reviewer_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:plan-reviewer`起動を記録。工程7の完遂判定に使う
+- `naive_executor_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:naive-executor`起動を記録。工程7の完遂判定に使う
+- `plan_impl_reviewer_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:plan-impl-reviewer`起動を記録。工程7の完遂判定に使う
 - `codex_review_invoked`: PostToolUse(Skill)が`agent-toolkit:plan-codex-review`呼び出しまたは
   `mcp__codex__codex`完了を記録。工程7の完遂判定に使う
-- `agent_doc_validator_invoked`: PostToolUse(Agent)が`agent-toolkit:agent-doc-validator`起動を記録。
+- `agent_doc_validator_invoked`: PostToolUse(Agent/Task)が`agent-toolkit:agent-doc-validator`起動を記録。
   コーディングエージェント向け文書対象ファイルを含む計画時のみ工程7の必須フラグとする
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時に上記フラグの条件付き必須化判定で計画ファイル本文を再読込するために使う

@@ -3388,6 +3388,92 @@ class TestScopeEscalationInDocEditCheck:
         assert category in result.stderr
 
 
+class TestFabricatedMetricsScopeEscalation:
+    """`fabricated-metrics`カテゴリ（実測値取得手段が無い数値主張）の検出（FB7）。
+
+    フレーズ本文は隔離フィクスチャ（`_SCOPE_ESCALATION_INPUTS`）経由の既存カテゴリ横断テストで
+    網羅済みのため、本クラスは分岐追加時に固有の境界値・誤検出回避・警告文言を追加検証する。
+    """
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "約80%消費した",
+            "残り1000トークン",
+            "経過3時間",
+            "約50kトークン",
+            "3時間経過",
+            "5分経過",
+            "10分相当",
+        ],
+    )
+    def test_question_text_blocks(self, text: str):
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": text,
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "fabricated-metrics" in result.stderr
+
+    def test_warning_message_includes_alternative(self):
+        """警告文言に代替表現例が併記される。"""
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "約80%消費した",
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "定性的な進捗記述" in result.stderr
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "満足度は80%程度",
+            "残りタスクは1000件",
+            "3時間後にミーティングがある",
+            "5分後に開始する",
+            "会議は3時間の予定",
+        ],
+    )
+    def test_question_text_does_not_block_unrelated(self, text: str):
+        """数値・単位を含むが実測値主張の文脈を伴わない文面は誤検出しない。"""
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": text,
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "fabricated-metrics" not in result.stderr
+
+
 class TestWorkaroundScratchpadGate:
     """plan fileのWrite時、ワークアラウンド語検出に伴うscratchpad事前検討記録の未整備ブロック。"""
 

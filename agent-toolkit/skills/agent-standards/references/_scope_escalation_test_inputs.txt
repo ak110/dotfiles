@@ -117,3 +117,4 @@ fabricated-metrics	残り1000トークン
 fabricated-metrics	経過3時間
 fabricated-metrics	約50kトークン
 fabricated-metrics	3時間経過
+fabricated-metrics	5分経過

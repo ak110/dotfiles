@@ -74,7 +74,7 @@ def _strip_fence_block_contents_in_section(section_text: str) -> str:
 
     `text`コードブロックに限らずフェンス全般を対象とする（背景セクションの引用素材は
     フェンス言語指定によらず除去対象に揃える）。
-    フェンス判定は`_locate_background_section`と同じ仕様で、
+    フェンス判定は`_locate_h2_section`と同じ仕様で、
     同字種かつ開始長以上で閉じるものに限る。
     """
     lines = section_text.splitlines(keepends=True)

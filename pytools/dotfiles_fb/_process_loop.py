@@ -101,7 +101,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
 
     1反復ごとに`claude --permission-mode=auto`で`/process-feedbacks`＋`/agent-toolkit:exit-session`を
-    直接起動する。claudeが正常終了（0・-15・15のいずれか）した場合は継続し、
+    直接起動する。claudeが正常終了（0・-15・15・143のいずれか）した場合は継続し、
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進む。
     Ctrl+Cで常駐ループを終了する。
