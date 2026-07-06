@@ -1401,11 +1401,16 @@ def _check_plan_file_target_files_h3_correspondence(
     target_files = set(_plan_format.extract_target_files_from_changes(content))
     if not target_files:
         return False
-    h3_headings = {
+    raw_h3s = [
         h.strip().strip("`")
         for h in _plan_format.extract_h3_headings_under_h2(content, "変更内容")
         if h.strip().strip("`") != _TARGET_FILE_LIST_HEADING
-    }
+    ]
+    # 「置換パターン: 」で始まるH3が存在する場合、当該計画は同一パターン置換の集約H3方式を採用しており、
+    # 対象ファイル一覧との1対1対応検査は`plan-reviewer`側での sublist 対応照合へ委ねる。
+    if any(h.startswith("置換パターン:") for h in raw_h3s):
+        return False
+    h3_headings = {h for h in raw_h3s if not h.startswith("置換パターン:")}
     missing_h3 = target_files - h3_headings
     extra_h3 = h3_headings - target_files
     if not missing_h3 and not extra_h3:
@@ -2473,8 +2478,9 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
 def _check_askuserquestion_scope_escalation(tool_input: dict) -> str | None:
     """AskUserQuestion入力から縮退誘発フレーズを検出して該当カテゴリ識別子を返す。
 
-    対象は`questions[].question`、`questions[].header`、
-    `questions[].options[].label`、`questions[].options[].description`の各テキスト。
+    対象は`questions[].options[].label`、`questions[].options[].description`の各テキスト。
+    `questions[].question`と`questions[].header`はユーザーへの状況説明性質を持つため対象外とする
+    （エージェントの意思表明は選択肢側に現れる前提）。
     検出時は最初に一致したパターンのカテゴリ識別子を返す。未検出時はNone。
     入力の構造が想定外（questionsが配列でないなど）の場合は検査不能としてNoneを返す。
     検出フレーズ本文はメッセージへ転記せず、カテゴリ識別子のみで通知する
@@ -2486,12 +2492,6 @@ def _check_askuserquestion_scope_escalation(tool_input: dict) -> str | None:
     for question in questions:
         if not isinstance(question, dict):
             continue
-        for field in ("question", "header"):
-            text = question.get(field)
-            if isinstance(text, str):
-                category = _match_scope_escalation(text)
-                if category is not None:
-                    return category
         options = question.get("options")
         if not isinstance(options, list):
             continue

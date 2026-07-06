@@ -14,7 +14,8 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 フックはカテゴリ識別子をstderrへ出力し、検出フレーズ本文は転記しない。
 配布物フックが対象とする経路は次の2つとする。
 
-- `AskUserQuestion`の`question`・`option.label`・`option.description`
+- `AskUserQuestion`の`option.label`・`option.description`
+  （`question`・`header`はユーザーへの状況説明性質を持つため対象外）
 - `Write`・`Edit`・`MultiEdit`による対象文書編集
 
 このほか、利用者環境固有のカスタムフックが同ヘルパーをimportして拡張する場合、

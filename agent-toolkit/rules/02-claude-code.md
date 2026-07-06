@@ -55,6 +55,8 @@
 - 対象が単一ファイル・単一関数に閉じない指示
  （複数ディレクトリ・複数ファイルに跨る一括見直し・横断調査・横断置換・全体リファクタリングなど）はメインで逐次処理しない。
   `Explore`サブエージェントへの委譲または並列`Agent`起動を最初の検討事項とする
+  - 横断調査時は追記先グループ（追記先ファイル・対象節・対象概念単位）ごとに`Explore`を並列委譲する
+    （目安3〜10並列、同一メッセージ内での`Agent`複数呼び出しで起動）
 - タスクを単純な形に分割する
   - ユーザー対話が頻発する作業（依存メジャーアップグレード・テスト失敗時の方針判断など）は
     対話頻度を分割可否の判断軸に含め、メインで直接実行する
@@ -73,10 +75,8 @@
   - メイン側が`"opus"`以下ならコンテキスト効率次第ではメイン側で作業した方がよい
   - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき
    （例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
-- Agentツールでサブエージェント起動時にmodel指定する場合はeffortを併記する
- （`"fable"`以外は`medium`、`"fable"`は`low`）
-  - `agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合も同様に扱う
-  - `model: inherit`指定時も`effort: medium`を明示する
+- Agentツール・`agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合はeffortを併記する
+ （`"fable"`以外は`medium`、`"fable"`は`low`、`model: inherit`指定時も`effort: medium`を明示する）
 - 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する
   - 同スキルは`context: fork`と`agent: Explore`でCLAUDE.md・ルール群を読み込まずに動作する
   - `model: haiku`指定によりhaikuで実行される

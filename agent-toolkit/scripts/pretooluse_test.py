@@ -2941,16 +2941,17 @@ class TestAskUserQuestionScopeEscalationCheck:
     """
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_question_text_blocks(self, text: str, category: str):
+    def test_option_label_text_blocks(self, text: str, category: str):
+        """`options[].label`に縮退フレーズが含まれる場合はブロックする。"""
         result = _run(
             {
                 "tool_name": "AskUserQuestion",
                 "tool_input": {
                     "questions": [
                         {
-                            "question": text,
+                            "question": "approach?",
                             "header": "header",
-                            "options": [{"label": "ok", "description": "ok"}],
+                            "options": [{"label": text, "description": "ok"}],
                         }
                     ],
                 },
@@ -2972,14 +2973,13 @@ class TestAskUserQuestionScopeEscalationCheck:
             "品質維持を継続する方針",
             "次サイクルの作業を計画する",
             "現行設計の見直しを検討する",
-            # 新規リテラル追加分の誤検出予防
             "別の作業と混同しないよう注意する",
             "本タスクの詳細を検討する",
             "工数の見積もりを更新する",
             "セッションの内容を要約する",
         ],
     )
-    def test_question_text_does_not_block_unrelated(self, text: str):
+    def test_option_label_does_not_block_unrelated(self, text: str):
         """文脈無関係なフレーズでは縮退誘発フレーズ検出が誤発火しない。"""
         result = _run(
             {
@@ -2987,9 +2987,9 @@ class TestAskUserQuestionScopeEscalationCheck:
                 "tool_input": {
                     "questions": [
                         {
-                            "question": text,
+                            "question": "approach?",
                             "header": "header",
-                            "options": [{"label": "ok", "description": "ok"}],
+                            "options": [{"label": text, "description": "ok"}],
                         }
                     ],
                 },
@@ -2998,7 +2998,26 @@ class TestAskUserQuestionScopeEscalationCheck:
         assert result.returncode == 0
         assert "縮退誘発フレーズ" not in result.stderr
 
-    def test_header_blocks(self):
+    def test_question_text_not_checked(self):
+        """`question`本文はユーザーへの状況説明性質を持つため縮退フレーズ検査対象外とする。"""
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "本セッションの残工程と両立させるため進め方を確認",
+                            "header": "header",
+                            "options": [{"label": "ok", "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_header_not_checked(self):
+        """`header`もユーザーへの状況説明性質を持つため縮退フレーズ検査対象外とする。"""
         result = _run(
             {
                 "tool_name": "AskUserQuestion",
@@ -3013,8 +3032,7 @@ class TestAskUserQuestionScopeEscalationCheck:
                 },
             }
         )
-        assert result.returncode == 2
-        assert "縮退誘発フレーズ" in result.stderr
+        assert result.returncode == 0
 
     def test_option_label_blocks(self):
         result = _run(
@@ -3402,16 +3420,16 @@ class TestFabricatedMetricsScopeEscalation:
             "10分相当",
         ],
     )
-    def test_question_text_blocks(self, text: str):
+    def test_option_label_blocks(self, text: str):
         result = _run(
             {
                 "tool_name": "AskUserQuestion",
                 "tool_input": {
                     "questions": [
                         {
-                            "question": text,
+                            "question": "approach?",
                             "header": "header",
-                            "options": [{"label": "ok", "description": "ok"}],
+                            "options": [{"label": text, "description": "ok"}],
                         }
                     ],
                 },
@@ -3428,9 +3446,9 @@ class TestFabricatedMetricsScopeEscalation:
                 "tool_input": {
                     "questions": [
                         {
-                            "question": "約80%消費した",
+                            "question": "approach?",
                             "header": "header",
-                            "options": [{"label": "ok", "description": "ok"}],
+                            "options": [{"label": "約80%消費した", "description": "ok"}],
                         }
                     ],
                 },
@@ -3449,7 +3467,7 @@ class TestFabricatedMetricsScopeEscalation:
             "会議は3時間の予定",
         ],
     )
-    def test_question_text_does_not_block_unrelated(self, text: str):
+    def test_option_label_does_not_block_unrelated(self, text: str):
         """数値・単位を含むが実測値主張の文脈を伴わない文面は誤検出しない。"""
         result = _run(
             {
@@ -3457,9 +3475,9 @@ class TestFabricatedMetricsScopeEscalation:
                 "tool_input": {
                     "questions": [
                         {
-                            "question": text,
+                            "question": "approach?",
                             "header": "header",
-                            "options": [{"label": "ok", "description": "ok"}],
+                            "options": [{"label": text, "description": "ok"}],
                         }
                     ],
                 },
@@ -4432,6 +4450,25 @@ class TestPlanFileTargetFilesH3Correspondence:
                 "session_id": "h3corr-nonplan",
                 "permission_mode": "default",
             },
+        )
+        assert result.returncode == 0
+
+    def test_allows_replacement_pattern_h3(self, tmp_path: pathlib.Path):
+        """「置換パターン: 」で始まるH3は対象ファイル一覧との1対1対応判定から除外される。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3corr-replacement"
+        content = _h3corr_build_content("### 置換パターン: dotfiles-fb → atk fb（対象: foo/bar.py foo/baz.py）\n\nx\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
         )
         assert result.returncode == 0
 
