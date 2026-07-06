@@ -195,24 +195,3 @@
   片方を改修する計画では他方の実装・仕様・終了判定条件との整合を計画段階で確認し、
   必要な追随修正を同一計画に含める。整合確認を実装完了後まで先送りしない。
   ペア対象は同名や類似名を持つCLIサブコマンド・スキル・自動化スクリプトの組合せを含む
-
-## スキルの事前呼び出し
-
-agent-toolkitプラグイン同梱のスキルは該当作業の着手前（計画段階・実装着手の双方を含む）に
-他の応答・サブエージェント起動・ファイル編集よりも先に呼び出す。
-Skill呼び出しはplan modeの編集禁止の対象外とする。
-
-- 計画・調査相談: plan mode下では`agent-toolkit:plan-mode`起動が必須
-  （pretooluseフックが計画ファイル編集をブロックするため）。plan mode外でも計画・調査相談の着手時には最初に呼び出す
-  - 例外: 固有の前処理を要するパターン(`agent-toolkit:apply-feedback`等）では該当スキルを先に呼び出してよい
-- コード・テスト: `agent-toolkit:coding-standards`と`agent-toolkit:writing-standards`
-- 一般ドキュメント: `agent-toolkit:writing-standards`
-- コーディングエージェント向け文書: `agent-toolkit:writing-standards`と`agent-toolkit:agent-standards`
-- レビュー実施: `agent-toolkit:review-standards`を著者向けスキルとあわせて呼び出す
-- git commit着手前・コミットメッセージ案作成時: `agent-toolkit:commit`
-- 妥当性評価・規範改訂・フィードバック判定・レビュー取捨判断時: `agent-toolkit:critical-thinking`
-
-複数トリガー該当時は全該当スキルを呼び出す。プラグイン未導入の環境ではユーザーへ報告して指示を求める。
-
-Skillツールで起動可能なスキルは、SKILL.mdをReadで読み込まずSkillツール経由で起動する。
-例外は当該ファイル自体の編集・調査目的、`references/`配下のRead、Skillツール利用不可な起動元での代替Readとする。

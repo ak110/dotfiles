@@ -76,7 +76,7 @@
 採用判定後にレビュー指摘で反映先の変更が必要と判明した場合の扱いは次のとおりとする。
 
 - 対象レビューは`agent-toolkit:plan-mode`工程5以降のcodexレビュー・
-  `plan-integrity-checker`・`agent-toolkit:careful-review`が該当する
+  `plan-reviewer`・`agent-toolkit:careful-review`が該当する
 - 不採用転換ではなく反映先変更として扱い、変更後の反映先・反映内容を計画ファイルの`## 変更履歴`へ記録する
 - ユーザーへの追加採否確認は不要とし、フィードバック原文の主旨が同等に達成されている限り採用扱いの後始末を継続してよい
 

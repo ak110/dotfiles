@@ -2126,6 +2126,77 @@ class TestManifestSsot:
         assert entry["name"] == plugin_manifest["name"]
 
 
+class TestAgentDocTargetPatternsSsot:
+    """agent-doc-validator の対象ファイル群列挙 SSOT 整合性検査。
+
+    pretooluse.py の _AGENT_DOC_TARGET_FILE_PATTERNS を SSOT とし、
+    agents/agent-doc-validator.md および
+    skills/plan-mode/references/integrity-checks.md の本文にすべての
+    対象パス文字列が現れることを保証する。
+    """
+
+    _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+    _AGENT_DOC_VALIDATOR_MD = _REPO_ROOT / "agent-toolkit" / "agents" / "agent-doc-validator.md"
+    _INTEGRITY_CHECKS_MD = _REPO_ROOT / "agent-toolkit" / "skills" / "plan-mode" / "references" / "integrity-checks.md"
+
+    @classmethod
+    def _expected_path_snippets(cls) -> list[str]:
+        """_AGENT_DOC_TARGET_FILE_PATTERNS からエスケープを解いてパス文字列を取得する。"""
+        # 実装SSOTを直接参照する
+        from pretooluse import _AGENT_DOC_TARGET_FILE_PATTERNS  # noqa: C0415  # pylint: disable=import-outside-toplevel
+
+        snippets: list[str] = []
+        for pat in _AGENT_DOC_TARGET_FILE_PATTERNS:
+            src = pat.pattern
+            # 正規表現エスケープ(\.)をリテラル(.)へ復元する
+            snippets.append(src.replace("\\.", "."))
+        return snippets
+
+    def _extract_h2_section(self, content: str, heading: str) -> str:
+        """指定H2見出し配下の本文を抽出する（次のH2または末尾まで）。"""
+        marker = f"## {heading}"
+        idx = content.find(marker)
+        assert idx != -1, f"見出し '{heading}' が見つからない"
+        after = content[idx + len(marker) :]
+        # 次のH2見出しを検索
+        next_h2 = after.find("\n## ")
+        return after if next_h2 == -1 else after[:next_h2]
+
+    def test_frontmatter_description_contains_all_patterns(self):
+        """agent-doc-validator.md frontmatter description が全パターンを含むこと。"""
+        content = self._AGENT_DOC_VALIDATOR_MD.read_text(encoding="utf-8")
+        # frontmatterは先頭の --- で囲まれた領域
+        assert content.startswith("---\n")
+        end = content.find("\n---\n", 4)
+        assert end != -1
+        frontmatter = content[4:end]
+        for snippet in self._expected_path_snippets():
+            assert snippet in frontmatter, f"frontmatter description に {snippet!r} が欠落"
+
+    def test_body_scope_section_contains_all_patterns(self):
+        """agent-doc-validator.md 本文「適用範囲」節が全パターンを含むこと。"""
+        content = self._AGENT_DOC_VALIDATOR_MD.read_text(encoding="utf-8")
+        section = self._extract_h2_section(content, "適用範囲")
+        for snippet in self._expected_path_snippets():
+            assert snippet in section, f"『適用範囲』節に {snippet!r} が欠落"
+
+    def test_integrity_checks_condition_section_contains_all_patterns(self):
+        """integrity-checks.md の条件付き起動記述部分が全パターンを含むこと。"""
+        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8")
+        # `agent-doc-validator` を含む節を検索し、その前後の当該記述行を確認
+        assert "agent-doc-validator" in content
+        for snippet in self._expected_path_snippets():
+            assert snippet in content, f"integrity-checks.md に {snippet!r} が欠落"
+
+    def test_integrity_checks_bypass_section_contains_all_patterns(self):
+        """integrity-checks.md の工程7バイパスファイル群記述が全パターンを含むこと。"""
+        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8")
+        # 上のテストで全content確認済みだが、ファイル群の記述部分の存在自体を検証
+        assert "工程7" in content or "バイパス" in content or "該当ファイル群" in content
+        for snippet in self._expected_path_snippets():
+            assert snippet in content, f"integrity-checks.md に {snippet!r} が欠落"
+
+
 class TestBashGitCommitWarning:
     """git commit未検証警告。
 
@@ -3447,7 +3518,7 @@ class TestWorkaroundScratchpadGate:
 
 
 _PROCESS7_FLAGS = (
-    "plan_integrity_checker_invoked",
+    "plan_reviewer_invoked",
     "naive_executor_invoked",
     "plan_impl_reviewer_invoked",
     "codex_review_invoked",

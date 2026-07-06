@@ -2,6 +2,9 @@
 
 ## Claude Code固有事項
 
+- 複数の事前呼び出しトリガーに該当した場合は該当スキルを全て呼び出す
+- Skillツールで起動可能なスキルは、SKILL.mdを`Read`で読み込まずSkillツール経由で起動する
+  - 例外は当該ファイル自体の編集・調査目的、`references/`配下のRead、Skillツール利用不可な起動元での代替Readとする
 - `AskUserQuestion`の`options`配列は1問あたり最大4件まで（5件以上は`InputValidationError: too_big`で失敗する）
   - 論点の整理・前提・判断材料は通常応答のテキスト出力で先にまとめてから`AskUserQuestion`を呼ぶ
   - 判断材料が長文になる場合は判断材料のみの応答でターンを終え、次のターンで`AskUserQuestion`を呼ぶ
@@ -181,7 +184,7 @@
     調査・整合性チェック系では出典サブエージェント名を記入する
   - 対応不要とした指摘は末尾に注記
     （`（メイン判断: 不対応 — <理由>）`・`（ユーザー判断: 不対応 — <理由>）`）を付ける
-  - 対象は`careful-review`・`plan-integrity-checker`・`naive-executor`・`Explore`ほか
+  - 対象は`careful-review`・`plan-reviewer`・`naive-executor`・`Explore`ほか
     サブエージェント出力全般を含む。レビュー系以外の調査・整合性チェック結果も対象に含める
 
 ## plan mode下での挙動

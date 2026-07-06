@@ -92,7 +92,7 @@
 
 - メイン側担当:「ユーザー発話・提示素材との照合」全体と、
   「計画文内・他ファイルとの整合」のうち横断`grep -rn`確認・関連ファイル本文の通読部分
-- `plan-integrity-checker`サブエージェント担当: 上記以外の節
+- `plan-reviewer`サブエージェント担当: 上記以外の節
  （「計画文内・他ファイルとの整合」の計画ファイル内部照合部分・「機械チェック適合性」・「編集対象スキル固有規定の事前適用」）
 
 サブエージェント担当節とメイン側担当節の対応関係は呼び出し元コンテキスト参照の要否で分かれる。
@@ -102,12 +102,12 @@
 1. 計画ファイル初版Write完了後、`## 変更内容`配下の全ファイル改訂を対象ファイル現行本文へ適用した
    改訂後最終形として一時ファイル群へ出力し、同一メッセージ内で次を並列起動する
    - codexレビュー: `codex-review.md`を読み込んで手順に従う
-   - サブエージェント`plan-integrity-checker`:
+   - サブエージェント`plan-reviewer`:
      「計画文内・他ファイルとの整合」「機械チェック適合性」「編集対象スキル固有規定の事前適用」の
      独立コンテキスト点検を委譲する
      - 起動プロンプトに本ファイルの読み込み指示、計画ファイルパス、
        「計画文内・他ファイルとの整合」節の既存規範の周辺品質サブ観点点検対象の既存規範ファイルパスを記載する
-   - 上記4サブエージェント（`codexレビュー`・`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）は、
+   - 上記4サブエージェント（`codexレビュー`・`plan-reviewer`・`naive-executor`・`plan-impl-reviewer`）は、
      いずれも省略と軽量化の対象外とする。条件成立時に起動する5件目の`agent-doc-validator`も同様に対象外とする
      - 時間・コンテキスト消費・autocompact thrashingのリスク・作業量見込みなどの自己推定を根拠に、
        省略・部分実施・単独foreground委譲下での例外扱いへ流用しない
@@ -149,10 +149,10 @@
 
 ## 工程7バイパスの機械検出
 
-工程7の4サブエージェント（`codexレビュー`・`plan-integrity-checker`・`naive-executor`・`plan-impl-reviewer`）の
+工程7の4サブエージェント（`codexレビュー`・`plan-reviewer`・`naive-executor`・`plan-impl-reviewer`）の
 起動は、次のセッション状態フラグとして記録される。5件目の`agent-doc-validator`は条件付きフラグとして扱う。
 
-- `plan_integrity_checker_invoked`
+- `plan_reviewer_invoked`
 - `naive_executor_invoked`
 - `plan_impl_reviewer_invoked`
 - `codex_review_invoked`

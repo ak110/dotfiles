@@ -120,10 +120,10 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 
 規範文書を追記・改訂する場合は、実施すべき正規フローの肯定的な記述を優先する。
 
-- 禁止規定を追加する前に、同じ再発防止を肯定形で表現できないか先に試みる。
-  肯定形で成立する場合は禁止形を採用しない
-- 同一節内の禁止項目が増えた場合は列挙の追加ではなく共通の根本原因へ遡った上位の肯定規定への統合を優先し、
-  肯定規定が存在しない領域へ禁止列挙のみを追加しない
+- 禁止規定を追加する前に、同じ再発防止を肯定形で表現できないか先に試みる
+- 新規追加の禁止規定は同一節内で対応する推奨事項を必ず併記する
+- 既存禁止規定は改訂時に遡及して推奨事項の併記または肯定形化を検討する
+- 変換テンプレは`references/positive-form-templates.md`を参照する
 
 ### 目的記述の明示
 
@@ -194,7 +194,8 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - `autonomous_exit_invoked`: dotfiles個人フックが`agent-toolkit:exit-session`呼び出しを記録。
   個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
   （リセットせず、新規セッションは別`session_id`の状態ファイルを使うため旧フラグは再読み取りされない）
-- `plan_integrity_checker_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-integrity-checker`起動を記録。工程7の完遂判定に使う
+- サブエージェント起動を検知する判定は`tool_name == "Agent"`をSSOTとする（pretooluse・posttooluseとも同一）
+- `plan_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-reviewer`起動を記録。工程7の完遂判定に使う
 - `naive_executor_invoked`: PostToolUse(Agent)が`agent-toolkit:naive-executor`起動を記録。工程7の完遂判定に使う
 - `plan_impl_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-impl-reviewer`起動を記録。工程7の完遂判定に使う
 - `codex_review_invoked`: PostToolUse(Skill)が`agent-toolkit:plan-codex-review`呼び出しまたは

@@ -293,24 +293,24 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestTaskInvocationFlags:
-    """Task起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
+class TestAgentInvocationFlags:
+    """Agent起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
 
-    @pytest.mark.parametrize("subagent_type", ["plan-integrity-checker", "agent-toolkit:plan-integrity-checker"])
-    def test_plan_integrity_checker_flag(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = "task-plan-integrity-checker"
+    @pytest.mark.parametrize("subagent_type", ["plan-reviewer", "agent-toolkit:plan-reviewer"])
+    def test_plan_reviewer_flag(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = "task-plan-reviewer"
         _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("plan_integrity_checker_invoked") is True
+        assert state.get("plan_reviewer_invoked") is True
 
     @pytest.mark.parametrize("subagent_type", ["naive-executor", "agent-toolkit:naive-executor"])
     def test_naive_executor_flag(self, tmp_path: pathlib.Path, subagent_type: str):
         sid = "task-naive-executor"
         _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
@@ -320,7 +320,7 @@ class TestTaskInvocationFlags:
     def test_plan_impl_reviewer_flag(self, tmp_path: pathlib.Path, subagent_type: str):
         sid = "task-plan-impl-reviewer"
         _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
@@ -330,7 +330,7 @@ class TestTaskInvocationFlags:
     def test_agent_doc_validator_flag(self, tmp_path: pathlib.Path, subagent_type: str):
         sid = "task-agent-doc-validator"
         _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": subagent_type}},
+            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
@@ -357,11 +357,11 @@ class TestTaskInvocationFlags:
     def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path):
         sid = "task-other-subagent"
         _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": "claude"}},
+            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": "claude"}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("plan_integrity_checker_invoked") is not True
+        assert state.get("plan_reviewer_invoked") is not True
         assert state.get("naive_executor_invoked") is not True
         assert state.get("plan_impl_reviewer_invoked") is not True
         assert state.get("agent_doc_validator_invoked") is not True

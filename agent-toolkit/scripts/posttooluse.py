@@ -20,7 +20,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. Task呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-integrity-checker / naive-executor / plan-impl-reviewer / agent-doc-validator）
+   （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator）
 9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
 10. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
@@ -127,11 +127,11 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 # codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
 _CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
 
-# Taskツールのsubagent_type別セッション状態フラグ記録。
+# Agentツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
-_TASK_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
-    "plan-integrity-checker": "plan_integrity_checker_invoked",
-    "agent-toolkit:plan-integrity-checker": "plan_integrity_checker_invoked",
+_AGENT_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
+    "plan-reviewer": "plan_reviewer_invoked",
+    "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
     "naive-executor": "naive_executor_invoked",
     "agent-toolkit:naive-executor": "naive_executor_invoked",
     "plan-impl-reviewer": "plan_impl_reviewer_invoked",
@@ -314,19 +314,19 @@ def main() -> int:
             update_state(session_id, _set_codex_review_invoked)
         return 0
 
-    # Task: subagent_type別セッション状態フラグ記録
-    if tool_name == "Task":
+    # Agent: subagent_type別セッション状態フラグ記録
+    if tool_name == "Agent":
         subagent_type = tool_input.get("subagent_type")
-        flag_key = _TASK_SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
+        flag_key = _AGENT_SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
         if flag_key is not None:
 
-            def _set_task_flag(state: dict, flag_key: str = flag_key) -> dict | None:
+            def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:
                 if state.get(flag_key, False):
                     return None
                 state[flag_key] = True
                 return state
 
-            update_state(session_id, _set_task_flag)
+            update_state(session_id, _set_agent_flag)
         return 0
 
     # mcp__codex__codex: codex-review起動検出
