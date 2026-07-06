@@ -4,6 +4,7 @@ description: >
   計画ファイルと成果物（コード・ドキュメント）の仕様適合性、および成果物間の整合性をレビューするサブエージェント。
   親から指定されたプロンプトに従いレビューする。
 model: sonnet
+effort: medium
 skills:
   - agent-toolkit:review-standards
 tools:

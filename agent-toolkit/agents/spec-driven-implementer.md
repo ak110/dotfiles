@@ -4,6 +4,7 @@ description: >
   `agent-toolkit:spec-driven-impl`から起動される専用サブエージェント。
   計画ファイル1件を`agent-toolkit:plan-impl`の工程で完遂する。
 model: inherit
+effort: medium
 skills:
   - agent-toolkit:plan-impl
   - agent-toolkit:spec-driven-impl

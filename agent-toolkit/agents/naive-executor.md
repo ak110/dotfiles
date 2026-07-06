@@ -5,6 +5,7 @@ description: >
   暗黙補完・参照不能・手順抜け・複数解釈の4カテゴリで指摘リストを返す。
   呼び出し元から対象パス・実行コンテキスト・抽出観点を受け取り、改善案や修正案は返さない。
 model: haiku
+effort: medium
 skills: []
 tools:
   - Skill

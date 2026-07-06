@@ -73,6 +73,10 @@
   - メイン側が`"opus"`以下ならコンテキスト効率次第ではメイン側で作業した方がよい
   - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき
    （例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
+- Agentツールでサブエージェント起動時にmodel指定する場合はeffortを併記する
+ （`"fable"`以外は`medium`、`"fable"`は`low`）
+  - `agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合も同様に扱う
+  - `model: inherit`指定時も`effort: medium`を明示する
 - 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する
   - 同スキルは`context: fork`と`agent: Explore`でCLAUDE.md・ルール群を読み込まずに動作する
   - `model: haiku`指定によりhaikuで実行される

@@ -4,6 +4,7 @@ description: >
   タスク単位の実装または検証を担うサブエージェント。
   親から指定されたプロンプトに従い実装または検証する。
 model: sonnet
+effort: medium
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards

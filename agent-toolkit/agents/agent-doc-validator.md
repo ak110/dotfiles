@@ -8,6 +8,7 @@ description: >
   適合性（Validation観点）を独立にレビューする。
   agent-toolkit:plan-mode工程7およびagent-toolkit:careful-reviewから並列起動される。
 model: sonnet
+effort: medium
 user-invocable: false
 skills:
   - agent-toolkit:agent-standards

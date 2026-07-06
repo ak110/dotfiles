@@ -5,6 +5,7 @@ description: >
   整合性チェックとサブエージェント連携の設計整合性を担当する。
   親から指定された計画ファイルパスと関連参照ファイルに従いレビューする。
 model: sonnet
+effort: medium
 skills:
   - agent-toolkit:writing-standards
   - agent-toolkit:agent-standards

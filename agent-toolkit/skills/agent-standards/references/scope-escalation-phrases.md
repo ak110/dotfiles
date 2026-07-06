@@ -43,6 +43,8 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | `quality-gate-count` | 品質ゲート（PreToolUse hook・lint・レビュー指摘等）観測値を根拠とした縮退表明 | 「hookブロックが繰り返される」「lint違反が膨大」「違反件数が多く進行困難」「ブロック回数を踏まえ」「修正量が多いため」 |
 | `fabricated-metrics` | トークン消費量・経過時間の実測値取得手段が無い状態での数値主張 | 「約80%消費した」「残り1000トークン」「経過3時間」「約50kトークン」「3時間経過」「5分経過」 |
 
+`pattern-conformance`カテゴリの例外は`agent-toolkit/rules/01-agent.md`「品質最優先」節の条件付き例外規定を参照する。
+
 ## 代替表現例
 
 `agent-toolkit/scripts/pretooluse.py`の`_SCOPE_ESCALATION_ALTERNATIVES`辞書に、
