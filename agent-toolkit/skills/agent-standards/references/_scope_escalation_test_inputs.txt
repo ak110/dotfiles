@@ -39,6 +39,10 @@ pattern-conformance	本タスク範囲外
 pattern-conformance	本タスクスコープ外
 pattern-conformance	本作業範囲外
 pattern-conformance	本作業スコープ外
+pattern-conformance	主要19ファイルへ限定する
+pattern-conformance	代表箇所のみ実施する
+pattern-conformance	本サイクルは規範強化のみとする
+pattern-conformance	今後の改訂時に随時是正する
 process-omission	工程省略
 process-omission	工程を省略
 process-omission	割愛する
