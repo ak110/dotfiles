@@ -26,7 +26,7 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 ロックファイル尊重・公開待機・ピン留め運用の3点を貫徹する。
 
 - ロックファイル尊重: `uv.lock`を再resolveせず使用する（`UV_FROZEN=1`を環境変数で常時適用）
-- 公開待機: `exclude-newer`で公開から一定の期間を経たパッケージのみ採用する
+- 公開待機: `exclude-newer`および`mise`の`minimum_release_age`で公開から一定の期間を経たパッケージのみ採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`を参照する。
