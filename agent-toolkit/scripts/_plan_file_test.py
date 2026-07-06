@@ -1,4 +1,6 @@
-"""_plan_file.pyのstrip_background_text_blocksの挙動を検証する。"""
+"""_plan_file.pyのstrip_background_text_blocks等の挙動を検証する。"""
+
+import hashlib
 
 import _plan_file
 
@@ -83,3 +85,78 @@ def test_compute_prelint_hashes_returns_pair() -> None:
     assert isinstance(stripped_sha, str) and len(stripped_sha) == 64
     # stripped_shaは背景フェンス内容除去後のハッシュなので異なる
     assert full_sha != stripped_sha
+
+
+def test_strip_diff_markers_unified_diff_block_stripped() -> None:
+    """先頭2行以内に`@@`を含むブロックはフェンスマーカー行と行頭`+`・`-`が除去される。"""
+    content = "# Title\n\n## 変更内容\n\n```text\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context\n```\n\n## 実行方法\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert "```" not in result.split("## 変更内容", 1)[1].split("## 実行方法", 1)[0]
+    assert "-old line" not in result
+    assert "+new line" not in result
+    assert "old line" in result
+    assert "new line" in result
+    assert " context" in result
+
+
+def test_strip_diff_markers_dash_marker_block_stripped() -> None:
+    """先頭2行以内に`---`・`+++`を含むブロックも加工対象になる。"""
+    content = "# Title\n\n## 変更内容\n\n```text\n--- a/file.py\n+++ b/file.py\n-removed\n+added\n```\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert "-removed" not in result
+    assert "+added" not in result
+    assert "removed" in result
+    assert "added" in result
+
+
+def test_strip_diff_markers_non_diff_language_block_unchanged() -> None:
+    """`python`・`sh`等の言語指定を持つブロックは変更しない。"""
+    content = "# Title\n\n## 変更内容\n\n```python\ndef f():\n    return 1\n```\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert result == content
+
+
+def test_strip_diff_markers_text_block_with_list_marker_unchanged() -> None:
+    """言語指定`text`かつ`+`・`-`をリスト記法として使うブロックは`@@`等が無いため変更しない。"""
+    content = "# Title\n\n## 変更内容\n\n```text\n- item one\n+ item two\n```\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert result == content
+
+
+def test_strip_diff_markers_multiple_blocks_individually_judged() -> None:
+    """複数コードブロック混在時、diffブロックのみ加工し非diffブロックは維持する。"""
+    content = "# Title\n\n## 変更内容\n\n```python\ndef f():\n    return 1\n```\n\n```text\n@@ -1 +1 @@\n-old\n+new\n```\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert "```python\ndef f():\n    return 1\n```" in result
+    assert "-old" not in result
+    assert "+new" not in result
+    assert "old" in result
+    assert "new" in result
+
+
+def test_strip_diff_markers_empty_block_unchanged() -> None:
+    """空のコードブロックは非diff扱いとなり変更しない。"""
+    content = "# Title\n\n## 変更内容\n\n```text\n```\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert result == content
+
+
+def test_strip_diff_markers_unclosed_fence_unchanged() -> None:
+    """閉じフェンスが無いブロックは変更しない。"""
+    content = "# Title\n\n## 変更内容\n\n```text\n@@ -1 +1 @@\n-old\n"
+    result = _plan_file.strip_diff_markers_in_changes_blocks(content)
+    assert result == content
+
+
+def test_strip_diff_markers_absent_section_returns_input() -> None:
+    """`## 変更内容`が無い場合は元の内容をそのまま返す。"""
+    content = "# Title\n\n## 対応方針\n\n```text\n@@ -1 +1 @@\n-old\n```\n"
+    assert _plan_file.strip_diff_markers_in_changes_blocks(content) == content
+
+
+def test_compute_prelint_hashes_matches_pipeline_output_for_diff_blocks() -> None:
+    """diff表記を含む計画本文の`stripped_sha`が、scratchpad加工後テキストのハッシュと整合する。"""
+    content = "# Title\n\n## 背景\n\n```text\nuser feedback\n```\n\n## 変更内容\n\n```text\n@@ -1 +1 @@\n-old\n+new\n```\n"
+    _, stripped_sha = _plan_file.compute_prelint_hashes(content)
+    pipeline_output = _plan_file.strip_diff_markers_in_changes_blocks(_plan_file.strip_background_text_blocks(content))
+    assert stripped_sha == hashlib.sha256(pipeline_output.encode("utf-8")).hexdigest()

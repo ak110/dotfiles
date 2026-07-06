@@ -76,6 +76,39 @@ class TestRunWithoutMise:
         assert _setup_mise.run() is False
 
 
+class TestEnsureMiseUpToDate:
+    """`mise self-update -y` の呼び出しと失敗時の後続ステップ継続を検証する。"""
+
+    def test_self_update_invoked(self, mise_stub: _MiseSubprocessStub):
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{"version": "24"}]})
+
+        assert _setup_mise.run() is True
+
+        self_update_calls = mise_stub.calls_for("self-update")
+        assert self_update_calls and self_update_calls[0]["args"] == ["self-update", "-y"]
+        assert self_update_calls[0]["env_overrides"] == _EXPECTED_ENV_OVERRIDES
+
+    def test_self_update_failure_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
+        """パッケージマネージャー経由インストール等で `self-update` が失敗しても後続ステップは継続する。"""
+        mise_stub.handlers[("self-update", "-y")] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="not available via package manager"
+        )
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+
+        _setup_mise.run()
+
+        assert mise_stub.calls_for("install")
+
+    def test_self_update_none_result_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
+        """タイムアウト・例外で`None`が返っても後続ステップは継続する。"""
+        mise_stub.handlers[("self-update", "-y")] = None
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+
+        _setup_mise.run()
+
+        assert mise_stub.calls_for("install")
+
+
 class TestRunTrustsWorkingTree:
     """`CHEZMOI_WORKING_TREE` と `mise.toml` 有無で `mise trust` 呼び出し有無が分かれる。"""
 

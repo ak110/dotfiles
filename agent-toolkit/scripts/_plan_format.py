@@ -163,6 +163,24 @@ def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, st
     return body
 
 
+def extract_h3_headings_under_h2(content: str, h2_heading: str) -> list[str]:
+    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
+
+    除外領域の定義は`iter_markdown_body_lines`に従う。
+    指定したH2が存在しない場合は空リストを返す。
+    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    """
+    headings: list[str] = []
+    in_target_h2 = False
+    for _, line in iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            in_target_h2 = line[3:].strip() == h2_heading
+            continue
+        if in_target_h2 and line.startswith("### "):
+            headings.append(line[4:].strip())
+    return headings
+
+
 def extract_target_files_from_changes(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
 

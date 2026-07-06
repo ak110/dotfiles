@@ -213,6 +213,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
     )
+    loop.add_argument(
+        "--autopilot",
+        action="store_true",
+        help="agent-toolkit:autopilotスキルの併用を指示するプロンプトを付与する",
+    )
 
     tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
     tbd_add.add_argument(

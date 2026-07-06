@@ -112,3 +112,8 @@ quality-gate-count	lint違反が膨大
 quality-gate-count	違反件数が多く進行困難
 quality-gate-count	ブロック回数を踏まえ
 quality-gate-count	修正量が多いため
+fabricated-metrics	約80%消費した
+fabricated-metrics	残り1000トークン
+fabricated-metrics	経過3時間
+fabricated-metrics	約50kトークン
+fabricated-metrics	3時間経過

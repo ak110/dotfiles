@@ -1,6 +1,9 @@
 # ステップ4詳細: 検討結果の提示書式と適用手順
 
-本ファイルは`agent-toolkit:apply-feedback`スキル本体のステップ4詳細を集約したものである。
+本ファイルは`agent-toolkit:apply-feedback`スキルのステップ4での検討結果の提示専用の書式を定義する。
+`agent-toolkit:plan-mode`の計画ファイル書式（`### エージェント判断`等のH3見出し）は別体系である。
+plan-mode側の定義は
+`agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`にある。
 
 ## 提示書式
 

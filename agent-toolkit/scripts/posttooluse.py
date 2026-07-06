@@ -19,7 +19,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
    （`session_review_invoked`辞書へ記録）
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
-8. Task呼び出し時のsubagent_type別セッション状態フラグ記録
+8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
    （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator）
 9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
 10. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -38,9 +38,9 @@ from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pyli
 from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_h2_sections,
+    extract_h3_headings_under_h2,
     extract_target_files_from_changes,
     is_agent_facing_md,
-    iter_markdown_body_lines,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -127,9 +127,9 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 # codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
 _CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
 
-# Agentツールのsubagent_type別セッション状態フラグ記録。
+# AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
-_AGENT_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
+_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
     "naive-executor": "naive_executor_invoked",
@@ -141,23 +141,6 @@ _AGENT_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 }
 
 # --- plan file形式検査の定数 ---
-
-
-def _extract_h3_under_h2(content: str, h2_heading: str) -> list[str]:
-    """指定したH2見出し配下に出現するH3見出しのテキストをリストで返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    指定したH2が存在しない場合は空リストを返す。
-    """
-    headings: list[str] = []
-    in_target_h2 = False
-    for _, line in iter_markdown_body_lines(content):
-        if line.startswith("## "):
-            in_target_h2 = line[3:].strip() == h2_heading
-            continue
-        if in_target_h2 and line.startswith("### "):
-            headings.append(line[4:].strip())
-    return headings
 
 
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
@@ -211,7 +194,7 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
 
     # 変更内容H2 配下の先頭H3が「対象ファイル一覧」かを検査する
     if "変更内容" in headings:
-        h3_list = _extract_h3_under_h2(content, "変更内容")
+        h3_list = extract_h3_headings_under_h2(content, "変更内容")
         first_h3 = h3_list[0] if h3_list else None
         if first_h3 != "対象ファイル一覧":
             actual = first_h3 if first_h3 is not None else "(no H3 present)"
@@ -314,10 +297,10 @@ def main() -> int:
             update_state(session_id, _set_codex_review_invoked)
         return 0
 
-    # Agent: subagent_type別セッション状態フラグ記録
-    if tool_name == "Agent":
+    # AgentとTask: subagent_type別セッション状態フラグ記録
+    if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
-        flag_key = _AGENT_SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
+        flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
         if flag_key is not None:
 
             def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:

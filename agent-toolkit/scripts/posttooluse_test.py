@@ -294,47 +294,30 @@ class TestSessionReviewSkillInvocation:
 
 
 class TestAgentInvocationFlags:
-    """Agent起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
+    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
 
-    @pytest.mark.parametrize("subagent_type", ["plan-reviewer", "agent-toolkit:plan-reviewer"])
-    def test_plan_reviewer_flag(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = "task-plan-reviewer"
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize(
+        ("subagent_type", "flag_key"),
+        [
+            ("plan-reviewer", "plan_reviewer_invoked"),
+            ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
+            ("naive-executor", "naive_executor_invoked"),
+            ("agent-toolkit:naive-executor", "naive_executor_invoked"),
+            ("plan-impl-reviewer", "plan_impl_reviewer_invoked"),
+            ("agent-toolkit:plan-impl-reviewer", "plan_impl_reviewer_invoked"),
+            ("agent-doc-validator", "agent_doc_validator_invoked"),
+            ("agent-toolkit:agent-doc-validator", "agent_doc_validator_invoked"),
+        ],
+    )
+    def test_subagent_type_flag(self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str):
+        sid = f"{tool_name.lower()}-{subagent_type.replace(':', '-')}"
         _run(
-            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
+            {"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is True
-
-    @pytest.mark.parametrize("subagent_type", ["naive-executor", "agent-toolkit:naive-executor"])
-    def test_naive_executor_flag(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = "task-naive-executor"
-        _run(
-            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("naive_executor_invoked") is True
-
-    @pytest.mark.parametrize("subagent_type", ["plan-impl-reviewer", "agent-toolkit:plan-impl-reviewer"])
-    def test_plan_impl_reviewer_flag(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = "task-plan-impl-reviewer"
-        _run(
-            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_impl_reviewer_invoked") is True
-
-    @pytest.mark.parametrize("subagent_type", ["agent-doc-validator", "agent-toolkit:agent-doc-validator"])
-    def test_agent_doc_validator_flag(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = "task-agent-doc-validator"
-        _run(
-            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("agent_doc_validator_invoked") is True
+        assert state.get(flag_key) is True
 
     def test_codex_review_flag_via_skill(self, tmp_path: pathlib.Path):
         sid = "codex-review-via-skill"
@@ -354,10 +337,11 @@ class TestAgentInvocationFlags:
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_invoked") is True
 
-    def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path):
-        sid = "task-other-subagent"
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path, tool_name: str):
+        sid = f"{tool_name.lower()}-other-subagent"
         _run(
-            {"session_id": sid, "tool_name": "Agent", "tool_input": {"subagent_type": "claude"}},
+            {"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)

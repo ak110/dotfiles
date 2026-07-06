@@ -58,6 +58,7 @@ def run() -> bool:
         return False
 
     changed = False
+    changed |= _ensure_mise_up_to_date(mise_bin)
     changed |= _ensure_working_tree_trusted(mise_bin)
     changed |= _ensure_global_node(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
@@ -88,6 +89,25 @@ def _find_mise_binary() -> Path | None:
         if candidate.is_file():
             return candidate
     return None
+
+
+def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
+    """`mise self-update -y` で mise 本体を最新版へ更新する。
+
+    パッケージマネージャー経由でインストールされた mise では
+    `self-update` サブコマンド自体が失敗するが、`_run_mise` の例外・非ゼロ終了吸収により
+    後続ステップ（trust・global node・tools install）は継続する。
+    """
+    result = _run_mise(mise_bin, ["self-update", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
+    if result is None:
+        logger.info(log_format.format_status("mise", "`self-update` がタイムアウトまたは例外で中断"))
+        return False
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        logger.info(log_format.format_status("mise", f"`self-update` に失敗: {stderr}"))
+        return False
+    logger.info(log_format.format_status("mise", "`self-update` を実行しました"))
+    return True
 
 
 def _ensure_working_tree_trusted(mise_bin: Path) -> bool:

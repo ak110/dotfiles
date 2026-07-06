@@ -218,6 +218,52 @@ class TestProcessLoopPromptAndEnv:
         assert "Ctrl+Cを検知しました" in captured.out
 
 
+class TestBuildProcessLoopPrompt:
+    """_build_process_loop_prompt: `autopilot`引数によるプロンプト分岐を検証する。"""
+
+    def test_autopilot_true_includes_autopilot_skill_line(self, tmp_path: pathlib.Path) -> None:
+        prompt = _process_loop._build_process_loop_prompt(tmp_path, autopilot=True)  # pylint: disable=protected-access  # noqa: SLF001
+        assert "agent-toolkit:autopilot" in prompt
+        assert "TBD.md" in prompt
+
+    def test_autopilot_false_omits_autopilot_skill_line(self, tmp_path: pathlib.Path) -> None:
+        prompt = _process_loop._build_process_loop_prompt(tmp_path, autopilot=False)  # pylint: disable=protected-access  # noqa: SLF001
+        assert "agent-toolkit:autopilot" not in prompt
+
+
+class TestProcessLoopAutopilotFlag:
+    """process-loopサブコマンド: `--autopilot`指定時・未指定時のプロンプト分岐を検証する。"""
+
+    @pytest.mark.parametrize(("autopilot_arg", "expect_autopilot"), [(["--autopilot"], True), ([], False)])
+    def test_autopilot_flag_controls_prompt_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        autopilot_arg: list[str],
+        expect_autopilot: bool,
+    ) -> None:
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1 if len(claude_calls) == 0 else 0)
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+            del private_notes, target_repo_id
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["process-loop", f"--target-repo={myrepo}", *autopilot_arg], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        prompt = claude_calls[0]["cmd"][2]
+        assert ("agent-toolkit:autopilot" in prompt) is expect_autopilot
+
+
 class TestProcessLoopClaudeReturncode:
     """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""
 

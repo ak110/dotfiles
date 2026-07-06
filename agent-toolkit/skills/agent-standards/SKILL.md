@@ -194,7 +194,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - `autonomous_exit_invoked`: dotfiles個人フックが`agent-toolkit:exit-session`呼び出しを記録。
   個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
   （リセットせず、新規セッションは別`session_id`の状態ファイルを使うため旧フラグは再読み取りされない）
-- サブエージェント起動を検知する判定は`tool_name == "Agent"`をSSOTとする（pretooluse・posttooluseとも同一）
+- サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
 - `plan_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-reviewer`起動を記録。工程7の完遂判定に使う
 - `naive_executor_invoked`: PostToolUse(Agent)が`agent-toolkit:naive-executor`起動を記録。工程7の完遂判定に使う
 - `plan_impl_reviewer_invoked`: PostToolUse(Agent)が`agent-toolkit:plan-impl-reviewer`起動を記録。工程7の完遂判定に使う

@@ -4213,3 +4213,377 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             env_overrides=env,
         )
         assert result.returncode == 0
+
+
+def _h3corr_build_content(extra_h3: str) -> str:
+    """FB8対象ファイル一覧・H3対応検査用の計画本文を組み立てる。"""
+    return (
+        "# タイトル\n\n"
+        "## 変更履歴\n\nx\n\n"
+        "## 背景\n\nx\n\n"
+        "## 対応方針\n\nx\n\n"
+        "## 調査結果\n\nx\n\n"
+        "## 変更内容\n\n"
+        "### 対象ファイル一覧\n\n"
+        "- [ ] `foo/bar.py`\n"
+        "- [ ] `foo/baz.py`\n\n"
+        f"{extra_h3}"
+        "## 実行方法\n\nx\n\n"
+        "## 進捗ログ\n\nx\n\n"
+        "## 計画ファイル（本ファイル）のパス\n\nx\n"
+    )
+
+
+class TestPlanFileTargetFilesH3Correspondence:
+    """plan file Write/Edit/MultiEdit時の対象ファイル一覧とH3見出し1対1対応検査（FB8）。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
+            },
+        )
+
+    def test_allows_full_correspondence(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧の各パスに対応するH3見出しが揃っている場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3corr-valid"
+        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n### foo/baz.py\n\nx\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_missing_h3(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧に対応するH3見出しが不足する場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3corr-missing"
+        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "H3見出し未対応" in result.stderr
+
+    def test_blocks_extra_h3(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧に無い余分なH3見出しがある場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3corr-extra"
+        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n### foo/baz.py\n\nx\n\n### foo/extra.py\n\nx\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "対象ファイル一覧に無いH3見出し" in result.stderr
+
+    def test_allows_no_target_files(self, tmp_path: pathlib.Path):
+        """対象ファイル一覧が空の場合は検査対象外で通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3corr-empty"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
+        """plan fileでないパスへの書き込みは検査対象外。"""
+        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "h3corr-nonplan",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+
+class TestPlanFileRetroactiveScanRecorded:
+    """規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録検査（FB4）。"""
+
+    @staticmethod
+    def _write_current_plan(home_dir: pathlib.Path, content: str) -> pathlib.Path:
+        plans_dir = home_dir / ".claude" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plans_dir / "current.md"
+        plan_path.write_text(content, encoding="utf-8")
+        return plan_path
+
+    _NEW_PROHIBITION = "既存の記述のみ\n\n- 新規事項はいかなる理由（例: テスト）があっても実施しない"
+
+    def test_blocks_new_prohibition_without_scan_record(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# rule\n\n既存の記述のみ\n", encoding="utf-8")
+        plan_path = self._write_current_plan(home, "## 調査結果\n\nなし\n")
+        sid = "retro-block"
+        env = _plan_file_state_env(tmp_path, home)
+        _write_session_state(tmp_path, sid, {"current_plan_file_path": str(plan_path)})
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存の記述のみ",
+                    "new_string": self._NEW_PROHIBITION,
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "遡及スキャン" in result.stderr
+
+    def test_allows_when_scan_record_present(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# rule\n\n既存の記述のみ\n", encoding="utf-8")
+        plan_content = (
+            "## 調査結果\n\n### 遡及スキャン結果\n\n- 対象パターン: 全称禁止形\n- 検出件数: 1件\n- 対応方針: 是正済み\n"
+        )
+        plan_path = self._write_current_plan(home, plan_content)
+        sid = "retro-allow"
+        env = _plan_file_state_env(tmp_path, home)
+        _write_session_state(tmp_path, sid, {"current_plan_file_path": str(plan_path)})
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存の記述のみ",
+                    "new_string": self._NEW_PROHIBITION,
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_no_new_prohibition_allows(self, tmp_path: pathlib.Path):
+        """禁止形の増加が無い編集はブロックしない。"""
+        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# rule\n\n既存の記述のみ\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存の記述のみ",
+                    "new_string": "既存の記述を少し変更",
+                },
+                "session_id": "retro-nochange",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+    def test_non_target_path_allows(self, tmp_path: pathlib.Path):
+        """文書サイズ上限対象外パスは検査対象外。"""
+        target = tmp_path / "misc" / "notes.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("既存の記述のみ\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存の記述のみ",
+                    "new_string": self._NEW_PROHIBITION,
+                },
+                "session_id": "retro-outofscope",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+
+class TestStyleNegationCheck:
+    """『Xを根拠にYしない』『Xを理由にYしない』形式の増加検出（FB10、warn）。"""
+
+    @staticmethod
+    def _target_path(tmp_path: pathlib.Path) -> pathlib.Path:
+        target = tmp_path / "agent-toolkit" / "rules" / "test-rule.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def test_write_with_negation_warns(self, tmp_path: pathlib.Path):
+        target = self._target_path(tmp_path)
+        content = "# rule\n\n作業量を根拠に延期しない\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "styleneg-write",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "根拠に" in result.stderr
+
+    def test_edit_increase_warns(self, tmp_path: pathlib.Path):
+        target = self._target_path(tmp_path)
+        target.write_text("# rule\n\n既存の記述\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存の記述",
+                    "new_string": "既存の記述\n\n工数を理由に対応しない",
+                },
+                "session_id": "styleneg-edit",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "理由に" in result.stderr
+
+    def test_edit_no_increase_does_not_warn(self, tmp_path: pathlib.Path):
+        """既存文字列の保持のみでは警告しない（誤検出解消）。"""
+        target = self._target_path(tmp_path)
+        target.write_text("# rule\n\n作業量を根拠に延期しない\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "作業量を根拠に延期しない",
+                    "new_string": "作業量を根拠に延期しない。追記のみ",
+                },
+                "session_id": "styleneg-edit-noincrease",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "根拠に" not in result.stderr
+
+    def test_non_target_path_does_not_warn(self, tmp_path: pathlib.Path):
+        target = tmp_path / "misc" / "notes.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = "作業量を根拠に延期しない\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "styleneg-outofscope",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "根拠に" not in result.stderr
+
+
+class TestPlanFilePrelintPassedDiffMarkerPipeline:
+    """FB11: diff表記コードブロックを含む計画本文の事前lint検査ハッシュ整合統合テスト。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    def test_diff_marker_stripped_scratchpad_hash_passes_prelint_check(self, tmp_path: pathlib.Path):
+        """加工処理を経たscratchpadのハッシュが計画本文のstripped_shaと整合し、事前lint検査を通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home, bypass_prelint=False)
+        sid = "prelint-diff-pipeline"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\n```text\nuser feedback\n```\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\nなし\n\n"
+            "### 詳細\n\n```text\n@@ -1 +1 @@\n-old\n+new\n```\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        # scratchpad出力の加工パイプライン（plan-file-guidelines.md記載の手順）を模擬する:
+        # 背景フェンス除去 → 変更内容配下のdiffマーカー除去、の順に適用したテキストを
+        # scratchpad相当のファイルへ書き込み、事前lint検査成功記録として登録する。
+        pipeline_output = _plan_file.strip_diff_markers_in_changes_blocks(_plan_file.strip_background_text_blocks(content))
+        scratchpad_sha = hashlib.sha256(pipeline_output.encode("utf-8")).hexdigest()
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [scratchpad_sha],
+                "plan_prelint_passed_line_width": [scratchpad_sha],
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert "prior lint check" not in result.stderr
+        assert result.returncode == 0

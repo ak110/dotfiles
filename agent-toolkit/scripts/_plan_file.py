@@ -19,8 +19,10 @@ def strip_background_text_blocks(content: str) -> str:
     コードフェンス内の`## `見出し文字列を次セクション開始と誤検出しないよう、
     行単位の走査でフェンス範囲を考慮してから`## 背景`配下の範囲を確定する。
     フェンス判定は同字種かつ開始長以上で閉じる方式に揃え、長いフェンス記法と波線記法に対応する。
+    `strip_diff_markers_in_changes_blocks`（`## 変更内容`配下が対象）とは対象節が異なり、
+    `compute_prelint_hashes`が両関数を組み合わせてscratchpad出力と同一の加工後テキストを算出する。
     """
-    section_range = _locate_background_section(content)
+    section_range = _locate_h2_section(content, "背景")
     if section_range is None:
         return content
     start, end = section_range
@@ -29,17 +31,18 @@ def strip_background_text_blocks(content: str) -> str:
     return content[:start] + stripped_section + content[end:]
 
 
-def _locate_background_section(content: str) -> tuple[int, int] | None:
-    """`## 背景`見出し行の開始位置と次のH2見出し（または末尾）の開始位置を返す。
+def _locate_h2_section(content: str, heading: str) -> tuple[int, int] | None:
+    """指定したH2見出し（`## <heading>`）の開始位置と次のH2見出し（または末尾）の開始位置を返す。
 
     コードフェンス内の`## `行はH2見出しと扱わない。
     フェンス終端は同字種かつ開始フェンス以上の長さで閉じるものに限る。
-    `## 背景`が無い場合はNone。
+    対象見出しが無い場合はNone。
     """
     lines = content.splitlines(keepends=True)
     fence_marker: str | None = None
     start: int | None = None
     offset = 0
+    heading_prefix = f"## {heading}"
     for line in lines:
         line_start = offset
         offset += len(line)
@@ -56,7 +59,7 @@ def _locate_background_section(content: str) -> tuple[int, int] | None:
         if fence_marker is not None:
             continue
         if start is None:
-            if line.startswith("## 背景"):
+            if line.startswith(heading_prefix):
                 start = line_start
             continue
         if line.startswith("## "):
@@ -99,16 +102,97 @@ def _strip_fence_block_contents_in_section(section_text: str) -> str:
     return "".join(result)
 
 
-def compute_prelint_hashes(content: str) -> tuple[str, str]:
-    """Plan file contentの全文SHA256と背景フェンスブロック除去後SHA256のペアを返す。
+# unified diff相当ブロックの識別に使う先頭行パターン。
+# フェンス開始直後の先頭2行以内にこれらのいずれかを含むブロックのみ加工対象とする。
+_DIFF_HEAD_PATTERN = re.compile(r"^(@@|---|\+\+\+)")
+_DIFF_MARKER_LOOKAHEAD_LINES = 2
 
+
+def strip_diff_markers_in_changes_blocks(content: str) -> str:
+    """`## 変更内容`配下のunified diff相当コードブロックのフェンスマーカー行と行頭プレフィックスを除去して返す。
+
+    diff相当の識別条件はフェンス開始直後の先頭2行以内に`@@`または`---`・`+++`を含むこと。
+    識別できないコードブロック（言語指定`text`かつ`+`・`-`をリスト記法として使うケース、
+    `python`・`sh`等の言語指定を持つブロック等）は対象外とし内容を変更しない。
+    scratchpad出力の加工パイプラインで、plan-file-guidelines.md
+    「計画ファイル全体の遵守事項」節の差分表記対応として使う。
+    """
+    section_range = _locate_h2_section(content, "変更内容")
+    if section_range is None:
+        return content
+    start, end = section_range
+    section_text = content[start:end]
+    processed_section = _strip_diff_marker_blocks_in_section(section_text)
+    return content[:start] + processed_section + content[end:]
+
+
+def _strip_diff_marker_blocks_in_section(section_text: str) -> str:
+    """セクション内のunified diff相当コードブロックのフェンスマーカー行と行頭プレフィックスを除去する。
+
+    diff相当でないブロック・閉じフェンス欠落ブロックは変更しない。
+    """
+    lines = section_text.splitlines(keepends=True)
+    result: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+        fence_match = _FENCE_PATTERN.match(stripped)
+        if not fence_match:
+            result.append(line)
+            i += 1
+            continue
+        fence_marker = fence_match.group(1)
+        block_lines: list[str] = []
+        j = i + 1
+        closing_index: int | None = None
+        while j < n:
+            candidate_stripped = lines[j].strip()
+            candidate_match = _FENCE_PATTERN.match(candidate_stripped)
+            if (
+                candidate_match
+                and candidate_stripped
+                and candidate_stripped[0] == fence_marker[0]
+                and len(candidate_stripped) >= len(fence_marker)
+                and set(candidate_stripped) == {fence_marker[0]}
+            ):
+                closing_index = j
+                break
+            block_lines.append(lines[j])
+            j += 1
+        if closing_index is None:
+            # 閉じフェンスが見つからない場合は元のまま出力する
+            result.append(line)
+            result.extend(block_lines)
+            i = j
+            continue
+        is_diff = any(_DIFF_HEAD_PATTERN.match(bl.strip()) for bl in block_lines[:_DIFF_MARKER_LOOKAHEAD_LINES])
+        if is_diff:
+            # フェンスマーカー行（開始・終了）は出力せず、行頭`+`・`-`のみ除去して本文を出力する
+            for bl in block_lines:
+                result.append(re.sub(r"^[+-]", "", bl, count=1))
+        else:
+            result.append(line)
+            result.extend(block_lines)
+            result.append(lines[closing_index])
+        i = closing_index + 1
+    return "".join(result)
+
+
+def compute_prelint_hashes(content: str) -> tuple[str, str]:
+    """Plan file contentの全文SHA256と、加工後テキストのSHA256のペアを返す。
+
+    加工後テキストは`## 背景`配下フェンスブロック除去
+    （`strip_background_text_blocks`）と`## 変更内容`配下diffマーカー除去
+    （`strip_diff_markers_in_changes_blocks`）を順に適用した結果で、
+    scratchpad出力の加工パイプラインと同一の変換内容にする。
     PreToolUseとPostToolUseが同一ロジックで2種類のSHA256を算出するため、本関数に共通化する。
     PreToolUseはWriteのcontentから、PostToolUseはscratchpadファイル内容から呼び出す。
     """
     full_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    stripped_sha = hashlib.sha256(
-        strip_background_text_blocks(content).encode("utf-8"),
-    ).hexdigest()
+    stripped = strip_diff_markers_in_changes_blocks(strip_background_text_blocks(content))
+    stripped_sha = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
     return full_sha, stripped_sha
 
 
