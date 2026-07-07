@@ -68,6 +68,11 @@
   - `grep -rn '<改訂箇所キーワード>' agent-toolkit/scripts/ agent-toolkit/skills/*/scripts/`
   - キーワード候補: 改訂節の見出し語・条件式に使う識別子・機械強制の対象概念語など
   - 該当スクリプトが見つからない場合はその旨を`### エージェント判断`へ記載する
+- 規範文書を改訂する計画では追随対象の洗い出しを実施する。
+  当該規範を参照する整合性チェック規範を、
+  改訂箇所のキーワードで洗い出し`## 変更内容`対象ファイル一覧へ含める。
+  対象例は`agent-toolkit/skills/plan-mode/references/integrity-checks.md`等
+  - `grep -rn '<改訂箇所キーワード>' agent-toolkit/skills/plan-mode/references/`
 - agent-toolkitプラグインのversion bumpを計画する場合は
   `agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`の双方を対象ファイル一覧へ含める。
   両者の整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が強制する
@@ -88,6 +93,8 @@
   `agent-toolkit/rules/`配下（`04-terminology.md`など）・
   `agent-toolkit/skills/agent-standards/`のSSOT定義との衝突有無を計画段階で照合する。
   同一概念・用語の重複定義があれば新規追加を撤回し既存定義への参照へ集約する
+  - 既存規範の絶対断定（「いかなる理由があっても」「唯一許容される」等）と
+    新設例外規定が同時に存在する場合、両者の優先関係を計画段階で確定して計画本文に明記する
 
 確認結果は`## 調査結果`に、追従更新箇所は`## 変更内容`に反映する。
 

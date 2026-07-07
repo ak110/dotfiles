@@ -18,6 +18,11 @@
 - 制約: 実行可能ツール範囲は各サブエージェント定義のfrontmatter`tools:`欄に従う。
   破壊的操作（git commit・git push・rm・ファイル書き換え等）は禁止。
   git操作全般（stash・checkout・reset等の作業ツリー変更を含む）は禁止
+- 起動プロンプトへは`agent-toolkit/agents/*.md`の規定参照
+  （「`## 出力`節に従う」等）を書かない。
+  当該定義ファイルはサブエージェント起動時にシステムプロンプトとして自動読込されるため再指示は冗長となる。
+  呼び出し元の後続処理が完了報告書式に依存する場合は、
+  書式期待を呼び出し元文書（本ファイル・`plan-impl/SKILL.md`等）に自己完結で記述する
 
 ## plan-reviewer雛形
 
@@ -34,7 +39,6 @@
       サブエージェント連携の設計整合性
     - 参照すべき規範スキル: `agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`・
       `agent-toolkit:review-standards`
-    - 完了報告書式: `agent-toolkit/agents/plan-reviewer.md`の`## 出力`節に従う
 
     ## 制約
 
@@ -55,12 +59,11 @@
     - 実行コンテキスト: これは計画ファイルである。あなたはこの計画に従って実装する実行者である
     - 抽出観点: 暗黙補完・参照不能・手順抜け・複数解釈の4カテゴリ全件
     - 担当範囲区分: 全項目担当
-    - 完了報告書式: `agent-toolkit/agents/naive-executor.md`の規定に従う
 
     ## 制約
 
     - 改善案・修正案は返さない（指摘リストのみ）
-    - 出力形式は`agent-toolkit/agents/naive-executor.md`の既存出力仕様に従う（全体サマリー禁止）
+    - 全体サマリーは含めない
     - 実行可能ツール範囲: Skill・Read・Grep・Glob・Bash（frontmatter`tools:`欄準拠）
     - ファイル変更・git操作（stash・checkout・reset・commit・push等）は禁止
 
@@ -75,7 +78,6 @@
     - 差分取得基準SHA: {計画着手前コミットSHA}
     - 担当観点: コード単体品質・ドキュメント単体品質・日本語表現
     - 参照すべき規範スキル: `agent-toolkit:review-standards`・`agent-toolkit:writing-standards`
-    - 完了報告書式: `agent-toolkit/agents/plan-impl-reviewer.md`の`## 出力`節に従う
 
     ## 制約
 
@@ -94,10 +96,8 @@
 
     - 計画ファイル絶対パス: {計画ファイル絶対パス}
     - 対象ファイル一覧: {コーディングエージェント向け文書のパス列挙}
-    - 担当観点: `agent-toolkit/agents/agent-doc-validator.md`「## 担当観点」節の10観点＋品質最優先の原則適合性
     - 参照すべき規範スキル: `agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`・
       `agent-toolkit:review-standards`
-    - 完了報告書式: `agent-toolkit/agents/agent-doc-validator.md`の`## 出力形式`節に従う
 
     ## 制約
 

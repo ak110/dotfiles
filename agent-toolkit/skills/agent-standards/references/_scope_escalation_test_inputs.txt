@@ -129,3 +129,6 @@ fabricated-metrics	5分経過
 fabricated-metrics	コンテキスト消費を踏まえ判断する
 fabricated-metrics	コンテキスト消費量を考慮して整理する
 fabricated-metrics	ここまでの消費を踏まえ次工程へ移る
+quality-tradeoff	実装・レビューラウンドの規模が現行のセッション状態から見て極めて大規模になる
+next-cycle-defer	いったん外側スキルへ復帰して次回起動時に本計画の実装を継続する
+approach-confirm	選択肢は完遂を試みる、保存して次回継続の二択とする
