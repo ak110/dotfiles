@@ -91,10 +91,15 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
 
-    1反復ごとに`claude --permission-mode=auto`で`/process-feedbacks`＋`/agent-toolkit:exit-session`を
-    直接起動する。claudeが正常終了（0・-15・15・143のいずれか）した場合は継続し、
+    1反復ごとに`claude --permission-mode=auto`で`/process-feedbacks`と
+    `/agent-toolkit:exit-session`を直接起動する。
+    claudeが正常終了（0・-15・15・143のいずれか）した場合、
+    `--no-update`未指定なら`update-dotfiles`を実行してから
+    自身のプロセスを`os.execv`で置き換えて再起動する。
+    `--no-update`指定時は従来のループ継続挙動を維持する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
-    件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進む。
+    件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進み、
+    待機に入った旨を1度出力する。
     Ctrl+Cで常駐ループを終了する。
     """
     local_path = _resolve_local_worktree(args.target_repo)
@@ -102,7 +107,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     env = os.environ.copy()
     env["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-
     print(f"dotfiles-fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     try:
         while True:
@@ -120,7 +124,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         file=sys.stderr,
                     )
                     sys.exit(result.returncode)
+                if not args.no_update:
+                    print("update-dotfilesを実行してprocess-loopを再起動します。")
+                    subprocess.run(["update-dotfiles"], check=False)
+                    os.execv(sys.argv[0], sys.argv)
                 continue
+            print("0件のため変更検知を待機します。")
             _wait_for_changes(private_notes, target_repo_id)
     except KeyboardInterrupt:
         print("Ctrl+Cを検知しました。常駐モードを終了します。")

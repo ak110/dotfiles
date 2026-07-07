@@ -8,13 +8,14 @@ import shutil
 import subprocess
 import sys
 
-from pytools.dotfiles_fb._common import _commit_and_push, _pull, _stamp_result, _subdir, _validate_filename
-
-
-def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> None:
-    """ファイル名群の検証のみ行う（pull前の早期拒否用）。"""
-    for f in filenames:
-        _validate_filename(f, base_dir)
+from pytools.dotfiles_fb._common import (
+    _commit_and_push,
+    _pull,
+    _stamp_result,
+    _subdir,
+    _validate_filename,
+    _validate_filenames_only,
+)
 
 
 def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) -> list[pathlib.Path]:

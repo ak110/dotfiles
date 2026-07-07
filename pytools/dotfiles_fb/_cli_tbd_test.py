@@ -1,6 +1,6 @@
 """pytools.dotfiles_fb._cli のtbd系サブコマンドのテスト。
 
-tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adoptサブコマンドの単体テストを集約する。
+tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adopt/tbd-rmサブコマンドの単体テストを集約する。
 既存サブコマンドのテストは`_cli_test.py`に、拡張サブコマンド・オプションのテストは
 `_cli_extras_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
 """
@@ -358,3 +358,109 @@ class TestTbdAdopt:
         assert exc_info.value.code == 2
         assert (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert not (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+
+
+class TestTbdRm:
+    """tbd-rmサブコマンドの単体テスト。"""
+
+    def test_single_file_removed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """1件のtbd-rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
+        assert "chore: remove 1 tbd item" in " ".join(commit_cmd)
+
+    def test_note_included_in_commit_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`--note`指定時にcommit messageへ`(理由: <note>)`形式で追記されること。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                ["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--note", "誤投入"],
+                home=tmp_path,
+            )
+        assert exc_info.value.code == 0
+        commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
+        assert "(理由: 誤投入)" in " ".join(commit_cmd)
+
+    def test_multiple_files_removed_single_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数ファイル指定時に1コミットへまとめて削除されること。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        with pytest.raises(SystemExit) as exc_info:
+            _cli.main(
+                ["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
+                home=tmp_path,
+            )
+        assert exc_info.value.code == 0
+        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
+        assert len(commit_cmds) == 1
+        assert "chore: remove 2 tbd items" in " ".join(commit_cmds[0])
+
+    def test_rejects_traversal(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """パストラバーサル文字列は削除前検証で拒否されること。"""
+        _setup_tbd_env(tmp_path)
+        with pytest.raises(SystemExit):
+            _cli.main(["tbd-rm", "../evil.md"], home=tmp_path)
+
+    def test_missing_file_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """指定ファイルがinbox配下に存在しないときexit 2で終了すること。"""
+        _setup_tbd_env(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit):
+            _cli.main(
+                ["tbd-rm", f"{_FIXED_TIMESTAMP}-999.md"],
+                home=tmp_path,
+            )
+
+    def test_partial_missing_file_prevents_any_removal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数指定で一部欠損時に既存ファイルも削除されずcommitも発生しないこと。"""
+        notes = _setup_tbd_env(tmp_path)
+        existing = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        with pytest.raises(SystemExit):
+            _cli.main(
+                [
+                    "tbd-rm",
+                    f"{_FIXED_TIMESTAMP}-001.md",
+                    f"{_FIXED_TIMESTAMP}-999.md",
+                ],
+                home=tmp_path,
+            )
+        assert existing.exists()
+        assert not [c["cmd"] for c in git_calls if "commit" in c["cmd"]]

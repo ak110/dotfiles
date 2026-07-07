@@ -104,7 +104,7 @@ feedback全件とTBD回答済みの本文を取得する。
      `dotfiles-fb reject <filename1> <filename2> ... --note <不採用理由> --commit <sha>`を実行する
    - TBD側の回答済み採用ファイルがある場合:
      `dotfiles-fb tbd-adopt <filename1> <filename2> ... --note <概要> --commit <sha>`を実行する。
-     TBD側の不採用フローは本スキルでは扱わない（保留・削除は既存`tbd-edit`で対応する）
+     TBD側の不採用フローは本スキルでは扱わない（保留は既存`tbd-edit`、誤投入等の削除は`tbd-rm`で対応する）
    - `--note`・`--commit`の詳細規定は
      `agent-toolkit:apply-feedback`スキル配下`references/decision-format.md`「後始末コマンドの引数」節に従う
    - 保留ファイルがある場合: 後始末コマンドは実行しない

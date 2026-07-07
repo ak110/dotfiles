@@ -1,4 +1,4 @@
-"""tbd-add/tbd-list/tbd-answer/tbd-edit/tbd-adoptサブコマンド実装。"""
+"""tbd-add/tbd-list/tbd-answer/tbd-edit/tbd-adopt/tbd-rmサブコマンド実装。"""
 
 import argparse
 import datetime
@@ -16,6 +16,7 @@ from pytools.dotfiles_fb._common import (
     _pull,
     _stamp_result,
     _validate_filename,
+    _validate_filenames_only,
 )
 from pytools.dotfiles_fb._formatters import _parse_target_repo, _shorten_home
 from pytools.dotfiles_fb._list import _render_tbd_entries
@@ -208,8 +209,7 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
     """
     tbd_inbox = private_notes / "tbd" / "inbox"
     tbd_adopted = private_notes / "tbd" / "adopted"
-    for filename in args.filenames:
-        _validate_filename(filename, tbd_inbox)
+    _validate_filenames_only(args.filenames, tbd_inbox)
     _pull(private_notes)
     paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
     tbd_adopted.mkdir(parents=True, exist_ok=True)
@@ -229,3 +229,25 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
         rel_paths,
     )
     print(f"{count}件採用: {', '.join(moved)}")
+
+
+def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """tbd-rmサブコマンド: TBDをtbd/inboxから単純削除しcommit・push。
+
+    全ファイルの存在を削除前に一括検証し、途中失敗による部分削除を防ぐ。
+    `--note`が指定された場合はcommit messageへ「(理由: <note>)」形式で追記する。
+    """
+    tbd_inbox = private_notes / "tbd" / "inbox"
+    _validate_filenames_only(args.filenames, tbd_inbox)
+    _pull(private_notes)
+    paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
+    for p in paths:
+        p.unlink()
+    count = len(paths)
+    suffix = f" (理由: {args.note})" if args.note else ""
+    _commit_and_push(
+        private_notes,
+        f"chore: remove {count} tbd {'item' if count == 1 else 'items'}{suffix}",
+        ["tbd"],
+    )
+    print(f"{count}件削除: {', '.join(p.name for p in paths)}")

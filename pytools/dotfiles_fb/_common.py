@@ -118,6 +118,12 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> None:
+    """ファイル名群のみ検証する（pull前の早期拒否用）。"""
+    for f in filenames:
+        _validate_filename(f, base_dir)
+
+
 def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) -> Iterator[tuple[pathlib.Path, str, str]]:
     """inbox配下の`.md`ファイルを名前順に走査し、`(path, target_repo, text)`を返す。
 

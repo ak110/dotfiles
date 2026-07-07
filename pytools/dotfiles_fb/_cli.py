@@ -20,6 +20,7 @@
 - tbd-answer: 未回答のTBD項目へ回答を書き込む
 - tbd-edit: `$EDITOR`でTBD項目を直接編集する
 - tbd-adopt: 回答済みTBD項目をtbd/inboxからtbd/adopted/へ移動しコミット・push
+- tbd-rm: TBD項目をtbd/inboxから単純削除しコミット・push
 
 ハンドラ実装は`_add`・`_list`・`_show`・`_mutations`・`_process_loop`・`_tbd`の各モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
@@ -44,6 +45,7 @@ from pytools.dotfiles_fb._tbd import (
     _cmd_tbd_answer,
     _cmd_tbd_edit,
     _cmd_tbd_list,
+    _cmd_tbd_rm,
     _tbd_filename_completer,
 )
 
@@ -213,6 +215,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="対象リポジトリ（パスまたは正規化リモートURL）。既定は現在の作業リポジトリ。",
     )
+    loop.add_argument(
+        "--no-update",
+        action="store_true",
+        help="1反復完了後のupdate-dotfiles実行と自身再起動を抑止する。",
+    )
     tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
     tbd_add.add_argument(
         "repo_path",
@@ -297,6 +304,23 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SHA",
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+    )
+
+    tbd_rm = sub.add_parser(
+        "tbd-rm",
+        help="TBD項目をtbd/inboxから単純削除しcommit・push",
+    )
+    tbd_rm.add_argument(
+        "filenames",
+        metavar="FILENAME",
+        nargs="+",
+        help="削除するTBDファイル名（1個以上）。",
+    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    tbd_rm.add_argument(
+        "--note",
+        metavar="TEXT",
+        default=None,
+        help="削除理由のメモ（commit messageへ追記する）。",
     )
 
     enable_completion(parser)
@@ -386,6 +410,7 @@ def main(
         "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),
         "tbd-edit": lambda: _cmd_tbd_edit(args, private_notes),
         "tbd-adopt": lambda: _cmd_tbd_adopt(args, private_notes, now),
+        "tbd-rm": lambda: _cmd_tbd_rm(args, private_notes),
     }
     dispatch[args.subcommand]()
     sys.exit(0)
