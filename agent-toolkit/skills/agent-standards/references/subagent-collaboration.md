@@ -50,8 +50,10 @@ Claude Code固有のサブエージェント実装制約は`agent-toolkit/rules/
 
 - サブエージェント定義frontmatterの`skills:`欄と、
   呼び出し元起動プロンプト明示の両方で同じ規範を参照する
-- 規範非読込型サブエージェント（`claude`・`Explore`など）へ委譲する場合は
-  当該規範の該当節本文を起動プロンプトへ引用転記する
+- 規範非読込型`subagent_type`の完全一覧は次の2種とする（`claude`・`Explore`）。
+  当該型へ委譲する場合は該当規範の節本文を起動プロンプトへ引用転記する。
+  本SSOTを追加・変更する場合は`agent-toolkit/scripts/pretooluse.py`の
+  `_NORM_SKIPPING_SUBAGENT_TYPES`定義を併せて更新する
 - 呼び出し元が計画本文に規範参照を列挙していない場合、
   サブエージェント側は完了報告に規範未参照の旨を明記して呼び出し元へ返却する
 

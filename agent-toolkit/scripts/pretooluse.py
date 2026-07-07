@@ -133,7 +133,8 @@ _ISOLATED_READ_TARGETS: tuple[str, ...] = (
 )
 
 # 規範文書を自動読み込みしないサブエージェントタイプ。
-# `agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節のSSOTに従い、
+# `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
+# 「必要な規範スキルの明示」節のSSOTに従い、
 # `claude`と`Explore`は独立コンテキストで規範を読み込まないため、
 # 起動プロンプトへの明示引用を求める。
 _NORM_SKIPPING_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude", "Explore"})
