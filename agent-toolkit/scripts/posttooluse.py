@@ -166,9 +166,9 @@ def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
     listed = ", ".join(f"{p} ({n} lines)" for p, n in over_limit)
     return (
         f"plan file contains target files with 200 or more lines: {listed}."
-        " Per agent-standards 'document size limit' section,"
-        " when post-revision projection reaches 215 lines,"
-        " assemble the final form and measure with `wc -l`."
+        " Per agent-standards 'document size limit' section"
+        " (200-219 lines is boundary-close, 220 or more is a violation),"
+        " assemble the post-revision final form and measure with `wc -l`."
         " Confirm whether you have measured the final form."
     )
 
