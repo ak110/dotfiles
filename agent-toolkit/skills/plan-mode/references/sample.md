@@ -110,3 +110,7 @@
 
 `~/.claude/plans/upload-limit-increase-concurrent-hickey.md`
 ````
+
+`agent-toolkit:agent-standards`「文書サイズ上限」節の対象ファイルを含む計画では、
+`## 調査結果`直下に「### 対象ファイルの現状」H3節を配置し、対象ファイル全件の現行`wc -l`実測値を列挙する。
+本サンプルはコード変更計画のため当該H3節の記載を省略している。
