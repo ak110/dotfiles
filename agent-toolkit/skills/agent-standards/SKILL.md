@@ -161,12 +161,14 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - 全コード・全ドキュメントに横断的に関わるものはfrontmatter無しのまま残す
 - 既存ルールへ節を追加する場合、追記内容の適用範囲が`paths`と一致するかを確認し、不一致なら別ルールへ分離するか`paths`を見直す
 
-### 機械可読な識別子のprefix
+### 識別子と環境変数
 
-機械可読な識別子（環境変数・設定キー・セッション状態フラグ等）のprefixは主管コンポーネントの配置レイヤに揃える。
+機械可読な識別子のprefixは配置レイヤに揃え、配布物の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式で本節にSSOTを置く。
+識別子prefixは配布物完結を`AGENT_TOOLKIT_`、個人環境完結を`DOTFILES_`とし、外部名前空間（`CLAUDE_`等）は不採用とする。
 
-- 配布物（`agent-toolkit/`配下）で完結する識別子は`AGENT_TOOLKIT_`相当、dotfiles個人環境（`.chezmoi-source/`配下等）
-  で完結する識別子は`DOTFILES_`相当を用いる。外部実行環境の名前空間（`CLAUDE_`等）は衝突リスクのため用いない
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk fb`が扱う管理repoのrootを指定する。既定は`~/private-notes/`
+- `AGENT_TOOLKIT_PRELINT_TEST_BYPASS`: 事前lintチェックの一部を無効化する（テスト用途）
+- `AGENT_TOOLKIT_STOP_GATE_DEBUG`: `_stop_gate`のデバッグ出力を有効化する
 
 ### rules階層のフラット構造
 
@@ -176,10 +178,8 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 
 ### セッション状態フラグ
 
-`agent-toolkit`プラグインのフックはセッション単位の状態ファイルを介する。
-パスは`{tempdir}/claude-agent-toolkit-{session_id}.json`とし、PreToolUseとPostToolUse間で情報を共有する。
-状態ファイル運用の一般論は`references/claude-hooks.md`「セッション状態ファイル」節を参照する。
-本節を`agent-toolkit`が扱う全フラグ一覧のSSOTとし、追加・変更時は書き込み元・読み取り元の対応関係を保って更新する。
+`agent-toolkit`プラグインは状態ファイル`{tempdir}/claude-agent-toolkit-{session_id}.json`を本節SSOTとして共有する。
+運用の一般論は`references/claude-hooks.md`「セッション状態ファイル」節を参照し、書き込み元・読み取り元の対応を保って更新する。
 
 - `test_executed`: PostToolUse(Bash)が記録。`git commit`未検証警告の抑制に使う
 - `git_status_checked`: PostToolUse(Bash)が`git status`/`git log`/`git diff`観測時に記録

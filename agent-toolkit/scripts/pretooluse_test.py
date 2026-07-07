@@ -4428,7 +4428,7 @@ class TestPlanFileTargetFilesH3Correspondence:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "h3corr-replacement"
-        content = _h3corr_build_content("### 置換パターン: dotfiles-fb → atk fb（対象: foo/bar.py foo/baz.py）\n\nx\n\n")
+        content = _h3corr_build_content("### 置換パターン: old-name → atk fb（対象: foo/bar.py foo/baz.py）\n\nx\n\n")
         self._prior_flags(tmp_path, sid, content)
         result = _run(
             {

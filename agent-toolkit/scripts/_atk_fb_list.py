@@ -1,11 +1,15 @@
-"""listサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_list.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import pathlib
 
-from pytools.dotfiles_fb._common import _is_tbd_answered, _iter_inbox_entries, _pull
-from pytools.dotfiles_fb._formatters import _body_summary, _tbd_body_summary
-from pytools.dotfiles_fb._repo import _resolve_repo_id
+from _atk_fb_common import _is_tbd_answered, _iter_inbox_entries, _pull
+from _atk_fb_formatters import _body_summary, _tbd_body_summary
+from _atk_fb_repo import _resolve_repo_id
 
 
 def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:

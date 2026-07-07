@@ -97,7 +97,7 @@ plan-mode側の定義は
 
 ## 後始末コマンドの引数
 
-`dotfiles-fb adopt`・`reject`・`tbd-adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
+`atk fb adopt`・`reject`・`tbd-adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
 
 - `--note`: 採用時は反映概要、不採用時は不採用理由。1行に収める
 - `--commit`: 対象リポジトリの短縮commit hash（`git rev-parse --short HEAD`の値）。

@@ -1,4 +1,8 @@
-"""フィードバック本文の出力整形・frontmatter解析ヘルパー。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_formatters.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import pathlib
 

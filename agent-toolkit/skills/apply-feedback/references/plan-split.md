@@ -32,7 +32,7 @@
 
 ## 合流点
 
-`git push`と後始末（`dotfiles-fb adopt`または`dotfiles-fb reject`）は、
+`git push`と後始末（`atk fb adopt`または`atk fb reject`）は、
 独立した計画の完遂後に呼び出し元スキル（`process-feedbacks`など）の後始末順序で実施する。
 
 ## その他

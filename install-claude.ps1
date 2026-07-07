@@ -52,6 +52,38 @@ function Install-AgentToolkitPlugin {
     Write-Output 'agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。'
 }
 
+# ~/.local/bin/atk.cmd へラッパーを配置する。
+# インストール済み agent-toolkit プラグインの最新バージョンを動的解決するため、
+# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/bin/atk.cmd）を実行時に決定する形とする。
+# 直接コピーするとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
+function Install-AtkWrapper {
+    $binDir = Join-Path $HOME '.local/bin'
+    $wrapper = Join-Path $binDir 'atk.cmd'
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    $body = @'
+@echo off
+setlocal enabledelayedexpansion
+set "PLUGIN_ROOT=%USERPROFILE%\.claude\plugins\cache"
+set "LATEST="
+for /f "delims=" %%A in ('dir /b /ad /o-n "%PLUGIN_ROOT%\*\agent-toolkit" 2^>nul') do (
+    for /f "delims=" %%B in ('dir /b /ad /o-n "%PLUGIN_ROOT%\%%A\*" 2^>nul') do (
+        if not defined LATEST set "LATEST=%PLUGIN_ROOT%\%%A\%%B\bin\atk.cmd"
+    )
+)
+if not defined LATEST (
+    echo atk: agent-toolkit プラグインが見つかりません。install-claude.ps1 を再実行してください。 1>&2
+    exit /b 1
+)
+call "%LATEST%" %*
+'@
+    Set-Content -LiteralPath $wrapper -Value $body -Encoding ASCII
+    Write-Output "配置: $wrapper"
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if (-not ($userPath -split ';' | Where-Object { $_ -ieq $binDir })) {
+        Write-Warning "'$binDir' がユーザー PATH に含まれていません。setx PATH ""%PATH%;$binDir"" 等で追加してください。"
+    }
+}
+
 function Main {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -93,6 +125,7 @@ function Main {
         }
 
         Install-AgentToolkitPlugin
+        Install-AtkWrapper
     } finally {
         # 差し替え前にエラー終了した場合、既存環境を復元する。
         if (-not $replaced -and $oldDir -and (Test-Path -LiteralPath $oldDir) -and -not (Test-Path -LiteralPath $targetDir)) {

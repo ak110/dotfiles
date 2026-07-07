@@ -1,25 +1,28 @@
-"""pytools.dotfiles_fb._cli のtbd系サブコマンドのテスト。
+"""atk (agent-toolkit `atk fb`) のtbd系サブコマンドのテスト。
 
 tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adopt/tbd-rmサブコマンドの単体テストを集約する。
-既存サブコマンドのテストは`_cli_test.py`に、拡張サブコマンド・オプションのテストは
-`_cli_extras_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
+既存サブコマンドのテストは`atk_test.py`に、拡張サブコマンド・オプションのテストは
+`_atk_fb_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
 import subprocess
+import sys
 from typing import Any
 
 import pytest
 
-from pytools.dotfiles_fb import _cli
-from pytools.dotfiles_fb._cli_test import (
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
     _setup_tbd_env,
     _write_tbd_file,
-)
+)  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class TestTbdAdd:
@@ -47,8 +50,8 @@ class TestTbdAdd:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["tbd-add", str(myrepo), "--scope", "theme1", "未確認の挙動"],
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "--scope", "theme1", "未確認の挙動"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -84,8 +87,8 @@ class TestTbdAdd:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["tbd-add", str(myrepo), "--question-type", "choice", "q"],
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "--question-type", "choice", "q"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -108,7 +111,7 @@ class TestTbdList:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-list", "--status", "unanswered"], home=tmp_path)
+            atk.main(["fb", "tbd-list", "--status", "unanswered"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md\tgithub.com/example/foo\t[unanswered] q1\n"
@@ -129,7 +132,7 @@ class TestTbdListSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-list", "--skip-pull"], home=tmp_path)
+            atk.main(["fb", "tbd-list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
@@ -149,7 +152,7 @@ class TestTbdEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-edit", "../escape.md"], home=tmp_path)
+            atk.main(["fb", "tbd-edit", "../escape.md"], home=tmp_path)
         assert exc_info.value.code == 2
 
     def test_no_diff_skips_commit(
@@ -166,7 +169,7 @@ class TestTbdEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["fb", "tbd-edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "差分なし" in captured.out
@@ -191,7 +194,7 @@ class TestTbdAnswer:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-answer"], home=tmp_path)
+            atk.main(["fb", "tbd-answer"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "未回答のTBDはありません" in captured.out
@@ -214,7 +217,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
@@ -235,8 +238,9 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
+            atk.main(
                 [
+                    "fb",
                     "tbd-adopt",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     "--note",
@@ -269,8 +273,9 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
+            atk.main(
                 [
+                    "fb",
                     "tbd-adopt",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     f"{_FIXED_TIMESTAMP}-002.md",
@@ -300,7 +305,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert any(c["cmd"] == ["git", "push"] for c in git_calls)
@@ -316,7 +321,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-adopt", "../escape.md"], home=tmp_path)
+            atk.main(["fb", "tbd-adopt", "../escape.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -333,7 +338,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-adopt", "nonexistent.md"], home=tmp_path)
+            atk.main(["fb", "tbd-adopt", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -350,8 +355,8 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "nonexistent.md"],
+            atk.main(
+                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "nonexistent.md"],
                 home=tmp_path,
             )
 
@@ -374,7 +379,7 @@ class TestTbdRm:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
         assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -391,8 +396,8 @@ class TestTbdRm:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--note", "誤投入"],
+            atk.main(
+                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--note", "誤投入"],
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
@@ -411,8 +416,8 @@ class TestTbdRm:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
+            atk.main(
+                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
@@ -427,7 +432,7 @@ class TestTbdRm:
         """パストラバーサル文字列は削除前検証で拒否されること。"""
         _setup_tbd_env(tmp_path)
         with pytest.raises(SystemExit):
-            _cli.main(["tbd-rm", "../evil.md"], home=tmp_path)
+            atk.main(["fb", "tbd-rm", "../evil.md"], home=tmp_path)
 
     def test_missing_file_exits(
         self,
@@ -438,8 +443,8 @@ class TestTbdRm:
         _setup_tbd_env(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit):
-            _cli.main(
-                ["tbd-rm", f"{_FIXED_TIMESTAMP}-999.md"],
+            atk.main(
+                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-999.md"],
                 home=tmp_path,
             )
 
@@ -454,8 +459,9 @@ class TestTbdRm:
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit):
-            _cli.main(
+            atk.main(
                 [
+                    "fb",
                     "tbd-rm",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     f"{_FIXED_TIMESTAMP}-999.md",

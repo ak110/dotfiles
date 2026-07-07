@@ -1,28 +1,27 @@
-"""~/private-notesのフィードバック項目を操作するCLIエントリポイント。
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["watchdog>=6.0.0"]
+# ///
+"""agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成。
-- add: inboxへフィードバックを投入する
-- list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
-  （--typeで種別絞込、--statusでtbd側のみ回答状況を絞込、--countで件数のみ出力）
-- show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
-  （--typeで種別絞込、--statusでtbd側のみ回答状況を絞込）
-- adopt: 採用としてinboxからadopted/へ移動しコミット・push
-- reject: 不採用としてinboxからrejected/へ移動しコミット・push
-- rm: inboxから単純削除しコミット・push
-- edit: $EDITORで対象ファイルを編集しコミット・push
-- commit: 外部編集後のinbox配下未コミット変更をコミット・push
-- enable: feedback-inboxフラグファイルを作成する
-- disable: feedback-inboxフラグファイルを削除する
-- status: feedback-inboxの有効状態を判定する（正常0・無効1）
-- process-loop: 対象リポジトリのfeedback消化を`claude /process-feedbacks`＋`/agent-toolkit:exit-session`直接起動で常駐実行する
-- tbd-add: 新規TBD項目を追加する
-- tbd-list: TBD項目一覧を状態フィルターで出力する
-- tbd-answer: 未回答のTBD項目へ回答を書き込む
-- tbd-edit: `$EDITOR`でTBD項目を直接編集する
-- tbd-adopt: 回答済みTBD項目をtbd/inboxからtbd/adopted/へ移動しコミット・push
-- tbd-rm: TBD項目をtbd/inboxから単純削除しコミット・push
+サブコマンド構成: `atk fb <sub>`形式。
+`fb`サブパーサ配下に旧`dotfiles-fb`のサブコマンド群を再登録する。
 
-ハンドラ実装は`_add`・`_list`・`_show`・`_mutations`・`_process_loop`・`_tbd`の各モジュールに分割し、
+- fb add: inboxへフィードバックを投入する
+- fb list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
+- fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
+- fb adopt: 採用としてinboxからadopted/へ移動しコミット・push
+- fb reject: 不採用としてinboxからrejected/へ移動しコミット・push
+- fb rm: inboxから単純削除しコミット・push
+- fb edit: $EDITORで対象ファイルを編集しコミット・push
+- fb commit: 外部編集後のinbox配下未コミット変更をコミット・push
+- fb enable/disable/status: feedback-inbox有効化フラグの操作・判定
+- fb process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する
+- fb tbd-add/tbd-list/tbd-answer/tbd-edit/tbd-adopt/tbd-rm: TBD項目の操作
+
+ハンドラ実装は`_atk_fb_add`・`_atk_fb_list`・`_atk_fb_show`・`_atk_fb_mutations`・
+`_atk_fb_process_loop`・`_atk_fb_tbd`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
 """
 
@@ -32,30 +31,23 @@ import pathlib
 import sys
 import typing
 
-from pytools._internal.cli import enable_completion
-from pytools.dotfiles_fb._add import _cmd_add
-from pytools.dotfiles_fb._common import _check_environment, _ensure_environment, _flag_path
-from pytools.dotfiles_fb._list import _cmd_list
-from pytools.dotfiles_fb._mutations import _cmd_adopt, _cmd_commit, _cmd_edit, _cmd_reject, _cmd_rm
-from pytools.dotfiles_fb._process_loop import _cmd_process_loop
-from pytools.dotfiles_fb._show import _cmd_show
-from pytools.dotfiles_fb._tbd import (
-    _cmd_tbd_add,
-    _cmd_tbd_adopt,
-    _cmd_tbd_answer,
-    _cmd_tbd_edit,
-    _cmd_tbd_list,
-    _cmd_tbd_rm,
-    _tbd_filename_completer,
-)
+# 兄弟モジュール（_atk_fb_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
+# sys.path挿入前の相対解決を避けるため、モジュール内importはこの下に配置する。
+# pylint: disable=wrong-import-position,protected-access
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+
+import _atk_fb_add as _add  # noqa: E402
+import _atk_fb_common as _common  # noqa: E402
+import _atk_fb_list as _list  # noqa: E402
+import _atk_fb_mutations as _mutations  # noqa: E402
+import _atk_fb_process_loop as _process_loop  # noqa: E402
+import _atk_fb_show as _show  # noqa: E402
+import _atk_fb_tbd as _tbd  # noqa: E402
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """サブコマンド付きargparseパーサーを構築する。"""
-    parser = argparse.ArgumentParser(
-        description="~/private-notesのフィードバック項目を操作する。",
-    )
-    sub = parser.add_subparsers(dest="subcommand", required=True)
+def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
+    """`fb`サブパーサ配下にfeedback/TBD操作用サブコマンドを登録する。"""
+    sub = fb.add_subparsers(dest="fb_subcommand", required=True)
 
     add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
     add.add_argument(
@@ -114,7 +106,7 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="表示する単一のinboxファイル名（省略時は--allの指定が必要）。",
-    ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    )
     show.add_argument(
         "--all",
         action="store_true",
@@ -140,9 +132,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
-    adopt.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。"
-    ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
     adopt.add_argument(
         "--note",
         metavar="TEXT",
@@ -157,9 +147,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     reject = sub.add_parser("reject", help="不採用としてinboxからrejected/へ移動しコミット・push")
-    reject.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。"
-    ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    reject.add_argument("filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。")
     reject.add_argument(
         "--note",
         metavar="TEXT",
@@ -174,9 +162,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     rm = sub.add_parser("rm", help="inboxから単純削除しコミット・push")
-    rm.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。"
-    ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
     edit.add_argument(
@@ -185,7 +171,7 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="編集対象のinboxファイル名。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
-    ).completer = _feedback_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    )
 
     sub.add_parser(
         "commit",
@@ -220,6 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="1反復完了後のupdate-dotfiles実行と自身再起動を抑止する。",
     )
+
     tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
     tbd_add.add_argument(
         "repo_path",
@@ -282,17 +269,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     tbd_edit = sub.add_parser("tbd-edit", help="$EDITORでTBDを編集してcommit・push")
-    tbd_edit.add_argument(
-        "filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。"
-    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    tbd_edit.add_argument("filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。")
 
     tbd_adopt = sub.add_parser(
         "tbd-adopt",
         help="回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push",
     )
-    tbd_adopt.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="採用するTBDファイル名（1個以上）。"
-    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    tbd_adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するTBDファイル名（1個以上）。")
     tbd_adopt.add_argument(
         "--note",
         metavar="TEXT",
@@ -315,7 +298,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FILENAME",
         nargs="+",
         help="削除するTBDファイル名（1個以上）。",
-    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    )
     tbd_rm.add_argument(
         "--note",
         metavar="TEXT",
@@ -323,25 +306,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="削除理由のメモ（commit messageへ追記する）。",
     )
 
-    enable_completion(parser)
+
+def _build_parser() -> argparse.ArgumentParser:
+    """`atk`トップレベルargparseパーサーを構築する。"""
+    parser = argparse.ArgumentParser(
+        prog="atk",
+        description="agent-toolkitプラグイン提供CLI。",
+    )
+    top = parser.add_subparsers(dest="command", required=True)
+    fb = top.add_parser("fb", help="フィードバック・TBDの操作")
+    _build_fb_parser(fb)
     return parser
-
-
-def _feedback_filename_completer(prefix: str, **_: object) -> list[str]:
-    """argcomplete用のフィードバックファイル名補完候補生成。
-
-    `~/private-notes/feedback/inbox/`配下の`*.md`ファイル名をprefix一致で返す。
-    ディレクトリ不在時は空リストを返す。
-    """
-    feedback_dir = pathlib.Path.home() / "private-notes" / "feedback" / "inbox"
-    if not feedback_dir.exists():
-        return []
-    return sorted(p.name for p in feedback_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))
 
 
 def _cmd_enable(home: pathlib.Path) -> None:
     """enableサブコマンド: feedback-inboxフラグファイルを作成する。"""
-    path = _flag_path(home)
+    path = _common._flag_path(home)
     if path.exists():
         print(f"既に有効です: {path}")
         return
@@ -352,7 +332,7 @@ def _cmd_enable(home: pathlib.Path) -> None:
 
 def _cmd_disable(home: pathlib.Path) -> None:
     """disableサブコマンド: feedback-inboxフラグファイルを削除する。"""
-    path = _flag_path(home)
+    path = _common._flag_path(home)
     if not path.exists():
         print(f"既に無効です: {path}")
         return
@@ -362,7 +342,7 @@ def _cmd_disable(home: pathlib.Path) -> None:
 
 def _cmd_status(home: pathlib.Path) -> typing.NoReturn:
     """statusサブコマンド: feedback-inboxの有効状態を判定し終了コードで通知する。"""
-    code, message = _check_environment(home)
+    code, message = _common._check_environment(home)
     stream = sys.stdout if code == 0 else sys.stderr
     print(message, file=stream)
     sys.exit(code)
@@ -386,31 +366,38 @@ def main(
         home = pathlib.Path.home()
     if now is None:
         now = datetime.datetime.now()
-    if args.subcommand == "enable":
+    if args.command != "fb":
+        parser.error(f"未知のトップレベルコマンド: {args.command}")
+    sub = args.fb_subcommand
+    if sub == "enable":
         _cmd_enable(home)
         sys.exit(0)
-    if args.subcommand == "disable":
+    if sub == "disable":
         _cmd_disable(home)
         sys.exit(0)
-    if args.subcommand == "status":
+    if sub == "status":
         _cmd_status(home)
-    private_notes = _ensure_environment(home)
+    private_notes = _common._ensure_environment(home)
     dispatch = {
-        "add": lambda: _cmd_add(args, private_notes, now, home),
-        "list": lambda: _cmd_list(args, private_notes),
-        "show": lambda: _cmd_show(args, private_notes),
-        "adopt": lambda: _cmd_adopt(args, private_notes, now),
-        "reject": lambda: _cmd_reject(args, private_notes, now),
-        "rm": lambda: _cmd_rm(args, private_notes),
-        "edit": lambda: _cmd_edit(args, private_notes),
-        "commit": lambda: _cmd_commit(private_notes),
-        "process-loop": lambda: _cmd_process_loop(args, private_notes),
-        "tbd-add": lambda: _cmd_tbd_add(args, private_notes, now, home),
-        "tbd-list": lambda: _cmd_tbd_list(args, private_notes),
-        "tbd-answer": lambda: _cmd_tbd_answer(args, private_notes),
-        "tbd-edit": lambda: _cmd_tbd_edit(args, private_notes),
-        "tbd-adopt": lambda: _cmd_tbd_adopt(args, private_notes, now),
-        "tbd-rm": lambda: _cmd_tbd_rm(args, private_notes),
+        "add": lambda: _add._cmd_add(args, private_notes, now, home),
+        "list": lambda: _list._cmd_list(args, private_notes),
+        "show": lambda: _show._cmd_show(args, private_notes),
+        "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
+        "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
+        "rm": lambda: _mutations._cmd_rm(args, private_notes),
+        "edit": lambda: _mutations._cmd_edit(args, private_notes),
+        "commit": lambda: _mutations._cmd_commit(private_notes),
+        "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
+        "tbd-add": lambda: _tbd._cmd_tbd_add(args, private_notes, now, home),
+        "tbd-list": lambda: _tbd._cmd_tbd_list(args, private_notes),
+        "tbd-answer": lambda: _tbd._cmd_tbd_answer(args, private_notes),
+        "tbd-edit": lambda: _tbd._cmd_tbd_edit(args, private_notes),
+        "tbd-adopt": lambda: _tbd._cmd_tbd_adopt(args, private_notes, now),
+        "tbd-rm": lambda: _tbd._cmd_tbd_rm(args, private_notes),
     }
-    dispatch[args.subcommand]()
+    dispatch[sub]()
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

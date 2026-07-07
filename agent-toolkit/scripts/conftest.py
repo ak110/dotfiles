@@ -7,6 +7,17 @@ from collections.abc import Callable
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`atk fb`用の管理repo rootをテスト用一時ディレクトリへ差し替える。
+
+    実運用の`~/private-notes/`ハードコードを避け、`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で
+    テストごとに`tmp_path/private-notes`を指す。実ディレクトリの作成は各テストヘルパー
+    （`_setup_flag_and_notes`等）が担う。
+    """
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+
+
 @pytest.fixture(name="make_dirty_repo")
 def _make_dirty_repo() -> Callable[[pathlib.Path], pathlib.Path]:
     """変更ありのgitリポジトリを作成するfactory fixture。

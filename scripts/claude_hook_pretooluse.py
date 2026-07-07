@@ -18,7 +18,7 @@
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
-8. `Bash`経由の`dotfiles-fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）
+8. `Bash`経由の`atk fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象はチェックごとに異なる。
@@ -82,7 +82,7 @@ def main() -> int:
     if tool_name == "Bash":
         command_raw = tool_input.get("command")
         command = command_raw if isinstance(command_raw, str) else ""
-        block_msg = _check_bash_dotfiles_fb_tbd_add_scope_escalation(command)
+        block_msg = _check_bash_atk_fb_tbd_add_scope_escalation(command)
         if block_msg is not None:
             print(_llm_notice(block_msg), file=sys.stderr)
             return 2
@@ -227,17 +227,17 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     return False
 
 
-# --- Bash: dotfiles-fb tbd-add 縮退フレーズ check (block) ---
+# --- Bash: atk fb tbd-add 縮退フレーズ check (block) ---
 
 
-def _check_bash_dotfiles_fb_tbd_add_scope_escalation(command: str) -> str | None:
-    """dotfiles-fb tbd-add実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロック用メッセージを返す。
+def _check_bash_atk_fb_tbd_add_scope_escalation(command: str) -> str | None:
+    """Atk fb tbd-add実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロック用メッセージを返す。
 
     `_match_scope_escalation`は`agent-toolkit/scripts/pretooluse.py`定義の
     `_SCOPE_ESCALATION_PHRASES`を再利用する（sys.path経由import）。
     検査対象はコマンド文字列全体とする。
     """
-    if "dotfiles-fb" not in command:
+    if "atk" not in command:
         return None
     if "tbd-add" not in command:
         return None
@@ -245,7 +245,7 @@ def _check_bash_dotfiles_fb_tbd_add_scope_escalation(command: str) -> str | None
     if category is None:
         return None
     return (
-        f"blocked: `dotfiles-fb tbd-add` includes a scope-escalation phrase (category: {category})."
+        f"blocked: `atk fb tbd-add` includes a scope-escalation phrase (category: {category})."
         " See agent-toolkit/rules/01-agent.md session-split prohibition section."
     )
 
@@ -420,7 +420,7 @@ _PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 分岐構造を取る場合に限り登録する。block / warn のいずれからも除外され、
 # 配布物文面 (`agent-toolkit/` 配下) への記述が許可される。
 # 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_BLOCK` との非衝突など) を確認する。
-_EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"dotfiles-fb"})
+_EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
 
 
 def _check_dotfiles_specific_names(

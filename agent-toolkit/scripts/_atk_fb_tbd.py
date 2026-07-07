@@ -1,4 +1,8 @@
-"""tbd-add/tbd-list/tbd-answer/tbd-edit/tbd-adopt/tbd-rmサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_tbd.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import datetime
@@ -7,20 +11,21 @@ import pathlib
 import subprocess
 import sys
 
-from pytools.dotfiles_fb._common import (
+from _atk_fb_common import (
     _collect_message_via_editor,
     _commit_and_push,
     _is_tbd_answered,
     _iter_inbox_entries,
     _max_existing_seq,
+    _private_notes_path,
     _pull,
     _stamp_result,
     _validate_filename,
     _validate_filenames_only,
 )
-from pytools.dotfiles_fb._formatters import _parse_target_repo, _shorten_home
-from pytools.dotfiles_fb._list import _render_tbd_entries
-from pytools.dotfiles_fb._repo import _resolve_repo_id
+from _atk_fb_formatters import _parse_target_repo, _shorten_home
+from _atk_fb_list import _render_tbd_entries
+from _atk_fb_repo import _resolve_repo_id
 
 
 def _tbd_subdir(private_notes: pathlib.Path) -> pathlib.Path:
@@ -33,9 +38,10 @@ def _tbd_subdir(private_notes: pathlib.Path) -> pathlib.Path:
 def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
     """argcomplete用のTBDファイル名補完候補生成。
 
-    `~/private-notes/tbd/inbox/`配下の`*.md`ファイル名をprefix一致で返す。
+    `AGENT_TOOLKIT_PRIVATE_NOTES`環境変数（未設定時は`~/private-notes/`）配下の
+    `tbd/inbox/*.md`ファイル名をprefix一致で返す。
     """
-    tbd_dir = pathlib.Path.home() / "private-notes" / "tbd" / "inbox"
+    tbd_dir = _private_notes_path(pathlib.Path.home()) / "tbd" / "inbox"
     if not tbd_dir.exists():
         return []
     return sorted(p.name for p in tbd_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))

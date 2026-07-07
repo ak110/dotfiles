@@ -112,12 +112,12 @@ Claude Code固有事項として、本体作業に着手する時点で
   - 判定困難な場合はユーザーへ確認する
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
-- 後始末コマンド（`dotfiles-fb adopt`・`dotfiles-fb reject`・`dotfiles-fb tbd-adopt`）は
+- 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk fb tbd-adopt`）は
   CI通過確認の完了後に発行する。
   `gh run watch --exit-status`成功を確認できるまで後始末コマンドを実行しない。
   CI失敗時は管理側の採否確定を先行させず、
   対象リポジトリ側の是正commit・再push・CI通過確認の完了後に後始末を発行する
-- GitHub Actionsが動作しないリポジトリ（feedback管理側のprivate-notes等）は本節の対象外とする
+- GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
 
 ## コミットメッセージとリリース
 

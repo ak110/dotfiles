@@ -29,28 +29,28 @@ def _load_scope_escalation_inputs() -> list[tuple[str, str]]:
 _SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()
 
 
-class TestBashDotfilesFbTbdAddScopeEscalation:
-    """`Bash`経由の`dotfiles-fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）。"""
+class TestBashAtkFbTbdAddScopeEscalation:
+    """`Bash`経由の`atk fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）。"""
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_blocks(self, text: str, category: str):
-        command = f"dotfiles-fb tbd-add glatasks {text}"
+        command = f"atk fb tbd-add glatasks {text}"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert category in result.stderr
         assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
 
     def test_unrelated_command_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "dotfiles-fb list --type=tbd"}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk fb list --type=tbd"}})
         assert result.returncode == 0
         assert result.stdout == ""
 
-    def test_non_dotfiles_fb_command_allowed(self):
+    def test_non_atk_command_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo tbd-add"}})
         assert result.returncode == 0
         assert result.stdout == ""
 
     def test_tbd_add_without_scope_escalation_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "dotfiles-fb tbd-add glatasks 確認事項です"}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk fb tbd-add glatasks 確認事項です"}})
         assert result.returncode == 0
         assert result.stdout == ""

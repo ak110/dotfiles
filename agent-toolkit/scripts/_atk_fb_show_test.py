@@ -1,24 +1,27 @@
-"""pytools.dotfiles_fb._cli のshowサブコマンドのテスト。
+"""atk (agent-toolkit `atk fb`) のshowサブコマンドのテスト。
 
 FILENAME指定表示・--all全件表示・型フィルター・状態フィルター・--skip-pullの単体テストを集約する。
-既存サブコマンドの残テストは`_cli_test.py`に、他サブコマンドの分割先は`_cli_mutations_test.py`・
-`_cli_process_loop_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_mutations_test.py`・
+`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
-from pytools.dotfiles_fb import _cli
-from pytools.dotfiles_fb._cli_test import (
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
     _write_feedback_file,
     _write_tbd_file,
-)
+)  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class TestShowSingleFile:
@@ -37,7 +40,7 @@ class TestShowSingleFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "show", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -58,7 +61,7 @@ class TestShowSingleFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "nonexistent.md"], home=tmp_path)
+            atk.main(["fb", "show", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -76,8 +79,8 @@ class TestShowSingleFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["show", "fb-001.md", "--target-repo=github.com/example/bar"],
+            atk.main(
+                ["fb", "show", "fb-001.md", "--target-repo=github.com/example/bar"],
                 home=tmp_path,
             )
 
@@ -103,7 +106,7 @@ class TestShowAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "--all"], home=tmp_path)
+            atk.main(["fb", "show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -129,7 +132,7 @@ class TestShowRequiresFilenameOrAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show"], home=tmp_path)
+            atk.main(["fb", "show"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -152,7 +155,7 @@ class TestShowTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", f"{_FIXED_TIMESTAMP}-001.md", "--type=tbd"], home=tmp_path)
+            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=tbd"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -170,7 +173,7 @@ class TestShowTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", f"{_FIXED_TIMESTAMP}-001.md", "--type=feedback"], home=tmp_path)
+            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=feedback"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -188,7 +191,7 @@ class TestShowTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -212,7 +215,7 @@ class TestShowStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "--all", "--status=answered"], home=tmp_path)
+            atk.main(["fb", "show", "--all", "--status=answered"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -232,8 +235,8 @@ class TestShowStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["show", f"{_FIXED_TIMESTAMP}-001.md", "--status=answered"],
+            atk.main(
+                ["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--status=answered"],
                 home=tmp_path,
             )
 
@@ -257,7 +260,7 @@ class TestShowSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "--all", "--skip-pull"], home=tmp_path)
+            atk.main(["fb", "show", "--all", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)

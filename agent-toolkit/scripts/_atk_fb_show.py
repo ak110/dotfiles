@@ -1,12 +1,16 @@
-"""showサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_show.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import pathlib
 import sys
 
-from pytools.dotfiles_fb._common import _is_tbd_answered, _iter_inbox_entries, _pull, _validate_filename
-from pytools.dotfiles_fb._formatters import _parse_target_repo
-from pytools.dotfiles_fb._repo import _resolve_repo_id
+from _atk_fb_common import _is_tbd_answered, _iter_inbox_entries, _pull, _validate_filename
+from _atk_fb_formatters import _parse_target_repo
+from _atk_fb_repo import _resolve_repo_id
 
 
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

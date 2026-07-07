@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
 
-`dotfiles-fb process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
+`atk fb process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
 環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`を設定した状態で起動される。
 本hookは同環境変数が設定されたセッションに限り、`agent-toolkit:exit-session`スキルの
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
@@ -63,7 +63,7 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 順序制約の再促文。process-feedbacksの多段処理途中でexit-session呼び出しが
 # 忘却されることを防ぐため、工程順序を明示する。
 _REASON_BODY = """\
-本セッションは dotfiles-fb process-loop CLI から自律実行モードで起動されています。
+本セッションは atk fb process-loop CLI から自律実行モードで起動されています。
 処理完了後は必ず /agent-toolkit:exit-session を呼び出してセッションを終了してください。
 ただし exit-session を呼ぶ前に、以下の工程を完全に終えてください。
 1. process-feedbacks スキルのステップ1〜3（feedback採否確定・commit・push・後始末）

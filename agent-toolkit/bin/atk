@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
+exec uv run --no-project --script "${SCRIPT_DIR}/scripts/atk.py" "$@"

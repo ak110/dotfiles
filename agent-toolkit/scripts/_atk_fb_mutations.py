@@ -1,4 +1,8 @@
-"""adopt/reject/rm/edit/commitサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_mutations.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import datetime
@@ -8,7 +12,7 @@ import shutil
 import subprocess
 import sys
 
-from pytools.dotfiles_fb._common import (
+from _atk_fb_common import (
     _commit_and_push,
     _pull,
     _stamp_result,

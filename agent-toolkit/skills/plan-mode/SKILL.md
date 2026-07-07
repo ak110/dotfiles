@@ -41,7 +41,7 @@ description: >
   - 登録済み工程を実施せず先へ進める判断を発話・記録した時点で当該判断を無効とし、
     直ちに正規の工程へ復帰する。当該発話・記録を`session-review`や恒久化の検討等の観測事象として扱う場合、
     `agent-toolkit:agent-standards`配下`references/quality-first-exceptions.md`の
-    例外条件（`dotfiles-fb status`有効・根本原因の独立性・成果物品質への非影響・対応要件充足）を個別に確認する。
+    例外条件（`atk fb status`有効・根本原因の独立性・成果物品質への非影響・対応要件充足）を個別に確認する。
     代表フレーズ集は`agent-toolkit:agent-standards`配下`references/scope-escalation-phrases.md`の
     `process-omission`カテゴリを参照する。当該パターンの宣言を規範違反続行の正当化に用いない
 - plan mode移行の前提: 本スキルはplan mode下でも外でも起動できる。

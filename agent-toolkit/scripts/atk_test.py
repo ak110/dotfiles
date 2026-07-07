@@ -1,24 +1,29 @@
-"""pytools.dotfiles_fb._cli のテスト。
+"""atk (agent-toolkit `atk fb`) のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add/list/本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-show系テストは`_cli_show_test.py`、adopt/reject/rm/edit/パストラバーサル拒否は`_cli_mutations_test.py`、
-process-loop・リモートURL正規化・リポジトリID解決は`_cli_process_loop_test.py`に分離する。
-commit/enable/disable/--source等の拡張機能テストは`_cli_extras_test.py`に分離する。
-tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adoptサブコマンドの単体テストは`_cli_tbd_test.py`に分離する。
-tbd関連の共通ヘルパー（`_setup_tbd_env`・`_write_tbd_file`）は本ファイルと`_cli_tbd_test.py`の
+show系テストは`_atk_fb_show_test.py`、adopt/reject/rm/edit/パストラバーサル拒否は`_atk_fb_mutations_test.py`、
+process-loop・リモートURL正規化・リポジトリID解決は`_atk_fb_process_loop_test.py`に分離する。
+commit/enable/disable/--source等の拡張機能テストは`_atk_fb_extras_test.py`に分離する。
+tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adoptサブコマンドの単体テストは`_atk_fb_tbd_test.py`に分離する。
+tbd関連の共通ヘルパー（`_setup_tbd_env`・`_write_tbd_file`）は本ファイルと`_atk_fb_tbd_test.py`の
 双方から使うため本ファイルに残置する。
 """
 
 import datetime
 import pathlib
 import subprocess
+import sys
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from pytools.dotfiles_fb import _add, _cli, _formatters
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import _atk_fb_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_fb_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 _GitCall = dict[str, Any]
 
@@ -78,7 +83,7 @@ class TestFlagFileMissing:
     def test_exits_with_error(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが存在しない場合はexit 1でstderrに案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["fb", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -86,20 +91,20 @@ class TestFlagFileMissing:
 
 
 class TestPrivateNotesMissing:
-    """~/private-notes不在時にexit 1と手動clone案内を返すこと。"""
+    """管理repo root不在時にexit 1とディレクトリ不在案内を返すこと。"""
 
-    def test_exits_with_clone_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """private-notesが存在しない場合はexit 1でclone案内を出力する。"""
+    def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
         flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
         flag.parent.mkdir(parents=True, exist_ok=True)
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["fb", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "クローン" in captured.err
+        assert "フィードバック保存ディレクトリが見つかりません" in captured.err
 
 
 class TestNoSubcommand:
@@ -108,7 +113,7 @@ class TestNoSubcommand:
     def test_exits_with_usage_error(self) -> None:
         """サブコマンド未指定の場合はexit 2でSystemExitが発生する。"""
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main([])
+            atk.main([])
 
         assert exc_info.value.code == 2
 
@@ -147,7 +152,7 @@ class TestAddSingleMessage:
         message = "テストメッセージ"
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", repo_path, message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -178,7 +183,7 @@ class TestAddSingleMessage:
         assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
+        assert f"  atk fb edit {files[0].name}\n" in captured.out
 
 
 class TestAddMultipleMessages:
@@ -214,7 +219,7 @@ class TestAddMultipleMessages:
         repo_path = str(myrepo)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -233,8 +238,8 @@ class TestAddMultipleMessages:
         assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
-        assert f"  dotfiles-fb edit {files[1].name}\n" in captured.out
+        assert f"  atk fb edit {files[0].name}\n" in captured.out
+        assert f"  atk fb edit {files[1].name}\n" in captured.out
 
 
 class TestAddRepoPathExpansion:
@@ -266,7 +271,7 @@ class TestAddRepoPathExpansion:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -345,7 +350,7 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "feedback" / "inbox"
@@ -384,7 +389,7 @@ class TestAddFrontmatterOverride:
         msg_plain = "frontmatter無し本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "feedback" / "inbox"
@@ -423,7 +428,7 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "feedback" / "inbox"
@@ -448,7 +453,7 @@ class TestListEmpty:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -470,7 +475,7 @@ class TestListSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -503,7 +508,7 @@ class TestListMalformedFrontmatter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -526,7 +531,7 @@ class TestListMultipleRepos:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -553,7 +558,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--target-repo=github.com/example/foo"], home=tmp_path)
+            atk.main(["fb", "list", "--target-repo=github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -588,7 +593,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--target-repo=~/myrepo"], home=tmp_path)
+            atk.main(["fb", "list", "--target-repo=~/myrepo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -606,7 +611,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
+            atk.main(["fb", "list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -629,7 +634,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=feedback"], home=tmp_path)
+            atk.main(["fb", "list", "--type=feedback"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -647,7 +652,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=tbd"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -665,7 +670,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -688,7 +693,7 @@ class TestListSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--skip-pull"], home=tmp_path)
+            atk.main(["fb", "list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
@@ -710,7 +715,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=tbd", "--status=answered"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd", "--status=answered"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -730,7 +735,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -750,7 +755,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=tbd"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -770,7 +775,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--status=answered"], home=tmp_path)
+            atk.main(["fb", "list", "--status=answered"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -780,7 +785,7 @@ class TestListStatusFilter:
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
         """--statusに不正値を指定するとargparseがexit 2で終了する。"""
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--status=invalid"], home=tmp_path)
+            atk.main(["fb", "list", "--status=invalid"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -802,7 +807,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--count"], home=tmp_path)
+            atk.main(["fb", "list", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -820,7 +825,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--count"], home=tmp_path)
+            atk.main(["fb", "list", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -839,7 +844,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--type=tbd", "--status=answered", "--count"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd", "--status=answered", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -856,7 +861,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list", "--count"], home=tmp_path)
+            atk.main(["fb", "list", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

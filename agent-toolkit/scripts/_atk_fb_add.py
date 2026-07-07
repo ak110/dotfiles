@@ -1,11 +1,15 @@
-"""addサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_add.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import datetime
 import pathlib
 import sys
 
-from pytools.dotfiles_fb._common import (
+from _atk_fb_common import (
     _collect_message_via_editor,
     _commit_and_push,
     _count_feedback,
@@ -13,8 +17,8 @@ from pytools.dotfiles_fb._common import (
     _pull,
     _subdir,
 )
-from pytools.dotfiles_fb._formatters import _shorten_home
-from pytools.dotfiles_fb._repo import _resolve_repo_id
+from _atk_fb_formatters import _shorten_home
+from _atk_fb_repo import _resolve_repo_id
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, str], str]:
@@ -88,4 +92,4 @@ def _cmd_add(
     print(f"inbox: 計{_count_feedback(inbox_dir)}件")
     print("編集する場合:")
     for filename in generated:
-        print(f"  dotfiles-fb edit {filename}")
+        print(f"  atk fb edit {filename}")

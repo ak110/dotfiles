@@ -1,22 +1,25 @@
-"""pytools.dotfiles_fb._cli のadopt/reject/rm/edit・パストラバーサル検証のテスト。
+"""atk (agent-toolkit `atk fb`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
-既存サブコマンドの残テストは`_cli_test.py`に、他サブコマンドの分割先は`_cli_show_test.py`・
-`_cli_process_loop_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_show_test.py`・
+`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
-from pytools.dotfiles_fb import _cli
-from pytools.dotfiles_fb._cli_test import (
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
     _write_feedback_file,
-)
+)  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class TestAdoptSingle:
@@ -34,7 +37,7 @@ class TestAdoptSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
@@ -61,7 +64,7 @@ class TestAdoptMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
+            atk.main(["fb", "adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         inbox = notes / "feedback" / "inbox"
@@ -91,7 +94,7 @@ class TestAdoptZeroArgs:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt"], home=tmp_path)
+            atk.main(["fb", "adopt"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -110,7 +113,7 @@ class TestAdoptMissing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt", "nonexistent.md"], home=tmp_path)
+            atk.main(["fb", "adopt", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -132,8 +135,8 @@ class TestAdoptStampWithNoteAndCommit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
+            atk.main(
+                ["fb", "adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
                 home=tmp_path,
             )
 
@@ -161,7 +164,7 @@ class TestAdoptStampWithoutOptional:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
@@ -187,7 +190,7 @@ class TestRejectDeletes:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["reject", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "reject", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
@@ -211,7 +214,7 @@ class TestRejectStampWithNote:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["reject", "fb-001.md", "--note", "不採用理由"], home=tmp_path)
+            atk.main(["fb", "reject", "fb-001.md", "--note", "不採用理由"], home=tmp_path)
 
         assert exc_info.value.code == 0
         rejected_text = (notes / "feedback" / "rejected" / "fb-001.md").read_text(encoding="utf-8")
@@ -236,7 +239,7 @@ class TestRejectMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["reject", "fb-001.md", "fb-002.md"], home=tmp_path)
+            atk.main(["fb", "reject", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         inbox = notes / "feedback" / "inbox"
@@ -263,7 +266,7 @@ class TestRejectZeroArgs:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["reject"], home=tmp_path)
+            atk.main(["fb", "reject"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -283,7 +286,7 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["rm", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
@@ -307,7 +310,7 @@ class TestRmMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["rm", "fb-001.md", "fb-002.md"], home=tmp_path)
+            atk.main(["fb", "rm", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
@@ -330,7 +333,7 @@ class TestEditNoEditor:
         monkeypatch.delenv("EDITOR", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["edit", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -362,7 +365,7 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["edit", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -394,7 +397,7 @@ class TestEditNoChanges:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["edit", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
@@ -430,7 +433,7 @@ class TestEditNoArg:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["edit"], home=tmp_path)
+            atk.main(["fb", "edit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -448,7 +451,7 @@ class TestEditNoArg:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["edit"], home=tmp_path)
+            atk.main(["fb", "edit"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -482,7 +485,7 @@ class TestPathTraversalRejection:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["adopt", bad], home=tmp_path)
+            atk.main(["fb", "adopt", bad], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()

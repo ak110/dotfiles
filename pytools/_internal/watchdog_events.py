@@ -3,7 +3,8 @@
 import watchdog.events
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
-# `pytools.claude_plans_viewer._local`と`pytools.dotfiles_fb._process_loop`が共有する。
+# `pytools.claude_plans_viewer._local`と旧`pytools.dotfiles_fb._process_loop`（agent-toolkit配下へ移設済み。
+# 現`agent-toolkit/scripts/_atk_fb_process_loop.py`）が共有する。
 WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileCreatedEvent,
     watchdog.events.FileModifiedEvent,

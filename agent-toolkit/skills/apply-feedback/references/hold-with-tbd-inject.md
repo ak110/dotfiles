@@ -1,7 +1,7 @@
 # 保留判定時の事前確認事項のTBD投入
 
 保留判定時、フィードバック原文内に事前確認が必要な論点・確認事項・仕様上の未確定項目が列挙されている場合は、
-当該事項を`dotfiles-fb tbd-add`で個別投入してから保留する。
+当該事項を`atk fb tbd-add`で個別投入してから保留する。
 
 ## 対象論点の判定基準
 
@@ -14,7 +14,7 @@
 
 各論点を個別に次の書式で投入する。
 
-`dotfiles-fb tbd-add <REPO_PATH> --question-type=free --scope=<提案識別子> "<論点本文>"`
+`atk fb tbd-add <REPO_PATH> --question-type=free --scope=<提案識別子> "<論点本文>"`
 
 `<提案識別子>`はフィードバックファイル名の日付連番部分などを使う。
 

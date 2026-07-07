@@ -1,4 +1,8 @@
-"""リポジトリ識別子（正規化リモートURL）の解決処理。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_repo.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import pathlib
 import re

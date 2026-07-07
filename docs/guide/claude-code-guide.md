@@ -125,6 +125,19 @@ claude mcp add --scope=user codex codex mcp-server
 
 codex CLI自体のセットアップは別途実施する。
 
+## atkコマンドのPATH設定
+
+`agent-toolkit`プラグインは`atk`ラッパースクリプトを`agent-toolkit/bin/atk`に配置する。
+Claude Codeがマーケットプレイス経由でインストールした実体は
+`~/.claude/plugins/cache/<marketplace-name>/agent-toolkit/<version>/bin/atk`にある。
+バージョン部は更新ごとに変わる。追随処理は`install-claude.sh`（Linux/macOS）または`install-claude.ps1`（Windows）で自動化する。
+
+- Linux/macOS: `~/.local/bin/atk`に最新バージョンを動的解決するラッパーを配置する
+- Windows: `~/.local/bin/atk.cmd`に同等のバッチラッパーを配置する
+- いずれも`~/.local/bin`がPATHに含まれていない環境では警告を表示する
+
+dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+
 ## 構成と機能
 
 ### 常時有効な仕組み

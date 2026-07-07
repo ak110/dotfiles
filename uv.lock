@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-01T17:36:24.874195212Z"
+exclude-newer = "2026-07-06T18:30:28.405635984Z"
 exclude-newer-span = "P1D"
 
 [options.exclude-newer-package]
@@ -1893,6 +1893,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "types-pyyaml" },
+    { name = "watchdog" },
 ]
 
 [package.metadata]
@@ -1929,6 +1930,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
+    { name = "watchdog", specifier = ">=6.0.0" },
 ]
 
 [[package]]

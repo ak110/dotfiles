@@ -1,22 +1,27 @@
-"""pytools.dotfiles_fb._cli のprocess-loopサブコマンド・リポジトリID解決のテスト。
+"""atk (agent-toolkit `atk fb`) のprocess-loopサブコマンド・リポジトリID解決のテスト。
 
 process-loopサブコマンド（常駐ループ）、リモートURL正規化（`_normalize_remote_url`）、
 リポジトリID解決（`_resolve_repo_id`）の単体テストを集約する。
-既存サブコマンドの残テストは`_cli_test.py`に、他サブコマンドの分割先は`_cli_show_test.py`・
-`_cli_mutations_test.py`に分離する。共通ヘルパーは`_cli_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_show_test.py`・
+`_atk_fb_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import os
 import pathlib
 import subprocess
+import sys
 import threading
 from typing import Any
 
 import pytest
 import watchdog.events
 
-from pytools.dotfiles_fb import _cli, _process_loop, _repo
-from pytools.dotfiles_fb._cli_test import _setup_flag_and_notes
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import _atk_fb_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_fb_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _fake_run_with_remote_url(
@@ -205,7 +210,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
@@ -247,7 +252,7 @@ class TestProcessLoopClaudeReturncode:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
@@ -273,7 +278,7 @@ class TestProcessLoopClaudeReturncode:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
@@ -314,8 +319,8 @@ class TestProcessLoopUpdateAndRestart:
 
         monkeypatch.setattr(os, "execv", fake_execv)
         with pytest.raises(SystemExit):
-            _cli.main(
-                ["process-loop", "--target-repo", str(myrepo)],
+            atk.main(
+                ["fb", "process-loop", "--target-repo", str(myrepo)],
                 home=tmp_path,
             )
         assert execv_calls
@@ -358,8 +363,8 @@ class TestProcessLoopUpdateAndRestart:
             lambda p, a: execv_calls.append((p, list(a))),
         )
         with pytest.raises(SystemExit):
-            _cli.main(
-                ["process-loop", "--target-repo", str(myrepo), "--no-update"],
+            atk.main(
+                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
                 home=tmp_path,
             )
         assert not execv_calls
@@ -391,8 +396,8 @@ class TestProcessLoopWaitMessage:
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
         with pytest.raises(SystemExit):
-            _cli.main(
-                ["process-loop", "--target-repo", str(myrepo), "--no-update"],
+            atk.main(
+                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
                 home=tmp_path,
             )
         captured = capsys.readouterr()
@@ -567,5 +572,5 @@ class TestProcessLoopUrlInput:
         monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
+            atk.main(["fb", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2

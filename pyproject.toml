@@ -43,7 +43,6 @@ dirsize = "pytools.dirsize:main"
 dotfiles-media-remote = "pytools.media_remote:main"
 dotfiles-post-apply = "pytools.post_apply:main"
 EcoUtilities = "pytools.ecoutilities:main"
-dotfiles-fb = "pytools.dotfiles_fb:main"
 git-justify = "pytools.git_justify:main"
 markdown-viewer = "pytools.markdown_viewer:main"
 mvdir = "pytools.mvdir:main"
@@ -80,6 +79,7 @@ dev = [
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
+    "watchdog>=6.0.0",
 ]
 
 [tool.pyfltr]

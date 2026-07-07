@@ -1,4 +1,8 @@
-"""feedback/tbd共通の環境判定・git操作・ファイル名検証ヘルパー。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_common.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import datetime
 import os
@@ -8,7 +12,7 @@ import sys
 import tempfile
 from collections.abc import Iterable, Iterator
 
-from pytools.dotfiles_fb._formatters import _parse_target_repo
+from _atk_fb_formatters import _parse_target_repo
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
@@ -23,25 +27,38 @@ def _flag_path(home: pathlib.Path) -> pathlib.Path:
     return home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
 
 
+def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
+    """フィードバック保存ディレクトリのroot絶対パスを返す。
+
+    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていれば当該値を優先し、
+    未設定時は`~/private-notes/`へフォールバックする。
+    """
+    override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
+    if override:
+        return pathlib.Path(override).expanduser()
+    return home / "private-notes"
+
+
 def _check_environment(home: pathlib.Path) -> tuple[int, str]:
     """feedback-inboxの有効状態を判定し、(exit_code, message)を返す。
 
-    正常時は(0, 有効案内)、フラグファイル不在・private-notes不在時は(1, 原因案内)。
+    正常時は(0, 有効案内)、フラグファイル不在・フィードバック保存ディレクトリ不在時は(1, 原因案内)。
     """
     if not _flag_path(home).exists():
         return 1, "feedback-inbox機能が無効です（フラグファイルが存在しません）。"
-    if not (home / "private-notes").exists():
-        return 1, "~/private-notesが見つかりません。GitHubからクローンしてから再実行してください。"
+    root = _private_notes_path(home)
+    if not root.exists():
+        return 1, f"フィードバック保存ディレクトリが見つかりません: {root}"
     return 0, "feedback-inboxは有効です。"
 
 
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
-    """フラグファイルとprivate-notesディレクトリの存在を確認し、private-notesパスを返す。"""
+    """フラグファイルとフィードバック保存ディレクトリの存在を確認し、rootパスを返す。"""
     code, message = _check_environment(home)
     if code != 0:
         print(message, file=sys.stderr)
         sys.exit(code)
-    return home / "private-notes"
+    return _private_notes_path(home)
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
@@ -50,7 +67,7 @@ def _run_git(args: list[str], cwd: pathlib.Path) -> None:
 
 
 def _pull(private_notes: pathlib.Path) -> None:
-    """private-notesリポジトリで`git pull --ff-only`を実行する。"""
+    """フィードバック保存リポジトリで`git pull --ff-only`を実行する。"""
     _run_git(["pull", "--ff-only"], cwd=private_notes)
 
 

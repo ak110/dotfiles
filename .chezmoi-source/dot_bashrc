@@ -20,6 +20,7 @@ test -d "$HOME/.cargo/bin" && export PATH=$HOME/.cargo/bin:$PATH
 test -d "$HOME/.local/bin" && export PATH=$HOME/.local/bin:$PATH
 test -d "$HOME/bin" && export PATH=$HOME/bin:$PATH
 test -d "$HOME/dotfiles/bin" && export PATH=$PATH:$HOME/dotfiles/bin
+test -d "$HOME/dotfiles/agent-toolkit/bin" && export PATH=$PATH:$HOME/dotfiles/agent-toolkit/bin
 
 test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
@@ -80,8 +81,8 @@ case $- in
 esac
 
 # 対話シェル起動時に未回答TBDを通知する
-if command -v dotfiles-fb >/dev/null 2>&1 && dotfiles-fb status >/dev/null 2>&1; then
-    dotfiles-fb list --type=tbd --status=unanswered --skip-pull || :
+if command -v atk >/dev/null 2>&1 && atk fb status >/dev/null 2>&1; then
+    atk fb list --type=tbd --status=unanswered --skip-pull || true
 fi
 
 # SSH対話ログイン時にtmuxへ自動アタッチする

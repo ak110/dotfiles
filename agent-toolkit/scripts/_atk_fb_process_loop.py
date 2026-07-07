@@ -1,4 +1,8 @@
-"""process-loopサブコマンド実装。"""
+"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+
+旧`pytools/dotfiles_fb/_process_loop.py`からの移設。PEP 723 entrypoint
+`atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+"""
 
 import argparse
 import os
@@ -9,10 +13,17 @@ import threading
 
 import watchdog.events
 import watchdog.observers
+from _atk_fb_common import _count_pending_entries, _pull
+from _atk_fb_repo import _resolve_local_worktree, _resolve_repo_id
 
-from pytools._internal.watchdog_events import WATCHED_EVENT_TYPES
-from pytools.dotfiles_fb._common import _count_pending_entries, _pull
-from pytools.dotfiles_fb._repo import _resolve_local_worktree, _resolve_repo_id
+# 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
+WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
+    watchdog.events.FileCreatedEvent,
+    watchdog.events.FileModifiedEvent,
+    watchdog.events.FileDeletedEvent,
+    watchdog.events.FileMovedEvent,
+    watchdog.events.FileClosedEvent,
+)
 
 # claudeがexit-sessionスキル経由でSIGTERMを受けて終了する場合のexit codeを含む正常終了集合。
 # 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当、
@@ -107,7 +118,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     env = os.environ.copy()
     env["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-    print(f"dotfiles-fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
+    print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     try:
         while True:
             count = _count_pending_entries(private_notes, target_repo=target_repo_id)

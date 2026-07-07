@@ -64,6 +64,33 @@ _install_agent_toolkit() {
     echo "agent-toolkit プラグインの導入・更新を試行しました (旧 edit-guardrails は削除を試行しました)。"
 }
 
+# ~/.local/bin/atk へラッパーを配置する。
+# インストール済み agent-toolkit プラグインの最新バージョンを動的解決するため、
+# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/bin/atk）を実行時に決定する形とする。
+# 直接シンボリックリンクを張るとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
+_install_atk_wrapper() {
+    local bin_dir="$HOME/.local/bin"
+    local wrapper="$bin_dir/atk"
+    mkdir -p "$bin_dir"
+    cat >"$wrapper" <<'EOF'
+#!/bin/bash
+# agent-toolkit プラグイン付属の atk コマンドを最新バージョンから起動するラッパー。
+# install-claude.sh が生成する。上書きされたい場合は同スクリプトを再実行する。
+set -euo pipefail
+plugin_bin=$(ls -d "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin 2>/dev/null | sort -V | tail -1)
+if [ -z "$plugin_bin" ] || [ ! -x "$plugin_bin/atk" ]; then
+    echo "atk: agent-toolkit プラグインが見つかりません。install-claude.sh を再実行してください。" >&2
+    exit 1
+fi
+exec "$plugin_bin/atk" "$@"
+EOF
+    chmod +x "$wrapper"
+    echo "配置: $wrapper"
+    if ! (echo "$PATH" | tr ':' '\n' | grep -qxF "$bin_dir"); then
+        echo "注意: '$bin_dir' が PATH に含まれていません。~/.bashrc 等で PATH に追加してください。" >&2
+    fi
+}
+
 main() {
     if ! command -v claude >/dev/null 2>&1; then
         echo "Claude Code (claude CLI) が見つかりません。" >&2
@@ -100,6 +127,7 @@ main() {
     fi
 
     _install_agent_toolkit
+    _install_atk_wrapper
 }
 
 main "$@"

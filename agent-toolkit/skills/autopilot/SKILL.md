@@ -57,10 +57,10 @@ description: >
 
 ユーザー確認事項の記録先は次の順序で判定する。
 
-- `command -v dotfiles-fb`が成功する場合は`dotfiles-fb tbd-add <repo_path> --scope=<scope> <message>`で記録する
+- `command -v atk`が成功する場合は`atk fb tbd-add <repo_path> --scope=<scope> <message>`で記録する
   - `tbd_path`引数は使用しない
-  - 重複防止・ユーザー指摘の追記は呼び出し元が`dotfiles-fb tbd-list`・`dotfiles-fb tbd-edit`で扱う
-- `dotfiles-fb`が存在しない場合は以下のTBD.md書式に従う
+  - 重複防止・ユーザー指摘の追記は呼び出し元が`atk fb tbd-list`・`atk fb tbd-edit`で扱う
+- `atk`が存在しない場合は以下のTBD.md書式に従う
 
 TBD.mdの目的はユーザー確認事項の記録に限定する。
 次の用途では使用しない。

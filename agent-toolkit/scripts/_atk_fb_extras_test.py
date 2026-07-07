@@ -1,24 +1,26 @@
-"""pytools.dotfiles_fb._cli の拡張サブコマンド・オプションのテスト。
+"""atk (agent-toolkit `atk fb`) の拡張サブコマンド・オプションのテスト。
 
 `add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
-既存サブコマンドのテストは`_cli_test.py`に分離する。
-共通ヘルパーは`_cli_test.py`から再利用する。
+既存サブコマンドのテストは`atk_test.py`に分離する。
+共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
 import subprocess
+import sys
 import typing
 from typing import Any
 
 import pytest
 
-from pytools.dotfiles_fb import _cli
-from pytools.dotfiles_fb._cli_test import (
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
-    _write_feedback_file,
 )
 
 
@@ -49,8 +51,8 @@ class TestAddSourceOption:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(
-                ["add", "--source=session-review", str(myrepo), "メッセージ"],
+            atk.main(
+                ["fb", "add", "--source=session-review", str(myrepo), "メッセージ"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -83,7 +85,7 @@ class TestAddSourceOption:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -104,7 +106,7 @@ class TestListPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["list"], home=tmp_path)
+            atk.main(["fb", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -125,7 +127,7 @@ class TestShowAllPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["show", "--all"], home=tmp_path)
+            atk.main(["fb", "show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -155,7 +157,7 @@ class TestCommitSubcommand:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["commit"], home=tmp_path)
+            atk.main(["fb", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls]
@@ -188,7 +190,7 @@ class TestCommitSubcommand:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["commit"], home=tmp_path)
+            atk.main(["fb", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in calls if "commit" in c["cmd"] or c["cmd"][:2] == ["git", "push"]]
@@ -206,7 +208,7 @@ class TestEnableSubcommand:
         assert not flag.exists()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["enable"], home=tmp_path)
+            atk.main(["fb", "enable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert flag.exists()
@@ -220,7 +222,7 @@ class TestEnableSubcommand:
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["enable"], home=tmp_path)
+            atk.main(["fb", "enable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -237,7 +239,7 @@ class TestDisableSubcommand:
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["disable"], home=tmp_path)
+            atk.main(["fb", "disable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not flag.exists()
@@ -247,7 +249,7 @@ class TestDisableSubcommand:
     def test_disable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが存在しない場合は無動作で完了する。"""
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["disable"], home=tmp_path)
+            atk.main(["fb", "disable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -260,7 +262,7 @@ class TestStatusSubcommand:
     def test_status_disabled_when_flag_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイル不在時はexit 1で標準エラー出力に無効案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["status"], home=tmp_path)
+            atk.main(["fb", "status"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -268,18 +270,17 @@ class TestStatusSubcommand:
         assert captured.out == ""
 
     def test_status_disabled_when_notes_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグありかつprivate-notes不在時はexit 1で標準エラー出力にクローン案内を出力する。"""
+        """フラグありかつ管理repo root不在時はexit 1で標準エラー出力にディレクトリ不在案内を出力する。"""
         flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
         flag.parent.mkdir(parents=True, exist_ok=True)
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["status"], home=tmp_path)
+            atk.main(["fb", "status"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "private-notesが見つかりません" in captured.err
-        assert "クローン" in captured.err
+        assert "フィードバック保存ディレクトリが見つかりません" in captured.err
         assert captured.out == ""
 
     def test_status_enabled_when_both_present(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -290,7 +291,7 @@ class TestStatusSubcommand:
         (tmp_path / "private-notes").mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["status"], home=tmp_path)
+            atk.main(["fb", "status"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -298,50 +299,7 @@ class TestStatusSubcommand:
         assert captured.err == ""
 
 
-class TestFeedbackFilenameCompleter:
-    """argcomplete補完関数の挙動を検証する。"""
-
-    def test_returns_md_files_only(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """inbox配下の`.md`のみ返し、他拡張子は除外する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        (notes / "feedback" / "inbox" / "note.txt").write_text("テキスト", encoding="utf-8")
-        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
-
-        # pylint: disable-next=protected-access
-        result = _cli._feedback_filename_completer("")  # noqa: SLF001
-        assert result == ["fb-001.md"]
-
-    def test_returns_empty_when_feedback_dir_missing(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """feedback配下が存在しない場合は空リストを返す。"""
-        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
-
-        # pylint: disable-next=protected-access
-        result = _cli._feedback_filename_completer("")  # noqa: SLF001
-        assert result == []
-
-    def test_filters_by_prefix(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """prefix一致のファイルのみ返す。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "20260101-001.md")
-        _write_feedback_file(notes, "20260201-001.md")
-        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: tmp_path))
-
-        # pylint: disable-next=protected-access
-        result = _cli._feedback_filename_completer("20260101")  # noqa: SLF001
-        assert result == ["20260101-001.md"]
+# argcomplete補完関数のテストは移設対象外（T1初期実装で`atk.py`はargcomplete非対応）。
 
 
 def _editor_fake_run(
@@ -396,7 +354,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         files = list((notes / "feedback" / "inbox").iterdir())
@@ -406,7 +364,7 @@ class TestAddViaEditor:
 
         captured = capsys.readouterr()
         assert "編集する場合:\n" in captured.out
-        assert f"  dotfiles-fb edit {files[0].name}\n" in captured.out
+        assert f"  atk fb edit {files[0].name}\n" in captured.out
 
     def test_editor_empty_save_aborts(
         self,
@@ -427,7 +385,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -460,7 +418,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -481,7 +439,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            _cli.main(["add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()

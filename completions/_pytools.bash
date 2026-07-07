@@ -37,7 +37,6 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete codexize
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dateRelocator
 complete -o nospace -o default -o bashdefault -F _python_argcomplete deletehomonym
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dirsize
-complete -o nospace -o default -o bashdefault -F _python_argcomplete dotfiles-fb
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dotfiles-media-remote
 complete -o nospace -o default -o bashdefault -F _python_argcomplete git-justify
 complete -o nospace -o default -o bashdefault -F _python_argcomplete markdown-viewer
