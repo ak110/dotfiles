@@ -181,6 +181,43 @@ def extract_h3_headings_under_h2(content: str, h2_heading: str) -> list[str]:
     return headings
 
 
+def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
+    """指定したH2見出し配下のH3見出しごとに、(H3見出しテキスト, body行リスト)を生成する。
+
+    body行はH3見出しの直後行から次のH3見出し行の直前までを、
+    ファイル先頭基準1始まりの行番号付きで収集する。
+    素朴に全行走査する（`## 変更内容`H2はフロントマターより後方の慣例のため十分）。
+    コードフェンス内の行はスキップせず生body行として返す
+    （呼び出し側でコードフェンス出現を判定できるようにするため）。
+    指定H2の直下にH3が現れる前の本文行は無視する。
+    pretooluse / posttooluse の双方からimportして使うSSOT実装。
+    """
+    lines = content.splitlines()
+    in_target_h2 = False
+    current_h3: str | None = None
+    current_body: list[tuple[int, str]] = []
+    for lineno, line in enumerate(lines, start=1):
+        if line.startswith("## "):
+            if current_h3 is not None:
+                yield current_h3, current_body
+                current_h3 = None
+                current_body = []
+            in_target_h2 = line[3:].strip() == h2_heading
+            continue
+        if not in_target_h2:
+            continue
+        if line.startswith("### "):
+            if current_h3 is not None:
+                yield current_h3, current_body
+            current_h3 = line[4:].strip()
+            current_body = []
+            continue
+        if current_h3 is not None:
+            current_body.append((lineno, line))
+    if current_h3 is not None:
+        yield current_h3, current_body
+
+
 def extract_target_files_from_changes(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
 

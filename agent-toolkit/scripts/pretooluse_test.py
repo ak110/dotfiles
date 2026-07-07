@@ -4326,7 +4326,8 @@ class TestPlanFileTargetFilesH3Correspondence:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "h3corr-valid"
-        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n### foo/baz.py\n\nx\n\n")
+        # H3配下にはtext/diffコードブロックを含める（`_check_plan_file_change_h3_has_code_block`検査通過のため）。
+        content = _h3corr_build_content("### foo/bar.py\n\n```text\nx\n```\n\n### foo/baz.py\n\n```text\nx\n```\n\n")
         self._prior_flags(tmp_path, sid, content)
         result = _run(
             {
@@ -4930,3 +4931,142 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         assert state_post["plan_file_written"] is True
         assert state_post["direct_agent_toolkit_edit_count"] == 0
         assert state_post["last_agent_toolkit_edit_path"] is None
+
+
+def _h3_codeblock_build_content(extra_h3: str) -> str:
+    """`## 変更内容`配下H3のtext/diffコードブロック検査用の計画本文を組み立てる。"""
+    return (
+        "# タイトル\n\n"
+        "## 変更履歴\n\nx\n\n"
+        "## 背景\n\nx\n\n"
+        "## 対応方針\n\nx\n\n"
+        "## 調査結果\n\nx\n\n"
+        "## 変更内容\n\n"
+        "### 対象ファイル一覧\n\n"
+        "- [ ] `foo/bar.py`\n\n"
+        f"{extra_h3}"
+        "## 実行方法\n\nx\n\n"
+        "## 進捗ログ\n\nx\n\n"
+        "## 計画ファイル（本ファイル）のパス\n\nx\n"
+    )
+
+
+class TestPlanFileChangeH3HasCodeBlock:
+    """plan file Write/Edit/MultiEdit時の`## 変更内容`配下H3のtext/diffコードブロック存在検査。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
+            },
+        )
+
+    def test_non_target_tool_is_skipped(self):
+        """対象外ツール名（Bash）は検査対象外。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "echo hello"},
+                "session_id": "h3cb-bash",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
+        """plan fileでないパスは検査対象外。"""
+        content = _h3_codeblock_build_content("### foo/bar.py\n\nテキストのみ\n\n")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "h3cb-nonplan",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+    def test_allows_when_text_code_block_present(self, tmp_path: pathlib.Path):
+        """text/diffコードブロックが揃っている場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3cb-ok"
+        content = _h3_codeblock_build_content("### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_blocks_when_code_block_missing(self, tmp_path: pathlib.Path):
+        """コードブロック欠落H3を検出してブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3cb-missing"
+        content = _h3_codeblock_build_content("### foo/bar.py\n\n概念記述のみ\n\n")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "text/diffコードブロックが存在しない" in result.stderr
+
+    def test_exception_prefixes_are_skipped(self, tmp_path: pathlib.Path):
+        """例外プレフィックス（`置換パターン:`・`fix-`）および`対象ファイル一覧`は検査対象外として通過する。
+
+        対象ファイル一覧を空にしてh3-correspondence検査をバイパスしたうえで、
+        `text`/`diff`コードブロックを持たない例外プレフィックスH3のみを配置し、
+        本検査が例外プレフィックスを検査対象から除外することを確認する。
+        """
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3cb-exception"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\nなし\n\n"
+            "### 置換パターン: foo → bar（対象: foo/bar.py）\n\nx\n\n"
+            "### fix-a\n\nx\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0

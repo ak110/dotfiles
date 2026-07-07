@@ -170,3 +170,38 @@ class TestPlanFormatSsot:
             f"plan-file-guidelines.md のセクション定義順 {defined_h2} が"
             f" PLAN_REQUIRED_H2 {_plan_format.PLAN_REQUIRED_H2} と一致しない"
         )
+
+
+def test_iter_h3_sections_under_h2_absent_h2() -> None:
+    content = "## 別の節\n\nbody\n"
+    assert not list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+
+
+def test_iter_h3_sections_under_h2_no_h3() -> None:
+    content = "## 変更内容\n\nbodyのみ\n"
+    assert not list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+
+
+def test_iter_h3_sections_under_h2_single_h3() -> None:
+    content = "## 変更内容\n\n### foo\nbody1\nbody2\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    assert len(result) == 1
+    assert result[0][0] == "foo"
+    assert [line for _, line in result[0][1]] == ["body1", "body2"]
+
+
+def test_iter_h3_sections_under_h2_multiple_h3_and_h2_boundary() -> None:
+    content = "## 変更内容\n\n### a\naaa\n### b\nbbb\nbbb2\n## 次\n### c\nccc\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    headings = [h for h, _ in result]
+    assert headings == ["a", "b"]
+    assert [line for _, line in result[1][1]] == ["bbb", "bbb2"]
+
+
+def test_iter_h3_sections_under_h2_preserves_code_fence_lines() -> None:
+    content = "## 変更内容\n\n### foo\n```text\ncontent\n```\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    assert len(result) == 1
+    body_texts = [line for _, line in result[0][1]]
+    assert "```text" in body_texts
+    assert "```" in body_texts
