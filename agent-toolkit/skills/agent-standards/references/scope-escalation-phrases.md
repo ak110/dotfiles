@@ -2,8 +2,8 @@
 
 `agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節および「縮退表明は発行しない」項目、ならびに
 `agent-toolkit/scripts/_scope_escalation.py`が対象とする禁止フレーズの典拠。
-配布物フックは3経路（`AskUserQuestion`選択肢・`Write`／`Edit`／`MultiEdit`対象文書・
-`Stop`フック経由の直近アシスタントターン応答テキスト）でこの辞書を参照する。
+配布物フックは4経路（PreToolUse `AskUserQuestion`／PreToolUse `Write`・`Edit`・`MultiEdit`／
+Stop hook直近アシスタント発話／SubagentStop hookサブエージェント発話）でこの辞書を参照する。
 
 `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、
 機械チェック用辞書の検出語そのものは本ファイルへ隔離する。
@@ -14,16 +14,15 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 
 各カテゴリは`agent-toolkit/scripts/_scope_escalation.py`の`_SCOPE_ESCALATION_PHRASES`定数の正規表現と対応する。
 フックはカテゴリ識別子をstderrへ出力し、検出フレーズ本文は転記しない。
-配布物フックが対象とする経路は次の3つとする。
+配布物フックが対象とする経路は次の4つとする。
 
 - `AskUserQuestion`の`option.label`・`option.description`
   （`question`・`header`はユーザーへの状況説明性質を持つため対象外）
 - `Write`・`Edit`・`MultiEdit`による対象文書編集
 - `Stop`フック経由の直近アシスタントターン応答テキスト
-  （`stop_advisor.py`が`transcript_path`から直近アシスタントターンを走査し、
-  `_STOP_FOCUS_CATEGORIES`（絞り込み後の限定カテゴリ。現行は`process-omission`単独）に限定して
-  `_match_scope_escalation`を呼び出す。自由文脈テキストでの誤検出を回避するため`fabricated-metrics`等の
-  他カテゴリは対象外とする）
+  （通常は`_STOP_FOCUS_CATEGORIES`、スキル実行中フラグ成立時は`_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡大）
+- `SubagentStop`フック経由のサブエージェント`last_assistant_message`
+  （照合カテゴリは`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTを用いる）
 
 このほか、利用者環境固有のカスタムフックが同ヘルパーをimportして拡張する場合、
 `Bash`経由のCLI呼び出し文字列も検査対象へ加えることがある。
@@ -34,7 +33,7 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | 識別子 | 対象観念 | 代表フレーズ |
 | --- | --- | --- |
 | `workload` | 作業量過多を根拠とした打診 | 「N件すべてで〜は作業量的に困難」「作業残量を考慮」「作業残量が多い」 |
-| `single-session` | 1セッション完遂困難を根拠とした打診 | 「1セッションで完遂するのは難しい」 |
+| `single-session` | 1セッション完遂困難を根拠とした打診 | 「本セッションで完遂困難」「規模的に本セッションでは困難」 |
 | `approach-confirm` | 進め方の確認・相談、または完遂を選択肢の1つに格下げする方針伺い | 「進め方を確認したい」「完遂か最小限か」「完遂は時間がかかる」「規範遵守で時間がかかる」「どう進めるべきか指示」「完遂を試みるか保存して次回継続するかの二択」 |
 | `split-execution` | 分割実行・分割対応の提案 | 「分割して進めたい」 |
 | `context-shortage` | 残コンテキスト見積りまたはターン数の自己推定を根拠とした打診 | 「残コンテキストが不足する見込みのため」「ターン数が増えるため」「ターン数を踏まえ進め方を相談」「ターン数の自己推定からスコープ縮小」「ターン数の上限に達する見込み」「対話往復が増えるため」「対話往復を踏まえ作業量を絞る」「対話往復の上限に達する見込み」「これ以上のターンは効率が悪いため」「単一セッションのコンテキスト容量を超える」「実装完遂リスクが実装利益を上回る」「次回サイクルへ持ち越し」 |
@@ -52,6 +51,13 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | `fabricated-metrics` | トークン消費量・経過時間の実測値取得手段が無い状態での数値主張。実測不能な数値または量的な推定を伴う抽象表現も同カテゴリで検出する | 「約80%消費した」「残り1000トークン」「経過3時間」「約50kトークン」「3時間経過」「5分経過」「コンテキスト消費を踏まえ」「コンテキスト消費量を考慮」「ここまでの消費を踏まえ」 |
 
 `pattern-conformance`カテゴリの例外は`agent-toolkit/rules/01-agent.md`「品質最優先」節の条件付き例外規定を参照する。
+
+## 機械検出の適用範囲
+
+配線される4経路は上記「対象カテゴリと代表フレーズ」節の一覧を正とする。
+Stop経路とSubagentStop経路で`async-wait`カテゴリを共通対象化する。
+規範本文で機械検出カテゴリの規範論を扱う場合の記述テンプレートは
+`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節の参照誘導テンプレを用いる。
 
 ## 代替表現例
 

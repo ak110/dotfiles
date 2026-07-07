@@ -10,7 +10,8 @@ description: >
 # 変わっていないかを確認する。「起動方針」節の判定基準はprecheckと同一基準とする。
 # 同等の前段precheck付与は将来`agent-toolkit:references/claude-hooks.md`の
 # 「Stop/SubagentStopフックの再帰呼び出し対策」節に従い追加されるSubagentStop hookでも
-# 維持する前提とする（本リポジトリ内ではSubagentStop hookは未登録）。
+# 維持する前提とする（本リポジトリのSubagentStop hookはscope-escalation検出専用であり、
+# session-review起動用の前段precheck付きSubagentStop hookは未追加）。
 # ステップ1「観察源の洗い出し」のうちユーザー割り込み・指摘・修正・確認質問系の観察対象の
 # SSOTは`agent-toolkit/rules/01-agent.md`「品質最優先」節
 # 「ユーザーの指摘・割り込み・是正要求が発生した段階で」の項。

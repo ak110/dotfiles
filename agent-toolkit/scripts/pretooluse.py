@@ -124,6 +124,30 @@ _SIZE_LIMIT_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
 # basenameで照合する文書サイズ上限対象ファイル名
 _SIZE_LIMIT_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
+# メインエージェントからの直接Readを禁じる隔離指定リファレンス。
+# `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節が指定する隔離リファレンスと同一SSOTとする。
+# `isSidechain`真の呼び出しは通過させ、`agent-toolkit-edit`スキル起動セッションも例外とする。
+_ISOLATED_READ_TARGETS: tuple[str, ...] = (
+    "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
+    "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
+)
+
+# 規範文書を自動読み込みしないサブエージェントタイプ。
+# `agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節のSSOTに従い、
+# `claude`と`Explore`は独立コンテキストで規範を読み込まないため、
+# 起動プロンプトへの明示引用を求める。
+_NORM_SKIPPING_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude", "Explore"})
+
+# 起動プロンプトが規範を明示引用していると判定するキーワード。
+# 上記の規範非読込型サブエージェントを起動する場合、プロンプト本文に少なくとも1つを含めること。
+_NORM_REFERENCE_KEYWORDS: tuple[str, ...] = (
+    "agent-toolkit:agent-standards",
+    "agent-toolkit:coding-standards",
+    "agent-toolkit:writing-standards",
+    "01-agent.md",
+    "02-claude-code.md",
+)
+
 
 def _is_agent_doc_target_file(file_path: str) -> bool:
     """コーディングエージェント向け文書対象パターンへの一致を判定する共通ヘルパー。
@@ -171,6 +195,62 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
+
+
+def _is_isolated_reference(file_path: str) -> bool:
+    r"""`_ISOLATED_READ_TARGETS`のいずれかに末尾一致するかを判定する。
+
+    `file_path`は相対・絶対の双方を受け取り、Windowsの`\\`区切りも正規化する。
+    """
+    if not file_path:
+        return False
+    posix = pathlib.Path(file_path).as_posix()
+    return any(posix.endswith(target) for target in _ISOLATED_READ_TARGETS)
+
+
+def _check_read_isolated_reference(tool_input: dict, session_id: str, is_sidechain: bool) -> str | None:
+    """メインエージェントからの隔離指定リファレンスへの直接Readを検出する。
+
+    `isSidechain`真（サブエージェント経由）は通過させる。
+    `agent-toolkit-edit`スキル起動セッション（`agent_toolkit_edit_skill_invoked`フラグ）も
+    編集目的の直接Readを許容する例外とする。
+    それ以外の場合はブロック用の`_llm_notice`文言を返す。
+    """
+    if is_sidechain:
+        return None
+    file_path_raw = tool_input.get("file_path")
+    if not isinstance(file_path_raw, str) or not _is_isolated_reference(file_path_raw):
+        return None
+    state = read_state(session_id)
+    if state.get("agent_toolkit_edit_skill_invoked"):
+        return None
+    return _llm_notice(
+        f"blocked: direct Read of isolated reference by main agent is prohibited. "
+        f"Use Explore/plan-implementer subagent, or invoke agent-toolkit-edit for edit purpose. "
+        f"Target: {file_path_raw}"
+    )
+
+
+def _check_agent_norm_reference(tool_input: dict) -> str | None:
+    """規範非読込型サブエージェント起動時に規範の明示引用が無い場合の警告文言を返す。
+
+    `subagent_type`が`_NORM_SKIPPING_SUBAGENT_TYPES`のいずれかで、
+    かつ`prompt`本文に`_NORM_REFERENCE_KEYWORDS`のいずれも含まれない場合に警告文言を返す。
+    それ以外は`None`を返す。
+    """
+    subagent_type = tool_input.get("subagent_type")
+    if subagent_type not in _NORM_SKIPPING_SUBAGENT_TYPES:
+        return None
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str):
+        return None
+    if any(kw in prompt for kw in _NORM_REFERENCE_KEYWORDS):
+        return None
+    return _llm_notice(
+        f"warning: subagent_type={subagent_type!r} does not load norms. "
+        "Include explicit reference to agent-toolkit:agent-standards or 01-agent.md in prompt.",
+        tag="warn",
+    )
 
 
 def _language_notice(body: str) -> str:
@@ -388,6 +468,24 @@ def main() -> int:
         if result is not None:
             emit_json(result)
             return 0
+        flush_pending_language_warning()
+        return 0
+
+    # Read: メインエージェントからの隔離指定リファレンスへの直接Readをブロック
+    if tool_name == "Read":
+        message = _check_read_isolated_reference(tool_input, session_id, payload.get("isSidechain") is True)
+        if message is not None:
+            print(message, file=sys.stderr)
+            flush_pending_language_warning()
+            return 2
+        flush_pending_language_warning()
+        return 0
+
+    # Agent/Task: 規範非読込型サブエージェント起動時の規範明示引用漏れを警告
+    if tool_name in ("Agent", "Task"):
+        message = _check_agent_norm_reference(tool_input)
+        if message is not None:
+            print(message, file=sys.stderr)
         flush_pending_language_warning()
         return 0
 

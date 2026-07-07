@@ -18,14 +18,25 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-# Stop経路（`stop_advisor.py`）で照合対象とするカテゴリ集合。
-# Stop経路は直近アシスタントターン全体を自由文脈テキストとして走査するため、
-# 他カテゴリ（`priority-consult`・`next-cycle-defer`・`approach-confirm`・`fabricated-metrics`等）が
-# 日常的な報告文言と誤検出する可能性がある。
-# 自由文脈で誤検出リスクが低い明確な宣言型のみを対象とするため`process-omission`単独へ絞り込む。
-# `fabricated-metrics`はPreToolUseの`AskUserQuestion`・`Write`・`Edit`経路のみで検出し、Stop経路の対象外とする。
+# Stop経路（`stop_advisor.py`）の基本照合カテゴリ集合。
+# 自由文脈の誤検出リスクが低い宣言型のみに限定する。
+# スキル実行中は`_STOP_FOCUS_CATEGORIES_EXTENDED`へ切り替えて照合対象を拡張する。
 # `pretooluse.py`側のWrite/Edit対象文書検査は全カテゴリを対象とし、本フィルタは適用しない。
 _STOP_FOCUS_CATEGORIES: frozenset[str] = frozenset({"process-omission"})
+
+# スキル実行中（plan-mode・apply-feedback・process-feedbacks等の起動フラグ成立時）に用いる拡張照合カテゴリ集合。
+# スキル実行文脈では縮退表明を含む可能性が高いため、Stop経路の照合対象を広げる。
+# SubagentStop経路も本集合と同一のSSOTとして参照する。
+_STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
+    {
+        "process-omission",
+        "async-wait",
+        "single-session",
+        "quality-tradeoff",
+        "next-cycle-defer",
+        "approach-confirm",
+    }
+)
 
 # scope-escalation縮退誘発フレーズ検出パターン。
 # 01-agent.md「セッション分割・別計画化は禁止する」節および「縮退表明は発行しない」項目で禁止される、
@@ -36,7 +47,16 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "workload",
         re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)|作業残量(を考慮|が多い)"),
     ),
-    ("single-session", re.compile(r"1?セッション(内|で)(の|に)?(完遂|完了|終わら|収まら|終わり)")),
+    (
+        "single-session",
+        re.compile(
+            r"(本|この|単一)セッション(の|で|内|下)?(リソース|残|容量)?では?(?:.{0,15})?(完遂|完了|完結|遂行)(?:.{0,10})?(困難|厳しい|現実的では?ない|不可能|できない)"
+        ),
+    ),
+    (
+        "single-session",
+        re.compile(r"規模(的に|として)?(本|この|単一)?セッション(の|で|内|下)?(?:.{0,15})?(困難|厳しい|現実的では?ない)"),
+    ),
     (
         "approach-confirm",
         re.compile(
@@ -174,6 +194,23 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "next-cycle-defer": ("同一計画内で対処項目として組み込む", "同一セッション内で完遂する"),
     "fabricated-metrics": ("実測値を扱わず、定性的な進捗記述に留める", "実施済み工程・残工程・観測事象で進捗を述べる"),
 }
+
+
+# 地の文中の選択肢提示（番号付きリスト形式）を検出する補助パターン。
+# Stop経路の拡張照合カテゴリ有効時に、正規表現辞書のいずれにも該当しない
+# 「地の文でユーザーへ選択を委ねる」表出を`approach-confirm`として拾い上げるために用いる。
+# 半角・全角の1〜9で始まる番号付き選択肢を対象とする。
+_INLINE_CHOICE_PATTERN: re.Pattern[str] = re.compile(r"選択肢\s*[:：]\s*\n?\s*[1-9１-９][\.．、\)]", re.MULTILINE)
+
+
+def has_inline_choice_offer(text: str) -> bool:
+    """テキストへ地の文の番号付き選択肢提示が含まれる場合に真を返す。
+
+    非文字列入力・空文字列は`False`を返す。
+    """
+    if not isinstance(text, str) or not text:
+        return False
+    return _INLINE_CHOICE_PATTERN.search(text) is not None
 
 
 def _match_scope_escalation(text: str, categories: Iterable[str] | None = None) -> str | None:

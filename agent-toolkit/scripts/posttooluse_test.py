@@ -979,3 +979,20 @@ class TestReadHandler:
         assert state.get("codex_review_read") is not True
         assert state.get("textlint_violations_read") is not True
         assert state.get("plan_file_guidelines_read") is not True
+
+
+class TestFeedbackSkillFlags:
+    """apply-feedback / process-feedbacksスキル呼び出しのセッション状態フラグ記録。"""
+
+    @pytest.mark.parametrize(
+        ("skill", "flag"),
+        [
+            ("agent-toolkit:apply-feedback", "apply_feedback_skill_invoked"),
+            ("agent-toolkit:process-feedbacks", "process_feedbacks_skill_invoked"),
+            ("process-feedbacks", "process_feedbacks_skill_invoked"),
+        ],
+    )
+    def test_skill_records_flag(self, tmp_path: pathlib.Path, skill: str, flag: str) -> None:
+        sid = f"fb-{skill.replace(':', '-')}"
+        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get(flag) is True

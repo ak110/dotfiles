@@ -10,7 +10,8 @@
 workload	作業量で多い
 workload	作業残量を考慮
 workload	作業残量が多いため
-single-session	セッションで完遂
+single-session	本セッションのリソースでは完遂困難
+single-session	規模的に本セッションでは困難
 approach-confirm	進め方を確認
 split-execution	分割して進める
 context-shortage	残コンテキスト

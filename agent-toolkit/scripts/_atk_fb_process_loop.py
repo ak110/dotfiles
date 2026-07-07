@@ -60,15 +60,17 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 def _build_process_loop_prompt(local_path: pathlib.Path) -> str:
     """claude起動プロンプトを構築する。
 
-    `/process-feedbacks`実行 → 振り返り工程完遂 → 改善提案の`session-review-dotfiles`スキルによる投入完了後に限り
-    `/agent-toolkit:exit-session`を呼ぶ順序制約を明示する。
+    主目標は選定対象の完遂であり、exit-sessionは完遂後の後処理として位置付ける。
     """
     return (
         f"/process-feedbacks {local_path} を実行してください。\n"
-        "process-feedbacksスキルのステップ4「振り返り工程」（session-review-dotfilesスキルを含む）まで完遂し、\n"
-        "振り返り結果として得られた改善提案の session-review-dotfiles スキルによる投入まで完了した後、\n"
-        "最後に /agent-toolkit:exit-session を呼び出してセッションを終了してください。\n"
-        "改善提案投入前に exit-session を呼ばないでください（振り返り結果が失われるため）。"
+        "主目標は選定対象フィードバックの実装完遂・レビュー・コミット・push・CI通過確認・adoptまでの完遂です。\n"
+        "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
+        "コンテキストは自動コンパクションで継続されます。\n"
+        "完遂後にステップ4「振り返り工程」（session-review-dotfilesスキルを含む）を実施し、\n"
+        "改善提案の session-review-dotfiles スキルによる投入まで完了した後で、\n"
+        "後処理として /agent-toolkit:exit-session を呼び出してセッションを終了してください。\n"
+        "振り返り結果を失わないため、改善提案投入前に exit-session を呼ばないでください。"
     )
 
 

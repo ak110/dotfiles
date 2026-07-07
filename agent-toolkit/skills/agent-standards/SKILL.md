@@ -20,8 +20,8 @@ description: >
 ## 共通の記述原則
 
 対象文書はコーディングエージェントが直接読み込むため、人間の読者を想定した説明文・前置き・装飾は書かない。
-以下は01-agent.md「品質最優先」原則および03-styles.md「日本語の品質を保つ」原則の具体例であり網羅規定ではないが、
-列挙外の場面でも原則に従う。
+以下は01-agent.md「品質最優先」原則および03-styles.md「日本語の品質を保つ」原則の具体例である
+（網羅規定ではないが、列挙外の場面でも原則に従う）。
 
 ### 記述の簡潔さ
 
@@ -40,7 +40,6 @@ description: >
 （`01-agent.md`・`02-claude-code.md`・各`SKILL.md`・サブエージェント定義・スキル配下の`references/`など）。
 作業ごとに作成・廃棄される計画ファイル（`~/.claude/plans/*.md`・`docs/v{next}/plans/*.md`）は本上限の対象外とする。
 本文の物理行数は219行以下を許容、220行以上を違反とする。frontmatterおよびYAMLヘッダ行も行数に算入する。
-220は違反閾値、200から219までの境界近接は予防閾値であり、両者は独立目的でSSOT不一致ではない。
 コーディングエージェントによっては先頭一定行数のみを読み込む実装があるため、超過は指示の読み込み漏れを招く。
 
 - 縮減手順・判定基準・縮減根拠4類型は`agent-toolkit:trim-agent-docs`を参照する
@@ -68,8 +67,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - 管理方針・編集判断・運用変化・編集者向け同期手順: 集約先・記述取捨選択・過去との変化・反映手順・編集経緯・
   棲み分けを語る言い回し（例:「〜をSSOTとしてまとめている」「以前は〜だった」）
 
-意図的重複・同期要件を新設する場合は、frontmatter同期注記コメントを重複対象の全ファイルへ同時に追加する
-（片側のみの追加は同期破綻リスクを残す）。
+意図的重複・同期要件を新設する場合は、frontmatter同期注記コメントを重複対象の全ファイルへ同時に追加する。
 
 ### 横断指針の配置
 
@@ -105,6 +103,9 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
   確認はExploreサブエージェント・修正は`plan-implementer`経由とし、転記禁止で機械チェック対象からも除外する
   - 新規追加時は既存例（`scope-escalation-phrases.md`等）と同じくスキルの`references/`配下へ配置する。
     pyfltr内蔵`colloquial-check`の除外設定・`pyproject.toml`の`extend-exclude`も同時に整備する
+- 規範文書本文で機械検出カテゴリの規範論を扱う場合、検出パターン相当の語句の直接転記を避ける。
+  代替として「代表フレーズは`references/scope-escalation-phrases.md`の`{カテゴリ名}`を参照する」形式の
+  参照誘導へ書き換え、カテゴリ名は同ファイルのカテゴリ表から選ぶ
 
 ### 既知情報・冗長記述の排除
 
@@ -137,7 +138,6 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 
 サブエージェント（Agentツール・forkスキル等で独立コンテキスト起動される主体）を含む
 設計・改訂時の観点は`references/subagent-collaboration.md`に集約する。
-起動プロンプトの必要情報網羅・独立コンテキスト前提・規範スキル明示等の各項目を規定する。
 
 ## Claude Code固有事項
 
@@ -146,7 +146,6 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 ### メカニズム選択
 
 新規挙動・制約は次の対応で振り分ける。
-指示文は確率的にしか従われないため、決定論的強制が必要な制約は地の文で書かずhookで機械的に実装する。
 
 - 常時参照される横断的標準: `CLAUDE.md`・`AGENTS.md`本文、または`.claude/rules/`配下のpaths未指定ルール
 - 特定パス・特定モジュール限定の規則: `.claude/rules/`配下のルールファイル（frontmatterで`paths`指定）
@@ -166,9 +165,9 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 機械可読な識別子のprefixは配置レイヤに揃え、配布物の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式で本節にSSOTを置く。
 識別子prefixは配布物完結を`AGENT_TOOLKIT_`、個人環境完結を`DOTFILES_`とし、外部名前空間（`CLAUDE_`等）は不採用とする。
 
-- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk fb`が扱う管理repoのrootを指定する。既定は`~/private-notes/`
-- `AGENT_TOOLKIT_PRELINT_TEST_BYPASS`: 事前lintチェックの一部を無効化する（テスト用途）
-- `AGENT_TOOLKIT_STOP_GATE_DEBUG`: `_stop_gate`のデバッグ出力を有効化する
+- 環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`: `atk fb`管理repoのroot（既定`~/private-notes/`）
+- 環境変数`AGENT_TOOLKIT_PRELINT_TEST_BYPASS`: 事前lint一部無効化（テスト用）
+- 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`: `_stop_gate`デバッグ出力
 
 ### rules階層のフラット構造
 
@@ -183,20 +182,21 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 
 - `test_executed`: PostToolUse(Bash)が記録。`git commit`未検証警告の抑制に使う
 - `git_status_checked`: PostToolUse(Bash)が`git status`/`git log`/`git diff`観測時に記録
-- `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録。amend/rebase直前確認に使い、
-  commit/rebase/push/ファイル編集観測時にリセットする
+- `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録。commit/rebase/push/編集時リセット、amend/rebase前確認に使う
 - `plan_mode_skill_invoked`: PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを記録。
-  plan file形式検査の有効化と最初ツール警告の抑制に使う
-- `session_review_invoked`: PostToolUse(Skill)が振り返りスキル呼び出しをキーごとに記録する辞書。
-  `agent-toolkit:session-review`は配布物、`session-review-dotfiles`は個人フックが記録し、
-  各Stop hookの重複抑止とEnterPlanMode時の辞書リセット（配布物担当）に使う
+  plan file形式の検査有効化と最初ツール警告抑制に使う
+- `session_review_invoked`: PostToolUse(Skill)が振り返りスキル呼び出しを辞書記録（`agent-toolkit:session-review`は配布物、
+  `session-review-dotfiles`は個人フック）。各Stop hookの重複抑止とEnterPlanMode時の辞書リセット（配布物担当）に使う
 - `agent_toolkit_edit_skill_invoked`: dotfiles個人フックが`agent-toolkit-edit`呼び出しを記録。
-  未起動時のPreToolUse警告抑制に使う（書き込み元・読み取り元とも個人フックで配布プラグインは関与しない）
+  未起動時のPreToolUse警告抑制と、配布物側`pretooluse.py`のRead隔離ブロックの例外判定に使う。
+  書き込み元はdotfiles個人フックのみ、読み取り元は個人フックと配布プラグイン双方
 - `session_review_extension_pending`: dotfiles個人フックが`agent-toolkit:*`または`session-review-dotfiles`使用を記録する。
   配布物Stop hook（`stop_advisor.py`）が重複送出抑制に使う（個人フック不在時は未設定のまま従来通り動作する）
 - `autonomous_exit_invoked`: dotfiles個人フックが`agent-toolkit:exit-session`呼び出しを記録。
   個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
-  （リセットしない。新規セッションは別`session_id`の状態ファイルで旧フラグを再読み取りしない）
+- `apply_feedback_skill_invoked` / `process_feedbacks_skill_invoked`: PostToolUse(Skill)が対応スキル呼び出しを記録。
+  対象は`agent-toolkit:apply-feedback`・`agent-toolkit:process-feedbacks`・`process-feedbacks`スラッシュコマンド。
+  Stop hookの拡張照合カテゴリ有効化判定に使う
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
 - 工程7完遂判定フラグ群: `plan_reviewer_invoked` / `naive_executor_invoked` /
   `plan_impl_reviewer_invoked` / `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、

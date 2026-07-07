@@ -16,7 +16,11 @@ approve・通知の分岐は以下のとおり。
 - 直近アシスタントターン応答テキストにscope-escalationフレーズを検出:
   `_scope_escalation._match_scope_escalation`で該当カテゴリを検出した場合、
   `decision: "block"`＋矯正指示`reason`を返し、正規工程へ復帰させる。
-  Stop経路の照合対象は`_STOP_FOCUS_CATEGORIES`（`process-omission`単独）に限定する。
+  Stop経路の照合カテゴリは通常`_STOP_FOCUS_CATEGORIES`（`process-omission`単独）だが、
+  plan-mode/apply-feedback/process-feedbacks等のスキル実行中フラグ成立時は
+  `_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する
+  （`_build_stop_focus_categories`が判定）。
+  拡張時は地の文選択肢提示も`approach-confirm`カテゴリでblockする。
   自由文脈テキスト全体を走査する経路のため、他カテゴリの日常的な報告文言との誤検出を回避する。
   `fabricated-metrics`はPreToolUseの`AskUserQuestion`・`Write`・`Edit`経路のみで検出しStop経路の対象外とする。
   振り返りスキル起動済み・拡張章pending等のapprove分岐より先に判定するため、
@@ -59,7 +63,9 @@ from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: dis
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _STOP_FOCUS_CATEGORIES,
+    _STOP_FOCUS_CATEGORIES_EXTENDED,
     _match_scope_escalation,
+    has_inline_choice_offer,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -80,6 +86,22 @@ _SESSION_REVIEW_SKILL = "agent-toolkit:session-review"
 
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
+
+
+def _build_stop_focus_categories(state: dict) -> frozenset[str]:
+    """スキル起動フラグに応じてStop経路の照合カテゴリ集合を決定する。
+
+    `plan_mode_skill_invoked`・`apply_feedback_skill_invoked`・`process_feedbacks_skill_invoked`のいずれかが真の場合、
+    縮退表明を含む可能性が高い文脈と判断し`_STOP_FOCUS_CATEGORIES_EXTENDED`を返す。
+    いずれも偽の場合は基本カテゴリ`_STOP_FOCUS_CATEGORIES`を返す。
+    """
+    if (
+        state.get("plan_mode_skill_invoked")
+        or state.get("apply_feedback_skill_invoked")
+        or state.get("process_feedbacks_skill_invoked")
+    ):
+        return _STOP_FOCUS_CATEGORIES_EXTENDED
+    return _STOP_FOCUS_CATEGORIES
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -222,10 +244,14 @@ def main() -> int:
     # transcript読み取り失敗（空パス・存在しないパス・OSエラー等）は
     # `iter_latest_assistant_messages`が空イテレーターを返すため、
     # 本checkは自動的にfail-openとなる。
+    state = read_state(session_id)
+    focus_categories = _build_stop_focus_categories(state)
     if transcript_path:
         for message in iter_latest_assistant_messages(transcript_path):
             text = assistant_text(message)
-            category = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES)
+            category = _match_scope_escalation(text, categories=focus_categories)
+            if category is None and focus_categories == _STOP_FOCUS_CATEGORIES_EXTENDED and has_inline_choice_offer(text):
+                category = "approach-confirm"
             if category is not None:
                 reason = _llm_notice(
                     f"blocked: 直近の応答テキストに`{category}`カテゴリの縮退表明・工程バイパス誘発表現を検出。"
@@ -241,7 +267,6 @@ def main() -> int:
     # 既に振り返りスキルが起動された痕跡があれば以後のStopは即approve。
     # 観測はPostToolUse(Skill)が`session_review_invoked`辞書へ記録するほか、
     # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
-    state = read_state(session_id)
     invoked = state.get("session_review_invoked")
     state_invoked = isinstance(invoked, dict) and invoked.get(_SESSION_REVIEW_SKILL) is True
     command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)

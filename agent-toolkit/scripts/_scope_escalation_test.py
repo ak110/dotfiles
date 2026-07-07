@@ -12,7 +12,7 @@
 import typing
 
 import pytest
-from _scope_escalation import _STOP_FOCUS_CATEGORIES, _match_scope_escalation
+from _scope_escalation import _STOP_FOCUS_CATEGORIES, _match_scope_escalation, has_inline_choice_offer
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _INPUTS = load_scope_escalation_inputs()
@@ -73,6 +73,32 @@ class TestMatchScopeEscalation:
         """`categories=None`（既定）は全カテゴリを照合対象とする。"""
         for text, category in _INPUTS:
             assert _match_scope_escalation(text, categories=None) == category
+
+    def test_completion_difficulty_matches_single_session(self):
+        """`本セッションのリソースでは完遂困難`は`single-session`を返す。"""
+        assert _match_scope_escalation("本セッションのリソースでは完遂困難と判断する。") == "single-session"
+
+    def test_scale_difficulty_matches_single_session(self):
+        """`規模的に本セッションでは困難`は`single-session`を返す。"""
+        assert _match_scope_escalation("規模的に本セッションでは困難のため一度に処理できない。") == "single-session"
+
+    def test_general_completion_difficulty_not_matched(self):
+        """`本|この|単一`セッション接頭を伴わない一般的な困難表現は`single-session`と判定しない。"""
+        assert _match_scope_escalation("実装完遂は技術的に困難だが対応する。") is None
+
+    def test_has_inline_choice_offer_detects_numbered_list(self):
+        """`選択肢:`直後の番号付きリストは選択肢提示として検出する。"""
+        text = "続行方針を選んでください。選択肢:\n1. 現行維持\n2. 次回持ち越し"
+        assert has_inline_choice_offer(text) is True
+
+    def test_has_inline_choice_offer_normal_text(self):
+        """`選択肢:`を含まない通常の進捗記述は選択肢提示として検出しない。"""
+        assert has_inline_choice_offer("処理を続行する。") is False
+
+    def test_has_inline_choice_offer_fullwidth_number(self):
+        """全角番号（`１`・`２`）で始まる選択肢提示も検出する。"""
+        text = "選択肢:\n１. 現行維持\n２. 次回持ち越し"
+        assert has_inline_choice_offer(text) is True
 
     @pytest.mark.parametrize("value", [None, 123, ["str"]])
     def test_non_string_input_returns_none(self, value: object):

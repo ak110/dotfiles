@@ -803,6 +803,65 @@ class TestScopeEscalationDetection:
         # scope-escalation矯正の本文は含まれない。
         assert "縮退表明" not in body
 
+    def test_extended_categories_apply_under_plan_mode(self, tmp_path: pathlib.Path):
+        """`plan_mode_skill_invoked`真ならStop経路の照合対象を`_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する。
+
+        通常フォーカスでは対象外の`single-session`カテゴリ相当フレーズも、
+        拡張フォーカス下ではblockされることを検証する。
+        """
+        text = "本セッションのリソースでは完遂困難と判断する。"
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(text)],
+        )
+        _write_state(tmp_path, "test-plan-mode", {"plan_mode_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-plan-mode", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "scope-escalation-phrases" in body or "縮退表明" in body
+
+    def test_extended_categories_apply_under_process_feedbacks(self, tmp_path: pathlib.Path):
+        """`process_feedbacks_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
+
+        3系統のスキル起動フラグ（plan_mode／apply_feedback／process_feedbacks）はいずれも
+        `_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
+        """
+        text = "本セッションのリソースでは完遂困難と判断する。"
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(text)],
+        )
+        _write_state(tmp_path, "test-process-feedbacks", {"process_feedbacks_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-process-feedbacks", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "scope-escalation-phrases" in body or "縮退表明" in body
+
+    def test_inline_choice_offer_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
+        """拡張フォーカス有効時、地の文の番号付き選択肢提示を`approach-confirm`として検出しblockする。"""
+        text = "続行方針を選んでください。選択肢:\n1. 現行維持\n2. 次回持ち越し"
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(text)],
+        )
+        _write_state(tmp_path, "test-inline-choice", {"apply_feedback_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-inline-choice", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "approach-confirm" in body or "scope-escalation-phrases" in body or "縮退表明" in body
+
     def test_logs_block_scope_escalation(self, tmp_path: pathlib.Path):
         """検出時に`append_stop_log`へ`block_scope_escalation`が記録される。"""
         phrase = _pick_scope_escalation_text()

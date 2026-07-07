@@ -3011,7 +3011,7 @@ class TestAskUserQuestionScopeEscalationCheck:
                         {
                             "question": "approach?",
                             "options": [
-                                {"label": "セッションで完遂", "description": "do all at once"},
+                                {"label": "本セッションで完遂困難", "description": "do all at once"},
                                 {"label": "ok", "description": "ok"},
                             ],
                         }
@@ -5208,3 +5208,100 @@ class TestPlanFileChangeH3HasCodeBlock:
             env_overrides=env,
         )
         assert result.returncode == 0
+
+
+class TestReadIsolatedReferenceCheck:
+    """Read: メインエージェントからの隔離指定リファレンス直接Readをブロックする検査。"""
+
+    _ISOLATED_PATH = "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md"
+
+    def test_read_isolated_reference_blocks(self, tmp_path: pathlib.Path):
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": self._ISOLATED_PATH},
+                "session_id": "isolated-block",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "isolated reference" in result.stderr
+
+    def test_read_isolated_reference_sidechain_passes(self, tmp_path: pathlib.Path):
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": self._ISOLATED_PATH},
+                "session_id": "isolated-sidechain",
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_read_isolated_reference_agent_toolkit_edit_skill_invoked_passes(self, tmp_path: pathlib.Path):
+        """`agent_toolkit_edit_skill_invoked`真ならメイン起動でも隔離Read検査は通過する。
+
+        `agent-toolkit-edit`スキル起動セッションでは同ファイル群の編集が正当な作業となるため、
+        隔離Readブロックの例外条件として扱う。
+        """
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        sid = "isolated-agent-toolkit-edit"
+        _write_session_state(tmp_path, sid, {"agent_toolkit_edit_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": self._ISOLATED_PATH},
+                "session_id": sid,
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "isolated reference" not in result.stderr
+
+
+class TestAgentNormReferenceCheck:
+    """Agent/Task: 規範非読込型サブエージェント起動時の規範明示引用漏れ警告検査。"""
+
+    def test_agent_norm_skipping_without_reference_warns(self, tmp_path: pathlib.Path):
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": "調査してください。"},
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    def test_agent_norm_skipping_with_reference_passes(self, tmp_path: pathlib.Path):
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "claude",
+                    "prompt": "agent-toolkit:agent-standardsを参照して実装せよ。",
+                },
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "does not load norms" not in result.stderr
+
+    def test_task_tool_treated_same_as_agent(self, tmp_path: pathlib.Path):
+        env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Task",
+                "tool_input": {"subagent_type": "Explore", "prompt": "調査してください。"},
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr

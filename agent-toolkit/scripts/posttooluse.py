@@ -127,6 +127,13 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 # codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
 _CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
 
+# apply-feedbackスキル呼び出し検出。Stop hookの拡張照合カテゴリ有効化判定に使う。
+_APPLY_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:apply-feedback"})
+
+# process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
+# Stop hookの拡張照合カテゴリ有効化判定に使う。
+_PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
+
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
@@ -141,6 +148,22 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 }
 
 # --- plan file形式検査の定数 ---
+
+
+def _set_apply_feedback_invoked(state: dict) -> dict | None:
+    """apply-feedbackスキル起動フラグを立てる。既に真ならNoneを返す（冪等）。"""
+    if state.get("apply_feedback_skill_invoked", False):
+        return None
+    state["apply_feedback_skill_invoked"] = True
+    return state
+
+
+def _set_process_feedbacks_invoked(state: dict) -> dict | None:
+    """process-feedbacksスキル起動フラグを立てる。既に真ならNoneを返す（冪等）。"""
+    if state.get("process_feedbacks_skill_invoked", False):
+        return None
+    state["process_feedbacks_skill_invoked"] = True
+    return state
 
 
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
@@ -295,6 +318,10 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_codex_review_invoked)
+        if isinstance(skill_name, str) and skill_name in _APPLY_FEEDBACK_SKILL_NAMES:
+            update_state(session_id, _set_apply_feedback_invoked)
+        if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
+            update_state(session_id, _set_process_feedbacks_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録

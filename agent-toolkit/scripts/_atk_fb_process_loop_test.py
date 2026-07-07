@@ -223,6 +223,14 @@ class TestProcessLoopPromptAndEnv:
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
 
+    def test_prompt_emphasizes_completion_over_exit_session(self) -> None:
+        """プロンプトが選定対象完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
+        prompt = _process_loop._build_process_loop_prompt(pathlib.Path("/repo"))  # pylint: disable=protected-access  # noqa: SLF001
+        assert "主目標" in prompt
+        assert "完遂" in prompt
+        assert "時間がかかるのは正常" in prompt
+        assert "作業量" in prompt
+
 
 class TestProcessLoopClaudeReturncode:
     """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""

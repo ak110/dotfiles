@@ -32,6 +32,16 @@
         ]
       }
     ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/subagent_stop_advisor.py"
+          }
+        ]
+      }
+    ],
     "StopFailure": [
       {
         "hooks": [
