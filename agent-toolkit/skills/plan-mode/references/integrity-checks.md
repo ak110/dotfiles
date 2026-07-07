@@ -1,7 +1,7 @@
 # 計画ファイル整合性チェック
 
-`agent-toolkit:plan-mode`スキル工程6-2の整合性チェックで適用する観点を節ごとに定義する。
-関連スキル・サブエージェントが参照する節名は本ファイルの見出しを典拠とする。
+`agent-toolkit:plan-mode`スキル工程6-2の整合性チェックで適用する観点を節ごとに定義する
+（関連スキル・サブエージェントが参照する節名は本ファイルの見出しを典拠とする）。
 
 ## ユーザー発話・提示素材との照合
 
@@ -64,9 +64,13 @@
 - 計画ファイル本文に「集約する」「委ねる」「従う」「参照する」等の参照型表現を含む追記文面を書く場合、
   参照先（ファイル・節・コメントブロック・関数docstring等）の実体存在を計画提出前に検査する
   - 実在しない場合は参照先の新規作成を`## 変更内容`の対象ファイル一覧へ含めるか参照型表現を撤回するかのいずれかを取る
-- 工程7の5並列レビュー起動前に、メイン側で次の3項目を機械的にセルフチェックする
+- 工程7の5並列レビュー起動前に、メイン側で次を機械的にセルフチェックする
+  - 計画本文の対象ファイル一覧に`[現行]/[置換後]`テキスト対比ブロック形式の差分を含む場合は、
+    `uv run --script agent-toolkit/skills/plan-mode/scripts/check_wc_projection.py <計画ファイルパス>`を
+    実行し、差分適用後の`wc -l`実測値と計画本文記載の見込み行数の乖離を検出する
   - 対象ファイル改訂後の`wc -l`実測値を計画本文の試算値と突合し、
-    1行以上の乖離があれば計画本文側を実測値に修正する
+    2行を超える乖離があれば計画本文側を実測値に修正する
+    （`check_wc_projection.py`の`_ALLOWED_DRIFT = 2`と一致）
   - 対象ファイルに`.md`規範文書が含まれる場合の突合。
     `plan-implementer`委譲時のmodel/effort指定規範
     （`agent-toolkit/rules/02-claude-code.md`「model指定する場合はeffortを併記する」）と
@@ -121,8 +125,6 @@
  （「計画文内・他ファイルとの整合」の計画ファイル内部照合部分・「機械チェック適合性」・
   「編集対象スキル固有規定の事前適用」・「サブエージェント連携の設計整合性」）
 
-サブエージェント担当節とメイン側担当節の対応関係は呼び出し元コンテキスト参照の要否で分かれる。
-
 ## 工程7の実施手順
 
 1. 計画ファイル初版Write完了後、`## 変更内容`配下の全ファイル改訂を対象ファイル現行本文へ適用した
@@ -140,8 +142,12 @@
      直列起動はレビュー往復時間を線形に加算するため、同一メッセージ内での並列起動を標準運用とする
    - 上記4サブエージェント（`codexレビュー`・`plan-reviewer`・`naive-executor`・`plan-impl-reviewer`）は、
      いずれも省略と軽量化の対象外とする。条件成立時に起動する5件目の`agent-doc-validator`も同様に対象外とする
-     - 時間・コンテキスト消費・autocompact thrashingのリスク・作業量見込みなどの自己推定を根拠に、
-       省略・部分実施・単独foreground委譲下での例外扱いへ流用しない
+     - 自己推定を根拠に省略・部分実施・単独foreground委譲下での例外扱いへ流用しない
+       （`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節と一体で適用する）。
+       流用禁止対象の自己推定は次を含む。
+       時間・コンテキスト消費・autocompact thrashingのリスク・作業量見込み。
+       後続スキル（`session-review`・`exit-session`等）の到達優先・上位スキルの目標達成。
+       多段委譲経路（`process-feedbacks`経由・`apply-feedback`経由等）でのネスト起動。
    - サブエージェント`naive-executor`: 計画ファイルの愚直読解を委譲する
      - 起動プロンプトは`launch-prompts-integrity.md`「naive-executor雛形」節を機械転記して構築する。
        埋め込み欄は対象テキスト・実行コンテキスト・抽出観点・担当範囲区分・完了報告書式
@@ -153,9 +159,7 @@
        参照すべき規範スキル・完了報告書式
    - サブエージェント`agent-doc-validator`（条件付き起動）:
      `## 変更内容`「対象ファイル一覧」にコーディングエージェント向け文書対象ファイル
-     （`agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
-     `agent-toolkit/skills/`配下、`.chezmoi-source/dot_claude/rules/`・
-     `.chezmoi-source/dot_claude/skills/`配下、`AGENTS.md`、`CLAUDE.md`）が含まれる計画の場合のみ起動し、
+     （対象範囲は「工程7バイパスの機械検出」節の`agent_doc_validator_invoked`項に集約）が含まれる場合のみ、
      `01-agent.md`方針および`agent-standards`スキル方針への適合性を独立にレビューする
      - 起動プロンプトは`launch-prompts-integrity.md`「agent-doc-validator雛形」節を機械転記して構築する。
        埋め込み欄は計画ファイルパス・対象ファイル一覧・担当観点・
@@ -184,6 +188,13 @@
    - 検出違反は計画ファイル本文へ反映する。
      Claude Code側permission modeが`plan`なら`ExitPlanMode`を呼び出し、
      `plan`でなければ`ExitPlanMode`を呼ばず工程8へ進む
+5. 指摘反映後・スコープ追加後の再レビュー起動時は次を適用する
+   - codexレビューは`threadId`（MCP版）または`SESSION_ID`（CLI版）を継続させ、
+     継続レビュー経路を優先する（全面改訂時の破棄規定は`codex-review.md`既定に従う）
+   - 起動プロンプトでは反映済み指摘・確定済み仕様を審査対象外と明示し、
+     審査対象を差分・追加スコープへ限定する
+   - 初回レビューで定義した各サブエージェントの担当観点そのものは維持する
+     （対象範囲の限定であり観点の縮小ではない）
 
 ## 工程7バイパスの機械検出
 
@@ -194,15 +205,15 @@
 - `naive_executor_invoked`
 - `plan_impl_reviewer_invoked`
 - `codex_review_invoked`
-- `agent_doc_validator_invoked`は条件付きで扱う。対象は`## 変更内容`「対象ファイル一覧」に
-  コーディングエージェント向け文書対象ファイルが含まれる計画とする。
-  該当ファイル群は`agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
+- `agent_doc_validator_invoked`は条件付きで扱う。
+  対象は`## 変更内容`「対象ファイル一覧」にコーディングエージェント向け文書対象ファイルが含まれる計画とする。
+  該当ファイル群は次のとおり。
+  `agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
   `agent-toolkit/skills/`配下、`.chezmoi-source/dot_claude/rules/`・
-  `.chezmoi-source/dot_claude/skills/`配下、`AGENTS.md`、`CLAUDE.md`とする
+  `.chezmoi-source/dot_claude/skills/`配下、`AGENTS.md`、`CLAUDE.md`
 
 記録は`agent-toolkit/scripts/posttooluse.py`が担う。
-`agent-toolkit/scripts/pretooluse.py`の`ExitPlanMode`ハンドラは、上記4フラグと条件成立時に加わる
-`agent_doc_validator_invoked`のいずれかが未起動の場合にブロックする。
-`Skill`ツールでの`agent-toolkit:plan-impl`スキル呼び出しハンドラも同様にブロックする。
-当該4フラグと条件成立時に加わる`agent_doc_validator_invoked`は、
-新計画に着手する時点（`agent-toolkit:plan-mode`スキル起動時）にリセットする。
+`agent-toolkit/scripts/pretooluse.py`は次のとおり動作する。
+`ExitPlanMode`ハンドラと`agent-toolkit:plan-impl`スキル呼び出しハンドラの両方が、
+上記4フラグ（条件成立時は`agent_doc_validator_invoked`を含む）のいずれか未起動時にブロックする。
+フラグは新計画着手時（`agent-toolkit:plan-mode`スキル起動時）にリセットする。
