@@ -4546,6 +4546,144 @@ class TestPlanFileRetroactiveScanRecorded:
         assert result.returncode == 0
 
 
+def _path_section_build_content(recorded_path: str) -> str:
+    """末尾パス節検査用の計画本文を組み立てる。"""
+    return (
+        "# タイトル\n\n"
+        "## 変更履歴\n\nx\n\n"
+        "## 背景\n\nx\n\n"
+        "## 対応方針\n\nx\n\n"
+        "## 調査結果\n\nx\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
+        "## 実行方法\n\nx\n\n"
+        "## 進捗ログ\n\nx\n\n"
+        "## 計画ファイル（本ファイル）のパス\n\n"
+        f"`{recorded_path}`\n"
+    )
+
+
+class TestPlanFilePathSectionMatchesFilePath:
+    """plan file編集で末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`不一致のブロック検査。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
+            },
+        )
+
+    def test_blocks_when_recorded_path_differs(self, tmp_path: pathlib.Path):
+        """記録パス値とWrite先のfile_pathが異なる場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "path-mismatch"
+        wrong_path = str(tmp_path / "scratchpad" / "other.md")
+        content = _path_section_build_content(wrong_path)
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "パス節配下のパス値" in result.stderr
+
+    def test_allows_when_recorded_path_matches(self, tmp_path: pathlib.Path):
+        """記録パス値とWrite先のfile_pathが一致する場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "path-match"
+        content = _path_section_build_content(str(plan))
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
+        """plan fileでないパスへの書き込みは検査対象外。"""
+        content = _path_section_build_content("/tmp/x.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "path-nonplan",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+    def test_allows_when_recorded_value_is_placeholder(self, tmp_path: pathlib.Path):
+        """パス節配下の値が絶対パス表記でない（`/`・`~`で始まらない）場合はプレースホルダーとみなし通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "path-placeholder"
+        content = _path_section_build_content("plan-path-here")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_allows_when_section_body_absent(self, tmp_path: pathlib.Path):
+        """パス節が本文に存在しない場合は本検査の対象外として通過する（他検査でブロックされ得る）。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "path-nosection"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\n\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        # 本検査は「該当節本文が空」の場合は対象外として通過する
+        assert "パス節配下のパス値" not in result.stderr
+
+
 class TestStyleNegationCheck:
     """『Xを根拠にYしない』『Xを理由にYしない』形式の増加検出（FB10、warn）。"""
 
