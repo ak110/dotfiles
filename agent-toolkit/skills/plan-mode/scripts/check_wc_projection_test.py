@@ -494,6 +494,29 @@ class TestCheckWcProjection:
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
 
+    def test_fence_containing_h2_like_line_does_not_truncate_section(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`節内のフェンスに他H2見出し様の行が含まれても、節本文が誤って途中終端しない。
+
+        フェンス内行を境界判定から除外しない実装では、フェンス内の`## 出力例の見出し`行を
+        節境界と誤認識し、後続の[現行]/[置換後]ブロックが`## 変更内容`節の外側として扱われ
+        検査対象から漏れる（見込み行数の乖離を検出できず誤って通過する）。
+        """
+        _write(tmp_path / "foo.md", "old line\nsecond\nthird\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行3行, 見込み99行）\n\n"
+            "### `foo.md`\n\n"
+            "出力例:\n\n```text\n## 出力例の見出し\n```\n\n"
+            "現行:\n\n```text\nold line\n```\n\n"
+            "置換後:\n\n```text\nnew line\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "見込み99行" in result.stderr
+
     def test_addition_reduction_detects_md_tmpl_extension(self, tmp_path: pathlib.Path) -> None:
         """`.md.tmpl`ファイルも追記/縮減対象集計の検査対象として乖離を検出する。"""
         plan = _write(

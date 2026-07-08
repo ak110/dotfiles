@@ -26,6 +26,7 @@ import argparse
 import pathlib
 import re
 import sys
+from collections.abc import Iterator
 
 # 見込み行数との許容乖離幅（行）。この幅を超えた差分のみ違反として報告する。
 _ALLOWED_DRIFT = 2
@@ -44,6 +45,11 @@ _CHECKBOX_PATH_RE = re.compile(r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\s（(]+)`?")
 
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+`?(?P<path>[^`\s（(]+)`?")
+
+# 汎用フェンス開始・終了判定（```pythonや~~~等、言語指定・記号種別を問わない）。
+# `_extract_section`のH2見出し境界判定でフェンス内の`## `様の行を除外するために用いる
+# （`check_line_ref.py`の`_FENCE_RE`と同等の役割）。
+_FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 
 # [現行]/[置換後]対比ブロックの開始フェンス。```textのみを対象とする（```pythonや```bash等の
 # 骨格提示ブロックは対比対象外のため誤検出しない）。
@@ -228,11 +234,40 @@ def _collect_known_paths(section: str) -> frozenset[str]:
     return frozenset(known_paths_set)
 
 
+def _iter_non_fenced_lines(lines: list[str], start: int = 0) -> Iterator[tuple[int, str]]:
+    """```・~~~フェンス内の行を除外し、(行番号, 行内容)を順に返す。
+
+    フェンス開閉状態を跨いで呼び出す用途は想定しない（呼び出しごとに`start`から新規に状態追跡する）。
+    """
+    in_fence = False
+    fence_marker = ""
+    for idx in range(start, len(lines)):
+        line = lines[idx]
+        m_fence = _FENCE_RE.match(line)
+        if m_fence:
+            marker = m_fence.group(2)
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
+                in_fence = False
+                fence_marker = ""
+            continue
+        if in_fence:
+            continue
+        yield idx, line
+
+
 def _extract_section(text: str, heading: str) -> str | None:
-    """指定H2見出し直後から次のH2見出し直前までの本文を返す。見出しが無ければ`None`を返す。"""
+    """指定H2見出し直後から次のH2見出し直前までの本文を返す。見出しが無ければ`None`を返す。
+
+    フェンス内に`## `始まりの行（コマンド出力例・サンプル計画本文等）が含まれる場合、
+    誤って節境界と判定し節本文を途中で誤終端することを防ぐため、
+    `_iter_non_fenced_lines`でフェンス内行を除外してから見出し判定する。
+    """
     lines = text.splitlines()
     start: int | None = None
-    for idx, line in enumerate(lines):
+    for idx, line in _iter_non_fenced_lines(lines):
         if line.strip() == heading:
             start = idx + 1
             break
@@ -240,8 +275,8 @@ def _extract_section(text: str, heading: str) -> str | None:
         return None
 
     end = len(lines)
-    for idx in range(start, len(lines)):
-        if lines[idx].startswith("## ") and lines[idx].strip() != heading:
+    for idx, line in _iter_non_fenced_lines(lines, start):
+        if line.startswith("## ") and line.strip() != heading:
             end = idx
             break
     return "\n".join(lines[start:end])
