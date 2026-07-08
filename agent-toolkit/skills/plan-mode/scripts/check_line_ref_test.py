@@ -2,6 +2,7 @@
 
 行番号への参照検査スクリプトをsubprocessで起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
+パス実在検査・スキル名実在検査・件数表現検出（FB4）も併せて検証する。
 """
 
 import pathlib
@@ -11,12 +12,13 @@ import sys
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_line_ref.py"
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
+def _run(*args: str, cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(_SCRIPT), *args],
         capture_output=True,
         text=True,
         check=False,
+        cwd=cwd,
     )
 
 
@@ -232,3 +234,137 @@ class TestCheckLineRef:
         result = _run(str(root))
         assert result.returncode == 1
         assert str(target) in result.stderr
+
+    def test_check_path_existence_detects_missing_path(self, tmp_path: pathlib.Path) -> None:
+        """存在しないパス記載を検出する。"""
+        path = _write(tmp_path / "doc.md", "対象は`docs/missing.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "docs/missing.md" in result.stderr
+        assert "実在しない" in result.stderr
+
+    def test_check_path_existence_passes_for_existing_path(self, tmp_path: pathlib.Path) -> None:
+        """実在するパス記載は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "existing.md").write_text("x\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "対象は`docs/existing.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_ignores_url_scheme(self, tmp_path: pathlib.Path) -> None:
+        """`://`を含むURLトークンはリポジトリパスとして誤検出しない。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "詳細は`https://example.com/docs/guide.md`を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_detects_missing_path_for_extended_extensions(self, tmp_path: pathlib.Path) -> None:
+        """`.sh`・`.yaml`・`.yml`・`.cmd`・`.ps1`・`.tmpl`拡張子の存在しないパス記載も検出する。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "対象は`scripts/missing.sh`・`config/missing.yaml`・`config/missing.yml`・"
+            "`bin/missing.cmd`・`bin/missing.ps1`・`templates/missing.tmpl`である。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        for missing in (
+            "scripts/missing.sh",
+            "config/missing.yaml",
+            "config/missing.yml",
+            "bin/missing.cmd",
+            "bin/missing.ps1",
+            "templates/missing.tmpl",
+        ):
+            assert missing in result.stderr
+
+    def test_check_skill_name_existence_detects_unknown_skill(self, tmp_path: pathlib.Path) -> None:
+        """実在しないスキル名記載を検出する。"""
+        path = _write(tmp_path / "doc.md", "`agent-toolkit:no-such-skill`を呼び出す。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "agent-toolkit:no-such-skill" in result.stderr
+        assert "実在しない" in result.stderr
+
+    def test_check_skill_name_existence_passes_for_existing_skill(self, tmp_path: pathlib.Path) -> None:
+        """実在するスキル名記載は違反として報告されない。"""
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "existing-skill"
+        skill_dir.mkdir(parents=True)
+        path = _write(tmp_path / "doc.md", "`agent-toolkit:existing-skill`を呼び出す。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_count_expressions_detects_forbidden_wording(self, tmp_path: pathlib.Path) -> None:
+        """「以下N件」等の件数表現を検出する。"""
+        path = _write(tmp_path / "doc.md", "以下7件の指摘を反映する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "7件" in result.stderr
+
+    def test_check_count_expressions_detects_standalone_wording(self, tmp_path: pathlib.Path) -> None:
+        """「以下」を伴わない単独「N件」「N点」形式の件数表現も検出する。"""
+        path = _write(tmp_path / "doc.md", "今回は5件の指摘と3点の改善案がある。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "5件" in result.stderr
+        assert "3点" in result.stderr
+
+    def test_check_count_expressions_marker_suppresses_aggregate_value(self, tmp_path: pathlib.Path) -> None:
+        """`<!-- line-ref-ok -->`マーカー付き行の集計値は件数表現として検出しない。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "既存違反7件・修正5件を解消した。<!-- line-ref-ok -->\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_count_expressions_detects_kanten_wording(self, tmp_path: pathlib.Path) -> None:
+        """「N観点」形式の件数表現を検出する。"""
+        path = _write(tmp_path / "doc.md", "3観点で確認する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "3観点" in result.stderr
+
+    def test_check_count_expressions_passes_without_count_wording(self, tmp_path: pathlib.Path) -> None:
+        """件数表現を含まない本文は違反として報告されない。"""
+        path = _write(tmp_path / "doc.md", "複数の観点で確認する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_excludes_newly_created_marker(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル一覧の新設マーカー付きパスは実在確認から除外する。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `docs/new-doc.md`（新設, 見込み10行）\n\n"
+            "### `docs/new-doc.md`\n\n"
+            "対象は`docs/new-doc.md`である。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_resolves_repo_root_from_git_ancestor(self, tmp_path: pathlib.Path) -> None:
+        """`.git`を持つ祖先ディレクトリをリポジトリルートとして解決し、cwdが下位でも実在判定が揺れない。"""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "existing.md").write_text("x\n", encoding="utf-8")
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        path = _write(subdir / "doc.md", "対象は`docs/existing.md`である。\n")
+        result = _run(str(path), cwd=subdir)
+        assert result.returncode == 0
+
+    def test_check_skill_name_existence_excludes_planned_new_skill(self, tmp_path: pathlib.Path) -> None:
+        """同一計画内で新設予定と明記されたスキル名は実在確認から除外する。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/new-skill/SKILL.md`（新設, 見込み50行）\n\n"
+            "### `agent-toolkit/skills/new-skill/SKILL.md`\n\n"
+            "`agent-toolkit:new-skill`を新設する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0

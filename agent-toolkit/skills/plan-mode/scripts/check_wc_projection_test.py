@@ -40,6 +40,24 @@ def _plan_with_single_block(*, checkbox_line: str, h3_heading: str, current_text
     )
 
 
+def _plan_with_addition_reduction(
+    *,
+    checkbox_line: str,
+    addition_lines: str,
+    reduction_block: str = "",
+) -> str:
+    """対象ファイル一覧`（現行N行, 見込みM行）`宣言と追記/縮減対象ブロックを持つ計画ファイル本文を組み立てる。"""
+    return (
+        "# テスト計画\n\n"
+        "## 変更内容\n\n"
+        "### 対象ファイル一覧\n\n"
+        f"{checkbox_line}\n\n"
+        "### `foo.md`\n\n"
+        f"追記:\n\n```text\n{addition_lines}\n```\n\n"
+        f"{reduction_block}"
+    )
+
+
 class TestCheckWcProjection:
     """[現行]/[置換後]対比ブロックの機械適用と検算の主要シナリオをまとめて検証する。"""
 
@@ -321,3 +339,131 @@ class TestCheckWcProjection:
         result = _run(ok_plan, ng_plan, cwd=tmp_path)
         assert result.returncode == 1
         assert "見込み99行" in result.stderr
+
+    def test_addition_reduction_alignment_ok(self, tmp_path: pathlib.Path) -> None:
+        """現行行数+追記量-縮減量が見込み行数と一致する場合は乖離検出なし。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_addition_reduction(
+                checkbox_line="- [ ] `foo.md`（現行10行, 見込み11行）",
+                addition_lines="line1\nline2",
+                reduction_block="#### 縮減対象\n\n```text\nold\n```\n",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_addition_reduction_drift_exceeds_threshold(self, tmp_path: pathlib.Path) -> None:
+        """現行行数+追記量-縮減量と見込み行数の乖離が2行超の場合は乖離検出。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_addition_reduction(
+                checkbox_line="- [ ] `foo.md`（現行10行, 見込み11行）",
+                addition_lines="line1\nline2\nline3\nline4\nline5\nline6",
+                reduction_block="#### 縮減対象\n\n```text\nold\n```\n",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "乖離が許容幅を超える" in result.stderr
+
+    def test_addition_without_reduction(self, tmp_path: pathlib.Path) -> None:
+        """追記のみで縮減対象記述が無い場合は追記量そのままで見込み行数と照合。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_addition_reduction(
+                checkbox_line="- [ ] `foo.md`（現行10行, 見込み13行）",
+                addition_lines="line1\nline2\nline3",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_reduction_block_detected_by_h4_heading(self, tmp_path: pathlib.Path) -> None:
+        """`#### 縮減対象`のH4見出し直後のブロックを縮減対象として検出する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_addition_reduction(
+                checkbox_line="- [ ] `foo.md`（現行10行, 見込み9行）",
+                addition_lines="line1",
+                reduction_block="#### 縮減対象（foo.md）\n\n```text\nold1\nold2\n```\n",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_annotation_only_first_line_excluded_from_count(self, tmp_path: pathlib.Path) -> None:
+        """フェンス内1行目が「（挿入先注記）」のみの場合、実挿入内容ではないため集計から除外する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み12行）\n\n"
+            "### `foo.md`\n\n"
+            "追記文言案は次のとおり。\n\n"
+            "```text\n（挿入先の説明）\nline1\nline2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_addition_blocks_detected_across_multiple_consecutive_blocks(self, tmp_path: pathlib.Path) -> None:
+        """「追記文言案は次のとおり」直後からH3節境界までの連続textブロックを全て追記として検出する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み15行）\n\n"
+            "### `foo.md`\n\n"
+            "追記文言案は次のとおり。\n\n"
+            "```text\nline1\nline2\n```\n\n"
+            "```text\nline3\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_addition_trigger_stops_at_h3_boundary(self, tmp_path: pathlib.Path) -> None:
+        """追記トリガー継続中フラグは次のH3見出しで解除され、後続H3のブロックは追記扱いされない。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み11行）\n"
+            "- [ ] `bar.md`（現行5行, 見込み5行）\n\n"
+            "### `foo.md`\n\n"
+            "追記文言案は次のとおり。\n\n"
+            "```text\nline1\n```\n\n"
+            "### `bar.md`\n\n"
+            "既存の記述を変更する（対比ブロックなし・プローズのみ）。\n\n"
+            "```text\n参考コード1\n参考コード2\n参考コード3\n参考コード4\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_reduction_not_detected_by_non_h4_heading(self, tmp_path: pathlib.Path) -> None:
+        """`### 縮減対象`等H4以外の見出しでは縮減対象として検出されず、乖離扱いとなる。
+
+        H3見出し配下は縮減対象ブロックと判定されないため、追記1行のみが集計される
+        （現行10行+追記1行=見込み11行のはずが宣言が5行のため乖離となる）。
+        """
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み5行）\n\n"
+            "### `foo.md`\n\n"
+            "追記:\n\n```text\nline1\n```\n\n"
+            "### 縮減対象\n\n```text\nold1\nold2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "乖離が許容幅を超える" in result.stderr

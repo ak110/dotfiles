@@ -168,6 +168,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
   含まれる場合にブロック
 - plan-modeスキル呼び出し済みのとき、`~/.claude/plans/*.md`の構成崩れと
   計画ファイル本文（`## 調査結果`配下を除く）の絶対行番号の直書きを検査して警告
+- 計画ファイルの`## 変更履歴`記載内容と`## 変更内容`側対象ファイル一覧・H3見出しとの対応欠落をブロック
 - 計画ファイル編集前の参照ドキュメント
  （`references/textlint-violations.md`・`references/plan-file-guidelines.md`）未読をブロック
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案

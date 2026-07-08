@@ -8,6 +8,15 @@
 `agent-toolkit:plan-mode`工程7のメイン側セルフチェックから呼び出される。
 アルゴリズムの詳細は`_parse_plan_file`・`_extract_diff_blocks`・`_check_one_file`各関数のdocstringを参照する。
 出力形式は兄弟スクリプト`check_line_ref.py`と揃える（stderrへメッセージ、違反ありでexit 1）。
+
+追記/縮減文面の算術照合は`_extract_addition_reduction_blocks`・`_collect_projection_bounds`・
+`_check_addition_reduction_projection`各関数が担う。`## 変更内容`H3節配下の追記ブロック・縮減対象ブロックを
+集計し、`### 対象ファイル一覧`チェックボックスの`（現行N行, 見込みM行）`表記との乖離を検出する。
+
+対象ファイルが`.py`など実装コードの場合、`## 変更内容`節は追記文言案を逐語のフェンス内容として
+記述せず、関数シグネチャ変更点の説明文で記述することが多い。
+この場合、上記算術照合は説明文の行数を追記量と誤集計し偽陽性の乖離検出を報告し得る。
+`.py`対象ファイルの見込み行数検証は本照合の出力に加え`wc -l`実測値との手動照合を併用する。
 """
 
 from __future__ import annotations
@@ -22,10 +31,10 @@ _ALLOWED_DRIFT = 2
 
 # `## 変更内容`直下の対象ファイル一覧チェックボックス項目。
 # 既存ファイル`- [ ] path（現行N行, 見込みM行）`と新設ファイル`- [ ] path（新設, 見込みM行）`の
-# 両形式から相対パスと見込み行数を抽出する。
+# 両形式から相対パス・現行行数（新設は0扱い）・見込み行数を抽出する。
 _CHECKBOX_RE = re.compile(
     r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*"
-    r"[（(](?:現行(?:\d+)行|新設),\s*見込み(?P<projected>\d+)行[）)]"
+    r"[（(](?:現行(?P<current>\d+)行|新設),\s*見込み(?P<projected>\d+)行[）)]"
 )
 
 # 対象ファイル一覧の全チェックボックス項目（見込み行数の有無を問わない）。
@@ -50,6 +59,20 @@ _CURRENT_LABEL_TOKEN = "現行"
 # 削除根拠ブロックは対比適用対象外として無視し、直前の[現行]ブロックも未消費扱いを解除する。
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
 
+# 縮減対象小見出し（`#### 縮減対象（xxx）`等）。H4見出しのみを対象とし統一する。
+# 小見出し配下のtextブロックは縮減対象ブロックとして扱う。
+_REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
+
+# 追記ブロックの連続検出トリガー文に含まれるトークン（部分一致）。
+# 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
+# 連続するtextブロックを全て追記ブロックとして扱う。
+_ADDITION_TRIGGER_TOKEN = "追記文言案"
+
+# 追記/縮減対象ブロック内の1行目が「（挿入先・対象の説明）」のみで構成される場合、
+# 計画執筆時の位置注記であり実際に対象ファイルへ挿入・保持される内容ではないため
+# 行数集計から除外する（全角丸括弧で行全体を囲む場合のみ一致）。
+_ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
+
 
 def main() -> int:
     """検算のエントリポイント。"""
@@ -72,11 +95,12 @@ def main() -> int:
 
 def _check_wc(plan_path: pathlib.Path) -> int:
     """1計画ファイルを検算し、違反件数を返す。"""
-    try:
-        projected_map, blocks, orphan_paths = _parse_plan_file(plan_path)
-    except (OSError, UnicodeDecodeError) as exc:
-        print(f"{plan_path}: 計画ファイルの読み込みに失敗: {exc}", file=sys.stderr)
+    text = _read_text_or_none(plan_path)
+    if text is None:
+        print(f"{plan_path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
         return 1
+
+    projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
     grouped: dict[str, list[tuple[str, str]]] = {}
     order: list[str] = []
@@ -96,7 +120,22 @@ def _check_wc(plan_path: pathlib.Path) -> int:
 
     for path in order:
         violations += _check_one_file(plan_path, path, grouped[path], projected_map)
+    violations += _check_addition_reduction_projection(plan_path, text)
     return violations
+
+
+def _read_text_or_none(path: pathlib.Path) -> str | None:
+    """ファイルを読み込む。読み込み失敗時は`None`を返す。
+
+    兄弟スクリプト`check_line_ref.py`の同名ヘルパーと同一パターン。
+    `_check_wc`で1回だけ読み込み、`_parse_plan_file`・
+    `_check_addition_reduction_projection`双方へ同一`text`を渡すことで
+    同一計画ファイルの重複読み込みを避ける。
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _check_one_file(
@@ -144,9 +183,9 @@ def _check_one_file(
 
 
 def _parse_plan_file(
-    plan_path: pathlib.Path,
+    text: str,
 ) -> tuple[dict[str, int], list[tuple[str, str, str]], list[str]]:
-    """計画ファイルを解析し、(見込み行数マップ, [(相対パス, 現行文言, 置換後文言), ...], 未消費[現行]パス一覧)を返す。
+    """計画ファイル本文を解析し、(見込み行数マップ, [(相対パス, 現行文言, 置換後文言), ...], 未消費[現行]パス一覧)を返す。
 
     見込み行数マップは`## 変更内容`配下`### 対象ファイル一覧`のチェックボックス項目から
     `- [ ] path（現行N行, 見込みM行）`形式を走査して収集する。
@@ -155,28 +194,37 @@ def _parse_plan_file(
     （`Makefile`・`Dockerfile`・`LICENSE`等の拡張子・区切りを持たないファイル名も検出できる）。
     対比ブロックは`## 変更内容`セクション配下に限定して走査する
     （`## 調査結果`等の他セクションに同形式の記述が偶発的に現れても対象外とするため）。
+    呼び出し元`_check_wc`が読み込み済みの`text`を受け取り、本関数ではファイルを再読み込みしない。
     """
-    text = plan_path.read_text(encoding="utf-8")
-
     section = _extract_section(text, "## 変更内容")
 
     projected_map: dict[str, int] = {}
-    known_paths_set: set[str] = set()
     if section is not None:
         for line in section.splitlines():
             m = _CHECKBOX_RE.match(line)
             if m:
                 projected_map[m.group("path")] = int(m.group("projected"))
-            m_path = _CHECKBOX_PATH_RE.match(line)
-            if m_path:
-                known_paths_set.add(m_path.group("path"))
 
-    known_paths = frozenset(known_paths_set)
+    known_paths = _collect_known_paths(section) if section is not None else frozenset()
     if section is not None:
         blocks, orphan_paths = _extract_diff_blocks(section, known_paths)
     else:
         blocks, orphan_paths = [], []
     return projected_map, blocks, orphan_paths
+
+
+def _collect_known_paths(section: str) -> frozenset[str]:
+    """`## 変更内容`本文の対象ファイル一覧チェックボックス項目から既知パス集合を構築する。
+
+    見込み行数の記載有無を問わず全チェックボックス項目のパスを収集する。
+    `_parse_plan_file`・`_extract_addition_reduction_blocks`の双方で共有するSSOT実装。
+    """
+    known_paths_set: set[str] = set()
+    for line in section.splitlines():
+        m_path = _CHECKBOX_PATH_RE.match(line)
+        if m_path:
+            known_paths_set.add(m_path.group("path"))
+    return frozenset(known_paths_set)
 
 
 def _extract_section(text: str, heading: str) -> str | None:
@@ -284,6 +332,158 @@ def _preceding_label(lines: list[str], fence_idx: int) -> str | None:
     if _CURRENT_LABEL_TOKEN in stripped:
         return "current"
     return None
+
+
+# --- 追記/縮減文面の算術照合（`## 変更内容`集計値 と対象ファイル一覧`（現行N行, 見込みM行）`の乖離検出） ---
+
+
+def _collect_projection_bounds(section: str) -> dict[str, tuple[int, int]]:
+    """`### 対象ファイル一覧`チェックボックス項目から{パス: (現行行数, 見込み行数)}を抽出する。
+
+    `新設`ファイルは現行行数0として扱う。`_CHECKBOX_RE`で抽出済みの見込み行数と同一の正規表現を用いる
+    （SSOTは`対象ファイル一覧`チェックボックス項目の`（現行N行, 見込みM行）`表記のみとする）。
+    """
+    bounds: dict[str, tuple[int, int]] = {}
+    for line in section.splitlines():
+        m = _CHECKBOX_RE.match(line)
+        if m:
+            current = int(m.group("current")) if m.group("current") else 0
+            bounds[m.group("path")] = (current, int(m.group("projected")))
+    return bounds
+
+
+def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]:
+    """`## 変更内容`H3節配下の追記/縮減対象textブロックをファイルごとに集計する。
+
+    `section`は`_extract_section(text, "## 変更内容")`で抽出済みのセクション文字列を受け取る
+    （呼び出し側で抽出済みの`section`を再利用し、同一セクションの重複抽出を避ける）。
+    追記ブロックは次の2条件いずれかで検出する。
+    (1) H3節内で`_ADDITION_TRIGGER_TOKEN`（「追記文言案」）を含むトリガー文が出現した直後から、
+        当該H3節境界（次のH3見出しまたはファイル末尾）までに現れる連続するtextブロック全体
+    (2) フェンス直前非空行に「追記」または「追加」の語を含むtextブロック
+        （部分一致。`"追記" in line or "追加" in line`相当。トリガー文が無い単発の追記ブロックを拾う）
+    縮減対象ブロックは直前見出しが`#### 縮減対象`（H4見出しのみ、統一済み）配下のtextブロック。
+    既存の`current`・`replacement`・`deletion`ラベル（`_preceding_label`が非Noneを返すブロック）に
+    合致するブロックは対象外とし、二重集計を避ける。
+    縮減対象見出し配下のブロックはトリガー文継続中でも縮減対象を優先する。
+    戻り値はファイルパスをキーとし、addition（追記行数合計）とreduction（縮減対象行数合計）を
+    値に持つ辞書。
+    """
+    result: dict[str, dict[str, int]] = {}
+    known_paths = _collect_known_paths(section)
+    lines = section.splitlines()
+    n = len(lines)
+    current_path: str | None = None
+    in_reduction_heading = False
+    in_addition_after_trigger = False
+    i = 0
+    while i < n:
+        line = lines[i]
+
+        m_h3 = _H3_RE.match(line)
+        if m_h3:
+            path = m_h3.group("path")
+            current_path = path if path in known_paths else None
+            in_reduction_heading = False
+            in_addition_after_trigger = False
+            i += 1
+            continue
+
+        if line.lstrip().startswith("#"):
+            in_reduction_heading = bool(_REDUCTION_HEADING_RE.match(line.strip()))
+            i += 1
+            continue
+
+        if _TEXT_FENCE_OPEN_RE.match(line):
+            label = _preceding_label_for_addition_reduction(lines, i, in_reduction_heading, in_addition_after_trigger)
+            i += 1
+            content_lines: list[str] = []
+            while i < n and not _FENCE_CLOSE_RE.match(lines[i]):
+                content_lines.append(lines[i])
+                i += 1
+            i += 1  # 閉じフェンス行を読み飛ばす
+
+            if label is not None and current_path is not None:
+                entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
+                counted_lines = content_lines
+                if counted_lines and _ANNOTATION_ONLY_RE.match(counted_lines[0].strip()):
+                    counted_lines = counted_lines[1:]
+                entry[label] += len(counted_lines)
+            continue
+
+        if _ADDITION_TRIGGER_TOKEN in line:
+            in_addition_after_trigger = True
+        i += 1
+
+    return result
+
+
+def _preceding_label_for_addition_reduction(
+    lines: list[str],
+    fence_idx: int,
+    in_reduction_heading: bool,
+    in_addition_after_trigger: bool,
+) -> str | None:
+    """縮減対象見出し（H4）コンテキスト・追記トリガー継続中フラグ・フェンス直前非空行から判定する。
+
+    縮減対象ブロックの判定は`#### 縮減対象`H4見出し配下であることのみを条件とする（見出し条件へ統一）。
+    追記ブロックの判定は次の優先順で行う。
+    (1) 縮減対象見出し配下でなく、かつ「追記文言案」トリガー文出現後で当該H3節境界に未到達の場合は
+        無条件で追記と判定する（トリガー継続中フラグ`in_addition_after_trigger`）
+    (2) トリガー継続中でない場合はフェンス直前非空行に「追記」または「追加」の語を含むかで判定する
+        （部分一致。`"追記" in line or "追加" in line`相当）
+    既存の`current`・`replacement`・`deletion`ラベル（`_preceding_label`が非Noneを返す場合）は
+    対象外として`None`を返す（従来通り無視）。
+    """
+    if _preceding_label(lines, fence_idx) is not None:
+        return None
+
+    if in_reduction_heading:
+        return "reduction"
+
+    if in_addition_after_trigger:
+        return "addition"
+
+    j = fence_idx - 1
+    while j >= 0 and lines[j].strip() == "":
+        j -= 1
+    if j >= 0:
+        stripped = lines[j].strip()
+        if "追記" in stripped or "追加" in stripped:
+            return "addition"
+    return None
+
+
+def _check_addition_reduction_projection(plan_path: pathlib.Path, text: str) -> int:
+    """追記/縮減対象文面の集計値と対象ファイル一覧`（現行N行, 見込みM行）`宣言との乖離を検査し、違反件数を返す。
+
+    照合式は「現行行数 + 追記行数 - 縮減対象行数 = 見込み行数」。
+    追記/縮減対象ブロックが1件も存在しないファイルは検査対象外とする
+    （対比ブロック方式のみを用いる従来計画ファイルへの影響を避けるため）。
+    呼び出し元`_check_wc`が読み込み済みの`text`を受け取り、本関数ではファイルを再読み込みしない。
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+    bounds = _collect_projection_bounds(section)
+    actual = _extract_addition_reduction_blocks(section)
+
+    violations = 0
+    for path, counted in actual.items():
+        if path not in bounds:
+            continue
+        current, projected = bounds[path]
+        expected = current + counted["addition"] - counted["reduction"]
+        drift = expected - projected
+        if abs(drift) > _ALLOWED_DRIFT:
+            print(
+                f"{plan_path}: {path} 対象ファイル一覧宣言(現行{current}行,見込み{projected}行)と"
+                f"追記/縮減対象集計からの見込み{expected}行(追記{counted['addition']}行,"
+                f"縮減{counted['reduction']}行)の乖離が許容幅を超える(差{drift:+d}行)",
+                file=sys.stderr,
+            )
+            violations += 1
+    return violations
 
 
 if __name__ == "__main__":

@@ -142,6 +142,10 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 # `- [ ] path` および `- [x] path` 形式（大文字`X`も許容）を対象とする。
 _CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
 
+# チェックボックス項目本文の先頭がバッククォート囲みのパスである場合に、
+# 後続の`（現行N行, 見込みM行）`等の付随メタ情報を除いてパス部分のみを取り出すパターン。
+_LEADING_BACKTICK_PATH_PATTERN = re.compile(r"^`([^`]+)`")
+
 
 def extract_h2_section_body(content: str, h2_heading: str) -> list[tuple[int, str]]:
     """指定したH2見出し配下の本文行を、ファイル先頭基準1始まりの行番号付きで返す。
@@ -221,8 +225,10 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
 def extract_target_files_from_changes(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
 
-    パス記述の慣例（インラインコード表記、`` `path` ``形式）に合わせ、
-    前後の全角空白を含む空白除去後にバッククォートを除去する。
+    パス記述の慣例（`` `path`（現行N行, 見込みM行） ``形式）に合わせ、
+    前後の全角空白を含む空白除去後、先頭のバッククォート囲み区間のみをパスとして取り出す
+    （後続の`（現行N行, 見込みM行）`等の付随メタ情報は除く）。
+    バッククォート囲みでない場合は従来どおり前後のバッククォートのみを除去する。
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
     """
     body = extract_h2_section_body(content, "変更内容")
@@ -234,8 +240,11 @@ def extract_target_files_from_changes(content: str) -> list[str]:
             continue
         if in_target_h3:
             m = _CHECKBOX_PATTERN.match(line)
-            if m:
-                paths.append(m.group(1).strip().strip("`"))
+            if not m:
+                continue
+            item = m.group(1).strip()
+            path_match = _LEADING_BACKTICK_PATH_PATTERN.match(item)
+            paths.append(path_match.group(1) if path_match else item.strip("`"))
     return paths
 
 

@@ -4442,6 +4442,161 @@ class TestPlanFileTargetFilesH3Correspondence:
         assert result.returncode == 0
 
 
+def _history_sync_build_content(*, history_line: str) -> str:
+    """FB5変更履歴と変更内容の対応照合検査用の計画本文を組み立てる。"""
+    return (
+        "# タイトル\n\n"
+        f"## 変更履歴\n\n- 初版\n{history_line}\n\n"
+        "## 背景\n\nx\n\n"
+        "## 対応方針\n\nx\n\n"
+        "## 調査結果\n\nx\n\n"
+        "## 変更内容\n\n"
+        "### 対象ファイル一覧\n\n"
+        "- [ ] `foo/bar.py`\n\n"
+        "### foo/bar.py\n\n```text\nx\n```\n\n"
+        "## 実行方法\n\nx\n\n"
+        "## 進捗ログ\n\nx\n\n"
+        "## 計画ファイル（本ファイル）のパス\n\nx\n"
+    )
+
+
+class TestPlanFileHistoryContentSync:
+    """plan file Write/Edit/MultiEdit時の変更履歴と変更内容の対応照合検査（FB5）。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
+            },
+        )
+
+    def test_history_content_sync_matches(self, tmp_path: pathlib.Path):
+        """変更履歴の対象ファイル・節名アンカーが変更内容側と一致する場合はブロックしない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "histsync-match"
+        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/bar.py`を修正。")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_history_content_sync_detects_missing_correspondence(self, tmp_path: pathlib.Path):
+        """変更履歴の対象ファイル・節名アンカーが変更内容側に無い場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "histsync-missing"
+        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "foo/missing.py" in result.stderr
+
+    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
+        """plan fileでないパスへの書き込みは検査対象外。"""
+        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
+                "session_id": "histsync-nonplan",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+
+    def test_history_content_sync_ignores_non_correspondence_path_mention(self, tmp_path: pathlib.Path):
+        """対応関係を意図しない参考言及のパス記載は誤検出しない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "histsync-mention"
+        content = _history_sync_build_content(history_line="- 初版。例として`foo/example.py`を参照した。")
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_history_content_sync_ignores_rejected_entry(self, tmp_path: pathlib.Path):
+        """却下項目に含まれるパスは`## 変更内容`側に対応記述が無くてもブロックしない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "histsync-rejected"
+        content = _history_sync_build_content(
+            history_line="- 却下: 指摘の対象は`foo/rejected.py`。既存機構でカバー済みのため却下。",
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
+    def test_history_content_sync_checks_edit_and_multiedit(self, tmp_path: pathlib.Path, tool_name: str):
+        """Edit・MultiEditの適用後contentも検査対象とする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = f"histsync-{tool_name.lower()}"
+        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
+        self._prior_flags(tmp_path, sid, content)
+        if tool_name == "Edit":
+            tool_input = {"file_path": str(plan), "old_string": "# t\n", "new_string": content}
+        else:
+            tool_input = {"file_path": str(plan), "edits": [{"old_string": "# t\n", "new_string": content}]}
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "foo/missing.py" in result.stderr
+
+
 class TestPlanFileRetroactiveScanRecorded:
     """規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録検査（FB4）。"""
 

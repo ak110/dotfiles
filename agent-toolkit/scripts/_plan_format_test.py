@@ -149,6 +149,39 @@ class TestIterMarkdownBodyLines:
         assert pairs == [(1, "first"), (2, "second"), (3, "third")]
 
 
+class TestExtractTargetFilesFromChanges:
+    """extract_target_files_from_changes の基本動作を検査する。"""
+
+    def test_strips_trailing_line_count_metadata(self) -> None:
+        """`（現行N行, 見込みM行）`等の付随メタ情報がパスから除去される。
+
+        `plan-file-guidelines.md`が規定する標準形式
+        `` `path`（現行N行, 見込みM行） ``を検査対象とする。
+        """
+        content = (
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `app/src/foo.svelte`（現行10行, 見込み20行）\n"
+            "- [x] `app/src/bar.ts`（新設, 見込み5行）\n"
+        )
+        assert _plan_format.extract_target_files_from_changes(content) == [
+            "app/src/foo.svelte",
+            "app/src/bar.ts",
+        ]
+
+    def test_plain_backtick_path_without_metadata(self) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `app/src/foo.svelte`\n"
+        assert _plan_format.extract_target_files_from_changes(content) == ["app/src/foo.svelte"]
+
+    def test_path_without_backtick(self) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] app/src/foo.svelte\n"
+        assert _plan_format.extract_target_files_from_changes(content) == ["app/src/foo.svelte"]
+
+    def test_ignores_items_outside_target_file_list_h3(self) -> None:
+        content = "## 変更内容\n\n### 別のH3\n\n- [ ] `app/src/foo.svelte`\n"
+        assert not _plan_format.extract_target_files_from_changes(content)
+
+
 class TestPlanFormatSsot:
     """PLAN_REQUIRED_H2がplan-file-guidelines.mdと整合することを検査する。"""
 
