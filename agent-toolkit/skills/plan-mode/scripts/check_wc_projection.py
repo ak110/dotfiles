@@ -16,7 +16,8 @@
 対象ファイルが`.py`など実装コードの場合、`## 変更内容`節は追記文言案を逐語のフェンス内容として
 記述せず、関数シグネチャ変更点の説明文で記述することが多い。
 この場合、上記算術照合は説明文の行数を追記量と誤集計し偽陽性の乖離検出を報告し得る。
-`.py`対象ファイルの見込み行数検証は本照合の出力に加え`wc -l`実測値との手動照合を併用する。
+`.py`対象ファイルは自動照合の対象外である。
+見込み行数の確認は`wc -l`実測値との手動照合が唯一の手段となる。
 """
 
 from __future__ import annotations
@@ -460,6 +461,9 @@ def _check_addition_reduction_projection(plan_path: pathlib.Path, text: str) -> 
     照合式は「現行行数 + 追記行数 - 縮減対象行数 = 見込み行数」。
     追記/縮減対象ブロックが1件も存在しないファイルは検査対象外とする
     （対比ブロック方式のみを用いる従来計画ファイルへの影響を避けるため）。
+    対象拡張子は`.md`および`.md.tmpl`に限定する。
+    `.py`等の実装コードは説明文行数を追記量と誤集計して偽陽性を報告するため対象外とする
+    （見込み行数の確認は`wc -l`実測値との手動照合が唯一の手段となる）。
     呼び出し元`_check_wc`が読み込み済みの`text`を受け取り、本関数ではファイルを再読み込みしない。
     """
     section = _extract_section(text, "## 変更内容")
@@ -471,6 +475,8 @@ def _check_addition_reduction_projection(plan_path: pathlib.Path, text: str) -> 
     violations = 0
     for path, counted in actual.items():
         if path not in bounds:
+            continue
+        if not (path.endswith(".md") or path.endswith(".md.tmpl")):
             continue
         current, projected = bounds[path]
         expected = current + counted["addition"] - counted["reduction"]

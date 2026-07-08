@@ -93,7 +93,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -332,9 +332,10 @@ def main() -> int:
     if _check_plan_file_required_reads_first(tool_name, tool_input, session_id):
         return 2
 
-    # plan fileのWriteで文書サイズ上限対象ファイルのwc -l実測値記録漏れがある場合はブロック
-    if _check_plan_file_size_limit_target_wc_l_recorded(tool_name, tool_input):
-        return 2
+    # plan fileのWriteで文書サイズ上限対象ファイルのwc -l実測値記録漏れがある場合はwarn降格
+    # （ExitPlanMode/plan-impl起動時までのブロック検出は`plan-reviewer`・`plan-impl-reviewer`等の
+    # サブエージェント目視レビューへ委譲する）
+    _check_plan_file_size_limit_target_wc_l_recorded(tool_name, tool_input)
 
     # 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの遡及スキャン記録未整備をブロック
     if _check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id):
@@ -344,32 +345,18 @@ def main() -> int:
     if _check_plan_file_prelint_passed(tool_name, tool_input, session_id):
         return 2
 
-    # plan fileのWrite時にH2節順違反がある場合はブロック
-    if _check_plan_file_h2_section_order(tool_name, tool_input):
-        return 2
+    # 内容・形式系検査群はwarn降格（ExitPlanMode/plan-impl起動時までのブロック集約は
+    # `plan-reviewer`・`plan-impl-reviewer`等のサブエージェント目視レビューへ委譲する）
+    _check_plan_file_h2_section_order(tool_name, tool_input)
+    _check_plan_file_target_files_h3_correspondence(tool_name, tool_input)
+    _check_plan_file_history_content_sync(tool_name, tool_input)
+    _check_plan_file_change_h3_has_code_block(tool_name, tool_input)
+    _check_plan_file_absolute_line_numbers(tool_name, tool_input)
+    _check_plan_file_path_section_matches_file_path(tool_name, tool_input)
+    _check_workaround_scratchpad_gate(tool_name, tool_input)
 
-    # plan fileのWrite/Edit/MultiEdit時に対象ファイル一覧とH3見出しの1対1対応違反をブロック
-    if _check_plan_file_target_files_h3_correspondence(tool_name, tool_input):
-        return 2
-
-    # plan fileのWrite/Edit/MultiEdit時に変更履歴と変更内容の対応欠落をブロック
-    if _check_plan_file_history_content_sync(tool_name, tool_input):
-        return 2
-
-    # plan fileのWrite/Edit/MultiEdit時に`## 変更内容`配下H3のtext/diffコードブロック欠落をブロック
-    if _check_plan_file_change_h3_has_code_block(tool_name, tool_input):
-        return 2
-
-    # plan fileのWrite/Edit/MultiEdit時に絶対行番号トークン直書きをブロック
-    if _check_plan_file_absolute_line_numbers(tool_name, tool_input):
-        return 2
-
-    # plan file編集で末尾の`## 計画ファイル（本ファイル）のパス`節配下パス値と`file_path`不一致をブロック
-    if _check_plan_file_path_section_matches_file_path(tool_name, tool_input):
-        return 2
-
-    # plan fileのWrite時にワークアラウンド語検出に伴うscratchpad事前検討記録未整備をブロック
-    if _check_workaround_scratchpad_gate(tool_name, tool_input):
+    # plan file `## 変更内容`・`### エージェント判断`配下の先送り含意動詞連結をブロック
+    if _check_plan_file_no_deferral_expression(tool_name, tool_input):
         return 2
 
     # ExitPlanMode: 工程7（4サブエージェント/codexレビュー）の完了未達をブロック
@@ -791,15 +778,24 @@ def _is_scope_escalation_target_doc(file_path: str) -> bool:
     return is_plan_file(file_path)
 
 
-def _match_scope_escalation_increase(old: str, new: str) -> str | None:
+def _match_scope_escalation_increase(
+    old: str,
+    new: str,
+    *,
+    exclude_categories: Iterable[str] | None = None,
+) -> str | None:
     """new側でフレーズ出現回数がold側より増加したカテゴリ識別子を返す。
 
     `_SCOPE_ESCALATION_PHRASES`を走査し、各パターンのfindall件数を比較する。
     new側件数がold側件数を上回るカテゴリを最初に検出した時点で当該識別子を返す。
     既存文字列の保持時はold=new同数となり通過する（既存保持部分での誤検出を防ぐ）。
+    `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
     増加が無い場合はNoneを返す。
     """
+    excluded = frozenset(exclude_categories) if exclude_categories is not None else frozenset()
     for category, pattern in _SCOPE_ESCALATION_PHRASES:
+        if category in excluded:
+            continue
         if len(pattern.findall(new)) > len(pattern.findall(old)):
             return category
     return None
@@ -819,11 +815,14 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
     """
     if not _is_scope_escalation_target_doc(file_path):
         return False
+    # plan fileでは`plan-deferral-onset`をMarkdown除外領域（text/HTMLコメント/`## 背景`配下）を考慮する
+    # `_check_plan_file_no_deferral_expression`が担当するため、本checkでは除外する。
+    exclude_categories: frozenset[str] = frozenset({"plan-deferral-onset"}) if is_plan_file(file_path) else frozenset()
     detection: tuple[str, str] | None = None
     if tool_name == "Write":
         content = tool_input.get("content")
         if isinstance(content, str):
-            category = _match_scope_escalation(content)
+            category = _match_scope_escalation(content, exclude_categories=exclude_categories)
             if category is not None:
                 detection = ("content", category)
     elif tool_name == "Edit":
@@ -831,7 +830,7 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
         new_string = tool_input.get("new_string") or ""
         if isinstance(new_string, str):
             old_string = old_string if isinstance(old_string, str) else ""
-            category = _match_scope_escalation_increase(old_string, new_string)
+            category = _match_scope_escalation_increase(old_string, new_string, exclude_categories=exclude_categories)
             if category is not None:
                 detection = ("new_string", category)
     elif tool_name == "MultiEdit":
@@ -845,7 +844,7 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
                 if not isinstance(new_string, str):
                     continue
                 old_string = old_string if isinstance(old_string, str) else ""
-                category = _match_scope_escalation_increase(old_string, new_string)
+                category = _match_scope_escalation_increase(old_string, new_string, exclude_categories=exclude_categories)
                 if category is not None:
                     detection = (f"edits[{index}].new_string", category)
                     break
@@ -1526,10 +1525,10 @@ def _check_plan_file_h2_section_order(
     violation_str = " / ".join(violations)
     print(
         _llm_notice(
-            f"blocked: plan file H2 section order violation: {violation_str}"
+            f"warning: plan file H2 section order violation: {violation_str}"
             f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
-            " Fix the section order and retry the Write.",
-            tag="block",
+            " Fix the section order before ExitPlanMode / plan-impl invocation.",
+            tag="warn",
         ),
         file=sys.stderr,
     )
@@ -1592,10 +1591,10 @@ def _check_plan_file_target_files_h3_correspondence(
         parts.append(f"対象ファイル一覧に無いH3見出し: {sorted(extra_h3)}")
     print(
         _llm_notice(
-            "blocked: plan file `## 変更内容`配下の対象ファイル一覧とH3見出しが1対1で対応していない。"
+            "warning: plan file `## 変更内容`配下の対象ファイル一覧とH3見出しが1対1で対応していない。"
             f" {' '.join(parts)}."
             " 各対象ファイルに対応するH3見出しを追加するか、不要なH3見出し・対象ファイル記載を削除する。",
-            tag="block",
+            tag="warn",
         ),
         file=sys.stderr,
     )
@@ -1720,11 +1719,11 @@ def _check_plan_file_history_content_sync(
         return False
     print(
         _llm_notice(
-            f"blocked: plan file `## 変更履歴`に記載されたファイル・節名 {missing} が"
+            f"warning: plan file `## 変更履歴`に記載されたファイル・節名 {missing} が"
             "`## 変更内容`側の対象ファイル一覧・H3見出しに対応する記述を持たない。"
             "変更履歴節は方針転換・全面改訂・却下の履歴保持に用途限定し、"
             "通常の指摘反映は`## 変更内容`本文へ直接反映する。",
-            tag="block",
+            tag="warn",
         ),
         file=sys.stderr,
     )
@@ -1788,11 +1787,11 @@ def _check_plan_file_change_h3_has_code_block(
         return False
     print(
         _llm_notice(
-            "blocked: plan file `## 変更内容`配下のH3にtext/diffコードブロックが存在しない。"
+            "warning: plan file `## 変更内容`配下のH3にtext/diffコードブロックが存在しない。"
             f" 該当H3: {sorted(missing)}."
             " 変更後の最終文面または差分を`text`または`diff`コードブロックで埋め込むこと。"
             " SSOT: skills/plan-mode/references/plan-file-guidelines.md「変更内容」節。",
-            tag="block",
+            tag="warn",
         ),
         file=sys.stderr,
     )
@@ -1844,11 +1843,11 @@ def _check_plan_file_path_section_matches_file_path(
         return False
     print(
         _llm_notice(
-            "blocked: plan file末尾のパス節配下のパス値がWrite/Edit/MultiEditの`file_path`と一致しない。"
+            "warning: plan file末尾のパス節配下のパス値がWrite/Edit/MultiEditの`file_path`と一致しない。"
             f" 記録値: {candidate}. Writeパス: {file_path_raw}."
             " scratchpad上で組み立てた本文を正規パスへ複写する場合は当該節の値も揃えること。"
             " SSOT: `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル（本ファイル）のパス」節。",
-            tag="block",
+            tag="warn",
         ),
         file=sys.stderr,
     )
@@ -1925,11 +1924,88 @@ def _check_plan_file_absolute_line_numbers(
     tail = f"; and {overflow} more" if overflow > 0 else ""
     print(
         _llm_notice(
-            "blocked: plan file body contains absolute line-number references"
+            "warning: plan file body contains absolute line-number references"
             " (per plan-file-guidelines.md absolute-numbers norm)."
             " Use section names or heading references instead,"
             " or annotate the token with '<!-- line-ref-ok -->' under '## 調査結果'."
             f" Matches: {shown_str}{tail}.",
+            tag="warn",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- plan file `## 変更内容`・`### エージェント判断`配下の先送り含意動詞連結検査 ---
+
+# 走査対象H2見出し名（`## 変更内容`）。`### エージェント判断`は変更内容配下のH3で扱う。
+_PLAN_DEFERRAL_TARGET_H2: frozenset[str] = frozenset({"変更内容"})
+
+# `### エージェント判断`H3見出し名。H2直下ではなく`## 対応方針`等の配下に置かれる場合もあり、
+# H3見出し自体の名前で判定する。
+_PLAN_DEFERRAL_TARGET_H3: frozenset[str] = frozenset({"エージェント判断"})
+
+
+def _iter_plan_deferral_target_lines(content: str) -> Iterator[tuple[int, str]]:
+    """`## 変更内容`配下および任意H2下の`### エージェント判断`配下の本文行を生成する。
+
+    `_plan_format.iter_markdown_body_lines`を経由してフロントマター・コードフェンス・
+    複数行HTMLコメントは除外済み（`text`コードブロック内・HTMLコメント内は無条件除外）。
+    """
+    current_h2: str | None = None
+    current_h3: str | None = None
+    for lineno, line in _plan_format.iter_markdown_body_lines(content):
+        if line.startswith("## "):
+            current_h2 = line[3:].strip()
+            current_h3 = None
+            continue
+        if line.startswith("### "):
+            current_h3 = line[4:].strip().strip("`")
+            continue
+        in_change_content = current_h2 in _PLAN_DEFERRAL_TARGET_H2
+        in_agent_decision = current_h3 in _PLAN_DEFERRAL_TARGET_H3
+        if in_change_content or in_agent_decision:
+            yield lineno, line
+
+
+def _check_plan_file_no_deferral_expression(
+    tool_name: str,
+    tool_input: dict,
+) -> bool:
+    """Plan fileのWrite/Edit/MultiEdit時に先送り含意動詞連結パターンをブロックする。
+
+    走査対象は`## 変更内容`配下および任意H2下の`### エージェント判断`配下の本文行。
+    検出パターンは`_scope_escalation._SCOPE_ESCALATION_PHRASES`の`plan-deferral-onset`カテゴリ
+    （「実装時／実装段階」直後の未確定動詞＋文末「〜で判断／決定／選定／確定する」連結）。
+    `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
+    """
+    if tool_name not in _PLAN_FILE_EDIT_TOOLS:
+        return False
+    file_path_raw = tool_input.get("file_path")
+    if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
+        return False
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
+    if content is None:
+        return False
+
+    matches: list[tuple[int, str]] = []
+    for lineno, line in _iter_plan_deferral_target_lines(content):
+        category = _match_scope_escalation(line, categories={"plan-deferral-onset"})
+        if category is not None:
+            matches.append((lineno, line.strip()))
+    if not matches:
+        return False
+    shown = matches[:5]
+    shown_str = "; ".join(f"line {ln}: {s!r}" for ln, s in shown)
+    overflow = len(matches) - len(shown)
+    tail = f"; and {overflow} more" if overflow > 0 else ""
+    print(
+        _llm_notice(
+            "blocked: plan file `## 変更内容`・`### エージェント判断`配下に先送り表現を検出した。"
+            " 実装段階への先送りを示唆する表現を、確定的な実施文（現在形の実施義務文）または"
+            " `## 進捗ログ`の観測記録へ書き換える。"
+            f" Matches: {shown_str}{tail}."
+            f" 代替案: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
             tag="block",
         ),
         file=sys.stderr,
@@ -1995,11 +2071,11 @@ def _check_workaround_scratchpad_gate(tool_name: str, tool_input: dict) -> bool:
     if not scratchpad_path.exists():
         print(
             _llm_notice(
-                f"blocked: plan file `## 変更内容`にワークアラウンド語を検出したが"
+                f"warning: plan file `## 変更内容`にワークアラウンド語を検出したが"
                 f" `{scratchpad_path}` が存在しない。"
                 f" 根本原因の候補・根本対応が成立するか・成立しない場合の理由を"
                 f" scratchpadファイルへ記録してから再度Writeする。",
-                tag="block",
+                tag="warn",
             ),
             file=sys.stderr,
         )
@@ -2014,9 +2090,9 @@ def _check_workaround_scratchpad_gate(tool_name: str, tool_input: dict) -> bool:
     if missing_items:
         print(
             _llm_notice(
-                f"blocked: `{scratchpad_path}` に必須項目 {missing_items} の記入がない。"
+                f"warning: `{scratchpad_path}` に必須項目 {missing_items} の記入がない。"
                 f" 根本原因の候補・根本対応が成立するか・成立しない場合の理由を記入してから再度Writeする。",
-                tag="block",
+                tag="warn",
             ),
             file=sys.stderr,
         )
@@ -2102,12 +2178,12 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             if basename not in search_body:
                 print(
                     _llm_notice(
-                        f"blocked: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
+                        f"warning: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
                         f"`## 調査結果`または`### エージェント判断`にwc -l実測値の記載が見当たらない。"
                         f"期待値: {actual_lines}（±2許容、すなわち{actual_lines - 2}〜{actual_lines + 2}）。"
                         f"計画ファイルの`## 調査結果`または`### エージェント判断`に"
                         f"`{basename}`の実測行数を追記してから再度Writeする。",
-                        tag="block",
+                        tag="warn",
                     ),
                     file=sys.stderr,
                 )
@@ -2118,11 +2194,11 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             if not any(low <= n <= high for n in numbers_in_body):
                 print(
                     _llm_notice(
-                        f"blocked: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
+                        f"warning: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
                         f"`## 調査結果`または`### エージェント判断`に記載の数値が実測値と一致しない。"
                         f"期待値: {actual_lines}（±2許容、すなわち{actual_lines - 2}〜{actual_lines + 2}）。"
                         f"計画ファイルの該当箇所を実測行数に更新してから再度Writeする。",
-                        tag="block",
+                        tag="warn",
                     ),
                     file=sys.stderr,
                 )

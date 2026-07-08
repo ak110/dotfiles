@@ -368,3 +368,28 @@ class TestCheckLineRef:
         )
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
+
+    def test_check_path_existence_ignores_home_prefixed_path(self, tmp_path: pathlib.Path) -> None:
+        """`~/`始まりのホームディレクトリパスはリポジトリ相対パスとして検査対象外とする。"""
+        path = _write(tmp_path / "doc.md", "対象は`~/foo/bar.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_ignores_glob_pattern(self, tmp_path: pathlib.Path) -> None:
+        """`*`・`?`・`[`を含むglobパターンは検査対象外とする。"""
+        path = _write(tmp_path / "doc.md", "対象は`agent-toolkit/**/*.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_ignores_absolute_path(self, tmp_path: pathlib.Path) -> None:
+        """`/`始まりの絶対パスはリポジトリ相対パスとして検査対象外とする。"""
+        path = _write(tmp_path / "doc.md", "対象は`/absolute/missing/path.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_path_existence_detects_relative_missing_path(self, tmp_path: pathlib.Path) -> None:
+        """通常のリポジトリ相対パスは検査対象として実在確認する。"""
+        path = _write(tmp_path / "doc.md", "対象は`foo/bar.md`である。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "foo/bar.md" in result.stderr

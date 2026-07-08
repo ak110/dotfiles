@@ -3,6 +3,21 @@
 保留判定時、フィードバック原文内に事前確認が必要な論点・確認事項・仕様上の未確定項目が列挙されている場合は、
 当該事項を`atk fb tbd-add`で個別投入してから保留する。
 
+本節の書式（`atk fb tbd-add`のオプション指定・`--scope`検証等）は、
+保留判定を伴わない場合（`agent-toolkit:add-feedback`のTBD投入等）にも準用する。
+ただし`add-feedback`のTBD投入は`atk fb add`実行前に発生するため、
+対象フィードバックファイルは未生成であり、
+`--scope`値の事前ファイル存在検証（`ls`・`grep`照合）は適用対象外とする。
+`atk fb add`が生成するファイル名`{timestamp}-{counter:03d}.md`の`{timestamp}`部分は
+`atk fb add`実行時点で確定し、秒単位で異なる値になり得るため事前予測は不可能である。
+TBD投入時は暫定値（投入セッションの現在時刻等）を`--scope`に指定し、
+`atk fb add`実行後に事後照合する。
+不一致が確認された場合は`atk fb tbd-edit <ファイル名>`で`$EDITOR`を起動し、
+frontmatterの`scope:`値を実ファイル名の日付連番部分と一致するよう手動で書き換える。
+1回の`atk fb add`呼び出しで複数`counter`のファイルが生成された場合は、
+論点が全ファイル共通なら共通の`{timestamp}`部分のみを`--scope`に指定する。
+論点がcounter個別ファイル固有なら全`counter`値へ個別のTBDを紐付ける。
+
 ## 対象論点の判定基準
 
 次のいずれかを満たす記述を対象とする。
@@ -14,9 +29,14 @@
 
 各論点を個別に次の書式で投入する。
 
-`atk fb tbd-add <REPO_PATH> --question-type=free --scope=<提案識別子> "<論点本文>"`
+`atk fb tbd-add <REPO_PATH> --question-type=choice --choices "<選択肢1>,<選択肢2>,..." --scope=<提案識別子> "<論点本文>"`
+
+選択肢化可能な論点は`--question-type=choice`と`--choices`を用いた選択肢形式を優先する。
+選択肢化が困難な自由記述質問のみ`--question-type=free`（既定）を用いる。
 
 `<提案識別子>`はフィードバックファイル名の日付連番部分などを使う。
+`--scope`引数の値はフィードバックファイル名の日付連番部分と一致することを投入前に検証する。
+検証は`ls`で該当ファイル名を確認するか、`--scope`値を含むファイル名を`grep`で照合する。
 
 ## 投入後の扱い
 

@@ -807,9 +807,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "test-rule.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_number_deviation_exceeds_2(self, tmp_path: pathlib.Path):
         """調査結果に基名はあるが記載行数が実測値から±3以上ずれている場合はブロックする。"""
@@ -833,9 +833,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "test-rule.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_passes_when_file_under_200_lines(self, tmp_path: pathlib.Path):
         """実ファイルが200行未満の場合は通過する。"""
@@ -1111,8 +1111,8 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_passes_when_number_deviation_is_plus_2(self, tmp_path: pathlib.Path):
         """記載値が実測値から+2の場合は通過する（上限境界値・正方向）。"""
@@ -1171,8 +1171,8 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_agents_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりAGENTS.mdが対象となる場合にブロックする。"""
@@ -1196,9 +1196,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "AGENTS.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_claude_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりCLAUDE.mdが対象となる場合にブロックする。"""
@@ -1222,9 +1222,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "CLAUDE.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_passes_when_path_backquote_missing(self, tmp_path: pathlib.Path):
         """`## 変更内容`にバッククォートパスが存在しない場合は通過する。"""
@@ -1347,8 +1347,8 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_skill_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`agent-toolkit/skills/foo/SKILL.md`相当のパスが対象として認識される場合にブロックする。"""
@@ -1372,9 +1372,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "SKILL.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_references_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`agent-toolkit/skills/foo/references/bar.md`相当のパスが対象として認識される場合にブロックする。"""
@@ -1398,9 +1398,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "bar.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_agents_definition_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`agent-toolkit/agents/foo.md`相当のパスが対象として認識される場合にブロックする。"""
@@ -1424,9 +1424,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "foo.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_chezmoi_dot_claude_rules_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`.chezmoi-source/dot_claude/rules/foo.md`相当のパスが対象として認識される場合にブロックする。"""
@@ -1450,9 +1450,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "foo.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_passes_when_all_files_have_wc_l_recorded(self, tmp_path: pathlib.Path):
         """`## 変更内容`に複数ファイルが列挙されており全ファイルの行数が`## 調査結果`に記載済みの場合は通過する。"""
@@ -1522,9 +1522,9 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             cwd=tmp_path,
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "test-rule2.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
 
 class TestPlanFilePrelintPassed:
@@ -1814,7 +1814,11 @@ class TestPlanFilePrelintPassed:
         assert result.returncode == 2
 
     def test_boundary_non_text_block_change_blocked(self, tmp_path: pathlib.Path):
-        """境界3: `## 背景`内の非textコードブロック（bash等）変更 → ハッシュ不一致でブロック。"""
+        """境界3: `## 背景`内の非textコードブロック（bash等）変更は内容形式系検査のwarn降格対象。
+
+        内容形式系検査群のブロック降格に伴い、事前lint検査以外のブロック契機が失われた場合は
+        exit 0（warnのみ）となる。ブロック維持は`ExitPlanMode`/`plan-impl`起動時の集約検査へ委ねる。
+        """
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -1835,7 +1839,7 @@ class TestPlanFilePrelintPassed:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
 
     def test_boundary_other_section_text_block_change_blocked(self, tmp_path: pathlib.Path):
         """境界4: 背景以外（調査結果等）のtextコードブロック変更 → ハッシュ不一致でブロック。"""
@@ -3532,8 +3536,8 @@ class TestWorkaroundScratchpadGate:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_incomplete_scratchpad_blocks(self, tmp_path: pathlib.Path):
         """scratchpadファイルは存在するが必須項目の記入漏れがある場合はブロックする。"""
@@ -3555,8 +3559,8 @@ class TestWorkaroundScratchpadGate:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_complete_scratchpad_passes(self, tmp_path: pathlib.Path):
         """scratchpadファイルに必須3項目が記入済みの場合は通過する。"""
@@ -3814,8 +3818,8 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_out_of_order_h2(self, tmp_path: pathlib.Path):
         """必須H2節が正規順と異なる場合はブロックする。"""
@@ -3845,8 +3849,8 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_unexpected_h2(self, tmp_path: pathlib.Path):
         """許可外のH2節を含むコンテンツはブロックする。"""
@@ -3865,8 +3869,8 @@ class TestCheckPlanFileH2SectionOrder:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_allows_non_write_tool(self, tmp_path: pathlib.Path):
         """Edit/MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。"""
@@ -4007,7 +4011,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
         assert repr(expected_match) in result.stderr
 
@@ -4049,7 +4053,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
 
     def test_write_outside_research_section_with_marker_blocks(self, tmp_path: pathlib.Path):
@@ -4069,7 +4073,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
 
     def test_write_inside_code_fence_is_allowed(self, tmp_path: pathlib.Path):
@@ -4130,7 +4134,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
 
     def test_alpha_prefix_is_not_false_positive(self, tmp_path: pathlib.Path):
@@ -4209,7 +4213,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert result.stderr.count("line ") == 5
         assert "and 1 more." in result.stderr
 
@@ -4236,7 +4240,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
 
     def test_multiedit_introduces_violation_blocks(self, tmp_path: pathlib.Path):
@@ -4263,7 +4267,7 @@ class TestCheckPlanFileAbsoluteLineNumbers:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "absolute line-number references" in result.stderr
 
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
@@ -4299,6 +4303,156 @@ def _h3corr_build_content(extra_h3: str) -> str:
         "## 進捗ログ\n\nx\n\n"
         "## 計画ファイル（本ファイル）のパス\n\nx\n"
     )
+
+
+class TestCheckPlanFileNoDeferralExpression:
+    """plan file Write/Edit/MultiEdit時の先送り含意動詞連結ブロック検査。
+
+    走査対象は`## 変更内容`配下および任意H2下の`### エージェント判断`配下。
+    検出条件は次の2条件AND成立時。
+    条件(a): 「実装時／実装段階」の直後に「精査／選定／確定／評価／検討」等の未確定動詞が続く。
+    条件(b): 文末が「判断／決定／選定／確定」+「する」で結ばれる。
+    (a)と(b)の共通動詞（選定・確定）は単独出現でも両条件同時成立として検出する。
+    `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
+    """
+
+    _state_env = staticmethod(_absnum_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+    _prior_flags = staticmethod(_absnum_prior_flags)
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "実装時に精査して確定する",
+            "実装段階で選定する",
+            "実装時に確定する",
+            "実装時にあらためて内容を精査したうえで最終的に確定する",
+            "実装段階であらためて選定する",
+        ],
+    )
+    def test_write_with_deferral_phrase_blocks(self, tmp_path: pathlib.Path, phrase: str):
+        """`## 変更内容`配下の先送り含意動詞連結パターンがWriteでブロックされる。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = f"deferral-{hash(phrase) & 0xFFFF:x}"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body=f"- {phrase}")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "先送り表現を検出" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+
+    def test_write_with_deferral_phrase_in_text_block_is_allowed(self, tmp_path: pathlib.Path):
+        """`text`コードブロック内の先送り含意動詞連結パターンはブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "deferral-textblock"
+        self._prior_flags(tmp_path, sid)
+        body = "```text\n実装時に精査して確定する\n```\n"
+        content = _ABSNUM_BASE_PLAN.format(body=body)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "先送り表現を検出" not in result.stderr
+
+    def test_write_with_deferral_phrase_in_html_comment_is_allowed(self, tmp_path: pathlib.Path):
+        """複数行HTMLコメント内の先送り含意動詞連結パターンはブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "deferral-htmlcomment"
+        self._prior_flags(tmp_path, sid)
+        body = "<!--\n実装時に精査して確定する\n-->\n"
+        content = _ABSNUM_BASE_PLAN.format(body=body)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "先送り表現を検出" not in result.stderr
+
+    def test_write_with_deferral_phrase_in_background_is_allowed(self, tmp_path: pathlib.Path):
+        """`## 背景`配下の先送り含意動詞連結パターンは走査対象外のためブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "deferral-background"
+        self._prior_flags(tmp_path, sid)
+        # `## 背景`配下（`## 変更内容`・`### エージェント判断`のいずれでもない）へ挿入する。
+        content = _ABSNUM_BASE_PLAN.replace("## 背景\n\nx\n", "## 背景\n\n実装時に精査して確定する\n").format(body="x")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "先送り表現を検出" not in result.stderr
+
+    def test_write_with_current_form_action_is_allowed(self, tmp_path: pathlib.Path):
+        """現在形の実施義務文（末尾が判断/決定/選定/確定+するではない）はブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "deferral-currentform"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に`agent-toolkit-edit`スキルを呼び出す")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "先送り表現を検出" not in result.stderr
+
+    def test_write_with_condition_a_unsatisfied_is_allowed(self, tmp_path: pathlib.Path):
+        """条件(a)未確定動詞が現れない文（末尾が決定するでも(a)不成立）はブロックされない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "deferral-cond-a-unsat"
+        self._prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body="- 実装時にレビュー内容を確認して最終的に決定する")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "先送り表現を検出" not in result.stderr
 
 
 class TestPlanFileTargetFilesH3Correspondence:
@@ -4357,7 +4511,7 @@ class TestPlanFileTargetFilesH3Correspondence:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "H3見出し未対応" in result.stderr
 
     def test_blocks_extra_h3(self, tmp_path: pathlib.Path):
@@ -4377,7 +4531,7 @@ class TestPlanFileTargetFilesH3Correspondence:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "対象ファイル一覧に無いH3見出し" in result.stderr
 
     def test_allows_no_target_files(self, tmp_path: pathlib.Path):
@@ -4515,7 +4669,7 @@ class TestPlanFileHistoryContentSync:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "foo/missing.py" in result.stderr
 
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
@@ -4593,7 +4747,7 @@ class TestPlanFileHistoryContentSync:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "foo/missing.py" in result.stderr
 
 
@@ -4754,7 +4908,7 @@ class TestPlanFilePathSectionMatchesFilePath:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "パス節配下のパス値" in result.stderr
 
     def test_allows_when_recorded_path_matches(self, tmp_path: pathlib.Path):
@@ -5324,7 +5478,7 @@ class TestPlanFileChangeH3HasCodeBlock:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "text/diffコードブロックが存在しない" in result.stderr
 
     def test_exception_prefixes_are_skipped(self, tmp_path: pathlib.Path):

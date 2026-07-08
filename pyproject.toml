@@ -91,6 +91,7 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
+colloquial-check = true
 # profile_ipy/はIPython自動生成プロファイル、
 # *.cmdはCP932（Shift_JIS）でpyfltrのUTF-8前提と適合せず誤検出を招くため、
 # plugins/agent-toolkitはマーケットプレイス配布原本のシンボリックリンク、

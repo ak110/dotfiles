@@ -61,6 +61,10 @@ Claude Code固有事項として、本体作業に着手する時点で
   `git status`・`git diff --stat`の変更集合にすべて含まれるか照合する。
   欠落があれば未反映の編集として補完してからコミットする
 - push前: `git remote -v`と`git branch --show-current`で対象リポジトリ・リモートURL・ブランチを確認する
+- `git push`はリモート名・ブランチ名を明示せず`git push`単独で呼び出すことを標準とする
+  - 明示指定が必要な場合は`git config --get branch.<branch>.remote`で当該branchの追跡remoteを確認する。
+    確認したremoteと`push`引数のremoteが一致するか照合する。
+    一致しない場合は追跡remote側を採用するか`git push --set-upstream <remote> <branch>`で追跡remoteを更新する
 - pushの許可は当該リポジトリ・当該対象・当該指示範囲に限定される
   - 別リポジトリ・別セッションには適用されない
   - 複数プロジェクト横断作業ではリポジトリごとに個別確認する
@@ -96,6 +100,7 @@ Claude Code固有事項として、本体作業に着手する時点で
 ## push後のCI通過確認
 
 `git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
+`git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
 
 - 手順
   - `git rev-parse HEAD`でpush対象shaを取得する

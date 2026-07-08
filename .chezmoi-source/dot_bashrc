@@ -392,15 +392,18 @@ if command -v pinact &>/dev/null; then
     eval "$(pinact completion bash)"
 fi
 
-# ~/dotfiles/completions/*.bash をまとめて読み込む。
-# pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完をここに集約する。
+# ~/dotfiles/completions/*.bash と ~/dotfiles/agent-toolkit/completions/*.bash をまとめて読み込む。
+# pytools系（argcomplete生成）と bin/ 配下のラッパー向け手書き補完、
+# agent-toolkitプラグイン配布物（atk等）向け補完をここに集約する。
 # コマンド追加時にbashrcを編集せず、completions/<name>.bashを置くだけで反映する運用とする。
-if [ -d ~/dotfiles/completions ]; then
-    for _completion_file in ~/dotfiles/completions/*.bash; do
-        [ -r "$_completion_file" ] && source "$_completion_file"
-    done
-    unset _completion_file
-fi
+for _completion_dir in ~/dotfiles/completions ~/dotfiles/agent-toolkit/completions; do
+    if [ -d "$_completion_dir" ]; then
+        for _completion_file in "$_completion_dir"/*.bash; do
+            [ -r "$_completion_file" ] && source "$_completion_file"
+        done
+    fi
+done
+unset _completion_dir _completion_file
 
 # ~/.localbashrc
 if [ -e ~/.localbashrc ]; then

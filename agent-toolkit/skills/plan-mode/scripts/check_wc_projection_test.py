@@ -467,3 +467,42 @@ class TestCheckWcProjection:
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
+
+    def test_addition_reduction_skips_py_extension(self, tmp_path: pathlib.Path) -> None:
+        """`.py`ファイルは`.md`限定分岐で追記/縮減対象集計対象外となる（乖離しても違反として報告されない）。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.py`（現行10行, 見込み5行）\n\n"
+            "### `foo.py`\n\n"
+            "追記:\n\n```text\nprint('a')\nprint('b')\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_addition_reduction_detects_md_extension(self, tmp_path: pathlib.Path) -> None:
+        """`.md`ファイルは追記/縮減対象集計の検査対象として乖離を検出する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み5行）\n\n"
+            "### `foo.md`\n\n"
+            "追記:\n\n```text\nline1\nline2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "乖離が許容幅を超える" in result.stderr
+
+    def test_addition_reduction_detects_md_tmpl_extension(self, tmp_path: pathlib.Path) -> None:
+        """`.md.tmpl`ファイルも追記/縮減対象集計の検査対象として乖離を検出する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md.tmpl`（現行10行, 見込み5行）\n\n"
+            "### `foo.md.tmpl`\n\n"
+            "追記:\n\n```text\nline1\nline2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "乖離が許容幅を超える" in result.stderr

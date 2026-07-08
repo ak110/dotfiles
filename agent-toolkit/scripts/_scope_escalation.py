@@ -153,6 +153,28 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "plan-deferral-onset",
+        # 計画ファイル本文の`## 変更内容`・`### エージェント判断`配下で、
+        # 次の2条件をANDで満たす先送り含意パターンを検出する。
+        # 条件(a): 「実装時」または「実装段階」の直後に
+        #   「精査／選定／確定／評価／検討」等の未確定動詞が続く
+        # 条件(b): 文末が「判断／決定／選定／確定」+「する」で結ばれる
+        # (a)動詞集合と(b)動詞集合の共通要素（選定・確定）が単独で出現する場合、
+        # 同一語で両条件を同時に満たすため単独出現も検出対象とする
+        # （代替節による許容: `(選定|確定)する`）。
+        # 条件(a)と(b)の間隔`{0,15}`は
+        # 「実装時にあらためて内容を精査したうえで最終的に確定する」のような
+        # 助詞・副詞1つ挿入のパターンをカバーするため15文字とする。
+        # 「実装時に`agent-toolkit-edit`スキルを呼び出す」等の現在形の実施義務文は
+        # (a)動詞集合のいずれとも合致しないため対象外となる。
+        # 「実装時にレビュー内容を確認して最終的に決定する」等の条件(a)不成立文も
+        # (a)動詞集合が現れないため対象外となる。
+        re.compile(
+            r"実装(時|段階)[に]?[^。\n]{0,15}?"
+            r"((精査|評価|検討)[^。\n]{0,50}?(判断|決定|選定|確定)|(選定|確定))する"
+        ),
+    ),
+    (
         "fabricated-metrics",
         re.compile(
             r"(約|およそ)?\d{1,3}\s*%[^、。\n]{0,10}(消費|使用|埋)"
@@ -192,6 +214,10 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     ),
     "quality-tradeoff": ("観測可能な技術的不成立の根拠を述べる", "同一計画内で完遂する方針を述べる"),
     "next-cycle-defer": ("同一計画内で対処項目として組み込む", "同一セッション内で完遂する"),
+    "plan-deferral-onset": (
+        "確定的な実施文（現在形の実施義務文）で記述する",
+        "実装段階での観測記録は`## 進捗ログ`側へ配置する",
+    ),
     "fabricated-metrics": ("実測値を扱わず、定性的な進捗記述に留める", "実施済み工程・残工程・観測事象で進捗を述べる"),
 }
 
@@ -213,11 +239,17 @@ def has_inline_choice_offer(text: str) -> bool:
     return _INLINE_CHOICE_PATTERN.search(text) is not None
 
 
-def _match_scope_escalation(text: str, categories: Iterable[str] | None = None) -> str | None:
+def _match_scope_escalation(
+    text: str,
+    categories: Iterable[str] | None = None,
+    *,
+    exclude_categories: Iterable[str] | None = None,
+) -> str | None:
     """テキストへ`_SCOPE_ESCALATION_PHRASES`を照合し、最初に一致したカテゴリ識別子を返す。
 
     `categories`を指定した場合は当該カテゴリ集合に含まれる分類のみを照合対象とする。
     未指定時は全カテゴリを対象とする。
+    `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
     Stop経路（`stop_advisor.py`）は自由文脈での誤検出回避のため
     `_STOP_FOCUS_CATEGORIES`（`process-omission`単独）を渡す。
     未検出時・非文字列入力時はNoneを返す。
@@ -225,8 +257,11 @@ def _match_scope_escalation(text: str, categories: Iterable[str] | None = None) 
     if not isinstance(text, str) or not text:
         return None
     allowed = frozenset(categories) if categories is not None else None
+    excluded = frozenset(exclude_categories) if exclude_categories is not None else frozenset()
     for category, pattern in _SCOPE_ESCALATION_PHRASES:
         if allowed is not None and category not in allowed:
+            continue
+        if category in excluded:
             continue
         if pattern.search(text) is not None:
             return category

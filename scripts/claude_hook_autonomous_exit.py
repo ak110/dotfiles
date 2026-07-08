@@ -63,16 +63,17 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 順序制約の再促文。process-feedbacksの多段処理途中でexit-session呼び出しが
 # 忘却されることを防ぐため、工程順序を明示する。
 _REASON_BODY = """\
-本セッションは atk fb process-loop CLI から自律実行モードで起動されています。
-処理完了後は必ず /agent-toolkit:exit-session を呼び出してセッションを終了してください。
-ただし exit-session を呼ぶ前に、以下の工程を完全に終えてください。
-1. process-feedbacks スキルのステップ1〜3（feedback採否確定・commit・push・後始末）
-2. process-feedbacks スキルのステップ4「振り返り工程」
-   （agent-toolkit:session-review スキルと session-review-dotfiles スキルの両方）
-3. session-review-dotfiles スキルによる改善提案の投入
-上記工程を全て完遂してから最後に exit-session を呼びます。
-改善提案投入前に exit-session を呼ぶと振り返り結果が失われるため厳禁です。
-未完遂の工程が残っている場合は当該工程を再開してから改めて本メッセージを検討してください。"""
+This session was launched in autonomous execution mode by the atk fb process-loop CLI.
+After processing completes, you must call /agent-toolkit:exit-session to end the session.
+Before calling exit-session, fully complete the following steps.
+1. process-feedbacks skill steps 1-3 (feedback adoption decision, commit, push, cleanup)
+2. process-feedbacks skill step 4, "振り返り工程"
+   (both the agent-toolkit:session-review skill and the session-review-dotfiles skill)
+3. Submission of improvement proposals via the session-review-dotfiles skill
+Call exit-session only after all of the above steps are complete.
+Calling exit-session before submitting improvement proposals is strictly forbidden, \
+because it discards the reflection results.
+If any step remains incomplete, resume that step before reconsidering this message."""
 
 
 def _llm_notice(body: str) -> str:

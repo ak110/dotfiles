@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["watchdog>=6.0.0"]
+# dependencies = ["argcomplete", "watchdog>=6.0.0"]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
@@ -361,6 +362,11 @@ def main(
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
     parser = _build_parser()
+    # bash補完（argcomplete）は配布物内で直接遅延importして呼び出す。
+    # `pytools._internal.cli`依存を避け、agent-toolkitプラグインの独立性を保つため。
+    import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする
+
+    argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
     if home is None:
         home = pathlib.Path.home()

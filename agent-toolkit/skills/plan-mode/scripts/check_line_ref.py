@@ -334,8 +334,14 @@ def _looks_like_repo_path(token: str) -> bool:
     裸単体のファイル名・URL・コマンドラインオプション・識別子は対象外とする。
     `://`を含むトークンはURL（`https://example.com/foo.md`等）とみなし対象外とする
     （スキーム付きURLをリポジトリ相対パスと誤検出しないため）。
+    `~`始まりのホームディレクトリパス・globパターン（`*`・`?`・`[`を含む）・
+    絶対パス（`/`始まり）もリポジトリ相対パスではないため対象外とする。
     """
     if "/" not in token or "://" in token:
+        return False
+    if token.startswith("~") or token.startswith("/"):
+        return False
+    if any(ch in token for ch in ("*", "?", "[")):
         return False
     return any(token.endswith(ext) for ext in _PATH_LIKE_EXTENSIONS)
 

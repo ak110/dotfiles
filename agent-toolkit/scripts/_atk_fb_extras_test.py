@@ -299,9 +299,6 @@ class TestStatusSubcommand:
         assert captured.err == ""
 
 
-# argcomplete補完関数のテストは移設対象外（T1初期実装で`atk.py`はargcomplete非対応）。
-
-
 def _editor_fake_run(
     action: typing.Callable[[pathlib.Path], int],
     myrepo: pathlib.Path | None = None,
