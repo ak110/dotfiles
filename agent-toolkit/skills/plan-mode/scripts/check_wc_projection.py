@@ -80,6 +80,11 @@ _ADDITION_TRIGGER_TOKEN = "追記文言案"
 # 行数集計から除外する（全角丸括弧で行全体を囲む場合のみ一致）。
 _ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
 
+# 代替経路採用の宣言を検出する部分一致トークン。
+# 「大規模計画の代替経路を採用」も本トークンで包含できる。
+# 前後の助詞・句読点による表記揺れは部分一致で吸収する。
+_ALTERNATIVE_PATH_TOKEN = "代替経路を採用"
+
 
 def main() -> int:
     """検算のエントリポイント。"""
@@ -106,6 +111,14 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     if text is None:
         print(f"{plan_path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
         return 1
+
+    # 代替経路採用計画では`## 変更内容`H3節配下が変更方針の説明文で記述され、
+    # 逐語の[現行]/[置換後]対比ブロックも追記/縮減文面の逐語ブロックも存在しないため
+    # 両検査は誤検出のみを産む。計画本文で代替経路採用の宣言を検出した場合は
+    # `_check_one_file`と`_check_addition_reduction_projection`を一括スキップする。
+    if _is_alternative_path_adopted(text):
+        print(f"代替経路採用のため乖離検査をスキップ: {plan_path}")
+        return 0
 
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
@@ -143,6 +156,36 @@ def _read_text_or_none(path: pathlib.Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
+
+
+def _is_alternative_path_adopted(plan_body: str) -> bool:
+    """計画本文に代替経路採用の宣言が含まれるかを判定する。
+
+    `## 対応方針`節（配下の`### エージェント判断`等のH3子節を含む）本文に
+    「代替経路を採用」の文字列を含むかを部分一致で判定する。
+    前後の助詞・句読点で表記が揺れるため部分一致で扱う。
+    「大規模計画の代替経路を採用」も同一トークンで包含できる。
+
+    大規模計画の代替経路採用時は`## 変更内容`H3節配下が変更方針の
+    説明文（設計要件記述コードブロック）で記述される。
+    逐語の[現行]/[置換後]対比ブロックも追記/縮減文面の逐語ブロックも存在せず、
+    `_check_one_file`の対比適用と`_check_addition_reduction_projection`の
+    追記/縮減集計は誤検出のみを産む。呼び出し元`_check_wc`で本判定が真の場合は
+    両検査を一括スキップする。
+    """
+    section = _extract_section(plan_body, "## 対応方針")
+    if section is None:
+        return False
+    # `### 却下した代替案`H3小節配下は判定対象から除外する（却下説明文中の採用トークン誤検出回避）。
+    # 次H3見出しまたは節末までを削除する（フェンス内`### `様の行は`_iter_non_fenced_lines`で除外済）。
+    lines = section.splitlines()
+    heading_idxs = [idx for idx, line in _iter_non_fenced_lines(lines) if line.startswith("### ")]
+    for i, idx in enumerate(heading_idxs):
+        if lines[idx].strip() == "### 却下した代替案":
+            end = heading_idxs[i + 1] if i + 1 < len(heading_idxs) else len(lines)
+            lines = lines[:idx] + lines[end:]
+            break
+    return _ALTERNATIVE_PATH_TOKEN in "\n".join(lines)
 
 
 def _check_one_file(

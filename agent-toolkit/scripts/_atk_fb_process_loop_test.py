@@ -230,6 +230,11 @@ class TestProcessLoopPromptAndEnv:
         assert "完遂" in prompt
         assert "時間がかかるのは正常" in prompt
         assert "作業量" in prompt
+        # 追加文言: 工程列挙が実施順序の定義である旨と、後続工程の到達要求を先行工程の縮退の根拠に解釈しない旨を明示する。
+        assert "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません" in prompt
+        assert "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します" in prompt
+        assert "後続工程" in prompt
+        assert "縮退の根拠に" in prompt
 
 
 class TestProcessLoopClaudeReturncode:

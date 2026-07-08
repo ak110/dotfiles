@@ -529,3 +529,55 @@ class TestCheckWcProjection:
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
+
+    def test_alternative_path_skips_check_via_agent_judgment(self, tmp_path: pathlib.Path) -> None:
+        """`### エージェント判断`節での代替経路採用宣言時は乖離検査をスキップする。"""
+        plan = _write(tmp_path / "plan.md", "# T\n\n## 対応方針\n\n### エージェント判断\n\n- 代替経路を採用する\n")
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert "代替経路採用のため乖離検査をスキップ" in result.stdout
+
+    def test_alternative_path_skips_check_via_response_policy(self, tmp_path: pathlib.Path) -> None:
+        """`## 対応方針`節本文の代替経路採用宣言時も乖離検査をスキップする。"""
+        plan = _write(tmp_path / "plan.md", "# T\n\n## 対応方針\n\n本計画は代替経路を採用する。\n")
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_alternative_path_not_adopted_when_in_rejected_section(self, tmp_path: pathlib.Path) -> None:
+        """`### 却下した代替案`H3小節配下の採用トークンは代替経路採用宣言と判定しない。"""
+        _write(tmp_path / "foo.md", "old\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n### 却下した代替案\n\n"
+            "- 大規模計画の代替経路を採用する案を検討したが却下した\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
+            "### `foo.md`\n\n現行:\n\n```text\nold\n```\n\n置換後:\n\n```text\nnew\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "見込み99行" in result.stderr
+        assert "代替経路採用のため乖離検査をスキップ" not in result.stdout
+
+    def test_alternative_path_not_adopted_when_section_missing(self, tmp_path: pathlib.Path) -> None:
+        """`## 対応方針`節にトークンを含まない計画は代替経路採用と判定せず通常検査を実行する。"""
+        _write(tmp_path / "foo.md", "old\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n通常経路で実装する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
+            "### `foo.md`\n\n現行:\n\n```text\nold\n```\n\n置換後:\n\n```text\nnew\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "見込み99行" in result.stderr
+
+    def test_normal_path_still_works(self, tmp_path: pathlib.Path) -> None:
+        """代替経路採用宣言を含まない計画では従来の乖離検査が動作する。"""
+        body = _plan_with_addition_reduction(
+            checkbox_line="- [ ] `foo.md`（現行10行, 見込み5行）", addition_lines="line1\nline2"
+        )
+        result = _run(_write(tmp_path / "plan.md", body), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "乖離が許容幅を超える" in result.stderr
