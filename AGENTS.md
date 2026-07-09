@@ -1,7 +1,6 @@
 # CLAUDE.md: dotfiles
 
-本リポジトリはchezmoi管理のdotfilesリポジトリ。
-`.chezmoi-source/`配下を`~/.*`にデプロイする。
+本リポジトリはchezmoi管理のdotfilesリポジトリであり、`.chezmoi-source/`配下を`~/.*`にデプロイする。
 多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
 
 ## 開発手順
@@ -9,7 +8,8 @@
 - `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `uvx pyfltr run-for-agent`
-  - テストコードの単体実行なども極力`pyfltr run-for-agent <path>`を使う（直接呼び出さない）
+  - プロジェクト設定済みコマンドの再現が必要な場合は`pyfltr run-for-agent <path>`を使う。
+    デバッガ・最小再現・環境切り分けでは直接実行してよい
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
 
 ## アーキテクチャの参照先

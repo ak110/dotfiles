@@ -4,11 +4,12 @@
 
 - importについて
   - 可能な限り`import xxx`形式で書く（`from xxx import yyy`ではない）
-  - `import xxx as yyy`の別名は`np`などの一般的なものを除き極力使わない
+  - `import xxx as yyy`の別名は`np`など広く定着した略称、名前衝突回避、互換API差し替えに限る
   - 可能な限りトップレベルでimportする（循環参照や初期化順による問題を避ける場合に限りブロック内も可）
     - 循環参照はTYPE_CHECKINGガード等の回避策に依存せず、共通依存を別モジュールへ切り出す設計上の解消を優先する
      （片方を関数内importにするのも局所対処であり、恒常化は避ける）
-- タイプヒントは可能な限り書く
+- 型ヒントはpublic関数・CLI境界・fixture・戻り値を持つprivate関数に必ず書く。
+  本文中だけで完結する短いローカル変数は型推論に任せてよい
   - `typing.List`ではなく`list`を使う。`dict`や`tuple`・`set`等も同様
   - `typing.Optional`ではなく`| None`を使う
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
@@ -155,7 +156,8 @@
 - 関数名: `_`で始める、テストから参照する場合は`name`で別名指定
 - scope: 可能な限り広いスコープ（session → package → module → function）
 - autouse: モジュール単位は積極的に使い、package／session単位は副作用に注意する
-- 型ヒント: 必須、複数値返す場合は型エイリアスを定義
+- 型ヒント: fixture関数の引数・戻り値には必ず書く。
+  複数値を返すfixtureでは型エイリアスまたはdataclassを定義する
 
 ### 非同期テスト
 

@@ -328,7 +328,13 @@ class RemoteWatcher:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as e:
-                logger.warning("リモートwatch JSON解析失敗 host=%s: %s line=%r", self.host, e, line)
+                logger.warning(
+                    "リモートwatch JSON解析失敗 host=%s msg=%s pos=%d length=%d",
+                    self.host,
+                    e.msg,
+                    e.pos,
+                    len(line),
+                )
                 continue
             await self._handle_event(event)
 

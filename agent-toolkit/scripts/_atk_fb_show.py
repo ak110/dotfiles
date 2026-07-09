@@ -17,12 +17,12 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME`指定時は当該1件、`--all`指定時は全件の本文を表示する。
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
-    `--type`指定時は出力対象種別（feedback・tbd・all）を絞り込む（既定: all）。
+    `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `FILENAME`指定時は`--type`の値で探索対象inboxを限定する。
     `--type=all`（既定）はfeedback/inbox→tbd/inboxの順で探索する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
-    `--status`指定時は、tbd側エントリのみ回答状況（answered・unanswered）で絞り込む
+    `--status`指定時は、tbd側エントリのみ回答状況（answered・unanswered）で限定する
     （feedback側には作用しない）。
     """
     if args.filename is None and not args.all:

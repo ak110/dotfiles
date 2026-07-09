@@ -25,7 +25,7 @@ WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
     watchdog.events.FileClosedEvent,
 )
 
-# claudeがexit-sessionスキル経由でSIGTERMを受けて終了する場合のexit codeを含む正常終了集合。
+# claudeがexit-sessionスキル経由でSIGTERMにより終了する場合のexit codeを含む正常終了集合。
 # 0は正常exit、-15はLinuxでのSIGTERM受信、15はWindowsでのSIGTERM相当、
 # 143はシェル経由でSIGTERM終了した場合の128+15を表す
 # （プラットフォーム分岐なしの緩い判定で十分と判断）。
@@ -89,6 +89,7 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     change_event = threading.Event()
     observer = watchdog.observers.Observer()
     handler = _ChangeHandler(change_event)
+    _ensure_inbox_dirs(private_notes)
     observer.schedule(handler, str(private_notes / "feedback" / "inbox"), recursive=False)
     observer.schedule(handler, str(private_notes / "tbd" / "inbox"), recursive=False)
     observer.start()
@@ -103,6 +104,18 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     finally:
         observer.stop()
         observer.join()
+
+
+def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
+    """watchdog監視対象のinboxディレクトリを事前作成する。"""
+    (private_notes / "feedback" / "inbox").mkdir(parents=True, exist_ok=True)
+    (private_notes / "tbd" / "inbox").mkdir(parents=True, exist_ok=True)
+
+
+def _build_restart_argv(argv: list[str]) -> list[str]:
+    """PEP 723スクリプトとしてprocess-loopを再起動するargvを返す。"""
+    script = pathlib.Path(argv[0]).resolve()
+    return ["uv", "run", "--no-project", "--script", str(script), *argv[1:]]
 
 
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -144,7 +157,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                 if not args.no_update:
                     print("update-dotfilesを実行してprocess-loopを再起動します。")
                     subprocess.run(["update-dotfiles"], check=False)
-                    os.execv(sys.argv[0], sys.argv)
+                    os.execvp("uv", _build_restart_argv(sys.argv))
                 continue
             print("0件のため変更検知を待機します。")
             _wait_for_changes(private_notes, target_repo_id)

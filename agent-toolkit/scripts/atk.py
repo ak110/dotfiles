@@ -87,7 +87,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--status",
         choices=("all", "answered", "unanswered"),
         default="all",
-        help="回答状況でtbd側のみ絞り込む（既定: all、feedback側には作用しない）。",
+        help="回答状況でtbd側のみ限定する（既定: all、feedback側には作用しない）。",
     )
     list_.add_argument(
         "--count",
@@ -124,7 +124,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--status",
         choices=("all", "answered", "unanswered"),
         default="all",
-        help="回答状況でtbd側のみ絞り込む（既定: all、feedback側には作用しない）。",
+        help="回答状況でtbd側のみ限定する（既定: all、feedback側には作用しない）。",
     )
     show.add_argument(
         "--skip-pull",

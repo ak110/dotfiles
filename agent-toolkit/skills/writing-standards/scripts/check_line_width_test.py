@@ -28,7 +28,7 @@ def _write(path: pathlib.Path, content: str) -> pathlib.Path:
 class TestCheckLineWidth:
     """1行幅検査の主要シナリオをまとめて検証する。"""
 
-    def test_within_limit_passes(self, tmp_path: pathlib.Path):
+    def test_within_limit_passes(self, tmp_path: pathlib.Path) -> None:
         # 全角混在で127半角換算以内、127丁度の境界値、半角のみのいずれも通過する。
         path = _write(
             tmp_path / "ok.md",
@@ -42,14 +42,14 @@ class TestCheckLineWidth:
         assert result.returncode == 0
         assert result.stderr == ""
 
-    def test_body_overflow_is_reported(self, tmp_path: pathlib.Path):
+    def test_body_overflow_is_reported(self, tmp_path: pathlib.Path) -> None:
         # 本文の128字超過は違反として出力される。
         path = _write(tmp_path / "ng.md", "あ" * 64 + "\n")  # 64*2 = 128
         result = _run(str(path))
         assert result.returncode == 1
         assert f"{path}:1 幅=128" in result.stderr
 
-    def test_table_row_is_excluded(self, tmp_path: pathlib.Path):
+    def test_table_row_is_excluded(self, tmp_path: pathlib.Path) -> None:
         # 表（Markdownテーブル、パイプ`|`で始まる行）は対象外。
         long_cell = "あ" * 70
         path = _write(
@@ -60,7 +60,7 @@ class TestCheckLineWidth:
         assert result.returncode == 0
         assert result.stderr == ""
 
-    def test_frontmatter_is_checked(self, tmp_path: pathlib.Path):
+    def test_frontmatter_is_checked(self, tmp_path: pathlib.Path) -> None:
         # frontmatter（YAML）の長すぎる行も違反扱い。
         path = _write(
             tmp_path / "fm.md",
@@ -70,7 +70,7 @@ class TestCheckLineWidth:
         assert result.returncode == 1
         assert f"{path}:2" in result.stderr
 
-    def test_fenced_code_block_is_excluded(self, tmp_path: pathlib.Path):
+    def test_fenced_code_block_is_excluded(self, tmp_path: pathlib.Path) -> None:
         # バックティック（` ``` `）フェンス内の超過行は対象外。
         path = _write(
             tmp_path / "code.md",
@@ -80,7 +80,7 @@ class TestCheckLineWidth:
         assert result.returncode == 0
         assert result.stderr == ""
 
-    def test_tilde_fence_is_excluded(self, tmp_path: pathlib.Path):
+    def test_tilde_fence_is_excluded(self, tmp_path: pathlib.Path) -> None:
         # チルダ（`~~~`）フェンスでも同様にコードブロック扱い。
         path = _write(
             tmp_path / "tilde.md",
@@ -89,7 +89,7 @@ class TestCheckLineWidth:
         result = _run(str(path))
         assert result.returncode == 0
 
-    def test_nested_fence_with_shorter_inner_marker_is_ignored(self, tmp_path: pathlib.Path):
+    def test_nested_fence_with_shorter_inner_marker_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """開始4個・内側3個のネストしたフェンスで、内側フェンス内の127幅超過行は誤検出されない。
 
         内側の閉じ候補（3個）は開始フェンス（4個）より短いため閉じ判定に使われず、
@@ -104,7 +104,7 @@ class TestCheckLineWidth:
         assert f"{path}:3 " not in result.stderr
         assert f"{path}:6 " in result.stderr
 
-    def test_different_fence_kind_inside_is_ignored(self, tmp_path: pathlib.Path):
+    def test_different_fence_kind_inside_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """開始3個のバッククォートフェンス内部に`~~~`（別種フェンス）が出現しても正しく無視される。"""
         path = _write(
             tmp_path / "doc.md",
@@ -115,7 +115,7 @@ class TestCheckLineWidth:
         assert f"{path}:3 " not in result.stderr
         assert f"{path}:6 " in result.stderr
 
-    def test_width_option_overrides_threshold(self, tmp_path: pathlib.Path):
+    def test_width_option_overrides_threshold(self, tmp_path: pathlib.Path) -> None:
         # `--width=80`を指定すると80字超過が検出される。
         path = _write(tmp_path / "narrow.md", "a" * 81 + "\n")
         result_default = _run(str(path))
@@ -124,7 +124,7 @@ class TestCheckLineWidth:
         assert result_narrow.returncode == 1
         assert f"{path}:1 幅=81" in result_narrow.stderr
 
-    def test_multiple_files_aggregated(self, tmp_path: pathlib.Path):
+    def test_multiple_files_aggregated(self, tmp_path: pathlib.Path) -> None:
         # 複数ファイルの違反を集約報告し、終了コード1。
         good = _write(tmp_path / "good.md", "ok\n")
         bad = _write(tmp_path / "bad.md", "あ" * 64 + "\n")
@@ -133,7 +133,7 @@ class TestCheckLineWidth:
         assert f"{bad}:1" in result.stderr
         assert str(good) not in result.stderr
 
-    def test_directory_recurses(self, tmp_path: pathlib.Path):
+    def test_directory_recurses(self, tmp_path: pathlib.Path) -> None:
         """ディレクトリを渡すと再帰的に対象拡張子のファイルを走査し違反を集約する。"""
         sub = tmp_path / "docs"
         sub.mkdir()
@@ -147,7 +147,7 @@ class TestCheckLineWidth:
         assert str(good) not in result.stderr
         assert str(skipped) not in result.stderr
 
-    def test_directory_includes_md_tmpl(self, tmp_path: pathlib.Path):
+    def test_directory_includes_md_tmpl(self, tmp_path: pathlib.Path) -> None:
         """ディレクトリ走査時に`.md.tmpl`二重拡張子もmd相当として走査対象に含む。
 
         `.tmpl`単独はテンプレート構文の誤検出を避けるため対象外であることも確認する。
@@ -159,7 +159,7 @@ class TestCheckLineWidth:
         assert f"{md_tmpl}:1" in result.stderr
         assert str(plain_tmpl) not in result.stderr
 
-    def test_directory_excludes_known_dirs(self, tmp_path: pathlib.Path):
+    def test_directory_excludes_known_dirs(self, tmp_path: pathlib.Path) -> None:
         """`.git`等の既知の除外ディレクトリ配下はスキャン対象外。"""
         for excluded in (".git", ".venv", "node_modules", "__pycache__"):
             d = tmp_path / excluded
@@ -172,7 +172,7 @@ class TestCheckLineWidth:
         for excluded in (".git", ".venv", "node_modules", "__pycache__"):
             assert excluded not in result.stderr
 
-    def test_directory_argument_with_excluded_name_is_scanned(self, tmp_path: pathlib.Path):
+    def test_directory_argument_with_excluded_name_is_scanned(self, tmp_path: pathlib.Path) -> None:
         """引数ディレクトリ自身の名前が除外集合と一致しても配下は走査する。
 
         境界値: 除外判定は引数ディレクトリからの相対パス成分のみで行うべきで、

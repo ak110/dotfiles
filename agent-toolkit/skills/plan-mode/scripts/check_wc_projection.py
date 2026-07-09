@@ -336,7 +336,7 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
     （プラン規範上「削除は現行文言と削除根拠を対比形式で記載する」）。
     H3見出しのパス候補は、対象ファイル一覧から構築した既知パス集合に含まれるものだけを対象とする。
     ブロック走査終了時・H3切り替え時に[現行]ブロックが未消費のまま残っていた場合は違反として報告する。
-    同一H3内で[現行]ブロックが[置換後]を挟まず連続した場合も、
+    同一H3内で[現行]ブロックが[置換後]を介さず連続した場合も、
     先行[現行]を未消費として違反へ記録する。
     """
     lines = section.splitlines()
@@ -369,7 +369,7 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
             while i < n and not _FENCE_CLOSE_RE.match(lines[i]):
                 content_lines.append(lines[i])
                 i += 1
-            i += 1  # 閉じフェンス行を読み飛ばす
+            i += 1  # 閉じフェンス行を除外する
             content = "\n".join(content_lines)
 
             if label == "current":
@@ -480,7 +480,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             while i < n and not _FENCE_CLOSE_RE.match(lines[i]):
                 content_lines.append(lines[i])
                 i += 1
-            i += 1  # 閉じフェンス行を読み飛ばす
+            i += 1  # 閉じフェンス行を除外する
 
             if label is not None and current_path is not None:
                 entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})

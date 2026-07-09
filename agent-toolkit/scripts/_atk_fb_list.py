@@ -30,8 +30,8 @@ def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """listサブコマンド: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する。
 
-    `--type`指定で出力対象種別（feedback・tbd・all）を絞り込む（既定: all）。
-    `--status`指定でtbd側のみ回答状況を絞り込む（既定: all、feedback側には作用しない）。
+    `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
+    `--status`指定でtbd側のみ回答状況を限定する（既定: all、feedback側には作用しない）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--type=all`（既定）指定時、該当部エントリが1件以上ある場合のみ種別ヘッダを出力する。

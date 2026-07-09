@@ -8,10 +8,10 @@
 	quotepath = false
 	#editor = code --wait フォーカス移動的に使いづらい
 	editor = vim
-[feature]
-	experimental = true
 [credential]
 	helper = store
+[feature]
+	experimental = true
 [color]
 	ui = auto
 [pager]

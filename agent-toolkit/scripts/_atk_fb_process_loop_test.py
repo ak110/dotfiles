@@ -92,6 +92,24 @@ class TestWaitForChanges:
         (private_notes / "tbd" / "inbox").mkdir(parents=True)
         return private_notes
 
+    def test_missing_inbox_dirs_are_created(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """inboxディレクトリ未作成でも監視前に作成され、タイムアウト経路が動作すること。"""
+        private_notes = tmp_path / "private-notes"
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
+        pull_calls: list[pathlib.Path] = []
+        monkeypatch.setattr(_process_loop, "_pull", pull_calls.append)
+
+        _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert (private_notes / "feedback" / "inbox").is_dir()
+        assert (private_notes / "tbd" / "inbox").is_dir()
+        assert pull_calls == [private_notes]
+
     def test_timeout_triggers_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -326,17 +344,19 @@ class TestProcessLoopUpdateAndRestart:
         )
         execv_calls: list[tuple[str, list[str]]] = []
 
-        def fake_execv(path: str, argv: list[str]) -> None:
+        def fake_execvp(path: str, argv: list[str]) -> None:
             execv_calls.append((path, list(argv)))
             raise SystemExit(0)
 
-        monkeypatch.setattr(os, "execv", fake_execv)
+        monkeypatch.setattr(os, "execvp", fake_execvp)
         with pytest.raises(SystemExit):
             atk.main(
                 ["fb", "process-loop", "--target-repo", str(myrepo)],
                 home=tmp_path,
             )
         assert execv_calls
+        assert execv_calls[0][0] == "uv"
+        assert execv_calls[0][1][:4] == ["uv", "run", "--no-project", "--script"]
         assert any(cmd[0] == "update-dotfiles" for cmd in subprocess_calls)
         captured = capsys.readouterr()
         assert "update-dotfilesを実行して" in captured.out
@@ -372,7 +392,7 @@ class TestProcessLoopUpdateAndRestart:
         execv_calls: list[tuple[str, list[str]]] = []
         monkeypatch.setattr(
             os,
-            "execv",
+            "execvp",
             lambda p, a: execv_calls.append((p, list(a))),
         )
         with pytest.raises(SystemExit):

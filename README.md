@@ -5,7 +5,7 @@
 [ci-badge]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml/badge.svg
 [ci-url]: https://github.com/ak110/dotfiles/actions/workflows/ci.yaml
 
-[chezmoi](https://www.chezmoi.io/)で管理する個人用dotfiles。
+[chezmoi](https://www.chezmoi.io/)で管理する個人用dotfilesである。
 
 ## 特徴
 

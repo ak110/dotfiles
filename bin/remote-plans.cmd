@@ -31,8 +31,9 @@ set "TARGET=%~1"
 set "START_PORT=%~2"
 if "%START_PORT%"=="" set "START_PORT=28766"
 
+set "REMOTE_PLANS_START_PORT=%START_PORT%"
 set "PORT="
-for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -Command "$s=%START_PORT%; for($i=0;$i -lt 50;$i++){$p=$s+$i; try{$l=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,$p); $l.Start(); $l.Stop(); Write-Output $p; exit 0}catch{}}; exit 1"`) do set "PORT=%%p"
+for /f "usebackq tokens=*" %%p in (`powershell -NoProfile -Command "$raw=$env:REMOTE_PLANS_START_PORT; $s=0; if(-not [int]::TryParse($raw,[ref]$s)){exit 2}; if($s -lt 1 -or $s -gt 65486){exit 2}; for($i=0;$i -lt 50;$i++){$p=$s+$i; try{$l=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,$p); $l.Start(); $l.Stop(); Write-Output $p; exit 0}catch{}}; exit 1"`) do set "PORT=%%p"
 
 if not defined PORT (
     echo error: no local port available in %START_PORT%..%START_PORT%+49 for bind on 127.0.0.1

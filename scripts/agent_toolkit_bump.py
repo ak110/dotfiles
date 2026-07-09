@@ -147,8 +147,16 @@ def _read_upstream_version() -> str | None:
 
 
 def _write_version(new_version: str) -> None:
-    _update_plugin_manifest(new_version)
-    _update_marketplace_manifest(new_version)
+    plugin_data = json.loads(_PLUGIN_MANIFEST.read_text(encoding="utf-8"))
+    marketplace_data = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
+    matched = [entry for entry in marketplace_data["plugins"] if entry.get("name") == _PLUGIN_NAME]
+    if len(matched) != 1:
+        raise RuntimeError(f"marketplace.jsonに{_PLUGIN_NAME}のエントリが1件ではない（{len(matched)}件）")
+
+    plugin_data["version"] = new_version
+    matched[0]["version"] = new_version
+    _PLUGIN_MANIFEST.write_text(json.dumps(plugin_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _MARKETPLACE_MANIFEST.write_text(json.dumps(marketplace_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _update_plugin_manifest(new_version: str) -> None:

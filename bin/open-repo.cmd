@@ -7,26 +7,18 @@ rem - それ以外: エラーを出力して終了
 rem - 引数はすべて委譲先CLIへ完全透過する
 setlocal
 
-for /f "usebackq delims=" %%u in (`git remote get-url origin`) do set "url=%%u"
+for /f "usebackq delims=" %%u in (`git remote get-url origin`) do set "OPEN_REPO_URL=%%u"
 
-if not defined url (
+if not defined OPEN_REPO_URL (
     echo open-repo: git remote get-url origin が失敗しました 1>&2
     exit /b 1
 )
 
 set "host="
-echo %url% | findstr /i "^git@" >nul 2>&1
-if %ERRORLEVEL%==0 (
-    for /f "tokens=2 delims=@:" %%h in ("%url%") do set "host=%%h"
-)
-echo %url% | findstr /i "^https://" >nul 2>&1
-if %ERRORLEVEL%==0 (
-    set "tmp=%url:https://=%"
-    for /f "tokens=1 delims=/" %%h in ("%tmp%") do set "host=%%h"
-)
+for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "$u=$env:OPEN_REPO_URL; if($u -match '^git@([^:]+):'){$Matches[1]; exit 0}; try{$uri=[Uri]$u; if($uri.Scheme -eq 'https'){$uri.Host; exit 0}}catch{}; exit 1"`) do set "host=%%h"
 
 if not defined host (
-    echo open-repo: 未対応のURL形式です: %url% 1>&2
+    echo open-repo: 未対応のURL形式です 1>&2
     exit /b 1
 )
 

@@ -76,7 +76,7 @@ class TestRemoteWatcher:
     """
 
     @pytest.mark.asyncio
-    async def test_snapshot_updates_cache_and_marks_connected(self):
+    async def test_snapshot_updates_cache_and_marks_connected(self) -> None:
         state = _state.BroadcastState()
         # 本番購読者の`maxsize=1`は容量超過時に新規通知を破棄する設計のため、
         # snapshotで連続発火する host-status と refresh の両方を観測するには十分な容量を要する。
@@ -116,7 +116,7 @@ class TestRemoteWatcher:
                 state.subscribers.discard(q)
 
     @pytest.mark.asyncio
-    async def test_upsert_adds_new_path(self):
+    async def test_upsert_adds_new_path(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         # 既存snapshotを与えてから、新規pathのupsertが追加されることを確認する。
@@ -139,7 +139,7 @@ class TestRemoteWatcher:
         assert sorted(e.path for e in cached) == ["a.md", "b.md"]
 
     @pytest.mark.asyncio
-    async def test_upsert_replaces_existing_path(self):
+    async def test_upsert_replaces_existing_path(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
@@ -162,7 +162,7 @@ class TestRemoteWatcher:
         assert cached[0].mtime_epoch == 999.0
 
     @pytest.mark.asyncio
-    async def test_deleted_removes_path(self):
+    async def test_deleted_removes_path(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
@@ -187,7 +187,7 @@ class TestRemoteWatcher:
         assert [e.path for e in cached] == ["b.md"]
 
     @pytest.mark.asyncio
-    async def test_ping_does_not_emit_anything(self):
+    async def test_ping_does_not_emit_anything(self) -> None:
         state = _state.BroadcastState()
         q = await _state.subscribe(state)
         try:
@@ -201,14 +201,15 @@ class TestRemoteWatcher:
             await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
-    async def test_invalid_json_logged_and_processing_continues(self, caplog: pytest.LogCaptureFixture):
+    async def test_invalid_json_logged_and_processing_continues(self, caplog: pytest.LogCaptureFixture) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
+        secret = "token=secret-value"
         with caplog.at_level("WARNING", logger="pytools.claude_plans_viewer"):
             await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
                 _aiter_lines(
                     [
-                        "not-a-json-line\n",
+                        f'{{"{secret}"\n',
                         json.dumps(
                             {
                                 "type": "snapshot",
@@ -222,9 +223,10 @@ class TestRemoteWatcher:
         # 後続行は処理が継続される。
         assert "host1" in state.remote_files
         assert any("JSON解析失敗" in r.message for r in caplog.records if r.levelname == "WARNING")
+        assert all(secret not in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_set_status_disconnected_emits_sse_after_snapshot(self):
+    async def test_set_status_disconnected_emits_sse_after_snapshot(self) -> None:
         """`_set_status`経由のdisconnected遷移とSSE配信を検証する。
 
         `run`本体の再接続ループはSSH/subprocess起動とバックオフ待機を含み、
@@ -255,7 +257,7 @@ class TestRemoteWatcher:
             await _state.unsubscribe(state, q)
 
     @pytest.mark.asyncio
-    async def test_snapshot_resets_backoff(self):
+    async def test_snapshot_resets_backoff(self) -> None:
         """snapshot受信でバックオフが`_REMOTE_BACKOFF_INITIAL_SEC`にリセットされること。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -275,15 +277,15 @@ class TestIterStreamLinesLimitOverrun:
     """`_iter_stream_lines`が`LimitOverrunError`を見過ごさず打ち切ることを確認する。
 
     実運用では`RemoteWatcher._connect`が`limit=REMOTE_STREAM_LIMIT_BYTES`(8MiB)を渡すが、
-    テストでは`limit=64`の`StreamReader`へ64バイト超のchunkを流し込んで再現性を高める。
+    テストでは`limit=64`の`StreamReader`へ64バイト超のchunkを投入して再現性を高める。
     見過ごしたまま再接続ループへ抜けると原因不明のリコネクトが続くため、
     明示的なwarningとイテレータ打ち切りを検証する。
     """
 
     @pytest.mark.asyncio
-    async def test_limit_overrun_logs_warning_and_terminates(self, caplog: pytest.LogCaptureFixture):
+    async def test_limit_overrun_logs_warning_and_terminates(self, caplog: pytest.LogCaptureFixture) -> None:
         stream = asyncio.StreamReader(limit=64)
-        # 改行を含まない長いバイト列を流し込み、`readline`が`LimitOverrunError`を送出する条件を作る。
+        # 改行を含まない長いバイト列を投入し、`readline`が`LimitOverrunError`を送出する条件を構成する。
         stream.feed_data(b"x" * 200)
         stream.feed_eof()
 
@@ -304,7 +306,7 @@ class TestDrainStderr:
     """
 
     @pytest.mark.asyncio
-    async def test_stderr_lines_forwarded_to_warning(self, caplog: pytest.LogCaptureFixture):
+    async def test_stderr_lines_forwarded_to_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         stream = asyncio.StreamReader()
         stream.feed_data(b"ModuleNotFoundError: No module named 'watchdog'\n")
         stream.feed_data(b"\n")  # 空行はwarning対象外
@@ -321,7 +323,7 @@ class TestDrainStderr:
         assert not any(m.endswith("host=host1: ") for m in messages)
 
     @pytest.mark.asyncio
-    async def test_stderr_read_exception_logged_and_returns(self, caplog: pytest.LogCaptureFixture):
+    async def test_stderr_read_exception_logged_and_returns(self, caplog: pytest.LogCaptureFixture) -> None:
         """`readline`が例外を送出しても、`_drain_stderr`はwarningを記録して処理を終える。"""
 
         class _BrokenStream:
@@ -344,7 +346,7 @@ class TestCancelStderrTask:
     """
 
     @pytest.mark.asyncio
-    async def test_cancel_stderr_task_no_task_is_noop(self):
+    async def test_cancel_stderr_task_no_task_is_noop(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         assert watcher._stderr_task is None  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（`_connect`前の初期状態確認）
@@ -353,7 +355,7 @@ class TestCancelStderrTask:
         assert watcher._stderr_task is None  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（呼び出し後の状態確認）
 
     @pytest.mark.asyncio
-    async def test_cancel_stderr_task_cancels_running_task(self):
+    async def test_cancel_stderr_task_cancels_running_task(self) -> None:
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
         stream = asyncio.StreamReader()
@@ -419,7 +421,7 @@ class TestRemoteWatcherRpc:
     """`RemoteWatcher`の双方向RPCの単体検証。"""
 
     @pytest.mark.asyncio
-    async def test_request_resolves_with_response_event(self):
+    async def test_request_resolves_with_response_event(self) -> None:
         """`request`は対応する`response`イベント受信で結果を返す。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -445,7 +447,7 @@ class TestRemoteWatcherRpc:
         assert '"path": "Zg=="' in sent or '"path":"Zg=="' in sent
 
     @pytest.mark.asyncio
-    async def test_request_when_disconnected_raises(self):
+    async def test_request_when_disconnected_raises(self) -> None:
         """切断状態（`_connected=False`）の`request`はRuntimeErrorを送出する。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -456,7 +458,7 @@ class TestRemoteWatcherRpc:
             await watcher.request("read", {"path": "Zg=="})
 
     @pytest.mark.asyncio
-    async def test_fail_pending_breaks_inflight_requests(self):
+    async def test_fail_pending_breaks_inflight_requests(self) -> None:
         """`_fail_pending`は実行中のすべての`request`を例外で解決する。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)
@@ -473,7 +475,7 @@ class TestRemoteWatcherRpc:
         await drive_task
 
     @pytest.mark.asyncio
-    async def test_request_timeout_removes_pending(self):
+    async def test_request_timeout_removes_pending(self) -> None:
         """応答が届かないとtimeoutでTimeoutErrorとなり、pendingエントリが残らない。"""
         state = _state.BroadcastState()
         watcher = _remote.RemoteWatcher("host1", state)

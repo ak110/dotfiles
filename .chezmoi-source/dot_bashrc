@@ -4,13 +4,13 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
-# パーミッションが644とかになるようにする
+# 既定の作成パーミッションを644/755相当にする
 umask 022
 
 # VSCode が最近 Remote SSH で `c:\Users\...;` のような値を PATH に混入させる事象への暫定対処。単純に ; を : に置換して無害化する。
 export PATH=${PATH//;/:}
 
-# 環境変数(非interactiveでも)
+# 環境変数(非対話シェルでも設定する)
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
 
@@ -22,7 +22,7 @@ test -d "$HOME/bin" && export PATH=$HOME/bin:$PATH
 test -d "$HOME/dotfiles/bin" && export PATH=$PATH:$HOME/dotfiles/bin
 test -d "$HOME/dotfiles/agent-toolkit/bin" && export PATH=$PATH:$HOME/dotfiles/agent-toolkit/bin
 
-test -d /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+test -f /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
 export EDITOR=vim
 export LESS="--LONG-PROMPT --RAW-CONTROL-CHARS --quit-if-one-screen --no-init"
@@ -34,11 +34,32 @@ if [ -d "$HOME/.poetry/bin" ]; then
     export PATH="$HOME/.poetry/bin:$PATH"
 fi
 
-# ~/.envがあれば読み込む
+# ~/.env があれば単純な KEY=VALUE 行だけを読み込む
 if [ -e ~/.env ]; then
-    set -a
-    eval "$(cat ~/.env <(echo) <(declare -x))"
-    set +a
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+        "" | \#*) continue ;;
+        export\ *) line="${line#export }" ;;
+        esac
+        case "$line" in
+        *[!A-Za-z0-9_]*=*)
+            key="${line%%=*}"
+            value="${line#*=}"
+            ;;
+        *=*)
+            key="${line%%=*}"
+            value="${line#*=}"
+            ;;
+        *) continue ;;
+        esac
+        case "$key" in
+        "" | [0-9]* | *[!A-Za-z0-9_]* | *[[:space:]]*) continue ;;
+        esac
+        case "$value" in
+        *[[:space:]]*) continue ;;
+        esac
+        export "$key=$value"
+    done <~/.env
 fi
 
 # ~/dotfiles/share/user.env を読み込む

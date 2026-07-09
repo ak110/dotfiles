@@ -199,7 +199,7 @@ class TestShowTypeFilter:
 
 
 class TestShowStatusFilter:
-    """showサブコマンド: --statusでtbd側エントリのみ回答状況を絞り込む。"""
+    """showサブコマンド: --statusでtbd側エントリのみ回答状況を限定する。"""
 
     def test_all_status_answered_excludes_unanswered_tbd_but_keeps_feedback(
         self,

@@ -1,6 +1,6 @@
 # dotfiles
 
-本dotfilesリポジトリのドキュメント。
+本dotfilesリポジトリのドキュメントである。
 導入手順・前提条件・更新方法は[README.md](../README.md)に記載している。
 
 - [docs/guide/index.md](guide/index.md): 利用者向け

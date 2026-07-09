@@ -42,7 +42,7 @@ auto modeは次の4区分でルールを判定する。
 ### exit-session `kill -TERM $PPID` の Interfere With Workloads 拒否
 
 auto mode classifierは`kill -TERM $PPID`を「エージェントが作成していない親プロセスの終了」とみなし拒否する。
-`agent-toolkit:exit-session`スキルは起動条件を厳密に絞る設計だが、既定classifierでは拒否対象となる。
+`agent-toolkit:exit-session`スキルは起動条件を厳密に限定する設計だが、既定classifierでは拒否対象となる。
 
 対応: `share/claude_settings_json_managed.json`の`autoMode.allow`配列へ以下の自然言語ルールを追加する。
 

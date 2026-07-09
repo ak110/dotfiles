@@ -10,6 +10,7 @@ from pytools.claude_session_export import (
     encode_project_path,
     export_sessions,
     iter_turns,
+    load_records,
     render_session,
 )
 
@@ -28,6 +29,31 @@ class TestEncodeProjectPath:
     )
     def test_encoding(self, cwd: str, expected: str) -> None:
         assert encode_project_path(cwd) == expected
+
+
+class TestLoadRecords:
+    """JSONL読み込みのテスト。"""
+
+    def test_invalid_json_log_does_not_include_line_body(
+        self,
+        tmp_path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """JSONパース失敗時に入力行本文をログへ含めない。"""
+        secret = "token=secret-value"
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            json.dumps({"type": "user"}, ensure_ascii=False) + "\n" + f'{{"{secret}"\n',
+            encoding="utf-8",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="pytools.claude_session_export"):
+            records = load_records(path)
+
+        assert records == [{"type": "user"}]
+        messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("JSONパースエラー" in m and "line_no=2" in m for m in messages)
+        assert all(secret not in m for m in messages)
 
 
 def _make_record(

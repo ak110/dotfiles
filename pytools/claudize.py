@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # 既存環境のクリーンアップのため、同期時にディレクトリごと削除する。
 _LEGACY_RULES_DIRNAME = "agent-basics"
 _RULES_DIRNAME = "agent-toolkit"
+_DOTFILES_ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
@@ -32,7 +33,7 @@ def main() -> None:
     )
     enable_completion(parser)
     args = parser.parse_args()
-    template_dir = Path.home() / "dotfiles" / "agent-toolkit" / "rules"
+    template_dir = _DOTFILES_ROOT / "agent-toolkit" / "rules"
     target_dir = Path.cwd()
     claudize(target_dir, template_dir, clean=args.clean)
     sys.exit(0)

@@ -105,5 +105,5 @@ class TestMatchScopeEscalation:
         """非文字列入力は`None`を返す（fail-safe挙動）。"""
         # `_match_scope_escalation`は`isinstance(text, str)`で防御し、
         # 非文字列渡しでも例外を送出しない挙動を保証する。
-        # 型チェッカー全種の引数型検査を回避するため`typing.cast`で`str`扱いに落とす。
+        # 型チェッカー全種の引数型検査を回避するため`typing.cast`で`str`扱いに変換する。
         assert _match_scope_escalation(typing.cast("str", value)) is None

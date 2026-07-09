@@ -21,7 +21,7 @@ case "$remote_url" in
         host="${host%%/*}"
         ;;
     *)
-        echo "open-repo: 未対応のURL形式です: ${remote_url}" >&2
+        echo "open-repo: 未対応のURL形式です。" >&2
         exit 1
         ;;
 esac

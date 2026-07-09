@@ -619,7 +619,7 @@ class TestListTargetRepoFilter:
 
 
 class TestListTypeFilter:
-    """listサブコマンド: --typeでfeedback/tbd出力を絞り込む。"""
+    """listサブコマンド: --typeでfeedback/tbd出力を限定する。"""
 
     def test_type_feedback_outputs_only_feedback_section(
         self,
@@ -700,7 +700,7 @@ class TestListSkipPull:
 
 
 class TestListStatusFilter:
-    """listサブコマンド: --statusでtbd側のみ回答状況を絞り込む。"""
+    """listサブコマンド: --statusでtbd側のみ回答状況を限定する。"""
 
     def test_status_answered_excludes_unanswered_tbd(
         self,

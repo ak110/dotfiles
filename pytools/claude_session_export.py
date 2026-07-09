@@ -225,14 +225,20 @@ def export_sessions(
 def load_records(path: pathlib.Path) -> list[dict]:
     """JSONLファイルを読み込んでレコードのリストを返す。"""
     records: list[dict] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = line.strip()
         if not line:
             continue
         try:
             records.append(json.loads(line))
-        except json.JSONDecodeError:
-            logger.warning("JSONパースエラー: %s", line[:100])
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "JSONパースエラー: path=%s line_no=%d pos=%d length=%d",
+                path,
+                line_no,
+                e.pos,
+                len(line),
+            )
     return records
 
 

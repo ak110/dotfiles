@@ -1093,7 +1093,7 @@ def _check_plan_mode_skill_first(
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
-    plan file編集に至るまでは警告を出さない
+    plan file編集に至るまでは警告を表示しない
     （`apply-feedback`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     """
     if not session_id:

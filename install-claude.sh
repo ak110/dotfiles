@@ -21,7 +21,7 @@ STAGE_ROOT="$HOME/.claude/rules-stage"
 # 配布対象ファイル一覧。
 # `install-claude.ps1`の`$files`、および`agent-toolkit/rules/`配下のmdファイル一覧と一致させる。
 # 3者の整合性は`agent-toolkit/scripts/install_script_ssot_test.py`で自動検証する。
-# 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
+# 変更時は`uvx pyfltr run-for-agent`を実行し、テスト通過を確認する。
 FILES=(
     01-agent.md
     02-claude-code.md
@@ -67,7 +67,7 @@ _install_agent_toolkit() {
 # ~/.local/bin/atk へラッパーを配置する。
 # インストール済み agent-toolkit プラグインの最新バージョンを動的解決するため、
 # 参照先パス（cache/<marketplace>/agent-toolkit/<version>/bin/atk）を実行時に決定する形とする。
-# 直接シンボリックリンクを張るとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
+# 直接シンボリックリンクを作成するとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
 _install_atk_wrapper() {
     local bin_dir="$HOME/.local/bin"
     local wrapper="$bin_dir/atk"
@@ -75,7 +75,7 @@ _install_atk_wrapper() {
     cat >"$wrapper" <<'EOF'
 #!/bin/bash
 # agent-toolkit プラグイン付属の atk コマンドを最新バージョンから起動するラッパー。
-# install-claude.sh が生成する。上書きされたい場合は同スクリプトを再実行する。
+# install-claude.sh が生成する。更新したい場合は同スクリプトを再実行する。
 set -euo pipefail
 plugin_bin=$(ls -d "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin 2>/dev/null | sort -V | tail -1)
 if [ -z "$plugin_bin" ] || [ ! -x "$plugin_bin/atk" ]; then

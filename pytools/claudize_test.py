@@ -1,11 +1,12 @@
 """claudizeモジュールのテスト。"""
 
 import logging
+import sys
 from pathlib import Path
 
 import pytest
 
-from pytools.claudize import claudize
+from pytools.claudize import claudize, main
 
 # テスト用テンプレート本文
 AGENT_TEMPLATE = "# カスタム指示\n\n## 基本原則\n\n- ルール1\n"
@@ -22,7 +23,25 @@ def _setup_template(tmp_path: Path) -> Path:
 class TestRuleDistribution:
     """ルール配布の基本動作。"""
 
-    def test_basic_deployment(self, tmp_path: Path):
+    def test_main_uses_repository_rules_dir(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """CLI経路でもリポジトリ内の配布元ルールを使用する。"""
+        target = tmp_path / "project"
+        target.mkdir()
+        monkeypatch.chdir(target)
+        monkeypatch.setattr(sys, "argv", ["claudize"])
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 0
+        rules_dir = target / ".claude" / "rules" / "agent-toolkit"
+        assert (rules_dir / "01-agent.md").exists()
+
+    def test_basic_deployment(self, tmp_path: Path) -> None:
         """配布元のファイルがそのまま配布先へコピーされる。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
@@ -33,7 +52,7 @@ class TestRuleDistribution:
         rules_dir = target / ".claude" / "rules" / "agent-toolkit"
         assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == AGENT_TEMPLATE
 
-    def test_extra_files_are_removed(self, tmp_path: Path):
+    def test_extra_files_are_removed(self, tmp_path: Path) -> None:
         """配布先に余分なファイルがあっても同期で削除される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
@@ -49,7 +68,7 @@ class TestRuleDistribution:
         assert not stale.exists(), "配布元に存在しないファイルが削除されていない"
         assert (rules_dir / "01-agent.md").exists()
 
-    def test_legacy_agent_basics_dir_removed(self, tmp_path: Path):
+    def test_legacy_agent_basics_dir_removed(self, tmp_path: Path) -> None:
         """旧 agent-basics ディレクトリが存在する場合は削除される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
@@ -64,7 +83,7 @@ class TestRuleDistribution:
         assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
         assert (target / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").exists()
 
-    def test_idempotent(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    def test_idempotent(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """2回実行しても同じ結果になる。"""
         caplog.set_level(logging.INFO)
         template_dir = _setup_template(tmp_path)
@@ -79,7 +98,7 @@ class TestRuleDistribution:
 
         assert actual_agent == expected_agent
 
-    def test_missing_template_exits(self, tmp_path: Path):
+    def test_missing_template_exits(self, tmp_path: Path) -> None:
         """配布元が無ければ非ゼロ終了する。"""
         template_dir = tmp_path / "nonexistent"
         target = tmp_path / "project"
@@ -92,7 +111,7 @@ class TestRuleDistribution:
 class TestClean:
     """`--clean` での削除動作。"""
 
-    def test_clean_removes_agent_toolkit_and_legacy(self, tmp_path: Path):
+    def test_clean_removes_agent_toolkit_and_legacy(self, tmp_path: Path) -> None:
         """--clean で agent-toolkit と旧 agent-basics の両方が削除される。"""
         template_dir = _setup_template(tmp_path)
         target = tmp_path / "project"
@@ -113,7 +132,7 @@ class TestClean:
         assert not (target / ".claude" / "rules").exists()
         assert not (target / ".claude").exists()
 
-    def test_clean_when_absent_is_noop(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    def test_clean_when_absent_is_noop(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         """配布先が存在しなくてもエラーにならない。"""
         caplog.set_level(logging.INFO)
         template_dir = _setup_template(tmp_path)

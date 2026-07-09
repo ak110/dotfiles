@@ -3,6 +3,7 @@
 import json
 import pathlib
 import subprocess
+import sys
 
 import permissionrequest as hook
 import pytest
@@ -400,7 +401,7 @@ class TestEndToEnd:
 
     def _run(self, payload: dict) -> tuple[int, str]:
         result = subprocess.run(
-            ["uv", "run", "--script", str(_SCRIPT_PATH)],
+            [sys.executable, str(_SCRIPT_PATH)],
             input=json.dumps(payload),
             capture_output=True,
             text=True,
@@ -488,7 +489,7 @@ class TestEndToEnd:
 
     def test_invalid_json_input_emits_nothing(self) -> None:
         result = subprocess.run(
-            ["uv", "run", "--script", str(_SCRIPT_PATH)],
+            [sys.executable, str(_SCRIPT_PATH)],
             input="not-json",
             capture_output=True,
             text=True,

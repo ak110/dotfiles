@@ -189,7 +189,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/export-for-resume`: 議論が発散したときの現状スナップショットを出力する
+- `/export-for-resume`: 決定事項・未決事項・進捗を整理した引き継ぎ用Markdownを出力する
 - `/shell-exec`: 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
 - `/plan-codex-review`: 計画ファイルのcodexレビュー実行をhaikuのサブエージェントへ委譲する
 - `/exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する

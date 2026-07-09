@@ -244,7 +244,7 @@ class TestCheckWcProjection:
         assert "[現行]ブロックに対応する[置換後]ブロックが存在しない" in result.stderr
 
     def test_consecutive_current_blocks_are_detected_as_orphan(self, tmp_path: pathlib.Path) -> None:
-        """同一H3内で[現行]ブロックが[置換後]を挟まず連続した場合、先行[現行]が違反として報告される。"""
+        """同一H3内で[現行]ブロックが[置換後]を介さず連続した場合、先行[現行]が違反として報告される。"""
         _write(tmp_path / "foo.md", "alpha\nbeta\ngamma\n")
         plan = _write(
             tmp_path / "plan.md",

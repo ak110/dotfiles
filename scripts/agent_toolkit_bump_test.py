@@ -1,5 +1,7 @@
 """scripts/agent_toolkit_bump.py の純関数テスト。"""
 
+import json
+
 import agent_toolkit_bump as bump
 import pytest
 
@@ -96,3 +98,25 @@ class TestBumpRanks:
 
     def test_ordering(self) -> None:
         assert bump.BUMP_RANKS["patch"] < bump.BUMP_RANKS["minor"] < bump.BUMP_RANKS["major"]
+
+
+class TestWriteVersion:
+    """manifest同時更新のテスト。"""
+
+    def test_marketplace_mismatch_does_not_modify_plugin(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """marketplace検証失敗時、plugin.jsonを部分更新しない。"""
+        plugin_manifest = tmp_path / "plugin.json"
+        marketplace_manifest = tmp_path / "marketplace.json"
+        plugin_manifest.write_text(json.dumps({"version": "0.1.0"}) + "\n", encoding="utf-8")
+        marketplace_manifest.write_text(json.dumps({"plugins": []}) + "\n", encoding="utf-8")
+        monkeypatch.setattr(bump, "_PLUGIN_MANIFEST", plugin_manifest)
+        monkeypatch.setattr(bump, "_MARKETPLACE_MANIFEST", marketplace_manifest)
+
+        with pytest.raises(RuntimeError):
+            bump._write_version("0.1.1")  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"

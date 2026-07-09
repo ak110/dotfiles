@@ -27,12 +27,14 @@ jobs:
         run: make -C "$HOME/dotfiles" setup-pwsh
       - name: chezmoi インストール
         run: |
+          set -euo pipefail
           sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: install.sh 実行
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
         run: |
+          set -euo pipefail
           test -f ~/.bashrc
           test -f ~/.vimrc
           test -f ~/.claude/rules/agent-toolkit/01-agent.md
@@ -66,6 +68,7 @@ jobs:
       - name: chezmoi 適用
         shell: bash
         run: |
+          set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source=~/dotfiles --apply
       - name: dotfiles-post-apply の動作確認
@@ -130,6 +133,7 @@ jobs:
       - name: Poppler インストール
         # repack-archive の PDF 入力テストが pdftoppm を必要とする
         run: |
+          set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends poppler-utils
 

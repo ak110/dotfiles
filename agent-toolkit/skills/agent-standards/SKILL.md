@@ -167,7 +167,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 
 ### rules階層のフラット構造
 
-`agent-toolkit/rules/`配下はサブディレクトリを作らずフラット構造を維持する
+`agent-toolkit/rules/`配下はサブディレクトリを作成せずフラット構造を維持する
 （自動ロード対象の規範ファイル集約先であり階層化はSkillとの混同を招く）。
 サブディレクトリ配置が必要な補助情報は`agent-toolkit/skills/*/references/`配下へ配置する。
 

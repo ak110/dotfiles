@@ -349,7 +349,7 @@ def _looks_like_repo_path(token: str) -> bool:
 def _collect_newly_created_paths(content: str) -> frozenset[str]:
     """`## 変更内容`「対象ファイル一覧」で新設マーカーが付与されたパスの集合を返す。
 
-    `- [ ] `path`（新設...)`・`(新設...)`形式のチェックボックス行から抽出する。
+    `- [ ] `path`（新設...)`・`(新設...)`形式のチェックボックス行を解析する。
     同一計画内で新設予定と明記されたパスは`_check_path_existence`の実在確認対象から除外する。
     """
     return frozenset(m.group("path").strip() for line in content.splitlines() if (m := _NEW_FILE_CHECKBOX_RE.match(line)))
