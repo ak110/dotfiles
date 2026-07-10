@@ -55,16 +55,16 @@ def _cmd_tbd_add(
 ) -> None:
     """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。"""
     target_repo = _resolve_repo_id(args.repo_path)
+    if args.question_type == "choice" and not args.choices:
+        print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
+        sys.exit(2)
+    _pull(private_notes)
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:
             sys.exit(1)
         messages = [message]
-    if args.question_type == "choice" and not args.choices:
-        print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
-        sys.exit(2)
-    _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     tbd_dir = _tbd_subdir(private_notes)
     counter = _max_existing_seq(tbd_dir, timestamp) + 1

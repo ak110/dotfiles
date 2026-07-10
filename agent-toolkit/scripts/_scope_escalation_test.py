@@ -33,6 +33,8 @@ class TestMatchScopeEscalation:
             "通常の進捗を報告する",
             "対象ファイル一覧を確認する",
             "テスト実行結果を報告する",
+            "Waiting for user input on the next question.",
+            "background agent is running.",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

@@ -59,13 +59,13 @@ def _cmd_add(
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     """
     target_repo = _resolve_repo_id(args.repo_path)
+    _pull(private_notes)
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:
             sys.exit(1)
         messages = [message]
-    _pull(private_notes)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     inbox_dir = _subdir(private_notes, "inbox")
     counter = _max_existing_seq(inbox_dir, timestamp) + 1

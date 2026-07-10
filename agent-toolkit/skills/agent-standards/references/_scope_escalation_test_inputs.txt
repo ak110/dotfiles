@@ -109,6 +109,9 @@ mitigation-in-adoption	実装コストが見合わないため除外
 async-wait	サブエージェントの完了通知を待つ
 async-wait	完了報告を待って続行する
 async-wait	サブエージェントの応答を待機する
+async-wait	Waiting for the plan-spec-reviewer and plan-impl-reviewer (code category) background agents to complete.
+async-wait	Waiting for the parallel subagents to finish.
+async-wait	background agents to complete before proceeding.
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し

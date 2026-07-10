@@ -95,6 +95,81 @@ class TestTbdAdd:
         assert exc_info.value.code == 2
 
 
+class TestTbdAddPullBeforeEditor:
+    """tbd-addサブコマンド: `_pull`を`_collect_message_via_editor`より前に呼ぶ順序保証。
+
+    `question_type == "choice" and not args.choices`のバリデーションは`_pull`より前に維持する。
+    """
+
+    def test_editor_not_invoked_when_pull_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """messages省略時にpullが失敗した場合、エディターは起動されずユーザー入力消失を予防する。"""
+        notes = _setup_tbd_env(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        editor_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kw.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd[:2] == ["git", "pull"]:
+                raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
+            if cmd[0] == "fake-editor":
+                editor_calls.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(subprocess.CalledProcessError):
+            atk.main(["fb", "tbd-add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+
+        assert not editor_calls
+        assert not list((notes / "tbd" / "inbox").iterdir())
+
+    def test_choice_validation_fires_before_pull(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--question-type=choiceで--choices未指定の場合、pullを呼ばずexit 2で失敗する。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        git_cmds: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kw.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd[0] == "git":
+                git_cmds.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "--question-type", "choice", "q"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 2
+        assert not any(c[:2] == ["git", "pull"] for c in git_cmds)
+
+
 class TestTbdList:
     """tbd-listサブコマンドのフィルター動作検証。"""
 

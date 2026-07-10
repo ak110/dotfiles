@@ -119,7 +119,9 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "async-wait",
         re.compile(
             r"((完了通知|完了報告)[^、。\n]{0,10}(待つ|待機|待って)"
-            r"|サブエージェント[^、。\n]{0,10}(終了|完了|応答|通知)[^、。\n]{0,10}(待つ|待機|待って))"
+            r"|サブエージェント[^、。\n]{0,10}(終了|完了|応答|通知)[^、。\n]{0,10}(待つ|待機|待って)"
+            r"|(?i:waiting for[^,.\n]{0,80}(background|parallel|subagent|reviewer))"
+            r"|(?i:background agents[^,.\n]{0,40}(complete|finish|end)))"
         ),
     ),
     (
