@@ -22,7 +22,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
    （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator）
 9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
-10. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
+10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
+11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
 """
 
@@ -126,6 +127,10 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
 # codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
 _CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
+
+# codex-impl起動検出に使うスキル名。フルネームと短縮名の両方を許容する。
+# pretooluse.pyの`_PLAN_IMPL_SKILL_NAMES`と同型の構成とする。
+_CODEX_IMPL_SKILL_NAMES = frozenset({"agent-toolkit:codex-impl", "codex-impl"})
 
 # apply-feedbackスキル呼び出し検出。Stop hookの拡張照合カテゴリ有効化判定に使う。
 _APPLY_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:apply-feedback"})
@@ -318,6 +323,15 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_codex_review_invoked)
+        if isinstance(skill_name, str) and skill_name in _CODEX_IMPL_SKILL_NAMES:
+
+            def _set_codex_impl_invoked(state: dict) -> dict | None:
+                if state.get("codex_impl_invoked", False):
+                    return None
+                state["codex_impl_invoked"] = True
+                return state
+
+            update_state(session_id, _set_codex_impl_invoked)
         if isinstance(skill_name, str) and skill_name in _APPLY_FEEDBACK_SKILL_NAMES:
             update_state(session_id, _set_apply_feedback_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
@@ -340,9 +354,13 @@ def main() -> int:
         return 0
 
     # mcp__codex__codex: codex-review起動検出
+    # 実装用途（codex-impl経由）の呼び出しは`codex_impl_invoked`が真になっているため、
+    # レビュー起動の誤記録を避けて`codex_review_invoked`を記録しない。
     if tool_name == "mcp__codex__codex":
 
         def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
+            if state.get("codex_impl_invoked", False):
+                return None
             if state.get("codex_review_invoked", False):
                 return None
             state["codex_review_invoked"] = True

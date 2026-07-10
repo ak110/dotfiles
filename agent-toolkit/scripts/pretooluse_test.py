@@ -2634,6 +2634,35 @@ class TestCodexReviewNotRead:
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
         assert "updatedInput" not in out["hookSpecificOutput"]
 
+    def test_allowed_when_codex_impl_invoked_without_review_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """`codex_impl_invoked`が真の場合、codex-review.md未読でもブロックせず通過する。"""
+        self._write_state(tmp_path, "impl-invoked", {"codex_impl_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "impl-invoked",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_blocked_when_codex_impl_not_invoked_and_review_unread(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """`codex_impl_invoked`が偽に設定済み＋codex-review.md未読の場合は従来どおりブロックされる。"""
+        self._write_state(tmp_path, "impl-not-invoked", {"codex_impl_invoked": False})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello"},
+                "session_id": "impl-not-invoked",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "codex-review.md" in result.stderr
+
 
 class TestCodexMcpSandbox:
     """codex MCP sandbox自動修正。"""
@@ -3730,13 +3759,14 @@ class TestPlanModeFlagReset:
     """`agent-toolkit:plan-mode`スキル起動時の工程7完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
+        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`・`codex_impl_invoked`が偽へリセットされ、
         `current_plan_file_path`が消去される。
         """
         sid = "process7-reset"
         state = {
             "plan_mode_skill_invoked": True,
             "agent_doc_validator_invoked": True,
+            "codex_impl_invoked": True,
             "current_plan_file_path": "/tmp/previous-plan.md",
         }
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -3755,6 +3785,7 @@ class TestPlanModeFlagReset:
         for flag in _PROCESS7_FLAGS:
             assert updated[flag] is False
         assert updated["agent_doc_validator_invoked"] is False
+        assert updated["codex_impl_invoked"] is False
         assert "current_plan_file_path" not in updated
 
 

@@ -19,9 +19,10 @@ user-invocable: false
 #   既定sonnetは定型パターンの反復（frontmatter値のみの変更や機械的な単純置換など）向け。
 #   コーディングエージェント向け文書全般の改訂、および既存記述との整合維持を要する改訂は、
 #   呼び出し元が`model: opus`と`effort: medium`を指定する
-#   （判断基準は`../skills/plan-impl/SKILL.md`「実装サブエージェント委譲（plan-implementer）の判断指針」節）。
+#   （判断基準は`../skills/plan-impl/SKILL.md`「実装委譲（codex-impl / plan-implementer）の判断指針」節）。
 # tools制限を持たない理由: MCPツール（`mcp__*`）呼び出しを許容するため。
 #   サブエージェント再帰起動の禁止は本文「判断基準」で担保する。
+#   codex MCP直接呼び出しの禁止も同様に本文「判断基準」で担保する。
 # 本ファイル`## 出力`節のchanged欄書式説明は
 # `../skills/plan-impl/references/launch-prompts-drafting.md`「起草・改訂委譲雛形」節の
 # `## 完了報告要件`欄と意図的に重複させている。
@@ -44,6 +45,9 @@ user-invocable: false
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
 - サブエージェント再帰起動（Agentツール経由のサブエージェント委譲、またはSkillツール経由でサブエージェントを起動する
   スキルの呼び出し）は行わない。再帰起動の必要性が判明した場合は`needs_escalation`を返してメイン側で起動する
+- `mcp__codex__codex`・`mcp__codex__codex-reply`の直接呼び出しは行わない
+  （codex委譲はメイン側`agent-toolkit:codex-impl`の責務とし、`threadId`を一元管理するため）。
+  codex委譲が必要と判明した場合は`needs_escalation`を返してメイン側で委譲する
 - 計画ファイル本文の`### エージェント判断`等に承認済みの例外条項・許容範囲が記載されている場合、
   実装方針を確定する前に該当条項を列挙し、適用可否を判断したうえで方針を決める
   - 例外条項を素通りしてすべてを保守的な判断に偏らせない（適用が妥当なケースに条項を活用しない判断は計画方針からの後退となる）

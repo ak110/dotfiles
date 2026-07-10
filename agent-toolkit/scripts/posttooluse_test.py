@@ -128,20 +128,14 @@ class TestTestExecution:
     )
     def test_test_commands_detected(self, tmp_path: pathlib.Path, command: str):
         sid = "test-exec-detect"
-        result = _run(
-            {"session_id": sid, "tool_input": {"command": command}},
-            state_dir=tmp_path,
-        )
+        result = _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is True, f"command={command!r} not detected"
 
     def test_unrelated_command_no_change(self, tmp_path: pathlib.Path):
         sid = "test-unrelated"
-        _run(
-            {"session_id": sid, "tool_input": {"command": "echo hello"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_input": {"command": "echo hello"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
 
@@ -152,10 +146,7 @@ class TestGitStatusCheck:
     @pytest.mark.parametrize("command", ["git status", "git log --decorate --oneline -5", "git diff"])
     def test_git_commands_detected(self, tmp_path: pathlib.Path, command: str):
         sid = "test-git-status"
-        _run(
-            {"session_id": sid, "tool_input": {"command": command}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("git_status_checked") is True
 
@@ -294,7 +285,7 @@ class TestSessionReviewSkillInvocation:
 
 
 class TestAgentInvocationFlags:
-    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
+    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出・codex-impl起動検出。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize(
@@ -312,10 +303,7 @@ class TestAgentInvocationFlags:
     )
     def test_subagent_type_flag(self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str):
         sid = f"{tool_name.lower()}-{subagent_type.replace(':', '-')}"
-        _run(
-            {"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get(flag_key) is True
 
@@ -330,20 +318,34 @@ class TestAgentInvocationFlags:
 
     def test_codex_review_flag_via_mcp(self, tmp_path: pathlib.Path):
         sid = "codex-review-via-mcp"
-        _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_invoked") is True
+
+    @pytest.mark.parametrize("skill_name", ["agent-toolkit:codex-impl", "codex-impl"])
+    def test_codex_impl_flag_via_skill(self, tmp_path: pathlib.Path, skill_name: str):
+        """`codex-impl`スキル完了で`codex_impl_invoked`が記録される（フルネーム・短縮名の両方）。"""
+        sid = f"codex-impl-via-skill-{skill_name.replace(':', '-')}"
+        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill_name}}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get("codex_impl_invoked") is True
+
+    def test_codex_review_not_recorded_via_mcp_when_codex_impl_invoked(self, tmp_path: pathlib.Path):
+        """`codex_impl_invoked`が真の場合、`mcp__codex__codex`完了で`codex_review_invoked`を記録しない。
+
+        `codex_impl_invoked`未設定時に記録される挙動（従来どおり）は`test_codex_review_flag_via_mcp`で検証済み。
+        """
+        sid = "codex-impl-mcp-no-review-flag"
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+            json.dumps({"codex_impl_invoked": True}, ensure_ascii=False), encoding="utf-8"
+        )
+        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path, tool_name: str):
         sid = f"{tool_name.lower()}-other-subagent"
-        _run(
-            {"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("plan_reviewer_invoked") is not True
         assert state.get("naive_executor_invoked") is not True
@@ -408,10 +410,7 @@ class TestEdgeCases:
 
     def test_silent_output(self, tmp_path: pathlib.Path):
         """PostToolUse は stdout に何も書き込まない。"""
-        result = _run(
-            {"session_id": "silent", "tool_input": {"command": "pytest"}},
-            state_dir=tmp_path,
-        )
+        result = _run({"session_id": "silent", "tool_input": {"command": "pytest"}}, state_dir=tmp_path)
         assert result.stdout == ""
 
 
@@ -441,10 +440,7 @@ class TestGitLogChecked:
     def test_git_log_sets_legacy_bool_when_cwd_absent(self, tmp_path: pathlib.Path):
         """cwd未指定では旧形式の単一bool値で記録する（後方互換）。"""
         sid = "log-check-nocwd"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline -5"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("git_log_checked") is True
 
@@ -495,15 +491,9 @@ class TestGitLogChecked:
     def test_legacy_bool_reset_back_to_false(self, tmp_path: pathlib.Path):
         """旧形式bool値はcommit時に`False`へ戻す（従来挙動）。"""
         sid = "log-legacy-reset"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}}, state_dir=tmp_path)
         assert _read_state(tmp_path, sid).get("git_log_checked") is True
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git commit -m 'x'"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git commit -m 'x'"}}, state_dir=tmp_path)
         assert _read_state(tmp_path, sid).get("git_log_checked") is False
 
     @pytest.mark.parametrize(
@@ -531,10 +521,7 @@ class TestGitLogChecked:
     def test_edit_resets_legacy_bool(self, tmp_path: pathlib.Path):
         """旧形式bool値の場合もWrite/Editでリセットする（後方互換）。"""
         sid = "log-reset-edit-legacy"
-        _run(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}},
-            state_dir=tmp_path,
-        )
+        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}}, state_dir=tmp_path)
         assert _read_state(tmp_path, sid).get("git_log_checked") is True
         _run(
             {"session_id": sid, "tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},

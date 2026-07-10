@@ -172,8 +172,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 ### rules階層のフラット構造
 
 `agent-toolkit/rules/`配下はサブディレクトリを作成せずフラット構造を維持する
-（自動ロード対象の規範ファイル集約先であり階層化はSkillとの混同を招く）。
-サブディレクトリ配置が必要な補助情報は`agent-toolkit/skills/*/references/`配下へ配置する。
+（規範集約先であり階層化はSkillとの混同を招く。補助情報は`agent-toolkit/skills/*/references/`配下へ置く）。
 
 ### セッション状態フラグ
 
@@ -200,8 +199,9 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
 - 工程7完遂判定フラグ群: `plan_reviewer_invoked` / `naive_executor_invoked` /
   `plan_impl_reviewer_invoked` / `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、
-  `codex_review_invoked`はPostToolUse（Skill呼び出しまたは`mcp__codex__codex`完了）が記録する
+  `codex_review_invoked`はPostToolUse（Skill呼び出し、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了）が記録する
   （`agent_doc_validator_invoked`はコーディングエージェント向け文書対象時のみ必須）
+- `codex_impl_invoked`: PostToolUse(Skill)が`codex-impl`呼び出しを記録。実装用途`mcp__codex__codex`の許可判定に使う
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時に上記フラグの条件付き必須化判定で計画ファイル本文を再読込するために使う
 - 計画ファイル未作成時の直接編集検知フラグ群: `plan_file_written` / `direct_agent_toolkit_edit_count` /

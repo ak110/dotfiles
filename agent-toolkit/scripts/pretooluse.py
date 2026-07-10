@@ -399,8 +399,10 @@ def main() -> int:
         return 0
 
     # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正 + 強制承認
+    # `codex_impl_invoked`が真の場合は実装用途の呼び出しのためcodex-review.md未読ブロックを回避する。
     if tool_name == "mcp__codex__codex":
-        if _check_codex_review_not_read(session_id):
+        state = read_state(session_id)
+        if not state.get("codex_impl_invoked", False) and _check_codex_review_not_read(state):
             return 2
         result = _check_codex_mcp_sandbox(tool_input)
         if result is not None:
@@ -2459,6 +2461,7 @@ def _reset_process7_completion_flags(session_id: str) -> None:
     新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`と条件付きフラグ
     `agent_doc_validator_invoked`を偽へ戻す。前計画の`current_plan_file_path`も
     新計画の対象ファイル判定へ誤流用しないよう消去する。
+    実装用途の`mcp__codex__codex`呼び出しを許可する`codex_impl_invoked`も偽へ戻す。
     """
     if not session_id:
         return
@@ -2480,6 +2483,10 @@ def _reset_process7_completion_flags(session_id: str) -> None:
             changed = True
         if current.get("last_agent_toolkit_edit_path") is not None:
             current["last_agent_toolkit_edit_path"] = None
+            changed = True
+        # 実装用途判定の迂回（codex-review.md未読ブロック回避）が新計画へ持ち越されるのを防ぐ。
+        if current.get("codex_impl_invoked", False):
+            current["codex_impl_invoked"] = False
             changed = True
         return current if changed else None
 
@@ -2948,9 +2955,8 @@ def _check_bash_codex_exec(command: str) -> dict | None:
 # --- mcp__codex__codex: codex-review.md未読ブロック ---
 
 
-def _check_codex_review_not_read(session_id: str) -> bool:
+def _check_codex_review_not_read(state: dict) -> bool:
     """codex-review.mdが未読の場合にブロックする。ブロック時Trueを返す。"""
-    state = read_state(session_id)
     if state.get("codex_review_read", False):
         return False
     print(
