@@ -18,6 +18,12 @@
 この場合、上記算術照合は説明文の行数を追記量と誤集計し偽陽性の乖離検出を報告し得る。
 `.py`対象ファイルは自動照合の対象外である。
 見込み行数の確認は`wc -l`実測値との手動照合が唯一の手段となる。
+
+共通要素は`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
+集約対象は`TEXT_FENCE_OPEN_RE`・`FENCE_CLOSE_RE`・`FENCE_RE`・`REDUCTION_HEADING_RE`・
+`iter_non_fenced_lines`・`extract_section_with_offset`とする。
+`_H3_RE`のグループ名、`_CURRENT_LABEL_TOKEN`・`_REPLACEMENT_LABEL_TOKEN`の角括弧の有無は
+本ファイル固有の意味論を持つため温存する。
 """
 
 from __future__ import annotations
@@ -26,7 +32,26 @@ import argparse
 import pathlib
 import re
 import sys
-from collections.abc import Iterator
+
+# 共通モジュール読み込みのため本ファイルと同一ディレクトリを`sys.path`へ追加する。
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+# pylint: disable=wrong-import-position
+from _plan_diff_parsing import (  # noqa: E402
+    FENCE_CLOSE_RE,
+    REDUCTION_HEADING_RE,
+    TEXT_FENCE_OPEN_RE,
+    extract_section_with_offset,
+    iter_non_fenced_lines,
+)
+
+# pylint: enable=wrong-import-position
+
+
+def _extract_section(text: str, heading: str) -> str | None:
+    """`extract_section_with_offset`の本文のみを返す薄いラッパー。"""
+    section, _ = extract_section_with_offset(text, heading)
+    return section
+
 
 # 見込み行数との許容乖離幅（行）。この幅を超えた差分のみ違反として報告する。
 _ALLOWED_DRIFT = 2
@@ -46,18 +71,6 @@ _CHECKBOX_PATH_RE = re.compile(r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\s（(]+)`?")
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+`?(?P<path>[^`\s（(]+)`?")
 
-# 汎用フェンス開始・終了判定（```pythonや~~~等、言語指定・記号種別を問わない）。
-# `_extract_section`のH2見出し境界判定でフェンス内の`## `様の行を除外するために用いる
-# （`check_line_ref.py`の`_FENCE_RE`と同等の役割）。
-_FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
-
-# [現行]/[置換後]対比ブロックの開始フェンス。```textのみを対象とする（```pythonや```bash等の
-# 骨格提示ブロックは対比対象外のため誤検出しない）。
-_TEXT_FENCE_OPEN_RE = re.compile(r"^```text\s*$")
-
-# フェンス閉じ行。
-_FENCE_CLOSE_RE = re.compile(r"^```\s*$")
-
 # [置換後]/[現行]ラベル行の判定トークン。両者とも部分一致で検出する
 # （`置換後:`・`[置換後]`・`現行:`・`[現行]`等の注記付き表現を対称に扱う）。
 _REPLACEMENT_LABEL_TOKEN = "置換後"
@@ -65,10 +78,6 @@ _CURRENT_LABEL_TOKEN = "現行"
 # 削除パターン（現行文言＋削除根拠の組）の削除根拠ブロックを判定するトークン。
 # 削除根拠ブロックは対比適用対象外として無視し、直前の[現行]ブロックも未消費扱いを解除する。
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
-
-# 縮減対象小見出し（`#### 縮減対象（xxx）`等）。H4見出しのみを対象とし統一する。
-# 小見出し配下のtextブロックは縮減対象ブロックとして扱う。
-_REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
 
 # 追記ブロックの連続検出トリガー文に含まれるトークン（部分一致）。
 # 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
@@ -177,9 +186,9 @@ def _is_alternative_path_adopted(plan_body: str) -> bool:
     if section is None:
         return False
     # `### 却下した代替案`H3小節配下は判定対象から除外する（却下説明文中の採用トークン誤検出回避）。
-    # 次H3見出しまたは節末までを削除する（フェンス内`### `様の行は`_iter_non_fenced_lines`で除外済）。
+    # 次H3見出しまたは節末までを削除する（フェンス内`### `様の行は`iter_non_fenced_lines`で除外済）。
     lines = section.splitlines()
-    heading_idxs = [idx for idx, line in _iter_non_fenced_lines(lines) if line.startswith("### ")]
+    heading_idxs = [idx for idx, line in iter_non_fenced_lines(lines) if line.startswith("### ")]
     for i, idx in enumerate(heading_idxs):
         if lines[idx].strip() == "### 却下した代替案":
             end = heading_idxs[i + 1] if i + 1 < len(heading_idxs) else len(lines)
@@ -277,54 +286,6 @@ def _collect_known_paths(section: str) -> frozenset[str]:
     return frozenset(known_paths_set)
 
 
-def _iter_non_fenced_lines(lines: list[str], start: int = 0) -> Iterator[tuple[int, str]]:
-    """```・~~~フェンス内の行を除外し、(行番号, 行内容)を順に返す。
-
-    フェンス開閉状態を跨いで呼び出す用途は想定しない（呼び出しごとに`start`から新規に状態追跡する）。
-    """
-    in_fence = False
-    fence_marker = ""
-    for idx in range(start, len(lines)):
-        line = lines[idx]
-        m_fence = _FENCE_RE.match(line)
-        if m_fence:
-            marker = m_fence.group(2)
-            if not in_fence:
-                in_fence = True
-                fence_marker = marker
-            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
-                in_fence = False
-                fence_marker = ""
-            continue
-        if in_fence:
-            continue
-        yield idx, line
-
-
-def _extract_section(text: str, heading: str) -> str | None:
-    """指定H2見出し直後から次のH2見出し直前までの本文を返す。見出しが無ければ`None`を返す。
-
-    フェンス内に`## `始まりの行（コマンド出力例・サンプル計画本文等）が含まれる場合、
-    誤って節境界と判定し節本文を途中で誤終端することを防ぐため、
-    `_iter_non_fenced_lines`でフェンス内行を除外してから見出し判定する。
-    """
-    lines = text.splitlines()
-    start: int | None = None
-    for idx, line in _iter_non_fenced_lines(lines):
-        if line.strip() == heading:
-            start = idx + 1
-            break
-    if start is None:
-        return None
-
-    end = len(lines)
-    for idx, line in _iter_non_fenced_lines(lines, start):
-        if line.startswith("## ") and line.strip() != heading:
-            end = idx
-            break
-    return "\n".join(lines[start:end])
-
-
 def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[list[tuple[str, str, str]], list[str]]:
     """`## 変更内容`本文から(相対パス, 現行文言, 置換後文言)の一覧と、未消費[現行]パス一覧を返す。
 
@@ -362,11 +323,11 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
             i += 1
             continue
 
-        if _TEXT_FENCE_OPEN_RE.match(line):
+        if TEXT_FENCE_OPEN_RE.match(line):
             label = _preceding_label(lines, i)
             i += 1
             content_lines: list[str] = []
-            while i < n and not _FENCE_CLOSE_RE.match(lines[i]):
+            while i < n and not FENCE_CLOSE_RE.match(lines[i]):
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する
@@ -469,15 +430,15 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             continue
 
         if line.lstrip().startswith("#"):
-            in_reduction_heading = bool(_REDUCTION_HEADING_RE.match(line.strip()))
+            in_reduction_heading = bool(REDUCTION_HEADING_RE.match(line.strip()))
             i += 1
             continue
 
-        if _TEXT_FENCE_OPEN_RE.match(line):
+        if TEXT_FENCE_OPEN_RE.match(line):
             label = _preceding_label_for_addition_reduction(lines, i, in_reduction_heading, in_addition_after_trigger)
             i += 1
             content_lines: list[str] = []
-            while i < n and not _FENCE_CLOSE_RE.match(lines[i]):
+            while i < n and not FENCE_CLOSE_RE.match(lines[i]):
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する

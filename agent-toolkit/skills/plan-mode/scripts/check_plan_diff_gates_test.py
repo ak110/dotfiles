@@ -50,14 +50,22 @@ def _stub_subprocess(
     scope_stdout: str = "",
     textlint_returncode: int = 0,
     textlint_stdout: str = "",
+    line_width_returncode: int = 0,
+    line_width_stderr: str = "",
 ) -> list[list[str]]:
-    """subprocess.runを差し替えてscope_escalation/textlint双方の応答を注入する。"""
+    """subprocess.runを差し替えてscope_escalation・textlint・check_line_widthの応答を注入する。
+
+    `check_line_width.py`は違反行を`sys.stderr`へ出力するため、
+    `line_width_stderr`をstderr側の応答として注入する。
+    """
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(list(cmd))
         if any("_scope_escalation.py" in part for part in cmd):
             return _completed(scope_returncode, stdout=scope_stdout)
+        if any("check_line_width.py" in part for part in cmd):
+            return _completed(line_width_returncode, stderr=line_width_stderr)
         if any(part == "pyfltr" or part.endswith("pyfltr") for part in cmd):
             return _completed(textlint_returncode, stdout=textlint_stdout)
         return _completed(0)
@@ -124,6 +132,15 @@ class TestExtractDiffBlocks:
         blocks = list(_MOD._extract_diff_blocks(text))
         assert blocks[0][1] > 0
 
+    def test_addition_trigger_tokens_include_compression_after(self) -> None:
+        assert "圧縮後:" in _MOD._ADDITION_TRIGGER_TOKENS
+
+    def test_extract_diff_blocks_compression_after_trigger(self) -> None:
+        text = "## 変更内容\n\n### `foo.md`\n\n圧縮後:\n\n```text\ncompressed body\n```\n"
+        blocks = list(_MOD._extract_diff_blocks(text))
+        assert len(blocks) == 1
+        assert blocks[0][2] == "compressed body"
+
 
 class TestRunScopeEscalation:
     """`_run_scope_escalation`のsubprocessモック検証。"""
@@ -167,6 +184,20 @@ class TestRunTextlint:
         assert calls
         # 最後の引数（一時ファイルパス）が`.md`で終わる。
         assert calls[0][-1].endswith(".md")
+
+
+class TestRunLineWidth:
+    """`_run_line_width`のsubprocessモック検証。"""
+
+    def test_run_line_width_success_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _stub_subprocess(monkeypatch, line_width_returncode=0)
+        assert _MOD._run_line_width("body") is None
+
+    def test_run_line_width_violation_returns_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _stub_subprocess(monkeypatch, line_width_returncode=1, line_width_stderr="width violation!")
+        result = _MOD._run_line_width("body")
+        assert result is not None
+        assert "width violation" in result
 
 
 class TestCheckPlanFile:
@@ -215,6 +246,26 @@ class TestCheckPlanFile:
         violations = _MOD._check_plan_file(missing)
         assert len(violations) == 1
         assert "読み込みに失敗" in violations[0]
+
+    def test_check_plan_file_reports_line_width_violation(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _stub_subprocess(
+            monkeypatch,
+            scope_returncode=0,
+            textlint_returncode=0,
+            line_width_returncode=1,
+            line_width_stderr="line too long",
+        )
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nlong body\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan)
+        assert len(violations) == 1
+        assert "line-width" in violations[0]
 
 
 class TestMainEntrypoint:

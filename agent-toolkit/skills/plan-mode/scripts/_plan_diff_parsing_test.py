@@ -1,0 +1,88 @@
+"""agent-toolkit/skills/plan-mode/scripts/_plan_diff_parsing.py のテスト。
+
+共有モジュールの公開定数（コンパイル済み正規表現）と`iter_non_fenced_lines`関数の
+仕様を単体レベルで検証する。呼び出し側スクリプト（`check_plan_diff_gates.py`・
+`check_wc_projection.py`）はこれらの挙動へ依存する。
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import pathlib
+import re
+import types
+
+_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "_plan_diff_parsing.py"
+
+
+def _load_module() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("_plan_diff_parsing", _MODULE_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MOD = _load_module()
+
+
+class TestPublicConstants:
+    """公開定数群がコンパイル済み正規表現であることを確認する。"""
+
+    def test_public_constants_are_compiled_patterns(self) -> None:
+        for name in ("TEXT_FENCE_OPEN_RE", "FENCE_CLOSE_RE", "FENCE_RE", "REDUCTION_HEADING_RE"):
+            pattern = getattr(_MOD, name)
+            assert isinstance(pattern, re.Pattern), name
+
+    def test_text_fence_open_matches_text_only(self) -> None:
+        assert _MOD.TEXT_FENCE_OPEN_RE.match("```text")
+        assert _MOD.TEXT_FENCE_OPEN_RE.match("```text  ")
+        assert not _MOD.TEXT_FENCE_OPEN_RE.match("```python")
+        assert not _MOD.TEXT_FENCE_OPEN_RE.match("```bash")
+        assert not _MOD.TEXT_FENCE_OPEN_RE.match("```")
+
+    def test_fence_close_matches_bare_backticks(self) -> None:
+        assert _MOD.FENCE_CLOSE_RE.match("```")
+        assert _MOD.FENCE_CLOSE_RE.match("```   ")
+        # `TEXT_FENCE_OPEN_RE`との排他性: ```textには一致しない。
+        assert not _MOD.FENCE_CLOSE_RE.match("```text")
+
+    def test_fence_re_matches_multiple_backticks_and_tildes(self) -> None:
+        assert _MOD.FENCE_RE.match("```")
+        assert _MOD.FENCE_RE.match("````")
+        assert _MOD.FENCE_RE.match("~~~")
+        assert _MOD.FENCE_RE.match("~~~~")
+        assert _MOD.FENCE_RE.match("```python")
+        assert _MOD.FENCE_RE.match("  ```")  # 先頭空白許容
+
+    def test_reduction_heading_re_matches_h4_only(self) -> None:
+        assert _MOD.REDUCTION_HEADING_RE.match("#### 縮減対象")
+        assert _MOD.REDUCTION_HEADING_RE.match("#### 縮減対象（一部）")
+        assert not _MOD.REDUCTION_HEADING_RE.match("### 縮減対象")
+        assert not _MOD.REDUCTION_HEADING_RE.match("##### 縮減対象")
+
+
+class TestIterNonFencedLines:
+    """`iter_non_fenced_lines`のフェンス除外仕様を検証する。"""
+
+    def test_iter_non_fenced_lines_skips_fenced_content(self) -> None:
+        text = "outer1\n```\ninside\n```\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert "inside" not in yielded
+        assert "outer1" in yielded
+        assert "outer2" in yielded
+
+    def test_iter_non_fenced_lines_respects_start_offset(self) -> None:
+        lines = ["a", "b", "c", "d"]
+        yielded_idxs = [idx for idx, _line in _MOD.iter_non_fenced_lines(lines, start=2)]
+        assert yielded_idxs == [2, 3]
+
+    def test_iter_non_fenced_lines_handles_nested_fence_markers(self) -> None:
+        # ~~~フェンス内の```はフェンス終了扱いにならない（マーカー先頭文字の一致で判定）。
+        text = "outer\n~~~\n```\ninside\n```\n~~~\ntail\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert "inside" not in yielded
+        assert "outer" in yielded
+        assert "tail" in yielded
