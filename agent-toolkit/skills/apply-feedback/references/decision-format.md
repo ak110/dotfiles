@@ -110,8 +110,3 @@ plan-mode側の定義は
 ## 計画作成移行ルール
 
 全件の承認を得たうえで計画作成へ移行する。
-
-## 計画分割・統合の判断基準
-
-各feedbackファイルのfrontmatter`plan_group`フィールドで計画単位を決定する。
-判定方式・命名基準は`references/plan-split.md`に集約する。

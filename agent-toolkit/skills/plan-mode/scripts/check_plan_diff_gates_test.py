@@ -78,27 +78,42 @@ class TestExtractDiffBlocks:
     """`_extract_diff_blocks`の抽出仕様を網羅する。"""
 
     def test_new_label_block_is_extracted(self) -> None:
-        text = "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nnew content line1\nnew content line2\n```\n"
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nnew content line1\nnew content line2\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert len(blocks) == 1
         label, _line, body = blocks[0]
         assert label == "`foo.md`"
+        # ラベル行はfence内側1行目に配置され、本文集計・textlint検査から除外される。
         assert body == "new content line1\nnew content line2"
 
     def test_replacement_label_block_is_extracted(self) -> None:
-        text = "## 変更内容\n\n### `foo.md`\n\n[置換後]:\n\n```text\nreplaced body\n```\n"
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後]\nreplaced body\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert len(blocks) == 1
+        assert blocks[0][2] == "replaced body"
 
     def test_replacement_full_label_block_is_extracted(self) -> None:
-        text = "## 変更内容\n\n### `foo.md`\n\n[置換後（全文）]:\n\n```text\nwhole file content\n```\n"
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後（全文）]\nwhole file content\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert len(blocks) == 1
+        assert blocks[0][2] == "whole file content"
 
     def test_current_label_block_is_excluded(self) -> None:
-        text = "## 変更内容\n\n### `foo.md`\n\n[現行]:\n\n```text\nold body\n```\n"
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold body\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert not blocks
+
+    def test_deletion_rationale_label_block_is_excluded(self) -> None:
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[削除根拠]\n削除の理由\n```\n"
+        blocks = list(_MOD._extract_diff_blocks(text))
+        assert not blocks
+
+    def test_variable_length_fence_four_backticks_is_extracted(self) -> None:
+        """外側4バッククォートのfenceも検査対象として認識される。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n````text\n[置換後]\ninner ``` allowed\n````\n"
+        blocks = list(_MOD._extract_diff_blocks(text))
+        assert len(blocks) == 1
+        assert blocks[0][2] == "inner ``` allowed"
 
     def test_new_h3_marker_extracts_body(self) -> None:
         text = "## 変更内容\n\n### `new_file.py`（新設）\n\n新設スクリプト。\n\n```text\nsome body under new h3\n```\n"
@@ -118,7 +133,7 @@ class TestExtractDiffBlocks:
         assert len(blocks) == 1
 
     def test_non_text_fence_is_ignored(self) -> None:
-        text = "## 変更内容\n\n### `foo.py`\n\n[新設]:\n\n```python\ndef f(): pass\n```\n"
+        text = "## 変更内容\n\n### `foo.py`\n\n```python\ndef f(): pass\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert not blocks
 
@@ -128,7 +143,7 @@ class TestExtractDiffBlocks:
         assert not blocks
 
     def test_block_start_line_is_computed(self) -> None:
-        text = "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nline\n```\n"
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nline\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert blocks[0][1] > 0
 
@@ -207,7 +222,7 @@ class TestCheckPlanFile:
         _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=0)
         plan = _write(
             tmp_path / "plan.md",
-            "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nclean\n```\n",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nclean\n```\n",
         )
         assert _MOD._check_plan_file(plan) == []
 
@@ -225,7 +240,7 @@ class TestCheckPlanFile:
         )
         plan = _write(
             tmp_path / "plan.md",
-            "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nbad phrase\n```\n",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nbad phrase\n```\n",
         )
         violations = _MOD._check_plan_file(plan)
         assert len(violations) == 1
@@ -235,7 +250,7 @@ class TestCheckPlanFile:
         _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
         plan = _write(
             tmp_path / "plan.md",
-            "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nlong body\n```\n",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
         violations = _MOD._check_plan_file(plan)
         assert len(violations) == 1
@@ -261,7 +276,7 @@ class TestCheckPlanFile:
         )
         plan = _write(
             tmp_path / "plan.md",
-            "## 変更内容\n\n### `foo.md`\n\n[新設]:\n\n```text\nlong body\n```\n",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
         violations = _MOD._check_plan_file(plan)
         assert len(violations) == 1

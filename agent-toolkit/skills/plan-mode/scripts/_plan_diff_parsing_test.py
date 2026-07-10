@@ -86,3 +86,65 @@ class TestIterNonFencedLines:
         assert "inside" not in yielded
         assert "outer" in yielded
         assert "tail" in yielded
+
+    def test_iter_non_fenced_lines_handles_variable_length_open_close_match(self) -> None:
+        """3バッククォート開始→3バッククォート閉じ（既存挙動維持）。"""
+        text = "outer1\n```\ninside\n```\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert yielded == ["outer1", "outer2"]
+
+    def test_iter_non_fenced_lines_handles_four_backtick_pair(self) -> None:
+        """4バッククォート開始→4バッククォート閉じは正しく閉じる。"""
+        text = "outer1\n````\ninside\n````\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert yielded == ["outer1", "outer2"]
+
+    def test_iter_non_fenced_lines_three_open_four_close(self) -> None:
+        """3バッククォート開始→4バッククォート閉じは閉じとして扱う（同数以上）。"""
+        text = "outer1\n```\ninside\n````\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert "inside" not in yielded
+        assert "outer2" in yielded
+
+    def test_iter_non_fenced_lines_four_open_three_close_does_not_close(self) -> None:
+        """4バッククォート開始→3バッククォート閉じは閉じとして扱わない。"""
+        text = "outer1\n````\ninside\n```\nstill_inside\n````\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert "still_inside" not in yielded
+        assert "outer2" in yielded
+
+    def test_iter_non_fenced_lines_nested_outer_four_inner_three(self) -> None:
+        """外側4バッククォート・内側3バッククォートのネスト構造を正しく扱う。"""
+        text = "outer1\n````\n```\ninner_code\n```\nouter_content\n````\nouter2\n"
+        lines = text.splitlines()
+        yielded = [line for _idx, line in _MOD.iter_non_fenced_lines(lines)]
+        assert "inner_code" not in yielded
+        assert "outer_content" not in yielded
+        assert yielded == ["outer1", "outer2"]
+
+
+class TestIsMatchingClose:
+    """`is_matching_close`ヘルパーの動作を検証する。"""
+
+    def test_three_open_three_close_matches(self) -> None:
+        assert _MOD.is_matching_close("```", "```")
+
+    def test_four_open_four_close_matches(self) -> None:
+        assert _MOD.is_matching_close("````", "````")
+
+    def test_three_open_four_close_matches(self) -> None:
+        """3バッククォート開始は4バッククォート閉じでも整合する（同数以上）。"""
+        assert _MOD.is_matching_close("```", "````")
+
+    def test_four_open_three_close_does_not_match(self) -> None:
+        assert not _MOD.is_matching_close("````", "```")
+
+    def test_non_close_line_returns_false(self) -> None:
+        assert not _MOD.is_matching_close("```", "regular text")
+
+    def test_close_marker_with_trailing_whitespace(self) -> None:
+        assert _MOD.is_matching_close("```", "```   ")

@@ -6,13 +6,27 @@
 H3見出し無し・複数ファイル対象・対比ブロック無しの各シナリオを網羅する。
 """
 
+import importlib.util
 import pathlib
 import subprocess
 import sys
+import types
 
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_wc_projection.py"
+
+
+def _load_module() -> types.ModuleType:
+    """`check_wc_projection.py`をテスト用にimportし、内部関数への直接アクセスを可能にする。"""
+    spec = importlib.util.spec_from_file_location("check_wc_projection", _SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MOD = _load_module()
 
 
 def _run(*plan_paths: pathlib.Path, cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -32,11 +46,15 @@ def _write(path: pathlib.Path, content: str) -> pathlib.Path:
 
 
 def _plan_with_single_block(*, checkbox_line: str, h3_heading: str, current_text: str, replacement_text: str) -> str:
-    """対象ファイル一覧と1個のH3対比ブロックを持つ計画ファイル本文を組み立てる。"""
+    """対象ファイル一覧と1個のH3対比ブロックを持つ計画ファイル本文を組み立てる。
+
+    ラベルはfence内側形式（fence直後1行目にプレーンテキストで配置）で出力する。
+    """
     return (
         "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-        f"{checkbox_line}\n\n{h3_heading}\n\n現行:\n\n```text\n{current_text}\n```\n\n"
-        f"置換後:\n\n```text\n{replacement_text}\n```\n"
+        f"{checkbox_line}\n\n{h3_heading}\n\n"
+        f"```text\n[現行]\n{current_text}\n```\n\n"
+        f"```text\n[置換後]\n{replacement_text}\n```\n"
     )
 
 
@@ -130,7 +148,7 @@ class TestCheckWcProjection:
         plan = _write(
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold line\n```\n\n置換後:\n\n```text\nnew line\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold line\n```\n\n```text\n[置換後]\nnew line\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -156,8 +174,8 @@ class TestCheckWcProjection:
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行3行, 見込み3行）\n- [ ] `bar.md`（現行3行, 見込み99行）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold foo\n```\n\n置換後:\n\n```text\nnew foo\n```\n\n"
-            "### `bar.md`\n\n現行:\n\n```text\nold bar\n```\n\n置換後:\n\n```text\nnew bar\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold foo\n```\n\n```text\n[置換後]\nnew foo\n```\n\n"
+            "### `bar.md`\n\n```text\n[現行]\nold bar\n```\n\n```text\n[置換後]\nnew bar\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -171,8 +189,8 @@ class TestCheckWcProjection:
         plan = _write(
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行3行, 見込み3行）\n\n"
-            "### `foo.md`\n\n置換1。\n\n現行:\n\n```text\nalpha\n```\n\n置換後:\n\n```text\nalpha2\n```\n\n"
-            "置換2。\n\n現行:\n\n```text\nbeta\n```\n\n置換後:\n\n```text\nbeta2\n```\n",
+            "### `foo.md`\n\n置換1。\n\n```text\n[現行]\nalpha\n```\n\n```text\n[置換後]\nalpha2\n```\n\n"
+            "置換2。\n\n```text\n[現行]\nbeta\n```\n\n```text\n[置換後]\nbeta2\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -236,7 +254,7 @@ class TestCheckWcProjection:
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`(現行3行, 見込み3行)\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold line\n```\n\n"
+            "### `foo.md`\n\n```text\n[現行]\nold line\n```\n\n"
             "（[置換後]ブロックが欠落）\n",
         )
         result = _run(plan, cwd=tmp_path)
@@ -250,8 +268,8 @@ class TestCheckWcProjection:
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`(現行3行, 見込み3行)\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nalpha\n```\n\n"
-            "現行:\n\n```text\nbeta\n```\n\n置換後:\n\n```text\nbeta2\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nalpha\n```\n\n"
+            "```text\n[現行]\nbeta\n```\n\n```text\n[置換後]\nbeta2\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -275,14 +293,14 @@ class TestCheckWcProjection:
         assert "見込み99行" in result.stderr
 
     def test_bracket_labels_are_supported(self, tmp_path: pathlib.Path) -> None:
-        """`[現行]`・`[置換後]`角括弧付きラベルの対比ブロックも機械適用対象として認識される。"""
+        """`[現行]`・`[置換後]`角括弧付きラベル（fence内側形式）の対比ブロックも機械適用対象として認識される。"""
         _write(tmp_path / "foo.md", "old line\nsecond\nthird\n")
         plan = _write(
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行3行, 見込み3行）\n\n"
-            "### `foo.md`\n\n[現行]:\n\n```text\nold line\n```\n\n"
-            "[置換後]:\n\n```text\nnew line\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold line\n```\n\n"
+            "```text\n[置換後]\nnew line\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -295,8 +313,8 @@ class TestCheckWcProjection:
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（新設, 見込み3行）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold line\n```\n\n"
-            "置換後:\n\n```text\nnew line\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold line\n```\n\n"
+            "```text\n[置換後]\nnew line\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -308,8 +326,8 @@ class TestCheckWcProjection:
             tmp_path / "plan.md",
             "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行3行, 見込み3行）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold line\n```\n\n"
-            "削除根拠:\n\n```text\n冗長な旧記述のため削除する\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold line\n```\n\n"
+            "```text\n[削除根拠]\n冗長な旧記述のため削除する\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -510,8 +528,8 @@ class TestCheckWcProjection:
             "- [ ] `foo.md`（現行3行, 見込み99行）\n\n"
             "### `foo.md`\n\n"
             "出力例:\n\n```text\n## 出力例の見出し\n```\n\n"
-            "現行:\n\n```text\nold line\n```\n\n"
-            "置換後:\n\n```text\nnew line\n```\n",
+            "```text\n[現行]\nold line\n```\n\n"
+            "```text\n[置換後]\nnew line\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -552,7 +570,7 @@ class TestCheckWcProjection:
             "- 大規模計画の代替経路を採用する案を検討したが却下した\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold\n```\n\n置換後:\n\n```text\nnew\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -567,7 +585,7 @@ class TestCheckWcProjection:
             "# T\n\n## 対応方針\n\n通常経路で実装する。\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
-            "### `foo.md`\n\n現行:\n\n```text\nold\n```\n\n置換後:\n\n```text\nnew\n```\n",
+            "### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
@@ -605,3 +623,110 @@ class TestCheckWcProjection:
             assert f"対象{total}件・新規{new_count}件" in result.stderr
         else:
             assert "規模基準未達" not in result.stderr
+
+
+class TestBoundaryReductionCheck:
+    """`_check_reduction_block_for_boundary_files`の警告出力仕様を検証する。
+
+    境界近接ファイル（見込み200〜219行）を対象に、対応する`#### 縮減対象（<ファイル名>）`
+    H4見出しの存在を検査する。警告は情報提供扱いで違反件数には計上しない（returncode 0）。
+    """
+
+    def test_boundary_file_without_reduction_heading_warns(self, tmp_path: pathlib.Path) -> None:
+        """境界近接ファイル対象・縮減対象H4不在時に警告が出力される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行200行, 見込み210行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "境界近接ファイル" in result.stderr
+        assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
+
+    def test_boundary_file_with_reduction_heading_passes(self, tmp_path: pathlib.Path) -> None:
+        """境界近接ファイル対象・縮減対象H4完備時は警告が出ない。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行200行, 見込み210行）\n\n"
+            "### `foo.md`\n\n"
+            "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "境界近接ファイル" not in result.stderr
+
+    def test_boundary_files_partial_headings_warn_only_missing(self, tmp_path: pathlib.Path) -> None:
+        """境界近接ファイル対象・一部のみH4完備時は不在ファイルにのみ警告が出力される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行200行, 見込み210行）\n"
+            "- [ ] `bar.md`（現行200行, 見込み215行）\n\n"
+            "### `foo.md`\n\n"
+            "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "bar.md" in result.stderr
+        assert "境界近接ファイルfoo.md" not in result.stderr
+
+    def test_non_boundary_file_skips_check(self, tmp_path: pathlib.Path) -> None:
+        """境界近接範囲外（見込み199行以下または220行以上）のファイルは検査対象外となる。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行150行, 見込み180行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "境界近接ファイル" not in result.stderr
+
+
+class TestLeadingLabel:
+    """`_leading_label`のfence内側形式ラベル検出を単体レベルで検証する。"""
+
+    # pylint: disable=protected-access
+
+    def test_current_label_inside_fence_is_detected(self) -> None:
+        assert _MOD._leading_label(["[現行]", "old body"]) == "current"
+
+    def test_replacement_label_inside_fence_is_detected(self) -> None:
+        assert _MOD._leading_label(["[置換後]", "new body"]) == "replacement"
+
+    def test_deletion_rationale_label_inside_fence_is_detected(self) -> None:
+        assert _MOD._leading_label(["[削除根拠]", "冗長のため削除"]) == "deletion"
+
+    def test_replacement_full_takes_precedence_over_replacement(self) -> None:
+        """「置換後（全文）」判定が「置換後」判定より先に評価される。"""
+        assert _MOD._leading_label(["[置換後（全文）]", "whole file body"]) == "replacement-full"
+
+    def test_new_label_inside_fence_is_detected(self) -> None:
+        assert _MOD._leading_label(["[新設]", "new file body"]) == "new"
+
+    def test_no_label_returns_none(self) -> None:
+        assert _MOD._leading_label(["regular body"]) is None
+        assert _MOD._leading_label([]) is None
+
+
+class TestVariableLengthFence:
+    """可変長フェンス（4バッククォート以上）のfence内側形式対応を検証する。"""
+
+    def test_four_backtick_fence_diff_block_is_processed(self, tmp_path: pathlib.Path) -> None:
+        """外側4バッククォートで囲んだfence内側形式ラベルの対比ブロックも機械適用対象。"""
+        _write(tmp_path / "foo.md", "```\ninner code\n```\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行3行, 見込み3行）\n\n"
+            "### `foo.md`\n\n"
+            "````text\n[現行]\n```\ninner code\n```\n````\n\n"
+            "````text\n[置換後]\n```\nnew inner\n```\n````\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr

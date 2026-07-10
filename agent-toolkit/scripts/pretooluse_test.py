@@ -3751,12 +3751,12 @@ class TestFabricatedMetricsScopeEscalation:
         assert "fabricated-metrics" not in result.stderr
 
 
-class TestWorkaroundScratchpadGate:
-    """plan fileのWrite時、ワークアラウンド語検出に伴うscratchpad事前検討記録の未整備ブロック。"""
+class TestWorkaroundMemoGate:
+    """plan fileのWrite時、ワークアラウンド語検出に伴う事前検討メモの未整備ブロック。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
-    # scratchpadキーは計画ファイル自身のstemから導出するため、`_make_plan`が生成する
+    # メモパスは計画ファイル自身のstemから導出するため、`_make_plan`が生成する
     # 既定のplan file名（`test.md`）のstemに合わせる。
     # フィードバック起因かどうかを問わず全ての計画ファイルへ一律適用できるため、
     # 複数inbox問題（複数の採否確定ファイルが1計画ファイルに列挙されるケース）を検証するテストは不要になった。
@@ -3811,8 +3811,8 @@ class TestWorkaroundScratchpadGate:
         )
         assert result.returncode == 0
 
-    def test_missing_scratchpad_blocks(self, tmp_path: pathlib.Path):
-        """ワークアラウンド語検出時にscratchpadファイルが不在の場合はブロックする。"""
+    def test_missing_memo_blocks(self, tmp_path: pathlib.Path):
+        """ワークアラウンド語検出時にメモファイルが不在の場合はブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -3831,16 +3831,18 @@ class TestWorkaroundScratchpadGate:
         assert result.returncode == 0
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_incomplete_scratchpad_blocks(self, tmp_path: pathlib.Path):
-        """scratchpadファイルは存在するが必須項目の記入漏れがある場合はブロックする。"""
+    @classmethod
+    def _memo_path(cls, home: pathlib.Path) -> pathlib.Path:
+        return home / ".claude" / "plans" / f"{cls._PLAN_STEM}-workaround-check.md"
+
+    def test_incomplete_memo_blocks(self, tmp_path: pathlib.Path):
+        """メモファイルは存在するが必須項目の記入漏れがある場合はブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "workaround-incomplete"
         self._prior_flags(tmp_path, sid)
-        scratchpad_dir = tmp_path / "scratchpad"
-        scratchpad_dir.mkdir(parents=True, exist_ok=True)
-        (scratchpad_dir / f"workaround-check-{self._PLAN_STEM}.md").write_text("根本原因の候補: 未整理\n", encoding="utf-8")
+        self._memo_path(home).write_text("根本原因の候補: 未整理\n", encoding="utf-8")
         content = self._content(self._changes_body_with_workaround())
         result = _run(
             {
@@ -3854,17 +3856,62 @@ class TestWorkaroundScratchpadGate:
         assert result.returncode == 0
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_complete_scratchpad_passes(self, tmp_path: pathlib.Path):
-        """scratchpadファイルに必須3項目が記入済みの場合は通過する。"""
+    def test_complete_memo_passes(self, tmp_path: pathlib.Path):
+        """メモファイルに必須3項目が記入済みの場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "workaround-complete"
         self._prior_flags(tmp_path, sid)
-        scratchpad_dir = tmp_path / "scratchpad"
-        scratchpad_dir.mkdir(parents=True, exist_ok=True)
-        (scratchpad_dir / f"workaround-check-{self._PLAN_STEM}.md").write_text(
+        self._memo_path(home).write_text(
             "根本原因の候補: A\n根本対応が成立するか: 否\n成立しない場合の理由: 外部制約\n",
+            encoding="utf-8",
+        )
+        content = self._content(self._changes_body_with_workaround())
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_empty_body_items_block(self, tmp_path: pathlib.Path):
+        """必須項目名は全て存在するが本文が空欄の場合はブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-empty"
+        self._prior_flags(tmp_path, sid)
+        self._memo_path(home).write_text(
+            "根本原因の候補:\n根本対応が成立するか:\n成立しない場合の理由:\n",
+            encoding="utf-8",
+        )
+        content = self._content(self._changes_body_with_workaround())
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+
+    def test_body_on_next_line_passes(self, tmp_path: pathlib.Path):
+        """項目名の次行に本文がある場合は通過する。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "workaround-next-line"
+        self._prior_flags(tmp_path, sid)
+        self._memo_path(home).write_text(
+            "根本原因の候補\n候補A\n根本対応が成立するか\n否\n成立しない場合の理由\n外部制約\n",
             encoding="utf-8",
         )
         content = self._content(self._changes_body_with_workaround())

@@ -32,8 +32,8 @@
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 
 SSOTコメント: ブロック抽出ロジックの共通トークン
-（`TEXT_FENCE_OPEN_RE`・`FENCE_CLOSE_RE`・`FENCE_RE`・`REDUCTION_HEADING_RE`・`iter_non_fenced_lines`・
-`extract_section_with_offset`）は兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
+（`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・`extract_section_with_offset`）
+は兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論的差異のある要素（`_H3_RE`のグループ名・角括弧付きラベルトークンなど）は本スクリプト固有として温存する。
 """
 
@@ -51,10 +51,10 @@ from collections.abc import Callable, Iterator
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
 from _plan_diff_parsing import (  # noqa: E402
-    FENCE_CLOSE_RE,
     REDUCTION_HEADING_RE,
     TEXT_FENCE_OPEN_RE,
     extract_section_with_offset,
+    is_matching_close,
 )
 
 # pylint: enable=wrong-import-position
@@ -70,11 +70,21 @@ _CHECK_LINE_WIDTH_CLI = pathlib.Path(__file__).resolve().parents[2] / "writing-s
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+(?P<rest>.+)$")
 
-# 対象ラベルの判定トークン（フェンス直前非空行に部分一致する場合に該当ラベル扱いとする）。
+# 対象ラベルの判定トークン（フェンス直後1行目のプレーンテキストラベルに部分一致する場合に該当扱いとする）。
 _NEW_LABEL_TOKEN = "[新設]"
 _REPLACEMENT_LABEL_TOKEN = "[置換後]"
 _REPLACEMENT_FULL_LABEL_TOKEN = "[置換後（全文）]"
 _CURRENT_LABEL_TOKEN = "[現行]"
+_DELETION_RATIONALE_LABEL_TOKEN = "[削除根拠]"
+
+# ラベル行判定用トークン一覧（fence直後1行目から本文抽出時に除外する対象）。
+_ALL_LABEL_TOKENS = (
+    _NEW_LABEL_TOKEN,
+    _REPLACEMENT_LABEL_TOKEN,
+    _REPLACEMENT_FULL_LABEL_TOKEN,
+    _CURRENT_LABEL_TOKEN,
+    _DELETION_RATIONALE_LABEL_TOKEN,
+)
 
 # 追記/縮減トリガー文に含まれるトークン（フェンス直前非空行に部分一致する場合、次のtextブロックを検査対象へ加える）。
 _ADDITION_TRIGGER_TOKENS = ("追記文言案", "追記内容:", "追記:", "追加:", "圧縮対象:", "圧縮後:")
@@ -135,7 +145,7 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
     """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文)`で順に返す。
 
     `## 変更内容`セクションに限定して走査する。H3見出しの走査状態を更新しつつ`text`フェンスを検出する。
-    各フェンスについて、直前非空行のラベル判定・トリガー継続中フラグ・見出しコンテキストで検査対象かを判断する。
+    各フェンスについて、フェンス直後1行目（fence内側）のラベル判定・トリガー継続中フラグ・見出しコンテキストで検査対象かを判断する。
     """
     section, section_start_line = extract_section_with_offset(text, "## 変更内容")
     if section is None:
@@ -165,18 +175,25 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
             i += 1
             continue
 
-        if TEXT_FENCE_OPEN_RE.match(line):
-            label = _classify_block(lines, i, in_new_h3, in_reduction_heading, trigger_active)
+        m_open = TEXT_FENCE_OPEN_RE.match(line)
+        if m_open:
+            open_marker = m_open.group(1)
             block_start = i + 1  # フェンス本文の先頭行（1始まり）
             i += 1
             content_lines: list[str] = []
-            while i < n and not FENCE_CLOSE_RE.match(lines[i]):
+            while i < n and not is_matching_close(open_marker, lines[i]):
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する
+            label = _classify_block(content_lines, in_new_h3, in_reduction_heading, trigger_active)
             trigger_active = False
             if label is not None:
-                body = "\n".join(content_lines)
+                # fence直後1行目のラベル行はtextlint検査対象から外す
+                # （半角大かっこがtextlintのjtf-style/4.3.2で誤検出されるため）。
+                body_lines = content_lines
+                if body_lines and _is_label_line(body_lines[0]):
+                    body_lines = body_lines[1:]
+                body = "\n".join(body_lines)
                 # 計画ファイル全体の行番号に換算する（section開始行 + section内オフセット）。
                 absolute_line = section_start_line + block_start
                 yield (current_h3, absolute_line, body)
@@ -189,31 +206,32 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
 
 
 def _classify_block(
-    lines: list[str],
-    fence_idx: int,
+    content_lines: list[str],
     in_new_h3: bool,
     in_reduction_heading: bool,
     trigger_active: bool,
 ) -> str | None:
-    """フェンス直前ラベル・見出しコンテキスト・トリガー継続フラグから検査対象種別を判定する。
+    """フェンス直後1行目のラベル・見出しコンテキスト・トリガー継続フラグから検査対象種別を判定する。
 
     優先順は次のとおり。
-    1. `[現行]`ラベル配下は削除予定の既存文言のため検査対象外とする（`None`を返す）
+    1. `[現行]`・`[削除根拠]`ラベル配下は既存文言または削除説明のため検査対象外（`None`）
     2. `[新設]`・`[置換後]`・`[置換後（全文）]`ラベル配下は種別ラベルを返す
     3. `#### 縮減対象`見出し配下は`reduction`を返す
     4. `（新設）`H3配下は`new-h3`を返す
     5. 追記トリガー文出現後で当該H3節境界に未到達なら`addition`を返す
     それ以外は検査対象外として`None`を返す。
     """
-    label_line = _preceding_non_empty(lines, fence_idx)
-    if label_line is not None:
-        if _CURRENT_LABEL_TOKEN in label_line:
+    first = content_lines[0].strip() if content_lines else ""
+    if first:
+        if _CURRENT_LABEL_TOKEN in first:
             return None
-        if _REPLACEMENT_FULL_LABEL_TOKEN in label_line:
+        if _DELETION_RATIONALE_LABEL_TOKEN in first:
+            return None
+        if _REPLACEMENT_FULL_LABEL_TOKEN in first:
             return "replacement-full"
-        if _REPLACEMENT_LABEL_TOKEN in label_line:
+        if _REPLACEMENT_LABEL_TOKEN in first:
             return "replacement"
-        if _NEW_LABEL_TOKEN in label_line:
+        if _NEW_LABEL_TOKEN in first:
             return "new"
     if in_reduction_heading:
         return "reduction"
@@ -224,14 +242,10 @@ def _classify_block(
     return None
 
 
-def _preceding_non_empty(lines: list[str], fence_idx: int) -> str | None:
-    """フェンス開始行`fence_idx`直前の非空行を返す（前後空白は除去）。存在しない場合は`None`。"""
-    j = fence_idx - 1
-    while j >= 0 and lines[j].strip() == "":
-        j -= 1
-    if j < 0:
-        return None
-    return lines[j].strip()
+def _is_label_line(line: str) -> bool:
+    """fence直後1行目が差分ラベル行に該当するかを判定する（本文抽出時の除外判定に用いる）。"""
+    stripped = line.strip()
+    return any(token in stripped for token in _ALL_LABEL_TOKENS)
 
 
 def _run_scope_escalation(body: str) -> str | None:

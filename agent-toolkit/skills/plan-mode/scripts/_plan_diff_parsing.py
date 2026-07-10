@@ -8,9 +8,8 @@
     sys.path.insert(0, str(pathlib.Path(__file__).parent))
     from _plan_diff_parsing import (
         TEXT_FENCE_OPEN_RE,
-        FENCE_CLOSE_RE,
-        FENCE_RE,
         REDUCTION_HEADING_RE,
+        is_matching_close,
         iter_non_fenced_lines,
         extract_section_with_offset,
     )
@@ -26,10 +25,15 @@ import re
 from collections.abc import Iterator
 
 # `text`フェンス開始行の判定。言語指定が`text`のフェンスのみを対象とする。
-TEXT_FENCE_OPEN_RE = re.compile(r"^```text\s*$")
+# CommonMark仕様に従い、フェンスは3個以上のバッククォートで開始可能。
+# キャプチャグループ1に開始マーカー（バッククォート列）を返す。
+TEXT_FENCE_OPEN_RE = re.compile(r"^(`{3,})text\s*$")
 
-# 汎用フェンス閉じ行の判定（言語指定なしの```閉じ）。
-FENCE_CLOSE_RE = re.compile(r"^```\s*$")
+# 汎用フェンス閉じ行の判定（言語指定なしの```閉じまたは~~~閉じ）。
+# CommonMark仕様に従い、閉じフェンスは開始と同数以上の同一記号種で有効。
+# キャプチャグループ1に閉じマーカー（バッククォート列またはチルダ列）を返し、
+# 呼び出し側で開始マーカー種別・長さとの比較により整合を検証する。
+FENCE_CLOSE_RE = re.compile(r"^(`{3,}|~{3,})\s*$")
 
 # 汎用フェンス開始・終了判定（```pythonや~~~等、言語指定・記号種別を問わない）。
 # H2見出し境界判定でフェンス内の`## `様の行を除外する用途に用いる。
@@ -37,6 +41,19 @@ FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 
 # 縮減対象小見出しの判定（`#### 縮減対象`および`#### 縮減対象（xxx）`）。
 REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
+
+
+def is_matching_close(open_marker: str, line: str) -> bool:
+    """`line`が`open_marker`で開いたフェンスの閉じ行として整合するかを判定する。
+
+    CommonMark仕様に従い、閉じフェンスは開始と同数以上の同一記号種
+    （バッククォート列またはチルダ列）で有効となる。
+    """
+    m = FENCE_CLOSE_RE.match(line)
+    if m is None:
+        return False
+    close_marker = m.group(1)
+    return close_marker[0] == open_marker[0] and len(close_marker) >= len(open_marker)
 
 
 def iter_non_fenced_lines(lines: list[str], start: int = 0) -> Iterator[tuple[int, str]]:
@@ -55,7 +72,7 @@ def iter_non_fenced_lines(lines: list[str], start: int = 0) -> Iterator[tuple[in
             if not in_fence:
                 in_fence = True
                 fence_marker = marker
-            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
+            elif is_matching_close(fence_marker, line):
                 in_fence = False
                 fence_marker = ""
             continue

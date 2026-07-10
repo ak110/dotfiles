@@ -20,7 +20,7 @@
 見込み行数の確認は`wc -l`実測値との手動照合が唯一の手段となる。
 
 共通要素は`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
-集約対象は`TEXT_FENCE_OPEN_RE`・`FENCE_CLOSE_RE`・`FENCE_RE`・`REDUCTION_HEADING_RE`・
+集約対象は`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・
 `iter_non_fenced_lines`・`extract_section_with_offset`とする。
 `_H3_RE`のグループ名、`_CURRENT_LABEL_TOKEN`・`_REPLACEMENT_LABEL_TOKEN`の角括弧の有無は
 本ファイル固有の意味論を持つため温存する。
@@ -37,10 +37,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
 from _plan_diff_parsing import (  # noqa: E402
-    FENCE_CLOSE_RE,
     REDUCTION_HEADING_RE,
     TEXT_FENCE_OPEN_RE,
     extract_section_with_offset,
+    is_matching_close,
     iter_non_fenced_lines,
 )
 
@@ -71,13 +71,21 @@ _CHECKBOX_PATH_RE = re.compile(r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\s（(]+)`?")
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+`?(?P<path>[^`\s（(]+)`?")
 
-# [置換後]/[現行]ラベル行の判定トークン。両者とも部分一致で検出する
-# （`置換後:`・`[置換後]`・`現行:`・`[現行]`等の注記付き表現を対称に扱う）。
+# [置換後]/[現行]/[削除根拠]/[新設]/[置換後（全文）]ラベル行の判定トークン。
+# fence直後1行目のプレーンテキストへ部分一致で検出する（fence内側形式）。
+# 「置換後（全文）」は「置換後」の部分文字列を含むため、判定順で先に「置換後（全文）」を確認する。
 _REPLACEMENT_LABEL_TOKEN = "置換後"
+_REPLACEMENT_FULL_LABEL_TOKEN = "置換後（全文）"
 _CURRENT_LABEL_TOKEN = "現行"
 # 削除パターン（現行文言＋削除根拠の組）の削除根拠ブロックを判定するトークン。
 # 削除根拠ブロックは対比適用対象外として無視し、直前の[現行]ブロックも未消費扱いを解除する。
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
+_NEW_LABEL_TOKEN = "新設"
+
+# 境界近接判定の見込み行数下限・上限（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
+# 220行上限に対する近接帯）。
+_BOUNDARY_PROJECTION_MIN = 200
+_BOUNDARY_PROJECTION_MAX = 219
 
 # 追記ブロックの連続検出トリガー文に含まれるトークン（部分一致）。
 # 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
@@ -120,6 +128,10 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     if text is None:
         print(f"{plan_path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
         return 1
+
+    # 境界近接ファイルの`#### 縮減対象（<ファイル名>）`H4見出し検査は代替経路採用の有無を問わず常時実行する
+    # （警告のみで違反件数には計上しない）。
+    _check_reduction_block_for_boundary_files(plan_path, text)
 
     # 代替経路採用計画では`## 変更内容`H3節配下が変更方針の説明文で記述され、
     # 逐語の[現行]/[置換後]対比ブロックも追記/縮減文面の逐語ブロックも存在しないため
@@ -376,15 +388,20 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
             i += 1
             continue
 
-        if TEXT_FENCE_OPEN_RE.match(line):
-            label = _preceding_label(lines, i)
+        m_open = TEXT_FENCE_OPEN_RE.match(line)
+        if m_open:
+            open_marker = m_open.group(1)
             i += 1
             content_lines: list[str] = []
-            while i < n and not FENCE_CLOSE_RE.match(lines[i]):
+            while i < n and not is_matching_close(open_marker, lines[i]):
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する
-            content = "\n".join(content_lines)
+
+            label = _leading_label(content_lines)
+            # ラベル行はfence直後1行目に配置される。本文抽出時はラベル行を除外する。
+            body_lines = content_lines[1:] if label is not None else content_lines
+            content = "\n".join(body_lines)
 
             if label == "current":
                 if pending_current is not None and current_path is not None:
@@ -398,6 +415,8 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
                 # 削除パターン（現行文言＋削除根拠の組）。削除根拠ブロック自体は対比対象外。
                 # 直前の[現行]ブロックは削除確定として消費し、対比適用リストへは追加しない。
                 pending_current = None
+            # `new`および`replacement-full`は対比ペア対象外のためここでは記録しない
+            # （追記/縮減集計側では別途扱う）。
             continue
 
         i += 1
@@ -408,23 +427,87 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
     return blocks, orphan_paths
 
 
-def _preceding_label(lines: list[str], fence_idx: int) -> str | None:
-    """フェンス開始行`fence_idx`直前の非空行を調べ、「current」「replacement」「deletion」「None」を返す。"""
-    j = fence_idx - 1
-    while j >= 0 and lines[j].strip() == "":
-        j -= 1
-    if j < 0:
+def _leading_label(content_lines: list[str]) -> str | None:
+    """fence直後1行目のプレーンテキストラベルを調べ、種別を返す。
+
+    返却値は`"current"`・`"replacement"`・`"replacement-full"`・`"deletion"`・`"new"`のいずれか、
+    ラベルが見つからない場合は`None`。
+
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`の5種で、
+    fence直後1行目の内容へ部分一致で検出する。
+    「置換後（全文）」は「置換後」の部分文字列を含むため、判定順で先に「置換後（全文）」を確認する。
+    """
+    if not content_lines:
         return None
-    stripped = lines[j].strip()
+    stripped = content_lines[0].strip()
     # 削除根拠は最も具体的なトークンのため先に判定する。
     if _DELETION_RATIONALE_LABEL_TOKEN in stripped:
         return "deletion"
+    # 「置換後（全文）」は「置換後」を包含するため先に判定する。
+    if _REPLACEMENT_FULL_LABEL_TOKEN in stripped:
+        return "replacement-full"
     # 置換後判定を先に行い、「現行との対比の置換後」等の両語併記行を置換後扱いに分類する。
     if _REPLACEMENT_LABEL_TOKEN in stripped:
         return "replacement"
     if _CURRENT_LABEL_TOKEN in stripped:
         return "current"
+    if _NEW_LABEL_TOKEN in stripped:
+        return "new"
     return None
+
+
+# `#### 縮減対象（<ファイル名>）`H4見出しからファイル名部分を抽出する正規表現。
+# 全角丸括弧・半角丸括弧の双方に対応する。
+_REDUCTION_HEADING_WITH_FILE_RE = re.compile(r"^####\s*縮減対象[（(]([^）)]+)[）)]")
+
+
+def _check_reduction_block_for_boundary_files(plan_path: pathlib.Path, text: str) -> int:
+    """境界近接ファイル（見込み200〜219行）対象時、対応する`#### 縮減対象（<ファイル名>）`H4見出しの存在を検証する。
+
+    引数順・戻り値型規約は兄弟関数`_check_alternative_path_scale`と揃え、
+    `(plan_path: pathlib.Path, text: str) -> int`とする。
+    常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱いのため）。
+
+    判定基準:
+    - 対象ファイル一覧の見込み行数が`_BOUNDARY_PROJECTION_MIN`〜`_BOUNDARY_PROJECTION_MAX`のファイルを対象とする
+    - 各対象ファイルに対応する`#### 縮減対象（<ファイル名>）`H4見出しが計画本文に存在するかを検証する
+    - 対応する見出しが不在の場合、`f"{plan_path}: <警告内容>"`書式で警告を出力する
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+
+    bounds = _collect_projection_bounds(section)
+    boundary_files = [
+        path
+        for path, (_current, projected) in bounds.items()
+        if _BOUNDARY_PROJECTION_MIN <= projected <= _BOUNDARY_PROJECTION_MAX
+    ]
+    if not boundary_files:
+        return 0
+
+    # `#### 縮減対象（<ファイル名>）`H4見出しからファイル名を収集する
+    # （フェンス内の`#### `様の行は`iter_non_fenced_lines`で除外する）。
+    heading_files: set[str] = set()
+    lines = section.splitlines()
+    for _idx, line in iter_non_fenced_lines(lines):
+        m = _REDUCTION_HEADING_WITH_FILE_RE.match(line.strip())
+        if m:
+            heading_files.add(m.group(1).strip())
+
+    for path in boundary_files:
+        # 対象ファイルパスの末尾名（basename）と一致もしくは完全パス一致で照合する。
+        # 計画本文の縮減対象H4はファイル名のみを記載することが多いため両形式で許容する。
+        basename = path.rsplit("/", 1)[-1]
+        if path in heading_files or basename in heading_files:
+            continue
+        print(
+            f"{plan_path}: 境界近接ファイル{path}"
+            f"（見込み{bounds[path][1]}行）に対応する"
+            f"`#### 縮減対象（{basename}）`H4見出しが不在",
+            file=sys.stderr,
+        )
+    return 0
 
 
 # --- 追記/縮減文面の算術照合（`## 変更内容`集計値 と対象ファイル一覧`（現行N行, 見込みM行）`の乖離検出） ---
@@ -456,7 +539,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     (2) フェンス直前非空行に「追記」または「追加」の語を含むtextブロック
         （部分一致。`"追記" in line or "追加" in line`相当。トリガー文が無い単発の追記ブロックを拾う）
     縮減対象ブロックは直前見出しが`#### 縮減対象`（H4見出しのみ、統一済み）配下のtextブロック。
-    既存の`current`・`replacement`・`deletion`ラベル（`_preceding_label`が非Noneを返すブロック）に
+    既存の`current`・`replacement`・`replacement-full`・`deletion`・`new`ラベル（`_leading_label`が非Noneを返すブロック）に
     合致するブロックは対象外とし、二重集計を避ける。
     縮減対象見出し配下のブロックはトリガー文継続中でも縮減対象を優先する。
     戻り値はファイルパスをキーとし、addition（追記行数合計）とreduction（縮減対象行数合計）を
@@ -487,14 +570,24 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             i += 1
             continue
 
-        if TEXT_FENCE_OPEN_RE.match(line):
-            label = _preceding_label_for_addition_reduction(lines, i, in_reduction_heading, in_addition_after_trigger)
+        m_open = TEXT_FENCE_OPEN_RE.match(line)
+        if m_open:
+            open_marker = m_open.group(1)
+            fence_start_idx = i
             i += 1
             content_lines: list[str] = []
-            while i < n and not FENCE_CLOSE_RE.match(lines[i]):
+            while i < n and not is_matching_close(open_marker, lines[i]):
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する
+
+            label = _preceding_label_for_addition_reduction(
+                lines,
+                fence_start_idx,
+                content_lines,
+                in_reduction_heading,
+                in_addition_after_trigger,
+            )
 
             if label is not None and current_path is not None:
                 entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
@@ -514,6 +607,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
 def _preceding_label_for_addition_reduction(
     lines: list[str],
     fence_idx: int,
+    content_lines: list[str],
     in_reduction_heading: bool,
     in_addition_after_trigger: bool,
 ) -> str | None:
@@ -525,10 +619,12 @@ def _preceding_label_for_addition_reduction(
         無条件で追記と判定する（トリガー継続中フラグ`in_addition_after_trigger`）
     (2) トリガー継続中でない場合はフェンス直前非空行に「追記」または「追加」の語を含むかで判定する
         （部分一致。`"追記" in line or "追加" in line`相当）
-    既存の`current`・`replacement`・`deletion`ラベル（`_preceding_label`が非Noneを返す場合）は
-    対象外として`None`を返す（従来通り無視）。
+    既存の`current`・`replacement`・`replacement-full`・`deletion`・`new`ラベル
+    （`_leading_label`が非Noneを返す場合）は対象外として`None`を返す（従来通り無視）。
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`の5種で、
+    fence直後1行目のプレーンテキストへ部分一致で検出する。
     """
-    if _preceding_label(lines, fence_idx) is not None:
+    if _leading_label(content_lines) is not None:
         return None
 
     if in_reduction_heading:

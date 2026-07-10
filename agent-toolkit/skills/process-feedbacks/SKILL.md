@@ -47,14 +47,12 @@ feedback全件とTBD回答済みの本文を取得する。
      管理側の抽象化を破り、Windows等の環境依存で表示が破損する可能性がある。
      管理repoのrootは`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で指定する
      （詳細は`agent-toolkit:agent-standards`スキル「識別子と環境変数」節）
-   - frontmatterは出力に保持されており`source: session-review`・`plan_group`などの
-     投入元情報・計画グルーピング情報をapply-feedback側で参照できる
+   - frontmatterは出力に保持されており`source: session-review`などの
+     投入元情報をapply-feedback側で参照できる
    - `apply-feedback`は批判的検討・採否判定・計画作成・実装までを担い、
      コミット以降の後続工程は`agent-toolkit:apply-feedback-finish`へ一元的に委ねる
-   - 全件を1度の`apply-feedback`呼び出しで処理する（1件ずつ呼び出さない）。
-     計画ファイルの分割・統合判断は`agent-toolkit:apply-feedback`配下
-     `references/decision-format.md`「計画分割・統合の判断基準」節（`plan_group`フィールドによる
-     明示的グルーピング）に従う
+   - 全件を1度の`apply-feedback`呼び出しで1計画へ統合して処理する。
+     計画ファイルの分割はしない（1コミット・1レビューで完遂する）
    - 本スキル経由で`apply-feedback`→`plan-mode`とネスト起動される場合、
      `plan-mode`スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない。
      ネスト起動下でも`plan-mode`工程2〜8（工程2は2.5・2.6・2.7を含む）を遵守する。

@@ -199,7 +199,7 @@ def compute_prelint_hashes(content: str) -> tuple[str, str]:
 def is_plan_file(file_path: str) -> bool:
     """`~/.claude/plans/`直下のplan file（`*.md`）の場合に真を返す。
 
-    `.review.md` / `.codex.log`は副次ファイルのため除外する。
+    `.review.md` / `.codex.log` / `-workaround-check.md`は副次ファイルのため除外する。
     サブディレクトリ配下のファイルは対象外（直下のみ）。
     """
     if not file_path:
@@ -213,6 +213,6 @@ def is_plan_file(file_path: str) -> bool:
     if len(rel.parts) != 1:
         return False
     name = rel.parts[0]
-    if name.endswith(".review.md") or name.endswith(".codex.log"):
+    if name.endswith(".review.md") or name.endswith(".codex.log") or name.endswith("-workaround-check.md"):
         return False
     return name.endswith(".md")

@@ -53,10 +53,8 @@
   - セキュリティ用途（トークン生成・パスワードリセット等）の乱数は`secrets`モジュールを使う
 - 他で指定が無い場合のツール推奨:
   - パッケージマネージャー: `uv`（pip互換、Pythonバージョン管理も統合）
-  - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー）
-    - 詳細: <https://ak110.github.io/pyfltr/llms.txt>
-  - ユーティリティ集: `pytilpack`（便利ライブラリ）
-    - 詳細: <https://ak110.github.io/pytilpack/llms.txt>
+  - リンター／フォーマッター: `pyfltr`（Ruff + mypy等を統合実行するラッパー、詳細は<https://ak110.github.io/pyfltr/llms.txt>）
+  - ユーティリティ集: `pytilpack`（便利ライブラリ、詳細は<https://ak110.github.io/pytilpack/llms.txt>）
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う
@@ -150,6 +148,10 @@
 - 空コレクションとの等価比較（`assert x == []`・`assert d == {}`など）はpylintの
   `use-implicit-booleaness-not-comparison`で警告されるため、`assert not x`と書く
   - 中身まで含めた比較が必要な場合は`assert x == [expected]`のように具体的な期待値を書く
+- 大規模テストスイートを対象とするプロジェクトでは`pyfltr`の`command-timeout`を延伸する
+  - 具体値・延伸判定・実測手順は各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ
+    実測ベースで記録し、そこをSSOTとする（本ファイル側の数値記載はしない）
+  - `command-timeout`の既定値と挙動仕様は`agent-toolkit:pyfltr-usage`スキルを参照する
 
 ### Fixtureのコーディングルール
 
