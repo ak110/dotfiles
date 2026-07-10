@@ -55,6 +55,7 @@ Bash:
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
 - `codex exec`の未決事項念押し (warn)
+- 一括ステージ実行時の自セッション編集対象外ファイル警告 (warn)
 
 AskUserQuestion:
 
@@ -99,6 +100,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    GitEvent,
     extract_git_events,
 )
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -441,6 +443,11 @@ def main() -> int:
         # git amend / rebaseは直前にgit logを確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id, cwd):
             return 2
+        # 一括ステージ実行時にセッション未編集の変更が含まれる場合の警告
+        result = _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd)
+        if result is not None:
+            emit_json(result)
+            return 0
         # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
             return 2
@@ -2555,6 +2562,148 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
         )
         return True
     return False
+
+
+# --- Bash: 一括ステージ実行時の未編集ファイル警告 ---
+
+
+def _has_a_flag(args: list[str]) -> bool:
+    """`git commit`の`-a`フラグ検出。`--all`、または短フラグクラスタ内の`a`を検出する。
+
+    `-am`・`-amx`等の連結ショートフラグにも一致する。
+    簡略化: 値付きフラグ（`-S<key-id>`等でクラスタ内に`a`が現れる形）は誤検出しうる。
+    `git commit`の`-S<value>`は`-S <value>`形式でも受け付けるため、
+    実運用ではまず短フラグクラスタに値が続かないため許容する。
+    見直し契機: 誤警告報告が発生した場合。
+    """
+    for tok in args:
+        if tok == "--all":
+            return True
+        if tok.startswith("-") and not tok.startswith("--") and "a" in tok[1:]:
+            return True
+    return False
+
+
+def _detect_bulk_stage_mode(event: GitEvent) -> str | None:
+    """一括ステージ操作の検出。該当時はモード名を返す。
+
+    - `git add -A` / `git add --all` / `git add .`: `include_untracked`
+    - `git add -u` / `git add --update`: `tracked_only`
+    - `git commit -a` / `git commit --all` / `git commit -am`等: `tracked_only`
+    """
+    args = event.subcommand_args
+    if event.subcommand == "add":
+        for tok in args:
+            if tok in ("-A", "--all", "."):
+                return "include_untracked"
+        for tok in args:
+            if tok in ("-u", "--update"):
+                return "tracked_only"
+        return None
+    if event.subcommand == "commit":
+        if _has_a_flag(args):
+            return "tracked_only"
+        return None
+    return None
+
+
+def _parse_git_status_short(stdout: str, mode: str) -> set[str]:
+    """`git status --short`出力から変更ファイルの相対パス集合を返す。
+
+    `mode == "tracked_only"`のときは`??`（未追跡）行を除外する。
+    リネーム行`R  old -> new`は新パスを採用する。
+    簡略化: クォート付きパス（`core.quotepath`有効時のUnicodeエスケープ等）は
+    先頭・末尾のダブルクォート除去のみで内部のエスケープは非対応。
+    見直し契機: エスケープを含むパスで誤検出報告が発生した場合。
+    """
+    files: set[str] = set()
+    for line in stdout.splitlines():
+        if len(line) < 4:
+            continue
+        prefix = line[:2]
+        if mode == "tracked_only" and prefix == "??":
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        if path.startswith('"') and path.endswith('"') and len(path) >= 2:
+            path = path[1:-1]
+        if path:
+            files.add(path)
+    return files
+
+
+def _normalize_to_relative(path: str, cwd: str) -> str:
+    """絶対パスを`cwd`起点の相対パスへ正規化する。相対パスは`pathlib.Path`のみ適用する。"""
+    if not path:
+        return path
+    p = pathlib.Path(path)
+    if p.is_absolute() and cwd:
+        try:
+            return str(p.relative_to(pathlib.Path(cwd), walk_up=True))
+        except ValueError:
+            return str(p)
+    return str(p)
+
+
+def _check_bash_bulk_stage_with_unedited_files(
+    command: str,
+    session_id: str,
+    payload_cwd: str,
+) -> dict | None:
+    """一括ステージ実行時に自セッション未編集の変更が含まれる場合の警告JSONを返す。
+
+    `git add -A/--all/.` は未追跡を含む集合、`git add -u/--update` と
+    `git commit -a/--all/-am`等は追跡済みのみを対象として作業ツリー変更を判定する。
+    セッション状態の`session_edited_files`集合との差集合が空でない場合、
+    個別ファイル指定への切替を促すwarnをhookSpecificOutputで返す。
+    """
+    for event in extract_git_events(command, payload_cwd):
+        mode = _detect_bulk_stage_mode(event)
+        if mode is None:
+            continue
+        effective_cwd = event.cwd or payload_cwd
+        if not effective_cwd:
+            continue
+        try:
+            proc = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=effective_cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (OSError, FileNotFoundError):
+            continue
+        if proc.returncode != 0:
+            continue
+        changed = _parse_git_status_short(proc.stdout, mode)
+        if not changed:
+            continue
+        state = read_state(session_id)
+        edited_raw = state.get("session_edited_files", []) or []
+        edited: set[str] = set()
+        for entry in edited_raw:
+            if isinstance(entry, str) and entry:
+                edited.add(_normalize_to_relative(entry, effective_cwd))
+        changed_norm = {_normalize_to_relative(p, effective_cwd) for p in changed}
+        unedited = changed_norm - edited
+        if not unedited:
+            continue
+        sample = sorted(unedited)[:5]
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "additionalContext": _llm_notice(
+                    "warn: 一括ステージ実行時に自セッションで編集していないファイルが作業ツリーに含まれる。"
+                    f"編集外候補: {sample}。"
+                    "個別ファイル指定 (git add <file>) への切替を推奨する。",
+                    tag="warn",
+                ),
+            },
+        }
+    return None
 
 
 # --- Bash: uv run python <path>形式の起動ブロック ---

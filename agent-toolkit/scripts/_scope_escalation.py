@@ -241,6 +241,27 @@ def has_inline_choice_offer(text: str) -> bool:
     return _INLINE_CHOICE_PATTERN.search(text) is not None
 
 
+# サブエージェント完了報告本文がSkill呼び出し単独記述のみで構成される場合を検出するパターン。
+# 括弧付き引数形式（`Skill(...)`）またはコロン後に1個の非空白トークン形式（`Skill: <name>`）に限定し、
+# Skill呼び出しの後に完了本文が続く正常報告を除外する。
+_SKILL_INVOCATION_FULL_PATTERN: re.Pattern[str] = re.compile(r"\ASkill\s*(?:\([^()\n]*\)|:\s*\S+)\s*\Z", re.DOTALL)
+
+
+def is_empty_completion_report(text: object) -> bool:
+    """サブエージェント完了報告が実質空、またはSkill呼び出し単独記述か判定する。
+
+    非文字列は`False`、trim後長さゼロは`True`、
+    trim後全体が`_SKILL_INVOCATION_FULL_PATTERN`に一致する場合は`True`を返す。
+    正常な短文報告（「指摘なし」等）の誤ブロックを避けるため長さ基準は採用しない。
+    """
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return True
+    return _SKILL_INVOCATION_FULL_PATTERN.fullmatch(stripped) is not None
+
+
 def _match_scope_escalation(
     text: str,
     categories: Iterable[str] | None = None,

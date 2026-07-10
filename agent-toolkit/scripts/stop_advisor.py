@@ -43,10 +43,11 @@ approve・通知の分岐は以下のとおり。
 構造判定（非同期待機ツール残存・未完了background task検出・
 `stop_hook_active`）はhook側（`_stop_gate.py`・本ファイル）が担当し、判定レイヤーを分離する。
 
-対象スキルは`session_review_invoked`辞書経由の起動済みフラグに加え、
-transcript内のユーザーターンに`<command-name>/agent-toolkit:session-review</command-name>`が
-含まれるスラッシュコマンド起動痕跡（`_stop_gate.has_command_invocation`）でも起動済み扱いとする。
-PostToolUse側のフラグ記録がスラッシュコマンド起動時のツール呼び出し扱いを取りこぼす場合の代替経路。
+対象スキルは`session_review_invoked`辞書経由の起動済みフラグを主判定とする。
+このフラグはPostToolUse（Skill）とUserPromptSubmit（スラッシュコマンド）の両経路で記録される。
+補助的にtranscript内のユーザーターンに`<command-name>/agent-toolkit:session-review</command-name>`が
+含まれるスラッシュコマンド起動痕跡（`_stop_gate.has_command_invocation`）でも起動済み扱いとする
+（UserPromptSubmit hookがfail-openで記録漏れした場合のsafety net）。
 
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """

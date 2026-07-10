@@ -80,3 +80,41 @@ def test_stop_hook_active_bypasses_check() -> None:
     result = _run({"last_assistant_message": text, "stop_hook_active": True})
     body = json.loads(result.stdout)
     assert body.get("decision") == "approve"
+
+
+def test_empty_message_blocks_as_empty_result() -> None:
+    """空文字列の完了報告は`is_empty_completion_report`でblockする。"""
+    result = _run({"last_assistant_message": ""})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+
+
+def test_whitespace_only_message_blocks_as_empty_result() -> None:
+    """trim後空の完了報告は`is_empty_completion_report`でblockする。"""
+    result = _run({"last_assistant_message": "   \n  \t  "})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "実質空" in body["reason"]
+
+
+def test_skill_invocation_only_blocks_as_empty_result() -> None:
+    """`Skill`呼び出し単独の完了報告はblockする。"""
+    result = _run({"last_assistant_message": "Skill(skill='foo')"})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "Skill" in body["reason"]
+
+
+def test_skill_invocation_with_body_passes() -> None:
+    """`Skill`呼び出し後に完了本文が続く正常報告はblockされない。"""
+    text = "Skill(skill='foo')\n\n点検実施済。指摘なし。次工程へ移行する。"
+    result = _run({"last_assistant_message": text})
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_non_string_message_passes() -> None:
+    """非文字列型の`last_assistant_message`は判定を通過する。"""
+    result = _run({"last_assistant_message": None})
+    assert result.stdout == ""
+    assert result.returncode == 0

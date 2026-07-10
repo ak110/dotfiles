@@ -115,6 +115,11 @@ Claude Code固有事項として、本体作業に着手する時点で
     - ワークフロー無効化・トリガー未定義などでCIが実行不能な場合は、
       ユーザーの明示判断（当該pushをCI通過確認なしで完了扱いとしてよい確認）を得てから完了扱いとする
   - 判定困難な場合はユーザーへ確認する
+  - 自コミットのrunが後続pushによる`concurrency.cancel-in-progress`打ち切りでcancelled終了した場合は、
+    `gh run list --branch <branch> --json databaseId,headSha,status,conclusion,createdAt`で当該ブランチのrun一覧を取得し、
+    自コミットSHA以降のコミット（`git log --format=%H <自コミット>..HEAD`で列挙）に対応するrunで
+    `conclusion == success`のものが1件以上あれば、自コミットを履歴に含む後続runの成功をもって通過確認とする。
+    該当なしの場合は追加コミットまたはCI再実行で通過確認を得る
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
 - 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk fb tbd-adopt`）は

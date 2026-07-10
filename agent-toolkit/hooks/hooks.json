@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|mcp__codex__codex",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex",
         "hooks": [
           {
             "type": "command",
@@ -59,6 +59,16 @@
           {
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/permissionrequest.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/user_prompt_submit.py"
           }
         ]
       }

@@ -3,11 +3,12 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""SubagentStop hook: 完了報告の本文を縮退表明・待機表明辞書で検査する。
+"""SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明・待機表明辞書で検査する。
 
 公式仕様の`last_assistant_message`を直参照し、
 `transcript_path`とisSidechain判定に依存しない。
-検査対象カテゴリは`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTを採用する。
+`is_empty_completion_report`で実質空またはSkill呼び出し単独の構造的欠落を検出し、
+続いて`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTで縮退表明フレーズを照合する。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 """
@@ -25,6 +26,7 @@ from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pyli
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _STOP_FOCUS_CATEGORIES_EXTENDED,
     _match_scope_escalation,
+    is_empty_completion_report,
 )
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
@@ -50,7 +52,16 @@ def main() -> int:
         return 0
 
     text = payload.get("last_assistant_message")
-    if not isinstance(text, str) or not text.strip():
+    if is_empty_completion_report(text):
+        reason = _llm_notice(
+            "blocked: サブエージェント完了報告が実質空、または`Skill`呼び出し単独。再委譲するか完遂本文を追記すること。",
+            tag="block",
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return 0
+    # `is_empty_completion_report`が非文字列・実質空を既に捕捉するため、
+    # ここではtypeガードのみを残す。
+    if not isinstance(text, str):
         return 0
 
     category = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES_EXTENDED)

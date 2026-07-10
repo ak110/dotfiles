@@ -25,6 +25,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
+12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
+    （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
 """
 
 import json
@@ -439,6 +441,23 @@ def main() -> int:
                 return current_state
 
             update_state(session_id, _set_current_plan_file_path)
+        # 自セッション編集済みファイルパス蓄積。
+        # pretooluse.pyの一括ステージ警告（_check_bash_bulk_stage_with_unedited_files）が
+        # 「自セッション編集済み集合」として参照する。パスは取得したままの形式で蓄積し、
+        # 参照側で正規化する。
+        if file_path:
+
+            def _append_edited_file(current_state: dict, target: str = file_path) -> dict | None:
+                edited = current_state.get("session_edited_files", [])
+                if not isinstance(edited, list):
+                    return None
+                if target in edited:
+                    return None
+                edited.append(target)
+                current_state["session_edited_files"] = edited
+                return current_state
+
+            update_state(session_id, _append_edited_file)
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
             cwd_raw = payload.get("cwd", "")
             cwd = cwd_raw if isinstance(cwd_raw, str) else ""

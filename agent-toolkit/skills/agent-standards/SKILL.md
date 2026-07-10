@@ -182,38 +182,38 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - `test_executed`: PostToolUse(Bash)が記録。`git commit`未検証警告の抑制に使う
 - `git_status_checked`: PostToolUse(Bash)が`git status`/`git log`/`git diff`観測時に記録
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録。commit/rebase/push/編集時リセット、amend/rebase前確認に使う
-- `plan_mode_skill_invoked`: PostToolUse(Skill)が`agent-toolkit:plan-mode`呼び出しを記録。
-  plan file形式の検査有効化と最初ツール警告抑制に使う
-- `session_review_invoked`: PostToolUse(Skill)が振り返りスキル呼び出しを辞書記録（`agent-toolkit:session-review`は配布物、
-  `session-review-dotfiles`は個人フック）。各Stop hookの重複抑止とEnterPlanMode時の辞書リセット（配布物担当）に使う
+- `plan_mode_skill_invoked`: PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で
+  `agent-toolkit:plan-mode`呼び出しを記録。plan file検査と最初ツール警告抑制に使う
+- `session_review_invoked`: PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で振り返りスキルの辞書へキーを追加。
+  配布物`agent-toolkit:session-review`と個人フック`session-review-dotfiles`が対象。
+  Stop hookの重複抑止と`EnterPlanMode`時の辞書リセットに使う
 - `agent_toolkit_edit_skill_invoked`: dotfiles個人フックが`agent-toolkit-edit`呼び出しを記録。
-  未起動時のPreToolUse警告抑制と、配布物側`pretooluse.py`のRead隔離ブロックの例外判定に使う。
-  書き込み元はdotfiles個人フックのみ、読み取り元は個人フックと配布プラグイン双方
-- `session_review_extension_pending`: dotfiles個人フックが`agent-toolkit:*`または`session-review-dotfiles`使用を記録する。
-  配布物Stop hook（`stop_advisor.py`）が重複送出抑制に使う（個人フック不在時は未設定のまま従来通り動作する）
-- `autonomous_exit_invoked`: dotfiles個人フックが`agent-toolkit:exit-session`呼び出しを記録。
-  個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
-- `apply_feedback_skill_invoked` / `process_feedbacks_skill_invoked`: PostToolUse(Skill)が対応スキル呼び出しを記録。
-  対象は`agent-toolkit:apply-feedback`・`agent-toolkit:process-feedbacks`・`process-feedbacks`スラッシュコマンド。
+  未起動時のPreToolUse警告抑制と、配布物`pretooluse.py`のRead隔離ブロックの例外判定に使う
+- dotfiles個人フック管理:
+  - `session_review_extension_pending`: `agent-toolkit:*`／`session-review-dotfiles`使用を記録。
+    配布物Stop hook（`stop_advisor.py`）が重複送出抑制に使う
+  - `autonomous_exit_invoked`: `agent-toolkit:exit-session`呼び出しを記録。
+    個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
+- `apply_feedback_skill_invoked` / `process_feedbacks_skill_invoked`:
+  PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で該当を記録。
+  対象は`agent-toolkit:apply-feedback`・`agent-toolkit:process-feedbacks`・各短縮スラッシュ。
   Stop hookの拡張照合カテゴリ有効化判定に使う
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
-- 工程7完遂判定フラグ群: `plan_reviewer_invoked` / `naive_executor_invoked` /
-  `plan_impl_reviewer_invoked` / `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、
-  `codex_review_invoked`はPostToolUse（Skill呼び出し、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了）が記録する
-  （`agent_doc_validator_invoked`はコーディングエージェント向け文書対象時のみ必須）
-- `codex_impl_invoked`: PostToolUse(Skill)が`codex-impl`呼び出しを記録。実装用途`mcp__codex__codex`の許可判定に使う
-- `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
-  ExitPlanMode時に上記フラグの条件付き必須化判定で計画ファイル本文を再読込するために使う
+- 工程7完遂判定フラグ群: `plan_reviewer_invoked`・`naive_executor_invoked`・`plan_impl_reviewer_invoked`・
+  `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、
+  `codex_review_invoked`はPostToolUse（Skill、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了）
+  ／UserPromptSubmit（`/plan-codex-review`）が記録する（`agent_doc_validator_invoked`はエージェント向け文書対象時のみ必須）
+- `codex_impl_invoked`: PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で`codex-impl`呼び出しを記録。
+  実装用途`mcp__codex__codex`の許可判定に使う
+- `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。ExitPlanMode時の再読込に使う
 - 計画ファイル未作成時の直接編集検知フラグ群: `plan_file_written` / `direct_agent_toolkit_edit_count` /
   `last_agent_toolkit_edit_path`はPreToolUse(Write/Edit/MultiEdit)が更新する
   （plan-mode起動後の計画ファイル未作成でのagent-toolkit配下編集連続を検知、2件目でwarn・3件目でblock）
 
 ### 公式リファレンス
 
-スキルの新規作成・hook実装など該当する作業では公式マーケットプレイス（`anthropics/claude-plugins-official`）を参照する。
-対象は`skill-creator:skill-creator`・`plugin-dev:skill-development`・`plugin-dev:agent-development`とする。
-`plugin-dev:hook-development`・`plugin-dev:plugin-structure`も対象とする。
-referencesに記載のない仕様や新機能、ユーザー指示との認識相違は以下を`WebFetch`で取得する（`.md`付与でMarkdown形式）。
-Memory: `https://code.claude.com/docs/ja/memory.md`。Skills: `https://code.claude.com/docs/ja/skills.md`。
-Subagents: `https://code.claude.com/docs/ja/sub-agents.md`。Hooks: `https://code.claude.com/docs/ja/hooks.md`。
-Plugins: `https://code.claude.com/docs/ja/plugins.md`と`https://code.claude.com/docs/ja/plugins-reference.md`。
+スキルの新規作成・hook実装では公式マーケットプレイス（`anthropics/claude-plugins-official`）を参照する。
+対象は`skill-creator:skill-creator`と`plugin-dev`の
+`skill-development`・`agent-development`・`hook-development`・`plugin-structure`。
+referencesに記載のない仕様や認識相違は`https://code.claude.com/docs/ja/`配下を`WebFetch`で取得する。
+参照対象は`memory.md`・`skills.md`・`sub-agents.md`・`hooks.md`・`plugins.md`・`plugins-reference.md`。

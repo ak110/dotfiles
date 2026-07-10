@@ -12,7 +12,12 @@
 import typing
 
 import pytest
-from _scope_escalation import _STOP_FOCUS_CATEGORIES, _match_scope_escalation, has_inline_choice_offer
+from _scope_escalation import (
+    _STOP_FOCUS_CATEGORIES,
+    _match_scope_escalation,
+    has_inline_choice_offer,
+    is_empty_completion_report,
+)
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _INPUTS = load_scope_escalation_inputs()
@@ -109,3 +114,46 @@ class TestMatchScopeEscalation:
         # 非文字列渡しでも例外を送出しない挙動を保証する。
         # 型チェッカー全種の引数型検査を回避するため`typing.cast`で`str`扱いに変換する。
         assert _match_scope_escalation(typing.cast("str", value)) is None
+
+
+class TestIsEmptyCompletionReport:
+    """`is_empty_completion_report`のサブエージェント完了報告判定。"""
+
+    def test_returns_true_for_empty_text(self):
+        """空文字列およびtrim後が空の入力は`True`を返す。"""
+        assert is_empty_completion_report("") is True
+        assert is_empty_completion_report("   \n\t  ") is True
+
+    def test_returns_true_for_skill_invocation_only(self):
+        """Skill呼び出し単独記述は`True`を返す。"""
+        assert is_empty_completion_report("Skill(skill='foo')") is True
+        assert is_empty_completion_report("Skill: agent-toolkit:writing-standards") is True
+
+    def test_returns_false_for_short_normal_report(self):
+        """10〜30字の正常な短文報告は`False`を返す。"""
+        assert is_empty_completion_report("指摘なし") is False
+        assert is_empty_completion_report("レビュー完了。指摘事項なし。") is False
+        assert is_empty_completion_report("実装完了、テスト通過") is False
+
+    def test_returns_false_for_normal_report(self):
+        """100字以上の完了本文は`False`を返す。"""
+        text = (
+            "レビューを実施した。対象ファイルの実装内容は計画ファイル本文の設計要件と整合しており、"
+            "重大な指摘は検出されなかった。日本語表現・型注釈・テストカバレッジの各観点でも問題なし。"
+        )
+        assert is_empty_completion_report(text) is False
+
+    @pytest.mark.parametrize("value", [None, 123, ["Skill(skill='foo')"]])
+    def test_returns_false_for_non_string(self, value: object):
+        """非文字列入力は`False`を返す。"""
+        assert is_empty_completion_report(value) is False
+
+    def test_returns_true_for_skill_invocation_with_trailing_whitespace(self):
+        """末尾に空白のみを持つSkill呼び出し単独記述は`True`を返す。"""
+        assert is_empty_completion_report("Skill(skill='foo')   \n\n") is True
+        assert is_empty_completion_report("  Skill: bar  ") is True
+
+    def test_returns_false_for_skill_call_followed_by_body(self):
+        """Skill呼び出し後に完了本文が続く正常報告は`False`を返す。"""
+        text = "Skill(skill='foo')\n点検実施済。指摘事項なし。"
+        assert is_empty_completion_report(text) is False

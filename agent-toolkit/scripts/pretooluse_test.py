@@ -2310,6 +2310,8 @@ class TestBashGitCommitWarning:
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
         # tracked .mdを作業ツリー上でのみ変更（indexには反映しない）
         (repo / "doc.md").write_text("# v2")
+        # 一括ステージ警告が別途発火しないようsession_edited_filesに含める。
+        _write_session_state(tmp_path, "commit-all", {"session_edited_files": ["doc.md"]})
         result = self._invoke("git commit -am 'update'", "commit-all", state_dir, cwd=str(repo))
         assert result.returncode == 0
         assert result.stdout == ""
@@ -2478,6 +2480,267 @@ class TestBashAmendRebaseBlock:
         self._write_state(tmp_path, sid, {"git_log_checked": {recorded_cwd: True}})
         result = self._invoke(command, sid, state_dir, cwd=payload_cwd)
         assert result.returncode == expected_returncode
+
+
+def _init_git_repo(path: pathlib.Path) -> None:
+    """一括ステージ警告テスト用の最小git repo初期化。"""
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "test"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "commit.gpgsign", "false"], check=True)
+
+
+def _git_commit_initial(path: pathlib.Path, files: dict[str, str]) -> None:
+    """指定ファイルを追加してinitial commitを作成する。"""
+    for rel, content in files.items():
+        target = path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+
+
+class TestBashBulkStageWithUneditedFiles:
+    """一括ステージ実行時にセッション未編集の変更が含まれる場合の警告。
+
+    - `git add -A/--all/.` は未追跡を含む集合を対象とする
+    - `git add -u/--update` と `git commit -a/--all/-am`等 は追跡済みのみを対象とする
+    - 実効cwdは `event.cwd`（`cd`・`git -C`の影響を反映）で判定する
+    """
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    _write_state = staticmethod(_write_session_state)
+
+    def _invoke(
+        self,
+        command: str,
+        session_id: str,
+        env: dict[str, str],
+        cwd: str,
+    ) -> subprocess.CompletedProcess[str]:
+        payload: dict = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "session_id": session_id,
+            "cwd": cwd,
+        }
+        return _run(payload, env_overrides=env)
+
+    @staticmethod
+    def _extract_json(stdout: str) -> dict | None:
+        """stdout末尾のJSON行を抽出する。"""
+        for line in reversed(stdout.splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+        return None
+
+    def _assert_warns(self, result: subprocess.CompletedProcess[str]) -> str:
+        assert result.returncode == 0
+        data = self._extract_json(result.stdout)
+        assert data is not None, f"expected JSON output, got: {result.stdout!r}"
+        ctx = data["hookSpecificOutput"]["additionalContext"]
+        assert "一括ステージ" in ctx
+        return ctx
+
+    def _assert_no_warn(self, result: subprocess.CompletedProcess[str]) -> None:
+        assert result.returncode == 0
+        data = self._extract_json(result.stdout)
+        if data is None:
+            return
+        ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert "一括ステージ" not in ctx
+
+    def test_warns_when_git_add_all_with_unedited_untracked(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git add -A`実行時、未追跡ファイルがsession外なら warn 返却。"""
+        repo = tmp_path / "repo1"
+        repo.mkdir()
+        _init_git_repo(repo)
+        (repo / "unedited.txt").write_text("x", encoding="utf-8")
+        self._write_state(tmp_path, "add-all-untracked", {"session_edited_files": []})
+        result = self._invoke("git add -A", "add-all-untracked", state_dir, cwd=str(repo))
+        ctx = self._assert_warns(result)
+        assert "unedited.txt" in ctx
+
+    def test_warns_when_git_add_dot_with_unedited_tracked(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git add .`実行時、追跡済み変更ファイルがsession外なら warn 返却。"""
+        repo = tmp_path / "repo2"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"tracked.txt": "orig\n"})
+        (repo / "tracked.txt").write_text("modified\n", encoding="utf-8")
+        self._write_state(tmp_path, "add-dot-tracked", {"session_edited_files": []})
+        result = self._invoke("git add .", "add-dot-tracked", state_dir, cwd=str(repo))
+        ctx = self._assert_warns(result)
+        assert "tracked.txt" in ctx
+
+    def test_no_warn_when_git_add_u_with_only_untracked_unedited(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git add -u`実行時、未追跡ファイルは対象外のため warn 無し。"""
+        repo = tmp_path / "repo3"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"kept.txt": "x\n"})
+        (repo / "new_untracked.txt").write_text("y", encoding="utf-8")
+        self._write_state(tmp_path, "add-u-untracked", {"session_edited_files": []})
+        result = self._invoke("git add -u", "add-u-untracked", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
+    def test_no_warn_when_git_commit_a_with_only_untracked_unedited(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git commit -a`実行時、未追跡ファイルは対象外のため warn 無し。"""
+        repo = tmp_path / "repo4"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"kept.txt": "x\n"})
+        (repo / "new_untracked.txt").write_text("y", encoding="utf-8")
+        # `test_executed`を有効化して git_commit warnを回避する
+        self._write_state(
+            tmp_path,
+            "commit-a-untracked",
+            {"session_edited_files": [], "test_executed": True},
+        )
+        result = self._invoke("git commit -a -m x", "commit-a-untracked", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
+    def test_no_warn_when_only_edited_files_changed(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """変更ツリーが session_edited_files と完全一致で warn 無し。"""
+        repo = tmp_path / "repo5"
+        repo.mkdir()
+        _init_git_repo(repo)
+        (repo / "edited.txt").write_text("x", encoding="utf-8")
+        self._write_state(
+            tmp_path,
+            "only-edited",
+            {"session_edited_files": ["edited.txt"]},
+        )
+        result = self._invoke("git add -A", "only-edited", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
+    def test_no_warn_when_working_tree_clean(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git status --short`出力が空で warn 無し。"""
+        repo = tmp_path / "repo6"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"kept.txt": "x\n"})
+        self._write_state(tmp_path, "clean", {"session_edited_files": []})
+        result = self._invoke("git add -A", "clean", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
+    def test_detects_git_commit_am_flag(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git commit -am`検出でも追跡済みモード判定。"""
+        repo = tmp_path / "repo7"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"tracked.txt": "orig\n"})
+        (repo / "tracked.txt").write_text("modified\n", encoding="utf-8")
+        self._write_state(
+            tmp_path,
+            "commit-am",
+            {"session_edited_files": [], "test_executed": True},
+        )
+        result = self._invoke("git commit -am msg", "commit-am", state_dir, cwd=str(repo))
+        ctx = self._assert_warns(result)
+        assert "tracked.txt" in ctx
+
+    def test_absolute_path_edited_matches_relative_change(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """session_edited_files の絶対パスが event.cwd 起点で正規化されて一致判定される。"""
+        repo = tmp_path / "repo8"
+        repo.mkdir()
+        _init_git_repo(repo)
+        (repo / "edited.txt").write_text("x", encoding="utf-8")
+        abs_path = str(repo / "edited.txt")
+        self._write_state(
+            tmp_path,
+            "abs-edited",
+            {"session_edited_files": [abs_path]},
+        )
+        result = self._invoke("git add -A", "abs-edited", state_dir, cwd=str(repo))
+        self._assert_no_warn(result)
+
+    def test_detects_cd_subdir_git_add_A(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`cd sub && git add -A`実行時、event.cwd = sub 配下の変更ツリーで判定される。"""
+        repo = tmp_path / "repo9"
+        repo.mkdir()
+        _init_git_repo(repo)
+        # sub配下に既存トラッキング済みファイルを作成しておく（サブディレクトリを
+        # gitに認識させ、`git status --short`のパス表示が`.`へ集約されるのを防ぐ）
+        _git_commit_initial(repo, {"sub/kept.txt": "orig\n"})
+        sub = repo / "sub"
+        (sub / "sub_unedited.txt").write_text("y", encoding="utf-8")
+        self._write_state(tmp_path, "cd-sub", {"session_edited_files": []})
+        result = self._invoke(
+            f"cd {sub} && git add -A",
+            "cd-sub",
+            state_dir,
+            cwd=str(repo),
+        )
+        ctx = self._assert_warns(result)
+        assert "sub_unedited.txt" in ctx
+
+    def test_detects_git_c_subdir_add_A(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`git -C sub add -A`実行時、event.cwd = sub 配下の変更ツリーで判定される。"""
+        repo = tmp_path / "repo10"
+        repo.mkdir()
+        _init_git_repo(repo)
+        # sub配下に既存トラッキング済みファイルを作成しておく（サブディレクトリを
+        # gitに認識させ、`git status --short`のパス表示が`.`へ集約されるのを防ぐ）
+        _git_commit_initial(repo, {"sub/kept.txt": "orig\n"})
+        sub = repo / "sub"
+        (sub / "sub_unedited.txt").write_text("y", encoding="utf-8")
+        self._write_state(tmp_path, "git-c-sub", {"session_edited_files": []})
+        result = self._invoke(
+            f"git -C {sub} add -A",
+            "git-c-sub",
+            state_dir,
+            cwd=str(repo),
+        )
+        ctx = self._assert_warns(result)
+        assert "sub_unedited.txt" in ctx
 
 
 class TestBashUvRunPythonBlock:

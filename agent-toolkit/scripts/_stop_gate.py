@@ -102,8 +102,10 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
 def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:
     """transcript内のユーザーターンに`pattern`一致のスラッシュコマンド起動痕跡があるか確認する。
 
-    スラッシュコマンドはPostToolUse(Skill)側の`session_review_invoked`辞書記録の対象外
-    （ツール呼び出しとして記録されない）ため、transcript走査による代替検出手段とする。
+    スラッシュコマンド起動はUserPromptSubmit hook（`user_prompt_submit.py`）が
+    `session_review_invoked`辞書へ記録する。
+    本関数はUserPromptSubmit hookがfail-openで記録漏れした場合のsafety netとして、
+    transcript走査による代替検出手段を提供する。
     非sidechainの`type=="user"`エントリの`message.content`を対象に走査する。
     transcript読み取り失敗時は偽を返す。
     """
