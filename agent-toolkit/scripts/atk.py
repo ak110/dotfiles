@@ -12,8 +12,9 @@
 - fb add: inboxへフィードバックを投入する
 - fb list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
 - fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
-- fb adopt: 採用としてinboxからadopted/へ移動しコミット・push
-- fb reject: 不採用としてinboxからrejected/へ移動しコミット・push
+- fb start-processing: inboxからprocessing/へ移動し処理中状態に遷移させコミット・push
+- fb adopt: 採用としてinboxまたはprocessingからadopted/へ移動しコミット・push
+- fb reject: 不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push
 - fb rm: inboxから単純削除しコミット・push
 - fb edit: $EDITORで対象ファイルを編集しコミット・push
 - fb commit: 外部編集後のinbox配下未コミット変更をコミット・push
@@ -85,9 +86,14 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "answered", "unanswered"),
-        default="all",
-        help="回答状況でtbd側のみ限定する（既定: all、feedback側には作用しない）。",
+        choices=("all", "answered", "unanswered", "inbox", "processing"),
+        default="inbox",
+        help=(
+            "表示範囲を限定する（既定: inbox）。"
+            "feedback側は`inbox`・`processing`・`all`で状態フォルダを切り替える。"
+            "tbd側は`answered`・`unanswered`で回答状況を限定する"
+            "（`inbox`・`processing`・`all`はtbd側に作用せず全件出力）。"
+        ),
     )
     list_.add_argument(
         "--count",
@@ -132,7 +138,18 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
     )
 
-    adopt = sub.add_parser("adopt", help="採用としてinboxからadopted/へ移動しコミット・push")
+    start_processing = sub.add_parser(
+        "start-processing",
+        help="inboxからprocessing/へ移動し処理中状態に遷移させコミット・push",
+    )
+    start_processing.add_argument(
+        "filenames",
+        metavar="FILENAME",
+        nargs="+",
+        help="処理開始するinboxファイル名（1個以上）。",
+    )
+
+    adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
     adopt.add_argument(
         "--note",
@@ -147,7 +164,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
     )
 
-    reject = sub.add_parser("reject", help="不採用としてinboxからrejected/へ移動しコミット・push")
+    reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
     reject.add_argument("filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。")
     reject.add_argument(
         "--note",
@@ -388,6 +405,7 @@ def main(
         "add": lambda: _add._cmd_add(args, private_notes, now, home),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
+        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
         "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),

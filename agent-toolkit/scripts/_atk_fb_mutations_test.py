@@ -117,7 +117,7 @@ class TestAdoptMissing:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inboxに存在しません" in captured.err
+        assert "inbox・processingのいずれにも存在しません" in captured.err
 
 
 class TestAdoptStampWithNoteAndCommit:
@@ -456,6 +456,171 @@ class TestEditNoArg:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "inbox" in captured.err
+
+
+class TestStartProcessingSingle:
+    """start-processingサブコマンド: 1件指定でinboxからprocessing/へ移動しコミットする。"""
+
+    def test_single_file_moved_to_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """1件のstart-processing実行でinboxから移動されprocessing/に置かれコミット件名が正しいこと。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "start-processing", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "feedback" / "processing" / "fb-001.md").exists()
+        commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
+        assert "chore: start processing 1 feedback item" in commit_cmd
+
+
+class TestStartProcessingMultiple:
+    """start-processingサブコマンド: 複数件指定で単一コミットへまとめる。"""
+
+    def test_multiple_files_moved_single_commit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """2件のstart-processingで両方がprocessing/へ移動し単一コミットが行われること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        _write_feedback_file(notes, "fb-002.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "start-processing", "fb-001.md", "fb-002.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        processing = notes / "feedback" / "processing"
+        assert (processing / "fb-001.md").exists()
+        assert (processing / "fb-002.md").exists()
+        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
+        assert len(commit_cmds) == 1
+        assert "chore: start processing 2 feedback items" in commit_cmds[0]
+
+
+class TestStartProcessingMissing:
+    """start-processingサブコマンド: 存在しないファイル指定でexit 2となる。"""
+
+    def test_missing_file_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "start-processing", "nonexistent.md"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "inboxに存在しません" in captured.err
+
+
+class TestAdoptFromProcessing:
+    """adopt: processing配下のファイルもadopted/へ移動できる。"""
+
+    def test_adopt_from_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """processing/配下のファイルがadopt対象に含まれadopted/へ移動する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing = notes / "feedback" / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        (processing / "fb-p.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-p.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (processing / "fb-p.md").exists()
+        assert (notes / "feedback" / "adopted" / "fb-p.md").exists()
+
+
+class TestRejectFromProcessing:
+    """reject: processing配下のファイルもrejected/へ移動できる。"""
+
+    def test_reject_from_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """processing/配下のファイルがreject対象に含まれrejected/へ移動する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing = notes / "feedback" / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        (processing / "fb-p.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "reject", "fb-p.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (processing / "fb-p.md").exists()
+        assert (notes / "feedback" / "rejected" / "fb-p.md").exists()
+
+
+class TestProcessingPrecedence:
+    """同名ファイルがinbox・processing双方に存在する場合processingを優先する。"""
+
+    def test_adopt_prefers_processing_when_both_exist(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """同名ファイルがinbox・processing双方に存在する場合、processing側が移動元として選ばれる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-dup.md")
+        inbox_path = notes / "feedback" / "inbox" / "fb-dup.md"
+        inbox_path.write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\ninbox本文\n",
+            encoding="utf-8",
+        )
+        processing = notes / "feedback" / "processing"
+        processing.mkdir(parents=True, exist_ok=True)
+        processing_path = processing / "fb-dup.md"
+        processing_path.write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nprocessing本文\n",
+            encoding="utf-8",
+        )
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-dup.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        # processing側が移動元として選ばれるため、inbox側は残存しprocessing側は消える。
+        assert inbox_path.exists()
+        assert not processing_path.exists()
+        adopted_path = notes / "feedback" / "adopted" / "fb-dup.md"
+        assert adopted_path.exists()
+        # 実際に移動されたのはprocessing側の内容であることを確認する。
+        assert "processing本文" in adopted_path.read_text(encoding="utf-8")
 
 
 class TestPathTraversalRejection:

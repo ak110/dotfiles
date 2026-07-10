@@ -14,6 +14,16 @@ from collections.abc import Iterable, Iterator
 
 from _atk_fb_formatters import _parse_target_repo
 
+# フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
+# - `inbox`: 未処理の投入直後
+# - `processing`: `start-processing`で処理中に移動された途中状態
+# - `adopted`: 採用として最終処理された状態
+# - `rejected`: 不採用として最終処理された状態
+FEEDBACK_STATE_INBOX = "inbox"
+FEEDBACK_STATE_PROCESSING = "processing"
+FEEDBACK_STATE_ADOPTED = "adopted"
+FEEDBACK_STATE_REJECTED = "rejected"
+
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     """feedback/配下の指定サブディレクトリパスを返す。必要時に作成する。"""
@@ -188,9 +198,14 @@ def _count_pending_entries(
     `--type`・`--status`フィルタは持たず、常駐ループの反復判定に必要な合計のみを返す
     （`_list.py`の`_cmd_list`が持つフィルタ分岐との共通化は行わない）。
     """
-    feedback_dir = private_notes / "feedback" / "inbox"
-    feedback_count = sum(1 for _ in _iter_inbox_entries(feedback_dir, target_repo))
-    tbd_dir = private_notes / "tbd" / "inbox"
+    # inbox・processingの両状態を未処理として合算する（`start-processing`で移動済みの
+    # 途中状態は`adopt`・`reject`未完了のため次反復での再処理対象に含める）。
+    feedback_inbox = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    feedback_processing = private_notes / "feedback" / FEEDBACK_STATE_PROCESSING
+    feedback_count = sum(1 for _ in _iter_inbox_entries(feedback_inbox, target_repo)) + sum(
+        1 for _ in _iter_inbox_entries(feedback_processing, target_repo)
+    )
+    tbd_dir = private_notes / "tbd" / FEEDBACK_STATE_INBOX
     tbd_count = sum(1 for _, _, text in _iter_inbox_entries(tbd_dir, target_repo) if _is_tbd_answered(text))
     return feedback_count + tbd_count
 

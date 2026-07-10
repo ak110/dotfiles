@@ -89,7 +89,7 @@ python = true
 command-timeout = 900
 ty = true
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts"]
+ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 pylint-args = ["--jobs=4"]
 shellcheck = true
 shfmt = true
@@ -163,8 +163,9 @@ convention = "google"
 
 [tool.pyright]
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを import するため
-# そのパスを追加する
-extraPaths = ["agent-toolkit/scripts"]
+# そのパスを追加する。agent-toolkit/scripts/posttooluse.py が plan-mode 配下の
+# _plan_diff_parsing を sys.path 経由で共有利用するため当該パスも追加する。
+extraPaths = ["agent-toolkit/scripts", "agent-toolkit/skills/plan-mode/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

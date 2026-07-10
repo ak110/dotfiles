@@ -13,6 +13,10 @@ import subprocess
 import sys
 
 from _atk_fb_common import (
+    FEEDBACK_STATE_ADOPTED,
+    FEEDBACK_STATE_INBOX,
+    FEEDBACK_STATE_PROCESSING,
+    FEEDBACK_STATE_REJECTED,
     _commit_and_push,
     _pull,
     _stamp_result,
@@ -33,18 +37,49 @@ def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) 
     return paths
 
 
+def _resolve_processable_targets(
+    filenames: list[str],
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+) -> list[pathlib.Path]:
+    """inboxまたはprocessing配下のファイル名群を検証・解決し、未存在があればexit 2する。
+
+    同一ファイルがinbox・processingの双方に存在する場合はprocessingを優先する
+    （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
+    """
+    resolved: list[pathlib.Path] = []
+    missing: list[str] = []
+    for name in filenames:
+        # 検証はinbox基準ディレクトリで行うが、実体はいずれか片方の状態フォルダに存在する。
+        inbox_path = _validate_filename(name, inbox_dir)
+        processing_path = processing_dir / name
+        if processing_path.exists():
+            resolved.append(processing_path)
+        elif inbox_path.exists():
+            resolved.append(inbox_path)
+        else:
+            missing.append(name)
+    if missing:
+        for name in missing:
+            print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
+
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """adoptサブコマンド: 採用としてinboxからadopted/へ移動しcommit・push。
+    """adoptサブコマンド: 採用としてinboxまたはprocessingからadopted/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     """
-    inbox_dir = private_notes / "feedback" / "inbox"
+    inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
-    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
-    adopted_dir = _subdir(private_notes, "adopted")
+    paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
+    adopted_dir = _subdir(private_notes, FEEDBACK_STATE_ADOPTED)
     for p in paths:
-        _stamp_result(p, outcome="adopted", now=now, commit=args.commit, note=args.note)
+        _stamp_result(p, outcome=FEEDBACK_STATE_ADOPTED, now=now, commit=args.commit, note=args.note)
         shutil.move(p, adopted_dir / p.name)
     count = len(paths)
     _commit_and_push(
@@ -56,17 +91,19 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
 
 
 def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """rejectサブコマンド: 不採用としてinboxからrejected/へ移動しcommit・push。
+    """rejectサブコマンド: 不採用としてinboxまたはprocessingからrejected/へ移動しcommit・push。
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     """
-    inbox_dir = private_notes / "feedback" / "inbox"
+    inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
-    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
-    rejected_dir = _subdir(private_notes, "rejected")
+    paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
+    rejected_dir = _subdir(private_notes, FEEDBACK_STATE_REJECTED)
     for p in paths:
-        _stamp_result(p, outcome="rejected", now=now, commit=args.commit, note=args.note)
+        _stamp_result(p, outcome=FEEDBACK_STATE_REJECTED, now=now, commit=args.commit, note=args.note)
         shutil.move(p, rejected_dir / p.name)
     count = len(paths)
     _commit_and_push(
@@ -77,9 +114,31 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     print(f"{count}件不採用処理: {', '.join(p.name for p in paths)}")
 
 
+def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """start-processingサブコマンド: inboxからprocessing/へ移動しcommit・push。
+
+    後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
+    （最終処理結果の記録は`adopt`・`reject`側で行う）。
+    """
+    inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    _validate_filenames_only(args.filenames, inbox_dir)
+    _pull(private_notes)
+    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
+    for p in paths:
+        shutil.move(p, processing_dir / p.name)
+    count = len(paths)
+    _commit_and_push(
+        private_notes,
+        f"chore: start processing {count} feedback {'item' if count == 1 else 'items'}",
+        ["feedback"],
+    )
+    print(f"{count}件処理開始: {', '.join(p.name for p in paths)}")
+
+
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: inboxから単純削除しcommit・push。"""
-    inbox_dir = private_notes / "feedback" / "inbox"
+    inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
@@ -103,7 +162,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not editor:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
         sys.exit(1)
-    inbox_dir = private_notes / "feedback" / "inbox"
+    inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     if args.filename is None:
         _pull(private_notes)
         candidates = sorted(

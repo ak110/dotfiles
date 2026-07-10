@@ -548,108 +548,30 @@ class TestCheckWcProjection:
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
 
-    def test_alternative_path_skips_check_via_agent_judgment(self, tmp_path: pathlib.Path) -> None:
-        """`### エージェント判断`節での代替経路採用宣言時は乖離検査をスキップする。"""
-        plan = _write(tmp_path / "plan.md", "# T\n\n## 対応方針\n\n### エージェント判断\n\n- 代替経路を採用する\n")
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0, result.stderr
-        assert "代替経路採用のため乖離検査をスキップ" in result.stdout
 
-    def test_alternative_path_skips_check_via_response_policy(self, tmp_path: pathlib.Path) -> None:
-        """`## 対応方針`節本文の代替経路採用宣言時も乖離検査をスキップする。"""
-        plan = _write(tmp_path / "plan.md", "# T\n\n## 対応方針\n\n本計画は代替経路を採用する。\n")
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0, result.stderr
+class TestOverThresholdReductionCheck:
+    """`_check_reduction_block_for_over_threshold_files`の警告出力仕様を検証する。
 
-    def test_alternative_path_not_adopted_when_in_rejected_section(self, tmp_path: pathlib.Path) -> None:
-        """`### 却下した代替案`H3小節配下の採用トークンは代替経路採用宣言と判定しない。"""
-        _write(tmp_path / "foo.md", "old\n")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n### 却下した代替案\n\n"
-            "- 大規模計画の代替経路を採用する案を検討したが却下した\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
-            "### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 1
-        assert "見込み99行" in result.stderr
-        assert "代替経路採用のため乖離検査をスキップ" not in result.stdout
-
-    def test_alternative_path_not_adopted_when_section_missing(self, tmp_path: pathlib.Path) -> None:
-        """`## 対応方針`節にトークンを含まない計画は代替経路採用と判定せず通常検査を実行する。"""
-        _write(tmp_path / "foo.md", "old\n")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n通常経路で実装する。\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行1行, 見込み99行）\n\n"
-            "### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 1
-        assert "見込み99行" in result.stderr
-
-    def test_normal_path_still_works(self, tmp_path: pathlib.Path) -> None:
-        """代替経路採用宣言を含まない計画では従来の乖離検査が動作する。"""
-        body = _plan_with_addition_reduction(
-            checkbox_line="- [ ] `foo.md`（現行10行, 見込み5行）", addition_lines="line1\nline2"
-        )
-        result = _run(_write(tmp_path / "plan.md", body), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "乖離が許容幅を超える" in result.stderr
-
-    @pytest.mark.parametrize(
-        ("total", "new_count", "expect_warn"),
-        [(6, 1, True), (9, 0, False), (6, 5, False)],
-        ids=["below-threshold", "boundary-nine", "five-new"],
-    )
-    def test_alternative_path_scale_warns_only_below_threshold(
-        self, tmp_path: pathlib.Path, total: int, new_count: int, expect_warn: bool
-    ) -> None:
-        """代替経路採用宣言時、規模基準未達（対象9件未満かつ新規5件未満）でのみ警告する。"""
-        checkbox_lines = "\n".join(
-            f"- [ ] `f{i}.md`（{'新設' if i < new_count else '現行10行'}, 見込み15行）" for i in range(total)
-        )
-        plan = _write(
-            tmp_path / "plan.md",
-            f"# T\n\n## 対応方針\n\n代替経路を採用する。\n\n## 変更内容\n\n### 対象ファイル一覧\n\n{checkbox_lines}\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0
-        if expect_warn:
-            assert "規模基準未達" in result.stderr
-            assert f"対象{total}件・新規{new_count}件" in result.stderr
-        else:
-            assert "規模基準未達" not in result.stderr
-
-
-class TestBoundaryReductionCheck:
-    """`_check_reduction_block_for_boundary_files`の警告出力仕様を検証する。
-
-    境界近接ファイル（見込み200〜219行）を対象に、対応する`#### 縮減対象（<ファイル名>）`
+    見込み200行超のファイルを対象に、対応する`#### 縮減対象（<ファイル名>）`
     H4見出しの存在を検査する。警告は情報提供扱いで違反件数には計上しない（returncode 0）。
     """
 
-    def test_boundary_file_without_reduction_heading_warns(self, tmp_path: pathlib.Path) -> None:
-        """境界近接ファイル対象・縮減対象H4不在時に警告が出力される。"""
+    def test_over_threshold_file_without_reduction_heading_warns(self, tmp_path: pathlib.Path) -> None:
+        """200行超過ファイル対象・縮減対象H4不在時に警告が出力される。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行200行, 見込み210行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行, 見込み210行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "境界近接ファイル" in result.stderr
+        assert "200行超過ファイル" in result.stderr
         assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
-    def test_boundary_file_with_reduction_heading_passes(self, tmp_path: pathlib.Path) -> None:
-        """境界近接ファイル対象・縮減対象H4完備時は警告が出ない。"""
+    def test_over_threshold_file_with_reduction_heading_passes(self, tmp_path: pathlib.Path) -> None:
+        """200行超過ファイル対象・縮減対象H4完備時は警告が出ない。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行200行, 見込み210行）\n\n"
             "### `foo.md`\n\n"
@@ -657,13 +579,13 @@ class TestBoundaryReductionCheck:
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "境界近接ファイル" not in result.stderr
+        assert "200行超過ファイル" not in result.stderr
 
-    def test_boundary_files_partial_headings_warn_only_missing(self, tmp_path: pathlib.Path) -> None:
-        """境界近接ファイル対象・一部のみH4完備時は不在ファイルにのみ警告が出力される。"""
+    def test_over_threshold_files_partial_headings_warn_only_missing(self, tmp_path: pathlib.Path) -> None:
+        """200行超過ファイル対象・一部のみH4完備時は不在ファイルにのみ警告が出力される。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
+            "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行200行, 見込み210行）\n"
             "- [ ] `bar.md`（現行200行, 見込み215行）\n\n"
@@ -673,19 +595,28 @@ class TestBoundaryReductionCheck:
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
         assert "bar.md" in result.stderr
-        assert "境界近接ファイルfoo.md" not in result.stderr
+        assert "200行超過ファイルfoo.md" not in result.stderr
 
-    def test_non_boundary_file_skips_check(self, tmp_path: pathlib.Path) -> None:
-        """境界近接範囲外（見込み199行以下または220行以上）のファイルは検査対象外となる。"""
+    def test_at_threshold_file_skips_check(self, tmp_path: pathlib.Path) -> None:
+        """見込み200行ちょうど・以下のファイルは検査対象外となる（200行以下収束の完了条件）。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 対応方針\n\n代替経路を採用する。\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行150行, 見込み180行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行150行, 見込み200行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "境界近接ファイル" not in result.stderr
+        assert "200行超過ファイル" not in result.stderr
+
+    def test_far_over_threshold_file_also_warns(self, tmp_path: pathlib.Path) -> None:
+        """200行を大きく超えるファイル（220行以上）でも200行超過として警告される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行300行, 見込み300行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "200行超過ファイル" in result.stderr
+        assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
 
 class TestLeadingLabel:

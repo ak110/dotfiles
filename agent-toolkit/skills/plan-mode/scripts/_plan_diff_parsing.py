@@ -42,6 +42,10 @@ FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 # 縮減対象小見出しの判定（`#### 縮減対象`および`#### 縮減対象（xxx）`）。
 REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
 
+# `#### 縮減対象（<ファイル名>）`H4見出しからファイル名部分を抽出する。
+# 全角丸括弧・半角丸括弧の双方に対応する。
+REDUCTION_HEADING_WITH_FILE_RE = re.compile(r"^####\s*縮減対象[（(]([^）)]+)[）)]")
+
 
 def is_matching_close(open_marker: str, line: str) -> bool:
     """`line`が`open_marker`で開いたフェンスの閉じ行として整合するかを判定する。
@@ -103,3 +107,16 @@ def extract_section_with_offset(text: str, heading: str) -> tuple[str | None, in
             end = idx
             break
     return "\n".join(lines[start:end]), start
+
+
+def iter_reduction_headings(section: str) -> Iterator[str]:
+    """`section`本文中の`#### 縮減対象（<ファイル名>）`H4見出しからファイル名を順に返す。
+
+    `check_wc_projection.py`と`posttooluse.py`の双方から利用可能な共通ヘルパー。
+    フェンス内の`#### `様の行は`iter_non_fenced_lines`で除外する。
+    """
+    lines = section.splitlines()
+    for _idx, line in iter_non_fenced_lines(lines):
+        m = REDUCTION_HEADING_WITH_FILE_RE.match(line.strip())
+        if m:
+            yield m.group(1).strip()

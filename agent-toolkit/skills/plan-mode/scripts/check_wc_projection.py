@@ -21,7 +21,7 @@
 
 共通要素は`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 集約対象は`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・
-`iter_non_fenced_lines`・`extract_section_with_offset`とする。
+`iter_reduction_headings`・`extract_section_with_offset`とする。
 `_H3_RE`のグループ名、`_CURRENT_LABEL_TOKEN`・`_REPLACEMENT_LABEL_TOKEN`の角括弧の有無は
 本ファイル固有の意味論を持つため温存する。
 """
@@ -41,7 +41,7 @@ from _plan_diff_parsing import (  # noqa: E402
     TEXT_FENCE_OPEN_RE,
     extract_section_with_offset,
     is_matching_close,
-    iter_non_fenced_lines,
+    iter_reduction_headings,
 )
 
 # pylint: enable=wrong-import-position
@@ -82,10 +82,9 @@ _CURRENT_LABEL_TOKEN = "現行"
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
 _NEW_LABEL_TOKEN = "新設"
 
-# 境界近接判定の見込み行数下限・上限（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
-# 220行上限に対する近接帯）。
-_BOUNDARY_PROJECTION_MIN = 200
-_BOUNDARY_PROJECTION_MAX = 219
+# 200行超過判定の閾値（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
+# 200行以下収束を実装完了条件とし、超過ファイルには縮減計画の明示を要求する）。
+_OVER_THRESHOLD_PROJECTION = 200
 
 # 追記ブロックの連続検出トリガー文に含まれるトークン（部分一致）。
 # 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
@@ -96,11 +95,6 @@ _ADDITION_TRIGGER_TOKEN = "追記文言案"
 # 計画執筆時の位置注記であり実際に対象ファイルへ挿入・保持される内容ではないため
 # 行数集計から除外する（全角丸括弧で行全体を囲む場合のみ一致）。
 _ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
-
-# 代替経路採用の宣言を検出する部分一致トークン。
-# 「大規模計画の代替経路を採用」も本トークンで包含できる。
-# 前後の助詞・句読点による表記揺れは部分一致で吸収する。
-_ALTERNATIVE_PATH_TOKEN = "代替経路を採用"
 
 
 def main() -> int:
@@ -129,18 +123,9 @@ def _check_wc(plan_path: pathlib.Path) -> int:
         print(f"{plan_path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
         return 1
 
-    # 境界近接ファイルの`#### 縮減対象（<ファイル名>）`H4見出し検査は代替経路採用の有無を問わず常時実行する
+    # 200行超過ファイルの`#### 縮減対象（<ファイル名>）`H4見出し検査を実行する
     # （警告のみで違反件数には計上しない）。
-    _check_reduction_block_for_boundary_files(plan_path, text)
-
-    # 代替経路採用計画では`## 変更内容`H3節配下が変更方針の説明文で記述され、
-    # 逐語の[現行]/[置換後]対比ブロックも追記/縮減文面の逐語ブロックも存在しないため
-    # 両検査は誤検出のみを産む。計画本文で代替経路採用の宣言を検出した場合は
-    # `_check_one_file`と`_check_addition_reduction_projection`を一括スキップする。
-    if _is_alternative_path_adopted(text):
-        print(f"代替経路採用のため乖離検査をスキップ: {plan_path}")
-        _check_alternative_path_scale(plan_path, text)
-        return 0
+    _check_reduction_block_for_over_threshold_files(plan_path, text)
 
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
@@ -178,88 +163,6 @@ def _read_text_or_none(path: pathlib.Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-
-
-def _is_alternative_path_adopted(plan_body: str) -> bool:
-    """計画本文に代替経路採用の宣言が含まれるかを判定する。
-
-    `## 対応方針`節（配下の`### エージェント判断`等のH3子節を含む）本文に
-    「代替経路を採用」の文字列を含むかを部分一致で判定する。
-    前後の助詞・句読点で表記が揺れるため部分一致で扱う。
-    「大規模計画の代替経路を採用」も同一トークンで包含できる。
-
-    大規模計画の代替経路採用時は`## 変更内容`H3節配下が変更方針の
-    説明文（設計要件記述コードブロック）で記述される。
-    逐語の[現行]/[置換後]対比ブロックも追記/縮減文面の逐語ブロックも存在せず、
-    `_check_one_file`の対比適用と`_check_addition_reduction_projection`の
-    追記/縮減集計は誤検出のみを産む。呼び出し元`_check_wc`で本判定が真の場合は
-    両検査を一括スキップする。
-    """
-    section = _extract_section(plan_body, "## 対応方針")
-    if section is None:
-        return False
-    # `### 却下した代替案`H3小節配下は判定対象から除外する（却下説明文中の採用トークン誤検出回避）。
-    # 次H3見出しまたは節末までを削除する（フェンス内`### `様の行は`iter_non_fenced_lines`で除外済）。
-    lines = section.splitlines()
-    heading_idxs = [idx for idx, line in iter_non_fenced_lines(lines) if line.startswith("### ")]
-    for i, idx in enumerate(heading_idxs):
-        if lines[idx].strip() == "### 却下した代替案":
-            end = heading_idxs[i + 1] if i + 1 < len(heading_idxs) else len(lines)
-            lines = lines[:idx] + lines[end:]
-            break
-    return _ALTERNATIVE_PATH_TOKEN in "\n".join(lines)
-
-
-# 代替経路採用時の規模基準判定に用いる閾値。
-# `integrity-checks.md`「概ね10以上」の許容境界が9〜10ファイルのためtotalは9件で許容、
-# 新規は5件以上で許容する。
-_ALTERNATIVE_SCALE_MIN_TOTAL = 9
-_ALTERNATIVE_SCALE_MIN_NEW = 5
-
-
-def _check_alternative_path_scale(plan_path: pathlib.Path, text: str) -> int:
-    """代替経路採用宣言時の規模基準判定を行い、未達時に警告を出力する。
-
-    `_check_wc`が代替経路採用を検出した後に呼び出される情報提供用ヘルパー。
-    引数順・戻り値型規約は兄弟関数`_check_addition_reduction_projection`と揃え、
-    `(plan_path: pathlib.Path, text: str) -> int`とする。
-    常に0を返し、違反件数の集計には影響させない設計とする
-    （警告は情報提供扱いのため）。
-
-    判定基準:
-    - 対象ファイル一覧の総件数と新規件数を集計する
-    - 総件数が`_ALTERNATIVE_SCALE_MIN_TOTAL`（9）以上、または
-      新規件数が`_ALTERNATIVE_SCALE_MIN_NEW`（5）以上のいずれかを満たす場合は警告なし
-    - 満たさない場合はstderrへ「規模基準未達」の警告を出力する
-
-    警告の限界注記:
-    version bump対象等の付随変更ファイルは現状の実装では自動的に除外できない。
-    `integrity-checks.md`「version bump対象等の付随変更ファイルは計上対象から除外する」
-    規定を根拠に、付随ファイル込みでの件数超過を実質的な代替経路適用と扱う運用のため、
-    偽陽性の警告が出た場合は人間の判断で警告を無視する。
-    """
-    section = _extract_section(text, "## 変更内容")
-    if section is None:
-        return 0
-
-    bounds = _collect_projection_bounds(section)
-    if not bounds:
-        return 0
-
-    total = len(bounds)
-    new_count = sum(1 for current, _projected in bounds.values() if current == 0)
-
-    if total >= _ALTERNATIVE_SCALE_MIN_TOTAL or new_count >= _ALTERNATIVE_SCALE_MIN_NEW:
-        return 0
-
-    print(
-        f"{plan_path}: 代替経路採用宣言だが規模基準未達"
-        f"（対象{total}件・新規{new_count}件、"
-        f"基準は{_ALTERNATIVE_SCALE_MIN_TOTAL}件以上または"
-        f"新規{_ALTERNATIVE_SCALE_MIN_NEW}件以上）",
-        file=sys.stderr,
-    )
-    return 0
 
 
 def _check_one_file(
@@ -456,20 +359,14 @@ def _leading_label(content_lines: list[str]) -> str | None:
     return None
 
 
-# `#### 縮減対象（<ファイル名>）`H4見出しからファイル名部分を抽出する正規表現。
-# 全角丸括弧・半角丸括弧の双方に対応する。
-_REDUCTION_HEADING_WITH_FILE_RE = re.compile(r"^####\s*縮減対象[（(]([^）)]+)[）)]")
+def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, text: str) -> int:
+    """200行超過ファイル（見込み200行超）対象時、対応する`#### 縮減対象（<ファイル名>）`H4見出しの存在を検証する。
 
-
-def _check_reduction_block_for_boundary_files(plan_path: pathlib.Path, text: str) -> int:
-    """境界近接ファイル（見込み200〜219行）対象時、対応する`#### 縮減対象（<ファイル名>）`H4見出しの存在を検証する。
-
-    引数順・戻り値型規約は兄弟関数`_check_alternative_path_scale`と揃え、
-    `(plan_path: pathlib.Path, text: str) -> int`とする。
+    引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
     常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱いのため）。
 
     判定基準:
-    - 対象ファイル一覧の見込み行数が`_BOUNDARY_PROJECTION_MIN`〜`_BOUNDARY_PROJECTION_MAX`のファイルを対象とする
+    - 対象ファイル一覧の見込み行数が`_OVER_THRESHOLD_PROJECTION`超のファイルを対象とする
     - 各対象ファイルに対応する`#### 縮減対象（<ファイル名>）`H4見出しが計画本文に存在するかを検証する
     - 対応する見出しが不在の場合、`f"{plan_path}: <警告内容>"`書式で警告を出力する
     """
@@ -478,31 +375,22 @@ def _check_reduction_block_for_boundary_files(plan_path: pathlib.Path, text: str
         return 0
 
     bounds = _collect_projection_bounds(section)
-    boundary_files = [
-        path
-        for path, (_current, projected) in bounds.items()
-        if _BOUNDARY_PROJECTION_MIN <= projected <= _BOUNDARY_PROJECTION_MAX
-    ]
-    if not boundary_files:
+    over_threshold_files = [path for path, (_current, projected) in bounds.items() if projected > _OVER_THRESHOLD_PROJECTION]
+    if not over_threshold_files:
         return 0
 
-    # `#### 縮減対象（<ファイル名>）`H4見出しからファイル名を収集する
-    # （フェンス内の`#### `様の行は`iter_non_fenced_lines`で除外する）。
-    heading_files: set[str] = set()
-    lines = section.splitlines()
-    for _idx, line in iter_non_fenced_lines(lines):
-        m = _REDUCTION_HEADING_WITH_FILE_RE.match(line.strip())
-        if m:
-            heading_files.add(m.group(1).strip())
+    # `#### 縮減対象（<ファイル名>）`H4見出しからファイル名を`iter_reduction_headings`で収集する
+    # （SSOTは`_plan_diff_parsing.iter_reduction_headings`）。
+    heading_files: set[str] = set(iter_reduction_headings(section))
 
-    for path in boundary_files:
+    for path in over_threshold_files:
         # 対象ファイルパスの末尾名（basename）と一致もしくは完全パス一致で照合する。
         # 計画本文の縮減対象H4はファイル名のみを記載することが多いため両形式で許容する。
         basename = path.rsplit("/", 1)[-1]
         if path in heading_files or basename in heading_files:
             continue
         print(
-            f"{plan_path}: 境界近接ファイル{path}"
+            f"{plan_path}: 200行超過ファイル{path}"
             f"（見込み{bounds[path][1]}行）に対応する"
             f"`#### 縮減対象（{basename}）`H4見出しが不在",
             file=sys.stderr,

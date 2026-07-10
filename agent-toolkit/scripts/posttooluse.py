@@ -36,10 +36,13 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_diff_parsing import iter_reduction_headings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_h2_section_body,
     extract_h2_sections,
     extract_h3_headings_under_h2,
     extract_target_files_from_changes,
@@ -173,15 +176,36 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
+def _collect_reduction_heading_files(content: str) -> set[str]:
+    """`## 変更内容`配下の`#### 縮減対象（<ファイル名>）`H4見出しからファイル名集合を抽出する。
+
+    完全パスとbasenameのどちらの記述も許容する運用のため、記載通りの文字列をそのまま集合へ格納する
+    （呼び出し側でパス・basenameのいずれとの一致でも除外対象と判定する）。
+    フェンス内・インラインコード等の除外領域は`extract_h2_section_body`側で処理済みとする。
+    正規表現SSOTは`_plan_diff_parsing.iter_reduction_headings`とし、当モジュールは共通ヘルパーを再利用する。
+    """
+    section_text = "\n".join(line for _lineno, line in extract_h2_section_body(content, "変更内容"))
+    return set(iter_reduction_headings(section_text))
+
+
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
-    """対象ファイル一覧の各パスの行数を確認し、200行以上の対象種別ファイルがあれば警告メッセージを返す。"""
+    """対象ファイル一覧の各パスの行数を確認し、200行超過の対象種別ファイルがあれば警告メッセージを返す。
+
+    `## 変更内容`配下に対応する`#### 縮減対象（<ファイル名>）`H4見出しが存在するファイルは、
+    縮減計画済みとして警告対象から除外する。ファイル名は完全パス表記・basename表記のいずれも許容する。
+    """
     paths = extract_target_files_from_changes(content)
     if not paths:
         return None
+    reduction_files = _collect_reduction_heading_files(content)
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     over_limit: list[tuple[str, int]] = []
     for rel in paths:
         if not is_agent_facing_md(rel):
+            continue
+        # 完全パス一致・basename一致のいずれかで縮減対象H4見出しが存在する場合は除外する。
+        basename = rel.rsplit("/", 1)[-1]
+        if rel in reduction_files or basename in reduction_files:
             continue
         target = base / rel
         try:
@@ -189,17 +213,16 @@ def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
         except (OSError, UnicodeDecodeError):
             continue
         line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
-        if line_count >= 200:
+        if line_count > 200:
             over_limit.append((rel, line_count))
     if not over_limit:
         return None
     listed = ", ".join(f"{p} ({n} lines)" for p, n in over_limit)
     return (
-        f"plan file contains target files with 200 or more lines: {listed}."
-        " Per agent-standards 'document size limit' section"
-        " (200-219 lines is boundary-close, 220 or more is a violation),"
-        " assemble the post-revision final form and measure with `wc -l`."
-        " Confirm whether you have measured the final form."
+        f"plan file contains target files exceeding 200 lines: {listed}."
+        " Per agent-standards 'document size limit' section (over 200 lines is a violation),"
+        " add a `#### 縮減対象（<ファイル名>）` H4 section under `## 変更内容` for each violation."
+        " Write the file name in full path form."
     )
 
 

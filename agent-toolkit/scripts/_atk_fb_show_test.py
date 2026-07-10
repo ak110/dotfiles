@@ -245,6 +245,88 @@ class TestShowStatusFilter:
         assert "inbox/tbdに存在しません" in captured.err
 
 
+def _write_feedback_processing_file(
+    notes: pathlib.Path,
+    filename: str,
+    target_repo: str = "github.com/example/foo",
+    body: str = "processing本文",
+) -> pathlib.Path:
+    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す。"""
+    processing_dir = notes / "feedback" / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    path = processing_dir / filename
+    path.write_text(
+        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestShowProcessing:
+    """showサブコマンド: processing状態も探索・走査対象に含める。"""
+
+    def test_single_file_finds_entry_in_processing_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、当該本文が表示される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-processing.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-processing.md" in captured.out
+        assert "processing本文" in captured.out
+
+    def test_single_file_inbox_precedes_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """FILENAME指定時、inbox→processingの順で探索しinbox側が優先される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-dup.md", body="inbox側本文")
+        _write_feedback_processing_file(notes, "fb-dup.md", body="processing側本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-dup.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inbox側本文" in captured.out
+        assert "processing側本文" not in captured.out
+
+    def test_all_scans_inbox_and_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--all指定時にinboxとprocessingの双方の本文がグループ化されて出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "--all"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-inbox.md" in captured.out
+        assert "inbox本文" in captured.out
+        assert "### fb-processing.md" in captured.out
+        assert "processing本文" in captured.out
+
+
 class TestShowSkipPull:
     """showサブコマンド: --skip-pull指定時はgit pullをスキップする。"""
 

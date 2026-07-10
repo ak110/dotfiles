@@ -39,7 +39,14 @@ feedback全件とTBD回答済みの本文を取得する。
 ## ステップ2: 取得した全件をapply-feedbackへ一括で引き渡す
 
 1. 対象リポジトリのディレクトリへカレントを移す
-2. ステップ1で取得した`### <filename>`ブロック全件を
+2. `atk fb start-processing <filename...>`を呼び出す。
+   ステップ1で取得したfeedbackファイル群をinboxからprocessingへ移動する。
+   TBDファイルは`start-processing`の対象外とする。
+   中断からの再開時は`atk fb show --all`がprocessing状態も走査するため、
+   処理対象一覧には既にprocessing化済みのファイルも含まれる。
+   `start-processing`はinbox直下のみを対象とするため、
+   呼び出し前にprocessing化済みのファイルを対象から除外して残るinbox起点分のみを引数に渡す
+3. ステップ1で取得した`### <filename>`ブロック全件を
    `agent-toolkit:apply-feedback`スキルへそのまま渡して起動する
    - `atk fb show --all`の出力は既に`### <filename>`見出しで区切られた結合形式であり、
      追加の結合・整形は不要とする
@@ -57,7 +64,7 @@ feedback全件とTBD回答済みの本文を取得する。
      `plan-mode`スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない。
      ネスト起動下でも`plan-mode`工程2〜8（工程2は2.5・2.6・2.7を含む）を遵守する。
      auto mode下・単独foreground委譲下でも同様とする
-3. 起動時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`末尾へ
+4. 起動時の追加指示として、apply-feedbackが作成する計画ファイルの`## 実行方法`末尾へ
    `agent-toolkit:apply-feedback-finish`スキルに従い後続工程を実施する旨を含めるよう明示する
 
 ## ステップ3: サマリー提示と後続工程

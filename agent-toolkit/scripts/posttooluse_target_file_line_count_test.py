@@ -1,6 +1,7 @@
 """agent-toolkit/scripts/posttooluse.py の対象ファイル一覧行数警告関連テスト。
 
-共通ヘルパー（`_run`・`_build_valid_plan`・`_prepare_plan_home`・`_write_plan`・`_parse_hook_output`）は`posttooluse_plan_format_test.py`と複製で持つ。
+共通ヘルパー（`_run`・`_build_valid_plan`・`_prepare_plan_home`・`_write_plan`・`_parse_hook_output`）は
+`posttooluse_plan_format_test.py`と複製で持つ。
 """
 
 import functools
@@ -124,9 +125,10 @@ class TestPlanFormatTargetFileLineCount:
         plans = _prepare_plan_home(home)
         return home, plans
 
-    def _make_200_line_file(self, path: pathlib.Path) -> None:
+    def _make_over_limit_file(self, path: pathlib.Path) -> None:
+        """201行の対象ファイルを生成する（`> 200`の警告閾値超過を発火させる）。"""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(f"line {i}" for i in range(1, 201)), encoding="utf-8")
+        path.write_text("\n".join(f"line {i}" for i in range(1, 202)), encoding="utf-8")
 
     def _plan_with_files(self, rel_paths: list[str]) -> str:
         items = "\n".join(f"- [ ] {p}" for p in rel_paths)
@@ -194,7 +196,7 @@ class TestPlanFormatTargetFileLineCount:
     def test_non_agent_facing_file_passes_silently(self, tmp_path: pathlib.Path):
         """Pythonファイルなど対象種別外は200行以上でも警告されない。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / "src" / "main.py")
+        self._make_over_limit_file(home / "src" / "main.py")
         content = self._plan_with_files(["src/main.py"])
         plan = _write_plan(plans, "non-agent.md", content)
         result = _run(
@@ -214,8 +216,8 @@ class TestPlanFormatTargetFileLineCount:
     def test_mixed_only_agent_facing_warned(self, tmp_path: pathlib.Path):
         """対象種別ファイルのみ警告され、対象種別外は警告されない。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / "agent-toolkit" / "rules" / "01-agent.md")
-        self._make_200_line_file(home / "src" / "main.py")
+        self._make_over_limit_file(home / "agent-toolkit" / "rules" / "01-agent.md")
+        self._make_over_limit_file(home / "src" / "main.py")
         content = self._plan_with_files(["agent-toolkit/rules/01-agent.md", "src/main.py"])
         plan = _write_plan(plans, "mixed.md", content)
         result = _run(
@@ -232,15 +234,15 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files with 200 or more lines" in msg
+        assert "plan file contains target files exceeding 200 lines" in msg
         assert "agent-toolkit/rules/01-agent.md" in msg
         assert "src/main.py" not in msg
 
     def test_both_checkbox_variants_extracted(self, tmp_path: pathlib.Path):
         """`- [ ]`と`- [x]`の両形式のチェックボックスからパスが抽出される。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / "AGENTS.md")
-        self._make_200_line_file(home / "CLAUDE.md")
+        self._make_over_limit_file(home / "AGENTS.md")
+        self._make_over_limit_file(home / "CLAUDE.md")
         overrides = {"変更内容": "### 対象ファイル一覧\n\n- [ ] AGENTS.md\n- [x] CLAUDE.md"}
         content = _build_valid_plan(overrides=overrides)
         plan = _write_plan(plans, "checkbox-variants.md", content)
@@ -258,14 +260,14 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files with 200 or more lines" in msg
+        assert "plan file contains target files exceeding 200 lines" in msg
         assert "AGENTS.md" in msg
         assert "CLAUDE.md" in msg
 
     def test_skipped_when_skill_not_invoked(self, tmp_path: pathlib.Path):
         """plan_mode_skill_invokedが偽の場合は行数警告を出力しない。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / "AGENTS.md")
+        self._make_over_limit_file(home / "AGENTS.md")
         content = self._plan_with_files(["AGENTS.md"])
         plan = _write_plan(plans, "no-skill.md", content)
         result = _run(
@@ -297,7 +299,7 @@ class TestPlanFormatTargetFileLineCount:
     def test_agent_facing_type_200_lines_is_warned(self, tmp_path: pathlib.Path, rel_path: str, test_id: str):
         """対象種別の各パターンで200行以上のファイルが警告される。"""
         home, plans = self._home(tmp_path)
-        self._make_200_line_file(home / pathlib.Path(rel_path))
+        self._make_over_limit_file(home / pathlib.Path(rel_path))
         content = self._plan_with_files([rel_path])
         plan = _write_plan(plans, f"{test_id}.md", content)
         result = _run(
@@ -314,5 +316,54 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files with 200 or more lines" in msg
+        assert "plan file contains target files exceeding 200 lines" in msg
         assert rel_path in msg
+
+    def test_reduction_heading_excludes_full_path(self, tmp_path: pathlib.Path):
+        """`#### 縮減対象（<完全パス>）`H4見出しが存在する場合は警告対象から除外される。"""
+        home, plans = self._home(tmp_path)
+        self._make_over_limit_file(home / "AGENTS.md")
+        overrides = {
+            "変更内容": "### 対象ファイル一覧\n\n- [ ] AGENTS.md\n\n#### 縮減対象（AGENTS.md）\n\n- 具体的な縮減方針",
+        }
+        content = _build_valid_plan(overrides=overrides)
+        plan = _write_plan(plans, "reduction-fullpath.md", content)
+        result = _run(
+            {
+                "session_id": "line-reduction-full",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "cwd": str(home),
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_reduction_heading_excludes_basename(self, tmp_path: pathlib.Path):
+        """`#### 縮減対象（<basename>）`H4見出しが存在する場合も警告対象から除外される。"""
+        home, plans = self._home(tmp_path)
+        self._make_over_limit_file(home / "agent-toolkit" / "rules" / "01-agent.md")
+        overrides = {
+            "変更内容": (
+                "### 対象ファイル一覧\n\n- [ ] agent-toolkit/rules/01-agent.md\n\n"
+                "#### 縮減対象（01-agent.md）\n\n- 具体的な縮減方針"
+            ),
+        }
+        content = _build_valid_plan(overrides=overrides)
+        plan = _write_plan(plans, "reduction-basename.md", content)
+        result = _run(
+            {
+                "session_id": "line-reduction-basename",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "cwd": str(home),
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""

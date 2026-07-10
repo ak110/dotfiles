@@ -94,11 +94,9 @@
 ## 実行方法
 
 - 以下のスキルを呼び出す
-  - `agent-toolkit:plan-impl`
-  - `agent-toolkit:coding-standards`
+  - `agent-toolkit:plan-impl`・`agent-toolkit:coding-standards`
 - 計画に従い実装する
-- 以下の検証を実施する
-  - `uvx pyfltr run-for-agent tests/upload_test.py`
+- 検証: `uvx pyfltr run-for-agent tests/upload_test.py`
 - `agent-toolkit:commit`スキルを呼び出す
 - コミットする
   - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
@@ -113,7 +111,6 @@
 
 `agent-toolkit:agent-standards`「文書サイズ上限」節の対象ファイルを含む計画では、
 `## 調査結果`直下に「### 対象ファイルの現状」H3節を配置し、対象ファイル全件の現行`wc -l`実測値を列挙する。
-本サンプルはコード変更計画のため当該H3節の記載を省略している。
 
 ## メタ規範新設計画のサンプル
 
@@ -196,8 +193,6 @@
 - push後CI通過確認
 
 ## 進捗ログ
-
-（空）
 
 ## 計画ファイル（本ファイル）のパス
 

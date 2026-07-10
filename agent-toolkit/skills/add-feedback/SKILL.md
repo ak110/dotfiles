@@ -74,6 +74,9 @@ TBD投入（`atk fb tbd-add`）を伴う場合の書式は
 ## ステップ4: 投入
 
 target_repoごとに、対応するメッセージ群を位置引数で渡して`atk fb add`を呼び出す。
+投入直後の状態は`inbox`となる。
+`processing`（`start-processing`後の途中状態）・`adopted`・`rejected`（最終処理済み）への
+移動は`atk fb`の対応サブコマンド経由で行われ、本スキルは常に`inbox`への追加のみを担う。
 
 ```sh
 atk fb add <repo-path> "<message1>" ["<message2>" ...]

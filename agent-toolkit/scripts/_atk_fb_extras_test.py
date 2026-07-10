@@ -21,6 +21,7 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
+    _write_feedback_file,
 )
 
 
@@ -197,6 +198,95 @@ class TestCommitSubcommand:
         assert commit_cmds == []
         captured = capsys.readouterr()
         assert "差分なし" in captured.out
+
+
+def _write_processing_file(
+    notes: pathlib.Path,
+    filename: str,
+    target_repo: str = "github.com/example/foo",
+    body: str = "処理中本文",
+) -> pathlib.Path:
+    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す。"""
+    processing_dir = notes / "feedback" / "processing"
+    processing_dir.mkdir(parents=True, exist_ok=True)
+    path = processing_dir / filename
+    path.write_text(
+        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestListFeedbackStatusInboxDefault:
+    """listサブコマンド既定: feedbackはinbox配下のみを表示しprocessingは除外する。"""
+
+    def test_default_shows_inbox_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status`省略時、feedback側はinbox配下のみ出力しprocessing配下は出力しない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" in captured.out
+        assert "fb-proc.md" not in captured.out
+
+
+class TestListFeedbackStatusProcessing:
+    """listサブコマンド `--status=processing`: feedbackはprocessing配下のみを表示する。"""
+
+    def test_processing_shows_processing_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=processing`指定時、feedback側はprocessing配下のみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=processing"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" not in captured.out
+        assert "fb-proc.md" in captured.out
+
+
+class TestListFeedbackStatusAll:
+    """listサブコマンド `--status=all`: feedbackはinbox・processing双方を表示する。"""
+
+    def test_all_shows_both(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=all`指定時、feedback側はinbox・processing両方を出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=all"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" in captured.out
+        assert "fb-proc.md" in captured.out
 
 
 class TestEnableSubcommand:

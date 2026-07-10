@@ -15,11 +15,10 @@
   - 関数をオーバーライドする場合は`typing.override`デコレーターを必ず使う
   - `@typing.final`でオーバーライドを禁止されたメソッドは、サブクラス実装の都合で除去しない
     サブクラスで挙動を変える必要がある場合は、抽象メソッド側での委譲など実装側で吸収する設計を検討する
-- docstringはGoogle Style
-  - 自明なArgs, Returns, Raisesは省略する
+- docstringはGoogle Style。自明なArgs, Returns, Raisesは省略する
   - `ruff`のD規則（pydocstyle由来のD100〜D107等）が有効なプロジェクトでは、自明な内容でも
-    public関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる
-    - 最小限の1行サマリーに留め、設計を歪めない範囲で関数を`_`接頭辞のprivate化に切り替える選択肢も検討する
+    public関数（D103）・モジュール（D100）・クラス（D101）等のdocstring省略はlintエラーになる。
+    最小限の1行サマリーに留めるか、設計を歪めない範囲で関数を`_`接頭辞のprivate化に切り替える
 - ログは`logging`を使う
   - `logger = logging.getLogger(__name__)`でモジュールごとに取得
   - `exc_info=True`指定時は例外をメッセージへ含めず簡潔に（例: `logger.error("〇〇処理エラー", exc_info=True)`）
@@ -32,8 +31,6 @@
 - 例外の再送出は`raise`（引数なし）を使い、`raise e`は使わない（スタックトレースが書き換わるため）
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
-- 単なる長い名前の別名でしかないローカル変数は定義しない
-  - 例: `x = cls.foo`と書いて`x`を使うより`cls.foo`を直接使う
 - SQLAlchemyのNULLチェックは`.is_(None)`を使う
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
@@ -63,8 +60,7 @@
   - `.python-version`ファイルが存在する場合、スクリプトの`requires-python`より
     `.python-version`の指定が優先される
     - 該当Pythonが利用環境に無いと`error: No interpreter found for Python <ver>`で失敗する
-    - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で
-      明示指定する
+    - `--no-project`では回避できないため`uv run --python <ver> --script <path>`で明示指定する
 - `argparse`で`action="append"`を使う場合の既定値は`default=None`にする
   - 非list（文字列等）を渡すとCLI引数指定時に`str + list`の`append`で型が破綻する
   - list（例: `[]`）を渡すと毎回初期要素として混入する
@@ -101,7 +97,6 @@
     配置先が`%LOCALAPPDATA%\<appname>\<appname>\...`の二重構造になる
   - Linux・macOSでは`appauthor`が無視されるため挙動差異を生まない
   - 全プラットフォームで`%LOCALAPPDATA%\<appname>\...`形式を維持するため必須指針とする
-- 実行中のイベントループを取得する場合は`asyncio.get_running_loop()`を使う（`asyncio.get_event_loop()`は非推奨）
 
 ## 静的解析の誤検出と抑制
 

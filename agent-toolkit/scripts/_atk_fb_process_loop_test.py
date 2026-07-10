@@ -47,6 +47,63 @@ def _fake_run_with_remote_url(
     return fake_run
 
 
+class TestProcessLoopIncludesProcessingInCount:
+    """process-loopがfeedback inbox・processing双方を検知件数に含めることを公開CLI経由で検証する。"""
+
+    def test_inbox_and_processing_entries_are_both_counted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox・processing双方に`.md`を配置した状態でprocess-loopを起動し、
+        検知メッセージ`{count}件のfeedback/回答済みTBDを検知`の件数が合算値になること。
+        """
+        _setup_flag_and_notes(tmp_path)
+        private_notes = tmp_path / "private-notes"
+        inbox_dir = private_notes / "feedback" / "inbox"
+        processing_dir = private_notes / "feedback" / "processing"
+        processing_dir.mkdir(parents=True)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        # `_fake_run_with_remote_url`が返す正規化後IDと一致させる。
+        target_repo_id = "github.com/example/myrepo"
+        (inbox_dir / "a.md").write_text(
+            f"---\ntarget_repo: {target_repo_id}\n---\n\n本文A\n",
+            encoding="utf-8",
+        )
+        (processing_dir / "b.md").write_text(
+            f"---\ntarget_repo: {target_repo_id}\n---\n\n本文B\n",
+            encoding="utf-8",
+        )
+
+        base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            # claude実行を模したのちファイルを削除し、次反復で件数0とすることで
+            # `_wait_for_changes`経路へ進めてループを終了させる。
+            if cmd[:1] == ["claude"]:
+                (inbox_dir / "a.md").unlink(missing_ok=True)
+                (processing_dir / "b.md").unlink(missing_ok=True)
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        def fake_wait(*_a: object, **_kw: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                home=tmp_path,
+            )
+
+        captured = capsys.readouterr()
+        assert "2件のfeedback/回答済みTBDを検知" in captured.out
+
+
 class TestChangeHandler:
     """_ChangeHandler.on_any_event: 監視対象イベント判定の実動作を検証する。"""
 
@@ -243,7 +300,9 @@ class TestProcessLoopPromptAndEnv:
 
     def test_prompt_emphasizes_completion_over_exit_session(self) -> None:
         """プロンプトが取得した全件の完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
-        prompt = _process_loop._build_process_loop_prompt(pathlib.Path("/repo"))  # pylint: disable=protected-access  # noqa: SLF001
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+        )
         assert "主目標" in prompt
         assert "完遂" in prompt
         assert "時間がかかるのは正常" in prompt
@@ -256,7 +315,9 @@ class TestProcessLoopPromptAndEnv:
 
     def test_prompt_references_apply_feedback_finish(self) -> None:
         """プロンプトが後続工程の集約先としてapply-feedback-finishスキルを参照すること。"""
-        prompt = _process_loop._build_process_loop_prompt(pathlib.Path("/repo"))  # pylint: disable=protected-access  # noqa: SLF001
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+        )
         assert "apply-feedback-finish" in prompt
 
 
@@ -477,7 +538,9 @@ class TestResolveRepoId:
 
     def test_url_input_resolved_directly(self) -> None:
         """URL形式の入力はgit呼び出しなしで正規化されること。"""
-        result = _repo._resolve_repo_id("https://github.com/owner/repo.git")  # pylint: disable=protected-access  # noqa: SLF001
+        result = _repo._resolve_repo_id(  # pylint: disable=protected-access  # noqa: SLF001
+            "https://github.com/owner/repo.git",
+        )
         assert result == "github.com/owner/repo"
 
     def test_normalized_url_input_resolved_directly(self) -> None:

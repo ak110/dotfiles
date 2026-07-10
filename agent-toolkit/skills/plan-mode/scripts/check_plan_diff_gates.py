@@ -31,10 +31,8 @@
 - 127幅事前検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 
-SSOTコメント: ブロック抽出ロジックの共通トークン
-（`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・`extract_section_with_offset`）
-は兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
-意味論的差異のある要素（`_H3_RE`のグループ名・角括弧付きラベルトークンなど）は本スクリプト固有として温存する。
+SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
+意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
 """
 
 from __future__ import annotations
@@ -145,7 +143,8 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
     """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文)`で順に返す。
 
     `## 変更内容`セクションに限定して走査する。H3見出しの走査状態を更新しつつ`text`フェンスを検出する。
-    各フェンスについて、フェンス直後1行目（fence内側）のラベル判定・トリガー継続中フラグ・見出しコンテキストで検査対象かを判断する。
+    各フェンスについて、フェンス直後1行目（fence内側）のラベル判定・トリガー継続中フラグ・
+    見出しコンテキストで検査対象かを判断する。
     """
     section, section_start_line = extract_section_with_offset(text, "## 変更内容")
     if section is None:

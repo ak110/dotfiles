@@ -8,7 +8,14 @@ import argparse
 import pathlib
 import sys
 
-from _atk_fb_common import _is_tbd_answered, _iter_inbox_entries, _pull, _validate_filename
+from _atk_fb_common import (
+    FEEDBACK_STATE_INBOX,
+    FEEDBACK_STATE_PROCESSING,
+    _is_tbd_answered,
+    _iter_inbox_entries,
+    _pull,
+    _validate_filename,
+)
 from _atk_fb_formatters import _parse_target_repo
 from _atk_fb_repo import _resolve_repo_id
 
@@ -18,8 +25,9 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
     `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
-    `FILENAME`指定時は`--type`の値で探索対象inboxを限定する。
-    `--type=all`（既定）はfeedback/inbox→tbd/inboxの順で探索する。
+    `FILENAME`指定時は`--type`の値で探索対象を限定する。
+    `--type=all`（既定）はfeedback/inbox→feedback/processing→tbd/inboxの順で探索する。
+    `--all`指定時のfeedback走査もinbox・processing双方を対象に含める。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--status`指定時は、tbd側エントリのみ回答状況（answered・unanswered）で限定する
@@ -37,9 +45,12 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if args.filename is not None:
         search_kinds: list[tuple[str, pathlib.Path]] = []
         if args.type in ("all", "feedback"):
-            search_kinds.append(("feedback", private_notes / "feedback" / "inbox"))
+            # feedback側はinbox・processing双方を検索対象に含める（`start-processing`後の
+            # 途中状態も参照可能とするため）。
+            search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_INBOX))
+            search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_PROCESSING))
         if args.type in ("all", "tbd"):
-            search_kinds.append(("tbd", private_notes / "tbd" / "inbox"))
+            search_kinds.append(("tbd", private_notes / "tbd" / FEEDBACK_STATE_INBOX))
         for kind, base_dir in search_kinds:
             path = _validate_filename(args.filename, base_dir)
             if not path.exists():
@@ -64,10 +75,13 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(2)
 
     if args.type in ("all", "feedback"):
-        inbox_dir = private_notes / "feedback" / "inbox"
+        # inbox・processing双方を走査対象にする（`start-processing`後の途中状態も
+        # `--all`で確認できるようにするため）。
         entries: dict[str, list[tuple[str, str]]] = {}
-        for path, target_repo, text in _iter_inbox_entries(inbox_dir, filter_repo):
-            entries.setdefault(target_repo, []).append((path.name, text))
+        for state_name in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING):
+            state_dir = private_notes / "feedback" / state_name
+            for path, target_repo, text in _iter_inbox_entries(state_dir, filter_repo):
+                entries.setdefault(target_repo, []).append((path.name, text))
         if entries:
             print("# feedback")
             for repo, items in entries.items():
@@ -78,7 +92,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     print()
 
     if args.type in ("all", "tbd"):
-        tbd_dir = private_notes / "tbd" / "inbox"
+        tbd_dir = private_notes / "tbd" / FEEDBACK_STATE_INBOX
         tbd_entries: dict[str, list[tuple[str, str]]] = {}
         for path, target_repo, text in _iter_inbox_entries(tbd_dir, filter_repo):
             answered = _is_tbd_answered(text)
