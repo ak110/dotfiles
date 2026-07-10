@@ -54,7 +54,10 @@ def main() -> int:
     text = payload.get("last_assistant_message")
     if is_empty_completion_report(text):
         reason = _llm_notice(
-            "blocked: サブエージェント完了報告が実質空、または`Skill`呼び出し単独。再委譲するか完遂本文を追記すること。",
+            "blocked: サブエージェント完了報告が実質空、または`Skill`呼び出し単独。"
+            "再委譲するか完遂本文を追記すること。"
+            "再送する場合は訂正内容だけでなく、当初の完了報告本文全体を再掲したうえで追記・訂正すること"
+            "（本フックのブロックでメイン側は本文を保持していないため）。",
             tag="block",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
@@ -70,7 +73,12 @@ def main() -> int:
 
     reason = _llm_notice(
         f"blocked: サブエージェント完了報告に縮退表明カテゴリ`{category}`が検出された。"
-        "報告本文の該当箇所を修正するか、実装未完遂として作業を継続すること。",
+        "報告本文の該当箇所を修正するか、実装未完遂として作業を継続すること。"
+        "再送する場合は訂正内容だけでなく、当初の完了報告本文全体を再掲したうえで"
+        "該当箇所のみを書き換えること（本フックのブロックでメイン側は本文を保持していないため）。"
+        "調査・レビュー系タスクの完了報告で規範文書の引用のため縮退表明フレーズを"
+        "本文へ含める必要がある場合は、`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い"
+        "カテゴリ識別子または節名で間接参照する形へ書き換えること。",
         tag="block",
     )
     print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

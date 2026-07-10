@@ -16,6 +16,7 @@ PEP 723 script headerも重量級依存も持たない。
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Iterable
 
 # Stop経路（`stop_advisor.py`）の基本照合カテゴリ集合。
@@ -289,3 +290,31 @@ def _match_scope_escalation(
         if pattern.search(text) is not None:
             return category
     return None
+
+
+def _cli_main(argv: list[str]) -> int:
+    """事前検証用CLIエントリポイント。
+
+    ブロック対象になり得る候補文言を発行前に自主検証するためのCLI。
+    stdinから対象テキストを読み込み、`_SCOPE_ESCALATION_PHRASES`のいずれかに
+    一致した場合はカテゴリ識別子を1行で標準出力へ出力しexit 2で終了する。
+    未一致時は何も出力せずexit 0で終了する。
+
+    使用例:
+
+        echo "<候補文言>" | python _scope_escalation.py
+
+    `pretooluse.py`のAskUserQuestion / Write / Editブロック案内文から
+    参照される。呼び出し側は本CLIをローカル実行で起動してカテゴリを事前確認できる。
+    """
+    del argv
+    text = sys.stdin.read()
+    category = _match_scope_escalation(text)
+    if category is None:
+        return 0
+    print(category)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(_cli_main(sys.argv[1:]))

@@ -392,7 +392,10 @@ def main() -> int:
                     f"{_scope_escalation_agent_md_reference(category)}を参照。"
                     f"カテゴリ定義は`agent-toolkit:agent-standards`配下"
                     f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。"
-                    f"{_format_scope_escalation_alternatives(category)}",
+                    f"{_format_scope_escalation_alternatives(category)}"
+                    f" 再発行前に候補文言を事前検証する場合は"
+                    f" `echo '<候補文言>' | python agent-toolkit/scripts/_scope_escalation.py`"
+                    f" を実行し、exit codeとカテゴリ識別子で照合できる（0で通過・2でブロック相当）。",
                 ),
                 file=sys.stderr,
             )
@@ -1370,7 +1373,11 @@ def _check_plan_file_required_reads_first(
     print(
         _llm_notice(
             "blocked: attempting to edit a plan file without reading required references.\n"
-            "Read them first, then retry the plan file edit.\n" + "\n".join(lines),
+            "Read them first, then retry the plan file edit.\n"
+            "本チェックは`~/.claude/plans/`直下の計画ファイル編集時にのみ発火する。"
+            "scratchpad等の別パスへ先行して計画ドラフトを書き込むと本チェックが発火せず、"
+            "正規パスへの書き戻し時点で参照未読が判明して手戻りとなる。"
+            "scratchpad上でドラフトを構築する前に下記リファレンスを全て読み込むこと。\n" + "\n".join(lines),
             tag="block",
         ),
         file=sys.stderr,
