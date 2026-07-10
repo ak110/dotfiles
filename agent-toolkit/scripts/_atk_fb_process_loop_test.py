@@ -234,7 +234,7 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         prompt = claude_calls[0]["cmd"][2]
         assert "/process-feedbacks" in prompt
-        assert "/agent-toolkit:exit-session" in prompt
+        assert "apply-feedback-finish" in prompt
         assert claude_calls[0]["cmd"][:2] == ["claude", "--permission-mode=auto"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
         assert len(wait_calls) == 2
@@ -242,7 +242,7 @@ class TestProcessLoopPromptAndEnv:
         assert "Ctrl+Cを検知しました" in captured.out
 
     def test_prompt_emphasizes_completion_over_exit_session(self) -> None:
-        """プロンプトが選定対象完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
+        """プロンプトが取得した全件の完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
         prompt = _process_loop._build_process_loop_prompt(pathlib.Path("/repo"))  # pylint: disable=protected-access  # noqa: SLF001
         assert "主目標" in prompt
         assert "完遂" in prompt
@@ -253,6 +253,11 @@ class TestProcessLoopPromptAndEnv:
         assert "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します" in prompt
         assert "後続工程" in prompt
         assert "縮退の根拠に" in prompt
+
+    def test_prompt_references_apply_feedback_finish(self) -> None:
+        """プロンプトが後続工程の集約先としてapply-feedback-finishスキルを参照すること。"""
+        prompt = _process_loop._build_process_loop_prompt(pathlib.Path("/repo"))  # pylint: disable=protected-access  # noqa: SLF001
+        assert "apply-feedback-finish" in prompt
 
 
 class TestProcessLoopClaudeReturncode:

@@ -362,6 +362,73 @@ class TestAddFrontmatterOverride:
         body = content.split("---\n\n", 1)[1]
         assert body == "テスト本文\n"
 
+    def test_message_frontmatter_plan_group_persisted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """メッセージ先頭frontmatterの`plan_group`がinboxファイルへ記録される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        message = "---\ntarget_repo: github.com/x/y\nplan_group: docs-sync\n---\n\nテスト本文"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "feedback" / "inbox"
+        files = list(inbox.iterdir())
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "plan_group: docs-sync" in content
+
+    def test_without_plan_group_frontmatter_line_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`plan_group`未指定時はinboxファイルへ`plan_group`行が記録されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        inbox = notes / "feedback" / "inbox"
+        files = list(inbox.iterdir())
+        content = files[0].read_text(encoding="utf-8")
+        assert "plan_group" not in content
+
     def test_multiple_messages_mixed_frontmatter(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -92,8 +92,9 @@ plan-mode側の定義は
   後始末コマンドがフィードバック管理側へcommit/pushを伴う場合、
   対象リポジトリ側がレビュー指摘で巻き戻るとフィードバック管理側だけが先行公開され整合性が崩れるため
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
-  `agent-toolkit:careful-review`→`git push`→push後CI通過確認→
-  後始末（呼び出し元スキルが指定する具体コマンド）とする
+  `agent-toolkit:careful-review`まで計画側で完遂し、
+  以降の後続工程（`git push`から振り返り・`exit-session`まで）は
+  `agent-toolkit:apply-feedback-finish`スキル本文の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
 
 ## 後始末コマンドの引数
@@ -112,9 +113,5 @@ plan-mode側の定義は
 
 ## 計画分割・統合の判断基準
 
-- 単一フィードバックが対象50ファイル以上の大規模な一括処理を要求する場合は、
-  当該フィードバックを他フィードバックから分離した独立計画として扱う。
-  詳細は`references/plan-split.md`を参照する
-- 上記に該当しない場合は複数フィードバックを1計画へ統合し、1計画1コミット原則を維持する
-- 処理対象件数のスケール調整は呼び出し元スキル（`process-feedbacks`）の処理対象の選定規定で行う。
-  `apply-feedback`側では引き渡された全件を1計画へ統合する
+各feedbackファイルのfrontmatter`plan_group`フィールドで計画単位を決定する。
+判定方式・命名基準は`references/plan-split.md`に集約する。

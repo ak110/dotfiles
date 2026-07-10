@@ -62,7 +62,8 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         nargs="*",
         help=(
             "投入するフィードバックメッセージ（省略時は$EDITORで編集する）。"
-            "メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。"
+            "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先し、"
+            "plan_group（任意。計画グルーピング識別子）があれば記録する。"
         ),
     )
     add.add_argument(

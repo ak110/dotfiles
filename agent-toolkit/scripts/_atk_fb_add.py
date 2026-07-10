@@ -56,7 +56,8 @@ def _cmd_add(
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
-    各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
+    各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先し、
+    `plan_group`（任意。計画グルーピング識別子）はfrontmatterからのみ取得して記録する。
     """
     target_repo = _resolve_repo_id(args.repo_path)
     _pull(private_notes)
@@ -75,8 +76,10 @@ def _cmd_add(
         item_target_repo = fm.get("target_repo", target_repo)
         item_source = fm.get("source", args.source)
         item_source_line = f"source: {item_source}\n" if item_source else ""
+        item_plan_group = fm.get("plan_group", "")
+        item_plan_group_line = f"plan_group: {item_plan_group}\n" if item_plan_group else ""
         filename = f"{timestamp}-{counter:03d}.md"
-        content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}---\n\n{body}\n"
+        content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}{item_plan_group_line}---\n\n{body}\n"
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         generated.append(filename)
         counter += 1
