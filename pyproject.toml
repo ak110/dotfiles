@@ -85,6 +85,8 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
+# Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、既定の600秒では境界を超えるためCIタイムアウトを延伸する
+command-timeout = 900
 ty = true
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを解決するため追加する
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "agent-toolkit/scripts"]

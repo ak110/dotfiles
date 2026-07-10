@@ -189,8 +189,8 @@
     対象に含め、unified diffはフェンスと行頭`+`・`-`を除去して出力する
   - 出力後に次のコマンドを実行する。
     `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check <一時ファイル>`
-    続けて`check_line_width.py`・`check_dash.py`・`check_line_ref.py`・`check_self_ref.py`も実行し、
-    本文全域の違反を反映前に解消する
+    続けて`check_line_width.py`・`check_dash.py`・`check_line_ref.py`・
+    `check_self_ref.py`・`check_plan_diff_gates.py`も実行し、本文全域および対比ブロックの違反を反映前に解消する
    （工程7を代替としない。`writing-standards`の厳格適合対象は`## 変更内容`配下のコードブロックに限定）
 
 ## 計画段階の調査・検証細則

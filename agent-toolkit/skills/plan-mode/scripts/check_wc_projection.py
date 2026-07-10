@@ -127,6 +127,7 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     # `_check_one_file`と`_check_addition_reduction_projection`を一括スキップする。
     if _is_alternative_path_adopted(text):
         print(f"代替経路採用のため乖離検査をスキップ: {plan_path}")
+        _check_alternative_path_scale(plan_path, text)
         return 0
 
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
@@ -195,6 +196,58 @@ def _is_alternative_path_adopted(plan_body: str) -> bool:
             lines = lines[:idx] + lines[end:]
             break
     return _ALTERNATIVE_PATH_TOKEN in "\n".join(lines)
+
+
+# 代替経路採用時の規模基準判定に用いる閾値。
+# `integrity-checks.md`「概ね10以上」の許容境界が9〜10ファイルのためtotalは9件で許容、
+# 新規は5件以上で許容する。
+_ALTERNATIVE_SCALE_MIN_TOTAL = 9
+_ALTERNATIVE_SCALE_MIN_NEW = 5
+
+
+def _check_alternative_path_scale(plan_path: pathlib.Path, text: str) -> int:
+    """代替経路採用宣言時の規模基準判定を行い、未達時に警告を出力する。
+
+    `_check_wc`が代替経路採用を検出した後に呼び出される情報提供用ヘルパー。
+    引数順・戻り値型規約は兄弟関数`_check_addition_reduction_projection`と揃え、
+    `(plan_path: pathlib.Path, text: str) -> int`とする。
+    常に0を返し、違反件数の集計には影響させない設計とする
+    （警告は情報提供扱いのため）。
+
+    判定基準:
+    - 対象ファイル一覧の総件数と新規件数を集計する
+    - 総件数が`_ALTERNATIVE_SCALE_MIN_TOTAL`（9）以上、または
+      新規件数が`_ALTERNATIVE_SCALE_MIN_NEW`（5）以上のいずれかを満たす場合は警告なし
+    - 満たさない場合はstderrへ「規模基準未達」の警告を出力する
+
+    警告の限界注記:
+    version bump対象等の付随変更ファイルは現状の実装では自動的に除外できない。
+    `integrity-checks.md`「version bump対象等の付随変更ファイルは計上対象から除外する」
+    規定を根拠に、付随ファイル込みでの件数超過を実質的な代替経路適用と扱う運用のため、
+    偽陽性の警告が出た場合は人間の判断で警告を無視する。
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+
+    bounds = _collect_projection_bounds(section)
+    if not bounds:
+        return 0
+
+    total = len(bounds)
+    new_count = sum(1 for current, _projected in bounds.values() if current == 0)
+
+    if total >= _ALTERNATIVE_SCALE_MIN_TOTAL or new_count >= _ALTERNATIVE_SCALE_MIN_NEW:
+        return 0
+
+    print(
+        f"{plan_path}: 代替経路採用宣言だが規模基準未達"
+        f"（対象{total}件・新規{new_count}件、"
+        f"基準は{_ALTERNATIVE_SCALE_MIN_TOTAL}件以上または"
+        f"新規{_ALTERNATIVE_SCALE_MIN_NEW}件以上）",
+        file=sys.stderr,
+    )
+    return 0
 
 
 def _check_one_file(

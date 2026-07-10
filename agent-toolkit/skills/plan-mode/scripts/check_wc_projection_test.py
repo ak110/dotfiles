@@ -581,3 +581,27 @@ class TestCheckWcProjection:
         result = _run(_write(tmp_path / "plan.md", body), cwd=tmp_path)
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("total", "new_count", "expect_warn"),
+        [(6, 1, True), (9, 0, False), (6, 5, False)],
+        ids=["below-threshold", "boundary-nine", "five-new"],
+    )
+    def test_alternative_path_scale_warns_only_below_threshold(
+        self, tmp_path: pathlib.Path, total: int, new_count: int, expect_warn: bool
+    ) -> None:
+        """代替経路採用宣言時、規模基準未達（対象9件未満かつ新規5件未満）でのみ警告する。"""
+        checkbox_lines = "\n".join(
+            f"- [ ] `f{i}.md`（{'新設' if i < new_count else '現行10行'}, 見込み15行）" for i in range(total)
+        )
+        plan = _write(
+            tmp_path / "plan.md",
+            f"# T\n\n## 対応方針\n\n代替経路を採用する。\n\n## 変更内容\n\n### 対象ファイル一覧\n\n{checkbox_lines}\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        if expect_warn:
+            assert "規模基準未達" in result.stderr
+            assert f"対象{total}件・新規{new_count}件" in result.stderr
+        else:
+            assert "規模基準未達" not in result.stderr
