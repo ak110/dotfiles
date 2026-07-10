@@ -1,3 +1,9 @@
+---
+# 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは
+# `agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する。
+# 改訂時は両ファイルを同時更新する。
+---
+
 # 計画ファイル起草・改訂委譲プロンプト雛形
 
 `agent-toolkit:plan-impl`スキルの`plan-implementer`起動プロンプトを、
@@ -24,6 +30,9 @@
 - コーディングエージェント向け文書の縮減・統合・縮小を含むタスクを委譲する場合、
   起動プロンプトへ`agent-toolkit:trim-agent-docs`スキルの起動指示を明示する
   （縮減観点の適用と再発予防のため）
+- サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
+  新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
+  `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
 
 ## 起草・改訂委譲雛形
 
@@ -62,6 +71,9 @@
       メイン側の起動プロンプトへ許可する操作を明示的に記述する
     - コーディングエージェント向け文書の縮減・統合・縮小を含むタスクを委譲する場合、
       起動プロンプトへ`agent-toolkit:trim-agent-docs`スキルの起動指示を明示する（縮減観点の適用と再発予防のため）
+    - サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
+      新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
+      `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
 
     ## 修正指摘（修正再実装時のみ）
 

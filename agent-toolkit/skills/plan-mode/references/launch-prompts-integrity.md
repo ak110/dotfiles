@@ -46,6 +46,7 @@
     - メイン側実施済み観点の内訳を次に示す。
       - 機械チェック実施結果を次に示す。
         {check_line_width・check_dash・check_line_ref・check_wc_projectionの各実行結果を列挙}。
+        {check_plan_diff_gatesの実行結果（縮退フレーズ検出・textlint各違反件数）を列挙}。
         {textlint・markdownlint・colloquial-check・typosの各実行結果を列挙}。
       - 遡及スキャン結果: {norm-revision-checklist.md規定に従い記述された内容を転記}。
       - 横断grep確認結果: {関連参照確認の実施内容と検出件数を転記}。

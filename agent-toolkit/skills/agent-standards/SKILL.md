@@ -190,8 +190,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
 - `agent_toolkit_edit_skill_invoked`: dotfiles個人フックが`agent-toolkit-edit`呼び出しを記録。
   未起動時のPreToolUse警告抑制と、配布物`pretooluse.py`のRead隔離ブロックの例外判定に使う
 - dotfiles個人フック管理:
-  - `session_review_extension_pending`: `agent-toolkit:*`／`session-review-dotfiles`使用を記録。
-    配布物Stop hook（`stop_advisor.py`）が重複送出抑制に使う
+  - `session_review_extension_pending`: `session-review-dotfiles`使用を記録（配布物Stop hookの重複送出抑制）
   - `autonomous_exit_invoked`: `agent-toolkit:exit-session`呼び出しを記録。
     個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
 - `apply_feedback_skill_invoked` / `process_feedbacks_skill_invoked`:
@@ -199,6 +198,7 @@ frontmatterコメントへ書くべきメタ記述の類型と代表例は次の
   対象は`agent-toolkit:apply-feedback`・`agent-toolkit:process-feedbacks`・各短縮スラッシュ。
   Stop hookの拡張照合カテゴリ有効化判定に使う
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする（pretooluse・posttooluseとも同一）
+  - コード追加・改訂時は`tool_name in ("Agent", "Task")`を`grep -rn`で確認して同一集合を使う
 - 工程7完遂判定フラグ群: `plan_reviewer_invoked`・`naive_executor_invoked`・`plan_impl_reviewer_invoked`・
   `agent_doc_validator_invoked`はPostToolUse(Agent/Task)が記録し、
   `codex_review_invoked`はPostToolUse（Skill、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了）
