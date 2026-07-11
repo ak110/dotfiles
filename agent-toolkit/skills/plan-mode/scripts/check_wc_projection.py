@@ -465,7 +465,8 @@ def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, 
     - 対象ファイル一覧の現行行数が`_OVER_THRESHOLD_PROJECTION`超のファイルを対象とする
     - `agent-toolkit:agent-standards`「文書サイズ上限」節に従い対象拡張子は`.md`・`.md.tmpl`に限定する
     - 集計結果で追記行数が0超かつ縮減対象行数が0の対象ファイルを警告対象とする
-      （ラベル付き`[現行]`/`[置換後]`ペアで書けば縮減量集計に載るため）
+      （ラベル付き`[現行]`/`[置換後]`ペアで書けば`_check_one_file`の対比検証経路へ載り
+      当該ブロックは追記/縮減集計からは除外されて集計上の追記が0になり見込み行数乖離を回避できるため）
     """
     section = _extract_section(text, "## 変更内容")
     if section is None:
