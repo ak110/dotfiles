@@ -56,7 +56,7 @@ disable-model-invocation: true
 2. 改善観点ごとに並列スキャンを実施し、改善候補を洗い出す
 3. 候補一覧をユーザーへ提示し、優先順位・採否・破壊的変更の取り扱いを確定する
 4. 確定した方針を計画ファイルへ転記し、`ExitPlanMode`で承認を得る
-5. `agent-toolkit:plan-impl`へ引き継いで実装・検証・コミットを進める
+5. Agentツールで`agent-toolkit:plan-impl-executor`を起動して実装・検証・コミットを進める
 6. レビューは`agent-toolkit:careful-review`へ引き継ぐ
 
 ## サブエージェント活用
@@ -65,9 +65,9 @@ disable-model-invocation: true
 
 - 観点ごとに別エージェントを起動し、独立する2件以上は`run_in_background=true`で同時実行する
 - モデル選定は02-claude-code.md「サブエージェントの活用」節の判断軸に従う
-- 実装フェーズの委譲判断・並列起動方針は`agent-toolkit:plan-impl`の標準ルールに従う
+- 実装フェーズの委譲判断・並列起動方針は`plan-impl-executor`手順の標準ルールに従う
 
-## 既存スキルとの連携
+## 既存スキル・サブエージェントとの連携
 
 - `agent-toolkit:plan-mode`: 起動直後に必ず呼び出す。plan mode外の場合は`EnterPlanMode`を先に呼ぶ
 - `agent-toolkit:coding-standards`: コード改善に着手するとき
@@ -75,7 +75,7 @@ disable-model-invocation: true
 - `agent-toolkit:agent-standards`: エージェント向け文書整備時
 - `agent-toolkit:review-standards`: レビュー実施時
 - `agent-toolkit:pyfltr-usage`: 足元整備時
-- `agent-toolkit:plan-impl`: `ExitPlanMode`後の実装フェーズへ引き継ぐ
+- `agent-toolkit:plan-impl-executor`: `ExitPlanMode`後の実装フェーズへAgentツールで引き継ぐ
 - `agent-toolkit:careful-review`: レビューフェーズへ引き継ぐ
 
 ## 参考リソース

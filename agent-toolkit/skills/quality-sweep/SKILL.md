@@ -132,7 +132,7 @@ disable-model-invocation: true
 - 機械チェックを回避する目的のlint抑制・テストskipは禁止
 ```
 
-## 既存スキルとの連携
+## 既存スキル・サブエージェントとの連携
 
 - `agent-toolkit:plan-mode`: 「進め方」手順1で呼び出す
 - `agent-toolkit:careful-review`: 分割閾値の定義元。分担方針を確定する時点で参照する

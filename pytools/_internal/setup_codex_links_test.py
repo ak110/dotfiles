@@ -161,6 +161,12 @@ def test_links_contains_add_feedback() -> None:
     assert setup_codex_links._LINKS["skills/add-feedback"] == "agent-toolkit/skills/add-feedback"
 
 
+def test_links_contains_agent_toolkit_agents() -> None:
+    """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれること。"""
+    assert "agent-toolkit/agents" in setup_codex_links._LINKS
+    assert setup_codex_links._LINKS["agent-toolkit/agents"] == "agent-toolkit/agents"
+
+
 def test_windows_creates_junction(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

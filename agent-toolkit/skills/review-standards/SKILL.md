@@ -90,7 +90,7 @@ description: >
 
 詳細は次の規定に従う。
 
-- `agent-toolkit/skills/plan-codex-review/SKILL.md`の規定
+- `agent-toolkit/agents/plan-codex-reviewer.md`の規定
 - `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`のplan-reviewer雛形の規定
 
 ## 指摘の表現

@@ -99,7 +99,8 @@
   追随項目を追加または既存項目を更新する
 - 既知の機械転記ペア例:
   - `process-feedbacks/SKILL.md`ステップ2.5節と`process-feedbacks/references/explore-template.md`「Explore委譲雛形」節
-  - `plan-impl/SKILL.md`と`plan-impl/references/launch-prompts-drafting.md`「起草・改訂委譲雛形」節
+  - `agents/plan-impl-executor.md`が参照する`references/plan-impl/execution-process.md`と
+    `references/plan-impl/launch-prompts-drafting.md`「起草・改訂委譲雛形」節
   - `plan-mode/references/integrity-checks.md`と`plan-mode/references/launch-prompts-integrity.md`の各雛形節
 
 ## 既存規範文の短縮・言い換え時の並列列挙要素の照合

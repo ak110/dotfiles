@@ -57,7 +57,7 @@ plan-mode本体の工程実施に対する読み替えは次のとおり。
 - 計画ファイル配置は`docs/v{next}/plans/{theme}.md`へ読み替える。
   plan-mode規定の`~/.claude/plans/*.md`は使用しない
 - `EnterPlanMode`は呼ばない（plan modeへは入らない）
-- 工程8（`ExitPlanMode`と`agent-toolkit:plan-impl`への引き継ぎ）は実施しない
+- 工程8（`ExitPlanMode`と`plan-impl-executor`への引き継ぎ）は実施しない
 - `docs/v{next}/plans/`ディレクトリが存在しない場合は計画ファイル作成前に作成する
 
 工程7のcodexレビュー等の長時間処理が実行中の間は、レビュー結果を待たず次テーマのフェーズAを先行起動する。

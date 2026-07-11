@@ -153,8 +153,9 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
 
 ### rules階層のフラット構造
 
-`agent-toolkit/rules/`配下はサブディレクトリを作成せずフラット構造を維持する
-（補助情報は`agent-toolkit/skills/*/references/`配下へ置く）。
+`agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを作成せずフラット構造を維持する。
+agents配下のサブディレクトリ内`.md`はagent定義と誤検出され、frontmatter欠落で`--strict`検証が失敗するためである。
+補助情報はrulesが`agent-toolkit/skills/*/references/`配下、agentsが`agent-toolkit/references/<用途名>/`配下とする。
 
 ### セッション状態フラグ
 
@@ -182,9 +183,8 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
 - 工程7完遂判定フラグ群はPostToolUse(Agent/Task)が記録する: `plan_reviewer_invoked`・`naive_executor_invoked`・
-  `plan_impl_reviewer_invoked`・`agent_doc_validator_invoked`（末尾のみエージェント向け文書対象時に必須）
-  `codex_review_invoked`はPostToolUse（Skill、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了）
-  ／UserPromptSubmit（`/plan-codex-review`）が記録する
+  `plan_impl_reviewer_invoked`・`codex_review_invoked`・`agent_doc_validator_invoked`（末尾は文書対象時のみ必須）
+  `codex_review_invoked`は`plan-codex-reviewer`起動時、または`codex_impl_invoked`未設定時の`mcp__codex__codex`完了時に記録する
 - `codex_impl_invoked`: PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で`codex-impl`呼び出しを記録。
   実装用途`mcp__codex__codex`の許可判定に使う
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。ExitPlanMode時の再読込に使う

@@ -93,8 +93,8 @@
 
 ## 実行方法
 
-- 以下のスキルを呼び出す
-  - `agent-toolkit:plan-impl`・`agent-toolkit:coding-standards`
+- Agentツールで`agent-toolkit:plan-impl-executor`を起動する
+  - `agent-toolkit:coding-standards`を呼び出す
 - 計画に従い実装する
 - 検証: `uvx pyfltr run-for-agent tests/upload_test.py`
 - `agent-toolkit:commit`スキルを呼び出す
@@ -182,7 +182,7 @@
 
 ## 実行方法
 
-- `agent-toolkit:plan-impl`
+- Agentツールで`agent-toolkit:plan-impl-executor`を起動する
 - `agent-toolkit-edit`
 - 実装
 - 検証: `uvx pyfltr run-for-agent`

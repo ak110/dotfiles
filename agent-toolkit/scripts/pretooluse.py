@@ -63,7 +63,11 @@ AskUserQuestion:
 Skill:
 
 - `agent-toolkit:plan-mode`起動時の工程7完了フラグリセット（新計画着手の合図） (auto-fix)
-- `agent-toolkit:plan-impl`起動時の工程7完了未達のブロック (block)
+
+Agent / Task:
+
+- 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
+- `plan-impl-executor`起動時の工程7完了未達のブロック (block)
 
 Write / Edit / MultiEdit:
 
@@ -120,6 +124,7 @@ _SIZE_LIMIT_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"agent-toolkit/skills/[^/]+/references/.+\.md$"),
     re.compile(r"agent-toolkit/agents/.+\.md$"),
+    re.compile(r"agent-toolkit/references/.+\.md$"),
     re.compile(r"\.chezmoi-source/dot_claude/rules/.+\.md$"),
 )
 # basenameで照合する文書サイズ上限対象ファイル名
@@ -337,7 +342,7 @@ def main() -> int:
         return 2
 
     # plan fileのWriteで文書サイズ上限対象ファイルのwc -l実測値記録漏れがある場合はwarn降格
-    # （ExitPlanMode/plan-impl起動時までのブロック検出は`plan-reviewer`・`plan-impl-reviewer`等の
+    # （ExitPlanMode/plan-impl-executor起動時までのブロック検出は`plan-reviewer`・`plan-impl-reviewer`等の
     # サブエージェント目視レビューへ委譲する）
     _check_plan_file_size_limit_target_wc_l_recorded(tool_name, tool_input)
 
@@ -345,7 +350,7 @@ def main() -> int:
     if _check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id):
         return 2
 
-    # 内容・形式系検査群はwarn降格（ExitPlanMode/plan-impl起動時までのブロック集約は
+    # 内容・形式系検査群はwarn降格（ExitPlanMode/plan-impl-executor起動時までのブロック集約は
     # `plan-reviewer`・`plan-impl-reviewer`等のサブエージェント目視レビューへ委譲する）
     _check_plan_file_h2_section_order(tool_name, tool_input)
     _check_plan_file_target_files_h3_correspondence(tool_name, tool_input)
@@ -366,17 +371,11 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # Skill: plan-mode起動時は工程7完了フラグをリセット、plan-impl起動時は工程7完了未達をブロック
+    # Skill: plan-mode起動時は工程7完了フラグをリセット
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             _reset_process7_completion_flags(session_id)
-        elif (
-            isinstance(skill_name, str)
-            and skill_name in _PLAN_IMPL_SKILL_NAMES
-            and _check_process7_completion_before_exit_plan_mode(session_id)
-        ):
-            return 2
         flush_pending_language_warning()
         return 0
 
@@ -485,8 +484,16 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: 規範非読込型サブエージェント起動時の規範明示引用漏れを警告
+    # Agent/Task: plan-impl-executor起動時の工程7完了未達ブロック +
+    # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告
     if tool_name in ("Agent", "Task"):
+        subagent_type = tool_input.get("subagent_type")
+        if (
+            isinstance(subagent_type, str)
+            and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
+            and _check_process7_completion_before_exit_plan_mode(session_id)
+        ):
+            return 2
         message = _check_agent_norm_reference(tool_input)
         if message is not None:
             print(message, file=sys.stderr)
@@ -1469,7 +1476,7 @@ def _check_plan_file_h2_section_order(
         _llm_notice(
             f"warning: plan file H2 section order violation: {violation_str}"
             f" Required order: {list(_plan_format.PLAN_REQUIRED_H2)}."
-            " Fix the section order before ExitPlanMode / plan-impl invocation.",
+            " Fix the section order before ExitPlanMode / plan-impl-executor invocation.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2330,10 +2337,12 @@ def _check_plan_file_retroactive_scan_recorded(
 
 # --- 工程7（4サブエージェント/codexレビュー）完了チェック ---
 
-# Skillツールの`skill`引数として許容するplan-mode / plan-implスキル名。
+# Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
-_PLAN_IMPL_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-impl", "plan-impl"})
+# Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
+# フルネームと短縮名の両方を許容する。
+_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
 # 工程7の完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
@@ -2400,7 +2409,7 @@ def _current_plan_file_requires_agent_doc_validator(state: dict) -> bool:
 
 
 def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
-    """ExitPlanMode呼び出しまたは`agent-toolkit:plan-impl`起動時、工程7完了未達をブロックする。
+    """ExitPlanMode呼び出しまたは`plan-impl-executor`起動時、工程7完了未達をブロックする。
 
     判定条件:
 
@@ -2427,7 +2436,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
         return False
     print(
         _llm_notice(
-            "blocked: attempting to exit plan mode or invoke `agent-toolkit:plan-impl`"
+            "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
             " before completing Phase 7 (plan-reviewer / naive-executor /"
             " plan-impl-reviewer / codex review)."
             f" Missing flags: {missing}."

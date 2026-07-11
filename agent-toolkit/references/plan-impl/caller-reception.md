@@ -1,30 +1,31 @@
-# fork完了報告の受領口
+# plan-impl-executor呼び出し元の起動前準備・完了報告の受領口
 
-`agent-toolkit:plan-impl`スキル本文から参照されるSSOTとする。
-本ファイルはfork起動前の準備と完了報告の受領後の手順を定める。
-呼び出し時に渡す引数は`plan-impl/SKILL.md`のdescriptionに従う。
+`agent-toolkit/agents/plan-impl-executor.md`から参照されるSSOTとする。
+本ファイルは`plan-impl-executor`起動前の準備と完了報告の受領後の手順を定める。
+呼び出し時に渡す引数は`plan-impl-executor.md`のdescriptionに従う。
 引数は計画ファイルの絶対パス、プロジェクトルートの絶対パス、追加指示（任意）とする。
 
-起動前の準備: 呼び出し元はfork起動の直前に`git rev-parse HEAD`を実行し、
+起動前の準備: 呼び出し元はAgentツールで`agent-toolkit:plan-impl-executor`を起動する直前に
+`git rev-parse HEAD`を実行する。
 結果を計画着手前SHAとして記録する（手順2の照合と手順4の不変参照点に使う）。
 
 呼び出し元は`plan-impl-executor`の完了報告を受領した後、次の手順を実施する。
 
 1. `status: completed`を確認する。`needs_escalation`の場合は`blockers`欄の内容で分岐する。
    - ユーザー判断・破壊的操作の確認を要する内容: `AskUserQuestion`でユーザーへ確認する。
-     確認結果に応じて、縮減した新規`plan-impl-executor`起動プロンプト（元計画ファイルパス・
+     確認結果に応じて、縮減した新規`agent-toolkit:plan-impl-executor`起動プロンプト（元計画ファイルパス・
      未完了項目・確認結果を明記）で再委譲する
    - 技術的に解消可能な実装不備（検証失敗・対象ファイル未網羅等）: `AskUserQuestion`を経由しない。
-     縮減した新規`plan-impl-executor`起動プロンプト（元計画ファイルパス・未完了項目・修正指摘を
+     縮減した新規`agent-toolkit:plan-impl-executor`起動プロンプト（元計画ファイルパス・未完了項目・修正指摘を
      明記）で再委譲する
    - いずれの分岐でも同一プロンプトでの再委譲は禁止する
 2. `changed`欄と計画ファイル`## 変更内容`を照合し、`git diff <計画着手前SHA>..<commit_sha>`の
    実差分で1対1確認する。完了報告の受領時点で作業ツリーはコミット済みでcleanなため、
    作業ツリー差分ではなくコミット範囲差分を照合対象とする
 3. `pending_confirmations`欄が空でない場合、内容を`AskUserQuestion`でユーザーへ提示する。
-   回答に応じた追修正が必要な場合は縮減した起動プロンプトで新規`plan-impl-executor`を再起動する
+   回答に応じた追修正が必要な場合は縮減した起動プロンプトで新規`agent-toolkit:plan-impl-executor`を再起動する
 4. `review_handoff`欄が「レビューは実施しない」以外の場合、記載のスキル・エージェントへ
-   メイン側が引き継いで起動する（複数併記時は並列起動する）。対象範囲は計画全体（全コミット完了後
+   呼び出し元が引き継いで起動する（複数併記時は並列起動する）。対象範囲は計画全体（全コミット完了後
    の差分）、計画ファイルパスは本計画のものを渡す。不変参照点（`origin/<base-branch>`相当または
    計画着手前SHA）と一時ファイル一覧を併せて渡す
 5. `pending_confirmations`欄・`plan_gaps`欄の内容を計画ファイル`## 進捗ログ`へ転記する。

@@ -297,6 +297,8 @@ class TestAgentInvocationFlags:
             ("agent-toolkit:plan-impl-reviewer", "plan_impl_reviewer_invoked"),
             ("agent-doc-validator", "agent_doc_validator_invoked"),
             ("agent-toolkit:agent-doc-validator", "agent_doc_validator_invoked"),
+            ("plan-codex-reviewer", "codex_review_invoked"),
+            ("agent-toolkit:plan-codex-reviewer", "codex_review_invoked"),
         ],
     )
     def test_subagent_type_flag(self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str):
@@ -304,15 +306,6 @@ class TestAgentInvocationFlags:
         _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get(flag_key) is True
-
-    def test_codex_review_flag_via_skill(self, tmp_path: pathlib.Path):
-        sid = "codex-review-via-skill"
-        _run(
-            {"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:plan-codex-review"}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
 
     def test_codex_review_flag_via_mcp(self, tmp_path: pathlib.Path):
         sid = "codex-review-via-mcp"

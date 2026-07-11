@@ -6,8 +6,8 @@
 
 本規範は本節の新設以降に新設または改訂するサブエージェント設計・
 呼び出し元起動プロンプトに対して適用する。
-既存の呼び出し元スキル
-（`agent-toolkit:plan-impl`・`agent-toolkit:careful-review`・
+既存の呼び出し元スキル・エージェント
+（`plan-impl-executor`・`agent-toolkit:careful-review`・
 `agent-toolkit:plan-mode`等）は本規範の各項目適合性の確認対象とする。
 各スキルの次回改訂契機で個別確認する。
 

@@ -1,7 +1,7 @@
 ---
 name: codex-impl
 description: >
-  `agent-toolkit:plan-impl`の実装工程でコード・テストコード・一般ドキュメントの
+  `plan-impl-executor`の実装工程でコード・テストコード・一般ドキュメントの
   実装タスクをcodex MCPへ委譲するときに呼び出す。
   lintエラー対応・レビュー指摘反映は`threadId`による継続呼び出しで同一codexスレッドへ戻す。
 allowed-tools: mcp__codex__codex mcp__codex__codex-reply
@@ -17,7 +17,7 @@ lintエラー対応・レビュー指摘反映など複数回のやり取りを`
 
 MCPが利用不可（`ToolSearch`で`mcp__codex__codex`のスキーマを取得できない、
 または呼び出し自体がエラーとなる）な場合は、初回・継続の別を問わず本スキルの手順を適用しない。
-`agent-toolkit:plan-impl`「実装委譲（codex-impl / plan-implementer）の判断指針」節に従い
+`plan-impl-executor`手順「実装委譲（codex-impl / plan-implementer）の判断指針」節に従い
 `plan-implementer`委譲へフォールバックする。
 
 ## プロンプト構築

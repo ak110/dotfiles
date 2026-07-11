@@ -7,7 +7,7 @@ description: >
   必要ならplan modeへ移行したうえで本スキルを起動する。
   単純な単一ファイルの修正指示や会話だけの質問には不要。
 # 編集時の注意点:
-# 本スキルはplan-implスキルや../agents/plan-*サブエージェントと連携する想定ではあるが、
+# 本スキルはplan-impl-executor等の../agents/plan-*サブエージェントと連携する想定ではあるが、
 # 本スキル利用時にそれらはまだコンテキストには入らないことに注意が必要。
 ---
 
@@ -36,8 +36,8 @@ description: >
   - 多段委譲経路（`process-feedbacks`経由等）でネスト起動された本スキルは、
     上位スキルの工程遷移目標（振り返り工程の到達等）を各工程の完遂の免除根拠にしない。
     上位スキルの後続工程は本スキルの全工程が完了して初めて実施可能となる
-  - `plan-impl`実行中の割り込みで工程4のみを再実施する場合も本規範を等しく適用する。
-    当該の工程4を完遂して初めて`plan-impl`の後続工程へ復帰可能となる
+  - `plan-impl-executor`実行中の割り込みで工程4のみを再実施する場合も本規範を等しく適用する。
+    当該の工程4を完遂して初めて`plan-impl-executor`の後続工程へ復帰可能となる
   - 登録済み工程を実施せず先へ進める判断を発話・記録した時点で当該判断を無効とし、
     直ちに正規の工程へ復帰する。当該発話・記録を`session-review`や恒久化の検討等の観測事象として扱う場合、
     `agent-toolkit:agent-standards`配下`references/quality-first-exceptions.md`の
@@ -46,7 +46,7 @@ description: >
     `process-omission`カテゴリを参照する。当該パターンの宣言を規範違反続行の正当化に用いない
 - plan mode移行の前提: 本スキルはplan mode下でも外でも起動できる。
   plan mode下の場合は`ExitPlanMode`が計画ファイル承認ゲートとして機能する。
-  plan mode外の場合はユーザー承認を介さず、工程8で`agent-toolkit:plan-impl`へ引き継ぐ。
+  plan mode外の場合はユーザー承認を介さず、工程8で`plan-impl-executor`へ引き継ぐ。
   Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従う
   - `process-feedbacks`スキル経由で本スキルが呼び出される場合はplan mode外で実行する。
     メイン側で`EnterPlanMode`を発行しない。
@@ -130,8 +130,8 @@ description: >
 対象は、hook追加・スキル冒頭の警告追記・コマンドラッパー追加・トリガーフレーズ拡張・テストケース追加などとする。
 仕組み化可能な場合は仕組み案を恒久化先候補に含め、規範文書側の改訂と並行して導入する。
 
-計画ファイル提示後・`plan-impl`実行中に新たな割り込み指摘・是正要求が発生した時点で、
-当該指摘の追加修正と並行して本工程を即時に実施する（`plan-impl/SKILL.md`の規定に従う）。
+計画ファイル提示後・`plan-impl-executor`実行中に新たな割り込み指摘・是正要求が発生した時点で、
+当該指摘の追加修正と並行して本工程を即時に実施する（`plan-impl-executor`手順の規定に従う）。
 後発で同根本原因の指摘が再発した場合は、前回の恒久化結果を参照したうえで本工程を再実施する。
 
 ## 5. リファクタリング検討
@@ -187,6 +187,7 @@ description: >
 ## 8. 計画の実行
 
 plan mode下では`ExitPlanMode`前に記述漏れを最終確認しユーザー承認後に
-メインが`agent-toolkit:plan-impl`を呼び出して計画ファイルへ引き継ぐ。
-plan mode外ではユーザー承認を介さずメインが直接`agent-toolkit:plan-impl`を呼び出す
-（レビュー実施有無は`## 実行方法`のレビューステップで分岐する）。
+メインがAgentツールで`agent-toolkit:plan-impl-executor`を起動して計画ファイルへ引き継ぐ。
+plan mode外ではユーザー承認を介さずメインが直接`agent-toolkit:plan-impl-executor`を起動する。
+レビュー実施有無は`## 実行方法`のレビューステップで分岐する。
+起動前準備と完了報告の受領手順は`agent-toolkit/references/plan-impl/caller-reception.md`に従う。

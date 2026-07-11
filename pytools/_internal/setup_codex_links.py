@@ -23,8 +23,6 @@ _LINKS: dict[str, str] = {
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
     "skills/add-feedback": "agent-toolkit/skills/add-feedback",
     "skills/gitlab-ci-usage": "agent-toolkit/skills/gitlab-ci-usage",
-    "skills/plan-codex-review": "agent-toolkit/skills/plan-codex-review",
-    "skills/plan-impl": "agent-toolkit/skills/plan-impl",
     "skills/plan-mode": "agent-toolkit/skills/plan-mode",
     "skills/pyfltr-usage": "agent-toolkit/skills/pyfltr-usage",
     "skills/pytilpack-usage": "agent-toolkit/skills/pytilpack-usage",
@@ -37,6 +35,7 @@ _LINKS: dict[str, str] = {
     "skills/spec-driven-promote": "agent-toolkit/skills/spec-driven-promote",
     "skills/sync-cross-project": ".chezmoi-source/dot_claude/skills/sync-cross-project",
     "skills/writing-standards": "agent-toolkit/skills/writing-standards",
+    "agent-toolkit/agents": "agent-toolkit/agents",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }
 

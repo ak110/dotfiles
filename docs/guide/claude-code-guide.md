@@ -177,14 +177,12 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/agent-standards`: コーディングエージェント向け文書固有の品質基準
 - `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `/plan-mode`: plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
-- `/plan-impl`: `ExitPlanMode`直後、計画ファイルに基づく実装ワークフロー
 - `/careful-review`: レビューワークフロー
 - `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `/export-for-resume`: 決定事項・未決事項・進捗を整理した引き継ぎ用Markdownを出力する
 - `/shell-exec`: 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
-- `/plan-codex-review`: 計画ファイルのcodexレビュー実行をhaikuのサブエージェントへ委譲する
 - `/exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
 
 ### 明示呼び出し専用のスキル

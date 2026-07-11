@@ -160,7 +160,7 @@
 3. 全指摘が出揃った時点（工程2.5・本ステップで起動した`plan-impl-reviewer`の結果を含む）で重大度に基づき対応要否を判断する。
    軽微指摘はメイン判断で取捨し、対応する指摘を計画ファイルの該当セクションへ反映する
    - 指摘の件数・重大度・反映に要する変更規模（設計変更・共有モジュール新設等を含む）によらず、
-     同一セッション内で計画ファイルへ反映して後続工程（`ExitPlanMode`・`plan-impl`）へ続行する。
+     同一セッション内で計画ファイルへ反映して後続工程（`ExitPlanMode`・`plan-impl-executor`起動）へ続行する。
      縮退禁止は`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節に従う
 4. 反映後にメイン側で機械チェックを実行する
    - コマンド: `uvx pyfltr run-for-agent --no-fix --work-dir=. <計画ファイルパス>`
@@ -195,6 +195,6 @@
   `AGENTS.md`、`CLAUDE.md`
 
 記録は`agent-toolkit/scripts/posttooluse.py`が担い、`agent-toolkit/scripts/pretooluse.py`は次のとおり動作する。
-`ExitPlanMode`ハンドラと`agent-toolkit:plan-impl`スキル呼び出しハンドラの両方が、
-上記4フラグ（条件成立時は`agent_doc_validator_invoked`を含む）のいずれか未起動時にブロックする。
+`ExitPlanMode`ハンドラと`plan-impl-executor`起動（Agentツール`subagent_type`判定）ハンドラの両方がある。
+いずれも上記4フラグ（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。
 フラグは新計画着手時（`agent-toolkit:plan-mode`スキル起動時）にリセットする。

@@ -1410,6 +1410,32 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "foo.md" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
+    def test_blocks_when_agent_references_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
+        """`agent-toolkit/references/plan-impl/foo.md`相当のパスが対象として認識される場合にブロックする。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "psl-agent-references-def-block"
+        self._all_prior_flags(tmp_path, sid)
+
+        target_rel = "agent-toolkit/references/plan-impl/foo.md"
+        self._make_target_file(tmp_path, target_rel, lines=210)
+
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
+        result = self._run_with_cwd(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            cwd=tmp_path,
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "foo.md" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+
     def test_blocks_when_chezmoi_dot_claude_rules_wc_l_not_recorded(self, tmp_path: pathlib.Path):
         """`.chezmoi-source/dot_claude/rules/foo.md`相当のパスが対象として認識される場合にブロックする。"""
         home = tmp_path / "home"
@@ -3583,7 +3609,7 @@ def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 class TestProcess7CompletionCheck:
-    """ExitPlanMode / `agent-toolkit:plan-impl`起動時の工程7完了未達ブロック。"""
+    """ExitPlanMode / `plan-impl-executor`起動時の工程7完了未達ブロック。"""
 
     def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
         """4フラグ全て真の場合はExitPlanModeを通過する。"""
@@ -3622,16 +3648,16 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 0
 
-    def test_plan_impl_skill_also_checked(self, tmp_path: pathlib.Path):
-        """`agent-toolkit:plan-impl`のSkill起動も同様に工程7完了未達をブロックする。"""
-        sid = "process7-plan-impl-skill"
+    def test_plan_impl_executor_agent_also_checked(self, tmp_path: pathlib.Path):
+        """`plan-impl-executor`のAgent起動も同様に工程7完了未達をブロックする。"""
+        sid = "process7-plan-impl-executor-agent"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: False for flag in _PROCESS7_FLAGS})
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:plan-impl"},
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor"},
                 "session_id": sid,
                 "permission_mode": "default",
             },

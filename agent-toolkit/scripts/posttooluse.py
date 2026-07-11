@@ -5,7 +5,7 @@
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / Skill / Read / EnterPlanModeの実行後にイベントを検出し、
+Bash / Write / Edit / MultiEdit / Skill / Read / EnterPlanMode / Agent / Taskの実行後にイベントを検出し、
 セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
@@ -20,8 +20,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator）
-9. codex-review起動検出（Skill: agent-toolkit:plan-codex-review / mcp__codex__codexツール）
+   （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
+9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール）
 10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
@@ -111,11 +111,8 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 # Stop hookでの振り返り誘導抑止に使う配布物側の振り返りスキル名。観測したらsession_stateへ記録する。
 _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
-# codex-review起動検出に使うスキル名。Skillツール経由での起動を観測したらsession_stateへ記録する。
-_CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
-
 # codex-impl起動検出に使うスキル名。フルネームと短縮名の両方を許容する。
-# pretooluse.pyの`_PLAN_IMPL_SKILL_NAMES`と同型の構成とする。
+# pretooluse.pyの`_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES`と同型の構成とする。
 _CODEX_IMPL_SKILL_NAMES = frozenset({"agent-toolkit:codex-impl", "codex-impl"})
 
 # process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
@@ -133,6 +130,8 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
     "agent-doc-validator": "agent_doc_validator_invoked",
     "agent-toolkit:agent-doc-validator": "agent_doc_validator_invoked",
+    "plan-codex-reviewer": "codex_review_invoked",
+    "agent-toolkit:plan-codex-reviewer": "codex_review_invoked",
 }
 
 # --- plan file形式検査の定数 ---
@@ -307,15 +306,6 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_review_invoked)
-        if isinstance(skill_name, str) and skill_name in _CODEX_REVIEW_SKILL_NAMES:
-
-            def _set_codex_review_invoked(state: dict) -> dict | None:
-                if state.get("codex_review_invoked", False):
-                    return None
-                state["codex_review_invoked"] = True
-                return state
-
-            update_state(session_id, _set_codex_review_invoked)
         if isinstance(skill_name, str) and skill_name in _CODEX_IMPL_SKILL_NAMES:
 
             def _set_codex_impl_invoked(state: dict) -> dict | None:

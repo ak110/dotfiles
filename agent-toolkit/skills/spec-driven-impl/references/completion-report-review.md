@@ -14,7 +14,7 @@
 - 段2（検証・コミット専従モード）: 上記共通照合に加え、サブエージェント報告の「検証結果」「作成コミットのSHA」を確認する
 - 通常モード・段2では`review_handoff`欄を検収する。
   「レビューは実施しない」以外は記載のスキル・エージェントを
-  `agent-toolkit:plan-impl`配下`references/fork-reception.md`の手順で起動する
+  `agent-toolkit/references/plan-impl/caller-reception.md`の手順で起動する
 
 ## needs_escalation・未解決事象を伴う完了報告
 

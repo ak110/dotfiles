@@ -15,7 +15,6 @@
 - session-review → `session_review_invoked`（辞書。キーは`agent-toolkit:session-review`で正規化）
 - process-feedbacks → `process_feedbacks_skill_invoked`
 - codex-impl → `codex_impl_invoked`
-- plan-codex-review → `codex_review_invoked`
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -33,7 +32,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _CODEX_IMPL_SKILL_NAMES,
-    _CODEX_REVIEW_SKILL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_FEEDBACKS_SKILL_NAMES,
     _SESSION_REVIEW_SKILL_NAMES,
@@ -44,7 +42,7 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
     """フルスキル名`agent-toolkit:<name>`から短縮名`<name>`を追加した拡張集合を返す。
 
     posttooluse.py側の集合定数には短縮名が未登録のスキル
-    （session-review・plan-codex-review）が存在するため、
+    （session-review）が存在するため、
     UserPromptSubmit経路のスラッシュコマンド検出用に補完する。
     """
     extended = set(names)
@@ -61,7 +59,6 @@ _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _SESSION_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_SESSION_REVIEW_SKILL_NAMES)
 _PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
 _CODEX_IMPL_NAMES_EXTENDED = _extend_with_short_names(_CODEX_IMPL_SKILL_NAMES)
-_CODEX_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_CODEX_REVIEW_SKILL_NAMES)
 
 # `/agent-toolkit:<name>`または`/<name>`形式のスラッシュコマンドから<name>を抽出する。
 # 先頭の`/`直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -118,13 +115,6 @@ def _set_codex_impl_invoked(state: dict) -> dict | None:
     return state
 
 
-def _set_codex_review_invoked(state: dict) -> dict | None:
-    if state.get("codex_review_invoked", False):
-        return None
-    state["codex_review_invoked"] = True
-    return state
-
-
 def main() -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
@@ -165,8 +155,6 @@ def main() -> int:
         update_state(session_id, _set_process_feedbacks_invoked)
     if name in _CODEX_IMPL_NAMES_EXTENDED or full_name in _CODEX_IMPL_SKILL_NAMES:
         update_state(session_id, _set_codex_impl_invoked)
-    if name in _CODEX_REVIEW_NAMES_EXTENDED or full_name in _CODEX_REVIEW_SKILL_NAMES:
-        update_state(session_id, _set_codex_review_invoked)
 
     return 0
 

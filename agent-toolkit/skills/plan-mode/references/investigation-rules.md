@@ -71,7 +71,8 @@
 - `agent-toolkit/rules/`配下は`agent-toolkit:agent-standards`「rules階層のフラット構造」節に従う。
   サブディレクトリを設けず、階層化が必要な補助情報は`agent-toolkit/skills/*/references/`配下へ置く
 - 新規に規範・概念・用語・分類ラベルを追加する時は、次を計画段階で確認する
-  - 呼び出し元スキル（`agent-toolkit:plan-impl`・`agent-toolkit:careful-review`・`agent-toolkit:plan-mode`等）
+  - 呼び出し元スキル・エージェント（`plan-impl-executor`・`agent-toolkit:careful-review`・
+    `agent-toolkit:plan-mode`等）
     への影響。各スキルへ適合済み・追随修正が必要・本計画スコープ外のいずれかを
     `### 遡及スキャン結果`副節へ実測ベースで記載する。
     断定的な適合宣言は避け、確認済み範囲を明示する

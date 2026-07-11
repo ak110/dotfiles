@@ -1,12 +1,12 @@
 ---
 name: careful-review
 description: >
-  対象範囲を指定してレビューを実行するスキル。
-  `agent-toolkit:plan-impl`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方に対応する。
+  対象範囲を指定してレビューするスキル。
+  `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方に対応する。
 # 編集時の注意点:
 # サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身は
 # メイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。
-# 起動経路（plan-impl経由・手動起動）で動作分岐させない。
+# 起動経路（plan-impl-executor経由・手動起動）で動作分岐させない。
 # 計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
 ---
 
@@ -21,7 +21,7 @@ description: >
 
 呼び出し元から計画ファイルパス（`~/.claude/plans/{ファイル名}.md`）・対象範囲
 （ファイルパス列挙またはgit差分範囲）のいずれか（または両方）を受け取る。
-`plan-impl`経由起動時は両方が付与され、手動起動時は`/agent-toolkit:careful-review <引数>`で受け取る。
+`plan-impl-executor`経由起動時は両方が付与され、手動起動時は`/agent-toolkit:careful-review <引数>`で受け取る。
 
 ## 対象範囲の確定
 

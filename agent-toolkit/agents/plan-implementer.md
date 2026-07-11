@@ -11,7 +11,7 @@ skills:
   # - agent-toolkit:agent-standards
 user-invocable: false
 # 編集時の注意点:
-# このエージェントはplan-mode, plan-implスキルなどを呼び出さないため、
+# このエージェントはplan-mode, plan-impl-executorなどを呼び出さないため、
 # それらの知識を持たないことに注意。
 # サブエージェント間の共通記述（## 共通判断基準など）は別コンテキスト実行のため統合しない
 # （統合するとコンテキスト汚染や指示の取りこぼしが発生する）。
@@ -19,12 +19,13 @@ user-invocable: false
 #   既定sonnetは定型パターンの反復（frontmatter値のみの変更や機械的な単純置換など）向け。
 #   コーディングエージェント向け文書全般の改訂、および既存記述との整合維持を要する改訂は、
 #   呼び出し元が`model: opus`と`effort: medium`を指定する
-#   （判断基準は`../skills/plan-impl/SKILL.md`「実装委譲（codex-impl / plan-implementer）の判断指針」節）。
+#   （判断基準は`../references/plan-impl/execution-process.md`
+#   「実装委譲（codex-impl / plan-implementer）の判断指針」節）。
 # tools制限を持たない理由: MCPツール（`mcp__*`）呼び出しを許容するため。
 #   サブエージェント再帰起動の禁止は本文「判断基準」で担保する。
 #   codex MCP直接呼び出しの禁止も同様に本文「判断基準」で担保する。
 # 本ファイル`## 出力`節のchanged欄書式説明は
-# `../skills/plan-impl/references/launch-prompts-drafting.md`「起草・改訂委譲雛形」節の
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「起草・改訂委譲雛形」節の
 # `## 完了報告要件`欄と意図的に重複させている。
 # 文面を変更する場合は両方の内容を意味的に一致させること
 # （冒頭句の主語は両ファイルで意図的に異なるため文字通りの同一化は誤り）。

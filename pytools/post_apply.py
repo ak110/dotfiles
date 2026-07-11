@@ -77,10 +77,15 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # ~/.codex/skills はグローバルに使うスキルだけを置く。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # 現在のスキル名は plan-impl。旧名 careful-impl の配布先リンクを除去する。
+        # 旧名careful-implの後継スキル名はplan-implだったが、
+        # plan-implもagentsへ移植し廃止したため配布先リンクを除去する。
         Path("skills/careful-impl"),
         # 現在のスキル名は agent-standards。旧名 claude-code-standards の配布先リンクを除去する。
         Path("skills/claude-code-standards"),
+        # plan-impl・plan-codex-reviewはagentsへ移植し、fork型スキルとしては廃止した。
+        # 旧配布先リンクを除去する。
+        Path("skills/plan-impl"),
+        Path("skills/plan-codex-review"),
         # 現在のスキル名は session-review-dotfiles。旧名 session-review の配布先リンクを除去する。
         Path("skills/session-review"),
         # 現在のスキル名は add-feedback。旧名 feedback-add の配布先リンクを除去する。
