@@ -59,9 +59,18 @@ _ALLOWED_DRIFT = 2
 # `## 変更内容`直下の対象ファイル一覧チェックボックス項目。
 # 既存ファイル`- [ ] path（現行N行, 見込みM行）`と新設ファイル`- [ ] path（新設, 見込みM行）`の
 # 両形式から相対パス・現行行数（新設は0扱い）・見込み行数を抽出する。
+# 「見込み」の送り仮名は任意受理（送り仮名なしの「見込M行」表記も許容する）。
 _CHECKBOX_RE = re.compile(
     r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*"
-    r"[（(](?:現行(?P<current>\d+)行|新設),\s*見込み(?P<projected>\d+)行[）)]"
+    r"[（(](?:現行(?P<current>\d+)行|新設),\s*見込み?(?P<projected>\d+)行[）)]"
+)
+
+# `.py`スクリプト・テストファイル等、実装段階で正確な行数事前算出が困難な対象向けの許容書式。
+# `- [ ] path（現行N行, 実装後未確定）`または`- [ ] path（新設, 実装後未確定）`にマッチする。
+# マッチ時は`_check_one_file`の見込み行数照合をスキップする。
+_CHECKBOX_UNDETERMINED_RE = re.compile(
+    r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*"
+    r"[（(](?:現行\d+行|新設),\s*実装後未確定[）)]"
 )
 
 # 対象ファイル一覧の全チェックボックス項目（見込み行数の有無を問わない）。
@@ -90,6 +99,9 @@ _OVER_THRESHOLD_PROJECTION = 200
 # 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
 # 連続するtextブロックを全て追記ブロックとして扱う。
 _ADDITION_TRIGGER_TOKEN = "追記文言案"
+
+# 「実装後未確定」パスの集合。`_parse_plan_file`が計画ファイル解析時に設定し、`_check_one_file`が参照する。
+_UNDETERMINED_PATHS: frozenset[str] = frozenset()
 
 # 追記/縮減対象ブロック内の1行目が「（挿入先・対象の説明）」のみで構成される場合、
 # 計画執筆時の位置注記であり実際に対象ファイルへ挿入・保持される内容ではないため
@@ -193,6 +205,9 @@ def _check_one_file(
 
     projected = projected_map.get(rel_path)
     if projected is None:
+        # 対象ファイル一覧で「実装後未確定」表記の場合は照合スキップ扱いとして許容する。
+        if rel_path in _UNDETERMINED_PATHS:
+            return 0
         print(f"{plan_path}: {rel_path} の見込み行数が対象ファイル一覧に未記載", file=sys.stderr)
         return 1
 
@@ -226,11 +241,19 @@ def _parse_plan_file(
     section = _extract_section(text, "## 変更内容")
 
     projected_map: dict[str, int] = {}
+    undetermined_paths: set[str] = set()
     if section is not None:
         for line in section.splitlines():
             m = _CHECKBOX_RE.match(line)
             if m:
                 projected_map[m.group("path")] = int(m.group("projected"))
+                continue
+            m_u = _CHECKBOX_UNDETERMINED_RE.match(line)
+            if m_u:
+                undetermined_paths.add(m_u.group("path"))
+    # `_check_one_file`から参照するためモジュールグローバルへ公開する。
+    global _UNDETERMINED_PATHS  # pylint: disable=global-statement
+    _UNDETERMINED_PATHS = frozenset(undetermined_paths)
 
     known_paths = _collect_known_paths(section) if section is not None else frozenset()
     if section is not None:
@@ -367,6 +390,8 @@ def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, tex
 
     判定基準:
     - 対象ファイル一覧の見込み行数が`_OVER_THRESHOLD_PROJECTION`超のファイルを対象とする
+    - `agent-toolkit:agent-standards`「文書サイズ上限」節に従い対象拡張子は`.md`・`.md.tmpl`に限定する
+      （`.py`等のスクリプト・非Markdownファイルは判定対象から除外する）
     - 各対象ファイルに対応する`#### 縮減対象（<ファイル名>）`H4見出しが計画本文に存在するかを検証する
     - 対応する見出しが不在の場合、`f"{plan_path}: <警告内容>"`書式で警告を出力する
     """
@@ -375,7 +400,11 @@ def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, tex
         return 0
 
     bounds = _collect_projection_bounds(section)
-    over_threshold_files = [path for path, (_current, projected) in bounds.items() if projected > _OVER_THRESHOLD_PROJECTION]
+    over_threshold_files = [
+        path
+        for path, (_current, projected) in bounds.items()
+        if projected > _OVER_THRESHOLD_PROJECTION and (path.endswith(".md") or path.endswith(".md.tmpl"))
+    ]
     if not over_threshold_files:
         return 0
 

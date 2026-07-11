@@ -648,6 +648,44 @@ class TestOverThresholdReductionCheck:
         assert "200行超過ファイル" in result.stderr
         assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
+    def test_py_extension_over_threshold_does_not_warn(self, tmp_path: pathlib.Path) -> None:
+        """`.py`ファイルが200行超過でもH4見出し警告は発生しない（拡張子フィルタ）。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行200行, 見込み250行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "200行超過ファイル" not in result.stderr
+
+
+class TestCheckboxProjectionAcceptance:
+    """`_CHECKBOX_RE`と`_CHECKBOX_UNDETERMINED_RE`の書式受理範囲を検証する。"""
+
+    def test_short_form_projection_is_accepted(self, tmp_path: pathlib.Path) -> None:
+        """「見込」表記（送り仮名なし）のチェックボックスも受理される。"""
+        source = tmp_path / "foo.md"
+        source.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行3行, 見込3行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "未記載" not in result.stderr
+
+    def test_undetermined_projection_skips_drift_check(self, tmp_path: pathlib.Path) -> None:
+        """「実装後未確定」表記は乖離判定をスキップし違反にならない。"""
+        source = tmp_path / "foo.py"
+        source.write_text("line1\nline2\n", encoding="utf-8")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行2行, 実装後未確定）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "未記載" not in result.stderr
+
 
 class TestLeadingLabel:
     """`_leading_label`のfence内側形式ラベル検出を単体レベルで検証する。"""

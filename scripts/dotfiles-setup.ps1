@@ -81,6 +81,67 @@ function Disable-UsbSelectiveSuspend {
     }
 }
 
+function Disable-PerDeviceUsbPowerManagement {
+    $writeCount = 0
+    $failureCount = 0
+
+    $usbEnumPath = 'HKLM:\SYSTEM\CurrentControlSet\Enum\USB'
+    if (Test-Path $usbEnumPath) {
+        Get-ChildItem -Path $usbEnumPath -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.PSPath 'Device Parameters') } |
+        ForEach-Object {
+            $deviceParamsPath = Join-Path $_.PSPath 'Device Parameters'
+            try {
+                $current = (Get-ItemProperty -Path $deviceParamsPath -Name 'SelectiveSuspendEnabled' -ErrorAction SilentlyContinue).SelectiveSuspendEnabled
+                if ($current -ne 0) {
+                    Set-ItemProperty -Path $deviceParamsPath -Name 'SelectiveSuspendEnabled' -Value 0 -Type DWord
+                    $writeCount++
+                }
+            }
+            catch {
+                $failureCount++
+                Write-Host ("per-device USB power management: レジストリ書き込み失敗 ({0}): {1}" -f $_.PSChildName, $_.Exception.Message)
+            }
+        }
+    }
+
+    try {
+        $usbPnpDevices = Get-PnpDevice -Class 'USB' -ErrorAction SilentlyContinue
+        $powerDevices = Get-CimInstance -Namespace 'root/wmi' -ClassName MSPower_DeviceEnable -ErrorAction SilentlyContinue
+        foreach ($powerDevice in $powerDevices) {
+            $matched = $usbPnpDevices |
+            Where-Object { $powerDevice.InstanceName.ToUpper().StartsWith($_.InstanceId.ToUpper()) } |
+            Select-Object -First 1
+            if (-not $matched) {
+                continue
+            }
+            try {
+                if ($powerDevice.Enable -ne $false) {
+                    $powerDevice.Enable = $false
+                    Set-CimInstance -InputObject $powerDevice | Out-Null
+                    $writeCount++
+                }
+            }
+            catch {
+                $failureCount++
+                Write-Host ("per-device USB power management: WMI書き込み失敗 ({0}): {1}" -f $matched.FriendlyName, $_.Exception.Message)
+            }
+        }
+    }
+    catch {
+        $failureCount++
+        Write-Host ("per-device USB power management: WMI列挙失敗: {0}" -f $_.Exception.Message)
+    }
+
+    if ($writeCount -eq 0 -and $failureCount -eq 0) {
+        Write-Host "per-device USB power management: 変更なし"
+    }
+    else {
+        Write-Host ("per-device USB power management: 書き込み {0} 件" -f $writeCount)
+        Write-Host ("per-device USB power management: 失敗 {0} 件" -f $failureCount)
+    }
+}
+
 function Show-CurrentState {
     Write-Host ""
     Write-Host "=== 適用後の状態 ==="
@@ -88,6 +149,14 @@ function Show-CurrentState {
     $regPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
     $hiber = (Get-ItemProperty -Path $regPath -Name 'HiberbootEnabled' -ErrorAction SilentlyContinue).HiberbootEnabled
     Write-Host ("HiberbootEnabled = {0}" -f $hiber)
+
+    Write-Host ""
+    $perDeviceCount = (Get-ChildItem -Path 'HKLM:\SYSTEM\CurrentControlSet\Enum\USB' -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.PSPath 'Device Parameters') } |
+        ForEach-Object {
+            (Get-ItemProperty -Path (Join-Path $_.PSPath 'Device Parameters') -Name 'SelectiveSuspendEnabled' -ErrorAction SilentlyContinue).SelectiveSuspendEnabled -eq 0
+        } | Where-Object { $_ }).Count
+    Write-Host ("per-device USB power management: SelectiveSuspendEnabled=0 のデバイス数 = {0}" -f $perDeviceCount)
 
     Write-Host ""
     Write-Host "USB selective suspend (SCHEME_CURRENT):"
@@ -109,6 +178,7 @@ try {
     Disable-FastStartup
     Write-Host ""
     Disable-UsbSelectiveSuspend
+    Disable-PerDeviceUsbPowerManagement
     Show-CurrentState
 
     Write-Host ""

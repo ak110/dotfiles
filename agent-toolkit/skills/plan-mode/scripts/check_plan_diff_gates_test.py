@@ -81,7 +81,7 @@ class TestExtractDiffBlocks:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nnew content line1\nnew content line2\n```\n"
         blocks = list(_MOD._extract_diff_blocks(text))
         assert len(blocks) == 1
-        label, _line, body = blocks[0]
+        label, _line, body, _ext = blocks[0]
         assert label == "`foo.md`"
         # ラベル行はfence内側1行目に配置され、本文集計・textlint検査から除外される。
         assert body == "new content line1\nnew content line2"
@@ -261,6 +261,60 @@ class TestCheckPlanFile:
         violations = _MOD._check_plan_file(missing)
         assert len(violations) == 1
         assert "読み込みに失敗" in violations[0]
+
+    @pytest.mark.parametrize("ext", [".py", ".yaml", ".json"])
+    def test_non_prose_extension_skips_textlint(
+        self,
+        ext: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
+        plan = _write(
+            tmp_path / "plan.md",
+            f"## 変更内容\n\n### `foo{ext}`\n\n```text\n[新設]\ncode snippet\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan)
+        assert violations == []
+        assert not any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
+
+    @pytest.mark.parametrize("ext", [".py", ".yaml", ".json"])
+    def test_non_prose_extension_still_runs_scope_and_line_width(
+        self,
+        ext: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = _stub_subprocess(
+            monkeypatch,
+            scope_returncode=2,
+            scope_stdout="pattern-conformance\n",
+            line_width_returncode=1,
+            line_width_stderr="line too long",
+        )
+        plan = _write(
+            tmp_path / "plan.md",
+            f"## 変更内容\n\n### `foo{ext}`\n\n```text\n[新設]\ncode snippet\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan)
+        assert len(violations) == 2
+        assert any("_scope_escalation.py" in part for cmd in calls for part in cmd)
+        assert any("check_line_width.py" in part for cmd in calls for part in cmd)
+
+    def test_md_extension_runs_all_rules(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan)
+        assert len(violations) == 1
+        assert "textlint" in violations[0]
+        assert any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
 
     def test_check_plan_file_reports_line_width_violation(
         self,

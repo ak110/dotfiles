@@ -68,6 +68,12 @@ _CHECK_LINE_WIDTH_CLI = pathlib.Path(__file__).resolve().parents[2] / "writing-s
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+(?P<rest>.+)$")
 
+# H3見出し内のバッククォート付きファイル名抽出用。
+_H3_FILE_RE = re.compile(r"`([^`]+)`")
+
+# 散文系lint（textlint）を適用する対象拡張子。
+_PROSE_EXTENSIONS = (".md", ".md.tmpl")
+
 # 対象ラベルの判定トークン（フェンス直後1行目のプレーンテキストラベルに部分一致する場合に該当扱いとする）。
 _NEW_LABEL_TOKEN = "[新設]"
 _REPLACEMENT_LABEL_TOKEN = "[置換後]"
@@ -120,17 +126,18 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
         return [msg]
 
     violations: list[str] = []
-    for h3_label, block_start_line, body in _extract_diff_blocks(text):
+    for h3_label, block_start_line, body, h3_ext in _extract_diff_blocks(text):
         category = _run_scope_escalation(body)
         if category is not None:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
             print(msg, file=sys.stderr)
             violations.append(msg)
-        textlint_error = _run_textlint(body)
-        if textlint_error is not None:
-            msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` textlint違反\n{textlint_error}"
-            print(msg, file=sys.stderr)
-            violations.append(msg)
+        if h3_ext in _PROSE_EXTENSIONS:
+            textlint_error = _run_textlint(body)
+            if textlint_error is not None:
+                msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` textlint違反\n{textlint_error}"
+                print(msg, file=sys.stderr)
+                violations.append(msg)
         line_width_error = _run_line_width(body)
         if line_width_error is not None:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` line-width違反\n{line_width_error}"
@@ -139,12 +146,13 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
     return violations
 
 
-def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
-    """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文)`で順に返す。
+def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
+    """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文, ファイル拡張子)`で順に返す。
 
     `## 変更内容`セクションに限定して走査する。H3見出しの走査状態を更新しつつ`text`フェンスを検出する。
     各フェンスについて、フェンス直後1行目（fence内側）のラベル判定・トリガー継続中フラグ・
-    見出しコンテキストで検査対象かを判断する。
+    見出しコンテキストで検査対象かを判断する。ファイル拡張子はH3見出し内のバッククォート付きファイル名から
+    抽出し、`_check_plan_file`側で散文系lint（textlint）の適用可否判定に使う。
     """
     section, section_start_line = extract_section_with_offset(text, "## 変更内容")
     if section is None:
@@ -152,6 +160,7 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
     lines = section.splitlines()
     n = len(lines)
     current_h3: str = ""
+    current_ext: str = ""
     in_new_h3 = False
     in_reduction_heading = False
     trigger_active = False
@@ -163,6 +172,7 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
         if m_h3:
             rest = m_h3.group("rest").strip()
             current_h3 = rest
+            current_ext = _extract_h3_ext(rest)
             in_new_h3 = _NEW_H3_MARKER in rest
             in_reduction_heading = False
             trigger_active = False
@@ -195,13 +205,27 @@ def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str]]:
                 body = "\n".join(body_lines)
                 # 計画ファイル全体の行番号に換算する（section開始行 + section内オフセット）。
                 absolute_line = section_start_line + block_start
-                yield (current_h3, absolute_line, body)
+                yield (current_h3, absolute_line, body, current_ext)
             continue
 
         stripped = line.strip()
         if stripped and any(token in stripped for token in _ADDITION_TRIGGER_TOKENS):
             trigger_active = True
         i += 1
+
+
+def _extract_h3_ext(rest: str) -> str:
+    """H3見出し本文からバッククォート付きファイル名の拡張子を抽出する。
+
+    `.md.tmpl`は複合拡張子として1トークン扱いとする。バッククォート付きファイル名が無い場合は空文字を返す。
+    """
+    m = _H3_FILE_RE.search(rest)
+    if not m:
+        return ""
+    name = m.group(1)
+    if name.endswith(".md.tmpl"):
+        return ".md.tmpl"
+    return pathlib.PurePosixPath(name).suffix
 
 
 def _classify_block(

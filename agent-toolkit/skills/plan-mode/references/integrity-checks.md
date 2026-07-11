@@ -77,6 +77,9 @@
   - `## 変更内容`配下の対象ブロック（ラベル体系は`plan-file-guidelines.md`「変更内容」小節の定義に従う）を
     `check_plan_diff_gates.py`で機械検査する。縮退フレーズは違反0件を必須とし、
     textlint・line-width（127幅）の違反は転記文面として極力解消し残存は自律判断で記録する
+  - 計画ファイルに`#### 廃止・改名対象一覧`H4が存在する場合、
+    `uv run --script agent-toolkit/skills/plan-mode/scripts/check_deprecated_identifier_coverage.py <計画ファイルパス>`を
+    実行し、リポジトリ横断grep結果と対象ファイル一覧との差集合が空であることを確認する
 
 ## 変更履歴と変更内容の対応照合
 
@@ -174,6 +177,7 @@
      継続レビュー経路を優先する（全面改訂時の破棄規定は`codex-review.md`既定に従う）
    - 起動プロンプトでは反映済み指摘・確定済み仕様を審査対象外と明示して審査対象を差分・追加スコープへ限定する
      （初回レビューで定義した各サブエージェントの担当観点は維持する。対象範囲の限定であり観点の縮小ではない）
+6. 完了判定は`SKILL.md`工程7節の完了条件（レビュー・機械チェック1周実施、重大指摘の全消化、exit 0通過）に従う
 
 ## 工程7バイパスの機械検出
 
@@ -190,8 +194,7 @@
   `agent-toolkit/skills/`配下、`.chezmoi-source/dot_claude/rules/`・`.chezmoi-source/dot_claude/skills/`配下、
   `AGENTS.md`、`CLAUDE.md`
 
-記録は`agent-toolkit/scripts/posttooluse.py`が担う。
-`agent-toolkit/scripts/pretooluse.py`は次のとおり動作する。
+記録は`agent-toolkit/scripts/posttooluse.py`が担い、`agent-toolkit/scripts/pretooluse.py`は次のとおり動作する。
 `ExitPlanMode`ハンドラと`agent-toolkit:plan-impl`スキル呼び出しハンドラの両方が、
 上記4フラグ（条件成立時は`agent_doc_validator_invoked`を含む）のいずれか未起動時にブロックする。
 フラグは新計画着手時（`agent-toolkit:plan-mode`スキル起動時）にリセットする。
