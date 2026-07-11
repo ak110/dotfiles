@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pyfltr>=3.14.1"]
+# dependencies = ["pyfltr>=3.14.1", "platformdirs>=4.0"]
 # ///
 # pylint: disable=too-many-lines  # ハンドラ網羅のためチェック実装が多く、分割するとモジュール間の依存関係が複雑化するため許容する
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。

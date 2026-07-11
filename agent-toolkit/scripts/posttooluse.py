@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["platformdirs>=4.0"]
 # ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
