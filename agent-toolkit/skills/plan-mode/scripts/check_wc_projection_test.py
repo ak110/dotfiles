@@ -535,6 +535,22 @@ class TestCheckWcProjection:
         assert result.returncode == 1
         assert "見込み99行" in result.stderr
 
+    def test_deletion_pattern_current_block_counted_as_reduction(self, tmp_path: pathlib.Path) -> None:
+        """[削除根拠]付き[現行]ブロックの[現行]行数が縮減対象集計へ加算され、乖離0で通過する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\nold2\n```\n\n"
+            "```text\n[削除根拠]\n冗長なため削除する\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
     def test_addition_reduction_detects_md_tmpl_extension(self, tmp_path: pathlib.Path) -> None:
         """`.md.tmpl`ファイルも追記/縮減対象集計の検査対象として乖離を検出する。"""
         plan = _write(
@@ -602,6 +618,20 @@ class TestOverThresholdReductionCheck:
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行150行, 見込み200行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "200行超過ファイル" not in result.stderr
+
+    def test_over_threshold_file_with_qualified_name_heading_passes(self, tmp_path: pathlib.Path) -> None:
+        """修飾名（例:「agent-standards SKILL.md」）で書かれた縮減対象H4見出しも突合成功する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/agent-standards/SKILL.md`（現行200行, 見込み210行）\n\n"
+            "### `agent-toolkit/skills/agent-standards/SKILL.md`\n\n"
+            "#### 縮減対象（agent-standards SKILL.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0

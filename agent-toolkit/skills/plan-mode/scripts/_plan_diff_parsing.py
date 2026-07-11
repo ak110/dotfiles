@@ -114,6 +114,8 @@ def iter_reduction_headings(section: str) -> Iterator[str]:
 
     `check_wc_projection.py`と`posttooluse.py`の双方から利用可能な共通ヘルパー。
     フェンス内の`#### `様の行は`iter_non_fenced_lines`で除外する。
+    返却文字列はbasename・相対パス末尾・basename含有修飾名（例: `agent-standards SKILL.md`）の
+    いずれの表記も加工せず透過的に返す。表記形式ごとの突合ロジックは呼び出し側の責務とする。
     """
     lines = section.splitlines()
     for _idx, line in iter_non_fenced_lines(lines):

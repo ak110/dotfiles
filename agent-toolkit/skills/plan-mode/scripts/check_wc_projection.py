@@ -384,10 +384,16 @@ def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, tex
     heading_files: set[str] = set(iter_reduction_headings(section))
 
     for path in over_threshold_files:
-        # 対象ファイルパスの末尾名（basename）と一致もしくは完全パス一致で照合する。
-        # 計画本文の縮減対象H4はファイル名のみを記載することが多いため両形式で許容する。
+        # 対象ファイルパスの末尾名（basename）と一致・完全パス一致・
+        # basename含有修飾名（例:「agent-standards SKILL.md」）のいずれかで照合する。
+        # 計画本文の縮減対象H4はファイル名のみ・修飾名のいずれの表記も許容する。
         basename = path.rsplit("/", 1)[-1]
-        if path in heading_files or basename in heading_files:
+        basename_pattern = re.compile(rf"\b{re.escape(basename)}\b")
+        if (
+            path in heading_files
+            or basename in heading_files
+            or any(basename_pattern.search(heading) for heading in heading_files)
+        ):
             continue
         print(
             f"{plan_path}: 200行超過ファイル{path}"
@@ -430,6 +436,10 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     既存の`current`・`replacement`・`replacement-full`・`deletion`・`new`ラベル（`_leading_label`が非Noneを返すブロック）に
     合致するブロックは対象外とし、二重集計を避ける。
     縮減対象見出し配下のブロックはトリガー文継続中でも縮減対象を優先する。
+    上記経路とは独立に、`## 変更内容`H3節配下で[現行]→[削除根拠]のペア出現を検出した場合、
+    直前の[現行]ブロックの行数（位置注記1行除外後）を縮減対象行数へ加算する
+    （削除パターンの[削除根拠]ブロック自体は`_leading_label`経由で対比対象外のため、
+    `_preceding_label_for_addition_reduction`側の縮減判定とは経路分離し二重集計を避ける）。
     戻り値はファイルパスをキーとし、addition（追記行数合計）とreduction（縮減対象行数合計）を
     値に持つ辞書。
     """
@@ -440,6 +450,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     current_path: str | None = None
     in_reduction_heading = False
     in_addition_after_trigger = False
+    pending_current_for_deletion: list[str] | None = None
     i = 0
     while i < n:
         line = lines[i]
@@ -450,6 +461,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             current_path = path if path in known_paths else None
             in_reduction_heading = False
             in_addition_after_trigger = False
+            pending_current_for_deletion = None
             i += 1
             continue
 
@@ -468,6 +480,22 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
                 content_lines.append(lines[i])
                 i += 1
             i += 1  # 閉じフェンス行を除外する
+
+            # [現行]→[削除根拠]ペア検出経路（既存の`_preceding_label_for_addition_reduction`とは
+            # 独立して実行し、削除パターンの[現行]行数を縮減対象へ加算する）。
+            leading = _leading_label(content_lines)
+            if leading == "current":
+                pending_current_for_deletion = content_lines
+            elif leading == "deletion" and current_path is not None:
+                pending_lines = pending_current_for_deletion
+                if pending_lines is not None:
+                    entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
+                    if pending_lines and _ANNOTATION_ONLY_RE.match(pending_lines[0].strip()):
+                        pending_lines = pending_lines[1:]
+                    entry["reduction"] += len(pending_lines)
+                pending_current_for_deletion = None
+            elif leading is not None:
+                pending_current_for_deletion = None
 
             label = _preceding_label_for_addition_reduction(
                 lines,

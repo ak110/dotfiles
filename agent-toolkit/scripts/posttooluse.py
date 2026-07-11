@@ -196,13 +196,36 @@ def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
     )
 
 
-def _check_plan_format(file_path: str, cwd: str) -> list[str]:
+def _mark_line_count_warned(session_id: str, file_path: str) -> None:
+    """対象ファイル行数超過警告を発火済みとしてセッション状態へアトミックに記録する。"""
+
+    def _mutator(state: dict, file_path: str = file_path) -> dict | None:
+        warned = state.get("plan_target_file_line_count_warned", {})
+        if not isinstance(warned, dict):
+            warned = {}
+        if warned.get(file_path, False):
+            return None
+        warned[file_path] = True
+        state["plan_target_file_line_count_warned"] = warned
+        return state
+
+    update_state(session_id, _mutator)
+
+
+def _line_count_already_warned(session_id: str, file_path: str) -> bool:
+    """対象ファイル行数超過警告が当該計画ファイルへ既に発火済みかを判定する。"""
+    warned = read_state(session_id).get("plan_target_file_line_count_warned", {})
+    return isinstance(warned, dict) and warned.get(file_path, False) is True
+
+
+def _check_plan_format(file_path: str, cwd: str, session_id: str) -> list[str]:
     """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
     検出する違反:
 
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
     - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが200行以上
+      （同一計画ファイルへ1度発火済みの場合は抑止し、H3順序違反等の他違反は毎回発火継続する）
 
     読み取り失敗時は空リストを返す。
     H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
@@ -224,8 +247,9 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
 
     line_count_warning = _check_target_file_line_counts(content, cwd)
-    if line_count_warning:
+    if line_count_warning and not _line_count_already_warned(session_id, file_path):
         violations.append(line_count_warning)
+        _mark_line_count_warned(session_id, file_path)
 
     return violations
 
@@ -431,7 +455,7 @@ def main() -> int:
             cwd_raw = payload.get("cwd", "")
             cwd = cwd_raw if isinstance(cwd_raw, str) else ""
             messages: list[str] = []
-            violations = _check_plan_format(file_path, cwd)
+            violations = _check_plan_format(file_path, cwd, session_id)
             if violations:
                 messages.append(
                     _llm_notice(

@@ -91,7 +91,8 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
   メインから直接読み込ませず、確認はExploreサブエージェント・修正は`plan-implementer`経由とする。
   新規追加時はスキル配下へ配置し、pyfltr内蔵`colloquial-check`の除外設定・`pyproject.toml`の`extend-exclude`も同時に整備する
 - 規範文書本文で機械検出カテゴリの規範論を扱う場合、検出パターン相当の語句の直接転記を避ける。
-  代替は「代表フレーズは`references/scope-escalation-phrases.md`の`{カテゴリ名}`を参照する」形式の参照誘導とする
+  代替は「代表フレーズは`references/scope-escalation-phrases.md`の`{カテゴリ名}`を参照する」形式の参照誘導とする。
+  加えて意味を保った言い換え（同義動詞への置換・上位概念名詞への抽象化・観測事象記述への書き換え）を許容する
 
 ### 既知情報・冗長記述の排除
 

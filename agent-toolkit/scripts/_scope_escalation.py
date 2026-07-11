@@ -36,6 +36,7 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
         "quality-tradeoff",
         "next-cycle-defer",
         "approach-confirm",
+        "subagent-hesitation",
     }
 )
 
@@ -52,6 +53,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "single-session",
         re.compile(
             r"(本|この|単一)セッション(の|で|内|下)?(リソース|残|容量)?では?(?:.{0,15})?(完遂|完了|完結|遂行)(?:.{0,10})?(困難|厳しい|現実的では?ない|不可能|できない)"
+            r"|\d+件を1(計画|セッション)で完遂は(難し|困難)"
         ),
     ),
     (
@@ -188,6 +190,22 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|\d+分(経過|相当)"
             r"|コンテキスト消費(量)?(を)?(踏まえ|考慮)"
             r"|ここまでの消費(を)?(踏まえ|考慮)"
+            r"|技術的成立性(が不透明|への疑念|が疑わしい)"
+            r"|これ以上進むとコンテキストが尽きる"
+            r"|コンテキスト残量が観測できない"
+            r"|auto compaction(を信頼|でカバー)"
+            r"|観測(可能な)?範囲では(成立性が疑わしい|技術的に困難)"
+            r"|(私の判断|実行)能力の限界を(感じ|認識)"
+            r"|無限修正ループを避けるため"
+            r"|技術判断として.*停止"
+        ),
+    ),
+    (
+        "subagent-hesitation",
+        re.compile(
+            r"サブエージェント(を使うか判断が迷う|活用の可否をユーザーへ確認)"
+            r"|委譲(すべきか確認したい|するか判断保留)"
+            r"|メインで処理するかサブエージェント委譲するか判断保留"
         ),
     ),
 )
@@ -222,6 +240,10 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
         "実装段階での観測記録は`## 進捗ログ`側へ配置する",
     ),
     "fabricated-metrics": ("実測値を扱わず、定性的な進捗記述に留める", "実施済み工程・残工程・観測事象で進捗を述べる"),
+    "subagent-hesitation": (
+        "サブエージェント委譲の可否・委譲先・並列度は技術判断として自律決定する",
+        "委譲先・分割方針を確定したうえで着手する",
+    ),
 }
 
 

@@ -12,6 +12,7 @@ workload	作業残量を考慮
 workload	作業残量が多いため
 single-session	本セッションのリソースでは完遂困難
 single-session	規模的に本セッションでは困難
+single-session	20件を1セッションで完遂は困難
 approach-confirm	進め方を確認
 split-execution	分割して進める
 context-shortage	残コンテキスト
@@ -133,6 +134,17 @@ fabricated-metrics	5分経過
 fabricated-metrics	コンテキスト消費を踏まえ判断する
 fabricated-metrics	コンテキスト消費量を考慮して整理する
 fabricated-metrics	ここまでの消費を踏まえ次工程へ移る
+fabricated-metrics	技術的成立性が不透明
+fabricated-metrics	これ以上進むとコンテキストが尽きる
+fabricated-metrics	コンテキスト残量が観測できない
+fabricated-metrics	auto compactionを信頼して続行する
+fabricated-metrics	観測範囲では技術的に困難
+fabricated-metrics	実行能力の限界を感じている
+fabricated-metrics	無限修正ループを避けるため中断する
+fabricated-metrics	技術判断として一旦停止する
 quality-tradeoff	実装・レビューラウンドの規模が現行のセッション状態から見て極めて大規模になる
 next-cycle-defer	いったん外側スキルへ復帰して次回起動時に本計画の実装を継続する
 approach-confirm	選択肢は完遂を試みる、保存して次回継続の二択とする
+subagent-hesitation	サブエージェントを使うか判断が迷う
+subagent-hesitation	委譲すべきか確認したい
+subagent-hesitation	メインで処理するかサブエージェント委譲するか判断保留

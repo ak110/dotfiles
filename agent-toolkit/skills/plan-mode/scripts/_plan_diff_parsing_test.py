@@ -127,6 +127,21 @@ class TestIterNonFencedLines:
         assert yielded == ["outer1", "outer2"]
 
 
+class TestIterReductionHeadings:
+    """`iter_reduction_headings`の返却文字列の透過性を検証する。"""
+
+    def test_iter_reduction_headings_returns_qualified_name_as_is(self) -> None:
+        section = "#### 縮減対象（agent-standards SKILL.md）\n本文\n"
+        assert list(_MOD.iter_reduction_headings(section)) == ["agent-standards SKILL.md"]
+
+    def test_iter_reduction_headings_returns_basename_and_relative_path(self) -> None:
+        section = "#### 縮減対象（SKILL.md）\n本文1\n#### 縮減対象（agent-toolkit/skills/agent-standards/SKILL.md）\n本文2\n"
+        assert list(_MOD.iter_reduction_headings(section)) == [
+            "SKILL.md",
+            "agent-toolkit/skills/agent-standards/SKILL.md",
+        ]
+
+
 class TestIsMatchingClose:
     """`is_matching_close`ヘルパーの動作を検証する。"""
 

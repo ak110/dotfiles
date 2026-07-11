@@ -188,10 +188,14 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
     `mitigation-in-adoption`は反映内容の縮小をフィードバック採否の場面で扱うため
     `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
     「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項を参照する。
+    `subagent-hesitation`はサブエージェント委譲可否の判断保留を扱うため
+    `agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節を参照する。
     他カテゴリは`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節を参照する。
     """
     if category == "mitigation-in-adoption":
         return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md「採用時の反映内容の縮小禁止」項"
+    if category == "subagent-hesitation":
+        return "agent-toolkit/rules/02-claude-code.md「サブエージェントの活用」節"
     return "agent-toolkit/rules/01-agent.md「セッション分割・別計画化は禁止する」節"
 
 

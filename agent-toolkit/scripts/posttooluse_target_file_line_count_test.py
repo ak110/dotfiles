@@ -342,6 +342,59 @@ class TestPlanFormatTargetFileLineCount:
         assert result.returncode == 0
         assert "does not conform" not in result.stdout
 
+    def test_repeat_write_suppresses_line_count_warning(self, tmp_path: pathlib.Path):
+        """同一計画ファイルへの2回目のWriteでは行数超過警告のみ抑止される（FB2）。"""
+        home, plans = self._home(tmp_path)
+        self._make_over_limit_file(home / "AGENTS.md")
+        content = self._plan_with_files(["AGENTS.md"])
+        plan = _write_plan(plans, "repeat-suppress.md", content)
+        state_dir = tmp_path / "state"
+        payload = {
+            "session_id": "line-repeat-suppress",
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(plan), "content": content},
+            "cwd": str(home),
+        }
+        first = _run(payload, state_dir=state_dir, home_dir=home, plan_mode_skill_invoked=True)
+        first_output = _parse_hook_output(first.stdout)
+        assert first_output is not None
+        first_msg = first_output["hookSpecificOutput"]["additionalContext"]
+        assert "plan file contains target files exceeding 200 lines" in first_msg
+
+        second = _run(payload, state_dir=state_dir, home_dir=home)
+        second_output = _parse_hook_output(second.stdout)
+        if second_output is not None:
+            second_msg = second_output["hookSpecificOutput"]["additionalContext"]
+            assert "plan file contains target files exceeding 200 lines" not in second_msg
+
+    def test_different_plan_path_warns_independently(self, tmp_path: pathlib.Path):
+        """異なる計画パスへは行数超過警告が独立に発火する（辞書型フラグの分離性、FB2）。"""
+        home, plans = self._home(tmp_path)
+        self._make_over_limit_file(home / "AGENTS.md")
+        content = self._plan_with_files(["AGENTS.md"])
+        plan_a = _write_plan(plans, "repeat-a.md", content)
+        plan_b = _write_plan(plans, "repeat-b.md", content)
+        state_dir = tmp_path / "state"
+        session_id = "line-repeat-independent"
+        payload_a = {
+            "session_id": session_id,
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(plan_a), "content": content},
+            "cwd": str(home),
+        }
+        payload_b = {
+            "session_id": session_id,
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(plan_b), "content": content},
+            "cwd": str(home),
+        }
+        _run(payload_a, state_dir=state_dir, home_dir=home, plan_mode_skill_invoked=True)
+        second = _run(payload_b, state_dir=state_dir, home_dir=home)
+        second_output = _parse_hook_output(second.stdout)
+        assert second_output is not None
+        second_msg = second_output["hookSpecificOutput"]["additionalContext"]
+        assert "plan file contains target files exceeding 200 lines" in second_msg
+
     def test_reduction_heading_excludes_basename(self, tmp_path: pathlib.Path):
         """`#### 縮減対象（<basename>）`H4見出しが存在する場合も警告対象から除外される。"""
         home, plans = self._home(tmp_path)
