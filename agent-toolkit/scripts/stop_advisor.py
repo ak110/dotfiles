@@ -60,6 +60,7 @@ import sys
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -106,36 +107,14 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def _is_tracked_change(line: str) -> bool:
-    """Git status --porcelain / --shortの1行がtracked変更かどうかを返す。
-
-    untrackedファイル（`??`）は対象外とする。
-    """
-    return bool(line) and not line.startswith("??")
-
-
 def _has_uncommitted_changes(cwd: str) -> bool:
     """作業ディレクトリに未コミットの変更がある場合に真を返す。
 
     untrackedファイル（`??`）は対象外とする（意図的に未追跡の場合があるため）。
     git未導入・リポジトリ外・コマンド失敗時は偽を返す。
+    判定は共有ヘルパー`_git_status.has_tracked_dirty`（`git status --porcelain`実行）へ委ねる。
     """
-    if not cwd:
-        return False
-    try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=cwd,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    if result.returncode != 0:
-        return False
-    return any(_is_tracked_change(line) for line in result.stdout.splitlines())
+    return bool(_git_status.has_tracked_dirty(cwd))
 
 
 def _git_status_for_display(cwd: str) -> str | None:
@@ -160,7 +139,7 @@ def _git_status_for_display(cwd: str) -> str | None:
     if not output:
         return None
     # untrackedファイルのみの場合は表示しない。
-    if not any(_is_tracked_change(line) for line in output.splitlines()):
+    if not any(_git_status.is_tracked_change(line) for line in output.splitlines()):
         return None
     return output
 

@@ -28,6 +28,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
 13. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
     （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
+14. `git commit --amend` / `git commit --fixup` 成功時のcwd別
+    `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
+15. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
 """
 
 import json
@@ -38,6 +41,7 @@ import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
+import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_diff_parsing import iter_reduction_headings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -102,6 +106,39 @@ _GIT_STATUS_SUBCOMMANDS: frozenset[str] = frozenset({"status", "log", "diff"})
 
 # git_log_checked をリセットするサブコマンド（既存コミットを書き換える・送出する系統）。
 _GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "push"})
+
+
+def _set_amend_pending_status_check(state: dict, cwd: str) -> dict | None:
+    """Git commit --amend / --fixup 成功時にcwd別フラグを設定する。既にTrueならNoneを返す（冪等）。"""
+    flags = state.get(_git_status.AMEND_PENDING_FLAG_KEY)
+    if not isinstance(flags, dict):
+        flags = {}
+    if flags.get(cwd, False):
+        return None
+    flags[cwd] = True
+    state[_git_status.AMEND_PENDING_FLAG_KEY] = flags
+    return state
+
+
+def _reset_amend_pending_status_check(state: dict, cwd: str) -> dict | None:
+    """該当cwdでpush前検査を通過した時点、またはpush成功時にフラグを解除する。既にFalseならNoneを返す（冪等）。"""
+    flags = state.get(_git_status.AMEND_PENDING_FLAG_KEY)
+    if not isinstance(flags, dict) or not flags.get(cwd, False):
+        return None
+    flags[cwd] = False
+    state[_git_status.AMEND_PENDING_FLAG_KEY] = flags
+    return state
+
+
+def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
+    """`git commit`のサブコマンド引数列から`--amend` / `--fixup=<sha>` / `--fixup <sha>`を検出する。"""
+    for tok in args:
+        if tok == "--amend":
+            return True
+        if tok == "--fixup" or tok.startswith("--fixup="):
+            return True
+    return False
+
 
 # --- plan-modeスキル呼び出し検出 ---
 
@@ -554,6 +591,20 @@ def main() -> int:
         if log_modified:
             state["git_log_checked"] = log_state
             changed = True
+
+        # git commit --amend / --fixup 成功時にcwd別のamend後dirty検査フラグを立てる。
+        # 実送出`git push`（`--dry-run`/`-n`以外）成功時に該当cwdフラグを解除する
+        # （dry-run時はpretooluse側でも解除しないため、posttooluse側でも解除しない）。
+        for event in git_events:
+            if event.subcommand == "commit" and _git_commit_is_amend_or_fixup(event.subcommand_args):
+                if _set_amend_pending_status_check(state, event.cwd) is not None:
+                    changed = True
+            elif (
+                event.subcommand == "push"
+                and _git_status.git_push_is_real_send(event.subcommand_args)
+                and _reset_amend_pending_status_check(state, event.cwd) is not None
+            ):
+                changed = True
 
         return state if changed else None
 

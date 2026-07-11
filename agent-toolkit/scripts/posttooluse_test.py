@@ -840,3 +840,146 @@ class TestProcessFeedbacksInvokedNonIdempotent:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+
+
+class TestAmendPendingStatusCheck:
+    """`amend_pending_status_check` cwd別フラグの管理（fb3）。
+
+    `git commit --amend` / `git commit --fixup=<sha>` / `git commit --fixup <sha>`成功時に
+    該当cwdでフラグを立て、実送出`git push`成功時に該当cwdを解除する
+    （`git status`実行では解除しない）。
+    """
+
+    @staticmethod
+    def _flag(state: dict, cwd: str) -> bool:
+        flags = state.get("amend_pending_status_check")
+        return bool(flags.get(cwd, False)) if isinstance(flags, dict) else False
+
+    @pytest.mark.parametrize(
+        ("label", "command"),
+        [
+            ("amend", "git commit --amend --no-edit"),
+            ("fixup_eq", "git commit --fixup=abc123"),
+            ("fixup_space", "git commit --fixup abc123"),
+        ],
+    )
+    def test_amend_or_fixup_sets_flag(self, tmp_path: pathlib.Path, label: str, command: str):
+        sid = f"amend-flag-{label}"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": command}, "cwd": "/repo/a"},
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+
+    def test_normal_commit_does_not_set_flag(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-normal"
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git commit -m 'x'"}, "cwd": "/repo/a"},
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is False
+
+    def test_dash_c_absolute_amend_records_dash_c_cwd(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-dash-c"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git -C /repo/x commit --amend --no-edit"},
+                "cwd": "/elsewhere",
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert self._flag(state, "/repo/x") is True
+        assert self._flag(state, "/elsewhere") is False
+
+    def test_cd_then_amend_records_cd_cwd(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-cd"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "cd /repo/x && git commit --amend --no-edit"},
+                "cwd": "/elsewhere",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), os.path.normpath("/repo/x")) is True
+
+    def test_git_status_does_not_reset_flag(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-status-noop"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": "/repo/a"},
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+
+    def test_real_push_success_resets_flag(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-push-real"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git push origin master"}, "cwd": "/repo/a"},
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is False
+
+    def test_dry_run_push_does_not_reset_flag(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-push-dryrun"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push --dry-run origin master"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+
+    def test_dash_n_push_does_not_reset_flag(self, tmp_path: pathlib.Path):
+        sid = "amend-flag-push-dashn"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit --amend --no-edit"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+        _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git push -n origin master"}, "cwd": "/repo/a"},
+            state_dir=tmp_path,
+        )
+        assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True

@@ -96,6 +96,8 @@ Claude Code固有事項として、本体作業に着手する時点で
   - `git status`で未コミット差分が残っていないか確認し、残っていれば`git add`したうえで
     `git commit --amend`／`git commit --fixup=`を再実行する
   - 最終応答前に`git status`がcleanであることを確認してから完了を宣言する
+  - `git push`実行時にPreToolUseフックがamend後の未コミット差分残置を検知すると自動的にpushをブロックする。
+    `git status`で確認後、再amendまたはadd/commitで解消してから再度pushできる
 
 ## push後のCI通過確認
 

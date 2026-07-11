@@ -2,7 +2,7 @@
 
 行番号への参照検査スクリプトをsubprocessで起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
-パス実在検査・スキル名実在検査・件数表現検出（FB4）も併せて検証する。
+パス実在検査・スキル名・サブエージェント名実在検査・件数表現検出（FB4）も併せて検証する。
 """
 
 import pathlib
@@ -294,6 +294,23 @@ class TestCheckLineRef:
         path = _write(tmp_path / "doc.md", "`agent-toolkit:existing-skill`を呼び出す。\n")
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
+
+    def test_check_skill_name_existence_passes_for_existing_subagent(self, tmp_path: pathlib.Path) -> None:
+        """実在するサブエージェント名記載は違反として報告されない。"""
+        agents_dir = tmp_path / "agent-toolkit" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "plan-impl-executor.md").write_text("x\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "`agent-toolkit:plan-impl-executor`を起動する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_check_skill_name_existence_detects_unknown_subagent(self, tmp_path: pathlib.Path) -> None:
+        """`agent-toolkit/agents/`配下・`.claude/agents/`配下いずれにも存在しないサブエージェント名を検出する。"""
+        path = _write(tmp_path / "doc.md", "`agent-toolkit:nonexistent`を起動する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "agent-toolkit:nonexistent" in result.stderr
+        assert "スキル名・サブエージェント名`agent-toolkit:nonexistent`が実在しない" in result.stderr
 
     def test_check_count_expressions_detects_forbidden_wording(self, tmp_path: pathlib.Path) -> None:
         """「以下N件」等の件数表現を検出する。"""

@@ -254,6 +254,11 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
 _INLINE_CHOICE_PATTERN: re.Pattern[str] = re.compile(r"選択肢\s*[:：]\s*\n?\s*[1-9１-９][\.．、\)]", re.MULTILINE)
 
 
+# priority-consultカテゴリの照合対象から他ファイル節名の引用文脈を除去するためのパターン。
+# 節名転記時の全角鍵括弧「」区間はpriority-consult語彙と字面上重なりやすく、過検出を招くため除外する。
+_ZENKAKU_KAKKO_RE: re.Pattern[str] = re.compile(r"「[^」]*」")
+
+
 def has_inline_choice_offer(text: str) -> bool:
     """テキストへ地の文の番号付き選択肢提示が含まれる場合に真を返す。
 
@@ -298,6 +303,8 @@ def _match_scope_escalation(
     `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
     Stop経路（`stop_advisor.py`）は自由文脈での誤検出回避のため
     `_STOP_FOCUS_CATEGORIES`（`process-omission`単独）を渡す。
+    priority-consultカテゴリは他ファイル節名の引用文脈（全角鍵括弧「」で囲まれた区間）を
+    走査対象から除去してから判定する（節名転記時の過検出を回避する）。
     未検出時・非文字列入力時はNoneを返す。
     """
     if not isinstance(text, str) or not text:
@@ -309,7 +316,10 @@ def _match_scope_escalation(
             continue
         if category in excluded:
             continue
-        if pattern.search(text) is not None:
+        target_text = text
+        if category == "priority-consult":
+            target_text = _ZENKAKU_KAKKO_RE.sub("", text)
+        if pattern.search(target_text) is not None:
             return category
     return None
 

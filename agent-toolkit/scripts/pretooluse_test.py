@@ -2412,6 +2412,310 @@ class TestBashBulkStageWithUneditedFiles:
         assert "sub_unedited.txt" in ctx
 
 
+class TestBashGitPushAfterAmendDirty:
+    """`git push`前のamend後dirty状態ブロック検査（fb3）。
+
+    posttooluse側で設定する`amend_pending_status_check`（cwd別辞書）がTrueかつ
+    `git status --porcelain`で追跡ファイル差分がある場合、`git push`をブロックする。
+    実送出push（`--dry-run`なし）でclean時のみフラグ解除する
+    （`git push --dry-run`はdirty時blockは実施しclean時は解除せず状態を保つ）。
+    """
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    _write_state = staticmethod(_write_session_state)
+
+    def _invoke(
+        self,
+        command: str,
+        session_id: str,
+        env: dict[str, str],
+        cwd: str,
+    ) -> subprocess.CompletedProcess[str]:
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "session_id": session_id,
+            "cwd": cwd,
+        }
+        return _run(payload, env_overrides=env)
+
+    @staticmethod
+    def _read_flag(state_dir_path: pathlib.Path, session_id: str, cwd: str) -> bool:
+        path = state_dir_path / f"claude-agent-toolkit-{session_id}.json"
+        if not path.exists():
+            return False
+        state = json.loads(path.read_text(encoding="utf-8"))
+        flags = state.get("amend_pending_status_check")
+        return bool(flags.get(cwd, False)) if isinstance(flags, dict) else False
+
+    def test_blocks_push_when_flag_true_and_dirty(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-dirty"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        # 追跡済みファイルを編集して未コミット差分を発生させる
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-dirty-block"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke("git push origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 2
+        assert "amend" in result.stderr
+        # ブロック時はフラグ解除されない
+        assert self._read_flag(tmp_path, sid, str(repo)) is True
+
+    def test_allows_real_push_when_flag_true_and_clean_resets_flag(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        repo = tmp_path / "repo-clean"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        sid = "push-clean-real"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke("git push origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 0
+        # 実送出pushのclean通過時のみフラグ解除される
+        assert self._read_flag(tmp_path, sid, str(repo)) is False
+
+    def test_dry_run_clean_does_not_reset_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-dryclean"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        sid = "push-clean-dryrun"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke("git push --dry-run origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 0
+        # dry-runではフラグ解除されない
+        assert self._read_flag(tmp_path, sid, str(repo)) is True
+
+    def test_dash_n_clean_does_not_reset_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`-n`は`--dry-run`の短縮形として扱われ、cleanでもフラグ解除されない。"""
+        repo = tmp_path / "repo-dashnclean"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        sid = "push-clean-dashn"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke("git push -n origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 0
+        assert self._read_flag(tmp_path, sid, str(repo)) is True
+
+    def test_dry_run_dirty_still_blocks(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-drydirty"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-dirty-dryrun"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke("git push --dry-run origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 2
+
+    def test_flag_false_bypasses_check(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-noflag"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-no-flag"
+        # フラグ未設定でもdirtyでも通過（対象外）
+        result = self._invoke("git push origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 0
+
+    def test_other_cwd_flag_does_not_affect_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-othercwd"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-other-cwd"
+        # 別cwdのフラグはpushに影響しない
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {"/other/repo": True}})
+        result = self._invoke("git push origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 0
+
+    def test_dash_c_push_uses_dash_c_cwd_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-dashc"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-dash-c"
+        # payload cwdは別で、`git -C <repo>`で切り替える。フラグは`repo`側に設定する
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke(f"git -C {repo} push origin master", sid, state_dir, cwd=str(tmp_path))
+        assert result.returncode == 2
+
+    def test_cd_then_push_uses_cd_cwd_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        repo = tmp_path / "repo-cd"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-cd"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        result = self._invoke(f"cd {repo} && git push origin master", sid, state_dir, cwd=str(tmp_path))
+        assert result.returncode == 2
+
+    def test_dry_run_dirty_block_range_matches_real_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """判定範囲の統一: `--dry-run`でもdirty判定は実施される（再確認）。"""
+        repo = tmp_path / "repo-dryrange"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-dryrange"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        for cmd in ("git push --dry-run origin master", "git push -n origin master"):
+            result = self._invoke(cmd, sid, state_dir, cwd=str(repo))
+            # `-n`は`--dry-run`の短縮形として同様に扱われ、dirty判定はどちらでも実施されblockになる
+            assert result.returncode == 2, f"expected block for {cmd!r}"
+
+    def test_git_status_does_not_clear_flag_then_push_still_blocks(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        """amend後→`git status`→dirtyのまま`git push`がblockされる（`git status`解除方式でない検証）。"""
+        repo = tmp_path / "repo-status-noop"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "initial"})
+        (repo / "a.txt").write_text("modified", encoding="utf-8")
+        sid = "push-status-noop"
+        self._write_state(tmp_path, sid, {"amend_pending_status_check": {str(repo): True}})
+        # `git status`はpretooluse側では何もしない。flagは残ったまま
+        self._invoke("git status", sid, state_dir, cwd=str(repo))
+        result = self._invoke("git push origin master", sid, state_dir, cwd=str(repo))
+        assert result.returncode == 2
+
+
+class TestPlanFileSentenceLengthWarn:
+    """計画ファイル本文の1文長warn検査（fb5）。
+
+    句点`。`区切り後の各文が120字を超える場合にstderrへwarnを出力する。
+    ブロックはしない。コードフェンス内は対象外。計画ファイル以外は対象外。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+
+    _long_sentence = "あ" * 121 + "。"
+    _short_sentence = "あ" * 10 + "。"
+
+    def _make_state(self, tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str, str], pathlib.Path]:
+        home = tmp_path / "home"
+        home.mkdir()
+        env = _plan_file_state_env(tmp_path, home_dir=home)
+        plan = _make_plan_file(home)
+        # 既存フラグを揃えてplan-mode/必須リファレンス関連ブロックを回避
+        _write_session_state(
+            tmp_path,
+            "sentlen",
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+        return home, env, plan
+
+    def test_warns_on_long_sentence_write(self, tmp_path: pathlib.Path):
+        _home, env, plan = self._make_state(tmp_path)
+        content = _VALID_H2_PLAN_CONTENT + "\n" + self._long_sentence + "\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": "sentlen",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence-length" in result.stderr or "sentence(s) exceeding" in result.stderr
+
+    def test_warns_on_long_sentence_edit(self, tmp_path: pathlib.Path):
+        _home, env, plan = self._make_state(tmp_path)
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "# タイトル\n",
+                    "new_string": "# タイトル\n\n" + self._long_sentence + "\n",
+                },
+                "session_id": "sentlen",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence(s) exceeding" in result.stderr
+
+    def test_warns_on_long_sentence_multiedit(self, tmp_path: pathlib.Path):
+        _home, env, plan = self._make_state(tmp_path)
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [
+                        {"old_string": "# タイトル\n", "new_string": "# タイトル\n\n" + self._long_sentence + "\n"},
+                    ],
+                },
+                "session_id": "sentlen",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence(s) exceeding" in result.stderr
+
+    def test_no_warn_on_short_sentence(self, tmp_path: pathlib.Path):
+        _home, env, plan = self._make_state(tmp_path)
+        content = _VALID_H2_PLAN_CONTENT + "\n" + (self._short_sentence * 5) + "\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": "sentlen",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence(s) exceeding" not in result.stderr
+
+    def test_no_warn_in_code_fence(self, tmp_path: pathlib.Path):
+        _home, env, plan = self._make_state(tmp_path)
+        # コードフェンス内は`iter_markdown_body_lines`が除外する
+        fenced = "```text\n" + self._long_sentence + "\n```\n"
+        content = _VALID_H2_PLAN_CONTENT + "\n" + fenced
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": "sentlen",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence(s) exceeding" not in result.stderr
+
+    def test_no_warn_on_non_plan_file(self, tmp_path: pathlib.Path):
+        env = _plan_file_state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "other.md"), "content": self._long_sentence + "\n"},
+                "session_id": "sentlen-nonplan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "sentence(s) exceeding" not in result.stderr
+
+
 class TestBashUvRunPythonBlock:
     """`uv run python <path>`形式の起動ブロック。
 

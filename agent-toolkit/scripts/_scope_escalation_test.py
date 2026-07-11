@@ -115,6 +115,21 @@ class TestMatchScopeEscalation:
         # 型チェッカー全種の引数型検査を回避するため`typing.cast`で`str`扱いに変換する。
         assert _match_scope_escalation(typing.cast("str", value)) is None
 
+    def test_priority_consult_phrase_inside_zenkaku_kakko_not_matched(self):
+        """全角鍵括弧内へ他ファイル節名を転記した文字列は検出されない。"""
+        text = "計画ファイル本文の「スコープ相談節」を確認してから実装する。"
+        assert _match_scope_escalation(text) is None
+
+    def test_priority_consult_phrase_outside_zenkaku_kakko_matched(self):
+        """全角鍵括弧の外側にpriority-consultパターン相当語彙がある場合は検出される。"""
+        text = "優先順位について相談してから着手する。"
+        assert _match_scope_escalation(text) == "priority-consult"
+
+    def test_priority_consult_phrase_inside_and_outside_kakko_matches_outside_only(self):
+        """全角鍵括弧の内側と外側の両方に該当語彙がある場合、外側のみが検出対象となる。"""
+        text = "計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
+        assert _match_scope_escalation(text) == "priority-consult"
+
 
 class TestIsEmptyCompletionReport:
     """`is_empty_completion_report`のサブエージェント完了報告判定。"""
