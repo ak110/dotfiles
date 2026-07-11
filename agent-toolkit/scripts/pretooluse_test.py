@@ -5565,3 +5565,163 @@ class TestAgentNormReferenceCheck:
         )
         assert result.returncode == 0
         assert "does not load norms" in result.stderr
+
+
+class TestProcessFeedbacksBlocksEnterPlanMode:
+    """process-feedbacks経由起動下でのEnterPlanMode発行ブロック検査。"""
+
+    @staticmethod
+    def _env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def test_blocks_when_flag_true(self, tmp_path: pathlib.Path):
+        """`process_feedbacks_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
+        sid = "epm-flag-true"
+        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": True})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "process-feedbacks" in result.stderr
+        assert "EnterPlanMode" in result.stderr
+
+    def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
+        """フラグ未設定時はEnterPlanMode発行を通過させる。"""
+        sid = "epm-flag-absent"
+        _write_session_state(tmp_path, sid, {})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_flag_false(self, tmp_path: pathlib.Path):
+        """フラグが偽の場合はEnterPlanMode発行を通過させる。"""
+        sid = "epm-flag-false"
+        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": False})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_ignores_other_tool_names(self, tmp_path: pathlib.Path):
+        """`ExitPlanMode`など他のツール名では本ハンドラは発火しない。"""
+        sid = "epm-other-tool"
+        _write_session_state(tmp_path, sid, {"process_feedbacks_skill_invoked": True})
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert "EnterPlanMode発行はplan-modeスキル規範" not in result.stderr
+
+
+class TestPlanFileBumpStepWhenAgentToolkitTarget:
+    """agent-toolkit配下対象計画のversion bumpステップ欠落警告検査。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+
+    @staticmethod
+    def _plan_body(target_paths: list[str], include_bump: bool) -> str:
+        target_lines = "\n".join(f"- [ ] `{p}`" for p in target_paths)
+        exec_lines = "- `scripts/agent_toolkit_bump.py patch`" if include_bump else "- 実装する"
+        return (
+            "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            f"{target_lines}\n\n"
+            "## 実行方法\n\n"
+            f"{exec_lines}\n\n"
+            "## 進捗ログ\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+
+    def test_warns_when_agent_toolkit_path_without_bump_step(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "bump-missing"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["agent-toolkit/scripts/pretooluse.py"], include_bump=False)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+
+    def test_passes_when_bump_step_present(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "bump-present"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["agent-toolkit/scripts/pretooluse.py"], include_bump=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr
+
+    def test_passes_when_no_agent_toolkit_path(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "bump-no-target"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["pytools/example.py"], include_bump=False)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr
+
+    def test_passes_when_all_test_py_paths(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "bump-test-only"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(
+            ["agent-toolkit/scripts/pretooluse_test.py", "agent-toolkit/scripts/posttooluse_test.py"],
+            include_bump=False,
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr

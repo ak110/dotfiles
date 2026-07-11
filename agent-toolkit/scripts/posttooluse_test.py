@@ -766,3 +766,77 @@ class TestFeedbackSkillFlags:
         sid = f"fb-{skill.replace(':', '-')}"
         _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
         assert _read_state(tmp_path, sid).get(flag) is True
+
+
+class TestProcessFeedbacksFinishResetsFlag:
+    """process-feedbacks-finishスキル起動検知時のフラグリセット。"""
+
+    @pytest.mark.parametrize(
+        "skill",
+        ["agent-toolkit:process-feedbacks-finish", "process-feedbacks-finish"],
+    )
+    def test_reset_when_finish_skill_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
+        """process-feedbacks-finish起動でprocess_feedbacks_skill_invokedが偽になる。"""
+        sid = f"finish-{skill.replace(':', '-')}"
+        # 事前にフラグを立てる。
+        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+            json.dumps({"process_feedbacks_skill_invoked": True}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+
+    def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
+        """既に偽の状態でfinishスキルが起動されても状態は変わらない。"""
+        sid = "finish-idem"
+        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+            json.dumps({"process_feedbacks_skill_invoked": False}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks-finish"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+
+
+class TestProcessFeedbacksInvokedNonIdempotent:
+    """process-feedbacksスキル再起動時のフラグ強制上書き。"""
+
+    def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
+        """finish後の再起動でフラグが確実にTrueへ戻る。"""
+        sid = "reinvoke"
+        # 事前にフラグを立てる。
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+        # finish起動でリセット。
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks-finish"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+        # 再起動でTrueへ確実に戻ることを確認する。
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True

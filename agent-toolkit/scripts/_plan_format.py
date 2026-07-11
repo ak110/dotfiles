@@ -275,3 +275,31 @@ def is_agent_facing_md(rel_path: str) -> bool:
     if "references" in parts[:-1] and "skills" in parts[:-1]:
         return True
     return "agents" in parts[:-1]
+
+
+def has_bump_step_when_required(content: str) -> bool:
+    """計画ファイル本文がversion bumpステップ要件を満たすかを判定する。
+
+    判定手順:
+
+    1. `extract_target_files_from_changes`で対象ファイル一覧を取得する
+    2. 対象ファイル一覧が空、または`agent-toolkit/`で始まるパスを1件も含まない場合は`True`を返す
+    3. 対象ファイル一覧の`agent-toolkit/`配下パス全件が`_test.py`で終わる場合は`True`を返す
+    4. `extract_h2_section_body`で`## 実行方法`節本文を取得し、
+       `agent_toolkit_bump.py`リテラル出現があれば`True`、無ければ`False`を返す
+
+    `agent-toolkit/scripts/pretooluse.py`と
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
+    双方からimportして使うSSOT実装。
+    """
+    paths = extract_target_files_from_changes(content)
+    if not paths:
+        return True
+    agent_toolkit_paths = [p for p in paths if p.startswith("agent-toolkit/")]
+    if not agent_toolkit_paths:
+        return True
+    if all(p.endswith("_test.py") for p in agent_toolkit_paths):
+        return True
+    execution_body = extract_h2_section_body(content, "実行方法")
+    execution_text = "\n".join(line for _lineno, line in execution_body)
+    return "agent_toolkit_bump.py" in execution_text

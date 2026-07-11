@@ -49,8 +49,8 @@ description: >
   plan mode外の場合はユーザー承認を介さず、工程8で`plan-impl-executor`へ引き継ぐ。
   Codex環境ではAGENTS.mdの「plan modeのエミュレーション」節に従う
   - `process-feedbacks`スキル経由で本スキルが呼び出される場合はplan mode外で実行する。
-    メイン側で`EnterPlanMode`を発行しない。
-    plan mode下での起動はユーザーの明示的な`EnterPlanMode`指示があった場合に限る
+    メイン側で`EnterPlanMode`を発行しない
+    （PreToolUseフックが`process_feedbacks_skill_invoked`真時にブロックする）
 - 本スキル未起動のまま計画ファイル（`~/.claude/plans/*.md`）の編集に至った場合は、
   PreToolUseフックがブロックするため本スキルを呼び出したうえで工程1または2から順に実施する
 - 例外: plan mode移行後にユーザーから単純な即時実行の指示があった場合に限り、

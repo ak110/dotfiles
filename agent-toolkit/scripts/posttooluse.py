@@ -23,9 +23,10 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
    （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール）
 10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
-11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
+11. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
+12. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
-12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
+13. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
     （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
 """
 
@@ -119,6 +120,9 @@ _CODEX_IMPL_SKILL_NAMES = frozenset({"agent-toolkit:codex-impl", "codex-impl"})
 # Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
 
+# process-feedbacks-finishスキル呼び出し検出。フラグリセット経路の第1経路として使う。
+_PROCESS_FEEDBACKS_FINISH_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks-finish", "process-feedbacks-finish"})
+
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
@@ -138,10 +142,20 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 
 
 def _set_process_feedbacks_invoked(state: dict) -> dict | None:
-    """process-feedbacksスキル起動フラグを立てる。既に真ならNoneを返す（冪等）。"""
-    if state.get("process_feedbacks_skill_invoked", False):
-        return None
+    """process-feedbacksスキル起動フラグを常時Trueへ上書きする。
+
+    新規process-feedbacksラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
+    リセット経路は`_reset_process_feedbacks_invoked`（process-feedbacks-finish完了検知）と併用する。
+    """
     state["process_feedbacks_skill_invoked"] = True
+    return state
+
+
+def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
+    """process-feedbacksスキル起動フラグを偽へ戻す。既に偽ならNoneを返す（冪等）。"""
+    if not state.get("process_feedbacks_skill_invoked", False):
+        return None
+    state["process_feedbacks_skill_invoked"] = False
     return state
 
 
@@ -317,6 +331,8 @@ def main() -> int:
             update_state(session_id, _set_codex_impl_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
+        if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES:
+            update_state(session_id, _reset_process_feedbacks_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録

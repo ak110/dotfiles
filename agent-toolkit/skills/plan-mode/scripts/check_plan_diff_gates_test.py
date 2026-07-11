@@ -361,3 +361,75 @@ class TestMainEntrypoint:
             check=False,
         )
         assert result.returncode == 0, result.stderr
+
+
+def _bump_plan(target_paths: list[str], include_bump: bool) -> str:
+    target_lines = "\n".join(f"- [ ] `{p}`" for p in target_paths)
+    exec_lines = "- `scripts/agent_toolkit_bump.py patch`" if include_bump else "- 実装する"
+    return f"## 変更内容\n\n### 対象ファイル一覧\n\n{target_lines}\n\n## 実行方法\n\n{exec_lines}\n"
+
+
+class TestCheckBumpStep:
+    """agent-toolkit配下対象計画のversion bumpステップ検査。"""
+
+    def test_warns_when_missing(self, tmp_path: pathlib.Path) -> None:
+        """agent-toolkit配下パス+bump未記載でwarnメッセージがstderrに出る（exit 0）。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _bump_plan(["agent-toolkit/scripts/pretooluse.py"], include_bump=False),
+        )
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), str(plan)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "agent_toolkit_bump.py" in result.stderr
+        assert "[warn]" in result.stderr
+
+    def test_passes_when_bump_step_present(self, tmp_path: pathlib.Path) -> None:
+        plan = _write(
+            tmp_path / "plan.md",
+            _bump_plan(["agent-toolkit/scripts/pretooluse.py"], include_bump=True),
+        )
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), str(plan)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "[warn]" not in result.stderr
+
+    def test_passes_when_test_only_paths(self, tmp_path: pathlib.Path) -> None:
+        """`*_test.py`のみは検査対象外。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _bump_plan(
+                ["agent-toolkit/scripts/pretooluse_test.py", "agent-toolkit/scripts/posttooluse_test.py"],
+                include_bump=False,
+            ),
+        )
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), str(plan)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "[warn]" not in result.stderr
+
+    def test_passes_when_no_agent_toolkit_paths(self, tmp_path: pathlib.Path) -> None:
+        plan = _write(
+            tmp_path / "plan.md",
+            _bump_plan(["pytools/example.py"], include_bump=False),
+        )
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), str(plan)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert "[warn]" not in result.stderr

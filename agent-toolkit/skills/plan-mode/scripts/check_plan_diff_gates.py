@@ -30,6 +30,7 @@
     （一時ファイル拡張子を`.md`に固定して呼び出す）
 - 127幅検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
+- 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
@@ -45,8 +46,9 @@ import sys
 import tempfile
 from collections.abc import Callable, Iterator
 
-# 共通モジュール読み込みのため本ファイルと同一ディレクトリを`sys.path`へ追加する。
+# 共通モジュール読み込みのため本ファイルと同一ディレクトリおよび`agent-toolkit/scripts/`を`sys.path`へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 # pylint: disable=wrong-import-position
 from _plan_diff_parsing import (  # noqa: E402
     REDUCTION_HEADING_RE,
@@ -54,6 +56,7 @@ from _plan_diff_parsing import (  # noqa: E402
     extract_section_with_offset,
     is_matching_close,
 )
+from _plan_format import has_bump_step_when_required  # noqa: E402
 
 # pylint: enable=wrong-import-position
 
@@ -143,7 +146,27 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` line-width違反\n{line_width_error}"
             print(msg, file=sys.stderr)
             violations.append(msg)
+    bump_warning = _check_bump_step(plan_path, text)
+    if bump_warning is not None:
+        print(bump_warning, file=sys.stderr)
     return violations
+
+
+def _check_bump_step(plan_path: pathlib.Path, text: str) -> str | None:
+    """計画ファイル本文へversion bumpステップ要件を照合する。違反時は警告メッセージを返す。
+
+    判定ロジックのSSOTは`_plan_format.has_bump_step_when_required`。
+    pretooluse.py側の`_check_plan_file_bump_step_when_agent_toolkit_target`と同じくwarn降格とし、
+    呼び出し元（`_check_plan_file`）はexit codeへ含めずstderr出力のみに使う
+    （`agent-toolkit-edit`スキル「bump不要時のみ省略可」文言との整合を保つ）。
+    """
+    if has_bump_step_when_required(text):
+        return None
+    return (
+        f"{plan_path}: [warn] 対象ファイル一覧に`agent-toolkit/`配下パスを含むが、"
+        f"`## 実行方法`本文に`agent_toolkit_bump.py`ステップが記載されていない。"
+        f"`agent-toolkit-edit`スキル「バージョン更新」節参照。"
+    )
 
 
 def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
