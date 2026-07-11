@@ -291,7 +291,7 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         prompt = claude_calls[0]["cmd"][2]
         assert "/process-feedbacks" in prompt
-        assert "apply-feedback-finish" in prompt
+        assert "process-feedbacks-finish" in prompt
         assert claude_calls[0]["cmd"][:2] == ["claude", "--permission-mode=auto"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
         assert len(wait_calls) == 2
@@ -313,12 +313,12 @@ class TestProcessLoopPromptAndEnv:
         assert "後続工程" in prompt
         assert "縮退の根拠に" in prompt
 
-    def test_prompt_references_apply_feedback_finish(self) -> None:
-        """プロンプトが後続工程の集約先としてapply-feedback-finishスキルを参照すること。"""
+    def test_prompt_references_process_feedbacks_finish(self) -> None:
+        """プロンプトが後続工程の集約先としてprocess-feedbacks-finishスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
         )
-        assert "apply-feedback-finish" in prompt
+        assert "process-feedbacks-finish" in prompt
 
 
 class TestProcessLoopClaudeReturncode:

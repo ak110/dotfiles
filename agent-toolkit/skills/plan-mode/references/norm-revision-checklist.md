@@ -33,7 +33,7 @@
 - 出力フォーマット・必須記載項目・文書サイズ上限などの、
   構造的・形式的な規範の改訂時も対象に含む
 - 遡及スキャン対象は、新規規範本文が判断軸として直接参照する成果物カテゴリに限定する
-  - 例として、`apply-feedback`の判定対象なら過去の判定対象の痕跡、
+  - 例として、`process-feedbacks`の判定対象なら過去の判定対象の痕跡、
     コーディング規範ならコード抑制痕
   - 新規規範の例示部に登場する対象種別（lint抑制・型チェック抑制等）は、
     当該規範が直接管轄する成果物カテゴリ外にある古い抑制サイトはスコープに含めない
@@ -98,7 +98,7 @@
 - 対応が確認できた場合、追記側の変更と同期して機械転記元テンプレート・転記先スキルの両ファイルへ
   追随項目を追加または既存項目を更新する
 - 既知の機械転記ペア例:
-  - `apply-feedback/SKILL.md`ステップ2.5節と`apply-feedback/references/explore-template.md`「Explore委譲雛形」節
+  - `process-feedbacks/SKILL.md`ステップ2.5節と`process-feedbacks/references/explore-template.md`「Explore委譲雛形」節
   - `plan-impl/SKILL.md`と`plan-impl/references/launch-prompts-drafting.md`「起草・改訂委譲雛形」節
   - `plan-mode/references/integrity-checks.md`と`plan-mode/references/launch-prompts-integrity.md`の各雛形節
 

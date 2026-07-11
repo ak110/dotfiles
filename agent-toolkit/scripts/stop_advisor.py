@@ -17,7 +17,7 @@ approve・通知の分岐は以下のとおり。
   `_scope_escalation._match_scope_escalation`で該当カテゴリを検出した場合、
   `decision: "block"`＋矯正指示`reason`を返し、正規工程へ復帰させる。
   Stop経路の照合カテゴリは通常`_STOP_FOCUS_CATEGORIES`（`process-omission`単独）だが、
-  plan-mode/apply-feedback/process-feedbacks等のスキル実行中フラグ成立時は
+  plan-mode/process-feedbacks等のスキル実行中フラグ成立時は
   `_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する
   （`_build_stop_focus_categories`が判定）。
   拡張時は地の文選択肢提示も`approach-confirm`カテゴリでblockする。
@@ -92,15 +92,11 @@ _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-r
 def _build_stop_focus_categories(state: dict) -> frozenset[str]:
     """スキル起動フラグに応じてStop経路の照合カテゴリ集合を決定する。
 
-    `plan_mode_skill_invoked`・`apply_feedback_skill_invoked`・`process_feedbacks_skill_invoked`のいずれかが真の場合、
+    `plan_mode_skill_invoked`・`process_feedbacks_skill_invoked`のいずれかが真の場合、
     縮退表明を含む可能性が高い文脈と判断し`_STOP_FOCUS_CATEGORIES_EXTENDED`を返す。
     いずれも偽の場合は基本カテゴリ`_STOP_FOCUS_CATEGORIES`を返す。
     """
-    if (
-        state.get("plan_mode_skill_invoked")
-        or state.get("apply_feedback_skill_invoked")
-        or state.get("process_feedbacks_skill_invoked")
-    ):
+    if state.get("plan_mode_skill_invoked") or state.get("process_feedbacks_skill_invoked"):
         return _STOP_FOCUS_CATEGORIES_EXTENDED
     return _STOP_FOCUS_CATEGORIES
 

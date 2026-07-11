@@ -65,13 +65,13 @@ def _build_process_loop_prompt(local_path: pathlib.Path) -> str:
     return (
         f"/process-feedbacks {local_path} を実行してください。\n"
         "主目標は取得した全件のフィードバックの実装完遂と、"
-        "agent-toolkit:apply-feedback-finish が定める後続工程の完遂です。\n"
+        "agent-toolkit:process-feedbacks-finish が定める後続工程の完遂です。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
         "コンテキストは自動コンパクションで継続されます。\n"
         "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません。\n"
         "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します。"
         "後続工程の到達要求を先行工程の縮退の根拠に解釈しないでください。\n"
-        "後続工程の個別手順は agent-toolkit:apply-feedback-finish に従い、"
+        "後続工程の個別手順は agent-toolkit:process-feedbacks-finish に従い、"
         "その最終工程（セッション終了）まで完遂してください。"
     )
 

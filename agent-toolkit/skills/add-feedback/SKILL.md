@@ -39,7 +39,7 @@ description: >
 `agent-toolkit:session-review`スキル「ステップ2」の「推測表現の投入抑止」バレットに従う。
 
 TBD投入（`atk fb tbd-add`）を伴う場合の書式は
-`agent-toolkit/skills/apply-feedback/references/hold-with-tbd-inject.md`を正本として参照する。
+`agent-toolkit/skills/process-feedbacks/references/hold-with-tbd-inject.md`を正本として参照する。
 選択肢形式の優先方針・`--scope`引数の検証手順も同ファイルに集約する。
 
 ### エージェント自律投入時の妥当性条件

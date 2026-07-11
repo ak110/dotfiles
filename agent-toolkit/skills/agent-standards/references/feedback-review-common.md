@@ -1,6 +1,6 @@
 # フィードバック処理・振り返り共通観点
 
-`agent-toolkit:session-review`・`agent-toolkit:apply-feedback`両スキルから参照するSSOT。
+`agent-toolkit:session-review`・`agent-toolkit:process-feedbacks`両スキルから参照するSSOT。
 両スキルで独立に定義していた採否判定観点・調査観点を集約する。
 
 ## 事前調査の徹底

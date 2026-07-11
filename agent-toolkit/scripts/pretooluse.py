@@ -186,11 +186,12 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
     """scope-escalationカテゴリに対応する参照先規範節の文言を返す。
 
     `mitigation-in-adoption`は反映内容の縮小をフィードバック採否の場面で扱うため
-    `agent-toolkit/skills/apply-feedback/SKILL.md`「採用時の反映内容の縮小禁止」節を参照する。
+    `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
+    「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項を参照する。
     他カテゴリは`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節を参照する。
     """
     if category == "mitigation-in-adoption":
-        return "agent-toolkit/skills/apply-feedback/SKILL.md「採用時の反映内容の縮小禁止」節"
+        return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md「採用時の反映内容の縮小禁止」項"
     return "agent-toolkit/rules/01-agent.md「セッション分割・別計画化は禁止する」節"
 
 
@@ -1099,7 +1100,7 @@ def _check_plan_mode_skill_first(
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     plan file編集に至るまでは警告を表示しない
-    （`apply-feedback`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
+    （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     """
     if not session_id:
         return False

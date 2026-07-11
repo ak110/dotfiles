@@ -827,7 +827,7 @@ class TestScopeEscalationDetection:
     def test_extended_categories_apply_under_process_feedbacks(self, tmp_path: pathlib.Path):
         """`process_feedbacks_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
 
-        3系統のスキル起動フラグ（plan_mode／apply_feedback／process_feedbacks）はいずれも
+        2系統のスキル起動フラグ（plan_mode／process_feedbacks）はいずれも
         `_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
         """
         text = "本セッションのリソースでは完遂困難と判断する。"
@@ -852,7 +852,7 @@ class TestScopeEscalationDetection:
             tmp_path,
             [_user_entry(), _assistant_text_only(text)],
         )
-        _write_state(tmp_path, "test-inline-choice", {"apply_feedback_skill_invoked": True})
+        _write_state(tmp_path, "test-inline-choice", {"process_feedbacks_skill_invoked": True})
         result = _run(
             {"session_id": "test-inline-choice", "transcript_path": str(transcript)},
             state_dir=tmp_path,

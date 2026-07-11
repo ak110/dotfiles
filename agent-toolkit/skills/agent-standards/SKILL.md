@@ -174,9 +174,9 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
   - `session_review_extension_pending`: `session-review-dotfiles`使用を記録（配布物Stop hookの重複送出抑制）
   - `autonomous_exit_invoked`: `agent-toolkit:exit-session`呼び出しを記録。
     個人フックStop hookが`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境下での未呼出判定に使う
-- `apply_feedback_skill_invoked` / `process_feedbacks_skill_invoked`:
+- `process_feedbacks_skill_invoked`:
   PostToolUse（Skill）／UserPromptSubmit（スラッシュ）で該当を記録。
-  対象は`agent-toolkit:apply-feedback`・`agent-toolkit:process-feedbacks`・各短縮スラッシュ。
+  対象は`agent-toolkit:process-feedbacks`・各短縮スラッシュ。
   Stop hookの拡張照合カテゴリ有効化判定に使う
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）

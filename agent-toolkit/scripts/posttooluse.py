@@ -118,9 +118,6 @@ _CODEX_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:plan-codex-review"})
 # pretooluse.pyの`_PLAN_IMPL_SKILL_NAMES`と同型の構成とする。
 _CODEX_IMPL_SKILL_NAMES = frozenset({"agent-toolkit:codex-impl", "codex-impl"})
 
-# apply-feedbackスキル呼び出し検出。Stop hookの拡張照合カテゴリ有効化判定に使う。
-_APPLY_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:apply-feedback"})
-
 # process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 # Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
@@ -139,14 +136,6 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 }
 
 # --- plan file形式検査の定数 ---
-
-
-def _set_apply_feedback_invoked(state: dict) -> dict | None:
-    """apply-feedbackスキル起動フラグを立てる。既に真ならNoneを返す（冪等）。"""
-    if state.get("apply_feedback_skill_invoked", False):
-        return None
-    state["apply_feedback_skill_invoked"] = True
-    return state
 
 
 def _set_process_feedbacks_invoked(state: dict) -> dict | None:
@@ -312,8 +301,6 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_codex_impl_invoked)
-        if isinstance(skill_name, str) and skill_name in _APPLY_FEEDBACK_SKILL_NAMES:
-            update_state(session_id, _set_apply_feedback_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
         return 0

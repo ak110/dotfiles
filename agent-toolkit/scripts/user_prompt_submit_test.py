@@ -70,16 +70,6 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
 
-    def test_detects_short_skill_command_apply_feedback(self, tmp_path: pathlib.Path):
-        """既存集合に短縮名が未登録のため、本hookで補完対象。"""
-        sid = "short-apply-feedback"
-        result = _run(
-            {"session_id": sid, "prompt": "/apply-feedback"},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("apply_feedback_skill_invoked") is True
-
     def test_detects_short_skill_command_session_review(self, tmp_path: pathlib.Path):
         """短縮名`/session-review`もフルスキル名キーで正規化して保存する。"""
         sid = "short-session-review"

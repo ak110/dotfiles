@@ -102,7 +102,7 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 `atk fb status`を実行し、出力が「有効」の場合は全提案を対象リポジトリごとに
 `atk fb add --source=session-review`へ位置引数で投入する。
 投入後、CLIの標準出力（投入件数・ファイル名）をそのままユーザーへ提示する。
-投入された提案は別セッションで`agent-toolkit:apply-feedback`スキルから処理される。
+投入された提案は別セッションで`agent-toolkit:process-feedbacks`スキルから処理される。
 
 `status`が非ゼロ終了する環境、または`atk fb`コマンドの実行に失敗した環境では、
 提案は出力済みのためそのまま終了する（案内文・誘導文の追加発行は行わない）。

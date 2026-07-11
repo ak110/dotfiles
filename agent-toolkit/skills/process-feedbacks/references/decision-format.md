@@ -1,6 +1,6 @@
 # ステップ4詳細: 検討結果の提示書式と適用手順
 
-本ファイルは`agent-toolkit:apply-feedback`スキルのステップ4での検討結果の提示専用の書式を定義する。
+本ファイルは`agent-toolkit:process-feedbacks`スキルのステップ4での検討結果の提示専用の書式を定義する。
 `agent-toolkit:plan-mode`の計画ファイル書式（`### エージェント判断`等のH3見出し）は別体系である。
 plan-mode側の定義は
 `agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`にある。
@@ -73,7 +73,8 @@ plan-mode側の定義は
 - 確認は不採用判定の見落とし防止が目的のため、フィードバック1件ごとの個別承認とする
 - 1問あたり最大4件の上限を超える場合は複数問へ分割する
 - ユーザーが「採用へ転換」を選んだ場合は採否を採用へ更新し、ステップ2・ステップ3の判定を再評価して提示書式も更新する
-- 部分採用の適用範囲は`agent-toolkit/skills/apply-feedback/SKILL.md`ステップ3「採用時の反映内容の縮小禁止」節に従う
+- 部分採用の適用範囲は`agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
+  「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項に従う
 
 ## レビュー指摘による反映先変更の扱い
 
@@ -94,7 +95,7 @@ plan-mode側の定義は
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
   `agent-toolkit:careful-review`まで計画側で完遂し、
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は
-  `agent-toolkit:apply-feedback-finish`スキル本文の工程順序へ引き継ぐ
+  `agent-toolkit:process-feedbacks-finish`スキル本文の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
 
 ## 後始末コマンドの引数

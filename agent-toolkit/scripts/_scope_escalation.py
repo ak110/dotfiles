@@ -25,7 +25,7 @@ from collections.abc import Iterable
 # `pretooluse.py`側のWrite/Edit対象文書検査は全カテゴリを対象とし、本フィルタは適用しない。
 _STOP_FOCUS_CATEGORIES: frozenset[str] = frozenset({"process-omission"})
 
-# スキル実行中（plan-mode・apply-feedback・process-feedbacks等の起動フラグ成立時）に用いる拡張照合カテゴリ集合。
+# スキル実行中（plan-mode・process-feedbacks等の起動フラグ成立時）に用いる拡張照合カテゴリ集合。
 # スキル実行文脈では縮退表明を含む可能性が高いため、Stop経路の照合対象を広げる。
 # SubagentStop経路も本集合と同一のSSOTとして参照する。
 _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(

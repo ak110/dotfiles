@@ -497,12 +497,12 @@ class TestPlanModeSkillFirstCheck:
         assert result.stdout == ""
 
     def test_allows_other_skill_in_plan_mode(self, tmp_path: pathlib.Path):
-        """`apply-feedback`等のplan mode下での他Skill呼び出しはブロックしない。"""
+        """`process-feedbacks`等のplan mode下での他Skill呼び出しはブロックしない。"""
         env = self._state_env(tmp_path)
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:apply-feedback"},
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
                 "session_id": "plan-other-skill",
                 "permission_mode": "plan",
             },
@@ -3197,8 +3197,8 @@ class TestScopeEscalationInDocEditCheck:
         assert "scope-escalation" in result.stderr
         assert category in result.stderr
 
-    def test_mitigation_in_adoption_references_apply_feedback(self):
-        """`mitigation-in-adoption`カテゴリはapply-feedback SKILL.mdの節を参照する。"""
+    def test_mitigation_in_adoption_references_process_feedbacks(self):
+        """`mitigation-in-adoption`カテゴリはprocess-feedbacks配下review-checklists.mdの項を参照する。"""
         text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "mitigation-in-adoption")
         result = _run(
             {
@@ -3210,7 +3210,7 @@ class TestScopeEscalationInDocEditCheck:
             }
         )
         assert result.returncode == 2
-        assert "apply-feedback/SKILL.md" in result.stderr
+        assert "review-checklists.md" in result.stderr
         assert "採用時の反映内容の縮小禁止" in result.stderr
 
     def test_other_category_references_01_agent_md(self):

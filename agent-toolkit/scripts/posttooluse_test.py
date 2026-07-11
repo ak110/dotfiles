@@ -760,12 +760,11 @@ class TestPlanFilePostWriteNotice:
 
 
 class TestFeedbackSkillFlags:
-    """apply-feedback / process-feedbacksスキル呼び出しのセッション状態フラグ記録。"""
+    """process-feedbacksスキル呼び出しのセッション状態フラグ記録。"""
 
     @pytest.mark.parametrize(
         ("skill", "flag"),
         [
-            ("agent-toolkit:apply-feedback", "apply_feedback_skill_invoked"),
             ("agent-toolkit:process-feedbacks", "process_feedbacks_skill_invoked"),
             ("process-feedbacks", "process_feedbacks_skill_invoked"),
         ],

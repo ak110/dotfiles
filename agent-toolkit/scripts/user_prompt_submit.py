@@ -13,7 +13,6 @@
 
 - plan-mode → `plan_mode_skill_invoked`
 - session-review → `session_review_invoked`（辞書。キーは`agent-toolkit:session-review`で正規化）
-- apply-feedback → `apply_feedback_skill_invoked`
 - process-feedbacks → `process_feedbacks_skill_invoked`
 - codex-impl → `codex_impl_invoked`
 - plan-codex-review → `codex_review_invoked`
@@ -33,7 +32,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _APPLY_FEEDBACK_SKILL_NAMES,
     _CODEX_IMPL_SKILL_NAMES,
     _CODEX_REVIEW_SKILL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
@@ -46,7 +44,7 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
     """フルスキル名`agent-toolkit:<name>`から短縮名`<name>`を追加した拡張集合を返す。
 
     posttooluse.py側の集合定数には短縮名が未登録のスキル
-    （session-review・apply-feedback・plan-codex-review）が存在するため、
+    （session-review・plan-codex-review）が存在するため、
     UserPromptSubmit経路のスラッシュコマンド検出用に補完する。
     """
     extended = set(names)
@@ -61,7 +59,6 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 # スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _SESSION_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_SESSION_REVIEW_SKILL_NAMES)
-_APPLY_FEEDBACK_NAMES_EXTENDED = _extend_with_short_names(_APPLY_FEEDBACK_SKILL_NAMES)
 _PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
 _CODEX_IMPL_NAMES_EXTENDED = _extend_with_short_names(_CODEX_IMPL_SKILL_NAMES)
 _CODEX_REVIEW_NAMES_EXTENDED = _extend_with_short_names(_CODEX_REVIEW_SKILL_NAMES)
@@ -105,13 +102,6 @@ def _make_session_review_mutator(canonical_name: str):
         return state
 
     return _mutator
-
-
-def _set_apply_feedback_invoked(state: dict) -> dict | None:
-    if state.get("apply_feedback_skill_invoked", False):
-        return None
-    state["apply_feedback_skill_invoked"] = True
-    return state
 
 
 def _set_process_feedbacks_invoked(state: dict) -> dict | None:
@@ -171,8 +161,6 @@ def main() -> int:
     if name in _SESSION_REVIEW_NAMES_EXTENDED or full_name in _SESSION_REVIEW_SKILL_NAMES:
         canonical = _resolve_canonical_name(name, _SESSION_REVIEW_NAMES_EXTENDED, _SESSION_REVIEW_SKILL_NAMES) or full_name
         update_state(session_id, _make_session_review_mutator(canonical))
-    if name in _APPLY_FEEDBACK_NAMES_EXTENDED or full_name in _APPLY_FEEDBACK_SKILL_NAMES:
-        update_state(session_id, _set_apply_feedback_invoked)
     if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
     if name in _CODEX_IMPL_NAMES_EXTENDED or full_name in _CODEX_IMPL_SKILL_NAMES:

@@ -1,7 +1,7 @@
 ---
-name: apply-feedback-finish
+name: process-feedbacks-finish
 description: >
-  `agent-toolkit:apply-feedback`の実装・レビュー完遂後に残る後続工程
+  `agent-toolkit:process-feedbacks`の実装・レビュー完遂後に残る後続工程
   （コミット・push・CI通過確認・adopt/reject/tbd-adopt・振り返り・exit-session）を
   段階的に実施する。`agent-toolkit:process-feedbacks`・`atk fb process-loop`から
   後続工程の到達先として参照される。単独のユーザー起動も可とする。
@@ -9,7 +9,7 @@ description: >
 
 # フィードバック処理の後続工程
 
-`agent-toolkit:apply-feedback`のステップ5（計画作成と実行）完遂後に、
+`agent-toolkit:process-feedbacks`のステップ5（計画作成と実行）完遂後に、
 本スキルへ進んで残工程を1つずつ実施する。
 各工程は前工程の完了を条件として次工程へ進む。
 工程の総量・所要時間は着手可否の判断材料にしない
@@ -32,24 +32,15 @@ push対象shaのCI runが全て成功するまで確認する。
 
 ## 工程4: 採否確定の後始末
 
-`agent-toolkit:apply-feedback`による批判的な検討の結果に基づき、対象ファイルを後始末する。
-
-対象feedbackファイルの起点は起動経路で分かれる。
-`process-feedbacks`経由の起動ではステップ2の`atk fb start-processing`により
-processingへ移動済みのファイルを起点とし、単独起動ではinbox直下のファイルを起点とする。
-本工程は起点ファイルへ採否確定コマンドを実行し、
-`inbox`または`processing`から`adopted`・`rejected`への状態遷移で最終処理する。
-不採用件が確定した時点で該当ファイルを`atk fb reject`で先行移動し、processing残置件数を早期に減らす。
+`agent-toolkit:process-feedbacks`による批判的な検討の結果に基づき、対象ファイルを後始末する。
 
 - feedback側の採用ファイル: `atk fb adopt <filename...> --note <概要> --commit <sha>`
 - feedback側の不採用ファイル: `atk fb reject <filename...> --note <不採用理由> --commit <sha>`
-  - 不採用件が確定した直後（`agent-toolkit:apply-feedback`ステップ4「採否判定」完了時点）で先行実行してよい
 - TBD側の回答済み採用ファイル: `atk fb tbd-adopt <filename...> --note <概要> --commit <sha>`
-- `--note`・`--commit`の詳細規定は`agent-toolkit:apply-feedback`配下
+- `--note`・`--commit`の詳細規定は`agent-toolkit:process-feedbacks`配下
   `references/decision-format.md`「後始末コマンドの引数」節に従う
 - 保留ファイルは後始末コマンドを実行しない
-  （`atk fb`は次回`show`で自動的に再評価対象として提示する。
-  `atk fb show --all`はprocessing状態も走査するため、processing残置分もそのまま再取得される）
+  （`atk fb`は次回`show`で自動的に再評価対象として提示する）
 
 ## 工程5: 振り返り
 

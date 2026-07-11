@@ -195,4 +195,4 @@ CLAUDE.md、README.md、docs/配下など、プロジェクト固有のドキュ
 ## ステップ4: 反映の案内
 
 拡張スキルが本ステップを上書きする場合は当該スキルの指示に従う。
-上書きがない場合は改善提案の反映に`agent-toolkit:apply-feedback`スキルを使う旨を案内する。
+上書きがない場合は改善提案の反映に`agent-toolkit:process-feedbacks`スキルを使う旨を案内する。
