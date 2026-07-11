@@ -3643,6 +3643,64 @@ class TestScopeEscalationInDocEditCheck:
         assert category in result.stderr
 
 
+class TestMatchScopeEscalationIncreaseBracketExclusion:
+    """`_match_scope_escalation_increase`の括弧内除外の共有動作を検証する。
+
+    `_scope_escalation._apply_category_exclusions`を経由してnew・old双方へ除外を適用する。
+    fixtureは`_scope_escalation_test.py`の`test_priority_consult_phrase_*`3件と同一文言。
+    """
+
+    def test_bracket_quoted_priority_consult_not_blocked(self):
+        """全角鍵括弧内のpriority-consult語彙は増分検出でもブロックしない。"""
+        old = "既存記述のみ。"
+        new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を確認する。"
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "old_string": old,
+                    "new_string": new,
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_outside_bracket_priority_consult_blocked(self):
+        """全角鍵括弧の外側のpriority-consult語彙は増分検出でブロックする。"""
+        old = "既存記述のみ。"
+        new = "既存記述のみ。優先順位について相談してから着手する。"
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "old_string": old,
+                    "new_string": new,
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "priority-consult" in result.stderr
+
+    def test_bracket_and_outside_mixed_blocked_by_outside(self):
+        """内側と外側の両方にある場合、外側の増分でブロックする。"""
+        old = "既存記述のみ。"
+        new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "old_string": old,
+                    "new_string": new,
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "priority-consult" in result.stderr
+
+
 class TestFabricatedMetricsScopeEscalation:
     """`fabricated-metrics`カテゴリ（実測値取得手段が無い数値主張）の検出（FB7）。
 

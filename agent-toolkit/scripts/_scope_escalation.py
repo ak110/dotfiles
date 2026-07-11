@@ -2,8 +2,8 @@
 
 `pretooluse.py`と`stop_advisor.py`の双方から参照する共有モジュール。
 エントリポイントスクリプト間で直接importする構造を避けるため、
-`_SCOPE_ESCALATION_PHRASES`・`_match_scope_escalation`・`_SCOPE_ESCALATION_ALTERNATIVES`を
-本モジュールへ集約する。
+`_SCOPE_ESCALATION_PHRASES`・`_match_scope_escalation`・`_SCOPE_ESCALATION_ALTERNATIVES`・
+`_apply_category_exclusions`を本モジュールへ集約する。
 
 カテゴリ定義および代表フレーズの詳細は
 `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
@@ -290,6 +290,20 @@ def is_empty_completion_report(text: object) -> bool:
     return _SKILL_INVOCATION_FULL_PATTERN.fullmatch(stripped) is not None
 
 
+def _apply_category_exclusions(text: str, category: str) -> str:
+    """カテゴリ別の照合対象除外を適用する共有関数。
+
+    現状は該当カテゴリで全角鍵括弧「」区間を除外する。
+    他ファイル節名の引用文脈を該当語彙の過検出から保護する。
+    他カテゴリは呼び出し元のtextをそのまま返す。
+    `_match_scope_escalation`(本モジュール)と
+    `_match_scope_escalation_increase`(`pretooluse.py`)の両経路から呼び出す。
+    """
+    if category == "priority-consult":
+        return _ZENKAKU_KAKKO_RE.sub("", text)
+    return text
+
+
 def _match_scope_escalation(
     text: str,
     categories: Iterable[str] | None = None,
@@ -316,9 +330,7 @@ def _match_scope_escalation(
             continue
         if category in excluded:
             continue
-        target_text = text
-        if category == "priority-consult":
-            target_text = _ZENKAKU_KAKKO_RE.sub("", text)
+        target_text = _apply_category_exclusions(text, category)
         if pattern.search(target_text) is not None:
             return category
     return None

@@ -14,6 +14,7 @@ import typing
 import pytest
 from _scope_escalation import (
     _STOP_FOCUS_CATEGORIES,
+    _apply_category_exclusions,
     _match_scope_escalation,
     has_inline_choice_offer,
     is_empty_completion_report,
@@ -129,6 +130,27 @@ class TestMatchScopeEscalation:
         """全角鍵括弧の内側と外側の両方に該当語彙がある場合、外側のみが検出対象となる。"""
         text = "計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
         assert _match_scope_escalation(text) == "priority-consult"
+
+
+class TestApplyCategoryExclusions:
+    """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
+
+    def test_priority_consult_removes_zenkaku_kakko_content(self):
+        """`priority-consult`カテゴリでは全角鍵括弧内が除去される。"""
+        text = "計画ファイル本文の「スコープ相談節」を確認する。"
+        result = _apply_category_exclusions(text, "priority-consult")
+        assert "スコープ相談節" not in result
+        assert "計画ファイル本文の" in result
+
+    def test_other_category_returns_text_unchanged(self):
+        """`priority-consult`以外のカテゴリはtextをそのまま返す。"""
+        text = "計画ファイル本文の「スコープ相談節」を確認する。"
+        assert _apply_category_exclusions(text, "workload") == text
+
+    def test_priority_consult_without_kakko_returns_unchanged(self):
+        """全角鍵括弧を含まないtextは`priority-consult`でも無変換で返す。"""
+        text = "優先順位について相談する。"
+        assert _apply_category_exclusions(text, "priority-consult") == text
 
 
 class TestIsEmptyCompletionReport:

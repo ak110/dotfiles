@@ -33,6 +33,9 @@
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
 - `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（warn出力のみ）
+- 対象ファイル一覧に規範ファイル（`agent-toolkit/rules/*.md`等）を含み、`## 変更内容`本文の
+    差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
+    小見出しが存在しない場合の全文一括検査（warn出力のみ）
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
@@ -59,6 +62,7 @@ from _plan_diff_parsing import (  # noqa: E402
     is_matching_close,
 )
 from _plan_format import (  # noqa: E402
+    extract_target_files_from_changes,
     has_bump_step_when_required,
     has_manifest_files_when_bump_step_present,
 )
@@ -109,6 +113,25 @@ _OUTER_LABEL_LINE_RE = re.compile(r"^\s*(?:\[現行\]|\[置換後\])\s*$")
 
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
+
+# fb-3: 規範ファイル対象パス正規表現。
+# `pretooluse.py`側の`_is_agent_doc_target_file`と対称の範囲。
+_NORM_TARGET_PATH_RE = re.compile(
+    r"^agent-toolkit/rules/.+\.md$"
+    r"|^agent-toolkit/skills/[^/]+/SKILL\.md$"
+    r"|^agent-toolkit/skills/[^/]+/references/.+\.md$"
+    r"|^agent-toolkit/agents/.+\.md$"
+    r"|^\.chezmoi-source/dot_claude/rules/.+\.md$"
+    r"|^\.chezmoi-source/dot_claude/skills/.+\.md$"
+    r"|^AGENTS\.md$|^CLAUDE\.md$"
+)
+
+# fb-3: 新規H2以深節見出し検出用。`pretooluse.py:2297`付近の
+# `_RETROACTIVE_SCAN_NEW_HEADING_PATTERN`と同じ正規表現を採用する。
+_NEW_NORM_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
+
+# fb-3: `### 遡及スキャン結果`小見出し検出用。
+_RETROACTIVE_SCAN_HEADING_RE = re.compile(r"^###\s+遡及スキャン結果\s*$", re.MULTILINE)
 
 
 def main() -> int:
@@ -164,6 +187,9 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
     manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
     if manifest_warning is not None:
         print(manifest_warning, file=sys.stderr)
+    retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
+    if retroactive_scan_warning is not None:
+        print(retroactive_scan_warning, file=sys.stderr)
     return violations
 
 
@@ -256,6 +282,42 @@ def _check_manifest_files_when_bump_step(plan_path: pathlib.Path, text: str) -> 
         f"{plan_path}: [warn] `## 実行方法`本文にbump stepが記載されているが、"
         f"対象ファイル一覧に両manifestの記載が欠落している。"
         f"`agent-toolkit-edit`スキル「バージョン更新」節参照。"
+    )
+
+
+def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text: str) -> str | None:
+    """規範ファイルへの新規##節追加を含む計画では、遡及スキャン結果小見出しの存在を検査する。
+
+    判定条件:
+
+    - `## 変更内容 > ### 対象ファイル一覧`に`agent-toolkit/rules/*.md`または
+      `agent-toolkit/skills/*/references/*.md`のパスを1件以上含む
+    - `## 変更内容`本文の`_extract_diff_blocks`が返す差分ブロックのbodyに`^## `H2見出し行を含む
+    - `## 調査結果`配下に`### 遡及スキャン結果`小見出しが存在しない
+
+    3条件全て成立時に`_check_bump_step`同型のwarn分類警告を返す。
+    呼び出し元はexit codeへ含めずstderr出力のみに用いる。
+    既存の`_check_plan_file_retroactive_scan_recorded`(`pretooluse.py`側)は
+    「規範ドキュメント側の編集Write時」を検査起点とするため、本checkは計画本文Write時に検査を前倒しする。
+    """
+    target_files = extract_target_files_from_changes(text)
+    if not any(_NORM_TARGET_PATH_RE.match(p) for p in target_files):
+        return None
+    has_new_heading = False
+    for _, _, body, _ in _extract_diff_blocks(text):
+        if _NEW_NORM_HEADING_RE.search(body):
+            has_new_heading = True
+            break
+    if not has_new_heading:
+        return None
+    survey_body, _ = extract_section_with_offset(text, "## 調査結果")
+    if survey_body is not None and _RETROACTIVE_SCAN_HEADING_RE.search(survey_body):
+        return None
+    return (
+        f"{plan_path}: [warn] 対象ファイル一覧に規範ファイルを含み、"
+        f"かつ`## 変更内容`本文で新規節見出しの追加を検出したが、"
+        f"`## 調査結果`配下に`### 遡及スキャン結果`小見出しが存在しない。"
+        f"`plan-mode/references/norm-revision-checklist.md`「規範対象範囲の網羅確認」節参照。"
     )
 
 

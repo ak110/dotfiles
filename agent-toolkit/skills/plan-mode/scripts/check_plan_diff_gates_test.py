@@ -442,6 +442,64 @@ class TestCheckBumpStep:
         assert "[warn]" not in result.stderr
 
 
+def _norm_scan_plan(
+    target_paths: list[str],
+    include_new_heading: bool,
+    include_survey_heading: bool,
+) -> str:
+    """fb-3テスト用計画文面ビルダー。"""
+    target_lines = "\n".join(f"- [ ] `{p}`" for p in target_paths)
+    if include_new_heading:
+        diff_block = "### `agent-toolkit/rules/01-agent.md`\n\n```text\n[置換後]\n## 新規節\n\n本文。\n```\n"
+    else:
+        diff_block = "### `agent-toolkit/rules/01-agent.md`\n\n```text\n[置換後]\n本文のみ。\n```\n"
+    survey = "## 調査結果\n\n### 遡及スキャン結果\n\n本文。\n" if include_survey_heading else "## 調査結果\n\n本文。\n"
+    return f"## 変更内容\n\n### 対象ファイル一覧\n\n{target_lines}\n\n{diff_block}\n{survey}"
+
+
+class TestCheckRetroactiveScanWhenNewNormSection:
+    """`_check_retroactive_scan_when_new_norm_section`のwarn分類検査動作を検証する。"""
+
+    def test_warns_when_all_three_conditions_met(self, tmp_path: pathlib.Path) -> None:
+        """規範対象+新規H2+小見出し不在の3条件成立でwarn警告を返す。"""
+        text = _norm_scan_plan(
+            ["agent-toolkit/rules/01-agent.md"],
+            include_new_heading=True,
+            include_survey_heading=False,
+        )
+        warning = _MOD._check_retroactive_scan_when_new_norm_section(tmp_path / "plan.md", text)
+        assert warning is not None
+        assert "[warn]" in warning
+        assert "遡及スキャン結果" in warning
+
+    def test_no_warning_when_survey_heading_exists(self, tmp_path: pathlib.Path) -> None:
+        """遡及スキャン結果小見出しが存在する場合は無警告。"""
+        text = _norm_scan_plan(
+            ["agent-toolkit/rules/01-agent.md"],
+            include_new_heading=True,
+            include_survey_heading=True,
+        )
+        assert _MOD._check_retroactive_scan_when_new_norm_section(tmp_path / "plan.md", text) is None
+
+    def test_no_warning_when_no_norm_target(self, tmp_path: pathlib.Path) -> None:
+        """規範対象ファイルを含まない計画は無警告。"""
+        text = _norm_scan_plan(
+            ["pytools/example.py"],
+            include_new_heading=True,
+            include_survey_heading=False,
+        )
+        assert _MOD._check_retroactive_scan_when_new_norm_section(tmp_path / "plan.md", text) is None
+
+    def test_no_warning_when_no_new_heading(self, tmp_path: pathlib.Path) -> None:
+        """新規H2見出しを含まない計画は無警告。"""
+        text = _norm_scan_plan(
+            ["agent-toolkit/rules/01-agent.md"],
+            include_new_heading=False,
+            include_survey_heading=False,
+        )
+        assert _MOD._check_retroactive_scan_when_new_norm_section(tmp_path / "plan.md", text) is None
+
+
 class TestCheckOuterLabelPlacement:
     """`_check_outer_label_placement`の単体テスト。"""
 

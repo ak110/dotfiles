@@ -121,6 +121,7 @@ from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-impor
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _SCOPE_ESCALATION_ALTERNATIVES,
     _SCOPE_ESCALATION_PHRASES,
+    _apply_category_exclusions,
     _match_scope_escalation,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -828,6 +829,8 @@ def _match_scope_escalation_increase(
     `_SCOPE_ESCALATION_PHRASES`を走査し、各パターンのfindall件数を比較する。
     new側件数がold側件数を上回るカテゴリを最初に検出した時点で当該識別子を返す。
     既存文字列の保持時はold=new同数となり通過する（既存保持部分での誤検出を防ぐ）。
+    カテゴリ別除外は`_scope_escalation._apply_category_exclusions`をnew・old双方へ適用し、
+    priority-consult他のカテゴリ別除外を両経路で共有する。
     `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
     増加が無い場合はNoneを返す。
     """
@@ -835,7 +838,9 @@ def _match_scope_escalation_increase(
     for category, pattern in _SCOPE_ESCALATION_PHRASES:
         if category in excluded:
             continue
-        if len(pattern.findall(new)) > len(pattern.findall(old)):
+        target_new = _apply_category_exclusions(new, category)
+        target_old = _apply_category_exclusions(old, category)
+        if len(pattern.findall(target_new)) > len(pattern.findall(target_old)):
             return category
     return None
 
