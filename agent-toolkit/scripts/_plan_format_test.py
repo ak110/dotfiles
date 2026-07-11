@@ -182,6 +182,45 @@ class TestExtractTargetFilesFromChanges:
         assert not _plan_format.extract_target_files_from_changes(content)
 
 
+class TestHasManifestFilesWhenBumpStepPresent:
+    """has_manifest_files_when_bump_step_present の基本動作を検査する。"""
+
+    def test_no_bump_step(self) -> None:
+        content = "## 実行方法\n\nx\n"
+        assert _plan_format.has_manifest_files_when_bump_step_present(content)
+
+    def test_bump_step_with_both_manifests(self) -> None:
+        content = (
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n"
+            "- [ ] `.claude-plugin/marketplace.json`\n\n"
+            "## 実行方法\n\n"
+            "agent_toolkit_bump.py を実行する\n"
+        )
+        assert _plan_format.has_manifest_files_when_bump_step_present(content)
+
+    def test_bump_step_missing_plugin_json(self) -> None:
+        content = (
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `.claude-plugin/marketplace.json`\n\n"
+            "## 実行方法\n\n"
+            "agent_toolkit_bump.py を実行する\n"
+        )
+        assert not _plan_format.has_manifest_files_when_bump_step_present(content)
+
+    def test_bump_step_missing_marketplace_json(self) -> None:
+        content = (
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n\n"
+            "## 実行方法\n\n"
+            "agent_toolkit_bump.py を実行する\n"
+        )
+        assert not _plan_format.has_manifest_files_when_bump_step_present(content)
+
+
 class TestPlanFormatSsot:
     """PLAN_REQUIRED_H2がplan-file-guidelines.mdと整合することを検査する。"""
 

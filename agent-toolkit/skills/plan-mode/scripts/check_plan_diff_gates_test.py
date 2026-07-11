@@ -391,7 +391,14 @@ class TestCheckBumpStep:
     def test_passes_when_bump_step_present(self, tmp_path: pathlib.Path) -> None:
         plan = _write(
             tmp_path / "plan.md",
-            _bump_plan(["agent-toolkit/scripts/pretooluse.py"], include_bump=True),
+            _bump_plan(
+                [
+                    "agent-toolkit/scripts/pretooluse.py",
+                    "agent-toolkit/.claude-plugin/plugin.json",
+                    ".claude-plugin/marketplace.json",
+                ],
+                include_bump=True,
+            ),
         )
         result = subprocess.run(
             [sys.executable, str(_SCRIPT), str(plan)],
@@ -433,3 +440,89 @@ class TestCheckBumpStep:
         )
         assert result.returncode == 0
         assert "[warn]" not in result.stderr
+
+
+class TestCheckOuterLabelPlacement:
+    """`_check_outer_label_placement`の単体テスト。"""
+
+    def test_outer_label_immediately_before_fence(self, tmp_path: pathlib.Path) -> None:
+        """ラベル単独行の直後にtextフェンス開始行がある場合は違反として検出。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n[置換後]\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "fence外側配置" in violations[0]
+
+    def test_outer_label_with_blank_line_before_fence(self, tmp_path: pathlib.Path) -> None:
+        """ラベル単独行の後に空行を1行以上おいたうえでtextフェンス開始行がある場合も違反として検出。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n[置換後]\n\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "fence外側配置" in violations[0]
+
+    def test_fullwidth_label_inside_fence_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """fence内側配置の全角化ラベルは検査対象外（既存の内側ラベル配置規定で扱う）。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後］\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_fullwidth_label_outside_fence(self, tmp_path: pathlib.Path) -> None:
+        """fence外側配置の全角化ラベルは違反として検出。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n[置換後］\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "全角化ラベル" in violations[0]
+
+    def test_regular_inside_placement_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """fence直後1行目の半角ラベルは違反として検出しない。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後]\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_out_of_scope_ignored(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`セクション外のラベル文言・全角化文字は違反として検出しない。"""
+        text = "## 背景\n\n[置換後]\n```text\nbody\n```\n\n[置換後］\n\n## 変更内容\n\n本文なし。\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert violations == []
+
+
+class TestCheckManifestFilesWhenBumpStep:
+    """`_check_manifest_files_when_bump_step`の単体テスト。"""
+
+    def test_no_bump_step(self, tmp_path: pathlib.Path) -> None:
+        """`## 実行方法`本文にbump step出現なしの場合はNoneを返す。"""
+        text = _bump_plan(["pytools/example.py"], include_bump=False)
+        assert _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text) is None
+
+    def test_bump_step_with_both_manifests(self, tmp_path: pathlib.Path) -> None:
+        """bump step記載かつmanifest両方あり: Noneを返す。"""
+        text = _bump_plan(
+            [
+                "agent-toolkit/scripts/pretooluse.py",
+                "agent-toolkit/.claude-plugin/plugin.json",
+                ".claude-plugin/marketplace.json",
+            ],
+            include_bump=True,
+        )
+        assert _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text) is None
+
+    def test_bump_step_missing_plugin_json(self, tmp_path: pathlib.Path) -> None:
+        """bump step記載かつplugin.json欠落: warn文言を返す。"""
+        text = _bump_plan(
+            ["agent-toolkit/scripts/pretooluse.py", ".claude-plugin/marketplace.json"],
+            include_bump=True,
+        )
+        result = _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text)
+        assert result is not None
+        assert "[warn]" in result
+        assert "manifest" in result
+
+    def test_bump_step_missing_marketplace_json(self, tmp_path: pathlib.Path) -> None:
+        """bump step記載かつmarketplace.json欠落: warn文言を返す。"""
+        text = _bump_plan(
+            ["agent-toolkit/scripts/pretooluse.py", "agent-toolkit/.claude-plugin/plugin.json"],
+            include_bump=True,
+        )
+        result = _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text)
+        assert result is not None
+        assert "[warn]" in result
+        assert "manifest" in result

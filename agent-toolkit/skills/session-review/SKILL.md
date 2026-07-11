@@ -107,6 +107,8 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
 - 判断軸の順序・既存対処済みの確認は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`の該当節を参照する
   - 肥大化抑止の判定基準は`agent-toolkit:agent-standards`「既知情報・冗長記述の排除」節に従う
+- 候補技術主張の実機検証は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「候補技術主張の実機検証」節を参照する
 - 肯定形優先チェック: 禁止規定の追加を提案候補とする前に、
   同じ再発防止を「実施すべき正規フローの肯定的な記述」で表現できないか先に試みる
   - 肯定形で成立する場合は禁止形を採用せず、肯定規定が無い領域へ禁止列挙のみを追加する提案をしない

@@ -303,3 +303,26 @@ def has_bump_step_when_required(content: str) -> bool:
     execution_body = extract_h2_section_body(content, "実行方法")
     execution_text = "\n".join(line for _lineno, line in execution_body)
     return "agent_toolkit_bump.py" in execution_text
+
+
+def has_manifest_files_when_bump_step_present(content: str) -> bool:
+    """計画ファイル本文がmanifest対象ファイル記載要件を満たすかを判定する。
+
+    判定手順:
+
+    1. `extract_h2_section_body`で`## 実行方法`節本文を取得する
+    2. `agent_toolkit_bump.py`リテラルの出現がなければ`True`を返す（bump不要のため対象外）
+    3. `extract_target_files_from_changes`で対象ファイル一覧を取得する
+    4. 対象ファイル一覧に`agent-toolkit/.claude-plugin/plugin.json`と
+       `.claude-plugin/marketplace.json`の両方が含まれれば`True`、いずれかが欠落していれば`False`を返す
+
+    `agent-toolkit/scripts/pretooluse.py`と
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
+    双方からimportして使うSSOT実装。
+    """
+    execution_body = extract_h2_section_body(content, "実行方法")
+    execution_text = "\n".join(line for _lineno, line in execution_body)
+    if "agent_toolkit_bump.py" not in execution_text:
+        return True
+    paths = extract_target_files_from_changes(content)
+    return "agent-toolkit/.claude-plugin/plugin.json" in paths and ".claude-plugin/marketplace.json" in paths
