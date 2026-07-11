@@ -65,6 +65,7 @@ from _plan_format import (  # noqa: E402
     extract_target_files_from_changes,
     has_bump_step_when_required,
     has_manifest_files_when_bump_step_present,
+    is_agent_doc_target_file,
 )
 
 # pylint: enable=wrong-import-position
@@ -113,18 +114,6 @@ _OUTER_LABEL_LINE_RE = re.compile(r"^\s*(?:\[現行\]|\[置換後\])\s*$")
 
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
-
-# fb-3: 規範ファイル対象パス正規表現。
-# `pretooluse.py`側の`_is_agent_doc_target_file`と対称の範囲。
-_NORM_TARGET_PATH_RE = re.compile(
-    r"^agent-toolkit/rules/.+\.md$"
-    r"|^agent-toolkit/skills/[^/]+/SKILL\.md$"
-    r"|^agent-toolkit/skills/[^/]+/references/.+\.md$"
-    r"|^agent-toolkit/agents/.+\.md$"
-    r"|^\.chezmoi-source/dot_claude/rules/.+\.md$"
-    r"|^\.chezmoi-source/dot_claude/skills/.+\.md$"
-    r"|^AGENTS\.md$|^CLAUDE\.md$"
-)
 
 # fb-3: 新規H2以深節見出し検出用。`pretooluse.py:2297`付近の
 # `_RETROACTIVE_SCAN_NEW_HEADING_PATTERN`と同じ正規表現を採用する。
@@ -301,7 +290,7 @@ def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text:
     「規範ドキュメント側の編集Write時」を検査起点とするため、本checkは計画本文Write時に検査を前倒しする。
     """
     target_files = extract_target_files_from_changes(text)
-    if not any(_NORM_TARGET_PATH_RE.match(p) for p in target_files):
+    if not any(is_agent_doc_target_file(p) for p in target_files):
         return None
     has_new_heading = False
     for _, _, body, _ in _extract_diff_blocks(text):

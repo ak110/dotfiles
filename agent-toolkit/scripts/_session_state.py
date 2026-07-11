@@ -5,7 +5,7 @@
 `read_state` → 操作 → 直接 `write_state` する従来パターンは廃止する
 （先発プロセスの追加キーが後発プロセスの書き込みで消失する事象を防ぐ）。
 
-ロック実装はPython標準ライブラリのみで、POSIXは`fcntl.flock`、Windowsは`msvcrt.locking`を使う。
+ロック取得・解放は`_file_lock.py`（POSIX: `fcntl.flock`、Windows: `msvcrt.locking`）へ委譲する。
 書き込みは同一ディレクトリの一時ファイル経由`os.replace`でアトミックに反映する。
 
 パス規則は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
@@ -20,7 +20,9 @@ import os
 import pathlib
 import tempfile
 from collections.abc import Callable
-from typing import IO
+
+from _file_lock import acquire_lock as _acquire_lock
+from _file_lock import release_lock as _release_lock
 
 _FILENAME_PREFIX = "claude-agent-toolkit-"
 _FILENAME_SUFFIX = ".json"
@@ -103,40 +105,3 @@ def _atomic_write(path: pathlib.Path, content: str) -> None:
         with contextlib.suppress(OSError):
             os.unlink(tmp_name)
         raise
-
-
-if os.name == "nt":
-    import msvcrt  # type: ignore[import-not-found]  # pylint: disable=import-error
-
-    def _acquire_lock(lock_file: IO) -> None:
-        """Windows: バイト範囲ロックを取得する。
-
-        空ファイルでも`LK_LOCK`はブロッキング取得可能。
-        `LK_LOCK`は最大10秒で再試行する仕様のため、長時間の競合に備えて
-        OSError時はループで再試行する。
-        """
-        lock_file.seek(0)
-        while True:
-            try:
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-                return
-            except OSError:
-                continue
-
-    def _release_lock(lock_file: IO) -> None:
-        """Windows: バイト範囲ロックを解放する。"""
-        lock_file.seek(0)
-        with contextlib.suppress(OSError):
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
-
-else:
-    import fcntl
-
-    def _acquire_lock(lock_file: IO) -> None:
-        """POSIX: ファイル全体への排他ロックを取得する。"""
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-
-    def _release_lock(lock_file: IO) -> None:
-        """POSIX: ファイル全体への排他ロックを解放する。"""
-        with contextlib.suppress(OSError):
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)

@@ -1,6 +1,4 @@
 ---
-# 同期注記: 「指摘対象外」規定は agent-toolkit/skills/review-standards/SKILL.md
-# 「計画ファイル文脈での例外」節と意図的に重複する。改訂時は2ファイルを同時更新する。
 # 同期注記: plan-reviewer雛形内「メイン側実施済み観点の内訳」欄の文言は
 # integrity-checks.md「工程7の実施手順」節・plan-reviewer.md「入力」節と意図的に重複する。
 # 改訂時は3ファイルを同時更新する。
@@ -22,7 +20,7 @@
   `agent-toolkit:agent-standards`・`agent-toolkit:review-standards`、
   `plan-impl-reviewer`は`agent-toolkit:review-standards`・`agent-toolkit:writing-standards`、
   `agent-doc-validator`は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`・
-  `agent-toolkit:review-standards`、`naive-executor`は`skills: []`のため明記対象なし）
+  `agent-toolkit:review-standards`）
 - 制約: 実行可能ツール範囲は各サブエージェント定義のfrontmatter`tools:`欄に従う。
   破壊的操作（git commit・git push・rm・ファイル書き換え等）は禁止。
   git操作全般（stash・checkout・reset等の作業ツリー変更を含む）は禁止
@@ -63,32 +61,7 @@
     - 差分起因・既存違反の2区分で報告する
     - 実行可能ツール範囲: Skill・Read・Grep・Glob・Bash（frontmatter`tools:`欄準拠）
     - ファイル変更・git操作（stash・checkout・reset・commit・push等）は禁止
-    - 以下は指摘対象外とする
-      - 記述スタイル（章構成・段落構成・表現選択・書き方）への指摘。記述間の矛盾は対象に含む
-      - 実装時にエージェントが判断可能な細部への指摘
-        （変数名・エラーメッセージ文言・小規模なループ構造・局所的な制御フローなど）
-      - 件数表現・行番号・行数・ファイルサイズなど機械検査で判定できる項目
-
-## naive-executor雛形
-
-naive-executorは`agent-toolkit:review-standards`を使用しないため、
-雛形本文に「指摘対象外」規定を追記しない（全カテゴリの愚直な指摘が担当範囲であるため）。
-`naive-executor`サブエージェントの起動プロンプトは次のとおり。
-
-    以下の計画ファイルを愚直に読解し、暗黙補完・参照不能・手順抜け・複数解釈の
-    全カテゴリで指摘リストを返してください。
-
-    - 対象テキスト: {計画ファイル絶対パス}
-    - 実行コンテキスト: これは計画ファイルである。あなたはこの計画に従って実装する実行者である
-    - 抽出観点: 暗黙補完・参照不能・手順抜け・複数解釈の全カテゴリ
-    - 担当範囲区分: 全項目担当
-
-    ## 制約
-
-    - 改善案・修正案は返さない（指摘リストのみ）
-    - 全体サマリーは含めない
-    - 実行可能ツール範囲: Skill・Read・Grep・Glob・Bash（frontmatter`tools:`欄準拠）
-    - ファイル変更・git操作（stash・checkout・reset・commit・push等）は禁止
+    - 「指摘対象外」規定は`agent-toolkit:review-standards`「計画ファイル文脈での例外」節をSSOTとする
 
 ## plan-impl-reviewer雛形
 
@@ -97,6 +70,7 @@ naive-executorは`agent-toolkit:review-standards`を使用しないため、
     以下の計画ファイル本文（`## 変更内容`H3配下の変更方針を含む）と対象ファイル現状
     （改訂前のファイル本体）を突合し、計画された変更が対象ファイル現状に対して単体品質・
     日本語表現を毀損しないかを事前レビューしてください。
+    対象ファイルは部分読解を避け必ず全体を`Read`で取得してから評価してください。
 
     - 計画ファイル絶対パス: {計画ファイル絶対パス}
     - 対象ファイル現状の絶対パスリスト: {`## 変更内容`「対象ファイル一覧」の各ファイル絶対パス}
@@ -108,7 +82,7 @@ naive-executorは`agent-toolkit:review-standards`を使用しないため、
     - 担当観点ごとに冒頭サマリーの点検済み印を必ず出力する
     - 重大度ラベルは`agent-toolkit:review-standards`に従う
     - 差分起因・既存違反の2区分で報告する
-    - 実行可能ツール範囲: Skill・Read・Grep・Glob・Bash（frontmatter`tools:`欄準拠）
+    - 実行可能ツール範囲: Skill・Read・Glob・Bash（frontmatter`tools:`欄準拠）
     - ファイル変更・git操作（stash・checkout・reset・commit・push等）は禁止
     - 記述スタイル・実装細部への指摘も対象内とする（「指摘対象外」規定は適用しない）
 

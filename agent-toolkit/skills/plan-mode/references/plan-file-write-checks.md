@@ -28,5 +28,6 @@ uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
 
 - 検出違反への対処は自律判断とする。実装時に成果物へ転記する文面（`## 変更内容`配下のコードブロック）の
   違反は極力解消し、それ以外の計画本文に対する体裁系違反への対処は任意とする
+  - 詳細は`agent-toolkit/skills/review-standards/SKILL.md`「計画ファイル文脈での例外」節を参照する
 - `## 背景`配下のユーザー提示素材原文に起因する違反は対処不要とする
 - 自動修正が適用された場合は計画ファイルを`Read`で再読込してから後続編集へ進む

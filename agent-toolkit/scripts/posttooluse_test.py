@@ -45,15 +45,15 @@ def _run(
     state_dir: pathlib.Path | None = None,
     home_dir: pathlib.Path | None = None,
     plan_mode_skill_invoked: bool = False,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
-        env["TMPDIR"] = str(state_dir)
-        env["TEMP"] = str(state_dir)
-        env["TMP"] = str(state_dir)
+        env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
     if home_dir is not None:
         env["HOME"] = str(home_dir)
+    env.update(extra_env or {})
     # plan file形式検査はplan_mode_skill_invokedが真の場合のみ実行されるため、
     # 形式検査を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
@@ -291,8 +291,6 @@ class TestAgentInvocationFlags:
         [
             ("plan-reviewer", "plan_reviewer_invoked"),
             ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
-            ("naive-executor", "naive_executor_invoked"),
-            ("agent-toolkit:naive-executor", "naive_executor_invoked"),
             ("plan-impl-reviewer", "plan_impl_reviewer_invoked"),
             ("agent-toolkit:plan-impl-reviewer", "plan_impl_reviewer_invoked"),
             ("agent-doc-validator", "agent_doc_validator_invoked"),
@@ -339,10 +337,27 @@ class TestAgentInvocationFlags:
         _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("plan_reviewer_invoked") is not True
-        assert state.get("naive_executor_invoked") is not True
         assert state.get("plan_impl_reviewer_invoked") is not True
         assert state.get("agent_doc_validator_invoked") is not True
         assert state.get("codex_review_invoked") is not True
+
+
+class TestSubagentEndProcessLoopLog:
+    """`_TRACKED_SUBAGENT_TYPES`対象種別終了時の`_process_loop_log`記録（fb-1、`enable_env`偽は空文字列で継承無効化）。"""
+
+    @pytest.mark.parametrize(
+        ("subagent_type", "enable_env", "expect_logged"),
+        [("plan-implementer", True, True), ("plan-implementer", False, False), ("claude", True, False)],
+    )
+    def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
+        xdg_state_home = tmp_path / "xdg-state"
+        extra_env = {"XDG_STATE_HOME": str(xdg_state_home), "DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1" if enable_env else ""}
+        payload = {"session_id": "sid", "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}}
+        _run(payload, state_dir=tmp_path, extra_env=extra_env)
+        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
+        assert log_path.exists() == expect_logged
+        if expect_logged:
+            assert "event=subagent_end" in (text := log_path.read_text(encoding="utf-8")) and f"type={subagent_type}" in text
 
 
 class TestCurrentPlanFilePathTracking:

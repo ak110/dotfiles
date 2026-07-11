@@ -10,7 +10,9 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 
+import _process_loop_log
 import watchdog.events
 import watchdog.observers
 from _atk_fb_common import _count_pending_entries, _pull
@@ -129,35 +131,57 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進み、
     待機に入った旨を1度出力する。
     Ctrl+Cで常駐ループを終了する。
+
+    各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
+    （`loop_iter_start`・`session_start`・`session_end`）を記録する
+    （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     prompt = _build_process_loop_prompt(local_path)
-    env = os.environ.copy()
-    env["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
     print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
+    # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
+    # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
+    # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
+    previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
+    os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
+    env = os.environ.copy()
     try:
-        while True:
-            count = _count_pending_entries(private_notes, target_repo=target_repo_id)
-            if count > 0:
-                print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
-                result = subprocess.run(
-                    ["claude", "--permission-mode=auto", prompt],
-                    check=False,
-                    env=env,
-                )
-                if result.returncode not in _NORMAL_EXIT_CODES:
-                    print(
-                        f"claudeがexit code {result.returncode}で異常終了しました。",
-                        file=sys.stderr,
+        try:
+            while True:
+                count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                _process_loop_log.append("loop_iter_start", count=count)
+                if count > 0:
+                    print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
+                    _process_loop_log.append("session_start")
+                    session_started_at = time.monotonic()
+                    result = subprocess.run(
+                        ["claude", "--permission-mode=auto", prompt],
+                        check=False,
+                        env=env,
                     )
-                    sys.exit(result.returncode)
-                if not args.no_update:
-                    print("update-dotfilesを実行してprocess-loopを再起動します。")
-                    subprocess.run(["update-dotfiles"], check=False)
-                    os.execvp("uv", _build_restart_argv(sys.argv))
-                continue
-            print("0件のため変更検知を待機します。")
-            _wait_for_changes(private_notes, target_repo_id)
-    except KeyboardInterrupt:
-        print("Ctrl+Cを検知しました。常駐モードを終了します。")
+                    _process_loop_log.append(
+                        "session_end",
+                        elapsed_sec=round(time.monotonic() - session_started_at, 3),
+                        returncode=result.returncode,
+                    )
+                    if result.returncode not in _NORMAL_EXIT_CODES:
+                        print(
+                            f"claudeがexit code {result.returncode}で異常終了しました。",
+                            file=sys.stderr,
+                        )
+                        sys.exit(result.returncode)
+                    if not args.no_update:
+                        print("update-dotfilesを実行してprocess-loopを再起動します。")
+                        subprocess.run(["update-dotfiles"], check=False)
+                        os.execvp("uv", _build_restart_argv(sys.argv))
+                    continue
+                print("0件のため変更検知を待機します。")
+                _wait_for_changes(private_notes, target_repo_id)
+        except KeyboardInterrupt:
+            print("Ctrl+Cを検知しました。常駐モードを終了します。")
+    finally:
+        if previous_env_value is None:
+            os.environ.pop("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", None)
+        else:
+            os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = previous_env_value

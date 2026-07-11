@@ -13,8 +13,8 @@ description: >
 # 著者向け規約はcoding-standards・writing-standards・agent-standards側に置く。
 # 機械チェックが扱う項目は本スキルでも非対象とする方針のため、
 # 検出語そのものを本文へ転記してはならない（コンテキスト汚染を招く）。
-# 「計画ファイル文脈での例外」節は launch-prompts-integrity.md のplan-reviewer雛形「指摘対象外」規定と
-# 意図的に重複する。改訂時は2ファイルを同時更新する。
+# 「計画ファイル文脈での例外」節は機械判定可能な体裁項目のSSOTとする。
+# launch-prompts-integrity.mdのplan-reviewer雛形・plan-file-write-checks.mdは本節を参照する。
 ---
 
 # レビュアー側心得
@@ -81,17 +81,17 @@ description: >
 
 ## 計画ファイル文脈での例外
 
-計画ファイル本文（`~/.claude/plans/*.md`）は廃棄される一時作業文書である。次を指摘対象外とする。
+計画ファイル本文（`~/.claude/plans/*.md`）は廃棄される一時作業文書である。
+本節は機械判定可能な体裁項目を指摘対象外とする規定のSSOTとし、次を指摘対象外とする。
 
 - 記述スタイル（章構成・段落構成・表現選択・書き方）への指摘。記述間の矛盾は対象に含む
 - 実装時にエージェントが判断可能な細部（変数名・エラーメッセージ文言・小規模なループ構造・局所的な制御フローなど）への指摘
 - 件数表現・行番号・行数・ファイルサイズなど機械検査で判定できる項目は
   レビュアーが指摘しない（役割分担の詳細は本スキル「レビューの基本姿勢」節を参照）
 
-詳細は次の規定に従う。
-
-- `agent-toolkit/agents/plan-codex-reviewer.md`の規定
-- `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`のplan-reviewer雛形の規定
+`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`のplan-reviewer雛形は本節を参照する。
+`agent-toolkit/skills/plan-mode/references/plan-file-write-checks.md`も本節を参照する。
+詳細は`agent-toolkit/agents/plan-codex-reviewer.md`の規定にも従う。
 
 ## 指摘の表現
 

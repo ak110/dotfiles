@@ -34,6 +34,7 @@ import sys
 import tempfile
 import time
 
+from _file_lock import rotate_if_needed as _rotate_if_needed
 from _transcript import iter_latest_assistant_messages as _iter_latest_assistant_messages
 
 # 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
@@ -161,21 +162,6 @@ def _stop_log_path(session_id: str) -> pathlib.Path:
     return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-stop-{session_id}.log"
 
 
-def _rotate_stop_log(path: pathlib.Path, max_bytes: int = 1_000_000) -> None:
-    """ログサイズが`max_bytes`を超えた場合に`path.with_suffix(".log.1")`へリネームする。
-
-    1世代のみのローリングとする（既存の`.log.1`は上書き）。
-    ログファイルが存在しない、またはサイズが上限未満の場合は何もしない。
-    """
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return
-    if size <= max_bytes:
-        return
-    path.replace(path.with_suffix(".log.1"))
-
-
 def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes: int = 1_000_000) -> None:
     """Stop hookの最終判定根拠を常時ログへ1行追記する。
 
@@ -193,7 +179,7 @@ def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes:
     if not session_id:
         return
     path = _stop_log_path(session_id)
-    _rotate_stop_log(path, max_bytes=max_bytes)
+    _rotate_if_needed(path, max_bytes)
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
     fields = " ".join(f"{key}={value}" for key, value in context.items())
     line = f"{timestamp} decision={decision}" + (f" {fields}" if fields else "") + "\n"

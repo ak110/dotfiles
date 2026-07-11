@@ -20,7 +20,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / naive-executor / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
+   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
+   および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール）
 10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
 11. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
@@ -42,6 +43,7 @@ import traceback
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_diff_parsing import iter_reduction_headings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -165,8 +167,6 @@ _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES = frozenset({"agent-toolkit:process-feedba
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
-    "naive-executor": "naive_executor_invoked",
-    "agent-toolkit:naive-executor": "naive_executor_invoked",
     "plan-impl-reviewer": "plan_impl_reviewer_invoked",
     "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
     "agent-doc-validator": "agent_doc_validator_invoked",
@@ -174,6 +174,28 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-codex-reviewer": "codex_review_invoked",
     "agent-toolkit:plan-codex-reviewer": "codex_review_invoked",
 }
+
+# `_process_loop_log`による終了時刻記録の対象サブエージェント種別（fb-1）。
+# `pretooluse.py`側の同名定数（起動時刻記録用）と対応させる。
+# フルネームと短縮名の両方を許容する。
+_TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
+    {
+        "plan-impl-executor",
+        "agent-toolkit:plan-impl-executor",
+        "plan-implementer",
+        "agent-toolkit:plan-implementer",
+        "plan-impl-reviewer",
+        "agent-toolkit:plan-impl-reviewer",
+        "plan-codex-reviewer",
+        "agent-toolkit:plan-codex-reviewer",
+        "plan-reviewer",
+        "agent-toolkit:plan-reviewer",
+        "plan-spec-reviewer",
+        "agent-toolkit:plan-spec-reviewer",
+        "agent-doc-validator",
+        "agent-toolkit:agent-doc-validator",
+    }
+)
 
 # --- plan file形式検査の定数 ---
 
@@ -372,9 +394,11 @@ def main() -> int:
             update_state(session_id, _reset_process_feedbacks_invoked)
         return 0
 
-    # AgentとTask: subagent_type別セッション状態フラグ記録
+    # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
+        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
+            _process_loop_log.append("subagent_end", type=subagent_type)
         flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
         if flag_key is not None:
 

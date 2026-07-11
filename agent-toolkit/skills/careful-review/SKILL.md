@@ -59,11 +59,10 @@ description: >
   （自動bumpで連動更新される`plugin.json`・`marketplace.json`等は閾値カウント対象外）
 - 単一カテゴリ内の対象ファイル数が10以上または合計行数が概ね2000行以上の場合は当該カテゴリ内で更に分割起動する。
   APIエラー等の異常終了時の再委譲手順は`agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節に従う
-- 対象合計ファイル数が30以上または合計差分が2000行以上の場合、`plan-impl-reviewer`の初回並列度を3以下に
-  抑える。上記3カテゴリのうち一般ドキュメント・コーディングエージェント向け文書を統合し2グループへ集約する。
-  統合グループ併読は`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`とする。
-  本条件下では単一カテゴリ内分割ルールより本上限を優先し、`plan-spec-reviewer`・`agent-doc-validator`の
-  独立起動は維持する。重大以上の指摘が集中する領域のみ2サイクル目で追加分割する
+- 対象合計ファイル数が30以上または合計差分が2000行以上の場合は`plan-impl-reviewer`の初回並列度を3以下に抑える。
+  一般ドキュメント・コーディングエージェント向け文書を統合し2グループへ集約する（併読は`agent-toolkit:writing-standards`・
+  `agent-toolkit:agent-standards`）。本条件は単一カテゴリ内分割ルールより優先し、`plan-spec-reviewer`・
+  `agent-doc-validator`の独立起動は維持する。重大以上の指摘が集中する領域のみ2サイクル目で追加分割する
 
 ## 起動プロンプトテンプレート
 
@@ -96,6 +95,7 @@ description: >
 - 対象範囲のいずれかが1ファイル1000行を超える場合、`autocompact thrashing`予防のため次の制約を適用すること
   - 当該ファイルの全文`Read`を避け、`git diff`出力範囲・該当節（H2/H3単位）・差分周辺のシンボル単位・特定行範囲のみを`Read`する
   - 「該当ファイル全体から全件を列挙」観点は当該ファイル内で差分周辺と該当節範囲に限定される
+  - 例外: `plan-impl-reviewer`起動時は本制約を適用せず「plan-impl-reviewerの分割起動」節の運用で担当分を1000行以内へ収める
 ```
 
 ## 指摘の統合と修正依頼

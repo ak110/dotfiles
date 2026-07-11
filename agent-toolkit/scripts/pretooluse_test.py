@@ -1157,7 +1157,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_agents_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりAGENTS.mdが対象となる場合にブロックする。"""
+        """`_plan_format.AGENT_DOC_TARGET_BASENAMES`照合によりAGENTS.mdが対象となる場合にブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -1183,7 +1183,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_blocks_when_claude_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`_SIZE_LIMIT_TARGET_BASENAMES`照合によりCLAUDE.mdが対象となる場合にブロックする。"""
+        """`_plan_format.AGENT_DOC_TARGET_BASENAMES`照合によりCLAUDE.mdが対象となる場合にブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -3643,6 +3643,79 @@ class TestScopeEscalationInDocEditCheck:
         assert category in result.stderr
 
 
+class TestScopeEscalationPlanFileFenceExclusion:
+    """fb-7: 計画ファイル対象時に`text`コードフェンス内のfixture例語彙を走査対象から除外する。
+
+    規範文書本体（`agent-toolkit/rules/`配下等）はフェンス除外を適用せず、既存の検出精度を維持する。
+    """
+
+    def test_priority_consult_in_text_fence_of_plan_file_not_detected(self, tmp_path: pathlib.Path):
+        """計画ファイルの`text`フェンス内フレーズは通過する（Write経路）。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home)
+        env = _plan_file_state_env(tmp_path, home)
+        sid = "scope-esc-plan-fence-write"
+        text, _category = _SCOPE_ESCALATION_INPUTS[0]
+        content = _VALID_H2_PLAN_CONTENT.replace(
+            "## 対応方針\n\nx\n",
+            f"## 対応方針\n\n```text\n{text}\n```\n",
+            1,
+        )
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_priority_consult_in_text_fence_of_plan_file_edit_not_detected(self, tmp_path: pathlib.Path):
+        """計画ファイルの`text`フェンス内へのnew_string追加も通過する（Edit経路）。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home)
+        env = _plan_file_state_env(tmp_path, home)
+        text, _category = _SCOPE_ESCALATION_INPUTS[0]
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": "# t",
+                    "new_string": f"# t\n\n```text\n{text}\n```\n",
+                },
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_priority_consult_in_norm_doc_still_detected(self):
+        """計画ファイル以外（規範文書本体）はフェンス内でも従来どおり検出する。"""
+        text, category = _SCOPE_ESCALATION_INPUTS[0]
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "content": f"# header\n\n```text\n{text}\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+
+
 class TestMatchScopeEscalationIncreaseBracketExclusion:
     """`_match_scope_escalation_increase`の括弧内除外の共有動作を検証する。
 
@@ -3960,7 +4033,6 @@ class TestWorkaroundMemoGate:
 
 _PROCESS7_FLAGS = (
     "plan_reviewer_invoked",
-    "naive_executor_invoked",
     "plan_impl_reviewer_invoked",
     "codex_review_invoked",
 )
@@ -3974,7 +4046,7 @@ class TestProcess7CompletionCheck:
     """ExitPlanMode / `plan-impl-executor`起動時の工程7完了未達ブロック。"""
 
     def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
-        """4フラグ全て真の場合はExitPlanModeを通過する。"""
+        """3フラグ全て真の場合はExitPlanModeを通過する。"""
         sid = "process7-all-set"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -3987,7 +4059,7 @@ class TestProcess7CompletionCheck:
 
     @pytest.mark.parametrize("missing_flag", _PROCESS7_FLAGS)
     def test_missing_flag_blocks(self, tmp_path: pathlib.Path, missing_flag: str):
-        """4フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
+        """3フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
         sid = f"process7-missing-{missing_flag}"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: (flag != missing_flag) for flag in _PROCESS7_FLAGS})

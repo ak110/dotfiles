@@ -1,7 +1,7 @@
 """atk (agent-toolkit `atk fb`) の`add`サブコマンド順序保証テスト。
 
-EDITOR経路で`_pull`失敗時にユーザー入力の消失を予防するため、`_pull`を
-`_collect_message_via_editor`より前に呼ぶ順序が維持されていることを検証する。
+エディター経由の本文確定後に`_pull`を実行しUXブロッキング待ちを最小化する順序
+（エディター起動 → 本文確定 → `_pull` → 書込 → commit&push）が維持されていることを検証する。
 基本動作テストは`atk_test.py`・`_atk_fb_extras_test.py`側に集約する。
 """
 
@@ -21,20 +21,20 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
 )
 
 
-class TestAddPullBeforeEditor:
-    """addサブコマンド: `_pull`を`_collect_message_via_editor`より前に呼ぶ順序保証。"""
+class TestAddOrderEditorFirst:
+    """addサブコマンド: エディター起動を`_pull`より前に呼ぶ順序保証。"""
 
-    def test_editor_not_invoked_when_pull_fails(
+    def test_editor_invoked_before_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時にpullが失敗した場合、エディターは起動されずユーザー入力消失を予防する。"""
+        """messages省略時、エディターは`_pull`より前に起動される。"""
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        editor_calls: list[list[str]] = []
+        call_order: list[str] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             empty: Any = "" if kwargs.get("text") else b""
@@ -45,21 +45,59 @@ class TestAddPullBeforeEditor:
                     else b"https://github.com/example/myrepo.git\n"
                 )
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd[:2] == ["git", "pull"]:
-                # _run_git は check=True で subprocess.run を呼ぶため非ゼロ終了で例外を送出する
-                raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
             if cmd[0] == "fake-editor":
-                editor_calls.append(list(cmd))
+                call_order.append("editor")
+                pathlib.Path(cmd[1]).write_text("本文テスト", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+            if cmd[:2] == ["git", "pull"]:
+                call_order.append("pull")
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
-        assert not editor_calls
-        assert not list((notes / "feedback" / "inbox").iterdir())
+        assert exc_info.value.code == 0
+        assert call_order == ["editor", "pull"]
+        assert list((notes / "feedback" / "inbox").iterdir())
+
+    def test_message_preserved_when_pull_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`_pull`失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text("消失させたくない本文", encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+            if cmd[:2] == ["git", "pull"]:
+                raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "消失させたくない本文" in captured.err
 
     def test_explicit_message_still_pulls_before_write(
         self,

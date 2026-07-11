@@ -7,6 +7,7 @@
 import argparse
 import datetime
 import pathlib
+import subprocess
 import sys
 
 from _atk_fb_common import (
@@ -57,15 +58,25 @@ def _cmd_add(
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
+    エディター経由の本文確定後に`_pull`を実行する順序とし、
+    エディター起動前のブロッキング待ち（他端末の投入分を取り込むgit pull）を無くしてUXを改善する。
+    `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     """
     target_repo = _resolve_repo_id(args.repo_path)
-    _pull(private_notes)
     messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:
             sys.exit(1)
         messages = [message]
+    try:
+        _pull(private_notes)
+    except subprocess.CalledProcessError:
+        print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+        for message in messages:
+            print("---", file=sys.stderr)
+            print(message, file=sys.stderr)
+        sys.exit(1)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     inbox_dir = _subdir(private_notes, "inbox")
     counter = _max_existing_seq(inbox_dir, timestamp) + 1

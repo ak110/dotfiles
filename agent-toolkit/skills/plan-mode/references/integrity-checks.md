@@ -135,13 +135,10 @@
        遡及スキャン結果・横断grep確認結果を機械的に列挙して転記する。
      - 転記された観点はplan-reviewer側で再点検を省略し、未カバー観点へ集中する
        （本欄の文言重複は本ファイル冒頭の同期注記を参照）。
-   - `codexレビュー`・`plan-reviewer`・`naive-executor`・`plan-impl-reviewer`と
+   - `codexレビュー`・`plan-reviewer`・`plan-impl-reviewer`と
      条件成立時に起動する`agent-doc-validator`は、いずれも省略・軽量化の対象外とする
      - 時間・コンテキスト消費・autocompact thrashingリスク・作業量見込み・後続スキル到達優先等の
        自己推定を根拠に、省略・部分実施・単独foreground委譲下での例外扱いへ流用しない
-   - サブエージェント`naive-executor`: 計画ファイルの愚直読解を委譲する
-     - 起動プロンプトは`launch-prompts-integrity.md`「naive-executor雛形」節を機械転記して構築する。
-       埋め込み欄は対象テキスト・実行コンテキスト・抽出観点・担当範囲区分・完了報告書式
    - サブエージェント`plan-impl-reviewer`: 計画ファイル本文（`## 変更内容`H3配下の変更方針を含む）と
      対象ファイル現状（改訂前のファイル本体）を突合する。
      計画された変更が対象ファイル現状に対して単体品質・日本語表現を毀損しないかを事前レビューする
@@ -181,11 +178,10 @@
 
 ## 工程7バイパスの機械検出
 
-工程7の各サブエージェント（`codexレビュー`・`plan-reviewer`・`naive-executor`・`plan-impl-reviewer`）の
+工程7の各サブエージェント（`codexレビュー`・`plan-reviewer`・`plan-impl-reviewer`）の
 起動は、次のセッション状態フラグとして記録される。`agent-doc-validator`は条件付きフラグとして扱う。
 
 - `plan_reviewer_invoked`
-- `naive_executor_invoked`
 - `plan_impl_reviewer_invoked`
 - `codex_review_invoked`
 - `agent_doc_validator_invoked`は条件付きで扱う。
@@ -196,5 +192,5 @@
 
 記録は`agent-toolkit/scripts/posttooluse.py`が担い、`agent-toolkit/scripts/pretooluse.py`は次のとおり動作する。
 `ExitPlanMode`ハンドラと`plan-impl-executor`起動（Agentツール`subagent_type`判定）ハンドラの両方がある。
-いずれも上記4フラグ（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。
+いずれも上記3フラグ（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。
 フラグは新計画着手時（`agent-toolkit:plan-mode`スキル起動時）にリセットする。

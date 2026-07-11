@@ -42,7 +42,7 @@ EnterPlanMode:
 
 ExitPlanMode:
 
-- 工程7（plan-reviewer / naive-executor / plan-impl-reviewer / codexレビュー、
+- 工程7（plan-reviewer / plan-impl-reviewer / codexレビュー、
   対象ファイル一覧にコーディングエージェント向け文書を含む計画では条件付きでagent-doc-validatorも追加）
   完了未達のブロック (block)
 
@@ -79,6 +79,7 @@ Agent / Task:
 
 - 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
 - `plan-impl-executor`起動時の工程7完了未達のブロック (block)
+- `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 
 Write / Edit / MultiEdit:
 
@@ -111,6 +112,7 @@ from collections.abc import Iterable, Iterator
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     GitEvent,
@@ -129,19 +131,6 @@ from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
-
-# 文書サイズ上限チェック対象パターン（計画ファイルの`## 変更内容`に列挙されたパスの照合に使用）。
-# agent-toolkit配下のルール・スキル・エージェント定義ファイルと、グローバルルールファイルが対象。
-_SIZE_LIMIT_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"agent-toolkit/rules/[^/]+\.md$"),
-    re.compile(r"agent-toolkit/skills/[^/]+/SKILL\.md$"),
-    re.compile(r"agent-toolkit/skills/[^/]+/references/.+\.md$"),
-    re.compile(r"agent-toolkit/agents/.+\.md$"),
-    re.compile(r"agent-toolkit/references/.+\.md$"),
-    re.compile(r"\.chezmoi-source/dot_claude/rules/.+\.md$"),
-)
-# basenameで照合する文書サイズ上限対象ファイル名
-_SIZE_LIMIT_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
 # メインエージェントからの直接Readを禁じる隔離指定リファレンス。
 # `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節が指定する隔離リファレンスと同一SSOTとする。
@@ -167,20 +156,6 @@ _NORM_REFERENCE_KEYWORDS: tuple[str, ...] = (
     "01-agent.md",
     "02-claude-code.md",
 )
-
-
-def _is_agent_doc_target_file(file_path: str) -> bool:
-    """コーディングエージェント向け文書対象パターンへの一致を判定する共通ヘルパー。
-
-    `_SIZE_LIMIT_TARGET_PATTERNS` / `_SIZE_LIMIT_TARGET_BASENAMES`への一致を判定する。
-    文書サイズ上限チェック・遡及スキャンチェック・style negationチェックのSSOT。
-    """
-    if not file_path:
-        return False
-    normalized = file_path.replace("\\", "/")
-    if any(pat.search(normalized) for pat in _SIZE_LIMIT_TARGET_PATTERNS):
-        return True
-    return pathlib.Path(normalized).name in _SIZE_LIMIT_TARGET_BASENAMES
 
 
 # このスクリプトの hook 識別子。
@@ -508,9 +483,12 @@ def main() -> int:
         return 0
 
     # Agent/Task: plan-impl-executor起動時の工程7完了未達ブロック +
-    # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告
+    # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
+    # process-loop観測用のサブエージェント起動時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
+        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
+            _process_loop_log.append("subagent_start", type=subagent_type)
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
@@ -845,6 +823,20 @@ def _match_scope_escalation_increase(
     return None
 
 
+def _extract_plan_scope_escalation_body(text: str, file_path: str) -> str:
+    """計画ファイル対象時のみscope-escalation走査本文からフェンス等除外領域を取り除く。
+
+    `_plan_format.iter_markdown_body_lines`（フロントマター・コードフェンス・
+    複数行HTMLコメントを除外するSSOT実装）を計画ファイル検査経路専用に適用するヘルパー。
+    テストfixture例を格納する`text`フェンス内の語彙が誤検出される問題（fb-7）を解消する。
+    計画ファイル以外（`agent-toolkit/rules/`配下・SKILL.md等の規範文書本体）は
+    検出精度を変えないため`text`をそのまま返す。
+    """
+    if not is_plan_file(file_path):
+        return text
+    return "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
+
+
 def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """対象ドキュメントへの編集時、フレーズ出現回数の増加を検出した場合にblockする。
 
@@ -853,6 +845,8 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
     Edit/MultiEditは`_match_scope_escalation_increase`でnew側件数 > old側件数のカテゴリを検出する。
     既存文字列の保持時は件数同数で通過する（誤検出解消）。
     Writeは`content`全文を検査する。
+    計画ファイル対象時は`_extract_plan_scope_escalation_body`でフェンス・フロントマター・
+    HTMLコメント区間を走査対象から除外する（fb-7。規範文書本体は対象外で検出精度を変えない）。
     判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
     `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、検出フレーズ本文は通知へ転記せず
     カテゴリ識別子のみを通知する。
@@ -866,7 +860,8 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
     if tool_name == "Write":
         content = tool_input.get("content")
         if isinstance(content, str):
-            category = _match_scope_escalation(content, exclude_categories=exclude_categories)
+            body = _extract_plan_scope_escalation_body(content, file_path)
+            category = _match_scope_escalation(body, exclude_categories=exclude_categories)
             if category is not None:
                 detection = ("content", category)
     elif tool_name == "Edit":
@@ -874,7 +869,9 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
         new_string = tool_input.get("new_string") or ""
         if isinstance(new_string, str):
             old_string = old_string if isinstance(old_string, str) else ""
-            category = _match_scope_escalation_increase(old_string, new_string, exclude_categories=exclude_categories)
+            old_body = _extract_plan_scope_escalation_body(old_string, file_path)
+            new_body = _extract_plan_scope_escalation_body(new_string, file_path)
+            category = _match_scope_escalation_increase(old_body, new_body, exclude_categories=exclude_categories)
             if category is not None:
                 detection = ("new_string", category)
     elif tool_name == "MultiEdit":
@@ -888,7 +885,9 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
                 if not isinstance(new_string, str):
                     continue
                 old_string = old_string if isinstance(old_string, str) else ""
-                category = _match_scope_escalation_increase(old_string, new_string, exclude_categories=exclude_categories)
+                old_body = _extract_plan_scope_escalation_body(old_string, file_path)
+                new_body = _extract_plan_scope_escalation_body(new_string, file_path)
+                category = _match_scope_escalation_increase(old_body, new_body, exclude_categories=exclude_categories)
                 if category is not None:
                     detection = (f"edits[{index}].new_string", category)
                     break
@@ -1057,7 +1056,7 @@ _STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 def _is_style_negation_target_doc(file_path: str) -> bool:
     """対象ドキュメント（文書サイズ上限対象と同一の判定基準）への編集かを判定する。"""
-    return _is_agent_doc_target_file(file_path)
+    return _plan_format.is_agent_doc_target_file(file_path)
 
 
 def _count_style_negation_matches(text: str) -> int:
@@ -1168,7 +1167,7 @@ def _check_plan_mode_skill_first(
 # `_check_direct_agent_toolkit_edits_after_plan_mode`専用の配布先追加パターン。
 # 原本パス（`agent-toolkit/rules/`・`agent-toolkit/skills/.../SKILL.md`・
 # `agent-toolkit/skills/.../references/`・`agent-toolkit/agents/`）は
-# `_is_agent_doc_target_file`のSSOTを再利用して判定するため本定数へ列挙しない。
+# `_plan_format.is_agent_doc_target_file`のSSOTを再利用して判定するため本定数へ列挙しない。
 # 本定数は原本パスから配布された実在経路のみを追加対象として保持する。
 #
 # 実在する配布経路は次の2系統である。
@@ -1180,7 +1179,7 @@ def _check_plan_mode_skill_first(
 #
 # `.claude/skills/agent-toolkit*/`および`.chezmoi-source/dot_claude/`配下への
 # agent-toolkit経由の配布経路は存在しないため本定数の対象に含めない。
-# `AGENTS.md`・`CLAUDE.md`のbasename一致（`_SIZE_LIMIT_TARGET_BASENAMES`）は
+# `AGENTS.md`・`CLAUDE.md`のbasename一致（`_plan_format.AGENT_DOC_TARGET_BASENAMES`）は
 # プロジェクトごとの文書へ波及するため本checkの対象からは除外する
 # （本checkはagent-toolkit本体への連続直接編集の抑止を目的とし、
 # プロジェクトごとの`AGENTS.md`・`CLAUDE.md`編集は本目的の対象外）。
@@ -1197,7 +1196,7 @@ _DIRECT_AGENT_TOOLKIT_DISTRIBUTION_PATTERNS: tuple[re.Pattern[str], ...] = (
 def _is_direct_agent_toolkit_edit_target(file_path: str) -> bool:
     """`_check_direct_agent_toolkit_edits_after_plan_mode`の対象パス判定。
 
-    原本パスは`_is_agent_doc_target_file`のSSOTを再利用して判定する
+    原本パスは`_plan_format.is_agent_doc_target_file`のSSOTを再利用して判定する
     （`agent-toolkit/rules/`・`agent-toolkit/skills/.../SKILL.md`・
     `agent-toolkit/skills/.../references/`・`agent-toolkit/agents/`・
     `.chezmoi-source/dot_claude/rules/`を含む）。
@@ -1211,9 +1210,9 @@ def _is_direct_agent_toolkit_edit_target(file_path: str) -> bool:
         return False
     normalized = file_path.replace("\\", "/")
     # basename一致（AGENTS.md/CLAUDE.md）はプロジェクト文書波及のため除外する。
-    if pathlib.Path(normalized).name in _SIZE_LIMIT_TARGET_BASENAMES:
+    if pathlib.Path(normalized).name in _plan_format.AGENT_DOC_TARGET_BASENAMES:
         return False
-    if _is_agent_doc_target_file(file_path):
+    if _plan_format.is_agent_doc_target_file(file_path):
         return True
     return any(pat.search(normalized) for pat in _DIRECT_AGENT_TOOLKIT_DISTRIBUTION_PATTERNS)
 
@@ -2199,8 +2198,8 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
     - 対象パスの実ファイル行数が200行以上
     - `## 調査結果`または`### エージェント判断`に対象ファイル基名と実測値±2の数値が共存しない
 
-    対象ファイルが200行未満の場合、またはパスが`_SIZE_LIMIT_TARGET_PATTERNS`・
-    `_SIZE_LIMIT_TARGET_BASENAMES`にマッチしない場合はブロックしない。
+    対象ファイルが200行未満の場合、またはパスが`_plan_format.AGENT_DOC_TARGET_PATTERNS`・
+    `_plan_format.AGENT_DOC_TARGET_BASENAMES`にマッチしない場合はブロックしない。
     """
     try:
         if tool_name != "Write":
@@ -2239,7 +2238,7 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             basename = pathlib.Path(path_str).name
 
             # パターン照合で文書サイズ上限対象かを判定
-            if not _is_agent_doc_target_file(path_str):
+            if not _plan_format.is_agent_doc_target_file(path_str):
                 continue
 
             # 実ファイルが存在し200行以上かを確認
@@ -2349,8 +2348,8 @@ def _check_plan_file_retroactive_scan_recorded(
     判定条件:
 
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が文書サイズ上限対象パターン（`_SIZE_LIMIT_TARGET_PATTERNS` /
-      `_SIZE_LIMIT_TARGET_BASENAMES`）に一致する規範対象ドキュメント（計画ファイル自身は対象外）
+    - 対象の`file_path`が文書サイズ上限対象パターン（`_plan_format.AGENT_DOC_TARGET_PATTERNS` /
+      `_plan_format.AGENT_DOC_TARGET_BASENAMES`）に一致する規範対象ドキュメント（計画ファイル自身は対象外）
     - 新規/既存内容の比較で`_detect_new_meta_norm`が真
       （全称禁止形の新規出現、汎用禁止形バレットの増加、新規節見出しの増加のいずれか）
     - `session_id`のセッション状態から取得した`current_plan_file_path`の
@@ -2365,7 +2364,7 @@ def _check_plan_file_retroactive_scan_recorded(
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
     if not file_path or is_plan_file(file_path):
         return False
-    if not _is_agent_doc_target_file(file_path):
+    if not _plan_format.is_agent_doc_target_file(file_path):
         return False
 
     detected = False
@@ -2422,7 +2421,7 @@ def _check_plan_file_retroactive_scan_recorded(
     return True
 
 
-# --- 工程7（4サブエージェント/codexレビュー）完了チェック ---
+# --- 工程7（3サブエージェント/codexレビュー）完了チェック ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
@@ -2431,12 +2430,33 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
+# `_process_loop_log`による起動時刻記録の対象サブエージェント種別（fb-1）。
+# `process-feedbacks`実行時のplan-impl系観測基盤で使う。フルネームと短縮名の両方を許容する。
+# `posttooluse.py`側の同名定数（終了時刻記録用）と対応させる。
+_TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
+    {
+        "plan-impl-executor",
+        "agent-toolkit:plan-impl-executor",
+        "plan-implementer",
+        "agent-toolkit:plan-implementer",
+        "plan-impl-reviewer",
+        "agent-toolkit:plan-impl-reviewer",
+        "plan-codex-reviewer",
+        "agent-toolkit:plan-codex-reviewer",
+        "plan-reviewer",
+        "agent-toolkit:plan-reviewer",
+        "plan-spec-reviewer",
+        "agent-toolkit:plan-spec-reviewer",
+        "agent-doc-validator",
+        "agent-toolkit:agent-doc-validator",
+    }
+)
+
 # 工程7の完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
 _PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = (
     "plan_reviewer_invoked",
-    "naive_executor_invoked",
     "plan_impl_reviewer_invoked",
     "codex_review_invoked",
 )
@@ -2616,7 +2636,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
     print(
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
-            " before completing Phase 7 (plan-reviewer / naive-executor /"
+            " before completing Phase 7 (plan-reviewer /"
             " plan-impl-reviewer / codex review)."
             f" Missing flags: {missing}."
             " See agent-toolkit/skills/plan-mode/references/integrity-checks.md「工程7の実施手順」節.",

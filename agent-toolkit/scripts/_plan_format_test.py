@@ -221,6 +221,34 @@ class TestHasManifestFilesWhenBumpStepPresent:
         assert not _plan_format.has_manifest_files_when_bump_step_present(content)
 
 
+class TestIsAgentDocTargetFile:
+    """is_agent_doc_target_file の対象パス判定を検査する。"""
+
+    def test_matches_agent_references_md(self) -> None:
+        assert _plan_format.is_agent_doc_target_file("agent-toolkit/references/plan-impl/execution-process.md")
+
+    def test_matches_chezmoi_dot_claude_skills(self) -> None:
+        assert _plan_format.is_agent_doc_target_file(".chezmoi-source/dot_claude/skills/refine-prompt/SKILL.md")
+
+    def test_matches_agents_top_md(self) -> None:
+        assert _plan_format.is_agent_doc_target_file("AGENTS.md")
+
+    def test_matches_claude_md_in_subdirectory(self) -> None:
+        assert _plan_format.is_agent_doc_target_file("subdir/CLAUDE.md")
+
+    def test_matches_rules_with_subdirectory(self) -> None:
+        assert _plan_format.is_agent_doc_target_file("agent-toolkit/rules/sub/nested.md")
+
+    def test_does_not_match_unrelated_path(self) -> None:
+        assert not _plan_format.is_agent_doc_target_file("pytools/foo.py")
+
+    def test_empty_path_returns_false(self) -> None:
+        assert not _plan_format.is_agent_doc_target_file("")
+
+    def test_backslash_path_normalized(self) -> None:
+        assert _plan_format.is_agent_doc_target_file("agent-toolkit\\agents\\foo.md")
+
+
 class TestPlanFormatSsot:
     """PLAN_REQUIRED_H2がplan-file-guidelines.mdと整合することを検査する。"""
 

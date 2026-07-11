@@ -277,6 +277,40 @@ def is_agent_facing_md(rel_path: str) -> bool:
     return "agents" in parts[:-1]
 
 
+# `(^|/)`接頭辞で先頭一致・任意の親ディレクトリ配下一致の両方を許容する
+# （`pretooluse.py`側が絶対パス・tmp_path配下等の任意接頭辞パスを渡す既存挙動を保つ）。
+AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(^|/)agent-toolkit/rules/.+\.md$"),
+    re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
+    re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
+    re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
+    re.compile(r"(^|/)agent-toolkit/references/.+\.md$"),
+    re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md$"),
+    re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md$"),
+)
+# basenameで照合するコーディングエージェント向け文書サイズ上限対象ファイル名。
+# ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
+AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
+
+
+def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
+    """パス文字列がコーディングエージェント向け文書サイズ上限対象かを判定する。
+
+    `agent-toolkit/scripts/pretooluse.py`（`_is_agent_doc_target_file`）と
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`（`_NORM_TARGET_PATH_RE`）が
+    独立に持っていた非対称な対象パス正規表現を、本関数へ統合したSSOTとする。
+    `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
+    basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
+    `is_agent_facing_md`とは判定対象範囲が異なる（本関数は文書サイズ上限チェック専用）。
+    """
+    normalized = str(file_path).replace("\\", "/")
+    if not normalized:
+        return False
+    if any(pat.search(normalized) for pat in AGENT_DOC_TARGET_PATTERNS):
+        return True
+    return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
+
+
 def has_bump_step_when_required(content: str) -> bool:
     """計画ファイル本文がversion bumpステップ要件を満たすかを判定する。
 
