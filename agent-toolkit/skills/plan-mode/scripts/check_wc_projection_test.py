@@ -659,6 +659,58 @@ class TestOverThresholdReductionCheck:
         assert "200行超過ファイル" not in result.stderr
 
 
+class TestOverThresholdLabellessAdditionCheck:
+    """`_check_labelless_addition_for_over_threshold_files`の警告出力仕様を検証する。
+
+    現行200行超のファイルへの追記がラベルなしtextフェンスのみで縮減量集計に載らない場合を検出する。
+    警告は情報提供扱いで違反件数には計上しない（returncode 0）。
+    """
+
+    def test_labelless_addition_over_threshold_emits_warning(self, tmp_path: pathlib.Path) -> None:
+        """現行200行超・追記のみラベルなしで縮減0の場合、差分ラベル付与を促す警告が出る。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(210)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行210行, 見込み214行）\n\n"
+            "### `foo.md`\n\n追記文言案:\n\n"
+            "```text\n追加行A\n追加行B\n追加行C\n追加行D\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "200行到達済みファイルfoo.md" in result.stderr
+        assert "差分ラベル付与を検討" in result.stderr
+
+    def test_labeled_addition_over_threshold_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """現行200行超で`[現行]`/`[置換後]`ペア記述時は警告が出ない。"""
+        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 211)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行211行, 見込み211行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nline0\n```\n\n"
+            "```text\n[置換後]\nnew line\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "差分ラベル付与を検討" not in result.stderr
+
+    def test_under_threshold_labelless_addition_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """現行200行以下のファイルはラベルなし追記でも警告が出ない。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(100)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行100行, 見込み104行）\n\n"
+            "### `foo.md`\n\n追記文言案:\n\n"
+            "```text\n追加行A\n追加行B\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "差分ラベル付与を検討" not in result.stderr
+
+
 class TestCheckboxProjectionAcceptance:
     """`_CHECKBOX_RE`と`_CHECKBOX_UNDETERMINED_RE`の書式受理範囲を検証する。"""
 

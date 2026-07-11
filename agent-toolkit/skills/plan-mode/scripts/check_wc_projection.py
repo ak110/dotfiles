@@ -139,6 +139,10 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     # （警告のみで違反件数には計上しない）。
     _check_reduction_block_for_over_threshold_files(plan_path, text)
 
+    # 200行到達済みファイルへのラベルなしtextフェンス追記のみが計上される場合の警告を実行する
+    # （警告のみで違反件数には計上しない）。
+    _check_labelless_addition_for_over_threshold_files(plan_path, text)
+
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
     grouped: dict[str, list[tuple[str, str]]] = {}
@@ -449,6 +453,46 @@ def _collect_projection_bounds(section: str) -> dict[str, tuple[int, int]]:
             current = int(m.group("current")) if m.group("current") else 0
             bounds[m.group("path")] = (current, int(m.group("projected")))
     return bounds
+
+
+def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, text: str) -> int:
+    """200行到達済みファイル（現行200行超）対象時、ラベルなしtextフェンスによる追記のみが計上される場合に警告する。
+
+    引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
+    常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱い）。
+
+    判定基準:
+    - 対象ファイル一覧の現行行数が`_OVER_THRESHOLD_PROJECTION`超のファイルを対象とする
+    - `agent-toolkit:agent-standards`「文書サイズ上限」節に従い対象拡張子は`.md`・`.md.tmpl`に限定する
+    - 集計結果で追記行数が0超かつ縮減対象行数が0の対象ファイルを警告対象とする
+      （ラベル付き`[現行]`/`[置換後]`ペアで書けば縮減量集計に載るため）
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+
+    bounds = _collect_projection_bounds(section)
+    over_threshold_files = {
+        path
+        for path, (current, _projected) in bounds.items()
+        if current > _OVER_THRESHOLD_PROJECTION and (path.endswith(".md") or path.endswith(".md.tmpl"))
+    }
+    if not over_threshold_files:
+        return 0
+
+    addition_reduction = _extract_addition_reduction_blocks(section)
+    for path in over_threshold_files:
+        stats = addition_reduction.get(path, {})
+        added = stats.get("addition", 0)
+        reduced = stats.get("reduction", 0)
+        if added > 0 and reduced == 0:
+            print(
+                f"{plan_path}: 200行到達済みファイル{path}"
+                f"（現行{bounds[path][0]}行）への追記に"
+                f"`[現行]`/`[置換後]`ラベルが付いていない。差分ラベル付与を検討",
+                file=sys.stderr,
+            )
+    return 0
 
 
 def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]:

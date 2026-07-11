@@ -76,3 +76,20 @@ blockers:
 `plan_gaps`欄は次回の計画作成時の改善提案の元ネタとなるため、`pending_confirmations`と重複してもよい。
 本サブエージェント自身はレビューを実施しない。`review_handoff`欄への記録のみを担い、
 レビューの起動判断は呼び出し元（`agent-toolkit/references/plan-impl/caller-reception.md`手順）が担う。
+
+`changed`欄の`path/to/file`はプロジェクトルート起点の絶対パスで記載する
+（メイン側が完了報告本文のみで対象ファイルを特定できるようにするため）。
+`verification`欄はコマンド単位のpass/failとし、
+検証コマンドの対象範囲は`changed`欄に列挙された全ファイルを含む。
+完了報告のresult欄では、Agent()呼び出しテンプレート原文・起動プロンプト雛形の文字列そのままを転記しない。
+代わりに、実装実施の観測可能な事実（変更ファイル一覧・検証結果・commit SHA等）を含める。
+`agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節の
+「result欄が起動プロンプトの再掲のみ」規定に対応する。
+
+## 並列委譲時の担当ファイル収束の責務
+
+`plan-implementer`委譲を並列起動する場合、各委譲タスクの担当ファイルは
+`agent-toolkit:agent-standards`「文書サイズ上限」節の200行以下への収束責務を持つ。
+200行以下への収束が担当タスク単独で完遂困難な場合は`needs_escalation`で返却する
+（呼び出し元の受領手順は`agent-toolkit/references/plan-impl/caller-reception.md`参照）。
+担当外ファイルへの巻き込み編集は禁止する（並列稼働中の他タスクの編集と競合するため）。
