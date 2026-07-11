@@ -43,8 +43,8 @@ description: >
 - 縮減手順・判定基準・縮減根拠4類型・references/分離判定基準は`agent-toolkit:trim-agent-docs`を参照する
 - 対象ファイルは現行と改訂後の`wc -l`実測値を`## 調査結果`へ記載し、
   200行超過時は既存節縮減を本計画スコープへ組み込み200行以下への収束を実装完了条件とする
-- 計画段階でscratchpadへ最終形を組み立て`uvx pyfltr run-for-agent --no-fix`で検査する
-  （検査対象の設定ファイル・相対パス参照先もscratchpadへ同時コピーする）
+- 最終形の文面検査は、計画本文へ転記した文面への書き込み後チェックと、
+  実装後の対象ファイルへの`uvx pyfltr run-for-agent`で代替する
 - 実装後レビューの指摘対象は200行超過の実測違反のみとし、事前予防は計画段階の`wc -l`実測で行う
 
 ### メタ記述の禁止
@@ -148,7 +148,6 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
 配布物完結は`AGENT_TOOLKIT_`、個人環境完結は`DOTFILES_`。外部名前空間（`CLAUDE_`等）は不採用。
 
 - 環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`: `atk fb`管理repoのroot（既定`~/private-notes/`）
-- 環境変数`AGENT_TOOLKIT_PRELINT_TEST_BYPASS`: 事前lint一部無効化（テスト用）
 - 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`: `_stop_gate`デバッグ出力
 
 ### rules階層のフラット構造

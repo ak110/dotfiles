@@ -28,7 +28,7 @@
 - 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）
 - textlint: `uvx pyfltr run-for-agent --commands=textlint --no-fix <tmpfile.md>`
     （一時ファイル拡張子を`.md`に固定して呼び出す）
-- 127幅事前検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
+- 127幅検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。

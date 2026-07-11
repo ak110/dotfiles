@@ -40,7 +40,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-m
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_diff_parsing import iter_reduction_headings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import compute_prelint_hashes, is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_h2_section_body,
     extract_h2_sections,
@@ -93,25 +93,6 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"(?:test|check|validate)\b"
     ),
 )
-
-# --- 事前lint検査の成功記録パターン ---
-
-# scratchpad配下への計画ファイル本文事前lint検査用Bashコマンドを完全一致型で識別する。
-# 改行・シェル演算子・後続文字列を許容しないことで、lint失敗を後続処理で覆す経路を防ぐ。
-_PRELINT_BASH_FULLMATCH = re.compile(
-    r"(?:uvx[ \t]+)?pyfltr[ \t]+run-for-agent[ \t]+"
-    r"--commands=textlint,markdownlint,typos,colloquial-check[ \t]+--enable=colloquial-check[ \t]+(\S+)",
-)
-
-# check_line_width.py単独実行のBashコマンドを完全一致型で識別する。
-# scratchpad配下の計画ファイル本文に対する127幅検査の成功を別キーで記録する。
-_LINE_WIDTH_BASH_FULLMATCH = re.compile(
-    r"(?:uvx?[ \t]+(?:run[ \t]+(?:--no-project[ \t]+)?--script[ \t]+)?|python3?[ \t]+)"
-    r"\S*check_line_width\.py[ \t]+(\S+)",
-)
-
-# pyfltrの標準出力サマリー行（exit:0）を成功判定根拠とする。
-_PYFLTR_SUCCESS_PATTERN = re.compile(r'"kind"\s*:\s*"summary"\s*,\s*"exit"\s*:\s*0\b')
 
 # --- git関連サブコマンドの分類 ---
 
@@ -258,32 +239,6 @@ def _check_plan_format(file_path: str, cwd: str) -> list[str]:
         violations.append(line_count_warning)
 
     return violations
-
-
-def _record_bash_success_hash(lint_target: str, cwd: str, state: dict, state_key: str) -> bool:
-    """成功したBashコマンドの対象ファイルを読み込みハッシュを`state[state_key]`へ登録する。
-
-    ファイル読み込み失敗時、または既存ハッシュと重複する場合は登録せずFalseを返す。
-    登録した場合はTrueを返す（呼び出し元でstate変更フラグに反映するため）。
-    """
-    lint_path = pathlib.Path(lint_target).expanduser()
-    if not lint_path.is_absolute() and cwd:
-        lint_path = pathlib.Path(cwd) / lint_path
-    try:
-        file_content = lint_path.read_text(encoding="utf-8")
-    except (FileNotFoundError, PermissionError, UnicodeDecodeError, OSError):
-        return False
-    passed = state.get(state_key, [])
-    if not isinstance(passed, list):
-        passed = []
-    passed_set = set(passed)
-    full_sha, stripped_sha = compute_prelint_hashes(file_content)
-    if full_sha in passed_set and stripped_sha in passed_set:
-        return False
-    passed_set.add(full_sha)
-    passed_set.add(stripped_sha)
-    state[state_key] = sorted(passed_set)
-    return True
 
 
 def main() -> int:
@@ -481,23 +436,44 @@ def main() -> int:
                 return current_state
 
             update_state(session_id, _append_edited_file)
+        # 計画ファイル向け通知: 形式検査違反（plan-mode起動時のみ）と、
+        # Write成功時の書き込み後チェック案内（plan-mode起動時のみ）を1つのadditionalContextへまとめる。
+        # 状態フラグは追加せず、案内のみを一方向で通知する（詳細は
+        # skills/plan-mode/references/plan-file-write-checks.md「書き込み後チェック」節）。
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
             cwd_raw = payload.get("cwd", "")
             cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+            messages: list[str] = []
             violations = _check_plan_format(file_path, cwd)
             if violations:
-                message = _llm_notice(
-                    f"plan file {file_path} does not conform to the expected structure."
-                    f" {' '.join(violations)}"
-                    f" Fix the structure per skills/plan-mode/references/plan-file-guidelines.md (read it first if not yet).",
-                    tag="warn",
+                messages.append(
+                    _llm_notice(
+                        f"plan file {file_path} does not conform to the expected structure."
+                        f" {' '.join(violations)}"
+                        f" Fix the structure per skills/plan-mode/references/plan-file-guidelines.md"
+                        f" (read it first if not yet).",
+                        tag="warn",
+                    )
                 )
+            if tool_name == "Write":
+                messages.append(
+                    _llm_notice(
+                        f"plan file {file_path} was written. Run the post-write checks:"
+                        f" `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check"
+                        f" --enable=colloquial-check {file_path}`,"
+                        f" followed by `check_line_width.py`, `check_dash.py`, `check_line_ref.py`,"
+                        f" `check_self_ref.py`, and `check_plan_diff_gates.py` on the same file."
+                        f" See skills/plan-mode/references/plan-file-write-checks.md for details.",
+                        tag="notice",
+                    )
+                )
+            if messages:
                 print(
                     json.dumps(
                         {
                             "hookSpecificOutput": {
                                 "hookEventName": "PostToolUse",
-                                "additionalContext": message,
+                                "additionalContext": "\n".join(messages),
                             }
                         },
                         ensure_ascii=False,
@@ -561,40 +537,6 @@ def main() -> int:
         if log_modified:
             state["git_log_checked"] = log_state
             changed = True
-
-        # 事前lint検査の成功記録: 完全一致型で許可パターン以外の余計な構文（シェル演算子・改行・後続文字列）を全て除外する
-        # （lint失敗を後続処理で成功終了へ覆す形を防ぐため）
-        prelint_match = _PRELINT_BASH_FULLMATCH.fullmatch(command.strip())
-        if prelint_match:
-            tool_response = payload.get("tool_response") or {}
-            if not isinstance(tool_response, dict):
-                tool_response = {}
-            interrupted = bool(tool_response.get("interrupted"))
-            output = tool_response.get("output") or tool_response.get("stdout") or ""
-            if not isinstance(output, str):
-                output = ""
-            pyfltr_succeeded = bool(_PYFLTR_SUCCESS_PATTERN.search(output))
-            if not interrupted and pyfltr_succeeded:
-                lint_target = prelint_match.group(1).strip("'\"")
-                if _record_bash_success_hash(lint_target, cwd, state, "plan_prelint_passed"):
-                    changed = True
-
-        # check_line_width.py 単独実行の成功記録: 完全一致型で識別し、終了コード0時に別キーへハッシュ登録する
-        line_width_match = _LINE_WIDTH_BASH_FULLMATCH.fullmatch(command.strip())
-        if line_width_match:
-            tool_response = payload.get("tool_response") or {}
-            if not isinstance(tool_response, dict):
-                tool_response = {}
-            interrupted = bool(tool_response.get("interrupted"))
-            exit_code_raw = tool_response.get("exit_code")
-            try:
-                exit_code = int(exit_code_raw) if exit_code_raw is not None else 0
-            except (TypeError, ValueError):
-                exit_code = -1
-            if not interrupted and exit_code == 0:
-                lint_target = line_width_match.group(1).strip("'\"")
-                if _record_bash_success_hash(lint_target, cwd, state, "plan_prelint_passed_line_width"):
-                    changed = True
 
         return state if changed else None
 

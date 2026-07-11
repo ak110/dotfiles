@@ -151,7 +151,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     def test_under_limit_passes_silently(self, tmp_path: pathlib.Path):
         """199行以下の対象種別ファイルは警告されない。"""
@@ -172,7 +172,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     def test_nonexistent_file_passes_silently(self, tmp_path: pathlib.Path):
         """対象ファイルが存在しない場合は警告されない。"""
@@ -191,7 +191,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     def test_non_agent_facing_file_passes_silently(self, tmp_path: pathlib.Path):
         """Pythonファイルなど対象種別外は200行以上でも警告されない。"""
@@ -211,7 +211,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     def test_mixed_only_agent_facing_warned(self, tmp_path: pathlib.Path):
         """対象種別ファイルのみ警告され、対象種別外は警告されない。"""
@@ -282,7 +282,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=False,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     @pytest.mark.parametrize(
         ("rel_path", "test_id"),
@@ -340,7 +340,7 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
 
     def test_reduction_heading_excludes_basename(self, tmp_path: pathlib.Path):
         """`#### 縮減対象（<basename>）`H4見出しが存在する場合も警告対象から除外される。"""
@@ -366,4 +366,4 @@ class TestPlanFormatTargetFileLineCount:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout

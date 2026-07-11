@@ -6,7 +6,6 @@ plan file形式検査・SSOT検査・codex-review.md読み込み追跡は
 """
 
 import functools
-import hashlib
 import importlib.util
 import json
 import os
@@ -15,7 +14,6 @@ import subprocess
 import sys
 import types
 
-import _plan_file
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
@@ -599,306 +597,6 @@ class TestGitLogChecked:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
 
 
-class TestPrelintSuccessRecord:
-    """Bash経由のpyfltr事前lint検査成功記録。
-
-    対象パターンのBashが`{"kind":"summary","exit":0,...}`を含む出力で成功した場合、
-    対象scratchpadファイルの全文SHA256と`## 背景`配下`text`コードブロック除去後SHA256を
-    `plan_prelint_passed`リストへ追加する。
-    """
-
-    _SUCCESS_OUTPUT = '{"kind":"summary","exit":0,"foo":1}'
-
-    @staticmethod
-    def _sha(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _strip_bg_text(content: str) -> str:
-        return _plan_file.strip_background_text_blocks(content)
-
-    _LINT_COMMAND = "pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check"
-
-    def _make_lint_file(self, tmp_path: pathlib.Path, content: str = "# plan\n") -> pathlib.Path:
-        scratch = tmp_path / "scratch"
-        scratch.mkdir()
-        target = scratch / "plan-prelint.md"
-        target.write_text(content, encoding="utf-8")
-        return target
-
-    def test_success_records_two_hashes(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-success"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target}",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        recorded = state.get("plan_prelint_passed", [])
-        assert isinstance(recorded, list)
-        content = target.read_text(encoding="utf-8")
-        assert self._sha(content) in recorded
-        assert self._sha(self._strip_bg_text(content)) in recorded
-
-    def test_uvx_prefix_also_matched(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-uvx"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"uvx {self._LINT_COMMAND} {target}",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        recorded = state.get("plan_prelint_passed", [])
-        assert recorded  # 非空
-
-    def test_no_success_marker_no_record(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-no-marker"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target}",
-                },
-                "tool_response": {"output": "no summary line here"},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_interrupted_no_record(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-interrupted"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target}",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT, "interrupted": True},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_non_zero_exit_summary_no_record(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-exit1"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target}",
-                },
-                "tool_response": {"output": '{"kind":"summary","exit":1}'},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_missing_file_no_record(self, tmp_path: pathlib.Path):
-        sid = "prelint-missing"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {tmp_path}/missing.md",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_unrelated_bash_no_record(self, tmp_path: pathlib.Path):
-        sid = "prelint-unrelated"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls -la"},
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    @pytest.mark.parametrize(
-        "command_suffix",
-        [
-            "&& echo ok",
-            "|| echo fail",
-            "; echo trail",
-            "| cat",
-            "& sleep 1",
-        ],
-    )
-    def test_shell_operator_compound_no_record(self, tmp_path: pathlib.Path, command_suffix: str):
-        target = self._make_lint_file(tmp_path)
-        sid = f"prelint-compound-{command_suffix[:2]}"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target} {command_suffix}",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_newline_separated_no_record(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-newline"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target}\necho done",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_extra_suffix_no_record(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-suffix"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} {target} --extra-flag",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        assert "plan_prelint_passed" not in state
-
-    def test_tilde_path_expanded_and_recorded(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "prelint-tilde"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": f"{self._LINT_COMMAND} ~/scratch/plan-prelint.md",
-                },
-                "tool_response": {"output": self._SUCCESS_OUTPUT},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-            home_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        recorded = state.get("plan_prelint_passed", [])
-        assert isinstance(recorded, list)
-        content = target.read_text(encoding="utf-8")
-        assert self._sha(content) in recorded
-        assert self._sha(self._strip_bg_text(content)) in recorded
-
-
-class TestLineWidthSuccessRecord:
-    """Bash経由の`check_line_width.py`単独実行成功記録。
-
-    対象パターンのBashが終了コード0で成功した場合、対象scratchpadファイルの全文SHA256と
-    `## 背景`配下`text`コードブロック除去後SHA256を`plan_prelint_passed_line_width`リストへ追加する。
-    """
-
-    @staticmethod
-    def _sha(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _strip_bg_text(content: str) -> str:
-        return _plan_file.strip_background_text_blocks(content)
-
-    def _make_lint_file(self, tmp_path: pathlib.Path, content: str = "# plan\n") -> pathlib.Path:
-        scratch = tmp_path / "scratch"
-        scratch.mkdir()
-        target = scratch / "plan-prelint.md"
-        target.write_text(content, encoding="utf-8")
-        return target
-
-    def test_tilde_path_expanded_and_recorded(self, tmp_path: pathlib.Path):
-        target = self._make_lint_file(tmp_path)
-        sid = "line-width-tilde"
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": "uv run --script check_line_width.py ~/scratch/plan-prelint.md",
-                },
-                "tool_response": {"exit_code": 0},
-                "session_id": sid,
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-            home_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        state = _read_state(tmp_path, sid)
-        recorded = state.get("plan_prelint_passed_line_width", [])
-        assert isinstance(recorded, list)
-        content = target.read_text(encoding="utf-8")
-        assert self._sha(content) in recorded
-        assert self._sha(self._strip_bg_text(content)) in recorded
-
-
 class TestReadHandler:
     """Read系判定（codex-review.md / textlint-violations.md）。
 
@@ -966,6 +664,99 @@ class TestReadHandler:
         assert state.get("codex_review_read") is not True
         assert state.get("textlint_violations_read") is not True
         assert state.get("plan_file_guidelines_read") is not True
+
+
+class TestPlanFilePostWriteNotice:
+    """計画ファイルのWrite成功時に書き込み後チェック案内をhookSpecificOutput経由で返す挙動。"""
+
+    def _make_plan_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        return plans / "sample.md"
+
+    def test_notice_emitted_on_plan_file_write(self, tmp_path: pathlib.Path) -> None:
+        plan_path = self._make_plan_path(tmp_path)
+        sid = "post-write-notice"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=plan_path.parents[2],
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        payload = json.loads(result.stdout)
+        message = payload["hookSpecificOutput"]["additionalContext"]
+        assert "post-write checks" in message
+        assert "pyfltr run-for-agent" in message
+        assert "check_plan_diff_gates.py" in message
+        assert "[auto-generated: agent-toolkit/posttooluse]" in message
+
+    def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
+        plan_path = self._make_plan_path(tmp_path)
+        sid = "post-write-no-plan-mode"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=plan_path.parents[2],
+        )
+        assert result.returncode == 0
+        assert "post-write checks" not in result.stdout
+
+    def test_no_notice_on_non_plan_file_write(self, tmp_path: pathlib.Path) -> None:
+        sid = "post-write-non-plan"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "a.py"), "content": "x"},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == "" or "post-write checks" not in result.stdout
+
+    def test_no_notice_on_plan_file_edit(self, tmp_path: pathlib.Path) -> None:
+        plan_path = self._make_plan_path(tmp_path)
+        plan_path.write_text("# t\n", encoding="utf-8")
+        sid = "post-write-edit"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(plan_path), "old_string": "t", "new_string": "u"},
+            },
+            state_dir=tmp_path,
+            home_dir=plan_path.parents[2],
+        )
+        assert result.returncode == 0
+        assert "post-write checks" not in result.stdout
+
+    def test_no_notice_on_sidecar_file_write(self, tmp_path: pathlib.Path) -> None:
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        sidecar = plans / "sample.review.md"
+        sid = "post-write-sidecar"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(sidecar), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        assert result.returncode == 0
+        assert "post-write checks" not in result.stdout
 
 
 class TestFeedbackSkillFlags:

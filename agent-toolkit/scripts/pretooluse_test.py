@@ -5,7 +5,6 @@ subprocessで起動しexit code・stderr・stdoutを検証する。
 
 # pylint: disable=too-many-lines  # ハンドラ網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
 
-import hashlib
 import json
 import os
 import pathlib
@@ -13,7 +12,6 @@ import re
 import subprocess
 import sys
 
-import _plan_file
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs as _load_scope_escalation_inputs
 from pyfltr.colloquial import check as _colloquial_check
@@ -352,15 +350,8 @@ class TestColloquialCheck:
 def _plan_file_state_env(
     tmp_path: pathlib.Path,
     home_dir: pathlib.Path | None = None,
-    *,
-    bypass_prelint: bool = True,
 ) -> dict[str, str]:
-    # 既存テストは事前lint検査の独立検査が目的のため、
-    # デフォルトで`AGENT_TOOLKIT_PRELINT_TEST_BYPASS=1`を設定して事前lint checkをバイパスする。
-    # 事前lint check自体を検証する`TestPlanFilePrelintPassed`は`bypass_prelint=False`を渡す。
     env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-    if bypass_prelint:
-        env["AGENT_TOOLKIT_PRELINT_TEST_BYPASS"] = "1"
     if home_dir is not None:
         env["HOME"] = str(home_dir)
     return env
@@ -373,11 +364,6 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
     plan.write_text("# t\n", encoding="utf-8")
     return plan
 
-
-# 既存テストで共通利用するplan file編集時の事前lint検査通過用SHA256。
-# `# t\n`のSHA256で、prelint未実施ブロックの干渉を回避するためにテスト側で事前登録する。
-_PLAN_TEMPLATE_CONTENT = "# t\n"
-_PLAN_TEMPLATE_SHA = hashlib.sha256(_PLAN_TEMPLATE_CONTENT.encode("utf-8")).hexdigest()
 
 # H2節順検査も通過する最小限の正規計画ファイル内容。
 # `## 変更内容`配下に`### 対象ファイル一覧`を含め、PostToolUseのH3検査も通過させる。
@@ -393,7 +379,6 @@ _VALID_H2_PLAN_CONTENT = (
     "## 進捗ログ\n\nx\n\n"
     "## 計画ファイル（本ファイル）のパス\n\nx\n"
 )
-_VALID_H2_PLAN_SHA = hashlib.sha256(_VALID_H2_PLAN_CONTENT.encode("utf-8")).hexdigest()
 
 
 class TestPlanModeSkillFirstCheck:
@@ -445,7 +430,6 @@ class TestPlanModeSkillFirstCheck:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "plan-skill-flag"
-        # textlint_violations_read・plan_file_guidelines_read・plan_prelint_passedも併せて設定する（独立checkとの干渉回避）
         _write_session_state(
             tmp_path,
             sid,
@@ -453,7 +437,6 @@ class TestPlanModeSkillFirstCheck:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
@@ -541,7 +524,6 @@ class TestPlanModeSkillFirstCheck:
             {
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
@@ -704,7 +686,6 @@ class TestPlanFileRequiredReadsFirstCheck:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [_VALID_H2_PLAN_SHA],
             },
         )
         result = _run(
@@ -769,13 +750,14 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
 
     @staticmethod
     def _all_prior_flags(tmp_path: pathlib.Path, session_id: str, content: str | None = None) -> None:
+        # `content`パラメーターは旧prelint検査用の状態設定に使っていたが撤廃済み。
+        # 互換のためシグネチャは維持する（呼び出し側の書き換え範囲を最小化する）。
+        del content
         state: dict = {
             "plan_mode_skill_invoked": True,
             "textlint_violations_read": True,
             "plan_file_guidelines_read": True,
         }
-        if content is not None:
-            state["plan_prelint_passed"] = [hashlib.sha256(content.encode("utf-8")).hexdigest()]
         _write_session_state(tmp_path, session_id, state)
 
     @staticmethod
@@ -1525,345 +1507,6 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert result.returncode == 0
         assert "test-rule2.md" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-
-class TestPlanFilePrelintPassed:
-    """plan file Write時の事前lint検査未実施ブロック検査。
-
-    `plan_prelint_passed`（pyfltr成功記録）と`plan_prelint_passed_line_width`（check_line_width.py成功記録）
-    の双方に登録済みのSHA256と一致するcontentのみWriteを許可する。
-    全文SHA256または`## 背景`配下フェンスブロック除去後SHA256のいずれかが両方のセットに登録されている必要がある。
-    """
-
-    @staticmethod
-    def _state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path | None = None) -> dict[str, str]:
-        # 事前lint check自体を検証するためバイパスを無効化する
-        return _plan_file_state_env(tmp_path, home_dir, bypass_prelint=False)
-
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _sha(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _strip_bg_text(content: str) -> str:
-        return _plan_file.strip_background_text_blocks(content)
-
-    @staticmethod
-    def _bypass_other_blocks() -> dict:
-        return {
-            "plan_mode_skill_invoked": True,
-            "textlint_violations_read": True,
-            "plan_file_guidelines_read": True,
-        }
-
-    def test_blocks_write_without_prelint_flag(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-block"
-        _write_session_state(tmp_path, sid, self._bypass_other_blocks())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": "# t\n"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "prior lint check" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
-
-    def test_allows_when_full_sha_registered(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-full-sha"
-        content = (
-            "# title\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\n本文\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        state = self._bypass_other_blocks()
-        sha = self._sha(content)
-        state["plan_prelint_passed"] = [sha]
-        state["plan_prelint_passed_line_width"] = [sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_allows_when_stripped_sha_registered(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-stripped-sha"
-        content = (
-            "# title\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\n```text\noriginal\n```\n\n"
-            "## 対応方針\n\n本文\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        state = self._bypass_other_blocks()
-        stripped_sha = self._sha(self._strip_bg_text(content))
-        state["plan_prelint_passed"] = [stripped_sha]
-        state["plan_prelint_passed_line_width"] = [stripped_sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_allows_non_plan_file(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        home.mkdir()
-        env = self._state_env(tmp_path, home)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": "prelint-other-file",
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_allows_when_session_id_empty(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        content = (
-            "# t\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": "",
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_allows_edit_and_multiedit(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        # H2節順検査がEdit/MultiEditにも適用されるため、初期内容をvalid H2にする
-        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-edit"
-        _write_session_state(tmp_path, sid, self._bypass_other_blocks())
-        for tool, ti in [
-            ("Edit", {"file_path": str(plan), "old_string": "# タイトル", "new_string": "# タイトル"}),
-            (
-                "MultiEdit",
-                {
-                    "file_path": str(plan),
-                    "edits": [{"old_string": "# タイトル", "new_string": "# タイトル"}],
-                },
-            ),
-        ]:
-            result = _run(
-                {"tool_name": tool, "tool_input": ti, "session_id": sid, "permission_mode": "default"},
-                env_overrides=env,
-            )
-            # Edit/MultiEditは本prelint checkの対象外（Write専用）
-            assert result.returncode == 0, f"{tool} should not be blocked by prelint check"
-
-    def test_allows_when_content_not_string(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-nonstr"
-        _write_session_state(tmp_path, sid, self._bypass_other_blocks())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": 123},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        # contentが非文字列なら判定不能のためスキップ（通過）
-        assert result.returncode == 0
-
-    def test_blocks_when_flag_value_not_list(self, tmp_path: pathlib.Path):
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-baddict"
-        state = self._bypass_other_blocks()
-        state["plan_prelint_passed"] = {"some": "dict"}  # 不正値（リスト以外）
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": "# t\n"},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        # 不正値は空リスト扱いで防御的に処理しブロック
-        assert result.returncode == 2
-
-    def test_boundary_text_block_change_allowed(self, tmp_path: pathlib.Path):
-        """境界1: `## 背景`内`text`コードブロック内容のみ変更したcontent → 除去後SHA256一致で通過。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-bdy1"
-        original = (
-            "# t\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\n```text\nA\n```\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        modified = (
-            "# t\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\n```text\nB\n```\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        state = self._bypass_other_blocks()
-        stripped_sha = self._sha(self._strip_bg_text(original))
-        state["plan_prelint_passed"] = [stripped_sha]
-        state["plan_prelint_passed_line_width"] = [stripped_sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": modified},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_boundary_background_prose_change_blocked(self, tmp_path: pathlib.Path):
-        """境界2: `## 背景`内地の文（コードブロック外）を変更 → ハッシュ不一致でブロック。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-bdy2"
-        original = "# t\n\n## 背景\n\n説明A\n\n```text\nX\n```\n\n## 対応方針\n\ny\n"
-        modified = "# t\n\n## 背景\n\n説明B\n\n```text\nX\n```\n\n## 対応方針\n\ny\n"
-        state = self._bypass_other_blocks()
-        stripped_sha = self._sha(self._strip_bg_text(original))
-        state["plan_prelint_passed"] = [stripped_sha]
-        state["plan_prelint_passed_line_width"] = [stripped_sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": modified},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-
-    def test_boundary_non_text_block_change_blocked(self, tmp_path: pathlib.Path):
-        """境界3: `## 背景`内の非textコードブロック（bash等）変更は内容形式系検査のwarn降格対象。
-
-        内容形式系検査群のブロック降格に伴い、事前lint検査以外のブロック契機が失われた場合は
-        exit 0（warnのみ）となる。ブロック維持は`ExitPlanMode`/`plan-impl`起動時の集約検査へ委ねる。
-        """
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-bdy3"
-        original = "# t\n\n## 背景\n\n```bash\nA\n```\n\n## 対応方針\n\nz\n"
-        modified = "# t\n\n## 背景\n\n```bash\nB\n```\n\n## 対応方針\n\nz\n"
-        state = self._bypass_other_blocks()
-        stripped_sha = self._sha(self._strip_bg_text(original))
-        state["plan_prelint_passed"] = [stripped_sha]
-        state["plan_prelint_passed_line_width"] = [stripped_sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": modified},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_boundary_other_section_text_block_change_blocked(self, tmp_path: pathlib.Path):
-        """境界4: 背景以外（調査結果等）のtextコードブロック変更 → ハッシュ不一致でブロック。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "prelint-bdy4"
-        original = "# t\n\n## 調査結果\n\n```text\nA\n```\n\n## 対応方針\n\nw\n"
-        modified = "# t\n\n## 調査結果\n\n```text\nB\n```\n\n## 対応方針\n\nw\n"
-        state = self._bypass_other_blocks()
-        stripped_sha = self._sha(self._strip_bg_text(original))
-        state["plan_prelint_passed"] = [stripped_sha]
-        state["plan_prelint_passed_line_width"] = [stripped_sha]
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": modified},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
 
 
 class TestResponseLanguageCheck:
@@ -4111,7 +3754,7 @@ class TestCheckPlanFileH2SectionOrder:
     _make_plan = staticmethod(_make_plan_file)
 
     @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
         """H2節順検査の前提条件となるセッション状態フラグを書き込む。"""
         _write_session_state(
             tmp_path,
@@ -4120,7 +3763,6 @@ class TestCheckPlanFileH2SectionOrder:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
             },
         )
 
@@ -4803,7 +4445,7 @@ class TestPlanFileTargetFilesH3Correspondence:
     _make_plan = staticmethod(_make_plan_file)
 
     @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
         _write_session_state(
             tmp_path,
             session_id,
@@ -4811,7 +4453,6 @@ class TestPlanFileTargetFilesH3Correspondence:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
             },
         )
 
@@ -4962,7 +4603,7 @@ class TestPlanFileHistoryContentSync:
     _make_plan = staticmethod(_make_plan_file)
 
     @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
         _write_session_state(
             tmp_path,
             session_id,
@@ -4970,7 +4611,6 @@ class TestPlanFileHistoryContentSync:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
             },
         )
 
@@ -5219,7 +4859,7 @@ class TestPlanFilePathSectionMatchesFilePath:
     _make_plan = staticmethod(_make_plan_file)
 
     @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
         _write_session_state(
             tmp_path,
             session_id,
@@ -5227,7 +4867,6 @@ class TestPlanFilePathSectionMatchesFilePath:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
             },
         )
 
@@ -5408,60 +5047,6 @@ class TestStyleNegationCheck:
         )
         assert result.returncode == 0
         assert "根拠に" not in result.stderr
-
-
-class TestPlanFilePrelintPassedDiffMarkerPipeline:
-    """FB11: diff表記コードブロックを含む計画本文の事前lint検査ハッシュ整合統合テスト。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    def test_diff_marker_stripped_scratchpad_hash_passes_prelint_check(self, tmp_path: pathlib.Path):
-        """加工処理を経たscratchpadのハッシュが計画本文のstripped_shaと整合し、事前lint検査を通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home, bypass_prelint=False)
-        sid = "prelint-diff-pipeline"
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\n```text\nuser feedback\n```\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\nなし\n\n"
-            "### 詳細\n\n```text\n@@ -1 +1 @@\n-old\n+new\n```\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        # scratchpad出力の加工パイプライン（plan-file-guidelines.md記載の手順）を模擬する:
-        # 背景フェンス除去 → 変更内容配下のdiffマーカー除去、の順に適用したテキストを
-        # scratchpad相当のファイルへ書き込み、事前lint検査成功記録として登録する。
-        pipeline_output = _plan_file.strip_diff_markers_in_changes_blocks(_plan_file.strip_background_text_blocks(content))
-        scratchpad_sha = hashlib.sha256(pipeline_output.encode("utf-8")).hexdigest()
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [scratchpad_sha],
-                "plan_prelint_passed_line_width": [scratchpad_sha],
-            },
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert "prior lint check" not in result.stderr
-        assert result.returncode == 0
 
 
 class TestDirectAgentToolkitEditsAfterPlanMode:
@@ -5681,7 +5266,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         """
         sid = "direct-edit-mark-plan-written"
         home = tmp_path / "home"
-        self._write_flag_state(tmp_path, sid, {"plan_prelint_passed": [_VALID_H2_PLAN_SHA]})
+        self._write_flag_state(tmp_path, sid)
         env = self._state_env(tmp_path, home)
         # 2件目でwarn状態にする。
         for name in ("foo/SKILL.md", "bar/SKILL.md"):
@@ -5746,7 +5331,7 @@ class TestPlanFileChangeH3HasCodeBlock:
     _make_plan = staticmethod(_make_plan_file)
 
     @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, content: str) -> None:
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
         _write_session_state(
             tmp_path,
             session_id,
@@ -5754,7 +5339,6 @@ class TestPlanFileChangeH3HasCodeBlock:
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
                 "plan_file_guidelines_read": True,
-                "plan_prelint_passed": [hashlib.sha256(content.encode("utf-8")).hexdigest()],
             },
         )
 

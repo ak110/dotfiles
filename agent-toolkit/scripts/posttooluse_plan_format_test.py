@@ -130,7 +130,8 @@ class TestPlanFormatCheck:
         plans = _prepare_plan_home(home)
         return home, plans
 
-    def test_valid_plan_passes_silently(self, tmp_path: pathlib.Path):
+    def test_valid_plan_emits_only_post_write_notice(self, tmp_path: pathlib.Path):
+        """有効な計画ファイルへのWrite成功時、形式違反は無く書き込み後チェック案内のみが返る。"""
         home, plans = self._home(tmp_path)
         plan = _write_plan(plans, "sample.md", _VALID_PLAN)
         result = _run(
@@ -144,7 +145,8 @@ class TestPlanFormatCheck:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
+        assert "post-write checks" in result.stdout
 
     def test_review_md_is_skipped(self, tmp_path: pathlib.Path):
         home, plans = self._home(tmp_path)
@@ -248,8 +250,8 @@ class TestPlanFormatCheck:
         )
         assert result.stdout == ""
 
-    def test_valid_plan_with_h3_passes_silently(self, tmp_path: pathlib.Path):
-        """## 変更内容 配下の先頭H3が「対象ファイル一覧」のとき違反なし。"""
+    def test_valid_plan_with_h3_emits_only_post_write_notice(self, tmp_path: pathlib.Path):
+        """## 変更内容 配下の先頭H3が「対象ファイル一覧」のとき形式違反は無く書き込み後チェック案内のみが返る。"""
         home, plans = self._home(tmp_path)
         content = _build_valid_plan(
             overrides={"変更内容": "### 対象ファイル一覧\n\n- z"},
@@ -266,7 +268,8 @@ class TestPlanFormatCheck:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == ""
+        assert "does not conform" not in result.stdout
+        assert "post-write checks" in result.stdout
 
     def test_no_h3_under_changes_section_is_warned(self, tmp_path: pathlib.Path):
         """## 変更内容 配下にH3が存在しないとき違反として警告される。"""
