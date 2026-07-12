@@ -147,8 +147,8 @@
   当該通知は休止状態を意味し実装工程の完了を意味しない。
   完了確認は完了報告本文の受領・`git log`・`gh run list`・作業ツリーの実測などの観測可能な事実で判定する。
   `idle_notification`のみを根拠に後続工程へ進まない
-  - Stopフック（`agent-toolkit/scripts/_stop_gate.py`）におけるteammate完了通知の扱いは別ロジックとする。
-    Stop許可判定への利用は`idle_notification`受信時の完了判定規定の対象外とする
+  - Stopフック（`agent-toolkit/scripts/_stop_gate.py`）はteammateの`idle_notification(available)`を完了集合へ加算する。
+    Stop許可判定と後続進行判定は別レイヤーで両立するため、`idle_notification`受信時の完了判定規定とは意図的に別ロジックとする
 - サブエージェント完了報告に異常終了の兆候（thrashing文言、`tool_uses`欄が`0`、
   `result`欄が起動プロンプトの再掲のみ等）が含まれる場合、完了とみなさず同タスクをメイン直接実装で再実施する
   - 同じプロンプトで再起動せず、縮減版プロンプト（読込対象削減・規範スキル限定・`subagent_type: claude`切替）で新規起動する
