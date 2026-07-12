@@ -360,3 +360,22 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
         return True
     paths = extract_target_files_from_changes(content)
     return "agent-toolkit/.claude-plugin/plugin.json" in paths and ".claude-plugin/marketplace.json" in paths
+
+
+def find_invalid_target_file_paths(content: str) -> list[str]:
+    """`## 変更内容 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
+
+    絶対パス（`/`始まり）または親ディレクトリ参照（パス部品に`..`を含む）を
+    プロジェクトルート相対の完全パス規範への違反として返す。
+    `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の
+    「既存パスはプロジェクトルート相対の完全パスで記述する」規定の機械強制。
+    """
+    invalid: list[str] = []
+    for path in extract_target_files_from_changes(content):
+        if path.startswith("/"):
+            invalid.append(path)
+            continue
+        parts = pathlib.PurePosixPath(path.replace("\\", "/")).parts
+        if ".." in parts:
+            invalid.append(path)
+    return invalid

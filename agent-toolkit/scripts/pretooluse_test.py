@@ -6324,3 +6324,91 @@ class TestPlanFileManifestWhenBumpStep:
         assert result.returncode == 0
         assert "対象ファイル一覧に両manifestの記載が欠落している" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+
+
+class TestPlanFileTargetFilePathsRelative:
+    """対象ファイル一覧のパス表記違反警告検査。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_mode_skill_invoked": True,
+                "textlint_violations_read": True,
+                "plan_file_guidelines_read": True,
+            },
+        )
+
+    @staticmethod
+    def _plan_body(target_paths: list[str]) -> str:
+        target_lines = "\n".join(f"- [ ] `{p}`" for p in target_paths)
+        return (
+            "# タイトル\n\n"
+            "## 変更履歴\n\n- 初版\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            f"{target_lines}\n\n"
+            "## 実行方法\n\n- 実装する\n\n"
+            "## 進捗ログ\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+
+    def test_warns_on_absolute_path(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "path-abs"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["/home/user/project/foo.py"])
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "絶対パスまたは親ディレクトリ参照" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
+
+    def test_warns_on_parent_reference(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "path-parent"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["../outside/bar.py"])
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "../outside/bar.py" in result.stderr
+
+    def test_passes_on_relative_paths(self, tmp_path: pathlib.Path):
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        sid = "path-relative"
+        self._prior_flags(tmp_path, sid)
+        content = self._plan_body(["agent-toolkit/scripts/atk.py"])
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+            },
+            env_overrides=self._state_env(tmp_path, home),
+        )
+        assert result.returncode == 0
+        assert "絶対パスまたは親ディレクトリ参照" not in result.stderr

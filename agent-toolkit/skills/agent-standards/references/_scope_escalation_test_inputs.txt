@@ -148,3 +148,8 @@ approach-confirm	選択肢は完遂を試みる、保存して次回継続の二
 subagent-hesitation	サブエージェントを使うか判断が迷う
 subagent-hesitation	委譲すべきか確認したい
 subagent-hesitation	メインで処理するかサブエージェント委譲するか判断保留
+next-cycle-defer	次セッションへ持ち越す
+next-cycle-defer	次回セッションへ持ち越す
+next-cycle-defer	次のセッションで扱う
+next-cycle-defer	次回ラウンドへ引き継ぐ
+next-cycle-defer	次計画へ回す

@@ -182,6 +182,30 @@ class TestExtractTargetFilesFromChanges:
         assert not _plan_format.extract_target_files_from_changes(content)
 
 
+class TestFindInvalidTargetFilePaths:
+    """find_invalid_target_file_paths の相対パス表記違反検出を検査する。"""
+
+    def test_find_invalid_target_file_paths_detects_absolute(self) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] /home/user/project/foo.py\n"
+        assert _plan_format.find_invalid_target_file_paths(content) == ["/home/user/project/foo.py"]
+
+    def test_find_invalid_target_file_paths_detects_parent_reference(self) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] ../outside/bar.py\n"
+        assert _plan_format.find_invalid_target_file_paths(content) == ["../outside/bar.py"]
+
+    def test_find_invalid_target_file_paths_accepts_relative(self) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/scripts/atk.py\n"
+        assert not _plan_format.find_invalid_target_file_paths(content)
+
+    def test_find_invalid_target_file_paths_handles_backtick_paths(self) -> None:
+        content = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `/abs/foo.md`（現行1行, 見込み2行）\n"
+            "- [ ] `agent-toolkit/rules/x.md`（現行10行）\n"
+        )
+        assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/foo.md"]
+
+
 class TestHasManifestFilesWhenBumpStepPresent:
     """has_manifest_files_when_bump_step_present の基本動作を検査する。"""
 

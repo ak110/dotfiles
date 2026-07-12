@@ -33,6 +33,7 @@
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
 - `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（warn出力のみ）
+- 対象ファイル一覧に絶対パスまたは親ディレクトリ参照（`..`を含むパス）を検出した場合の全文一括検査（warn出力のみ）
 - 対象ファイル一覧に規範ファイル（`agent-toolkit/rules/*.md`等）を含み、`## 変更内容`本文の
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
     小見出しが存在しない場合の全文一括検査（warn出力のみ）
@@ -68,6 +69,7 @@ from _plan_diff_parsing import (  # noqa: E402
 )
 from _plan_format import (  # noqa: E402
     extract_target_files_from_changes,
+    find_invalid_target_file_paths,
     has_bump_step_when_required,
     has_manifest_files_when_bump_step_present,
     is_agent_doc_target_file,
@@ -181,6 +183,9 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
     manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
     if manifest_warning is not None:
         print(manifest_warning, file=sys.stderr)
+    target_path_warning = _check_target_file_paths_relative(plan_path, text)
+    if target_path_warning is not None:
+        print(target_path_warning, file=sys.stderr)
     retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
     if retroactive_scan_warning is not None:
         print(retroactive_scan_warning, file=sys.stderr)
@@ -276,6 +281,25 @@ def _check_manifest_files_when_bump_step(plan_path: pathlib.Path, text: str) -> 
         f"{plan_path}: [warn] `## 実行方法`本文にbump stepが記載されているが、"
         f"対象ファイル一覧に両manifestの記載が欠落している。"
         f"`agent-toolkit-edit`スキル「バージョン更新」節参照。"
+    )
+
+
+def _check_target_file_paths_relative(plan_path: pathlib.Path, text: str) -> str | None:
+    """対象ファイル一覧のパス表記がプロジェクトルート相対であるかを照合する。違反時は警告メッセージを返す。
+
+    判定ロジックのSSOTは`_plan_format.find_invalid_target_file_paths`。
+    既存`_check_bump_step`と対称のwarn降格とし、呼び出し元はexit codeへ含めずstderr出力のみに使う。
+    `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節参照。
+    """
+    invalid = find_invalid_target_file_paths(text)
+    if not invalid:
+        return None
+    joined = ", ".join(f"`{p}`" for p in invalid)
+    return (
+        f"{plan_path}: [warn] `## 変更内容 > ### 対象ファイル一覧`に"
+        f"絶対パスまたは親ディレクトリ参照を含む項目を検出: {joined}。"
+        f"プロジェクトルート相対の完全パスへ修正する"
+        f"（`skills/plan-mode/references/plan-file-guidelines.md`参照）。"
     )
 
 
@@ -559,6 +583,9 @@ def _extract_diff_blocks(
     manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
     if manifest_warning is not None:
         print(manifest_warning, file=sys.stderr)
+    target_path_warning = _check_target_file_paths_relative(plan_path, text)
+    if target_path_warning is not None:
+        print(target_path_warning, file=sys.stderr)
     retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
     if retroactive_scan_warning is not None:
         print(retroactive_scan_warning, file=sys.stderr)

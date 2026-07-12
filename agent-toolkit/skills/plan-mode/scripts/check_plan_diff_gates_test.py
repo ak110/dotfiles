@@ -586,6 +586,30 @@ class TestCheckManifestFilesWhenBumpStep:
         assert "manifest" in result
 
 
+class TestCheckTargetFilePathsRelative:
+    """`_check_target_file_paths_relative`のwarn分類検査動作を検証する。"""
+
+    def test_returns_none_for_relative_paths(self, tmp_path: pathlib.Path) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] agent-toolkit/scripts/atk.py\n"
+        plan_path = tmp_path / "plan.md"
+        assert _MOD._check_target_file_paths_relative(plan_path, content) is None
+
+    def test_warns_on_absolute_path(self, tmp_path: pathlib.Path) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] /home/user/foo.py\n"
+        plan_path = tmp_path / "plan.md"
+        msg = _MOD._check_target_file_paths_relative(plan_path, content)
+        assert msg is not None
+        assert "[warn]" in msg
+        assert "/home/user/foo.py" in msg
+
+    def test_warns_on_parent_reference(self, tmp_path: pathlib.Path) -> None:
+        content = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] ../outside/bar.py\n"
+        plan_path = tmp_path / "plan.md"
+        msg = _MOD._check_target_file_paths_relative(plan_path, content)
+        assert msg is not None
+        assert "../outside/bar.py" in msg
+
+
 class TestExtractDiffBlocksPublic:
     """統合ランナー向け公開関数`_extract_diff_blocks(plan_path)`の挙動を検証する。"""
 
