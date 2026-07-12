@@ -21,9 +21,11 @@
 - `writing-standards/scripts/check_line_width.py`: 127幅検査（サブプロセス、ファイル単位）
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）
 - `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
-  --enable=colloquial-check`: 計画ファイル全域のtextlint・markdownlint・typos・口語表現検査
-  （サブプロセス、JSONL出力を解析し`kind == "diagnostic"`のレコード、および
-  `kind == "command"`かつ失敗系statusのレコードのみ要約表示）
+  --enable=colloquial-check --exclude-fence-under=## 背景`: 計画ファイル全域のtextlint・
+  markdownlint・typos・口語表現検査（サブプロセス、JSONL出力を解析し`kind == "diagnostic"`の
+  レコード、および`kind == "command"`かつ失敗系statusのレコードのみ要約表示）。
+  `--exclude-fence-under=## 背景`はユーザー発話原文転記領域（`## 背景`節配下のfenceブロック）を
+  検査対象から除外し、原文の表現・記法に対する偽陽性検出を回避する
 
 成功時（全項目0違反）はexit 0で無出力。違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
 終了する。`uvx pyfltr`のJSONL出力はヘッダ行・succeeded系サマリー行を含み冗長なため生出力を
@@ -92,15 +94,17 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
 
     prose_paths: list[pathlib.Path] = []
     line_width_paths: list[pathlib.Path] = []
+    location_map: dict[str, str] = {}
 
     def _extract() -> int:
-        messages, (extracted_prose, extracted_line_width) = check_plan_diff_gates._extract_diff_blocks(plan_path)
+        messages, (extracted_prose, extracted_line_width, extracted_map) = check_plan_diff_gates._extract_diff_blocks(plan_path)
         prose_paths.extend(extracted_prose)
         line_width_paths.extend(extracted_line_width)
+        location_map.update(extracted_map)
         return len(messages)
 
     violations += _capture_and_relay(_extract)
-    for msg in check_plan_diff_gates._check_extracted_paths((prose_paths, line_width_paths)):
+    for msg in check_plan_diff_gates._check_extracted_paths((prose_paths, line_width_paths, location_map)):
         print(msg, file=sys.stderr)
         violations += 1
 

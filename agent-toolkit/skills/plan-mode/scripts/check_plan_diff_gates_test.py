@@ -584,3 +584,81 @@ class TestCheckManifestFilesWhenBumpStep:
         assert result is not None
         assert "[warn]" in result
         assert "manifest" in result
+
+
+class TestExtractDiffBlocksPublic:
+    """統合ランナー向け公開関数`_extract_diff_blocks(plan_path)`の挙動を検証する。"""
+
+    def test_prose_block_appears_in_both_lists(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """散文系拡張子（`.md`）ブロックはprose_paths・line_width_paths双方へ追加される。"""
+        _stub_subprocess(monkeypatch, scope_returncode=0)
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nprose body\n```\n",
+        )
+        messages, (prose_paths, line_width_paths, location_map) = _MOD._extract_diff_blocks(plan)
+        assert messages == []
+        assert len(prose_paths) == 1
+        assert len(line_width_paths) == 1
+        assert prose_paths[0] == line_width_paths[0]
+        assert str(prose_paths[0]) in location_map
+        assert "foo.md" in location_map[str(prose_paths[0])]
+        for path in {*prose_paths, *line_width_paths}:
+            path.unlink(missing_ok=True)
+
+    def test_code_block_appears_only_in_line_width_list(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """非散文系拡張子（`.py`）ブロックはline_width_pathsのみへ追加され、textlint適用対象から除外される。"""
+        _stub_subprocess(monkeypatch, scope_returncode=0)
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.py`\n\n```text\n[新設]\ndef main(): pass\n```\n",
+        )
+        messages, (prose_paths, line_width_paths, location_map) = _MOD._extract_diff_blocks(plan)
+        assert messages == []
+        assert prose_paths == []
+        assert len(line_width_paths) == 1
+        assert str(line_width_paths[0]) in location_map
+        for path in line_width_paths:
+            path.unlink(missing_ok=True)
+
+
+class TestCheckExtractedPaths:
+    """`_check_extracted_paths`のバッチ実行と位置情報復元を検証する。"""
+
+    def test_empty_paths_returns_empty(self) -> None:
+        """全リストが空なら空リストを返す。"""
+        assert _MOD._check_extracted_paths(([], [], {})) == []
+
+    def test_rewrites_tmp_path_to_location_marker(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """textlint出力中の一時ファイルパスがH3位置マーカーへ書き換えられる。"""
+        prose_file = tmp_path / "block.md"
+        prose_file.write_text("body", encoding="utf-8")
+        location_marker = "plan.md: H3=`foo.md` L42"
+        location_map = {str(prose_file): location_marker}
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if "textlint" in "".join(cmd):
+                return _completed(1, stdout=f"{prose_file}:5: violation")
+            return _completed(0)
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        messages = _MOD._check_extracted_paths(([prose_file], [prose_file], location_map))
+        assert any(location_marker in m for m in messages)
+        assert not any(str(prose_file) in m for m in messages)
+
+
+class TestRewriteLocations:
+    """`_rewrite_locations`の置換ロジックを検証する。"""
+
+    def test_replaces_all_registered_paths(self) -> None:
+        """位置マップに登録された全パスがマーカーへ置換される。"""
+        output = "/tmp/a.md:3: A\n/tmp/b.md:5: B\n"
+        location_map = {"/tmp/a.md": "plan.md: H3=`x` L1", "/tmp/b.md": "plan.md: H3=`y` L2"}
+        result = _MOD._rewrite_locations(output, location_map)
+        assert "plan.md: H3=`x` L1:3: A" in result
+        assert "plan.md: H3=`y` L2:5: B" in result
+
+    def test_leaves_unmatched_content_intact(self) -> None:
+        """位置マップに存在しないパスはそのまま残る。"""
+        output = "/tmp/other.md:1: something"
+        assert _MOD._rewrite_locations(output, {"/tmp/known.md": "marker"}) == output

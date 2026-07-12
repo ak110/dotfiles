@@ -1,5 +1,5 @@
 ---
-# 同期注記: 「起草をサブエージェントへ委譲するプロンプト」節の「計画専用機械チェック実行」サブバレットは
+# 同期注記: 「起草をサブエージェントへ委譲するプロンプト」バレットの「計画専用機械チェック実行」サブバレットは
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と
 # 意図的に重複する。改訂時は両ファイルを同時更新する。
 ---
@@ -142,6 +142,13 @@
   - 並列起動時は作業ツリー全体へ影響する操作（pre-commit起動・コミット作成等）を起動プロンプトで明示禁止し、
     検証・コミットはメイン側で全タスク完了後にまとめて実施する
   - 例外: `plan-impl-executor`手順配下の`plan-implementer`は実装委譲に専念し、検証・コミットは呼び出し元が担う
+- `Agent`ツールの`name`指定で起動したサブエージェント（teammate）から
+  `idle_notification`（`{"type":"idle_notification", "idleReason":"available", ...}`形式）を受信した場合、
+  当該通知は休止状態を意味し実装工程の完了を意味しない。
+  完了確認は完了報告本文の受領・`git log`・`gh run list`・作業ツリーの実測などの観測可能な事実で判定する。
+  `idle_notification`のみを根拠に後続工程へ進まない
+  - Stopフック（`agent-toolkit/scripts/_stop_gate.py`）におけるteammate完了通知の扱いは別ロジックとする。
+    Stop許可判定への利用は`idle_notification`受信時の完了判定規定の対象外とする
 - サブエージェント完了報告に異常終了の兆候（thrashing文言、`tool_uses`欄が`0`、
   `result`欄が起動プロンプトの再掲のみ等）が含まれる場合、完了とみなさず同タスクをメイン直接実装で再実施する
   - 同じプロンプトで再起動せず、縮減版プロンプト（読込対象削減・規範スキル限定・`subagent_type: claude`切替）で新規起動する
