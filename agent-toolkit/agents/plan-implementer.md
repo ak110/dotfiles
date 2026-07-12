@@ -8,7 +8,8 @@ effort: medium
 skills:
   - agent-toolkit:coding-standards
   - agent-toolkit:writing-standards
-  # - agent-toolkit:agent-standards
+  # agent-toolkit:agent-standardsは条件付き参照のためskills欄でプリロードしない。
+  # 判断基準どおり編集対象が「コーディングエージェント向け文書」の場合のみ本文のSkillツール起動で読み込む。
 user-invocable: false
 # 編集時の注意点:
 # このエージェントはplan-mode, plan-impl-executorなどを呼び出さないため、

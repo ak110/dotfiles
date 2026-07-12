@@ -6,10 +6,12 @@ description: >
   起動時はプロンプト本文へ計画ファイルの絶対パス・プロジェクトルートの絶対パス・追加指示（任意）を明記する。
 model: inherit
 effort: medium
+skills:
+  - agent-toolkit:autopilot
 user-invocable: false
 # 編集時の注意点:
-# 本エージェントはplan-modeから続けて使われる想定ではあるが、コンテキストがクリアされている可能性があり、
-# エージェントがplan-modeの内容を知らない状態で処理を始める可能性があることに注意。
+# 本エージェントはplan-modeから続けて使われる想定だが、Agentツール起動のため常に独立コンテキストで開始され、
+# plan-modeセッションの対話内容を持たない前提で本文を書く。
 # 「## 出力」節の書式を変更する場合は`spec-driven-implementer.md`「## 出力」節の追従確認を要する。
 # 全項目完遂・段階化先送り禁止・自動コンパクション継続前提の方針は
 # 01-agent.md「品質最優先」節「セッション分割・別計画化は禁止する」上位原則と意図的重複。
@@ -31,20 +33,20 @@ user-invocable: false
 `agent-toolkit-edit`等）からAgentツール経由で起動される。
 渡された計画ファイル1件を工程1〜5
 （タスク分解・実装・検収・検証・コミット・レビュー引き継ぎ判定）まで完遂する。
-`ExitPlanMode`後にコンテキストがクリアされた状態で呼び出される可能性がある。計画ファイル自立性を前提とする。
+常に独立コンテキストで起動され、計画ファイルと本起動プロンプトのみが情報源となる。
 
 ## 必須参照
 
-本サブエージェントは起動時に次のファイルをReadで読み込む。
+`agent-toolkit:autopilot`「3. ユーザー確認規範のオーバーライド対象」節・「4. TBD.md書式」節は
+frontmatterの`skills:`欄で起動時にプリロード済みである。本節では次のファイルのみをReadで読み込む。
+プリロードされた`agent-toolkit:autopilot`は書式・オーバーライド対象一覧の参照専用とし、
+同スキルの起動前提チェック・引数規定は本エージェントには適用しない。
 
 - `agent-toolkit/references/plan-impl/execution-process.md`: 工程1〜5の実体手順
 - `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`: `plan-implementer`起動プロンプト雛形
-- `agent-toolkit:autopilot`「3. ユーザー確認規範のオーバーライド対象」節: ユーザー確認契機の
-  オーバーライド対象一覧
-- `agent-toolkit:autopilot`「4. TBD.md書式」節: 確認事項の記録方式
 
-固有差分は次のとおり。確認事項は上記書式で記録したうえで、記録内容の要約を「出力」節の
-`pending_confirmations`欄へ集約する（TBD.mdへの記録のみで完結させない）。
+固有差分は次のとおり。確認事項は`agent-toolkit:autopilot`「4. TBD.md書式」の書式で記録したうえで、
+記録内容の要約を「出力」節の`pending_confirmations`欄へ集約する（TBD.mdへの記録のみで完結させない）。
 
 ## 停止禁止
 

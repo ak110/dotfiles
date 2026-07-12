@@ -15,6 +15,8 @@
 - 通常モード・段2では`review_handoff`欄を検収する。
   「レビューは実施しない」以外は記載のスキル・エージェントを
   `agent-toolkit/references/plan-impl/caller-reception.md`の手順で起動する
+- `plan_gaps`欄は当該テーマ計画ファイルの`## 進捗ログ`へ転記して蓄積し、
+  後続テーマの計画作成（`agent-toolkit:spec-driven-plan`）の入力として参照する
 
 ## needs_escalation・未解決事象を伴う完了報告
 

@@ -39,6 +39,11 @@ Claude Code固有のサブエージェント実装制約は`agent-toolkit/rules/
 - メイン側で確定済みの判断結果への参照
   （サブエージェント側で再導出できない材料）
 
+Agentツール起動は常に独立コンテキストで開始される確定事実であり、
+「コンテキストがクリアされている可能性がある」等の不確定表現をサブエージェント定義本文へ書かない。
+呼び出し元の行動（起動前準備・完了報告の受領後の手順・自立性の担保責務等）を規定する記述は、
+サブエージェント定義本文でなく呼び出し元文書（スキル本文・`references/`）側へ書く。
+
 孫サブエージェント（サブエージェントからさらに委譲する場合）も
 同様の非共有前提を適用する。
 
@@ -55,8 +60,11 @@ Claude Code固有のサブエージェント実装制約は`agent-toolkit/rules/
 対象は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`・
 `agent-toolkit:review-standards`などとする。
 
-- サブエージェント定義frontmatterの`skills:`欄と、
+- 常時参照する規範スキルは、サブエージェント定義frontmatterの`skills:`欄でのプリロード指定と、
   呼び出し元起動プロンプト明示の両方で同じ規範を参照する
+- 対象ファイル種別に応じた条件付き参照スキルは本文のSkillツール起動でよい。
+  この場合はfrontmatterコメントへ条件付き参照である旨を明記する。
+  本文中のReadによる個別読込指示は、スキルでない個別referencesファイルに限る
 - 規範非読込型`subagent_type`の完全一覧は次の2種とする（`claude`・`Explore`）。
   当該型へ委譲する場合は該当規範の節本文を起動プロンプトへ引用転記する。
   本SSOTを追加・変更する場合は`agent-toolkit/scripts/pretooluse.py`の

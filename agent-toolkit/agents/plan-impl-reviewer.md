@@ -25,6 +25,8 @@ user-invocable: false
 #   サブエージェント再帰起動（Agent）を除外する。
 # Grep除外の理由: ファイル全体での整合性把握が重要なため部分読解に繋がるGrepを禁止し、
 #   対象ファイル全体のRead必須へ一本化する。
+# tone-examples.mdをskills欄でなく本文Readで直読みする理由: 当該ファイルは独立スキルではなく
+#   writing-standardsスキル配下のreferences単体のため、skills欄でのプリロード対象に含められない。
 ---
 
 # plan-impl-reviewer

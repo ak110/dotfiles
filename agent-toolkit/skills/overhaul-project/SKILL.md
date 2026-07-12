@@ -56,7 +56,8 @@ disable-model-invocation: true
 2. 改善観点ごとに並列スキャンを実施し、改善候補を洗い出す
 3. 候補一覧をユーザーへ提示し、優先順位・採否・破壊的変更の取り扱いを確定する
 4. 確定した方針を計画ファイルへ転記し、`ExitPlanMode`で承認を得る
-5. Agentツールで`agent-toolkit:plan-impl-executor`を起動して実装・検証・コミットを進める
+5. Agentツールで`agent-toolkit:plan-impl-executor`を起動して実装・検証・コミットを進める。
+   起動前準備と完了報告の受領手順は`agent-toolkit/references/plan-impl/caller-reception.md`に従う
 6. レビューは`agent-toolkit:careful-review`へ引き継ぐ
 
 ## サブエージェント活用
