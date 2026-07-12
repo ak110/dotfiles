@@ -3,7 +3,7 @@
 計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、wc -l実測値と
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
 正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・220行到達済みラベルなし追記検査・
-H3見出し無し・複数ファイル対象・対比ブロック無しの各シナリオを網羅する。
+H3見出し無し・複数ファイル対象・対比ブロック無し・削除ペア先頭ラベル行の縮減量除外の各シナリオを網羅する。
 """
 
 import importlib.util
@@ -546,6 +546,29 @@ class TestCheckWcProjection:
             "### `foo.md`\n\n"
             "```text\n[現行]\nold1\nold2\n```\n\n"
             "```text\n[削除根拠]\n冗長なため削除する\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_deletion_pattern_excludes_leading_current_label_from_reduction(self, tmp_path: pathlib.Path) -> None:
+        """[削除根拠]付き[現行]ブロックの先頭ラベル行`[現行]`は縮減量から除外される。"""
+        # 削除ペア3件・実本文各2行。ラベル込み（3行×3）ならreduction=9で
+        # expected=12-9=3、見込み6行との差3で_ALLOWED_DRIFTを超過する。
+        # 除外後（2行×3）ならreduction=6でexpected=6、差0で通過する。
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行12行, 見込み6行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\na1\na2\n```\n\n"
+            "```text\n[削除根拠]\n冗長\n```\n\n"
+            "```text\n[現行]\nb1\nb2\n```\n\n"
+            "```text\n[削除根拠]\n冗長\n```\n\n"
+            "```text\n[現行]\nc1\nc2\n```\n\n"
+            "```text\n[削除根拠]\n冗長\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr

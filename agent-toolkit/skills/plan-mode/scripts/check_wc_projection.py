@@ -517,7 +517,7 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     合致するブロックは対象外とし、二重集計を避ける。
     縮減対象見出し配下のブロックはトリガー文継続中でも縮減対象を優先する。
     上記経路とは独立に、`## 変更内容`H3節配下で[現行]→[削除根拠]のペア出現を検出した場合、
-    直前の[現行]ブロックの行数（位置注記1行除外後）を縮減対象行数へ加算する
+    直前の[現行]ブロックの行数（先頭ラベル行および位置注記1行の除外後）を縮減対象行数へ加算する
     （削除パターンの[削除根拠]ブロック自体は`_leading_label`経由で対比対象外のため、
     `_preceding_label_for_addition_reduction`側の縮減判定とは経路分離し二重集計を避ける）。
     戻り値はファイルパスをキーとし、addition（追記行数合計）とreduction（縮減対象行数合計）を
@@ -570,6 +570,8 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
                 pending_lines = pending_current_for_deletion
                 if pending_lines is not None:
                     entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
+                    if pending_lines and _leading_label(pending_lines) is not None:
+                        pending_lines = pending_lines[1:]
                     if pending_lines and _ANNOTATION_ONLY_RE.match(pending_lines[0].strip()):
                         pending_lines = pending_lines[1:]
                     entry["reduction"] += len(pending_lines)
