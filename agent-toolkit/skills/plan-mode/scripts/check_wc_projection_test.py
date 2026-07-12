@@ -738,6 +738,19 @@ class TestCheckboxProjectionAcceptance:
         assert result.returncode == 0
         assert "未記載" not in result.stderr
 
+    def test_non_md_path_without_projection_is_accepted(self, tmp_path: pathlib.Path) -> None:
+        """`.py`パスは見込み行数チェックボックスが存在しなくても違反にならない。"""
+        source = tmp_path / "foo.py"
+        source.write_text("line1\nline2\nline3\n", encoding="utf-8")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（新設）\n\n"
+            "### `foo.py`\n\n```text\n[現行]\nline1\n```\n\n```text\n[置換後]\nnew line\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "未記載" not in result.stderr
+
 
 class TestLeadingLabel:
     """`_leading_label`のfence内側形式ラベル検出を単体レベルで検証する。"""

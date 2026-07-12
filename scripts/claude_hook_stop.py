@@ -220,10 +220,9 @@ def main() -> int:
     # SESSION_REVIEW_PRECHECK を付与し、満たさない場合はスキル起動自体を抑止する。
     # precheckを満たした場合も各スキル本体の起動方針節に従う。
     body = (
-        f"{SESSION_REVIEW_PRECHECK} Then invoke the `{_EXTENSION_SKILL}` Skill via the Skill tool together with the"
-        " `agent-toolkit:session-review` Skill in the same turn, and produce a single combined review covering"
-        " both the dotfiles-specific extension chapters and the standard agent-toolkit session review."
-        " Follow each skill's activation policy section to decide whether to proceed with the review."
+        f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_EXTENSION_SKILL}` via the Skill tool together with"
+        " `agent-toolkit:session-review` in the same turn as one combined review,"
+        " per each skill's activation policy section."
     )
     append_stop_log(session_id, "block_session_review", {})
     _emit_block(_llm_notice(body))

@@ -1,7 +1,7 @@
 ---
-# 同期注記: plan-reviewer雛形内「メイン側実施済み観点の内訳」欄の文言は
-# integrity-checks.md「工程7の実施手順」節・plan-reviewer.md「入力」節と意図的に重複する。
-# 改訂時は3ファイルを同時更新する。
+# 同期注記: plan-reviewer雛形内「メイン側実施済み観点の内訳」欄の趣旨は
+# integrity-checks.md「工程7の実施手順」節・plan-reviewer.md「入力」節と
+# 意図的に重複する（構成は各ファイルの用途に合わせる）。改訂時は3ファイルを同時更新する。
 ---
 
 # 工程7サブエージェント起動プロンプト雛形
@@ -42,10 +42,7 @@
     - 関連参照ファイル: {改訂・拡張対象の既存規範ファイルパス一覧。空の場合は「なし」と明記}
     - メイン側担当節の実施有無: {実施済み | 未実施}。
     - メイン側実施済み観点の内訳を次に示す。
-      - 機械チェック実施結果を次に示す。
-        {check_line_width・check_dash・check_line_ref・check_wc_projectionの各実行結果を列挙}。
-        {check_plan_diff_gatesの実行結果（縮退フレーズ検出・textlint・line-width（127幅）各違反件数）を列挙}。
-        {textlint・markdownlint・colloquial-check・typosの各実行結果を列挙}。
+      - 機械チェック実施結果: {check_plan_file.pyの実行結果（違反件数・該当箇所）を転記}。
       - 遡及スキャン結果: {norm-revision-checklist.md規定に従い記述された内容を転記}。
       - 横断grep確認結果: {関連参照確認の実施内容と検出件数を転記}。
     - 転記された実施済み観点はplan-reviewer側で再点検を省略し、未カバー観点へ集中する。

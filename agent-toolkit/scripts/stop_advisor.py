@@ -144,26 +144,31 @@ def _git_status_for_display(cwd: str) -> str | None:
     return output
 
 
+def _status_summary(cwd: str) -> dict[str, str]:
+    """`systemMessage`用のgit statusサマリーを組み立てる（ユーザー表示専用、LLMには渡らない）。
+
+    全文ではなく変更ファイル件数のみを表示し、ユーザー向け通知の分量を抑える。
+    """
+    if not cwd:
+        return {}
+    status = _git_status_for_display(cwd)
+    if not status:
+        return {}
+    return {"systemMessage": f"[git status] {len(status.splitlines())}件の変更ファイル"}
+
+
 def _approve(cwd: str = "") -> None:
-    output: dict[str, str] = {}
-    if cwd:
-        status = _git_status_for_display(cwd)
-        if status:
-            output["systemMessage"] = f"[git status]\n{status}"
-    print(json.dumps(output, ensure_ascii=False))
+    print(json.dumps(_status_summary(cwd), ensure_ascii=False))
 
 
 def _emit_block_with_status(reason: str, cwd: str = "") -> None:
-    """振り返り誘導を`decision: "block"`＋`reason`で出力し、未コミット変更があれば`systemMessage`でgit statusを併記する。
+    """振り返り誘導を`decision: "block"`＋`reason`で出力し、未コミット変更があれば`systemMessage`で件数を併記する。
 
     `reason`をhookの応答に載せることでセッション終端ターンを継続させ、振り返りスキルを当該ターン内で強制起動する。
     `stop_hook_active`保護で1回のみ発火する前提。
     """
     output: dict[str, str] = {"decision": "block", "reason": reason}
-    if cwd:
-        status = _git_status_for_display(cwd)
-        if status:
-            output["systemMessage"] = f"[git status]\n{status}"
+    output.update(_status_summary(cwd))
     print(json.dumps(output, ensure_ascii=False))
 
 
@@ -268,8 +273,8 @@ def main() -> int:
     # 誘導文の先頭にSESSION_REVIEW_PRECHECKを付与し、質問直後など終了相当の
     # ケースではスキル起動自体を抑止する。
     reason = _llm_notice(
-        f"{SESSION_REVIEW_PRECHECK} If so, invoke the `{_SESSION_REVIEW_SKILL}` Skill via the Skill tool"
-        " and follow its activation policy section to decide whether to proceed with the review."
+        f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_SESSION_REVIEW_SKILL}` via the Skill tool"
+        " per its activation policy section."
     )
     append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")

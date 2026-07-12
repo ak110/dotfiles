@@ -118,6 +118,7 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
 ## タスク固有で読み込む補足情報
 
 - `references/agent-skills.md`: スキル編集時
+- `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
 - `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時）: Claude Code固有
 
 ## サブエージェント連携の設計
@@ -148,8 +149,8 @@ frontmatterコメントへは管理方針・編集判断・運用変化・編集
 機械可読な識別子のprefixは配置レイヤに揃え、配布物の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式で本節にSSOTを置く。
 配布物完結は`AGENT_TOOLKIT_`、個人環境完結は`DOTFILES_`。外部名前空間（`CLAUDE_`等）は不採用。
 
-- 環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`: `atk fb`管理repoのroot（既定`~/private-notes/`）
-- 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`: `_stop_gate`デバッグ出力
+- 環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk fb`管理repoのroot、既定`~/private-notes/`）・
+  `AGENT_TOOLKIT_STOP_GATE_DEBUG`（`_stop_gate`デバッグ出力）
 
 ### rules階層のフラット構造
 

@@ -20,11 +20,11 @@
 計画ファイル本文を正規パスへ書き込んだ直後に次のコマンドを計画ファイルへ実行する。
 
 ```sh
-uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check --exclude-fence-under="## 背景" <計画ファイル>
+uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>
 ```
 
-続けて`check_line_width.py`・`check_dash.py`・`check_line_ref.py`・
-`check_self_ref.py`・`check_plan_diff_gates.py`も実行する（工程7を代替としない）。
+統合ランナーは書き込み後チェックの全検査（検査項目は`check_plan_file.py`のdocstringを典拠とする）を
+1プロセスで実行する（工程7を代替としない）。
 
 - 検出違反への対処は自律判断とする。実装時に成果物へ転記する文面（`## 変更内容`配下のコードブロック）の
   違反は極力解消し、それ以外の計画本文に対する体裁系違反への対処は任意とする

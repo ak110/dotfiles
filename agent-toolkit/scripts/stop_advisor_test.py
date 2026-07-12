@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+import stop_advisor
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "stop_advisor.py"
@@ -412,7 +413,7 @@ class TestContextConditions:
     def test_dirty_repo_context_with_both_messages(
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
-        """未コミット変更あり → `reason`に振り返り誘導、`systemMessage`にgit statusを返す。"""
+        """未コミット変更あり → `reason`に振り返り誘導、`systemMessage`にgit status件数サマリーを返す。"""
         repo = make_dirty_repo(tmp_path)
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
@@ -425,7 +426,7 @@ class TestContextConditions:
         assert _SESSION_REVIEW_SKILL in body
         assert "end the turn silently" in body
         assert "systemMessage" in decision
-        assert "file.txt" in decision["systemMessage"]
+        assert "件の変更ファイル" in decision["systemMessage"]
 
     def test_repeats_context_each_stop(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
         """同一transcriptで2回連続Stopしても、スキル未起動なら毎回`decision: block`＋`reason`を返す。"""
@@ -572,7 +573,7 @@ class TestGitStatusDisplay:
     def test_dirty_repo_shows_git_status_on_approve(
         self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
     ):
-        """approve時かつ未コミット変更ありの場合、systemMessageでgit statusを表示する。"""
+        """approve時かつ未コミット変更ありの場合、systemMessageでgit status件数サマリーを表示する。"""
         repo = make_dirty_repo(tmp_path)
         # スキル起動済みでapproveパスに到達させる。
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
@@ -589,7 +590,7 @@ class TestGitStatusDisplay:
         assert "decision" not in decision
         assert "systemMessage" in decision
         assert "git status" in decision["systemMessage"]
-        assert "file.txt" in decision["systemMessage"]
+        assert "件の変更ファイル" in decision["systemMessage"]
 
     def test_clean_repo_no_system_message(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
@@ -662,6 +663,28 @@ class TestGitStatusDisplay:
         decision = _parse_decision(result)
         assert "decision" not in decision
         assert "systemMessage" not in decision
+
+
+class TestStatusSummary:
+    """`_status_summary`のsystemMessage組み立てを検証する。"""
+
+    def test_empty_cwd_returns_empty_dict(self) -> None:
+        assert not stop_advisor._status_summary("")  # pylint: disable=protected-access
+
+    def test_clean_repo_returns_empty_dict(
+        self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
+    ) -> None:
+        repo = make_clean_repo(tmp_path)
+        assert not stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
+
+    def test_dirty_repo_returns_file_count_summary(
+        self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]
+    ) -> None:
+        repo = make_dirty_repo(tmp_path)
+        summary = stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
+        assert "systemMessage" in summary
+        assert "[git status]" in summary["systemMessage"]
+        assert "件の変更ファイル" in summary["systemMessage"]
 
 
 class TestScopeEscalationDetection:

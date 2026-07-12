@@ -537,10 +537,8 @@ def main() -> int:
                 messages.append(
                     _llm_notice(
                         f"plan file {file_path} was written. Run the post-write checks:"
-                        f" `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check"
-                        f" --enable=colloquial-check {file_path}`,"
-                        f" followed by `check_line_width.py`, `check_dash.py`, `check_line_ref.py`,"
-                        f" `check_self_ref.py`, and `check_plan_diff_gates.py` on the same file."
+                        f" `uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py"
+                        f" {file_path}`."
                         f" See skills/plan-mode/references/plan-file-write-checks.md for details.",
                         tag="notice",
                     )

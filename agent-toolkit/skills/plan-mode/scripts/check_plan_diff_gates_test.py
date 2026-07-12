@@ -75,11 +75,11 @@ def _stub_subprocess(
 
 
 class TestExtractDiffBlocks:
-    """`_extract_diff_blocks`の抽出仕様を網羅する。"""
+    """`_iter_diff_blocks`の抽出仕様を網羅する。"""
 
     def test_new_label_block_is_extracted(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nnew content line1\nnew content line2\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         label, _line, body, _ext = blocks[0]
         assert label == "`foo.md`"
@@ -88,63 +88,63 @@ class TestExtractDiffBlocks:
 
     def test_replacement_label_block_is_extracted(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後]\nreplaced body\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][2] == "replaced body"
 
     def test_replacement_full_label_block_is_extracted(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[置換後（全文）]\nwhole file content\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][2] == "whole file content"
 
     def test_current_label_block_is_excluded(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold body\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert not blocks
 
     def test_deletion_rationale_label_block_is_excluded(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[削除根拠]\n削除の理由\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert not blocks
 
     def test_variable_length_fence_four_backticks_is_extracted(self) -> None:
         """外側4バッククォートのfenceも検査対象として認識される。"""
         text = "## 変更内容\n\n### `foo.md`\n\n````text\n[置換後]\ninner ``` allowed\n````\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][2] == "inner ``` allowed"
 
     def test_new_h3_marker_extracts_body(self) -> None:
         text = "## 変更内容\n\n### `new_file.py`（新設）\n\n新設スクリプト。\n\n```text\nsome body under new h3\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][0].startswith("`new_file.py`")
 
     def test_trigger_line_extracts_following_block(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n追記内容:\n\n```text\nadded line\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][2] == "added line"
 
     def test_reduction_heading_extracts_body(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n#### 縮減対象\n\n```text\nold verbose text\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
 
     def test_non_text_fence_is_ignored(self) -> None:
         text = "## 変更内容\n\n### `foo.py`\n\n```python\ndef f(): pass\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert not blocks
 
     def test_no_change_section_returns_empty(self) -> None:
         text = "## 背景\n\n本文のみ。\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert not blocks
 
     def test_block_start_line_is_computed(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nline\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert blocks[0][1] > 0
 
     def test_addition_trigger_tokens_include_compression_after(self) -> None:
@@ -152,7 +152,7 @@ class TestExtractDiffBlocks:
 
     def test_extract_diff_blocks_compression_after_trigger(self) -> None:
         text = "## 変更内容\n\n### `foo.md`\n\n圧縮後:\n\n```text\ncompressed body\n```\n"
-        blocks = list(_MOD._extract_diff_blocks(text))
+        blocks = list(_MOD._iter_diff_blocks(text))
         assert len(blocks) == 1
         assert blocks[0][2] == "compressed body"
 

@@ -25,8 +25,9 @@ user-invocable: false
 # model: sonnet固定の理由: 節名定義に従う照合作業は確定手順の実行のため。
 # tools制限の理由: 計画ファイル本文の整合性点検は閲覧・調査のみで完結し、
 #   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
-# 「入力」節のメイン側実施済み観点の内訳は integrity-checks.md「工程7の実施手順」節・
-# launch-prompts-integrity.md のplan-reviewer雛形と意図的に重複する。改訂時は3ファイルを同時更新する。
+# 「入力」節のメイン側実施済み観点の内訳の趣旨は integrity-checks.md「工程7の実施手順」節・
+# launch-prompts-integrity.md のplan-reviewer雛形と意図的に重複する（構成は各ファイルの用途に合わせる）。
+# 改訂時は3ファイルを同時更新する。
 ---
 
 # plan-reviewer
@@ -68,10 +69,7 @@ user-invocable: false
   - 未通知の場合は、出力冒頭に「メイン側担当節の実施有無が未通知」と明示報告したうえで、
     担当外扱いにせず点検を継続する。無音での省略はしない。
   - メイン側実施済み観点の内訳を次に示す。
-    - 機械チェック実施結果を次に示す。
-      {check_line_width・check_dash・check_line_ref・check_wc_projectionの各実行結果を列挙}。
-      {check_plan_diff_gatesの実行結果（縮退フレーズ検出・textlint・line-width（127幅）各違反件数）を列挙}。
-      {textlint・markdownlint・colloquial-check・typosの各実行結果を列挙}。
+    - 機械チェック実施結果: {check_plan_file.pyの実行結果（違反件数・該当箇所）を転記}。
     - 遡及スキャン結果: {norm-revision-checklist.md規定に従い記述された内容を転記}。
     - 横断grep確認結果: {関連参照確認の実施内容と検出件数を転記}。
     - 転記された実施済み観点はplan-reviewer側で再点検を省略し、未カバー観点へ集中する。

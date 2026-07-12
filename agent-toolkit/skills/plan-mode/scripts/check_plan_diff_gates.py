@@ -39,6 +39,11 @@
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
+
+統合ランナー`check_plan_file.py`向けに、差分ブロック抽出とtextlint/line-width起動の責務を分離した
+`_extract_diff_blocks(plan_path)`・`_check_extracted_paths(paths)`も公開する。抽出済み一時ファイル群を
+まとめてtextlint 1回・`check_line_width.py` 1回のsubprocess呼び出しへ渡し、多重起動を避ける。
+単独CLI実行（`main()`経由の`_check_plan_file`）はブロック単位のsubprocess起動のまま変更しない。
 """
 
 from __future__ import annotations
@@ -153,7 +158,7 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
 
     violations: list[str] = []
     violations.extend(_check_outer_label_placement(plan_path, text))
-    for h3_label, block_start_line, body, h3_ext in _extract_diff_blocks(text):
+    for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
         category = _run_scope_escalation(body)
         if category is not None:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
@@ -293,7 +298,7 @@ def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text:
     if not any(is_agent_doc_target_file(p) for p in target_files):
         return None
     has_new_heading = False
-    for _, _, body, _ in _extract_diff_blocks(text):
+    for _, _, body, _ in _iter_diff_blocks(text):
         if _NEW_NORM_HEADING_RE.search(body):
             has_new_heading = True
             break
@@ -310,7 +315,7 @@ def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text:
     )
 
 
-def _extract_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
+def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
     """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文, ファイル拡張子)`で順に返す。
 
     `## 変更内容`セクションに限定して走査する。H3見出しの走査状態を更新しつつ`text`フェンスを検出する。
@@ -502,6 +507,121 @@ def _run_line_width(body: str) -> str | None:
         lambda p: [sys.executable, str(_CHECK_LINE_WIDTH_CLI), str(p)],
         "check_line_width",
     )
+
+
+def _extract_diff_blocks(
+    plan_path: pathlib.Path,
+) -> tuple[list[str], tuple[list[pathlib.Path], list[pathlib.Path]]]:
+    """統合ランナー向けに1計画ファイルを走査し、`(違反メッセージ一覧, (textlint対象, line-width対象))`を返す。
+
+    fence外側配置検査・縮退フレーズ検査・bump/manifest/遡及スキャン警告はここで実行して
+    メッセージまたは`stderr`出力へ反映する。各対象ブロック本文は一時ファイル（`.md`拡張子）へ
+    保存してパスのみ返し、textlint・line-width検査自体は`_check_extracted_paths`へ委譲する
+    （1計画ファイル分の全ブロックをまとめて1回のsubprocess呼び出しへ渡すため）。
+
+    textlint対象は`.md`・`.md.tmpl`ブロック（`_PROSE_EXTENSIONS`）に限定する。
+    `.py`等のコードブロックへtextlintを適用すると日本語文体ルールが偽陽性検出するため。
+    line-width検査（127幅）は言語非依存のため全ブロックへ適用する。
+    """
+    try:
+        text = plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        msg = f"{plan_path}: 計画ファイルの読み込みに失敗 ({exc})"
+        print(msg, file=sys.stderr)
+        return [msg], ([], [])
+
+    messages: list[str] = list(_check_outer_label_placement(plan_path, text))
+    prose_paths: list[pathlib.Path] = []
+    line_width_paths: list[pathlib.Path] = []
+    for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
+        category = _run_scope_escalation(body)
+        if category is not None:
+            msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
+            print(msg, file=sys.stderr)
+            messages.append(msg)
+        if body:
+            tmp_path = _write_tmpfile(body)
+            line_width_paths.append(tmp_path)
+            if h3_ext in _PROSE_EXTENSIONS:
+                prose_paths.append(tmp_path)
+
+    bump_warning = _check_bump_step(plan_path, text)
+    if bump_warning is not None:
+        print(bump_warning, file=sys.stderr)
+    manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
+    if manifest_warning is not None:
+        print(manifest_warning, file=sys.stderr)
+    retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
+    if retroactive_scan_warning is not None:
+        print(retroactive_scan_warning, file=sys.stderr)
+
+    return messages, (prose_paths, line_width_paths)
+
+
+def _write_tmpfile(body: str) -> pathlib.Path:
+    """検査対象ブロック本文を`.md`拡張子の一時ファイルへ保存し、パスを返す。"""
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md", delete=False) as tmp:
+        tmp.write(body)
+        return pathlib.Path(tmp.name)
+
+
+def _check_extracted_paths(
+    paths: tuple[list[pathlib.Path], list[pathlib.Path]],
+) -> list[str]:
+    """`_extract_diff_blocks`が抽出した一時ファイル群へtextlint・`check_line_width.py`を1回ずつ実行する。
+
+    `paths`は`(textlint対象, line-width対象)`の2要素タプル。textlint対象は散文系拡張子
+    （`.md`・`.md.tmpl`）に限定した部分集合で、line-width対象は全ブロックを含む。
+    呼び出し元（統合ランナー）は返り値メッセージをそのまま`stderr`へ出力する
+    （本関数自体はstderrへ直接出力せず戻り値のみで結果を返す。ただしsubprocess呼び出しと
+    一時ファイル削除の副作用は伴う）。
+    """
+    prose_paths, line_width_paths = paths
+    all_paths = list({p: None for p in [*prose_paths, *line_width_paths]}.keys())
+    if not all_paths:
+        return []
+    try:
+        messages: list[str] = []
+        if prose_paths:
+            textlint_error = _run_textlint_batch(prose_paths)
+            if textlint_error is not None:
+                messages.append(f"textlint違反\n{textlint_error}")
+        if line_width_paths:
+            line_width_error = _run_line_width_batch(line_width_paths)
+            if line_width_error is not None:
+                messages.append(f"line-width違反\n{line_width_error}")
+        return messages
+    finally:
+        for path in all_paths:
+            path.unlink(missing_ok=True)
+
+
+def _run_textlint_batch(paths: list[pathlib.Path]) -> str | None:
+    """一時ファイル群へtextlintを1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。"""
+    result = subprocess.run(
+        ["uvx", "pyfltr", "run-for-agent", "--commands=textlint", "--no-fix", *(str(p) for p in paths)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return None
+    combined = (result.stdout or "") + (result.stderr or "")
+    return combined.strip() or f"textlint exit={result.returncode}"
+
+
+def _run_line_width_batch(paths: list[pathlib.Path]) -> str | None:
+    """一時ファイル群へ`check_line_width.py`を1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。"""
+    result = subprocess.run(
+        [sys.executable, str(_CHECK_LINE_WIDTH_CLI), *(str(p) for p in paths)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return None
+    combined = (result.stdout or "") + (result.stderr or "")
+    return combined.strip() or f"check_line_width exit={result.returncode}"
 
 
 if __name__ == "__main__":

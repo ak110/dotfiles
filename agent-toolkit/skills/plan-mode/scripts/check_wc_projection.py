@@ -19,6 +19,9 @@
 `.py`対象ファイルは自動照合の対象外である。
 見込み行数の確認は`wc -l`実測値との手動照合が唯一の手段となる。
 
+見込み行数チェックボックス自体の記載義務は`.md`・`.md.tmpl`に限定する。
+`.py`等それ以外の拡張子は対象ファイル一覧に見込み行数チェックボックスが存在しなくても違反としない。
+
 共通要素は`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 集約対象は`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・
 `iter_reduction_headings`・`extract_section_with_offset`とする。
@@ -211,6 +214,9 @@ def _check_one_file(
     if projected is None:
         # 対象ファイル一覧で「実装後未確定」表記の場合は照合スキップ扱いとして許容する。
         if rel_path in _UNDETERMINED_PATHS:
+            return 0
+        # 見込み行数の記載義務は`.md`・`.md.tmpl`に限定する。それ以外の拡張子は未記載を許容する。
+        if not (rel_path.endswith(".md") or rel_path.endswith(".md.tmpl")):
             return 0
         print(f"{plan_path}: {rel_path} の見込み行数が対象ファイル一覧に未記載", file=sys.stderr)
         return 1

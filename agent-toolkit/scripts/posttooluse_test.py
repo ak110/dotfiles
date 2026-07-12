@@ -700,8 +700,7 @@ class TestPlanFilePostWriteNotice:
         payload = json.loads(result.stdout)
         message = payload["hookSpecificOutput"]["additionalContext"]
         assert "post-write checks" in message
-        assert "pyfltr run-for-agent" in message
-        assert "check_plan_diff_gates.py" in message
+        assert "check_plan_file.py" in message
         assert "[auto-generated: agent-toolkit/posttooluse]" in message
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
