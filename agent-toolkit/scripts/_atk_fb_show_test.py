@@ -1,6 +1,7 @@
 """atk (agent-toolkit `atk fb`) のshowサブコマンドのテスト。
 
-FILENAME指定表示・--all全件表示・型フィルター・状態フィルター・--skip-pullの単体テストを集約する。
+FILENAME指定表示・--all全件表示・型フィルター・状態フィルター・
+--include-processed（adopted・rejected配下探索）・--skip-pullの単体テストを集約する。
 既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_mutations_test.py`・
 `_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
@@ -245,21 +246,32 @@ class TestShowStatusFilter:
         assert "inbox/tbdに存在しません" in captured.err
 
 
+def _write_feedback_state_file(
+    notes: pathlib.Path,
+    state: str,
+    filename: str,
+    target_repo: str = "github.com/example/foo",
+    body: str = "state本文",
+) -> pathlib.Path:
+    """feedback/<state>配下（processing・adopted・rejected等）に1ファイルを書き込み、絶対パスを返す。"""
+    state_dir = notes / "feedback" / state
+    state_dir.mkdir(parents=True, exist_ok=True)
+    path = state_dir / filename
+    path.write_text(
+        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _write_feedback_processing_file(
     notes: pathlib.Path,
     filename: str,
     target_repo: str = "github.com/example/foo",
     body: str = "processing本文",
 ) -> pathlib.Path:
-    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す。"""
-    processing_dir = notes / "feedback" / "processing"
-    processing_dir.mkdir(parents=True, exist_ok=True)
-    path = processing_dir / filename
-    path.write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
-        encoding="utf-8",
-    )
-    return path
+    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す（`_write_feedback_state_file`の薄いラッパー）。"""
+    return _write_feedback_state_file(notes, "processing", filename, target_repo=target_repo, body=body)
 
 
 class TestShowProcessing:
@@ -325,6 +337,88 @@ class TestShowProcessing:
         assert "inbox本文" in captured.out
         assert "### fb-processing.md" in captured.out
         assert "processing本文" in captured.out
+
+
+class TestShowIncludeProcessed:
+    """showサブコマンド: --include-processed指定時にFILENAME探索へadopted・rejectedを追加する。"""
+
+    def test_include_processed_finds_adopted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--include-processed指定時にadopted配下のFILENAMEを参照できる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-adopted.md", "--include-processed"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-adopted.md" in captured.out
+        assert "adopted本文" in captured.out
+
+    def test_include_processed_finds_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--include-processed指定時にrejected配下のFILENAMEを参照できる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-rejected.md", "--include-processed"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-rejected.md" in captured.out
+        assert "rejected本文" in captured.out
+
+    def test_include_processed_default_off(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--include-processed未指定時はadopted配下のFILENAMEを渡してもexit 2になる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-adopted.md"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "inbox/tbdに存在しません" in captured.err
+
+    def test_all_ignores_include_processed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--allモードは--include-processedの影響を受けずadopted・rejectedを含めない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "--all", "--include-processed"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-inbox.md" in captured.out
+        assert "adopted本文" not in captured.out
+        assert "rejected本文" not in captured.out
 
 
 class TestShowSkipPull:

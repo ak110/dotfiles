@@ -12,6 +12,7 @@
 - fb add: inboxへフィードバックを投入する
 - fb list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
 - fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
+  （`--include-processed`でFILENAME指定時にadopted・rejected配下も探索）
 - fb start-processing: inboxからprocessing/へ移動し処理中状態に遷移させコミット・push
 - fb adopt: 採用としてinboxまたはprocessingからadopted/へ移動しコミット・push
 - fb reject: 不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push
@@ -136,6 +137,11 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--skip-pull",
         action="store_true",
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
+    )
+    show.add_argument(
+        "--include-processed",
+        action="store_true",
+        help="FILENAME指定時にadopted・rejected配下も探索対象へ含める（--allには影響しない）。",
     )
 
     start_processing = sub.add_parser(

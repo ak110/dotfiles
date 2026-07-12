@@ -9,8 +9,10 @@ import pathlib
 import sys
 
 from _atk_fb_common import (
+    FEEDBACK_STATE_ADOPTED,
     FEEDBACK_STATE_INBOX,
     FEEDBACK_STATE_PROCESSING,
+    FEEDBACK_STATE_REJECTED,
     _is_tbd_answered,
     _iter_inbox_entries,
     _pull,
@@ -32,6 +34,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     完全一致するエントリのみを出力する。
     `--status`指定時は、tbd側エントリのみ回答状況（answered・unanswered）で限定する
     （feedback側には作用しない）。
+    `--include-processed`指定時は`FILENAME`指定分岐でfeedback側の探索対象へadopted・rejectedを追加する
+    （`--all`には影響しない）。
     """
     if args.filename is None and not args.all:
         print("FILENAMEまたは--allのいずれかを指定してください。", file=sys.stderr)
@@ -49,6 +53,9 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             # 途中状態も参照可能とするため）。
             search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_INBOX))
             search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_PROCESSING))
+            if args.include_processed:
+                search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_ADOPTED))
+                search_kinds.append(("feedback", private_notes / "feedback" / FEEDBACK_STATE_REJECTED))
         if args.type in ("all", "tbd"):
             search_kinds.append(("tbd", private_notes / "tbd" / FEEDBACK_STATE_INBOX))
         for kind, base_dir in search_kinds:

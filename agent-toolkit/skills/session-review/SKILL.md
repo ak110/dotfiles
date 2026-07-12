@@ -111,6 +111,11 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
 - 判断軸の順序・既存対処済みの確認は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`の該当節を参照する
   - 肥大化抑止の判定基準は`agent-toolkit:agent-standards`「既知情報・冗長記述の排除」節に従う
+- 既採用フィードバックとの意向照合:
+  生成候補は対象target_repoの既採用フィードバック（adopted配下）で示された意向と衝突しないかを確認する
+  - 衝突が確認された候補は不採用として扱い候補化しない
+  - 既採用意向を強化する形の候補へ組み替え可能な場合は組み替える
+  - 既採用フィードバックの参照は`atk fb show --include-processed <FILENAME>`で実施する
 - 候補技術主張の実機検証は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「候補技術主張の実機検証」節を参照する
 - 肯定形優先チェック: 禁止規定の追加を提案候補とする前に、

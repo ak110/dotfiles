@@ -48,8 +48,10 @@ feedback全件とTBD回答済みの本文を取得する。出力は`# feedback`
 フィードバック本文の直接入力の場合は上記`atk fb show`取得をスキップし、ユーザーメッセージから該当箇所を抽出する。
 フィードバックが含まれない場合はユーザーに提供を求める。
 
-フィードバック管理repo配下への直接アクセス（`Read`・`cat`・`ls`等）は禁止する
-（管理側の抽象化を破り、Windows等の環境依存で表示が破損する可能性があるため）。
+`atk fb`が扱う操作（inbox・processing・adopted・rejected本文の取得、投入、状態遷移など）はCLI経由で実施する
+（管理側の抽象化を保ち、Windows等の環境依存での表示破損を避けるため）。
+CLI未提供の参照用途（`atk fb show --include-processed`で拾えない横断検索・複数ファイル参照・特殊な集計用途など）は
+直接Readで参照してよい。
 管理repoのrootは`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で指定する
 （詳細は`agent-toolkit:agent-standards`スキル「識別子と環境変数」節）。
 frontmatterは出力に保持されており`source: session-review`などの投入元情報を後続ステップで参照できる。

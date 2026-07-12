@@ -88,6 +88,8 @@ description: >
 - 実装時にエージェントが判断可能な細部（変数名・エラーメッセージ文言・小規模なループ構造・局所的な制御フローなど）への指摘
 - 件数表現・行番号・行数・ファイルサイズなど機械検査で判定できる項目は
   レビュアーが指摘しない（役割分担の詳細は本スキル「レビューの基本姿勢」節を参照）
+- 計画ファイル本文中の追記文言案（`[置換後]`ブロック内文面等）に含まれる件数表現は
+  計画ファイルの軽微なフォーマットとしてレビュアーが指摘しない（機械検査の対象外である場合も含む）
 
 `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`のplan-reviewer雛形は本節を参照する。
 `agent-toolkit/skills/plan-mode/references/plan-file-write-checks.md`も本節を参照する。
