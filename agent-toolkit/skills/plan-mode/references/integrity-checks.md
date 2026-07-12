@@ -72,6 +72,12 @@
     宣言されている場合は重大指摘として報告する
     - 静的リスト運用のサブエージェントの例: `agent-doc-validator`は`agent-standards`共通の記述原則と
       `01-agent.md`品質最優先の適合性で運用する形式を採用する
+- 機械検査関連スクリプト（`check_plan_diff_gates.py`・`pretooluse.py`等）への新規warn/check関数追加を
+  対象ファイル一覧に含む場合、次の各項が計画本文に反映済みかを照合する
+  - `check_plan_diff_gates.py`が`_check_plan_file`と`_extract_diff_blocks`の双方から呼び出される
+  - モジュールdocstringの検査項目列挙（`pretooluse.py`の「統合しているチェック:」等）に追記される
+  - 対応テスト（`check_plan_diff_gates_test.py`・`pretooluse_test.py`等）が対象ファイル一覧に含まれる
+  - `_plan_format.py`配下SSOT判定関数の新設・改訂時は両スクリプトから呼び出される
 
 メイン側担当部分:
 
