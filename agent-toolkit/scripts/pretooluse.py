@@ -2195,10 +2195,10 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
     - 対象の`file_path`が計画ファイル（`is_plan_file`が真）
     - `tool_input["content"]`が文字列
     - `## 変更内容`配下に文書サイズ上限対象パスが列挙されている
-    - 対象パスの実ファイル行数が200行以上
+    - 対象パスの実ファイル行数が220行以上
     - `## 調査結果`または`### エージェント判断`に対象ファイル基名と実測値±2の数値が共存しない
 
-    対象ファイルが200行未満の場合、またはパスが`_plan_format.AGENT_DOC_TARGET_PATTERNS`・
+    対象ファイルが220行未満の場合、またはパスが`_plan_format.AGENT_DOC_TARGET_PATTERNS`・
     `_plan_format.AGENT_DOC_TARGET_BASENAMES`にマッチしない場合はブロックしない。
     """
     try:
@@ -2241,7 +2241,7 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             if not _plan_format.is_agent_doc_target_file(path_str):
                 continue
 
-            # 実ファイルが存在し200行以上かを確認
+            # 実ファイルが存在し220行以上かを確認
             real_path = cwd / path_str
             if not real_path.exists():
                 continue
@@ -2250,7 +2250,7 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
                     actual_lines = sum(1 for _ in f)
             except OSError:
                 continue
-            if actual_lines < 200:
+            if actual_lines < 220:
                 continue
 
             # search_bodyに基名と実測値±2の数値が共存するかを判定

@@ -2,6 +2,9 @@
 # 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは
 # `agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する。
 # 改訂時は両ファイルを同時更新する。
+# 同期注記: 「共通遵守事項」節の「計画専用機械チェック実行」バレットは
+# `agent-toolkit/rules/02-claude-code.md`「起草をサブエージェントへ委譲するプロンプト」節と
+# 意図的に重複する。改訂時は両ファイルを同時更新する。
 ---
 
 # 計画ファイル起草・改訂委譲プロンプト雛形
@@ -33,6 +36,9 @@
 - サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
   新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
   `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
+- 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
+  `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
+  `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
 
 ## 起草・改訂委譲雛形
 
@@ -74,6 +80,9 @@
     - サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
       新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
       `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
+    - 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
+      `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
+      `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
 
     ## 修正指摘（修正再実装時のみ）
 
@@ -105,7 +114,7 @@
 既存記述の維持範囲・追記位置の詳細指定など、委譲プロンプトが計画ファイル本文を上書き解釈する形の指示は、
 plan-implementerが計画ファイル本文と委譲プロンプトの齟齬で判断分岐する構造となり計画ファイル自立性を損なう。
 委譲プロンプトで計画ファイル本文の`## 変更内容`節に無い詳細差分を新たに書き起こす運用も、
-いかなる理由（例: コンテキスト節約・200行超過ファイル制約回避・多層ネスト起動下の効率化）があっても採用しない。
+いかなる理由（例: コンテキスト節約・220行超過ファイル制約回避・多層ネスト起動下の効率化）があっても採用しない。
 詳細差分は必ず計画ファイル本文へ事前に埋め込み、委譲プロンプトは計画ファイル本文を引用する形に限定する。
 
 - 起動プロンプト作成前に、プロンプト内で参照する計画ファイルの節名・見出し・記述内容を、

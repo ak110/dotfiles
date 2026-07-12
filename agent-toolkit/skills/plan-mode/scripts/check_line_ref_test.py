@@ -349,6 +349,34 @@ class TestCheckLineRef:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
 
+    def test_next_n_files_detected(self, tmp_path: pathlib.Path) -> None:
+        """「次の3ファイル」の件数表現を検出する。"""
+        path = _write(tmp_path / "doc.md", "次の3ファイルを改訂する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "次の3ファイル" in result.stderr
+
+    def test_below_n_variants_detected(self, tmp_path: pathlib.Path) -> None:
+        """「以下の2バリアント」の件数表現を検出する。"""
+        path = _write(tmp_path / "doc.md", "以下の2バリアントを比較する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "以下の2バリアント" in result.stderr
+
+    def test_next_prefix_with_existing_vocabulary(self, tmp_path: pathlib.Path) -> None:
+        """「次の5件」が既存語彙パターンの接頭辞拡張として検出される。"""
+        path = _write(tmp_path / "doc.md", "次の5件を反映する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "5件" in result.stderr
+
+    def test_next_n_no_duplicate_report(self, tmp_path: pathlib.Path) -> None:
+        """「次の5件」に対する違反行が重複出力されない。"""
+        path = _write(tmp_path / "doc.md", "次の5件を反映する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert len(result.stderr.splitlines()) == 1
+
     def test_check_path_existence_excludes_newly_created_marker(self, tmp_path: pathlib.Path) -> None:
         """対象ファイル一覧の新設マーカー付きパスは実在確認から除外する。"""
         path = _write(

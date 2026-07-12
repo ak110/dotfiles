@@ -720,9 +720,9 @@ class TestPlanFileRequiredReadsFirstCheck:
 class TestPlanFileSizeLimitTargetWcLRecorded:
     """plan file Write時の文書サイズ上限対象ファイルwc -l実測値記録漏れ検出。
 
-    `## 変更内容`に文書サイズ上限対象パスが列挙され、実ファイルが200行以上にもかかわらず
+    `## 変更内容`に文書サイズ上限対象パスが列挙され、実ファイルが220行以上にもかかわらず
     `## 調査結果`または`### エージェント判断`にwc -l実測値（±2許容）が未記載の場合にブロックする。
-    対象外パス・200行未満・Write以外のツール・plan file以外は一切ブロックしない。
+    対象外パス・220行未満・Write以外のツール・plan file以外は一切ブロックしない。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -761,14 +761,14 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         _write_session_state(tmp_path, session_id, state)
 
     @staticmethod
-    def _make_target_file(base: pathlib.Path, rel: str, lines: int = 210) -> pathlib.Path:
+    def _make_target_file(base: pathlib.Path, rel: str, lines: int = 230) -> pathlib.Path:
         target = base / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("\n".join(f"line {i}" for i in range(lines)) + "\n", encoding="utf-8")
         return target
 
     def test_blocks_when_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """変更内容に対象パスがあり実ファイルが200行以上だが調査結果に基名未記載の場合はブロックする。"""
+        """変更内容に対象パスがあり実ファイルが220行以上だが調査結果に基名未記載の場合はブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -776,7 +776,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -802,7 +802,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 100 行。\n"
         result = self._run_with_cwd(
@@ -819,8 +819,8 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert "test-rule.md" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_passes_when_file_under_200_lines(self, tmp_path: pathlib.Path):
-        """実ファイルが200行未満の場合は通過する。"""
+    def test_passes_when_file_under_220_lines(self, tmp_path: pathlib.Path):
+        """実ファイルが220行未満の場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -853,7 +853,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         assert result.returncode == 0
 
     def test_passes_when_path_not_in_scope(self, tmp_path: pathlib.Path):
-        """文書サイズ上限対象外パスは200行以上でも通過する。"""
+        """文書サイズ上限対象外パスは220行以上でも通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -893,13 +893,13 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         sid = "psl-correct-chosa"
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = (
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\ntest-rule.md は 210 行。\n\n"
+            "## 調査結果\n\ntest-rule.md は 230 行。\n\n"
             f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -926,14 +926,14 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         sid = "psl-agent-judgment"
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = (
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
             "## 調査結果\n\n調査内容。\n\n"
-            "### エージェント判断\n\ntest-rule.md: 209行。\n\n"
+            "### エージェント判断\n\ntest-rule.md: 229行。\n\n"
             f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -960,7 +960,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         sid = "psl-agent-judgment-only"
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         # `### エージェント判断`を`## 変更内容`配下に置き、`## 調査結果`配下でなくても認識されることを検証する
         content = (
@@ -969,7 +969,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
             "## 対応方針\n\nx\n\n"
             "## 調査結果\n\nなし\n\n"
             f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "### エージェント判断\n\ntest-rule.md: 209行。\n\n"
+            "### エージェント判断\n\ntest-rule.md: 229行。\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
             "## 計画ファイル（本ファイル）のパス\n\nx\n"
@@ -1021,7 +1021,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         # file_pathが計画ファイル外のため、本checkは先行する全checkで即時returnする（事前フラグ不要）
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1044,14 +1044,14 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         sid = "psl-dev-2-pass"
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
-        # 208（実測値210から-2）で通過することを検証
+        # 228（実測値230から-2）で通過することを検証
         content = (
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
-            f"## 調査結果\n\ntest-rule.md は 208 行。\n\n"
+            f"## 調査結果\n\ntest-rule.md は 228 行。\n\n"
             f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -1079,10 +1079,10 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
-        # 207（実測値210から-3）でブロックすることを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 207 行。\n"
+        # 227（実測値230から-3）でブロックすることを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 227 行。\n"
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1105,14 +1105,14 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
-        # 212（実測値210から+2）で通過することを検証
+        # 232（実測値230から+2）で通過することを検証
         content = (
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
-            f"## 調査結果\n\ntest-rule.md は 212 行。\n\n"
+            f"## 調査結果\n\ntest-rule.md は 232 行。\n\n"
             f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
             "## 実行方法\n\nx\n\n"
             "## 進捗ログ\n\nx\n\n"
@@ -1139,10 +1139,10 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
-        # 213（実測値210から+3）でブロックすることを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 213 行。\n"
+        # 233（実測値230から+3）でブロックすることを検証
+        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 233 行。\n"
         result = self._run_with_cwd(
             {
                 "tool_name": "Write",
@@ -1165,7 +1165,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "some/dir/AGENTS.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1191,7 +1191,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "some/dir/CLAUDE.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1217,7 +1217,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = (
             "## 変更履歴\n\nx\n\n"
@@ -1274,16 +1274,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         )
         assert result.returncode == 0
 
-    def test_passes_when_lines_just_below_200(self, tmp_path: pathlib.Path):
-        """実ファイルが199行（閾値未満）の場合は通過する。"""
+    def test_passes_when_lines_just_below_220(self, tmp_path: pathlib.Path):
+        """実ファイルが219行（閾値未満）の場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "psl-199-lines"
+        sid = "psl-219-lines"
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=199)
+        self._make_target_file(tmp_path, target_rel, lines=219)
 
         content = (
             "## 変更履歴\n\nx\n\n"
@@ -1307,16 +1307,16 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         )
         assert result.returncode == 0
 
-    def test_blocks_when_lines_exactly_200(self, tmp_path: pathlib.Path):
-        """実ファイルが200行（閾値ちょうど）の場合は照合対象となりブロックする。"""
+    def test_blocks_when_lines_exactly_220(self, tmp_path: pathlib.Path):
+        """実ファイルが220行（閾値ちょうど）の場合は照合対象となりブロックする。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "psl-200-lines"
+        sid = "psl-220-lines"
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=200)
+        self._make_target_file(tmp_path, target_rel, lines=220)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1341,7 +1341,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/skills/foo/SKILL.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1367,7 +1367,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/skills/foo/references/bar.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1393,7 +1393,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/agents/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1419,7 +1419,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = "agent-toolkit/references/plan-impl/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1445,7 +1445,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         self._all_prior_flags(tmp_path, sid)
 
         target_rel = ".chezmoi-source/dot_claude/rules/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=210)
+        self._make_target_file(tmp_path, target_rel, lines=230)
 
         content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
         result = self._run_with_cwd(
@@ -1472,15 +1472,15 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
 
         target_rel1 = "agent-toolkit/rules/test-rule1.md"
         target_rel2 = "agent-toolkit/rules/test-rule2.md"
-        self._make_target_file(tmp_path, target_rel1, lines=210)
-        self._make_target_file(tmp_path, target_rel2, lines=210)
+        self._make_target_file(tmp_path, target_rel1, lines=230)
+        self._make_target_file(tmp_path, target_rel2, lines=230)
 
         content = (
             "## 変更履歴\n\nx\n\n"
             "## 背景\n\nx\n\n"
             "## 対応方針\n\nx\n\n"
             "## 調査結果\n\n"
-            "test-rule1.md は 210 行。\ntest-rule2.md は 210 行。\n\n"
+            "test-rule1.md は 230 行。\ntest-rule2.md は 230 行。\n\n"
             "## 変更内容\n\n"
             f"- `{target_rel1}` を変更する\n"
             f"- `{target_rel2}` を変更する\n\n"
@@ -1510,15 +1510,15 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
 
         target_rel1 = "agent-toolkit/rules/test-rule1.md"
         target_rel2 = "agent-toolkit/rules/test-rule2.md"
-        self._make_target_file(tmp_path, target_rel1, lines=210)
-        self._make_target_file(tmp_path, target_rel2, lines=210)
+        self._make_target_file(tmp_path, target_rel1, lines=230)
+        self._make_target_file(tmp_path, target_rel2, lines=230)
 
         content = (
             "## 変更内容\n\n"
             f"- `{target_rel1}` を変更する\n"
             f"- `{target_rel2}` を変更する\n\n"
             "## 調査結果\n\n"
-            "test-rule1.md は 210 行。\n"
+            "test-rule1.md は 230 行。\n"
         )
         result = self._run_with_cwd(
             {
@@ -1816,7 +1816,7 @@ class TestHookEntryPointsPep723Dependencies:
 
     hook 間で新規に間接 import を追加した際、依存元 entry point の PEP 723 dependencies
     へ外部パッケージを追記し忘れると本番実行時に ModuleNotFoundError で hook が
-    Traceback 落ちする回帰を機械的に予防する。
+    Traceback を伴い異常終了する回帰を機械的に予防する。
     """
 
     @pytest.mark.parametrize("script_name", _hook_entry_point_names())

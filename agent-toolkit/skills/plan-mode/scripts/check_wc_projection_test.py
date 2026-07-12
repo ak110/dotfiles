@@ -2,7 +2,7 @@
 
 計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、wc -l実測値と
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
-正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・200行超過縮減対象H4検査・200行到達済みラベルなし追記検査・
+正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・220行到達済みラベルなし追記検査・
 H3見出し無し・複数ファイル対象・対比ブロック無しの各シナリオを網羅する。
 """
 
@@ -568,60 +568,60 @@ class TestCheckWcProjection:
 class TestOverThresholdReductionCheck:
     """`_check_reduction_block_for_over_threshold_files`の警告出力仕様を検証する。
 
-    見込み200行超のファイルを対象に、対応する`#### 縮減対象（<ファイル名>）`
+    見込み220行超のファイルを対象に、対応する`#### 縮減対象（<ファイル名>）`
     H4見出しの存在を検査する。警告は情報提供扱いで違反件数には計上しない（returncode 0）。
     """
 
     def test_over_threshold_file_without_reduction_heading_warns(self, tmp_path: pathlib.Path) -> None:
-        """200行超過ファイル対象・縮減対象H4不在時に警告が出力される。"""
+        """220行超過ファイル対象・縮減対象H4不在時に警告が出力される。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行, 見込み210行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行220行, 見込み230行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" in result.stderr
+        assert "220行超過ファイル" in result.stderr
         assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
     def test_over_threshold_file_with_reduction_heading_passes(self, tmp_path: pathlib.Path) -> None:
-        """200行超過ファイル対象・縮減対象H4完備時は警告が出ない。"""
+        """220行超過ファイル対象・縮減対象H4完備時は警告が出ない。"""
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行200行, 見込み210行）\n\n"
+            "- [ ] `foo.md`（現行220行, 見込み230行）\n\n"
             "### `foo.md`\n\n"
             "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" not in result.stderr
+        assert "220行超過ファイル" not in result.stderr
 
     def test_over_threshold_files_partial_headings_warn_only_missing(self, tmp_path: pathlib.Path) -> None:
-        """200行超過ファイル対象・一部のみH4完備時は不在ファイルにのみ警告が出力される。"""
+        """220行超過ファイル対象・一部のみH4完備時は不在ファイルにのみ警告が出力される。"""
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行200行, 見込み210行）\n"
-            "- [ ] `bar.md`（現行200行, 見込み215行）\n\n"
+            "- [ ] `foo.md`（現行220行, 見込み230行）\n"
+            "- [ ] `bar.md`（現行220行, 見込み235行）\n\n"
             "### `foo.md`\n\n"
             "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
         assert "bar.md" in result.stderr
-        assert "200行超過ファイルfoo.md" not in result.stderr
+        assert "220行超過ファイルfoo.md" not in result.stderr
 
     def test_at_threshold_file_skips_check(self, tmp_path: pathlib.Path) -> None:
-        """見込み200行ちょうど・以下のファイルは検査対象外となる（200行以下収束の完了条件）。"""
+        """見込み220行ちょうど・以下のファイルは検査対象外となる（220行以下収束の完了条件）。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行150行, 見込み200行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行150行, 見込み220行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" not in result.stderr
+        assert "220行超過ファイル" not in result.stderr
 
     def test_over_threshold_file_with_qualified_name_heading_passes(self, tmp_path: pathlib.Path) -> None:
         """修飾名（例:「agent-standards SKILL.md」）で書かれた縮減対象H4見出しも突合成功する。"""
@@ -629,66 +629,66 @@ class TestOverThresholdReductionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `agent-toolkit/skills/agent-standards/SKILL.md`（現行200行, 見込み210行）\n\n"
+            "- [ ] `agent-toolkit/skills/agent-standards/SKILL.md`（現行220行, 見込み230行）\n\n"
             "### `agent-toolkit/skills/agent-standards/SKILL.md`\n\n"
             "#### 縮減対象（agent-standards SKILL.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" not in result.stderr
+        assert "220行超過ファイル" not in result.stderr
 
     def test_far_over_threshold_file_also_warns(self, tmp_path: pathlib.Path) -> None:
-        """200行を大きく超えるファイル（220行以上）でも200行超過として警告される。"""
+        """220行を大きく超えるファイル（300行以上）でも220行超過として警告される。"""
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行300行, 見込み300行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" in result.stderr
+        assert "220行超過ファイル" in result.stderr
         assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
     def test_py_extension_over_threshold_does_not_warn(self, tmp_path: pathlib.Path) -> None:
-        """`.py`ファイルが200行超過でもH4見出し警告は発生しない（拡張子フィルタ）。"""
+        """`.py`ファイルが220行超過でもH4見出し警告は発生しない（拡張子フィルタ）。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行200行, 見込み250行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行220行, 見込み250行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
-        assert "200行超過ファイル" not in result.stderr
+        assert "220行超過ファイル" not in result.stderr
 
 
 class TestOverThresholdLabellessAdditionCheck:
     """`_check_labelless_addition_for_over_threshold_files`の警告出力仕様を検証する。
 
-    現行200行超のファイルへの追記がラベルなしtextフェンスのみで縮減量集計に載らない場合を検出する。
+    現行220行超のファイルへの追記がラベルなしtextフェンスのみで縮減量集計に載らない場合を検出する。
     警告は情報提供扱いで違反件数には計上しない（returncode 0）。
     """
 
     def test_labelless_addition_over_threshold_emits_warning(self, tmp_path: pathlib.Path) -> None:
-        """現行200行超・追記のみラベルなしで縮減0の場合、差分ラベル付与を促す警告が出る。"""
-        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(210)) + "\n")
+        """現行220行超・追記のみラベルなしで縮減0の場合、差分ラベル付与を促す警告が出る。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(230)) + "\n")
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行210行, 見込み214行）\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
             "### `foo.md`\n\n追記文言案:\n\n"
             "```text\n追加行A\n追加行B\n追加行C\n追加行D\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
-        assert "200行到達済みファイルfoo.md" in result.stderr
+        assert "220行到達済みファイルfoo.md" in result.stderr
         assert "差分ラベル付与を検討" in result.stderr
 
     def test_labeled_addition_over_threshold_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """現行200行超で`[現行]`/`[置換後]`ペア記述時は警告が出ない。"""
-        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 211)) + "\n")
+        """現行220行超で`[現行]`/`[置換後]`ペア記述時は警告が出ない。"""
+        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 231)) + "\n")
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行211行, 見込み211行）\n\n"
+            "- [ ] `foo.md`（現行231行, 見込み231行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行]\nline0\n```\n\n"
             "```text\n[置換後]\nnew line\n```\n",
@@ -697,7 +697,7 @@ class TestOverThresholdLabellessAdditionCheck:
         assert "差分ラベル付与を検討" not in result.stderr
 
     def test_under_threshold_labelless_addition_no_warning(self, tmp_path: pathlib.Path) -> None:
-        """現行200行以下のファイルはラベルなし追記でも警告が出ない。"""
+        """現行220行以下のファイルはラベルなし追記でも警告が出ない。"""
         _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(100)) + "\n")
         plan = _write(
             tmp_path / "plan.md",

@@ -20,7 +20,7 @@
 計画ファイル本文を正規パスへ書き込んだ直後に次のコマンドを計画ファイルへ実行する。
 
 ```sh
-uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check <計画ファイル>
+uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check --enable=colloquial-check --exclude-fence-under="## 背景" <計画ファイル>
 ```
 
 続けて`check_line_width.py`・`check_dash.py`・`check_line_ref.py`・

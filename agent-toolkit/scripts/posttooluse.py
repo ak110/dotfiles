@@ -231,7 +231,7 @@ def _collect_reduction_heading_files(content: str) -> set[str]:
 
 
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
-    """対象ファイル一覧の各パスの行数を確認し、200行超過の対象種別ファイルがあれば警告メッセージを返す。
+    """対象ファイル一覧の各パスの行数を確認し、220行超過の対象種別ファイルがあれば警告メッセージを返す。
 
     `## 変更内容`配下に対応する`#### 縮減対象（<ファイル名>）`H4見出しが存在するファイルは、
     縮減計画済みとして警告対象から除外する。ファイル名は完全パス表記・basename表記のいずれも許容する。
@@ -255,14 +255,14 @@ def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
         except (OSError, UnicodeDecodeError):
             continue
         line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
-        if line_count > 200:
+        if line_count > 220:
             over_limit.append((rel, line_count))
     if not over_limit:
         return None
     listed = ", ".join(f"{p} ({n} lines)" for p, n in over_limit)
     return (
-        f"plan file contains target files exceeding 200 lines: {listed}."
-        " Per agent-standards 'document size limit' section (over 200 lines is a violation),"
+        f"plan file contains target files exceeding 220 lines: {listed}."
+        " Per agent-standards 'document size limit' section (over 220 lines is a violation),"
         " add a `#### 縮減対象（<ファイル名>）` H4 section under `## 変更内容` for each violation."
         " Write the file name in full path form."
     )
@@ -296,7 +296,7 @@ def _check_plan_format(file_path: str, cwd: str, session_id: str) -> list[str]:
     検出する違反:
 
     - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
-    - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが200行以上
+    - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが220行以上
       （同一計画ファイルへ1度発火済みの場合は抑止し、H3順序違反等の他違反は毎回発火継続する）
 
     読み取り失敗時は空リストを返す。

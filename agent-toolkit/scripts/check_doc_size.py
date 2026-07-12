@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-"""agent-toolkitドキュメントの文書サイズ上限（200行）を検査するpre-commitローカルhook。
+"""agent-toolkitドキュメントの文書サイズ上限（220行）を検査するpre-commitローカルhook。
 
 対象ファイルは`.pre-commit-config.yaml`の`files:`正規表現で選定する。
 """
@@ -12,11 +12,11 @@ from __future__ import annotations
 import pathlib
 import sys
 
-LIMIT = 200
+LIMIT = 220
 
 
 def main(argv: list[str]) -> int:
-    """対象ファイル群を200行以下か検査し、違反があれば1を返す。"""
+    """対象ファイル群を220行以下か検査し、違反があれば1を返す。"""
     violations: list[tuple[str, int]] = []
     for path_str in argv:
         path = pathlib.Path(path_str)
@@ -29,11 +29,11 @@ def main(argv: list[str]) -> int:
         if line_count > LIMIT:
             violations.append((path_str, line_count))
     if violations:
-        print("agent-toolkitドキュメントサイズ上限（200行）違反:", file=sys.stderr)
+        print("agent-toolkitドキュメントサイズ上限（220行）違反:", file=sys.stderr)
         for path_str, line_count in violations:
             print(f"  {path_str}: {line_count}行（上限{LIMIT}行）", file=sys.stderr)
         print(
-            "該当ファイルを200行以下へ縮減してください。",
+            "該当ファイルを220行以下へ縮減してください。",
             file=sys.stderr,
         )
         return 1

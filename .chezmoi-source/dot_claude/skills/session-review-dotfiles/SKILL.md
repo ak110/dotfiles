@@ -13,6 +13,9 @@ description: >
 # スキル起動を抑止する設計のため、本スキルの編集時はprecheck文言の前提が
 # 変わっていないかを確認する。「起動方針」節の終了判定はprecheckと同一基準の
 # 多重チェックとして保持する。
+# 同期注記: 「ステップ4の適用範囲」節の`atk fb status`ゲート・投入手順は
+# `agent-toolkit/skills/session-review/SKILL.md`「ステップ4: 反映の案内」節と
+# 意図的に重複する（本節が同ステップを完全上書きするため）。改訂時は両ファイルを同時更新する。
 ---
 
 # セッション振り返り（dotfiles拡張章）
@@ -97,12 +100,12 @@ dotfilesプロジェクトで作業中の場合は、`agent-toolkit:session-revi
 ## ステップ4の適用範囲
 
 本拡張章は`agent-toolkit:session-review`スキルのステップ4を完全に上書きする。
-改善提案の投入は`atk fb add --source=session-review` CLIの直接実行で行い、`add-feedback`スキルは経由しない。
+上書き手順は次のとおり。
 
-`atk fb status`を実行し、出力が「有効」の場合は全提案を対象リポジトリごとに
-`atk fb add --source=session-review`へ位置引数で投入する。
-投入後、CLIの標準出力（投入件数・ファイル名）をそのままユーザーへ提示する。
-投入された提案は別セッションで`agent-toolkit:process-feedbacks`スキルから処理される。
-
-`status`が非ゼロ終了する環境、または`atk fb`コマンドの実行に失敗した環境では、
-提案は出力済みのためそのまま終了する（案内文・誘導文の追加発行は行わない）。
+1. `atk fb status`を実行し、feedback-inboxが有効な場合のみステップ2以降を実行する。
+   非ゼロ終了時は改善提案の投入を省略し進捗ログのみ記録する
+2. ステップ3の改善提案本文をユーザー可視の応答として発行した直後、
+   `atk fb add --source=session-review`を各改善提案について連続実行する
+3. 全提案の投入完了後、`agent-toolkit:exit-session`スキル（自律実行系での起動時）
+   または通常応答（ユーザー起動時）へ即座に遷移する
+4. 「以上の改善提案を検討します」等の承認待ちと解釈される表現をステップ3応答末尾へ置かない

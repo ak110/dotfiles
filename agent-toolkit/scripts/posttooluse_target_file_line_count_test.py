@@ -126,9 +126,9 @@ class TestPlanFormatTargetFileLineCount:
         return home, plans
 
     def _make_over_limit_file(self, path: pathlib.Path) -> None:
-        """201行の対象ファイルを生成する（`> 200`の警告閾値超過を発火させる）。"""
+        """221行の対象ファイルを生成する（`> 220`の警告閾値超過を発火させる）。"""
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(f"line {i}" for i in range(1, 202)), encoding="utf-8")
+        path.write_text("\n".join(f"line {i}" for i in range(1, 222)), encoding="utf-8")
 
     def _plan_with_files(self, rel_paths: list[str]) -> str:
         items = "\n".join(f"- [ ] {p}" for p in rel_paths)
@@ -154,10 +154,10 @@ class TestPlanFormatTargetFileLineCount:
         assert "does not conform" not in result.stdout
 
     def test_under_limit_passes_silently(self, tmp_path: pathlib.Path):
-        """199行以下の対象種別ファイルは警告されない。"""
+        """219行以下の対象種別ファイルは警告されない。"""
         home, plans = self._home(tmp_path)
         agents_md = home / "AGENTS.md"
-        agents_md.write_text("\n".join(f"line {i}" for i in range(1, 200)), encoding="utf-8")
+        agents_md.write_text("\n".join(f"line {i}" for i in range(1, 220)), encoding="utf-8")
         content = self._plan_with_files(["AGENTS.md"])
         plan = _write_plan(plans, "under-limit.md", content)
         result = _run(
@@ -194,7 +194,7 @@ class TestPlanFormatTargetFileLineCount:
         assert "does not conform" not in result.stdout
 
     def test_non_agent_facing_file_passes_silently(self, tmp_path: pathlib.Path):
-        """Pythonファイルなど対象種別外は200行以上でも警告されない。"""
+        """Pythonファイルなど対象種別外は220行以上でも警告されない。"""
         home, plans = self._home(tmp_path)
         self._make_over_limit_file(home / "src" / "main.py")
         content = self._plan_with_files(["src/main.py"])
@@ -234,7 +234,7 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files exceeding 200 lines" in msg
+        assert "plan file contains target files exceeding 220 lines" in msg
         assert "agent-toolkit/rules/01-agent.md" in msg
         assert "src/main.py" not in msg
 
@@ -260,7 +260,7 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files exceeding 200 lines" in msg
+        assert "plan file contains target files exceeding 220 lines" in msg
         assert "AGENTS.md" in msg
         assert "CLAUDE.md" in msg
 
@@ -296,8 +296,8 @@ class TestPlanFormatTargetFileLineCount:
             ("agent-toolkit/agents/plan-impl-reviewer.md", "agents"),
         ],
     )
-    def test_agent_facing_type_200_lines_is_warned(self, tmp_path: pathlib.Path, rel_path: str, test_id: str):
-        """対象種別の各パターンで200行以上のファイルが警告される。"""
+    def test_agent_facing_type_220_lines_is_warned(self, tmp_path: pathlib.Path, rel_path: str, test_id: str):
+        """対象種別の各パターンで220行以上のファイルが警告される。"""
         home, plans = self._home(tmp_path)
         self._make_over_limit_file(home / pathlib.Path(rel_path))
         content = self._plan_with_files([rel_path])
@@ -316,7 +316,7 @@ class TestPlanFormatTargetFileLineCount:
         output = _parse_hook_output(result.stdout)
         assert output is not None
         msg = output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files exceeding 200 lines" in msg
+        assert "plan file contains target files exceeding 220 lines" in msg
         assert rel_path in msg
 
     def test_reduction_heading_excludes_full_path(self, tmp_path: pathlib.Path):
@@ -359,13 +359,13 @@ class TestPlanFormatTargetFileLineCount:
         first_output = _parse_hook_output(first.stdout)
         assert first_output is not None
         first_msg = first_output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files exceeding 200 lines" in first_msg
+        assert "plan file contains target files exceeding 220 lines" in first_msg
 
         second = _run(payload, state_dir=state_dir, home_dir=home)
         second_output = _parse_hook_output(second.stdout)
         if second_output is not None:
             second_msg = second_output["hookSpecificOutput"]["additionalContext"]
-            assert "plan file contains target files exceeding 200 lines" not in second_msg
+            assert "plan file contains target files exceeding 220 lines" not in second_msg
 
     def test_different_plan_path_warns_independently(self, tmp_path: pathlib.Path):
         """異なる計画パスへは行数超過警告が独立に発火する（辞書型フラグの分離性、FB2）。"""
@@ -393,7 +393,7 @@ class TestPlanFormatTargetFileLineCount:
         second_output = _parse_hook_output(second.stdout)
         assert second_output is not None
         second_msg = second_output["hookSpecificOutput"]["additionalContext"]
-        assert "plan file contains target files exceeding 200 lines" in second_msg
+        assert "plan file contains target files exceeding 220 lines" in second_msg
 
     def test_reduction_heading_excludes_basename(self, tmp_path: pathlib.Path):
         """`#### 縮減対象（<basename>）`H4見出しが存在する場合も警告対象から除外される。"""

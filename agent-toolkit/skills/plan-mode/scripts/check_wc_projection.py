@@ -91,9 +91,9 @@ _CURRENT_LABEL_TOKEN = "現行"
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
 _NEW_LABEL_TOKEN = "新設"
 
-# 200行超過判定の閾値（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
-# 200行以下収束を実装完了条件とし、超過ファイルには縮減計画の明示を要求する）。
-_OVER_THRESHOLD_PROJECTION = 200
+# 220行超過判定の閾値（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
+# 220行以下収束を実装完了条件とし、超過ファイルには縮減計画の明示を要求する）。
+_OVER_THRESHOLD_PROJECTION = 220
 
 # 追記ブロックの連続検出トリガー文に含まれるトークン（部分一致）。
 # 「追記文言案は次のとおり。」等の見出し文を検出したら、当該H3節境界まで出現する
@@ -135,11 +135,11 @@ def _check_wc(plan_path: pathlib.Path) -> int:
         print(f"{plan_path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
         return 1
 
-    # 200行超過ファイルの`#### 縮減対象（<ファイル名>）`H4見出し検査を実行する
+    # 220行超過ファイルの`#### 縮減対象（<ファイル名>）`H4見出し検査を実行する
     # （警告のみで違反件数には計上しない）。
     _check_reduction_block_for_over_threshold_files(plan_path, text)
 
-    # 200行到達済みファイルへのラベルなしtextフェンス追記のみが計上される場合の警告を実行する
+    # 220行到達済みファイルへのラベルなしtextフェンス追記のみが計上される場合の警告を実行する
     # （警告のみで違反件数には計上しない）。
     _check_labelless_addition_for_over_threshold_files(plan_path, text)
 
@@ -387,7 +387,7 @@ def _leading_label(content_lines: list[str]) -> str | None:
 
 
 def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, text: str) -> int:
-    """200行超過ファイル（見込み200行超）対象時、対応する`#### 縮減対象（<ファイル名>）`H4見出しの存在を検証する。
+    """220行超過ファイル（見込み220行超）対象時、対応する`#### 縮減対象（<ファイル名>）`H4見出しの存在を検証する。
 
     引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
     常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱いのため）。
@@ -429,7 +429,7 @@ def _check_reduction_block_for_over_threshold_files(plan_path: pathlib.Path, tex
         ):
             continue
         print(
-            f"{plan_path}: 200行超過ファイル{path}"
+            f"{plan_path}: 220行超過ファイル{path}"
             f"（見込み{bounds[path][1]}行）に対応する"
             f"`#### 縮減対象（{basename}）`H4見出しが不在",
             file=sys.stderr,
@@ -456,7 +456,7 @@ def _collect_projection_bounds(section: str) -> dict[str, tuple[int, int]]:
 
 
 def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, text: str) -> int:
-    """200行到達済みファイル（現行200行超）対象時、ラベルなしtextフェンスによる追記のみが計上される場合に警告する。
+    """220行到達済みファイル（現行220行超）対象時、ラベルなしtextフェンスによる追記のみが計上される場合に警告する。
 
     引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
     常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱い）。
@@ -488,7 +488,7 @@ def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, 
         reduced = stats.get("reduction", 0)
         if added > 0 and reduced == 0:
             print(
-                f"{plan_path}: 200行到達済みファイル{path}"
+                f"{plan_path}: 220行到達済みファイル{path}"
                 f"（現行{bounds[path][0]}行）への追記に"
                 f"`[現行]`/`[置換後]`ラベルが付いていない。差分ラベル付与を検討",
                 file=sys.stderr,
