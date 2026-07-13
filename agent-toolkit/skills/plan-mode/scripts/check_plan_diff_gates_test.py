@@ -1,8 +1,9 @@
 """agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py のテスト。
 
 計画ファイル`## 変更内容`配下の差分ブロック本文へ`_scope_escalation.py` CLIと
-`uvx pyfltr run-for-agent --commands=textlint`を事前適用する検査スクリプトを
-`monkeypatch.setattr("subprocess.run", ...)`でsubprocessをmockして検証する。
+`uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check`を
+事前適用する検査スクリプトを`monkeypatch.setattr("subprocess.run", ...)`でsubprocessをmockして検証する。
+`[追記]`ラベル直接検出・colloquial-check併走引数の検証もあわせて扱う。
 """
 
 # 対象スクリプトは単独実行スクリプトであり公開APIは`main()`のみだが、
@@ -156,6 +157,18 @@ class TestExtractDiffBlocks:
         assert len(blocks) == 1
         assert blocks[0][2] == "compressed body"
 
+    def test_addition_label_block_is_extracted(self) -> None:
+        """`[追記]`ラベル単独ブロック（隣接文言に「追記」「追加」の語なし）も検査対象へ入る。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n特に前置きなし。\n\n```text\n[追記]\naddition body\n```\n"
+        blocks = list(_MOD._iter_diff_blocks(text))
+        assert len(blocks) == 1
+        # ラベル行はfence内側1行目に配置され本文抽出時に除外される。
+        assert blocks[0][2] == "addition body"
+
+    def test_classify_block_returns_addition_for_addition_label(self) -> None:
+        """`_classify_block`は`[追記]`ラベル単独行を`"addition"`種別として返す。"""
+        assert _MOD._classify_block(["[追記]", "body"], False, False, False) == "addition"
+
 
 class TestRunScopeEscalation:
     """`_run_scope_escalation`のsubprocessモック検証。"""
@@ -199,6 +212,36 @@ class TestRunTextlint:
         assert calls
         # 最後の引数（一時ファイルパス）が`.md`で終わる。
         assert calls[0][-1].endswith(".md")
+
+    def test_subprocess_args_include_colloquial_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`_run_textlint`はcolloquial-check併走のため`--commands`と`--enable`引数を含める。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(list(cmd))
+            return _completed(0)
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        _MOD._run_textlint("hello")
+        assert calls
+        assert "--commands=textlint,colloquial-check" in calls[0]
+        assert "--enable=colloquial-check" in calls[0]
+
+    def test_batch_subprocess_args_include_colloquial_check(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """`_run_textlint_batch`もcolloquial-check併走引数を含める。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(list(cmd))
+            return _completed(0)
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        _MOD._run_textlint_batch([tmp_path / "a.md"])
+        assert calls
+        assert "--commands=textlint,colloquial-check" in calls[0]
+        assert "--enable=colloquial-check" in calls[0]
 
 
 class TestRunLineWidth:

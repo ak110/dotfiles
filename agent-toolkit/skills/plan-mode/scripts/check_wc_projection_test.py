@@ -3,7 +3,8 @@
 計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、wc -l実測値と
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
 正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・220行到達済みラベルなし追記検査・
-H3見出し無し・複数ファイル対象・対比ブロック無し・削除ペア先頭ラベル行の縮減量除外の各シナリオを網羅する。
+H3見出し無し・複数ファイル対象・対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・
+`[追記]`ラベル直接検出とラベル付き/なし追記の分離集計の各シナリオを網羅する。
 """
 
 import importlib.util
@@ -574,6 +575,33 @@ class TestCheckWcProjection:
         assert result.returncode == 0, result.stderr
         assert result.stderr == ""
 
+    def test_addition_label_block_counted_without_trigger(self, tmp_path: pathlib.Path) -> None:
+        """隣接文言に「追記」「追加」の語が無い`[追記]`ブロックも集計対象へ入る。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み12行）\n\n"
+            "### `foo.md`\n\n"
+            "特に前置き無し。\n\n"
+            "```text\n[追記]\n追加行A\n追加行B\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_addition_label_line_and_annotation_both_excluded(self, tmp_path: pathlib.Path) -> None:
+        """`[追記]`ラベル行と位置注記行の両方が集計から除外される。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み12行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[追記]\n（挿入先: 節末尾）\n追加行A\n追加行B\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
     def test_addition_reduction_detects_md_tmpl_extension(self, tmp_path: pathlib.Path) -> None:
         """`.md.tmpl`ファイルも追記/縮減対象集計の検査対象として乖離を検出する。"""
         plan = _write(
@@ -719,6 +747,37 @@ class TestOverThresholdLabellessAdditionCheck:
         result = _run(plan, cwd=tmp_path)
         assert "差分ラベル付与を検討" not in result.stderr
 
+    def test_addition_label_only_over_threshold_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """現行220行超で`[追記]`ラベル単独使用時は警告が出ない（`addition_labelless`が0のため）。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[追記]\n追加行A\n追加行B\n追加行C\n追加行D\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "差分ラベル付与を検討" not in result.stderr
+
+    def test_addition_label_and_labelless_mix_over_threshold_warns(self, tmp_path: pathlib.Path) -> None:
+        """`[追記]`ラベル付きとラベルなし追記が混在時、ラベルなし追記が残っていれば警告対象となる。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み236行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[追記]\nラベル付き行A\nラベル付き行B\n```\n\n"
+            "追記文言案:\n\n"
+            "```text\nラベルなし行A\nラベルなし行B\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "220行到達済みファイルfoo.md" in result.stderr
+        assert "差分ラベル付与を検討" in result.stderr
+
     def test_under_threshold_labelless_addition_no_warning(self, tmp_path: pathlib.Path) -> None:
         """現行220行以下のファイルはラベルなし追記でも警告が出ない。"""
         _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(100)) + "\n")
@@ -799,6 +858,10 @@ class TestLeadingLabel:
     def test_no_label_returns_none(self) -> None:
         assert _MOD._leading_label(["regular body"]) is None
         assert _MOD._leading_label([]) is None
+
+    def test_addition_label_inside_fence_is_detected(self) -> None:
+        """`[追記]`ラベルは`"addition"`種別として返却される。"""
+        assert _MOD._leading_label(["[追記]", "追記本文"]) == "addition"
 
 
 class TestVariableLengthFence:

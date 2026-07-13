@@ -13,6 +13,11 @@
 `_check_addition_reduction_projection`各関数が担う。`## 変更内容`H3節配下の追記ブロック・縮減対象ブロックを
 集計し、`### 対象ファイル一覧`チェックボックスの`（現行N行, 見込みM行）`表記との乖離を検出する。
 
+`[追記]`ラベルは`plan-file-diff-labels.md`「差分ラベル6種」節が定める正式ラベルであり、
+`_leading_label`が`"addition"`を返す直接検出経路として扱う。ラベル行は集計対象から除外し、
+兄弟スクリプト`check_plan_diff_gates.py`の`colloquial-check`併走と連携して、
+計画段階でラベル直下のフェンス本文へ口語表現検査を到達させる。
+
 対象ファイルが`.py`など実装コードの場合、`## 変更内容`節は追記文言案を逐語のフェンス内容として
 記述せず、関数シグネチャ変更点の説明文で記述することが多い。
 この場合、上記算術照合は説明文の行数を追記量と誤集計し偽陽性の乖離検出を報告し得る。
@@ -93,6 +98,7 @@ _CURRENT_LABEL_TOKEN = "現行"
 # 削除根拠ブロックは対比適用対象外として無視し、直前の[現行]ブロックも未消費扱いを解除する。
 _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
 _NEW_LABEL_TOKEN = "新設"
+_ADDITION_LABEL_TOKEN = "追記"
 
 # 220行超過判定の閾値（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
 # 220行以下収束を実装完了条件とし、超過ファイルには縮減計画の明示を要求する）。
@@ -110,6 +116,12 @@ _UNDETERMINED_PATHS: frozenset[str] = frozenset()
 # 計画執筆時の位置注記であり実際に対象ファイルへ挿入・保持される内容ではないため
 # 行数集計から除外する（全角丸括弧で行全体を囲む場合のみ一致）。
 _ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
+
+# 追記/縮減対象ブロック内の1行目が`[追記]`ラベル単独の場合、当該ラベル行は
+# `plan-file-diff-labels.md`「差分ラベル6種」節が定める記法上の目印であり
+# 対象ファイルへ挿入される内容ではないため行数集計から除外する。
+# ラベル文字列は`_ADDITION_LABEL_TOKEN`をSSOTとし、正規表現側から参照する。
+_LABEL_ADDITION_ONLY_RE = re.compile(rf"^\[{re.escape(_ADDITION_LABEL_TOKEN)}\]$")
 
 
 def main() -> int:
@@ -366,10 +378,10 @@ def _extract_diff_blocks(section: str, known_paths: frozenset[str]) -> tuple[lis
 def _leading_label(content_lines: list[str]) -> str | None:
     """fence直後1行目のプレーンテキストラベルを調べ、種別を返す。
 
-    返却値は`"current"`・`"replacement"`・`"replacement-full"`・`"deletion"`・`"new"`のいずれか、
+    返却値は`"current"`・`"replacement"`・`"replacement-full"`・`"deletion"`・`"new"`・`"addition"`のいずれか、
     ラベルが見つからない場合は`None`。
 
-    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`の5種で、
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種で、
     fence直後1行目の内容へ部分一致で検出する。
     「置換後（全文）」は「置換後」の部分文字列を含むため、判定順で先に「置換後（全文）」を確認する。
     """
@@ -389,6 +401,8 @@ def _leading_label(content_lines: list[str]) -> str | None:
         return "current"
     if _NEW_LABEL_TOKEN in stripped:
         return "new"
+    if _ADDITION_LABEL_TOKEN in stripped:
+        return "addition"
     return None
 
 
@@ -470,9 +484,11 @@ def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, 
     判定基準:
     - 対象ファイル一覧の現行行数が`_OVER_THRESHOLD_PROJECTION`超のファイルを対象とする
     - `agent-toolkit:agent-standards`「文書サイズ上限」節に従い対象拡張子は`.md`・`.md.tmpl`に限定する
-    - 集計結果で追記行数が0超かつ縮減対象行数が0の対象ファイルを警告対象とする
-      （ラベル付き`[現行]`/`[置換後]`ペアで書けば`_check_one_file`の対比検証経路へ載り
-      当該ブロックは追記/縮減集計からは除外されて集計上の追記が0になり見込み行数乖離を回避できるため）
+    - 集計結果でラベルなし追記行数（`addition_labelless`）が0超かつ縮減対象行数が0の対象ファイルを警告対象とする
+      （ラベル付き`[現行]`/`[置換後]`ペアまたは`[追記]`ラベルで書けば`_check_one_file`の対比検証経路
+      または`[追記]`直接検出経路へ載り、ラベルなし追記のみを警告対象として抽出できるため）
+    - `[追記]`ラベル付き追記（`addition_labelled`）とラベルなし追記が混在する場合、
+      ラベルなし追記が残っていれば警告対象として扱う（誤抑止を避けるため）
     """
     section = _extract_section(text, "## 変更内容")
     if section is None:
@@ -490,13 +506,13 @@ def _check_labelless_addition_for_over_threshold_files(plan_path: pathlib.Path, 
     addition_reduction = _extract_addition_reduction_blocks(section)
     for path in over_threshold_files:
         stats = addition_reduction.get(path, {})
-        added = stats.get("addition", 0)
+        labelless = stats.get("addition_labelless", 0)
         reduced = stats.get("reduction", 0)
-        if added > 0 and reduced == 0:
+        if labelless > 0 and reduced == 0:
             print(
                 f"{plan_path}: 220行到達済みファイル{path}"
                 f"（現行{bounds[path][0]}行）への追記に"
-                f"`[現行]`/`[置換後]`ラベルが付いていない。差分ラベル付与を検討",
+                f"`[現行]`/`[置換後]`または`[追記]`ラベルが付いていない。差分ラベル付与を検討",
                 file=sys.stderr,
             )
     return 0
@@ -520,8 +536,10 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     直前の[現行]ブロックの行数（先頭ラベル行および位置注記1行の除外後）を縮減対象行数へ加算する
     （削除パターンの[削除根拠]ブロック自体は`_leading_label`経由で対比対象外のため、
     `_preceding_label_for_addition_reduction`側の縮減判定とは経路分離し二重集計を避ける）。
-    戻り値はファイルパスをキーとし、addition（追記行数合計）とreduction（縮減対象行数合計）を
-    値に持つ辞書。
+    戻り値はファイルパスをキーとし、addition（ラベル付き＋ラベルなし追記行数合計）・
+    addition_labelled（`[追記]`ラベル起源の追記行数）・addition_labelless（トリガー継続・
+    追記見出し由来のラベルなし追記行数）・reduction（縮減対象行数合計）を値に持つ辞書。
+    互換のため`addition`はlabelledとlabellessの合計を併記する。
     """
     result: dict[str, dict[str, int]] = {}
     known_paths = _collect_known_paths(section)
@@ -569,7 +587,10 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             elif leading == "deletion" and current_path is not None:
                 pending_lines = pending_current_for_deletion
                 if pending_lines is not None:
-                    entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
+                    entry = result.setdefault(
+                        current_path,
+                        {"addition": 0, "addition_labelled": 0, "addition_labelless": 0, "reduction": 0},
+                    )
                     if pending_lines and _leading_label(pending_lines) is not None:
                         pending_lines = pending_lines[1:]
                     if pending_lines and _ANNOTATION_ONLY_RE.match(pending_lines[0].strip()):
@@ -588,11 +609,25 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
             )
 
             if label is not None and current_path is not None:
-                entry = result.setdefault(current_path, {"addition": 0, "reduction": 0})
+                entry = result.setdefault(
+                    current_path,
+                    {"addition": 0, "addition_labelled": 0, "addition_labelless": 0, "reduction": 0},
+                )
                 counted_lines = content_lines
+                is_label_line_first = bool(counted_lines and _LABEL_ADDITION_ONLY_RE.match(counted_lines[0].strip()))
+                if is_label_line_first:
+                    counted_lines = counted_lines[1:]
                 if counted_lines and _ANNOTATION_ONLY_RE.match(counted_lines[0].strip()):
                     counted_lines = counted_lines[1:]
-                entry[label] += len(counted_lines)
+                added = len(counted_lines)
+                if label == "addition":
+                    if is_label_line_first:
+                        entry["addition_labelled"] += added
+                    else:
+                        entry["addition_labelless"] += added
+                    entry["addition"] += added
+                else:
+                    entry[label] += added
             continue
 
         if _ADDITION_TRIGGER_TOKEN in line:
@@ -617,12 +652,17 @@ def _preceding_label_for_addition_reduction(
         無条件で追記と判定する（トリガー継続中フラグ`in_addition_after_trigger`）
     (2) トリガー継続中でない場合はフェンス直前非空行に「追記」または「追加」の語を含むかで判定する
         （部分一致。`"追記" in line or "追加" in line`相当）
-    既存の`current`・`replacement`・`replacement-full`・`deletion`・`new`ラベル
-    （`_leading_label`が非Noneを返す場合）は対象外として`None`を返す（従来通り無視）。
-    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`の5種で、
+    `[追記]`ラベルによる直接検出（`_leading_label(content_lines) == "addition"`）を
+    追記判定の第1候補として採用する。既存の`current`・`replacement`・`replacement-full`・
+    `deletion`・`new`ラベル（`_leading_label`が"addition"以外の非Noneを返す場合）は
+    対象外として`None`を返す（従来通り無視）。
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種で、
     fence直後1行目のプレーンテキストへ部分一致で検出する。
     """
-    if _leading_label(content_lines) is not None:
+    leading = _leading_label(content_lines)
+    if leading == "addition":
+        return "addition"
+    if leading is not None:
         return None
 
     if in_reduction_heading:

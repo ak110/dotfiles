@@ -11,6 +11,7 @@
 - `[新設]`単独ラベル配下のtextフェンスブロック
 - `[置換後]`単独ラベル配下のtextフェンスブロック
 - `[置換後（全文）]`単独ラベル配下のtextフェンスブロック
+- `[追記]`単独ラベル配下のtextフェンスブロック
 - 追記/縮減トリガー文（「追記文言案」「追記内容:」「追記:」「追加:」「圧縮対象:」「圧縮後:」等）配下の直後textフェンスブロック
 - `（新設）`H3配下のtextフェンスブロック
 - `#### 縮減対象`小見出し配下のtextフェンスブロック
@@ -27,8 +28,9 @@
 
 - `## 変更内容`本文のfence外側配置ラベルおよび全角化ラベルの全文一括検査（exit 1違反）
 - 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）
-- textlint: `uvx pyfltr run-for-agent --commands=textlint --no-fix <tmpfile.md>`
-    （一時ファイル拡張子を`.md`に固定して呼び出す）
+- textlint併走colloquial-check: 一時ファイル拡張子を`.md`に固定して
+    `uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check --no-fix <tmpfile.md>`
+    を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走
 - 127幅検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
     （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
@@ -100,6 +102,7 @@ _REPLACEMENT_LABEL_TOKEN = "[置換後]"
 _REPLACEMENT_FULL_LABEL_TOKEN = "[置換後（全文）]"
 _CURRENT_LABEL_TOKEN = "[現行]"
 _DELETION_RATIONALE_LABEL_TOKEN = "[削除根拠]"
+_ADDITION_LABEL_TOKEN = "[追記]"
 
 # ラベル行判定用トークン一覧（fence直後1行目から本文抽出時に除外する対象）。
 _ALL_LABEL_TOKENS = (
@@ -108,6 +111,7 @@ _ALL_LABEL_TOKENS = (
     _REPLACEMENT_FULL_LABEL_TOKEN,
     _CURRENT_LABEL_TOKEN,
     _DELETION_RATIONALE_LABEL_TOKEN,
+    _ADDITION_LABEL_TOKEN,
 )
 
 # 追記/縮減トリガー文に含まれるトークン（フェンス直前非空行に部分一致する場合、次のtextブロックを検査対象へ加える）。
@@ -431,7 +435,8 @@ def _classify_block(
 
     優先順は次のとおり。
     1. `[現行]`・`[削除根拠]`ラベル配下は既存文言または削除説明のため検査対象外（`None`）
-    2. `[新設]`・`[置換後]`・`[置換後（全文）]`ラベル配下は種別ラベルを返す
+    2. `[新設]`・`[置換後]`・`[置換後（全文）]`・`[追記]`ラベル配下は種別ラベルを返す
+       （`[追記]`は`addition`）
     3. `#### 縮減対象`見出し配下は`reduction`を返す
     4. `（新設）`H3配下は`new-h3`を返す
     5. 追記トリガー文出現後で当該H3節境界に未到達なら`addition`を返す
@@ -449,6 +454,8 @@ def _classify_block(
             return "replacement"
         if _NEW_LABEL_TOKEN in first:
             return "new"
+        if _ADDITION_LABEL_TOKEN in first:
+            return "addition"
     if in_reduction_heading:
         return "reduction"
     if in_new_h3:
@@ -516,10 +523,25 @@ def _run_tmpfile_check(
 
 
 def _run_textlint(body: str) -> str | None:
-    """一時ファイル経由でtextlintを実行し、違反時stderr内容・未違反時Noneを返す。"""
+    """一時ファイル経由でtextlintおよびcolloquial-checkを実行し、違反時stderr内容・未違反時Noneを返す。
+
+    計画本文のフェンス内文面は上位のcolloquial-checkが検査対象外とするため、
+    フェンス外扱いの一時ファイル経由でcolloquial-checkを併走させる。
+    実装検証段階でのcolloquial-check違反発覚を計画段階で先取り検出する。
+    呼び出し元では違反ラベルを「textlint違反」で統一する。
+    colloquial-check由来の違反も同ラベルで報告される点は既知とする。
+    """
     return _run_tmpfile_check(
         body,
-        lambda p: ["uvx", "pyfltr", "run-for-agent", "--commands=textlint", "--no-fix", str(p)],
+        lambda p: [
+            "uvx",
+            "pyfltr",
+            "run-for-agent",
+            "--commands=textlint,colloquial-check",
+            "--enable=colloquial-check",
+            "--no-fix",
+            str(p),
+        ],
         "textlint",
     )
 
@@ -649,9 +671,24 @@ def _rewrite_locations(output: str, location_map: dict[str, str]) -> str:
 
 
 def _run_textlint_batch(paths: list[pathlib.Path]) -> str | None:
-    """一時ファイル群へtextlintを1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。"""
+    """一時ファイル群へtextlintおよびcolloquial-checkを1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。
+
+    計画本文のフェンス内文面は上位のcolloquial-checkが検査対象外とするため、
+    フェンス外扱いの一時ファイル経由でcolloquial-checkを併走させる。
+    実装検証段階でのcolloquial-check違反発覚を計画段階で先取り検出する。
+    呼び出し元では違反ラベルを「textlint違反」で統一する。
+    colloquial-check由来の違反も同ラベルで報告される点は既知とする。
+    """
     result = subprocess.run(
-        ["uvx", "pyfltr", "run-for-agent", "--commands=textlint", "--no-fix", *(str(p) for p in paths)],
+        [
+            "uvx",
+            "pyfltr",
+            "run-for-agent",
+            "--commands=textlint,colloquial-check",
+            "--enable=colloquial-check",
+            "--no-fix",
+            *(str(p) for p in paths),
+        ],
         capture_output=True,
         text=True,
         check=False,
