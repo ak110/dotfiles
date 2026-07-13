@@ -59,13 +59,18 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
         self._change_event.set()
 
 
-def _build_process_loop_prompt(local_path: pathlib.Path) -> str:
+def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
     """claude起動プロンプトを構築する。
 
     主目標は取得した全件の完遂であり、exit-sessionは完遂後の後処理として位置付ける。
+    対象リポジトリはcwdではなくtarget_repo_idで一意に固定する
+    （プロンプト本文へ対象範囲を限定する指示を明記し、他リポジトリのfeedback処理を防ぐ）。
     """
     return (
         f"/process-feedbacks {local_path} を実行してください。\n"
+        f"対象リポジトリは`--target-repo={target_repo_id}`で必ず限定してください。"
+        "cwd由来の暗黙解決に依存せず、フィードバック取得・処理・後始末のいずれの段階でも"
+        "他リポジトリのフィードバックを対象に含めないでください。\n"
         "主目標は取得した全件のフィードバックの実装完遂と、"
         "agent-toolkit:process-feedbacks-finish が定める後続工程の完遂です。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
@@ -138,8 +143,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
     """
     local_path = _resolve_local_worktree(args.target_repo)
-    prompt = _build_process_loop_prompt(local_path)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
+    prompt = _build_process_loop_prompt(local_path, target_repo_id)
     print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
@@ -156,10 +161,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
                     _process_loop_log.append("session_start")
                     session_started_at = time.monotonic()
+                    # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
+                    # claude起動セッション内でcwd依存の子コマンドが発行された場合、
+                    # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
                     result = subprocess.run(
                         ["claude", "--permission-mode=auto", "--model", args.model, prompt],
                         check=False,
                         env=env,
+                        cwd=local_path,
                     )
                     _process_loop_log.append(
                         "session_end",

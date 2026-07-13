@@ -33,7 +33,7 @@ def _fake_run_with_remote_url(
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         if cmd[:1] == ["claude"]:
-            claude_calls.append({"cmd": list(cmd), "env": kwargs.get("env")})
+            claude_calls.append({"cmd": list(cmd), "env": kwargs.get("env"), "cwd": kwargs.get("cwd")})
             empty: Any = "" if kwargs.get("text") else b""
             return subprocess.CompletedProcess(cmd, returncode=claude_returncode, stdout=empty, stderr=empty)
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
@@ -292,6 +292,8 @@ class TestProcessLoopPromptAndEnv:
         prompt = claude_calls[0]["cmd"][-1]
         assert "/process-feedbacks" in prompt
         assert "process-feedbacks-finish" in prompt
+        # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
+        assert claude_calls[0]["cwd"] == myrepo
         assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
         assert len(wait_calls) == 2
@@ -302,6 +304,7 @@ class TestProcessLoopPromptAndEnv:
         """プロンプトが取得した全件の完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
+            "github.com/example/repo",
         )
         assert "主目標" in prompt
         assert "完遂" in prompt
@@ -317,8 +320,23 @@ class TestProcessLoopPromptAndEnv:
         """プロンプトが後続工程の集約先としてprocess-feedbacks-finishスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
+            "github.com/example/repo",
         )
         assert "process-feedbacks-finish" in prompt
+
+    def test_prompt_includes_target_repo(self) -> None:
+        """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。
+
+        LLM起動プロンプトでcwd由来の暗黙解決を排除するため、target_repo_idを
+        プロンプト本文へ明示埋め込みする。
+        """
+        target_repo_id = "github.com/example/repo"
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+            target_repo_id,
+        )
+        assert f"--target-repo={target_repo_id}" in prompt
+        assert "/repo" in prompt
 
     def test_model_override(
         self,
