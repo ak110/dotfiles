@@ -121,8 +121,9 @@ def _build_restart_argv(argv: list[str]) -> list[str]:
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
 
-    1反復ごとに`claude --permission-mode=auto`で`/process-feedbacks`と
-    `/agent-toolkit:exit-session`を直接起動する。
+    1反復ごとに`claude --permission-mode=auto --model {args.model}`で`/process-feedbacks`と
+    `/agent-toolkit:exit-session`を直接起動する。`--model`の既定値は`opus`で、
+    オーケストレーション品質を維持する目的で設定する。
     claudeが正常終了（0・-15・15・143のいずれか）した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
     自身のプロセスを`os.execv`で置き換えて再起動する。
@@ -156,7 +157,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     _process_loop_log.append("session_start")
                     session_started_at = time.monotonic()
                     result = subprocess.run(
-                        ["claude", "--permission-mode=auto", prompt],
+                        ["claude", "--permission-mode=auto", "--model", args.model, prompt],
                         check=False,
                         env=env,
                     )

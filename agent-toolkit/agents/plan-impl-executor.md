@@ -4,7 +4,7 @@ description: >
   計画ファイル合意後の計画実行を担うサブエージェント。
   `ExitPlanMode`直後、計画ファイルがある場合に必ずAgentツールで起動すること。
   起動時はプロンプト本文へ計画ファイルの絶対パス・プロジェクトルートの絶対パス・追加指示（任意）を明記する。
-model: inherit
+model: sonnet
 effort: medium
 skills:
   - agent-toolkit:autopilot

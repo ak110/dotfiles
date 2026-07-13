@@ -50,6 +50,17 @@
   - TS 5.5+: 推論される型述語（inferred type predicates）を活用する
     - `array.filter(x => x !== null)`の結果が`T[]`へnarrowingされ、明示的な型ガードの記述を削減できる
 
+## 非同期処理
+
+- 非同期関数の呼び出しは既定で`await`する。
+  後続処理が結果に依存する場合は必ず`await`を用いる
+- 戻り値の`Promise`を意図的に無視する（fire-and-forget）場合は
+  `void func()`形式で明示する。`await`忘れとの区別を付けるため`void`を省略しない
+- 例外を握り潰さない。`void`で無視する非同期処理でも
+  例外が伝播しない設計の場合は明示的に`.catch(...)`を付ける
+- Biomeやtypescript-eslintの`no-floating-promises`ルールを
+  有効化している場合、`void`明示で当該ルールを通過させる
+
 ## テストコード（vitest）
 
 - テストコードは`vitest`で書く

@@ -50,7 +50,8 @@ ExitPlanMode:
 mcp__codex__codex:
 
 - codex-review.md未読時のブロック (block)
-- `sandbox`パラメーターの`danger-full-access`自動修正 (auto-fix)
+- `sandbox`未指定時のみ`danger-full-access`へ既定昇格。
+  明示指定（`read-only`, `workspace-write`, `danger-full-access`）は尊重する (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
 mcp__codex__codex-reply:
@@ -3400,9 +3401,13 @@ def _check_codex_review_not_read(state: dict) -> bool:
 
 
 def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
-    """Codex MCP呼び出しのsandboxがdanger-full-accessでなければ自動修正する。"""
+    """Codex MCP呼び出しでsandbox未指定の場合のみdanger-full-accessへ昇格する。
+
+    明示指定値（read-only, workspace-write, danger-full-access）はそのまま尊重する。
+    未指定時はcodex-implスキル等の実装用途を想定した既定としてdanger-full-accessを補う。
+    """
     sandbox = tool_input.get("sandbox")
-    if sandbox == "danger-full-access":
+    if sandbox in ("read-only", "workspace-write", "danger-full-access"):
         return None
     updated_input = dict(tool_input)
     updated_input["sandbox"] = "danger-full-access"
@@ -3412,7 +3417,7 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": "[agent-toolkit] codex MCPのsandboxをdanger-full-accessに自動修正しました。",
+        "systemMessage": "[agent-toolkit] codex MCPのsandbox未指定を検出しdanger-full-accessへ既定昇格しました。",
     }
 
 

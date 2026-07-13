@@ -72,7 +72,7 @@ repos:
         entry: uv run --frozen python scripts/gen-completions.py
         language: system
         pass_filenames: false
-        files: '^(pyproject\.toml|pytools/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash)$'
+        files: '^(pyproject\.toml|pytools/.*\.py|agent-toolkit/scripts/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash|agent-toolkit/completions/atk\.bash)$'
       - id: pyfltr
         name: pyfltr
         entry: uvx pyfltr fast

@@ -50,6 +50,11 @@
 
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
 `completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
+`scripts/gen-completions.py`は生成先を2箇所へ分岐して書き込む。
+`pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
+`agent-toolkit/scripts/*.py`のうちargcompleteマーカーを持つスクリプトが対象で、
+対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンド（`atk`等）に限る。
+これらは`agent-toolkit/completions/atk.bash`へ書き込む。
 
 新しいCLIに補完を追加する場合は、CLIモジュールへのマーカー配置と`enable_completion()`呼び出しをコード側コメントに従い追加し、
 補完スクリプトを再生成する。
@@ -61,8 +66,9 @@ uv run --script scripts/gen-completions.py          # 再生成
 uv run --script scripts/gen-completions.py --check  # 検証（pre-commitフックで自動実行）
 ```
 
-手書き補完が必要な場合（`bin/`配下コマンドなど）は`completions/<name>.bash`を新規追加する。
-`_`プレフィックスのファイルは自動生成物の慣習として予約する。
+手書き補完が必要な場合（`bin/`配下コマンドのうち`gen-completions.py`の収集対象外のものなど）は
+`completions/<name>.bash`を新規追加する。`_`プレフィックスのファイルは自動生成物の慣習として予約する。
+`agent-toolkit/completions/atk.bash`は`gen-completions.py`の自動生成対象のため、この手順は当てはまらない。
 
 ## Windows PowerShellスクリプトの注意事項
 

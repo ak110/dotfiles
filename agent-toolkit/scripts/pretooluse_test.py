@@ -2965,10 +2965,10 @@ class TestCodexMcpSandbox:
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
         assert updated["prompt"] == "hello"
-        assert "自動修正" in out["systemMessage"]
+        assert "既定昇格" in out["systemMessage"]
 
     def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが不正な値の場合も自動修正される。"""
+        """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
         self._write_state(tmp_path, "fix2", {"codex_review_read": True})
         result = _run(
             {
@@ -2982,7 +2982,38 @@ class TestCodexMcpSandbox:
         out = json.loads(result.stdout)
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
-        assert "自動修正" in out["systemMessage"]
+
+    def test_sandbox_read_only_respected(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandbox=read-onlyの明示指定は尊重され自動昇格しない。"""
+        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "read-only"},
+                "session_id": "fix_ro",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "updatedInput" not in out["hookSpecificOutput"]
+
+    def test_sandbox_workspace_write_respected(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandbox=workspace-writeの明示指定は尊重され自動昇格しない。"""
+        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "workspace-write"},
+                "session_id": "fix_ww",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "updatedInput" not in out["hookSpecificOutput"]
 
     def test_sandbox_correct_no_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが既にdanger-full-accessの場合は修正せず強制承認のみ返す。"""

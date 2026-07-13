@@ -1,7 +1,29 @@
-# `atk`コマンドのbash補完（argcomplete）を実行時登録する。
-# `register-python-argcomplete`はargcomplete同梱のCLIで、対象コマンドの
-# `# PYTHON_ARGCOMPLETE_OK`マーカーを検出して補完関数を動的生成する。
-# `atk`・`register-python-argcomplete`いずれか未実在の環境でも安全に読み込めるようガードする。
-if command -v atk >/dev/null 2>&1 && command -v register-python-argcomplete >/dev/null 2>&1; then
-    eval "$(register-python-argcomplete atk)"
-fi
+# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
+# 再生成: `uv run --script scripts/gen-completions.py`
+#
+# argcomplete対応の`atk`コマンドにbash補完を提供する。
+# 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
+# argcomplete側で候補生成と出力を行う。
+
+_python_argcomplete() {
+    local IFS=$'\013'
+    local SUPPRESS_SPACE=0
+    if compopt +o nospace 2> /dev/null; then
+        SUPPRESS_SPACE=1
+    fi
+    COMPREPLY=( $(IFS="$IFS" \
+                  COMP_LINE="$COMP_LINE" \
+                  COMP_POINT="$COMP_POINT" \
+                  COMP_TYPE="$COMP_TYPE" \
+                  _ARGCOMPLETE_COMP_WORDBREAKS="$COMP_WORDBREAKS" \
+                  _ARGCOMPLETE=1 \
+                  _ARGCOMPLETE_SUPPRESS_SPACE=$SUPPRESS_SPACE \
+                  "$1" 8>&1 9>&2 1>/dev/null 2>/dev/null) )
+    if [[ $? != 0 ]]; then
+        unset COMPREPLY
+    elif [[ $SUPPRESS_SPACE == 1 ]] && [[ "${COMPREPLY-}" =~ [=/:]$ ]]; then
+        compopt -o nospace
+    fi
+}
+
+complete -o nospace -o default -o bashdefault -F _python_argcomplete atk

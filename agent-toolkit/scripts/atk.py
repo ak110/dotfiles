@@ -230,6 +230,11 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         action="store_true",
         help="1反復完了後のupdate-dotfiles実行と自身再起動を抑止する。",
     )
+    loop.add_argument(
+        "--model",
+        default="opus",
+        help="claude起動時の--modelオプションの既定はopusとする。",
+    )
 
     tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
     tbd_add.add_argument(

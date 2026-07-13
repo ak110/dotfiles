@@ -289,10 +289,10 @@ class TestProcessLoopPromptAndEnv:
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
-        prompt = claude_calls[0]["cmd"][2]
+        prompt = claude_calls[0]["cmd"][-1]
         assert "/process-feedbacks" in prompt
         assert "process-feedbacks-finish" in prompt
-        assert claude_calls[0]["cmd"][:2] == ["claude", "--permission-mode=auto"]
+        assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
         assert claude_calls[0]["env"]["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] == "1"
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
@@ -319,6 +319,40 @@ class TestProcessLoopPromptAndEnv:
             pathlib.Path("/repo"),
         )
         assert "process-feedbacks-finish" in prompt
+
+    def test_model_override(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--model`引数の値がclaude起動コマンドへ反映される。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        count_calls: list[int] = []
+
+        def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
+            del private_notes, target_repo
+            count_calls.append(len(count_calls))
+            return 1 if len(count_calls) == 1 else 0
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+            del private_notes, target_repo_id
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count_pending_entries)
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["fb", "process-loop", f"--target-repo={myrepo}", "--no-update", "--model=sonnet"],
+                home=tmp_path,
+            )
+
+        assert len(claude_calls) == 1
+        assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "sonnet"]
 
 
 class TestProcessLoopClaudeReturncode:

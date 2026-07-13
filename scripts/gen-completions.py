@@ -3,11 +3,12 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""`completions/_pytools.bash`を生成する。
+"""bash補完ファイル（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）を生成する。
 
-`pyproject.toml`の`[project.scripts]`を読み、エントリポイント先のモジュールに
-`# PYTHON_ARGCOMPLETE_OK`マーカーがあるコマンドだけを補完登録対象にする。
-`completions/_pytools.bash`は手編集禁止（pre-commitフックで再生成される）。
+`pyproject.toml`の`[project.scripts]`に登録された`pytools`系コマンドと、
+`agent-toolkit/scripts/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
+対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンドを補完対象とする。
+出力先ファイルは手編集禁止（pre-commitフックで再生成される）。
 
 使い方:
     scripts/gen-completions.py    # 生成または更新する（既存と同一なら書き換えない）
@@ -21,15 +22,27 @@ import tomllib
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
-_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
+_PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
+_ATK_OUTPUT = _REPO_ROOT / "agent-toolkit" / "completions" / "atk.bash"
+_AGENT_TOOLKIT_SCRIPTS = _REPO_ROOT / "agent-toolkit" / "scripts"
+_AGENT_TOOLKIT_BIN = _REPO_ROOT / "agent-toolkit" / "bin"
 
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
-_HEADER = """\
+_HEADER_PYTOOLS = """\
 # 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
 # 再生成: `uv run --script scripts/gen-completions.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
+# 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
+# argcomplete側で候補生成と出力を行う。
+"""
+
+_HEADER_ATK = """\
+# 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
+# 再生成: `uv run --script scripts/gen-completions.py`
+#
+# argcomplete対応の`atk`コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
 # argcomplete側で候補生成と出力を行う。
 """
@@ -61,21 +74,26 @@ _python_argcomplete() {
 
 
 def main(argv: list[str] | None = None) -> int:
-    """completions/_pytools.bashを生成する。"""
-    argparse.ArgumentParser(description="completions/_pytools.bash を生成する。").parse_args(argv)
+    """bash補完ファイルを生成する。"""
+    argparse.ArgumentParser(description="bash補完ファイルを生成する。").parse_args(argv)
 
-    commands = sorted(_collect_commands())
-    content = _render(commands)
+    pytools_commands = sorted(_collect_pytools_commands())
+    _write_if_changed(_PYTOOLS_OUTPUT, _render(_HEADER_PYTOOLS, pytools_commands), len(pytools_commands))
 
-    _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    if _OUTPUT.exists() and _OUTPUT.read_text(encoding="utf-8") == content:
-        return 0
-    _OUTPUT.write_text(content, encoding="utf-8")
-    print(f"生成: {_OUTPUT.relative_to(_REPO_ROOT)} ({len(commands)}コマンド)")
+    atk_commands = sorted(_collect_agent_toolkit_commands())
+    _write_if_changed(_ATK_OUTPUT, _render(_HEADER_ATK, atk_commands), len(atk_commands))
     return 0
 
 
-def _collect_commands() -> list[str]:
+def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists() and output.read_text(encoding="utf-8") == content:
+        return
+    output.write_text(content, encoding="utf-8")
+    print(f"生成: {output.relative_to(_REPO_ROOT)} ({count}コマンド)")
+
+
+def _collect_pytools_commands() -> list[str]:
     """argcomplete対応の`project.scripts`コマンド名を抽出する。"""
     data = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))
     scripts = data.get("project", {}).get("scripts", {})
@@ -85,9 +103,25 @@ def _collect_commands() -> list[str]:
         path = _resolve_module_path(module)
         if path is None:
             continue
-        # マーカーは先頭付近のコメント行を想定する。ファイル全体を読んでもサイズは小さく許容できる。
         if _has_marker(path):
             result.append(name)
+    return result
+
+
+def _collect_agent_toolkit_commands() -> list[str]:
+    """`agent-toolkit/scripts/*.py`のうち、argcompleteマーカーを持ち対応するbashラッパーがあるコマンド名を返す。"""
+    result: list[str] = []
+    if not _AGENT_TOOLKIT_SCRIPTS.is_dir():
+        return result
+    for script_path in _AGENT_TOOLKIT_SCRIPTS.glob("*.py"):
+        if script_path.name.startswith("_"):
+            continue
+        if not _has_marker(script_path):
+            continue
+        wrapper = _AGENT_TOOLKIT_BIN / script_path.stem
+        if not wrapper.is_file():
+            continue
+        result.append(script_path.stem)
     return result
 
 
@@ -110,9 +144,9 @@ def _has_marker(path: pathlib.Path) -> bool:
     return re.search(rf"^{re.escape(_MARKER)}$", text, re.MULTILINE) is not None
 
 
-def _render(commands: list[str]) -> str:
-    """`_pytools.bash`の中身を組み立てる。"""
-    lines = [_HEADER.rstrip("\n"), _DISPATCHER.rstrip("\n"), ""]
+def _render(header: str, commands: list[str]) -> str:
+    """補完ファイルの中身を組み立てる。"""
+    lines = [header.rstrip("\n"), _DISPATCHER.rstrip("\n"), ""]
     for name in commands:
         lines.append(f"complete -o nospace -o default -o bashdefault -F _python_argcomplete {name}")
     lines.append("")
