@@ -6646,7 +6646,7 @@ class TestFrontmatterSyncNoteBodyExists:
         assert "never-exists.md" in result.stderr
 
     def test_consecutive_independent_sync_notes_do_not_cross_contaminate(self, tmp_path: pathlib.Path) -> None:
-        """空行を挟まず連続する独立した同期注記宣言は別々の注記として分離される（指摘2回帰防止）。
+        """空行を置かず連続する独立した同期注記宣言は別々の注記として分離される（指摘2回帰防止）。
 
         実運用（`plan-impl-executor.md`）と同様、1つ目の注記が外部ファイルの節を参照し、
         2つ目の注記が自ファイルの節を参照する形式でも、両方とも正しく解決されてwarnしない。

@@ -59,18 +59,14 @@ import pathlib
 import re
 import subprocess
 import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import sys
 import tempfile
 from collections.abc import Callable, Iterator
-
-import check_deprecated_identifier_coverage  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # 共通モジュール読み込みのため本ファイルと同一ディレクトリおよび`agent-toolkit/scripts/`を`sys.path`へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 # pylint: disable=wrong-import-position
+import check_deprecated_identifier_coverage  # noqa: E402
 from _plan_diff_parsing import (  # noqa: E402
     FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
@@ -186,7 +182,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())
+    # 統合ランナー側の既存慣例と同じく、兄弟スクリプトのリポジトリルート解決を再利用する。
+    repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())  # pylint: disable=protected-access
     total_violations = 0
     for plan_path in args.plan_paths:
         total_violations += len(_check_plan_file(plan_path, repo_root))
@@ -399,9 +396,9 @@ def _check_transcription_declaration_consistency(plan_path: pathlib.Path, text: 
     検出する。判定対象キーワードは`_TRANSCRIPTION_CONFLICT_KEYWORDS`（`push`・`git commit`・`git push`・
     `レビュー`・`作業ツリー`）の全件ではなく、同H3配下の追記/置換ブロック本文
     （`_iter_diff_blocks`抽出結果。`[現行]`・`[削除根拠]`ラベル配下の既存文言・削除説明は
-    `_iter_diff_blocks`が既に対象外とするため自然と追記・置換後・新設内容へ絞られる）に
-    実際に出現する要素のみへ絞り込む。無関係な既存の否定文脈を誤検出しないための限定である。
-    絞り込み後のキーワードが検出したH3見出し（`### <ファイルパス>`）の指す対象ファイル本体で
+    `_iter_diff_blocks`が既に対象外とするため自然と追記・置換後・新設内容へ限定される）に
+    実際に出現する要素のみへ限定する。無関係な既存の否定文脈を誤検出しないための限定である。
+    限定後のキーワードが検出したH3見出し（`### <ファイルパス>`）の指す対象ファイル本体で
     否定文脈（「〜しない」「対象外」等）に使われていないかを前後`_NEGATION_CONTEXT_WINDOW`行の
     windowで検査する。否定文脈での使用を検出した場合はwarnメッセージを返す
     （`_check_plan_file`はexit codeへ含めない）。
