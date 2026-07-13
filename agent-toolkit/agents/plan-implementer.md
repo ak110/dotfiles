@@ -179,3 +179,4 @@ unplanned:
 本サブエージェントはレビュー指摘対応等で実装差分が計画ファイル本文diff案・
 `### エージェント判断`の記述と乖離した場合、`changed`欄の別サブバレット
 （`[乖離]`ラベル付き）で乖離箇所と実装最終形を明示する。
+書式SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-diff-labels.md`「進捗ログの乖離注記」節に集約する。
