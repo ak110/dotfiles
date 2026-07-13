@@ -4,7 +4,8 @@
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
 正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・220行到達済みラベルなし追記検査・
 H3見出し無し・複数ファイル対象・対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・
-`[追記]`ラベル直接検出とラベル付き/なし追記の分離集計の各シナリオを網羅する。
+`[追記]`ラベル直接検出とラベル付き/なし追記の分離集計・frontmatterサブラベル
+（`[追記（frontmatter）]`等4種）の行数集計と本体変更との合算の各シナリオを網羅する。
 """
 
 import importlib.util
@@ -862,6 +863,65 @@ class TestLeadingLabel:
     def test_addition_label_inside_fence_is_detected(self) -> None:
         """`[追記]`ラベルは`"addition"`種別として返却される。"""
         assert _MOD._leading_label(["[追記]", "追記本文"]) == "addition"
+
+
+class TestFrontmatterLabelExtraction:
+    """frontmatterサブラベル（`[追記（frontmatter）]`等4種）の行数集計を検証する。"""
+
+    def test_addition_frontmatter_sublabel_counted(self, tmp_path: pathlib.Path) -> None:
+        """`[追記（frontmatter）]`ブロックの本文行数が追記量として集計される。"""
+        _write(tmp_path / "foo.md", "---\ntitle: t\n---\nbody\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行4行, 見込み6行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[追記（frontmatter）]\nsummary: s\ntags: []\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_current_replacement_frontmatter_pair_applied(self, tmp_path: pathlib.Path) -> None:
+        """`[現行（frontmatter）]`/`[置換後（frontmatter）]`対比ペアが実ファイルへ適用され、見込み行数と照合される。"""
+        _write(tmp_path / "foo.md", "---\ntitle: old\n---\nbody\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行4行, 見込み5行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行（frontmatter）]\ntitle: old\n```\n\n"
+            "```text\n[置換後（frontmatter）]\ntitle: new\nsummary: s\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_deletion_frontmatter_sublabel_counted_as_reduction(self, tmp_path: pathlib.Path) -> None:
+        """`[削除根拠（frontmatter）]`ブロックの直前`[現行（frontmatter）]`行数が縮減量として集計される。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行（frontmatter）]\nold-line1\nold-line2\n```\n\n"
+            "```text\n[削除根拠（frontmatter）]\n陳腐化のため削除\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_frontmatter_and_body_addition_summed(self, tmp_path: pathlib.Path) -> None:
+        """frontmatter変更（`[追記（frontmatter）]`）と本体変更（`[追記]`）が同一H3内で合算される。"""
+        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み13行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[追記（frontmatter）]\nfm-line1\n```\n\n"
+            "```text\n[追記]\nbody-line1\nbody-line2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
 
 
 class TestVariableLengthFence:

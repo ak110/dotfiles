@@ -41,6 +41,9 @@ class TestMatchScopeEscalation:
             "テスト実行結果を報告する",
             "Waiting for user input on the next question.",
             "background agent is running.",
+            "バックグラウンドで処理する。その後、追跡中の状態を確認する。",
+            "完了報告を提出してから確認する。",
+            "gh run listで一覧を確認する。",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

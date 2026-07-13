@@ -128,6 +128,18 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "async-wait",
+        re.compile(r"(?:バックグラウンド(?:実行|ジョブ|プロセス)?)[^、。\n]{0,15}(?:追跡中|継続中|実行中|進行中)"),
+    ),
+    (
+        "async-wait",
+        re.compile(r"(?:完了通知|完了報告)[^、。\n]{0,15}(?:受領|受信|到達|着信)[^、。\n]{0,15}(?:確定|続行|着手|進行|反映)"),
+    ),
+    (
+        "async-wait",
+        re.compile(r"(?:gh run watch|gh run view)[^、。\n]{0,20}(?:待機|追跡|バックグラウンド)"),
+    ),
+    (
         "quality-gate-count",
         re.compile(
             r"hookブロック[^、。\n]*繰り返|lint違反[^、。\n]*膨大|違反件数[^、。\n]*進行困難|ブロック回数を踏まえ|修正量が多い"

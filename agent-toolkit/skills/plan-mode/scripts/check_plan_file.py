@@ -14,6 +14,8 @@
 - `check_wc_projection._check_wc`: 見込み行数と`wc -l`実測値の乖離検出
 - `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`: 差分ブロック抽出、
   縮退フレーズ・textlint・line-width（127幅）の検査
+- `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
+  宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・件数表現の検査
@@ -120,6 +122,9 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in check_self_ref._check_file(plan_path, text):
         print(msg, file=sys.stderr)
         violations += 1
+    # warn出力のみでexit codeへ含めない（`check_plan_diff_gates._check_plan_file`と同じ扱い）。
+    for msg in check_plan_diff_gates._check_transcription_declaration_consistency(plan_path, text, repo_root):
+        print(msg, file=sys.stderr)
 
     violations += _run_subprocess_check([sys.executable, str(_CHECK_LINE_WIDTH_CLI), str(plan_path)], "check_line_width")
     violations += _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash")

@@ -3,7 +3,8 @@
 計画ファイル`## 変更内容`配下の差分ブロック本文へ`_scope_escalation.py` CLIと
 `uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check`を
 事前適用する検査スクリプトを`monkeypatch.setattr("subprocess.run", ...)`でsubprocessをmockして検証する。
-`[追記]`ラベル直接検出・colloquial-check併走引数の検証もあわせて扱う。
+`[追記]`ラベル直接検出・colloquial-check併走引数の検証、および
+`_check_transcription_declaration_consistency`の「同構造」「同旨」「同期」宣言時整合性検査もあわせて扱う。
 """
 
 # 対象スクリプトは単独実行スクリプトであり公開APIは`main()`のみだが、
@@ -267,7 +268,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nclean\n```\n",
         )
-        assert _MOD._check_plan_file(plan) == []
+        assert _MOD._check_plan_file(plan, tmp_path) == []
 
     def test_scope_violation_is_reported(
         self,
@@ -285,7 +286,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nbad phrase\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 1
         assert "process-omission" in violations[0]
 
@@ -295,13 +296,13 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 1
         assert "textlint" in violations[0]
 
     def test_missing_file_is_reported(self, tmp_path: pathlib.Path) -> None:
         missing = tmp_path / "missing.md"
-        violations = _MOD._check_plan_file(missing)
+        violations = _MOD._check_plan_file(missing, tmp_path)
         assert len(violations) == 1
         assert "読み込みに失敗" in violations[0]
 
@@ -317,7 +318,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             f"## 変更内容\n\n### `foo{ext}`\n\n```text\n[新設]\ncode snippet\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert violations == []
         assert not any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
 
@@ -339,7 +340,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             f"## 変更内容\n\n### `foo{ext}`\n\n```text\n[新設]\ncode snippet\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 2
         assert any("_scope_escalation.py" in part for cmd in calls for part in cmd)
         assert any("check_line_width.py" in part for cmd in calls for part in cmd)
@@ -354,7 +355,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 1
         assert "textlint" in violations[0]
         assert any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
@@ -375,7 +376,7 @@ class TestCheckPlanFile:
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
-        violations = _MOD._check_plan_file(plan)
+        violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 1
         assert "line-width" in violations[0]
 
@@ -729,3 +730,79 @@ class TestRewriteLocations:
         """位置マップに存在しないパスはそのまま残る。"""
         output = "/tmp/other.md:1: something"
         assert _MOD._rewrite_locations(output, {"/tmp/known.md": "marker"}) == output
+
+
+class TestTranscriptionDeclarationConsistency:
+    """`_check_transcription_declaration_consistency`の「同構造」「同旨」「同期」宣言時の整合性検査を検証する。"""
+
+    def test_warns_when_declared_transcription_conflicts_with_target(self, tmp_path: pathlib.Path) -> None:
+        """「同構造」宣言つき追記で対象ファイルに矛盾キーワードがある場合、warnが発火する。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushは行わない。\n")
+        text = (
+            "## 変更内容\n\n"
+            f"### `{target}`\n\n"
+            "既存の追記文言を同構造として転記する。\n\n"
+            "```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert len(warnings) == 1
+        assert "push" in warnings[0]
+        assert str(target) in warnings[0]
+
+    def test_no_warning_when_no_conflict(self, tmp_path: pathlib.Path) -> None:
+        """「同旨」宣言つき追記で対象ファイルに矛盾キーワードが無い場合、warnは発火しない。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushを実施する。\n")
+        text = (
+            f"## 変更内容\n\n### `{target}`\n\n既存の追記文言を同旨として転記する。\n\n```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert warnings == []
+
+    def test_responsibility_diff_table_suppresses_warning(self, tmp_path: pathlib.Path) -> None:
+        """`### エージェント判断`配下に責務差分表の見出しが存在する場合、warnが抑制される。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushは行わない。\n")
+        text = (
+            "### エージェント判断\n\n"
+            "#### 責務差分表\n\n"
+            "対象ファイルごとの責務差分は次のとおり。\n\n"
+            "## 変更内容\n\n"
+            f"### `{target}`\n\n"
+            "既存の追記文言を同構造として転記する。\n\n"
+            "```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert warnings == []
+
+    def test_single_target_file_without_declaration_is_out_of_scope(self, tmp_path: pathlib.Path) -> None:
+        """単一対象ファイルへの追記で宣言表現（「同構造」「同旨」「同期して」）が無い場合、対象外。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushは行わない。\n")
+        text = f"## 変更内容\n\n### `{target}`\n\n追記内容:\n\n```text\n[追記]\npushを実施する。\n```\n"
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert warnings == []
+
+    def test_no_warning_when_conflict_keyword_absent_from_added_body(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイルに`レビュー`の否定文脈があっても、追記文言案が同語を含まない場合はwarnしない。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\nレビューは対象外。\n")
+        text = (
+            f"## 変更内容\n\n### `{target}`\n\n"
+            "既存の追記文言を同構造として転記する。\n\n"
+            "```text\n[追記]\n設定値を更新する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert warnings == []
+
+    def test_warns_only_for_keyword_present_in_added_body(self, tmp_path: pathlib.Path) -> None:
+        """追記文言案が`push`のみ言及する場合、対象ファイルの`レビュー`否定文脈はwarn対象に含めない。"""
+        target = _write(
+            tmp_path / "target.md",
+            "## 判断基準\n\npushは行わない。\nレビューは対象外。\n",
+        )
+        text = (
+            f"## 変更内容\n\n### `{target}`\n\n"
+            "既存の追記文言を同構造として転記する。\n\n"
+            "```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert len(warnings) == 1
+        assert "push" in warnings[0]
+        assert "レビュー" not in warnings[0]

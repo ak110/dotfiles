@@ -22,11 +22,16 @@ _SCOPE_ESCALATION_INPUTS = load_scope_escalation_inputs()
 
 
 def _pick_scope_escalation_text(category: str) -> str:
-    """指定カテゴリの最小マッチ入力を1件返す。フィクスチャ不在時は空文字列。"""
+    """指定カテゴリの最小マッチ入力を1件返す。フィクスチャ不在時は空文字列。
+
+    フィクスチャ内の最後の該当行を返す。新規追記した最小マッチ入力を
+    優先的にE2Eテストへ供給するため（末尾追記が既定の追記位置のため）。
+    """
+    picked = ""
     for text, cat in _SCOPE_ESCALATION_INPUTS:
         if cat == category:
-            return text
-    return ""
+            picked = text
+    return picked
 
 
 def _run(payload: dict) -> subprocess.CompletedProcess[str]:
@@ -66,6 +71,17 @@ def test_single_session_blocks() -> None:
     result = _run({"last_assistant_message": text})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
+
+
+def test_blocks_async_wait_new_phrases() -> None:
+    """`async-wait`カテゴリの新規追記フレーズもblockする。"""
+    text = _pick_scope_escalation_text("async-wait")
+    if not text:
+        pytest.skip("scope-escalation fixture for async-wait not available")
+    result = _run({"last_assistant_message": text})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "async-wait" in body["reason"]
 
 
 def test_stop_hook_active_bypasses_check() -> None:

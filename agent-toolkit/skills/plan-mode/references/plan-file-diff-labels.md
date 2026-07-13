@@ -25,6 +25,20 @@
 実測起源義務は本規範文で担保する。
 なお対象ファイル本文との一意一致（不一致・複数箇所マッチの検出）は`check_wc_projection.py`が事後検査する。
 
+## frontmatter変更用サブラベル
+
+frontmatter部分（`^---$`と`^---$`区間内）の変更を対象とするサブラベルを次の4種類とする。
+
+- 既存frontmatter追記: `[追記（frontmatter）]`
+- 既存frontmatter置換前（対比形式）: `[現行（frontmatter）]`
+- 既存frontmatter置換後: `[置換後（frontmatter）]`
+- 既存frontmatter削除根拠: `[削除根拠（frontmatter）]`
+
+対比形式は`[現行（frontmatter）]`/`[置換後（frontmatter）]`ペアで書く。
+記述位置は通常のラベルと同様に`### <ファイルパス>`H3配下の`text`フェンス直後。
+担当スクリプトは本ファイル「機械適用対象」節を参照する。
+`### 対象ファイル一覧`の見込み行数にはfrontmatter変更行数と本体変更行数を合算する。
+
 ## フェンス配置
 
 各ラベルは`text`フェンス直後1行目にプレーンテキストで配置する（fence内側形式）。
@@ -45,6 +59,9 @@ textlintがフェンス内のPython行を日本語文として誤検出し、`se
   （対比ペア2種に限定する。textlint autofix全角化の観測実績が同ペアに集中するため）
 - 全角化`[現行］`/`[置換後］`のfence外側出現も同スクリプトが検査する（同上の限定根拠）
 - 各ラベル付きブロックは`### <ファイルパス>`H3配下へ配置する
+- frontmatter変更用サブラベル（`[追記（frontmatter）]`・`[現行（frontmatter）]`・
+  `[置換後（frontmatter）]`・`[削除根拠（frontmatter）]`）は既存本体ラベルと同一の
+  担当スクリプトで処理する（`check_wc_projection.py`と`check_plan_diff_gates.py`が対応）
 
 ## 記載範囲
 

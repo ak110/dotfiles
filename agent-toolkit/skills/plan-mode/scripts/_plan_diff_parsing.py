@@ -42,6 +42,12 @@ FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
 # 縮減対象小見出しの判定（`#### 縮減対象`および`#### 縮減対象（xxx）`）。
 REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
 
+# frontmatter区間（`^---$`〜`^---$`区間）向けサブラベル行の完全一致判定。
+# `plan-file-diff-labels.md`「frontmatter変更用サブラベル」節が定める4種
+# （現行・追記・置換後・削除根拠）のいずれかに完全一致する行を検出し、
+# キャプチャグループ1にラベル種別トークン（角括弧・「（frontmatter）」を除いた文字列）を返す。
+FRONTMATTER_LABEL_RE = re.compile(r"^\[(現行|追記|置換後|削除根拠)（frontmatter）\]$")
+
 # `#### 縮減対象（<ファイル名>）`H4見出しからファイル名部分を抽出する。
 # 全角丸括弧・半角丸括弧の双方に対応する。
 REDUCTION_HEADING_WITH_FILE_RE = re.compile(r"^####\s*縮減対象[（(]([^）)]+)[）)]")

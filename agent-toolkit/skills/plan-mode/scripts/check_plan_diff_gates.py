@@ -39,9 +39,12 @@
 - 対象ファイル一覧に規範ファイル（`agent-toolkit/rules/*.md`等）を含み、`## 変更内容`本文の
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
     小見出しが存在しない場合の全文一括検査（warn出力のみ）
+- 「同構造」「同旨」「同期」宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ）
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
+frontmatterサブラベル（`[追記（frontmatter）]`等4種）は`FRONTMATTER_LABEL_RE`の完全一致で
+`_classify_block`・`_is_label_line`双方が本体ラベルと同じ種別へ分類する。
 
 統合ランナー`check_plan_file.py`向けに、差分ブロック抽出とtextlint/line-width起動の責務を分離した
 `_extract_diff_blocks(plan_path)`・`_check_extracted_paths(paths)`も公開する。抽出済み一時ファイル群を
@@ -56,14 +59,20 @@ import pathlib
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import sys
 import tempfile
 from collections.abc import Callable, Iterator
+
+import check_deprecated_identifier_coverage  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # 共通モジュール読み込みのため本ファイルと同一ディレクトリおよび`agent-toolkit/scripts/`を`sys.path`へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 # pylint: disable=wrong-import-position
 from _plan_diff_parsing import (  # noqa: E402
+    FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
     TEXT_FENCE_OPEN_RE,
     extract_section_with_offset,
@@ -114,6 +123,16 @@ _ALL_LABEL_TOKENS = (
     _ADDITION_LABEL_TOKEN,
 )
 
+# `FRONTMATTER_LABEL_RE`のキャプチャグループ1（角括弧・「（frontmatter）」を除いたトークン）から
+# `_classify_block`の戻り値種別へ変換するマップ。本体ラベルトークン（角括弧付き）とは異なり
+# 角括弧なしで比較するため、専用の対応表として保持する。
+_FRONTMATTER_LABEL_TOKEN_TO_KIND: dict[str, str | None] = {
+    "現行": None,
+    "削除根拠": None,
+    "置換後": "replacement",
+    "追記": "addition",
+}
+
 # 追記/縮減トリガー文に含まれるトークン（フェンス直前非空行に部分一致する場合、次のtextブロックを検査対象へ加える）。
 _ADDITION_TRIGGER_TOKENS = ("追記文言案", "追記内容:", "追記:", "追加:", "圧縮対象:", "圧縮後:")
 
@@ -133,6 +152,26 @@ _NEW_NORM_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
 # fb-3: `### 遡及スキャン結果`小見出し検出用。
 _RETROACTIVE_SCAN_HEADING_RE = re.compile(r"^###\s+遡及スキャン結果\s*$", re.MULTILINE)
 
+# fb-4: 「同構造」「同旨」「同期して」宣言表現検出用。
+_TRANSCRIPTION_DECLARATION_RE = re.compile(r"同構造|同旨|同期して")
+
+# fb-4: 転記先ファイル本体との矛盾有無を確認するキーワード一覧。
+_TRANSCRIPTION_CONFLICT_KEYWORDS = ("push", "git commit", "git push", "レビュー", "作業ツリー")
+
+# fb-4: キーワード出現行の前後windowに含まれる場合、既存規定側の否定文脈と判定するトークン。
+# 「ない」は「しない」「行わない」等の動詞否定形を広く捕捉する意図的に緩い判定とする
+# （本チェックはwarn出力のみでexit codeへ影響しないため、過検出より見落とし回避を優先する）。
+_NEGATION_CONTEXT_RE = re.compile(r"ない|対象外")
+
+# fb-4: キーワード出現行を中心とした前後の走査幅（行数）。
+_NEGATION_CONTEXT_WINDOW = 3
+
+# fb-4: `### エージェント判断`H3見出し検出用。
+_AGENT_JUDGMENT_HEADING_RE = re.compile(r"^###\s*エージェント判断\s*$")
+
+# fb-4: 責務差分表の記入検出用（`### エージェント判断`配下の見出し行に対して判定する）。
+_RESPONSIBILITY_DIFF_HEADING_RE = re.compile(r"^#{1,6}\s*.*責務差分")
+
 
 def main() -> int:
     """検査のエントリポイント。複数の計画ファイルを位置引数で受け取る。"""
@@ -147,14 +186,19 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())
     total_violations = 0
     for plan_path in args.plan_paths:
-        total_violations += len(_check_plan_file(plan_path))
+        total_violations += len(_check_plan_file(plan_path, repo_root))
     return 1 if total_violations > 0 else 0
 
 
-def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
-    """1計画ファイルを走査し、違反メッセージ一覧を返す。副作用として`stderr`へも出力する。"""
+def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[str]:
+    """1計画ファイルを走査し、違反メッセージ一覧を返す。副作用として`stderr`へも出力する。
+
+    `repo_root`は`_check_transcription_declaration_consistency`の対象ファイル解決に用いる
+    （`check_line_ref.py`等の兄弟モジュールと同様、呼び出し側で算出した値を明示的に受け取る）。
+    """
     try:
         text = plan_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -193,6 +237,8 @@ def _check_plan_file(plan_path: pathlib.Path) -> list[str]:
     retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
     if retroactive_scan_warning is not None:
         print(retroactive_scan_warning, file=sys.stderr)
+    for transcription_warning in _check_transcription_declaration_consistency(plan_path, text, repo_root):
+        print(transcription_warning, file=sys.stderr)
     return violations
 
 
@@ -343,6 +389,140 @@ def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text:
     )
 
 
+def _check_transcription_declaration_consistency(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
+    """「同構造」「同旨」「同期して」宣言による転記時、対象ファイル本体との責務差分の見落としを検査する。
+
+    `repo_root`は対象ファイルパスの解決起点。`check_line_ref.py`と同様に呼び出し側
+    （`check_plan_file.py`または本モジュールの`main()`）が算出した値を明示的に受け取る。
+
+    `## 変更内容`H3配下の地の文から`_TRANSCRIPTION_DECLARATION_RE`（「同構造」「同旨」「同期して」）を
+    検出する。判定対象キーワードは`_TRANSCRIPTION_CONFLICT_KEYWORDS`（`push`・`git commit`・`git push`・
+    `レビュー`・`作業ツリー`）の全件ではなく、同H3配下の追記/置換ブロック本文
+    （`_iter_diff_blocks`抽出結果。`[現行]`・`[削除根拠]`ラベル配下の既存文言・削除説明は
+    `_iter_diff_blocks`が既に対象外とするため自然と追記・置換後・新設内容へ絞られる）に
+    実際に出現する要素のみへ絞り込む。無関係な既存の否定文脈を誤検出しないための限定である。
+    絞り込み後のキーワードが検出したH3見出し（`### <ファイルパス>`）の指す対象ファイル本体で
+    否定文脈（「〜しない」「対象外」等）に使われていないかを前後`_NEGATION_CONTEXT_WINDOW`行の
+    windowで検査する。否定文脈での使用を検出した場合はwarnメッセージを返す
+    （`_check_plan_file`はexit codeへ含めない）。
+    `### エージェント判断`配下に「責務差分表」または「責務差分」の見出しが存在する場合は
+    責務差分の記入済みとみなし、本チェック全体のwarn出力を抑制する。
+    `check_wc_projection.py`とは異なり本関数はpure Python正規表現のみで完結し、
+    subprocess呼び出しは行わない。
+    """
+    if _has_responsibility_diff_table(text):
+        return []
+    section, section_start_line = extract_section_with_offset(text, "## 変更内容")
+    if section is None:
+        return []
+
+    h3_keywords = _collect_transcription_block_keywords(text)
+
+    warnings: list[str] = []
+    lines = section.splitlines()
+    current_files: list[str] = []
+    current_h3 = ""
+    reported: set[tuple[str, str]] = set()
+    for idx, line in enumerate(lines):
+        m_h3 = _H3_RE.match(line)
+        if m_h3:
+            current_h3 = m_h3.group("rest").strip()
+            current_files = _H3_FILE_RE.findall(m_h3.group("rest"))
+            continue
+        if not _TRANSCRIPTION_DECLARATION_RE.search(line):
+            continue
+        keywords_in_body = h3_keywords.get(current_h3, frozenset())
+        if not keywords_in_body:
+            continue
+        for target_rel in current_files:
+            target_text = _read_target_text_or_none(target_rel, repo_root)
+            if target_text is None:
+                continue
+            for keyword in keywords_in_body:
+                if (target_rel, keyword) in reported:
+                    continue
+                if not _keyword_used_in_negated_context(target_text, keyword):
+                    continue
+                reported.add((target_rel, keyword))
+                absolute_line = section_start_line + idx + 1  # `extract_section_with_offset`の1始まり換算規約
+                warnings.append(
+                    f"{plan_path}:{absolute_line}: [warn] 対象ファイル`{target_rel}`に"
+                    f"既存規定と矛盾する可能性がある（キーワード: `{keyword}`）。"
+                    f"責務差分表を`### エージェント判断`へ記入するか、追記文言を分離すること。"
+                )
+    return warnings
+
+
+def _collect_transcription_block_keywords(text: str) -> dict[str, frozenset[str]]:
+    """H3見出しごとに、追記/置換ブロック本文へ実際に出現する転記競合キーワード集合を収集する。
+
+    `_iter_diff_blocks`が返す本文（`[現行]`・`[削除根拠]`ラベル配下は既に対象外）を走査し、
+    `_TRANSCRIPTION_CONFLICT_KEYWORDS`のうち各H3配下のブロック本文に出現する要素のみを集める。
+    """
+    result: dict[str, set[str]] = {}
+    for h3_label, _block_start_line, body, _ext in _iter_diff_blocks(text):
+        found = {keyword for keyword in _TRANSCRIPTION_CONFLICT_KEYWORDS if keyword in body}
+        if not found:
+            continue
+        result.setdefault(h3_label, set()).update(found)
+    return {h3_label: frozenset(keywords) for h3_label, keywords in result.items()}
+
+
+def _read_target_text_or_none(rel_path: str, repo_root: pathlib.Path) -> str | None:
+    """`repo_root`基準で対象ファイルを読み込む。パス不在・読み込み失敗時は`None`を返す。
+
+    `rel_path`が絶対パスの場合は`pathlib`の結合仕様により`repo_root`を無視して
+    そのまま解決される（テストフィクスチャ等が絶対パスを直接指定する経路と後方互換）。
+    """
+    target_path = repo_root / rel_path
+    if not target_path.exists():
+        return None
+    try:
+        return target_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _keyword_used_in_negated_context(target_text: str, keyword: str) -> bool:
+    """`keyword`が対象ファイル本体で否定文脈（「〜しない」「対象外」等）内に出現するかを判定する。
+
+    出現行を中心に前後`_NEGATION_CONTEXT_WINDOW`行のwindowを走査し、
+    `_NEGATION_CONTEXT_RE`に一致する行がwindow内に存在すれば否定文脈と判定する。
+    """
+    target_lines = target_text.splitlines()
+    for idx, line in enumerate(target_lines):
+        if keyword not in line:
+            continue
+        window_start = max(0, idx - _NEGATION_CONTEXT_WINDOW)
+        window_end = min(len(target_lines), idx + _NEGATION_CONTEXT_WINDOW + 1)
+        window = target_lines[window_start:window_end]
+        if any(_NEGATION_CONTEXT_RE.search(w) for w in window):
+            return True
+    return False
+
+
+def _has_responsibility_diff_table(text: str) -> bool:
+    """`### エージェント判断`配下に「責務差分表」または「責務差分」の見出しが存在するかを判定する。
+
+    区間は`### エージェント判断`見出し行から、同階層以上（`##`〜`###`）の次の見出し行までとする。
+    """
+    lines = text.splitlines()
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if _AGENT_JUDGMENT_HEADING_RE.match(stripped):
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        if _RESPONSIBILITY_DIFF_HEADING_RE.match(stripped):
+            return True
+        if re.match(r"^#{1,3}\s", stripped) and stripped != "":
+            # 同階層以上の次の見出しに到達したら区間終了（責務差分見出しは既に上で判定済み）。
+            break
+    return False
+
+
 def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
     """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文, ファイル拡張子)`で順に返す。
 
@@ -434,16 +614,21 @@ def _classify_block(
     """フェンス直後1行目のラベル・見出しコンテキスト・トリガー継続フラグから検査対象種別を判定する。
 
     優先順は次のとおり。
-    1. `[現行]`・`[削除根拠]`ラベル配下は既存文言または削除説明のため検査対象外（`None`）
-    2. `[新設]`・`[置換後]`・`[置換後（全文）]`・`[追記]`ラベル配下は種別ラベルを返す
+    1. frontmatterサブラベル（`[現行（frontmatter）]`等4種、`FRONTMATTER_LABEL_RE`の完全一致）は
+       対応する本体ラベルと同じ種別へ分類する
+    2. `[現行]`・`[削除根拠]`ラベル配下は既存文言または削除説明のため検査対象外（`None`）
+    3. `[新設]`・`[置換後]`・`[置換後（全文）]`・`[追記]`ラベル配下は種別ラベルを返す
        （`[追記]`は`addition`）
-    3. `#### 縮減対象`見出し配下は`reduction`を返す
-    4. `（新設）`H3配下は`new-h3`を返す
-    5. 追記トリガー文出現後で当該H3節境界に未到達なら`addition`を返す
+    4. `#### 縮減対象`見出し配下は`reduction`を返す
+    5. `（新設）`H3配下は`new-h3`を返す
+    6. 追記トリガー文出現後で当該H3節境界に未到達なら`addition`を返す
     それ以外は検査対象外として`None`を返す。
     """
     first = content_lines[0].strip() if content_lines else ""
     if first:
+        m_frontmatter = FRONTMATTER_LABEL_RE.match(first)
+        if m_frontmatter:
+            return _FRONTMATTER_LABEL_TOKEN_TO_KIND[m_frontmatter.group(1)]
         if _CURRENT_LABEL_TOKEN in first:
             return None
         if _DELETION_RATIONALE_LABEL_TOKEN in first:
@@ -466,8 +651,13 @@ def _classify_block(
 
 
 def _is_label_line(line: str) -> bool:
-    """fence直後1行目が差分ラベル行に該当するかを判定する（本文抽出時の除外判定に用いる）。"""
+    """fence直後1行目が差分ラベル行に該当するかを判定する（本文抽出時の除外判定に用いる）。
+
+    frontmatterサブラベル（`FRONTMATTER_LABEL_RE`の完全一致）も本体ラベルと同様に該当扱いとする。
+    """
     stripped = line.strip()
+    if FRONTMATTER_LABEL_RE.match(stripped):
+        return True
     return any(token in stripped for token in _ALL_LABEL_TOKENS)
 
 

@@ -6443,3 +6443,255 @@ class TestPlanFileTargetFilePathsRelative:
         )
         assert result.returncode == 0
         assert "絶対パスまたは親ディレクトリ参照" not in result.stderr
+
+
+class TestFrontmatterSyncNoteBodyExists:
+    """frontmatter同期注記の本体該当語句の実在検証（feedback 2、warn）。"""
+
+    @staticmethod
+    def _target(tmp_path: pathlib.Path, name: str = "test-agent.md") -> pathlib.Path:
+        target = tmp_path / "agent-toolkit" / "agents" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def test_existing_reference_does_not_warn(self, tmp_path: pathlib.Path):
+        """同期注記が実在するファイルパス・節名を指す場合はwarnしない。"""
+        target = self._target(tmp_path)
+        sibling = target.parent / "other-agent.md"
+        sibling.write_text("# other-agent\n\n## 実在節\n\n本文。\n", encoding="utf-8")
+        content = "---\nname: test-agent\n# other-agent.mdの「実在節」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-ok",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_nonexistent_file_path_warns(self, tmp_path: pathlib.Path):
+        """同期注記が実在しないファイルパスを指す場合はwarnする。"""
+        target = self._target(tmp_path)
+        content = "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-missing-path",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "参照ファイルパス未実在" in result.stderr
+        assert "nonexistent-agent.md" in result.stderr
+
+    def test_nonexistent_section_warns(self, tmp_path: pathlib.Path):
+        """同期注記が実在するファイルパスを指すが節名が本体に存在しない場合はwarnする。"""
+        target = self._target(tmp_path)
+        sibling = target.parent / "other-agent2.md"
+        sibling.write_text("# other-agent2\n\n本文のみ。\n", encoding="utf-8")
+        content = "---\nname: test-agent\n# other-agent2.mdの「存在しない節」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-missing-section",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "節名未実在" in result.stderr
+        assert "存在しない節" in result.stderr
+
+    def test_no_frontmatter_is_out_of_scope(self, tmp_path: pathlib.Path):
+        """frontmatter未使用ファイルは検査対象外。"""
+        target = self._target(tmp_path)
+        content = "# test-agent\n\nfrontmatterなし本文。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-no-frontmatter",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_sync_note_prefix_form_is_detected(self, tmp_path: pathlib.Path):
+        """`# 同期注記:`形式のコメント行も検出対象に含まれる。"""
+        target = self._target(tmp_path)
+        content = "---\nname: test-agent\n# 同期注記: nonexistent-prefix.mdの「何か」節\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-prefix-form",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "参照ファイルパス未実在" in result.stderr
+        assert "nonexistent-prefix.md" in result.stderr
+
+    def test_multiline_note_with_existing_reference_does_not_warn(self, tmp_path: pathlib.Path):
+        """トリガー語・参照パス・節名が別々の行に分かれる複数行形式でも、実在参照ならwarnしない。"""
+        target = self._target(tmp_path)
+        sibling = target.parent / "other-multiline-agent.md"
+        sibling.write_text("# other-multiline-agent\n\n## 実在複数行節\n\n本文。\n", encoding="utf-8")
+        content = (
+            "---\nname: test-agent\n"
+            "# 同期注記: 「実在複数行節」節の内容は\n"
+            "# other-multiline-agent.md\n"
+            "# と意図的に重複する。\n"
+            "---\n\n# test-agent\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-multiline-ok",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_multiline_note_with_nonexistent_reference_warns(self, tmp_path: pathlib.Path):
+        """参照パスがトリガー語と別行にある複数行形式で、パスが実在しない場合はwarnする。
+
+        トリガー行単体しか走査しない実装では参照パスが別行にあるため抽出漏れとなり、
+        警告が発火しない状態（陳腐化の素通り）が発生していた。本テストはその回帰を検出する。
+        """
+        target = self._target(tmp_path)
+        content = (
+            "---\nname: test-agent\n"
+            "# 同期注記: 「何か」節の内容は\n"
+            "# nonexistent-multiline.md\n"
+            "# と意図的に重複する。\n"
+            "---\n\n# test-agent\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-multiline-missing",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "参照ファイルパス未実在" in result.stderr
+        assert "nonexistent-multiline.md" in result.stderr
+
+    def test_git_ancestor_sibling_reference_resolves(self, tmp_path: pathlib.Path) -> None:
+        """`.git`祖先が存在しても同一ディレクトリの兄弟ファイル参照はwarnしない（指摘1回帰防止）。
+
+        修正前は`.git`祖先発見時点でリポジトリルート直下のみ実在確認し、
+        同一ディレクトリの裸ファイル名参照（`plan-impl-executor.md`実運用形式）が
+        不在判定されフォールバックしない不具合があった。
+        """
+        (tmp_path / ".git").mkdir()
+        target = self._target(tmp_path)
+        sibling = target.parent / "sibling-agent.md"
+        sibling.write_text("# sibling-agent\n\n## 実在兄弟節\n\n本文。\n", encoding="utf-8")
+        content = "---\nname: test-agent\n# sibling-agent.mdの「実在兄弟節」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-git-sibling",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_git_ancestor_neighbor_directory_reference_resolves(self, tmp_path: pathlib.Path) -> None:
+        """`.git`祖先が存在する場合、近隣ディレクトリ（agent-toolkit/rules等）配下の裸ファイル名参照も解決する。"""
+        (tmp_path / ".git").mkdir()
+        rules_dir = tmp_path / "agent-toolkit" / "rules"
+        rules_dir.mkdir(parents=True)
+        neighbor = rules_dir / "01-agent.md"
+        neighbor.write_text("# 01-agent\n\n## 品質最優先\n\n本文。\n", encoding="utf-8")
+        target = self._target(tmp_path)
+        content = "---\nname: test-agent\n# 01-agent.mdの「品質最優先」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-git-neighbor",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_git_ancestor_still_warns_when_reference_truly_missing(self, tmp_path: pathlib.Path) -> None:
+        """`.git`祖先が存在してもフォールバック探索で見つからない参照は依然としてwarnする。"""
+        (tmp_path / ".git").mkdir()
+        target = self._target(tmp_path)
+        content = "---\nname: test-agent\n# never-exists.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-git-missing",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "参照ファイルパス未実在" in result.stderr
+        assert "never-exists.md" in result.stderr
+
+    def test_consecutive_independent_sync_notes_do_not_cross_contaminate(self, tmp_path: pathlib.Path) -> None:
+        """空行を挟まず連続する独立した同期注記宣言は別々の注記として分離される（指摘2回帰防止）。
+
+        実運用（`plan-impl-executor.md`）と同様、1つ目の注記が外部ファイルの節を参照し、
+        2つ目の注記が自ファイルの節を参照する形式でも、両方とも正しく解決されてwarnしない。
+        """
+        (tmp_path / ".git").mkdir()
+        target = self._target(tmp_path)
+        sibling = target.parent / "external-agent.md"
+        sibling.write_text("# external-agent\n\n## 外部節\n\n本文。\n", encoding="utf-8")
+        content = (
+            "---\nname: test-agent\n"
+            "# external-agent.mdの「外部節」節と意図的に重複させている\n"
+            "# 「## 自己節」節はこのファイル自身の内容と意図的に同期する\n"
+            "---\n\n# test-agent\n\n## 自己節\n\n本文。\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-no-cross-contaminate",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "frontmatter同期注記" not in result.stderr
+
+    def test_consecutive_independent_sync_notes_still_detect_real_mismatch(self, tmp_path: pathlib.Path) -> None:
+        """独立した同期注記宣言が連続していても、個別の注記の節名不一致は正しく検出される。"""
+        (tmp_path / ".git").mkdir()
+        target = self._target(tmp_path)
+        sibling = target.parent / "external-agent2.md"
+        sibling.write_text("# external-agent2\n\n## 外部節2\n\n本文。\n", encoding="utf-8")
+        content = (
+            "---\nname: test-agent\n"
+            "# external-agent2.mdの「外部節2」節と意図的に重複させている\n"
+            "# 「## 存在しない自己節」節はこのファイル自身の内容と意図的に同期する\n"
+            "---\n\n# test-agent\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "fm-sync-cross-contaminate-detect",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "節名未実在" in result.stderr
+        assert "存在しない自己節" in result.stderr

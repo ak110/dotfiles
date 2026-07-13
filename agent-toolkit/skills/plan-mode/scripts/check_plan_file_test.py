@@ -33,6 +33,11 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check_plan_file.check_line_ref, "_check_file", lambda _p, _t: [])
     monkeypatch.setattr(check_plan_file.check_line_ref, "_check_content_level_violations", lambda _p, _t, _r: [])
     monkeypatch.setattr(check_plan_file.check_self_ref, "_check_file", lambda _p, _t: [])
+    monkeypatch.setattr(
+        check_plan_file.check_plan_diff_gates,
+        "_check_transcription_declaration_consistency",
+        lambda _p, _t, _r: [],
+    )
     monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label: 0)
     monkeypatch.setattr(check_plan_file, "_run_pyfltr_jsonl", lambda _p: 0)
 
@@ -58,6 +63,38 @@ class TestCheckOne:
             lambda _p: (["msg1", "msg2"], ([], [], {})),
         )
         assert check_plan_file._check_one(plan_path, tmp_path) == 2
+
+    def test_transcription_declaration_consistency_called_with_no_warnings(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """正常系: 警告なし応答時は違反件数へ影響しない。"""
+        plan_path = _write_plan(tmp_path)
+        received: list[tuple[pathlib.Path, str, pathlib.Path]] = []
+
+        def _fake_check(p: pathlib.Path, t: str, r: pathlib.Path) -> list[str]:
+            received.append((p, t, r))
+            return []
+
+        monkeypatch.setattr(
+            check_plan_file.check_plan_diff_gates,
+            "_check_transcription_declaration_consistency",
+            _fake_check,
+        )
+        assert check_plan_file._check_one(plan_path, tmp_path) == 0
+        assert received == [(plan_path, plan_path.read_text(encoding="utf-8"), tmp_path)]
+
+    def test_transcription_declaration_consistency_warning_printed_without_counting(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """異常系: 警告応答時はstderrへ出力されるが違反件数（exit code相当）には計上しない。"""
+        plan_path = _write_plan(tmp_path)
+        monkeypatch.setattr(
+            check_plan_file.check_plan_diff_gates,
+            "_check_transcription_declaration_consistency",
+            lambda _p, _t, _r: ["plan.md:1: [warn] 責務差分の可能性"],
+        )
+        assert check_plan_file._check_one(plan_path, tmp_path) == 0
+        assert "責務差分の可能性" in capsys.readouterr().err
 
     def test_extracted_paths_violation_counted(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`_extract_diff_blocks`が返す一時ファイルパス・位置マップを`_check_extracted_paths`へ渡し、違反を集計する。"""

@@ -29,7 +29,9 @@
 
 共通要素は`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 集約対象は`TEXT_FENCE_OPEN_RE`・`is_matching_close`・`REDUCTION_HEADING_RE`・
-`iter_reduction_headings`・`extract_section_with_offset`とする。
+`iter_reduction_headings`・`extract_section_with_offset`・`FRONTMATTER_LABEL_RE`とする。
+`FRONTMATTER_LABEL_RE`は`plan-file-diff-labels.md`「frontmatter変更用サブラベル」節が定める
+`[追記（frontmatter）]`等4種の完全一致判定に用い、`_leading_label`・`_LABEL_ADDITION_ONLY_RE`双方から参照する。
 `_H3_RE`のグループ名、`_CURRENT_LABEL_TOKEN`・`_REPLACEMENT_LABEL_TOKEN`の角括弧の有無は
 本ファイル固有の意味論を持つため温存する。
 """
@@ -45,6 +47,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
 from _plan_diff_parsing import (  # noqa: E402
+    FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
     TEXT_FENCE_OPEN_RE,
     extract_section_with_offset,
@@ -100,6 +103,16 @@ _DELETION_RATIONALE_LABEL_TOKEN = "削除根拠"
 _NEW_LABEL_TOKEN = "新設"
 _ADDITION_LABEL_TOKEN = "追記"
 
+# `FRONTMATTER_LABEL_RE`のキャプチャグループ1（角括弧・「（frontmatter）」を除いたトークン）から
+# `_leading_label`の戻り値種別へ変換するマップ。`[新設（frontmatter）]`は
+# `plan-file-diff-labels.md`「frontmatter変更用サブラベル」節が定める4種に含まないため対象外。
+_FRONTMATTER_LABEL_TOKEN_TO_KIND: dict[str, str] = {
+    _CURRENT_LABEL_TOKEN: "current",
+    _REPLACEMENT_LABEL_TOKEN: "replacement",
+    _DELETION_RATIONALE_LABEL_TOKEN: "deletion",
+    _ADDITION_LABEL_TOKEN: "addition",
+}
+
 # 220行超過判定の閾値（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める
 # 220行以下収束を実装完了条件とし、超過ファイルには縮減計画の明示を要求する）。
 _OVER_THRESHOLD_PROJECTION = 220
@@ -121,7 +134,9 @@ _ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
 # `plan-file-diff-labels.md`「差分ラベル6種」節が定める記法上の目印であり
 # 対象ファイルへ挿入される内容ではないため行数集計から除外する。
 # ラベル文字列は`_ADDITION_LABEL_TOKEN`をSSOTとし、正規表現側から参照する。
-_LABEL_ADDITION_ONLY_RE = re.compile(rf"^\[{re.escape(_ADDITION_LABEL_TOKEN)}\]$")
+# 末尾`(（frontmatter）)?`は`[追記（frontmatter）]`サブラベル（`plan-file-diff-labels.md`
+# 「frontmatter変更用サブラベル」節）にも対応するためのオプション部分。
+_LABEL_ADDITION_ONLY_RE = re.compile(rf"^\[{re.escape(_ADDITION_LABEL_TOKEN)}\](（frontmatter）)?$")
 
 
 def main() -> int:
@@ -384,10 +399,16 @@ def _leading_label(content_lines: list[str]) -> str | None:
     ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種で、
     fence直後1行目の内容へ部分一致で検出する。
     「置換後（全文）」は「置換後」の部分文字列を含むため、判定順で先に「置換後（全文）」を確認する。
+
+    frontmatter向けサブラベル（`[現行（frontmatter）]`等）は`FRONTMATTER_LABEL_RE`の完全一致で
+    先に判定する。以降の部分一致判定は本体ラベル向けの既存ロジックを温存する。
     """
     if not content_lines:
         return None
     stripped = content_lines[0].strip()
+    m_frontmatter = FRONTMATTER_LABEL_RE.match(stripped)
+    if m_frontmatter:
+        return _FRONTMATTER_LABEL_TOKEN_TO_KIND[m_frontmatter.group(1)]
     # 削除根拠は最も具体的なトークンのため先に判定する。
     if _DELETION_RATIONALE_LABEL_TOKEN in stripped:
         return "deletion"
@@ -540,6 +561,13 @@ def _extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]
     addition_labelled（`[追記]`ラベル起源の追記行数）・addition_labelless（トリガー継続・
     追記見出し由来のラベルなし追記行数）・reduction（縮減対象行数合計）を値に持つ辞書。
     互換のため`addition`はlabelledとlabellessの合計を併記する。
+
+    frontmatterサブラベル（`[追記（frontmatter）]`・`[現行（frontmatter）]`・
+    `[置換後（frontmatter）]`・`[削除根拠（frontmatter）]`）は`_leading_label`が本体ラベルと
+    同じ種別（"addition"・"current"・"replacement"・"deletion"）を返すため、
+    本関数内では本体ラベルとラベル種別ごとに同一の集計経路（`entry["addition"]`等）へ合算する。
+    ラベル行自体の除外判定（`_LABEL_ADDITION_ONLY_RE`・`_leading_label(pending_lines) is not None`）は
+    frontmatterサブラベルにも対応済みのため、本体/frontmatterの区別で集計ロジックを分岐させない。
     """
     result: dict[str, dict[str, int]] = {}
     known_paths = _collect_known_paths(section)

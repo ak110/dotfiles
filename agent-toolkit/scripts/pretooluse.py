@@ -95,6 +95,7 @@ Write / Edit / MultiEdit:
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
 - 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
+- .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）のみ。
@@ -532,6 +533,7 @@ def main() -> int:
     _check_home_path(tool_name, fields, file_path)
     _check_colloquial(tool_name, fields, file_path)
     _check_style_negation(tool_name, tool_input, file_path)
+    _check_frontmatter_sync_note_body_exists(tool_name, tool_input, file_path)
 
     flush_pending_language_warning()
     return 0
@@ -1110,6 +1112,203 @@ def _check_style_negation(tool_name: str, tool_input: dict, file_path: str) -> b
             " 「Xでなければ`Y`してよい」と誤読される可能性がある。"
             " 全称否定形（『いかなる理由（例: X）があってもYしない』）への書き換えを検討する。"
             " 03-styles.md「日本語の品質を保つ」節を参照。",
+            tag="warn",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- frontmatter同期注記の本体該当語句の実在検証check (warn, feedback 2) ---
+
+# 対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル全般
+# （`_plan_format.is_agent_doc_target_file`より対象範囲が広い専用判定）。
+_FRONTMATTER_SYNC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(^|/)agent-toolkit/.+\.md$"),
+    re.compile(r"(^|/)\.chezmoi-source/dot_claude/.+\.md$"),
+)
+
+# frontmatter区間（`^---$`〜`^---$`）の抽出用。
+_FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
+
+# 同期注記コメント行の判定トリガー。
+# `# ...と意図的に重複させている` / `# ...と意図的に同期する` / `# 同期注記:`の3形式を検出する。
+_SYNC_NOTE_TRIGGER_RE = re.compile(r"と意図的に(?:重複させている|同期する)|同期注記:")
+
+# 注記本文からの参照ファイルパス抽出（`<name>.md`形式）。
+_SYNC_NOTE_FILE_PATH_RE = re.compile(r"[\w.\-/]+\.md")
+
+# 注記本文からの節名抽出。`「<節名>」節`形式とバッククォート囲み`<節名>節`形式の両方に対応する。
+_SYNC_NOTE_SECTION_KAGI_RE = re.compile(r"「([^」]+)」節")
+_SYNC_NOTE_SECTION_QUOTED_RE = re.compile(r"`([^`]+)`節")
+
+
+def _is_frontmatter_sync_check_target(file_path: str) -> bool:
+    """frontmatter同期注記検査の対象ファイルかを判定する。
+
+    対象は`agent-toolkit/`・`.chezmoi-source/dot_claude/`配下の`.md`ファイル、
+    および計画ファイル（`is_plan_file`が真のパス）。
+    """
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    if any(p.search(normalized) is not None for p in _FRONTMATTER_SYNC_TARGET_PATTERNS):
+        return True
+    return is_plan_file(file_path)
+
+
+def _extract_frontmatter_sync_notes(content: str) -> list[str]:
+    """frontmatter区間から同期注記コメントブロックの本文一覧を抽出する。
+
+    `#`始まり行が連続するコメントブロックを走査単位とし、ブロック内をさらに
+    `_SYNC_NOTE_TRIGGER_RE`一致行を境界として複数の注記へ分離する
+    （`_split_sync_note_block`参照）。トリガー語・参照先ファイルパスが別行に分かれる形式
+    （1行目に参照先パス、後続行にトリガー語を含む宣言文）は同一注記として結合する一方、
+    空行を挟まず連続して書かれた独立した複数の同期注記宣言が1つの注記へ混在する事態を避ける。
+    frontmatter未使用ファイル（先頭が`---`で始まらない）は空リストを返す
+    （`## 背景`原文転記領域はfrontmatter区間の外側のため走査対象に含まれない）。
+    """
+    match = _FRONTMATTER_BLOCK_RE.match(content)
+    if match is None:
+        return []
+    notes: list[str] = []
+    current_block: list[str] = []
+    for line in match.group(1).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            current_block.append(stripped.lstrip("#").strip())
+            continue
+        notes.extend(_split_sync_note_block(current_block))
+        current_block = []
+    notes.extend(_split_sync_note_block(current_block))
+    return notes
+
+
+def _split_sync_note_block(block: list[str]) -> list[str]:
+    """連続コメント行ブロックをトリガー行境界で複数の同期注記へ分離する。
+
+    トリガー行（`_SYNC_NOTE_TRIGGER_RE`一致行）に到達するたびそこまでの蓄積行を1件の注記として確定し、
+    次のトリガー行に向けて新たな蓄積を開始する。これにより「1行目に参照先パス、
+    後続行にトリガー語を含む宣言文」形式は同一注記として結合されつつ、
+    空行を挟まず連続する独立した複数の同期注記宣言は別々の注記に分離される。
+    最終トリガー行より後に続く行（後続の補足）はトリガーを含まないため、
+    直前に確定した注記へ継続として合流させる。ブロック全体にトリガー行が1つも無い場合は空リストを返す。
+    """
+    notes: list[list[str]] = []
+    current: list[str] = []
+    for body in block:
+        current.append(body)
+        if _SYNC_NOTE_TRIGGER_RE.search(body):
+            notes.append(current)
+            current = []
+    if current:
+        if notes:
+            notes[-1].extend(current)
+        else:
+            return []
+    return [" ".join(note) for note in notes]
+
+
+def _extract_sync_note_references(note: str) -> tuple[list[str], list[str]]:
+    """同期注記本文から参照ファイルパス一覧と節名一覧を抽出する。"""
+    paths = _SYNC_NOTE_FILE_PATH_RE.findall(note)
+    sections = _SYNC_NOTE_SECTION_KAGI_RE.findall(note) + _SYNC_NOTE_SECTION_QUOTED_RE.findall(note)
+    return paths, sections
+
+
+def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | None:
+    """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
+
+    frontmatterの同期注記は同一ディレクトリまたは近隣ディレクトリの兄弟ファイルを
+    裸ファイル名（例: `spec-driven-implementer.md`）で参照する形式が実運用で使われるため、
+    `.git`を持つ祖先（リポジトリルート）を発見しても即確定とせず、以下の順に実在確認する。
+
+    1. `file_path`の各祖先ディレクトリ（近い順。同一ディレクトリの兄弟ファイル参照に対応）
+    2. リポジトリルート配下の`agent-toolkit/agents/`・`agent-toolkit/rules/`・
+       `agent-toolkit/skills/`（近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
+
+    いずれの経路でも実在しない場合は`None`を返す。
+    """
+    start = pathlib.Path(file_path).resolve().parent
+    ancestors = (start, *start.parents)
+    search_roots: list[pathlib.Path] = list(ancestors)
+
+    repo_root: pathlib.Path | None = None
+    for candidate in ancestors:
+        if (candidate / ".git").exists():
+            repo_root = candidate
+            break
+    if repo_root is not None:
+        search_roots.extend(
+            repo_root / neighbor for neighbor in ("agent-toolkit/agents", "agent-toolkit/rules", "agent-toolkit/skills")
+        )
+
+    for candidate in search_roots:
+        resolved = candidate / referenced
+        if resolved.exists():
+            return resolved
+    return None
+
+
+def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    r"""frontmatter同期注記が指す本体側の該当語句の実在を検査して警告する（warn）。
+
+    対象は`_is_frontmatter_sync_check_target`が真のファイル。
+    frontmatter区間から`# ...と意図的に重複させている`・`# ...と意図的に同期する`・
+    `# 同期注記:`形式のコメント行（同期注記）を抽出し、注記本文が参照するファイルパス
+    （`<name>.md`形式）と節名（`「<節名>」節`または`` `<節名>`節 ``形式）の実在を照合する。
+
+    - 参照ファイルパスがリポジトリ内に実在しない場合は警告する
+    - 節名は、自ファイルの適用後本文（frontmatter区間を除く）と実在する参照ファイル本文を
+      連結した対象に対し見出し一致（`^#+\s*<節名>$`）または部分文字列一致のいずれかで照合し、
+      いずれも一致しない場合は警告する
+
+    表記揺れ（同旨表現の同義語形式）による誤検出を許容するためblock化しない。
+    """
+    if not _is_frontmatter_sync_check_target(file_path):
+        return False
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
+    if content is None:
+        return False
+    notes = _extract_frontmatter_sync_notes(content)
+    if not notes:
+        return False
+
+    # 節名照合の自ファイル側corpusはfrontmatter区間を除いた本文のみとする。
+    # frontmatter内の同期注記コメント自体が対象の節名文字列を引用形式で含むため、
+    # frontmatterを含めたまま照合すると常に自明一致（誤検出解消の形骸化）してしまう。
+    frontmatter_match = _FRONTMATTER_BLOCK_RE.match(content)
+    self_body = content[frontmatter_match.end() :] if frontmatter_match is not None else content
+
+    reasons: list[str] = []
+    for note in notes:
+        paths, sections = _extract_sync_note_references(note)
+        referenced_bodies: list[str] = []
+        for path in paths:
+            resolved = _resolve_referenced_path(file_path, path)
+            if resolved is None:
+                reasons.append(f"参照ファイルパス未実在: {path}")
+                continue
+            try:
+                referenced_bodies.append(resolved.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                reasons.append(f"参照ファイル読込失敗: {path}")
+        # 節名は自ファイル本文内で完結する場合（自己参照）と、他ファイル参照を伴う場合の双方があるため、
+        # 自ファイル本文（frontmatter除く）と参照先ファイル本文の双方を照合対象に含める。
+        search_corpus = "\n".join([self_body, *referenced_bodies])
+        for section in sections:
+            heading_pattern = re.compile(rf"^#+\s*{re.escape(section)}\s*$", re.MULTILINE)
+            if heading_pattern.search(search_corpus) is None and section not in search_corpus:
+                reasons.append(f"節名未実在: {section}")
+
+    if not reasons:
+        return False
+    print(
+        _llm_notice(
+            "frontmatter同期注記が指す本体該当語句が実在しない可能性がある"
+            f"（{tool_name}, target: {file_path}）: {'; '.join(reasons)}."
+            " norm-revision-checklist.md「規範対象範囲の網羅確認」節を参照し、"
+            "同期注記本文と対象ファイル・節名の整合を確認する。",
             tag="warn",
         ),
         file=sys.stderr,

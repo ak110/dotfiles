@@ -2,7 +2,8 @@
 
 行番号への参照検査スクリプトをsubprocessで起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
-パス実在検査・スキル名・サブエージェント名実在検査・件数表現検出（FB4）も併せて検証する。
+パス実在検査・スキル名・サブエージェント名実在検査・件数表現検出（FB4）・
+節名参照の実在照合（FB3）も併せて検証する。
 """
 
 import pathlib
@@ -438,3 +439,101 @@ class TestCheckLineRef:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 1
         assert "foo/bar.md" in result.stderr
+
+
+class TestSectionNameExistence:
+    """節名参照の実在照合（FB3対応）の主要シナリオをまとめて検証する。"""
+
+    def test_existing_section_name_passes(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル内に実在する節名参照は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "詳細は`docs/guide.md`「変更内容」節を参照する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_missing_section_name_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル内に存在しない節名参照は違反として報告される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "詳細は`docs/guide.md`「存在しない節」節を参照する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+        assert "存在しない節" in result.stderr
+
+    def test_skill_ref_path_resolution_passes_for_existing_section(self, tmp_path: pathlib.Path) -> None:
+        """`agent-toolkit:<skill>`形式は`agent-toolkit/skills/<skill>/SKILL.md`へ解決され、実在節名は違反にならない。"""
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "詳細は`agent-toolkit:sample-skill`「使い方」節を参照する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_skill_ref_path_resolution_detects_missing_section(self, tmp_path: pathlib.Path) -> None:
+        """`agent-toolkit:<skill>`形式で解決した対象ファイルに存在しない節名は違反として報告される。"""
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(tmp_path / "doc.md", "詳細は`agent-toolkit:sample-skill`「存在しない節」節を参照する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+        assert "存在しない節" in result.stderr
+
+    def test_section_ref_inside_normal_fence_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """通常の言語指定付きコードフェンス内の節名参照は検査対象外。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```python\n# 詳細は`docs/guide.md`「存在しない節」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_section_ref_inside_labeled_frontmatter_subfence_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """`[追記（frontmatter）]`サブラベル配下の`text`フェンス内文面は検査対象に含まれる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n[追記（frontmatter）]\n詳細は`docs/guide.md`「存在しない節」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_section_ref_inside_unlabeled_text_fence_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """ラベル無しの`text`フェンス内の節名参照は検査対象外。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n詳細は`docs/guide.md`「存在しない節」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_section_ref_under_investigation_with_marker_is_suppressed(self, tmp_path: pathlib.Path) -> None:
+        """`## 調査結果`配下かつ同一行マーカー付きの節名参照は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "## 調査結果\n\n詳細は`docs/guide.md`「存在しない節」節を参照する。<!-- line-ref-ok -->\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_section_ref_under_background_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """`## 背景`配下の原文転記領域内の節名参照は検査対象外。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "## 背景\n\n詳細は`docs/guide.md`「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
