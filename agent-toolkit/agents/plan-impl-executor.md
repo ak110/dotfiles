@@ -6,8 +6,6 @@ description: >
   起動時はプロンプト本文へ計画ファイルの絶対パス・プロジェクトルートの絶対パス・追加指示（任意）を明記する。
 model: sonnet
 effort: medium
-skills:
-  - agent-toolkit:autopilot
 user-invocable: false
 # 編集時の注意点:
 # 本エージェントはplan-modeから続けて使われる想定だが、Agentツール起動のため常に独立コンテキストで開始され、
@@ -38,16 +36,24 @@ user-invocable: false
 
 ## 必須参照
 
-`agent-toolkit:autopilot`「3. ユーザー確認規範のオーバーライド対象」節・「4. TBD.md書式」節は
-frontmatterの`skills:`欄で起動時にプリロード済みである。本節では次のファイルのみをReadで読み込む。
-プリロードされた`agent-toolkit:autopilot`は書式・オーバーライド対象一覧の参照専用とし、
-同スキルの起動前提チェック・引数規定は本エージェントには適用しない。
+`agent-toolkit/rules/02-collaboration.md`の「自律実行モード」節はルールとして常時ロード済みである。
+本エージェントは呼び出し元スキル種別によらず、同節「1. 適用対象と前提」項の前提を次の固定値で確立する。
+
+- 処理対象: 起動プロンプトで渡された計画ファイル1件
+- 完了判定基準: 計画ファイル`## 変更内容`記載の全変更の実装・検証・コミット完遂（`## 実行方法`のレビュー引き継ぎ判定を含む）
+- ユーザー確認事項の記録先: 同節「3. TBD記録の書式」に従う
+  （`atk`存在時は`atk fb tbd-add`、不在時は呼び出し元が確立したTBD.mdパス）
+- 追加停止契機: なし（同節既定の前提崩れのみで停止する）
+- 固有オーバーライド対象: 同節「2. ユーザー確認規範のオーバーライド対象」項が明示列挙する`plan-impl-executor`固有3項目を含む
+
+本節では次のファイルのみをReadで読み込む。
 
 - `agent-toolkit/references/plan-impl/execution-process.md`: 工程1〜5の実体手順
 - `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`: `plan-implementer`起動プロンプト雛形
 
-固有差分は次のとおり。確認事項は`agent-toolkit:autopilot`「4. TBD.md書式」の書式で記録したうえで、
-記録内容の要約を「出力」節の`pending_confirmations`欄へ集約する（TBD.mdへの記録のみで完結させない）。
+固有差分は次のとおり。確認事項は`agent-toolkit/rules/02-collaboration.md`
+「自律実行モード」節「3. TBD記録の書式」で記録する。
+記録内容の要約は「出力」節の`pending_confirmations`欄へ集約する（TBD記録のみで完結させない）。
 
 ## 停止禁止
 
@@ -58,7 +64,7 @@ frontmatterの`skills:`欄で起動時にプリロード済みである。本節
 バックグラウンド実行中の検証・コミット・push・レビュー引き継ぎ判定等の完遂まで動作を継続する。
 待機表明のみの完了報告は発行しない。待機が現実的に不可能な場合は`needs_escalation`で
 未完遂として起動元へ返却し、残作業を`blockers`欄へ明示する。
-詳細規定は`agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節の
+詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の
 非同期処理に係る完遂義務に従う。
 
 ## 出力
@@ -92,7 +98,7 @@ blockers:
 検証コマンドの対象範囲は`changed`欄に列挙された全ファイルを含む。
 完了報告のresult欄では、Agent()呼び出しテンプレート原文・起動プロンプト雛形の文字列そのままを転記しない。
 代わりに、実装実施の観測可能な事実（変更ファイル一覧・検証結果・commit SHA等）を含める。
-`agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節の
+`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の
 「result欄が起動プロンプトの再掲のみ」規定に対応する。
 
 ## 並列委譲時の担当ファイル収束の責務

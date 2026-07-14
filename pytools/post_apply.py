@@ -67,6 +67,13 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 旧配布先 (dotfiles-fb 系スキル) の配布先ディレクトリを削除する。
         Path("skills/add-feedback"),
         Path("skills/process-feedbacks"),
+        # 02-claude-code.md / 03-styles.md / 04-terminology.md →
+        # 03-claude-code.md / 04-styles.md / 05-terminology.md リネームに伴い旧ファイルを削除する。
+        Path("rules/agent-toolkit/02-claude-code.md"),
+        Path("rules/agent-toolkit/03-styles.md"),
+        Path("rules/agent-toolkit/04-terminology.md"),
+        # autopilotスキルは02-collaboration.mdへ吸収し廃止。配布先から旧スキルディレクトリを削除する。
+        Path("skills/autopilot"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、

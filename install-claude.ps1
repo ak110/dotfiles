@@ -24,9 +24,10 @@ $stageRoot = Join-Path $HOME '.claude/rules-stage'
 # 変更時は`uvx pyfltr run-for-agent`を実行してテストgreenを確認する。
 $files = @(
     '01-agent.md'
-    '02-claude-code.md'
-    '03-styles.md'
-    '04-terminology.md'
+    '02-collaboration.md'
+    '03-claude-code.md'
+    '04-styles.md'
+    '05-terminology.md'
 )
 
 function Invoke-Download {
@@ -103,6 +104,11 @@ function Main {
     try {
         foreach ($name in $files) {
             Invoke-Download "$baseUrl/$name" (Join-Path $stageDir $name)
+        }
+
+        # リネーム前の旧ファイル名を配布先から削除する（ダウンロード対象一覧との差分残置防止）。
+        foreach ($legacy in @('02-claude-code.md', '03-styles.md', '04-terminology.md')) {
+            Remove-Item -Path (Join-Path $targetDir $legacy) -Force -ErrorAction SilentlyContinue
         }
 
         if (Test-Path -LiteralPath $targetDir) {

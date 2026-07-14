@@ -20,7 +20,7 @@
   網羅特定し、集約対象を`## 変更内容`へ全件列挙する（実装段階での追加集約はレビュー指摘の対象とする）
 - 計画本文で対象ファイル群を規模記述で確定させる場合、根拠となる`ls | wc -l`または`find ... | wc -l`等の
   実測コマンドと出力値を`## 調査結果`へ併記する（試算値のみでの確定は不可とする）
-- 既存ファイルパス・スキル名の実在確認と件数表現の回避は`plan-file-guidelines.md`・`03-styles.md`の
+- 既存ファイルパス・スキル名の実在確認と件数表現の回避は`plan-file-guidelines.md`・`04-styles.md`の
   既存規定に従う。`check_line_ref.py`が両違反を機械検査する（新設マーカー付き対象は除外）
 
 ## 関連参照確認の細則
@@ -75,7 +75,7 @@
   - 呼び出し元スキル・エージェント（`plan-impl-executor`・`agent-toolkit:careful-review`・
     `agent-toolkit:plan-mode`等）への影響を、適合済み・追随修正要・本計画外のいずれかで
     `### 遡及スキャン結果`副節へ実測ベースで記載する（断定的な適合宣言は避け確認済み範囲を明示）
-  - 既存SSOT定義（`agent-toolkit/rules/04-terminology.md`・`agent-toolkit/skills/agent-standards/`等）との重複。
+  - 既存SSOT定義（`agent-toolkit/rules/05-terminology.md`・`agent-toolkit/skills/agent-standards/`等）との重複。
     重複時は新規追加を撤回し既存定義への参照へ集約する
   - 既存規範の絶対断定と新設例外規定の同時存在時は、両者の優先関係を計画段階で確定して計画本文に明記する
 - 計画本文の`## 変更内容`配下コードブロック内の実装識別子（関数名・クラス名・ヘルパー名・

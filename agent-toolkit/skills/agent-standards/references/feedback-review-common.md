@@ -11,7 +11,7 @@
 ## 事前調査の徹底
 
 候補事象に関連する既存規範文書の関連節を網羅的に`Read`してから抽象化階層を確定する。
-対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/02-claude-code.md`・該当作業のスキル本体・
+対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/03-claude-code.md`・該当作業のスキル本体・
 対応する`references/`配下を含む。当該事象を特殊ケースとして包含する既存上位節がある場合は
 新規追加ではなく既存節の表現強化・対象類型追加・例示拡張へ変換する。
 

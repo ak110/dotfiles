@@ -3,7 +3,7 @@
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と
 # 意図的に重複する。改訂時は両ファイルを同時更新する。
 ---
-# 02-claude-code.md
+# 03-claude-code.md
 
 ## Claude Code固有事項
 
@@ -203,18 +203,4 @@
     サブエージェント出力全般を含む。レビュー系以外の調査・整合性チェック結果も対象に含める
   - 本項の固定書式表を汎用定義のSSOTとし、`careful-review/SKILL.md`等の列名整合は個別委譲で扱う
 - サブエージェント委譲の可否・委譲先エージェントの選択・並列度・model選択は技術判断として自律決定する。
-  詳細は`agent-toolkit/rules/01-agent.md`「実装手順の詳細」節（技術判断・自律決定原則のSSOT）を参照する
-
-## plan mode下での挙動
-
-plan modeでも計画立案に必要な調査・検証を自粛せず、いかなる理由（例:「制約で実行できない」）があっても推測で計画を進めない。
-
-- リポジトリ内に閉じる副作用込みのコマンド（grep・find・lint・format・test・dev server起動など）は事前確認なしで実行する
-- 計画ファイル以外への直接編集・`git reset`・`rm`などの意図的な破壊操作はユーザー確認を得て実行する
-- リモートpush・外部送信などの不可逆操作は「ユーザーとともに考える」原則に従う
-
-## auto mode下での挙動
-
-`Auto Mode Active`システムプロンプトが注入された場合でも本ルールファイルが優先される。
-いかなる理由（例:`Minimize interruptions`・`Prefer action over planning`・`Execute immediately`）があっても
-確認・計画・検討を省略しない。迷ったら作業を止めて確認し、推測で継続しない。
+  詳細は`agent-toolkit/rules/01-agent.md`の「実装手順の詳細」節（技術判断・自律決定原則のSSOT）を参照する

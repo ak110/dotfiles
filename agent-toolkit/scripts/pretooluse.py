@@ -159,7 +159,8 @@ _NORM_REFERENCE_KEYWORDS: tuple[str, ...] = (
     "agent-toolkit:coding-standards",
     "agent-toolkit:writing-standards",
     "01-agent.md",
-    "02-claude-code.md",
+    "02-collaboration.md",
+    "03-claude-code.md",
 )
 
 
@@ -187,13 +188,13 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
     `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`
     「批判的検討チェックリスト」節の「採用時の反映内容の縮小禁止」項を参照する。
     `subagent-hesitation`はサブエージェント委譲可否の判断保留を扱うため
-    `agent-toolkit/rules/02-claude-code.md`「サブエージェントの活用」節を参照する。
+    `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節を参照する。
     他カテゴリは`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節を参照する。
     """
     if category == "mitigation-in-adoption":
         return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md「採用時の反映内容の縮小禁止」項"
     if category == "subagent-hesitation":
-        return "agent-toolkit/rules/02-claude-code.md「サブエージェントの活用」節"
+        return "agent-toolkit/rules/03-claude-code.md「サブエージェントの活用」節"
     return "agent-toolkit/rules/01-agent.md「セッション分割・別計画化は禁止する」節"
 
 
@@ -1070,7 +1071,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
                     f" Rewrite using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per 03-styles.md 「日本語の品質を保つ」 section."
+                    f" no metaphorical verbs) per 04-styles.md 「日本語の品質を保つ」 section."
                     f" Target: {file_path}",
                     tag="warn",
                 ),
@@ -1082,7 +1083,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
 
-# 03-styles.md「日本語の品質を保つ」節が指摘する誤読リスクのある禁止規定形式。
+# 04-styles.md「日本語の品質を保つ」節が指摘する誤読リスクのある禁止規定形式。
 # 「Xでなければ`Y`してよい」と誤読される可能性があるため、全称否定形への書き換えを推奨する。
 _STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"([^、\s]{1,20})を根拠に([^、\s]{1,20})しない"),
@@ -1142,7 +1143,7 @@ def _check_style_negation(tool_name: str, tool_input: dict, file_path: str) -> b
             f" Target: {file_path}."
             " 「Xでなければ`Y`してよい」と誤読される可能性がある。"
             " 全称否定形（『いかなる理由（例: X）があってもYしない』）への書き換えを検討する。"
-            " 03-styles.md「日本語の品質を保つ」節を参照。",
+            " 04-styles.md「日本語の品質を保つ」節を参照。",
             tag="warn",
         ),
         file=sys.stderr,

@@ -24,9 +24,10 @@ STAGE_ROOT="$HOME/.claude/rules-stage"
 # 変更時は`uvx pyfltr run-for-agent`を実行し、テスト通過を確認する。
 FILES=(
     01-agent.md
-    02-claude-code.md
-    03-styles.md
-    04-terminology.md
+    02-collaboration.md
+    03-claude-code.md
+    04-styles.md
+    05-terminology.md
 )
 
 STAGE_DIR=""
@@ -103,6 +104,11 @@ main() {
 
     for name in "${FILES[@]}"; do
         _download "$name"
+    done
+
+    # リネーム前の旧ファイル名を配布先から削除する（ダウンロード対象一覧との差分残置防止）。
+    for legacy in 02-claude-code.md 03-styles.md 04-terminology.md; do
+        rm -f "$TARGET_DIR/$legacy"
     done
 
     # 既存の TARGET_DIR を退避し、ステージングを差し替える。

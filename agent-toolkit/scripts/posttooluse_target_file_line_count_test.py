@@ -290,7 +290,7 @@ class TestPlanFormatTargetFileLineCount:
             ("AGENTS.md", "root-agents-md"),
             ("CLAUDE.md", "root-claude-md"),
             ("agent-toolkit/rules/01-agent.md", "rules-direct"),
-            (".chezmoi-source/dot_claude/rules/agent-toolkit/02-claude-code.md", "rules-nested"),
+            (".chezmoi-source/dot_claude/rules/agent-toolkit/03-claude-code.md", "rules-nested"),
             ("agent-toolkit/skills/plan-mode/SKILL.md", "skills-skill-md"),
             ("agent-toolkit/skills/plan-mode/references/norm-revision-checklist.md", "skills-references"),
             ("agent-toolkit/agents/plan-impl-reviewer.md", "agents"),

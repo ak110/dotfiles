@@ -114,13 +114,13 @@
 書き込み後チェックで実施済みのため、`plan-reviewer`は補完照合のみ担当し、残存する体裁系違反は軽微指摘として扱う。
 `## 変更内容`・`## 対応方針`配下のコードブロック内文面は次で点検する。
 
-- `agent-toolkit/rules/03-styles.md`「日本語の品質を保つ」節の上位原則
+- `agent-toolkit/rules/04-styles.md`「日本語の品質を保つ」節の上位原則
 - `agent-toolkit:writing-standards`「Markdown記述スタイル」節
 
 ## 編集対象スキル固有規定の事前適用
 
 本節は`agent-toolkit:agent-standards`「文書サイズ上限」節の対象ファイルを扱う。
-対象ファイルは`01-agent.md`・`02-claude-code.md`・各`SKILL.md`・サブエージェント定義・`references/`配下などとする。
+対象ファイルは`01-agent.md`・`03-claude-code.md`・各`SKILL.md`・サブエージェント定義・`references/`配下などとする。
 対象ファイルが計画ファイル`## 変更内容`の対象ファイル一覧へ含まれる場合は、計画ファイル本文の以下を機械的に検査する。
 
 - `## 変更内容`の`wc -l`確認手順記載と、対象ファイルの現行・改訂後見込みの`wc -l`実測値が

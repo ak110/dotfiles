@@ -49,7 +49,7 @@ description: >
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
 - agent-toolkit同梱スキル参照は`agent-toolkit:<skill-name>`形式に統一する。
-  サブエージェント名の表記規約は`agent-toolkit/rules/02-claude-code.md`「forkスキルとagents定義」節に従う
+  サブエージェント名の表記規約は`agent-toolkit/rules/03-claude-code.md`「forkスキルとagents定義」節に従う
   （起動指示は完全修飾形、地の文呼称は短縮形を許容する）。
   プロジェクトローカルスキル（`.claude/skills/`配下）はプラグイン接頭辞を付けず素のスキル名で参照する
 - 規範文言中でscope-escalation検出対象パターン（工程スキップ・作業省略・部分対応・規範違反承知の続行等）に
