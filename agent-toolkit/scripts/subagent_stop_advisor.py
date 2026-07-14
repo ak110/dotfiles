@@ -67,9 +67,10 @@ def main() -> int:
     if not isinstance(text, str):
         return 0
 
-    category = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES_EXTENDED)
-    if category is None:
+    match_result = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES_EXTENDED)
+    if match_result is None:
         return 0
+    category, _matched = match_result
 
     reason = _llm_notice(
         f"blocked: サブエージェント完了報告に縮退表明カテゴリ`{category}`が検出された。"

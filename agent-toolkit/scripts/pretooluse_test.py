@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 
+import pretooluse
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs as _load_scope_escalation_inputs
 from pyfltr.colloquial import check as _colloquial_check
@@ -3452,8 +3453,9 @@ class TestScopeEscalationInDocEditCheck:
         assert result.returncode == 2
         assert "scope-escalation" in result.stderr
         assert category in result.stderr
-        # フレーズ本文は通知へ転記しない（コンテキスト汚染防止）
-        assert text not in result.stderr
+        # 検出契機の特定のため、hookブロックメッセージへマッチ文言を含める
+        # （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節の例外規定）
+        assert "matched:" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_edit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
@@ -3470,7 +3472,7 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
-        assert text not in result.stderr
+        assert "matched:" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_multiedit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
@@ -3489,7 +3491,7 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
-        assert text not in result.stderr
+        assert "matched:" in result.stderr
 
     def test_multilevel_skill_target_blocks(self):
         """任意階層の`agent-toolkit/skills/**/SKILL.md`を対象に含む。"""
@@ -3551,7 +3553,7 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
-        assert text not in result.stderr
+        assert "matched:" in result.stderr
 
     def test_multiedit_blocks_on_unreadable_existing_file_fallback(self, tmp_path: pathlib.Path):
         """MultiEditでも既存ファイル読込失敗時（OSError）は`current`を空文字列にフォールバックする。
@@ -3577,7 +3579,7 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
         assert category in result.stderr
-        assert text not in result.stderr
+        assert "matched:" in result.stderr
 
     @pytest.mark.parametrize(
         "file_path",
@@ -6111,7 +6113,7 @@ class TestPlanFileChangeH3HasCodeBlock:
 class TestReadIsolatedReferenceCheck:
     """Read: メインエージェントからの隔離指定リファレンス直接Readをブロックする検査。"""
 
-    _ISOLATED_PATH = "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md"
+    _ISOLATED_PATH = "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt"
 
     def test_read_isolated_reference_blocks(self, tmp_path: pathlib.Path):
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
@@ -6160,6 +6162,54 @@ class TestReadIsolatedReferenceCheck:
         )
         assert result.returncode == 0
         assert "isolated reference" not in result.stderr
+
+
+def test_isolated_targets_excludes_phrases_md() -> None:
+    """`scope-escalation-phrases.md`が隔離対象から除かれ、テストデータのみ隔離を保つ。"""
+    assert not pretooluse._is_isolated_reference(  # noqa: SLF001  # pylint: disable=protected-access
+        "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md"
+    )
+    assert pretooluse._is_isolated_reference(  # noqa: SLF001  # pylint: disable=protected-access
+        "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt"
+    )
+
+
+class TestScopeEscalationBlockMessageIncludesMatchedPhrase:
+    """AskUserQuestion経路・Edit経路のブロックメッセージにマッチ文言が含まれることを検証する。"""
+
+    def test_askuserquestion_block_message_includes_matched_phrase(self):
+        text, _category = _SCOPE_ESCALATION_INPUTS[0]
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "q",
+                            "header": "h",
+                            "options": [{"label": text, "description": ""}],
+                        }
+                    ]
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "matched:" in result.stderr
+
+    def test_doc_edit_block_message_includes_matched_phrase(self):
+        text, category = _SCOPE_ESCALATION_INPUTS[0]
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "content": f"# header\n\n{text}\n",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert "matched:" in result.stderr
 
 
 class TestAgentNormReferenceCheck:

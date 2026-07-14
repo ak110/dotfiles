@@ -5,6 +5,11 @@
 # 同期注記: 「共通遵守事項」節の「計画専用機械チェック実行」バレットは
 # `agent-toolkit/rules/03-claude-code.md`「起草をサブエージェントへ委譲するプロンプト」節と
 # 意図的に重複する。改訂時は両ファイルを同時更新する。
+# named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節および
+# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md` と意図的に重複する。
+# 改訂時は3ファイルを同時更新する。
+# 加えて `agent-toolkit/agents/plan-implementer.md`「## 出力」節との同期は本ファイル
+# 「## 運用ガイダンス」の既存規定に従う。
 ---
 
 # 計画ファイル起草・改訂委譲プロンプト雛形
@@ -42,6 +47,9 @@
 - 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
   `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
   `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
+- named subagentとして`run_in_background=true`起動する場合、
+  完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
+  メイン側からの明示要求を待つ挙動は未完遂扱いとする
 
 ## 起草・改訂委譲雛形
 
@@ -89,6 +97,9 @@
     - 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
       `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
       `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
+    - named subagentとして`run_in_background=true`起動する場合、
+      完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
+      メイン側からの明示要求を待つ挙動は未完遂扱いとする
 
     ## 修正指摘（修正再実装時のみ）
 

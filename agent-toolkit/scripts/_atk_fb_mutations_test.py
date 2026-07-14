@@ -355,7 +355,7 @@ class TestEditWithChanges:
 
         git_calls: list[_GitCall] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
                 path.write_text("編集後\n", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -388,7 +388,7 @@ class TestEditNoChanges:
 
         git_calls: list[_GitCall] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
@@ -422,7 +422,7 @@ class TestEditNoArg:
 
         git_calls: list[_GitCall] = []
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
                 assert cmd[1] == str(latest)
                 latest.write_text("編集後\n", encoding="utf-8")
@@ -621,6 +621,140 @@ class TestProcessingPrecedence:
         assert adopted_path.exists()
         # 実際に移動されたのはprocessing側の内容であることを確認する。
         assert "processing本文" in adopted_path.read_text(encoding="utf-8")
+
+
+class TestTargetRepoVerification:
+    """mutation系サブコマンド: `--target-repo`指定時のfrontmatter一致検証を検証する。
+
+    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_feedback_file`既定値）。
+    """
+
+    def test_adopt_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "target_repo不一致" in captured.err
+        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert not (notes / "feedback" / "adopted" / "fb-001.md").exists()
+
+    def test_adopt_match_succeeds(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md", "--target-repo", "github.com/example/foo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
+
+    def test_reject_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """reject: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "reject", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+
+    def test_rm_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "rm", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+
+    def test_start_processing_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """start-processing: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "start-processing", "fb-001.md", "--target-repo", "github.com/other/repo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+
+    def test_edit_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="編集前")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        editor_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[0] == "fake-editor":
+                editor_calls.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "edit", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert not editor_calls
+
+    def test_unspecified_target_repo_is_noop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`--target-repo`未指定時は検証されず既存挙動のまま処理が進む。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
 
 
 class TestPathTraversalRejection:

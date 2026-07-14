@@ -412,6 +412,8 @@ def _check_path_existence(content: str, repo_root: pathlib.Path) -> list[str]:
     対象は`.md`・`.py`・`.json`・`.toml`・`.sh`・`.yaml`・`.yml`・`.cmd`・`.ps1`・`.tmpl`拡張子と
     スラッシュを含むディレクトリパス。実在しないパスを検出した場合は違反メッセージ一覧を返す。
     「対象ファイル一覧」で新設マーカーが付与されたパスは実在確認対象から除外する。
+    `_EXCLUDED_DIRS`配下（`.venv`・`node_modules`等）を先頭ディレクトリ名に持つパスも実在確認対象から除外する
+    （依存物配下の一時生成物・サンプルパスを誤検出しないため）。
     `content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提とする
     （フェンス内の例示パスを誤検出しないため）。
     出力形式は`_check_count_expressions`と揃え、初出行の行番号を`{lineno}行目:`形式で先頭に付す。
@@ -426,6 +428,8 @@ def _check_path_existence(content: str, repo_root: pathlib.Path) -> list[str]:
                 continue
             seen.add(stripped)
             if stripped in new_paths:
+                continue
+            if stripped.split("/", 1)[0] in _EXCLUDED_DIRS:
                 continue
             if not (repo_root / stripped).exists():
                 violations.append(f"{lineno}行目: 記載パス`{stripped}`が対象リポジトリに実在しない")

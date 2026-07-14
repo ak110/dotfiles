@@ -24,13 +24,19 @@ from _scope_escalation_test_helpers import load_scope_escalation_inputs
 _INPUTS = load_scope_escalation_inputs()
 
 
+def _category_of(text: str, **kwargs: typing.Any) -> str | None:
+    """`_match_scope_escalation`の戻り値タプルからカテゴリのみを取り出す。"""
+    result = _match_scope_escalation(text, **kwargs)
+    return result[0] if result is not None else None
+
+
 class TestMatchScopeEscalation:
     """`_match_scope_escalation`のカテゴリ分類。"""
 
     @pytest.mark.parametrize(("text", "category"), _INPUTS)
     def test_fixture_inputs_match_expected_category(self, text: str, category: str):
         """隔離フィクスチャの各入力が期待カテゴリへ分類されることを確認する。"""
-        assert _match_scope_escalation(text) == category
+        assert _category_of(text) == category
 
     @pytest.mark.parametrize(
         "text",
@@ -73,7 +79,7 @@ class TestMatchScopeEscalation:
             phrase = by_category.get(target)
             if phrase is None:
                 continue
-            assert _match_scope_escalation(phrase, categories=_STOP_FOCUS_CATEGORIES) == target
+            assert _category_of(phrase, categories=_STOP_FOCUS_CATEGORIES) == target
         # `_STOP_FOCUS_CATEGORIES`に含まれないカテゴリは検出されない。
         for cat, phrase in by_category.items():
             if cat in _STOP_FOCUS_CATEGORIES:
@@ -83,15 +89,15 @@ class TestMatchScopeEscalation:
     def test_categories_none_matches_all(self):
         """`categories=None`（既定）は全カテゴリを照合対象とする。"""
         for text, category in _INPUTS:
-            assert _match_scope_escalation(text, categories=None) == category
+            assert _category_of(text, categories=None) == category
 
     def test_completion_difficulty_matches_single_session(self):
         """`本セッションのリソースでは完遂困難`は`single-session`を返す。"""
-        assert _match_scope_escalation("本セッションのリソースでは完遂困難と判断する。") == "single-session"
+        assert _category_of("本セッションのリソースでは完遂困難と判断する。") == "single-session"
 
     def test_scale_difficulty_matches_single_session(self):
         """`規模的に本セッションでは困難`は`single-session`を返す。"""
-        assert _match_scope_escalation("規模的に本セッションでは困難のため一度に処理できない。") == "single-session"
+        assert _category_of("規模的に本セッションでは困難のため一度に処理できない。") == "single-session"
 
     def test_general_completion_difficulty_not_matched(self):
         """`本|この|単一`セッション接頭を伴わない一般的な困難表現は`single-session`と判定しない。"""
@@ -127,12 +133,20 @@ class TestMatchScopeEscalation:
     def test_priority_consult_phrase_outside_zenkaku_kakko_matched(self):
         """全角鍵括弧の外側にpriority-consultパターン相当語彙がある場合は検出される。"""
         text = "優先順位について相談してから着手する。"
-        assert _match_scope_escalation(text) == "priority-consult"
+        assert _category_of(text) == "priority-consult"
 
     def test_priority_consult_phrase_inside_and_outside_kakko_matches_outside_only(self):
         """全角鍵括弧の内側と外側の両方に該当語彙がある場合、外側のみが検出対象となる。"""
         text = "計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
-        assert _match_scope_escalation(text) == "priority-consult"
+        assert _category_of(text) == "priority-consult"
+
+    def test_match_scope_escalation_returns_tuple_on_hit(self):
+        """検出時は`(category, matched_phrase)`のタプルを返す。"""
+        result = _match_scope_escalation("優先順位について相談してから着手する。")
+        assert result is not None
+        category, matched = result
+        assert category == "priority-consult"
+        assert matched
 
 
 class TestApplyCategoryExclusions:

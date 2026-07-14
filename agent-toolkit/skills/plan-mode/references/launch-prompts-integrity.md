@@ -6,6 +6,11 @@
 # 再レビュー起動時の対象範囲明示バレットは意図的に同一文言で重複する。改訂時は両雛形を同時更新する。
 # 加えて plan-impl-reviewer雛形と agent-doc-validator雛形の「## 制約」小節冒頭に配置する
 # 事前レビュー明示バレットも意図的に同一文言で重複する。改訂時は両雛形を同時更新する。
+# named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節および
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md` と意図的に重複する。
+# 改訂時は3ファイルを同時更新する。
+# 本ファイル本文の3雛形は `background` 起動・`name` 指定を伴わない前提運用のため、
+# named subagent能動送付規定は本ファイル本文へは追加せず、frontmatter同期注記のみを配置する。
 ---
 
 # 工程7サブエージェント起動プロンプト雛形

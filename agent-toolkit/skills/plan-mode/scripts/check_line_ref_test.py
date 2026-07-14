@@ -440,6 +440,15 @@ class TestCheckLineRef:
         assert result.returncode == 1
         assert "foo/bar.md" in result.stderr
 
+    def test_check_path_existence_skips_excluded_dir_prefix(self, tmp_path: pathlib.Path) -> None:
+        """`.venv`・`node_modules`始まりの実在しないパスは`_EXCLUDED_DIRS`除外により違反対象外。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "参考: `.venv/lib/foo.py` の記述。\n参考: `node_modules/pkg/foo.py` の記述。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
 
 class TestSectionNameExistence:
     """節名参照の実在照合（FB3対応）の主要シナリオをまとめて検証する。"""

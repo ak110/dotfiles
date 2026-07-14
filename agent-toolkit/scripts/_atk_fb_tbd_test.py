@@ -170,6 +170,164 @@ class TestTbdAddPullBeforeEditor:
         assert not any(c[:2] == ["git", "pull"] for c in git_cmds)
 
 
+class TestTbdAddSourceOption:
+    """tbd-addサブコマンド: `--source`指定時にfrontmatterへsource行を記録する。"""
+
+    def test_source_recorded_when_given(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--source=session-hold指定時、frontmatterにsource: session-holdが含まれる。"""
+        notes = _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+            empty: Any = "" if kw.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+
+        files = sorted((notes / "tbd" / "inbox").iterdir())
+        content = files[0].read_text(encoding="utf-8")
+        assert "source: session-hold" in content
+
+    def test_source_absent_when_not_given(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--source未指定時、frontmatterにsource行が含まれない。"""
+        notes = _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+            empty: Any = "" if kw.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "tbd-add", str(myrepo), "質問本文"], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+
+        files = sorted((notes / "tbd" / "inbox").iterdir())
+        content = files[0].read_text(encoding="utf-8")
+        assert "source:" not in content
+
+
+class TestTbdMutationTargetRepoVerification:
+    """tbd-edit/tbd-adopt/tbd-rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
+
+    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_tbd_file`既定値）。
+    """
+
+    def test_tbd_edit_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """tbd-edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        editor_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_a: object, **_kw: object) -> subprocess.CompletedProcess[bytes]:
+            if cmd[0] == "fake-editor":
+                editor_calls.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-edit", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert not editor_calls
+
+    def test_tbd_adopt_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """tbd-adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert not (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+
+    def test_tbd_adopt_match_succeeds(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """tbd-adopt: `--target-repo`一致時は通常通りtbd/adopted/へ移動する。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/example/foo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+
+    def test_tbd_rm_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """tbd-rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 2
+        assert (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+
+
 class TestTbdList:
     """tbd-listサブコマンドのフィルター動作検証。"""
 

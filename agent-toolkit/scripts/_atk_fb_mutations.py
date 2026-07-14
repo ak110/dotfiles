@@ -24,6 +24,7 @@ from _atk_fb_common import (
     _validate_filename,
     _validate_filenames_only,
 )
+from _atk_fb_repo import _verify_frontmatter_target_repo
 
 
 def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -76,6 +77,8 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
     paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
     adopted_dir = _subdir(private_notes, FEEDBACK_STATE_ADOPTED)
     for p in paths:
@@ -100,6 +103,8 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
     paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
     rejected_dir = _subdir(private_notes, FEEDBACK_STATE_REJECTED)
     for p in paths:
@@ -123,6 +128,8 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     for p in paths:
@@ -141,6 +148,8 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
     paths = _resolve_feedback_targets(args.filenames, inbox_dir)
     for p in paths:
         p.unlink()
@@ -176,6 +185,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     else:
         path = _validate_filename(args.filename, inbox_dir)
         _pull(private_notes)
+    _verify_frontmatter_target_repo(path.name, [inbox_dir], args.target_repo)
     if not path.exists():
         print(f"inboxに存在しません: {path.name}", file=sys.stderr)
         sys.exit(2)

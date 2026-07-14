@@ -140,10 +140,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 # メインエージェントからの直接Readを禁じる隔離指定リファレンス。
 # `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節が指定する隔離リファレンスと同一SSOTとする。
 # `isSidechain`真の呼び出しは通過させ、`agent-toolkit-edit`スキル起動セッションも例外とする。
-_ISOLATED_READ_TARGETS: tuple[str, ...] = (
-    "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
-    "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
-)
+_ISOLATED_READ_TARGETS: tuple[str, ...] = ("agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",)
 
 # 規範文書を自動読み込みしないサブエージェントタイプ。
 # `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
@@ -166,6 +163,16 @@ _NORM_REFERENCE_KEYWORDS: tuple[str, ...] = (
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/pretooluse"
+
+
+def _truncate_matched_phrase(phrase: str) -> str:
+    """scope-escalationマッチ文言をブロックメッセージ表示用に整形する。
+
+    禁止語彙のクイズ化を避けるため、ブロック契機となったマッチテキストそのものを
+    利用者が判読可能な形で通知する（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
+    CR/LFを除去し、通知の肥大化を避けるため先頭50文字までに切り詰める。
+    """
+    return phrase.replace("\r", "").replace("\n", "")[:50]
 
 
 def _format_scope_escalation_alternatives(category: str) -> str:
@@ -383,11 +390,13 @@ def main() -> int:
 
     # AskUserQuestion: 縮退誘発フレーズ検出
     if tool_name == "AskUserQuestion":
-        category = _check_askuserquestion_scope_escalation(tool_input)
-        if category is not None:
+        match_result = _check_askuserquestion_scope_escalation(tool_input)
+        if match_result is not None:
+            category, matched = match_result
             print(
                 _llm_notice(
                     f"blocked: AskUserQuestionに縮退誘発フレーズ（カテゴリ: {category}）を検出。"
+                    f" matched: {_truncate_matched_phrase(matched)} "
                     f"{_scope_escalation_agent_md_reference(category)}を参照。"
                     f"カテゴリ定義は`agent-toolkit:agent-standards`配下"
                     f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。"
@@ -809,15 +818,16 @@ def _match_scope_escalation_increase(
     new: str,
     *,
     exclude_categories: Iterable[str] | None = None,
-) -> str | None:
-    """new側でフレーズ出現回数がold側より増加したカテゴリ識別子を返す。
+) -> tuple[str, str] | None:
+    """new側でフレーズ出現回数がold側より増加したカテゴリと、そのマッチ文言を返す。
 
     `_SCOPE_ESCALATION_PHRASES`を走査し、各パターンのfindall件数を比較する。
-    new側件数がold側件数を上回るカテゴリを最初に検出した時点で当該識別子を返す。
+    new側件数がold側件数を上回るカテゴリを最初に検出した時点で`(category, matched_phrase)`を返す。
     既存文字列の保持時はold=new同数となり通過する（既存保持部分での誤検出を防ぐ）。
     カテゴリ別除外は`_scope_escalation._apply_category_exclusions`をnew・old双方へ適用し、
     priority-consult他のカテゴリ別除外を両経路で共有する。
     `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
+    matched_phraseはnew側でのパターンマッチテキストそのまま。
     増加が無い場合はNoneを返す。
     """
     excluded = frozenset(exclude_categories) if exclude_categories is not None else frozenset()
@@ -827,7 +837,9 @@ def _match_scope_escalation_increase(
         target_new = _apply_category_exclusions(new, category)
         target_old = _apply_category_exclusions(old, category)
         if len(pattern.findall(target_new)) > len(pattern.findall(target_old)):
-            return category
+            m = pattern.search(target_new)
+            matched = m.group(0) if m is not None else ""
+            return (category, matched)
     return None
 
 
@@ -880,22 +892,24 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
     Edit/MultiEditでも全文へ適用するため、フェンス開始・終了行がold/new_string外にある場合も除外境界を維持する。
     規範文書本体は対象外で検出精度を変えない。
     判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
-    `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、検出フレーズ本文は通知へ転記せず
-    カテゴリ識別子のみを通知する。
+    `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、hookブロックメッセージは
+    利用者がブロック契機を特定できるようマッチ文言を含める（スキル本文・ルール本文・テストコードへの
+    転記禁止とは別扱いとする）。
     """
     if not _is_scope_escalation_target_doc(file_path):
         return False
     # plan fileでは`plan-deferral-onset`をMarkdown除外領域（text/HTMLコメント/`## 背景`配下）を考慮する
     # `_check_plan_file_no_deferral_expression`が担当するため、本checkでは除外する。
     exclude_categories: frozenset[str] = frozenset({"plan-deferral-onset"}) if is_plan_file(file_path) else frozenset()
-    detection: tuple[str, str] | None = None
+    detection: tuple[str, str, str] | None = None
     if tool_name == "Write":
         content = tool_input.get("content")
         if isinstance(content, str):
             body = _extract_plan_scope_escalation_body(content, file_path)
-            category = _match_scope_escalation(body, exclude_categories=exclude_categories)
-            if category is not None:
-                detection = ("content", category)
+            match_result = _match_scope_escalation(body, exclude_categories=exclude_categories)
+            if match_result is not None:
+                category, matched = match_result
+                detection = ("content", category, matched)
     elif tool_name == "Edit":
         try:
             pre_content = pathlib.Path(file_path).read_text(encoding="utf-8")
@@ -905,9 +919,10 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
         if post_content is not None:
             pre_body = _extract_plan_scope_escalation_body(pre_content, file_path)
             post_body = _extract_plan_scope_escalation_body(post_content, file_path)
-            category = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
-            if category is not None:
-                detection = ("new_string", category)
+            match_result = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
+            if match_result is not None:
+                category, matched = match_result
+                detection = ("new_string", category, matched)
     elif tool_name == "MultiEdit":
         edits = tool_input.get("edits") or []
         if isinstance(edits, list):
@@ -923,18 +938,20 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
                     continue
                 pre_body = _extract_plan_scope_escalation_body(current, file_path)
                 post_body = _extract_plan_scope_escalation_body(next_current, file_path)
-                category = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
-                if category is not None:
-                    detection = (f"edits[{index}].new_string", category)
+                match_result = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
+                if match_result is not None:
+                    category, matched = match_result
+                    detection = (f"edits[{index}].new_string", category, matched)
                     break
                 current = next_current
     if detection is None:
         return False
-    field, category = detection
+    field, category, matched = detection
     print(
         _llm_notice(
             f"blocked: scope-escalation phrase (category: {category})"
             f" detected in {tool_name}.{field}. Target: {file_path}."
+            f" matched: {_truncate_matched_phrase(matched)}"
             f" {_scope_escalation_agent_md_reference(category)}を参照。"
             f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
             f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
@@ -2257,8 +2274,8 @@ def _check_plan_file_no_deferral_expression(
 
     matches: list[tuple[int, str]] = []
     for lineno, line in _iter_plan_deferral_target_lines(content):
-        category = _match_scope_escalation(line, categories={"plan-deferral-onset"})
-        if category is not None:
+        match_result = _match_scope_escalation(line, categories={"plan-deferral-onset"})
+        if match_result is not None:
             matches.append((lineno, line.strip()))
     if not matches:
         return False
@@ -3652,16 +3669,16 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
     }
 
 
-def _check_askuserquestion_scope_escalation(tool_input: dict) -> str | None:
-    """AskUserQuestion入力から縮退誘発フレーズを検出して該当カテゴリ識別子を返す。
+def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str] | None:
+    """AskUserQuestion入力から縮退誘発フレーズを検出して該当カテゴリとマッチ文言を返す。
 
     対象は`questions[].options[].label`、`questions[].options[].description`の各テキスト。
     `questions[].question`と`questions[].header`はユーザーへの状況説明性質を持つため対象外とする
     （エージェントの意思表明は選択肢側に現れる前提）。
-    検出時は最初に一致したパターンのカテゴリ識別子を返す。未検出時はNone。
+    検出時は最初に一致したパターンの`(category, matched_phrase)`を返す。未検出時はNone。
     入力の構造が想定外（questionsが配列でないなど）の場合は検査不能としてNoneを返す。
-    検出フレーズ本文はメッセージへ転記せず、カテゴリ識別子のみで通知する
-    （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従う）。
+    ブロックメッセージへのマッチ文言含有は`agent-toolkit:agent-standards`
+    「コンテキスト汚染の回避」節の例外規定に従う。
     """
     questions = tool_input.get("questions")
     if not isinstance(questions, list):
@@ -3678,9 +3695,9 @@ def _check_askuserquestion_scope_escalation(tool_input: dict) -> str | None:
             for field in ("label", "description"):
                 text = option.get(field)
                 if isinstance(text, str):
-                    category = _match_scope_escalation(text)
-                    if category is not None:
-                        return category
+                    match_result = _match_scope_escalation(text)
+                    if match_result is not None:
+                        return match_result
     return None
 
 

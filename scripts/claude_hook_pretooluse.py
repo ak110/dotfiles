@@ -241,9 +241,10 @@ def _check_bash_atk_fb_tbd_add_scope_escalation(command: str) -> str | None:
         return None
     if "tbd-add" not in command:
         return None
-    category = _match_scope_escalation(command)
-    if category is None:
+    match_result = _match_scope_escalation(command)
+    if match_result is None:
         return None
+    category, _matched = match_result
     return (
         f"blocked: `atk fb tbd-add` includes a scope-escalation phrase (category: {category})."
         " See agent-toolkit/rules/01-agent.md session-split prohibition section."

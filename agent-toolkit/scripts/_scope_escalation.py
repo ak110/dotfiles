@@ -330,8 +330,8 @@ def _match_scope_escalation(
     categories: Iterable[str] | None = None,
     *,
     exclude_categories: Iterable[str] | None = None,
-) -> str | None:
-    """テキストへ`_SCOPE_ESCALATION_PHRASES`を照合し、最初に一致したカテゴリ識別子を返す。
+) -> tuple[str, str] | None:
+    """テキストへ`_SCOPE_ESCALATION_PHRASES`を照合し、最初に一致した`(category, matched_phrase)`を返す。
 
     `categories`を指定した場合は当該カテゴリ集合に含まれる分類のみを照合対象とする。
     未指定時は全カテゴリを対象とする。
@@ -340,6 +340,7 @@ def _match_scope_escalation(
     `_STOP_FOCUS_CATEGORIES`（`process-omission`単独）を渡す。
     priority-consultカテゴリは他ファイル節名の引用文脈（全角鍵括弧「」で囲まれた区間）を
     走査対象から除去してから判定する（節名転記時の過検出を回避する）。
+    matched_phraseはパターンのマッチテキストそのまま。
     未検出時・非文字列入力時はNoneを返す。
     """
     if not isinstance(text, str) or not text:
@@ -352,8 +353,9 @@ def _match_scope_escalation(
         if category in excluded:
             continue
         target_text = _apply_category_exclusions(text, category)
-        if pattern.search(target_text) is not None:
-            return category
+        m = pattern.search(target_text)
+        if m is not None:
+            return (category, m.group(0))
     return None
 
 
@@ -371,12 +373,14 @@ def _cli_main(argv: list[str]) -> int:
 
     `pretooluse.py`のAskUserQuestion / Write / Editブロック案内文から
     参照される。呼び出し側は本CLIをローカル実行で起動してカテゴリを事前確認できる。
+    CLI互換性のためstdout出力はカテゴリ識別子のみとし、マッチ文言は出力しない。
     """
     del argv
     text = sys.stdin.read()
-    category = _match_scope_escalation(text)
-    if category is None:
+    match_result = _match_scope_escalation(text)
+    if match_result is None:
         return 0
+    category, _matched = match_result
     print(category)
     return 2
 

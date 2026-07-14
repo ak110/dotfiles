@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 
+from _atk_fb_formatters import _parse_target_repo
+
 
 def _normalize_remote_url(url: str) -> str:
     """リモートURLを`host/owner/repo`形式（またはネスト配下`host/group/.../repo`）へ正規化して返す。
@@ -137,3 +139,37 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(2)
+
+
+def _verify_frontmatter_target_repo(
+    filename: str,
+    inbox_paths: list[pathlib.Path],
+    expected: str | None,
+) -> None:
+    """filenameのfrontmatter`target_repo`が`expected`と一致するか検証する。
+
+    `expected`が`None`（`--target-repo`未指定）ならno-op。`inbox_paths`は先頭から順に
+    実在確認し、最初に見つかった候補のfrontmatterのみ検証する。frontmatterに
+    `target_repo`が無い場合、および正規化後の値が`expected`と不一致の場合はexit 2。
+    候補がいずれのパスにも存在しない場合は後続の存在検証に委ねてno-opとする。
+    """
+    if expected is None:
+        return
+    normalized_expected = _resolve_repo_id(expected)
+    for base_dir in inbox_paths:
+        candidate = base_dir / filename
+        if not candidate.exists():
+            continue
+        text = candidate.read_text(encoding="utf-8")
+        actual = _parse_target_repo(text)
+        if actual == "(unknown)":
+            print(f"frontmatterにtarget_repoがありません: {candidate}", file=sys.stderr)
+            sys.exit(2)
+        normalized_actual = _normalize_remote_url(actual)
+        if normalized_actual != normalized_expected:
+            print(
+                f"target_repo不一致: 期待={normalized_expected} 実際={normalized_actual} ファイル={candidate}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        return

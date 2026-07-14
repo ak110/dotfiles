@@ -6,7 +6,7 @@
 """Claude Code statusLine: セッション状況を1行で可視化する。
 
 stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・
-output_style名（既定値以外）・コンテキスト消費量・累計コスト・経過時間・5時間消費量を
+output_style名（既定値以外）・コンテキスト消費量・累計コスト・経過時間・5時間消費量・7日消費量を
 パイプ区切りで標準出力へ出力する。数値項目には日本語ラベルを付与する。欠落・null要素は省略する。
 """
 
@@ -29,6 +29,7 @@ _LABEL_CONTEXT = "コンテキスト消費量"
 _LABEL_COST = "累計コスト"
 _LABEL_DURATION = "経過時間"
 _LABEL_FIVE_HOUR = "5時間消費量"
+_LABEL_SEVEN_DAY = "7日消費量"
 
 
 def main() -> int:
@@ -58,6 +59,7 @@ def render(data: dict[str, Any]) -> str:
     total_cost = _get_nested_number(data, "cost", "total_cost_usd")
     duration_ms = _get_nested_number(data, "cost", "total_duration_ms")
     five_hour_pct = _get_nested_number(data, "rate_limits", "five_hour", "used_percentage")
+    seven_day_pct = _get_nested_number(data, "rate_limits", "seven_day", "used_percentage")
 
     head = _build_head_segment(model_name, effort_level, cwd, style_name)
 
@@ -70,6 +72,8 @@ def render(data: dict[str, Any]) -> str:
         tail.append(_color(f"{_LABEL_DURATION}: {_format_duration(duration_ms)}", GRAY))
     if five_hour_pct is not None:
         tail.append(_color(f"{_LABEL_FIVE_HOUR}: {five_hour_pct:.0f}%", _threshold_color(five_hour_pct)))
+    if seven_day_pct is not None:
+        tail.append(_color(f"{_LABEL_SEVEN_DAY}: {seven_day_pct:.0f}%", _threshold_color(seven_day_pct)))
 
     segments = ([head] if head else []) + tail
     return " | ".join(segments)

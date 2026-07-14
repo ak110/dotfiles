@@ -25,7 +25,7 @@ from _atk_fb_common import (
 )
 from _atk_fb_formatters import _parse_target_repo, _shorten_home
 from _atk_fb_list import _render_tbd_entries
-from _atk_fb_repo import _resolve_repo_id
+from _atk_fb_repo import _resolve_repo_id, _verify_frontmatter_target_repo
 
 
 def _tbd_subdir(private_notes: pathlib.Path) -> pathlib.Path:
@@ -71,6 +71,8 @@ def _cmd_tbd_add(
     fm_extra = ""
     if args.scope:
         fm_extra += f"scope: {args.scope}\n"
+    if args.source:
+        fm_extra += f"source: {args.source}\n"
     fm_extra += f"question_type: {args.question_type}\n"
     if args.question_type == "choice":
         fm_extra += f"choices: {args.choices}\n"
@@ -182,6 +184,7 @@ def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None
     tbd_dir = private_notes / "tbd" / "inbox"
     path = _validate_filename(args.filename, tbd_dir)
     _pull(private_notes)
+    _verify_frontmatter_target_repo(args.filename, [tbd_dir], args.target_repo)
     if not path.exists():
         print(f"tbd/inboxに存在しません: {path.name}", file=sys.stderr)
         sys.exit(2)
@@ -217,6 +220,8 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
     tbd_adopted = private_notes / "tbd" / "adopted"
     _validate_filenames_only(args.filenames, tbd_inbox)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [tbd_inbox], args.target_repo)
     paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
     tbd_adopted.mkdir(parents=True, exist_ok=True)
     moved: list[str] = []
@@ -246,6 +251,8 @@ def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     tbd_inbox = private_notes / "tbd" / "inbox"
     _validate_filenames_only(args.filenames, tbd_inbox)
     _pull(private_notes)
+    for filename in args.filenames:
+        _verify_frontmatter_target_repo(filename, [tbd_inbox], args.target_repo)
     paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
     for p in paths:
         p.unlink()

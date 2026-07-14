@@ -2,6 +2,11 @@
 # 同期注記: 「起草をサブエージェントへ委譲するプロンプト」バレットの「計画専用機械チェック実行」サブバレットは
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と
 # 意図的に重複する。改訂時は両ファイルを同時更新する。
+# named subagent能動送付規定（Agentツールで`name`指定・`run_in_background=true`起動時の
+# 完了時SendMessage(to: 'main')能動送付義務）は
+# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`および
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`と意図的に重複する。
+# 改訂時は3ファイルを同時更新する。
 ---
 # 03-claude-code.md
 
@@ -95,6 +100,9 @@
   - 並列起動時はメイン側の単一メッセージ内に複数のサブエージェント起動ブロックを並べる
    （`Agent`ツール直接呼び出しと`agent-toolkit:shell-exec`等のforkスキル呼び出しを混在させてよい）
   - `background`起動時は完了報告として結果全文をメイン宛1回で送付する規定を起動プロンプトへ明記する
+  - Agentツールで`name`指定した`run_in_background=true`起動のnamed subagent（teammate）は、
+    作業完了時にSendMessage(to: 'main')で完了報告本文を能動送付する。
+    メイン側からの明示要求を待たず、`idle_notification(available)`のみを送出して待機しない
 - 再開時はモデルを変更できない。異なるモデルが必要なら新規`Agent`起動を使う
   - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い、
     元タスク・修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める

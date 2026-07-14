@@ -77,6 +77,46 @@ def _write_feedback_file(
     return path
 
 
+class TestMutationTargetRepoParserOption:
+    """mutation系サブコマンドの`--target-repo`受理をargparseレベルで検証する。"""
+
+    @pytest.mark.parametrize(
+        ("subcommand", "argv_tail"),
+        [
+            ("adopt", ["20260714-000001-001.md"]),
+            ("reject", ["20260714-000001-001.md"]),
+            ("rm", ["20260714-000001-001.md"]),
+            ("edit", ["20260714-000001-001.md"]),
+            ("start-processing", ["20260714-000001-001.md"]),
+            ("tbd-edit", ["20260714-000001-001.md"]),
+            ("tbd-adopt", ["20260714-000001-001.md"]),
+            ("tbd-rm", ["20260714-000001-001.md"]),
+        ],
+    )
+    def test_accepts_target_repo(self, subcommand: str, argv_tail: list[str]) -> None:
+        """8種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["fb", subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
+        assert args.target_repo == "github.com/foo/bar"
+
+    def test_commit_has_no_target_repo_option(self) -> None:
+        """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["fb", "commit", "--target-repo", "github.com/foo/bar"])
+        assert exc_info.value.code == 2
+
+
+class TestTbdAddSourceOptionParser:
+    """tbd-addサブコマンドの`--source`受理をargparseレベルで検証する。"""
+
+    def test_accepts_source(self) -> None:
+        """`tbd-add`が`--source`を受理しargs.sourceへ格納される。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["fb", "tbd-add", "/tmp/x", "--source", "session-hold", "hello"])
+        assert args.source == "session-hold"
+
+
 class TestFlagFileMissing:
     """フラグファイル不在時にexit 1とstderr案内を返すこと。"""
 

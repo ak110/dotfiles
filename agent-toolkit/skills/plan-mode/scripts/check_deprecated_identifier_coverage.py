@@ -61,6 +61,23 @@ _TARGET_EXTENSION_PATTERNS: tuple[str, ...] = (
     "*.cmd",
 )
 
+# grep走査から除外するディレクトリ名。`check_line_ref.py`の同名定数と集合を一致させる。
+_EXCLUDED_DIRS: tuple[str, ...] = (
+    ".git",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    "dist",
+    "build",
+    "site",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".idea",
+    ".vscode",
+)
+
 
 def main() -> int:
     """廃止・改名識別子の残存参照照合のエントリポイント。"""
@@ -176,8 +193,9 @@ def _grep_identifier(repo_root: pathlib.Path, identifier: str) -> list[tuple[str
     終了コード2以上（引数不正等）は照合対象外として空リストを返す。
     """
     include_args = [f"--include={pattern}" for pattern in _TARGET_EXTENSION_PATTERNS]
+    exclude_dir_args = [f"--exclude-dir={name}" for name in _EXCLUDED_DIRS]
     result = subprocess.run(
-        ["grep", "-rnF", "--exclude-dir=.git", *include_args, identifier, str(repo_root)],
+        ["grep", "-rnF", *exclude_dir_args, *include_args, identifier, str(repo_root)],
         capture_output=True,
         text=True,
         check=False,

@@ -82,6 +82,32 @@ def test_all_hits_within_target_file_list_exit_zero(tmp_path: pathlib.Path) -> N
     assert result.returncode == 0
 
 
+def test_hits_in_excluded_dirs_are_ignored(tmp_path: pathlib.Path) -> None:
+    """`.venv`・`node_modules`配下のヒットはgrep除外により違反として報告されない。"""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".venv" / "lib").mkdir(parents=True)
+    (repo_root / ".venv" / "lib" / "dummy.py").write_text("old_identifier = 1\n", encoding="utf-8")
+    (repo_root / "node_modules" / "pkg").mkdir(parents=True)
+    (repo_root / "node_modules" / "pkg" / "dummy.py").write_text("old_identifier = 2\n", encoding="utf-8")
+    plan_path = tmp_path / "plan.md"
+    plan_path.write_text(
+        """## 変更内容
+
+### 対象ファイル一覧
+
+#### 廃止・改名対象一覧
+
+- `old_identifier`
+""",
+        encoding="utf-8",
+    )
+
+    result = _run(plan_path, repo_root=repo_root)
+
+    assert result.returncode == 0
+
+
 def test_partial_hits_missing_from_target_file_list_exit_one(tmp_path: pathlib.Path) -> None:
     """廃止識別子のヒットファイルの一部が`### 対象ファイル一覧`から漏れている場合はexit 1となる。"""
     repo_root = tmp_path / "repo"

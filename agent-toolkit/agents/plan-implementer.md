@@ -144,6 +144,10 @@ user-invocable: false
 呼び出し元の計画で扱えない発見は`[即時相談候補]`としてメインへ報告し、
 メイン判断で計画への採用可否をユーザーと決める。
 
+named subagentとして`run_in_background=true`起動された場合、
+完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
+メイン側からの明示要求を待つ挙動は未完遂扱いとする。
+
 ```markdown
 status: completed | blocked | needs_escalation
 summary: {1文の結果}

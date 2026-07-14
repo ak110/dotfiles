@@ -230,7 +230,8 @@ def main() -> int:
     if transcript_path:
         for message in iter_latest_assistant_messages(transcript_path):
             text = assistant_text(message)
-            category = _match_scope_escalation(text, categories=focus_categories)
+            match_result = _match_scope_escalation(text, categories=focus_categories)
+            category = match_result[0] if match_result is not None else None
             if category is None and focus_categories == _STOP_FOCUS_CATEGORIES_EXTENDED and has_inline_choice_offer(text):
                 category = "approach-confirm"
             if category is not None:

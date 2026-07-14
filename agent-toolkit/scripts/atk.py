@@ -48,6 +48,16 @@ import _atk_fb_show as _show  # noqa: E402
 import _atk_fb_tbd as _tbd  # noqa: E402
 
 
+def _add_target_repo_arg(parser: argparse.ArgumentParser, *, help_extra: str = "") -> None:
+    """`--target-repo`オプションを共通形式で登録する。"""
+    parser.add_argument(
+        "--target-repo",
+        metavar="REPO",
+        default=None,
+        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + help_extra,
+    )
+
+
 def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     """`fb`サブパーサ配下にfeedback/TBD操作用サブコマンドを登録する。"""
     sub = fb.add_subparsers(dest="fb_subcommand", required=True)
@@ -154,6 +164,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         nargs="+",
         help="処理開始するinboxファイル名（1個以上）。",
     )
+    _add_target_repo_arg(start_processing, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
@@ -169,6 +180,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
     )
+    _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
     reject.add_argument("filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。")
@@ -184,9 +196,11 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
     )
+    _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     rm = sub.add_parser("rm", help="inboxから単純削除しコミット・push")
     rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
+    _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
     edit.add_argument(
@@ -196,6 +210,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         default=None,
         help="編集対象のinboxファイル名。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
     )
+    _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     sub.add_parser(
         "commit",
@@ -249,6 +264,12 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         help="呼び出し元固有のスコープ識別子（任意。frontmatterにscope: <NAME>として記録）。",
     )
     tbd_add.add_argument(
+        "--source",
+        metavar="NAME",
+        default=None,
+        help="投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-hold）。",
+    )
+    tbd_add.add_argument(
         "--question-type",
         choices=("free", "yesno", "choice"),
         default="free",
@@ -299,6 +320,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
 
     tbd_edit = sub.add_parser("tbd-edit", help="$EDITORでTBDを編集してcommit・push")
     tbd_edit.add_argument("filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。")
+    _add_target_repo_arg(tbd_edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     tbd_adopt = sub.add_parser(
         "tbd-adopt",
@@ -317,6 +339,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
     )
+    _add_target_repo_arg(tbd_adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     tbd_rm = sub.add_parser(
         "tbd-rm",
@@ -334,6 +357,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         default=None,
         help="削除理由のメモ（commit messageへ追記する）。",
     )
+    _add_target_repo_arg(tbd_rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
 
 def _build_parser() -> argparse.ArgumentParser:
