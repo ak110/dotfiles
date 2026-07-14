@@ -11,6 +11,14 @@
 
 呼び出し元は`plan-impl-executor`の完了報告を受領した後、次の手順を実施する。
 
+0. 報告本文の書式適合性を検査する。
+   検査対象欄は`agent-toolkit/agents/plan-impl-executor.md`「出力」節が定義する主要欄とする。
+   主要欄は`status:`・`summary:`・`changed:`・`verification:`・`commit_sha:`・`review_handoff:`・
+   `pending_confirmations:`・`plan_gaps:`を指す。
+   `status: needs_escalation`の場合は`blockers:`欄も必須欄として検査する。
+   いずれかを明示形式で含まない場合は、`status: completed`表示があっても未完遂扱いとして再委譲へ回す。
+   書式不備の完了報告は`blockers`欄も欠落する可能性があるため、
+   手順1の`needs_escalation`分岐評価を経ず、技術的に解消可能な実装不備の再委譲へ直行する。
 1. `status: completed`を確認する。`needs_escalation`の場合は`blockers`欄の内容で分岐する。
    - ユーザー判断・破壊的操作の確認を要する内容: `AskUserQuestion`でユーザーへ確認する。
      確認結果に応じて、縮減した新規`agent-toolkit:plan-impl-executor`起動プロンプト（元計画ファイルパス・
@@ -41,5 +49,8 @@
 6. `pending_confirmations`欄・`plan_gaps`欄の内容を計画ファイル`## 進捗ログ`へ転記する。
    後続の振り返り工程（`agent-toolkit:session-review`）は当該進捗ログを既存の観察源
    「計画ファイル進捗ログ」経由で参照する（本節側から新規の受信専用欄へは送らない）
+
+非同期処理の待機表明を含む完了報告の判定は、上記手順0〜6のいずれとも独立に適用し、
+`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う。
 
 呼び出し元は本ファイルを参照し、固有差分（起動タイミング・追加の確認事項）のみを自スキル側へ記述する。

@@ -2,9 +2,10 @@
 
 計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、wc -l実測値と
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
-正常系・乖離検出・[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・220行到達済みラベルなし追記検査・
-H3見出し無し・複数ファイル対象・対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・
-`[追記]`ラベル直接検出とラベル付き/なし追記の分離集計・frontmatterサブラベル
+正常系・乖離検出（純追記パターンの二重適用防止・通常パターンでの[現行]優先確認を含む）・
+[現行]文面不一致・対象ファイル不在・見込み行数記載欠落・220行超過縮減対象H4検査・
+220行到達済みラベルなし追記検査・H3見出し無し・複数ファイル対象・対比ブロック無し・
+削除ペア先頭ラベル行の縮減量除外・`[追記]`ラベル直接検出とラベル付き/なし追記の分離集計・frontmatterサブラベル
 （`[追記（frontmatter）]`等4種）の行数集計と本体変更との合算の各シナリオを網羅する。
 """
 
@@ -154,6 +155,47 @@ class TestCheckWcProjection:
                 h3_heading="### `foo.md`",
                 current_text="old line\n",
                 replacement_text="",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_pure_addition_diff_block_already_applied_is_not_double_counted(self, tmp_path: pathlib.Path) -> None:
+        """純追記パターン（過去に発生した回帰）は実装完了後の再実行で二重適用されない
+
+        （追記行数3行で乖離が`_ALLOWED_DRIFT`を超える構成にし、判定順序を戻すと失敗することを保証する）。
+        """
+        current_text = "old line"
+        replacement_text = "old line\nnew line 1\nnew line 2\nnew line 3"
+        _write(tmp_path / "foo.md", f"{replacement_text}\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行1行, 見込み4行）",
+                h3_heading="### `foo.md`",
+                current_text=current_text,
+                replacement_text=replacement_text,
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_replacement_coincidentally_present_elsewhere_does_not_skip_current_replacement(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """通常の書き換えパターンでは[置換後]が偶然別箇所に存在しても[現行]が優先される（純追記限定判定の回帰確認）。"""
+        current_text = "old\nline2\nline3\nline4"
+        replacement_text = "existing"
+        _write(tmp_path / "foo.md", f"{replacement_text}\n{current_text}\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行5行, 見込み2行）",
+                h3_heading="### `foo.md`",
+                current_text=current_text,
+                replacement_text=replacement_text,
             ),
         )
         result = _run(plan, cwd=tmp_path)
@@ -501,11 +543,7 @@ class TestCheckWcProjection:
         assert result.stderr == ""
 
     def test_reduction_not_detected_by_non_h4_heading(self, tmp_path: pathlib.Path) -> None:
-        """`### 縮減対象`等H4以外の見出しでは縮減対象として検出されず、乖離扱いとなる。
-
-        H3見出し配下は縮減対象ブロックと判定されないため、追記1行のみが集計される
-        （現行10行+追記1行=見込み11行のはずが宣言が5行のため乖離となる）。
-        """
+        """`### 縮減対象`等H4以外の見出しでは縮減対象として検出されず、追記のみ集計され乖離扱いとなる。"""
         plan = _write(
             tmp_path / "plan.md",
             "# テスト計画\n\n"
@@ -547,11 +585,9 @@ class TestCheckWcProjection:
         assert "乖離が許容幅を超える" in result.stderr
 
     def test_fence_containing_h2_like_line_does_not_truncate_section(self, tmp_path: pathlib.Path) -> None:
-        """`## 変更内容`節内のフェンスに他H2見出し様の行が含まれても、節本文が誤って途中終端しない。
+        """`## 変更内容`節内のフェンスに他H2見出し様の行が含まれても、節本文が誤って途中終端しない
 
-        フェンス内行を境界判定から除外しない実装では、フェンス内の`## 出力例の見出し`行を
-        節境界と誤認識し、後続の[現行]/[置換後]ブロックが`## 変更内容`節の外側として扱われ
-        検査対象から漏れる（見込み行数の乖離を検出できず誤って通過する）。
+        （フェンス内行を境界判定から除外しない実装では後続ブロックが節外扱いされ検査対象から漏れる）。
         """
         _write(tmp_path / "foo.md", "old line\nsecond\nthird\n")
         plan = _write(
@@ -868,18 +904,11 @@ class TestCheckboxProjectionAcceptance:
 
 
 class TestLeadingLabel:
-    """`_leading_label`のfence内側形式ラベル検出を単体レベルで検証する。"""
+    """`_leading_label`のfence内側形式ラベル検出のうち、公開インターフェース経由で代替できない
+    `replacement-full`・`new`・ラベル無し境界値のみ直接検証する（他4種は既存結合テストで間接カバー済み）。
+    """
 
     # pylint: disable=protected-access
-
-    def test_current_label_inside_fence_is_detected(self) -> None:
-        assert _MOD._leading_label(["[現行]", "old body"]) == "current"
-
-    def test_replacement_label_inside_fence_is_detected(self) -> None:
-        assert _MOD._leading_label(["[置換後]", "new body"]) == "replacement"
-
-    def test_deletion_rationale_label_inside_fence_is_detected(self) -> None:
-        assert _MOD._leading_label(["[削除根拠]", "冗長のため削除"]) == "deletion"
 
     def test_replacement_full_takes_precedence_over_replacement(self) -> None:
         """「置換後（全文）」判定が「置換後」判定より先に評価される。"""
@@ -891,10 +920,6 @@ class TestLeadingLabel:
     def test_no_label_returns_none(self) -> None:
         assert _MOD._leading_label(["regular body"]) is None
         assert _MOD._leading_label([]) is None
-
-    def test_addition_label_inside_fence_is_detected(self) -> None:
-        """`[追記]`ラベルは`"addition"`種別として返却される。"""
-        assert _MOD._leading_label(["[追記]", "追記本文"]) == "addition"
 
 
 class TestFrontmatterLabelExtraction:

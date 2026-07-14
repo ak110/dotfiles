@@ -221,8 +221,15 @@ def _check_one_file(
 
     正本は書き換えない（メモリ上で置換して行数のみ実測する）。
     実装完了後（`plan-impl-executor`工程3）の再実行にも対応するため、
-    [現行]文面が正本に不在でも[置換後]文面（削除パターンは空文字列）が
-    単独で存在する場合は適用済み状態とみなして通過する（前後どちらの時点で実行しても同一結果を返す）。
+    [置換後]文面が正本に単独で存在する場合は適用済み状態とみなして通過する
+    （前後どちらの時点で実行しても同一結果を返す）。
+    純追記パターン（[現行]文面が末尾に新規行を加えただけの[置換後]文面の真部分文字列となる場合）は、
+    [置換後]適用後も[現行]文面がそのまま部分一致で残存するため、
+    [現行]優先で判定すると二重適用（新規行の重複計上）が発生する。
+    これを避けるため、[現行]が[置換後]の真部分文字列となる純追記パターンに限り、
+    [置換後]文面の単独存在チェックを[現行]文面チェックより先に行う。
+    純追記パターンでない通常の書き換えでは従来どおり[現行]チェックを優先し、
+    [置換後]文面が対比ブロックと無関係な箇所に偶然一致するケースでの誤判定を避ける。
     """
     source = pathlib.Path(rel_path)
     if not source.exists():
@@ -235,12 +242,16 @@ def _check_one_file(
         print(f"{plan_path}: 対象ファイル読込失敗 {rel_path} ({exc})", file=sys.stderr)
         return 1
     for current, replacement in diffs:
+        is_pure_addition = replacement != "" and current in replacement
+        # 実装完了後の再実行時、対象ファイルは既に[置換後]文面が反映済みで[現行]文面は消失している
+        # （純追記パターンでは[現行]文面が部分文字列として残存する）。
+        # 純追記パターンに限り、[置換後]文面が単独で存在する場合は適用済み状態とみなし、
+        # textを変更せず次の対比ブロックへ進む。
+        if is_pure_addition and text.count(replacement) == 1:
+            continue
         if text.count(current) == 1:
             text = text.replace(current, replacement)
             continue
-        # 実装完了後の再実行時、対象ファイルは既に[置換後]文面が反映済みで[現行]文面は消失している。
-        # [置換後]文面（空文字列の場合は削除確認のため文面照合を省略）が単独で存在する場合は
-        # 適用済み状態とみなし、textを変更せず次の対比ブロックへ進む。
         if text.count(current) == 0 and (replacement == "" or text.count(replacement) == 1):
             continue
         print(f"{plan_path}: {rel_path} [現行]文面が正本と一致せず、[置換後]文面の反映も確認できない", file=sys.stderr)
