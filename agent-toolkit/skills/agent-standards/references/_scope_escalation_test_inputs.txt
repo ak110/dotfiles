@@ -116,6 +116,9 @@ async-wait	background agents to complete before proceeding.
 async-wait	バックグラウンドジョブが追跡中である
 async-wait	完了通知の受領後に結果を確定する
 async-wait	gh run watchの結果を待機する
+async-wait	wait for the automatic completion notification
+async-wait	rather than continue polling
+async-wait	Still running while polling completes.
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し

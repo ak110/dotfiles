@@ -140,6 +140,14 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"(?:gh run watch|gh run view)[^、。\n]{0,20}(?:待機|追跡|バックグラウンド)"),
     ),
     (
+        "async-wait",
+        re.compile(
+            r"(?i:wait(?:ing)? for (?:the )?(?:automatic )?completion notification)"
+            r"|(?i:(?:rather than|instead of) (?:continue|continuing) polling)"
+            r"|(?i:still running[^\n]{0,40}(?:wait|notification|polling))"
+        ),
+    ),
+    (
         "quality-gate-count",
         re.compile(
             r"hookブロック[^、。\n]*繰り返|lint違反[^、。\n]*膨大|違反件数[^、。\n]*進行困難|ブロック回数を踏まえ|修正量が多い"
