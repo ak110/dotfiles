@@ -80,9 +80,18 @@ def main() -> int:
     """統合ランナーのエントリポイント。"""
     parser = argparse.ArgumentParser(description="計画ファイル向け機械チェックの統合ランナー。")
     parser.add_argument("plan_paths", nargs="+", type=pathlib.Path, help="検査対象の計画ファイル（複数指定可）")
+    parser.add_argument(
+        "--target-repo",
+        type=pathlib.Path,
+        default=None,
+        help="対象リポジトリのrootを明示指定する（未指定時はcwd起点で`.git`祖先を探索する）",
+    )
     args = parser.parse_args()
 
-    repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())
+    if args.target_repo is not None:
+        repo_root = args.target_repo.expanduser().resolve()
+    else:
+        repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())
     total_violations = 0
     for plan_path in args.plan_paths:
         total_violations += _check_one(plan_path, repo_root)

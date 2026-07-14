@@ -54,6 +54,10 @@ user-invocable: false
 固有差分は次のとおり。確認事項は`agent-toolkit/rules/02-collaboration.md`
 「自律実行モード」節「3. TBD記録の書式」で記録する。
 記録内容の要約は「出力」節の`pending_confirmations`欄へ集約する（TBD記録のみで完結させない）。
+レビュー指摘反映によるコード側amend後は、計画ファイル本文`## 変更内容`配下の
+該当`[置換後]`ブロックへ最終文面を同期反映してから機械チェックを再実行する。
+詳細規定は`agent-toolkit/skills/careful-review/SKILL.md`「修正再実装で実装ファイルを変更した場合」項に従う。
+`agent-toolkit/references/plan-impl/execution-process.md`の同期規定も参照する。
 
 ## 停止禁止
 

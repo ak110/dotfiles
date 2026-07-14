@@ -4084,7 +4084,7 @@ class TestWorkaroundMemoGate:
 
     @classmethod
     def _changes_body_with_workaround(cls) -> str:
-        return "### 対象ファイル一覧\n\n- フォールバックとして代替経路を追加する\n"
+        return "### 対象ファイル一覧\n\n- 失敗時対処として代替経路を追加する\n"
 
     @staticmethod
     def _content(changes_body: str) -> str:

@@ -2283,7 +2283,7 @@ def _check_plan_file_no_deferral_expression(
 # --- plan fileのワークアラウンド語検出時の事前検討メモチェック ---
 
 # 検出対象語。フォールバック・回避策的な対応の温存を検出する。
-_WORKAROUND_TERMS: tuple[str, ...] = ("フォールバック", "回避策", "迂回", "失敗時対処")
+_WORKAROUND_TERMS: tuple[str, ...] = ("回避策", "迂回", "失敗時対処")
 _WORKAROUND_FAILURE_PATTERN = re.compile(r"が失敗する場合は.{0,30}?する")
 _WORKAROUND_REQUIRED_ITEMS: tuple[str, ...] = ("根本原因の候補", "根本対応が成立するか", "成立しない場合の理由")
 

@@ -11,10 +11,11 @@ import sys
 
 
 def _normalize_remote_url(url: str) -> str:
-    """リモートURLを`host/owner/repo`形式へ正規化して返す。
+    """リモートURLを`host/owner/repo`形式（またはネスト配下`host/group/.../repo`）へ正規化して返す。
 
-    HTTPS形式・SSH短縮形式・SSH URI形式・既に正規化済みの`host/owner/repo`形式の4種を受理する。
-    受理外はValueErrorを送出する。出力は全体小文字化し`.git`サフィックスを除去する。
+    HTTPS形式・SSH短縮形式・SSH URI形式・既に正規化済みの`host/path...`形式（`host`直下に
+    2要素以上の`/`区切りパスを持つ）の4種を受理する。ネスト配下のリポジトリ（GitLabサブグループ等）も
+    含む。受理外はValueErrorを送出する。出力は全体小文字化し`.git`サフィックスを除去する。
     """
     # HTTPS: https://github.com/owner/repo[.git]
     m = re.match(r"https?://([^/:]+)/(.+)", url)
@@ -40,8 +41,8 @@ def _normalize_remote_url(url: str) -> str:
         path = re.sub(r"\.git$", "", path)
         return f"{host}/{path}".lower()
 
-    # Already normalized: host/owner/repo (2+ slashes, no scheme, no @)
-    if re.match(r"[^/]+/[^/]+/[^/]+$", url) and "://" not in url and "@" not in url:
+    # Already normalized: host/owner/repo or host/group.../repo (2+ slashes, no scheme, no @)
+    if re.match(r"[^/]+(?:/[^/]+){2,}$", url) and "://" not in url and "@" not in url:
         return re.sub(r"\.git$", "", url).lower()
 
     raise ValueError(f"リモートURLとして解析できません: {url!r}")
