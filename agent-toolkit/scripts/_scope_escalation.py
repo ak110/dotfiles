@@ -144,7 +144,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"(?i:wait(?:ing)? for (?:the )?(?:automatic )?completion notification)"
             r"|(?i:(?:rather than|instead of) (?:continue|continuing) polling)"
-            r"|(?i:still running[^\n]{0,40}(?:wait|notification|polling))"
+            r"|(?i:still running[^\n]{0,40}(?:wait|notification))"
         ),
     ),
     (
