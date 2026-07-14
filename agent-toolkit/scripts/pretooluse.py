@@ -80,7 +80,7 @@ Skill:
 Agent / Task:
 
 - 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
-- `plan-impl-executor`起動時の工程7完了未達のブロック (block)
+- `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の工程7完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 
 Write / Edit / MultiEdit:
@@ -508,7 +508,7 @@ def main() -> int:
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
-            and _check_process7_completion_before_exit_plan_mode(session_id)
+            and _check_process7_completion_for_plan_impl_executor_agent(session_id, tool_input)
         ):
             return 2
         message = _check_agent_norm_reference(tool_input)
@@ -2888,8 +2888,11 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
     )
 
 
-def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
-    """ExitPlanMode呼び出しまたは`plan-impl-executor`起動時、工程7完了未達をブロックする。
+def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dict | None = None) -> bool:
+    """ExitPlanModeまたは`plan-impl-executor`起動時、工程7完了未達をブロックする。
+
+    `plan-impl-executor`起動時は`_check_process7_completion_for_plan_impl_executor_agent`
+    経由で呼ばれる。
 
     判定条件:
 
@@ -2902,10 +2905,12 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
       （`_should_require_agent_doc_validator`参照。無条件必須化はしない）
 
     未起動フラグは1回のブロックメッセージへ全件列挙する。
+    `state`を渡した場合はセッション状態の再読み込みを省略する。
     """
     if not session_id:
         return False
-    state = read_state(session_id)
+    if state is None:
+        state = read_state(session_id)
     if not state.get("plan_mode_skill_invoked", False):
         return False
     required_flags = list(_PROCESS7_COMPLETION_FLAGS)
@@ -2926,6 +2931,74 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str) -> bool:
         file=sys.stderr,
     )
     return True
+
+
+_PLAN_FILE_PATH_IN_BACKTICK_RE = re.compile(r"`([^`\n]*\.claude[/\\]plans[/\\][^`\n]+\.md)`")
+_PLAN_FILE_PATH_IN_PROMPT_RE = re.compile(r"[^\s`]*\.claude[/\\]plans[/\\][^\s`]+\.md")
+
+
+def _extract_referenced_plan_file_path(prompt: str) -> str | None:
+    r"""起動プロンプト本文から計画ファイルパス（`.claude/plans/*.md`）を抽出する。
+
+    パス区切りは`/`と`\\`の双方を許容する。
+    バッククォート囲み表記を優先し、囲み内は空白を含めて丸ごと抽出する
+    （空白を含むホームディレクトリ名での部分抽出誤りを防ぐため）。
+    一意に定まらない場合（0件または2件以上の異なるパスが検出された場合）は`None`を返す。
+    呼び出し側は`None`を「抽出不能」として安全側（従来どおりブロック判定）に扱う。
+    """
+    matches = {m.group(1) for m in _PLAN_FILE_PATH_IN_BACKTICK_RE.finditer(prompt)}
+    if not matches:
+        matches = {m.group(0) for m in _PLAN_FILE_PATH_IN_PROMPT_RE.finditer(prompt)}
+    if len(matches) != 1:
+        return None
+    return next(iter(matches))
+
+
+def _normalize_plan_file_path(path_text: str) -> pathlib.Path | None:
+    """計画ファイルパスの比較用正規化（`~`展開と絶対化）を行う。
+
+    正規化に失敗した場合（`expanduser`が未解決ユーザーで例外を送出する場合等）は`None`を返す。
+    呼び出し側は`None`を「抽出不能」と同じ従来判定へ倒す。
+    """
+    try:
+        return pathlib.Path(path_text).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, tool_input: dict) -> bool:
+    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ工程7完了未達をブロックする。
+
+    起動プロンプトの`prompt`欄から計画ファイルパスを抽出し、正規化のうえセッション状態の
+    `current_plan_file_path`と一致する場合のみ`_check_process7_completion_before_exit_plan_mode`を適用する。
+    別セッションでplan-modeにより完遂済みの計画（例:`plan-and-add-feedback`投入の計画実装型フィードバック）を
+    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの工程7未達を理由にブロックしない。
+    `prompt`が文字列でない場合、パスが一意に抽出できない場合、
+    `current_plan_file_path`が未記録・非文字列の場合、正規化に失敗した場合、
+    または不一致の参照パスが実在しない場合は安全側として従来どおり判定する
+    （実在確認が無いと、任意の非実在パスを記述するだけで工程7未達を回避できてしまうため）。
+    """
+    if not session_id:
+        return False
+    prompt = tool_input.get("prompt")
+    if not isinstance(prompt, str):
+        return _check_process7_completion_before_exit_plan_mode(session_id)
+    referenced_path = _extract_referenced_plan_file_path(prompt)
+    if referenced_path is None:
+        return _check_process7_completion_before_exit_plan_mode(session_id)
+    state = read_state(session_id)
+    current_path = state.get("current_plan_file_path")
+    if not isinstance(current_path, str) or not current_path:
+        return _check_process7_completion_before_exit_plan_mode(session_id, state)
+    referenced = _normalize_plan_file_path(referenced_path)
+    current = _normalize_plan_file_path(current_path)
+    if referenced is None or current is None:
+        return _check_process7_completion_before_exit_plan_mode(session_id, state)
+    if referenced != current:
+        if not referenced.is_file():
+            return _check_process7_completion_before_exit_plan_mode(session_id, state)
+        return False
+    return _check_process7_completion_before_exit_plan_mode(session_id, state)
 
 
 def _reset_process7_completion_flags(session_id: str) -> None:

@@ -25,7 +25,9 @@ description: >
    plan mode下の場合、`ExitPlanMode`は通常どおり承認ゲートとして経由する
 2. 工程8（`plan-impl-executor`起動）を実施しない。代わりに`agent-toolkit:add-feedback`スキルを呼び出す。
    「`<計画ファイルの絶対パス>` を実装する」という本文を対象リポジトリへ投入する
-   （対象リポジトリの判別は`add-feedback`ステップ2の規定に従う）
+   （対象リポジトリの判別は`add-feedback`ステップ2の規定に従う）。
+   投入したフィードバックは`agent-toolkit:process-feedbacks`「ステップ1: 入力の確定」の分類で
+   計画実装型として扱われ、計画作成を経ずに実装される
 3. フィードバック投入結果をユーザーへ提示して終了する。`agent-toolkit:exit-session`は
    呼ばずセッションを継続する
 

@@ -4305,6 +4305,148 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 2
 
+    def test_agent_referenced_matching_current_plan_blocks(self, tmp_path: pathlib.Path):
+        """起動プロンプトが現行計画パスと一致する場合は工程7完了未達をブロックする。"""
+        plan_path = str(tmp_path / ".claude" / "plans" / "current.md")
+        sid = "process7-agent-path-match"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {plan_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+    def test_agent_referenced_other_existing_plan_passes(self, tmp_path: pathlib.Path):
+        """起動プロンプトが現行計画と異なる実在パスを指す場合はブロックしない。"""
+        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
+        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
+        other_path.parent.mkdir(parents=True, exist_ok=True)
+        other_path.write_text("計画実装型フィードバック投入元セッションで完遂済みの計画。", encoding="utf-8")
+        sid = "process7-agent-path-mismatch"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_agent_referenced_nonexistent_other_plan_blocks(self, tmp_path: pathlib.Path):
+        """起動プロンプトが現行計画と異なる非実在パスを指す場合は従来どおりブロックする。
+
+        実在確認が無ければ、任意の非実在パスを記述するだけで工程7未達を回避できてしまうため、
+        実在しないパスへの参照はブロック（returncode 2）を維持することを確認する。
+        """
+        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
+        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
+        sid = "process7-agent-path-mismatch-nonexistent"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+    def test_agent_backtick_path_with_spaces_matches(self, tmp_path: pathlib.Path):
+        """空白を含むバッククォート囲みパスも丸ごと抽出して一致判定する。"""
+        plan_path = str(tmp_path / "User Name" / ".claude" / "plans" / "current.md")
+        sid = "process7-agent-path-space-match"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: `{plan_path}` を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+    def test_agent_path_normalization_failure_blocks(self, tmp_path: pathlib.Path):
+        """パス正規化に失敗した場合（未解決ユーザー表記等）は従来判定でブロックする。
+
+        現行計画パスには正規化可能な別パスを設定する。正規化失敗のフォールバックが
+        無ければ両パスは不一致となり通過（returncode 0）するため、
+        ブロック（returncode 2）はフォールバック経路の通過を裏付ける。
+        """
+        referenced_path = "~nonexistent-user-for-test/.claude/plans/current.md"
+        current_path = str(tmp_path / ".claude" / "plans" / "other.md")
+        sid = "process7-agent-path-normalize-fail"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: `{referenced_path}` を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+    def test_agent_prompt_without_plan_path_blocks(self, tmp_path: pathlib.Path):
+        """起動プロンプトから計画ファイルパスを抽出できない場合は安全側でブロックする。"""
+        sid = "process7-agent-path-unextractable"
+        state = {
+            "plan_mode_skill_invoked": True,
+            "current_plan_file_path": str(tmp_path / ".claude" / "plans" / "current.md"),
+        }
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": "計画に従い実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
     def test_agent_doc_validator_required_when_target_file_listed(self, tmp_path: pathlib.Path):
         """対象ファイル一覧にコーディングエージェント向け文書が含まれる場合、agent_doc_validator_invokedも必須化する。"""
         plan_path = tmp_path / "plan.md"
