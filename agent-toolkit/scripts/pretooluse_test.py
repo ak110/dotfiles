@@ -365,6 +365,13 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
     return plan
 
 
+def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) -> pathlib.Path:
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 # H2節順検査も通過する最小限の正規計画ファイル内容。
 # `## 変更内容`配下に`### 対象ファイル一覧`を含め、PostToolUseのH3検査も通過させる。
 _VALID_H2_PLAN_CONTENT = (
@@ -3449,12 +3456,13 @@ class TestScopeEscalationInDocEditCheck:
         assert text not in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_blocks_on_target_doc(self, text: str, category: str):
+    def test_edit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", "old\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "file_path": str(target),
                     "old_string": "old",
                     "new_string": f"old {text}",
                 },
@@ -3465,12 +3473,13 @@ class TestScopeEscalationInDocEditCheck:
         assert text not in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_blocks_on_target_doc(self, text: str, category: str):
+    def test_multiedit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", "a\nc\n")
         result = _run(
             {
                 "tool_name": "MultiEdit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "file_path": str(target),
                     "edits": [
                         {"old_string": "a", "new_string": "b"},
                         {"old_string": "c", "new_string": f"c {text}"},
@@ -3496,7 +3505,7 @@ class TestScopeEscalationInDocEditCheck:
         )
         assert result.returncode == 2
 
-    def test_old_string_not_inspected_on_target(self):
+    def test_old_string_not_inspected_on_target(self, tmp_path: pathlib.Path):
         """対象ファイルでも`old_string`内のフレーズは検出しない（既存違反の修正を妨げない）。
 
         `new_string`にはクリーンな置換後文面を配置し、フレーズが`old_string`にのみあることで
@@ -3504,6 +3513,7 @@ class TestScopeEscalationInDocEditCheck:
         """
         text = _SCOPE_ESCALATION_INPUTS[0][0]
         clean_replacement = "通常の置換後文面"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", f"{text}\n")
         # 置換後文面にフレーズが残っていないことを確認（テスト前提の自己検査）
         for input_text, _ in _SCOPE_ESCALATION_INPUTS:
             assert input_text not in clean_replacement
@@ -3511,13 +3521,63 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "file_path": str(target),
                     "old_string": text,
                     "new_string": clean_replacement,
                 },
             }
         )
         assert result.returncode == 0
+
+    def test_edit_blocks_on_unreadable_existing_file_fallback(self, tmp_path: pathlib.Path):
+        """`file_path`の既存ファイル読込失敗時（OSError）、`empty_base_fallback`で`new_string`単独を検査する。
+
+        対象パスは存在しないため`pathlib.Path.read_text`がOSError（`FileNotFoundError`）を送出し、
+        `pre_content`は空文字列にフォールバックする。`empty_base_fallback=True`のため
+        `post_content`は`new_string`単独となり、フレーズ検出でblockされる。
+        """
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        category = _SCOPE_ESCALATION_INPUTS[0][1]
+        target = tmp_path / "agent-toolkit/skills/agent-standards/SKILL.md"
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "old",
+                    "new_string": text,
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert text not in result.stderr
+
+    def test_multiedit_blocks_on_unreadable_existing_file_fallback(self, tmp_path: pathlib.Path):
+        """MultiEditでも既存ファイル読込失敗時（OSError）は`current`を空文字列にフォールバックする。
+
+        対象パスは存在しないため`pathlib.Path.read_text`がOSError（`FileNotFoundError`）を送出し、
+        `current`は空文字列にフォールバックする。先頭editの`old_string`を空文字列にすることで
+        `_apply_single_edit`の通常置換経路（`empty_base_fallback=False`）でも
+        `new_string`が空の`current`へそのまま挿入され、フレーズ検出でblockされる。
+        """
+        text = _SCOPE_ESCALATION_INPUTS[0][0]
+        category = _SCOPE_ESCALATION_INPUTS[0][1]
+        target = tmp_path / "agent-toolkit/skills/x/SKILL.md"
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "", "new_string": text},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert text not in result.stderr
 
     @pytest.mark.parametrize(
         "file_path",
@@ -3636,38 +3696,54 @@ class TestScopeEscalationInDocEditCheck:
         assert "セッション分割・別計画化は禁止する" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_preserves_existing_phrase_in_unchanged_region(self, text: str, category: str):
+    def test_edit_preserves_existing_phrase_in_unchanged_region(
+        self,
+        text: str,
+        category: str,
+        tmp_path: pathlib.Path,
+    ):
         """Edit時、`old_string`と`new_string`双方に同一フレーズが既存文字列として保持される場合は通過する。
 
         フレーズ出現回数の増加比較方式ではold=new同数のため検出されない。
         旧仕様（new_string全文検査）では検出ブロックされる回帰ケース。
         """
         del category  # 未使用
+        old = f"既存記述。{text}。末尾A"
+        new = f"既存記述。{text}。末尾B"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", f"{old}\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "old_string": f"既存記述。{text}。末尾A",
-                    "new_string": f"既存記述。{text}。末尾B",
+                    "file_path": str(target),
+                    "old_string": old,
+                    "new_string": new,
                 },
             }
         )
         assert result.returncode == 0
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_preserves_existing_phrase_in_unchanged_region(self, text: str, category: str):
+    def test_multiedit_preserves_existing_phrase_in_unchanged_region(
+        self,
+        text: str,
+        category: str,
+        tmp_path: pathlib.Path,
+    ):
         """MultiEditでも既存文字列の保持部分のフレーズは検査対象外として通過する。"""
         del category  # 未使用
+        old = f"前文。{text}。末尾A"
+        new = f"前文。{text}。末尾B"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", f"{old}\n")
         result = _run(
             {
                 "tool_name": "MultiEdit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "file_path": str(target),
                     "edits": [
                         {
-                            "old_string": f"前文。{text}。末尾A",
-                            "new_string": f"前文。{text}。末尾B",
+                            "old_string": old,
+                            "new_string": new,
                         }
                     ],
                 },
@@ -3676,16 +3752,17 @@ class TestScopeEscalationInDocEditCheck:
         assert result.returncode == 0
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_detects_phrase_addition_in_new_string(self, text: str, category: str):
+    def test_edit_detects_phrase_addition_in_new_string(self, text: str, category: str, tmp_path: pathlib.Path):
         """Edit時に純粋追加された新規フレーズはブロックする。
 
         既存に0件、追加で1件出現する純粋追加パターンの陽性テスト。
         """
+        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", "既存記述のみ\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
+                    "file_path": str(target),
                     "old_string": "既存記述のみ",
                     "new_string": f"既存記述のみ。{text}",
                 },
@@ -3695,16 +3772,22 @@ class TestScopeEscalationInDocEditCheck:
         assert category in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_detects_phrase_addition_in_new_string(self, text: str, category: str):
+    def test_multiedit_detects_phrase_addition_in_new_string(
+        self,
+        text: str,
+        category: str,
+        tmp_path: pathlib.Path,
+    ):
         """MultiEdit時に純粋追加された新規フレーズはブロックする。
 
         edits内のold_stringにフレーズなし・new_stringにフレーズありの陽性テスト。
         """
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", "既存記述のみ\n")
         result = _run(
             {
                 "tool_name": "MultiEdit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/x/SKILL.md",
+                    "file_path": str(target),
                     "edits": [
                         {
                             "old_string": "既存記述のみ",
@@ -3775,6 +3858,49 @@ class TestScopeEscalationPlanFileFenceExclusion:
         )
         assert result.returncode == 0
 
+    def test_fence_inner_only_plan_file_edit_not_detected(self, tmp_path: pathlib.Path):
+        """フェンス境界を含まないEditでも、全文上の`text`フェンス内なら通過する。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home)
+        env = _plan_file_state_env(tmp_path, home)
+        text, _category = _SCOPE_ESCALATION_INPUTS[0]
+        before = "フェンス内の既存文言"
+        after = f"フェンス内の既存文言。{text}"
+        plan.write_text(f"# t\n\n```text\n{before}\n```\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "old_string": before,
+                    "new_string": after,
+                },
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
+    def test_fence_inner_only_plan_file_multiedit_not_detected(self, tmp_path: pathlib.Path):
+        """フェンス境界を含まないMultiEditでも、全文上の`text`フェンス内なら通過する。"""
+        home = tmp_path / "home"
+        plan = _make_plan_file(home)
+        env = _plan_file_state_env(tmp_path, home)
+        text, _category = _SCOPE_ESCALATION_INPUTS[0]
+        before = "フェンス内の既存文言"
+        after = f"フェンス内の既存文言。{text}"
+        plan.write_text(f"# t\n\n```text\n{before}\n```\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(plan),
+                    "edits": [{"old_string": before, "new_string": after}],
+                },
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+
     def test_priority_consult_in_norm_doc_still_detected(self):
         """計画ファイル以外（規範文書本体）はフェンス内でも従来どおり検出する。"""
         text, category = _SCOPE_ESCALATION_INPUTS[0]
@@ -3798,15 +3924,16 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
     fixtureは`_scope_escalation_test.py`の`test_priority_consult_phrase_*`3件と同一文言。
     """
 
-    def test_bracket_quoted_priority_consult_not_blocked(self):
+    def test_bracket_quoted_priority_consult_not_blocked(self, tmp_path: pathlib.Path):
         """全角鍵括弧内のpriority-consult語彙は増分検出でもブロックしない。"""
         old = "既存記述のみ。"
         new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を確認する。"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "file_path": str(target),
                     "old_string": old,
                     "new_string": new,
                 },
@@ -3814,15 +3941,16 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
         )
         assert result.returncode == 0
 
-    def test_outside_bracket_priority_consult_blocked(self):
+    def test_outside_bracket_priority_consult_blocked(self, tmp_path: pathlib.Path):
         """全角鍵括弧の外側のpriority-consult語彙は増分検出でブロックする。"""
         old = "既存記述のみ。"
         new = "既存記述のみ。優先順位について相談してから着手する。"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "file_path": str(target),
                     "old_string": old,
                     "new_string": new,
                 },
@@ -3831,15 +3959,16 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
         assert result.returncode == 2
         assert "priority-consult" in result.stderr
 
-    def test_bracket_and_outside_mixed_blocked_by_outside(self):
+    def test_bracket_and_outside_mixed_blocked_by_outside(self, tmp_path: pathlib.Path):
         """内側と外側の両方にある場合、外側の増分でブロックする。"""
         old = "既存記述のみ。"
         new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
+        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
         result = _run(
             {
                 "tool_name": "Edit",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/agent-standards/SKILL.md",
+                    "file_path": str(target),
                     "old_string": old,
                     "new_string": new,
                 },

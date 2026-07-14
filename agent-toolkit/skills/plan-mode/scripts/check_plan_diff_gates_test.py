@@ -170,6 +170,41 @@ class TestExtractDiffBlocks:
         """`_classify_block`は`[追記]`ラベル単独行を`"addition"`種別として返す。"""
         assert _MOD._classify_block(["[追記]", "body"], False, False, False) == "addition"
 
+    @pytest.mark.parametrize("label", ["[追記（frontmatter）]", "[置換後（frontmatter）]"])
+    def test_frontmatter_label_block_yields_empty_ext_for_md_host(self, label: str) -> None:
+        """frontmatterサブラベル配下の本文は、ホストファイルが`.md`でも拡張子を空文字列で返す。
+
+        本文は`#`始まりのYAML/Pythonコメント文言のため、独立抽出時にtextlintがATX見出しと
+        誤認する（`jtf-style/1.1.2.見出し`偽陽性）。ホストファイルの実拡張子に関わらずtextlint対象外とする。
+        """
+        text = f"## 変更内容\n\n### `foo.md`\n\n```text\n{label}\n# コメント文言。\n```\n"
+        blocks = list(_MOD._iter_diff_blocks(text))
+        assert len(blocks) == 1
+        assert blocks[0][3] == ""
+
+    def test_non_frontmatter_label_block_keeps_host_ext_for_md(self) -> None:
+        """通常ラベル配下は従来どおりホストファイルの拡張子をそのまま返す。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[追記]\n通常の追記文言\n```\n"
+        blocks = list(_MOD._iter_diff_blocks(text))
+        assert len(blocks) == 1
+        assert blocks[0][3] == ".md"
+
+    @pytest.mark.parametrize(
+        ("rest", "expected"),
+        [
+            ("agent-toolkit/scripts/pretooluse.py", ".py"),
+            ("agent-toolkit/skills/foo/SKILL.md", ".md"),
+            ("templates/example.md.tmpl", ".md.tmpl"),
+            ("`foo.py`", ".py"),
+            ("agent-toolkit/scripts/foo.py（新設）", ".py"),
+            ("`foo.py`（新設）", ".py"),
+            ("README", ""),
+        ],
+    )
+    def test_extract_h3_ext(self, rest: str, expected: str) -> None:
+        """H3見出し本文の各表記から対象ファイル拡張子を抽出する。"""
+        assert _MOD._extract_h3_ext(rest) == expected
+
 
 class TestRunScopeEscalation:
     """`_run_scope_escalation`のsubprocessモック検証。"""
@@ -806,3 +841,35 @@ class TestTranscriptionDeclarationConsistency:
         assert len(warnings) == 1
         assert "push" in warnings[0]
         assert "レビュー" not in warnings[0]
+
+    def test_warns_for_backtickless_h3_heading(self, tmp_path: pathlib.Path) -> None:
+        """バッククォート無しのH3見出し（SSOT規定の標準形式）でも対象ファイルを抽出しwarnが発火する。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushは行わない。\n")
+        text = (
+            f"## 変更内容\n\n### {target}\n\n既存の追記文言を同構造として転記する。\n\n```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert len(warnings) == 1
+        assert "push" in warnings[0]
+        assert str(target) in warnings[0]
+
+    def test_warns_for_backtickless_h3_heading_with_new_marker(self, tmp_path: pathlib.Path) -> None:
+        """バッククォート無しH3見出しに`_NEW_H3_MARKER`注記が付く場合も注記を除去して対象ファイルを抽出する。"""
+        target = _write(tmp_path / "target.md", "## 判断基準\n\npushは行わない。\n")
+        text = (
+            f"## 変更内容\n\n### {target}（新設）\n\n"
+            "既存の追記文言を同構造として転記する。\n\n"
+            "```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert len(warnings) == 1
+        assert "push" in warnings[0]
+        assert str(target) in warnings[0]
+
+    def test_no_warning_for_h3_heading_with_only_new_marker(self, tmp_path: pathlib.Path) -> None:
+        """H3見出し本文が`_NEW_H3_MARKER`注記のみで対象ファイル名が空になる場合、warnは発火しない。"""
+        text = (
+            "## 変更内容\n\n### （新設）\n\n既存の追記文言を同構造として転記する。\n\n```text\n[追記]\npushを実施する。\n```\n"
+        )
+        warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
+        assert warnings == []

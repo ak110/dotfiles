@@ -98,9 +98,11 @@ Write / Edit / MultiEdit:
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
-block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）のみ。
-`old_string`は既存内容の修正・削除を妨げないため検査しない。
-Edit/MultiEditのscope-escalation checkはフレーズ出現回数の増加のみを検出する（既存保持時の誤検出を解消）。
+block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）を基本とする。
+`old_string`は既存内容の修正・削除を妨げないため単独では検査対象としない。
+Edit/MultiEditのscope-escalation checkは既存ファイル本文を読み込み、
+各edit適用前後の全文をフェンス除外込みで比較しフレーズ出現回数の増加のみを検出する。
+既存保持時の誤検出を解消し、フェンス開始・終了行がold/new_string外にある場合の除外漏れも解消する。
 """
 
 import json
@@ -842,16 +844,40 @@ def _extract_plan_scope_escalation_body(text: str, file_path: str) -> str:
     return "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
 
 
+def _apply_single_edit(base_content: str, edit_dict: dict, *, empty_base_fallback: bool = False) -> str | None:
+    """単一Edit入力を既存本文へ適用した文字列を返す。
+
+    `new_string`が文字列でない場合はNoneを返す。
+    `old_string`が文字列でない場合は空文字列扱いとし、既存の緩和処理と同じくfail-closeで検査を継続する。
+    `empty_base_fallback`が真で既存本文が空の場合は、Edit経路の読込失敗時検査漏れを避けるため`new_string`を返す。
+    """
+    old_string = edit_dict.get("old_string") or ""
+    new_string = edit_dict.get("new_string")
+    if not isinstance(new_string, str):
+        return None
+    old_string = old_string if isinstance(old_string, str) else ""
+    if empty_base_fallback and not base_content:
+        return new_string
+    replace_all = bool(edit_dict.get("replace_all"))
+    if replace_all:
+        return base_content.replace(old_string, new_string)
+    return base_content.replace(old_string, new_string, 1)
+
+
 def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_path: str) -> bool:
     """対象ドキュメントへの編集時、フレーズ出現回数の増加を検出した場合にblockする。
 
     対象は`agent-toolkit/rules/`配下・`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）・
     計画ファイル（`~/.claude/plans/`直下）。
-    Edit/MultiEditは`_match_scope_escalation_increase`でnew側件数 > old側件数のカテゴリを検出する。
+    Edit/MultiEditは既存ファイル本文を読み込み、各edit適用前後の全文を
+    `_match_scope_escalation_increase`で比較してnew側件数 > old側件数のカテゴリを検出する。
+    MultiEditは各edit単位で適用前後を比較し、同一MultiEdit内の除去と追加による相殺を検出漏れにしない。
     既存文字列の保持時は件数同数で通過する（誤検出解消）。
     Writeは`content`全文を検査する。
     計画ファイル対象時は`_extract_plan_scope_escalation_body`でフェンス・フロントマター・
-    HTMLコメント区間を走査対象から除外する（fb-7。規範文書本体は対象外で検出精度を変えない）。
+    HTMLコメント区間を走査対象から除外する。
+    Edit/MultiEditでも全文へ適用するため、フェンス開始・終了行がold/new_string外にある場合も除外境界を維持する。
+    規範文書本体は対象外で検出精度を変えない。
     判定パターンは`_SCOPE_ESCALATION_PHRASES`を再利用しAskUserQuestion checkと同一の検出基準とする。
     `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、検出フレーズ本文は通知へ転記せず
     カテゴリ識別子のみを通知する。
@@ -870,32 +896,37 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
             if category is not None:
                 detection = ("content", category)
     elif tool_name == "Edit":
-        old_string = tool_input.get("old_string") or ""
-        new_string = tool_input.get("new_string") or ""
-        if isinstance(new_string, str):
-            old_string = old_string if isinstance(old_string, str) else ""
-            old_body = _extract_plan_scope_escalation_body(old_string, file_path)
-            new_body = _extract_plan_scope_escalation_body(new_string, file_path)
-            category = _match_scope_escalation_increase(old_body, new_body, exclude_categories=exclude_categories)
+        try:
+            pre_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            pre_content = ""
+        post_content = _apply_single_edit(pre_content, tool_input, empty_base_fallback=True)
+        if post_content is not None:
+            pre_body = _extract_plan_scope_escalation_body(pre_content, file_path)
+            post_body = _extract_plan_scope_escalation_body(post_content, file_path)
+            category = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
             if category is not None:
                 detection = ("new_string", category)
     elif tool_name == "MultiEdit":
         edits = tool_input.get("edits") or []
         if isinstance(edits, list):
+            try:
+                current = pathlib.Path(file_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                current = ""
             for index, edit in enumerate(edits):
                 if not isinstance(edit, dict):
                     continue
-                old_string = edit.get("old_string") or ""
-                new_string = edit.get("new_string") or ""
-                if not isinstance(new_string, str):
+                next_current = _apply_single_edit(current, edit, empty_base_fallback=False)
+                if next_current is None:
                     continue
-                old_string = old_string if isinstance(old_string, str) else ""
-                old_body = _extract_plan_scope_escalation_body(old_string, file_path)
-                new_body = _extract_plan_scope_escalation_body(new_string, file_path)
-                category = _match_scope_escalation_increase(old_body, new_body, exclude_categories=exclude_categories)
+                pre_body = _extract_plan_scope_escalation_body(current, file_path)
+                post_body = _extract_plan_scope_escalation_body(next_current, file_path)
+                category = _match_scope_escalation_increase(pre_body, post_body, exclude_categories=exclude_categories)
                 if category is not None:
                     detection = (f"edits[{index}].new_string", category)
                     break
+                current = next_current
     if detection is None:
         return False
     field, category = detection

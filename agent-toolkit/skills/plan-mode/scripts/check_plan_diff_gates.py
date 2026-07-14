@@ -424,7 +424,17 @@ def _check_transcription_declaration_consistency(plan_path: pathlib.Path, text: 
         m_h3 = _H3_RE.match(line)
         if m_h3:
             current_h3 = m_h3.group("rest").strip()
-            current_files = _H3_FILE_RE.findall(m_h3.group("rest"))
+            matches = _H3_FILE_RE.findall(m_h3.group("rest"))
+            if matches:
+                current_files = matches
+            else:
+                # バッククォートなしH3見出しをフォールバック抽出
+                # （SSOT plan-file-diff-labels.md規定の標準形式に対応）。
+                # `_NEW_H3_MARKER`注記が末尾に付く場合は除去する。
+                candidate = current_h3
+                if candidate.endswith(_NEW_H3_MARKER):
+                    candidate = candidate[: -len(_NEW_H3_MARKER)].strip()
+                current_files = [candidate] if candidate else []
             continue
         if not _TRANSCRIPTION_DECLARATION_RE.search(line):
             continue
@@ -527,6 +537,9 @@ def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
     各フェンスについて、フェンス直後1行目（fence内側）のラベル判定・トリガー継続中フラグ・
     見出しコンテキストで検査対象かを判断する。ファイル拡張子はH3見出し内のバッククォート付きファイル名から
     抽出し、`_check_plan_file`側で散文系lint（textlint）の適用可否判定に使う。
+    frontmatterサブラベル（`FRONTMATTER_LABEL_RE`の完全一致）配下の本文は、
+    ホストファイルの拡張子が`.md`等であっても空文字列拡張子として返しtextlint対象から除外する
+    （本文がYAML/Python形式のコメント文言のため、独立抽出時にtextlintがATX見出しと誤認する）。
     """
     section, section_start_line = extract_section_with_offset(text, "## 変更内容")
     if section is None:
@@ -573,13 +586,17 @@ def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
             if label is not None:
                 # fence直後1行目のラベル行はtextlint検査対象から外す
                 # （半角大かっこがtextlintのjtf-style/4.3.2で誤検出されるため）。
+                is_frontmatter = bool(content_lines) and bool(FRONTMATTER_LABEL_RE.match(content_lines[0].strip()))
                 body_lines = content_lines
                 if body_lines and _is_label_line(body_lines[0]):
                     body_lines = body_lines[1:]
                 body = "\n".join(body_lines)
                 # 計画ファイル全体の行番号に換算する（section開始行 + section内オフセット）。
                 absolute_line = section_start_line + block_start
-                yield (current_h3, absolute_line, body, current_ext)
+                # frontmatterサブラベル配下の本文はYAML/Python形式のコメント文言（`#`始まり）であり、
+                # 独立ファイルへ抽出するとtextlintがATX見出しと誤認するため、
+                # ホストファイルの拡張子に関わらずtextlint非対象（空文字列拡張子）として返す。
+                yield (current_h3, absolute_line, body, "" if is_frontmatter else current_ext)
             continue
 
         stripped = line.strip()
@@ -589,14 +606,17 @@ def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
 
 
 def _extract_h3_ext(rest: str) -> str:
-    """H3見出し本文からバッククォート付きファイル名の拡張子を抽出する。
+    """H3見出し本文からファイル名の拡張子を抽出する。
 
-    `.md.tmpl`は複合拡張子として1トークン扱いとする。バッククォート付きファイル名が無い場合は空文字を返す。
+    バッククォート付きファイル名を優先し、無ければH3見出し本文全体を平文パスとして扱う。
+    `_NEW_H3_MARKER`注記（`（新設）`）が末尾に付く場合は除去してから拡張子を判定する。
+    `.md.tmpl`は複合拡張子として1トークン扱いとする。拡張子が無い場合は空文字を返す。
+    SSOT `plan-file-diff-labels.md`はバッククォートなしH3見出しを規定するため両形式に対応する。
     """
     m = _H3_FILE_RE.search(rest)
-    if not m:
-        return ""
-    name = m.group(1)
+    name = m.group(1) if m else rest.strip()
+    if name.endswith(_NEW_H3_MARKER):
+        name = name[: -len(_NEW_H3_MARKER)].strip()
     if name.endswith(".md.tmpl"):
         return ".md.tmpl"
     return pathlib.PurePosixPath(name).suffix

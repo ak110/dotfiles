@@ -126,7 +126,39 @@ class TestCheckWcProjection:
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
-        assert "正本と一致しないか複数箇所へマッチする" in result.stderr
+        assert "正本と一致せず、[置換後]文面の反映も確認できない" in result.stderr
+
+    def test_already_applied_replacement_is_treated_as_up_to_date(self, tmp_path: pathlib.Path) -> None:
+        """実装完了後の再実行時、対象ファイルが既に[置換後]文面のみを含む場合は適用済みとして通過する。"""
+        _write(tmp_path / "foo.md", "new line\nsecond\nthird\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行3行, 見込み3行）",
+                h3_heading="### `foo.md`",
+                current_text="old line",
+                replacement_text="new line",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_already_applied_deletion_is_treated_as_up_to_date(self, tmp_path: pathlib.Path) -> None:
+        """削除パターン（[置換後]が空文字列）で対象ファイルから既に[現行]文面が消失している場合も通過する。"""
+        _write(tmp_path / "foo.md", "second\nthird\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行3行, 見込み2行）",
+                h3_heading="### `foo.md`",
+                current_text="old line\n",
+                replacement_text="",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
 
     def test_missing_target_file_is_detected(self, tmp_path: pathlib.Path) -> None:
         """H3見出しが指す対象ファイルが存在しない場合は違反として報告される。"""

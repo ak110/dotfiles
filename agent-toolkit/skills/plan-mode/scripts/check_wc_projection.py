@@ -220,6 +220,9 @@ def _check_one_file(
     """1対象ファイルへ対比ブロック群を逐次適用し、乖離を検査する。違反件数を返す。
 
     正本は書き換えない（メモリ上で置換して行数のみ実測する）。
+    実装完了後（`plan-impl-executor`工程3）の再実行にも対応するため、
+    [現行]文面が正本に不在でも[置換後]文面（削除パターンは空文字列）が
+    単独で存在する場合は適用済み状態とみなして通過する（前後どちらの時点で実行しても同一結果を返す）。
     """
     source = pathlib.Path(rel_path)
     if not source.exists():
@@ -232,10 +235,16 @@ def _check_one_file(
         print(f"{plan_path}: 対象ファイル読込失敗 {rel_path} ({exc})", file=sys.stderr)
         return 1
     for current, replacement in diffs:
-        if text.count(current) != 1:
-            print(f"{plan_path}: {rel_path} [現行]文面が正本と一致しないか複数箇所へマッチする", file=sys.stderr)
-            return 1
-        text = text.replace(current, replacement)
+        if text.count(current) == 1:
+            text = text.replace(current, replacement)
+            continue
+        # 実装完了後の再実行時、対象ファイルは既に[置換後]文面が反映済みで[現行]文面は消失している。
+        # [置換後]文面（空文字列の場合は削除確認のため文面照合を省略）が単独で存在する場合は
+        # 適用済み状態とみなし、textを変更せず次の対比ブロックへ進む。
+        if text.count(current) == 0 and (replacement == "" or text.count(replacement) == 1):
+            continue
+        print(f"{plan_path}: {rel_path} [現行]文面が正本と一致せず、[置換後]文面の反映も確認できない", file=sys.stderr)
+        return 1
 
     projected = projected_map.get(rel_path)
     if projected is None:
