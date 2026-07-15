@@ -391,6 +391,19 @@ class TestCheckLineRef:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
 
+    def test_check_path_existence_excludes_skill_relative_suffix_of_new_path(self, tmp_path: pathlib.Path) -> None:
+        """新設パスのスキル相対裸表記（`references/xxx.md`形式）も実在確認から除外する。"""
+        marker_path = "agent-toolkit/skills/sample-skill/references/new-file.md"
+        path = _write(
+            tmp_path / "doc.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            f"- [ ] `{marker_path}`（新設, 見込み10行）\n\n"
+            "対象は`references/new-file.md`である。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
     def test_check_path_existence_resolves_repo_root_from_git_ancestor(self, tmp_path: pathlib.Path) -> None:
         """`.git`を持つ祖先ディレクトリをリポジトリルートとして解決し、cwdが下位でも実在判定が揺れない。"""
         (tmp_path / ".git").mkdir()
@@ -439,6 +452,25 @@ class TestCheckLineRef:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 1
         assert "foo/bar.md" in result.stderr
+
+    def test_check_path_existence_does_not_exclude_non_references_suffix_match(self, tmp_path: pathlib.Path) -> None:
+        """新設マーカーが`references/`以外のディレクトリの場合、無関係な同名サフィックスは除外されない。
+
+        新設マーカー`agent-toolkit/skills/foo-skill/scripts/helper.py`に対し、
+        本文中の無関係な`scripts/helper.py`という実在しないパス記載はサフィックス一致で
+        誤って除外されず、「実在しない」として検出される。
+        """
+        path = _write(
+            tmp_path / "doc.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo-skill/scripts/helper.py`（新設, 見込み10行）\n\n"
+            "対象は`scripts/helper.py`である。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "scripts/helper.py" in result.stderr
+        assert "実在しない" in result.stderr
 
     def test_check_path_existence_skips_excluded_dir_prefix(self, tmp_path: pathlib.Path) -> None:
         """`.venv`・`node_modules`始まりの実在しないパスは`_EXCLUDED_DIRS`除外により違反対象外。"""
@@ -544,5 +576,98 @@ class TestSectionNameExistence:
             tmp_path / "doc.md",
             "## 背景\n\n詳細は`docs/guide.md`「存在しない節」節を参照する。\n",
         )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_skill_relative_path_fallback_resolves_via_skills_search(self, tmp_path: pathlib.Path) -> None:
+        """スキル相対パスが実在しない場合、agent-toolkit/skills配下から実在解決される。
+
+        計画ファイルの`[追記]`・`[置換後]`ブロックへの転記を模すため、参照はラベル付き
+        フェンス内へ置く（`_check_path_existence`はフェンス内を除外し、
+        `_check_section_name_existence`のみがフェンス内文面を検査するため）。
+        """
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
+        bt = chr(0x60)  # 計画本文が`check_line_ref`自身にマッチするのを回避するため、間接表記を用いる
+        path = _write(
+            tmp_path / "doc.md",
+            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Usage」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_skill_relative_path_fallback_detects_missing_section(self, tmp_path: pathlib.Path) -> None:
+        """フォールバック解決した対象ファイルに存在しない節名は違反として報告される。"""
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
+        bt = chr(0x60)
+        path = _write(
+            tmp_path / "doc.md",
+            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Missing」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_skill_relative_path_fallback_can_misresolve_to_unrelated_same_name_file(self, tmp_path: pathlib.Path) -> None:
+        """複数スキル配下に同名ファイルが存在する場合、意図しないファイルへ誤解決され得る。
+
+        フォールバックは`agent-toolkit/skills/*/`配下をアルファベット順に探索し先頭一致を採用するため、
+        参照元が意図した対象と異なるスキル配下の無関係な同名ファイルへ誤って解決される可能性がある。
+        本テストは、意図した対象（`zzz-skill`配下のguide.md）に実在する節が、
+        アルファベット順で先に一致する無関係な`aaa-skill`配下の同名ファイルへの誤解決により、
+        誤って「節名不在」と判定されることを示す。
+        """
+        aaa_dir = tmp_path / "agent-toolkit" / "skills" / "aaa-skill" / "references"
+        aaa_dir.mkdir(parents=True)
+        (aaa_dir / "guide.md").write_text("## Unrelated\n\nBody.\n", encoding="utf-8")
+        zzz_dir = tmp_path / "agent-toolkit" / "skills" / "zzz-skill" / "references"
+        zzz_dir.mkdir(parents=True)
+        (zzz_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
+        bt = chr(0x60)
+        path = _write(
+            tmp_path / "doc.md",
+            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Usage」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        # 意図した対象（zzz-skill配下）には「Usage」節が実在するが、アルファベット順で
+        # 先に一致するaaa-skill配下の無関係な同名ファイルへ誤解決されるため誤検知が発生する。
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_new_marker_path_basename_only_ref_is_not_excluded(self, tmp_path: pathlib.Path) -> None:
+        """新設マーカーが`references/xxx.md`形式でも、ベースファイル名のみの参照は除外されない。
+
+        新設マーカー`agent-toolkit/skills/foo-skill/references/guide.md`に対し、
+        本文中のベースファイル名一致のみの`guide.md`「概要」節という参照は
+        サフィックス一致の対象外（`references/`始まりのトークンではない）となり、
+        節名不在検査自体がスキップされず「節名不在」として検出される。
+        """
+        marker_path = "agent-toolkit/skills/foo-skill/references/guide.md"
+        bt = chr(0x60)
+        body = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            f"- [ ] {bt}{marker_path}{bt}（新設, 見込み20行）\n\n"
+            f"対象は{bt}guide.md{bt}「概要」節を参照する。\n"
+        )
+        path = _write(tmp_path / "plan.md", body)
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_new_marker_path_with_skill_relative_ref_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """新設マーカー（フルパス）と本文のスキル相対裸表記が対応する節参照は検査対象外。"""
+        skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
+        skill_dir.mkdir(parents=True)
+        marker_path = "agent-toolkit/skills/sample-skill/references/new-file.md"
+        bt = chr(0x60)
+        body = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            f"- [ ] {bt}{marker_path}{bt}（新設, 見込み20行）\n\n"
+            f"{bt}references/new-file.md{bt}「概要」節を参照する。\n"
+        )
+        path = _write(tmp_path / "plan.md", body)
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0

@@ -249,12 +249,23 @@ def _check_one_file(
         # textを変更せず次の対比ブロックへ進む。
         if is_pure_addition and text.count(replacement) == 1:
             continue
-        if text.count(current) == 1:
+        occurrence = text.count(current)
+        if occurrence == 1:
             text = text.replace(current, replacement)
             continue
-        if text.count(current) == 0 and (replacement == "" or text.count(replacement) == 1):
+        if occurrence == 0 and (replacement == "" or text.count(replacement) == 1):
             continue
-        print(f"{plan_path}: {rel_path} [現行]文面が正本と一致せず、[置換後]文面の反映も確認できない", file=sys.stderr)
+        if occurrence == 0:
+            print(
+                f"{plan_path}: {rel_path} [現行]文面が正本内で0回検出（転記誤りの可能性）、[置換後]文面の反映も確認できない",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"{plan_path}: {rel_path} [現行]文面が正本内で{occurrence}回検出（一意化不足）、"
+                f"[置換後]文面の反映も確認できない。[現行]ブロックへ周辺行を含めて一意化する必要",
+                file=sys.stderr,
+            )
         return 1
 
     projected = projected_map.get(rel_path)

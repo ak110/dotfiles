@@ -3,7 +3,7 @@
 # `agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する。
 # 改訂時は両ファイルを同時更新する。
 # 同期注記: 「共通遵守事項」節の「計画専用機械チェック実行」バレットは
-# `agent-toolkit/rules/03-claude-code.md`「起草をサブエージェントへ委譲するプロンプト」節と
+# `agent-toolkit/rules/03-claude-code.md`「起草をサブエージェントへ委譲するプロンプト」バレットと
 # 意図的に重複する。改訂時は両ファイルを同時更新する。
 # named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節および
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md` と意図的に重複する。
@@ -44,9 +44,8 @@
 - サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
   新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
   `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
-- 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
-  `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
-  `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
+- 計画専用機械チェックとして統合ランナー
+  `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
 - named subagentとして`run_in_background=true`起動する場合、
   完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
   メイン側からの明示要求を待つ挙動は未完遂扱いとする
@@ -94,9 +93,8 @@
     - サブエージェント起動・完了・名前解決に関わるコード（`Agent`・`Task`のtool_use判定等）を
       新規追加・改訂する場合、`agent-toolkit:agent-standards`「セッション状態フラグ」節の
       `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
-    - 計画専用機械チェック（`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`・
-      `check_dash.py`、`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`・
-      `check_wc_projection.py`・`check_plan_diff_gates.py`）を起草完了前に実行し違反・警告を解消する
+    - 計画専用機械チェックとして統合ランナー
+      `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
     - named subagentとして`run_in_background=true`起動する場合、
       完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
       メイン側からの明示要求を待つ挙動は未完遂扱いとする

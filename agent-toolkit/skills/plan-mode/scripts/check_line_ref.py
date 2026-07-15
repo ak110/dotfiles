@@ -406,12 +406,29 @@ def _collect_newly_created_skill_names(new_paths: frozenset[str]) -> frozenset[s
     return frozenset(names)
 
 
+def _is_newly_created_path(token: str, new_paths: frozenset[str]) -> bool:
+    """`token`が新設マーカー付きパス集合`new_paths`に該当するかを判定する。
+
+    完全一致に加え、`token`がスキル相対の裸表記（`references/xxx.md`形式）である場合の
+    サフィックス一致（`new_paths`要素の末尾がパスセパレータ区切りで`token`と一致する）も対象とする。
+    サフィックス一致の対象を`references/`接頭辞トークンへ限定する。
+    他ディレクトリ名を持つトークンへ適用すると無関係な参照を誤除外するため
+    （レビューで実機確認済みの不具合再発防止）。
+    `_check_path_existence`・`_find_section_ref_violations`の双方から共通利用する。
+    """
+    return token in new_paths or (
+        token.startswith("references/") and any(new_path.endswith("/" + token) for new_path in new_paths)
+    )
+
+
 def _check_path_existence(content: str, repo_root: pathlib.Path) -> list[str]:
     """計画本文中のバッククォート囲みパスを抽出し、対象リポジトリrootからの相対パスで実在確認する。
 
     対象は`.md`・`.py`・`.json`・`.toml`・`.sh`・`.yaml`・`.yml`・`.cmd`・`.ps1`・`.tmpl`拡張子と
     スラッシュを含むディレクトリパス。実在しないパスを検出した場合は違反メッセージ一覧を返す。
     「対象ファイル一覧」で新設マーカーが付与されたパスは実在確認対象から除外する。
+    新設パスをスキル相対の裸表記（`references/xxx.md`形式）で引用したトークンも、
+    `_is_newly_created_path`（新設判定の共通ヘルパー）で除外する。
     `_EXCLUDED_DIRS`配下（`.venv`・`node_modules`等）を先頭ディレクトリ名に持つパスも実在確認対象から除外する
     （依存物配下の一時生成物・サンプルパスを誤検出しないため）。
     `content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提とする
@@ -427,7 +444,7 @@ def _check_path_existence(content: str, repo_root: pathlib.Path) -> list[str]:
             if not stripped or stripped in seen or not _looks_like_repo_path(stripped):
                 continue
             seen.add(stripped)
-            if stripped in new_paths:
+            if _is_newly_created_path(stripped, new_paths):
                 continue
             if stripped.split("/", 1)[0] in _EXCLUDED_DIRS:
                 continue
@@ -521,13 +538,27 @@ def _resolve_section_ref_target(raw_path: str, repo_root: pathlib.Path) -> pathl
     ディレクトリ区切りを含まない裸のファイル名は`_EXCLUDED_DIRS`配下を除く`repo_root`直下から
     ファイル名一致で探索し、最初に見つかった実在パスを返す
     （見つからない場合は`repo_root`直下パスとして解決し、後続の実在確認で不在と判定させる）。
+    ディレクトリ区切りを含むパスの解決先が実在しない場合は、`references/`接頭辞の有無を問わず
+    ディレクトリ区切りを含む未解決の`.md`パス全般に対応するため`agent-toolkit/skills/*/`配下から
+    ファイル名一致でフォールバック再解決する
+    （見つからない場合は`repo_root`相対パスをそのまま返す）。
     """
     stripped = raw_path.strip("`")
     m = _SKILL_REF_TARGET_RE.match(stripped)
     if m:
         return repo_root / "agent-toolkit" / "skills" / m.group(1) / "SKILL.md"
     if "/" in stripped:
-        return repo_root / stripped
+        primary = repo_root / stripped
+        if primary.exists():
+            return primary
+        basename = pathlib.PurePosixPath(stripped).name
+        skills_root = repo_root / "agent-toolkit" / "skills"
+        if skills_root.is_dir():
+            for candidate in sorted(skills_root.rglob(basename)):
+                if any(part in _EXCLUDED_DIRS for part in candidate.relative_to(repo_root).parts):
+                    continue
+                return candidate
+        return primary
     for candidate in sorted(repo_root.rglob(stripped)):
         if any(part in _EXCLUDED_DIRS for part in candidate.relative_to(repo_root).parts):
             continue
@@ -553,12 +584,18 @@ def _find_section_ref_violations(
     """1行分の節名参照を抽出し、対象ファイル内での節見出し実在を検査して違反メッセージ一覧を返す。
 
     `new_paths`に含まれる新設予定パス（対象ファイル一覧の新設マーカー付きパス）への
-    節名参照は検査対象から除外する（`_check_path_existence`の新設除外と対称の扱い）。
+    節名参照は`_is_newly_created_path`（`_check_path_existence`と共通の新設判定ヘルパー）で
+    検査対象から除外する。参照表記そのもの（`raw_path`）が本文中でスキル相対の裸表記
+    （`references/xxx.md`形式）である場合のサフィックス一致も同ヘルパーが判定する。
+    新設と判定した場合は`_resolve_section_ref_target`によるフォールバック解決
+    （無関係な同名ファイルへの誤解決を招き得る）を行わずスキップする。
     """
     violations: list[str] = []
     for m in _SECTION_REF_PATTERN.finditer(raw):
         raw_path = m.group("path").strip("`")
         section = m.group("section").strip()
+        if _is_newly_created_path(raw_path, new_paths):
+            continue
         target = _resolve_section_ref_target(raw_path, repo_root)
         try:
             relative_str = str(target.relative_to(repo_root))
