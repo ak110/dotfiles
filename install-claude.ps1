@@ -28,6 +28,7 @@ $files = @(
     '03-claude-code.md'
     '04-styles.md'
     '05-terminology.md'
+    '06-monitoring.md'
 )
 
 function Invoke-Download {
