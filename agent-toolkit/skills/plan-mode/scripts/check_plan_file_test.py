@@ -15,7 +15,12 @@ import pytest
 
 def _write_plan(tmp_path: pathlib.Path) -> pathlib.Path:
     path = tmp_path / "plan.md"
-    path.write_text("# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n", encoding="utf-8")
+    path.write_text(
+        "# タイトル\n\n## 背景\n\n### 計画メタ情報\n\n"
+        "- 起動経路: process-feedbacks経由\n- 対象リポジトリ: `~/dotfiles`\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n",
+        encoding="utf-8",
+    )
     return path
 
 
@@ -33,6 +38,7 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check_plan_file.check_line_ref, "_check_file", lambda _p, _t: [])
     monkeypatch.setattr(check_plan_file.check_line_ref, "_check_content_level_violations", lambda _p, _t, _r: [])
     monkeypatch.setattr(check_plan_file.check_self_ref, "_check_file", lambda _p, _t: [])
+    monkeypatch.setattr(check_plan_file.check_plan_meta, "_check_file", lambda _p, _t: [])
     monkeypatch.setattr(
         check_plan_file.check_plan_diff_gates,
         "_check_transcription_declaration_consistency",

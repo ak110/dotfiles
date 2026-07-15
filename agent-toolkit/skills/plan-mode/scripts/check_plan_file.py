@@ -22,6 +22,7 @@
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
+- `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）
 - `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
   --enable=colloquial-check --exclude-fence-under=## 背景`: 計画ファイル全域のtextlint・
@@ -67,6 +68,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import check_deprecated_identifier_coverage  # noqa: E402
 import check_line_ref  # noqa: E402
 import check_plan_diff_gates  # noqa: E402
+import check_plan_meta  # noqa: E402
 import check_self_ref  # noqa: E402
 import check_wc_projection  # noqa: E402
 
@@ -127,6 +129,9 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         print(msg, file=sys.stderr)
         violations += 1
     for msg in check_self_ref._check_file(plan_path, text):
+        print(msg, file=sys.stderr)
+        violations += 1
+    for msg in check_plan_meta._check_file(plan_path, text):
         print(msg, file=sys.stderr)
         violations += 1
     # warn出力のみでexit codeへ含めない（`check_plan_diff_gates._check_plan_file`と同じ扱い）。
