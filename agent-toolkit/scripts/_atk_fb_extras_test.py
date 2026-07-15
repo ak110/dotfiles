@@ -259,6 +259,30 @@ class TestListFeedbackStatusDefaultAll:
         assert "fb-proc.md" in captured.out
 
 
+class TestListFeedbackStatusProcessing:
+    """listサブコマンド `--status=processing`: feedbackはprocessing配下のみを表示する。"""
+
+    def test_processing_shows_processing_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=processing`指定時、feedback側はprocessing配下のみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=processing"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" not in captured.out
+        assert "fb-proc.md" in captured.out
+
+
 class TestListFeedbackStatusAdopted:
     """listサブコマンド `--status=adopted`: feedbackはadopted配下のみを表示する。"""
 
@@ -310,30 +334,6 @@ class TestListFeedbackCategory:
         captured = capsys.readouterr()
         assert "fb-scope.md" in captured.out
         assert "fb-other.md" not in captured.out
-
-
-class TestListFeedbackStatusProcessing:
-    """listサブコマンド `--status=processing`: feedbackはprocessing配下のみを表示する。"""
-
-    def test_processing_shows_processing_only(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """`--status=processing`指定時、feedback側はprocessing配下のみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
-        _write_processing_file(notes, "fb-proc.md", body="proc-body")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=processing"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "fb-inbox.md" not in captured.out
-        assert "fb-proc.md" in captured.out
 
 
 class TestListFeedbackStatusAll:

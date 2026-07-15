@@ -42,7 +42,7 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
 )
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂原則」節および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂原則」項および「縮退表明は発行しない」項目で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (

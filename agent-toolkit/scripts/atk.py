@@ -190,7 +190,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     adopt.add_argument(
         "--category",
         default=None,
-        help=("採用フィードバックの再発防止分類ラベル（任意）。累積カテゴリ集計の対象になる。"),
+        help="採用フィードバックの再発防止分類ラベル（任意）。累積カテゴリ集計の対象になる。",
     )
     _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 

@@ -28,15 +28,8 @@ def _category_line_matches(line: str, category: str) -> bool:
 
 
 def _has_category(text: str, category: str) -> bool:
-    """frontmatterまたは`## 処理結果`節に指定カテゴリが記録されているか判定する。"""
+    """`## 処理結果`節に指定カテゴリが記録されているか判定する。"""
     lines = text.splitlines()
-    if lines and lines[0].strip() == "---":
-        for line in lines[1:]:
-            if line.strip() == "---":
-                break
-            if _category_line_matches(line, category):
-                return True
-
     in_result_section = False
     for line in lines:
         if line.startswith("## "):
