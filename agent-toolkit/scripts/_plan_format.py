@@ -22,6 +22,7 @@ PLAN_REQUIRED_H2: tuple[str, ...] = (
 
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 _H2_PATTERN = re.compile(r"^## (.+?)\s*$")
+_RECURRENCE_MARKER_PATTERN = re.compile(r"再発予防|上位カテゴリ|独立節新設が実効性を欠く")
 
 
 def extract_h2_sections(content: str) -> list[str]:
@@ -360,6 +361,27 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
         return True
     paths = extract_target_files_from_changes(content)
     return "agent-toolkit/.claude-plugin/plugin.json" in paths and ".claude-plugin/marketplace.json" in paths
+
+
+def has_recurrence_prevention_when_section_present(content: str) -> bool:
+    """`### 恒久化・リファクタリング内容`小見出し配下が再発予防記述を含むかを判定する。
+
+    判定手順:
+
+    1. `iter_h3_sections_under_h2`で`## 対応方針`直下のH3見出しを走査し、見出し文言が
+       `### 恒久化・リファクタリング内容`と一致する本文を取得する
+    2. 小見出しが存在しない場合は`True`を返す（本関数は小見出し存在時のみを判定対象とする）
+    3. 本文が`_RECURRENCE_MARKER_PATTERN`（「再発予防」「上位カテゴリ」「独立節新設が実効性を欠く」の
+       いずれかに一致する正規表現）へ一致すれば`True`、しなければ`False`を返す
+
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`からimportして使うSSOT実装。
+    """
+    for h3_heading, body_lines in iter_h3_sections_under_h2(content, "対応方針"):
+        if h3_heading != "恒久化・リファクタリング内容":
+            continue
+        body_text = "\n".join(line for _lineno, line in body_lines)
+        return _RECURRENCE_MARKER_PATTERN.search(body_text) is not None
+    return True
 
 
 def find_invalid_target_file_paths(content: str) -> list[str]:

@@ -16,6 +16,8 @@
   縮退フレーズ・textlintの検査
 - `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
   宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
+- `check_plan_diff_gates._check_recurrence_prevention_recorded`: `### 恒久化・リファクタリング内容`
+  小見出し配下の再発予防記述要件の照合（ユーザー指示による機械ゲート化、exit codeへ含める）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査

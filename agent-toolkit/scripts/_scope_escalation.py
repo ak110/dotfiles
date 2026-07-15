@@ -37,11 +37,12 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
         "next-cycle-defer",
         "approach-confirm",
         "subagent-hesitation",
+        "overhead-tradeoff",
     }
 )
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「セッション分割・別計画化は禁止する」節および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂原則」節および「縮退表明は発行しない」項目で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -230,6 +231,14 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|メインで処理するかサブエージェント委譲するか判断保留"
         ),
     ),
+    (
+        "overhead-tradeoff",
+        re.compile(
+            r"オーバーヘッド[^、。\n]{0,10}(上回|超え|見合わ)"
+            r"|複雑度[^、。\n]{0,15}(高くなり過ぎない範囲|によっては[^、。\n]{0,15}(併用|対応)してよい)"
+            r"|実装(コスト|複雑度)[^、。\n]{0,15}(大きい|高い)ため"
+        ),
+    ),
 )
 
 
@@ -265,6 +274,10 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "subagent-hesitation": (
         "サブエージェント委譲の可否・委譲先・並列度は技術判断として自律決定する",
         "委譲先・分割方針を確定したうえで着手する",
+    ),
+    "overhead-tradeoff": (
+        "実装コスト・複雑度を判断材料にせず技術的最適案を選ぶ方針を述べる",
+        "オーバーヘッドの多寡によらず正規手順で完遂する方針を述べる",
     ),
 }
 

@@ -50,6 +50,7 @@ class TestMatchScopeEscalation:
             "バックグラウンドで処理する。その後、追跡中の状態を確認する。",
             "完了報告を提出してから確認する。",
             "gh run listで一覧を確認する。",
+            "複雑度に応じてモデルを選択する。",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

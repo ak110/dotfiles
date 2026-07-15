@@ -868,6 +868,25 @@ class TestScopeEscalationDetection:
         body = _block_reason(decision)
         assert "scope-escalation-phrases" in body or "縮退表明" in body
 
+    def test_overhead_tradeoff_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
+        """拡張フォーカス有効時、`overhead-tradeoff`カテゴリを検出しblockする。"""
+        phrase = _pick_scope_escalation_text("overhead-tradeoff")
+        if not phrase:
+            pytest.skip("scope-escalation fixture for overhead-tradeoff not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        _write_state(tmp_path, "test-overhead-tradeoff", {"process_feedbacks_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-overhead-tradeoff", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "overhead-tradeoff" in body or "scope-escalation-phrases" in body or "縮退表明" in body
+
     def test_inline_choice_offer_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
         """拡張フォーカス有効時、地の文の番号付き選択肢提示を`approach-confirm`として検出しblockする。"""
         text = "続行方針を選んでください。選択肢:\n1. 現行維持\n2. 次回持ち越し"

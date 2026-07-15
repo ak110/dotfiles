@@ -160,3 +160,6 @@ next-cycle-defer	次回セッションへ持ち越す
 next-cycle-defer	次のセッションで扱う
 next-cycle-defer	次回ラウンドへ引き継ぐ
 next-cycle-defer	次計画へ回す
+overhead-tradeoff	オーバーヘッドが上回るため
+overhead-tradeoff	複雑度が高くなり過ぎない範囲で対応
+overhead-tradeoff	実装コストが大きいため

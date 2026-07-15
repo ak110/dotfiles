@@ -8,6 +8,7 @@ import argparse
 import pathlib
 
 from _atk_fb_common import (
+    FEEDBACK_STATE_ADOPTED,
     FEEDBACK_STATE_INBOX,
     FEEDBACK_STATE_PROCESSING,
     _is_tbd_answered,
@@ -16,6 +17,34 @@ from _atk_fb_common import (
 )
 from _atk_fb_formatters import _body_summary, _tbd_body_summary
 from _atk_fb_repo import _resolve_repo_id
+
+
+def _category_line_matches(line: str, category: str) -> bool:
+    """カテゴリ記録行が指定カテゴリと一致するか判定する。"""
+    stripped = line.strip()
+    if stripped.startswith("- "):
+        stripped = stripped[2:].strip()
+    return bool(stripped.startswith("カテゴリ:") and stripped.removeprefix("カテゴリ:").strip() == category)
+
+
+def _has_category(text: str, category: str) -> bool:
+    """frontmatterまたは`## 処理結果`節に指定カテゴリが記録されているか判定する。"""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for line in lines[1:]:
+            if line.strip() == "---":
+                break
+            if _category_line_matches(line, category):
+                return True
+
+    in_result_section = False
+    for line in lines:
+        if line.startswith("## "):
+            in_result_section = line.strip() == "## 処理結果"
+            continue
+        if in_result_section and _category_line_matches(line, category):
+            return True
+    return False
 
 
 def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
@@ -38,9 +67,10 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: all）。
-    feedback側は`inbox`・`processing`・`all`を解釈する（`inbox`・`processing`両方表示が既定）。
-    tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`all`は
+    feedback側は`inbox`・`processing`・`adopted`・`all`を解釈する。
+    tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
+    `--category`指定時はfeedback側のみを指定ラベルへ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--type=all`（既定）指定時、該当部エントリが1件以上ある場合のみ種別ヘッダを出力する。
@@ -56,14 +86,24 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     feedback_entries: list[tuple[pathlib.Path, str, str]] = []
     if args.type in ("all", "feedback"):
         # feedback側`--status`解釈: `inbox`=inbox配下のみ・`processing`=processing配下のみ・
-        # `all`=両方連結。回答状況指定（answered/unanswered）はfeedback側では既定（all）扱い。
-        feedback_status = args.status if args.status in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING, "all") else "all"
+        # `adopted`=adopted配下のみ・`all`=全配下連結。回答状況指定（answered/unanswered）は
+        # feedback側では既定（all）扱い。
+        feedback_status = (
+            args.status
+            if args.status in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING, FEEDBACK_STATE_ADOPTED, "all")
+            else "all"
+        )
         if feedback_status in (FEEDBACK_STATE_INBOX, "all"):
             inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
             feedback_entries.extend(_iter_inbox_entries(inbox_dir, filter_repo))
         if feedback_status in (FEEDBACK_STATE_PROCESSING, "all"):
             processing_dir = private_notes / "feedback" / FEEDBACK_STATE_PROCESSING
             feedback_entries.extend(_iter_inbox_entries(processing_dir, filter_repo))
+        if feedback_status in (FEEDBACK_STATE_ADOPTED, "all"):
+            adopted_dir = private_notes / "feedback" / FEEDBACK_STATE_ADOPTED
+            feedback_entries.extend(_iter_inbox_entries(adopted_dir, filter_repo))
+        if args.category is not None:
+            feedback_entries = [entry for entry in feedback_entries if _has_category(entry[2], args.category)]
 
     tbd_entries: list[tuple[pathlib.Path, str, str]] = []
     if args.type in ("all", "tbd"):

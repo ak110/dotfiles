@@ -178,7 +178,7 @@
      `## 観点網羅`欄を検査する。未点検（`[ ]`）観点があれば再起動する（`careful-review`の受領検査と同等の扱い）
    - 指摘の件数・重大度・反映に要する変更規模（設計変更・共有モジュール新設等を含む）によらず、
      同一セッション内で計画ファイルへ反映して後続工程（`ExitPlanMode`・`plan-impl-executor`起動）へ続行する。
-     縮退禁止は`agent-toolkit/rules/01-agent.md`「セッション分割・別計画化は禁止する」節に従う
+     縮退禁止は`agent-toolkit/rules/01-agent.md`「完遂原則」節に従う
 4. 反映後にメイン側で機械チェックを実行する
    - コマンド: `uvx pyfltr run-for-agent --no-fix --work-dir=. <計画ファイルパス>`
      （cwdをプロジェクトルートに設定）

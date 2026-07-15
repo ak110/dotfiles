@@ -27,7 +27,10 @@
 無違反時はexit 0で終了する。
 
 - `## 変更内容`本文のfence外側配置ラベルおよび全角化ラベルの全文一括検査（exit 1違反）
-- 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）
+- 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）。
+    フェンス直前の非フェンス行に抑止マーカー`<!-- scope-escalation-ok -->`を配置すると、
+    直後のフェンス1個分の本検査を抑止する（新設カテゴリの代表フレーズ実例を
+    `[置換後]`ブロックへ含める場合の自己言及誤検出を回避する目的）
 - textlint併走colloquial-check: 一時ファイル拡張子を`.md`に固定して
     `uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check --no-fix <tmpfile.md>`
     を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走
@@ -78,6 +81,7 @@ from _plan_format import (  # noqa: E402
     find_invalid_target_file_paths,
     has_bump_step_when_required,
     has_manifest_files_when_bump_step_present,
+    has_recurrence_prevention_when_section_present,
     is_agent_doc_target_file,
 )
 
@@ -132,6 +136,11 @@ _NEW_H3_MARKER = "（新設）"
 
 # fence外側配置検出用: ラベル文言単独行（前後空白のみ許容）。
 _OUTER_LABEL_LINE_RE = re.compile(r"^\s*(?:\[現行\]|\[置換後\])\s*$")
+
+# 縮退フレーズ検出ゲートの抑止マーカー。フェンス直前の非フェンス行に配置すると直後の
+# textフェンス1個分の`_run_scope_escalation`検査を抑止する。新設カテゴリの代表フレーズ実例を
+# `[置換後]`ブロックへ含める場合（自己言及で誤検出するケース）に用いる。
+_SCOPE_ESCALATION_ALLOW_MARKER = "<!-- scope-escalation-ok -->"
 
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
@@ -200,8 +209,9 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
 
     violations: list[str] = []
     violations.extend(_check_outer_label_placement(plan_path, text))
+    scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
     for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
-        category = _run_scope_escalation(body)
+        category = None if block_start_line in scope_escalation_allowed_starts else _run_scope_escalation(body)
         if category is not None:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
             print(msg, file=sys.stderr)
@@ -215,6 +225,10 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
     bump_warning = _check_bump_step(plan_path, text)
     if bump_warning is not None:
         print(bump_warning, file=sys.stderr)
+    recurrence_error = _check_recurrence_prevention_recorded(plan_path, text)
+    if recurrence_error is not None:
+        print(recurrence_error, file=sys.stderr)
+        violations.append(recurrence_error)
     manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
     if manifest_warning is not None:
         print(manifest_warning, file=sys.stderr)
@@ -243,6 +257,20 @@ def _check_bump_step(plan_path: pathlib.Path, text: str) -> str | None:
         f"{plan_path}: [warn] 対象ファイル一覧に`agent-toolkit/`配下パスを含むが、"
         f"`## 実行方法`本文に`agent_toolkit_bump.py`ステップが記載されていない。"
         f"`agent-toolkit-edit`スキル「バージョン更新」節参照。"
+    )
+
+
+def _check_recurrence_prevention_recorded(plan_path: pathlib.Path, text: str) -> str | None:
+    """`### 恒久化・リファクタリング内容`小見出しの再発予防記述要件を照合する。
+
+    判定ロジックのSSOTは`_plan_format.has_recurrence_prevention_when_section_present`。
+    `_check_bump_step`と異なりexit codeへ含める（ユーザー指示による機械ゲート化）。
+    """
+    if has_recurrence_prevention_when_section_present(text):
+        return None
+    return (
+        f"{plan_path}: `### 恒久化・リファクタリング内容`小見出し配下に再発予防の検討結果が"
+        f"含まれていない。`agent-toolkit:plan-mode`工程4「恒久化検討」参照。"
     )
 
 
@@ -520,6 +548,41 @@ def _has_responsibility_diff_table(text: str) -> bool:
     return False
 
 
+def _scope_escalation_allowed_starts(text: str) -> frozenset[int]:
+    """`_SCOPE_ESCALATION_ALLOW_MARKER`が配置された行の直後にある`text`フェンスの本文開始行集合を返す。
+
+    `## 変更内容`セクション内でマーカーを含む非フェンス行を検出するたびフラグを立て、
+    直後に出現する最初の`text`フェンス開始（`_iter_diff_blocks`が返す`block_start_line`と同じ
+    行番号換算）を集合へ追加してフラグを解除する。フェンス内側の行はマーカー検出対象に含めない。
+    """
+    section, section_start_line = extract_section_with_offset(text, "## 変更内容")
+    if section is None:
+        return frozenset()
+    lines = section.splitlines()
+    n = len(lines)
+    allowed: set[int] = set()
+    marker_pending = False
+    i = 0
+    while i < n:
+        line = lines[i]
+        m_open = TEXT_FENCE_OPEN_RE.match(line)
+        if m_open:
+            open_marker = m_open.group(1)
+            block_start = i + 1
+            i += 1
+            if marker_pending:
+                allowed.add(section_start_line + block_start)
+                marker_pending = False
+            while i < n and not is_matching_close(open_marker, lines[i]):
+                i += 1
+            i += 1  # 閉じフェンス行を除外する
+            continue
+        if _SCOPE_ESCALATION_ALLOW_MARKER in line:
+            marker_pending = True
+        i += 1
+    return frozenset(allowed)
+
+
 def _iter_diff_blocks(text: str) -> Iterator[tuple[str, int, str, str]]:
     """計画ファイル本文から検査対象ブロックを`(H3ラベル, ブロック開始行番号, ブロック本文, ファイル拡張子)`で順に返す。
 
@@ -774,8 +837,9 @@ def _extract_diff_blocks(
     messages: list[str] = list(_check_outer_label_placement(plan_path, text))
     prose_paths: list[pathlib.Path] = []
     location_map: dict[str, str] = {}
+    scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
     for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
-        category = _run_scope_escalation(body)
+        category = None if block_start_line in scope_escalation_allowed_starts else _run_scope_escalation(body)
         if category is not None:
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
             print(msg, file=sys.stderr)
@@ -788,6 +852,10 @@ def _extract_diff_blocks(
     bump_warning = _check_bump_step(plan_path, text)
     if bump_warning is not None:
         print(bump_warning, file=sys.stderr)
+    recurrence_error = _check_recurrence_prevention_recorded(plan_path, text)
+    if recurrence_error is not None:
+        print(recurrence_error, file=sys.stderr)
+        messages.append(recurrence_error)
     manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
     if manifest_warning is not None:
         print(manifest_warning, file=sys.stderr)

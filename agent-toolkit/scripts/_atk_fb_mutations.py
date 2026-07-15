@@ -24,7 +24,10 @@ from _atk_fb_common import (
     _validate_filename,
     _validate_filenames_only,
 )
+from _atk_fb_list import _has_category
 from _atk_fb_repo import _verify_frontmatter_target_repo
+
+_CATEGORY_GATE_THRESHOLD = 3
 
 
 def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -82,8 +85,29 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
     adopted_dir = _subdir(private_notes, FEEDBACK_STATE_ADOPTED)
     for p in paths:
-        _stamp_result(p, outcome=FEEDBACK_STATE_ADOPTED, now=now, commit=args.commit, note=args.note)
+        _stamp_result(
+            p,
+            outcome=FEEDBACK_STATE_ADOPTED,
+            now=now,
+            commit=args.commit,
+            note=args.note,
+            category=args.category,
+        )
         shutil.move(p, adopted_dir / p.name)
+    if args.category is not None:
+        adopted_count = sum(
+            1
+            for entry_path in adopted_dir.iterdir()
+            if entry_path.is_file() and _has_category(entry_path.read_text(encoding="utf-8"), args.category)
+        )
+        if adopted_count >= _CATEGORY_GATE_THRESHOLD:
+            print(
+                f"カテゴリ「{args.category}」の採用件数が{adopted_count}件に到達した。"
+                "上位カテゴリでの規範化・仕組み化の検討を必須とする"
+                "（agent-toolkit:agent-standards配下references/feedback-review-common.md"
+                "「同一カテゴリ累積時の規範化ゲート」参照）。",
+                file=sys.stderr,
+            )
     count = len(paths)
     _commit_and_push(
         private_notes,

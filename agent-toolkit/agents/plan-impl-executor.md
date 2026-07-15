@@ -12,7 +12,7 @@ user-invocable: false
 # plan-modeセッションの対話内容を持たない前提で本文を書く。
 # 「## 出力」節の書式を変更する場合は`spec-driven-implementer.md`「## 出力」節の追従確認を要する。
 # 全項目完遂・段階化先送り禁止・自動コンパクション継続前提の方針は
-# 01-agent.md「品質最優先」節「セッション分割・別計画化は禁止する」上位原則と意図的重複。
+# 01-agent.md「品質最優先」節「完遂原則」上位原則と意図的重複。
 # 計画実行エージェントで強調するため再掲している。文面を変更する場合は両方の整合を取ること。
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「起草・改訂委譲雛形」節内の
 # `## 完了報告要件`欄は`agent-toolkit/agents/plan-implementer.md`の`## 出力`節のchanged欄書式説明と意図的に重複させている。

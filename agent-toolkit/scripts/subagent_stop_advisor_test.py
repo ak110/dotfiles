@@ -84,6 +84,17 @@ def test_blocks_async_wait_new_phrases() -> None:
     assert "async-wait" in body["reason"]
 
 
+def test_blocks_overhead_tradeoff_phrases() -> None:
+    """`overhead-tradeoff`カテゴリのフレーズもblockする。"""
+    text = _pick_scope_escalation_text("overhead-tradeoff")
+    if not text:
+        pytest.skip("scope-escalation fixture for overhead-tradeoff not available")
+    result = _run({"last_assistant_message": text})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "overhead-tradeoff" in body["reason"]
+
+
 def test_stop_hook_active_bypasses_check() -> None:
     """`stop_hook_active`真は判定処理をせず無条件approveを返す。
 

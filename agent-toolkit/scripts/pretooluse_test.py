@@ -3696,7 +3696,7 @@ class TestScopeEscalationInDocEditCheck:
         assert result.returncode == 2
         assert "agent-toolkit/rules/01-agent.md" in result.stderr
         assert "01-01-agent.md" not in result.stderr
-        assert "セッション分割・別計画化は禁止する" in result.stderr
+        assert "完遂原則" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_edit_preserves_existing_phrase_in_unchanged_region(

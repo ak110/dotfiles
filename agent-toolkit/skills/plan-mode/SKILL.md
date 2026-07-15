@@ -142,6 +142,10 @@ description: >
 当該指摘の追加修正と並行して本工程を即時に実施する（`plan-impl-executor`手順の規定に従う）。
 後発で同根本原因の指摘が再発した場合は、前回の恒久化結果を参照したうえで本工程を再実施する。
 
+本節は`agent-toolkit:agent-standards`配下
+`references/feedback-review-common.md`「規範改善案の併記」節とSSOTを共有する。
+双方の記述に矛盾が生じた場合は`feedback-review-common.md`側を優先する。
+
 ## 5. リファクタリング検討
 
 本来の対応が既存コード・ドキュメントの理想的な状態を崩す場合は、

@@ -149,6 +149,81 @@ class TestAdoptStampWithNoteAndCommit:
         assert "- メモ: 採用理由サマリー" in adopted_text
 
 
+class TestAdoptStampWithCategory:
+    """adopt: --category指定時に`## 処理結果`節へカテゴリが追記される。"""
+
+    def test_stamp_written_with_category(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """--category指定時、adopted/配下のファイル末尾にカテゴリ行が追記される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        assert "- カテゴリ: scope-escalation" in adopted_text
+
+
+class TestAdoptCategoryGate:
+    """adopt: 同一カテゴリの採用件数が閾値へ到達した場合に警告を出力する。"""
+
+    def test_below_threshold_has_no_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同一カテゴリの採用件数が閾値未満の場合は標準エラー出力へ警告しない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "採用件数" not in captured.err
+
+    def test_threshold_reached_warns(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同一カテゴリの採用件数が閾値へ到達した場合は標準エラー出力へ警告する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        adopted = notes / "feedback" / "adopted"
+        adopted.mkdir(parents=True, exist_ok=True)
+        for index in range(1, 3):
+            (adopted / f"old-{index}.md").write_text(
+                "---\ntarget_repo: github.com/example/foo\n---\n\n"
+                "## 処理結果\n\n"
+                "- 採否: adopted\n"
+                "- カテゴリ: scope-escalation\n",
+                encoding="utf-8",
+            )
+        _write_feedback_file(notes, "fb-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "カテゴリ「scope-escalation」の採用件数が3件に到達した" in captured.err
+        assert "上位カテゴリでの規範化・仕組み化" in captured.err
+
+
 class TestAdoptStampWithoutOptional:
     """adopt: --note・--commit省略時も必須項目のみ追記される。"""
 
@@ -173,6 +248,7 @@ class TestAdoptStampWithoutOptional:
         assert "- 処理日時: " in adopted_text
         assert "- 対応commit: " not in adopted_text
         assert "- メモ: " not in adopted_text
+        assert "- カテゴリ: " not in adopted_text
 
 
 class TestRejectDeletes:

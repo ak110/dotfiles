@@ -303,6 +303,45 @@ class TestCheckPlanFile:
         assert len(violations) == 1
         assert "process-omission" in violations[0]
 
+    def test_scope_violation_suppressed_by_allow_marker(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """直前行に`<!-- scope-escalation-ok -->`があるフェンスは縮退フレーズ検査を抑止する。"""
+        _stub_subprocess(
+            monkeypatch,
+            scope_returncode=2,
+            scope_stdout="process-omission\n",
+            textlint_returncode=0,
+        )
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n<!-- scope-escalation-ok -->\n\n```text\n[新設]\nbad phrase\n```\n",
+        )
+        assert _MOD._check_plan_file(plan, tmp_path) == []
+
+    def test_scope_violation_reported_without_allow_marker(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """マーカー無しの隣接ブロックは通常どおり縮退フレーズ検査の対象となる。"""
+        _stub_subprocess(
+            monkeypatch,
+            scope_returncode=2,
+            scope_stdout="process-omission\n",
+            textlint_returncode=0,
+        )
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n"
+            "<!-- scope-escalation-ok -->\n\n```text\n[新設]\nbad phrase\n```\n\n"
+            "```text\n[新設]\nanother bad phrase\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan, tmp_path)
+        assert len(violations) == 1
+
     def test_textlint_violation_is_reported(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
         plan = _write(
@@ -474,6 +513,24 @@ class TestCheckBumpStep:
         )
         assert result.returncode == 0
         assert "[warn]" not in result.stderr
+
+
+class TestCheckRecurrencePreventionRecorded:
+    """恒久化・リファクタリング内容の再発予防記述要件を検証する。"""
+
+    def test_no_section_returns_none(self, tmp_path: pathlib.Path) -> None:
+        text = "## 対応方針\n\n### 実装方針\n\n本文。\n"
+        assert _MOD._check_recurrence_prevention_recorded(tmp_path / "plan.md", text) is None
+
+    def test_marker_present_returns_none(self, tmp_path: pathlib.Path) -> None:
+        text = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n再発予防として検査を追加する。\n"
+        assert _MOD._check_recurrence_prevention_recorded(tmp_path / "plan.md", text) is None
+
+    def test_marker_missing_returns_violation(self, tmp_path: pathlib.Path) -> None:
+        text = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n検査を追加する。\n"
+        result = _MOD._check_recurrence_prevention_recorded(tmp_path / "plan.md", text)
+        assert result is not None
+        assert "再発予防" in result
 
 
 def _norm_scan_plan(

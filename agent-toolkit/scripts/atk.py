@@ -99,14 +99,19 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "answered", "unanswered", "inbox", "processing"),
+        choices=("all", "answered", "unanswered", "inbox", "processing", "adopted"),
         default="all",
         help=(
             "表示範囲を限定する（既定: all）。"
-            "feedback側は`inbox`・`processing`・`all`で状態フォルダを切り替える。"
+            "feedback側は`inbox`・`processing`・`adopted`・`all`で状態フォルダを切り替える。"
             "tbd側は`answered`・`unanswered`で回答状況を限定する"
-            "（`inbox`・`processing`・`all`はtbd側に作用せず全件出力）。"
+            "（`inbox`・`processing`・`adopted`・`all`はtbd側に作用せず全件出力）。"
         ),
+    )
+    list_.add_argument(
+        "--category",
+        default=None,
+        help="指定時、同ラベルが付与されたfeedbackのみへ限定する。",
     )
     list_.add_argument(
         "--count",
@@ -181,6 +186,11 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         metavar="SHA",
         default=None,
         help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+    )
+    adopt.add_argument(
+        "--category",
+        default=None,
+        help=("採用フィードバックの再発防止分類ラベル（任意）。累積カテゴリ集計の対象になる。"),
     )
     _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 

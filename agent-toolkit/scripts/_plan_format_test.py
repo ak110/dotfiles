@@ -245,6 +245,22 @@ class TestHasManifestFilesWhenBumpStepPresent:
         assert not _plan_format.has_manifest_files_when_bump_step_present(content)
 
 
+class TestHasRecurrencePreventionWhenSectionPresent:
+    """has_recurrence_prevention_when_section_present の基本動作を検査する。"""
+
+    def test_no_section(self) -> None:
+        content = "## 対応方針\n\n### 実装方針\n\n本文。\n"
+        assert _plan_format.has_recurrence_prevention_when_section_present(content)
+
+    def test_section_with_marker(self) -> None:
+        content = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n再発予防として検査を追加する。\n"
+        assert _plan_format.has_recurrence_prevention_when_section_present(content)
+
+    def test_section_without_marker(self) -> None:
+        content = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n検査を追加する。\n"
+        assert not _plan_format.has_recurrence_prevention_when_section_present(content)
+
+
 class TestIsAgentDocTargetFile:
     """is_agent_doc_target_file の対象パス判定を検査する。"""
 

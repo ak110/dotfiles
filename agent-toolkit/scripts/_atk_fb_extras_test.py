@@ -217,6 +217,24 @@ def _write_processing_file(
     return path
 
 
+def _write_adopted_file(
+    notes: pathlib.Path,
+    filename: str,
+    category: str,
+    target_repo: str = "github.com/example/foo",
+    body: str = "採用済み本文",
+) -> pathlib.Path:
+    """feedback/adopted配下にカテゴリ付きファイルを書き込み、絶対パスを返す。"""
+    adopted_dir = notes / "feedback" / "adopted"
+    adopted_dir.mkdir(parents=True, exist_ok=True)
+    path = adopted_dir / filename
+    path.write_text(
+        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n- カテゴリ: {category}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 class TestListFeedbackStatusDefaultAll:
     """listサブコマンド既定: feedbackはinbox・processing両方を表示する。"""
 
@@ -239,6 +257,59 @@ class TestListFeedbackStatusDefaultAll:
         captured = capsys.readouterr()
         assert "fb-inbox.md" in captured.out
         assert "fb-proc.md" in captured.out
+
+
+class TestListFeedbackStatusAdopted:
+    """listサブコマンド `--status=adopted`: feedbackはadopted配下のみを表示する。"""
+
+    def test_adopted_shows_adopted_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=adopted`指定時、feedback側はadopted配下のみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=adopted"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" not in captured.out
+        assert "fb-proc.md" not in captured.out
+        assert "fb-adopted.md" in captured.out
+
+
+class TestListFeedbackCategory:
+    """listサブコマンド `--category`: feedbackを指定カテゴリへ限定する。"""
+
+    def test_category_filter_limits_feedback_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--category`指定時、同カテゴリが付与されたfeedbackのみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_adopted_file(notes, "fb-scope.md", category="scope-escalation", body="scope-body")
+        _write_adopted_file(notes, "fb-other.md", category="other", body="other-body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "list", "--type=feedback", "--status=adopted", "--category", "scope-escalation"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-scope.md" in captured.out
+        assert "fb-other.md" not in captured.out
 
 
 class TestListFeedbackStatusProcessing:
