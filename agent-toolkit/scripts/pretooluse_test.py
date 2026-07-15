@@ -4240,7 +4240,6 @@ class TestWorkaroundMemoGate:
 
 _PROCESS7_FLAGS = (
     "plan_reviewer_invoked",
-    "plan_impl_reviewer_invoked",
     "codex_review_invoked",
 )
 
@@ -4253,7 +4252,7 @@ class TestProcess7CompletionCheck:
     """ExitPlanMode / `plan-impl-executor`起動時の工程7完了未達ブロック。"""
 
     def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
-        """3フラグ全て真の場合はExitPlanModeを通過する。"""
+        """2フラグ全て真の場合はExitPlanModeを通過する。"""
         sid = "process7-all-set"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -4266,7 +4265,7 @@ class TestProcess7CompletionCheck:
 
     @pytest.mark.parametrize("missing_flag", _PROCESS7_FLAGS)
     def test_missing_flag_blocks(self, tmp_path: pathlib.Path, missing_flag: str):
-        """3フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
+        """2フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
         sid = f"process7-missing-{missing_flag}"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: (flag != missing_flag) for flag in _PROCESS7_FLAGS})

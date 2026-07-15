@@ -33,7 +33,8 @@
     `[置換後]`ブロックへ含める場合の自己言及誤検出を回避する目的）
 - textlint併走colloquial-check: 一時ファイル拡張子を`.md`に固定して
     `uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check --no-fix <tmpfile.md>`
-    を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走
+    を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走。
+    体裁系のため警告出力のみでexit codeへ算入しない
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
 - `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（warn出力のみ）
 - 対象ファイル一覧に絶対パスまたは親ディレクトリ参照（`..`を含むパス）を検出した場合の全文一括検査（warn出力のみ）
@@ -216,12 +217,13 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
             print(msg, file=sys.stderr)
             violations.append(msg)
+        # textlint違反は体裁系のため警告出力のみとしviolationsへは加算しない
+        # （縮退フレーズ検査のみ構造系としてviolationsへ加算する）。
         if h3_ext in _PROSE_EXTENSIONS:
             textlint_error = _run_textlint(body)
             if textlint_error is not None:
-                msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` textlint違反\n{textlint_error}"
+                msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` textlint違反（警告・非ブロック）\n{textlint_error}"
                 print(msg, file=sys.stderr)
-                violations.append(msg)
     bump_warning = _check_bump_step(plan_path, text)
     if bump_warning is not None:
         print(bump_warning, file=sys.stderr)
@@ -884,7 +886,8 @@ def _check_extracted_paths(
     `paths`は`(textlint対象, 位置マップ)`の2要素タプル。位置マップは
     subprocess出力中の一時ファイルパス文字列を`{plan_path}: H3=<label> L<line>`形式のH3位置マーカーへ
     書き換えるために使用する（バッチ実行で失われる位置情報を復元し、修正対象H3を特定可能にする）。
-    呼び出し元（統合ランナー）は返り値メッセージをそのまま`stderr`へ出力する
+    呼び出し元（統合ランナー）は返り値メッセージをそのまま`stderr`へ出力するが、
+    体裁系（textlint）のため警告出力のみとしexit codeへは算入しない
     （本関数自体はstderrへ直接出力せず戻り値のみで結果を返す。ただしsubprocess呼び出しと
     一時ファイル削除の副作用は伴う）。
     """

@@ -43,7 +43,7 @@ EnterPlanMode:
 
 ExitPlanMode:
 
-- 工程7（plan-reviewer / plan-impl-reviewer / codexレビュー、
+- 工程7（plan-reviewer / codexレビュー、
   対象ファイル一覧にコーディングエージェント向け文書を含む計画では条件付きでagent-doc-validatorも追加）
   完了未達のブロック (block)
 
@@ -373,7 +373,7 @@ def main() -> int:
     if _check_process_feedbacks_blocks_enter_plan_mode(tool_name, session_id):
         return 2
 
-    # ExitPlanMode: 工程7（4サブエージェント/codexレビュー）の完了未達をブロック
+    # ExitPlanMode: 工程7（2サブエージェント/codexレビュー）の完了未達をブロック
     if tool_name == "ExitPlanMode":
         if _check_process7_completion_before_exit_plan_mode(session_id):
             return 2
@@ -2661,7 +2661,7 @@ def _check_plan_file_retroactive_scan_recorded(
     return True
 
 
-# --- 工程7（3サブエージェント/codexレビュー）完了チェック ---
+# --- 工程7（2サブエージェント/codexレビュー）完了チェック ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
@@ -2697,7 +2697,6 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
 _PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = (
     "plan_reviewer_invoked",
-    "plan_impl_reviewer_invoked",
     "codex_review_invoked",
 )
 
@@ -2911,8 +2910,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
     print(
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
-            " before completing Phase 7 (plan-reviewer /"
-            " plan-impl-reviewer / codex review)."
+            " before completing Phase 7 (plan-reviewer / codex review)."
             f" Missing flags: {missing}."
             " See agent-toolkit/skills/plan-mode/references/integrity-checks.md「工程7の実施手順」節.",
             tag="block",

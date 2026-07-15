@@ -44,8 +44,8 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
         "_check_transcription_declaration_consistency",
         lambda _p, _t, _r: [],
     )
-    monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label: 0)
-    monkeypatch.setattr(check_plan_file, "_run_pyfltr_jsonl", lambda _p: 0)
+    monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label, **_kwargs: 0)
+    monkeypatch.setattr(check_plan_file, "_run_pyfltr_jsonl", lambda _p, **_kwargs: 0)
 
 
 @pytest.mark.usefixtures("stub_check_one")
@@ -102,8 +102,12 @@ class TestCheckOne:
         assert check_plan_file._check_one(plan_path, tmp_path) == 0
         assert "責務差分の可能性" in capsys.readouterr().err
 
-    def test_extracted_paths_violation_counted(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`_extract_diff_blocks`が返す一時ファイルパス・位置マップを`_check_extracted_paths`へ渡し、違反を集計する。"""
+    def test_extracted_paths_message_printed_but_not_counted(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`_extract_diff_blocks`が返す一時ファイルパス・位置マップを`_check_extracted_paths`へ渡すが、
+        textlint違反は警告出力のみで`violations`へは加算しない。
+        """
         plan_path = _write_plan(tmp_path)
         prose_file = tmp_path / "prose.md"
         prose_file.write_text("散文ブロック", encoding="utf-8")
@@ -126,8 +130,9 @@ class TestCheckOne:
             "_check_extracted_paths",
             _fake_check_extracted_paths,
         )
-        assert check_plan_file._check_one(plan_path, tmp_path) == 1
+        assert check_plan_file._check_one(plan_path, tmp_path) == 0
         assert received == [([prose_file], location_map)]
+        assert "textlint違反" in capsys.readouterr().err
 
 
 class TestCaptureAndRelay:
@@ -177,6 +182,20 @@ class TestRunSubprocessCheck:
         )
         assert check_plan_file._run_subprocess_check(["false"], "label") == 1
         assert "label" in capsys.readouterr().err
+
+    def test_failure_with_blocking_false_returns_zero_and_prints(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`blocking=False`は違反があっても0を返し、警告ラベル付きで出力する。"""
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="out", stderr="err"),
+        )
+        assert check_plan_file._run_subprocess_check(["false"], "label", blocking=False) == 0
+        err = capsys.readouterr().err
+        assert "警告" in err
+        assert "label" in err
 
 
 class TestRunPyfltrJsonl:
@@ -232,3 +251,19 @@ class TestRunPyfltrJsonl:
         err = capsys.readouterr().err
         assert "[pyfltr] textlint: failed" in err
         assert "[pyfltr] markdownlint: resolution_failed" in err
+
+    def test_diagnostic_records_with_blocking_false_returns_zero(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`blocking=False`は診断レコードがあっても0を返し、警告ラベル付きで出力する。"""
+        lines = [json.dumps({"kind": "diagnostic", "path": "x.md", "line": 3, "message": "違反"})]
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
+        )
+        plan_path = _write_plan(tmp_path)
+        assert check_plan_file._run_pyfltr_jsonl(plan_path, blocking=False) == 0
+        err = capsys.readouterr().err
+        assert "x.md:3" in err
+        assert "警告" in err

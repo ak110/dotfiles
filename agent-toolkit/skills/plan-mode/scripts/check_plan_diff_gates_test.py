@@ -342,15 +342,17 @@ class TestCheckPlanFile:
         violations = _MOD._check_plan_file(plan, tmp_path)
         assert len(violations) == 1
 
-    def test_textlint_violation_is_reported(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_textlint_violation_is_reported_but_not_counted(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
         plan = _write(
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
         violations = _MOD._check_plan_file(plan, tmp_path)
-        assert len(violations) == 1
-        assert "textlint" in violations[0]
+        assert violations == []
+        assert "textlint" in capsys.readouterr().err
 
     def test_missing_file_is_reported(self, tmp_path: pathlib.Path) -> None:
         missing = tmp_path / "missing.md"
@@ -398,6 +400,7 @@ class TestCheckPlanFile:
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         calls = _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=1, textlint_stdout="length error")
         plan = _write(
@@ -405,8 +408,8 @@ class TestCheckPlanFile:
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
         )
         violations = _MOD._check_plan_file(plan, tmp_path)
-        assert len(violations) == 1
-        assert "textlint" in violations[0]
+        assert violations == []
+        assert "textlint" in capsys.readouterr().err
         assert any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
 
 

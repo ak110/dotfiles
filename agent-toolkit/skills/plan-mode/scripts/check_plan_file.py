@@ -13,7 +13,8 @@
 
 - `check_wc_projection._check_wc`: 見込み行数と`wc -l`実測値の乖離検出
 - `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`: 差分ブロック抽出、
-  縮退フレーズ・textlintの検査
+  縮退フレーズの検査（exit codeへ算入）。textlintは警告出力のみで
+  exit codeへ算入しない（体裁・表記系は計画作成の往復削減方針により非ブロック化する）
 - `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
   宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
 - `check_plan_diff_gates._check_recurrence_prevention_recorded`: `### 恒久化・リファクタリング内容`
@@ -23,15 +24,20 @@
   スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
 - `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
-- `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）
+- `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）。
+  警告出力のみでexit codeへ算入しない
 - `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
   --enable=colloquial-check --exclude-fence-under=## 背景`: 計画ファイル全域のtextlint・
   markdownlint・typos・口語表現検査（サブプロセス、JSONL出力を解析し`kind == "diagnostic"`の
   レコード、および`kind == "command"`かつ失敗系statusのレコードのみ要約表示）。
   `--exclude-fence-under=## 背景`はユーザー発話原文転記領域（`## 背景`節配下のfenceブロック）を
-  検査対象から除外し、原文の表現・記法に対する偽陽性検出を回避する
+  検査対象から除外し、原文の表現・記法に対する偽陽性検出を回避する。
+  警告出力のみでexit codeへ算入しない
 
-成功時（全項目0違反）はexit 0で無出力。違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
+体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）は
+全て警告出力のみとしexit codeへ算入しない。
+成功時（構造系0違反）はexit 0で終了する。体裁系のみ違反時もexit 0で終了し、
+警告として`stderr`へ出力する。構造系の違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
 終了する。`uvx pyfltr`のJSONL出力はヘッダ行・succeeded系サマリー行を含み冗長なため生出力を
 転記せず、diagnostics保有行と失敗系command行のみ`file:line: message`形式または
 `[pyfltr] <command>: <status> <message>`形式へ要約する
@@ -115,9 +121,10 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         return len(messages)
 
     violations += _capture_and_relay(_extract)
+    # textlint違反は体裁系のため警告出力のみとしviolationsへは加算しない
+    # （構造系の縮退フレーズ検査は`_extract`側で既に`violations`へ加算済み）。
     for msg in check_plan_diff_gates._check_extracted_paths((prose_paths, location_map)):
         print(msg, file=sys.stderr)
-        violations += 1
 
     violations += _capture_and_relay(lambda: check_deprecated_identifier_coverage._check_plan(plan_path, repo_root))
 
@@ -138,8 +145,8 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in check_plan_diff_gates._check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
 
-    violations += _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash")
-    violations += _run_pyfltr_jsonl(plan_path)
+    _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash", blocking=False)
+    _run_pyfltr_jsonl(plan_path, blocking=False)
     return violations
 
 
@@ -154,18 +161,26 @@ def _capture_and_relay(check: Callable[[], int]) -> int:
     return violations
 
 
-def _run_subprocess_check(cmd: list[str], label: str) -> int:
-    """サブプロセスを実行し、非0終了時にstderrへ要約表示する。違反ありなら1を返す。"""
+def _run_subprocess_check(cmd: list[str], label: str, *, blocking: bool = True) -> int:
+    """サブプロセスを実行し、非0終了時にstderrへ要約表示する。
+
+    `blocking=True`の場合のみ違反ありを1として返す。`blocking=False`（体裁系チェック用）は
+    警告として出力するのみでexit code集計へは常に0を返す。
+    """
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode == 0:
         return 0
     combined = (result.stdout or "") + (result.stderr or "")
-    print(f"[{label}]\n{combined.strip()}", file=sys.stderr)
-    return 1
+    label_suffix = label if blocking else f"{label}（警告・非ブロック）"
+    print(f"[{label_suffix}]\n{combined.strip()}", file=sys.stderr)
+    return 1 if blocking else 0
 
 
-def _run_pyfltr_jsonl(plan_path: pathlib.Path) -> int:
-    """`uvx pyfltr run-for-agent`をJSONL出力で実行し、diagnosticsレコードと失敗系command行を要約表示する。"""
+def _run_pyfltr_jsonl(plan_path: pathlib.Path, *, blocking: bool = True) -> int:
+    """`uvx pyfltr run-for-agent`をJSONL出力で実行し、diagnosticsレコードと失敗系command行を要約表示する。
+
+    `blocking=False`（体裁系チェック用）は違反を警告として出力するのみでexit code集計へは0を返す。
+    """
     result = subprocess.run(
         [
             "uvx",
@@ -189,18 +204,21 @@ def _run_pyfltr_jsonl(plan_path: pathlib.Path) -> int:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
+        prefix = "[pyfltr]" if blocking else "[pyfltr（警告・非ブロック）]"
         if record.get("kind") == "diagnostic":
             path = record.get("path", plan_path)
             lineno = record.get("line", "?")
             message = record.get("message", "")
-            print(f"[pyfltr] {path}:{lineno}: {message}", file=sys.stderr)
-            violations += 1
+            print(f"{prefix} {path}:{lineno}: {message}", file=sys.stderr)
+            if blocking:
+                violations += 1
         elif record.get("kind") == "command" and record.get("status") in _FAILED_COMMAND_STATUSES:
             command = record.get("command", "?")
             status = record.get("status", "?")
             message = record.get("message", "")
-            print(f"[pyfltr] {command}: {status} {message}", file=sys.stderr)
-            violations += 1
+            print(f"{prefix} {command}: {status} {message}", file=sys.stderr)
+            if blocking:
+                violations += 1
     return violations
 
 
