@@ -35,8 +35,6 @@
   - 非印字文字の確認は`Read`・`od -c`・`xxd`・`hexdump -C`で代替する
 - 複数ファイルに跨る置換・参照除去・キーワード書き換えは`agent-toolkit:pyfltr-usage`スキルのgrep/replaceサブコマンドを使う
   - `sed -i`の手書き正規表現や個別`Edit`の繰り返しは対象漏れや誤爆が起きやすい
-- 文字数が増える置換時は`agent-toolkit:writing-standards`配布の`scripts/check_line_width.py`で127幅違反を検査する
-  - textlint・markdownlintでは検出できない場合がある
 - 100行超の連続ブロックを`Edit`で置換する場合は`old_string`にブロック全体を含めるかPythonスクリプトの
   行範囲スライスを用いる（途中分割で残余を後続`Edit`で削除する運用は中間状態でファイルが破損する）
 - Bashで`run_in_background=true`した長時間ジョブの完了判定では、最終サマリー欠落とゲート判定の早期成立に注意する

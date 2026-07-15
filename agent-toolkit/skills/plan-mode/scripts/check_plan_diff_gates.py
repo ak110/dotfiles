@@ -20,7 +20,7 @@
 
 兄弟スクリプト`check_wc_projection.py`は`[現行]`/`[置換後]`対比と`[削除根拠]`および
 `「追記文言案」`トリガー・`#### 縮減対象`見出しを追記/縮減の行数集計対象とする。
-本スクリプトのトリガー語彙は事前機械検査（縮退フレーズ・textlint・line-width）を
+本スクリプトのトリガー語彙は事前機械検査（縮退フレーズ・textlint）を
 広く発火させる目的でwc集計側より広く定義しており、両者の対象範囲は意図的に非対称である。
 
 各対象ブロック本文を次の検査へ通し、違反があれば`stderr`へ列挙してexit 1で終了する。
@@ -31,8 +31,6 @@
 - textlint併走colloquial-check: 一時ファイル拡張子を`.md`に固定して
     `uvx pyfltr run-for-agent --commands=textlint,colloquial-check --enable=colloquial-check --no-fix <tmpfile.md>`
     を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走
-- 127幅検査: `agent-toolkit/skills/writing-standards/scripts/check_line_width.py`
-    （一時ファイル拡張子を`.md`に固定してsubprocess呼び出しし、違反行のstderr出力を回収する）
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
 - `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（warn出力のみ）
 - 対象ファイル一覧に絶対パスまたは親ディレクトリ参照（`..`を含むパス）を検出した場合の全文一括検査（warn出力のみ）
@@ -46,10 +44,11 @@ SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.
 frontmatterサブラベル（`[追記（frontmatter）]`等4種）は`FRONTMATTER_LABEL_RE`の完全一致で
 `_classify_block`・`_is_label_line`双方が本体ラベルと同じ種別へ分類する。
 
-統合ランナー`check_plan_file.py`向けに、差分ブロック抽出とtextlint/line-width起動の責務を分離した
+統合ランナー`check_plan_file.py`向けに、差分ブロック抽出とtextlint起動の責務を分離した
 `_extract_diff_blocks(plan_path)`・`_check_extracted_paths(paths)`も公開する。抽出済み一時ファイル群を
-まとめてtextlint 1回・`check_line_width.py` 1回のsubprocess呼び出しへ渡し、多重起動を避ける。
-単独CLI実行（`main()`経由の`_check_plan_file`）はブロック単位のsubprocess起動のまま変更しない。
+まとめてtextlint 1回のsubprocess呼び出しへ渡し、多重起動を避ける。
+単独CLI実行（`main()`経由の`_check_plan_file`）のtextlintはブロック単位のsubprocess起動のまま
+変更しないが、line-width検査の呼び出しは削除する。
 """
 
 from __future__ import annotations
@@ -87,10 +86,6 @@ from _plan_format import (  # noqa: E402
 # `agent-toolkit/scripts/_scope_escalation.py`の絶対パス。
 # 本スクリプトは`agent-toolkit/skills/plan-mode/scripts/`配下のため、3階層遡って`scripts/`へ到達する。
 _SCOPE_ESCALATION_CLI = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "_scope_escalation.py"
-
-# `check_line_width.py` CLIの絶対パス。
-# 本スクリプトから2階層遡って`writing-standards/scripts/check_line_width.py`へ到達する。
-_CHECK_LINE_WIDTH_CLI = pathlib.Path(__file__).resolve().parents[2] / "writing-standards" / "scripts" / "check_line_width.py"
 
 # `### <相対パス>`H3見出し。バッククォート付き・「（新設）」等の注記付きの双方に対応する。
 _H3_RE = re.compile(r"^###\s+(?P<rest>.+)$")
@@ -217,11 +212,6 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
                 msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` textlint違反\n{textlint_error}"
                 print(msg, file=sys.stderr)
                 violations.append(msg)
-        line_width_error = _run_line_width(body)
-        if line_width_error is not None:
-            msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` line-width違反\n{line_width_error}"
-            print(msg, file=sys.stderr)
-            violations.append(msg)
     bump_warning = _check_bump_step(plan_path, text)
     if bump_warning is not None:
         print(bump_warning, file=sys.stderr)
@@ -753,30 +743,22 @@ def _run_textlint(body: str) -> str | None:
     )
 
 
-def _run_line_width(body: str) -> str | None:
-    """一時ファイル経由で`check_line_width.py`を実行し、違反時stderr内容・未違反時Noneを返す。"""
-    return _run_tmpfile_check(
-        body,
-        lambda p: [sys.executable, str(_CHECK_LINE_WIDTH_CLI), str(p)],
-        "check_line_width",
-    )
-
-
 def _extract_diff_blocks(
     plan_path: pathlib.Path,
-) -> tuple[list[str], tuple[list[pathlib.Path], list[pathlib.Path], dict[str, str]]]:
+) -> tuple[list[str], tuple[list[pathlib.Path], dict[str, str]]]:
     """統合ランナー向けに1計画ファイルを走査し、抽出結果を返す。
 
-    戻り値は`(違反メッセージ一覧, (textlint対象, line-width対象, 一時パス→H3位置マップ))`。
+    戻り値は`(違反メッセージ一覧, (textlint対象, 一時パス→H3位置マップ))`。
 
     fence外側配置検査・縮退フレーズ検査・bump/manifest/遡及スキャン警告はここで実行して
-    メッセージまたは`stderr`出力へ反映する。各対象ブロック本文は一時ファイル（`.md`拡張子）へ
-    保存してパスのみ返し、textlint・line-width検査自体は`_check_extracted_paths`へ委譲する
+    メッセージまたは`stderr`出力へ反映する。散文系拡張子（`_PROSE_EXTENSIONS`）ブロック本文は
+    一時ファイル（`.md`拡張子）へ保存してパスのみ返し、textlint検査自体は`_check_extracted_paths`へ委譲する
     （1計画ファイル分の全ブロックをまとめて1回のsubprocess呼び出しへ渡すため）。
 
     textlint対象は`.md`・`.md.tmpl`ブロック（`_PROSE_EXTENSIONS`）に限定する。
     `.py`等のコードブロックへtextlintを適用すると日本語文体ルールが偽陽性検出するため。
-    line-width検査（127幅）は言語非依存のため全ブロックへ適用する。
+    非散文系拡張子（`.py`等）ブロックは縮退フレーズ検査のみ本文へ直接適用し、
+    一時ファイル生成自体を行わない。
 
     位置マップは一時ファイルパス文字列を`{plan_path}: H3=<label> L<block_start_line>`形式の
     H3位置マーカーへ対応付ける（`_check_extracted_paths`が違反出力内の一時パスを元位置へ
@@ -787,11 +769,10 @@ def _extract_diff_blocks(
     except (OSError, UnicodeDecodeError) as exc:
         msg = f"{plan_path}: 計画ファイルの読み込みに失敗 ({exc})"
         print(msg, file=sys.stderr)
-        return [msg], ([], [], {})
+        return [msg], ([], {})
 
     messages: list[str] = list(_check_outer_label_placement(plan_path, text))
     prose_paths: list[pathlib.Path] = []
-    line_width_paths: list[pathlib.Path] = []
     location_map: dict[str, str] = {}
     for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
         category = _run_scope_escalation(body)
@@ -799,12 +780,10 @@ def _extract_diff_blocks(
             msg = f"{plan_path}:{block_start_line}: H3=`{h3_label}` 縮退フレーズ検出（カテゴリ: {category}）"
             print(msg, file=sys.stderr)
             messages.append(msg)
-        if body:
+        if body and h3_ext in _PROSE_EXTENSIONS:
             tmp_path = _write_tmpfile(body)
             location_map[str(tmp_path)] = f"{plan_path}: H3=`{h3_label}` L{block_start_line}"
-            line_width_paths.append(tmp_path)
-            if h3_ext in _PROSE_EXTENSIONS:
-                prose_paths.append(tmp_path)
+            prose_paths.append(tmp_path)
 
     bump_warning = _check_bump_step(plan_path, text)
     if bump_warning is not None:
@@ -819,7 +798,7 @@ def _extract_diff_blocks(
     if retroactive_scan_warning is not None:
         print(retroactive_scan_warning, file=sys.stderr)
 
-    return messages, (prose_paths, line_width_paths, location_map)
+    return messages, (prose_paths, location_map)
 
 
 def _write_tmpfile(body: str) -> pathlib.Path:
@@ -830,45 +809,35 @@ def _write_tmpfile(body: str) -> pathlib.Path:
 
 
 def _check_extracted_paths(
-    paths: tuple[list[pathlib.Path], list[pathlib.Path], dict[str, str]],
+    paths: tuple[list[pathlib.Path], dict[str, str]],
 ) -> list[str]:
-    """`_extract_diff_blocks`が抽出した一時ファイル群へtextlint・`check_line_width.py`を1回ずつ実行する。
+    """`_extract_diff_blocks`が抽出した一時ファイル群へtextlintを1回実行する。
 
-    `paths`は`(textlint対象, line-width対象, 位置マップ)`の3要素タプル。textlint対象は散文系拡張子
-    （`.md`・`.md.tmpl`）に限定した部分集合で、line-width対象は全ブロックを含む。位置マップは
+    `paths`は`(textlint対象, 位置マップ)`の2要素タプル。位置マップは
     subprocess出力中の一時ファイルパス文字列を`{plan_path}: H3=<label> L<line>`形式のH3位置マーカーへ
     書き換えるために使用する（バッチ実行で失われる位置情報を復元し、修正対象H3を特定可能にする）。
     呼び出し元（統合ランナー）は返り値メッセージをそのまま`stderr`へ出力する
     （本関数自体はstderrへ直接出力せず戻り値のみで結果を返す。ただしsubprocess呼び出しと
     一時ファイル削除の副作用は伴う）。
     """
-    prose_paths, line_width_paths, location_map = paths
-    # `_extract_diff_blocks`の構築順序により`prose_paths`は常に`line_width_paths`の部分集合となる
-    # （散文系拡張子ブロックは両リストへ、非散文系は`line_width_paths`のみへ追加される）。
-    # 削除対象は全ブロックを含む`line_width_paths`側で網羅できるが、順序を保った重複排除で明示する。
-    all_paths = list({p: None for p in [*prose_paths, *line_width_paths]}.keys())
-    if not all_paths:
+    prose_paths, location_map = paths
+    if not prose_paths:
         return []
     try:
         messages: list[str] = []
-        if prose_paths:
-            textlint_error = _run_textlint_batch(prose_paths)
-            if textlint_error is not None:
-                messages.append(f"textlint違反\n{_rewrite_locations(textlint_error, location_map)}")
-        if line_width_paths:
-            line_width_error = _run_line_width_batch(line_width_paths)
-            if line_width_error is not None:
-                messages.append(f"line-width違反\n{_rewrite_locations(line_width_error, location_map)}")
+        textlint_error = _run_textlint_batch(prose_paths)
+        if textlint_error is not None:
+            messages.append(f"textlint違反\n{_rewrite_locations(textlint_error, location_map)}")
         return messages
     finally:
-        for path in all_paths:
+        for path in prose_paths:
             path.unlink(missing_ok=True)
 
 
 def _rewrite_locations(output: str, location_map: dict[str, str]) -> str:
     """subprocess出力内の一時ファイルパスをH3位置マーカーへ書き換える。
 
-    textlint・line-widthの違反出力には`<tmpfile>:<line>: <message>`形式で一時ファイルパスが
+    textlintの違反出力には`<tmpfile>:<line>: <message>`形式で一時ファイルパスが
     含まれる。`location_map`に登録された各一時パス文字列を元H3位置（`{plan_path}: H3=<label> L<line>`）へ
     置換することで、統合ランナー経由の違反メッセージからも修正対象H3を特定できる。
     """
@@ -904,20 +873,6 @@ def _run_textlint_batch(paths: list[pathlib.Path]) -> str | None:
         return None
     combined = (result.stdout or "") + (result.stderr or "")
     return combined.strip() or f"textlint exit={result.returncode}"
-
-
-def _run_line_width_batch(paths: list[pathlib.Path]) -> str | None:
-    """一時ファイル群へ`check_line_width.py`を1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。"""
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_LINE_WIDTH_CLI), *(str(p) for p in paths)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        return None
-    combined = (result.stdout or "") + (result.stderr or "")
-    return combined.strip() or f"check_line_width exit={result.returncode}"
 
 
 if __name__ == "__main__":

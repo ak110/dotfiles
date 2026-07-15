@@ -14,8 +14,7 @@ plan-mode配下 plan-file-guidelines.mdの絶対数値の直書き回避規定
 `## 調査結果`外の節ではマーカー付与に関わらず違反として報告する。
 
 本ファイルは兄弟スクリプト
-`agent-toolkit/skills/writing-standards/scripts/check_dash.py`および
-`agent-toolkit/skills/writing-standards/scripts/check_line_width.py`と共通のヘルパー
+`agent-toolkit/skills/writing-standards/scripts/check_dash.py`と共通のヘルパー
 （`_expand_paths`・`_add`・`_strip_inline_code`・`_FENCE_RE`等）を意図的に複製している。
 PEP 723単独実行スクリプト制約下で外部モジュールへ切り出せないため。
 共通処理へ修正・バグ修正を加える場合は兄弟スクリプトも同一計画内で同時修正する。

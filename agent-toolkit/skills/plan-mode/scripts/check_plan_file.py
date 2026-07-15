@@ -13,14 +13,13 @@
 
 - `check_wc_projection._check_wc`: 見込み行数と`wc -l`実測値の乖離検出
 - `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`: 差分ブロック抽出、
-  縮退フレーズ・textlint・line-width（127幅）の検査
+  縮退フレーズ・textlintの検査
 - `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
   宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
-- `writing-standards/scripts/check_line_width.py`: 127幅検査（サブプロセス、ファイル単位）
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）
 - `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
   --enable=colloquial-check --exclude-fence-under=## 背景`: 計画ファイル全域のtextlint・
@@ -72,7 +71,6 @@ import check_wc_projection  # noqa: E402
 # pylint: enable=wrong-import-position
 
 # `writing-standards`スキル配布物のCLI絶対パス。配布境界を保つためimportせずサブプロセス呼び出しする。
-_CHECK_LINE_WIDTH_CLI = pathlib.Path(__file__).resolve().parents[2] / "writing-standards" / "scripts" / "check_line_width.py"
 _CHECK_DASH_CLI = pathlib.Path(__file__).resolve().parents[2] / "writing-standards" / "scripts" / "check_dash.py"
 
 
@@ -104,18 +102,16 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     violations += _capture_and_relay(lambda: check_wc_projection._check_wc(plan_path))
 
     prose_paths: list[pathlib.Path] = []
-    line_width_paths: list[pathlib.Path] = []
     location_map: dict[str, str] = {}
 
     def _extract() -> int:
-        messages, (extracted_prose, extracted_line_width, extracted_map) = check_plan_diff_gates._extract_diff_blocks(plan_path)
+        messages, (extracted_prose, extracted_map) = check_plan_diff_gates._extract_diff_blocks(plan_path)
         prose_paths.extend(extracted_prose)
-        line_width_paths.extend(extracted_line_width)
         location_map.update(extracted_map)
         return len(messages)
 
     violations += _capture_and_relay(_extract)
-    for msg in check_plan_diff_gates._check_extracted_paths((prose_paths, line_width_paths, location_map)):
+    for msg in check_plan_diff_gates._check_extracted_paths((prose_paths, location_map)):
         print(msg, file=sys.stderr)
         violations += 1
 
@@ -135,7 +131,6 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in check_plan_diff_gates._check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
 
-    violations += _run_subprocess_check([sys.executable, str(_CHECK_LINE_WIDTH_CLI), str(plan_path)], "check_line_width")
     violations += _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash")
     violations += _run_pyfltr_jsonl(plan_path)
     return violations

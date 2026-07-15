@@ -26,7 +26,7 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         check_plan_file.check_plan_diff_gates,
         "_extract_diff_blocks",
-        lambda _p: ([], ([], [], {})),
+        lambda _p: ([], ([], {})),
     )
     monkeypatch.setattr(check_plan_file.check_plan_diff_gates, "_check_extracted_paths", lambda _paths: [])
     monkeypatch.setattr(check_plan_file.check_deprecated_identifier_coverage, "_check_plan", lambda _p, _r: 0)
@@ -60,7 +60,7 @@ class TestCheckOne:
         monkeypatch.setattr(
             check_plan_file.check_plan_diff_gates,
             "_extract_diff_blocks",
-            lambda _p: (["msg1", "msg2"], ([], [], {})),
+            lambda _p: (["msg1", "msg2"], ([], {})),
         )
         assert check_plan_file._check_one(plan_path, tmp_path) == 2
 
@@ -101,18 +101,16 @@ class TestCheckOne:
         plan_path = _write_plan(tmp_path)
         prose_file = tmp_path / "prose.md"
         prose_file.write_text("散文ブロック", encoding="utf-8")
-        code_file = tmp_path / "code.md"
-        code_file.write_text("code_body", encoding="utf-8")
-        location_map = {str(prose_file): "plan.md: H3=`foo.md` L10", str(code_file): "plan.md: H3=`foo.py` L20"}
+        location_map = {str(prose_file): "plan.md: H3=`foo.md` L10"}
         monkeypatch.setattr(
             check_plan_file.check_plan_diff_gates,
             "_extract_diff_blocks",
-            lambda _p: ([], ([prose_file], [prose_file, code_file], location_map)),
+            lambda _p: ([], ([prose_file], location_map)),
         )
-        received: list[tuple[list[pathlib.Path], list[pathlib.Path], dict[str, str]]] = []
+        received: list[tuple[list[pathlib.Path], dict[str, str]]] = []
 
         def _fake_check_extracted_paths(
-            paths: tuple[list[pathlib.Path], list[pathlib.Path], dict[str, str]],
+            paths: tuple[list[pathlib.Path], dict[str, str]],
         ) -> list[str]:
             received.append(paths)
             return ["textlint違反\ndetail"]
@@ -123,7 +121,7 @@ class TestCheckOne:
             _fake_check_extracted_paths,
         )
         assert check_plan_file._check_one(plan_path, tmp_path) == 1
-        assert received == [([prose_file], [prose_file, code_file], location_map)]
+        assert received == [([prose_file], location_map)]
 
 
 class TestCaptureAndRelay:

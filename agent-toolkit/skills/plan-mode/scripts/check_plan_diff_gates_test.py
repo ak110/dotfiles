@@ -52,22 +52,14 @@ def _stub_subprocess(
     scope_stdout: str = "",
     textlint_returncode: int = 0,
     textlint_stdout: str = "",
-    line_width_returncode: int = 0,
-    line_width_stderr: str = "",
 ) -> list[list[str]]:
-    """subprocess.runを差し替えてscope_escalation・textlint・check_line_widthの応答を注入する。
-
-    `check_line_width.py`は違反行を`sys.stderr`へ出力するため、
-    `line_width_stderr`をstderr側の応答として注入する。
-    """
+    """subprocess.runを差し替えてscope_escalation・textlintの応答を注入する。"""
     calls: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(list(cmd))
         if any("_scope_escalation.py" in part for part in cmd):
             return _completed(scope_returncode, stdout=scope_stdout)
-        if any("check_line_width.py" in part for part in cmd):
-            return _completed(line_width_returncode, stderr=line_width_stderr)
         if any(part == "pyfltr" or part.endswith("pyfltr") for part in cmd):
             return _completed(textlint_returncode, stdout=textlint_stdout)
         return _completed(0)
@@ -280,20 +272,6 @@ class TestRunTextlint:
         assert "--enable=colloquial-check" in calls[0]
 
 
-class TestRunLineWidth:
-    """`_run_line_width`のsubprocessモック検証。"""
-
-    def test_run_line_width_success_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _stub_subprocess(monkeypatch, line_width_returncode=0)
-        assert _MOD._run_line_width("body") is None
-
-    def test_run_line_width_violation_returns_stderr(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _stub_subprocess(monkeypatch, line_width_returncode=1, line_width_stderr="width violation!")
-        result = _MOD._run_line_width("body")
-        assert result is not None
-        assert "width violation" in result
-
-
 class TestCheckPlanFile:
     """`_check_plan_file`の統合動作。"""
 
@@ -358,7 +336,7 @@ class TestCheckPlanFile:
         assert not any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
 
     @pytest.mark.parametrize("ext", [".py", ".yaml", ".json"])
-    def test_non_prose_extension_still_runs_scope_and_line_width(
+    def test_non_prose_extension_still_runs_scope(
         self,
         ext: str,
         tmp_path: pathlib.Path,
@@ -368,17 +346,14 @@ class TestCheckPlanFile:
             monkeypatch,
             scope_returncode=2,
             scope_stdout="pattern-conformance\n",
-            line_width_returncode=1,
-            line_width_stderr="line too long",
         )
         plan = _write(
             tmp_path / "plan.md",
             f"## 変更内容\n\n### `foo{ext}`\n\n```text\n[新設]\ncode snippet\n```\n",
         )
         violations = _MOD._check_plan_file(plan, tmp_path)
-        assert len(violations) == 2
+        assert len(violations) == 1
         assert any("_scope_escalation.py" in part for cmd in calls for part in cmd)
-        assert any("check_line_width.py" in part for cmd in calls for part in cmd)
 
     def test_md_extension_runs_all_rules(
         self,
@@ -394,26 +369,6 @@ class TestCheckPlanFile:
         assert len(violations) == 1
         assert "textlint" in violations[0]
         assert any("pyfltr" in part or part.endswith("pyfltr") for cmd in calls for part in cmd)
-
-    def test_check_plan_file_reports_line_width_violation(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        _stub_subprocess(
-            monkeypatch,
-            scope_returncode=0,
-            textlint_returncode=0,
-            line_width_returncode=1,
-            line_width_stderr="line too long",
-        )
-        plan = _write(
-            tmp_path / "plan.md",
-            "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nlong body\n```\n",
-        )
-        violations = _MOD._check_plan_file(plan, tmp_path)
-        assert len(violations) == 1
-        assert "line-width" in violations[0]
 
 
 class TestMainEntrypoint:
@@ -692,37 +647,32 @@ class TestCheckTargetFilePathsRelative:
 class TestExtractDiffBlocksPublic:
     """統合ランナー向け公開関数`_extract_diff_blocks(plan_path)`の挙動を検証する。"""
 
-    def test_prose_block_appears_in_both_lists(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """散文系拡張子（`.md`）ブロックはprose_paths・line_width_paths双方へ追加される。"""
+    def test_prose_block_appears_in_prose_paths(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """散文系拡張子（`.md`）ブロックはprose_pathsへ追加される。"""
         _stub_subprocess(monkeypatch, scope_returncode=0)
         plan = _write(
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.md`\n\n```text\n[新設]\nprose body\n```\n",
         )
-        messages, (prose_paths, line_width_paths, location_map) = _MOD._extract_diff_blocks(plan)
+        messages, (prose_paths, location_map) = _MOD._extract_diff_blocks(plan)
         assert messages == []
         assert len(prose_paths) == 1
-        assert len(line_width_paths) == 1
-        assert prose_paths[0] == line_width_paths[0]
         assert str(prose_paths[0]) in location_map
         assert "foo.md" in location_map[str(prose_paths[0])]
-        for path in {*prose_paths, *line_width_paths}:
+        for path in prose_paths:
             path.unlink(missing_ok=True)
 
-    def test_code_block_appears_only_in_line_width_list(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """非散文系拡張子（`.py`）ブロックはline_width_pathsのみへ追加され、textlint適用対象から除外される。"""
+    def test_code_block_produces_no_tmpfile(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """非散文系拡張子（`.py`）ブロックは一時ファイルを生成しない。"""
         _stub_subprocess(monkeypatch, scope_returncode=0)
         plan = _write(
             tmp_path / "plan.md",
             "## 変更内容\n\n### `foo.py`\n\n```text\n[新設]\ndef main(): pass\n```\n",
         )
-        messages, (prose_paths, line_width_paths, location_map) = _MOD._extract_diff_blocks(plan)
+        messages, (prose_paths, location_map) = _MOD._extract_diff_blocks(plan)
         assert messages == []
         assert prose_paths == []
-        assert len(line_width_paths) == 1
-        assert str(line_width_paths[0]) in location_map
-        for path in line_width_paths:
-            path.unlink(missing_ok=True)
+        assert location_map == {}
 
 
 class TestCheckExtractedPaths:
@@ -730,7 +680,7 @@ class TestCheckExtractedPaths:
 
     def test_empty_paths_returns_empty(self) -> None:
         """全リストが空なら空リストを返す。"""
-        assert _MOD._check_extracted_paths(([], [], {})) == []
+        assert _MOD._check_extracted_paths(([], {})) == []
 
     def test_rewrites_tmp_path_to_location_marker(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """textlint出力中の一時ファイルパスがH3位置マーカーへ書き換えられる。"""
@@ -745,7 +695,7 @@ class TestCheckExtractedPaths:
             return _completed(0)
 
         monkeypatch.setattr("subprocess.run", fake_run)
-        messages = _MOD._check_extracted_paths(([prose_file], [prose_file], location_map))
+        messages = _MOD._check_extracted_paths(([prose_file], location_map))
         assert any(location_marker in m for m in messages)
         assert not any(str(prose_file) in m for m in messages)
 
