@@ -27,7 +27,11 @@ _VALID_META = """## 背景
 
 
 def _run(tmp_path: pathlib.Path, content: str) -> subprocess.CompletedProcess[str]:
-    """スクリプトを別プロセスで起動し結果を返す。"""
+    """スクリプトを別プロセスで起動し結果を返す。
+
+    PEP 723スクリプト形式の実行環境と本テスト環境を分離するため、`uv run`ではなく
+    Pythonインタプリタ直接起動でモジュール読み込みして実行する。
+    """
     plan_path = tmp_path / "plan.md"
     plan_path.write_text(content, encoding="utf-8")
     return subprocess.run(
@@ -41,6 +45,17 @@ def _run(tmp_path: pathlib.Path, content: str) -> subprocess.CompletedProcess[st
 def test_valid_meta_passes(tmp_path: pathlib.Path) -> None:
     """`### 計画メタ情報`と必須2項目が揃っていれば違反なし。"""
     result = _run(tmp_path, f"# タイトル\n\n{_VALID_META}")
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
+def test_valid_meta_with_fullwidth_colons_passes(tmp_path: pathlib.Path) -> None:
+    """必須2項目の区切りが全角コロンでも違反なし。"""
+    content = (
+        "# タイトル\n\n## 背景\n\n### 計画メタ情報\n\n"
+        "- 起動経路：process-feedbacks経由\n- 対象リポジトリ：`~/dotfiles`\n\n## 対応方針\n"
+    )
+    result = _run(tmp_path, content)
     assert result.returncode == 0
     assert result.stderr == ""
 
@@ -59,6 +74,30 @@ def test_missing_meta_subsection(tmp_path: pathlib.Path) -> None:
     result = _run(tmp_path, content)
     assert result.returncode == 1
     assert "plan-meta-missing" in result.stderr
+
+
+def test_meta_subsection_inside_fence_is_ignored(tmp_path: pathlib.Path) -> None:
+    """フェンス内の`### 計画メタ情報`と必須2項目は本物の計画メタ情報として扱わない。"""
+    content = (
+        "# タイトル\n\n## 背景\n\n### 提示素材\n\n```text\n"
+        "### 計画メタ情報\n\n- 起動経路: process-feedbacks経由\n- 対象リポジトリ: `~/dotfiles`\n"
+        "```\n\n## 対応方針\n"
+    )
+    result = _run(tmp_path, content)
+    assert result.returncode == 1
+    assert "plan-meta-missing" in result.stderr
+
+
+def test_h2_like_line_inside_fence_does_not_end_background(tmp_path: pathlib.Path) -> None:
+    """フェンス内の`## `行で`## 背景`を早期終端しない。"""
+    content = (
+        "# タイトル\n\n## 背景\n\n### 提示素材\n\n```text\n"
+        "## 対応方針\n\nユーザー提示素材。\n```\n\n### 計画メタ情報\n\n"
+        "- 起動経路: process-feedbacks経由\n- 対象リポジトリ: `~/dotfiles`\n\n## 対応方針\n"
+    )
+    result = _run(tmp_path, content)
+    assert result.returncode == 0
+    assert result.stderr == ""
 
 
 def test_missing_launch_route(tmp_path: pathlib.Path) -> None:

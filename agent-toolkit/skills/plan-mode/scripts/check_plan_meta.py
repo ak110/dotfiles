@@ -23,6 +23,8 @@ import pathlib
 import re
 import sys
 
+import _plan_diff_parsing
+
 _H2_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 _H3_HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
 _META_H3_TITLE = "計画メタ情報"
@@ -70,10 +72,10 @@ def _check_file(path: pathlib.Path, text: str) -> list[str]:
         return [f"{path}:{bg_start + 1}: plan-meta-missing: `## 背景`配下に`### 計画メタ情報`H3が存在しない"]
 
     violations: list[str] = []
-    section_lines = lines[meta_start:meta_end]
-    if not any(_LAUNCH_ROUTE_RE.match(line) for line in section_lines):
+    section_lines = _iter_non_fenced_lines_in_range(lines, meta_start + 1, meta_end)
+    if not any(_LAUNCH_ROUTE_RE.match(line) for _i, line in section_lines):
         violations.append(f"{path}:{meta_start + 1}: plan-meta-missing: `- 起動経路:`行が存在しない")
-    if not any(_TARGET_REPO_RE.match(line) for line in section_lines):
+    if not any(_TARGET_REPO_RE.match(line) for _i, line in section_lines):
         violations.append(f"{path}:{meta_start + 1}: plan-meta-missing: `- 対象リポジトリ:`行が存在しない")
     return violations
 
@@ -83,12 +85,12 @@ def _find_section(
 ) -> tuple[int | None, int]:
     """`search_start`以降・`search_end`未満の範囲で`title`に一致する見出し行の開始・終了位置を返す。
 
-    終了位置は同レベル以上の次の見出し行、または`search_end`のいずれか早い方。
+    終了位置は`heading_re`に一致する次の見出し行、または`search_end`のいずれか早い方。
     """
     start: int | None = None
     end = search_end
-    for i in range(search_start, search_end):
-        m = heading_re.match(lines[i])
+    for i, line in _iter_non_fenced_lines_in_range(lines, search_start, search_end):
+        m = heading_re.match(line)
         if m is None:
             continue
         if start is None:
@@ -98,6 +100,11 @@ def _find_section(
         end = i
         break
     return start, end
+
+
+def _iter_non_fenced_lines_in_range(lines: list[str], search_start: int, search_end: int) -> list[tuple[int, str]]:
+    """指定範囲内のフェンス外行を返す。"""
+    return [(i, line) for i, line in _plan_diff_parsing.iter_non_fenced_lines(lines, search_start) if i < search_end]
 
 
 if __name__ == "__main__":
