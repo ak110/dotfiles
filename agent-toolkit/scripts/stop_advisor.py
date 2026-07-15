@@ -154,7 +154,7 @@ def _status_summary(cwd: str) -> dict[str, str]:
     status = _git_status_for_display(cwd)
     if not status:
         return {}
-    return {"systemMessage": f"[git status] {len(status.splitlines())}件の変更ファイル"}
+    return {"systemMessage": f"[git status] {len(status.splitlines())} changed file(s)"}
 
 
 def _approve(cwd: str = "") -> None:
@@ -236,10 +236,12 @@ def main() -> int:
                 category = "approach-confirm"
             if category is not None:
                 reason = _llm_notice(
-                    f"blocked: 直近の応答テキストに`{category}`カテゴリの縮退表明・工程バイパス誘発表現を検出。"
-                    "当該判断を撤回し、規範上の必須工程へ復帰したうえで作業を継続する。"
-                    "カテゴリ定義は`agent-toolkit:agent-standards`配下"
-                    "`references/scope-escalation-phrases.md`を参照する。",
+                    f"blocked: the latest assistant response matched scope-escalation category `{category}`"
+                    " (a phrase that induces skipping normative steps or bypasses required workflow)."
+                    " Retract that judgment, return to the mandatory workflow defined by the applicable norms,"
+                    " and continue the work."
+                    " Category definitions are documented in `agent-toolkit:agent-standards`"
+                    " `references/scope-escalation-phrases.md`.",
                     tag="block",
                 )
                 append_stop_log(session_id, "block_scope_escalation", {"category": category})

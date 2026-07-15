@@ -89,6 +89,9 @@ atk fb add <repo-path> "<message1>" ["<message2>" ...]
 ```
 
 - `<repo-path>`: target_repoの絶対パスまたは`~`展開可能パス
+  - `atk fb add`の引数形式はREPO_PATH位置引数（対象リポジトリのローカルパス、例: `.`）を使う。
+    `--target-repo`オプションはaddサブコマンドには存在せず、show・adopt等の他subcommandとは
+    引数体系が非対称である点に注意する
 - `<message>`: 自由本文。改行を含めてよい。
   シェルメタ文字（バッククォート・`$`・`!`等）を含む場合は
   シングルクォート（`'...'`）または`$'...'`で囲む。

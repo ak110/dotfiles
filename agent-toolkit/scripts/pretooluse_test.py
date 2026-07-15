@@ -2267,7 +2267,7 @@ class TestBashBulkStageWithUneditedFiles:
         data = self._extract_json(result.stdout)
         assert data is not None, f"expected JSON output, got: {result.stdout!r}"
         ctx = data["hookSpecificOutput"]["additionalContext"]
-        assert "一括ステージ" in ctx
+        assert "bulk staging" in ctx
         return ctx
 
     def _assert_no_warn(self, result: subprocess.CompletedProcess[str]) -> None:
@@ -2276,7 +2276,7 @@ class TestBashBulkStageWithUneditedFiles:
         if data is None:
             return
         ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
-        assert "一括ステージ" not in ctx
+        assert "bulk staging" not in ctx
 
     def test_warns_when_git_add_all_with_unedited_untracked(
         self,
@@ -2973,7 +2973,7 @@ class TestCodexMcpSandbox:
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
         assert updated["prompt"] == "hello"
-        assert "強制固定" in out["systemMessage"]
+        assert "forced" in out["systemMessage"]
 
     def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
@@ -3279,7 +3279,7 @@ class TestAskUserQuestionScopeEscalationCheck:
             }
         )
         assert result.returncode == 2
-        assert "縮退誘発フレーズ" in result.stderr
+        assert "scope-escalation phrase" in result.stderr
         assert category in result.stderr
 
     @pytest.mark.parametrize(
@@ -3317,7 +3317,7 @@ class TestAskUserQuestionScopeEscalationCheck:
             }
         )
         assert result.returncode == 0
-        assert "縮退誘発フレーズ" not in result.stderr
+        assert "scope-escalation phrase" not in result.stderr
 
     def test_question_text_not_checked(self):
         """`question`本文はユーザーへの状況説明性質を持つため縮退フレーズ検査対象外とする。"""
@@ -3373,7 +3373,7 @@ class TestAskUserQuestionScopeEscalationCheck:
             }
         )
         assert result.returncode == 2
-        assert "縮退誘発フレーズ" in result.stderr
+        assert "scope-escalation phrase" in result.stderr
 
     def test_option_description_blocks(self):
         result = _run(
@@ -3392,7 +3392,7 @@ class TestAskUserQuestionScopeEscalationCheck:
             }
         )
         assert result.returncode == 2
-        assert "縮退誘発フレーズ" in result.stderr
+        assert "scope-escalation phrase" in result.stderr
 
     def test_normal_question_allowed(self):
         result = _run(
@@ -5139,7 +5139,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 2
-        assert "先送り表現を検出" in result.stderr
+        assert "deferral expressions were detected" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_write_with_deferral_phrase_in_text_block_is_allowed(self, tmp_path: pathlib.Path):
@@ -5161,7 +5161,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "先送り表現を検出" not in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
 
     def test_write_with_deferral_phrase_in_html_comment_is_allowed(self, tmp_path: pathlib.Path):
         """複数行HTMLコメント内の先送り含意動詞連結パターンはブロックされない。"""
@@ -5182,7 +5182,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "先送り表現を検出" not in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
 
     def test_write_with_deferral_phrase_in_background_is_allowed(self, tmp_path: pathlib.Path):
         """`## 背景`配下の先送り含意動詞連結パターンは走査対象外のためブロックされない。"""
@@ -5203,7 +5203,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "先送り表現を検出" not in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
 
     def test_write_with_current_form_action_is_allowed(self, tmp_path: pathlib.Path):
         """現在形の実施義務文（末尾が判断/決定/選定/確定+するではない）はブロックされない。"""
@@ -5223,7 +5223,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "先送り表現を検出" not in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
 
     def test_write_with_condition_a_unsatisfied_is_allowed(self, tmp_path: pathlib.Path):
         """条件(a)未確定動詞が現れない文（末尾が決定するでも(a)不成立）はブロックされない。"""
@@ -5243,7 +5243,7 @@ class TestCheckPlanFileNoDeferralExpression:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "先送り表現を検出" not in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
 
 
 class TestPlanFileTargetFilesH3Correspondence:
@@ -5302,7 +5302,7 @@ class TestPlanFileTargetFilesH3Correspondence:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "H3見出し未対応" in result.stderr
+        assert "target files without a corresponding H3 heading" in result.stderr
 
     def test_blocks_extra_h3(self, tmp_path: pathlib.Path):
         """対象ファイル一覧に無い余分なH3見出しがある場合はブロックする。"""
@@ -5322,7 +5322,7 @@ class TestPlanFileTargetFilesH3Correspondence:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に無いH3見出し" in result.stderr
+        assert "H3 headings not listed in the target file list" in result.stderr
 
     def test_allows_no_target_files(self, tmp_path: pathlib.Path):
         """対象ファイル一覧が空の場合は検査対象外で通過する。"""
@@ -5697,7 +5697,7 @@ class TestPlanFilePathSectionMatchesFilePath:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "パス節配下のパス値" in result.stderr
+        assert "trailing path section" in result.stderr
 
     def test_allows_when_recorded_path_matches(self, tmp_path: pathlib.Path):
         """記録パス値とWrite先のfile_pathが一致する場合は通過する。"""
@@ -5778,7 +5778,7 @@ class TestPlanFilePathSectionMatchesFilePath:
             env_overrides=env,
         )
         # 本検査は「該当節本文が空」の場合は対象外として通過する
-        assert "パス節配下のパス値" not in result.stderr
+        assert "trailing path section" not in result.stderr
 
 
 class TestStyleNegationCheck:
@@ -5899,7 +5899,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "計画ファイル未作成" not in result.stderr
+        assert "without first creating a plan file" not in result.stderr
 
     def test_second_target_edit_warns_and_continues(self, tmp_path: pathlib.Path):
         sid = "direct-edit-warn"
@@ -5923,7 +5923,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 # 2件目はwarnして通過する（returncode 0）。
                 assert result.returncode == 0
                 assert "[warn]" in result.stderr
-                assert "計画ファイル未作成" in result.stderr
+                assert "without first creating a plan file" in result.stderr
 
     def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
         sid = "direct-edit-block"
@@ -5946,7 +5946,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 # 3件目でblockする。
                 assert result.returncode == 2
                 assert "[block]" in result.stderr
-                assert "計画ファイル未作成" in result.stderr
+                assert "without first creating a plan file" in result.stderr
 
     def test_block_persists_on_same_path_retry(self, tmp_path: pathlib.Path):
         """block後にコーディングエージェントが同一パスを再試行してもblockを継続する。
@@ -5986,7 +5986,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             assert result.returncode == 2
             assert "[block]" in result.stderr
-            assert "計画ファイル未作成" in result.stderr
+            assert "without first creating a plan file" in result.stderr
         # block後もstateは更新されず、カウンタは2・直前パスは2件目のままである。
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
         state_after = json.loads(state_path.read_text(encoding="utf-8"))
@@ -6212,7 +6212,7 @@ class TestPlanFileChangeH3HasCodeBlock:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "text/diffコードブロックが存在しない" in result.stderr
+        assert "missing a text/diff code block" in result.stderr
 
     def test_exception_prefixes_are_skipped(self, tmp_path: pathlib.Path):
         """例外プレフィックス（`置換パターン:`・`fix-`）および`対象ファイル一覧`は検査対象外として通過する。
@@ -6444,7 +6444,7 @@ class TestProcessFeedbacksBlocksEnterPlanMode:
             {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
             env_overrides=self._env(tmp_path),
         )
-        assert "EnterPlanMode発行はplan-modeスキル規範" not in result.stderr
+        assert "issuing EnterPlanMode from within the process-feedbacks skill" not in result.stderr
 
 
 class TestPlanFileBumpStepWhenAgentToolkitTarget:
@@ -6517,7 +6517,7 @@ class TestPlanFileBumpStepWhenAgentToolkitTarget:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr
+        assert "the target file list includes paths under `agent-toolkit/`" not in result.stderr
 
     def test_passes_when_no_agent_toolkit_path(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -6534,7 +6534,7 @@ class TestPlanFileBumpStepWhenAgentToolkitTarget:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr
+        assert "the target file list includes paths under `agent-toolkit/`" not in result.stderr
 
     def test_passes_when_all_test_py_paths(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -6554,7 +6554,7 @@ class TestPlanFileBumpStepWhenAgentToolkitTarget:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に`agent-toolkit/`配下パスを含むが" not in result.stderr
+        assert "the target file list includes paths under `agent-toolkit/`" not in result.stderr
 
 
 class TestPlanFileManifestWhenBumpStep:
@@ -6609,7 +6609,7 @@ class TestPlanFileManifestWhenBumpStep:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に両manifestの記載が欠落している" not in result.stderr
+        assert "target file list is missing both manifests" not in result.stderr
 
     def test_passes_when_both_manifests_present(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -6633,7 +6633,7 @@ class TestPlanFileManifestWhenBumpStep:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に両manifestの記載が欠落している" not in result.stderr
+        assert "target file list is missing both manifests" not in result.stderr
 
     def test_warns_when_plugin_json_missing(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -6653,7 +6653,7 @@ class TestPlanFileManifestWhenBumpStep:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に両manifestの記載が欠落している" in result.stderr
+        assert "target file list is missing both manifests" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_warns_when_marketplace_json_missing(self, tmp_path: pathlib.Path):
@@ -6674,7 +6674,7 @@ class TestPlanFileManifestWhenBumpStep:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "対象ファイル一覧に両manifestの記載が欠落している" in result.stderr
+        assert "target file list is missing both manifests" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
 
@@ -6728,7 +6728,7 @@ class TestPlanFileTargetFilePathsRelative:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "絶対パスまたは親ディレクトリ参照" in result.stderr
+        assert "absolute paths or parent-directory references" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_warns_on_parent_reference(self, tmp_path: pathlib.Path):
@@ -6763,7 +6763,7 @@ class TestPlanFileTargetFilePathsRelative:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "絶対パスまたは親ディレクトリ参照" not in result.stderr
+        assert "absolute paths or parent-directory references" not in result.stderr
 
 
 class TestFrontmatterSyncNoteBodyExists:
@@ -6790,7 +6790,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_nonexistent_file_path_warns(self, tmp_path: pathlib.Path):
         """同期注記が実在しないファイルパスを指す場合はwarnする。"""
@@ -6805,7 +6805,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "参照ファイルパス未実在" in result.stderr
+        assert "referenced file path does not exist" in result.stderr
         assert "nonexistent-agent.md" in result.stderr
 
     def test_nonexistent_section_warns(self, tmp_path: pathlib.Path):
@@ -6823,7 +6823,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "節名未実在" in result.stderr
+        assert "section name does not exist" in result.stderr
         assert "存在しない節" in result.stderr
 
     def test_no_frontmatter_is_out_of_scope(self, tmp_path: pathlib.Path):
@@ -6839,7 +6839,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_sync_note_prefix_form_is_detected(self, tmp_path: pathlib.Path):
         """`# 同期注記:`形式のコメント行も検出対象に含まれる。"""
@@ -6854,7 +6854,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "参照ファイルパス未実在" in result.stderr
+        assert "referenced file path does not exist" in result.stderr
         assert "nonexistent-prefix.md" in result.stderr
 
     def test_multiline_note_with_existing_reference_does_not_warn(self, tmp_path: pathlib.Path):
@@ -6878,7 +6878,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_multiline_note_with_nonexistent_reference_warns(self, tmp_path: pathlib.Path):
         """参照パスがトリガー語と別行にある複数行形式で、パスが実在しない場合はwarnする。
@@ -6903,7 +6903,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "参照ファイルパス未実在" in result.stderr
+        assert "referenced file path does not exist" in result.stderr
         assert "nonexistent-multiline.md" in result.stderr
 
     def test_git_ancestor_sibling_reference_resolves(self, tmp_path: pathlib.Path) -> None:
@@ -6927,7 +6927,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_git_ancestor_neighbor_directory_reference_resolves(self, tmp_path: pathlib.Path) -> None:
         """`.git`祖先が存在する場合、近隣ディレクトリ（agent-toolkit/rules等）配下の裸ファイル名参照も解決する。"""
@@ -6947,7 +6947,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_git_ancestor_still_warns_when_reference_truly_missing(self, tmp_path: pathlib.Path) -> None:
         """`.git`祖先が存在してもフォールバック探索で見つからない参照は依然としてwarnする。"""
@@ -6963,7 +6963,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "参照ファイルパス未実在" in result.stderr
+        assert "referenced file path does not exist" in result.stderr
         assert "never-exists.md" in result.stderr
 
     def test_consecutive_independent_sync_notes_do_not_cross_contaminate(self, tmp_path: pathlib.Path) -> None:
@@ -6991,7 +6991,7 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "frontmatter同期注記" not in result.stderr
+        assert "frontmatter sync note" not in result.stderr
 
     def test_consecutive_independent_sync_notes_still_detect_real_mismatch(self, tmp_path: pathlib.Path) -> None:
         """独立した同期注記宣言が連続していても、個別の注記の節名不一致は正しく検出される。"""
@@ -7014,5 +7014,5 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "節名未実在" in result.stderr
+        assert "section name does not exist" in result.stderr
         assert "存在しない自己節" in result.stderr

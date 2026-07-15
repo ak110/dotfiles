@@ -130,6 +130,13 @@ Claude Code固有事項として、本体作業に着手する時点で
   CI失敗時は管理側の採否確定を先行させず、
   対象リポジトリ側の是正commit・再push・CI通過確認の完了後に後始末を発行する
 - GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
+- GitLab CI利用リポジトリ（`.gitlab-ci.yml`存在）は`gh`の代わりに`glab`を用いる。
+  自己署名のTLS証明書を使うGitLab私設ホストは`glab config set skip_tls_verify true --host <host>`と
+  環境変数`GITLAB_HOST=<host>`設定でTLS検証をスキップする。
+  `glab`が機能しない場合の代替として`curl -k https://<host>/api/v4/projects/<id>/pipelines?sha=<sha>`
+  でpipeline一覧を取得し、status=successまで待つ。
+  いずれも実行不可能な場合はユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
+  詳細は`agent-toolkit:gitlab-ci-usage`スキルを参照する
 
 ## コミットメッセージとリリース
 

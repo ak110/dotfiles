@@ -206,7 +206,13 @@ class TestRunPyfltrJsonl:
     ) -> None:
         lines = [
             json.dumps({"kind": "header"}),
-            json.dumps({"kind": "diagnostic", "path": "x.md", "line": 3, "message": "違反"}),
+            json.dumps(
+                {
+                    "kind": "diagnostic",
+                    "file": "x.md",
+                    "messages": [{"line": 3, "rule": "R", "msg": "違反"}],
+                }
+            ),
             json.dumps({"kind": "command", "status": "succeeded", "diagnostics": 0}),
         ]
         monkeypatch.setattr(
@@ -256,7 +262,15 @@ class TestRunPyfltrJsonl:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """`blocking=False`は診断レコードがあっても0を返し、警告ラベル付きで出力する。"""
-        lines = [json.dumps({"kind": "diagnostic", "path": "x.md", "line": 3, "message": "違反"})]
+        lines = [
+            json.dumps(
+                {
+                    "kind": "diagnostic",
+                    "file": "x.md",
+                    "messages": [{"line": 3, "rule": "R", "msg": "違反"}],
+                }
+            )
+        ]
         monkeypatch.setattr(
             subprocess,
             "run",
@@ -267,3 +281,125 @@ class TestRunPyfltrJsonl:
         err = capsys.readouterr().err
         assert "x.md:3" in err
         assert "警告" in err
+
+    def test_new_schema_expands_message_with_rule(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """新スキーマ`{"file","messages":[{"line","rule","message"}]}`から`file:line: [rule] message`形式へ展開する。
+
+        ルート:`msg`欠落時は`message`キーを参照する後方互換パスも同時検証する。
+        """
+        lines = [
+            json.dumps(
+                {
+                    "kind": "diagnostic",
+                    "file": "x.md",
+                    "messages": [{"line": 1, "rule": "r", "message": "err"}],
+                }
+            )
+        ]
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
+        )
+        plan_path = _write_plan(tmp_path)
+        assert check_plan_file._run_pyfltr_jsonl(plan_path) == 1
+        assert "x.md:1: [r] err" in capsys.readouterr().err
+
+    def test_cwd_argument_forwarded_to_subprocess(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`cwd`引数はsubprocess.runへ文字列として転送される。"""
+        received: dict[str, object] = {}
+
+        def _fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            received.update(kwargs)
+            return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        plan_path = _write_plan(tmp_path)
+        check_plan_file._run_pyfltr_jsonl(plan_path, cwd=tmp_path)
+        assert received.get("cwd") == str(tmp_path)
+
+
+class TestDocumentSizeUpperLimit:
+    """`_check_document_size_upper_limit`の検査を検証する。"""
+
+    def test_no_over_threshold_files_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行100行, 見込み150行）\n"
+        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 0
+
+    def test_over_threshold_without_reduction_reports_violation(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行, 見込み230行）\n"
+        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 1
+        assert "文書サイズ上限" in capsys.readouterr().err
+
+    def test_over_threshold_with_reduction_heading_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行200行, 見込み230行）\n\n"
+            "#### 縮減対象（foo.md）\n\n本文縮減方針を記す。\n"
+        )
+        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 0
+
+
+class TestVersionBumpMatrix:
+    """`_check_version_bump_matrix`の検査を検証する。"""
+
+    def test_no_agent_toolkit_md_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pytools/foo.py`（現行10行, 見込み15行）\n"
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
+
+    def test_agent_toolkit_md_without_matrix_reports_violation(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行, 見込み15行）\n"
+        )
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 1
+        assert "版更新マトリクス" in capsys.readouterr().err
+
+    def test_agent_toolkit_md_with_matrix_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 対応方針\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| foo | 1 | bar | PATCH | ok |\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行, 見込み15行）\n"
+        )
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
+
+    def test_agent_toolkit_md_with_bump_script_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行, 見込み15行）\n\n"
+            "## 実行方法\n\n`scripts/agent_toolkit_bump.py minor`で更新する。\n"
+        )
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
+
+
+class TestIdentifierExistence:
+    """`_check_identifier_existence`の検査を検証する。"""
+
+    def test_identifier_present_no_warning(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "foo.py"
+        target.write_text("def my_func():\n    pass\n", encoding="utf-8")
+        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n`my_func`を更新する。\n"
+        assert not check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
+
+    def test_identifier_absent_reports_warning(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "foo.py"
+        target.write_text("def existing():\n    pass\n", encoding="utf-8")
+        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n`nonexistent_fn`を追加する。\n"
+        warnings = check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+        assert "nonexistent_fn" in warnings[0]
+        assert "[warn]" in warnings[0]
+
+    def test_fence_content_ignored(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "foo.py"
+        target.write_text("def existing():\n    pass\n", encoding="utf-8")
+        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n```text\n[追記]\ndef new_added(): pass\n```\n"
+        assert not check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)

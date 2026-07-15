@@ -825,6 +825,42 @@ class TestCheckWcProjection:
         assert result.returncode == 0
         assert "H4見出しが不在" in result.stderr
 
+    def test_mixed_replacement_and_deletion_pairs_warns(self, tmp_path: pathlib.Path) -> None:
+        """同一ファイルへ`[現行]`/`[置換後]`と`[現行]`/`[削除根拠]`ペアが混在する場合、警告が出力される。"""
+        _write(tmp_path / "foo.md", "old1\nold2\nold3\nold4\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行4行, 見込み4行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\n```\n\n"
+            "```text\n[置換後]\nnew1\n```\n\n"
+            "```text\n[現行]\nold2\n```\n\n"
+            "```text\n[削除根拠]\n冗長のため削除\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "見込み行数検算経路をどちらかへ統一" in result.stderr
+
+    def test_absolute_path_without_allowed_root_warns(self, tmp_path: pathlib.Path) -> None:
+        """許容ルート未宣言の絶対パスが対象ファイル一覧に含まれる場合、警告が出力される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `/home/aki/other-repo/foo.md`（現行10行, 見込み10行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "許容ルート未宣言の絶対パスを検出" in result.stderr
+
+    def test_absolute_path_with_allowed_root_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """`<!-- allowed-repo-root: /abs/path -->`宣言済みルート配下の絶対パスは警告対象から除外される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n<!-- allowed-repo-root: /home/aki/other-repo -->\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `/home/aki/other-repo/foo.md`（現行10行, 見込み10行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert "許容ルート未宣言の絶対パスを検出" not in result.stderr
+
     def test_projection_drift_with_replacement_diff_detection(self, tmp_path: pathlib.Path) -> None:
         """実ファイル適用経路と差分集計経路の乖離判定が同一ペアで同じ見込み値を報告する。"""
         _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 230)) + "\n")

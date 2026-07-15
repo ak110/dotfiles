@@ -55,6 +55,17 @@ def test_normal_message_passes() -> None:
     assert result.stdout == ""
 
 
+def _make_transcript(tmp_path: Path, tool_uses: list[dict]) -> str:
+    """指定したtool_useブロック列を含むassistant messageを1件出力したtranscriptパスを返す。"""
+    path = tmp_path / "transcript.jsonl"
+    entry = {
+        "type": "assistant",
+        "message": {"content": tool_uses},
+    }
+    path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    return str(path)
+
+
 def test_process_omission_blocks() -> None:
     text = _pick_scope_escalation_text("process-omission")
     if not text:
@@ -121,7 +132,7 @@ def test_whitespace_only_message_blocks_as_empty_result() -> None:
     result = _run({"last_assistant_message": "   \n  \t  "})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
-    assert "実質空" in body["reason"]
+    assert "empty" in body["reason"]
 
 
 def test_skill_invocation_only_blocks_as_empty_result() -> None:
@@ -130,6 +141,100 @@ def test_skill_invocation_only_blocks_as_empty_result() -> None:
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
     assert "Skill" in body["reason"]
+
+
+def test_named_subagent_without_main_send_blocks(tmp_path: Path) -> None:
+    """named subagentが閾値以上のtool_useを実行しSendMessage(to='main')が無い場合blockする。"""
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "Bash", "input": {}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    result = _run(
+        {
+            "last_assistant_message": "実装が完了した。差分は3ファイル。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+        }
+    )
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "SendMessage" in body["reason"]
+
+
+def test_named_subagent_with_main_send_passes(tmp_path: Path) -> None:
+    """SendMessage(to='main')送付済みnamed subagentは通過する。"""
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    result = _run(
+        {
+            "last_assistant_message": "完了報告を送付した。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+        }
+    )
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_short_lived_named_subagent_passes(tmp_path: Path) -> None:
+    """tool_use数が閾値未満のnamed subagentは検査対象外。"""
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    result = _run(
+        {
+            "last_assistant_message": "対象ファイルを1件確認した。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+        }
+    )
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_unnamed_subagent_missing_send_passes(tmp_path: Path) -> None:
+    """`agent_name`未指定（匿名subagent）はSendMessage検査対象外。"""
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "Bash", "input": {}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    result = _run(
+        {
+            "last_assistant_message": "作業が完了した。",
+            "agent_name": "",
+            "transcript_path": transcript,
+        }
+    )
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_named_subagent_send_to_other_target_blocks(tmp_path: Path) -> None:
+    """SendMessage送付先が`main`以外の場合はメイン報告未送とみなしblockする。"""
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "SendMessage", "input": {"to": "plan-impl-2", "message": "hi"}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    result = _run(
+        {
+            "last_assistant_message": "実装が完了した。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+        }
+    )
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
 
 
 def test_skill_invocation_with_body_passes() -> None:

@@ -17,8 +17,7 @@ description: >
 手動での`git pull`実行は不要とする。
 `adopt`・`reject`は採否確定を管理側へ反映する（管理側リポジトリの操作は`atk fb`が内部で完結する）。
 対象リポジトリ側のcommit/pushは別途必要とする。
-自律実行モード下で起動された場合は`agent-toolkit/rules/02-collaboration.md`
-「自律実行モード」節の運用を本スキルの処理単位へ適用する。
+自律実行モード下で起動された場合は`agent-toolkit/rules/02-collaboration.md`「自律実行モード」節の運用を本スキルの処理単位へ適用する。
 適用前提として本スキルは次を自身の文脈で確立する。
 
 - 処理対象: 「ステップ1: 入力の確定」で取得したフィードバック全件
@@ -51,8 +50,7 @@ feedback全件とTBD回答済みの本文を取得する。出力は`# feedback`
 取得した全件を本セッションの処理対象とする（件数・規模による選定は行わない）。
 `atk fb show`が非ゼロ終了する場合（feedback-inbox無効化等）は、標準エラー出力のエラーメッセージを提示して終了する。
 本ステップ取得のスナップショット以降にinboxへ追加されたファイルは、次回起動時の処理対象とする。
-処理対象の確定後、今回取得したfeedback分（`# feedback`見出し配下、`# tbd`側は対象外）を
-`atk fb start-processing <filename...>`でprocessingへ遷移させてから着手する。
+処理対象の確定後、今回取得したfeedback分（`# feedback`見出し配下、`# tbd`側は対象外）を`atk fb start-processing <filename...>`でprocessingへ遷移させてから着手する。
 
 フィードバック本文の直接入力の場合は上記`atk fb show`取得をスキップし、ユーザーメッセージから該当箇所を抽出する。
 フィードバックが含まれない場合はユーザーに提供を求める。
@@ -61,14 +59,17 @@ feedback全件とTBD回答済みの本文を取得する。出力は`# feedback`
 （管理側の抽象化を保ち、Windows等の環境依存での表示破損を避けるため）。
 CLI未提供の参照用途（`atk fb show --include-processed`で拾えない横断検索・複数ファイル参照・特殊な集計用途など）は
 直接Readで参照してよい。
-管理repoのrootは`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で指定する
-（詳細は`agent-toolkit:agent-standards`スキル「識別子と環境変数」節）。
+管理repoのrootは`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で指定する（詳細は`agent-toolkit:agent-standards`スキル「識別子と環境変数」節）。
 frontmatterは出力に保持されており`source: session-review`などの投入元情報を後続ステップで参照できる。
-自己生成起点（`source: session-review`等）のフィードバックの信頼性と採否判定の扱いは、
-`agent-toolkit/rules/02-collaboration.md`「協調モード」節の優先順位の段落の直後の規定に従う。
+自己生成起点（`source: session-review`等）のフィードバックの信頼性と採否判定の扱いは、`agent-toolkit/rules/02-collaboration.md`「協調モード」節の優先順位の段落の直後の規定に従う。
 
 取得した全件を「計画実装型」「通常型」へ分類する。
 判定基準・混在時の並行制御・後始末分担は`references/plan-impl-feedback-flow.md`に従う。
+
+フィードバック本文の反映先ファイル群がtarget_repoで指定されたリポジトリの外にある場合、target_repoの誤設定として扱う。
+frontmatterのtarget_repoを実際の反映先リポジトリの値へ書き換えて`atk fb commit`で確定させる。
+書き換え後のinboxは本セッションでは処理対象から外し、書き換え先リポジトリの次回process-feedbacks起動で扱う。
+書き換え手段は`atk fb edit`の対話編集または直接編集後`atk fb commit`の2系統とする。
 
 ## ステップ2: 内容の調整
 
@@ -182,8 +183,7 @@ plan-impl-executor起動プロンプトの`## 追加指示`欄には計画ファ
 後続工程はメイン側が完了報告の受領後に別途起動する運用とする（`## 実行方法`末尾記載は本規定の対象外とする）。
 
 plan-modeスキル本文で規定される全工程の遵守を、auto mode下・自律実行系CLI経由の委譲下でも維持する。
-各工程の実施義務は`plan-mode/SKILL.md`
-「暗黙スキップ・明示バイパスの禁止」節の規定に従う。
+各工程の実施義務は`plan-mode/SKILL.md`「暗黙スキップ・明示バイパスの禁止」節の規定に従う。
 plan mode下の場合の最終承認は`agent-toolkit:plan-mode`工程8の`ExitPlanMode`で得る。
 全件採用扱いで計画作成へ進んだ後に採否判定を変更したい場合は、ユーザー側の割り込みで提示する前提とする。
 計画ファイルの`## 実行方法`末尾へ`agent-toolkit:process-feedbacks-finish`スキルを

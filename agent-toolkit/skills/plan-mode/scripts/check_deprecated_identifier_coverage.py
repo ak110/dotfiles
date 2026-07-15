@@ -132,7 +132,8 @@ def _check_plan(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
 
     violations = 0
     for identifier in identifiers:
-        for rel_path, lineno, content in _grep_identifier(repo_root, identifier):
+        hits = _grep_identifier(repo_root, identifier)
+        for rel_path, lineno, content in hits:
             if rel_path in known_paths:
                 continue
             print(
@@ -140,6 +141,16 @@ def _check_plan(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
                 file=sys.stderr,
             )
             violations += 1
+        # warn止まりの網羅性検査: リポジトリ内出現行数と計画本文中の当該識別子引用数を比較し、
+        # 乖離があれば計画本文側の言及漏れの可能性としてwarn出力する（exit codeへは含めない）。
+        repo_hit_count = len(hits)
+        plan_reference_count = text.count(identifier)
+        if repo_hit_count > 0 and plan_reference_count < repo_hit_count:
+            print(
+                f"{plan_path}: [warn] `{identifier}`はリポジトリ内で{repo_hit_count}件検出されるが"
+                f"計画本文中の引用は{plan_reference_count}件のみで乖離（計画側の言及漏れの可能性）",
+                file=sys.stderr,
+            )
     return violations
 
 

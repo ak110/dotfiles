@@ -215,5 +215,6 @@ dotfiles利用環境では拡張スキル`session-review-dotfiles`の`## dotfile
 
 ステップ3の改善提案本文をユーザー可視の応答として発行した直後、同一ターン内で
 `atk fb add --source=session-review`を各改善提案について連続実行する。
+引数形式（REPO_PATH位置引数使用・`--target-repo`不在）は`agent-toolkit:add-feedback`スキル「ステップ4: 投入」節を参照する。
 投入完了後は`agent-toolkit:exit-session`スキルへ遷移せず、通常の完了応答へ戻る。
 「以上の改善提案を検討します」等の承認待ちと解釈される表現をステップ3応答末尾へ置かない。

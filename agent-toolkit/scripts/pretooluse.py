@@ -184,8 +184,8 @@ def _format_scope_escalation_alternatives(category: str) -> str:
     alternatives = _SCOPE_ESCALATION_ALTERNATIVES.get(category)
     if not alternatives:
         return ""
-    joined = "／".join(f"『{item}』" for item in alternatives)
-    return f" 代替表現例: {joined}。"
+    joined = " / ".join(f"`{item}`" for item in alternatives)
+    return f" Alternative expressions: {joined}."
 
 
 def _scope_escalation_agent_md_reference(category: str) -> str:
@@ -199,10 +199,10 @@ def _scope_escalation_agent_md_reference(category: str) -> str:
     他カテゴリは`agent-toolkit/rules/01-agent.md`「完遂原則」項を参照する。
     """
     if category == "mitigation-in-adoption":
-        return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md「採用時の反映内容の縮小禁止」項"
+        return "agent-toolkit/skills/process-feedbacks/references/review-checklists.md '採用時の反映内容の縮小禁止' item"
     if category == "subagent-hesitation":
-        return "agent-toolkit/rules/03-claude-code.md「サブエージェントの活用」節"
-    return "agent-toolkit/rules/01-agent.md「完遂原則」項"
+        return "agent-toolkit/rules/03-claude-code.md 'サブエージェントの活用' section"
+    return "agent-toolkit/rules/01-agent.md '完遂原則' item"
 
 
 def _llm_notice(body: str, *, tag: str = "") -> str:
@@ -395,15 +395,15 @@ def main() -> int:
             category, matched = match_result
             print(
                 _llm_notice(
-                    f"blocked: AskUserQuestionに縮退誘発フレーズ（カテゴリ: {category}）を検出。"
-                    f" matched: {_truncate_matched_phrase(matched)} "
-                    f"{_scope_escalation_agent_md_reference(category)}を参照。"
-                    f"カテゴリ定義は`agent-toolkit:agent-standards`配下"
-                    f"`references/scope-escalation-phrases.md`の隔離リファレンスを参照。"
+                    f"blocked: AskUserQuestion contains a scope-escalation phrase (category: {category})."
+                    f" matched: {_truncate_matched_phrase(matched)}."
+                    f" See {_scope_escalation_agent_md_reference(category)}."
+                    f" Category definitions are documented in `agent-toolkit:agent-standards`"
+                    f" `references/scope-escalation-phrases.md` (isolated reference)."
                     f"{_format_scope_escalation_alternatives(category)}"
-                    f" 再発行前に候補文言を事前検証する場合は"
-                    f" `echo '<候補文言>' | python agent-toolkit/scripts/_scope_escalation.py`"
-                    f" を実行し、exit codeとカテゴリ識別子で照合できる（0で通過・2でブロック相当）。",
+                    f" To pre-validate candidate phrases before re-issuing, run"
+                    f" `echo '<candidate>' | python agent-toolkit/scripts/_scope_escalation.py`"
+                    f" and match by exit code and category identifier (0 = pass, 2 = block).",
                 ),
                 file=sys.stderr,
             )
@@ -940,11 +940,11 @@ def _check_scope_escalation_in_doc_edit(tool_name: str, tool_input: dict, file_p
         _llm_notice(
             f"blocked: scope-escalation phrase (category: {category})"
             f" detected in {tool_name}.{field}. Target: {file_path}."
-            f" matched: {_truncate_matched_phrase(matched)}"
-            f" {_scope_escalation_agent_md_reference(category)}を参照。"
-            f" agent-toolkit/skills/agent-standards/SKILL.md「コンテキスト汚染の回避」節および"
-            f" `references/scope-escalation-phrases.md`の隔離規定を参照。"
-            f" 検出パターン本文をスキル本文・ルール本文・テストコードへ転記しない。"
+            f" matched: {_truncate_matched_phrase(matched)}."
+            f" See {_scope_escalation_agent_md_reference(category)}."
+            f" See agent-toolkit/skills/agent-standards/SKILL.md 'コンテキスト汚染の回避' section and"
+            f" `references/scope-escalation-phrases.md` isolation rule."
+            f" Do not transcribe the detected pattern body into skill body, rule body, or test code."
             f"{_format_scope_escalation_alternatives(category)}",
             tag="block",
         ),
@@ -1077,7 +1077,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                     f"colloquial Japanese expressions detected in {tool_name}.{field}."
                     f" Rewrite using formal written-style expressions"
                     f" (standard technical terminology, dictionary form,"
-                    f" no metaphorical verbs) per 04-styles.md 「日本語の品質を保つ」 section."
+                    f" no metaphorical verbs) per 04-styles.md '日本語の品質を保つ' section."
                     f" Target: {file_path}",
                     tag="warn",
                 ),
@@ -1145,11 +1145,12 @@ def _check_style_negation(tool_name: str, tool_input: dict, file_path: str) -> b
         return False
     print(
         _llm_notice(
-            f"『Xを根拠にYしない』『Xを理由にYしない』形式のメタ規範文言の増加を{tool_name}で検出。"
-            f" Target: {file_path}."
-            " 「Xでなければ`Y`してよい」と誤読される可能性がある。"
-            " 全称否定形（『いかなる理由（例: X）があってもYしない』）への書き換えを検討する。"
-            " 04-styles.md「日本語の品質を保つ」節を参照。",
+            f"detected an increase in meta-norm phrases of the form '`X`を根拠に`Y`しない' / '`X`を理由に`Y`しない'"
+            f" via {tool_name}. Target: {file_path}."
+            " Such phrasing risks being misread as 'if not X, then it is fine to Y'."
+            " Consider rewriting to the universal-negation form"
+            " ('いかなる理由（例: X）があっても`Y`しない')."
+            " See 04-styles.md '日本語の品質を保つ' section.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -1325,28 +1326,28 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
         for path in paths:
             resolved = _resolve_referenced_path(file_path, path)
             if resolved is None:
-                reasons.append(f"参照ファイルパス未実在: {path}")
+                reasons.append(f"referenced file path does not exist: {path}")
                 continue
             try:
                 referenced_bodies.append(resolved.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError):
-                reasons.append(f"参照ファイル読込失敗: {path}")
+                reasons.append(f"failed to read referenced file: {path}")
         # 節名は自ファイル本文内で完結する場合（自己参照）と、他ファイル参照を伴う場合の双方があるため、
         # 自ファイル本文（frontmatter除く）と参照先ファイル本文の双方を照合対象に含める。
         search_corpus = "\n".join([self_body, *referenced_bodies])
         for section in sections:
             heading_pattern = re.compile(rf"^#+\s*{re.escape(section)}\s*$", re.MULTILINE)
             if heading_pattern.search(search_corpus) is None and section not in search_corpus:
-                reasons.append(f"節名未実在: {section}")
+                reasons.append(f"section name does not exist: {section}")
 
     if not reasons:
         return False
     print(
         _llm_notice(
-            "frontmatter同期注記が指す本体該当語句が実在しない可能性がある"
-            f"（{tool_name}, target: {file_path}）: {'; '.join(reasons)}."
-            " norm-revision-checklist.md「規範対象範囲の網羅確認」節を参照し、"
-            "同期注記本文と対象ファイル・節名の整合を確認する。",
+            "the body-side identifier referenced by the frontmatter sync note may not exist"
+            f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
+            " See norm-revision-checklist.md '規範対象範囲の網羅確認' section and verify that the"
+            " sync note body matches the target file and section name.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -1561,9 +1562,9 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     if new_count >= 3:
         print(
             _llm_notice(
-                f"blocked: plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の"
-                f"Write/Edit/MultiEditが{new_count}件連続した。"
-                "先に`~/.claude/plans/`配下の計画ファイルを作成し、その後に配下ファイルを編集する。",
+                f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
+                f" operations targeted files under agent-toolkit/ without first creating a plan file."
+                " Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/.",
                 tag="block",
             ),
             file=sys.stderr,
@@ -1572,9 +1573,10 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     if new_count == 2:
         print(
             _llm_notice(
-                f"warn: plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の"
-                f"Write/Edit/MultiEditが{new_count}件連続。次件目でblockする。"
-                "先に`~/.claude/plans/`配下の計画ファイルを作成する。",
+                f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
+                f" operations targeted files under agent-toolkit/ without first creating a plan file."
+                " The next such edit will be blocked."
+                " Create a plan file under `~/.claude/plans/` first.",
                 tag="warn",
             ),
             file=sys.stderr,
@@ -1645,8 +1647,8 @@ def _check_plan_file_required_reads_first(
         _llm_notice(
             "blocked: attempting to edit a plan file without reading required references.\n"
             "Read them first, then retry the plan file edit.\n"
-            "本チェックは`~/.claude/plans/`直下の計画ファイル編集時にのみ発火する。"
-            "計画ファイルを編集する前に下記リファレンスを全て読み込むこと。\n" + "\n".join(lines),
+            "This check fires only when editing plan files directly under `~/.claude/plans/`."
+            " Read all references below before editing the plan file.\n" + "\n".join(lines),
             tag="block",
         ),
         file=sys.stderr,
@@ -1801,14 +1803,14 @@ def _check_plan_file_target_files_h3_correspondence(
         return False
     parts = []
     if missing_h3:
-        parts.append(f"H3見出し未対応の対象ファイル: {sorted(missing_h3)}")
+        parts.append(f"target files without a corresponding H3 heading: {sorted(missing_h3)}")
     if extra_h3:
-        parts.append(f"対象ファイル一覧に無いH3見出し: {sorted(extra_h3)}")
+        parts.append(f"H3 headings not listed in the target file list: {sorted(extra_h3)}")
     print(
         _llm_notice(
-            "warning: plan file `## 変更内容`配下の対象ファイル一覧とH3見出しが1対1で対応していない。"
+            "warning: the target file list and H3 headings under plan file `## 変更内容` are not in one-to-one correspondence."
             f" {' '.join(parts)}."
-            " 各対象ファイルに対応するH3見出しを追加するか、不要なH3見出し・対象ファイル記載を削除する。",
+            " Add an H3 heading for each target file, or remove the unmatched H3 headings / target file entries.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -1934,10 +1936,10 @@ def _check_plan_file_history_content_sync(
         return False
     print(
         _llm_notice(
-            f"warning: plan file `## 変更履歴`に記載されたファイル・節名 {missing} が"
-            "`## 変更内容`側の対象ファイル一覧・H3見出しに対応する記述を持たない。"
-            "変更履歴節は方針転換・全面改訂・却下の履歴保持に用途限定し、"
-            "通常の指摘反映は`## 変更内容`本文へ直接反映する。",
+            f"warning: files/section names {missing} listed under plan file `## 変更履歴` have no"
+            " corresponding entry in the target file list or H3 headings under `## 変更内容`."
+            " The `## 変更履歴` section is reserved for recording direction changes, full revisions,"
+            " and rejections; normal feedback reflection should be applied directly to the `## 変更内容` body.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2002,10 +2004,10 @@ def _check_plan_file_change_h3_has_code_block(
         return False
     print(
         _llm_notice(
-            "warning: plan file `## 変更内容`配下のH3にtext/diffコードブロックが存在しない。"
-            f" 該当H3: {sorted(missing)}."
-            " 変更後の最終文面または差分を`text`または`diff`コードブロックで埋め込むこと。"
-            " SSOT: skills/plan-mode/references/plan-file-guidelines.md「変更内容」節。",
+            "warning: H3 sections under plan file `## 変更内容` are missing a text/diff code block."
+            f" Affected H3: {sorted(missing)}."
+            " Embed the final post-change text or diff in a `text` or `diff` code block."
+            " SSOT: skills/plan-mode/references/plan-file-guidelines.md '変更内容' section.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2057,10 +2059,11 @@ def _check_plan_file_path_section_matches_file_path(
         return False
     print(
         _llm_notice(
-            "warning: plan file末尾のパス節配下のパス値がWrite/Edit/MultiEditの`file_path`と一致しない。"
-            f" 記録値: {candidate}. Writeパス: {file_path_raw}."
-            " 当該節の値を実際の書き込み先と一致させること。"
-            " SSOT: `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル（本ファイル）のパス」節。",
+            "warning: the path recorded under the plan file's trailing path section does not match the"
+            " `file_path` of the Write/Edit/MultiEdit."
+            f" Recorded value: {candidate}. Write path: {file_path_raw}."
+            " Update the section value to match the actual write target."
+            " SSOT: `skills/plan-mode/references/plan-file-guidelines.md` '計画ファイル（本ファイル）のパス' section.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2274,11 +2277,11 @@ def _check_plan_file_no_deferral_expression(
     tail = f"; and {overflow} more" if overflow > 0 else ""
     print(
         _llm_notice(
-            "blocked: plan file `## 変更内容`・`### エージェント判断`配下に先送り表現を検出した。"
-            " 実装段階への先送りを示唆する表現を、確定的な実施文（現在形の実施義務文）または"
-            " `## 進捗ログ`の観測記録へ書き換える。"
+            "blocked: deferral expressions were detected under plan file `## 変更内容` / `### エージェント判断`."
+            " Rewrite phrases that defer decisions to the implementation phase into definitive execution statements"
+            " (present-tense mandatory execution) or into observation records under `## 進捗ログ`."
             f" Matches: {shown_str}{tail}."
-            f" 代替案: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
+            f" Alternatives: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
             tag="block",
         ),
         file=sys.stderr,
@@ -2386,10 +2389,10 @@ def _check_workaround_memo_gate(tool_name: str, tool_input: dict) -> bool:
     if not memo_path.exists():
         print(
             _llm_notice(
-                f"warning: plan file `## 変更内容`にワークアラウンド語を検出したが"
-                f" `{memo_path}` が存在しない。"
-                f" 根本原因の候補・根本対応が成立するか・成立しない場合の理由を"
-                f" 当該メモファイルへ記録してから再度Writeする。",
+                f"warning: workaround-related terms were detected under plan file `## 変更内容`,"
+                f" but `{memo_path}` does not exist."
+                f" Record the root-cause candidates, whether a root-cause fix is viable, and if not,"
+                f" the reason it is not viable, in that memo file before retrying Write.",
                 tag="warn",
             ),
             file=sys.stderr,
@@ -2409,8 +2412,9 @@ def _check_workaround_memo_gate(tool_name: str, tool_input: dict) -> bool:
     if missing_items:
         print(
             _llm_notice(
-                f"warning: `{memo_path}` に必須項目 {missing_items} の本文記入がない。"
-                f" 根本原因の候補・根本対応が成立するか・成立しない場合の理由を記入してから再度Writeする。",
+                f"warning: `{memo_path}` is missing body content for required items {missing_items}."
+                f" Fill in the root-cause candidates, whether a root-cause fix is viable, and if not,"
+                f" the reason it is not viable, before retrying Write.",
                 tag="warn",
             ),
             file=sys.stderr,
@@ -2497,11 +2501,11 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             if basename not in search_body:
                 print(
                     _llm_notice(
-                        f"warning: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
-                        f"`## 調査結果`または`### エージェント判断`にwc -l実測値の記載が見当たらない。"
-                        f"期待値: {actual_lines}（±2許容、すなわち{actual_lines - 2}〜{actual_lines + 2}）。"
-                        f"計画ファイルの`## 調査結果`または`### エージェント判断`に"
-                        f"`{basename}`の実測行数を追記してから再度Writeする。",
+                        f"warning: plan file `## 変更内容` includes size-limit-target file `{basename}`,"
+                        f" but no wc -l measured value is recorded under `## 調査結果` or `### エージェント判断`."
+                        f" Expected: {actual_lines} (±2 tolerance, i.e. {actual_lines - 2}-{actual_lines + 2})."
+                        f" Record the actual line count of `{basename}` under `## 調査結果` or `### エージェント判断`"
+                        f" before retrying Write.",
                         tag="warn",
                     ),
                     file=sys.stderr,
@@ -2513,10 +2517,11 @@ def _check_plan_file_size_limit_target_wc_l_recorded(
             if not any(low <= n <= high for n in numbers_in_body):
                 print(
                     _llm_notice(
-                        f"warning: 計画ファイルの`## 変更内容`に文書サイズ上限対象ファイル`{basename}`が含まれるが、"
-                        f"`## 調査結果`または`### エージェント判断`に記載の数値が実測値と一致しない。"
-                        f"期待値: {actual_lines}（±2許容、すなわち{actual_lines - 2}〜{actual_lines + 2}）。"
-                        f"計画ファイルの該当箇所を実測行数に更新してから再度Writeする。",
+                        f"warning: plan file `## 変更内容` includes size-limit-target file `{basename}`,"
+                        f" but the number recorded under `## 調査結果` or `### エージェント判断` does not match"
+                        f" the actual measurement."
+                        f" Expected: {actual_lines} (±2 tolerance, i.e. {actual_lines - 2}-{actual_lines + 2})."
+                        f" Update the recorded number in the plan file to the actual line count before retrying Write.",
                         tag="warn",
                     ),
                     file=sys.stderr,
@@ -2649,11 +2654,12 @@ def _check_plan_file_retroactive_scan_recorded(
         return False
     print(
         _llm_notice(
-            f"blocked: {file_path}へのメタ規範新設パターンの編集を検出したが、"
-            f"計画ファイル{plan_file_path}の`## 調査結果`配下`### 遡及スキャン結果`小見出しに"
-            f"必須項目（対象パターン・検出件数・対応方針）の記述が見当たらない。"
-            f"skills/plan-mode/references/norm-revision-checklist.md「規範対象範囲の網羅確認」節に従い、"
-            f"遡及スキャン結果を計画ファイルへ記載してから再度編集する。",
+            f"blocked: detected a new meta-norm pattern being added to {file_path},"
+            f" but plan file {plan_file_path} does not record the required items"
+            f" (target pattern, detection count, remediation policy) under the"
+            f" `### 遡及スキャン結果` sub-heading of its `## 調査結果` section."
+            f" Follow skills/plan-mode/references/norm-revision-checklist.md '規範対象範囲の網羅確認' section,"
+            f" record the retroactive scan results in the plan file, then retry the edit.",
             tag="block",
         ),
         file=sys.stderr,
@@ -2777,11 +2783,11 @@ def _check_process_feedbacks_blocks_enter_plan_mode(tool_name: str, session_id: 
         return False
     print(
         _llm_notice(
-            "blocked: process-feedbacksスキル経由でのEnterPlanMode発行はplan-modeスキル規範"
-            "（agent-toolkit/skills/plan-mode/SKILL.md「plan mode移行の前提」節）に反する。"
-            "process-feedbacksはplan mode外で実行する。"
-            "process-feedbacks経由の起動を維持したままplan modeへ切り替えたい場合は"
-            "`agent-toolkit:process-feedbacks-finish`スキルを起動してフラグをリセットする。",
+            "blocked: issuing EnterPlanMode from within the process-feedbacks skill violates the plan-mode norm"
+            " (agent-toolkit/skills/plan-mode/SKILL.md 'plan mode移行の前提' section)."
+            " Run process-feedbacks outside plan mode."
+            " To switch into plan mode while keeping the process-feedbacks-invoked state,"
+            " invoke the `agent-toolkit:process-feedbacks-finish` skill to reset the flag.",
             tag="block",
         ),
         file=sys.stderr,
@@ -2808,10 +2814,10 @@ def _check_plan_file_bump_step_when_agent_toolkit_target(tool_name: str, tool_in
         return
     print(
         _llm_notice(
-            f"plan file {file_path_raw}: 対象ファイル一覧に`agent-toolkit/`配下パスを含むが、"
-            "`## 実行方法`本文に`agent_toolkit_bump.py`ステップが記載されていない。"
-            "`.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節に従い実行方法へbumpステップを追加する"
-            "（bump不要時は本警告を無視して進める）。",
+            f"plan file {file_path_raw}: the target file list includes paths under `agent-toolkit/`,"
+            " but the `## 実行方法` body does not include an `agent_toolkit_bump.py` step."
+            " Follow `.claude/skills/agent-toolkit-edit/SKILL.md` 'バージョン更新' section and add a bump step"
+            " to the execution procedure (ignore this warning if a bump is not required).",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2837,9 +2843,10 @@ def _check_plan_file_manifest_when_bump_step(tool_name: str, tool_input: dict) -
         return
     print(
         _llm_notice(
-            f"plan file {file_path_raw}: `## 実行方法`本文にbump stepが記載されているが、"
-            "対象ファイル一覧に両manifestの記載が欠落している。"
-            "`.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節に従い両manifestを対象ファイル一覧へ追加する。",
+            f"plan file {file_path_raw}: the `## 実行方法` body records a bump step,"
+            " but the target file list is missing both manifests."
+            " Follow `.claude/skills/agent-toolkit-edit/SKILL.md` 'バージョン更新' section and add both manifests to"
+            " the target file list.",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2866,10 +2873,10 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
     joined = ", ".join(f"`{p}`" for p in invalid)
     print(
         _llm_notice(
-            f"plan file {file_path_raw}: `## 変更内容 > ### 対象ファイル一覧`に"
-            f"絶対パスまたは親ディレクトリ参照を含む項目を検出: {joined}。"
-            f"プロジェクトルート相対の完全パスへ修正する"
-            f"（`skills/plan-mode/references/plan-file-guidelines.md`参照）。",
+            f"plan file {file_path_raw}: entries containing absolute paths or parent-directory references were"
+            f" detected under `## 変更内容 > ### 対象ファイル一覧`: {joined}."
+            f" Rewrite them as full paths relative to the project root"
+            f" (see `skills/plan-mode/references/plan-file-guidelines.md`).",
             tag="warn",
         ),
         file=sys.stderr,
@@ -2912,7 +2919,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
             " before completing Phase 7 (plan-reviewer / codex review)."
             f" Missing flags: {missing}."
-            " See agent-toolkit/skills/plan-mode/references/integrity-checks.md「工程7の実施手順」節.",
+            " See agent-toolkit/skills/plan-mode/references/integrity-checks.md '工程7の実施手順' section.",
             tag="block",
         ),
         file=sys.stderr,
@@ -3282,9 +3289,9 @@ def _check_bash_bulk_stage_with_unedited_files(
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
                 "additionalContext": _llm_notice(
-                    "warn: 一括ステージ実行時に自セッションで編集していないファイルが作業ツリーに含まれる。"
-                    f"編集外候補: {sample}。"
-                    "個別ファイル指定 (git add <file>) への切替を推奨する。",
+                    "warn: bulk staging includes files that were not edited in this session."
+                    f" Un-edited candidates: {sample}."
+                    " Consider switching to per-file staging (`git add <file>`).",
                     tag="warn",
                 ),
             },
@@ -3656,7 +3663,7 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": "[agent-toolkit] git logに--decorateを自動的に挿入しました。",
+        "systemMessage": "[agent-toolkit] auto-inserted --decorate into git log.",
     }
 
 
@@ -3731,7 +3738,7 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
         },
     }
     if not already_correct:
-        result["systemMessage"] = "[agent-toolkit] codex MCPのsandboxをdanger-full-accessへ強制固定しました。"
+        result["systemMessage"] = "[agent-toolkit] forced codex MCP sandbox to danger-full-access."
     return result
 
 

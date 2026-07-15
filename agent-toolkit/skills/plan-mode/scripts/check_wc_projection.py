@@ -130,6 +130,10 @@ _UNDETERMINED_PATHS: frozenset[str] = frozenset()
 # 行数集計から除外する（全角丸括弧で行全体を囲む場合のみ一致）。
 _ANNOTATION_ONLY_RE = re.compile(r"^（.*）$")
 
+# 計画本文冒頭の許容リポジトリルート宣言（HTMLコメント形式`<!-- allowed-repo-root: /abs/path -->`）を抽出する。
+# 宣言されたルート配下の絶対パスは対象ファイル一覧の絶対パス警告対象から除外する。
+_ALLOWED_REPO_ROOT_RE = re.compile(r"<!--\s*allowed-repo-root:\s*(?P<root>[^\s]+?)\s*-->")
+
 # 追記/縮減対象ブロック内の1行目が`[追記]`ラベル単独の場合、当該ラベル行は
 # `plan-file-diff-labels.md`「差分ラベル6種」節が定める記法上の目印であり
 # 対象ファイルへ挿入される内容ではないため行数集計から除外する。
@@ -173,6 +177,14 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     # （警告のみで違反件数には計上しない）。
     _check_labelless_addition_for_over_threshold_files(plan_path, text)
 
+    # 対象ファイル一覧の絶対パス表記を検出し、`<!-- allowed-repo-root: /abs/path -->`宣言済み
+    # ルート配下のパスは除外したうえで残余のみ警告する（警告のみで違反件数には計上しない）。
+    _check_absolute_paths_with_allowed_roots(plan_path, text)
+
+    # 同一ファイルへ[現行]/[置換後]置換ペア経路と[現行]/[削除根拠]削除ペア経路が混在する場合、
+    # 見込み行数検算経路の統一を促す警告を出力する（警告のみで違反件数には計上しない）。
+    _check_projection_path_uniformity(plan_path, text)
+
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
     grouped: dict[str, list[tuple[str, str]]] = {}
@@ -195,6 +207,108 @@ def _check_wc(plan_path: pathlib.Path) -> int:
         violations += _check_one_file(plan_path, path, grouped[path], projected_map)
     violations += _check_addition_reduction_projection(plan_path, text)
     return violations
+
+
+def _extract_allowed_repo_roots(text: str) -> list[str]:
+    """計画本文中の`<!-- allowed-repo-root: /abs/path -->`宣言から許容ルート絶対パス一覧を抽出する。
+
+    複数宣言時は宣言順に全て収集する。宣言が無い場合は空リストを返す。
+    """
+    return [m.group("root") for m in _ALLOWED_REPO_ROOT_RE.finditer(text)]
+
+
+def _check_absolute_paths_with_allowed_roots(plan_path: pathlib.Path, text: str) -> int:
+    """対象ファイル一覧の絶対パス表記のうち、許容ルート配下でないものを警告する。
+
+    引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
+    常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱い）。
+    許容ルートの宣言記法は`<!-- allowed-repo-root: /abs/path -->`のHTMLコメント形式で、
+    計画本文冒頭（または任意位置）に配置できる。
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+    allowed_roots = _extract_allowed_repo_roots(text)
+    absolute_paths: list[str] = []
+    for line in section.splitlines():
+        m = _CHECKBOX_PATH_RE.match(line)
+        if not m:
+            continue
+        path = m.group("path")
+        if not path.startswith("/"):
+            continue
+        if any(path == root or path.startswith(root.rstrip("/") + "/") for root in allowed_roots):
+            continue
+        absolute_paths.append(path)
+    if absolute_paths:
+        joined = ", ".join(f"`{p}`" for p in absolute_paths)
+        print(
+            f"{plan_path}: [warn] 対象ファイル一覧に許容ルート未宣言の絶対パスを検出: {joined}。"
+            f"`<!-- allowed-repo-root: /abs/path -->`宣言で許容するか相対パスへ修正する",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def _check_projection_path_uniformity(plan_path: pathlib.Path, text: str) -> int:
+    """同一ファイル内で置換ペア経路と削除ペア経路が混在する場合、経路統一を促す警告を出力する。
+
+    引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
+    常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱い）。
+    見込み行数検算経路の統一（`[現行]`/`[置換後]`置換ペアと`[現行]`/`[削除根拠]`削除ペアの
+    どちらか片方への集約）を促し、混在検出時に警告する。
+    """
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+    # ファイルごとに、置換ペア出現と削除ペア出現の有無を集計する。
+    replacement_pair_files: set[str] = set()
+    deletion_pair_files: set[str] = set()
+    known_paths = _collect_known_paths(section)
+    lines = section.splitlines()
+    n = len(lines)
+    current_path: str | None = None
+    pending_current = False
+    i = 0
+    while i < n:
+        line = lines[i]
+        m_h3 = _H3_RE.match(line)
+        if m_h3:
+            path = m_h3.group("path")
+            current_path = path if path in known_paths else None
+            pending_current = False
+            i += 1
+            continue
+        m_open = TEXT_FENCE_OPEN_RE.match(line)
+        if m_open:
+            open_marker = m_open.group(1)
+            i += 1
+            content_lines: list[str] = []
+            while i < n and not is_matching_close(open_marker, lines[i]):
+                content_lines.append(lines[i])
+                i += 1
+            i += 1
+            label = _leading_label(content_lines)
+            if label == "current":
+                pending_current = True
+            elif label in {"replacement", "replacement-full"} and pending_current and current_path is not None:
+                replacement_pair_files.add(current_path)
+                pending_current = False
+            elif label == "deletion" and pending_current and current_path is not None:
+                deletion_pair_files.add(current_path)
+                pending_current = False
+            elif label is not None:
+                pending_current = False
+            continue
+        i += 1
+    mixed = replacement_pair_files & deletion_pair_files
+    for path in sorted(mixed):
+        print(
+            f"{plan_path}: [warn] {path} で`[現行]`/`[置換後]`置換ペアと"
+            f"`[現行]`/`[削除根拠]`削除ペアが混在。見込み行数検算経路をどちらかへ統一する",
+            file=sys.stderr,
+        )
+    return 0
 
 
 def _read_text_or_none(path: pathlib.Path) -> str | None:

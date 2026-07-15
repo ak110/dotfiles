@@ -155,3 +155,23 @@ GitLab本体のlintは`include`や`workflow`の評価まで実行するため、
 
 CIが意図通りに動作しない場合は、原因の階層（起動条件・rules評価・依存関係・artifacts）を切り分けてから
 [GitLab CI/CDドキュメント](https://docs.gitlab.com/ci/)の該当セクションを参照する。
+
+## 私設ホスト（自己署名のTLS証明書）でのCI通過確認
+
+自己署名のTLS証明書のGitLab私設ホストでは、`glab`が既定でTLS証明書検証エラー（`tls: failed to verify certificate`）で
+動作しない場合がある。以下のいずれかで解消する。
+
+- `glab config set skip_tls_verify true --host <host>`でホスト単位のTLS検証をスキップする
+- 環境変数`GITLAB_HOST=<host>`と`GITLAB_TOKEN=<token>`を併せて設定する
+- `glab`が全く機能しない場合の代替として`curl -k`によるAPI直呼び出しを使う
+
+```text
+curl -k -H "PRIVATE-TOKEN: <token>" \
+  "https://<host>/api/v4/projects/<project-id>/pipelines?sha=<commit-sha>"
+```
+
+pipeline一覧からstatus=successを検知するまでpollingする。全て不可能な場合は
+ユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
+
+`curl -k`はTLS検証をスキップするためMITM耐性が下がる。認証トークン漏洩防止のため、
+トークンは環境変数経由で渡し、コマンド履歴に残さない運用とする。

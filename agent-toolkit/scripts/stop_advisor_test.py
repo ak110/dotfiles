@@ -426,7 +426,7 @@ class TestContextConditions:
         assert _SESSION_REVIEW_SKILL in body
         assert "end the turn silently" in body
         assert "systemMessage" in decision
-        assert "件の変更ファイル" in decision["systemMessage"]
+        assert "changed file(s)" in decision["systemMessage"]
 
     def test_repeats_context_each_stop(self, tmp_path: pathlib.Path, make_dirty_repo: Callable[[pathlib.Path], pathlib.Path]):
         """同一transcriptで2回連続Stopしても、スキル未起動なら毎回`decision: block`＋`reason`を返す。"""
@@ -590,7 +590,7 @@ class TestGitStatusDisplay:
         assert "decision" not in decision
         assert "systemMessage" in decision
         assert "git status" in decision["systemMessage"]
-        assert "件の変更ファイル" in decision["systemMessage"]
+        assert "changed file(s)" in decision["systemMessage"]
 
     def test_clean_repo_no_system_message(
         self, tmp_path: pathlib.Path, make_clean_repo: Callable[[pathlib.Path], pathlib.Path]
@@ -684,7 +684,7 @@ class TestStatusSummary:
         summary = stop_advisor._status_summary(str(repo))  # pylint: disable=protected-access
         assert "systemMessage" in summary
         assert "[git status]" in summary["systemMessage"]
-        assert "件の変更ファイル" in summary["systemMessage"]
+        assert "changed file(s)" in summary["systemMessage"]
 
 
 class TestScopeEscalationDetection:
@@ -713,7 +713,7 @@ class TestScopeEscalationDetection:
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
         # カテゴリ名またはリファレンス誘導が本文に含まれる。
-        assert "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_non_matching_text_falls_through_to_review_block(self, tmp_path: pathlib.Path):
         """非該当テキスト → 通常の振り返り誘導blockへ進む（`session-review`が本文へ含まれる）。"""
@@ -785,7 +785,7 @@ class TestScopeEscalationDetection:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
-        assert "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
     @pytest.mark.parametrize(
         "category",
@@ -824,7 +824,7 @@ class TestScopeEscalationDetection:
         body = _block_reason(decision)
         assert _SESSION_REVIEW_SKILL in body
         # scope-escalation矯正の本文は含まれない。
-        assert "縮退表明" not in body
+        assert "scope-escalation" not in body
 
     def test_extended_categories_apply_under_plan_mode(self, tmp_path: pathlib.Path):
         """`plan_mode_skill_invoked`真ならStop経路の照合対象を`_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する。
@@ -845,7 +845,7 @@ class TestScopeEscalationDetection:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
-        assert "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_extended_categories_apply_under_process_feedbacks(self, tmp_path: pathlib.Path):
         """`process_feedbacks_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
@@ -866,7 +866,7 @@ class TestScopeEscalationDetection:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
-        assert "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_overhead_tradeoff_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
         """拡張フォーカス有効時、`overhead-tradeoff`カテゴリを検出しblockする。"""
@@ -885,7 +885,7 @@ class TestScopeEscalationDetection:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
-        assert "overhead-tradeoff" in body or "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "overhead-tradeoff" in body or "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_inline_choice_offer_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
         """拡張フォーカス有効時、地の文の番号付き選択肢提示を`approach-confirm`として検出しblockする。"""
@@ -902,7 +902,7 @@ class TestScopeEscalationDetection:
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
-        assert "approach-confirm" in body or "scope-escalation-phrases" in body or "縮退表明" in body
+        assert "approach-confirm" in body or "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_logs_block_scope_escalation(self, tmp_path: pathlib.Path):
         """検出時に`append_stop_log`へ`block_scope_escalation`が記録される。"""

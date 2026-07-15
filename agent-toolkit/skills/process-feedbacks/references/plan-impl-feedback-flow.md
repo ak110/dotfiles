@@ -36,6 +36,11 @@
 直列実装の消化完了後、`agent-toolkit:process-feedbacks-finish`へ進む。
 採否確定はいずれの場合も`process-feedbacks-finish`工程4（`atk fb adopt`等の後始末コマンド）で行う。
 
+## 通常型の計画作成時に行うSSOT事前照合
+
+複数フィードバックを統合する計画を作成する場合は、初版Write前に各反映先ファイルのSSOT間の
+相互整合（同期の注記、重複を意図的に明記した箇所の追随、実装典拠との整合）を事前照合するチェックリストを併用する。
+
 ## `run_in_background`起動の制約
 
 `run_in_background`起動は権限プロンプトへ応答できない制約
