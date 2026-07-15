@@ -46,9 +46,10 @@ auto mode classifierは`kill -TERM $PPID`を「エージェントが作成して
 
 対応: `share/claude_settings_json_managed.json`の`autoMode.allow`配列へ以下の自然言語ルールを追加する。
 
-- 対象: `exit-session`スキルからの`kill -TERM $PPID`
-- ルール本文: 「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は正当な自律終了操作として許可する。
-  対象は呼び出し元スキルからの明示呼び出し、またはユーザーのSkill名明示指定に限る」
+- 対象: `exit-session`スキルからの`kill -TERM $PPID`。
+- ルール本文: 「`agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、
+  同スキルの起動条件を満たした状態でのシグナル送出であり許可する」とする。
+  起動条件の内訳は`agent-toolkit:exit-session`スキル本文「起動条件」節を参照する。
 
 ## カスタムルール記述の注意点
 
