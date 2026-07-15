@@ -47,13 +47,28 @@ def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
     return sorted(p.name for p in tbd_dir.iterdir() if p.suffix == ".md" and p.name.startswith(prefix))
 
 
+def _looks_like_question(message: str) -> bool:
+    """メッセージ本文に疑問文らしき表現が含まれるかを簡易判定する。
+
+    `？`・`?`を部分文字列として含む場合、または末尾（句点除去後）が`か`で終わる場合を問いとみなす。
+    高度な自然言語処理は導入せず、誤検知は許容してユーザーが目視で気づける警告にとどめる。
+    """
+    if "？" in message or "?" in message:
+        return True
+    return message.rstrip().rstrip("。").endswith("か")
+
+
 def _cmd_tbd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
     now: datetime.datetime,
     home: pathlib.Path,
 ) -> None:
-    """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。"""
+    """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。
+
+    `choice`類型以外は`_looks_like_question`で疑問文の有無を判定し、
+    含まれない場合は投入対象ファイル名を添えて標準エラーへ警告する（投入自体は成功させる）。
+    """
     target_repo = _resolve_repo_id(args.repo_path)
     if args.question_type == "choice" and not args.choices:
         print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
@@ -79,6 +94,12 @@ def _cmd_tbd_add(
     generated: list[str] = []
     for message in messages:
         filename = f"{timestamp}-{counter:03d}.md"
+        if args.question_type != "choice" and not _looks_like_question(message):
+            print(
+                f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
+                "回答者が何に答えるべきか分かる文面か確認してください。",
+                file=sys.stderr,
+            )
         content = (
             f"---\ntarget_repo: {target_repo}\n{fm_extra}---\n\n"
             f"## 質問\n\n{message}\n\n## 回答\n\n"

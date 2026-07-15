@@ -8,6 +8,7 @@ tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adopt/tbd-rmサブコマンドの単体
 import pathlib
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -25,6 +26,21 @@ from atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 
+def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
+    """tbd-add検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
+
+    def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+        if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            stdout: Any = (
+                "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
+            )
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
+        empty: Any = "" if kw.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    return fake_run
+
+
 class TestTbdAdd:
     """tbd-addサブコマンドの基本動作検証。"""
 
@@ -37,17 +53,7 @@ class TestTbdAdd:
         notes = _setup_tbd_env(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
-            empty: Any = "" if kw.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -93,6 +99,80 @@ class TestTbdAdd:
                 now=_FIXED_DT,
             )
         assert exc_info.value.code == 2
+
+    def test_add_without_question_mark_warns(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """問いを含まない本文投入時に警告が標準エラーへ出力され、投入自体は成功する。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "実施報告のみで疑問文を含まない本文"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+        stderr = capsys.readouterr().err
+        assert "警告" in stderr
+        assert f"{_FIXED_TIMESTAMP}-001.md" in stderr
+
+    def test_add_with_question_mark_no_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """疑問文を含む本文投入時は警告が出力されない。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "tbd-add", str(myrepo), "この対応でよいか？"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+        assert "警告" not in capsys.readouterr().err
+
+    def test_choice_without_question_mark_no_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """question-type=choice時は疑問文を含まない本文でも警告が出力されない。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "fb",
+                    "tbd-add",
+                    str(myrepo),
+                    "--question-type",
+                    "choice",
+                    "--choices",
+                    "A,B",
+                    "実施報告のみで疑問文を含まない選択式本文",
+                ],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+        assert "警告" not in capsys.readouterr().err
 
 
 class TestTbdAddPullBeforeEditor:
@@ -182,17 +262,7 @@ class TestTbdAddSourceOption:
         notes = _setup_tbd_env(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
-            empty: Any = "" if kw.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -215,20 +285,10 @@ class TestTbdAddSourceOption:
         notes = _setup_tbd_env(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kw.get("text") else b"")
-            empty: Any = "" if kw.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-add", str(myrepo), "質問本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "tbd-add", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         files = sorted((notes / "tbd" / "inbox").iterdir())
