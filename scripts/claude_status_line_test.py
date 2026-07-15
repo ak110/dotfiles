@@ -82,41 +82,38 @@ class TestRender:
     )
     def test_context_percentage_color_threshold(self, value: float, expected_color: str) -> None:
         data = {"context_window": {"used_percentage": value}}
-        assert claude_status_line.render(data) == (f"{expected_color}コンテキスト消費量: {value:.0f}%{RESET}")
+        assert claude_status_line.render(data) == (f"{expected_color}コンテキスト: {value:.0f}%{RESET}")
+
+    def test_rate_limits_segment_combined(self) -> None:
+        data = {"rate_limits": {"five_hour": {"used_percentage": 60}, "seven_day": {"used_percentage": 40}}}
+        assert claude_status_line.render(data) == f"{YELLOW}消費量(5h/7d): 60% / 40%{RESET}"
+
+    def test_rate_limits_segment_five_hour_only(self) -> None:
+        data = {"rate_limits": {"five_hour": {"used_percentage": 81}}}
+        assert claude_status_line.render(data) == f"{RED}消費量(5h/7d): 81%{RESET}"
+
+    def test_rate_limits_segment_seven_day_only(self) -> None:
+        data = {"rate_limits": {"seven_day": {"used_percentage": 30}}}
+        assert claude_status_line.render(data) == f"{GREEN}消費量(5h/7d): 30%{RESET}"
+
+    def test_rate_limits_segment_all_missing(self) -> None:
+        data = {"rate_limits": {"five_hour": {"used_percentage": None}, "seven_day": {"used_percentage": None}}}
+        assert claude_status_line.render(data) == ""
 
     @pytest.mark.parametrize(
-        ("value", "expected_color"),
+        ("five_hour", "seven_day", "expected_color"),
         [
-            (0, GREEN),
-            (49, GREEN),
-            (50, GREEN),
-            (51, YELLOW),
-            (79, YELLOW),
-            (80, YELLOW),
-            (81, RED),
-            (95, RED),
+            (30, 30, GREEN),
+            (60, 30, YELLOW),
+            (30, 60, YELLOW),
+            (90, 30, RED),
+            (30, 90, RED),
+            (60, 90, RED),
         ],
     )
-    def test_five_hour_percentage_color_threshold(self, value: float, expected_color: str) -> None:
-        data = {"rate_limits": {"five_hour": {"used_percentage": value}}}
-        assert claude_status_line.render(data) == (f"{expected_color}5時間消費量: {value:.0f}%{RESET}")
-
-    @pytest.mark.parametrize(
-        ("value", "expected_color"),
-        [
-            (0, GREEN),
-            (49, GREEN),
-            (50, GREEN),
-            (51, YELLOW),
-            (79, YELLOW),
-            (80, YELLOW),
-            (81, RED),
-            (95, RED),
-        ],
-    )
-    def test_seven_day_percentage_color_threshold(self, value: float, expected_color: str) -> None:
-        data = {"rate_limits": {"seven_day": {"used_percentage": value}}}
-        assert claude_status_line.render(data) == (f"{expected_color}7日消費量: {value:.0f}%{RESET}")
+    def test_rate_limits_segment_severer_color(self, five_hour: float, seven_day: float, expected_color: str) -> None:
+        data = {"rate_limits": {"five_hour": {"used_percentage": five_hour}, "seven_day": {"used_percentage": seven_day}}}
+        assert claude_status_line.render(data) == (f"{expected_color}消費量(5h/7d): {five_hour:.0f}% / {seven_day:.0f}%{RESET}")
 
     def test_null_numeric_fields_omitted(self) -> None:
         data = {
@@ -128,7 +125,7 @@ class TestRender:
 
     def test_cost_formatting(self) -> None:
         data = {"cost": {"total_cost_usd": 0.1234}}
-        assert claude_status_line.render(data) == f"{GRAY}累計コスト: $0.12{RESET}"
+        assert claude_status_line.render(data) == f"{GRAY}コスト: $0.12{RESET}"
 
     @pytest.mark.parametrize(
         ("ms", "expected"),
@@ -158,10 +155,9 @@ class TestRender:
             f"{CYAN}[claude-opus-4-7|xhigh]{RESET} "
             f"{BLUE}~/dotfiles{RESET} "
             f"{MAGENTA}@Explanatory{RESET}"
-            f" | {GREEN}コンテキスト消費量: 42%{RESET}"
-            f" | {GRAY}累計コスト: $0.12{RESET}"
+            f" | {GREEN}コンテキスト: 42%{RESET}"
+            f" | {GRAY}コスト: $0.12{RESET}"
             f" | {GRAY}経過時間: 12分34秒{RESET}"
-            f" | {YELLOW}5時間消費量: 60%{RESET}"
-            f" | {GREEN}7日消費量: 40%{RESET}"
+            f" | {YELLOW}消費量(5h/7d): 60% / 40%{RESET}"
         )
         assert claude_status_line.render(data) == expected

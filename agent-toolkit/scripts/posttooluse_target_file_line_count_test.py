@@ -4,32 +4,16 @@
 `posttooluse_plan_format_test.py`と複製で持つ。
 """
 
-import functools
-import importlib.util
 import json
 import os
 import pathlib
 import subprocess
 import sys
-import types
 
 import _plan_format
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
-
-
-@functools.cache
-def _load_posttooluse_module() -> types.ModuleType:
-    """`scripts/posttooluse.py`を`importlib`で動的にインポートする。"""
-    spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
 def _run(
@@ -394,6 +378,34 @@ class TestPlanFormatTargetFileLineCount:
         assert second_output is not None
         second_msg = second_output["hookSpecificOutput"]["additionalContext"]
         assert "plan file contains target files exceeding 220 lines" in second_msg
+
+    def test_replacement_pair_diff_excludes_target(self, tmp_path: pathlib.Path):
+        """`[現行]`/`[置換後]`ペアで縮減量が計上済みの場合はH4見出しがなくても警告対象から除外される。"""
+        home, plans = self._home(tmp_path)
+        self._make_over_limit_file(home / "AGENTS.md")
+        overrides = {
+            "変更内容": (
+                "### 対象ファイル一覧\n\n- [ ] AGENTS.md\n\n"
+                "### `AGENTS.md`\n\n"
+                "```text\n[現行]\nold1\nold2\nold3\n```\n\n"
+                "```text\n[置換後]\nnew1\n```\n"
+            ),
+        }
+        content = _build_valid_plan(overrides=overrides)
+        plan = _write_plan(plans, "replacement-pair.md", content)
+        result = _run(
+            {
+                "session_id": "line-replacement-pair",
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "cwd": str(home),
+            },
+            state_dir=tmp_path / "state",
+            home_dir=home,
+            plan_mode_skill_invoked=True,
+        )
+        assert result.returncode == 0
+        assert "does not conform" not in result.stdout
 
     def test_reduction_heading_excludes_basename(self, tmp_path: pathlib.Path):
         """`#### 縮減対象（<basename>）`H4見出しが存在する場合も警告対象から除外される。"""

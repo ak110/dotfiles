@@ -621,12 +621,15 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
     （計画本文の追記案・置換案・frontmatter変更案に埋め込まれた節名参照も検査するため）。
     `## 調査結果`配下で`_LINE_ALLOW_MARKER`を同一行に持つ行、`## 背景`配下の原文転記領域は検査対象から除外する。
     節名の表記揺れ処理は前後空白のtrimのみ実施する。
+    ラベル付き`text`フェンス内でネストしたフェンス付きコードブロック区画は検査対象外とする。
     """
     violations: list[str] = []
     in_fence = False
     fence_marker = ""
     fence_included = False
     awaiting_label = False
+    in_inner_fence = False
+    inner_fence_marker = ""
     in_investigation = False
     in_background = False
     section_cache: dict[str, frozenset[str] | None] = {}
@@ -642,17 +645,29 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
                 fence_lang = raw[m_fence.end() :].strip()
                 fence_included = False
                 awaiting_label = fence_lang == "text"
+            elif fence_included and not in_inner_fence and (marker[0] != fence_marker[0] or len(marker) < len(fence_marker)):
+                in_inner_fence = True
+                inner_fence_marker = marker
+            elif in_inner_fence and marker[0] == inner_fence_marker[0] and len(marker) >= len(inner_fence_marker):
+                in_inner_fence = False
+                inner_fence_marker = ""
+            elif in_inner_fence:
+                continue
             elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
                 in_fence = False
                 fence_marker = ""
                 fence_included = False
                 awaiting_label = False
+                in_inner_fence = False
+                inner_fence_marker = ""
             continue
 
         if in_fence:
             if awaiting_label:
                 fence_included = bool(_INCLUDED_SECTION_REF_FENCE_LABEL_RE.match(raw))
                 awaiting_label = False
+            if in_inner_fence:
+                continue
             if not fence_included:
                 continue
             violations.extend(_find_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths))

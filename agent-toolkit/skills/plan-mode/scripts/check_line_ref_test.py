@@ -589,10 +589,9 @@ class TestSectionNameExistence:
         skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
         skill_dir.mkdir(parents=True)
         (skill_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
-        bt = chr(0x60)  # 計画本文が`check_line_ref`自身にマッチするのを回避するため、間接表記を用いる
         path = _write(
             tmp_path / "doc.md",
-            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Usage」節を参照する。\n```\n",
+            "```text\n[追記]\n詳細は`references/guide.md`「Usage」節を参照する。\n```\n",
         )
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
@@ -602,10 +601,9 @@ class TestSectionNameExistence:
         skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
         skill_dir.mkdir(parents=True)
         (skill_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
-        bt = chr(0x60)
         path = _write(
             tmp_path / "doc.md",
-            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Missing」節を参照する。\n```\n",
+            "```text\n[追記]\n詳細は`references/guide.md`「Missing」節を参照する。\n```\n",
         )
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 1
@@ -626,10 +624,9 @@ class TestSectionNameExistence:
         zzz_dir = tmp_path / "agent-toolkit" / "skills" / "zzz-skill" / "references"
         zzz_dir.mkdir(parents=True)
         (zzz_dir / "guide.md").write_text("## Usage\n\nBody.\n", encoding="utf-8")
-        bt = chr(0x60)
         path = _write(
             tmp_path / "doc.md",
-            f"```text\n[追記]\n詳細は{bt}references/guide.md{bt}「Usage」節を参照する。\n```\n",
+            "```text\n[追記]\n詳細は`references/guide.md`「Usage」節を参照する。\n```\n",
         )
         result = _run(str(path), cwd=tmp_path)
         # 意図した対象（zzz-skill配下）には「Usage」節が実在するが、アルファベット順で
@@ -646,11 +643,10 @@ class TestSectionNameExistence:
         節名不在検査自体がスキップされず「節名不在」として検出される。
         """
         marker_path = "agent-toolkit/skills/foo-skill/references/guide.md"
-        bt = chr(0x60)
         body = (
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            f"- [ ] {bt}{marker_path}{bt}（新設, 見込み20行）\n\n"
-            f"対象は{bt}guide.md{bt}「概要」節を参照する。\n"
+            f"- [ ] `{marker_path}`（新設, 見込み20行）\n\n"
+            "対象は`guide.md`「概要」節を参照する。\n"
         )
         path = _write(tmp_path / "plan.md", body)
         result = _run(str(path), cwd=tmp_path)
@@ -662,12 +658,89 @@ class TestSectionNameExistence:
         skill_dir = tmp_path / "agent-toolkit" / "skills" / "sample-skill" / "references"
         skill_dir.mkdir(parents=True)
         marker_path = "agent-toolkit/skills/sample-skill/references/new-file.md"
-        bt = chr(0x60)
         body = (
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            f"- [ ] {bt}{marker_path}{bt}（新設, 見込み20行）\n\n"
-            f"{bt}references/new-file.md{bt}「概要」節を参照する。\n"
+            f"- [ ] `{marker_path}`（新設, 見込み20行）\n\n"
+            "`references/new-file.md`「概要」節を参照する。\n"
         )
         path = _write(tmp_path / "plan.md", body)
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
+
+    def test_nested_python_fence_inside_labeled_text_fence_excluded(self, tmp_path: pathlib.Path) -> None:
+        """ラベル付き`text`フェンス内のpythonフェンス内にある節名参照は検査対象外。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            '````text\n[追記]\n```python\ntext = "`docs/guide.md`「存在しない節」節を参照する。"\n```\n````\n',
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_nested_fence_close_does_not_terminate_outer_fence(self, tmp_path: pathlib.Path) -> None:
+        """内側フェンスの閉じでは外側フェンスが維持される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "````text\n[追記]\n```python\n"
+            'text = "`docs/guide.md`「存在しない節」節を参照する。"\n'
+            "```\n`docs/guide.md`「存在しない節」節を参照する。\n````\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert len(result.stderr.splitlines()) == 1
+        assert "6行目" in result.stderr
+
+    def test_nested_fence_still_detects_outer_text_section_ref_violation(self, tmp_path: pathlib.Path) -> None:
+        """内側フェンス外・外側フェンス内の節名参照違反は引き続き検出される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "````text\n[追記]\n`docs/guide.md`「存在しない節」節を参照する。\n"
+            "```python\n"
+            'text = "`docs/guide.md`「別の存在しない節」節を参照する。"\n'
+            "```\n````\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert len(result.stderr.splitlines()) == 1
+        assert "3行目" in result.stderr
+        assert "別の存在しない節" not in result.stderr
+
+    def test_inner_fence_single_marker_char_differs(self, tmp_path: pathlib.Path) -> None:
+        """内側フェンスのマーカー文字が外側と異なる場合もネスト除外が動作する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            '~~~text\n[追記]\n```python\ntext = "`docs/guide.md`「存在しない節」節を参照する。"\n```\n~~~\n',
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_inner_fence_same_marker_char_same_length_closes_outer(self, tmp_path: pathlib.Path) -> None:
+        """外側と同一マーカー文字・同一長のフェンスは既存ロジック通り外側フェンスを閉じる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n[追記]\n```\n`docs/guide.md`「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "4行目" in result.stderr
+
+    def test_inner_fence_longer_marker_closes_outer(self, tmp_path: pathlib.Path) -> None:
+        """外側より長い同種マーカーは既存ロジック通り外側フェンスを閉じる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n[追記]\n````python\n`docs/guide.md`「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "4行目" in result.stderr

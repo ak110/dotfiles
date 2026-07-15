@@ -46,7 +46,10 @@ import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_diff_parsing import iter_reduction_headings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_diff_parsing import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_section_with_offset,
+    iter_reduction_headings,
+)
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_h2_section_body,
@@ -56,6 +59,9 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
     is_agent_facing_md,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from check_wc_projection import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_addition_reduction_blocks,
+)
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
@@ -233,13 +239,17 @@ def _collect_reduction_heading_files(content: str) -> set[str]:
 def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
     """対象ファイル一覧の各パスの行数を確認し、220行超過の対象種別ファイルがあれば警告メッセージを返す。
 
-    `## 変更内容`配下に対応する`#### 縮減対象（<ファイル名>）`H4見出しが存在するファイルは、
-    縮減計画済みとして警告対象から除外する。ファイル名は完全パス表記・basename表記のいずれも許容する。
+    `## 変更内容`配下に対応する`#### 縮減対象（<ファイル名>）`H4見出しが存在するファイル、
+    および`[現行]`/`[置換後]`ペア・`[削除根拠]`ペアで縮減量・置換ペアが計上済みのファイルは、
+    縮減計画済みとして警告対象から除外する（`check_wc_projection.py`の判定条件と同一のSSOTを使う）。
+    ファイル名は完全パス表記・basename表記のいずれも許容する。
     """
     paths = extract_target_files_from_changes(content)
     if not paths:
         return None
     reduction_files = _collect_reduction_heading_files(content)
+    section_text, _offset = extract_section_with_offset(content, "## 変更内容")
+    addition_reduction = extract_addition_reduction_blocks(section_text or "")
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     over_limit: list[tuple[str, int]] = []
     for rel in paths:
@@ -248,6 +258,9 @@ def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
         # 完全パス一致・basename一致のいずれかで縮減対象H4見出しが存在する場合は除外する。
         basename = rel.rsplit("/", 1)[-1]
         if rel in reduction_files or basename in reduction_files:
+            continue
+        entry = addition_reduction.get(rel, {})
+        if entry.get("replacement_pair_count", 0) > 0 or entry.get("reduction", 0) > 0:
             continue
         target = base / rel
         try:

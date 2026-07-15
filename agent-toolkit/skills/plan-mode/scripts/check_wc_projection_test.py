@@ -4,9 +4,9 @@
 見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
 正常系・乖離検出（純追記パターンの二重適用防止・通常パターンでの[現行]優先確認を含む）・
 [現行]文面不一致・対象ファイル不在・見込み行数記載欠落・H3見出し無し・複数ファイル対象・
-対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・`[追記]`ラベル直接検出と
-ラベル付き/なし追記の分離集計の各シナリオを網羅する。
-220行超過縮減対象H4検査以降の追加シナリオは`check_wc_projection_extra_test.py`が担う。
+対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・`[追記]`ラベル直接検出・
+ラベル付き/なし追記の分離集計・`[現行]`/`[置換後]`ペア差分集計の各シナリオを網羅する。
+220行超過縮減対象H4検査の既存シナリオは`check_wc_projection_extra_test.py`が担う。
 """
 
 import importlib.util
@@ -688,3 +688,156 @@ class TestCheckWcProjection:
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 1
         assert "乖離が許容幅を超える" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("current_text", "replacement_text", "current_decl", "projected_decl"),
+        [
+            pytest.param(
+                "old1\nold2\nold3\nold4\nold5",
+                "new1\nnew2\nnew3\nnew4\nnew5\nnew6\nnew7\nnew8\nnew9",
+                5,
+                9,
+                id="positive-diff-adds-to-addition",
+            ),
+            pytest.param(
+                "old1\nold2\nold3\nold4\nold5\nold6\nold7\nold8\nold9",
+                "new1\nnew2\nnew3\nnew4\nnew5",
+                9,
+                5,
+                id="negative-diff-adds-to-reduction",
+            ),
+            pytest.param("old1\nold2\nold3", "new1\nnew2\nnew3", 3, 3, id="zero-diff-no-change"),
+        ],
+    )
+    def test_projection_includes_current_to_replacement_diff(
+        self,
+        tmp_path: pathlib.Path,
+        current_text: str,
+        replacement_text: str,
+        current_decl: int,
+        projected_decl: int,
+    ) -> None:
+        """`[現行]`/`[置換後]`ペアの行数差が追記量・縮減量へ自動算入され乖離が検出されない。
+
+        旧経路（差分算入なし）では`現行N行 + 追記0行 - 縮減0行`が宣言済み見込み行数と食い違い、
+        乖離超過として`returncode == 1`になるはずの入力を用いて新経路の動作を検証する。
+        """
+        _write(tmp_path / "foo.md", current_text + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line=f"- [ ] `foo.md`（現行{current_decl}行, 見込み{projected_decl}行）",
+                h3_heading="### `foo.md`",
+                current_text=current_text,
+                replacement_text=replacement_text,
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_projection_current_replacement_diff_not_counted_as_labelless(self, tmp_path: pathlib.Path) -> None:
+        """`[現行]`/`[置換後]`差分はラベルなし追記警告の対象にならない。"""
+        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nline0\n```\n\n"
+            "```text\n[置換後]\nline0\nadded1\nadded2\nadded3\nadded4\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert "差分ラベル付与を検討" not in result.stderr
+
+    def test_projection_current_deletion_pair_unaffected(self, tmp_path: pathlib.Path) -> None:
+        """`[削除根拠]`ペアの縮減量集計は`[置換後]`差分経路の追加後も維持される。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\nold2\n```\n\n"
+            "```text\n[削除根拠]\n冗長なため削除する\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_projection_current_replacement_full_diff_applied(self, tmp_path: pathlib.Path) -> None:
+        """`[置換後（全文）]`ラベルでも`[現行]`との差分が追記量へ加算され乖離が検出されない。
+
+        `[置換後（全文）]`は文字列置換適用（`_check_one_file`）の対象外のため対象ファイルの実在は不要。
+        旧経路（差分算入なし）では宣言済み見込み4行と`現行2行+追記0行`が食い違い違反になるはずの入力を用いる。
+        """
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行2行, 見込み4行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\nold2\n```\n\n"
+            "```text\n[置換後（全文）]\nnew1\nnew2\nnew3\nnew4\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+
+    def test_reduction_block_warning_skipped_when_replacement_diff_present(self, tmp_path: pathlib.Path) -> None:
+        """220行超過ファイルで`[現行]`/`[置換後]`ペアがあればH4欠落警告は発生しない。"""
+        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nline0\n```\n\n"
+            "```text\n[置換後]\nline0\nadded1\nadded2\nadded3\nadded4\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert "H4見出しが不在" not in result.stderr
+
+    def test_reduction_block_warning_skipped_when_zero_diff_replacement_pair_present(self, tmp_path: pathlib.Path) -> None:
+        """同行数の`[現行]`/`[置換後]`ペアでもH4欠落警告は発生しない。"""
+        _write(tmp_path / "foo.md", "old1\nold2\n" + "\n".join(f"line{i}" for i in range(2, 230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み230行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\nold2\n```\n\n"
+            "```text\n[置換後]\nnew1\nnew2\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert "H4見出しが不在" not in result.stderr
+
+    def test_reduction_block_warning_still_fires_when_no_diff_mechanism(self, tmp_path: pathlib.Path) -> None:
+        """差分機構が無い220行超過ファイルでは従来どおりH4欠落警告が発生する。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行230行, 見込み230行）\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0
+        assert "H4見出しが不在" in result.stderr
+
+    def test_projection_drift_with_replacement_diff_detection(self, tmp_path: pathlib.Path) -> None:
+        """実ファイル適用経路と差分集計経路の乖離判定が同一ペアで同じ見込み値を報告する。"""
+        _write(tmp_path / "foo.md", "line0\n" + "\n".join(f"line{i}" for i in range(1, 230)) + "\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            "# T\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行230行, 見込み231行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nline0\n```\n\n"
+            "```text\n[置換後]\nline0\nadded1\nadded2\nadded3\nadded4\n```\n",
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "見込み231行, 実測234行" in result.stderr
+        assert "追記/縮減対象集計からの見込み234行" in result.stderr

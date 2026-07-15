@@ -6,7 +6,7 @@
 """Claude Code statusLine: セッション状況を1行で可視化する。
 
 stdinから公式statusLine JSON入力を受け取り、モデル名・effort・cwd・
-output_style名（既定値以外）・コンテキスト消費量・累計コスト・経過時間・5時間消費量・7日消費量を
+output_style名（既定値以外）・コンテキスト・コスト・経過時間・消費量(5h/7d)を
 パイプ区切りで標準出力へ出力する。数値項目には日本語ラベルを付与する。欠落・null要素は省略する。
 """
 
@@ -25,11 +25,10 @@ CYAN = "\033[36m"
 GRAY = "\033[90m"
 
 _DEFAULT_OUTPUT_STYLE = "default"
-_LABEL_CONTEXT = "コンテキスト消費量"
-_LABEL_COST = "累計コスト"
+_LABEL_CONTEXT = "コンテキスト"
+_LABEL_COST = "コスト"
 _LABEL_DURATION = "経過時間"
-_LABEL_FIVE_HOUR = "5時間消費量"
-_LABEL_SEVEN_DAY = "7日消費量"
+_LABEL_RATE_LIMITS = "消費量(5h/7d)"
 
 
 def main() -> int:
@@ -70,10 +69,9 @@ def render(data: dict[str, Any]) -> str:
         tail.append(_color(f"{_LABEL_COST}: ${total_cost:.2f}", GRAY))
     if duration_ms is not None:
         tail.append(_color(f"{_LABEL_DURATION}: {_format_duration(duration_ms)}", GRAY))
-    if five_hour_pct is not None:
-        tail.append(_color(f"{_LABEL_FIVE_HOUR}: {five_hour_pct:.0f}%", _threshold_color(five_hour_pct)))
-    if seven_day_pct is not None:
-        tail.append(_color(f"{_LABEL_SEVEN_DAY}: {seven_day_pct:.0f}%", _threshold_color(seven_day_pct)))
+    rate_limits_segment = _build_rate_limits_segment(five_hour_pct, seven_day_pct)
+    if rate_limits_segment is not None:
+        tail.append(rate_limits_segment)
 
     segments = ([head] if head else []) + tail
     return " | ".join(segments)
@@ -128,6 +126,32 @@ def _format_duration(ms: float) -> str:
     if hours > 0:
         return f"{hours}時間{minutes}分{secs}秒"
     return f"{minutes}分{secs}秒"
+
+
+def _build_rate_limits_segment(five_hour_pct: float | None, seven_day_pct: float | None) -> str | None:
+    """5時間/7日消費量を統合した1セグメント文字列を返す。両方Noneなら`None`を返す。"""
+    if five_hour_pct is None and seven_day_pct is None:
+        return None
+    if five_hour_pct is not None and seven_day_pct is not None:
+        display = f"{five_hour_pct:.0f}% / {seven_day_pct:.0f}%"
+        color = _severer_color(_threshold_color(five_hour_pct), _threshold_color(seven_day_pct))
+    elif five_hour_pct is not None:
+        display = f"{five_hour_pct:.0f}%"
+        color = _threshold_color(five_hour_pct)
+    else:
+        assert seven_day_pct is not None
+        display = f"{seven_day_pct:.0f}%"
+        color = _threshold_color(seven_day_pct)
+    return _color(f"{_LABEL_RATE_LIMITS}: {display}", color)
+
+
+def _severer_color(a: str, b: str) -> str:
+    """2色のうちRED、YELLOW、GREENの順でより警告寄りの色を返す。"""
+    order = (RED, YELLOW, GREEN)
+    for candidate in order:
+        if candidate in (a, b):
+            return candidate
+    return a
 
 
 def _threshold_color(percentage: float) -> str:
