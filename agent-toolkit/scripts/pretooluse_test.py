@@ -2920,7 +2920,7 @@ class TestCodexReviewNotRead:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
 
     def test_allowed_when_codex_impl_invoked_without_review_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """`codex_impl_invoked`が真の場合、codex-review.md未読でもブロックせず通過する。"""
