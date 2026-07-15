@@ -10,10 +10,10 @@
 `fb`サブパーサ配下に旧`dotfiles-fb`のサブコマンド群を再登録する。
 
 - fb add: inboxへフィードバックを投入する
-- fb list: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
+- fb list: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
 - fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
   （`--include-processed`でFILENAME指定時にadopted・rejected配下も探索）
-- fb start-processing: inboxからprocessing/へ移動し処理中状態に遷移させコミット・push
+- fb start-processing: feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push
 - fb adopt: 採用としてinboxまたはprocessingからadopted/へ移動しコミット・push
 - fb reject: 不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push
 - fb rm: inboxから単純削除しコミット・push
@@ -87,7 +87,9 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         ),
     )
 
-    list_ = sub.add_parser("list", help="feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する")
+    list_ = sub.add_parser(
+        "list", help="feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する"
+    )
     list_.add_argument(
         "--target-repo",
         metavar="REPO",
@@ -98,9 +100,9 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument(
         "--status",
         choices=("all", "answered", "unanswered", "inbox", "processing"),
-        default="inbox",
+        default="all",
         help=(
-            "表示範囲を限定する（既定: inbox）。"
+            "表示範囲を限定する（既定: all）。"
             "feedback側は`inbox`・`processing`・`all`で状態フォルダを切り替える。"
             "tbd側は`answered`・`unanswered`で回答状況を限定する"
             "（`inbox`・`processing`・`all`はtbd側に作用せず全件出力）。"
@@ -156,7 +158,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
 
     start_processing = sub.add_parser(
         "start-processing",
-        help="inboxからprocessing/へ移動し処理中状態に遷移させコミット・push",
+        help="feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push",
     )
     start_processing.add_argument(
         "filenames",

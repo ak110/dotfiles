@@ -217,16 +217,16 @@ def _write_processing_file(
     return path
 
 
-class TestListFeedbackStatusInboxDefault:
-    """listサブコマンド既定: feedbackはinbox配下のみを表示しprocessingは除外する。"""
+class TestListFeedbackStatusDefaultAll:
+    """listサブコマンド既定: feedbackはinbox・processing両方を表示する。"""
 
-    def test_default_shows_inbox_only(
+    def test_default_shows_inbox_and_processing(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、feedback側はinbox配下のみ出力しprocessing配下は出力しない。"""
+        """`--status`省略時、feedback側はinbox配下とprocessing配下の両方を出力する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -238,7 +238,7 @@ class TestListFeedbackStatusInboxDefault:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "fb-inbox.md" in captured.out
-        assert "fb-proc.md" not in captured.out
+        assert "fb-proc.md" in captured.out
 
 
 class TestListFeedbackStatusProcessing:

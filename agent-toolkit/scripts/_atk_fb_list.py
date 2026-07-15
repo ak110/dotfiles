@@ -34,11 +34,11 @@ def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """listサブコマンド: feedback/tbd inbox全件を1件1行（filename・target_repo・本文冒頭要約）で出力する。
+    """listサブコマンド: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する。
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
-    `--status`指定で表示範囲を限定する（既定: inbox）。
-    feedback側は`inbox`・`processing`・`all`を解釈する（`inbox`のみ表示が既定）。
+    `--status`指定で表示範囲を限定する（既定: all）。
+    feedback側は`inbox`・`processing`・`all`を解釈する（`inbox`・`processing`両方表示が既定）。
     tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
@@ -56,10 +56,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     feedback_entries: list[tuple[pathlib.Path, str, str]] = []
     if args.type in ("all", "feedback"):
         # feedback側`--status`解釈: `inbox`=inbox配下のみ・`processing`=processing配下のみ・
-        # `all`=両方連結。回答状況指定（answered/unanswered）はfeedback側では既定（inbox）扱い。
-        feedback_status = (
-            args.status if args.status in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING, "all") else FEEDBACK_STATE_INBOX
-        )
+        # `all`=両方連結。回答状況指定（answered/unanswered）はfeedback側では既定（all）扱い。
+        feedback_status = args.status if args.status in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING, "all") else "all"
         if feedback_status in (FEEDBACK_STATE_INBOX, "all"):
             inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
             feedback_entries.extend(_iter_inbox_entries(inbox_dir, filter_repo))
