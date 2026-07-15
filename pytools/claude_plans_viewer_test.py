@@ -684,6 +684,18 @@ class TestIndexHtml:
         assert "コピーしました" in html_src
         assert "コピーに失敗しました" in html_src
 
+    def test_index_html_has_copy_path_button_contract(self):
+        """右ペインのtoolbarに計画ファイルパスコピーボタンが存在する契約。"""
+        html_src = _assets.INDEX_HTML
+
+        assert 'id="copy-path-btn"' in html_src
+        assert "async function copySelectedPath" in html_src
+        assert "if (!selectedPath || !selectedHost) return" in html_src
+        assert "const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__" in html_src
+        assert "const ROOT_DIR = __ROOT_DIR_JS__" in html_src
+        assert 'document.getElementById("copy-path-btn").disabled = host !== LOCAL_HOST_NAME' in html_src
+        assert 'document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath)' in html_src
+
     def test_index_html_renders_host_and_mtime_in_meta(self):
         """左ペインのmetaが左にホスト名、右にmtimeを並べる。
 

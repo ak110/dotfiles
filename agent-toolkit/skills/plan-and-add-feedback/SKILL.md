@@ -30,6 +30,10 @@ description: >
    計画実装型として扱われ、計画作成を経ずに実装される
 3. フィードバック投入結果をユーザーへ提示して終了する。`agent-toolkit:exit-session`は
    呼ばずセッションを継続する
+   - 本規定の適用範囲は本スキル自身の手順内に限定する
+   - 後続でStopフック起点の振り返りスキル（`agent-toolkit:session-review`・
+     `session-review-dotfiles`等）が起動された場合は当該スキルの終了手順
+     （`agent-toolkit:exit-session`遷移を含む）に従う
 
 ## 想定動作モード
 

@@ -18,7 +18,7 @@
   宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
-  スキル名実在・件数表現の検査
+  スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
 - `writing-standards/scripts/check_line_width.py`: 127幅検査（サブプロセス、ファイル単位）
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）

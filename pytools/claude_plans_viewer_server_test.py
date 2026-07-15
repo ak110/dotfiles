@@ -246,6 +246,19 @@ class TestApiEndpoints:
         assert [e["path"] for e in data] == ["a.md"]
 
     @pytest.mark.asyncio
+    async def test_index_embeds_copy_path_constants(self, tmp_path: Path):
+        """/応答HTMLがパスコピー用のJS定数を埋め込む。"""
+        app = _app.create_app(tmp_path, hostname="test-host")
+        client = app.test_client()
+        response = await client.get("/")
+
+        body = await response.get_data(as_text=True)
+        expected_root = str(tmp_path).replace("\\", "/")
+        assert response.status_code == 200
+        assert f"const LOCAL_HOST_NAME = {json.dumps('test-host')};" in body
+        assert f"const ROOT_DIR = {json.dumps(expected_root)};" in body
+
+    @pytest.mark.asyncio
     async def test_api_file_renders_markdown(self, tmp_path: Path):
         """/api/fileがMarkdownをHTMLへ変換して返す。"""
         (tmp_path / "a.md").write_text("# title\n", encoding="utf-8")

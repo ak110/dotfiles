@@ -3,7 +3,7 @@
 行番号への参照検査スクリプトをsubprocessで起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
 パス実在検査・スキル名・サブエージェント名実在検査・件数表現検出（FB4）・
-節名参照の実在照合（FB3）も併せて検証する。
+節名参照の実在照合（FB3）・裸節名参照の実在照合（FB5）も併せて検証する。
 """
 
 import pathlib
@@ -744,3 +744,162 @@ class TestSectionNameExistence:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 1
         assert "4行目" in result.stderr
+
+
+class TestBareSectionNameExistence:
+    """裸節名参照の実在照合（FB5対応）の主要シナリオをまとめて検証する。"""
+
+    def test_existing_section_name_passes(self, tmp_path: pathlib.Path) -> None:
+        """対象H3のファイル内に実在する裸節名参照は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n「使い方」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_missing_section_name_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """対象H3のファイル内に存在しない裸節名参照は違反として報告される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+        assert "存在しない節" in result.stderr
+
+    def test_section_marker_suppresses_same_line(self, tmp_path: pathlib.Path) -> None:
+        """同一行の`<!-- section-ref-ok -->`は裸節名参照違反を抑止する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n「存在しない節」節を参照する。<!-- section-ref-ok -->\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_outside_change_content_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`H2配下以外の裸節名参照は検査対象外。"""
+        path = _write(tmp_path / "plan.md", "## 調査結果\n\n「存在しない節」節を参照する。\n")
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_backticked_h3_path_resolves_target(self, tmp_path: pathlib.Path) -> None:
+        """バッククォート囲みパスのH3から対象ファイルを解決する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n```text\n[追記]\n「仕様」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_h3_path_resolves_target(self, tmp_path: pathlib.Path) -> None:
+        """裸パスのH3から対象ファイルを解決する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### docs/guide.md\n\n「仕様」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_annotated_backticked_h3_path_detects_existing_section(self, tmp_path: pathlib.Path) -> None:
+        """行数注記付きバッククォート囲みH3から対象パスを抽出し、実在節名を照合する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`（現行10行, 見込み12行）\n\n「仕様」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_annotated_backticked_h3_path_detects_missing_section(self, tmp_path: pathlib.Path) -> None:
+        """行数注記付きバッククォート囲みH3でも裸節名参照違反を検出する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`（現行10行, 見込み12行）\n\n「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+        assert "存在しない節" in result.stderr
+
+    def test_annotated_bare_h3_path_resolves_target(self, tmp_path: pathlib.Path) -> None:
+        """丸括弧注記が直接続く裸パスH3から対象パスを抽出する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### docs/guide.md（現行10行, 見込み12行）\n\n「仕様」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_outside_target_h3_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """対応する対象H3配下以外の裸節名参照は検査対象外。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n"
+            "「存在しない節」節を参照する。\n\n"
+            "### `docs/guide.md`\n\n"
+            "「仕様」節を参照する。\n\n"
+            "### 対象ファイル一覧\n\n"
+            "「別の存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_newly_created_file_self_reference_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル一覧で新設扱いのH3配下では裸節名参照を検査対象外にする。"""
+        new_path = "docs/new-guide.md"
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            f"- [ ] `{new_path}`（新設, 見込み20行）\n\n"
+            f"### `{new_path}`\n\n"
+            "「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_annotated_newly_created_file_self_reference_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """新設注記付きH3でも新設ファイルへの裸節名参照を検査対象外にする。"""
+        new_path = "docs/new-guide.md"
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            f"- [ ] `{new_path}`（新設, 見込み20行）\n\n"
+            f"### `{new_path}`（新設）\n\n"
+            "「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_path_qualified_ref_is_not_double_reported_as_bare_ref(self, tmp_path: pathlib.Path) -> None:
+        """パス付き形式の節名参照に含まれる裸パターン部分は二重検出されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n`docs/guide.md`「存在しない節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert len(result.stderr.splitlines()) == 1
+        assert "docs/guide.md 「存在しない節」" in result.stderr

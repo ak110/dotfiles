@@ -216,6 +216,8 @@ _INDEX_JS = """\
 // `__BASE_PATH_JS__`は`_app.py`が`json.dumps`で文字列リテラルとして埋め込む。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 const BASE_PATH = __BASE_PATH_JS__;
+const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
+const ROOT_DIR = __ROOT_DIR_JS__;
 
 let files = [];
 // ホスト名とパスの組で一意に識別する。
@@ -493,6 +495,7 @@ async function openFile(host, path) {
   const selected = files.find(f => f.host === host && f.path === path);
   selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
+  document.getElementById("copy-path-btn").disabled = host !== LOCAL_HOST_NAME;
   updateNavButtons();
   updateMetaMobile();
 }
@@ -517,6 +520,21 @@ async function copySelectedRaw() {
     if (!res.ok) throw new Error("status " + res.status);
     const text = await res.text();
     await navigator.clipboard.writeText(text);
+    btn.textContent = "コピーしました";
+  } catch (e) {
+    btn.textContent = "コピーに失敗しました";
+  }
+  setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+}
+
+async function copySelectedPath() {
+  if (!selectedPath || !selectedHost) return;
+  const btn = document.getElementById("copy-path-btn");
+  const originalLabel = btn.dataset.label || btn.textContent;
+  btn.dataset.label = originalLabel;
+  const absolutePath = ROOT_DIR + "/" + selectedPath;
+  try {
+    await navigator.clipboard.writeText(absolutePath);
     btn.textContent = "コピーしました";
   } catch (e) {
     btn.textContent = "コピーに失敗しました";
@@ -609,6 +627,7 @@ document.getElementById("filter").addEventListener("input", () => {
   renderFiles();
 });
 document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
+document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
 document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
 document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
 document.getElementById("menu-btn").addEventListener("click", () => {
@@ -661,6 +680,7 @@ INDEX_HTML = (
       <button id="menu-btn" type="button" aria-label="ファイル一覧を開く">&#9776;</button>
       <span class="spacer"></span>
       <button id="copy-btn" type="button" disabled>Markdownをコピー</button>
+      <button id="copy-path-btn" type="button" disabled>計画ファイルのパスをコピー</button>
       <button id="prev-btn" class="nav-btn" type="button" aria-label="前のファイル" disabled>&uarr;</button>
       <button id="next-btn" class="nav-btn" type="button" aria-label="次のファイル" disabled>&darr;</button>
     </div>

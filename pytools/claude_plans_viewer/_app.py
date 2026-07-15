@@ -128,10 +128,15 @@ def create_app(
     @app.get("/")
     async def index() -> quart.Response:
         base_path = safe_base_path(quart.request.root_path)
+        # `selectedPath`はPOSIX形式で保持されるため、Windows上でもコピーする絶対パスの区切りを統一する。
+        root_for_js = str(root).replace("\\", "/")
         # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
         # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
-        body = _assets.INDEX_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
-            "__BASE_PATH_JS__", json.dumps(base_path)
+        body = (
+            _assets.INDEX_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
+            .replace("__BASE_PATH_JS__", json.dumps(base_path))
+            .replace("__LOCAL_HOST_NAME_JS__", json.dumps(resolved_hostname))
+            .replace("__ROOT_DIR_JS__", json.dumps(root_for_js))
         )
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
