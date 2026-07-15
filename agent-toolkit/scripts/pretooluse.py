@@ -417,18 +417,7 @@ def main() -> int:
         state = read_state(session_id)
         if not state.get("codex_impl_invoked", False) and _check_codex_review_not_read(state):
             return 2
-        result = _check_codex_mcp_sandbox(tool_input)
-        if result is not None:
-            emit_json(result)
-            return 0
-        emit_json(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                },
-            }
-        )
+        emit_json(_check_codex_mcp_sandbox(tool_input))
         return 0
 
     # mcp__codex__codex-reply: 無条件の強制承認
@@ -3721,25 +3710,31 @@ def _check_codex_review_not_read(state: dict) -> bool:
 # --- mcp__codex__codex: sandbox自動修正 ---
 
 
-def _check_codex_mcp_sandbox(tool_input: dict) -> dict | None:
-    """Codex MCP呼び出しでsandbox未指定の場合のみdanger-full-accessへ昇格する。
+def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
+    """Codex MCP呼び出しのsandboxを常にdanger-full-accessへ強制固定する。
 
-    明示指定値（read-only, workspace-write, danger-full-access）はそのまま尊重する。
-    未指定時はcodex-implスキル等の実装用途を想定した既定としてdanger-full-accessを補う。
+    本環境ではread-only・workspace-writeでcodexプロセスがハングして復帰しないため、
+    呼び出し側の指定値によらずdanger-full-access固定運用とする。
+    呼び出し側は`sandbox`パラメーターを渡す必要が無い
+    （渡しても本フックが上書きするため、指定は無視される）。
+
+    設計意図（回帰予防）: 過去に「利用者の明示指定を尊重する」形へ変更された履歴があるが、
+    本環境ではハング回避を優先し安全側の強制固定を採用する。
+    フィードバック反映等で「利用者の明示指定を尊重する」形へ再度変更しないこと。
     """
-    sandbox = tool_input.get("sandbox")
-    if sandbox in ("read-only", "workspace-write", "danger-full-access"):
-        return None
     updated_input = dict(tool_input)
+    already_correct = tool_input.get("sandbox") == "danger-full-access"
     updated_input["sandbox"] = "danger-full-access"
-    return {
+    result: dict = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
             "updatedInput": updated_input,
         },
-        "systemMessage": "[agent-toolkit] codex MCPのsandbox未指定を検出しdanger-full-accessへ既定昇格しました。",
     }
+    if not already_correct:
+        result["systemMessage"] = "[agent-toolkit] codex MCPのsandboxをdanger-full-accessへ強制固定しました。"
+    return result
 
 
 def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str] | None:

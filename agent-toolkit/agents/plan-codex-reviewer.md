@@ -86,8 +86,8 @@ H1見出し以降を埋め込む。
 
 - 初回: `mcp__codex__codex`を以下の引数で呼び出す
   - `cwd`: `"{project_directory}"`
-  - `sandbox`: `"danger-full-access"`
   - `prompt`: 初回プロンプト
+  - `sandbox`は指定しない（PreToolUseフックが常に`danger-full-access`固定へ強制上書きする）
 - 継続: `mcp__codex__codex-reply`（`threadId`: 前回の戻り値、`prompt`: 再レビュープロンプト）
 
 ### CLIフォールバック版

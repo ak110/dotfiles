@@ -2973,7 +2973,7 @@ class TestCodexMcpSandbox:
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
         assert updated["prompt"] == "hello"
-        assert "既定昇格" in out["systemMessage"]
+        assert "強制固定" in out["systemMessage"]
 
     def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
@@ -2991,8 +2991,8 @@ class TestCodexMcpSandbox:
         updated = out["hookSpecificOutput"]["updatedInput"]
         assert updated["sandbox"] == "danger-full-access"
 
-    def test_sandbox_read_only_respected(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandbox=read-onlyの明示指定は尊重され自動昇格しない。"""
+    def test_sandbox_read_only_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandbox=read-onlyの明示指定もdanger-full-accessへ強制昇格する（本環境の要件）。"""
         self._write_state(tmp_path, "fix_ro", {"codex_review_read": True})
         result = _run(
             {
@@ -3004,11 +3004,11 @@ class TestCodexMcpSandbox:
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
 
-    def test_sandbox_workspace_write_respected(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandbox=workspace-writeの明示指定は尊重され自動昇格しない。"""
+    def test_sandbox_workspace_write_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandbox=workspace-writeの明示指定もdanger-full-accessへ強制昇格する。"""
         self._write_state(tmp_path, "fix_ww", {"codex_review_read": True})
         result = _run(
             {
@@ -3020,11 +3020,11 @@ class TestCodexMcpSandbox:
         )
         assert result.returncode == 0
         out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
 
-    def test_sandbox_correct_no_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが既にdanger-full-accessの場合は修正せず強制承認のみ返す。"""
+    def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandboxが既にdanger-full-accessの場合、updatedInputは返すがsystemMessageを含めない。"""
         self._write_state(tmp_path, "fix3", {"codex_review_read": True})
         result = _run(
             {
@@ -3037,7 +3037,8 @@ class TestCodexMcpSandbox:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "updatedInput" not in out["hookSpecificOutput"]
+        assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
+        assert "systemMessage" not in out
 
 
 class TestCodexMcpReply:
