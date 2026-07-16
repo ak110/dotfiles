@@ -102,6 +102,23 @@ class TestCheckOne:
         assert check_plan_file._check_one(plan_path, tmp_path) == 0
         assert "責務差分の可能性" in capsys.readouterr().err
 
+    def test_cross_reference_sync_note_warning_printed(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`_check_cross_reference_sync_note_requested`の配線: warn出力がstderrへ含まれる。"""
+        plan_path = _write_plan(tmp_path)
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8") + "\n### `foo.md`\n\n```text\n[追記]\n「対象節」に従う。\n```\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            check_plan_file.check_plan_diff_gates,
+            "_check_cross_reference_sync_note_requested",
+            lambda _p, _t: ["plan.md:1: [warn] 相互参照文言を検出したが同期注記が不在"],
+        )
+        assert check_plan_file._check_one(plan_path, tmp_path) == 0
+        assert "同期注記が不在" in capsys.readouterr().err
+
     def test_extracted_paths_message_printed_but_not_counted(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:

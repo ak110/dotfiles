@@ -173,6 +173,20 @@ _AGENT_JUDGMENT_HEADING_RE = re.compile(r"^###\s*エージェント判断\s*$")
 # fb-4: 責務差分表の記入検出用（`### エージェント判断`配下の見出し行に対して判定する）。
 _RESPONSIBILITY_DIFF_HEADING_RE = re.compile(r"^#{1,6}\s*.*責務差分")
 
+# fb-4: 相互参照文言（節参照・同期・意図的重複の宣言表現）検出用。
+_CROSS_REFERENCE_TRIGGER_RE = re.compile(
+    r"「[^」]+」\s*節\s*に従う"
+    r"|『[^』]+』\s*節\s*に従う"
+    r"|`[^`]+`\s*節\s*に従う"
+    r"|と同期する"
+    r"|と意図的に重複させている"
+    r"|と意図的に同期する"
+    r"|同期注記:"
+)
+
+# fb-4: `### エージェント判断`欄内の同期注記追加要否明示の判定用。
+_JUDGMENT_SYNC_NOTE_RE = re.compile(r"同期注記|意図的重複")
+
 
 def main() -> int:
     """検査のエントリポイント。複数の計画ファイルを位置引数で受け取る。"""
@@ -548,6 +562,55 @@ def _has_responsibility_diff_table(text: str) -> bool:
             # 同階層以上の次の見出しに到達したら区間終了（責務差分見出しは既に上で判定済み）。
             break
     return False
+
+
+def _extract_judgment_section_body(text: str) -> str:
+    """`### エージェント判断`見出し直後から同階層以上（`##`〜`###`）の次見出し直前までを抽出する。
+
+    `extract_section_with_offset`はH2見出し境界前提のため、後続H3節（`### 却下した代替案`等）が
+    混入してfalse negativeを生む問題を回避する。`_has_responsibility_diff_table`と同じ走査規約に従う。
+    """
+    lines = text.splitlines()
+    body_lines: list[str] = []
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if _AGENT_JUDGMENT_HEADING_RE.match(stripped):
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        if re.match(r"^#{1,3}\s", stripped) and stripped != "":
+            break
+        body_lines.append(line)
+    return "\n".join(body_lines)
+
+
+def _check_cross_reference_sync_note_requested(plan_path: pathlib.Path, text: str) -> list[str]:
+    """相互参照文言検出時の`### エージェント判断`欄内の同期注記追加要否明示を照合する。
+
+    `## 変更内容`配下の`text`フェンス本文を対象とする。
+    走査は既存`_iter_diff_blocks`を直接利用する（同関数は`## 変更内容`配下に限定済み。
+    `## 背景`・`### 却下した代替案`・`### 提示素材`は自然に対象外となる）。
+    `### エージェント判断`節の抽出は`_extract_judgment_section_body`でH3境界に区切り、
+    後続H3節（`### 却下した代替案`等）の文言混入によるfalse negativeを回避する。
+    警告出力のみでexit codeへは算入しない。
+    """
+    messages: list[str] = []
+    judgment_section = _extract_judgment_section_body(text)
+    has_judgment_note = bool(_JUDGMENT_SYNC_NOTE_RE.search(judgment_section))
+    if has_judgment_note:
+        return messages
+    for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
+        if h3_ext not in _PROSE_EXTENSIONS:
+            continue
+        if not _CROSS_REFERENCE_TRIGGER_RE.search(body):
+            continue
+        messages.append(
+            f"{plan_path}:{block_start_line}: H3=`{h3_label}` 相互参照文言を検出したが"
+            f"`### エージェント判断`欄に同期注記追加要否の明示が不在"
+        )
+    return messages
 
 
 def _scope_escalation_allowed_starts(text: str) -> frozenset[int]:

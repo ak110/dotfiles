@@ -48,6 +48,9 @@
   プロジェクトルート起点で実在するかを検査する（不在時に違反として報告、exit codeへ算入）
 - `_check_identifier_existence`: 計画本文の`### <相対パス>`H3節配下で言及される関数名・節見出し名の
   対象ファイル内実在を`grep`相当の`in`照合で確認する（不在時にwarn報告、exit codeへ含めない）
+- `check_plan_diff_gates._check_cross_reference_sync_note_requested`: `## 変更内容`配下`text`フェンス本文で
+  相互参照文言（同期・意図的重複・「XX節に従う」形式）検出時、`### エージェント判断`欄の同期注記追加要否明示の
+  有無を照合しwarn出力する（exit codeへ算入しない）
 
 体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
 文書サイズ上限検査（`_check_document_size_upper_limit`）は
@@ -169,6 +172,8 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         print(msg, file=sys.stderr)
         violations += 1
     for msg in _check_identifier_existence(plan_path, text):
+        print(msg, file=sys.stderr)
+    for msg in check_plan_diff_gates._check_cross_reference_sync_note_requested(plan_path, text):
         print(msg, file=sys.stderr)
 
     _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash", blocking=False)
