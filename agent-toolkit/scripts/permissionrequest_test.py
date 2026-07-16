@@ -210,9 +210,9 @@ class TestShouldAllowBash:
         cmd = f"rm {home}/.claude/plans/a.md | rm {home}/.claude/plans/b.md"
         assert hook.should_allow_bash(cmd, str(home)) is False
 
-    def test_unsafe_metachar_semicolon_rejected(self, home: pathlib.Path) -> None:
+    def test_semicolon_composed_rm_allowed(self, home: pathlib.Path) -> None:
         cmd = f"rm {home}/.claude/plans/a.md; rm {home}/.claude/plans/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is False
+        assert hook.should_allow_bash(cmd, str(home)) is True
 
     def test_unsafe_metachar_dollar_rejected(self, home: pathlib.Path) -> None:
         assert hook.should_allow_bash("rm $HOME/.claude/plans/a.md", str(home)) is False
@@ -230,6 +230,10 @@ class TestShouldAllowBash:
 
     def test_empty_command_rejected(self) -> None:
         assert hook.should_allow_bash("", "") is False
+
+    @pytest.mark.parametrize("command", [";", "\n", ";\n"])
+    def test_separator_only_command_rejected(self, command: str, home: pathlib.Path) -> None:
+        assert hook.should_allow_bash(command, str(home)) is False
 
     def test_relative_path_without_cwd_rejected(self) -> None:
         assert hook.should_allow_bash("rm x.md", "") is False
@@ -304,10 +308,52 @@ class TestShouldAllowBash:
         cmd = f"rm {plans}/a.md && rm {plans}/b.md | cat"
         assert hook.should_allow_bash(cmd, str(home)) is False
 
-    def test_unsafe_metachar_semicolon_rejected_still(self, home: pathlib.Path) -> None:
+    def test_mixed_and_semicolon_composed_allowed(self, home: pathlib.Path) -> None:
         plans = home / ".claude" / "plans"
         cmd = f"rm {plans}/a.md && rm {plans}/b.md; echo done"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_mixed_and_semicolon_outside_path_rejected(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"rm {plans}/a.md && rm {plans}/b.md; rm {home}/elsewhere.md"
         assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_newline_composed_mkdir_cp_wc_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"mkdir -p {plans}\ncp /tmp/scratchpad/x.md {plans}/x.md\nwc -l {plans}/x.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    def test_semicolon_composed_mkdir_cp_wc_allowed(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"mkdir -p {plans}; cp /tmp/scratchpad/x.md {plans}/x.md; wc -l {plans}/x.md"
+        assert hook.should_allow_bash(cmd, str(home)) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'echo "任意文字列"',
+            'echo "$var"',
+            'echo "a; b"',
+        ],
+    )
+    def test_echo_standalone_allowed(self, command: str, home: pathlib.Path) -> None:
+        assert hook.should_allow_bash(command, str(home)) is True
+
+    def test_cd_plans_allowed(self, home: pathlib.Path) -> None:
+        assert hook.should_allow_bash(f"cd {home}/.claude/plans", str(home)) is True
+
+    def test_cd_outside_rejected(self, home: pathlib.Path) -> None:
+        assert hook.should_allow_bash("cd /etc", str(home)) is False
+
+    def test_newline_composed_unknown_command_rejected(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"mkdir -p {plans}\nuv run x.py"
+        assert hook.should_allow_bash(cmd, str(home)) is False
+
+    def test_trailing_newline_separator_ignored(self, home: pathlib.Path) -> None:
+        plans = home / ".claude" / "plans"
+        cmd = f"mkdir -p {plans}\n\n"
+        assert hook.should_allow_bash(cmd, str(home)) is True
 
     def test_unknown_read_op_rejected(self, home: pathlib.Path) -> None:
         # head は `_BASH_READ_OPS` 未収載のため、既存の対象外コマンド拒否と同様に拒否する

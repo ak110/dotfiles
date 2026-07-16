@@ -73,6 +73,12 @@ repos:
         language: system
         pass_filenames: false
         files: '^(pyproject\.toml|pytools/.*\.py|agent-toolkit/scripts/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash|agent-toolkit/completions/atk\.bash)$'
+      - id: gen-install-files
+        name: install script FILES一覧の再生成
+        entry: uv run --frozen python scripts/gen-install-files.py
+        language: system
+        pass_filenames: false
+        files: '^(agent-toolkit/rules/.*\.md|install-claude\.(sh|ps1)|scripts/gen-install-files\.py)$'
       - id: pyfltr
         name: pyfltr
         entry: uvx pyfltr fast

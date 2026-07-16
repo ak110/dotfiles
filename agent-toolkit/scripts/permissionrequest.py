@@ -23,11 +23,12 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 Bashコマンド判定の設計方針:
 
-- 字句解析は`shlex.shlex(command, posix=True, punctuation_chars=True)`に
-  `whitespace_split = True`を設定して行う。空白の有無によらず`&&`・`||`・単独`&`・単独`|`を
-  独立トークンへ分割でき、引用符内の文字列は連結されたまま扱われる
-- `&&`・`||`はサブコマンドの区切りとして扱い、各サブコマンドを個別に判定して
-  すべてが許可条件を満たす場合にのみ全体を許可する
+- 字句解析は`shlex.shlex(command, posix=True, punctuation_chars=True)`を使い、
+  `whitespace`から改行を除外して行う。空白の有無によらず`&&`・`||`・`;`・単独`&`・
+  単独`|`を独立トークンへ分割でき、引用符内の文字列は連結されたまま扱われる
+- `&&`・`||`・`;`・改行はサブコマンドの区切りとして扱い、各サブコマンドを
+  個別に判定してすべてが許可条件を満たす場合にのみ全体を許可する
+- 末尾区切りや連続区切りで生じる空サブコマンドは無視し、区切りだけの入力は拒否する
 - 単独`&`・単独`|`・`|&`・`>&`・`&>`等の複合演算子トークンも拒否する。
   `&&`と`||`のみを許容する例外とする
 - 単独`&`はバックグラウンド実行指示、単独`|`はパイプ、`|&`はstdout+stderrパイプを表す
@@ -37,6 +38,8 @@ Bashコマンド判定の設計方針:
   `_BASH_READ_OPS`に列挙したコマンドのみ対象とし、
   `_READ_OP_ALLOWED_OPTS`に列挙したbool系オプション以外の指定は拒否する
   （値がパスとなり得るオプションの誤許可を避けるため）
+- `echo`は文字列出力だけのサブコマンドとして許可する。リダイレクトを伴う場合は
+  リダイレクト先のパス検査を行う
 """
 
 import json
@@ -51,14 +54,21 @@ _GIT_WORKTREE_LOOKUP_DEPTH = 64
 
 _FILE_TOOLS = frozenset({"Write", "Edit", "MultiEdit"})
 
+# Bash サブコマンドの区切りトークン。
+_BASH_COMMAND_SEPARATORS = frozenset({"&&", "||", ";", "\n"})
+
 # Bash 自動許可の対象コマンド（引数がすべて対象パス配下なら許可）。
 # 危険性が高い `dd` / `tar` / `rsync` 等は対象外。
-_BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "chown"})
+_BASH_FILE_OPS = frozenset({"rm", "mkdir", "mv", "cp", "touch", "ln", "chmod", "chown", "cd"})
 
-# 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトのみ別途トークンレベルで許容する。
+# Bash 自動許可の対象となる文字列出力コマンド。
+_BASH_ECHO_OPS = frozenset({"echo"})
+
+# 安全と判断できないシェルメタ文字。`>` `>>` のリダイレクトと `;` のサブコマンド区切りは
+# 別途トークンレベルで扱う。
 # `&` は論理AND結合 `&&` を、`|` は論理OR結合 `||` を許容するため除外する。
 # 単独の `&`・`|`（バックグラウンド実行・パイプ）はトークンレベルで別途拒否する。
-_UNSAFE_METACHARS = frozenset(";`$()<")
+_UNSAFE_METACHARS = frozenset("`$()<")
 
 # Bash 自動許可の対象となる読み取り系コマンド（ホワイトリスト方式）。
 # `_READ_OP_ALLOWED_OPTS` に列挙したオプション以外を指定した場合は拒否する。
@@ -165,8 +175,6 @@ def should_allow_bash(command: str, cwd: str) -> bool:
     """
     if not command:
         return False
-    if any(ch in _UNSAFE_METACHARS for ch in command):
-        return False
     tokens = _tokenize(command)
     if not tokens:
         return False
@@ -177,49 +185,64 @@ def should_allow_bash(command: str, cwd: str) -> bool:
         return False
 
     cwd_base = _resolve_cwd(cwd)
-    return all(_evaluate_subcommand(subcommand, cwd_base) for subcommand in _split_by_logical_ops(tokens))
+    subcommands = _split_by_logical_ops(tokens)
+    return bool(subcommands) and all(_evaluate_subcommand(subcommand, cwd_base) for subcommand in subcommands)
 
 
 def _tokenize(command: str) -> list[str] | None:
     """`command` を punctuation_chars 対応の shlex でトークン化する（失敗時は None）。
 
-    `posix=True` かつ `punctuation_chars=True` の `shlex.shlex` に
-    `whitespace_split = True` を設定し、空白の有無によらず `&&` / `||` / 単独 `&` /
-    単独 `|` を独立トークンへ分割する。空白なしのリダイレクト `>` / `>>` も同様に
-    独立トークン化される。引用符内の文字列は連結されたまま扱われる。
+    `posix=True` かつ `punctuation_chars=True` の `shlex.shlex` で、空白の有無によらず
+    `&&` / `||` / `;` / 単独 `&` / 単独 `|` を独立トークンへ分割する。
+    `whitespace` から改行を除外し、改行も独立トークンとして扱う。空白なしの
+    リダイレクト `>` / `>>` も同様に独立トークン化される。引用符内の文字列は
+    連結されたまま扱われる。
     """
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
+        lexer.whitespace = lexer.whitespace.replace("\n", "")
         return list(lexer)
     except ValueError:
         return None
 
 
 def _split_by_logical_ops(tokens: list[str]) -> list[list[str]]:
-    """`&&` / `||` トークンでサブコマンドのトークン列へ分割する。"""
+    """サブコマンド区切りトークンでトークン列を分割する。"""
     subcommands: list[list[str]] = []
     current: list[str] = []
     for token in tokens:
-        if token in ("&&", "||"):
-            subcommands.append(current)
+        if token in _BASH_COMMAND_SEPARATORS:
+            if current:
+                subcommands.append(current)
             current = []
             continue
         current.append(token)
-    subcommands.append(current)
+    if current:
+        subcommands.append(current)
     return subcommands
 
 
 def _evaluate_subcommand(tokens: list[str], cwd_base: pathlib.Path | None) -> bool:
     """単一サブコマンドの操作対象パスがすべて自動許可対象配下か判定する。"""
+    if not tokens:
+        return False
+    if tokens[0] not in _BASH_ECHO_OPS and any(ch in _UNSAFE_METACHARS for token in tokens for ch in token):
+        return False
+
     redirect_targets, remaining = _split_redirects(tokens)
     if remaining is None:
         return False  # 不正なリダイレクト構文のため拒否する
 
     paths: list[str] = list(redirect_targets)
+    cmd = ""
     if remaining:
         cmd = remaining[0]
-        if cmd in _BASH_FILE_OPS:
+        if cmd in _BASH_ECHO_OPS:
+            if not redirect_targets:
+                return True
+        elif cmd == "cd":
+            return _evaluate_cd_subcommand(redirect_targets, remaining[1:], cwd_base)
+        elif cmd in _BASH_FILE_OPS:
             paths.extend(_extract_path_args(remaining[1:]))
         elif cmd in _BASH_READ_OPS:
             extracted = _extract_read_op_paths(cmd, remaining[1:])
@@ -236,7 +259,24 @@ def _evaluate_subcommand(tokens: list[str], cwd_base: pathlib.Path | None) -> bo
 
     for path_arg in paths:
         target = _normalize_path(path_arg, cwd_base=cwd_base)
+        if target is None or not (_is_target_path(target) or (cmd == "mkdir" and _is_home_claude_plans_root(target))):
+            return False
+    return True
+
+
+def _evaluate_cd_subcommand(redirect_targets: list[str], args: list[str], cwd_base: pathlib.Path | None) -> bool:
+    """`cd` サブコマンドの移動先とリダイレクト先を判定する。"""
+    for path_arg in redirect_targets:
+        target = _normalize_path(path_arg, cwd_base=cwd_base)
         if target is None or not _is_target_path(target):
+            return False
+
+    cd_paths = _extract_path_args(args)
+    if not cd_paths:
+        return bool(redirect_targets)
+    for path_arg in cd_paths:
+        target = _normalize_path(path_arg, cwd_base=cwd_base)
+        if target is None or not (_is_target_path(target) or _is_home_claude_plans_root(target)):
             return False
     return True
 
@@ -289,6 +329,14 @@ def _is_target_path(target: pathlib.Path) -> bool:
     if _is_under(target, tmp_root):
         return True
     return _is_repo_agent_meta_edit(target, home_claude)
+
+
+def _is_home_claude_plans_root(target: pathlib.Path) -> bool:
+    """`target` が `~/.claude/plans` ディレクトリそのものか判定する。"""
+    try:
+        return target == (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False)
+    except (ValueError, OSError):
+        return False
 
 
 def _is_under(target: pathlib.Path, base: pathlib.Path) -> bool:
