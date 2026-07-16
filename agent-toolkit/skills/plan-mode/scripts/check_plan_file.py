@@ -53,6 +53,8 @@
   有無を照合しwarn出力する（exit codeへ算入しない）
 - `check_plan_diff_gates._check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで
   内容がラベル行1行のみで終わる構成をwarn出力（exit code非算入）。
+- `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
+  リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する（warn出力のみ、exit code非算入）。
 
 体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
 文書サイズ上限検査（`_check_document_size_upper_limit`）は
@@ -174,6 +176,8 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         print(msg, file=sys.stderr)
         violations += 1
     for msg in _check_identifier_existence(plan_path, text):
+        print(msg, file=sys.stderr)
+    for msg in _check_test_file_pairing(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
     for msg in check_plan_diff_gates._check_cross_reference_sync_note_requested(plan_path, text):
         print(msg, file=sys.stderr)
@@ -491,6 +495,41 @@ def _check_identifier_existence(plan_path: pathlib.Path, text: str) -> list[str]
                     f"{plan_path}: [warn] {current_h3_path} H3節本文で言及の識別子`{identifier}`が対象ファイル内に不在"
                 )
         i += 1
+    return warnings
+
+
+_TEST_FILE_SUFFIX = "_test.py"
+_TEST_PAIRING_EXCLUDES = frozenset({"__init__.py", "_test_helpers.py"})
+
+
+def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
+    """`.py`実装ファイルに対応する`<basename>_test.py`の対象ファイル一覧欠落を検査する。
+
+    対象ファイル一覧に`.py`実装ファイルが含まれ、リポジトリに対応する`<basename>_test.py`が
+    実在する場合、テストファイルが対象ファイル一覧から欠落していないかを確認する。
+    欠落検知時にwarn文言を返す。exit codeへは算入しない。
+    除外対象: 末尾`_test.py`のファイル自身、`__init__.py`、`_test_helpers.py`。
+    """
+    warnings: list[str] = []
+    target_paths = _extract_target_file_paths(text)
+    target_set = set(target_paths)
+    for path in target_paths:
+        if not path.endswith(".py"):
+            continue
+        if path.endswith(_TEST_FILE_SUFFIX):
+            continue
+        basename = pathlib.PurePosixPath(path).name
+        if basename in _TEST_PAIRING_EXCLUDES:
+            continue
+        test_path = path[: -len(".py")] + _TEST_FILE_SUFFIX
+        if not (repo_root / test_path).exists():
+            continue
+        if test_path in target_set:
+            continue
+        warnings.append(
+            f"{plan_path}: [warn] 対象ファイル{basename}に対応するテスト"
+            f"{pathlib.PurePosixPath(test_path).name}が対象ファイル一覧に不在"
+        )
     return warnings
 
 

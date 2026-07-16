@@ -458,3 +458,54 @@ class TestIdentifierExistence:
         target.write_text("def existing():\n    pass\n", encoding="utf-8")
         text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n```text\n[追記]\ndef new_added(): pass\n```\n"
         assert not check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
+
+
+def _write_repo_file(repo_root: pathlib.Path, rel_path: str) -> None:
+    path = repo_root / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8")
+
+
+class TestCheckTestFilePairing:
+    """`_check_test_file_pairing`のテスト。"""
+
+    def test_pair_missing_from_target_list(self, tmp_path: pathlib.Path) -> None:
+        """`.py`実装と`_test.py`がリポジトリに存在し対象一覧に実装のみの場合にwarnが返る。"""
+        _write_repo_file(tmp_path, "pkg/mod.py")
+        _write_repo_file(tmp_path, "pkg/mod_test.py")
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pkg/mod.py`\n"
+        warnings = check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+        assert len(warnings) == 1
+        assert "mod_test.py" in warnings[0]
+
+    def test_pair_both_listed(self, tmp_path: pathlib.Path) -> None:
+        """実装と`_test.py`両方が対象一覧に含まれる場合はwarn無し。"""
+        _write_repo_file(tmp_path, "pkg/mod.py")
+        _write_repo_file(tmp_path, "pkg/mod_test.py")
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pkg/mod.py`\n- [ ] `pkg/mod_test.py`\n"
+        assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+
+    def test_no_test_file_exists(self, tmp_path: pathlib.Path) -> None:
+        """リポジトリに`_test.py`が存在しない場合はwarn無し。"""
+        _write_repo_file(tmp_path, "pkg/mod.py")
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pkg/mod.py`\n"
+        assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+
+    def test_excludes_init_and_test_helpers(self, tmp_path: pathlib.Path) -> None:
+        """`__init__.py`と`_test_helpers.py`は検査対象外。"""
+        _write_repo_file(tmp_path, "pkg/__init__.py")
+        _write_repo_file(tmp_path, "pkg/__init___test.py")
+        _write_repo_file(tmp_path, "pkg/_test_helpers.py")
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pkg/__init__.py`\n- [ ] `pkg/_test_helpers.py`\n"
+        assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+
+    def test_excludes_test_file_itself(self, tmp_path: pathlib.Path) -> None:
+        """末尾`_test.py`のファイル自身は検査対象外。"""
+        _write_repo_file(tmp_path, "pkg/mod_test.py")
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pkg/mod_test.py`\n"
+        assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+
+    def test_excludes_non_python(self, tmp_path: pathlib.Path) -> None:
+        """`.md`等の非Python拡張子は検査対象外。"""
+        text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `docs/guide.md`\n"
+        assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
