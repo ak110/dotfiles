@@ -2,7 +2,7 @@
 
 行番号への参照検査スクリプトをsubprocessで起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
-パス実在検査・スキル名・サブエージェント名実在検査・件数表現検出（FB4）・
+パス実在検査・スキル名・サブエージェント名実在検査・
 節名参照の実在照合（FB3）・裸節名参照の実在照合（FB5）も併せて検証する。
 """
 
@@ -312,71 +312,6 @@ class TestCheckLineRef:
         assert result.returncode == 1
         assert "agent-toolkit:nonexistent" in result.stderr
         assert "スキル名・サブエージェント名`agent-toolkit:nonexistent`が実在しない" in result.stderr
-
-    def test_check_count_expressions_detects_forbidden_wording(self, tmp_path: pathlib.Path) -> None:
-        """「以下N件」等の件数表現を検出する。"""
-        path = _write(tmp_path / "doc.md", "以下7件の指摘を反映する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "7件" in result.stderr
-
-    def test_check_count_expressions_detects_standalone_wording(self, tmp_path: pathlib.Path) -> None:
-        """「以下」を伴わない単独「N件」「N点」形式の件数表現も検出する。"""
-        path = _write(tmp_path / "doc.md", "今回は5件の指摘と3点の改善案がある。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "5件" in result.stderr
-        assert "3点" in result.stderr
-
-    def test_check_count_expressions_marker_suppresses_aggregate_value(self, tmp_path: pathlib.Path) -> None:
-        """`<!-- line-ref-ok -->`マーカー付き行の集計値は件数表現として検出しない。"""
-        path = _write(
-            tmp_path / "doc.md",
-            "既存違反7件・修正5件を解消した。<!-- line-ref-ok -->\n",
-        )
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 0
-
-    def test_check_count_expressions_detects_kanten_wording(self, tmp_path: pathlib.Path) -> None:
-        """「N観点」形式の件数表現を検出する。"""
-        path = _write(tmp_path / "doc.md", "3観点で確認する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "3観点" in result.stderr
-
-    def test_check_count_expressions_passes_without_count_wording(self, tmp_path: pathlib.Path) -> None:
-        """件数表現を含まない本文は違反として報告されない。"""
-        path = _write(tmp_path / "doc.md", "複数の観点で確認する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 0
-
-    def test_next_n_files_detected(self, tmp_path: pathlib.Path) -> None:
-        """「次の3ファイル」の件数表現を検出する。"""
-        path = _write(tmp_path / "doc.md", "次の3ファイルを改訂する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "次の3ファイル" in result.stderr
-
-    def test_below_n_variants_detected(self, tmp_path: pathlib.Path) -> None:
-        """「以下の2バリアント」の件数表現を検出する。"""
-        path = _write(tmp_path / "doc.md", "以下の2バリアントを比較する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "以下の2バリアント" in result.stderr
-
-    def test_next_prefix_with_existing_vocabulary(self, tmp_path: pathlib.Path) -> None:
-        """「次の5件」が既存語彙パターンの接頭辞拡張として検出される。"""
-        path = _write(tmp_path / "doc.md", "次の5件を反映する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert "5件" in result.stderr
-
-    def test_next_n_no_duplicate_report(self, tmp_path: pathlib.Path) -> None:
-        """「次の5件」に対する違反行が重複出力されない。"""
-        path = _write(tmp_path / "doc.md", "次の5件を反映する。\n")
-        result = _run(str(path), cwd=tmp_path)
-        assert result.returncode == 1
-        assert len(result.stderr.splitlines()) == 1
 
     def test_check_path_existence_excludes_newly_created_marker(self, tmp_path: pathlib.Path) -> None:
         """対象ファイル一覧の新設マーカー付きパスは実在確認から除外する。"""

@@ -21,7 +21,7 @@
   小見出し配下の再発予防記述要件の照合（ユーザー指示による機械ゲート化、exit codeへ含める）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
-  スキル名実在・件数表現・節名実在（パス付き節名参照形式および裸参照形式）の検査
+  スキル名実在・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
 - `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）。
@@ -39,7 +39,7 @@
   警告出力のみでexit codeへ算入しない
 - `_check_document_size_upper_limit`: `## 変更内容`対象ファイル一覧の見込み行数が220行超過の`.md`ファイルに
   ついて、対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
-  （不在時に違反として報告、exit codeへ算入）
+  （体裁・構成寄りの指摘のためwarning出力のみとしexit codeへ算入しない）
 - `_check_version_bump_matrix`: `## 変更内容`対象ファイル一覧が`agent-toolkit/`配下の`.md`ファイルを
   含む計画で、`ファイル・改訂節数・節名・判定・該当基準`の5列表または`scripts/agent_toolkit_bump.py`の
   種別記載のいずれかが計画本文に存在するかを検査する（不在時に違反として報告、exit codeへ算入）
@@ -49,7 +49,8 @@
 - `_check_identifier_existence`: 計画本文の`### <相対パス>`H3節配下で言及される関数名・節見出し名の
   対象ファイル内実在を`grep`相当の`in`照合で確認する（不在時にwarn報告、exit codeへ含めない）
 
-体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）は
+体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
+文書サイズ上限検査（`_check_document_size_upper_limit`）は
 全て警告出力のみとしexit codeへ算入しない。
 成功時（構造系0違反）はexit 0で終了する。体裁系のみ違反時もexit 0で終了し、
 警告として`stderr`へ出力する。構造系の違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
@@ -162,7 +163,7 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in check_plan_diff_gates._check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
 
-    violations += _check_document_size_upper_limit(plan_path, text)
+    _check_document_size_upper_limit(plan_path, text)
     violations += _check_version_bump_matrix(plan_path, text)
     for msg in _check_run_method_script_paths(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
@@ -339,12 +340,14 @@ def _extract_target_file_paths(text: str) -> list[str]:
     return paths
 
 
-def _check_document_size_upper_limit(plan_path: pathlib.Path, text: str) -> int:
+def _check_document_size_upper_limit(plan_path: pathlib.Path, text: str) -> None:
     """220行超過の`.md`対象ファイルに対し縮減対象H4または追記量圧縮の明示があるかを検査する。
 
     見込み行数（またはそれ相当の現行行数）が`_DOCUMENT_SIZE_UPPER_LIMIT`を超過する`.md`ファイルを検出し、
-    計画本文に`#### 縮減対象`H4見出しまたは「追記量圧縮」の記述が1件もない場合に違反として報告する。
-    exit codeへ算入する。
+    計画本文に`#### 縮減対象`H4見出しまたは「追記量圧縮」の記述が1件もない場合にwarningとして報告する。
+    体裁・構成寄りの指摘のためexit codeへは算入しない
+    （判定根拠は`agent-toolkit:agent-standards`配下`references/check-script-design.md`
+    「検査項目のerror・warning区分」節を参照する）。
     """
     over_files = [
         (path, projected)
@@ -352,20 +355,17 @@ def _check_document_size_upper_limit(plan_path: pathlib.Path, text: str) -> int:
         if projected > _DOCUMENT_SIZE_UPPER_LIMIT and (path.endswith(".md") or path.endswith(".md.tmpl"))
     ]
     if not over_files:
-        return 0
+        return
     has_reduction_heading = any(_REDUCTION_HEADING_RE.match(line) for line in text.splitlines())
     has_reduction_note = "追記量圧縮" in text or "追記量の圧縮" in text
     if has_reduction_heading or has_reduction_note:
-        return 0
-    violations = 0
+        return
     for path, projected in over_files:
         print(
-            f"{plan_path}: {path} 見込み{projected}行が文書サイズ上限（{_DOCUMENT_SIZE_UPPER_LIMIT}行）を超過するが、"
+            f"[warn] {plan_path}: {path} 見込み{projected}行が文書サイズ上限（{_DOCUMENT_SIZE_UPPER_LIMIT}行）を超過するが、"
             f"`#### 縮減対象`H4見出しも追記量圧縮の記述も本文に存在しない",
             file=sys.stderr,
         )
-        violations += 1
-    return violations
 
 
 def _check_version_bump_matrix(plan_path: pathlib.Path, text: str) -> int:

@@ -324,24 +324,30 @@ class TestRunPyfltrJsonl:
 class TestDocumentSizeUpperLimit:
     """`_check_document_size_upper_limit`の検査を検証する。"""
 
-    def test_no_over_threshold_files_returns_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_no_over_threshold_files_prints_nothing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行100行, 見込み150行）\n"
-        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 0
+        check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
+        assert capsys.readouterr().err == ""
 
-    def test_over_threshold_without_reduction_reports_violation(
+    def test_over_threshold_without_reduction_prints_warning(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行, 見込み230行）\n"
-        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 1
-        assert "文書サイズ上限" in capsys.readouterr().err
+        check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
+        captured = capsys.readouterr().err
+        assert "[warn]" in captured
+        assert "文書サイズ上限" in captured
 
-    def test_over_threshold_with_reduction_heading_returns_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_over_threshold_with_reduction_heading_prints_nothing(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         text = (
             "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
             "- [ ] `foo.md`（現行200行, 見込み230行）\n\n"
             "#### 縮減対象（foo.md）\n\n本文縮減方針を記す。\n"
         )
-        assert check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text) == 0
+        check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
+        assert capsys.readouterr().err == ""
 
 
 class TestVersionBumpMatrix:
