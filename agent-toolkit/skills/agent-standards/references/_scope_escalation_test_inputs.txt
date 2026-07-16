@@ -163,3 +163,6 @@ next-cycle-defer	次計画へ回す
 overhead-tradeoff	オーバーヘッドが上回るため
 overhead-tradeoff	複雑度が高くなり過ぎない範囲で対応
 overhead-tradeoff	実装コストが大きいため
+async-wait	完了通知はまだ届いていない
+async-wait	完了報告をまだ受領していない
+async-wait	待機を継続する

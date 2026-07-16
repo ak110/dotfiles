@@ -129,6 +129,15 @@ _NEW_FILE_CHECKBOX_RE = re.compile(r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*[
 # 新設パスから`agent-toolkit/skills/<name>/`形式のスキル名を導出するパターン。
 _SKILL_DIR_PATH_RE = re.compile(r"^agent-toolkit/skills/([A-Za-z0-9_-]+)/")
 
+# `## 変更内容`H3配下の`text`フェンスにおける新設節抽出対象ラベル判定。
+# `[追記]`・`[新設]`本体、および`[追記（frontmatter）]`等のサブラベル形式に一致する。
+# `[置換後]`は既存節の書き換えであり新設節を意味しないため対象外とする。
+_NEW_SECTION_FENCE_LABEL_RE = re.compile(r"^\s*\[(?:追記|新設)(?:（[^）]*）)?\]\s*$")
+
+# 新設節見出し抽出パターン。`^##\s+<title>$`・`^###\s+<title>$`のみを対象とし、
+# 前置記号`+`は許容するが削除記号`-`は対象外とする。
+_NEW_SECTION_HEADING_RE = re.compile(r"^\+?\s*(#{2,3})\s+(.+?)\s*$")
+
 # 計画本文中の`<path>「<節名>」節`形式の参照抽出パターン。
 # `path`はバッククォート囲み省略可の`.md`パス、または`agent-toolkit:<skill-name>`形式。
 _SECTION_REF_PATTERN = re.compile(r"(?P<path>`?[\w./:-]+\.md`?|`?agent-toolkit:[\w-]+`?)「(?P<section>[^」]+)」節")
@@ -398,6 +407,74 @@ def _collect_newly_created_paths(content: str) -> frozenset[str]:
     return frozenset(m.group("path").strip() for line in content.splitlines() if (m := _NEW_FILE_CHECKBOX_RE.match(line)))
 
 
+def _collect_newly_created_sections(text: str) -> dict[str, frozenset[str]]:
+    r"""`## 変更内容`H2配下の`### <path>`H3ブロック配下で新設される節見出しを集約する。
+
+    各H3配下の`[追記]`・`[新設]`ラベル付き`text`フェンス内の`##`・`###`見出しを
+    新設節として対象ファイルパスごとに集約する。
+    節名実在検査で「同一計画内で新設予定の節」を実在確認対象から除外するために用いる
+    （`_check_section_name_existence`から呼び出される）。
+    既存ファイル内の節新設パターンと、ファイル自体の新設（`_collect_newly_created_paths`）は
+    独立して機能する。
+
+    抽出条件は次のとおり。
+    - `## 変更内容`H2配下の`### <path>`H3のみを対象とする（`<path>`はH3行頭のバッククォート囲みまたは裸表記）
+    - 各H3配下の言語指定`text`フェンス内で、直後1行目が`[追記]`・`[新設]`ラベル
+      （およびfrontmatterサブラベル形式）に一致する場合のみ抽出対象とする
+    - 抽出対象は`^##\\s+<title>$`・`^###\\s+<title>$`パターンのみ。
+      前置記号（`+`）は許容し、削除記号（`-`）は対象外とする
+    """
+    sections: dict[str, set[str]] = {}
+    in_change_content = False
+    current_target: str | None = None
+    in_fence = False
+    fence_marker = ""
+    fence_included = False
+    awaiting_label = False
+
+    for raw in text.splitlines():
+        m_fence = _FENCE_RE.match(raw)
+        if m_fence:
+            marker = m_fence.group(2)
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker
+                fence_lang = raw[m_fence.end() :].strip()
+                fence_included = False
+                awaiting_label = fence_lang == "text"
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
+                in_fence = False
+                fence_marker = ""
+                fence_included = False
+                awaiting_label = False
+            continue
+
+        if in_fence:
+            if awaiting_label:
+                fence_included = current_target is not None and bool(_NEW_SECTION_FENCE_LABEL_RE.match(raw))
+                awaiting_label = False
+                continue
+            if not fence_included:
+                continue
+            m_heading = _NEW_SECTION_HEADING_RE.match(raw)
+            if m_heading and current_target is not None:
+                sections.setdefault(current_target, set()).add(m_heading.group(2).strip())
+            continue
+
+        m_h2 = _H2_HEADING_RE.match(raw)
+        if m_h2:
+            in_change_content = m_h2.group(1) == _CHANGE_HEADING
+            current_target = None
+            continue
+
+        if in_change_content:
+            m_h3 = _H3_HEADING_RE.match(raw)
+            if m_h3:
+                current_target = _extract_change_h3_target(raw)
+
+    return {path: frozenset(names) for path, names in sections.items()}
+
+
 def _collect_newly_created_skill_names(new_paths: frozenset[str]) -> frozenset[str]:
     """新設パス集合から`agent-toolkit/skills/<name>/`形式の新設予定スキル名を導出する。
 
@@ -560,12 +637,16 @@ def _resolve_target_headings(
     repo_root: pathlib.Path,
     section_cache: dict[str, frozenset[str] | None],
     new_paths: frozenset[str],
+    new_sections: dict[str, frozenset[str]],
 ) -> _ResolvedTargetHeadings:
     """参照先パスを解決し、新設判定後に見出し集合をキャッシュ経由で返す。
 
     参照先が`new_paths`に含まれる新設予定パスへ解決された場合は`_NEW_TARGET_SKIP`を返す。
     対象ファイルの読み込み失敗は既存どおり節名不在違反として扱うため、`_target_file_headings`由来の
     `None`をそのまま返す。
+    `new_sections`（`_collect_newly_created_sections`の戻り値）に参照先パスの新設節集合が
+    存在する場合、対象ファイルの既存見出し集合と合成した`frozenset`を返す
+    （同一計画内で新設予定の節を実在確認対象から除外するため）。
     """
     target = _resolve_section_ref_target(raw_path, repo_root)
     try:
@@ -577,7 +658,11 @@ def _resolve_target_headings(
     cache_key = str(target)
     if cache_key not in section_cache:
         section_cache[cache_key] = _target_file_headings(target)
-    return section_cache[cache_key]
+    headings = section_cache[cache_key]
+    extra_sections = new_sections.get(relative_str, frozenset())
+    if not extra_sections:
+        return headings
+    return extra_sections if headings is None else headings | extra_sections
 
 
 def _find_section_ref_violations(
@@ -586,6 +671,7 @@ def _find_section_ref_violations(
     repo_root: pathlib.Path,
     section_cache: dict[str, frozenset[str] | None],
     new_paths: frozenset[str] = frozenset(),
+    new_sections: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
     """1行分の節名参照を抽出し、対象ファイル内での節見出し実在を検査して違反メッセージ一覧を返す。
 
@@ -595,6 +681,8 @@ def _find_section_ref_violations(
     （`references/xxx.md`形式）である場合のサフィックス一致も同ヘルパーが判定する。
     新設と判定した場合は`_resolve_section_ref_target`によるフォールバック解決
     （無関係な同名ファイルへの誤解決を招き得る）を行わずスキップする。
+    `new_sections`は同一計画内で新設予定の節集合（`_collect_newly_created_sections`）を表し、
+    `_resolve_target_headings`へ委譲して既存節との合成判定に用いる。
     """
     violations: list[str] = []
     for m in _SECTION_REF_PATTERN.finditer(raw):
@@ -602,7 +690,7 @@ def _find_section_ref_violations(
         section = m.group("section").strip()
         if _is_newly_created_path(raw_path, new_paths):
             continue
-        headings = _resolve_target_headings(raw_path, repo_root, section_cache, new_paths)
+        headings = _resolve_target_headings(raw_path, repo_root, section_cache, new_paths, new_sections or {})
         if isinstance(headings, _NewTargetSkip):
             continue
         if headings is None or section not in headings:
@@ -637,6 +725,7 @@ def _find_bare_section_ref_violations(
     repo_root: pathlib.Path,
     section_cache: dict[str, frozenset[str] | None],
     new_paths: frozenset[str],
+    new_sections: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
     """対象H3配下の裸節名参照を抽出し、H3対象ファイル内での節見出し実在を検査する。"""
     if target_path is None or _SECTION_ALLOW_MARKER in raw:
@@ -645,7 +734,7 @@ def _find_bare_section_ref_violations(
         return []
 
     path_ref_spans = [m.span() for m in _SECTION_REF_PATTERN.finditer(raw)]
-    headings = _resolve_target_headings(target_path, repo_root, section_cache, new_paths)
+    headings = _resolve_target_headings(target_path, repo_root, section_cache, new_paths, new_sections or {})
     if isinstance(headings, _NewTargetSkip):
         return []
 
@@ -666,10 +755,13 @@ def _find_all_section_ref_violations(
     section_cache: dict[str, frozenset[str] | None],
     new_paths: frozenset[str],
     bare_target_path: str | None,
+    new_sections: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
     """パス付き形式と裸形式の節名参照違反を1行分まとめて返す。"""
-    violations = _find_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths)
-    violations.extend(_find_bare_section_ref_violations(raw, lineno, bare_target_path, repo_root, section_cache, new_paths))
+    violations = _find_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths, new_sections)
+    violations.extend(
+        _find_bare_section_ref_violations(raw, lineno, bare_target_path, repo_root, section_cache, new_paths, new_sections)
+    )
     return violations
 
 
@@ -686,6 +778,10 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
     裸形式は`_SECTION_ALLOW_MARKER`を同一行に持つ行を検査対象から除外する。
     節名の表記揺れ処理は前後空白のtrimのみ実施する。
     ラベル付き`text`フェンス内でネストしたフェンス付きコードブロック区画は検査対象外とする。
+
+    同一計画内で新設予定の節（`## 変更内容`H3配下の`[追記]`・`[新設]`ラベル付き`text`フェンス内の
+    `##`・`###`見出し）は`_collect_newly_created_sections`で抽出し、対象ファイルの見出し集合と合成した
+    節名集合で実在確認する。ファイル自体の新設除外（`_collect_newly_created_paths`）と併用する。
     """
     violations: list[str] = []
     in_fence = False
@@ -700,6 +796,7 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
     current_change_target: str | None = None
     section_cache: dict[str, frozenset[str] | None] = {}
     new_paths = _collect_newly_created_paths(text)
+    new_sections = _collect_newly_created_sections(text)
 
     for lineno, raw in enumerate(text.splitlines(), start=1):
         m_fence = _FENCE_RE.match(raw)
@@ -737,7 +834,9 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
             if not fence_included:
                 continue
             violations.extend(
-                _find_all_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths, current_change_target)
+                _find_all_section_ref_violations(
+                    raw, lineno, repo_root, section_cache, new_paths, current_change_target, new_sections
+                )
             )
             continue
 
@@ -762,7 +861,9 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
             continue
 
         violations.extend(
-            _find_all_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths, current_change_target)
+            _find_all_section_ref_violations(
+                raw, lineno, repo_root, section_cache, new_paths, current_change_target, new_sections
+            )
         )
 
     return violations

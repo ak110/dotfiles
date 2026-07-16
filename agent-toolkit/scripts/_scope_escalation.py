@@ -150,6 +150,17 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "async-wait",
+        re.compile(
+            r"(?:完了通知|完了報告)(?:は)?[^、。\n]{0,15}(?:まだ)?[^、。\n]{0,5}"
+            r"(?:届いていない|受領していない|到達していない|受け取っていない)"
+        ),
+    ),
+    (
+        "async-wait",
+        re.compile(r"待機(?:を)?(?:継続|続行|続け)(?:する|します)?|待機継続"),
+    ),
+    (
         "quality-gate-count",
         re.compile(
             r"hookブロック[^、。\n]*繰り返|lint違反[^、。\n]*膨大|違反件数[^、。\n]*進行困難|ブロック回数を踏まえ|修正量が多い"
@@ -293,6 +304,11 @@ _INLINE_CHOICE_PATTERN: re.Pattern[str] = re.compile(r"選択肢\s*[:：]\s*\n?\
 # 節名転記時の全角鍵括弧「」区間はpriority-consult語彙と字面上重なりやすく、過検出を招くため除外する。
 _ZENKAKU_KAKKO_RE: re.Pattern[str] = re.compile(r"「[^」]*」")
 
+# priority-consultカテゴリの照合対象から他ファイル節名の引用文脈（バッククォート囲み）を除去するためのパターン。
+# バッククォート囲みは識別子・節名・コマンド名の引用に用いられ、priority-consult語彙と字面上重なりやすい。
+# 全角鍵括弧と同格の除外対象として扱う。改行を含まない同一行内の囲み区間を対象とする。
+_BACKTICK_RE: re.Pattern[str] = re.compile(r"`[^`\n]+`")
+
 
 def has_inline_choice_offer(text: str) -> bool:
     """テキストへ地の文の番号付き選択肢提示が含まれる場合に真を返す。
@@ -328,14 +344,14 @@ def is_empty_completion_report(text: object) -> bool:
 def _apply_category_exclusions(text: str, category: str) -> str:
     """カテゴリ別の照合対象除外を適用する共有関数。
 
-    現状は該当カテゴリで全角鍵括弧「」区間を除外する。
-    他ファイル節名の引用文脈を該当語彙の過検出から保護する。
+    現状は該当カテゴリで引用文脈（全角鍵括弧・バッククォート囲みの各区間）を除外する。
+    他ファイル節名・識別子・コマンド名の引用文脈を該当語彙の過検出から保護する。
     他カテゴリは呼び出し元のtextをそのまま返す。
     `_match_scope_escalation`(本モジュール)と
     `_match_scope_escalation_increase`(`pretooluse.py`)の両経路から呼び出す。
     """
     if category == "priority-consult":
-        return _ZENKAKU_KAKKO_RE.sub("", text)
+        return _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text))
     return text
 
 
@@ -352,7 +368,8 @@ def _match_scope_escalation(
     `exclude_categories`を指定した場合は当該カテゴリ集合を照合対象から除外する。
     Stop経路（`stop_advisor.py`）は自由文脈での誤検出回避のため
     `_STOP_FOCUS_CATEGORIES`（`process-omission`単独）を渡す。
-    priority-consultカテゴリは他ファイル節名の引用文脈（全角鍵括弧「」で囲まれた区間）を
+    priority-consultカテゴリは他ファイル節名・識別子の引用文脈
+    （全角鍵括弧「」で囲まれた区間・バッククォート`で囲まれた区間）を
     走査対象から除去してから判定する（節名転記時の過検出を回避する）。
     matched_phraseはパターンのマッチテキストそのまま。
     未検出時・非文字列入力時はNoneを返す。

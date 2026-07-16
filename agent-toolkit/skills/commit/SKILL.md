@@ -93,10 +93,12 @@ Claude Code固有事項として、本体作業に着手する時点で
   - この場合に限り、事前に`pre-commit run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、
     `git commit --no-verify`を使ってよい（stashによる事故を避けるための限定的な例外）
   - これ以外（検証省略・hook失敗の強行突破など）での`--no-verify`使用は禁止する
+- `git add`後・amend実行前は`git status --short`でステージ対象と作業ツリー差分を確認する
 - `git commit --amend`／`git commit --fixup=`の実行直後は初回・再実行を問わずステージ状態を確認する
   - pre-commitのstash/restoreは初回amendでも発生し、直後にステージ状態がワーキングツリーへ戻り未コミット差分が残る
   - `git status`で未コミット差分が残っていないか確認し、残っていれば`git add`したうえで
     `git commit --amend`／`git commit --fixup=`を再実行する
+  - amend後は`git show HEAD:<path>`で反映結果を実体照合する
   - 最終応答前に`git status`がcleanであることを確認してから完了を宣言する
   - `git push`実行時にPreToolUseフックがamend後の未コミット差分残置を検知すると自動的にpushをブロックする。
     `git status`で確認後、再amendまたはadd/commitで解消してから再度pushできる

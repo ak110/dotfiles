@@ -149,6 +149,21 @@ class TestMatchScopeEscalation:
         assert category == "priority-consult"
         assert matched
 
+    def test_priority_consult_phrase_inside_backtick_not_matched(self):
+        """バッククォート囲み内へ他ファイル節名を転記した文字列は検出されない。"""
+        text = "計画ファイル本文の`スコープ相談節`を確認してから実装する。"
+        assert _match_scope_escalation(text) is None
+
+    def test_priority_consult_phrase_inside_and_outside_backtick_matches_outside_only(self):
+        """バッククォート囲みの内側と外側の両方に該当語彙がある場合、外側のみが検出対象となる。"""
+        text = "計画ファイル本文の`スコープ相談節`を参照しつつ、優先順位について相談してから着手する。"
+        assert _category_of(text) == "priority-consult"
+
+    def test_priority_consult_phrase_inside_zenkaku_kakko_and_backtick_not_matched(self):
+        """全角鍵括弧・バッククォート囲みの両方が同時に除去され、いずれの内部語彙も検出されない。"""
+        text = "計画ファイル本文の「スコープ相談節」と`別のスコープ相談節`を確認してから実装する。"
+        assert _match_scope_escalation(text) is None
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
@@ -169,6 +184,20 @@ class TestApplyCategoryExclusions:
         """全角鍵括弧を含まないtextは`priority-consult`でも無変換で返す。"""
         text = "優先順位について相談する。"
         assert _apply_category_exclusions(text, "priority-consult") == text
+
+    def test_priority_consult_removes_backtick_content(self):
+        """`priority-consult`カテゴリではバッククォート囲み内が除去される。"""
+        text = "計画ファイル本文の`スコープ相談節`を確認する。"
+        result = _apply_category_exclusions(text, "priority-consult")
+        assert "スコープ相談節" not in result
+        assert "計画ファイル本文の" in result
+
+    def test_priority_consult_removes_both_kakko_and_backtick_content(self):
+        """`priority-consult`カテゴリでは全角鍵括弧・バッククォート囲みの両方が同時に除去される。"""
+        text = "計画ファイル本文の「スコープ相談節」と`別のスコープ相談節`を確認する。"
+        result = _apply_category_exclusions(text, "priority-consult")
+        assert "スコープ相談節" not in result
+        assert "計画ファイル本文の" in result
 
 
 class TestIsEmptyCompletionReport:

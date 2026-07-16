@@ -681,6 +681,85 @@ class TestSectionNameExistence:
         assert "4行目" in result.stderr
 
 
+class TestNewlyCreatedSectionExclusion:
+    """既存ファイル内で新設される節の実在確認除外（FB1対応）の主要シナリオをまとめて検証する。"""
+
+    def test_added_label_fence_heading_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """H3配下の`[追記]`ラベル`text`フェンス内で宣言された新設節は、計画内の別箇所の参照で実在確認をスキップする。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[追記]\n## 新設節\n本文案。\n```\n\n"
+            "詳細は`docs/guide.md`「新設節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_new_label_fence_heading_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """`[新設]`ラベルでも同様に新設節扱いとなる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[新設]\n### 新設小節\n本文案。\n```\n\n"
+            "詳細は`docs/guide.md`「新設小節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_multiple_headings_in_same_fence_are_all_treated_as_new(self, tmp_path: pathlib.Path) -> None:
+        """H3配下の`[追記]`フェンス内で複数見出しを宣言した場合に全て新設節扱いとなる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[追記]\n## 節A\n本文。\n### 節B\n本文。\n```\n\n"
+            "詳細は`docs/guide.md`「節A」節と`docs/guide.md`「節B」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_excluded_fence_forms_are_not_treated_as_new_sections(self, tmp_path: pathlib.Path) -> None:
+        """抽出対象外（`[置換後]`ラベル・言語指定なしフェンス・削除記号`-`前置）は新設節に含まれない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[置換後]\n## 置換後節\n本文。\n```\n\n"
+            "```text\n## 無ラベル節\n本文。\n```\n\n"
+            "```text\n[追記]\n-## 削除予定節\n本文。\n```\n\n"
+            "詳細は`docs/guide.md`「置換後節」節・`docs/guide.md`「無ラベル節」節・"
+            "`docs/guide.md`「削除予定節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        violations = [line for line in result.stderr.splitlines() if "節名不在" in line]
+        assert len(violations) == 3
+
+    def test_file_level_and_section_level_new_exclusions_are_independent(self, tmp_path: pathlib.Path) -> None:
+        """ファイル自体の新設除外（既存機構）と節新設除外（本機構）が同一計画内で独立して機能する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "existing.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        new_path = "docs/new-guide.md"
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            f"- [ ] `{new_path}`（新設, 見込み10行）\n\n"
+            f"### `{new_path}`\n\n"
+            f"詳細は`{new_path}`「任意の節」節を参照する。\n\n"
+            "### `docs/existing.md`\n\n"
+            "```text\n[追記]\n## 新設節\n本文。\n```\n\n"
+            "詳細は`docs/existing.md`「新設節」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+
 class TestBareSectionNameExistence:
     """裸節名参照の実在照合（FB5対応）の主要シナリオをまとめて検証する。"""
 
