@@ -1,3 +1,8 @@
+---
+# 同期注記: 「網羅調査チェックリスト」節1項目目のマッピング手順への相互参照は、
+# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節観点1と
+# 意図的に同期させる。改訂時は両ファイルを同時更新する。
+---
 # 採否判定チェックリスト
 
 `agent-toolkit:process-feedbacks`ステップ2.5「採否判定前の網羅調査」・
@@ -7,7 +12,9 @@
 
 - 追記先候補ファイルの該当節を読み、既存記述または既存実装で同等内容が既にカバー済みでないかを確認する。
   併せて同ドメインの既存規範が`agent-toolkit/rules/`・`agent-toolkit/skills/`配下に存在しないかを`grep -rn`で網羅確認する。
-  既存規範が存在する場合はスコープ拡張・条件補強による一本化案を優先候補とする
+  既存規範が存在する場合はスコープ拡張・条件補強による一本化案を優先候補とする。
+  原文に複数の提案項目が含まれる場合のマッピング手順は
+  `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節観点1に従う
 - 禁止規定・推奨規定との照合:
   フィードバック原文が示す反映パターン（キーワード・実装手法・禁止/推奨の主張）を
   `agent-toolkit/rules/`・`agent-toolkit/skills/`配下の既存禁止規定・推奨規定と照合する。
