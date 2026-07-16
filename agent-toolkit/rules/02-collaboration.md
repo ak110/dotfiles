@@ -14,7 +14,7 @@
 
 `useAutoModeDuringPlan`設定（既定`true`）が有効な環境では、plan mode中もauto modeの
 classifierが読み取り専用操作の確認を省略する。
-出典はClaude Code公式ドキュメント`Use auto mode during plan`（<https://code.claude.com/docs/en/permission-modes.md>）である。
+出典はClaude Code公式ドキュメント`Use auto mode during plan`節である。
 本設定はplan modeへの部分的な重ね合わせであり、編集操作は計画承認まで常にブロックされる。
 この場合も上記の判定基準に従いplan mode下は「協調モード」として扱う。
 
