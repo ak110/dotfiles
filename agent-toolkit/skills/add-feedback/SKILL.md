@@ -1,9 +1,9 @@
 ---
 name: add-feedback
 description: >
-  フリーフォーマットのフィードバック本文を対象リポジトリごとに振り分け、
-  `atk fb add` CLIへ位置引数で渡してフィードバック管理repoのinboxへ投入する。
-  「〇〇を改善提案にして」「〇〇をフィードバックにして」「〇〇をfeedbackに追加して」などのキーワードで起動する。
+  フィードバック本文を管理repoのinboxへ投入するときに起動する。
+  「〇〇を改善提案にして」「〇〇をフィードバックにして」
+  「〇〇をfeedbackに追加して」などのキーワードで起動する。
 # 連携: `atk fb add` CLI（`agent-toolkit/scripts/atk.py`）に位置引数で投入する。
 # `atk fb status`が正常終了する環境でのみ動作する。
 ---

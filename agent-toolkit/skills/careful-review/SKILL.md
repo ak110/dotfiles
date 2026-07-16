@@ -1,8 +1,8 @@
 ---
 name: careful-review
 description: >
-  対象範囲を指定してレビューするスキル。
-  `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方に対応する。
+  対象範囲を指定してレビューするときに起動する。
+  `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方で起動する。
 # 編集時の注意点:
 # サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身は
 # メイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。

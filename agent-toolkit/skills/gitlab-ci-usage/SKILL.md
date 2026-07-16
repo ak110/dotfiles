@@ -1,7 +1,8 @@
 ---
 name: gitlab-ci-usage
 description: >
-  GitLab CI（`.gitlab-ci.yml`）のキーワード仕様・典型パターン・lintのリファレンス。
+  GitLab CI設定のキーワード仕様・典型パターン・lint実行方法を参照するときに起動する。
+  `.gitlab-ci.yml`の編集・確認時に起動する。
 ---
 
 # GitLab CIの使い方

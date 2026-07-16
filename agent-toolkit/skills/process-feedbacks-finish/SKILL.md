@@ -1,10 +1,9 @@
 ---
 name: process-feedbacks-finish
 description: >
-  `agent-toolkit:process-feedbacks`の実装・レビュー完遂後に残る後続工程
-  （コミット・push・CI通過確認・adopt/reject/tbd-adopt・振り返り・exit-session）を
-  段階的に実施する。`agent-toolkit:process-feedbacks`・`atk fb process-loop`から
-  後続工程の到達先として参照される。単独のユーザー起動も可とする。
+  `agent-toolkit:process-feedbacks`の実装・レビュー完遂後の後続工程を実施するときに起動する。
+  `agent-toolkit:process-feedbacks`・`atk fb process-loop`からの到達時に起動する。
+  ユーザー単独起動時も起動する。
   対象リポジトリのコード変更有無・コミット対象の有無に関わらず必ず起動する
   （変更なしを理由とする起動省略は`agent-toolkit:agent-standards`配下
   `references/scope-escalation-phrases.md`の`process-omission`カテゴリに該当し禁止する）。

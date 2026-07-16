@@ -1,8 +1,8 @@
 ---
 name: overhaul-project
 description: >
-  プロジェクト全体を網羅的に点検し、コード改善（リファクタリング）・ドキュメント整備・足元整備の観点で
-  まとめて改善するワークフロー。ユーザー手動起動専用（`/agent-toolkit:overhaul-project`）。
+  プロジェクト全体を網羅的に点検し改善するときに起動する。
+  ユーザー手動起動専用（`/agent-toolkit:overhaul-project`）。
 disable-model-invocation: true
 # 編集時の注意点:
 # 本スキルはユーザー手動起動専用。disable-model-invocation: trueでモデル側からの自動起動を抑止する。

@@ -1,9 +1,7 @@
 ---
 name: spec-driven-plan
 description: >
-  次版ドキュメント（テーマ仕様）を基に、テーマごとの実装計画ファイル（`docs/v{next}/plans/{theme}.md`）を作成する。
-  `agent-toolkit:plan-mode`を参照呼び出ししてユーザー対話・調査・整合性チェックを進め、
-  ExitPlanMode直前までの工程を完遂する。引数なしで起動でき、計画ファイルが未作成のテーマを順次対話的に計画する。
+  次版ドキュメント（テーマ仕様）を基にテーマごとの実装計画ファイルを作成するときに起動する。
 # 編集時の注意点:
 # 本スキルは`agent-toolkit:plan-mode`を参照呼び出しする想定だが、本スキル起動時点ではplan-modeは
 # 未ロード。フェーズA・Bサブエージェントが各自Skillツールで`agent-toolkit:plan-mode`を呼び出す前提。

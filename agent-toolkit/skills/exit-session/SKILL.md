@@ -1,12 +1,12 @@
 ---
 name: exit-session
 description: >
-  Claude Code本体プロセスへシグナルを送出して現セッションを自律終了する。
-  `agent-toolkit:process-feedbacks-finish`工程6、自律終了再促フック（未起動判定時の再促誘導。
-  dotfiles個人環境固有の`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境変数で有効化され、
-  配布物の利用者環境では既定で無効）、またはユーザーがSkill名を明示指定した場合にのみ起動する。
-  作業完了・振り返り完了・会話の区切りのみを契機に呼び出さない。
-  「終了」「やめる」等のユーザーの一般的な意思表示のみでは起動せず、`/exit`の入力を案内する。
+  現セッションを自律終了するときに起動する。
+  `agent-toolkit:process-feedbacks-finish`工程6、
+  自律終了再促フック、またはユーザーがSkill名を明示指定した
+  場合にのみ起動する。
+  作業完了・振り返り完了・会話の区切りのみを契機に起動しない。
+  「終了」「やめる」等の一般的な意思表示のみでは起動しない。
 allowed-tools: Bash
 ---
 

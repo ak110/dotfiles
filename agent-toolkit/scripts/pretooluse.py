@@ -10,6 +10,7 @@ r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
 warn種別のcheckはstderrまたはstdoutに警告を表示しつつ処理を継続する。
 auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換えする。
+関連チェック項目は初回で一括開示する（反復サイクル防止のため）。
 
 統合しているチェック:
 
@@ -1620,8 +1621,9 @@ def _check_plan_file_required_reads_first(
     - `_PLAN_FILE_REQUIRED_READS`のいずれかのフラグがセッション状態上で偽
 
     各リファレンスを一度Readするとフラグが設定され、以降の判定から除外される。
-    未読要素が複数ある場合も1回のブロックメッセージへ全件列挙する
-    （段階的な複数回ブロックを避けるため）。
+    ブロックメッセージには既読済みも含めた`_PLAN_FILE_REQUIRED_READS`全件を毎回列挙し
+    （反復サイクル防止のため初回で全件を一括開示する）、既読済み項目には`(already read)`を付与する。
+    未読要素が1件も無い場合はブロックしない。
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     """
     if not session_id:
@@ -1632,16 +1634,14 @@ def _check_plan_file_required_reads_first(
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
         return False
     state = read_state(session_id)
-    unread = [
-        (skill_name, reference_path, purpose_sentence)
-        for flag_name, skill_name, reference_path, purpose_sentence in _PLAN_FILE_REQUIRED_READS
-        if not state.get(flag_name, False)
-    ]
-    if not unread:
+    read_flags = [state.get(flag_name, False) for flag_name, _, _, _ in _PLAN_FILE_REQUIRED_READS]
+    if all(read_flags):
         return False
     lines = [
-        f"- `{skill_name}` reference `{reference_path}`: {purpose_sentence}"
-        for skill_name, reference_path, purpose_sentence in unread
+        f"- `{skill_name}` reference `{reference_path}`: {purpose_sentence}" + (" (already read)" if is_read else "")
+        for is_read, (_, skill_name, reference_path, purpose_sentence) in zip(
+            read_flags, _PLAN_FILE_REQUIRED_READS, strict=True
+        )
     ]
     print(
         _llm_notice(

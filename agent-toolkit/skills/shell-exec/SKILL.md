@@ -1,7 +1,8 @@
 ---
 name: shell-exec
 description: >
-  メインのコンテキストを消費せずコマンドライン作業を実行する。
+  コマンドライン作業をメインのコンテキストから分離して実行するときに起動する。
+  複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）で起動する。
 context: fork
 agent: Explore
 model: haiku

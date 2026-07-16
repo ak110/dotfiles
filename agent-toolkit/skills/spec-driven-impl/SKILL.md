@@ -1,11 +1,8 @@
 ---
 name: spec-driven-impl
 description: >
-  `agent-toolkit:spec-driven-plan`で作成した計画ファイル群（`docs/v{next}/plans/*.md`）を
-  全件巡回し、ユーザー不在の自律実行により順次実装する。
-  各計画ファイルは`plan-impl-executor`の手順で検証・コミット・レビューまで完遂する。
-  確認事項は`docs/v{next}/TBD.md`へ書き残し続行する。
-  ユーザーが回答を追記したうえで本スキルを再起動すれば回答済み事項を反映して続行できる。
+  `agent-toolkit:spec-driven-plan`で作成した計画ファイル群を自律実行で順次実装するときに起動する。
+  ユーザー回答追記後の再起動時にも起動する。
 # 編集時の注意点:
 # 本スキル実行中はユーザー確認規範をオーバーライドする（「2. ユーザー確認規範のオーバーライド」節）。
 # `EnterPlanMode`/`ExitPlanMode`は使用しない（plan modeの編集制約と整合しないため）。

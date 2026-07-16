@@ -1,8 +1,7 @@
 ---
 name: quality-sweep
 description: >
-  既存プロジェクト全体の品質スイープ。`plan-impl-reviewer`で既存不良を網羅検出し、
-  カテゴリ別の`claude`サブエージェントへ分担修正させ、最終検証サブエージェントで一括コミットする。
+  既存プロジェクト全体の品質スイープを実施するときに起動する。
   ユーザー手動起動専用（`/agent-toolkit:quality-sweep`）。
 disable-model-invocation: true
 # 編集時の注意点:

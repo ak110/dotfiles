@@ -380,6 +380,38 @@ class TestVersionBumpMatrix:
         assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
 
 
+class TestRunMethodScriptPaths:
+    """`_check_run_method_script_paths`の検査を検証する。"""
+
+    _REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
+
+    def test_existing_script_passes(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 実行方法\n\n`scripts/agent_toolkit_bump.py minor`で更新する。\n"
+        assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+    def test_missing_script_blocks(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 実行方法\n\n`agent-toolkit/scripts/agent_toolkit_bump.py`を実行する。\n"
+        issues = check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+        assert len(issues) == 1
+        assert "agent-toolkit/scripts/agent_toolkit_bump.py" in issues[0]
+
+    def test_command_with_arguments_extracts_only_script(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 実行方法\n\n`python scripts/agent_toolkit_bump.py minor`で更新する。\n"
+        assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+    def test_non_run_method_section_ignored(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n`agent-toolkit/scripts/nonexistent.py`に言及する。\n"
+        assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+    def test_non_script_token_ignored(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 実行方法\n\n`agent-toolkit:commit`を呼び出す。\n"
+        assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+    def test_flag_or_keyvalue_ignored(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 実行方法\n\n`--frozen scripts/agent_toolkit_bump.py --script=scripts/nonexistent.py`で更新する。\n"
+        assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+
 class TestIdentifierExistence:
     """`_check_identifier_existence`の検査を検証する。"""
 

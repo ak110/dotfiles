@@ -626,10 +626,11 @@ class TestPlanFileRequiredReadsFirstCheck:
         assert result.returncode == 2
         assert "textlint-violations.md" in result.stderr
         assert "plan-file-guidelines.md" in result.stderr
+        assert "(already read)" not in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_blocks_when_only_textlint_violations_unread(self, tmp_path: pathlib.Path):
-        """片方のみ未読の場合、当該参照パスのみメッセージに列挙される。"""
+        """片方のみ未読の場合、両参照が列挙され読了済み側に`(already read)`が付く。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
@@ -650,11 +651,12 @@ class TestPlanFileRequiredReadsFirstCheck:
         )
         assert result.returncode == 2
         assert "textlint-violations.md" in result.stderr
-        assert "plan-file-guidelines.md" not in result.stderr
+        assert "plan-file-guidelines.md" in result.stderr
+        assert "plan-file-guidelines.md`: internalize plan file structure requirements (already read)" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_blocks_when_only_plan_file_guidelines_unread(self, tmp_path: pathlib.Path):
-        """片方のみ未読の場合、当該参照パスのみメッセージに列挙される。"""
+        """片方のみ未読の場合、両参照が列挙され読了済み側に`(already read)`が付く。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "multi.md")
         env = self._state_env(tmp_path, home)
@@ -678,7 +680,8 @@ class TestPlanFileRequiredReadsFirstCheck:
         )
         assert result.returncode == 2
         assert "plan-file-guidelines.md" in result.stderr
-        assert "textlint-violations.md" not in result.stderr
+        assert "textlint-violations.md" in result.stderr
+        assert "textlint-violations.md`: internalize frequent textlint violation patterns (already read)" in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
 
     def test_allows_plan_file_when_both_read(self, tmp_path: pathlib.Path):

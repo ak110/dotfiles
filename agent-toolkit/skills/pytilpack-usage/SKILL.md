@@ -1,8 +1,8 @@
 ---
 name: pytilpack-usage
 description: >
-  pytilpackのモジュール構成・API・extras・CLIの使い方リファレンス。
-  `import pytilpack`を含むコードを読み書きする時に使う。
+  pytilpackのモジュール構成・API・extras・CLIの使い方を参照するときに起動する。
+  `import pytilpack`を含むコードを読み書きする時に起動する。
 ---
 
 # pytilpackの使い方

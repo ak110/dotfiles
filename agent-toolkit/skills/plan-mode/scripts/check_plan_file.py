@@ -43,6 +43,9 @@
 - `_check_version_bump_matrix`: `## 変更内容`対象ファイル一覧が`agent-toolkit/`配下の`.md`ファイルを
   含む計画で、`ファイル・改訂節数・節名・判定・該当基準`の5列表または`scripts/agent_toolkit_bump.py`の
   種別記載のいずれかが計画本文に存在するかを検査する（不在時に違反として報告、exit codeへ算入）
+- `_check_run_method_script_paths`: `## 実行方法`節内のバッククォート囲みコマンドから
+  拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）スクリプトパスを抽出し、
+  プロジェクトルート起点で実在するかを検査する（不在時に違反として報告、exit codeへ算入）
 - `_check_identifier_existence`: 計画本文の`### <相対パス>`H3節配下で言及される関数名・節見出し名の
   対象ファイル内実在を`grep`相当の`in`照合で確認する（不在時にwarn報告、exit codeへ含めない）
 
@@ -76,6 +79,7 @@ import io
 import json
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
@@ -160,6 +164,9 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
 
     violations += _check_document_size_upper_limit(plan_path, text)
     violations += _check_version_bump_matrix(plan_path, text)
+    for msg in _check_run_method_script_paths(plan_path, text, repo_root):
+        print(msg, file=sys.stderr)
+        violations += 1
     for msg in _check_identifier_existence(plan_path, text):
         print(msg, file=sys.stderr)
 
@@ -272,6 +279,12 @@ _BUMP_SCRIPT_RE = re.compile(r"agent_toolkit_bump\.py")
 # 文書サイズ上限（`agent-toolkit:agent-standards`「文書サイズ上限」節が定める220行）。
 _DOCUMENT_SIZE_UPPER_LIMIT = 220
 
+# `## 実行方法`節の区間抽出、およびバッククォート囲みコマンド中の拡張子付きスクリプトパス抽出用。
+_RUN_METHOD_SECTION_RE = re.compile(r"^## 実行方法\s*$", re.MULTILINE)
+_NEXT_H2_RE = re.compile(r"^## ", re.MULTILINE)
+_BACKTICK_INLINE_RE = re.compile(r"`([^`\n]+)`")
+_SCRIPT_EXT_RE = re.compile(r"\.(?:py|sh|ps1|js|ts)$")
+
 # H3ファイル節見出しから相対パスを抽出する。`### \`path/to/file\``形式。
 _H3_FILE_HEADING_RE = re.compile(r"^###\s+`(?P<path>[^`\s]+)`")
 
@@ -377,6 +390,36 @@ def _check_version_bump_matrix(plan_path: pathlib.Path, text: str) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+def _check_run_method_script_paths(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
+    """`## 実行方法`節内のバッククォート囲みコマンドから拡張子付きスクリプトパスを抽出し実在確認する。
+
+    拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）トークン限定で検査するため、
+    ハイフン始まりのフラグ・`=`を含むkey=value形式のトークンは誤検出抑制のため除外する。
+    """
+    issues: list[str] = []
+    m = _RUN_METHOD_SECTION_RE.search(text)
+    if not m:
+        return issues
+    section_start = m.end()
+    next_m = _NEXT_H2_RE.search(text, section_start)
+    section_end = next_m.start() if next_m else len(text)
+    section = text[section_start:section_end]
+    for inline_m in _BACKTICK_INLINE_RE.finditer(section):
+        raw = inline_m.group(1).strip()
+        try:
+            tokens = shlex.split(raw)
+        except ValueError:
+            tokens = raw.split()
+        for token in tokens:
+            if not _SCRIPT_EXT_RE.search(token):
+                continue
+            if token.startswith("-") or "=" in token:
+                continue
+            if not (repo_root / token).exists():
+                issues.append(f"{plan_path}: `## 実行方法`が参照するスクリプトパスが不在: {token}")
+    return issues
 
 
 def _check_identifier_existence(plan_path: pathlib.Path, text: str) -> list[str]:
