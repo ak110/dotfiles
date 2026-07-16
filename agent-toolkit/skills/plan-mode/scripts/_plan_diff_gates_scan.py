@@ -1,7 +1,7 @@
 """差分ブロック走査系・textlintバッチ実行系の関数群を集約する内部モジュール。
 
 `check_plan_diff_gates.py`の1000行超過解消のため走査系ロジックを本モジュールへ分離した。
-呼び出し元は`check_plan_diff_gates`と`check_plan_file`。
+呼び出し元は`check_plan_diff_gates`（`check_plan_file`からは同モジュール経由で間接利用）。
 シバン・PEP 723ヘッダは付けない（`_`プレフィックスの内部モジュールで単独実行対象外のため。
 既存の`_plan_diff_parsing.py`と同じ扱い）。
 """
@@ -359,14 +359,7 @@ def _rewrite_locations(output: str, location_map: dict[str, str]) -> str:
 
 
 def _run_textlint_batch(paths: list[pathlib.Path]) -> str | None:
-    """一時ファイル群へtextlintおよびcolloquial-checkを1回のsubprocess呼び出しで実行し、違反時stderr内容・未違反時Noneを返す。
-
-    計画本文のフェンス内文面は上位のcolloquial-checkが検査対象外とするため、
-    フェンス外扱いの一時ファイル経由でcolloquial-checkを併走させる。
-    実装検証段階でのcolloquial-check違反発覚を計画段階で先取り検出する。
-    呼び出し元では違反ラベルを「textlint違反」で統一する。
-    colloquial-check由来の違反も同ラベルで報告される点は既知とする。
-    """
+    """一時ファイル群へtextlint併走を1回のsubprocess呼び出しで実行する。詳細は`_run_textlint`のdocstring参照。"""
     result = subprocess.run(
         [
             "uvx",

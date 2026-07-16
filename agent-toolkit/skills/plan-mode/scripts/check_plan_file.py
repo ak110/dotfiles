@@ -48,13 +48,13 @@
   プロジェクトルート起点で実在するかを検査する（不在時に違反として報告、exit codeへ算入）
 - `_check_identifier_existence`: 計画本文の`### <相対パス>`H3節配下で言及される関数名・節見出し名の
   対象ファイル内実在を`grep`相当の`in`照合で確認する（不在時にwarn報告、exit codeへ含めない）
+- `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
+  リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する（warn出力のみ、exit code非算入）。
 - `check_plan_diff_gates._check_cross_reference_sync_note_requested`: `## 変更内容`配下`text`フェンス本文で
   相互参照文言（同期・意図的重複・「XX節に従う」形式）検出時、`### エージェント判断`欄の同期注記追加要否明示の
   有無を照合しwarn出力する（exit codeへ算入しない）
 - `check_plan_diff_gates._check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで
   内容がラベル行1行のみで終わる構成をwarn出力（exit code非算入）。
-- `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
-  リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する（warn出力のみ、exit code非算入）。
 
 体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
 文書サイズ上限検査（`_check_document_size_upper_limit`）は
@@ -310,6 +310,10 @@ _H3_HEADING_RE = re.compile(r"^###\s")
 # プロース中の識別子候補（バッククォート囲みで英数字・アンダースコアのみ）。
 _IDENTIFIER_CANDIDATE_RE = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*)`")
 
+# `.py`実装ファイルと対応する`_test.py`ペアの照合用。
+_TEST_FILE_SUFFIX = "_test.py"
+_TEST_PAIRING_EXCLUDES = frozenset({"__init__.py", "_test_helpers.py"})
+
 
 def _collect_projected_files(text: str) -> list[tuple[str, int]]:
     """計画本文から(相対パス, 見込み行数)一覧を抽出する。
@@ -496,10 +500,6 @@ def _check_identifier_existence(plan_path: pathlib.Path, text: str) -> list[str]
                 )
         i += 1
     return warnings
-
-
-_TEST_FILE_SUFFIX = "_test.py"
-_TEST_PAIRING_EXCLUDES = frozenset({"__init__.py", "_test_helpers.py"})
 
 
 def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
