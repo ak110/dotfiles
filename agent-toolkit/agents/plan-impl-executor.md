@@ -24,6 +24,10 @@ user-invocable: false
 # 「## 停止禁止」節末尾の非同期処理に係る完遂義務パラグラフは
 # spec-driven-implementer.md「停止禁止」バレット配下の同旨バレットと意図的に重複させている
 # 文面を変更する場合は両方の整合を取ること
+# 「停止禁止」節末尾のポインターバレット（plan-implementer起動プロンプトへの埋め込み義務）は
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節をSSOTとして参照する。
+# 同節は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理継続義務と意図的に重複する。
+# 改訂時は3ファイルを同時更新する。
 ---
 
 # plan-impl-executor
@@ -72,6 +76,9 @@ user-invocable: false
 未完遂として起動元へ返却し、残作業を`blockers`欄へ明示する。
 詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の
 非同期処理に係る完遂義務に従う。
+
+- `plan-implementer`起動プロンプトへ本規定を必須遵守事項として埋め込む。
+  実装SSOTは`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節とする
 
 ## 出力
 

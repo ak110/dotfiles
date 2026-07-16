@@ -1,12 +1,12 @@
 ---
 # 同期注記: 「起草をサブエージェントへ委譲するプロンプト」バレットの「計画専用機械チェック実行」サブバレットは
-# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と
-# 意図的に重複する。改訂時は両ファイルを同時更新する。
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
 # named subagent能動送付規定（Agentツールで`name`指定・`run_in_background=true`起動時の
 # 完了時SendMessage(to: 'main')能動送付義務）は
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`および
-# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`と意図的に重複する。
-# 改訂時は3ファイルを同時更新する。
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`と意図的に重複する（改訂時は3ファイルを同時更新する）。
+# 「サブエージェントの活用」節の非同期処理に係る完遂義務パラグラフ（「サブエージェントは自身の起動タスク完了前に」で始まるバレット）は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節と
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は3ファイルを同時更新する）。
 ---
 # 03-claude-code.md
 
