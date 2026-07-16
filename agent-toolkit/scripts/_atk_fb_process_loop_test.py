@@ -338,6 +338,15 @@ class TestProcessLoopPromptAndEnv:
         assert f"--target-repo={target_repo_id}" in prompt
         assert "/repo" in prompt
 
+    def test_prompt_states_feedback_provenance(self) -> None:
+        """プロンプトがフィードバックの投入元の確認方法を明示すること。"""
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+            "github.com/example/repo",
+        )
+        assert "投入元" in prompt
+        assert "frontmatterで確認できます" in prompt
+
     def test_model_override(
         self,
         tmp_path: pathlib.Path,

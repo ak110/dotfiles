@@ -56,6 +56,21 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "autoMode.allow",
         "agent-toolkit:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
     ),
+    # 2026-07: Exit-Session Termination の文面を数回改訂した際、union マージで
+    # 旧文面が除去されず`~/.claude/settings.json`に重複蓄積していたため除去する
+    # （`claude auto-mode critique`実測で4件の重複を検出）
+    (
+        "autoMode.allow",
+        "自律実行系CLIからの間接起動セッションの完遂条件を満たしたときの正当な自律終了操作",
+    ),
+    (
+        "autoMode.allow",
+        "呼び出し元スキルから明示的に呼ばれた場合、またはユーザーがSkill名を明示指定した場合の正当な自律終了操作",
+    ),
+    (
+        "autoMode.allow",
+        "自律終了再促フックからの誘導・ユーザーのSkill名明示指定のいずれか",
+    ),
 )
 
 _MAX_VALUE_LEN = 60

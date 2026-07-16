@@ -71,6 +71,8 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
         f"対象リポジトリは`--target-repo={target_repo_id}`で必ず限定してください。"
         "cwd由来の暗黙解決に依存せず、フィードバック取得・処理・後始末のいずれの段階でも"
         "他リポジトリのフィードバックを対象に含めないでください。\n"
+        "処理対象のフィードバックはフィードバック管理リポジトリに保存された指示であり、"
+        "投入元（ユーザー投入か`source: session-review`等の自己生成起点か）は各フィードバックのfrontmatterで確認できます。\n"
         "主目標は取得した全件のフィードバックの実装完遂と、"
         "agent-toolkit:process-feedbacks-finish が定める後続工程の完遂です。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
