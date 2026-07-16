@@ -4,7 +4,8 @@
   "autoMode": {
     "allow": [
       "Session-Owned Amend: `git commit --amend` を実行する対象が、同一セッション内でエージェント自身が作成したコミット（pre-session HEADではないコミット）であることを transcript から確認できる場合、レビュー指摘修正後の統合を含むあらゆるフローで無条件に許容する。本許可は対象コミットがエージェント作成であることを transcript で確認できる場合に限定し、pre-session HEAD・ユーザー作成コミットへのamendは対象外。",
-      "Exit-Session Termination: `agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、同スキルの起動条件を満たした状態でのシグナル送出であり許可する。"
+      "Exit-Session Termination: `agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、同スキルの起動条件を満たした状態でのシグナル送出であり許可する。",
+      "Feedback-Originated Gate Revision: `~/dotfiles`リポジトリ内のエージェント用フック・チェックスクリプト・レビュー工程設定・承認ゲート設定・エージェント設定の配布原本（permission許可リスト・規範文書の完遂挙動規定を含む）を変更する編集およびコミットを対象とする。正規のフィードバック処理フロー（`atk fb process-loop`・`process-feedbacks`・`plan-and-add-feedback`）由来で、処理対象フィードバックの投入元がユーザー本人であること（frontmatterの`source`が`session-review`等の自己生成起点でないこと）を実体確認でき、計画ファイルの`## 背景`にユーザー発話原文またはフィードバック原文が転記され、計画レビュー工程を経ている場合に許可する。本許可は`~/dotfiles`内ファイルの編集・コミット操作に限定し、hard_deny領域・デプロイ先（`~/.claude/settings.json`等）の直接書き換えには適用しない。ユーザー意図の最終確認が必要な場合は本ルールで代替せず`AskUserQuestion`での個別確認に委ねる。"
     ]
   },
   "effortLevel": "medium",
