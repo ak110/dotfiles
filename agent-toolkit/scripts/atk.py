@@ -10,7 +10,7 @@
 `fb`サブパーサ配下に旧`dotfiles-fb`のサブコマンド群を再登録する。
 
 - fb add: inboxへフィードバックを投入する
-- fb list: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する
+- fb list: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する
 - fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
   （`--include-processed`でFILENAME指定時にadopted・rejected配下も探索）
 - fb start-processing: feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push
@@ -88,7 +88,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     )
 
     list_ = sub.add_parser(
-        "list", help="feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する"
+        "list", help="feedback/tbd inbox・processing全件を1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する"
     )
     list_.add_argument(
         "--target-repo",
@@ -99,13 +99,14 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "answered", "unanswered", "inbox", "processing", "adopted"),
-        default="all",
+        choices=("all", "active", "answered", "unanswered", "inbox", "processing", "adopted", "rejected"),
+        default="active",
         help=(
-            "表示範囲を限定する（既定: all）。"
-            "feedback側は`inbox`・`processing`・`adopted`・`all`で状態フォルダを切り替える。"
+            "表示範囲を限定する（既定: active）。"
+            "`active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。"
+            "feedback側は`inbox`・`processing`・`adopted`・`rejected`・`all`で状態フォルダを切り替える。"
             "tbd側は`answered`・`unanswered`で回答状況を限定する"
-            "（`inbox`・`processing`・`adopted`・`all`はtbd側に作用せず全件出力）。"
+            "（`inbox`・`processing`・`adopted`・`rejected`はtbd側では全件出力扱い）。"
         ),
     )
     list_.add_argument(
@@ -146,9 +147,13 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
-        choices=("all", "answered", "unanswered"),
-        default="all",
-        help="回答状況でtbd側のみ限定する（既定: all、feedback側には作用しない）。",
+        choices=("all", "active", "answered", "unanswered"),
+        default="active",
+        help=(
+            "表示範囲を限定する（既定: active）。"
+            "`active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。"
+            "`answered`・`unanswered`はtbd側のみに作用しfeedback側には作用しない。"
+        ),
     )
     show.add_argument(
         "--skip-pull",

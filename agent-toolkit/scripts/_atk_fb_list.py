@@ -8,10 +8,13 @@ import argparse
 import pathlib
 
 from _atk_fb_common import (
+    FEEDBACK_ACTIVE_STATES,
     FEEDBACK_STATE_ADOPTED,
     FEEDBACK_STATE_INBOX,
     FEEDBACK_STATE_PROCESSING,
+    FEEDBACK_STATE_REJECTED,
     _is_tbd_answered,
+    _iter_feedback_entries_with_state,
     _iter_inbox_entries,
     _pull,
 )
@@ -56,12 +59,13 @@ def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """listサブコマンド: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・本文冒頭要約）で出力する。
+    """listサブコマンド: feedback/tbdを1件1行（filename・target_repo・状態・要約）で出力する。
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
-    `--status`指定で表示範囲を限定する（既定: all）。
-    feedback側は`inbox`・`processing`・`adopted`・`all`を解釈する。
-    tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`all`は
+    `--status`指定で表示範囲を限定する（既定: active）。
+    `active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。
+    feedback側は`inbox`・`processing`・`adopted`・`rejected`・`all`を解釈する。
+    tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`rejected`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
     `--category`指定時はfeedback側のみを指定ラベルへ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
@@ -76,27 +80,36 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
 
-    feedback_entries: list[tuple[pathlib.Path, str, str]] = []
-    if args.type in ("all", "feedback"):
-        # feedback側`--status`解釈: `inbox`=inbox配下のみ・`processing`=processing配下のみ・
-        # `adopted`=adopted配下のみ・`all`=全配下連結。回答状況指定（answered/unanswered）は
-        # feedback側では既定（all）扱い。
-        feedback_status = (
-            args.status
-            if args.status in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING, FEEDBACK_STATE_ADOPTED, "all")
-            else "all"
+    # --status=activeはfeedback側`inbox`+`processing`、tbd側`answered`を指す。
+    # --status=allは4状態フォルダ全連結。個別状態指定時は当該状態のみ。
+    feedback_states: tuple[str, ...]
+    if args.status == "active":
+        feedback_states = FEEDBACK_ACTIVE_STATES
+    elif args.status == "all":
+        feedback_states = (
+            FEEDBACK_STATE_INBOX,
+            FEEDBACK_STATE_PROCESSING,
+            FEEDBACK_STATE_ADOPTED,
+            FEEDBACK_STATE_REJECTED,
         )
-        if feedback_status in (FEEDBACK_STATE_INBOX, "all"):
-            inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
-            feedback_entries.extend(_iter_inbox_entries(inbox_dir, filter_repo))
-        if feedback_status in (FEEDBACK_STATE_PROCESSING, "all"):
-            processing_dir = private_notes / "feedback" / FEEDBACK_STATE_PROCESSING
-            feedback_entries.extend(_iter_inbox_entries(processing_dir, filter_repo))
-        if feedback_status in (FEEDBACK_STATE_ADOPTED, "all"):
-            adopted_dir = private_notes / "feedback" / FEEDBACK_STATE_ADOPTED
-            feedback_entries.extend(_iter_inbox_entries(adopted_dir, filter_repo))
+    elif args.status in (
+        FEEDBACK_STATE_INBOX,
+        FEEDBACK_STATE_PROCESSING,
+        FEEDBACK_STATE_ADOPTED,
+        FEEDBACK_STATE_REJECTED,
+    ):
+        feedback_states = (args.status,)
+    else:
+        # tbd専用フィルタ（answered/unanswered）指定時はfeedback側はactive扱い
+        feedback_states = FEEDBACK_ACTIVE_STATES
+
+    feedback_entries_with_state: list[tuple[pathlib.Path, str, str, str]] = []
+    if args.type in ("all", "feedback"):
+        feedback_entries_with_state = list(_iter_feedback_entries_with_state(private_notes, feedback_states, filter_repo))
         if args.category is not None:
-            feedback_entries = [entry for entry in feedback_entries if _has_category(entry[2], args.category)]
+            feedback_entries_with_state = [
+                entry for entry in feedback_entries_with_state if _has_category(entry[2], args.category)
+            ]
 
     tbd_entries: list[tuple[pathlib.Path, str, str]] = []
     if args.type in ("all", "tbd"):
@@ -107,15 +120,17 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 continue
             if args.status == "unanswered" and answered:
                 continue
+            if args.status == "active" and not answered:
+                continue
             tbd_entries.append((path, target_repo, text))
 
     if args.count:
-        print(len(feedback_entries) + len(tbd_entries))
+        print(len(feedback_entries_with_state) + len(tbd_entries))
         return
 
-    if feedback_entries:
+    if feedback_entries_with_state:
         print("# feedback")
-        for path, target_repo, text in feedback_entries:
-            print(f"{path.name}\t{target_repo}\t{_body_summary(text)}")
+        for path, target_repo, text, state in feedback_entries_with_state:
+            print(f"{path.name}\t{target_repo}\t[{state}] {_body_summary(text)}")
 
     _render_tbd_entries(tbd_entries)

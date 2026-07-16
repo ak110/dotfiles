@@ -96,9 +96,9 @@
   - 並列起動時はメイン側の単一メッセージ内に複数のサブエージェント起動ブロックを並べる
    （`Agent`ツール直接呼び出しと`agent-toolkit:shell-exec`等のforkスキル呼び出しを混在させてよい）
   - `background`起動時は完了報告として結果全文をメイン宛1回で送付する規定を起動プロンプトへ明記する
-  - Agentツールで`name`指定した`run_in_background=true`起動のnamed subagent（teammate）は、
-    作業完了時にSendMessage(to: 'main')で完了報告本文を能動送付する。
-    メイン側からの明示要求を待たず、`idle_notification(available)`のみを送出して待機しない
+  - Agentツールで`name`指定した`run_in_background=true`起動のnamed subagent（teammate）を扱う。
+    作業完了時のSendMessage(to: 'main')による完了報告本文の能動送付を必須ゲートとする。
+    メイン明示要求を待たず`idle_notification(available)`のみで待機しない（SubagentStopフックがブロックする）
 - 再開時はモデルを変更できない。異なるモデルが必要なら新規`Agent`起動を使う
   - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い、
     元タスク・修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める

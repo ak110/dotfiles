@@ -115,6 +115,33 @@ def extract_section_with_offset(text: str, heading: str) -> tuple[str | None, in
     return "\n".join(lines[start:end]), start
 
 
+def extract_h3_section_with_offset(text: str, heading: str) -> tuple[str, int]:
+    """指定H3見出し直後から同階層以上の次見出し直前までを抽出する。
+
+    引数`heading`はH3見出しの先頭マーカーを含めた完全一致文字列（例:`### エージェント判断`）で指定する。
+    戻り値は`(本文, 開始行番号1始まり)`。指定見出しが本文中に存在しない場合は`("", 0)`を返す。
+    フェンス内行は`iter_non_fenced_lines`で除外し、フェンス内の`### `文字列を境界誤検出しない。
+    `check_plan_diff_gates.py`の`_extract_judgment_section_body`・`_has_responsibility_diff_table`
+    等のH3走査系関数から共通利用する。H2境界前提の`extract_section_with_offset`と混同しない。
+    """
+    lines = text.splitlines()
+    heading_line = heading.strip()
+    body_lines: list[str] = []
+    start_line = 0
+    in_section = False
+    for idx, line in iter_non_fenced_lines(lines):
+        stripped = line.strip()
+        if not in_section:
+            if stripped == heading_line:
+                in_section = True
+                start_line = idx + 1
+            continue
+        if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("### "):
+            break
+        body_lines.append(line)
+    return "\n".join(body_lines), start_line
+
+
 def iter_reduction_headings(section: str) -> Iterator[str]:
     """`section`本文中の`#### 縮減対象（<ファイル名>）`H4見出しからファイル名を順に返す。
 

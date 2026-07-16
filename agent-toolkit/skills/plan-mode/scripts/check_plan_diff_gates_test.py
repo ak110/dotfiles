@@ -10,6 +10,7 @@
 # 対象スクリプトは単独実行スクリプトであり公開APIは`main()`のみだが、
 # 個別関数の抽出仕様・副作用・境界を単体レベルで検証するためprotected-accessを許容する。
 # pylint: disable=protected-access,unused-argument
+# pylint: disable=too-many-lines  # 検査項目網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
 
 from __future__ import annotations
 
@@ -883,6 +884,31 @@ class TestTranscriptionDeclarationConsistency:
         )
         warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
         assert warnings == []
+
+
+class TestCheckLabelOnlyFence:
+    """ラベル単独フェンス検出仕様テスト。"""
+
+    def test_detects_label_only_fence(self, tmp_path: pathlib.Path) -> None:
+        plan_path = tmp_path / "plan.md"
+        text = "## 変更内容\n\n### `some/file.py`\n\n```text\n[追記]\n```\n\n```text\n本文がこちらに分離\n```\n"
+        plan_path.write_text(text, encoding="utf-8")
+        msgs = _MOD._check_label_only_fence(plan_path, text)
+        assert any("[warn]" in m and "ラベル行のみ" in m for m in msgs)
+
+    def test_no_warning_when_body_included(self, tmp_path: pathlib.Path) -> None:
+        plan_path = tmp_path / "plan.md"
+        text = "## 変更内容\n\n### `some/file.py`\n\n```text\n[追記]\n本文がある\n```\n"
+        plan_path.write_text(text, encoding="utf-8")
+        msgs = _MOD._check_label_only_fence(plan_path, text)
+        assert msgs == []
+
+    def test_no_warning_for_current_deletion_pair(self, tmp_path: pathlib.Path) -> None:
+        plan_path = tmp_path / "plan.md"
+        text = "## 変更内容\n\n### `some/file.md`\n\n```text\n[現行]\n旧文言\n```\n\n```text\n[削除根拠]\n削除理由\n```\n"
+        plan_path.write_text(text, encoding="utf-8")
+        msgs = _MOD._check_label_only_fence(plan_path, text)
+        assert msgs == []
 
 
 class TestCrossReferenceSyncNoteRequested:

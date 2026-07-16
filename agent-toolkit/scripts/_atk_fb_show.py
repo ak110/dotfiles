@@ -9,11 +9,13 @@ import pathlib
 import sys
 
 from _atk_fb_common import (
+    FEEDBACK_ACTIVE_STATES,
     FEEDBACK_STATE_ADOPTED,
     FEEDBACK_STATE_INBOX,
     FEEDBACK_STATE_PROCESSING,
     FEEDBACK_STATE_REJECTED,
     _is_tbd_answered,
+    _iter_feedback_entries_with_state,
     _iter_inbox_entries,
     _pull,
     _validate_filename,
@@ -29,11 +31,13 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `FILENAME`指定時は`--type`の値で探索対象を限定する。
     `--type=all`（既定）はfeedback/inbox→feedback/processing→tbd/inboxの順で探索する。
-    `--all`指定時のfeedback走査もinbox・processing双方を対象に含める。
+    `--all`指定時のfeedback走査対象は`--status`と連動する
+    （既定`active`はinbox・processing、`all`は4状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
-    `--status`指定時は、tbd側エントリのみ回答状況（answered・unanswered）で限定する
-    （feedback側には作用しない）。
+    `--status`は`--all`分岐でfeedback走査集合を切り替え、tbd側のフィルタ（active・answered・unanswered）を制御する。
+    `FILENAME`単発指定分岐は`--include-processed`のみ有効で、`--status=active`のtbd未回答除外は適用しない
+    （個別ファイル指定は明示的照会のため状態フィルタを迂回する既定挙動）。
     `--include-processed`指定時は`FILENAME`指定分岐でfeedback側の探索対象へadopted・rejectedを追加する
     （`--all`には影響しない）。
     """
@@ -82,19 +86,27 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(2)
 
     if args.type in ("all", "feedback"):
-        # inbox・processing双方を走査対象にする（`start-processing`後の途中状態も
-        # `--all`で確認できるようにするため）。
-        entries: dict[str, list[tuple[str, str]]] = {}
-        for state_name in (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING):
-            state_dir = private_notes / "feedback" / state_name
-            for path, target_repo, text in _iter_inbox_entries(state_dir, filter_repo):
-                entries.setdefault(target_repo, []).append((path.name, text))
+        feedback_states: tuple[str, ...]
+        if args.status == "active":
+            feedback_states = FEEDBACK_ACTIVE_STATES
+        elif args.status == "all":
+            feedback_states = (
+                FEEDBACK_STATE_INBOX,
+                FEEDBACK_STATE_PROCESSING,
+                FEEDBACK_STATE_ADOPTED,
+                FEEDBACK_STATE_REJECTED,
+            )
+        else:
+            feedback_states = FEEDBACK_ACTIVE_STATES
+        entries: dict[str, list[tuple[str, str, str]]] = {}
+        for path, target_repo, text, state in _iter_feedback_entries_with_state(private_notes, feedback_states, filter_repo):
+            entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
             print("# feedback")
             for repo, items in entries.items():
                 print(f"## target_repo: {repo}")
-                for name, text in items:
-                    print(f"### {name}")
+                for name, text, state in items:
+                    print(f"### {name} [{state}]")
                     print(text)
                     print()
 
@@ -106,6 +118,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if args.status == "answered" and not answered:
                 continue
             if args.status == "unanswered" and answered:
+                continue
+            if args.status == "active" and not answered:
                 continue
             tbd_entries.setdefault(target_repo, []).append((path.name, text))
         if tbd_entries:

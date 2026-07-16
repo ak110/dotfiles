@@ -142,6 +142,35 @@ class TestIterReductionHeadings:
         ]
 
 
+class TestExtractH3SectionWithOffset:
+    """extract_h3_section_with_offsetのH3境界抽出仕様テスト。"""
+
+    def test_extracts_body_until_next_h3(self) -> None:
+        text = "## 対応方針\n\n### エージェント判断\n\n本文行1\n本文行2\n\n### 却下した代替案\n\n別本文\n"
+        body, start = _MOD.extract_h3_section_with_offset(text, "### エージェント判断")
+        assert "本文行1" in body
+        assert "本文行2" in body
+        assert "別本文" not in body
+        assert start > 0
+
+    def test_extracts_body_until_next_h2(self) -> None:
+        text = "### エージェント判断\n\n本文\n\n## 調査結果\n\n無関係\n"
+        body, _ = _MOD.extract_h3_section_with_offset(text, "### エージェント判断")
+        assert "本文" in body
+        assert "無関係" not in body
+
+    def test_returns_empty_when_heading_missing(self) -> None:
+        text = "### 別見出し\n本文\n"
+        body, start = _MOD.extract_h3_section_with_offset(text, "### エージェント判断")
+        assert body == ""
+        assert start == 0
+
+    def test_ignores_heading_inside_fence(self) -> None:
+        text = "### エージェント判断\n\n本文\n\n```text\n### 却下した代替案\n```\n\n続き本文\n"
+        body, _ = _MOD.extract_h3_section_with_offset(text, "### エージェント判断")
+        assert "続き本文" in body
+
+
 class TestIsMatchingClose:
     """`is_matching_close`ヘルパーの動作を検証する。"""
 

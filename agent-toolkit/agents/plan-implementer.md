@@ -145,8 +145,9 @@ user-invocable: false
 メイン判断で計画への採用可否をユーザーと決める。
 
 named subagentとして`run_in_background=true`起動された場合、
-完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
-メイン側からの明示要求を待つ挙動は未完遂扱いとする。
+完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+`idle_notification(available)`のみを送出しメイン側の明示要求を待つ挙動は未完遂扱いとし、
+SubagentStopフックがSendMessage(to='main')不在時にブロックする。
 
 ```markdown
 status: completed | blocked | needs_escalation

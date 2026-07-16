@@ -18,10 +18,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_DT,
+    _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
     _write_feedback_file,
+    _write_tbd_file,
 )
 
 
@@ -358,6 +360,117 @@ class TestListFeedbackStatusAll:
         captured = capsys.readouterr()
         assert "fb-inbox.md" in captured.out
         assert "fb-proc.md" in captured.out
+
+
+class TestListFeedbackStatusActive:
+    """listサブコマンド `--status=active`: feedbackはinbox・processingのみを表示しadopted・rejectedを除外する。"""
+
+    def test_active_excludes_adopted_and_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=active`指定時、feedback側はadopted・rejected配下を除外しinbox・processingのみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_processing_file(notes, "fb-proc.md", body="proc-body")
+        _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted-body")
+        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir.mkdir(parents=True, exist_ok=True)
+        (rejected_dir / "fb-rejected.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=active"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md\tgithub.com/example/foo\t[inbox] in-body" in captured.out
+        assert "fb-proc.md\tgithub.com/example/foo\t[processing] proc-body" in captured.out
+        assert "fb-adopted.md" not in captured.out
+        assert "fb-rejected.md" not in captured.out
+
+    def test_default_status_matches_explicit_active(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status`省略時、feedback側はadopted配下を除外し、tbd側は未回答を除外する（`--status=active`と同じ結果）。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted本文")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list"], home=tmp_path)
+        assert exc_info.value.code == 0
+        default_out = capsys.readouterr().out
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--status=active"], home=tmp_path)
+        assert exc_info.value.code == 0
+        active_out = capsys.readouterr().out
+
+        assert default_out == active_out
+        assert "fb-inbox.md\tgithub.com/example/foo\t[inbox] inbox本文" in default_out
+        assert "fb-adopted.md" not in default_out
+        assert f"{_FIXED_TIMESTAMP}-001.md" not in default_out
+        assert f"{_FIXED_TIMESTAMP}-002.md" in default_out
+
+
+class TestListFeedbackStatusRejected:
+    """listサブコマンド `--status=rejected`: feedbackはrejected配下のみを表示する。"""
+
+    def test_rejected_shows_rejected_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=rejected`指定時、feedback側はrejected配下のみ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir.mkdir(parents=True, exist_ok=True)
+        (rejected_dir / "fb-rejected.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--status=rejected"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-inbox.md" not in captured.out
+        assert "fb-rejected.md\tgithub.com/example/foo\t[rejected] rejected-body" in captured.out
+
+    def test_rejected_does_not_affect_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--status=rejected`指定時、tbd側は状態フォルダを持たないため全件出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        (notes / "tbd" / "inbox").mkdir(parents=True, exist_ok=True)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--status=rejected"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
 
 
 class TestEnableSubcommand:

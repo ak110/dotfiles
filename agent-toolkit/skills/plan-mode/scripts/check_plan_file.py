@@ -51,6 +51,8 @@
 - `check_plan_diff_gates._check_cross_reference_sync_note_requested`: `## 変更内容`配下`text`フェンス本文で
   相互参照文言（同期・意図的重複・「XX節に従う」形式）検出時、`### エージェント判断`欄の同期注記追加要否明示の
   有無を照合しwarn出力する（exit codeへ算入しない）
+- `check_plan_diff_gates._check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで
+  内容がラベル行1行のみで終わる構成をwarn出力（exit code非算入）。
 
 体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
 文書サイズ上限検査（`_check_document_size_upper_limit`）は
@@ -174,6 +176,9 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in _check_identifier_existence(plan_path, text):
         print(msg, file=sys.stderr)
     for msg in check_plan_diff_gates._check_cross_reference_sync_note_requested(plan_path, text):
+        print(msg, file=sys.stderr)
+    # warn出力のみでexit codeへ含めない
+    for msg in check_plan_diff_gates._check_label_only_fence(plan_path, text):
         print(msg, file=sys.stderr)
 
     _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash", blocking=False)

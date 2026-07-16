@@ -50,8 +50,8 @@
 - 計画専用機械チェックとして統合ランナー
   `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
 - named subagentとして`run_in_background=true`起動する場合、
-  完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
-  メイン側からの明示要求を待つ挙動は未完遂扱いとする
+  完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+  `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
 - 起草・改訂委譲の担当範囲は起草作業と`check_plan_file.py`による機械チェック通過までとする。
   `agent-toolkit:plan-mode`工程7相当の整合性チェック・レビュー工程のサブエージェント起動は
   委譲先で自律起動せず呼び出し元（メインエージェント）が担当する
@@ -102,8 +102,8 @@
     - 計画専用機械チェックとして統合ランナー
       `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
     - named subagentとして`run_in_background=true`起動する場合、
-      完了時に完了報告本文をSendMessage(to: 'main')で能動送付する。
-      メイン側からの明示要求を待つ挙動は未完遂扱いとする
+      完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+      `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
     - 起草・改訂委譲の担当範囲は起草作業と`check_plan_file.py`による機械チェック通過までとする。
       `agent-toolkit:plan-mode`工程7相当の整合性チェック・レビュー工程のサブエージェント起動は
       委譲先で自律起動せず呼び出し元（メインエージェント）が担当する

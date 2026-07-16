@@ -3,6 +3,7 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
+# pylint: disable=too-many-lines  # 検査項目網羅のためチェック実装が多く、分割するとモジュール間の依存関係が複雑化するため許容する
 """計画ファイル`## 変更内容`配下の差分ブロック本文へ事前機械検査を適用する。
 
 抽出対象は次のラベル配下`text`フェンスブロック・トリガー文配下ブロック・
@@ -42,6 +43,9 @@
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
     小見出しが存在しない場合の全文一括検査（warn出力のみ）
 - 「同構造」「同旨」「同期」宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ）
+- `_check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで内容が
+    ラベル行1行のみで終わる構成（後続の実文言フェンスが検査を素通りする構造）をwarn出力する。
+    exit code非算入。
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
@@ -74,10 +78,11 @@ from _plan_diff_parsing import (  # noqa: E402
     FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
     TEXT_FENCE_OPEN_RE,
+    extract_h3_section_with_offset,
     extract_section_with_offset,
     is_matching_close,
 )
-from _plan_format import (  # noqa: E402
+from _plan_format import (  # noqa: E402  # pylint: disable=import-error
     extract_target_files_from_changes,
     find_invalid_target_file_paths,
     has_bump_step_when_required,
@@ -167,9 +172,6 @@ _NEGATION_CONTEXT_RE = re.compile(r"ない|対象外")
 # fb-4: キーワード出現行を中心とした前後の走査幅（行数）。
 _NEGATION_CONTEXT_WINDOW = 3
 
-# fb-4: `### エージェント判断`H3見出し検出用。
-_AGENT_JUDGMENT_HEADING_RE = re.compile(r"^###\s*エージェント判断\s*$")
-
 # fb-4: 責務差分表の記入検出用（`### エージェント判断`配下の見出し行に対して判定する）。
 _RESPONSIBILITY_DIFF_HEADING_RE = re.compile(r"^#{1,6}\s*.*責務差分")
 
@@ -256,6 +258,9 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
         print(retroactive_scan_warning, file=sys.stderr)
     for transcription_warning in _check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(transcription_warning, file=sys.stderr)
+    # warn出力のみでexit codeへ含めない
+    for msg in _check_label_only_fence(plan_path, text):
+        print(msg, file=sys.stderr)
     return violations
 
 
@@ -382,6 +387,56 @@ def _check_target_file_paths_relative(plan_path: pathlib.Path, text: str) -> str
         f"プロジェクトルート相対の完全パスへ修正する"
         f"（`skills/plan-mode/references/plan-file-guidelines.md`参照）。"
     )
+
+
+def _check_label_only_fence(plan_path: pathlib.Path, text: str) -> list[str]:
+    """`## 変更内容`配下のtextフェンスで内容がラベル行1行のみで終わる構成を検出する。
+
+    ラベル単独フェンスは`_iter_diff_blocks`のbody抽出でbodyが空となり、
+    後続の実文言フェンスがtextlint併走・縮退フレーズ検査を素通りする。
+    `plan-file-diff-labels.md`の`フェンス配置`規定に反する構成として警告する。
+    出力書式は`{plan_path}:{line}: [warn] ラベル行のみのtextフェンス構成: 後続フェンスへ本文を分離せず
+    同一フェンス内へ本文を配置してください`。
+    exit code非算入。既存の`[現行]`・`[削除根拠]`・`[置換後]`ペアはいずれも本文行を持つため対象外。
+    """
+    messages: list[str] = []
+    changes_body, changes_offset = extract_section_with_offset(text, "## 変更内容")
+    if not changes_body:
+        return messages
+    lines = changes_body.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = TEXT_FENCE_OPEN_RE.match(line)
+        if not match:
+            i += 1
+            continue
+        open_marker = match.group(1)
+        fence_open_idx = i
+        i += 1
+        content_lines: list[str] = []
+        while i < len(lines):
+            if is_matching_close(open_marker, lines[i]):
+                break
+            content_lines.append(lines[i])
+            i += 1
+        if i < len(lines):
+            i += 1
+        if not content_lines:
+            continue
+        first_stripped = content_lines[0].strip()
+        if not _is_label_line(first_stripped):
+            continue
+        rest_non_empty = [ln for ln in content_lines[1:] if ln.strip()]
+        if rest_non_empty:
+            continue
+        absolute_line = changes_offset + fence_open_idx
+        messages.append(
+            f"{plan_path}:{absolute_line}: [warn] "
+            "ラベル行のみのtextフェンス構成: 後続フェンスへ本文を分離せず"
+            "同一フェンス内へ本文を配置してください（plan-file-diff-labels.mdの`フェンス配置`規定）"
+        )
+    return messages
 
 
 def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text: str) -> str | None:
@@ -542,48 +597,20 @@ def _keyword_used_in_negated_context(target_text: str, keyword: str) -> bool:
     return False
 
 
-def _has_responsibility_diff_table(text: str) -> bool:
-    """`### エージェント判断`配下に「責務差分表」または「責務差分」の見出しが存在するかを判定する。
-
-    区間は`### エージェント判断`見出し行から、同階層以上（`##`〜`###`）の次の見出し行までとする。
-    """
-    lines = text.splitlines()
-    in_section = False
-    for line in lines:
-        stripped = line.strip()
-        if _AGENT_JUDGMENT_HEADING_RE.match(stripped):
-            in_section = True
-            continue
-        if not in_section:
-            continue
-        if _RESPONSIBILITY_DIFF_HEADING_RE.match(stripped):
-            return True
-        if re.match(r"^#{1,3}\s", stripped) and stripped != "":
-            # 同階層以上の次の見出しに到達したら区間終了（責務差分見出しは既に上で判定済み）。
-            break
-    return False
-
-
 def _extract_judgment_section_body(text: str) -> str:
-    """`### エージェント判断`見出し直後から同階層以上（`##`〜`###`）の次見出し直前までを抽出する。
+    """`### エージェント判断`H3節本文を新API`extract_h3_section_with_offset`経由で抽出する。
 
-    `extract_section_with_offset`はH2見出し境界前提のため、後続H3節（`### 却下した代替案`等）が
-    混入してfalse negativeを生む問題を回避する。`_has_responsibility_diff_table`と同じ走査規約に従う。
+    走査規約は`_plan_diff_parsing.extract_h3_section_with_offset`に委譲する
+    （H2境界前提の`extract_section_with_offset`との混同を防ぐ）。
     """
-    lines = text.splitlines()
-    body_lines: list[str] = []
-    in_section = False
-    for line in lines:
-        stripped = line.strip()
-        if _AGENT_JUDGMENT_HEADING_RE.match(stripped):
-            in_section = True
-            continue
-        if not in_section:
-            continue
-        if re.match(r"^#{1,3}\s", stripped) and stripped != "":
-            break
-        body_lines.append(line)
-    return "\n".join(body_lines)
+    body, _ = extract_h3_section_with_offset(text, "### エージェント判断")
+    return body
+
+
+def _has_responsibility_diff_table(text: str) -> bool:
+    """`### エージェント判断`H3節配下に責務差分見出しが存在するかを判定する。"""
+    section_body = _extract_judgment_section_body(text)
+    return any(_RESPONSIBILITY_DIFF_HEADING_RE.match(line.strip()) for line in section_body.splitlines())
 
 
 def _check_cross_reference_sync_note_requested(plan_path: pathlib.Path, text: str) -> list[str]:

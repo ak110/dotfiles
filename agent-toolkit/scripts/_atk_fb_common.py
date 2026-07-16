@@ -174,6 +174,22 @@ def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None)
         yield path, entry_repo, text
 
 
+# `--status=active`が指す集合: feedbackは`inbox`・`processing`、tbdは`answered`。
+FEEDBACK_ACTIVE_STATES = (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING)
+
+
+def _iter_feedback_entries_with_state(
+    private_notes: pathlib.Path,
+    states: Iterable[str],
+    filter_repo: str | None,
+) -> Iterator[tuple[pathlib.Path, str, str, str]]:
+    """指定状態フォルダのfeedbackエントリを`(path, target_repo, text, state)`形式で列挙する。"""
+    for state in states:
+        state_dir = private_notes / "feedback" / state
+        for path, target_repo, text in _iter_inbox_entries(state_dir, filter_repo):
+            yield path, target_repo, text, state
+
+
 def _is_tbd_answered(text: str) -> bool:
     """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
     marker = "\n## 回答\n"

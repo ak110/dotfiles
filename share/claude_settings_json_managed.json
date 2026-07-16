@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "autoMemoryEnabled": false,
   "autoMode": {
+    "allowMode": "extend",
     "allow": [
       "Session-Owned Amend: `git commit --amend` を実行する対象が、同一セッション内でエージェント自身が作成したコミット（pre-session HEADではないコミット）であることを transcript から確認できる場合、レビュー指摘修正後の統合を含むあらゆるフローで無条件に許容する。本許可は対象コミットがエージェント作成であることを transcript で確認できる場合に限定し、pre-session HEAD・ユーザー作成コミットへのamendは対象外。",
       "Exit-Session Termination: `agent-toolkit:exit-session`スキル経由の`kill -TERM $PPID`は、同スキルの起動条件を満たした状態でのシグナル送出であり許可する。",

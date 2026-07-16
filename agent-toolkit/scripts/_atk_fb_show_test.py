@@ -112,11 +112,47 @@ class TestShowAll:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "## target_repo: github.com/example/foo" in captured.out
-        assert "### fb-001.md" in captured.out
+        assert "### fb-001.md [inbox]" in captured.out
         assert "本文1" in captured.out
         assert "## target_repo: github.com/example/bar" in captured.out
-        assert "### fb-002.md" in captured.out
+        assert "### fb-002.md [inbox]" in captured.out
         assert "本文2" in captured.out
+
+
+class TestShowStatusAll:
+    """showサブコマンド `--all --status=all`: 全状態（adopted・rejected含む）を出力する。"""
+
+    def test_all_status_all_includes_every_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
+        adopted_dir = notes / "feedback" / "adopted"
+        adopted_dir.mkdir(parents=True, exist_ok=True)
+        (adopted_dir / "fb-adopted.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nadopted本文\n",
+            encoding="utf-8",
+        )
+        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir.mkdir(parents=True, exist_ok=True)
+        (rejected_dir / "fb-rejected.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "--all", "--status=all"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "### fb-inbox.md [inbox]" in captured.out
+        assert "### fb-adopted.md [adopted]" in captured.out
+        assert "### fb-rejected.md [rejected]" in captured.out
 
 
 class TestShowRequiresFilenameOrAll:

@@ -519,7 +519,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t本文1\n"
+        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n"
 
 
 class TestListMalformedFrontmatter:
@@ -552,7 +552,7 @@ class TestListMalformedFrontmatter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out.startswith("# feedback\nmalformed.md\t(unknown)\t")
+        assert captured.out.startswith("# feedback\nmalformed.md\t(unknown)\t[inbox] ")
 
 
 class TestListMultipleRepos:
@@ -577,8 +577,8 @@ class TestListMultipleRepos:
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
             "# feedback",
-            "fb-001.md\tgithub.com/example/foo\tテスト本文",
-            "fb-002.md\tgithub.com/example/bar\tテスト本文",
+            "fb-001.md\tgithub.com/example/foo\t[inbox] テスト本文",
+            "fb-002.md\tgithub.com/example/bar\t[inbox] テスト本文",
         ]
 
 
@@ -637,7 +637,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/myrepo\tテスト本文\n"
+        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/myrepo\t[inbox] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -678,7 +678,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t本文1\n"
+        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -692,7 +692,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -788,14 +788,14 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=all（既定）指定時に全TBDが出力される。"""
+        """--status=all指定時に全TBDが出力される。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd"], home=tmp_path)
+            atk.main(["fb", "list", "--type=tbd", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -819,7 +819,7 @@ class TestListStatusFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback\nfb-001.md\tgithub.com/example/foo\t本文1\n" in captured.out
+        assert "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n" in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
@@ -828,6 +828,18 @@ class TestListStatusFilter:
             atk.main(["fb", "list", "--status=invalid"], home=tmp_path)
 
         assert exc_info.value.code == 2
+
+    @pytest.mark.parametrize("status", ["active", "rejected"])
+    def test_active_and_rejected_are_accepted_choices(self, status: str) -> None:
+        """--status=active・--status=rejectedがargparseのchoicesとして受理されること。
+
+        機能的な出力検証（feedback側の状態別除外・tbd側の回答状況連動）は
+        `_atk_fb_extras_test.py`のTestListFeedbackStatusActive・
+        TestListFeedbackStatusRejectedへ集約する。
+        """
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["fb", "list", f"--status={status}"])
+        assert args.status == status
 
 
 class TestListCount:
@@ -847,7 +859,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count"], home=tmp_path)
+            atk.main(["fb", "list", "--count", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

@@ -39,9 +39,11 @@ description: >
 
 対象リポジトリ確定後、`atk fb list --status=processing --target-repo=<repo>`でprocessing残存を確認する。
 残存時は前セッションの中断とみなし、実装状況を確認したうえで再実施対象へ最優先で組み込む。
-続いて`atk fb show --all --status=answered --target-repo=<repo>`を実行する。
-feedback全件とTBD回答済みの本文を取得する。出力は`# feedback`・`# tbd`種別ヘッダで区分けされる。
-`--status=answered`はTBD側のフィルターとして働き、feedback側の出力には影響しない。
+続いて`atk fb show --all --status=active --target-repo=<repo>`を実行する。
+feedback（inbox・processing）と回答済みTBDを一括取得する。
+出力は`# feedback`・`# tbd`種別ヘッダで区分けされ、`### <filename> [<state>]`形式で
+各エントリの状態ラベルが併記される。
+`--status=active`はfeedback側の`inbox`・`processing`とtbd側の`answered`を指す。
 `<repo>`は対象リポジトリパスまたは正規化リモートURL（`host/owner/repo`形式）を指す。
 出力が空（`### <filename>`見出しが1件も存在しない）場合は「処理対象なし」と示して終了する。
 1件以上の場合は`### <filename>`見出しの件数を1文でユーザーに提示する。
