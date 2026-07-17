@@ -130,12 +130,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups --all-extras
 
-      - name: Poppler インストール
-        # repack-archive の PDF 入力テストが pdftoppm を必要とする
+      - name: ネイティブ依存インストール
+        # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
+        # libarchive13 の共有ライブラリを必要とする
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends poppler-utils
+          apt-get install -y --no-install-recommends poppler-utils libarchive13
 
       - name: Test with pyfltr
         env:
