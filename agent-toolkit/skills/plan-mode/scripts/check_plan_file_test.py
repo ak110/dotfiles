@@ -4,7 +4,6 @@
 # テストは対象モジュールの`_`接頭辞関数を意図的に検査対象とするため、pylintの警告を抑止する。
 from __future__ import annotations
 
-import json
 import pathlib
 import subprocess
 import sys
@@ -45,7 +44,6 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda _p, _t, _r: [],
     )
     monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label, **_kwargs: 0)
-    monkeypatch.setattr(check_plan_file, "_run_pyfltr_jsonl", lambda _p, **_kwargs: 0)
 
 
 @pytest.mark.usefixtures("stub_check_one")
@@ -101,23 +99,6 @@ class TestCheckOne:
         )
         assert check_plan_file._check_one(plan_path, tmp_path) == 0
         assert "責務差分の可能性" in capsys.readouterr().err
-
-    def test_cross_reference_sync_note_warning_printed(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """`_check_cross_reference_sync_note_requested`の配線: warn出力がstderrへ含まれる。"""
-        plan_path = _write_plan(tmp_path)
-        plan_path.write_text(
-            plan_path.read_text(encoding="utf-8") + "\n### `foo.md`\n\n```text\n[追記]\n「対象節」に従う。\n```\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(
-            check_plan_file.check_plan_diff_gates,
-            "_check_cross_reference_sync_note_requested",
-            lambda _p, _t: ["plan.md:1: [warn] 相互参照文言を検出したが同期注記が不在"],
-        )
-        assert check_plan_file._check_one(plan_path, tmp_path) == 0
-        assert "同期注記が不在" in capsys.readouterr().err
 
     def test_extracted_paths_message_printed_but_not_counted(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -215,129 +196,6 @@ class TestRunSubprocessCheck:
         assert "label" in err
 
 
-class TestRunPyfltrJsonl:
-    """`_run_pyfltr_jsonl`のJSONL要約ロジックを検証する。"""
-
-    def test_diagnostic_records_counted(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        lines = [
-            json.dumps({"kind": "header"}),
-            json.dumps(
-                {
-                    "kind": "diagnostic",
-                    "file": "x.md",
-                    "messages": [{"line": 3, "rule": "R", "msg": "違反"}],
-                }
-            ),
-            json.dumps({"kind": "command", "status": "succeeded", "diagnostics": 0}),
-        ]
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
-        )
-        plan_path = _write_plan(tmp_path)
-        assert check_plan_file._run_pyfltr_jsonl(plan_path) == 1
-        assert "x.md:3" in capsys.readouterr().err
-
-    def test_no_diagnostics_returns_zero(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        lines = [json.dumps({"kind": "header"}), json.dumps({"kind": "command", "status": "succeeded"})]
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda *_a, **_k: subprocess.CompletedProcess([], 0, stdout="\n".join(lines), stderr=""),
-        )
-        plan_path = _write_plan(tmp_path)
-        assert check_plan_file._run_pyfltr_jsonl(plan_path) == 0
-        assert capsys.readouterr().err == ""
-
-    def test_failed_command_status_counted(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        lines = [
-            json.dumps({"kind": "header"}),
-            json.dumps({"kind": "command", "command": "textlint", "status": "failed", "message": "設定エラー"}),
-            json.dumps(
-                {"kind": "command", "command": "markdownlint", "status": "resolution_failed", "message": "依存解決失敗"}
-            ),
-        ]
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
-        )
-        plan_path = _write_plan(tmp_path)
-        assert check_plan_file._run_pyfltr_jsonl(plan_path) == 2
-        err = capsys.readouterr().err
-        assert "[pyfltr] textlint: failed" in err
-        assert "[pyfltr] markdownlint: resolution_failed" in err
-
-    def test_diagnostic_records_with_blocking_false_returns_zero(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """`blocking=False`は診断レコードがあっても0を返し、警告ラベル付きで出力する。"""
-        lines = [
-            json.dumps(
-                {
-                    "kind": "diagnostic",
-                    "file": "x.md",
-                    "messages": [{"line": 3, "rule": "R", "msg": "違反"}],
-                }
-            )
-        ]
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
-        )
-        plan_path = _write_plan(tmp_path)
-        assert check_plan_file._run_pyfltr_jsonl(plan_path, blocking=False) == 0
-        err = capsys.readouterr().err
-        assert "x.md:3" in err
-        assert "警告" in err
-
-    def test_new_schema_expands_message_with_rule(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """新スキーマ`{"file","messages":[{"line","rule","message"}]}`から`file:line: [rule] message`形式へ展開する。
-
-        ルート:`msg`欠落時は`message`キーを参照する後方互換パスも同時検証する。
-        """
-        lines = [
-            json.dumps(
-                {
-                    "kind": "diagnostic",
-                    "file": "x.md",
-                    "messages": [{"line": 1, "rule": "r", "message": "err"}],
-                }
-            )
-        ]
-        monkeypatch.setattr(
-            subprocess,
-            "run",
-            lambda *_a, **_k: subprocess.CompletedProcess([], 1, stdout="\n".join(lines), stderr=""),
-        )
-        plan_path = _write_plan(tmp_path)
-        assert check_plan_file._run_pyfltr_jsonl(plan_path) == 1
-        assert "x.md:1: [r] err" in capsys.readouterr().err
-
-    def test_cwd_argument_forwarded_to_subprocess(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`cwd`引数はsubprocess.runへ文字列として転送される。"""
-        received: dict[str, object] = {}
-
-        def _fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-            received.update(kwargs)
-            return subprocess.CompletedProcess([], 0, stdout="", stderr="")
-
-        monkeypatch.setattr(subprocess, "run", _fake_run)
-        plan_path = _write_plan(tmp_path)
-        check_plan_file._run_pyfltr_jsonl(plan_path, cwd=tmp_path)
-        assert received.get("cwd") == str(tmp_path)
-
-
 class TestDocumentSizeUpperLimit:
     """`_check_document_size_upper_limit`の検査を検証する。"""
 
@@ -433,31 +291,6 @@ class TestRunMethodScriptPaths:
     def test_flag_or_keyvalue_ignored(self, tmp_path: pathlib.Path) -> None:
         text = "# t\n\n## 実行方法\n\n`--frozen scripts/agent_toolkit_bump.py --script=scripts/nonexistent.py`で更新する。\n"
         assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
-
-
-class TestIdentifierExistence:
-    """`_check_identifier_existence`の検査を検証する。"""
-
-    def test_identifier_present_no_warning(self, tmp_path: pathlib.Path) -> None:
-        target = tmp_path / "foo.py"
-        target.write_text("def my_func():\n    pass\n", encoding="utf-8")
-        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n`my_func`を更新する。\n"
-        assert not check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
-
-    def test_identifier_absent_reports_warning(self, tmp_path: pathlib.Path) -> None:
-        target = tmp_path / "foo.py"
-        target.write_text("def existing():\n    pass\n", encoding="utf-8")
-        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n`nonexistent_fn`を追加する。\n"
-        warnings = check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
-        assert len(warnings) == 1
-        assert "nonexistent_fn" in warnings[0]
-        assert "[warn]" in warnings[0]
-
-    def test_fence_content_ignored(self, tmp_path: pathlib.Path) -> None:
-        target = tmp_path / "foo.py"
-        target.write_text("def existing():\n    pass\n", encoding="utf-8")
-        text = f"# t\n\n## 変更内容\n\n### `{target}`\n\n```text\n[追記]\ndef new_added(): pass\n```\n"
-        assert not check_plan_file._check_identifier_existence(tmp_path / "plan.md", text)
 
 
 def _write_repo_file(repo_root: pathlib.Path, rel_path: str) -> None:

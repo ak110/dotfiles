@@ -26,8 +26,9 @@
   スコープ外の場合は追記先を変更するか、当該ファイルのスコープ宣言拡張を`## 変更内容`へ含める
 - 反映先が上位規範文書（01-agent.md・agent-standards/SKILL.md・plan-mode/references/配下等）の場合は、
   反映先ファイルの該当節を`Read`で直接確認する。
-  確認対象は反映内容と衝突しうる既存上位規定（「品質最優先」節・fabricated-metricsカテゴリ・
-  「不採用根拠の限定」節・「先送り・縮退表現の混入検査」節等）とする。
+  確認対象は反映内容と衝突しうる既存上位規定
+  （`agent-toolkit/rules/01-agent.md`「品質最優先」節・fabricated-metricsカテゴリ・
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「不採用根拠の限定」節等）とする。
   衝突検出時は反映内容の適用範囲を限定するか、上位規定側にも例外参照を追加する統合案へ再設計する
 - 追記先候補が配置先スキルの管轄範囲（プロジェクト直下`AGENTS.md`・`CLAUDE.md`が編集対象
   ディレクトリに対して指定する範囲）に該当する場合は、当該配置先スキルをSkillツールで起動する。

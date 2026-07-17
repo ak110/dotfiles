@@ -26,17 +26,6 @@
 - `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）。
   警告出力のみでexit codeへ算入しない
-- `uvx pyfltr run-for-agent --commands=textlint,markdownlint,typos,colloquial-check
-  --enable=colloquial-check --exclude-fence-under=## 背景`: 計画ファイル全域のtextlint・
-  markdownlint・typos・口語表現検査（サブプロセス、JSONL出力を解析し`kind == "diagnostic"`の
-  レコード、および`kind == "command"`かつ失敗系statusのレコードのみ要約表示）。
-  診断レコードのキーは`file`（対象ファイルパス）と`messages`（`{"line", "rule", "msg"}`辞書の配列）で、
-  1診断レコードから複数メッセージ行を展開する。
-  `--exclude-fence-under=## 背景`はユーザー発話原文転記領域（`## 背景`節配下のfenceブロック）を
-  検査対象から除外し、原文の表現・記法に対する偽陽性検出を回避する。
-  サブプロセス起動時の`cwd`はリポジトリルート（`.textlintrc.yaml`等の設定原本が存在するdotfilesルート相当）
-  へ固定し、対象計画ファイルが同ディレクトリ外に配置されていても設定を1発参照できる形へ整える。
-  警告出力のみでexit codeへ算入しない
 - `_check_document_size_upper_limit`: `## 変更内容`対象ファイル一覧の見込み行数が220行超過の`.md`ファイルに
   ついて、対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
   （体裁・構成寄りの指摘のためwarning出力のみとしexit codeへ算入しない）
@@ -46,19 +35,12 @@
 - `_check_run_method_script_paths`: `## 実行方法`節内のバッククォート囲みコマンドから
   拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）スクリプトパスを抽出し、
   プロジェクトルート起点で実在するかを検査する（不在時に違反として報告、exit codeへ算入）
-- `_check_identifier_existence`: 計画本文の`### <相対パス>`H3節配下で言及される関数名・節見出し名の
-  対象ファイル内実在を`grep`相当の`in`照合で確認する（不在時にwarn報告、exit codeへ含めない）
 - `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
   リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する（warn出力のみ、exit code非算入）。
-- `check_plan_diff_gates._check_cross_reference_sync_note_requested`: `## 変更内容`配下`text`フェンス本文で
-  相互参照文言（同期・意図的重複・「XX節に従う」形式）検出時、`### エージェント判断`欄の同期注記追加要否明示の
-  有無を照合しwarn出力する（exit codeへ算入しない）
-- `check_plan_diff_gates._check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで
-  内容がラベル行1行のみで終わる構成をwarn出力（exit code非算入）。
 
-体裁・表記系（textlint・markdownlint・typos・口語表現・和文ハイフン）と、
-文書サイズ上限検査（`_check_document_size_upper_limit`）は
-全て警告出力のみとしexit codeへ算入しない。
+体裁・表記系（和文ハイフン）と、文書サイズ上限検査（`_check_document_size_upper_limit`）は
+全て警告出力のみとしexit codeへ算入しない。textlint・markdownlint・typos・口語表現の全文検査は
+工程7ステップ4の`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行う。
 成功時（構造系0違反）はexit 0で終了する。体裁系のみ違反時もexit 0で終了し、
 警告として`stderr`へ出力する。構造系の違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
 終了する。`uvx pyfltr`のJSONL出力はヘッダ行・succeeded系サマリー行を含み冗長なため生出力を
@@ -84,15 +66,12 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import json
 import pathlib
 import re
 import shlex
 import subprocess
 import sys
 from collections.abc import Callable
-
-_FAILED_COMMAND_STATUSES = frozenset({"failed", "resolution_failed"})
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
@@ -175,18 +154,10 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in _check_run_method_script_paths(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
         violations += 1
-    for msg in _check_identifier_existence(plan_path, text):
-        print(msg, file=sys.stderr)
     for msg in _check_test_file_pairing(plan_path, text, repo_root):
-        print(msg, file=sys.stderr)
-    for msg in check_plan_diff_gates._check_cross_reference_sync_note_requested(plan_path, text):
-        print(msg, file=sys.stderr)
-    # warn出力のみでexit codeへ含めない
-    for msg in check_plan_diff_gates._check_label_only_fence(plan_path, text):
         print(msg, file=sys.stderr)
 
     _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash", blocking=False)
-    _run_pyfltr_jsonl(plan_path, blocking=False, cwd=repo_root)
     return violations
 
 
@@ -214,61 +185,6 @@ def _run_subprocess_check(cmd: list[str], label: str, *, blocking: bool = True) 
     label_suffix = label if blocking else f"{label}（警告・非ブロック）"
     print(f"[{label_suffix}]\n{combined.strip()}", file=sys.stderr)
     return 1 if blocking else 0
-
-
-def _run_pyfltr_jsonl(plan_path: pathlib.Path, *, blocking: bool = True, cwd: pathlib.Path | None = None) -> int:
-    """`uvx pyfltr run-for-agent`をJSONL出力で実行し、diagnosticsレコードと失敗系command行を要約表示する。
-
-    `blocking=False`（体裁系チェック用）は違反を警告として出力するのみでexit code集計へは0を返す。
-    `cwd`はサブプロセス実行時のカレントディレクトリを指定する（`.textlintrc.yaml`等の設定原本が
-    存在するリポジトリルートへ固定するために用いる）。未指定時は本プロセスの現在ディレクトリで実行する。
-
-    診断レコードのスキーマは`{"kind": "diagnostic", "file": <path>, "messages": [{"line", "rule", "msg"}...]}`で、
-    1診断レコードから複数メッセージ行を展開する。互換のため`msg`欠落時は`message`キーを参照する。
-    """
-    result = subprocess.run(
-        [
-            "uvx",
-            "pyfltr",
-            "run-for-agent",
-            "--commands=textlint,markdownlint,typos,colloquial-check",
-            "--enable=colloquial-check",
-            "--exclude-fence-under=## 背景",
-            str(plan_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(cwd) if cwd is not None else None,
-    )
-    violations = 0
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        prefix = "[pyfltr]" if blocking else "[pyfltr（警告・非ブロック）]"
-        if record.get("kind") == "diagnostic":
-            file_path = record.get("file", str(plan_path))
-            for entry in record.get("messages", []):
-                lineno = entry.get("line", "?")
-                rule = entry.get("rule", "")
-                msg_text = entry.get("msg") or entry.get("message", "")
-                rule_label = f"[{rule}] " if rule else ""
-                print(f"{prefix} {file_path}:{lineno}: {rule_label}{msg_text}", file=sys.stderr)
-                if blocking:
-                    violations += 1
-        elif record.get("kind") == "command" and record.get("status") in _FAILED_COMMAND_STATUSES:
-            command = record.get("command", "?")
-            status = record.get("status", "?")
-            message = record.get("message", "")
-            print(f"{prefix} {command}: {status} {message}", file=sys.stderr)
-            if blocking:
-                violations += 1
-    return violations
 
 
 # `### 対象ファイル一覧`または`### 対象ファイルの現状`直下のチェックボックス/バレット項目から
@@ -299,16 +215,6 @@ _RUN_METHOD_SECTION_RE = re.compile(r"^## 実行方法\s*$", re.MULTILINE)
 _NEXT_H2_RE = re.compile(r"^## ", re.MULTILINE)
 _BACKTICK_INLINE_RE = re.compile(r"`([^`\n]+)`")
 _SCRIPT_EXT_RE = re.compile(r"\.(?:py|sh|ps1|js|ts)$")
-
-# H3ファイル節見出しから相対パスを抽出する。`### \`path/to/file\``形式。
-_H3_FILE_HEADING_RE = re.compile(r"^###\s+`(?P<path>[^`\s]+)`")
-
-# H2/H3見出しの汎用検出。
-_H2_HEADING_RE = re.compile(r"^##\s")
-_H3_HEADING_RE = re.compile(r"^###\s")
-
-# プロース中の識別子候補（バッククォート囲みで英数字・アンダースコアのみ）。
-_IDENTIFIER_CANDIDATE_RE = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*)`")
 
 # `.py`実装ファイルと対応する`_test.py`ペアの照合用。
 _TEST_FILE_SUFFIX = "_test.py"
@@ -438,68 +344,6 @@ def _check_run_method_script_paths(plan_path: pathlib.Path, text: str, repo_root
             if not (repo_root / token).exists():
                 issues.append(f"{plan_path}: `## 実行方法`が参照するスクリプトパスが不在: {token}")
     return issues
-
-
-def _check_identifier_existence(plan_path: pathlib.Path, text: str) -> list[str]:
-    """`### <相対パス>`H3節配下で言及される識別子の対象ファイル内実在を検査する。
-
-    H3節本文（fenceブロック外のプロース）に現れるバッククォート囲みの英数字識別子を対象とし、
-    対応する対象ファイルの本文に部分一致で存在するかを確認する。不在時にwarn文言を返す。
-    fenceブロック内のラベル（`[追記]`等）で新設定義される識別子は除外するため、
-    fence内容自体を検査対象から除く。exit codeへは算入しない（誤警告あり得るため）。
-    """
-    warnings: list[str] = []
-    lines = text.splitlines()
-    i = 0
-    current_h3_path: str | None = None
-    inside_fence = False
-    fence_marker = ""
-    while i < len(lines):
-        line = lines[i]
-        # fence境界判定を先に実施する。
-        m_fence = re.match(r"^(```+)", line)
-        if m_fence:
-            marker = m_fence.group(1)
-            if not inside_fence:
-                inside_fence = True
-                fence_marker = marker
-            elif marker == fence_marker:
-                inside_fence = False
-                fence_marker = ""
-            i += 1
-            continue
-        if inside_fence:
-            i += 1
-            continue
-        m_h3 = _H3_FILE_HEADING_RE.match(line)
-        if m_h3:
-            current_h3_path = m_h3.group("path")
-            i += 1
-            continue
-        # 他レベル見出し（##・別H3・####）出現時はH3節を離脱するが、
-        # ファイル名以外のH3見出し（`### 対象ファイル一覧`等）も離脱契機として扱う。
-        if _H2_HEADING_RE.match(line) or (_H3_HEADING_RE.match(line) and not _H3_FILE_HEADING_RE.match(line)):
-            current_h3_path = None
-            i += 1
-            continue
-        if current_h3_path is None:
-            i += 1
-            continue
-        # H3節本文プロースからバッククォート識別子を抽出し、対象ファイル本文と照合する。
-        for identifier in _IDENTIFIER_CANDIDATE_RE.findall(line):
-            target_file = pathlib.Path(current_h3_path)
-            if not target_file.exists():
-                continue
-            try:
-                target_text = target_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            if identifier not in target_text:
-                warnings.append(
-                    f"{plan_path}: [warn] {current_h3_path} H3節本文で言及の識別子`{identifier}`が対象ファイル内に不在"
-                )
-        i += 1
-    return warnings
 
 
 def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:

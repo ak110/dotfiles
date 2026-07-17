@@ -42,9 +42,6 @@
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
     小見出しが存在しない場合の全文一括検査（warn出力のみ）
 - 「同構造」「同旨」「同期」宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ）
-- `_check_label_only_fence`: `## 変更内容`H3節配下のtextフェンスで内容が
-    ラベル行1行のみで終わる構成（後続の実文言フェンスが検査を素通りする構造）をwarn出力する。
-    exit code非算入。
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
@@ -78,7 +75,6 @@ from _plan_diff_gates_scan import (  # noqa: E402
     _H3_RE,
     _NEW_H3_MARKER,
     _PROSE_EXTENSIONS,
-    _is_label_line,
     _iter_diff_blocks,
     _rewrite_locations,
     _run_scope_escalation,
@@ -133,20 +129,6 @@ _NEGATION_CONTEXT_WINDOW = 3
 
 # fb-4: 責務差分表の記入検出用（`### エージェント判断`配下の見出し行に対して判定する）。
 _RESPONSIBILITY_DIFF_HEADING_RE = re.compile(r"^#{1,6}\s*.*責務差分")
-
-# fb-4: 相互参照文言（節参照・同期・意図的重複の宣言表現）検出用。
-_CROSS_REFERENCE_TRIGGER_RE = re.compile(
-    r"「[^」]+」\s*節\s*に従う"
-    r"|『[^』]+』\s*節\s*に従う"
-    r"|`[^`]+`\s*節\s*に従う"
-    r"|と同期する"
-    r"|と意図的に重複させている"
-    r"|と意図的に同期する"
-    r"|同期注記:"
-)
-
-# fb-4: `### エージェント判断`欄内の同期注記追加要否明示の判定用。
-_JUDGMENT_SYNC_NOTE_RE = re.compile(r"同期注記|意図的重複")
 
 
 def main() -> int:
@@ -217,9 +199,6 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
         print(retroactive_scan_warning, file=sys.stderr)
     for transcription_warning in _check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(transcription_warning, file=sys.stderr)
-    # warn出力のみでexit codeへ含めない
-    for msg in _check_label_only_fence(plan_path, text):
-        print(msg, file=sys.stderr)
     return violations
 
 
@@ -346,56 +325,6 @@ def _check_target_file_paths_relative(plan_path: pathlib.Path, text: str) -> str
         f"プロジェクトルート相対の完全パスへ修正する"
         f"（`skills/plan-mode/references/plan-file-guidelines.md`参照）。"
     )
-
-
-def _check_label_only_fence(plan_path: pathlib.Path, text: str) -> list[str]:
-    """`## 変更内容`配下のtextフェンスで内容がラベル行1行のみで終わる構成を検出する。
-
-    ラベル単独フェンスは`_iter_diff_blocks`のbody抽出でbodyが空となり、
-    後続の実文言フェンスがtextlint併走・縮退フレーズ検査を素通りする。
-    `plan-file-diff-labels.md`の`フェンス配置`規定に反する構成として警告する。
-    出力書式は`{plan_path}:{line}: [warn] ラベル行のみのtextフェンス構成: 後続フェンスへ本文を分離せず
-    同一フェンス内へ本文を配置してください`。
-    exit code非算入。既存の`[現行]`・`[削除根拠]`・`[置換後]`ペアはいずれも本文行を持つため対象外。
-    """
-    messages: list[str] = []
-    changes_body, changes_offset = extract_section_with_offset(text, "## 変更内容")
-    if not changes_body:
-        return messages
-    lines = changes_body.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        match = TEXT_FENCE_OPEN_RE.match(line)
-        if not match:
-            i += 1
-            continue
-        open_marker = match.group(1)
-        fence_open_idx = i
-        i += 1
-        content_lines: list[str] = []
-        while i < len(lines):
-            if is_matching_close(open_marker, lines[i]):
-                break
-            content_lines.append(lines[i])
-            i += 1
-        if i < len(lines):
-            i += 1
-        if not content_lines:
-            continue
-        first_stripped = content_lines[0].strip()
-        if not _is_label_line(first_stripped):
-            continue
-        rest_non_empty = [ln for ln in content_lines[1:] if ln.strip()]
-        if rest_non_empty:
-            continue
-        absolute_line = changes_offset + fence_open_idx
-        messages.append(
-            f"{plan_path}:{absolute_line}: [warn] "
-            "ラベル行のみのtextフェンス構成: 後続フェンスへ本文を分離せず"
-            "同一フェンス内へ本文を配置してください（plan-file-diff-labels.mdの`フェンス配置`規定）"
-        )
-    return messages
 
 
 def _check_retroactive_scan_when_new_norm_section(plan_path: pathlib.Path, text: str) -> str | None:
@@ -570,33 +499,6 @@ def _has_responsibility_diff_table(text: str) -> bool:
     """`### エージェント判断`H3節配下に責務差分見出しが存在するかを判定する。"""
     section_body = _extract_judgment_section_body(text)
     return any(_RESPONSIBILITY_DIFF_HEADING_RE.match(line.strip()) for line in section_body.splitlines())
-
-
-def _check_cross_reference_sync_note_requested(plan_path: pathlib.Path, text: str) -> list[str]:
-    """相互参照文言検出時の`### エージェント判断`欄内の同期注記追加要否明示を照合する。
-
-    `## 変更内容`配下の`text`フェンス本文を対象とする。
-    走査は既存`_iter_diff_blocks`を直接利用する（同関数は`## 変更内容`配下に限定済み。
-    `## 背景`・`### 却下した代替案`・`### 提示素材`は自然に対象外となる）。
-    `### エージェント判断`節の抽出は`_extract_judgment_section_body`でH3境界に区切り、
-    後続H3節（`### 却下した代替案`等）の文言混入によるfalse negativeを回避する。
-    警告出力のみでexit codeへは算入しない。
-    """
-    messages: list[str] = []
-    judgment_section = _extract_judgment_section_body(text)
-    has_judgment_note = bool(_JUDGMENT_SYNC_NOTE_RE.search(judgment_section))
-    if has_judgment_note:
-        return messages
-    for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
-        if h3_ext not in _PROSE_EXTENSIONS:
-            continue
-        if not _CROSS_REFERENCE_TRIGGER_RE.search(body):
-            continue
-        messages.append(
-            f"{plan_path}:{block_start_line}: H3=`{h3_label}` 相互参照文言を検出したが"
-            f"`### エージェント判断`欄に同期注記追加要否の明示が不在"
-        )
-    return messages
 
 
 def _extract_diff_blocks(
