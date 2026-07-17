@@ -21,6 +21,9 @@ import sys
 import pytest
 from _plan_diff_gates_test_helpers import _load_module, _stub_subprocess, _write
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_plan_diff_gates.py"
 _MOD = _load_module(_SCRIPT)
 
@@ -172,23 +175,13 @@ class TestMainEntrypoint:
     def test_exit_zero_on_no_violations(self, tmp_path: pathlib.Path) -> None:
         # 空の`## 変更内容`のみ。抽出0件のためsubprocess呼び出しも発生せずexit 0。
         plan = _write(tmp_path / "plan.md", "## 変更内容\n\n本文なし。\n")
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
         assert result.returncode == 0, result.stderr
 
     def test_multiple_plan_files_are_all_checked(self, tmp_path: pathlib.Path) -> None:
         p1 = _write(tmp_path / "p1.md", "## 変更内容\n\n本文なし。\n")
         p2 = _write(tmp_path / "p2.md", "## 変更内容\n\n本文なし。\n")
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(p1), str(p2)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(p1), str(p2)))
         assert result.returncode == 0, result.stderr
 
 
@@ -207,12 +200,7 @@ class TestCheckBumpStep:
             tmp_path / "plan.md",
             _bump_plan(["agent-toolkit/scripts/pretooluse.py"], include_bump=False),
         )
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" in result.stderr
         assert "[warn]" in result.stderr
@@ -229,12 +217,7 @@ class TestCheckBumpStep:
                 include_bump=True,
             ),
         )
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
         assert result.returncode == 0
         assert "[warn]" not in result.stderr
 
@@ -247,12 +230,7 @@ class TestCheckBumpStep:
                 include_bump=False,
             ),
         )
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
         assert result.returncode == 0
         assert "[warn]" not in result.stderr
 
@@ -261,12 +239,7 @@ class TestCheckBumpStep:
             tmp_path / "plan.md",
             _bump_plan(["pytools/example.py"], include_bump=False),
         )
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
         assert result.returncode == 0
         assert "[warn]" not in result.stderr
 

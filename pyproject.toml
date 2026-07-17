@@ -96,14 +96,12 @@ shfmt = true
 colloquial-check = true
 # profile_ipy/はIPython自動生成プロファイル、
 # *.cmdはCP932（Shift_JIS）でpyfltrのUTF-8前提と適合せず誤検出を招くため、
-# plugins/agent-toolkitはマーケットプレイス配布原本のシンボリックリンク、
 # tone-examples.md・tone-examples-llm-tone.md・scope-escalation-phrases.md・
 # _scope_escalation_test_inputs.txtは
 # 危険語彙または縮退誘発フレーズを含む隔離ファイルのためいずれも検査対象外とする
 extend-exclude = [
     "*/profile_ipy/*",
     "*.cmd",
-    "plugins/agent-toolkit",
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
@@ -191,9 +189,10 @@ configurables = "configurables"
 thm = "thm"
 
 [tool.pytest.ini_options]
-# -n 4による4プロセス並列実行で--dist=loadfileを併用し、モジュール単位でテストをworkerへ分配する。
-# モジュール固有の重い初期化（fixture）をworker内で共有してテスト起動オーバーヘッドを抑える
-addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 --dist=loadfile"
+# -n 4による4プロセス並列実行で--dist=workstealを併用し、完了したworkerへ未実行テストを動的分配する。
+# --dist=loadfileは最大テストファイルへ実行時間が固定され律速となるため、
+# module scopeのfixtureが1件のみで順序依存が無いことを確認したうえでworksteal方式へ変更した
+addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 --dist=worksteal"
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

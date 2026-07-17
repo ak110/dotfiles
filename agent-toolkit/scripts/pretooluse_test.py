@@ -10,8 +10,8 @@ import os
 import pathlib
 import re
 import subprocess
-import sys
 
+import _fork_runner
 import pretooluse
 import pytest
 import yaml
@@ -28,14 +28,7 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
     env = os.environ.copy()
     if env_overrides:
         env.update(env_overrides)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -750,15 +743,7 @@ class TestPlanFileSizeLimitTargetWcLRecorded:
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
-        return subprocess.run(
-            [sys.executable, str(_SCRIPT)],
-            input=text,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            cwd=str(cwd),
-        )
+        return _fork_runner.run_script(_SCRIPT, input=text, env=env, cwd=cwd)
 
     @staticmethod
     def _all_prior_flags(tmp_path: pathlib.Path, session_id: str, content: str | None = None) -> None:

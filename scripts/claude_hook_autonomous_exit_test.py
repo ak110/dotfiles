@@ -1,7 +1,7 @@
 """scripts/claude_hook_autonomous_exit.py のテスト。
 
-dotfiles個人環境専用のStopフックのテスト。独立スクリプトなのでsubprocessで起動し
-stdout（JSON）を検証する。判定分岐は環境変数未設定・`stop_hook_active`・
+dotfiles個人環境専用のStopフックのテスト。独立スクリプトなのでfork-server経由
+（フォールバック時はsubprocess）で起動しstdout（JSON）を検証する。判定分岐は環境変数未設定・`stop_hook_active`・
 非同期待機中・`autonomous_exit_invoked`・block送出を検証する。
 """
 
@@ -10,6 +10,10 @@ import os
 import pathlib
 import subprocess
 import sys
+
+# 共通テストヘルパー読み込みのため agent-toolkit/scripts/ を sys.path へ追加する。
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_autonomous_exit.py"
 
@@ -74,14 +78,7 @@ def _run(
         env[_ENV_REQUIRED] = "1"
     else:
         env.pop(_ENV_REQUIRED, None)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:

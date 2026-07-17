@@ -1,12 +1,15 @@
 """agent-toolkit/skills/writing-standards/scripts/check_dash.py のテスト。
 
-ダッシュ系禁止文字検査スクリプトをsubprocessで起動し、
+ダッシュ系禁止文字検査スクリプトをfork-server経由（フォールバック時はsubprocess）で起動し、
 違反検出・除外・出力形式・ディレクトリ再帰・拡張子フィルタを検証する。
 """
 
 import pathlib
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_dash.py"
 
@@ -18,12 +21,7 @@ _BOX_DOUBLE = "──"  # ── (2倍ダッシュ)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    return _fork_runner.run_script(_SCRIPT, argv=args)
 
 
 def _write(path: pathlib.Path, content: str) -> pathlib.Path:

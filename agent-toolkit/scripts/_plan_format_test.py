@@ -205,6 +205,15 @@ class TestFindInvalidTargetFilePaths:
         )
         assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/foo.md"]
 
+    def test_find_invalid_target_file_paths_excludes_allowed_repo_root(self) -> None:
+        content = (
+            "<!-- allowed-repo-root: /home/aki/other-repo -->\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `/home/aki/other-repo/docs/guide.md`（現行10行, 見込み12行）\n"
+            "- [ ] `/home/aki/unrelated-repo/foo.md`（現行1行, 見込み1行）\n"
+        )
+        assert _plan_format.find_invalid_target_file_paths(content) == ["/home/aki/unrelated-repo/foo.md"]
+
 
 class TestHasManifestFilesWhenBumpStepPresent:
     """has_manifest_files_when_bump_step_present の基本動作を検査する。"""

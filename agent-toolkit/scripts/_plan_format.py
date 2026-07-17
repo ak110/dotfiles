@@ -384,6 +384,20 @@ def has_recurrence_prevention_when_section_present(content: str) -> bool:
     return True
 
 
+_ALLOWED_REPO_ROOT_RE = re.compile(r"<!--\s*allowed-repo-root:\s*(?P<root>[^\s]+?)\s*-->")
+
+
+def extract_allowed_repo_roots(content: str) -> list[str]:
+    """計画本文中の`<!-- allowed-repo-root: /abs/path -->`宣言から許容ルート絶対パス一覧を抽出する。
+
+    複数宣言時は宣言順に全て収集する。宣言が無い場合は空リストを返す。
+    本ファイル内`find_invalid_target_file_paths`が参照するSSOT実装。
+    `check_wc_projection.py`は同種処理（`_ALLOWED_REPO_ROOT_RE`・`_extract_allowed_repo_roots`）を
+    独自実装として別途保持しており、本関数への統合は見送っている。
+    """
+    return [m.group("root") for m in _ALLOWED_REPO_ROOT_RE.finditer(content)]
+
+
 def find_invalid_target_file_paths(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下の相対パス表記違反を検出する。
 
@@ -391,10 +405,15 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
     プロジェクトルート相対の完全パス規範への違反として返す。
     `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の
     「既存パスはプロジェクトルート相対の完全パスで記述する」規定の機械強制。
+    `<!-- allowed-repo-root: /abs/path -->`宣言済みルート配下の絶対パスは、
+    複数リポジトリに跨る計画（姉妹プロジェクトのドキュメント更新等）を許容するため違反対象から除外する。
     """
+    allowed_roots = extract_allowed_repo_roots(content)
     invalid: list[str] = []
     for path in extract_target_files_from_changes(content):
         if path.startswith("/"):
+            if any(path == root or path.startswith(root.rstrip("/") + "/") for root in allowed_roots):
+                continue
             invalid.append(path)
             continue
         parts = pathlib.PurePosixPath(path.replace("\\", "/")).parts

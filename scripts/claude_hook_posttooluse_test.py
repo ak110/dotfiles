@@ -1,7 +1,7 @@
 """scripts/claude_hook_posttooluse.py のテスト。
 
 dotfiles 個人環境専用の PostToolUse フックのテスト。
-独立スクリプトなので subprocess で起動し、状態ファイルの中身を検証する。
+独立スクリプトなのでfork-server経由（フォールバック時はsubprocess）で起動し、状態ファイルの中身を検証する。
 """
 
 import json
@@ -18,6 +18,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_posttooluse.py"
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
 
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -28,14 +29,7 @@ def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 def _run(payload: object, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _state_path(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:

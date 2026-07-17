@@ -1,7 +1,7 @@
 """agent-toolkit/skills/plan-mode/scripts/check_wc_projection.py のテスト。
 
 計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、wc -l実測値と
-見込み行数の乖離を検出する検算スクリプトをsubprocessで起動して検証する。
+見込み行数の乖離を検出する検算スクリプトをfork-server経由（フォールバック時はsubprocess）で起動して検証する。
 正常系・乖離検出（純追記パターンの二重適用防止・通常パターンでの[現行]優先確認を含む）・
 [現行]文面不一致・対象ファイル不在・見込み行数記載欠落・H3見出し無し・複数ファイル対象・
 対比ブロック無し・削除ペア先頭ラベル行の縮減量除外・`[追記]`ラベル直接検出・
@@ -16,6 +16,9 @@ import sys
 import types
 
 import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_wc_projection.py"
 
@@ -33,13 +36,7 @@ _MOD = _load_module()
 
 
 def _run(*plan_paths: pathlib.Path, cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT), *(str(p) for p in plan_paths)],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cwd,
-    )
+    return _fork_runner.run_script(_SCRIPT, argv=tuple(str(p) for p in plan_paths), cwd=cwd)
 
 
 def _write(path: pathlib.Path, content: str) -> pathlib.Path:

@@ -6,9 +6,8 @@ StopFailure発火内容のログ追記を、時刻固定の引数注入で検証
 import datetime
 import json
 import pathlib
-import subprocess
-import sys
 
+import _fork_runner
 from stopfailure_notifier import append_log
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "stopfailure_notifier.py"
@@ -63,11 +62,5 @@ def test_append_log_appends_across_sessions(tmp_path: pathlib.Path):
 
 def test_invalid_json_exits_safely():
     """不正JSON入力でも例外を送出せず正常終了する。"""
-    result = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input="not json",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _fork_runner.run_script(_SCRIPT, input="not json")
     assert result.returncode == 0

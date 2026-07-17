@@ -2,7 +2,8 @@
 
 dotfiles 個人環境専用の PreToolUse フックのテスト。
 mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
-独立スクリプトなので subprocess で起動し exit code / stderr / stdout (JSON) を検証する。
+独立スクリプトなのでfork-server経由（フォールバック時はsubprocess）で起動し
+exit code / stderr / stdout (JSON) を検証する。
 """
 
 import json
@@ -12,6 +13,10 @@ import subprocess
 import sys
 
 import pytest
+
+# 共通テストヘルパー読み込みのため agent-toolkit/scripts/ を sys.path へ追加する。
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _HOME = pathlib.Path.home()
 
@@ -27,14 +32,7 @@ _LOCAL_MD = "CLAUDE" + ".local.md"
 
 def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:

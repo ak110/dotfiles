@@ -1,6 +1,6 @@
 """agent-toolkit/skills/plan-mode/scripts/check_line_ref.py のテスト。
 
-行番号への参照検査スクリプトをsubprocessで起動し、
+行番号への参照検査スクリプトをfork-server経由（フォールバック時はsubprocess）で起動し、
 違反検出・除外・語境界・出力形式・複数ファイル・ディレクトリ再帰を検証する。
 パス実在検査・スキル名・サブエージェント名実在検査・節名参照の実在照合も併せて検証する。
 裸節名参照の実在照合の主要シナリオは`check_line_ref_bare_test.py`へ責務分割済み。
@@ -10,17 +10,14 @@ import pathlib
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_line_ref.py"
 
 
 def _run(*args: str, cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cwd,
-    )
+    return _fork_runner.run_script(_SCRIPT, argv=args, cwd=cwd)
 
 
 def _write(path: pathlib.Path, content: str) -> pathlib.Path:

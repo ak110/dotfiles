@@ -2,9 +2,8 @@
 
 import json
 import pathlib
-import subprocess
-import sys
 
+import _fork_runner
 import permissionrequest as hook
 import pytest
 
@@ -446,14 +445,7 @@ class TestEndToEnd:
     """サブプロセス経由で stdin / stdout の応答を検証する。"""
 
     def _run(self, payload: dict) -> tuple[int, str]:
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT_PATH)],
-            input=json.dumps(payload),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
+        result = _fork_runner.run_script(_SCRIPT_PATH, input=json.dumps(payload), timeout=30)
         return result.returncode, result.stdout
 
     def test_write_to_plans_returns_allow(self, home: pathlib.Path) -> None:
@@ -534,14 +526,7 @@ class TestEndToEnd:
         assert stdout == ""
 
     def test_invalid_json_input_emits_nothing(self) -> None:
-        result = subprocess.run(
-            [sys.executable, str(_SCRIPT_PATH)],
-            input="not-json",
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
+        result = _fork_runner.run_script(_SCRIPT_PATH, input="not-json", timeout=30)
         assert result.returncode == 0
         assert result.stdout == ""
 

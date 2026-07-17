@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
+import _fork_runner
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
@@ -35,13 +35,7 @@ def _pick_scope_escalation_text(category: str) -> str:
 
 
 def _run(payload: dict) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload))
 
 
 def test_no_message_passes() -> None:

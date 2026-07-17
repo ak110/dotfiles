@@ -1,7 +1,7 @@
 """scripts/claude_hook_stop.py のテスト。
 
 dotfiles 個人環境専用の Stop フックのテスト。
-独立スクリプトなので subprocess で起動し stdout (JSON) を検証する。
+独立スクリプトなのでfork-server経由（フォールバック時はsubprocess）で起動しstdout (JSON) を検証する。
 """
 
 import json
@@ -17,6 +17,7 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_stop.py"
@@ -46,14 +47,7 @@ def _run(
     if home is not None:
         env["HOME"] = str(home)
         env["USERPROFILE"] = str(home)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:

@@ -13,10 +13,10 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 from collections.abc import Callable
 from typing import Any
 
+import _fork_runner
 import pytest
 import stop_advisor
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
@@ -45,14 +45,7 @@ def _run(
         env["TMPDIR"] = str(state_dir)
         env["TEMP"] = str(state_dir)
         env["TMP"] = str(state_dir)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:

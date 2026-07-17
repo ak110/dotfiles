@@ -11,9 +11,9 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import types
 
+import _fork_runner
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
@@ -64,14 +64,7 @@ def _run(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=text,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:

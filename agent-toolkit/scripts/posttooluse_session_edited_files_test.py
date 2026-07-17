@@ -10,7 +10,8 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
+
+import _fork_runner
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 
@@ -20,14 +21,7 @@ def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProce
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=json.dumps(payload, ensure_ascii=False),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload, ensure_ascii=False), env=env)
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:

@@ -12,6 +12,9 @@ import pathlib
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_deprecated_identifier_coverage.py"
 
 
@@ -23,13 +26,7 @@ def _run(plan_path: pathlib.Path, *, repo_root: pathlib.Path) -> subprocess.Comp
     `repo_root`の外側に配置し、計画本文中の識別子宣言行（`` - `<identifier>` ``）が
     grep対象として自己ヒットしないようにする。
     """
-    return subprocess.run(
-        [sys.executable, str(_SCRIPT), str(plan_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=repo_root,
-    )
+    return _fork_runner.run_script(_SCRIPT, argv=(str(plan_path),), cwd=repo_root)
 
 
 def test_no_deprecated_targets_exit_zero(tmp_path: pathlib.Path) -> None:
