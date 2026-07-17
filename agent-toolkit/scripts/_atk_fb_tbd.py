@@ -19,6 +19,8 @@ from _atk_fb_common import (
     _max_existing_seq,
     _private_notes_path,
     _pull,
+    _reject_bare_repo_path_override,
+    _resolve_repo_path_override,
     _stamp_result,
     _validate_filename,
     _validate_filenames_only,
@@ -66,15 +68,19 @@ def _cmd_tbd_add(
 ) -> None:
     """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。
 
+    対象リポジトリは常にカレントディレクトリから解決する。ただし`fb tbd-add`直後のトークンが実在
+    ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
+    当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     `choice`類型以外は`_looks_like_question`で疑問文の有無を判定し、
     含まれない場合は投入対象ファイル名を添えて標準エラーへ警告する（投入自体は成功させる）。
     """
-    target_repo = _resolve_repo_id(args.repo_path)
+    messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
+    _reject_bare_repo_path_override(repo_path_override, messages, 'atk fb tbd-add "TBD本文"')
+    target_repo = _resolve_repo_id(repo_path_override)
     if args.question_type == "choice" and not args.choices:
         print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
         sys.exit(2)
     _pull(private_notes)
-    messages = list(args.messages)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:

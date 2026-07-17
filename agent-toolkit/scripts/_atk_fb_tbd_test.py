@@ -186,7 +186,7 @@ class TestTbdAddPullBeforeEditor:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時にpullが失敗した場合、エディターは起動されずユーザー入力消失を予防する。"""
+        """messages省略時にpullが失敗した場合、エディターは起動されずユーザー入力消失を予防する（対象リポジトリはcwdから解決）。"""
         notes = _setup_tbd_env(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -195,8 +195,11 @@ class TestTbdAddPullBeforeEditor:
 
         def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
             empty: Any = "" if kw.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{myrepo}\n" if kw.get("text") else f"{myrepo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
+                stdout = (
                     "https://github.com/example/myrepo.git\n" if kw.get("text") else b"https://github.com/example/myrepo.git\n"
                 )
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
@@ -210,7 +213,7 @@ class TestTbdAddPullBeforeEditor:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(subprocess.CalledProcessError):
-            atk.main(["fb", "tbd-add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "tbd-add"], home=tmp_path, now=_FIXED_DT)
 
         assert not editor_calls
         assert not list((notes / "tbd" / "inbox").iterdir())
@@ -248,6 +251,79 @@ class TestTbdAddPullBeforeEditor:
 
         assert exc_info.value.code == 2
         assert not any(c[:2] == ["git", "pull"] for c in git_cmds)
+
+
+class TestTbdAddRepoPathOverrideCli:
+    """`fb tbd-add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+
+    def test_repo_path_omitted_resolves_from_cwd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """REPO_PATH省略時、対象リポジトリはカレントディレクトリのgit worktreeから解決される。"""
+        notes = _setup_tbd_env(tmp_path)
+        cwd_repo = tmp_path / "cwdrepo"
+        cwd_repo.mkdir()
+
+        def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kw.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{cwd_repo}\n" if kw.get("text") else f"{cwd_repo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(cwd_repo), "remote", "get-url", "origin"]:
+                stdout = (
+                    "https://github.com/example/cwdrepo.git\n"
+                    if kw.get("text")
+                    else b"https://github.com/example/cwdrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "tbd-add", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "tbd" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/cwdrepo" in content
+
+    def test_message_only_directory_errors(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE先頭がディレクトリで本文が続かない場合、誤指定としてexit 2になる。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "tbd-add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "MESSAGE引数がディレクトリを指しています" in captured.err
+
+    def test_directory_followed_by_message_uses_compat_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """MESSAGE先頭が実在ディレクトリで残り本文がある場合、旧REPO_PATH形式として互換動作する。"""
+        notes = _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "tbd-add", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "tbd" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "この対応でよいか" in content
 
 
 class TestTbdAddSourceOption:

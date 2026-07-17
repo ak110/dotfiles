@@ -48,6 +48,29 @@ import _atk_fb_show as _show  # noqa: E402
 import _atk_fb_tbd as _tbd  # noqa: E402
 
 
+def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
+    """`fb add`・`fb tbd-add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
+
+    REPO_PATH位置引数廃止後の後方互換のため、argparse解析前の生argvへ適用する。
+    `messages`側のnargs="*"単一positionalでは、オプションで分断され前後2箇所に分かれた
+    位置引数を一括で解決できない（argparseの既知の制約）ため、サブコマンド名直後という
+    先頭位置に限定して抽出することで後続のオプション・MESSAGE位置を通常解析に委ねる。
+    """
+    if len(argv) < 2 or argv[0] != "fb" or argv[1] not in ("add", "tbd-add"):
+        return argv, None
+    candidate_index = 2
+    if candidate_index >= len(argv):
+        return argv, None
+    candidate = argv[candidate_index]
+    if candidate.startswith("-"):
+        return argv, None
+    candidate_path = pathlib.Path(candidate).expanduser()
+    if not candidate_path.is_dir():
+        return argv, None
+    new_argv = argv[:candidate_index] + argv[candidate_index + 1 :]
+    return new_argv, str(candidate_path)
+
+
 def _add_target_repo_arg(parser: argparse.ArgumentParser, *, help_extra: str = "") -> None:
     """`--target-repo`オプションを共通形式で登録する。"""
     parser.add_argument(
@@ -64,16 +87,12 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
 
     add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
     add.add_argument(
-        "repo_path",
-        metavar="REPO_PATH",
-        help="フィードバック対象リポジトリのローカルパス（リモートURLを自動取得して格納）。",
-    )
-    add.add_argument(
         "messages",
         metavar="MESSAGE",
         nargs="*",
         help=(
             "投入するフィードバックメッセージ（省略時は$EDITORで編集する）。"
+            "対象リポジトリは常にカレントディレクトリから解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
         ),
     )
@@ -270,11 +289,6 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
 
     tbd_add = sub.add_parser("tbd-add", help="TBDをtbd/inboxへ投入する")
     tbd_add.add_argument(
-        "repo_path",
-        metavar="REPO_PATH",
-        help="対象リポジトリのローカルパス（リモートURLを自動取得して格納）。",
-    )
-    tbd_add.add_argument(
         "--scope",
         metavar="NAME",
         default=None,
@@ -302,7 +316,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "messages",
         metavar="MESSAGE",
         nargs="*",
-        help="投入するTBDメッセージ（省略時は$EDITORで編集する）。",
+        help="投入するTBDメッセージ（省略時は$EDITORで編集する）。対象リポジトリは常にカレントディレクトリから解決する。",
     )
 
     tbd_list = sub.add_parser("tbd-list", help="TBDをtarget_repoごとに出力する")
@@ -436,8 +450,11 @@ def main(
     import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする
 
     argcomplete.autocomplete(parser)
-    _common.warn_space_separated_option(argv if argv is not None else sys.argv[1:])
-    args = parser.parse_args(argv)
+    raw_argv = argv if argv is not None else sys.argv[1:]
+    _common.warn_space_separated_option(raw_argv)
+    raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
+    args = parser.parse_args(raw_argv)
+    args.repo_path_override = repo_path_override
     if home is None:
         home = pathlib.Path.home()
     if now is None:

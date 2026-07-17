@@ -581,7 +581,8 @@ def _editor_fake_run(
     """エディター呼び出し時にactionを実行し戻り値をreturncodeとするsubprocess.run差し替えを返す。
 
     fake-editor以外のコマンドは終了コード0で成功扱いとする。
-    myrepo指定時は`git -C <myrepo> remote get-url origin`にremote_urlを返す。
+    myrepo指定時は`git rev-parse --show-toplevel`にmyrepoを、
+    `git -C <myrepo> remote get-url origin`にremote_urlを返す（対象リポジトリはcwdから解決される）。
     """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -589,9 +590,12 @@ def _editor_fake_run(
         if cmd[0] == "fake-editor":
             returncode = action(pathlib.Path(cmd[1]))
             return subprocess.CompletedProcess(cmd, returncode=returncode, stdout=empty, stderr=empty)
-        if myrepo is not None and cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-            stdout: Any = f"{remote_url}\n" if kwargs.get("text") else f"{remote_url}\n".encode()
+        if myrepo is not None and cmd == ["git", "rev-parse", "--show-toplevel"]:
+            stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+        if myrepo is not None and cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+            remote_stdout: Any = f"{remote_url}\n" if kwargs.get("text") else f"{remote_url}\n".encode()
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=remote_stdout, stderr=empty)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run
@@ -625,7 +629,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         files = list((notes / "feedback" / "inbox").iterdir())
@@ -656,7 +660,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -676,20 +680,23 @@ class TestAddViaEditor:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
+                stdout = (
                     "https://github.com/example/myrepo.git\n"
                     if kwargs.get("text")
                     else b"https://github.com/example/myrepo.git\n"
                 )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -710,7 +717,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()

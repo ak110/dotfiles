@@ -297,6 +297,45 @@ def _max_existing_seq(feedback_dir: pathlib.Path, timestamp_prefix: str) -> int:
     return max_seq
 
 
+def _resolve_repo_path_override(
+    args_messages: list[str],
+    pre_parse_override: str | None,
+) -> tuple[list[str], str | None]:
+    """旧REPO_PATH位置引数形式の呼び出しを解決する（`atk.py`の`_extract_legacy_repo_path`の後段）。
+
+    `pre_parse_override`（サブコマンド名直後のトークンをargparse解析前に抽出した結果）が
+    設定済みならそれを優先する。未設定の場合、argparseが単一のcontiguousな位置引数群として
+    解決できたケース（REPO_PATHがオプションの後ろに置かれた呼び出し等）を対象に、
+    messages先頭が実在ディレクトリなら追加でREPO_PATHとして抽出する。
+    """
+    messages = list(args_messages)
+    if pre_parse_override is not None:
+        return messages, pre_parse_override
+    if not messages:
+        return messages, None
+    candidate = pathlib.Path(messages[0]).expanduser()
+    if not candidate.is_dir():
+        return messages, None
+    return messages[1:], str(candidate)
+
+
+def _reject_bare_repo_path_override(repo_path_override: str | None, messages: list[str], usage_example: str) -> None:
+    """`atk.py`の`_extract_legacy_repo_path`で抽出したREPO_PATHにMESSAGE本体が伴わない場合はexit 2する。
+
+    REPO_PATHは省略してカレントディレクトリから自動解決する仕様のため、REPO_PATHらしき
+    ディレクトリ引数だけが渡されMESSAGEが空の呼び出しは誤指定として拒否する。
+    """
+    if repo_path_override is None or messages:
+        return
+    print(
+        f"MESSAGE引数がディレクトリを指しています: {repo_path_override}\n"
+        "REPO_PATHは省略してカレントディレクトリから自動解決されます。\n"
+        f"使用例: {usage_example}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+
 def _collect_message_via_editor() -> str | None:
     """$EDITORで一時ファイルを開き、保存内容をstripして返す。
 

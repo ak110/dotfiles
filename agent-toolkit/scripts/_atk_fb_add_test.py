@@ -29,7 +29,7 @@ class TestAddOrderEditorFirst:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時、エディターは`_pull`より前に起動される。"""
+        """messages省略時、エディターは`_pull`より前に起動される（対象リポジトリはcwdから解決）。"""
         notes = _setup_flag_and_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -38,8 +38,11 @@ class TestAddOrderEditorFirst:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
+                stdout = (
                     "https://github.com/example/myrepo.git\n"
                     if kwargs.get("text")
                     else b"https://github.com/example/myrepo.git\n"
@@ -56,7 +59,7 @@ class TestAddOrderEditorFirst:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert call_order == ["editor", "pull"]
@@ -76,8 +79,11 @@ class TestAddOrderEditorFirst:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
+                stdout = (
                     "https://github.com/example/myrepo.git\n"
                     if kwargs.get("text")
                     else b"https://github.com/example/myrepo.git\n"
@@ -93,7 +99,7 @@ class TestAddOrderEditorFirst:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -134,3 +140,124 @@ class TestAddOrderEditorFirst:
 
         assert exc_info.value.code == 0
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
+
+
+class TestAddRepoPathOverrideCli:
+    """`fb add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+
+    def test_repo_path_omitted_resolves_from_cwd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """REPO_PATH省略時、対象リポジトリはカレントディレクトリのgit worktreeから解決される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        cwd_repo = tmp_path / "cwdrepo"
+        cwd_repo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{cwd_repo}\n" if kwargs.get("text") else f"{cwd_repo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(cwd_repo), "remote", "get-url", "origin"]:
+                stdout = (
+                    "https://github.com/example/cwdrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/cwdrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", "本文"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/cwdrepo" in content
+
+    def test_message_only_directory_errors(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """MESSAGE先頭がディレクトリで本文が続かない場合、誤指定としてexit 2になる。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "MESSAGE引数がディレクトリを指しています" in captured.err
+
+    def test_directory_followed_by_message_uses_compat_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """MESSAGE先頭が実在ディレクトリで残り本文がある場合、旧REPO_PATH形式として互換動作する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "本文" in content
+
+    def test_directory_followed_by_option_and_message_uses_compat_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """REPO_PATHとMESSAGEの間にオプションを配置する旧形式でも互換動作する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "add", str(myrepo), "--source", "session-review", "本文"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content
+        assert "本文" in content
+        assert "source: session-review" in content

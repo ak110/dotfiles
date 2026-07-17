@@ -16,6 +16,8 @@ from _atk_fb_common import (
     _count_feedback,
     _max_existing_seq,
     _pull,
+    _reject_bare_repo_path_override,
+    _resolve_repo_path_override,
     _subdir,
 )
 from _atk_fb_formatters import _shorten_home
@@ -57,13 +59,17 @@ def _cmd_add(
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
+    対象リポジトリは常にカレントディレクトリから解決する。ただし`fb add`直後のトークンが実在
+    ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
+    当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     エディター経由の本文確定後に`_pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を取り込むgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     """
-    target_repo = _resolve_repo_id(args.repo_path)
-    messages = list(args.messages)
+    messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
+    _reject_bare_repo_path_override(repo_path_override, messages, 'atk fb add "フィードバック本文"')
+    target_repo = _resolve_repo_id(repo_path_override)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:

@@ -80,18 +80,18 @@ TBD投入（`atk fb tbd-add`）を伴う場合の書式は
 ## ステップ4: 投入
 
 target_repoごとに、対応するメッセージ群を位置引数で渡して`atk fb add`を呼び出す。
-投入直後の状態は`inbox`となる。
+対象リポジトリは常にカレントディレクトリから解決するため、事前に`cd`で対象リポジトリへ
+移動してから呼び出す。投入直後の状態は`inbox`となる。
 `processing`（`start-processing`後の途中状態）・`adopted`・`rejected`（最終処理済み）への
 移動は`atk fb`の対応サブコマンド経由で行われ、本スキルは常に`inbox`への追加のみを担う。
 
 ```sh
-atk fb add <repo-path> "<message1>" ["<message2>" ...]
+cd <repo-path> && atk fb add "<message1>" ["<message2>" ...]
 ```
 
-- `<repo-path>`: target_repoの絶対パスまたは`~`展開可能パス
-  - `atk fb add`の引数形式はREPO_PATH位置引数（対象リポジトリのローカルパス、例: `.`）を使う。
-    `--target-repo`オプションはaddサブコマンドには存在せず、show・adopt等の他subcommandとは
-    引数体系が非対称である点に注意する
+- 対象リポジトリの解決: `atk fb add`はREPO_PATHを引数で受け取らず、常にカレントディレクトリから
+  自動解決する。MESSAGE先頭引数に実在ディレクトリを渡した場合、後続にMESSAGE本文が続けば
+  旧形式呼び出しとの互換によりREPO_PATHとして解釈される。MESSAGE本文が欠落する場合は誤指定エラーとなる
 - `<message>`: 自由本文。改行を含めてよい。
   長文はシェルメタ文字（バッククォート・`$`・`!`等）の混入をその都度検知せず、
   常に`$'...'`のANSI-Cクォートで囲む（本文中の`'`は`\'`でエスケープする）。

@@ -113,7 +113,7 @@ class TestTbdAddSourceOptionParser:
     def test_accepts_source(self) -> None:
         """`tbd-add`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", "tbd-add", "/tmp/x", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["fb", "tbd-add", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
 
 
