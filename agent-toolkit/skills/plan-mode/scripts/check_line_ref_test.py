@@ -680,6 +680,21 @@ class TestSectionNameExistence:
         assert result.returncode == 1
         assert "4行目" in result.stderr
 
+    def test_path_prefixed_ref_with_angle_bracket_placeholder_and_unresolvable_target_is_excluded(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        """パス付き形式でも、参照先パスが解決不能（見出し集合`None`）な山括弧含み参照は擬陽性除外される。
+
+        指摘1の共通ヘルパー抽出により`_find_section_ref_violations`にも
+        `_find_bare_section_ref_violations`と同一の擬陽性除外仕様が適用される。
+        """
+        path = _write(
+            tmp_path / "plan.md",
+            "詳細はdocs/missing.md「<節名>」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
 
 class TestNewlyCreatedSectionExclusion:
     """既存ファイル内で新設される節の実在確認除外（FB1対応）の主要シナリオをまとめて検証する。"""
@@ -917,3 +932,65 @@ class TestBareSectionNameExistence:
         assert result.returncode == 1
         assert len(result.stderr.splitlines()) == 1
         assert "docs/guide.md 「存在しない節」" in result.stderr
+
+    def test_bare_ref_with_angle_bracket_placeholder_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """山括弧完結型のプレースホルダー参照は擬陽性として検査対象から除外される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[追記]\n計画本文で「<節名>」節形式のプレースホルダーを使う。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_with_angle_bracket_mixed_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """山括弧混在型のプレースホルダー参照も擬陽性として検査対象から除外される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n```text\n[追記]\n「対象ファイル<ファイル名>」節形式で記述する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_with_angle_bracket_placeholder_and_unresolvable_target_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """対象H3パスが解決不能（見出し集合が読み込み不能または非該当）でも、山括弧含み裸参照は擬陽性除外される。
+
+        `headings is None`ケースと、`headings`が非`None`かつ対象節を含まないケースは
+        実装上同一分岐（`_is_angle_bracket_placeholder`経由の除外）を辿るため、
+        本テストはH3見出しをバッククォート無し（裸パス、`_check_path_existence`の
+        実在確認対象から外れる）で記述し、対象H3パスが解決不能な状況での擬陽性除外挙動を固定する。
+        """
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### docs/missing.md\n\n"
+            "```text\n[追記]\n計画本文で「<節名>」節形式のプレースホルダーを使う。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_mistyped_without_brackets_to_bracketed_heading_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """山括弧記号を含む実在見出しへの誤参照（山括弧を欠いた転記）は引き続き節名不在違反として検出される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("### <ファイル名>: <提案要約>\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n「ファイル名: 提案要約」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_bare_ref_exact_match_to_bracketed_heading_is_not_flagged(self, tmp_path: pathlib.Path) -> None:
+        """山括弧記号を含む実在見出しへの完全一致参照は違反として検出されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("### <ファイル名>: <提案要約>\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n「<ファイル名>: <提案要約>」節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0

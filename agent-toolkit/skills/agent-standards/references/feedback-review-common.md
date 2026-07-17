@@ -92,6 +92,10 @@
 これにより同種事象の再発を予防する。本節は`agent-toolkit:plan-mode`工程4「恒久化検討」と
 同一のSSOTを構成する。条件を問わず全採否判定で実施する。
 
+フィードバック採用計画の`### 却下した代替案`節では、対策強度の序列に従い上位層から順に成立可否を評価する。
+対策強度の序列は`agent-toolkit/skills/plan-mode/references/bugfix-process.md`「再発防止策」節が定義する。
+不成立の場合は根拠を明記したうえで下位層を選ぶ。上位層評価を省略して下位層のみを列挙する形は認めない。
+
 ## 同一カテゴリ累積時の規範化ゲート
 
 `atk fb list --type=feedback --status=adopted --category=<カテゴリ名>`で

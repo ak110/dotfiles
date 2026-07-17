@@ -683,6 +683,9 @@ def _find_section_ref_violations(
     （無関係な同名ファイルへの誤解決を招き得る）を行わずスキップする。
     `new_sections`は同一計画内で新設予定の節集合（`_collect_newly_created_sections`）を表し、
     `_resolve_target_headings`へ委譲して既存節との合成判定に用いる。
+    実在見出しへの参照は違反として扱わない。実在見出しに一致せず山括弧文字（`<`または`>`）を
+    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で
+    擬陽性除外する。
     """
     violations: list[str] = []
     for m in _SECTION_REF_PATTERN.finditer(raw):
@@ -693,8 +696,11 @@ def _find_section_ref_violations(
         headings = _resolve_target_headings(raw_path, repo_root, section_cache, new_paths, new_sections or {})
         if isinstance(headings, _NewTargetSkip):
             continue
-        if headings is None or section not in headings:
-            violations.append(f"{lineno}行目: 節名不在: {raw_path} 「{section}」")
+        if headings is not None and section in headings:
+            continue
+        if _is_angle_bracket_placeholder(section):
+            continue
+        violations.append(f"{lineno}行目: 節名不在: {raw_path} 「{section}」")
     return violations
 
 
@@ -718,6 +724,16 @@ def _is_span_covered(span: tuple[int, int], covering_spans: list[tuple[int, int]
     return any(start < covering_end and end > covering_start for covering_start, covering_end in covering_spans)
 
 
+def _is_angle_bracket_placeholder(section: str) -> bool:
+    """節名`section`が山括弧（`<`または`>`）を含むプレースホルダー表記かを判定する。
+
+    書式規範の説明用に`<節名>`形式で節名参照を例示する箇所を、実在見出し不一致時の
+    擬陽性除外判定として`_find_section_ref_violations`・`_find_bare_section_ref_violations`の
+    両方から共通利用する。
+    """
+    return "<" in section or ">" in section
+
+
 def _find_bare_section_ref_violations(
     raw: str,
     lineno: int,
@@ -727,7 +743,12 @@ def _find_bare_section_ref_violations(
     new_paths: frozenset[str],
     new_sections: dict[str, frozenset[str]] | None = None,
 ) -> list[str]:
-    """対象H3配下の裸節名参照を抽出し、H3対象ファイル内での節見出し実在を検査する。"""
+    """対象H3配下の裸節名参照を抽出し、H3対象ファイル内での節見出し実在を検査する。
+
+    実在見出しへの参照は違反として扱わない。実在見出しに一致せず山括弧文字（`<`または`>`）を
+    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で
+    擬陽性除外する。
+    """
     if target_path is None or _SECTION_ALLOW_MARKER in raw:
         return []
     if _is_newly_created_path(target_path, new_paths):
@@ -743,8 +764,11 @@ def _find_bare_section_ref_violations(
         if _is_span_covered(m.span(), path_ref_spans):
             continue
         section = m.group("section").strip()
-        if headings is None or section not in headings:
-            violations.append(f"{lineno}行目: 節名不在: {target_path} 「{section}」")
+        if headings is not None and section in headings:
+            continue
+        if _is_angle_bracket_placeholder(section):
+            continue
+        violations.append(f"{lineno}行目: 節名不在: {target_path} 「{section}」")
     return violations
 
 
