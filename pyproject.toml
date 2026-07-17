@@ -106,6 +106,8 @@ extend-exclude = [
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
     "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
+    "agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md",
+    "agent-toolkit/scripts/_norm_inquiry_escalation_test_inputs.txt",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]

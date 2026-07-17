@@ -168,6 +168,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
  （`references/textlint-violations.md`・`references/plan-file-guidelines.md`）未読をブロック
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 - Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に確認ダイアログを自動許可
+- ユーザー発話中の規範照会・是正要求の兆候を検出し、メタ視点点検・恒久化検討の実施を促す
 
 ### オンデマンドのスキル
 

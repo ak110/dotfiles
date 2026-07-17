@@ -15,6 +15,11 @@
 - session-review → `session_review_invoked`（辞書。キーは`agent-toolkit:session-review`で正規化）
 - process-feedbacks → `process_feedbacks_skill_invoked`
 
+加えて、非スラッシュコマンド入力（先頭行が`/`で始まらない発話）に対しては
+規範照会・是正要求の兆候（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`）を検出し、
+クールダウン判定を経て`hookSpecificOutput.additionalContext`でメタ視点点検・恒久化検討の実施を促す
+リマインダーを注入する（`agent-toolkit/rules/02-collaboration.md`「メタ視点」節の対象事象）。
+
 例外時はfail-openで exit 0 を返す。
 """
 
@@ -28,11 +33,30 @@ import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from _norm_inquiry_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _match_norm_inquiry_escalation,
+)
 from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_FEEDBACKS_SKILL_NAMES,
     _SESSION_REVIEW_SKILL_NAMES,
+)
+
+# `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
+# 「コーディングエージェント宛てメッセージの標識」節が定める自動生成標識。
+_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit]"
+_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+
+# クールダウン間隔（UserPromptSubmit呼び出し回数）。
+# 同一指摘対応の作業中に再注入しない一方、別トピックの指摘では再注入され得る目安値。
+_NORM_INQUIRY_COOLDOWN_TURNS = 5
+
+_NORM_INQUIRY_REMINDER_BODY = (
+    "Norm-inquiry or correction-request phrasing was detected in the user's message. "
+    "Per agent-toolkit/rules/02-collaboration.md's meta-perspective checkpoint, inspect why the "
+    "existing norm failed to prevent this, and drive the permanent-fix decision (adopt/reject with "
+    "reason) to completion within this session instead of only logging a one-line report."
 )
 
 
@@ -105,6 +129,50 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
+def _record_norm_inquiry_detection(session_id: str, detected: bool) -> bool:
+    """カウンターを加算し、検出時のクールダウン判定を行う。
+
+    UserPromptSubmitの呼び出しごとに単調増加カウンター`user_prompt_counter`を加算する。
+    `detected`が真の場合、現在カウンターと`norm_inquiry_last_injected`の記録値
+    （キー不在時は`0`とみなす）の差が`_NORM_INQUIRY_COOLDOWN_TURNS`以上であれば
+    注入対象と判定し、現在値を`norm_inquiry_last_injected`へ記録する。
+    戻り値は注入対象と判定したかどうか。
+    """
+    outcome = {"should_inject": False}
+
+    def _mutator(state: dict) -> dict | None:
+        counter_raw = state.get("user_prompt_counter", 0)
+        counter = counter_raw if isinstance(counter_raw, int) else 0
+        counter += 1
+        state["user_prompt_counter"] = counter
+        if detected:
+            last_raw = state.get("norm_inquiry_last_injected", 0)
+            last = last_raw if isinstance(last_raw, int) else 0
+            if counter - last >= _NORM_INQUIRY_COOLDOWN_TURNS:
+                state["norm_inquiry_last_injected"] = counter
+                outcome["should_inject"] = True
+        return state
+
+    update_state(session_id, _mutator)
+    return outcome["should_inject"]
+
+
+def _emit_norm_inquiry_reminder() -> None:
+    """規範照会・是正要求検出時のリマインダーを`hookSpecificOutput`として標準出力へ書く。"""
+    body = f"{_MESSAGE_PREFIX} {_NORM_INQUIRY_REMINDER_BODY} {_MESSAGE_SUFFIX}"
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": body,
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def main() -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
@@ -126,6 +194,15 @@ def main() -> int:
     # 先頭行のみを取り出して照合する（先頭行以外は無視）。
     first_line = prompt.split("\n", 1)[0].strip()
     if not first_line.startswith("/"):
+        # 規範照会・是正要求の検出処理。局所的に例外を捕捉し、失敗時も
+        # fail-open原則（exit 0・追加出力なし）で既存の非スラッシュ入力の扱いを維持する。
+        try:
+            match_result = _match_norm_inquiry_escalation(prompt)
+            should_inject = _record_norm_inquiry_detection(session_id, match_result is not None)
+            if should_inject:
+                _emit_norm_inquiry_reminder()
+        except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught  # hook fail-open原則
+            pass
         return 0
 
     match = _SLASH_COMMAND_PATTERN.match(first_line)
