@@ -35,6 +35,8 @@ Type=simple
 ExecStart=%h/.local/bin/claude-plans-viewer
 Restart=on-failure
 RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
 
 [Install]
 WantedBy=default.target
@@ -129,7 +131,7 @@ def _apply_systemctl_state(unit_changed: bool) -> None:
     logger.info(log_format.format_status("plans-viewer", f"サービスを restart ({_SERVICE_UNIT})"))
     result = claude_common.run_subprocess(
         ["systemctl", "--user", "restart", _SERVICE_UNIT],
-        timeout=15.0,
+        timeout=30.0,
         tag="plans-viewer",
     )
     if result is None or result.returncode != 0:

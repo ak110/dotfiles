@@ -167,6 +167,38 @@ def test_links_contains_agent_toolkit_agents() -> None:
     assert setup_codex_links._LINKS["agent-toolkit/agents"] == "agent-toolkit/agents"
 
 
+def test_windows_recreates_link_when_junction_like_dangling(
+    env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows相当環境でリンク切れジャンクション（`is_symlink`は偽だが`_is_link_like`が真）を
+    検出した場合、`_remove_link`実行後に`CreateJunction`を呼ぶこと。"""
+    dotfiles_root, codex_home = env
+    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
+    src.mkdir(parents=True)
+    dest = codex_home / "skills" / "foo"
+
+    monkeypatch.setattr(setup_codex_links.sys, "platform", "win32")
+    monkeypatch.setattr(setup_codex_links, "_is_link_like", lambda path: path == dest)
+
+    calls: list[str] = []
+    monkeypatch.setattr(setup_codex_links, "_remove_link", lambda path: calls.append("remove"))
+
+    fake_winapi = type(sys)("_winapi_fake")
+
+    def fake_create_junction(source: str, destination: str) -> None:
+        del source, destination
+        calls.append("create")
+
+    fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    monkeypatch.setitem(sys.modules, "_winapi", fake_winapi)
+
+    assert setup_codex_links.run() is True
+
+    assert calls == ["remove", "create"]
+
+
 def test_windows_creates_junction(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,

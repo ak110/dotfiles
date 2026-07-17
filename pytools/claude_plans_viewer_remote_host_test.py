@@ -208,11 +208,17 @@ class TestRemoteHostIntegration:
     """リモートホスト統合（API・許可リスト・host-status）の挙動を検証する。"""
 
     @pytest.mark.asyncio
-    async def test_api_files_merges_local_and_remote_sorted(self, tmp_path: Path):
-        """`/api/files`がローカル＋全リモートホストのエントリをmtime降順で統合する。"""
+    async def test_api_files_merges_local_and_remote_sorted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """`/api/files`がローカル＋全リモートホストのエントリをctime（作成日時）降順で統合する。
+
+        ローカルファイルの実`ctime`（Linux上では`st_ctime`）は`os.utime`で制御できないため、
+        `_local._ctime_epoch`をmonkeypatchして決定論的な値へ固定する。
+        `mtime_epoch`降順とは異なる順序になる値を選び、ソート基準が`ctime_epoch`であることを示す。
+        """
         local = tmp_path / "local.md"
         local.write_text("local", encoding="utf-8")
         os.utime(local, (3_000.0, 3_000.0))
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: 2_000.0)
 
         app = _app.create_app(
             tmp_path,
@@ -220,18 +226,19 @@ class TestRemoteHostIntegration:
             remote_hosts=["host1", "host2"],
         )
         state: _state.BroadcastState = app.config["PLANS_STATE"]
-        _seed_remote_cache(state, "host1", [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0}])
-        _seed_remote_cache(state, "host2", [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0}])
+        _seed_remote_cache(state, "host1", [{"path": "h1.md", "name": "h1.md", "mtime_epoch": 5_000.0, "ctime_epoch": 4_000.0}])
+        _seed_remote_cache(state, "host2", [{"path": "h2.md", "name": "h2.md", "mtime_epoch": 1_000.0, "ctime_epoch": 6_000.0}])
 
         client = app.test_client()
         response = await client.get("/api/files")
 
         assert response.status_code == 200
         data = json.loads(await response.get_data())
+        # ctime降順: host2(6000) > host1(4000) > local-host(2000)。
         assert [(e["host"], e["path"]) for e in data] == [
+            ("host2", "h2.md"),
             ("host1", "h1.md"),
             ("local-host", "local.md"),
-            ("host2", "h2.md"),
         ]
         # 全エントリに`host`フィールドが乗ること。
         assert {e["host"] for e in data} == {"host1", "host2", "local-host"}
@@ -413,6 +420,47 @@ class TestRemoteHostIntegration:
         response = await client.get("/api/host-status")
         data = json.loads(await response.get_data())
         assert data == {"local-host": "connected", "host1": "connected"}
+
+    @pytest.mark.asyncio
+    async def test_snapshot_registers_host_info_and_propagates_ctime(self, tmp_path: Path):
+        """初回snapshot受信で`BroadcastState.host_info`にroot・os_type・os_nameが登録され、
+        `ctime_epoch`が`/api/files`応答まで伝搬すること。
+        """
+        app = _app.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+        )
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        # ローカル分はcreate_app起動時に即座に登録される。
+        assert state.host_info["local-host"]["os_type"] in ("posix", "nt")
+
+        watcher = _remote.RemoteWatcher("host1", state)
+        remote_host_info = {"root": "/home/remote/.claude/plans", "os_type": "posix", "os_name": "posix"}
+        await watcher._process_stream(  # pylint: disable=protected-access  # noqa: SLF001  # 引数注入では到達不能（SSH/subprocess起動を伴う公開経路run()を単体で網羅不能）
+            _aiter_lines(
+                [
+                    json.dumps(
+                        {
+                            "type": "snapshot",
+                            "entries": [
+                                {"path": "r.md", "name": "r.md", "mtime_epoch": 10.0, "ctime_epoch": 20.0},
+                            ],
+                            "host_info": remote_host_info,
+                        }
+                    )
+                    + "\n",
+                ]
+            )
+        )
+
+        assert state.host_info["host1"] == remote_host_info
+
+        client = app.test_client()
+        response = await client.get("/api/files")
+        data = json.loads(await response.get_data())
+        remote_entry = next(e for e in data if e["host"] == "host1")
+        assert remote_entry["ctime_epoch"] == 20.0
 
 
 class TestBuildRemoteCommand:

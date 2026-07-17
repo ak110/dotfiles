@@ -62,8 +62,9 @@ def _process_link(dest: Path, target: Path) -> bool:
         logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
         return False
 
-    # is_symlink単独だとリンク切れも捕捉できる。
-    if dest.exists() or dest.is_symlink():
+    # is_symlink単独だとリンク切れも捕捉できるが、リンク切れのジャンクションは
+    # is_symlinkがFalseを返すため_is_link_likeも条件へ加え、CreateJunctionの衝突を避ける。
+    if dest.exists() or dest.is_symlink() or _is_link_like(dest):
         if _is_link_like(dest):
             if dest.resolve() == target.resolve():
                 return False

@@ -3,7 +3,8 @@
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add/list/本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
 show系は`_atk_fb_show_test.py`、mutation系は`_atk_fb_mutations_test.py`、process-loop・リポジトリ解決は
-`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、TBD系は`_atk_fb_tbd_test.py`に分離する。
+`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、TBD系は`_atk_fb_tbd_test.py`、
+本文要約の切り詰め境界ケースは`_atk_fb_formatters_test.py`に分離する。
 TBD共通ヘルパーは本ファイルとTBD系テストの双方から使うため本ファイルに残置する。
 """
 
@@ -19,7 +20,6 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_fb_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_fb_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 _GitCall = dict[str, Any]
@@ -27,6 +27,9 @@ _GitCall = dict[str, Any]
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
+
+# 端末幅の固定化は`conftest.py`の`_fixed_terminal_size`autouseフィクスチャへ集約する
+# （`shutil`モジュール差し替えのため個別テストファイルへの重複定義は不要）。
 
 
 def _make_subprocess_fake(
@@ -550,7 +553,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
 
 
 class TestListMalformedFrontmatter:
@@ -583,7 +586,7 @@ class TestListMalformedFrontmatter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out.startswith("# feedback\nmalformed.md\t(unknown)\t[inbox] ")
+        assert captured.out.startswith("# feedback\nmalformed.md: (unknown) [inbox] ")
 
 
 class TestListMultipleRepos:
@@ -608,8 +611,8 @@ class TestListMultipleRepos:
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
             "# feedback",
-            "fb-001.md\tgithub.com/example/foo\t[inbox] テスト本文",
-            "fb-002.md\tgithub.com/example/bar\t[inbox] テスト本文",
+            "fb-001.md: github.com/example/foo [inbox] テスト本文",
+            "fb-002.md: github.com/example/bar [inbox] テスト本文",
         ]
 
 
@@ -668,7 +671,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/myrepo\t[inbox] テスト本文\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -709,7 +712,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -727,7 +730,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md\tgithub.com/example/foo\t[unanswered] q1\n"
+        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [unanswered] q1\n"
 
     def test_type_all_omits_empty_section_header(
         self,
@@ -850,7 +853,7 @@ class TestListStatusFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback\nfb-001.md\tgithub.com/example/foo\t[inbox] 本文1\n" in captured.out
+        assert "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n" in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
@@ -949,25 +952,6 @@ class TestListCount:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "0\n"
-
-
-class TestBodySummaryTruncation:
-    """_body_summary: 40文字境界での切り詰め動作を検証する。"""
-
-    def test_exactly_40_chars_not_truncated(self) -> None:
-        """本文冒頭行がちょうど40文字の場合は切り詰めず`...`を付与しない。"""
-        text = "---\ntarget_repo: github.com/example/foo\n---\n\n" + "あ" * 40 + "\n"
-        assert _formatters._body_summary(text) == "あ" * 40  # pylint: disable=protected-access  # noqa: SLF001
-
-    def test_over_40_chars_truncated_with_ellipsis(self) -> None:
-        """本文冒頭行が40文字を超える場合は40文字で切り詰め`...`を付与する。"""
-        text = "---\ntarget_repo: github.com/example/foo\n---\n\n" + "い" * 41 + "\n"
-        assert _formatters._body_summary(text) == "い" * 40 + "..."  # pylint: disable=protected-access  # noqa: SLF001
-
-    def test_multiline_body_uses_first_line_only(self) -> None:
-        """本文が複数行の場合は先頭行のみを要約対象とし改行以降は無視する。"""
-        text = "---\ntarget_repo: github.com/example/foo\n---\n\n先頭行\n2行目\n"
-        assert _formatters._body_summary(text) == "先頭行"  # pylint: disable=protected-access  # noqa: SLF001
 
 
 def _setup_tbd_env(tmp_path: pathlib.Path) -> pathlib.Path:

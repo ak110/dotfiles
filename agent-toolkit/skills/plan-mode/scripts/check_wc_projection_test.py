@@ -880,13 +880,14 @@ class TestCheckWcProjection:
         assert result.returncode == 0
         assert "H4見出しが不在" in result.stderr
 
-    def test_mixed_replacement_and_deletion_pairs_warns(self, tmp_path: pathlib.Path) -> None:
-        """同一ファイルへ`[現行]`/`[置換後]`と`[現行]`/`[削除根拠]`ペアが混在する場合、警告が出力される。"""
+    def test_mixed_replacement_and_deletion_pairs_computed_together(self, tmp_path: pathlib.Path) -> None:
+        """同一ファイルへ`[現行]`/`[置換後]`と`[現行]`/`[削除根拠]`ペアが混在しても、
+        両ペアが同型の集計経路で合算され乖離0なら警告なく通過する。"""
         _write(tmp_path / "foo.md", "old1\nold2\nold3\nold4\n")
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行4行, 見込み4行）\n\n"
+            "- [ ] `foo.md`（現行4行, 見込み3行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行]\nold1\n```\n\n"
             "```text\n[置換後]\nnew1\n```\n\n"
@@ -894,7 +895,8 @@ class TestCheckWcProjection:
             "```text\n[削除根拠]\n冗長のため削除\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
-        assert "見込み行数検算経路をどちらかへ統一" in result.stderr
+        assert result.returncode == 0, result.stderr
+        assert "見込み行数検算経路をどちらかへ統一" not in result.stderr
 
     def test_absolute_path_without_allowed_root_warns(self, tmp_path: pathlib.Path) -> None:
         """許容ルート未宣言の絶対パスが対象ファイル一覧に含まれる場合、警告が出力される。"""

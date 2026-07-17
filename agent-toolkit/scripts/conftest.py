@@ -1,10 +1,13 @@
 """pytest conftest: テスト用のgitリポジトリ作成factory fixtureを提供する。"""
 
+import os
 import pathlib
 import subprocess
 from collections.abc import Callable
 
 import pytest
+
+_FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +19,19 @@ def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     （`_setup_flag_and_notes`等）が担う。
     """
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+
+
+@pytest.fixture(autouse=True)
+def _fixed_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅に依存しない結果にする。
+
+    `_atk_fb_list.py`・`_atk_fb_common.py`は`shutil.get_terminal_size()`から表示幅を算出し
+    `atk fb list`・未回答TBD通知の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
+    両モジュールおよびこのディレクトリ配下の全テストファイルへ一括で適用する
+    （個別テストファイルごとの重複フィクスチャ定義を避けるSSOT化）。
+    """
+    fixed = os.terminal_size((_FIXED_TERMINAL_WIDTH, 24))
+    monkeypatch.setattr("shutil.get_terminal_size", lambda *_a, **_kw: fixed)
 
 
 @pytest.fixture(name="make_dirty_repo")

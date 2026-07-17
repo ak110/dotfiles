@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import json
+import os
 import re
 import typing
 from pathlib import Path
@@ -234,7 +235,7 @@ class TestApiEndpoints:
 
     @pytest.mark.asyncio
     async def test_api_files_returns_list(self, tmp_path: Path):
-        """/api/filesが.mdの一覧をJSONで返す。"""
+        """/api/filesが.mdの一覧をJSONで返す（`ctime_epoch`を含む）。"""
         (tmp_path / "a.md").write_text("x", encoding="utf-8")
         app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
@@ -244,10 +245,15 @@ class TestApiEndpoints:
         assert response.content_type == "application/json; charset=utf-8"
         data = json.loads(await response.get_data())
         assert [e["path"] for e in data] == ["a.md"]
+        assert "ctime_epoch" in data[0]
 
     @pytest.mark.asyncio
     async def test_index_embeds_copy_path_constants(self, tmp_path: Path):
-        """/応答HTMLがパスコピー用のJS定数を埋め込む。"""
+        """/応答HTMLがパスコピー用のJS定数を埋め込む。
+
+        `ROOT_DIRS`はページロード時点ではローカルホスト分のみを含む
+        （リモート分はSSE経由の`host_info_update`で受信のたびに反映される）。
+        """
         app = _app.create_app(tmp_path, hostname="test-host")
         client = app.test_client()
         response = await client.get("/")
@@ -256,7 +262,8 @@ class TestApiEndpoints:
         expected_root = str(tmp_path).replace("\\", "/")
         assert response.status_code == 200
         assert f"const LOCAL_HOST_NAME = {json.dumps('test-host')};" in body
-        assert f"const ROOT_DIR = {json.dumps(expected_root)};" in body
+        expected_root_dirs = {"test-host": {"root": expected_root, "os_type": os.name, "os_name": os.name}}
+        assert f"const ROOT_DIRS = {json.dumps(expected_root_dirs, ensure_ascii=False)};" in body
 
     @pytest.mark.asyncio
     async def test_api_file_renders_markdown(self, tmp_path: Path):
@@ -352,6 +359,53 @@ class TestApiEndpoints:
         assert data["name"] == "Claude plans"
 
 
+class TestHostInfo:
+    """`BroadcastState.host_info`のローカル登録と`deliver_host_info`のSSE配信契約を検証する。
+
+    リモート分の登録・削除契約（snapshot受信時の登録、切断時のキー削除）は
+    `pytools/claude_plans_viewer_remote_host_test.py`側で検証する。
+    `GET /api/host_info`エンドポイントは設けない（既存SSE経路`host_info_update`イベントへ統合する）方針のため、
+    本クラスはSSE配信契約のみを検証対象とする。
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_app_registers_local_host_info(self, tmp_path: Path):
+        """`create_app`起動時にローカルホスト分の`host_info`が即座に登録される。"""
+        app = _app.create_app(tmp_path, hostname="local-host")
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+
+        assert state.host_info["local-host"] == {
+            "root": str(tmp_path).replace("\\", "/"),
+            "os_type": os.name,
+            "os_name": os.name,
+        }
+
+    @pytest.mark.asyncio
+    async def test_deliver_host_info_broadcasts_update(self):
+        """`deliver_host_info`が`{"type":"host_info_update","host":...,"info":...}`を配信する。"""
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
+        try:
+            info = {"root": "/home/alice/.claude/plans", "os_type": "posix", "os_name": "posix"}
+            await _state.deliver_host_info(state, "host1", info)
+            msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
+            assert msg == json.dumps({"type": "host_info_update", "host": "host1", "info": info}, ensure_ascii=False)
+        finally:
+            await _state.unsubscribe(state, q)
+
+    @pytest.mark.asyncio
+    async def test_deliver_host_info_none_signals_removal(self):
+        """`info=None`は該当ホストキーの削除指示を意味するペイロードとして配信される。"""
+        state = _state.BroadcastState()
+        q = await _state.subscribe(state)
+        try:
+            await _state.deliver_host_info(state, "host1", None)
+            msg = await asyncio.wait_for(q.get(), timeout=_QUEUE_GET_TIMEOUT_SEC)
+            assert msg == json.dumps({"type": "host_info_update", "host": "host1", "info": None}, ensure_ascii=False)
+        finally:
+            await _state.unsubscribe(state, q)
+
+
 class TestEventsEndpoint:
     """`/api/events`エンドポイントの統合テスト。"""
 
@@ -408,7 +462,7 @@ class TestBroadcastStateDataclass:
     """`BroadcastState`のフィールド既定値の契約を固定する。"""
 
     def test_defaults(self):
-        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態は空。"""
+        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態・host_infoは空。"""
         state = _state.BroadcastState()
         assert not state.subscribers
         assert state.debounce_task is None
@@ -417,6 +471,7 @@ class TestBroadcastStateDataclass:
         assert not state.remote_tasks
         assert not state.host_status
         assert not state.remote_watchers
+        assert not state.host_info
         # `dataclasses.fields`経由で契約を固定し、意図しないフィールド追加を検出する。
         fields = {f.name for f in dataclasses.fields(state)}
         assert fields == {
@@ -428,4 +483,5 @@ class TestBroadcastStateDataclass:
             "remote_tasks",
             "host_status",
             "remote_watchers",
+            "host_info",
         }

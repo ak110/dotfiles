@@ -245,7 +245,7 @@ class RemoteWatcher:
             self._pending.pop(req_id, None)
 
     async def run(self) -> None:
-        """無限ループで接続→ストリーム処理→バックオフ→再接続を行う。
+        """無限ループで接続→ストリーム処理→バックオフ→再接続を繰り返す。
 
         `asyncio.CancelledError`は再送出してタスクを終了させる。
         それ以外の例外はwarningログに残し、`disconnected`遷移後にバックオフ再試行する。
@@ -342,13 +342,18 @@ class RemoteWatcher:
         kind = event.get("type")
         if kind == "snapshot":
             entries = [_state.make_file_entry(self.host, item) for item in event.get("entries", [])]
+            host_info = event.get("host_info")
             async with self.state.lock:
                 self.state.remote_files[self.host] = entries
+                if isinstance(host_info, dict):
+                    self.state.host_info[self.host] = dict(host_info)
             await self._set_status("connected")
             self._connected = True
             # 接続成功時にバックオフをリセットし、次回切断後の再接続を初期値から始める。
             self._backoff = REMOTE_BACKOFF_INITIAL_SEC
             await _state.deliver_refresh(self.state)
+            if isinstance(host_info, dict):
+                await _state.deliver_host_info(self.state, self.host, dict(host_info))
             return
         if kind == "upsert":
             entry = _state.make_file_entry(self.host, event)
@@ -401,8 +406,14 @@ class RemoteWatcher:
         async with self.state.lock:
             previous = self.state.host_status.get(self.host)
             self.state.host_status[self.host] = status
+            if status == "disconnected":
+                # 接続喪失（heartbeat応答途絶・SSE切断検知等）時は`host_info`のキー自体を削除する
+                # （`None`値保持ではない）。再接続成功時は`_handle_event`のsnapshot分岐で再登録される。
+                self.state.host_info.pop(self.host, None)
         if previous != status:
             await _state.deliver_host_status(self.state, self.host, status)
+            if status == "disconnected":
+                await _state.deliver_host_info(self.state, self.host, None)
 
 
 async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:

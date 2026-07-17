@@ -407,7 +407,7 @@ class TestTbdList:
             atk.main(["fb", "tbd-list", "--status", "unanswered"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md\tgithub.com/example/foo\t[unanswered] q1\n"
+        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [unanswered] q1\n"
 
 
 class TestTbdListSkipPull:

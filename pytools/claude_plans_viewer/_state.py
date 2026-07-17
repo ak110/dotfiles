@@ -25,6 +25,7 @@ class FileEntry:
     name: str
     mtime: str
     mtime_epoch: float
+    ctime_epoch: float
 
 
 @dataclasses.dataclass(slots=True)
@@ -50,11 +51,16 @@ class BroadcastState:
     # 型を`typing.Any`にしているのは`_state` → `_remote`の循環import回避のため
     # （`_remote`が`_state`をimportしているのと逆方向の参照になるため）。
     remote_watchers: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
+    # ホスト名 -> {"root": <ホスト側ROOT絶対パス>, "os_type": "posix"|"nt", "os_name": <os.name値>}。
+    # ローカル分は`_app.py`起動時に即座にセットする。リモート分は初回snapshot受信時に追加し、
+    # 接続喪失時（heartbeat応答途絶・SSE切断検知等）はキー自体を削除する（`None`値保持ではない）。
+    host_info: dict[str, dict[str, str]] = dataclasses.field(default_factory=dict)
 
 
 def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEntry:
     """リモートヘルパー由来のdictを`FileEntry`に変換する。snapshot/upsertの両方から使う。"""
     mtime_epoch = float(item["mtime_epoch"])
+    ctime_epoch = float(item["ctime_epoch"])
     tzinfo = datetime.datetime.now().astimezone().tzinfo
     mtime = datetime.datetime.fromtimestamp(mtime_epoch, tz=tzinfo)
     return FileEntry(
@@ -63,6 +69,7 @@ def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEnt
         name=str(item["name"]),
         mtime=mtime.strftime("%Y/%m/%d %H:%M"),
         mtime_epoch=mtime_epoch,
+        ctime_epoch=ctime_epoch,
     )
 
 
@@ -114,6 +121,16 @@ async def deliver_host_status(state: BroadcastState, host: str, status: str) -> 
     Queue満杯時の破棄も許容する。
     """
     payload = json.dumps({"type": "host-status", "host": host, "status": status}, ensure_ascii=False)
+    await _broadcast(state, payload)
+
+
+async def deliver_host_info(state: BroadcastState, host: str, info: dict[str, str] | None) -> None:
+    """全購読者へ`{"type":"host_info_update","host":...,"info":...}`を配信する。
+
+    `info=None`は該当ホストの`host_info`削除（接続喪失）を意味する。
+    クライアントはこのイベントで`ROOT_DIRS`を更新する（新規APIエンドポイントは設けない）。
+    """
+    payload = json.dumps({"type": "host_info_update", "host": host, "info": info}, ensure_ascii=False)
     await _broadcast(state, payload)
 
 

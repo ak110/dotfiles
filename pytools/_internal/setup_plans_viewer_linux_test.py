@@ -14,11 +14,13 @@ from pytools._internal import setup_plans_viewer_linux
 def _make_subprocess_fake(
     responses: dict[str, subprocess.CompletedProcess[str]],
     calls: list[list[str]],
+    timeouts: list[float | None] | None = None,
 ):
     """run_subprocess の stub を返す。
 
     calls に呼び出し履歴を記録し、responses のキーが cmd 文字列に部分一致するエントリの戻り値を返す。
     一致しない場合は returncode=0 の空 CompletedProcess を返す。
+    timeouts を渡した場合は呼び出しごとの timeout 引数もそこへ記録する。
     """
 
     def fake(
@@ -28,8 +30,10 @@ def _make_subprocess_fake(
         cwd: Path | None = None,
         tag: str | None = None,
     ) -> subprocess.CompletedProcess[str] | None:
-        del timeout, cwd, tag
+        del cwd, tag
         calls.append(list(cmd))
+        if timeouts is not None:
+            timeouts.append(timeout)
         cmd_key = " ".join(cmd)
         for pattern, result in responses.items():
             if pattern in cmd_key:
@@ -179,6 +183,8 @@ class TestRunUnitDeployment:
         assert "[Service]" in content
         assert "[Install]" in content
         assert "claude-plans-viewer" in content
+        assert "KillMode=mixed" in content
+        assert "TimeoutStopSec=10" in content
 
         cmd_strings = [" ".join(c) for c in calls]
         assert any("daemon-reload" in s for s in cmd_strings)
@@ -241,6 +247,35 @@ class TestRunUnitDeployment:
         cmd_strings = [" ".join(c) for c in calls]
         assert any("daemon-reload" in s for s in cmd_strings)
         assert any(s.endswith("restart claude-plans-viewer.service") for s in cmd_strings)
+
+    def test_restart_uses_longer_timeout_than_other_calls(
+        self,
+        prepared: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """restart のみ timeout=30.0、daemon-reload・enable は timeout=15.0 で呼ばれること。
+
+        sshトンネル子孫プロセス残留による停止上限超過を回避するため、
+        restart のタイムアウトのみ延長している。
+        """
+        del prepared  # フィクスチャ効果（環境セットアップ）のみ使用する
+        calls: list[list[str]] = []
+        timeouts: list[float | None] = []
+        monkeypatch.setattr(
+            setup_plans_viewer_linux.claude_common,
+            "run_subprocess",
+            _make_subprocess_fake({"Linger": _ok(stdout="Linger=yes\n")}, calls, timeouts),
+        )
+
+        result = setup_plans_viewer_linux.run()
+
+        assert result is True
+        for cmd, timeout in zip(calls, timeouts, strict=True):
+            cmd_string = " ".join(cmd)
+            if cmd_string.endswith("restart claude-plans-viewer.service"):
+                assert timeout == 30.0
+            elif "daemon-reload" in cmd_string or cmd_string.endswith("enable claude-plans-viewer.service"):
+                assert timeout == 15.0
 
 
 class TestLingerWarning:

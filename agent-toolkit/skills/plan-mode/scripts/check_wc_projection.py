@@ -182,10 +182,6 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     # ルート配下のパスは除外したうえで残余のみ警告する（警告のみで違反件数には計上しない）。
     _check_absolute_paths_with_allowed_roots(plan_path, text)
 
-    # 同一ファイルへ[現行]/[置換後]置換ペア経路と[現行]/[削除根拠]削除ペア経路が混在する場合、
-    # 見込み行数検算経路の統一を促す警告を出力する（警告のみで違反件数には計上しない）。
-    _check_projection_path_uniformity(plan_path, text)
-
     projected_map, blocks, orphan_paths = _parse_plan_file(text)
 
     grouped: dict[str, list[tuple[str, str]]] = {}
@@ -269,67 +265,6 @@ def _check_absolute_paths_with_allowed_roots(plan_path: pathlib.Path, text: str)
         print(
             f"{plan_path}: [warn] 対象ファイル一覧に許容ルート未宣言の絶対パスを検出: {joined}。"
             f"`<!-- allowed-repo-root: /abs/path -->`宣言で許容するか相対パスへ修正する",
-            file=sys.stderr,
-        )
-    return 0
-
-
-def _check_projection_path_uniformity(plan_path: pathlib.Path, text: str) -> int:
-    """同一ファイル内で置換ペア経路と削除ペア経路が混在する場合、経路統一を促す警告を出力する。
-
-    引数順・戻り値型規約は`(plan_path: pathlib.Path, text: str) -> int`とする。
-    常に0を返し、違反件数の集計には影響させない設計とする（警告は情報提供扱い）。
-    見込み行数検算経路の統一（`[現行]`/`[置換後]`置換ペアと`[現行]`/`[削除根拠]`削除ペアの
-    どちらか片方への集約）を促し、混在検出時に警告する。
-    """
-    section = _extract_section(text, "## 変更内容")
-    if section is None:
-        return 0
-    # ファイルごとに、置換ペア出現と削除ペア出現の有無を集計する。
-    replacement_pair_files: set[str] = set()
-    deletion_pair_files: set[str] = set()
-    known_paths = _collect_known_paths(section)
-    lines = section.splitlines()
-    n = len(lines)
-    current_path: str | None = None
-    pending_current = False
-    i = 0
-    while i < n:
-        line = lines[i]
-        m_h3 = _H3_RE.match(line)
-        if m_h3:
-            path = m_h3.group("path")
-            current_path = path if path in known_paths else None
-            pending_current = False
-            i += 1
-            continue
-        m_open = TEXT_FENCE_OPEN_RE.match(line)
-        if m_open:
-            open_marker = m_open.group(1)
-            i += 1
-            content_lines: list[str] = []
-            while i < n and not is_matching_close(open_marker, lines[i]):
-                content_lines.append(lines[i])
-                i += 1
-            i += 1
-            label = _leading_label(content_lines)
-            if label == "current":
-                pending_current = True
-            elif label in {"replacement", "replacement-full"} and pending_current and current_path is not None:
-                replacement_pair_files.add(current_path)
-                pending_current = False
-            elif label == "deletion" and pending_current and current_path is not None:
-                deletion_pair_files.add(current_path)
-                pending_current = False
-            elif label is not None:
-                pending_current = False
-            continue
-        i += 1
-    mixed = replacement_pair_files & deletion_pair_files
-    for path in sorted(mixed):
-        print(
-            f"{plan_path}: [warn] {path} で`[現行]`/`[置換後]`置換ペアと"
-            f"`[現行]`/`[削除根拠]`削除ペアが混在。見込み行数検算経路をどちらかへ統一する",
             file=sys.stderr,
         )
     return 0
@@ -728,6 +663,16 @@ def _new_addition_reduction_entry() -> dict[str, int]:
     }
 
 
+def compute_expected_line_count(current: int, counted: dict[str, int]) -> int:
+    """宣言済み現行行数と`extract_addition_reduction_blocks`集計から計算見込み行数を算出する。
+
+    `現行行数 + 追記行数 - 縮減対象行数`の単一算出式をSSOTとして公開し、
+    乖離検出（`_check_addition_reduction_projection`）と文書サイズ上限検査
+    （`check_plan_file._check_document_size_upper_limit`）の両方から共有利用する。
+    """
+    return current + counted.get("addition", 0) - counted.get("reduction", 0)
+
+
 def extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]:
     """`## 変更内容`H3節配下の追記/縮減対象textブロックをファイルごとに集計する。
 
@@ -742,10 +687,11 @@ def extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]
     既存の`new`ラベル（`_leading_label`が非Noneを返すブロック）は対象外とする。
     `[現行]`→`[置換後]`ペアは行数差を追記量または縮減量へ算入する。
     縮減対象見出し配下のブロックはトリガー文継続中でも縮減対象を優先する。
-    上記経路とは独立に、`## 変更内容`H3節配下で[現行]→[削除根拠]のペア出現を検出した場合、
-    直前の[現行]ブロックの行数（先頭ラベル行および位置注記1行の除外後）を縮減対象行数へ加算する
+    `## 変更内容`H3節配下で[現行]→[削除根拠]のペア出現を検出した場合も、[現行]→[置換後]ペアと同型の
+    diff計算経路（置換後文言を空リストとして扱う）で処理し、直前の[現行]ブロックの行数
+    （先頭ラベル行および位置注記1行の除外後）を縮減対象行数へ加算する
     （削除パターンの[削除根拠]ブロック自体は`_leading_label`経由で対比対象外のため、
-    `_preceding_label_for_addition_reduction`側の縮減判定とは経路分離し二重集計を避ける）。
+    `_preceding_label_for_addition_reduction`側の縮減判定とは別経路で処理し二重集計を避ける）。
     戻り値はファイルパスをキーとし、addition（ラベル付き＋ラベルなし追記行数合計）・
     addition_labelled（`[追記]`ラベル起源の追記行数）・addition_labelless（トリガー継続・
     追記見出し由来のラベルなし追記行数）・reduction（縮減対象行数合計）を値に持つ辞書。
@@ -805,11 +751,19 @@ def extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]
             leading = _leading_label(content_lines)
             if leading == "current":
                 pending_current = content_lines
-            elif leading in {"replacement", "replacement-full"} and pending_current is not None and current_path is not None:
+            elif (
+                leading in {"replacement", "replacement-full", "deletion"}
+                and pending_current is not None
+                and current_path is not None
+            ):
+                # 削除ペア（[現行]＋[削除根拠]）も置換ペア（[現行]＋[置換後]）と同型の
+                # diff計算経路で処理する。削除ペアは置換後文言を空リストとして扱う。
                 current_lines_effective: list[str] = list(pending_current)
                 if current_lines_effective and _leading_label(current_lines_effective) is not None:
                     current_lines_effective = current_lines_effective[1:]
-                replacement_lines_effective: list[str] = list(content_lines)
+                if current_lines_effective and _ANNOTATION_ONLY_RE.match(current_lines_effective[0].strip()):
+                    current_lines_effective = current_lines_effective[1:]
+                replacement_lines_effective: list[str] = [] if leading == "deletion" else list(content_lines)
                 if replacement_lines_effective and _leading_label(replacement_lines_effective) is not None:
                     replacement_lines_effective = replacement_lines_effective[1:]
                 diff = len(replacement_lines_effective) - len(current_lines_effective)
@@ -820,16 +774,6 @@ def extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]
                 elif diff < 0:
                     entry["reduction"] += -diff
                 entry["replacement_pair_count"] += 1
-                pending_current = None
-            elif leading == "deletion" and current_path is not None:
-                pending_lines = pending_current
-                if pending_lines is not None:
-                    entry = result.setdefault(current_path, _new_addition_reduction_entry())
-                    if pending_lines and _leading_label(pending_lines) is not None:
-                        pending_lines = pending_lines[1:]
-                    if pending_lines and _ANNOTATION_ONLY_RE.match(pending_lines[0].strip()):
-                        pending_lines = pending_lines[1:]
-                    entry["reduction"] += len(pending_lines)
                 pending_current = None
             elif leading is not None:
                 pending_current = None
@@ -938,7 +882,7 @@ def _check_addition_reduction_projection(plan_path: pathlib.Path, text: str) -> 
         if counted["addition"] == 0 and counted["reduction"] == 0:
             continue
         current, projected = bounds[path]
-        expected = current + counted["addition"] - counted["reduction"]
+        expected = compute_expected_line_count(current, counted)
         drift = expected - projected
         if abs(drift) > _ALLOWED_DRIFT:
             print(

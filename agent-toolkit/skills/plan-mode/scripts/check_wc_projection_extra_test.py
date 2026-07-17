@@ -307,6 +307,24 @@ class TestFrontmatterLabelExtraction:
         assert result.returncode == 0, result.stderr
 
 
+class TestDeletionPairUnifiedAccounting:
+    """削除ペアが置換ペアと同型の`diff`計算経路へ統合されたことを検証する（FB1）。"""
+
+    def test_deletion_pair_counted_into_replacement_pair_count(self) -> None:
+        """`[削除根拠]`ペアも`replacement_pair_count`へ計上される。"""
+        section = (
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+            "### `foo.md`\n\n"
+            "```text\n[現行]\nold1\nold2\n```\n\n"
+            "```text\n[削除根拠]\n冗長なため削除する\n```\n"
+        )
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["foo.md"]["replacement_pair_count"] == 1
+        assert result["foo.md"]["reduction"] == 2
+        assert result["foo.md"]["addition"] == 0
+
+
 class TestVariableLengthFence:
     """可変長フェンス（4バッククォート以上）のfence内側形式対応を検証する。"""
 

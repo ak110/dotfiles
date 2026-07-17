@@ -26,8 +26,9 @@
 - `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
 - `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）。
   警告出力のみでexit codeへ算入しない
-- `_check_document_size_upper_limit`: `## 変更内容`対象ファイル一覧の見込み行数が220行超過の`.md`ファイルに
-  ついて、対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
+- `_check_document_size_upper_limit`: `## 変更内容`対象ファイル一覧の宣言済み見込み行数、
+  および追記/縮減対象集計からの計算見込み行数のいずれかが220行超過する`.md`ファイルについて、
+  対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
   （体裁・構成寄りの指摘のためwarning出力のみとしexit codeへ算入しない）
 - `_check_version_bump_matrix`: `## 変更内容`対象ファイル一覧が`agent-toolkit/`配下の`.md`ファイルを
   含む計画で、`ファイル・改訂節数・節名・判定・該当基準`の5列表または`scripts/agent_toolkit_bump.py`の
@@ -187,13 +188,8 @@ def _run_subprocess_check(cmd: list[str], label: str, *, blocking: bool = True) 
     return 1 if blocking else 0
 
 
-# `### 対象ファイル一覧`または`### 対象ファイルの現状`直下のチェックボックス/バレット項目から
-# ファイルパスと見込み行数を抽出する。見込み行数チェックボックス表記（`（現行N行, 見込みM行）`）と
-# 現状記述バレット表記（`- \`path\`: 現行N行`）のどちらも受理する。
-_PROJECTION_CHECKBOX_RE = re.compile(
-    r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*"
-    r"[（(](?:現行\d+行|新設),\s*見込み?(?P<projected>\d+)行[）)]"
-)
+# `### 対象ファイルの現状`直下のバレット項目からファイルパスと現行行数を抽出する
+# （`- \`path\`: 現行N行`形式。対象ファイル一覧のチェックボックス確定前の調査段階記述）。
 _CURRENT_LINES_BULLET_RE = re.compile(r"^-\s*`(?P<path>[^`]+)`\s*[:：]\s*現行(?P<current>\d+)行")
 
 # `#### 縮減対象`H4見出し（見出し行）。ファイル名注記の有無を問わず一致する。
@@ -221,23 +217,15 @@ _TEST_FILE_SUFFIX = "_test.py"
 _TEST_PAIRING_EXCLUDES = frozenset({"__init__.py", "_test_helpers.py"})
 
 
-def _collect_projected_files(text: str) -> list[tuple[str, int]]:
-    """計画本文から(相対パス, 見込み行数)一覧を抽出する。
+def _collect_current_bullet_files(text: str) -> list[tuple[str, int]]:
+    r"""`### 対象ファイルの現状`バレット記述`- \`path\`: 現行N行`から(相対パス, 現行行数)一覧を抽出する。
 
-    `### 対象ファイル一覧`のチェックボックス項目の見込み行数、および
-    `### 対象ファイルの現状`のバレット記述の現行行数の両方を対象とする。
-    現状記述は「見込み」ではないが、見込み220行超過判定の入力として同等に扱う。
+    対象ファイル一覧のチェックボックス確定前の調査段階記述であり、見込み値は持たないため
+    現行行数のみを220行超過判定の入力として扱う（`_check_document_size_upper_limit`が利用する）。
     """
-    results: list[tuple[str, int]] = []
-    for line in text.splitlines():
-        m = _PROJECTION_CHECKBOX_RE.match(line)
-        if m:
-            results.append((m.group("path"), int(m.group("projected"))))
-            continue
-        m_cur = _CURRENT_LINES_BULLET_RE.match(line)
-        if m_cur:
-            results.append((m_cur.group("path"), int(m_cur.group("current"))))
-    return results
+    return [
+        (m.group("path"), int(m.group("current"))) for line in text.splitlines() if (m := _CURRENT_LINES_BULLET_RE.match(line))
+    ]
 
 
 def _extract_target_file_paths(text: str) -> list[str]:
@@ -267,17 +255,38 @@ def _extract_target_file_paths(text: str) -> list[str]:
 def _check_document_size_upper_limit(plan_path: pathlib.Path, text: str) -> None:
     """220行超過の`.md`対象ファイルに対し縮減対象H4または追記量圧縮の明示があるかを検査する。
 
-    見込み行数（またはそれ相当の現行行数）が`_DOCUMENT_SIZE_UPPER_LIMIT`を超過する`.md`ファイルを検出し、
-    計画本文に`#### 縮減対象`H4見出しまたは「追記量圧縮」の記述が1件もない場合にwarningとして報告する。
-    体裁・構成寄りの指摘のためexit codeへは算入しない
+    宣言済み見込み行数（`### 対象ファイル一覧`チェックボックスの`見込みM行`）と、
+    `check_wc_projection.extract_addition_reduction_blocks`による追記/縮減対象集計から算出する
+    計算見込み（`宣言済み現行行数 + 追記行数 - 縮減対象行数`）の両方を`_DOCUMENT_SIZE_UPPER_LIMIT`と比較し、
+    いずれか一方でも超過する場合を対象とする。計画執筆時点で対比ブロックへ書ききれていない超過を
+    宣言値だけの照合では見逃すため、実績集計からの計算見込みも併用する。
+    対象ファイルに`#### 縮減対象`H4見出しまたは「追記量圧縮」の記述が計画本文に1件もない場合に
+    warningとして報告する。体裁・構成寄りの指摘のためexit codeへは算入しない
     （判定根拠は`agent-toolkit:agent-standards`配下`references/check-script-design.md`
     「検査項目のerror・warning区分」節を参照する）。
+    `### 対象ファイルの現状`バレット記述（チェックボックス確定前の調査段階記述）は宣言済み見込み値を
+    持たないため、従来どおり現行行数のみで超過判定する。
     """
-    over_files = [
-        (path, projected)
-        for path, projected in _collect_projected_files(text)
-        if projected > _DOCUMENT_SIZE_UPPER_LIMIT and (path.endswith(".md") or path.endswith(".md.tmpl"))
-    ]
+    section = check_wc_projection._extract_section(text, "## 変更内容")
+    bounds = check_wc_projection._collect_projection_bounds(section) if section is not None else {}
+    counted_map = check_wc_projection.extract_addition_reduction_blocks(section) if section is not None else {}
+
+    over_files: list[tuple[str, int]] = []
+    for path, (current, projected) in bounds.items():
+        if not (path.endswith(".md") or path.endswith(".md.tmpl")):
+            continue
+        counted = counted_map.get(path, {})
+        computed = check_wc_projection.compute_expected_line_count(current, counted)
+        limit_value = max(projected, computed)
+        if limit_value > _DOCUMENT_SIZE_UPPER_LIMIT:
+            over_files.append((path, limit_value))
+
+    for path, current in _collect_current_bullet_files(text):
+        if path in bounds:
+            continue
+        if current > _DOCUMENT_SIZE_UPPER_LIMIT and (path.endswith(".md") or path.endswith(".md.tmpl")):
+            over_files.append((path, current))
+
     if not over_files:
         return
     has_reduction_heading = any(_REDUCTION_HEADING_RE.match(line) for line in text.splitlines())

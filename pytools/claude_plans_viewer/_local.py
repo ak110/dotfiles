@@ -2,8 +2,8 @@
 
 import asyncio
 import collections
-import datetime
 import html as html_lib
+import os
 import pathlib
 import typing
 
@@ -174,29 +174,46 @@ class MarkdownCache:
         return self._total_bytes
 
 
+def _ctime_epoch(st: os.stat_result) -> float:
+    """作成日時をepoch秒で返す。
+
+    `st_birthtime`（macOS・Windowsで実在し「作成時刻」を表す）を優先し、
+    存在しないプラットフォーム（Linux等）では`st_ctime`（inode変更時刻）へフォールバックする。
+    Linux上のfallback意味論は並列作業時のリネーム・権限変更で更新される制約があるが、
+    実運用では作成時刻に近い値として許容する。
+    """
+    birthtime = getattr(st, "st_birthtime", None)
+    return float(birthtime) if birthtime is not None else float(st.st_ctime)
+
+
+def local_host_info(root: pathlib.Path) -> dict[str, str]:
+    """ローカルホストの`host_info`エントリ（`root`・`os_type`・`os_name`）を組み立てる。
+
+    `_app.py`が起動時に`BroadcastState.host_info`へ登録し、`index()`のJS注入にも使う。
+    `root`はクライアント側のパス結合と表記を統一するため常に`/`区切りへ正規化する。
+    """
+    return {"root": str(root).replace("\\", "/"), "os_type": os.name, "os_name": os.name}
+
+
 def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
-    """`root`から`.md`ファイルを再帰的に探し、更新日時の降順で返す。
+    """`root`から`.md`ファイルを再帰的に探し、作成日時の降順で返す。
 
     `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
     """
-    tzinfo = datetime.datetime.now().astimezone().tzinfo
-    collected: list[tuple[float, _state.FileEntry]] = []
+    collected: list[_state.FileEntry] = []
     for path in root.rglob("*.md"):
         if not path.is_file():
             continue
         st = path.stat()
-        rel = path.relative_to(root).as_posix()
-        mtime = datetime.datetime.fromtimestamp(st.st_mtime, tz=tzinfo)
-        entry = _state.FileEntry(
-            host=host,
-            path=rel,
-            name=path.name,
-            mtime=mtime.strftime("%Y/%m/%d %H:%M"),
-            mtime_epoch=st.st_mtime,
-        )
-        collected.append((st.st_mtime, entry))
-    collected.sort(key=lambda pair: pair[0], reverse=True)
-    return [entry for _, entry in collected]
+        item = {
+            "path": path.relative_to(root).as_posix(),
+            "name": path.name,
+            "mtime_epoch": st.st_mtime,
+            "ctime_epoch": _ctime_epoch(st),
+        }
+        collected.append(_state.make_file_entry(host, item))
+    collected.sort(key=lambda entry: entry.ctime_epoch, reverse=True)
+    return collected
 
 
 def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:

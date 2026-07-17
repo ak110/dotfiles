@@ -89,7 +89,7 @@ class TestNotifyUnansweredTbdsIfAny:
 
         _common.notify_unanswered_tbds_if_any(tmp_path, None)
 
-        assert capsys.readouterr().err == "# tbd\none.md\tgithub.com/example/repo\t[unanswered] 最初の質問\n"
+        assert capsys.readouterr().err == "# tbd\none.md: github.com/example/repo [unanswered] 最初の質問\n"
 
     def test_notifies_matching_unanswered_entries_in_filename_order(
         self,
@@ -104,5 +104,5 @@ class TestNotifyUnansweredTbdsIfAny:
         _common.notify_unanswered_tbds_if_any(tmp_path, "github.com/example/repo")
 
         assert capsys.readouterr().err == (
-            "# tbd\n001.md\tgithub.com/example/repo\t[unanswered] 質問1\n002.md\tgithub.com/example/repo\t[unanswered] 質問2\n"
+            "# tbd\n001.md: github.com/example/repo [unanswered] 質問1\n002.md: github.com/example/repo [unanswered] 質問2\n"
         )

@@ -10,6 +10,7 @@
 
 import base64
 import json
+import os
 import pathlib
 import sys
 import threading
@@ -36,6 +37,25 @@ def _is_target_path(path: pathlib.Path) -> bool:
     return not any(p.startswith(".") for p in rel.parts)
 
 
+def _ctime_epoch(st: os.stat_result) -> float:
+    """作成日時をepoch秒で返す。`st_birthtime`（存在時）を優先し`st_ctime`へフォールバックする。
+
+    詳細は`pytools/claude_plans_viewer/_local.py`の同名関数のdocstringを参照
+    （リモートヘルパーは独立実行スクリプトのためロジックを重複させている）。
+    """
+    birthtime = getattr(st, "st_birthtime", None)
+    return float(birthtime) if birthtime is not None else float(st.st_ctime)
+
+
+def _host_info() -> dict[str, str]:
+    """このリモートホストの`host_info`エントリ（`root`・`os_type`・`os_name`）を組み立てる。
+
+    `root`は`/`区切りへ正規化する（`_local.py`の`local_host_info`と同一の正規化。
+    クライアント側`copySelectedPath`が`root`を`/`区切り前提で解析するため）。
+    """
+    return {"root": str(ROOT.resolve()).replace("\\", "/"), "os_type": os.name, "os_name": os.name}
+
+
 def _scan_entries() -> list[dict[str, typing.Any]]:
     entries: list[dict[str, typing.Any]] = []
     if not ROOT.is_dir():
@@ -51,6 +71,7 @@ def _scan_entries() -> list[dict[str, typing.Any]]:
                 "path": path.relative_to(ROOT).as_posix(),
                 "name": path.name,
                 "mtime_epoch": st.st_mtime,
+                "ctime_epoch": _ctime_epoch(st),
             }
         )
     return entries
@@ -176,6 +197,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
                     "path": path.relative_to(ROOT).as_posix(),
                     "name": path.name,
                     "mtime_epoch": st.st_mtime,
+                    "ctime_epoch": _ctime_epoch(st),
                 }
             )
 
@@ -192,7 +214,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
         observer.schedule(Handler(), str(ROOT), recursive=True)
         observer.start()
     # observer起動後にsnapshotを発行することで、起動以前の変更取りこぼしを排除する。
-    _emit({"type": "snapshot", "entries": _scan_entries()})
+    _emit({"type": "snapshot", "entries": _scan_entries(), "host_info": _host_info()})
 
     ping_thread = threading.Thread(target=ping_loop, daemon=True)
     ping_thread.start()
@@ -203,8 +225,9 @@ def _watch_files() -> int:
     """`watch`サブコマンド: `~/.claude/plans`配下をwatchdogで監視し、行区切りJSONをstdoutへ出力する。
 
     行プロトコル（行区切りJSON）:
-        - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":...}, ...]}
-        - {"type":"upsert","path":..., "name":..., "mtime_epoch":...}
+        - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":..., "ctime_epoch":...}, ...],
+           "host_info":{"root":..., "os_type":..., "os_name":...}}
+        - {"type":"upsert","path":..., "name":..., "mtime_epoch":..., "ctime_epoch":...}
         - {"type":"deleted","path":...}
         - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
     """

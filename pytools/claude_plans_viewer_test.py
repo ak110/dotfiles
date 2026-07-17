@@ -25,8 +25,14 @@ _QUEUE_GET_TIMEOUT_SEC = _BROADCAST_DEBOUNCE_SEC + 0.7
 class TestListFiles:
     """list_files のテスト。"""
 
-    def test_sorts_by_mtime_desc(self, tmp_path: Path):
-        """mtime降順で返ること。"""
+    def test_sorts_by_ctime_desc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """作成日時（ctime）降順で返ること。
+
+        `st_ctime`（Linux上のフォールバック値）は`os.utime`で直接制御できず、
+        `st_birthtime`は環境依存のため、`_local._ctime_epoch`を
+        `st_mtime`の符号反転値（mtime降順とは逆順になる値）へ差し替えて、
+        ソート基準が`mtime_epoch`ではなく`ctime_epoch`であることを決定論的に検証する。
+        """
         old_path = tmp_path / "old.md"
         old_path.write_text("old", encoding="utf-8")
         os.utime(old_path, (1_000.0, 1_000.0))
@@ -35,17 +41,23 @@ class TestListFiles:
         new_path.write_text("new", encoding="utf-8")
         os.utime(new_path, (2_000.0, 2_000.0))
 
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: -st.st_mtime)
+
         entries = _local.list_files(tmp_path, "local-host")
 
-        assert [e.path for e in entries] == ["new.md", "old.md"]
+        # mtime降順なら["new.md", "old.md"]になるはずだが、ctime_epoch降順（mtimeと逆順）を
+        # 使うため["old.md", "new.md"]となる。
+        assert [e.path for e in entries] == ["old.md", "new.md"]
         # mtimeは`yyyy/MM/dd HH:mm`書式で整形される。
         pattern = re.compile(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}$")
         for entry in entries:
             assert pattern.match(entry.mtime), entry.mtime
         # `FileEntry`はサイズを保持しない。
         assert not hasattr(entries[0], "size")
-        # `mtime_epoch`・`host`を保持すること（クライアント側mtime変化検知・多ホスト識別に使用）。
+        # `mtime_epoch`・`ctime_epoch`・`host`を保持すること
+        # （クライアント側mtime変化検知・ソート・多ホスト識別に使用）。
         assert hasattr(entries[0], "mtime_epoch")
+        assert hasattr(entries[0], "ctime_epoch")
         assert all(e.host == "local-host" for e in entries)
 
     def test_includes_only_md(self, tmp_path: Path):
@@ -685,16 +697,22 @@ class TestIndexHtml:
         assert "コピーに失敗しました" in html_src
 
     def test_index_html_has_copy_path_button_contract(self):
-        """右ペインのtoolbarに計画ファイルパスコピーボタンが存在する契約。"""
+        """右ペインのtoolbarに計画ファイルパスコピーボタンが存在する契約。
+
+        `ROOT_DIRS`は複数ホスト分（ローカル起動時注入＋リモート分SSEマージ）のホスト情報辞書契約であり、
+        disabled判定は選択ホストが`ROOT_DIRS`に登録済みかどうかで行う。
+        """
         html_src = _assets.INDEX_HTML
 
         assert 'id="copy-path-btn"' in html_src
         assert "async function copySelectedPath" in html_src
         assert "if (!selectedPath || !selectedHost) return" in html_src
-        assert "const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__" in html_src
-        assert "const ROOT_DIR = __ROOT_DIR_JS__" in html_src
-        assert 'document.getElementById("copy-path-btn").disabled = host !== LOCAL_HOST_NAME' in html_src
+        assert "const ROOT_DIRS = __ROOT_DIRS_JS__" in html_src
+        assert 'document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS)' in html_src
         assert 'document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath)' in html_src
+        # ホスト種別に応じたパス表記変換（POSIXはチルダ、WindowsはUSERPROFILE環境変数）。
+        assert 'info.os_type === "nt"' in html_src
+        assert "%USERPROFILE%" in html_src
 
     def test_index_html_renders_host_and_mtime_in_meta(self):
         """左ペインのmetaが左にホスト名、右にmtimeを並べる。

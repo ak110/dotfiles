@@ -572,9 +572,11 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
     バックスラッシュ・``:``・Windows 流のドライブ表記を含むパスは
     ``pytilpack.zipfile.is_safe_relative_path`` で除外し、failures に追加する。
     NUL 文字は ``decode_zipinfo_filename`` 側で切り詰められて吸収される。
+    ignoreフィルタ適用後の対象エントリが0件の場合は ``ValueError`` を送出する。
     """
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[EntryFailure] = []
+    target_count = 0
     with zipfile.ZipFile(archive) as zf:
         infos = list(
             natsort.natsorted(
@@ -598,6 +600,7 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                 ignore_path = normalized + "/" if is_dir else normalized
                 if compiled.should_ignore_entry(ignore_path):
                     continue
+                target_count += 1
                 try:
                     out_path = dest / normalized
                     if is_dir:
@@ -609,6 +612,8 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                 except OSError as e:
                     failures.append((entry_path, "error", str(e)))
                     logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+    if target_count == 0:
+        raise ValueError("対象ファイルが0件のためスキップします")
     return failures
 
 
@@ -621,6 +626,7 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
 
     展開順は元アーカイブ記録順のまま据え置く（逐次走査制約のため事前ソート不可）。
     最終ZIPのnatsort順揃えは後段の ``_write_uncompressed_zip`` が担当する。
+    ignoreフィルタ適用後の対象エントリが0件の場合は ``ValueError`` を送出する。
     """
     libarchive = _load_libarchive()
     count = 0
@@ -629,6 +635,7 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
             count += 1
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[EntryFailure] = []
+    target_count = 0
     with (
         tqdm.tqdm(total=count, desc="extract", unit="file", ascii=True, ncols=100) as pbar,
         libarchive.file_reader(str(archive)) as reader,
@@ -640,6 +647,7 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
                 continue
             if compiled.should_ignore_entry(entry_path):
                 continue
+            target_count += 1
             try:
                 out_path = dest / entry_path
                 if entry.isdir:
@@ -652,6 +660,8 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
             except OSError as e:
                 failures.append((entry_path, "error", str(e)))
                 logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+    if target_count == 0:
+        raise ValueError("対象ファイルが0件のためスキップします")
     return failures
 
 
@@ -660,13 +670,16 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
 
     走査順は POSIX 区切りの相対パスを natsort キーとする自然順に揃える。
     個別ファイルの ``OSError`` は捕捉して (相対パス, severity, エラー文字列) のリストとして返す。
+    ignoreフィルタ適用後の対象ファイルが0件の場合は ``ValueError`` を送出する。
     """
     dest.mkdir(parents=True, exist_ok=True)
     failures: list[EntryFailure] = []
+    target_count = 0
     items = list(natsort.natsorted(src.rglob("*"), key=lambda p: p.relative_to(src).as_posix()))
     for item in items:
         if compiled.should_ignore_path(item, root=src):
             continue
+        target_count += 1
         rel = item.relative_to(src)
         try:
             target = dest / rel
@@ -678,6 +691,8 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
         except OSError as e:
             failures.append((rel.as_posix(), "error", str(e)))
             logger.warning("%s: エントリコピー失敗: %s (%s)", src.name, rel, e)
+    if target_count == 0:
+        raise ValueError("対象ファイルが0件のためスキップします")
     return failures
 
 

@@ -7,12 +7,13 @@
 import datetime
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator
 
-from _atk_fb_formatters import _parse_target_repo, _tbd_body_summary
+from _atk_fb_formatters import _display_width, _parse_target_repo, _tbd_body_summary
 
 # フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
 # - `inbox`: 未処理の投入直後
@@ -243,7 +244,9 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         return
     print("# tbd", file=sys.stderr)
     for path, entry_repo, text in entries:
-        print(f"{path.name}\t{entry_repo}\t[unanswered] {_tbd_body_summary(text)}", file=sys.stderr)
+        prefix = f"{path.name}: {entry_repo} [unanswered] "
+        available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+        print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 
 
 def _count_pending_entries(

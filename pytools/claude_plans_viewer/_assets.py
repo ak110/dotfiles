@@ -207,7 +207,7 @@ _INDEX_CSS = """\
 # 主な責務:
 # - ファイル一覧の取得・描画・フィルタ
 # - 選択中ファイルのプレビュー表示・コピー
-# - SSE経由のリアルタイム更新（refresh/host-status）
+# - SSE経由のリアルタイム更新（refresh/host-status/host_info_update）
 # - タブ復帰時の強制再同期（バックグラウンドthrottling対策。`visibilitychange`/`focus`の2系統）
 # - 大量件数時の段階展開描画（番兵要素を`IntersectionObserver`で監視し、表示上限を100件単位で拡張）
 # - モバイル時のドロワー開閉と上部メタ表示
@@ -217,7 +217,9 @@ _INDEX_JS = """\
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 const BASE_PATH = __BASE_PATH_JS__;
 const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
-const ROOT_DIR = __ROOT_DIR_JS__;
+// ホスト名 -> {root, os_type}。ページロード時はローカル分のみ注入され、
+// リモート分はSSE経由の`host_info_update`イベントで受信のたびに反映される。
+const ROOT_DIRS = __ROOT_DIRS_JS__;
 
 let files = [];
 // ホスト名とパスの組で一意に識別する。
@@ -495,7 +497,8 @@ async function openFile(host, path) {
   const selected = files.find(f => f.host === host && f.path === path);
   selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
-  document.getElementById("copy-path-btn").disabled = host !== LOCAL_HOST_NAME;
+  // 選択ホストの`host_info`未取得（リモート接続確立前）はdisabled維持する。
+  document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS);
   updateNavButtons();
   updateMetaMobile();
 }
@@ -529,10 +532,20 @@ async function copySelectedRaw() {
 
 async function copySelectedPath() {
   if (!selectedPath || !selectedHost) return;
+  const info = ROOT_DIRS[selectedHost];
+  if (!info) return;
   const btn = document.getElementById("copy-path-btn");
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
-  const absolutePath = ROOT_DIR + "/" + selectedPath;
+  // ホスト種別に応じてチルダ表記（POSIX）または%USERPROFILE%表記（Windows）へ変換する。
+  let absolutePath;
+  if (info.os_type === "nt") {
+    const winRoot = info.root.split("/").join("\\\\");
+    const winRelative = selectedPath.split("/").join("\\\\");
+    absolutePath = (winRoot + "\\\\" + winRelative).replace(winRoot, "%USERPROFILE%");
+  } else {
+    absolutePath = (info.root + "/" + selectedPath).replace(info.root, "~");
+  }
   try {
     await navigator.clipboard.writeText(absolutePath);
     btn.textContent = "コピーしました";
@@ -563,12 +576,23 @@ async function handleSseMessage(event) {
     renderFiles();
     return;
   }
+  if (payload && payload.type === "host_info_update") {
+    if (payload.info === null) {
+      delete ROOT_DIRS[payload.host];
+    } else {
+      ROOT_DIRS[payload.host] = payload.info;
+    }
+    if (selectedHost === payload.host) {
+      document.getElementById("copy-path-btn").disabled = !(selectedHost in ROOT_DIRS);
+    }
+    return;
+  }
   await resyncFromServer();
 }
 
 function connectEvents() {
   const es = new EventSource(BASE_PATH + "/api/events");
-  // EventSourceは接続断後にブラウザが自動再接続を行うが、再接続中に発生したSSEイベントは
+  // EventSourceは接続断後にブラウザが自動再接続するが、再接続中に発生したSSEイベントは
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
     await refreshHostStatus();

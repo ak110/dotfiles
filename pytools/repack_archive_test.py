@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import struct
 import sys
+import tarfile
 import zipfile
 
 import PIL.Image
@@ -717,6 +718,102 @@ class TestMainFailureSummary:
         summary = "\n".join(r.getMessage() for r in caplog.records)
         assert "失敗したターゲット" in summary
         assert str(bad) in summary
+
+
+def _make_tar(path: pathlib.Path, entries: dict[str, bytes]) -> None:
+    with tarfile.open(path, "w") as tf:
+        for name, data in entries.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+
+class TestZeroTargetAfterFilter:
+    """フィルタ後の対象件数が 0 件の場合に ``ValueError`` で当該 target をスキップする挙動の検証。
+
+    3経路 (``_extract_zip`` / ``_extract_with_libarchive`` / ``_copy_filtered``) それぞれで、
+    全エントリが ignore 対象になり展開・コピー対象が 0 件になるケースを再現する。
+    ``main()`` の try/except が ``ValueError`` を捕捉して ``failed_targets`` に集約し、
+    後続 target の処理を継続することを、良好な target との同時実行で検証する。
+    """
+
+    def test_extract_zip_all_ignored_raises(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_extract_zip`` 経路: ZIP 内の全エントリが ignore_files に一致し 0 件になる。"""
+        good = tmp_path / "good.zip"
+        _make_zip(good, {"keep.txt": b"k"})
+        empty = tmp_path / "empty.zip"
+        _make_zip(empty, {"drop.pdf": b"p"})
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['*.pdf']\n", encoding="utf-8")
+
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(good), str(empty)],
+        )
+        assert exit_code == 1
+        # 良好な target は処理が継続され出力 ZIP が残る
+        assert _zip_entries(tmp_path / "good.zip") == {"keep.txt"}
+        # 対象 0 件の target は failed_targets に集約される
+        summary = "\n".join(r.getMessage() for r in caplog.records)
+        assert "対象ファイルが0件のためスキップします" in summary
+        assert str(empty) in summary
+
+    def test_extract_with_libarchive_all_ignored_raises(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_extract_with_libarchive`` 経路: tar 内の全エントリが ignore_files に一致し 0 件になる。"""
+        good = tmp_path / "good.zip"
+        _make_zip(good, {"keep.txt": b"k"})
+        empty = tmp_path / "empty.tar"
+        _make_tar(empty, {"drop.pdf": b"p"})
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['*.pdf']\n", encoding="utf-8")
+
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(good), str(empty)],
+        )
+        assert exit_code == 1
+        assert _zip_entries(tmp_path / "good.zip") == {"keep.txt"}
+        summary = "\n".join(r.getMessage() for r in caplog.records)
+        assert "対象ファイルが0件のためスキップします" in summary
+        assert str(empty) in summary
+
+    def test_copy_filtered_all_ignored_raises(
+        self,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_copy_filtered`` 経路: ディレクトリ内の全ファイルが ignore_files に一致し 0 件になる。"""
+        good = tmp_path / "good.zip"
+        _make_zip(good, {"keep.txt": b"k"})
+        empty_dir = tmp_path / "empty_book"
+        empty_dir.mkdir()
+        (empty_dir / "drop.pdf").write_bytes(b"p")
+        config_yaml = tmp_path / "repack-archive.yaml"
+        config_yaml.write_text("ignore_files: ['*.pdf']\n", encoding="utf-8")
+
+        caplog.set_level(logging.WARNING, logger=repack_archive.logger.name)
+        exit_code = _run_main(
+            monkeypatch,
+            ["--no-trash", "--config", str(config_yaml), str(good), str(empty_dir)],
+        )
+        assert exit_code == 1
+        assert _zip_entries(tmp_path / "good.zip") == {"keep.txt"}
+        summary = "\n".join(r.getMessage() for r in caplog.records)
+        assert "対象ファイルが0件のためスキップします" in summary
+        assert str(empty_dir) in summary
 
 
 @pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="Poppler (pdftoppm) 未導入")

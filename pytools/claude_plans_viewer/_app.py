@@ -92,6 +92,9 @@ def create_app(
     state.host_status[resolved_hostname] = "connected"
     for host in remote_host_list:
         state.host_status[host] = "connecting"
+    # ローカルホスト分の`host_info`は起動時に即座にセットする。
+    # リモート分は接続確立時（初回snapshot受信）にRemoteWatcher側で追加する。
+    state.host_info[resolved_hostname] = _local.local_host_info(root)
 
     # app.configに格納してモジュールレベルの可変状態を避ける。
     # ルートハンドラからは`quart.current_app.config`経由で参照する。
@@ -128,15 +131,16 @@ def create_app(
     @app.get("/")
     async def index() -> quart.Response:
         base_path = safe_base_path(quart.request.root_path)
-        # `selectedPath`はPOSIX形式で保持されるため、Windows上でもコピーする絶対パスの区切りを統一する。
-        root_for_js = str(root).replace("\\", "/")
+        # ページロード時はローカル分`host_info`のみを注入する。リモート分はSSE経由の
+        # `host_info_update`イベントで随時反映する（新規APIエンドポイントは設けない）。
+        root_dirs_js = {resolved_hostname: state.host_info[resolved_hostname]}
         # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
         # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
         body = (
             _assets.INDEX_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
             .replace("__BASE_PATH_JS__", json.dumps(base_path))
             .replace("__LOCAL_HOST_NAME_JS__", json.dumps(resolved_hostname))
-            .replace("__ROOT_DIR_JS__", json.dumps(root_for_js))
+            .replace("__ROOT_DIRS_JS__", json.dumps(root_dirs_js, ensure_ascii=False))
         )
         return quart.Response(body, content_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
 
@@ -201,7 +205,7 @@ def create_app(
             for cached in state.remote_files.values():
                 remote_entries.extend(cached)
         merged = local_entries + remote_entries
-        merged.sort(key=lambda e: e.mtime_epoch, reverse=True)
+        merged.sort(key=lambda e: e.ctime_epoch, reverse=True)
         body = json.dumps([dataclasses.asdict(e) for e in merged], ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 

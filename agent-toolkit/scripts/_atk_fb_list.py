@@ -6,6 +6,7 @@
 
 import argparse
 import pathlib
+import shutil
 
 from _atk_fb_common import (
     FEEDBACK_ACTIVE_STATES,
@@ -18,7 +19,7 @@ from _atk_fb_common import (
     _iter_inbox_entries,
     _pull,
 )
-from _atk_fb_formatters import _body_summary, _tbd_body_summary
+from _atk_fb_formatters import _body_summary, _display_width, _tbd_body_summary
 from _atk_fb_repo import _resolve_repo_id
 
 
@@ -55,7 +56,9 @@ def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
     print("# tbd")
     for path, target_repo, text in entries:
         label = "answered" if _is_tbd_answered(text) else "unanswered"
-        print(f"{path.name}\t{target_repo}\t[{label}] {_tbd_body_summary(text)}")
+        prefix = f"{path.name}: {target_repo} [{label}] "
+        available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+        print(f"{prefix}{_tbd_body_summary(text, available_width)}")
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -131,6 +134,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if feedback_entries_with_state:
         print("# feedback")
         for path, target_repo, text, state in feedback_entries_with_state:
-            print(f"{path.name}\t{target_repo}\t[{state}] {_body_summary(text)}")
+            prefix = f"{path.name}: {target_repo} [{state}] "
+            available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+            print(f"{prefix}{_body_summary(text, available_width)}")
 
     _render_tbd_entries(tbd_entries)

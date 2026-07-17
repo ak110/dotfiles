@@ -212,9 +212,9 @@
   - 本項の固定書式表を汎用定義のSSOTとし、`careful-review/SKILL.md`等の列名整合は個別委譲で扱う
 - サブエージェント委譲の可否・委譲先エージェントの選択・並列度・model選択は技術判断として自律決定する。
   詳細は`agent-toolkit/rules/02-collaboration.md`の「実装手順の詳細」項（技術判断・自律決定原則のSSOT）を参照する
-- 長時間検証プロセス（`pyfltr`・`pytest`・ビルド・CI等）の完了検知は単発`ps`スナップショット依存を避ける。
-  ブロッキング完了検知パターンを用いる。代表例は`wait <PID>`・`until ! ps -p <PID>; do sleep <n>; done`等とする。
-  Monitor toolの`until <check>; do sleep; done`・`run_in_background`+完了通知等も用いる
+- 長時間検証プロセスの完了検知パターンは`agent-toolkit/rules/01-agent.md`完遂原則配下の
+  `長時間実行コマンド（検証・ビルド・CIポーリング等）`バレットに従う。Claude Code固有事項として、
+  Monitor toolを完了検知の代表例に含め、`idle_notification`の扱いは以下のサブバレットに従う
   - `idle_notification`送信後に呼び出し元から催促された場合、経過時間ベースの推測で「まだ実行中」と返さず
     `ps -p`または該当プロセスの終了ステータスを実測してから応答する
   - 単発`ps`確認1回だけで以降の状態変化を推測しない
