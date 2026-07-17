@@ -1,8 +1,9 @@
 """agent-toolkit/scripts/posttooluse.py のテスト。
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
-plan file形式検査・SSOT検査・codex-review.md読み込み追跡は
-`posttooluse_plan_format_test.py`へ分割している。
+plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
+Agent/Task起動セッション状態フラグ記録は`posttooluse_codex_flags_test.py`、
+`session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へそれぞれ分割している。
 """
 
 import functools
@@ -273,55 +274,6 @@ class TestSessionReviewSkillInvocation:
         state = _read_state(tmp_path, sid)
         assert state == {"session_review_invoked": {self._REVIEW_SKILL: True}, "other": "keep"}
         assert path.stat().st_mtime_ns == mtime_before
-
-
-class TestAgentInvocationFlags:
-    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize(
-        ("subagent_type", "flag_key"),
-        [
-            ("plan-reviewer", "plan_reviewer_invoked"),
-            ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
-            ("plan-impl-reviewer", "plan_impl_reviewer_invoked"),
-            ("agent-toolkit:plan-impl-reviewer", "plan_impl_reviewer_invoked"),
-            ("agent-doc-validator", "agent_doc_validator_invoked"),
-            ("agent-toolkit:agent-doc-validator", "agent_doc_validator_invoked"),
-            ("plan-codex-reviewer", "codex_review_invoked"),
-            ("agent-toolkit:plan-codex-reviewer", "codex_review_invoked"),
-        ],
-    )
-    def test_subagent_type_flag(self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str):
-        sid = f"{tool_name.lower()}-{subagent_type.replace(':', '-')}"
-        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get(flag_key) is True
-
-    def test_codex_review_flag_via_mcp(self, tmp_path: pathlib.Path):
-        sid = "codex-review-via-mcp"
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
-
-    def test_codex_review_not_recorded_via_mcp_when_sidechain(self, tmp_path: pathlib.Path):
-        """`isSidechain`が真（`plan-codex-implementer`内部呼び出し）の場合、`codex_review_invoked`を記録しない。
-
-        `isSidechain`が偽の場合に記録される挙動（従来どおり）は`test_codex_review_flag_via_mcp`で検証済み。
-        """
-        sid = "codex-sidechain-mcp-no-review-flag"
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path, tool_name: str):
-        sid = f"{tool_name.lower()}-other-subagent"
-        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is not True
-        assert state.get("plan_impl_reviewer_invoked") is not True
-        assert state.get("agent_doc_validator_invoked") is not True
-        assert state.get("codex_review_invoked") is not True
 
 
 class TestSubagentEndProcessLoopLog:

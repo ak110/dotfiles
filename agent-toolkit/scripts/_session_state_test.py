@@ -158,3 +158,20 @@ class TestReadState:
     def test_non_dict_payload_returns_empty(self) -> None:
         state_path("array").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
         assert read_state("array") == {}
+
+
+def test_session_state_persists_new_codex_flags() -> None:
+    """FB[4]: 新規追加フラグ(plan_codex_reviewer_invoked/blocked, recorded_codex_thread_id)が永続化されることを確認する。"""
+    session_id = "test-fb4-session"
+
+    def _set(state: dict) -> dict | None:
+        state["plan_codex_reviewer_invoked"] = True
+        state["plan_codex_reviewer_blocked"] = False
+        state["recorded_codex_thread_id"] = "th_test123"
+        return state
+
+    assert update_state(session_id, _set) is True
+    state = read_state(session_id)
+    assert state["plan_codex_reviewer_invoked"] is True
+    assert state["plan_codex_reviewer_blocked"] is False
+    assert state["recorded_codex_thread_id"] == "th_test123"

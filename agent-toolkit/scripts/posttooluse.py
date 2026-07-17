@@ -20,9 +20,11 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
+   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer。
+   plan-codex-reviewer起動時はplan_codex_reviewer_invokedも同時記録する）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール）
+9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール。
+   mcp__codex__codex成功時はrecorded_codex_thread_idも記録する）
 10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
@@ -31,6 +33,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
+15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-reviewer起動失敗時のplan_codex_reviewer_blocked記録
 """
 
 import json
@@ -352,6 +355,23 @@ def main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
+    # 通番4: PostToolUseFailure（実行時失敗）・PermissionDenied（権限拒否）はAgent/Task限定で
+    # plan_codex_reviewer_blockedのみ検知し、通常のPostToolUse成功分岐（flag_key記録等）は実行しない。
+    hook_event_name = payload.get("hook_event_name", "")
+    if hook_event_name in ("PostToolUseFailure", "PermissionDenied"):
+        if tool_name in ("Agent", "Task"):
+            subagent_type = tool_input.get("subagent_type")
+            if subagent_type in ("plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer"):
+
+                def _set_blocked(state: dict) -> dict | None:
+                    if state.get("plan_codex_reviewer_blocked", False):
+                        return None
+                    state["plan_codex_reviewer_blocked"] = True
+                    return state
+
+                update_state(session_id, _set_blocked)
+        return 0
+
     # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
     if tool_name == "EnterPlanMode":
 
@@ -400,16 +420,24 @@ def main() -> int:
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_end", type=subagent_type)
-        flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type) if isinstance(subagent_type, str) else None
-        if flag_key is not None:
+        if isinstance(subagent_type, str):
+            flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
+            if flag_key is not None:
 
-            def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:
-                if state.get(flag_key, False):
-                    return None
-                state[flag_key] = True
-                return state
+                def _set_agent_flag(state: dict, flag_key: str = flag_key, subagent_type: str = subagent_type) -> dict | None:
+                    changed = False
+                    if not state.get(flag_key, False):
+                        state[flag_key] = True
+                        changed = True
+                    # FB[4]: plan-codex-reviewer起動時は経路遵守検査用のplan_codex_reviewer_invokedも同時に真化する。
+                    if subagent_type in ("plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer") and not state.get(
+                        "plan_codex_reviewer_invoked", False
+                    ):
+                        state["plan_codex_reviewer_invoked"] = True
+                        changed = True
+                    return state if changed else None
 
-            update_state(session_id, _set_agent_flag)
+                update_state(session_id, _set_agent_flag)
         return 0
 
     # mcp__codex__codex: codex-review起動検出
@@ -425,6 +453,20 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_codex_review_invoked_via_mcp)
+
+            # FB[4]: `mcp__codex__codex`成功時のthreadIdをrecorded_codex_thread_idとして記録する。
+            tool_response = payload.get("tool_response", {})
+            if isinstance(tool_response, dict):
+                thread_id_response = tool_response.get("threadId") or tool_response.get("thread_id")
+                if isinstance(thread_id_response, str) and thread_id_response:
+
+                    def _set_recorded_thread_id(state: dict) -> dict | None:
+                        if state.get("recorded_codex_thread_id") == thread_id_response:
+                            return None
+                        state["recorded_codex_thread_id"] = thread_id_response
+                        return state
+
+                    update_state(session_id, _set_recorded_thread_id)
         return 0
 
     # Read: 規範ファイル読み込みのセッション状態フラグ化

@@ -62,6 +62,9 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 公開インターフェース（関数シグネチャ・型定義・モジュール構造など）を変更した場合は全体で実行する。
 末尾のsummary行で`failed`の有無と`diagnostics`数を確認する。
 
+- 所要時間の計測・現状把握・調査を目的とする実行には`--no-fix`を付ける。auto-fixによる作業ツリー変更の副作用を避けるため、
+  修正を意図する実行のみ既定のauto-fixを用いる
+
 ## grep&replace
 
 `pyfltr grep`と`pyfltr replace`は、コードベース横断のキーワード書き換え・参照除去のように
@@ -184,8 +187,8 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 - エラー内容が`diagnostic`行だけでは把握しづらい場合、
   `uvx pyfltr run --output-format=text`等でテキスト出力を得てツールの生出力を確認する
-- `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある
-  意図的に抑止する場合以外は付けずに実行する
+- `--no-fix`で自動fixを止めた状態で`run`/`fast`を実行すると、autofixで解消できる違反が`diagnostic`に残ることがある。
+  運用方針は「サブコマンドの使い分け」節末尾バレットを参照する
 - bin-runner未提供環境（Windows等でmise経由バイナリを提供しないツール、shellcheck・shfmtなど）:
   - 対象ファイルが0件のときは解決処理を省略するため`skipped`で通過し、対象がある状態で失敗すると`resolution_failed`が出る
   - 回避策は`bin-runner`を`direct`に切り替えてシステムのバイナリを使うか、当該ツールを`{tool} = false`で無効化する

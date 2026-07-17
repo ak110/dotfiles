@@ -36,6 +36,11 @@ def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) 
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
+def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 class TestMojibakeCheck:
     """文字化け（U+FFFD）検出。"""
 
@@ -2790,7 +2795,7 @@ class TestCodexReviewNotRead:
 
     def test_allowed_when_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """codex-review.md読み込み済みの場合は強制承認して通過する。"""
-        self._write_state(tmp_path, "with-review", {"codex_review_read": True})
+        self._write_state(tmp_path, "with-review", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2845,7 +2850,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
-        self._write_state(tmp_path, "fix1", {"codex_review_read": True})
+        self._write_state(tmp_path, "fix1", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
             env_overrides=state_dir,
@@ -2859,7 +2864,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
-        self._write_state(tmp_path, "fix2", {"codex_review_read": True})
+        self._write_state(tmp_path, "fix2", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2875,7 +2880,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_read_only_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox=read-onlyの明示指定もdanger-full-accessへ強制昇格する（本環境の要件）。"""
-        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True})
+        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2891,7 +2896,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_workspace_write_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox=workspace-writeの明示指定もdanger-full-accessへ強制昇格する。"""
-        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True})
+        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2907,7 +2912,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが既にdanger-full-accessの場合、updatedInputは返すがsystemMessageを含めない。"""
-        self._write_state(tmp_path, "fix3", {"codex_review_read": True})
+        self._write_state(tmp_path, "fix3", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2930,8 +2935,11 @@ class TestCodexMcpReply:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
-    def test_reply_auto_approved(self, state_dir: dict[str, str]):
-        """codex-reply呼び出しは無条件で強制承認される。"""
+    _write_state = staticmethod(_write_session_state)
+
+    def test_reply_auto_approved(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """threadId一致時は`mcp__codex__codex-reply`が強制承認される。"""
+        self._write_state(tmp_path, "reply1", {"recorded_codex_thread_id": "abc"})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex-reply",
@@ -2943,6 +2951,87 @@ class TestCodexMcpReply:
         assert result.returncode == 0
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+class TestCodexMcpPlanCodexReviewerGate:
+    """FB[4]: plan-codex-reviewer経由検査によるmcp__codex__codex直接呼び出しブロック。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    _write_state = staticmethod(_write_session_state)
+
+    def test_blocked_when_not_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """plan_codex_reviewer_invoked/blockedとも偽なら`mcp__codex__codex`をブロックする。"""
+        self._write_state(tmp_path, "gate-blocked", {"codex_review_read": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello"},
+                "session_id": "gate-blocked",
+                "isSidechain": False,
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "plan-codex-reviewer" in result.stderr
+
+    def test_allowed_when_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """plan_codex_reviewer_invoked真なら通過を許可する。"""
+        self._write_state(tmp_path, "gate-invoked", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello"},
+                "session_id": "gate-invoked",
+                "isSidechain": False,
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+
+    def test_allowed_when_blocked_flag_set(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """plan_codex_reviewer_blocked真ならauto mode例外として通過を許可する。"""
+        self._write_state(tmp_path, "gate-fallback", {"codex_review_read": True, "plan_codex_reviewer_blocked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello"},
+                "session_id": "gate-fallback",
+                "isSidechain": False,
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+
+    def test_reply_allowed_when_threadid_matches(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """threadId一致時は`mcp__codex__codex-reply`の通過を許可する。"""
+        self._write_state(tmp_path, "gate-reply-match", {"recorded_codex_thread_id": "th_abc123"})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "th_abc123", "prompt": "続行"},
+                "session_id": "gate-reply-match",
+                "isSidechain": False,
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+
+    def test_reply_blocked_when_threadid_mismatches_and_no_flag(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """threadId不一致かつフラグ全偽時はブロックする。"""
+        self._write_state(tmp_path, "gate-reply-mismatch", {"recorded_codex_thread_id": "th_old"})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "th_new", "prompt": "続行"},
+                "session_id": "gate-reply-mismatch",
+                "isSidechain": False,
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
 
 
 class TestCodexMcpLanguageWarningMerge:
@@ -2974,7 +3063,7 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__codex__codex分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "codex-lang", {"codex_review_read": True})
+        self._write_state(tmp_path, "codex-lang", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -2994,6 +3083,7 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__codex__codex-reply分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "reply-lang", {"recorded_codex_thread_id": "abc"})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -4493,6 +4583,33 @@ class TestPlanModeFlagReset:
             assert updated[flag] is False
         assert updated["agent_doc_validator_invoked"] is False
         assert "current_plan_file_path" not in updated
+
+    def test_resets_new_codex_fields_on_plan_mode_skill_invocation(self, tmp_path: pathlib.Path):
+        """通番3対応: 新計画着手時に新規3フィールドが全てリセットされることを確認する。"""
+        session_id = "reset-fields"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {
+                "plan_codex_reviewer_invoked": True,
+                "plan_codex_reviewer_blocked": True,
+                "recorded_codex_thread_id": "th_old_session",
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": session_id,
+                "isSidechain": False,
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = _read_session_state(tmp_path, session_id)
+        assert state.get("plan_codex_reviewer_invoked", False) is False
+        assert state.get("plan_codex_reviewer_blocked", False) is False
+        assert "recorded_codex_thread_id" not in state
 
 
 class TestCheckPlanFileH2SectionOrder:

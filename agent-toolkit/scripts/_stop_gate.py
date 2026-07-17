@@ -133,6 +133,22 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     return pending
 
 
+def has_pending_background_launches(transcript_path: str, session_id: str) -> bool:
+    """ハーネスが追跡するbackgroundタスクのうち、完了未消化のものが1件以上あれば真を返す。
+
+    `is_pending_async_work`と同じ`launched - completed`のremainder非空判定を用いる
+    （起動記録の存在だけで判定すると完了消化後も真を返し続けるため、消化状態を必ず反映する）。
+    stop_advisor側でasync-waitカテゴリ検出時の除外判定に使う。
+    起動集合・完了集合の抽出条件は`is_pending_async_work`docstringに定義済み
+    （`toolUseResult.status`・`backgroundTaskId`・SendMessage背景再開マーカー・
+    `<task-notification>`・idle_notification(available)の各条件）。
+
+    transcript読み取り失敗時は偽を返す（fail-closed。ブロック維持側で動作する）。
+    """
+    launched, completed = _describe_pending_background_tasks(transcript_path, session_id)
+    return bool(launched - completed)
+
+
 def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:
     """transcript内のユーザーターンに`pattern`一致のスラッシュコマンド起動痕跡があるか確認する。
 

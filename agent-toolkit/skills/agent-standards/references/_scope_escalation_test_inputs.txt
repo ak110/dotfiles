@@ -166,3 +166,6 @@ overhead-tradeoff	実装コストが大きいため
 async-wait	完了通知はまだ届いていない
 async-wait	完了報告をまだ受領していない
 async-wait	待機を継続する
+async-wait	配下のplan-implementerへ再委譲し継続中である
+async-wait	下流のエージェントへ委譲し進行中である
+async-wait	backgroundで委譲し完了報告受領後に確定する

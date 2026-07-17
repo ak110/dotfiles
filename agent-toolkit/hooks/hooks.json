@@ -22,6 +22,28 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse.py"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/posttooluse.py"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

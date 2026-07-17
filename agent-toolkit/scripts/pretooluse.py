@@ -50,13 +50,17 @@ ExitPlanMode:
 mcp__codex__codex:
 
 - codex-review.md未読時のブロック (block)
+- `plan-codex-reviewer`サブエージェント経由の実施履歴（`plan_codex_reviewer_invoked`・
+  `plan_codex_reviewer_blocked`のいずれかが真）が無い直接呼び出しのブロック (block)
 - `sandbox`未指定時のみ`danger-full-access`へ既定昇格。
   明示指定（`read-only`, `workspace-write`, `danger-full-access`）は尊重する (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
 mcp__codex__codex-reply:
 
-- 無条件の強制承認 (auto-approve)
+- `threadId`が`recorded_codex_thread_id`と不一致かつ
+  `plan-codex-reviewer`経由の実施履歴が無い場合のブロック (block)
+- `threadId`一致または`plan-codex-reviewer`経由の実施履歴がある場合の強制承認 (auto-approve)
 
 Bash:
 
@@ -419,11 +423,21 @@ def main() -> int:
             state = read_state(session_id)
             if _check_codex_review_not_read(state):
                 return 2
+            # plan-codex-reviewerサブエージェント経由の実施履歴が無ければブロックする。
+            if _check_codex_mcp_via_plan_codex_reviewer(state, tool_name=tool_name):
+                return 2
         emit_json(_check_codex_mcp_sandbox(tool_input))
         return 0
 
-    # mcp__codex__codex-reply: 無条件の強制承認
+    # mcp__codex__codex-reply: 強制承認（threadId不一致時はplan-codex-reviewer経由検査へ回す）
     if tool_name == "mcp__codex__codex-reply":
+        if payload.get("isSidechain") is not True:
+            state = read_state(session_id)
+            thread_id_arg = tool_input.get("threadId")
+            recorded = state.get("recorded_codex_thread_id")
+            thread_id_matches = isinstance(thread_id_arg, str) and thread_id_arg == recorded
+            if not thread_id_matches and _check_codex_mcp_via_plan_codex_reviewer(state, tool_name=tool_name):
+                return 2
         emit_json(
             {
                 "hookSpecificOutput": {
@@ -2951,11 +2965,19 @@ def _reset_process7_completion_flags(session_id: str) -> None:
 
     def _reset(current: dict) -> dict | None:
         changed = False
-        for flag in (*_PROCESS7_COMPLETION_FLAGS, "agent_doc_validator_invoked"):
+        for flag in (
+            *_PROCESS7_COMPLETION_FLAGS,
+            "agent_doc_validator_invoked",
+            "plan_codex_reviewer_invoked",
+            "plan_codex_reviewer_blocked",
+        ):
             if current.get(flag, False):
                 current[flag] = False
                 changed = True
         if current.pop("current_plan_file_path", None) is not None:
+            changed = True
+        # 前計画のcodex thread参照を新計画へ持ち越さない。
+        if current.pop("recorded_codex_thread_id", None) is not None:
             changed = True
         # 直接編集連続checkの状態も新計画へ持ち越さない。
         if current.get("plan_file_written", False):
@@ -3644,6 +3666,34 @@ def _check_codex_review_not_read(state: dict) -> bool:
         _llm_notice(
             "codex-review.md has not been read in this session."
             " Read skills/plan-mode/references/codex-review.md before calling mcp__codex__codex.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+def _check_codex_mcp_via_plan_codex_reviewer(state: dict, *, tool_name: str) -> bool:
+    """plan-codex-reviewerサブエージェント経由の実施履歴が無い直接呼び出しをブロックする。
+
+    `plan_codex_reviewer_invoked`(成功起動記録)と`plan_codex_reviewer_blocked`(起動失敗記録)の
+    いずれも偽の場合にTrueを返す（ブロック方向）。auto mode下でサブエージェント経由が
+    ブロックされた場合は`plan_codex_reviewer_blocked`が真となるため直接呼び出しが許容される
+    （`codex-review.md`「実行経路」節の既存例外条件と整合）。
+    `tool_name`は通知文で呼び出し元ツール名（`mcp__codex__codex`または`mcp__codex__codex-reply`）を
+    明示するために使う。
+    """
+    if state.get("plan_codex_reviewer_invoked", False):
+        return False
+    if state.get("plan_codex_reviewer_blocked", False):
+        return False
+    print(
+        _llm_notice(
+            f"{tool_name} call is blocked because it did not go through `agent-toolkit:plan-codex-reviewer` subagent."
+            " The default path is via `agent-toolkit:plan-codex-reviewer` subagent"
+            " (see `agent-toolkit/skills/plan-mode/references/codex-review.md` execution route section)."
+            " Invoke the subagent first. If the subagent invocation is blocked by the environment,"
+            " it will set `plan_codex_reviewer_blocked` and this hook will allow the direct call.",
             tag="block",
         ),
         file=sys.stderr,

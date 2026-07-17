@@ -14,7 +14,7 @@ import time
 from typing import Literal
 
 import pytest
-from _stop_gate import append_stop_log, has_command_invocation, is_pending_async_work
+from _stop_gate import append_stop_log, has_command_invocation, has_pending_background_launches, is_pending_async_work
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
@@ -669,6 +669,32 @@ class TestIsPendingAsyncWork:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is False
+
+
+class TestHasPendingBackgroundLaunches:
+    """`has_pending_background_launches`の境界値検証。"""
+
+    def test_returns_true_when_launched_and_not_completed(self, tmp_path: pathlib.Path) -> None:
+        """起動記録ありかつ未消化時に真を返すことを確認する。"""
+        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_pending1")])
+        assert has_pending_background_launches(str(t), "sess-1") is True
+
+    def test_returns_false_when_no_launches(self, tmp_path: pathlib.Path) -> None:
+        """起動記録なし時に偽を返すことを確認する。"""
+        t = _write_transcript(tmp_path, [])
+        assert has_pending_background_launches(str(t), "sess-2") is False
+
+    def test_returns_false_when_launched_and_completed(self, tmp_path: pathlib.Path) -> None:
+        """起動記録ありでも完了通知消化済みなら偽を返すことを確認する。"""
+        t = _write_transcript(
+            tmp_path,
+            [_user_async_launched_entry("toolu_pending2"), _user_task_notification_entry("toolu_pending2")],
+        )
+        assert has_pending_background_launches(str(t), "sess-4") is False
+
+    def test_fail_closed_on_bad_path(self) -> None:
+        """transcript読み取り失敗時は偽(ブロック維持側)を返すことを確認する。"""
+        assert has_pending_background_launches("/nonexistent/path", "sess-3") is False
 
 
 class TestDebugOutput:

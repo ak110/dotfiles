@@ -15,6 +15,7 @@ from pathlib import Path
 import _fork_runner
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
+from _stop_gate_test import _user_async_launched_entry, _user_task_notification_entry, _write_transcript
 
 _SCRIPT = Path(__file__).parent / "subagent_stop_advisor.py"
 
@@ -98,6 +99,38 @@ def test_blocks_overhead_tradeoff_phrases() -> None:
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
     assert "overhead-tradeoff" in body["reason"]
+
+
+def test_approves_async_wait_when_background_tracked(tmp_path: Path) -> None:
+    """async-wait表明でも未消化の追跡中background起動が実在すれば通過する。"""
+    text = _pick_scope_escalation_text("async-wait")
+    if not text:
+        pytest.skip("scope-escalation fixture for async-wait not available")
+    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
+    result = _run({"last_assistant_message": text, "transcript_path": transcript})
+    assert result.stdout == ""
+
+
+def test_blocks_async_wait_without_tracked_background() -> None:
+    """async-wait表明かつ追跡中background起動が無い場合は現行どおりブロックする。"""
+    text = _pick_scope_escalation_text("async-wait")
+    if not text:
+        pytest.skip("scope-escalation fixture for async-wait not available")
+    result = _run({"last_assistant_message": text})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+
+
+def test_blocks_async_wait_when_tracked_background_completed(tmp_path: Path) -> None:
+    """起動記録があっても完了通知で全消化済みなら現行どおりブロックする。"""
+    text = _pick_scope_escalation_text("async-wait")
+    if not text:
+        pytest.skip("scope-escalation fixture for async-wait not available")
+    entries = [_user_async_launched_entry("toolu_bg2"), _user_task_notification_entry("toolu_bg2")]
+    transcript = str(_write_transcript(tmp_path, entries))
+    result = _run({"last_assistant_message": text, "transcript_path": transcript})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
 
 
 def test_stop_hook_active_bypasses_check() -> None:

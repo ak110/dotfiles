@@ -9,6 +9,9 @@
 `transcript_path`とisSidechain判定に依存しない。
 `is_empty_completion_report`で実質空またはSkill呼び出し単独の構造的欠落を検出し、
 続いて`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTで縮退表明フレーズを照合する。
+`async-wait`カテゴリ検出時は、ハーネスが追跡するbackground起動の未消化実在
+（`has_pending_background_launches`）を確認し、実在する場合はブロックせず通過させる
+（task-notificationで自動発火する経路の待機表明を誤ってブロックしないため）。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 
@@ -32,6 +35,7 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
     is_empty_completion_report,
 )
+from _stop_gate import has_pending_background_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
 
@@ -130,6 +134,17 @@ def main() -> int:
     match_result = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES_EXTENDED)
     if match_result is not None:
         category, _matched = match_result
+        # async-waitカテゴリ検出時はハーネス追跡background起動の未消化実在で除外判定する。
+        # 完了未消化の起動記録が存在する場合、task-notificationで自動発火する経路に該当するため待機表明を許容する。
+        # 起動記録が無い場合・全消化済みの場合（判定不能・素の待機表明）は現行どおりブロックする（fail-closed）。
+        transcript_path = payload.get("transcript_path")
+        session_id = payload.get("session_id")
+        if (
+            category == "async-wait"
+            and isinstance(transcript_path, str)
+            and has_pending_background_launches(transcript_path, session_id if isinstance(session_id, str) else "")
+        ):
+            return 0
         reason = _llm_notice(
             f"blocked: subagent completion report matched scope-escalation category `{category}`."
             " Either revise the flagged text or continue the work as unfinished."

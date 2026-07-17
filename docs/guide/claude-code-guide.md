@@ -154,6 +154,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `agent-toolkit/`配下のファイルを含む`git commit`で`plugin.json`のversion未変更を警告
 - `git log`実行時に`--decorate`オプションを自動挿入する
 - `codex exec`実行前に未決事項の確認を促す
+- `plan-codex-reviewer`サブエージェントを経ない`mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
 - APIエラー停止後の入力待ち時にツール呼び出しの解析失敗をベルとデスクトップ通知で警告
 - APIエラーでのターン終了の発生種別をログへ記録
