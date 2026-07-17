@@ -67,7 +67,10 @@ _NORM_INQUIRY_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "correction-request",
-        re.compile(r"(間違っ|誤っ)(ている|ています|ていた|てた|てる|てます)"),
+        re.compile(
+            r"(規範|ルール|方針|ポリシー|CLAUDE|指針|規定|フロー|運用|条文|項目)"
+            r"[^。\n]{0,20}(間違っ|誤っ)(ている|ています|ていた|てた|てる|てます)"
+        ),
     ),
     (
         "correction-request",

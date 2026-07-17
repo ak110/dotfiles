@@ -931,3 +931,52 @@ class TestCheckWcProjection:
         assert result.returncode == 1
         assert "見込み231行, 実測234行" in result.stderr
         assert "追記/縮減対象集計からの見込み234行" in result.stderr
+
+
+class TestExtractAdditionReductionBlocksMultiplierLabel:
+    """`[追記×N]`書式の集計仕様（倍率抽出・既存書式互換・無効値拒否）を検証する。"""
+
+    _KNOWN_PATH_HEADER = "### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/x.md`\n\n### `agent-toolkit/skills/x.md`\n\n"
+
+    def test_multiplier_label_two(self) -> None:
+        """`[追記×2]`は同一文面3行を2倍した6行を集計する。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記×2]\nline1\nline2\nline3\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 6
+        assert result["agent-toolkit/skills/x.md"]["addition_labelled"] == 6
+
+    def test_bare_addition_label_defaults_to_one(self) -> None:
+        """倍率修飾子無しの`[追記]`は従来どおりN=1として集計する。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記]\nline1\nline2\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 2
+
+    def test_multiplier_one_explicit(self) -> None:
+        """`[追記×1]`は`[追記]`と同等の集計結果になる。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記×1]\nline1\nline2\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 2
+
+    def test_frontmatter_variant_still_supported(self) -> None:
+        """`[追記（frontmatter）]`サブラベルは`×N`修飾子追加後も従来どおり動作する。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記（frontmatter）]\nline1\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 1
+
+    def test_rejects_multiplier_zero(self) -> None:
+        """`[追記×0]`は正規表現で不受理となり、ラベル行自体が本文行として計上される。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記×0]\nline1\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 2
+
+    def test_rejects_frontmatter_multiplier_mix(self) -> None:
+        """`[追記×2（frontmatter）]`は`×N`とサブラベルの併用形式のため不受理となる。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記×2（frontmatter）]\nline1\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 2
+
+    def test_rejects_unicode_digit_multiplier(self) -> None:
+        """全角数字`２`はASCII整数限定の正規表現で不受理となる。"""
+        section = self._KNOWN_PATH_HEADER + "```text\n[追記×２]\nline1\n```\n"
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["agent-toolkit/skills/x.md"]["addition"] == 2

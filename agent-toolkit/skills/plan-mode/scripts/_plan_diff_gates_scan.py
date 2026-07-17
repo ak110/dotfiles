@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterator
 # 共通モジュール読み込みのため本ファイルと同一ディレクトリを`sys.path`へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
+import check_wc_projection  # noqa: E402
 from _plan_diff_parsing import (  # noqa: E402
     FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
@@ -47,17 +48,21 @@ _REPLACEMENT_LABEL_TOKEN = "[置換後]"
 _REPLACEMENT_FULL_LABEL_TOKEN = "[置換後（全文）]"
 _CURRENT_LABEL_TOKEN = "[現行]"
 _DELETION_RATIONALE_LABEL_TOKEN = "[削除根拠]"
-_ADDITION_LABEL_TOKEN = "[追記]"
 
 # ラベル行判定用トークン一覧（fence直後1行目から本文抽出時に除外する対象）。
+# `[追記]`系ラベルは`_is_addition_label_line`側の完全一致判定で扱うため本一覧から除く。
 _ALL_LABEL_TOKENS = (
     _NEW_LABEL_TOKEN,
     _REPLACEMENT_LABEL_TOKEN,
     _REPLACEMENT_FULL_LABEL_TOKEN,
     _CURRENT_LABEL_TOKEN,
     _DELETION_RATIONALE_LABEL_TOKEN,
-    _ADDITION_LABEL_TOKEN,
 )
+
+# `[追記]`・`[追記（frontmatter）]`・`[追記×N]`（NはASCII整数1以上）いずれかの完全一致を判定する。
+# `check_wc_projection.py`と同一ディレクトリのモジュール群（`check_plan_file.py`が双方をimportする）
+# のためSSOTとして`check_wc_projection._LABEL_ADDITION_ONLY_RE`を再利用し、重複定義を避ける。
+_LABEL_ADDITION_ONLY_RE = check_wc_projection._LABEL_ADDITION_ONLY_RE  # pylint: disable=protected-access
 
 # `FRONTMATTER_LABEL_RE`のキャプチャグループ1（角括弧・「（frontmatter）」を除いたトークン）から
 # `_classify_block`の戻り値種別へ変換するマップ。本体ラベルトークン（角括弧付き）とは異なり
@@ -221,7 +226,7 @@ def _classify_block(
        対応する本体ラベルと同じ種別へ分類する
     2. `[現行]`・`[削除根拠]`ラベル配下は既存文言または削除説明のため検査対象外（`None`）
     3. `[新設]`・`[置換後]`・`[置換後（全文）]`・`[追記]`ラベル配下は種別ラベルを返す
-       （`[追記]`は`addition`）
+       （`[追記]`は`addition`。`[追記×N]`・`[追記（frontmatter）]`の派生形も`addition`扱い）
     4. `#### 縮減対象`見出し配下は`reduction`を返す
     5. `（新設）`H3配下は`new-h3`を返す
     6. 追記トリガー文出現後で当該H3節境界に未到達なら`addition`を返す
@@ -242,7 +247,7 @@ def _classify_block(
             return "replacement"
         if _NEW_LABEL_TOKEN in first:
             return "new"
-        if _ADDITION_LABEL_TOKEN in first:
+        if _is_addition_label_line(first):
             return "addition"
     if in_reduction_heading:
         return "reduction"
@@ -257,11 +262,19 @@ def _is_label_line(line: str) -> bool:
     """fence直後1行目が差分ラベル行に該当するかを判定する（本文抽出時の除外判定に用いる）。
 
     frontmatterサブラベル（`FRONTMATTER_LABEL_RE`の完全一致）も本体ラベルと同様に該当扱いとする。
+    `[追記]`系ラベルは`_is_addition_label_line`（`[追記×N]`修飾子込みの完全一致判定）に委譲する。
     """
     stripped = line.strip()
     if FRONTMATTER_LABEL_RE.match(stripped):
         return True
+    if _is_addition_label_line(stripped):
+        return True
     return any(token in stripped for token in _ALL_LABEL_TOKENS)
+
+
+def _is_addition_label_line(stripped: str) -> bool:
+    """`[追記]`・`[追記×N]`（NはASCII整数1以上）・`[追記（frontmatter）]`いずれかの完全一致を判定する。"""
+    return bool(_LABEL_ADDITION_ONLY_RE.match(stripped))
 
 
 def _run_scope_escalation(body: str) -> str | None:

@@ -1,7 +1,8 @@
 # 縮退誘発フレーズ集（隔離リファレンス）
 
-`agent-toolkit/rules/01-agent.md`「完遂原則」項および「縮退表明は発行しない」項目、ならびに
-`agent-toolkit/scripts/_scope_escalation.py`が対象とする禁止フレーズの典拠。
+本ファイルは`agent-toolkit/rules/01-agent.md`「完遂原則」項および「縮退表明は発行しない」項目の典拠。
+また`agent-toolkit/scripts/_scope_escalation.py`が対象とする禁止フレーズの典拠。
+さらに`agent-toolkit/scripts/_norm_inquiry_escalation.py`が対象とする規範照会・是正要求フレーズの典拠。
 配布物フックは4経路（PreToolUse `AskUserQuestion`／PreToolUse `Write`・`Edit`・`MultiEdit`／
 Stop hook直近アシスタント発話／SubagentStop hookサブエージェント発話）でこの辞書を参照する。
 
@@ -11,7 +12,7 @@ Stop hook直近アシスタント発話／SubagentStop hookサブエージェン
 修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
 （`plan-implementer`は実装委譲先専用のため本用途では指名しない）。
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
-引用ブロック回避規範は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節を参照。
+引用ブロック回避規範は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節を参照する。
 
 ## 対象カテゴリと代表フレーズ
 
@@ -56,6 +57,14 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | `overhead-tradeoff` | オーバーヘッドや複雑度上限を根拠とした対応範囲の縮小 | 「オーバーヘッドが上回るため」「複雑度が高くなり過ぎない範囲」「実装コストが大きいため」 |
 
 `pattern-conformance`カテゴリの例外は`agent-toolkit/rules/01-agent.md`「品質最優先」節の条件付き例外規定を参照する。
+
+## 検出パターン設計原則
+
+`_scope_escalation.py`・`_norm_inquiry_escalation.py`等の正規表現検出パターンを対象とする。
+新規パターン追加時と既存パターンへの`|`分岐追加時は、近傍語（既存挙動言及を求める語彙）との共起必須化を
+パターン設計の必須ゲートとして扱う。近傍語を伴わないパターンは一般発話への過剰マッチを招く。
+近傍語の具体一覧は実装SSOT`_norm_inquiry_escalation.py`の`_NORM_INQUIRY_PHRASES`を参照する。
+検出パターン設計原則は対象スクリプトの検出パターン追加・拡張に共通適用する。
 
 ## 機械検出の適用範囲
 

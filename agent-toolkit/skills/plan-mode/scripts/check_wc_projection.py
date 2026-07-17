@@ -139,9 +139,15 @@ _ALLOWED_REPO_ROOT_RE = re.compile(r"<!--\s*allowed-repo-root:\s*(?P<root>[^\s]+
 # `plan-file-diff-labels.md`「差分ラベル6種」節が定める記法上の目印であり
 # 対象ファイルへ挿入される内容ではないため行数集計から除外する。
 # ラベル文字列は`_ADDITION_LABEL_TOKEN`をSSOTとし、正規表現側から参照する。
-# 末尾`(（frontmatter）)?`は`[追記（frontmatter）]`サブラベル（`plan-file-diff-labels.md`
-# 「frontmatter変更用サブラベル」節）にも対応するためのオプション部分。
-_LABEL_ADDITION_ONLY_RE = re.compile(rf"^\[{re.escape(_ADDITION_LABEL_TOKEN)}\](（frontmatter）)?$")
+# `[追記]`・`[追記（frontmatter）]`・`[追記×N]`（NはASCII整数で1以上）の3パターンに対応する。
+# `×N`修飾子は`plan-file-diff-labels.md`「差分ラベル6種」節が定める同一文面を複数箇所へ配置する場合の
+# 書式であり、集計時に該当ブロックの行数をN倍して加算する。
+# `[追記（frontmatter）]`サブラベルと`×N`修飾子の併用（`[追記×N（frontmatter）]`・
+# `[追記（frontmatter）×N]`）は不受理とする（書式解釈の曖昧化を防ぐ）。
+# 倍率は`[1-9][0-9]*`でASCII整数1以上に限定し、`[追記×0]`受理・Unicode数字受理を防ぐ。
+_LABEL_ADDITION_ONLY_RE = re.compile(
+    rf"^\[{re.escape(_ADDITION_LABEL_TOKEN)}(?:×(?P<multiplier>[1-9][0-9]*)|（frontmatter）)?\]$"
+)
 
 
 def main() -> int:
@@ -504,7 +510,8 @@ def _leading_label(content_lines: list[str]) -> str | None:
     返却値は`"current"`・`"replacement"`・`"replacement-full"`・`"deletion"`・`"new"`・`"addition"`のいずれか、
     ラベルが見つからない場合は`None`。
 
-    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種で、
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種
+    （`[追記]`は`[追記×N]`・`[追記（frontmatter）]`の派生形を含む）で、
     fence直後1行目の内容へ部分一致で検出する。
     「置換後（全文）」は「置換後」の部分文字列を含むため、判定順で先に「置換後（全文）」を確認する。
 
@@ -789,12 +796,17 @@ def extract_addition_reduction_blocks(section: str) -> dict[str, dict[str, int]]
             if label is not None and current_path is not None:
                 entry = result.setdefault(current_path, _new_addition_reduction_entry())
                 counted_lines = content_lines
-                is_label_line_first = bool(counted_lines and _LABEL_ADDITION_ONLY_RE.match(counted_lines[0].strip()))
-                if is_label_line_first:
+                multiplier = 1
+                label_match = _LABEL_ADDITION_ONLY_RE.match(counted_lines[0].strip()) if counted_lines else None
+                is_label_line_first = label_match is not None
+                if label_match is not None:
+                    multiplier_group = label_match.group("multiplier")
+                    if multiplier_group is not None:
+                        multiplier = int(multiplier_group)
                     counted_lines = counted_lines[1:]
                 if counted_lines and _ANNOTATION_ONLY_RE.match(counted_lines[0].strip()):
                     counted_lines = counted_lines[1:]
-                added = len(counted_lines)
+                added = len(counted_lines) * multiplier
                 if label == "addition":
                     if is_label_line_first:
                         entry["addition_labelled"] += added
@@ -831,7 +843,8 @@ def _preceding_label_for_addition_reduction(
     追記判定の第1候補として採用する。既存の`current`・`replacement`・`replacement-full`・
     `deletion`・`new`ラベル（`_leading_label`が"addition"以外の非Noneを返す場合）は
     対象外として`None`を返す（従来通り無視）。
-    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種で、
+    ラベル種は`[現行]`・`[置換後]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`・`[追記]`の6種
+    （`[追記]`は`[追記×N]`・`[追記（frontmatter）]`の派生形を含む）で、
     fence直後1行目のプレーンテキストへ部分一致で検出する。
     """
     leading = _leading_label(content_lines)

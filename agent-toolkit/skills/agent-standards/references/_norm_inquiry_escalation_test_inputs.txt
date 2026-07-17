@@ -17,8 +17,8 @@ norm-inquiry	これは規範のはずなんだけど
 norm-inquiry	いつの間にか規範が形骸化してる
 correction-request	この記述を直してください
 correction-request	既存の方針を修正してほしい
-correction-request	コメントが間違っています
-correction-request	そのパターンは間違ってる
+correction-request	規範のコメントが間違っています
+correction-request	方針のパターンは間違ってる
 correction-request	それは違う、直して
 correction-request	今後の方針にして
 none	通常の進捗を報告する

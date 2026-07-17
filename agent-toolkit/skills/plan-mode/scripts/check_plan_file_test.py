@@ -43,6 +43,7 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
         "_check_transcription_declaration_consistency",
         lambda _p, _t, _r: [],
     )
+    monkeypatch.setattr(check_plan_file, "_check_frontmatter_sync_note_coverage", lambda _p, _t, _r: 0)
     monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label, **_kwargs: 0)
 
 
@@ -131,6 +132,13 @@ class TestCheckOne:
         assert check_plan_file._check_one(plan_path, tmp_path) == 0
         assert received == [([prose_file], location_map)]
         assert "textlint違反" in capsys.readouterr().err
+
+    def test_frontmatter_sync_note_coverage_violation_counted(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan_path = _write_plan(tmp_path)
+        monkeypatch.setattr(check_plan_file, "_check_frontmatter_sync_note_coverage", lambda _p, _t, _r: 3)
+        assert check_plan_file._check_one(plan_path, tmp_path) == 3
 
 
 class TestCaptureAndRelay:
@@ -372,3 +380,162 @@ class TestCheckTestFilePairing:
         """`.md`等の非Python拡張子は検査対象外。"""
         text = "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `docs/guide.md`\n"
         assert not check_plan_file._check_test_file_pairing(tmp_path / "plan.md", text, tmp_path)
+
+
+class TestCheckFrontmatterSyncNoteCoverage:
+    """`_check_frontmatter_sync_note_coverage`の単体挙動を検証する。"""
+
+    def test_detects_missing_reference(self, tmp_path: pathlib.Path) -> None:
+        """同期注記の参照先が対象ファイル一覧から欠落する場合を検出する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+
+    def test_passes_when_all_referenced(self, tmp_path: pathlib.Path) -> None:
+        """同期注記の参照先が全て対象ファイル一覧に含まれる場合は通過する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n- [ ] `agent-toolkit/skills/b.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_passes_when_no_sync_note(self, tmp_path: pathlib.Path) -> None:
+        """同期注記が無いファイルは検査対象外として通過する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text("# 本文のみ\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_skips_nonexistent_reference(self, tmp_path: pathlib.Path) -> None:
+        """参照先ファイルが実在しない場合は対象外として通過する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/nonexistent.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_ignores_background_mention(self, tmp_path: pathlib.Path) -> None:
+        """`## 背景`配下への言及のみでは充足せず追記漏れとして検出する（判断根拠スコープ限定の確認）。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 背景\n\nagent-toolkit/skills/b.mdについて言及するが判断根拠ではない。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+
+    def test_accepts_agent_judgment_mention(self, tmp_path: pathlib.Path) -> None:
+        """`### エージェント判断`配下への言及は判断根拠スコープに含まれ充足とみなす。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 対応方針\n\n### エージェント判断\n\n"
+            "agent-toolkit/skills/b.mdはレビュー済みで更新不要と判断する。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_detects_missing_section_reference(self, tmp_path: pathlib.Path) -> None:
+        """節名参照が判断根拠スコープに存在しない場合の欠落を検出する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `対象節`節と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+
+    def test_accepts_referenced_section_mention(self, tmp_path: pathlib.Path) -> None:
+        """節名参照が判断根拠スコープに言及されていれば充足とみなす。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `対象節`節と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "`対象節`節は本計画の変更と無関係のため更新不要。\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_counts_violation_on_read_failure(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """対象ファイルの読み込み失敗時はstderr出力のうえ違反件数へ加算し検査を継続する。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text("# 本文のみ\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/a.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+
+        def _raise_os_error(_self: pathlib.Path, encoding: str = "utf-8") -> str:
+            raise OSError("読み込み失敗")
+
+        monkeypatch.setattr(pathlib.Path, "read_text", _raise_os_error)
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+        assert "読み込みに失敗" in capsys.readouterr().err

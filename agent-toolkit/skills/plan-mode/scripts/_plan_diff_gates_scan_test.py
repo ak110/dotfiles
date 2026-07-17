@@ -113,6 +113,42 @@ class TestExtractDiffBlocks:
         """`_classify_block`は`[追記]`ラベル単独行を`"addition"`種別として返す。"""
         assert _MOD._classify_block(["[追記]", "body"], False, False, False) == "addition"
 
+    def test_classify_block_returns_addition_for_multiplier_label(self) -> None:
+        """`_classify_block`は`[追記×N]`ラベル単独行も`"addition"`種別として返す。"""
+        assert _MOD._classify_block(["[追記×2]", "body"], False, False, False) == "addition"
+
+    def test_multiplier_addition_label_block_is_extracted(self) -> None:
+        """`[追記×N]`ラベルの単独ブロックも検査対象へ入り、ラベル行は本文抽出時に除外される。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n特に前置きなし。\n\n```text\n[追記×2]\naddition body\n```\n"
+        blocks = list(_MOD._iter_diff_blocks(text))
+        assert len(blocks) == 1
+        assert blocks[0][2] == "addition body"
+
+
+class TestIsAdditionLabelLine:
+    """`_is_addition_label_line`の完全一致判定を検証する。"""
+
+    @pytest.mark.parametrize(
+        "stripped",
+        ["[追記]", "[追記×1]", "[追記×2]", "[追記×10]", "[追記（frontmatter）]"],
+    )
+    def test_accepts_valid_forms(self, stripped: str) -> None:
+        assert _MOD._is_addition_label_line(stripped) is True
+
+    @pytest.mark.parametrize(
+        "stripped",
+        [
+            "[追記×0]",
+            "[追記×２]",
+            "[追記×2（frontmatter）]",
+            "[追記（frontmatter）×2]",
+            "以下は[追記]内容",
+            "[追記",
+        ],
+    )
+    def test_rejects_invalid_forms(self, stripped: str) -> None:
+        assert _MOD._is_addition_label_line(stripped) is False
+
     @pytest.mark.parametrize("label", ["[追記（frontmatter）]", "[置換後（frontmatter）]"])
     def test_frontmatter_label_block_yields_empty_ext_for_md_host(self, label: str) -> None:
         """frontmatterサブラベル配下の本文は、ホストファイルが`.md`でも拡張子を空文字列で返す。
