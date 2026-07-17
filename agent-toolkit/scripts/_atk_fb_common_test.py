@@ -106,3 +106,21 @@ class TestNotifyUnansweredTbdsIfAny:
         assert capsys.readouterr().err == (
             "# tbd\n001.md: github.com/example/repo [unanswered] 質問1\n002.md: github.com/example/repo [unanswered] 質問2\n"
         )
+
+
+class TestIsExistingDir:
+    """長大な文字列候補に対する`is_existing_dir`のOSError耐性を検証する。"""
+
+    def test_returns_true_for_existing_directory(self, tmp_path: pathlib.Path) -> None:
+        """実在ディレクトリはTrueを返す。"""
+        assert _common.is_existing_dir(tmp_path) is True
+
+    def test_returns_false_for_missing_path(self, tmp_path: pathlib.Path) -> None:
+        """存在しないパスはFalseを返す。"""
+        assert _common.is_existing_dir(tmp_path / "missing") is False
+
+    def test_returns_false_for_oversized_name_without_raising(self) -> None:
+        """OS上限を超える長さの文字列でも`OSError`を送出せずFalseを返す。"""
+        oversized = pathlib.Path("x" * 5000)
+
+        assert _common.is_existing_dir(oversized) is False

@@ -65,7 +65,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     if candidate.startswith("-"):
         return argv, None
     candidate_path = pathlib.Path(candidate).expanduser()
-    if not candidate_path.is_dir():
+    if not _common.is_existing_dir(candidate_path):
         return argv, None
     new_argv = argv[:candidate_index] + argv[candidate_index + 1 :]
     return new_argv, str(candidate_path)

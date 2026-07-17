@@ -29,6 +29,18 @@ _SPACE_SEPARATED_OPTION_SUBCOMMANDS = frozenset(("adopt", "reject", "tbd-adopt")
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
 
 
+def is_existing_dir(path: pathlib.Path) -> bool:
+    """パスが実在ディレクトリかどうかを判定する（OSレベルの`OSError`はFalse扱い）。
+
+    自由記述のMESSAGE文字列をパス候補として`is_dir()`へ渡す呼び出し元があり、
+    長大な文字列は`OSError: File name too long`を送出しうるため、ここで吸収する。
+    """
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def warn_space_separated_option(argv: list[str]) -> None:
     """後始末サブコマンドの値付きオプションが空白区切りの場合に警告する。"""
     try:
@@ -314,7 +326,7 @@ def _resolve_repo_path_override(
     if not messages:
         return messages, None
     candidate = pathlib.Path(messages[0]).expanduser()
-    if not candidate.is_dir():
+    if not is_existing_dir(candidate):
         return messages, None
     return messages[1:], str(candidate)
 
