@@ -18,7 +18,7 @@
 加えて、非スラッシュコマンド入力（先頭行が`/`で始まらない発話）に対しては
 規範照会・是正要求の兆候（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`）を検出し、
 クールダウン判定を経て`hookSpecificOutput.additionalContext`でメタ視点点検・恒久化検討の実施を促す
-リマインダーを注入する（`agent-toolkit/rules/02-collaboration.md`「メタ視点」節の対象事象）。
+リマインダーを注入する（`agent-toolkit/rules/02-collaboration.md`「メタ視点」バレット項の対象事象）。
 
 例外時はfail-openで exit 0 を返す。
 """

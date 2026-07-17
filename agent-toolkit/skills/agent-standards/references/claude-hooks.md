@@ -95,9 +95,8 @@ read-only・workspace-writeではcodexプロセスがハングして復帰しな
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | 次ターンまで待ってよい誘導に使う（`decision: "block"`非対応） |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | 当該ターンの応答生成前にユーザー発話へ前置注入する誘導に使う（`decision: "block"`非対応） |
 
-公式ドキュメント（<https://code.claude.com/docs/en/hooks>）で`additionalContext`対応を確認済みである。
 `decision`と独立に注入可能で、stdoutプレーン出力もコンテキスト追加される仕様である。
 
 ## Stop/SubagentStopフックの再帰呼び出し対策

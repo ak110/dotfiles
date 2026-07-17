@@ -6,7 +6,8 @@ subprocessで起動しexit code・状態ファイルの内容を検証する。
 規範照会・是正要求検出（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`への委譲、
 クールダウン判定）は`main()`公開経路（フック実行経路）経由でのみ検証する。
 `_match_norm_inquiry_escalation`単体への直接テストは設けない。
-検出語の具体入力は隔離フィクスチャ`_norm_inquiry_escalation_test_inputs.txt`から
+検出語の具体入力は隔離フィクスチャ
+`agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt`から
 `_load_norm_inquiry_inputs`経由で読み込み、テストコード本文へ直接転記しない
 （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
 """
@@ -15,16 +16,22 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 
 import _fork_runner
+import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "user_prompt_submit.py"
-_NORM_INQUIRY_INPUTS_PATH = pathlib.Path(__file__).resolve().parent / "_norm_inquiry_escalation_test_inputs.txt"
+_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
+_SCRIPT = _SCRIPTS_DIR / "user_prompt_submit.py"
+_NORM_INQUIRY_INPUTS_PATH = (
+    _SCRIPTS_DIR.parent / "skills" / "agent-standards" / "references" / "_norm_inquiry_escalation_test_inputs.txt"
+)
 
-# クールダウン閾値（`user_prompt_submit.py`の`_NORM_INQUIRY_COOLDOWN_TURNS`と同値）。
-# 隔離フィクスチャからの動的読み込みとは独立した定数であり、
-# 実装側の定数値が変わった場合は本テストも同期見直しの対象とする。
-_COOLDOWN_TURNS = 5
+# クールダウン閾値は実装側の定数を直接参照する。
+sys.path.insert(0, str(_SCRIPTS_DIR))
+from user_prompt_submit import (  # noqa: E402  # pylint: disable=wrong-import-position
+    _NORM_INQUIRY_COOLDOWN_TURNS as _COOLDOWN_TURNS,
+)
 
 
 def _load_norm_inquiry_inputs() -> dict[str, list[str]]:
@@ -130,8 +137,9 @@ class TestNonMatchingPrompts:
     """非スキル起動プロンプトでフラグが立たないことの検証。
 
     非スラッシュコマンド入力は規範照会・是正要求検出の対象経路（`user_prompt_counter`加算）を
-    通るため、当該2ケースは状態辞書の完全一致ではなくスキルフラグ・追加出力の不在で検証する
-    （`/help`は既存のスラッシュコマンド検出処理に留まりカウンター加算対象外のため完全一致のまま維持する）。
+    通るため、非スラッシュ入力ケースは状態辞書の完全一致ではなくスキルフラグ・追加出力の不在で
+    検証する（`/help`は既存のスラッシュコマンド検出処理に留まりカウンター加算対象外のため
+    完全一致のまま維持する）。
     """
 
     def test_ignores_non_skill_prompt(self, tmp_path: pathlib.Path):
@@ -158,10 +166,8 @@ class TestNonMatchingPrompts:
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
-        # 空入力
         result = _run("", state_dir=tmp_path)
         assert result.returncode == 0
-        # prompt欠落
         sid = "no-prompt"
         result = _run({"session_id": sid}, state_dir=tmp_path)
         assert result.returncode == 0
@@ -185,44 +191,50 @@ class TestNonMatchingPrompts:
 class TestNormInquiryEscalationDetection:
     """規範照会・是正要求検出時の`additionalContext`注入とクールダウン判定の検証。"""
 
-    def test_norm_inquiry_pattern_emits_additional_context(self, tmp_path: pathlib.Path):
-        """規範照会パターン（`norm-inquiry`カテゴリ）でリマインダーが注入される。"""
-        sid = "norm-inquiry-detect"
+    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("norm-inquiry", []))
+    def test_norm_inquiry_pattern_emits_additional_context(self, tmp_path: pathlib.Path, prompt: str):
+        """規範照会パターン（`norm-inquiry`カテゴリ）でリマインダーが注入される。
+
+        隔離フィクスチャの全代表フレーズを`parametrize`で走査する。
+        """
+        sid = f"norm-inquiry-detect-{abs(hash(prompt))}"
         _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
         result = _run(
-            {"session_id": sid, "prompt": _NORM_INQUIRY_INPUTS["norm-inquiry"][0]},
+            {"session_id": sid, "prompt": prompt},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         context = _additional_context(result)
-        assert context is not None
+        assert context is not None, f"unmatched norm-inquiry input: {prompt!r}"
         assert context.startswith("[auto-generated: agent-toolkit/user_prompt_submit]")
         assert context.endswith(
             "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
         )
         assert _read_state(tmp_path, sid).get("norm_inquiry_last_injected") == _COOLDOWN_TURNS
 
-    def test_correction_request_pattern_emits_additional_context(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("correction-request", []))
+    def test_correction_request_pattern_emits_additional_context(self, tmp_path: pathlib.Path, prompt: str):
         """是正要求パターン（`correction-request`カテゴリ）でリマインダーが注入される。"""
-        sid = "correction-request-detect"
+        sid = f"correction-request-detect-{abs(hash(prompt))}"
         _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
         result = _run(
-            {"session_id": sid, "prompt": _NORM_INQUIRY_INPUTS["correction-request"][0]},
+            {"session_id": sid, "prompt": prompt},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _additional_context(result) is not None
+        assert _additional_context(result) is not None, f"unmatched correction-request input: {prompt!r}"
 
-    def test_simple_question_without_norm_reference_emits_nothing(self, tmp_path: pathlib.Path):
+    @pytest.mark.parametrize("prompt", _NORM_INQUIRY_INPUTS.get("none", []))
+    def test_non_matching_prompt_emits_nothing(self, tmp_path: pathlib.Path, prompt: str):
         """規範・ルール言及を伴わない単純な質問・要望では追加出力が発生しない。"""
-        sid = "simple-question"
+        sid = f"non-matching-{abs(hash(prompt))}"
         _prime_counter(sid, tmp_path, turns=_COOLDOWN_TURNS - 1)
         result = _run(
-            {"session_id": sid, "prompt": _NORM_INQUIRY_INPUTS["none"][1]},
+            {"session_id": sid, "prompt": prompt},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _additional_context(result) is None
+        assert _additional_context(result) is None, f"false-positive on: {prompt!r}"
 
     def test_cooldown_suppresses_immediate_redetection(self, tmp_path: pathlib.Path):
         """クールダウン中（直近注入から`_COOLDOWN_TURNS`未満）の再検出は抑止される。"""

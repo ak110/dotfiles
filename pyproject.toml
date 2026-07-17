@@ -97,7 +97,8 @@ colloquial-check = true
 # profile_ipy/はIPython自動生成プロファイル、
 # *.cmdはCP932（Shift_JIS）でpyfltrのUTF-8前提と適合せず誤検出を招くため、
 # tone-examples.md・tone-examples-llm-tone.md・scope-escalation-phrases.md・
-# _scope_escalation_test_inputs.txtは
+# _scope_escalation_test_inputs.txt・norm-inquiry-escalation-phrases.md・
+# _norm_inquiry_escalation_test_inputs.txtは
 # 危険語彙または縮退誘発フレーズを含む隔離ファイルのためいずれも検査対象外とする
 extend-exclude = [
     "*/profile_ipy/*",
@@ -107,7 +108,7 @@ extend-exclude = [
     "agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md",
     "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
     "agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md",
-    "agent-toolkit/scripts/_norm_inquiry_escalation_test_inputs.txt",
+    "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]

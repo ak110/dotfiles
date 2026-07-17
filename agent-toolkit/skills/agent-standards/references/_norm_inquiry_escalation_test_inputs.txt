@@ -8,13 +8,20 @@
 #
 # 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（agent-standardsスキル「コンテキスト汚染の回避」節）。
 norm-inquiry	なんかの拍子に勝手に規範変えちゃった？
-norm-inquiry	これってルールに違反してない？
+norm-inquiry	これはルールに違反していないか
 norm-inquiry	方針に違反してるかな
+norm-inquiry	規範に違反していないのか
 norm-inquiry	説明したはずの理由をいつの間にか忘れてる？
+norm-inquiry	これは前に伝えたはずなんだけど
+norm-inquiry	いつの間にか形骸化してる
 correction-request	この記述を直してください
+correction-request	既存の方針を修正してほしい
 correction-request	コメントが間違っています
+correction-request	そのパターンは間違ってる
 correction-request	それは違う、直して
+correction-request	今後の方針にして
 none	通常の進捗を報告する
 none	対象ファイル一覧を確認する
 none	明日の予定を教えてください
 none	この関数の役割を説明して
+none	typoを直してください

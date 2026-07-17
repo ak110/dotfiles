@@ -1,9 +1,8 @@
 """Claude Code agent-toolkit: 規範照会・是正要求検出用の共有辞書とマッチャー。
 
-`user_prompt_submit.py`から参照する共有モジュール。エントリポイントスクリプト間で
-直接importする構造を避けるため、`_NORM_INQUIRY_PHRASES`・`_match_norm_inquiry_escalation`を
-本モジュールへ集約する（`_scope_escalation.py`の`_SCOPE_ESCALATION_PHRASES`・
-`_match_scope_escalation`と同型の先例踏襲）。
+`user_prompt_submit.py`が唯一の消費者であり、本モジュールはパターン集と純粋関数を集約する。
+`_scope_escalation.py`（`pretooluse.py`・`stop_advisor.py`から共有される）と同型の
+モジュール構成を踏襲する。
 
 カテゴリ定義および代表フレーズの規範説明は
 `agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md`
@@ -18,11 +17,12 @@ from __future__ import annotations
 import re
 
 # 疑問符相当の文末表現。「か」「かな」「？」等の文末表現を指す
-# （agent-toolkit/rules/02-collaboration.md「メタ視点」節の対象文言例と対応する）。
-_QUESTION_END = r"(?:[？?]|かな[？?]?|のか[？?]?|だろうか[？?]?)"
+# （agent-toolkit/rules/02-collaboration.md「メタ視点」バレット項の対象文言例と対応する）。
+# 単独の「か」は文末（改行・句読点・文字列終端）に接する場合のみ疑問符扱いとする。
+_QUESTION_END = r"(?:[？?]|かな[？?]?|のか[？?]?|だろうか[？?]?|か(?=[。、\n\s]|\Z))"
 
 # 規範照会・是正要求検出パターン。
-# `agent-toolkit/rules/02-collaboration.md`「メタ視点」節が対象とする、
+# `agent-toolkit/rules/02-collaboration.md`「メタ視点」バレット項が対象とする、
 # 既存規範の変更経緯・遵守状況をユーザーが疑問文で問う発話（`norm-inquiry`）、
 # および既存規範・実装の誤りを明示的に是正要求する発話（`correction-request`）を検出する。
 # 単純な質問・要望一般（規範・ルール・既存挙動への言及を伴わないもの）は対象外とする。
@@ -43,16 +43,35 @@ _NORM_INQUIRY_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
-        "correction-request",
-        re.compile(r"(直して|修正して)(ください|くれ|欲しい|もらえ)?"),
+        "norm-inquiry",
+        re.compile(r"(のはず|はず)(なん)?(だ|です)?(けど|よね|ですよね|なんだけど)"),
+    ),
+    (
+        "norm-inquiry",
+        re.compile(r"いつの間にか[^。\n]{0,10}(形骸化|忘れ|消え|変わ|なくな)"),
     ),
     (
         "correction-request",
-        re.compile(r"(間違って|誤って)(いる|います|いた|た)"),
+        re.compile(
+            r"(規範|ルール|方針|ポリシー|既存|現行|挙動|コード|実装|コメント|記述|文言|"
+            r"ドキュメント|判断|対応|パターン|定義|条文)"
+            r"[^。\n]{0,30}(直して|修正して)(ください|くれ|欲しい|もらえ)?"
+        ),
+    ),
+    (
+        "correction-request",
+        re.compile(r"(間違っ|誤っ)(ている|ています|ていた|てた|てる|てます|た)"),
     ),
     (
         "correction-request",
         re.compile(r"(それ|そこ|その(対応|判断|実装))は(違う|誤り|間違い)[^。\n]{0,10}(直し|修正)"),
+    ),
+    (
+        "correction-request",
+        re.compile(
+            r"(今後|以降|これから|次から)[^。\n]{0,10}(方針|ルール|規範|規定)"
+            r"[^。\n]{0,10}(にして|とする|に変えて|変更)"
+        ),
     ),
 )
 
