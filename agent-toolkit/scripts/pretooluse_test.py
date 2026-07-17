@@ -14,6 +14,7 @@ import sys
 
 import pretooluse
 import pytest
+import yaml
 from _scope_escalation_test_helpers import load_scope_escalation_inputs as _load_scope_escalation_inputs
 from pyfltr.colloquial import check as _colloquial_check
 
@@ -1811,6 +1812,34 @@ class TestManifestSsot:
         assert entry["name"] == plugin_manifest["name"]
 
 
+_AGENTS_DIR_PATH = pathlib.Path(__file__).resolve().parents[1] / "agents"
+_PERMITTED_CODEX_MCP_AGENTS = frozenset({"plan-codex-reviewer", "plan-codex-implementer"})
+
+
+class TestCodexMcpToolDeclarationGuardrail:
+    """`mcp__codex__codex`系ツールをfrontmatterへ宣言できるエージェント定義の限定検査。
+
+    `subagent-collaboration.md`「実装委譲3者の関係」節のガードレールを機械検証する。
+    """
+
+    def test_only_permitted_agents_declare_codex_mcp_tools(self) -> None:
+        violations: list[str] = []
+        for agent_path in sorted(_AGENTS_DIR_PATH.glob("*.md")):
+            text = agent_path.read_text(encoding="utf-8")
+            if not text.startswith("---\n"):
+                continue
+            _, _, rest = text.partition("---\n")
+            frontmatter_text, _, _ = rest.partition("\n---")
+            frontmatter = yaml.safe_load(frontmatter_text)
+            tools = frontmatter.get("tools") if isinstance(frontmatter, dict) else None
+            if not isinstance(tools, list):
+                continue
+            declares_codex_mcp = "mcp__codex__codex" in tools or "mcp__codex__codex-reply" in tools
+            if declares_codex_mcp and frontmatter.get("name") not in _PERMITTED_CODEX_MCP_AGENTS:
+                violations.append(agent_path.name)
+        assert not violations, f"codex MCPツールを宣言している許可外エージェント定義: {violations}"
+
+
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
 _SCRIPTS_DIR_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts"
 
@@ -2925,14 +2954,14 @@ class TestCodexReviewNotRead:
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
         assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
 
-    def test_allowed_when_codex_impl_invoked_without_review_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """`codex_impl_invoked`が真の場合、codex-review.md未読でもブロックせず通過する。"""
-        self._write_state(tmp_path, "impl-invoked", {"codex_impl_invoked": True})
+    def test_allowed_when_sidechain_without_review_read(self, state_dir: dict[str, str]):
+        """`isSidechain`が真の場合、codex-review.md未読でもブロックせず通過する。"""
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
-                "session_id": "impl-invoked",
+                "session_id": "sidechain-invoked",
+                "isSidechain": True,
             },
             env_overrides=state_dir,
         )
@@ -2940,14 +2969,14 @@ class TestCodexReviewNotRead:
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
-    def test_blocked_when_codex_impl_not_invoked_and_review_unread(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """`codex_impl_invoked`が偽に設定済み＋codex-review.md未読の場合は従来どおりブロックされる。"""
-        self._write_state(tmp_path, "impl-not-invoked", {"codex_impl_invoked": False})
+    def test_blocked_when_not_sidechain_and_review_unread(self, state_dir: dict[str, str]):
+        """`isSidechain`が偽（メイン直接呼び出し）かつcodex-review.md未読の場合は従来どおりブロックされる。"""
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
                 "tool_input": {"prompt": "hello"},
-                "session_id": "impl-not-invoked",
+                "session_id": "not-sidechain",
+                "isSidechain": False,
             },
             env_overrides=state_dir,
         )
@@ -4523,14 +4552,13 @@ class TestPlanModeFlagReset:
     """`agent-toolkit:plan-mode`スキル起動時の工程7完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`・`codex_impl_invoked`が偽へリセットされ、
+        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
         `current_plan_file_path`が消去される。
         """
         sid = "process7-reset"
         state = {
             "plan_mode_skill_invoked": True,
             "agent_doc_validator_invoked": True,
-            "codex_impl_invoked": True,
             "current_plan_file_path": "/tmp/previous-plan.md",
         }
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -4549,7 +4577,6 @@ class TestPlanModeFlagReset:
         for flag in _PROCESS7_FLAGS:
             assert updated[flag] is False
         assert updated["agent_doc_validator_invoked"] is False
-        assert updated["codex_impl_invoked"] is False
         assert "current_plan_file_path" not in updated
 
 

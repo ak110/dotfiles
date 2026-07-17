@@ -144,8 +144,12 @@ specとimpl指摘が同一変更箇所で相反する場合、重大度が異な
 同期を委譲先で行うかメイン側amend前に行うかは修正指示で明示する。
 
 対応が必要な指摘が1件以上あれば修正内容をユーザーへ簡潔に報告して修正再実装へ進み、完了後に検証タスクで合格を確認する。
-codex委譲実装分（進捗ログに`threadId`記録あり）は`agent-toolkit:codex-impl`の継続呼び出しで同一スレッドへ差し戻し、
-それ以外は修正再実装モードで`plan-implementer`へ委譲する。
+修正実装はcodexを優先する。詳細は`agent-toolkit/references/plan-impl/execution-process.md`
+「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節に従う。
+進捗ログに`threadId`記録がある場合はAgentツールで`plan-codex-implementer`サブエージェントを継続呼び出し
+（`threadId`引き渡し）で同一スレッドへ差し戻す。`threadId`記録が無い場合も
+`mcp__codex__codex`が利用可能なら新規に`plan-codex-implementer`サブエージェントへ委譲する。
+MCPが利用不可の場合のみ修正再実装モードで`plan-implementer`へ委譲する。
 
 修正のコミット反映は、直前の未プッシュコミットがレビュー対象計画と件名・対象範囲の両面で整合する場合に
 `git commit --amend`で統合する。いずれかを満たさない場合はamendせず新規コミットを作成する。

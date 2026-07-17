@@ -82,10 +82,8 @@
   - メイン側が`"opus"`以下ならコンテキスト効率次第ではメイン側で作業した方がよい
   - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき
    （例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
-- Agentツール・`agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合はeffortを併記する
- （`"fable"`以外は`medium`、`"fable"`は`low`、`model: inherit`指定時も`effort: medium`を明示する）
-- 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する
-  - 同スキルは`context: fork`と`agent: Explore`・`model: haiku`指定でCLAUDE.md・ルール群を読み込まずhaikuで実行する
+- Agentツール・`agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合はeffortを併記する。`"fable"`以外は`medium`、`"fable"`は`low`、`model: inherit`指定時も`effort: medium`を明示する
+- 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する。同スキルは`context: fork`と`agent: Explore`・`model: haiku`指定でCLAUDE.md・ルール群を読み込まずhaikuで実行する
   - 例外: 単発の参照コマンド1回で完結する操作は、委譲による段階的開示の利点が発生しないためメイン直接実行も許容する
 - forkスキルとagents定義は以下の基準で使い分ける
   - CLAUDE.mdを読み込まず`"haiku"`で実行してよい単純作業はforkスキル（`agent: Explore`と`model: haiku`指定）を使う
@@ -118,6 +116,8 @@
     膨張要因が重なると`autocompact thrashing`を誘発するため、該当時はタスク分割または
     `subagent_type: claude`への切替（規範スキル読込を省略し起動プロンプトで関連規範
     `agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`等を明示引用）を選ぶ
+    （適用範囲・`plan-codex-implementer`との使い分けは
+    `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節を正典とする）
 - 機械検出対象の文字列（縮退表明の代表フレーズ等）の照合・分析をサブエージェントへ委譲する場合、
   委譲プロンプトで判定対象フレーズを原文のまま報告本文へ引用させず部分伏字または間接記述（「〜という構造の文」等）で表記させる
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する

@@ -81,6 +81,32 @@ Agentツール起動は常に独立コンテキストで開始される確定事
 受信側の処理規定を伴わない起動プロンプト欄追加は無効情報の埋め込みとなり、
 計画レビューで重大指摘対象とする。
 
+## 実装委譲3者の関係
+
+`plan-impl-executor`・`plan-codex-implementer`・`plan-implementer`の相互関係を本節でSSOT化する。
+各定義の本文改訂時は要約と本節への参照のみを置き、詳細記述を重複させない。
+
+- `plan-impl-executor`: `plan-mode`が確定した計画ファイル1件の実行全体（タスク分解・実装・検証・
+  コミット・レビュー引き継ぎ判定）を担う起動主体。実装委譲先の選定を担当する
+- `plan-codex-implementer`: 実装委譲先の第一候補
+  - コード・テストコード・一般ドキュメント・コーディングエージェント向け文書の実装タスクを
+    codex MCPへ委譲するサブエージェントである
+  - `mcp__codex__codex`が利用可能な場合に常に優先する
+- `plan-implementer`: 実装委譲先のフォールバック
+  - `mcp__codex__codex`が利用不可と判明した場合に限り、`plan-impl-executor`が実装タスクを委譲する
+    サブエージェントである
+  - 実装委譲以外の用途（レビュー指摘の一律差し戻し先・隔離リファレンスの確認・修正窓口等）へ指名しない
+- 判定基準の詳細（委譲手順・並列実行・`threadId`管理）は
+  `agent-toolkit/references/plan-impl/execution-process.md`
+  「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節を正典とする
+- 設計指針: 同一役割層（実装委譲先）に属するコンポーネントは委譲形態を揃える。
+  `plan-codex-implementer`・`plan-implementer`はいずれもサブエージェント定義とし、
+  一方のみをスキル定義にする非対称構成を新設しない
+- ガードレール: `agent-toolkit/agents/`配下のエージェント定義frontmatterの`tools:`へ
+  `mcp__codex__codex`・`mcp__codex__codex-reply`を宣言してよいのは`plan-codex-reviewer`・
+  `plan-codex-implementer`の2定義に限る。他のエージェント定義へ追加する場合も本節の制約に従う
+  （機械検証は`agent-toolkit/scripts/pretooluse_test.py`の該当テストを参照）
+
 ## 出力節への追加要素導入
 
 サブエージェント定義の`## 出力`節に新規要素（観点網羅サマリー・チェックリスト等）を導入する場合、

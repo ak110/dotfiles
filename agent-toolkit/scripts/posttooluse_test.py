@@ -283,7 +283,7 @@ class TestSessionReviewSkillInvocation:
 
 
 class TestAgentInvocationFlags:
-    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出・codex-impl起動検出。"""
+    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize(
@@ -311,24 +311,13 @@ class TestAgentInvocationFlags:
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_invoked") is True
 
-    @pytest.mark.parametrize("skill_name", ["agent-toolkit:codex-impl", "codex-impl"])
-    def test_codex_impl_flag_via_skill(self, tmp_path: pathlib.Path, skill_name: str):
-        """`codex-impl`スキル完了で`codex_impl_invoked`が記録される（フルネーム・短縮名の両方）。"""
-        sid = f"codex-impl-via-skill-{skill_name.replace(':', '-')}"
-        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill_name}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("codex_impl_invoked") is True
+    def test_codex_review_not_recorded_via_mcp_when_sidechain(self, tmp_path: pathlib.Path):
+        """`isSidechain`が真（`plan-codex-implementer`内部呼び出し）の場合、`codex_review_invoked`を記録しない。
 
-    def test_codex_review_not_recorded_via_mcp_when_codex_impl_invoked(self, tmp_path: pathlib.Path):
-        """`codex_impl_invoked`が真の場合、`mcp__codex__codex`完了で`codex_review_invoked`を記録しない。
-
-        `codex_impl_invoked`未設定時に記録される挙動（従来どおり）は`test_codex_review_flag_via_mcp`で検証済み。
+        `isSidechain`が偽の場合に記録される挙動（従来どおり）は`test_codex_review_flag_via_mcp`で検証済み。
         """
-        sid = "codex-impl-mcp-no-review-flag"
-        tmp_path.mkdir(parents=True, exist_ok=True)
-        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
-            json.dumps({"codex_impl_invoked": True}, ensure_ascii=False), encoding="utf-8"
-        )
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}}, state_dir=tmp_path)
+        sid = "codex-sidechain-mcp-no-review-flag"
+        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True}, state_dir=tmp_path)
         assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])

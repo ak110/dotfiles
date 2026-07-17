@@ -240,7 +240,8 @@ def _check_read_isolated_reference(tool_input: dict, session_id: str, is_sidecha
         return None
     return _llm_notice(
         f"blocked: direct Read of isolated reference by main agent is prohibited. "
-        f"Use Explore/plan-implementer subagent, or invoke agent-toolkit-edit for edit purpose. "
+        f"Use Explore subagent to check, subagent_type=claude to fix, "
+        f"or invoke agent-toolkit-edit for edit purpose. "
         f"Target: {file_path_raw}"
     )
 
@@ -413,11 +414,13 @@ def main() -> int:
         return 0
 
     # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正 + 強制承認
-    # `codex_impl_invoked`が真の場合は実装用途の呼び出しのためcodex-review.md未読ブロックを回避する。
+    # `isSidechain`が真（サブエージェント内部からの呼び出し）の場合は実装用途の呼び出しのため
+    # codex-review.md未読ブロックを回避する。
     if tool_name == "mcp__codex__codex":
-        state = read_state(session_id)
-        if not state.get("codex_impl_invoked", False) and _check_codex_review_not_read(state):
-            return 2
+        if payload.get("isSidechain") is not True:
+            state = read_state(session_id)
+            if _check_codex_review_not_read(state):
+                return 2
         emit_json(_check_codex_mcp_sandbox(tool_input))
         return 0
 
@@ -2685,6 +2688,8 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-impl-executor",
         "plan-implementer",
         "agent-toolkit:plan-implementer",
+        "plan-codex-implementer",
+        "agent-toolkit:plan-codex-implementer",
         "plan-impl-reviewer",
         "agent-toolkit:plan-impl-reviewer",
         "plan-codex-reviewer",
@@ -3001,7 +3006,6 @@ def _reset_process7_completion_flags(session_id: str) -> None:
     新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`と条件付きフラグ
     `agent_doc_validator_invoked`を偽へ戻す。前計画の`current_plan_file_path`も
     新計画の対象ファイル判定へ誤流用しないよう消去する。
-    実装用途の`mcp__codex__codex`呼び出しを許可する`codex_impl_invoked`も偽へ戻す。
     """
     if not session_id:
         return
@@ -3023,10 +3027,6 @@ def _reset_process7_completion_flags(session_id: str) -> None:
             changed = True
         if current.get("last_agent_toolkit_edit_path") is not None:
             current["last_agent_toolkit_edit_path"] = None
-            changed = True
-        # 実装用途判定の迂回（codex-review.md未読ブロック回避）が新計画へ持ち越されるのを防ぐ。
-        if current.get("codex_impl_invoked", False):
-            current["codex_impl_invoked"] = False
             changed = True
         return current if changed else None
 

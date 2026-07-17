@@ -7,7 +7,9 @@ Stop hook直近アシスタント発話／SubagentStop hookサブエージェン
 
 `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節に従い、
 機械チェック用辞書の検出語そのものは本ファイルへ隔離する。
-メインエージェントは本ファイルを読み込まず、`Explore`サブエージェントまたは`plan-implementer`経由でのみ参照する。
+メインエージェントは本ファイルを読み込まず、`Explore`サブエージェント経由で確認し、
+修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
+（`plan-implementer`は実装委譲先専用のため本用途では指名しない）。
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
 引用ブロック回避規範は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節を参照。
 

@@ -23,15 +23,14 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
    （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール）
-10. codex-impl起動検出（Skill: agent-toolkit:codex-impl。`codex_impl_invoked`記録）
-11. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
-12. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
+10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
+11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
-13. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
+12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
     （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
-14. `git commit --amend` / `git commit --fixup` 成功時のcwd別
+13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
-15. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
+14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
 """
 
 import json
@@ -157,10 +156,6 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 # Stop hookでの振り返り誘導抑止に使う配布物側の振り返りスキル名。観測したらsession_stateへ記録する。
 _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 
-# codex-impl起動検出に使うスキル名。フルネームと短縮名の両方を許容する。
-# pretooluse.pyの`_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES`と同型の構成とする。
-_CODEX_IMPL_SKILL_NAMES = frozenset({"agent-toolkit:codex-impl", "codex-impl"})
-
 # process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 # Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
@@ -190,6 +185,8 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-impl-executor",
         "plan-implementer",
         "agent-toolkit:plan-implementer",
+        "plan-codex-implementer",
+        "agent-toolkit:plan-codex-implementer",
         "plan-impl-reviewer",
         "agent-toolkit:plan-impl-reviewer",
         "plan-codex-reviewer",
@@ -392,15 +389,6 @@ def main() -> int:
                 return state
 
             update_state(session_id, _set_review_invoked)
-        if isinstance(skill_name, str) and skill_name in _CODEX_IMPL_SKILL_NAMES:
-
-            def _set_codex_impl_invoked(state: dict) -> dict | None:
-                if state.get("codex_impl_invoked", False):
-                    return None
-                state["codex_impl_invoked"] = True
-                return state
-
-            update_state(session_id, _set_codex_impl_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES:
@@ -425,19 +413,18 @@ def main() -> int:
         return 0
 
     # mcp__codex__codex: codex-review起動検出
-    # 実装用途（codex-impl経由）の呼び出しは`codex_impl_invoked`が真になっているため、
+    # `isSidechain`が真（`plan-codex-implementer`内部の実装用途呼び出し）の場合は
     # レビュー起動の誤記録を避けて`codex_review_invoked`を記録しない。
     if tool_name == "mcp__codex__codex":
+        if payload.get("isSidechain") is not True:
 
-        def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
-            if state.get("codex_impl_invoked", False):
-                return None
-            if state.get("codex_review_invoked", False):
-                return None
-            state["codex_review_invoked"] = True
-            return state
+            def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
+                if state.get("codex_review_invoked", False):
+                    return None
+                state["codex_review_invoked"] = True
+                return state
 
-        update_state(session_id, _set_codex_review_invoked_via_mcp)
+            update_state(session_id, _set_codex_review_invoked_via_mcp)
         return 0
 
     # Read: 規範ファイル読み込みのセッション状態フラグ化

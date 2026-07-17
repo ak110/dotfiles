@@ -82,15 +82,6 @@ class TestSlashCommandDetection:
         assert isinstance(invoked, dict)
         assert invoked.get("agent-toolkit:session-review") is True
 
-    def test_detects_short_skill_command_codex_impl(self, tmp_path: pathlib.Path):
-        sid = "short-codex-impl"
-        result = _run(
-            {"session_id": sid, "prompt": "/codex-impl"},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("codex_impl_invoked") is True
-
 
 class TestNonMatchingPrompts:
     """非スキル起動プロンプトでフラグが立たないことの検証。"""
