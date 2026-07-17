@@ -17,8 +17,7 @@
   - 例外は当該ファイル自体の編集・調査目的、`references/`配下のRead、Skillツール利用不可な起動元での代替Readとする
 - `AskUserQuestion`の`options`配列は1問あたり最大4件まで（5件以上は`InputValidationError: too_big`で失敗する）
   - 論点の整理・前提・判断材料は通常応答のテキスト出力で先にまとめてから`AskUserQuestion`を呼ぶ
-  - 判断材料が長文になる場合は判断材料のみの応答でターンを終え、次のターンで`AskUserQuestion`を呼ぶ
-   （ツール呼び出しと同一メッセージ内のテキストはユーザーに表示されない）
+  - 判断材料が長文になる場合は判断材料のみの応答でターンを終え、次のターンで`AskUserQuestion`を呼ぶ（ツール呼び出しと同一メッセージ内のテキストはユーザーに表示されない）
 - ユーザーへの質問・承認待ちを発行してターンを終了する場合は地の文の問いかけを避け、必ず`AskUserQuestion`を用いる
   （地の文のみで問いかけて応答待ちに入るとStopフックの振り返り誘導が誤発動する）
 - task管理は`TaskCreate`・`TaskUpdate`を優先する（plan mode編集禁止の対象外として扱う）
@@ -37,11 +36,11 @@
   - `sed -i`の手書き正規表現や個別`Edit`の繰り返しは対象漏れや誤爆が起きやすい
 - 100行超の連続ブロックを`Edit`で置換する場合は`old_string`にブロック全体を含めるかPythonスクリプトの
   行範囲スライスを用いる（途中分割で残余を後続`Edit`で削除する運用は中間状態でファイルが破損する）
-- Bashで`run_in_background=true`した長時間ジョブの完了判定では、最終サマリー欠落とゲート判定の早期成立に注意する
-  - `tail -N`は集計行（`passed`/`failed`サマリーなど）が欠落し得るため、Monitorで全行取得するか最終マーカーを`grep -q`で待つ
-  - 出力ファイルパスのサイズ・存在をwhileループでポーリングしない
+- Bashで`run_in_background=true`した長時間ジョブの完了判定では、最終サマリー欠落とゲート判定の早期成立に注意する。
+  `tail -N`は集計行（`passed`/`failed`サマリーなど）が欠落し得るため、Monitorで全行取得するか最終マーカーを`grep -q`で待つ。
+  出力ファイルパスのサイズ・存在をwhileループでポーリングしない
 - task-notificationで自動発火する背景タスク（Bashの`run_in_background`・Agent呼び出し・fork内サブエージェント）の
-  完了検出目的でMonitorを起動しない。マーカー未生成時は無限待機、Stop hookは直前tool_use=Monitorを一律ブロックする。
+  完了検出目的でMonitorを起動しない。マーカー未生成時は無限待機となり、Stop hookは直前tool_use=Monitorを一律ブロックする。
   Monitorはマーカー作成源が明確に存在する外部プロセスの状態変化・ログ出力の逐次観察等に限定する
 - `git merge`進行中に`git stash`は禁止（stash/pop後に`MERGE_HEAD`が失われ通常コミット形式へ降格するため）。
   退避は対象ファイルを別パスへ`cp`、`git switch -c`で別ブランチへ退避、または`git reset --hard ORIG_HEAD`で再マージする
@@ -55,8 +54,7 @@
   - `agent-toolkit:agent-standards`スキルの`references/auto-mode.md`を参照してカスタムルール追加の要否を判断する
 - 起草をサブエージェントへ委譲するプロンプトには`agent-toolkit/skills/writing-standards/references/textlint-violations.md`
   読込指示を含める。加えて`[現行]`ブロック記述直前の対象ファイル再`Read`義務を含める（陳腐化転記による差分不成立の防止）
-  - 計画専用機械チェックとして統合ランナー
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し
+  - 計画専用機械チェックとして統合ランナー`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行する。
     違反・警告を解消する旨を委譲プロンプトへ含める
     （`launch-prompts-drafting.md`と同期。統合ランナーが全チェックを内包する）
 - `AskUserQuestion`の応答本文に`[SYSTEM NOTIFICATION - NOT USER INPUT]`ヘッダが含まれる場合の扱い。
@@ -80,8 +78,7 @@
   - `"opus"`向き: バグの原因調査や設計検討を伴うコーディング・文書記述・レビュー（創造的で方向性未確定な場合に選ぶ）
   - 事前に内容が確定していないコーディングなどに`"sonnet"`以下を使うことは避ける（品質重視）
   - メイン側が`"opus"`以下ならコンテキスト効率次第ではメイン側で作業した方がよい
-  - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき
-   （例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
+  - メイン側が`"fable"`/`"mythos"`以上の場合はオーケストレーションに専念すべき（例えば計画ファイル作成なども全てサブエージェントへ移譲すべき）
 - Agentツール・`agent-toolkit/agents/*.md`のfrontmatterでmodel指定する場合はeffortを併記する。`"fable"`以外は`medium`、`"fable"`は`low`、`model: inherit`指定時も`effort: medium`を明示する
 - 複数のシェルコマンド実行を要する定型作業（gh・glabの操作など）は`agent-toolkit:shell-exec`スキルへ委譲する。同スキルは`context: fork`と`agent: Explore`・`model: haiku`指定でCLAUDE.md・ルール群を読み込まずhaikuで実行する
   - 例外: 単発の参照コマンド1回で完結する操作は、委譲による段階的開示の利点が発生しないためメイン直接実行も許容する
@@ -101,13 +98,12 @@
   - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い、
     元タスク・修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める
 - 実行途中のサブエージェントへ追加指示・スコープ変更を送る場合、起動プロンプトの制約
-  （編集対象範囲・git操作禁止・外部公開操作の禁止等）が追加指示にも引き続き適用される旨を
-  追加指示本文へ明記する。制約対象の作業を追加指示で新たに委譲する場合はその旨を明示的に許可する
+  （編集対象範囲・git操作禁止・外部公開操作の禁止等）が追加指示にも引き続き適用される旨を追加指示本文へ明記する。
+  制約対象の作業を追加指示で新たに委譲する場合はその旨を明示的に許可する
 - 並列起動のたびに各タスクの編集対象ファイル集合の重複を起動前に点検し、重複があればタスク境界を再設計する
   （修正再実装ループでの再並列起動でも省略しない）
 - 並列Claudeセッション（背景セッション）検知時の分岐解消手順
-  - `git status`・`git log --oneline`で予期しないコミットを検知した場合、
-    `git reflog --date=iso`で他セッションによる`commit (amend)`の発生時刻を特定する
+  - `git status`・`git log --oneline`で予期しないコミットを検知した場合、`git reflog --date=iso`で他セッションによる`commit (amend)`の発生時刻を特定する
   - ローカルHEADと`origin`が分岐している場合はユーザーへ確認を求めたうえで、
     `git pull --rebase --autostash`または`git push --force-with-lease`のいずれかを選択する
 - 対象ファイルの編集が定型パターンの反復であり規範適合性の判断を要さないタスクは
@@ -116,8 +112,7 @@
     膨張要因が重なると`autocompact thrashing`を誘発するため、該当時はタスク分割または
     `subagent_type: claude`への切替（規範スキル読込を省略し起動プロンプトで関連規範
     `agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`等を明示引用）を選ぶ
-    （適用範囲・`plan-codex-implementer`との使い分けは
-    `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節を正典とする）
+    （適用範囲・`plan-codex-implementer`との使い分けは`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節を正典とする）
 - 機械検出対象の文字列（縮退表明の代表フレーズ等）の照合・分析をサブエージェントへ委譲する場合、
   委譲プロンプトで判定対象フレーズを原文のまま報告本文へ引用させず部分伏字または間接記述（「〜という構造の文」等）で表記させる
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する
@@ -178,15 +173,14 @@
   - 検証・コミットを伴うタスクは`foreground`起動するか、メイン側で検証・コミットを巻き取る前提で計画する
   - 権限不可で検証未実施のまま編集完了報告された場合は完了扱いとせず、メイン側で`git diff`照合と検証コマンドを実行する
 - 外部主体（サブエージェント・pre-commit・chezmoi・linter等）による作業ツリー変更の可能性がある契機の直後は、
-  メイン側の認識・キャッシュを実体と照合してから次工程へ進む
-  - 契機の例: 並列起動バッチの全完了通知の受領直後・pre-commit実行後・chezmoi apply後・
-    機械チェック（textlint・pyfltr auto-fix等）実行後
+  メイン側の認識・キャッシュを実体と照合してから次工程へ進む。
+  契機は並列起動バッチの全完了通知の受領直後・pre-commit実行後・chezmoi apply後・
+  機械チェック（textlint・pyfltr auto-fix等）実行後などとする
   - 並列完了直後は`git status --short`と`git diff --stat`を実行し、
     各サブエージェントの完了報告が挙げる変更ファイル集合と作業ツリーの実態が一致するか照合する。
     不一致を検出した場合は後続作業へ進まず、巻き戻り・取りこぼしの原因を特定して回復する
-  - `Edit`対象の全ファイルは事前に`Read`で再読込してから編集する。
-    メイン側ファイルキャッシュ陳腐化による「File has been modified since read」エラーの未然回避のため。
-    契機はchezmoi post_applyフック・pre-commitフック・linter再書き込みなど
+  - `Edit`対象の全ファイルは契機発生直後に事前`Read`で再読込してから編集する
+    （メイン側ファイルキャッシュ陳腐化による「File has been modified since read」エラーの未然回避のため）
 - 計画ファイル作成をサブエージェントへ移譲する場合、plan modeは専用のサンドボックスパス
  （`<計画名>-agent-<id>.md`）を付与し正規パスへは書き込まれない。
   メイン側でサブエージェント完了後にサンドボックスファイル内容を検収し、正規パスへ書き込む
@@ -218,3 +212,9 @@
   - 本項の固定書式表を汎用定義のSSOTとし、`careful-review/SKILL.md`等の列名整合は個別委譲で扱う
 - サブエージェント委譲の可否・委譲先エージェントの選択・並列度・model選択は技術判断として自律決定する。
   詳細は`agent-toolkit/rules/02-collaboration.md`の「実装手順の詳細」項（技術判断・自律決定原則のSSOT）を参照する
+- 長時間検証プロセス（`pyfltr`・`pytest`・ビルド・CI等）の完了検知は単発`ps`スナップショット依存を避ける。
+  ブロッキング完了検知パターンを用いる。代表例は`wait <PID>`・`until ! ps -p <PID>; do sleep <n>; done`等とする。
+  Monitor toolの`until <check>; do sleep; done`・`run_in_background`+完了通知等も用いる
+  - `idle_notification`送信後に呼び出し元から催促された場合、経過時間ベースの推測で「まだ実行中」と返さず
+    `ps -p`または該当プロセスの終了ステータスを実測してから応答する
+  - 単発`ps`確認1回だけで以降の状態変化を推測しない

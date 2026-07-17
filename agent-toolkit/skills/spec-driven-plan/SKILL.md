@@ -1,7 +1,7 @@
 ---
 name: spec-driven-plan
-description: >
-  次版ドキュメント（テーマ仕様）を基にテーマごとの実装計画ファイルを作成するときに起動する。
+description: 手動起動専用。
+disable-model-invocation: true
 # 編集時の注意点:
 # 本スキルは`agent-toolkit:plan-mode`を参照呼び出しする想定だが、本スキル起動時点ではplan-modeは
 # 未ロード。フェーズA・Bサブエージェントが各自Skillツールで`agent-toolkit:plan-mode`を呼び出す前提。

@@ -2,12 +2,9 @@
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add/list/本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-show系テストは`_atk_fb_show_test.py`、adopt/reject/rm/edit/パストラバーサル拒否は`_atk_fb_mutations_test.py`、
-process-loop・リモートURL正規化・リポジトリID解決は`_atk_fb_process_loop_test.py`に分離する。
-commit/enable/disable/--source等の拡張機能テストは`_atk_fb_extras_test.py`に分離する。
-tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adoptサブコマンドの単体テストは`_atk_fb_tbd_test.py`に分離する。
-tbd関連の共通ヘルパー（`_setup_tbd_env`・`_write_tbd_file`）は本ファイルと`_atk_fb_tbd_test.py`の
-双方から使うため本ファイルに残置する。
+show系は`_atk_fb_show_test.py`、mutation系は`_atk_fb_mutations_test.py`、process-loop・リポジトリ解決は
+`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、TBD系は`_atk_fb_tbd_test.py`に分離する。
+TBD共通ヘルパーは本ファイルとTBD系テストの双方から使うため本ファイルに残置する。
 """
 
 import datetime
@@ -115,6 +112,40 @@ class TestTbdAddSourceOptionParser:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["fb", "tbd-add", "/tmp/x", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
+
+
+class TestSpaceSeparatedOptionWarning:
+    """mainがparse前に空白区切りオプションを警告することを検証する。"""
+
+    @pytest.mark.parametrize("subcommand", ["adopt", "reject", "tbd-adopt"])
+    def test_warns_before_argument_error(self, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            atk.main(["fb", subcommand, "missing.md", "--note", "memo"])
+        assert "警告: --noteは--note=VALUE形式で渡すことを推奨します。" in capsys.readouterr().err
+
+    def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            atk.main(["fb", "adopt", "missing.md", "--note=memo"])
+        assert "警告:" not in capsys.readouterr().err
+
+
+class TestUnansweredTbdNotification:
+    """非TBDサブコマンド完了後の未回答TBD通知を検証する。"""
+
+    @pytest.mark.parametrize("count", [0, 1, 3])
+    def test_notifies_unanswered_entries_after_non_tbd_command(
+        self, count: int, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        notes = _setup_tbd_env(tmp_path)
+        for index in range(count):
+            _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        stderr = capsys.readouterr().err
+        assert stderr.count("[unanswered]") == count
+        assert stderr.startswith("# tbd\n") if count else not stderr
 
 
 class TestFlagFileMissing:

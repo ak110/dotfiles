@@ -46,6 +46,7 @@ import sys
 # 共通モジュール読み込みのため本ファイルと同一ディレクトリを`sys.path`へ追加する。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
+import _narrative_ledger  # noqa: E402
 from _plan_diff_parsing import (  # noqa: E402
     FRONTMATTER_LABEL_RE,
     REDUCTION_HEADING_RE,
@@ -206,7 +207,30 @@ def _check_wc(plan_path: pathlib.Path) -> int:
     for path in order:
         violations += _check_one_file(plan_path, path, grouped[path], projected_map)
     violations += _check_addition_reduction_projection(plan_path, text)
+    violations += _check_narrative_ledger_consistency(plan_path, text)
     return violations
+
+
+def _check_narrative_ledger_consistency(plan_path: pathlib.Path, text: str) -> int:
+    """H3節と対比ブロックの実測差を収集し、行数収支主張検査へ渡す。"""
+    section = _extract_section(text, "## 変更内容")
+    if section is None:
+        return 0
+
+    known_paths = _collect_known_paths(section)
+    ledgers: list[tuple[str, str, int]] = []
+    for h3_section in re.split(r"(?=^###\s+)", section, flags=re.MULTILINE):
+        heading = h3_section.splitlines()[0] if h3_section.splitlines() else ""
+        match = _H3_RE.match(heading)
+        if match is None or match.group("path") not in known_paths:
+            continue
+        path = match.group("path")
+        blocks, _ = _extract_diff_blocks(h3_section, frozenset({path}))
+        if not blocks:
+            continue
+        actual_diff = sum(len(replacement.splitlines()) - len(current.splitlines()) for _, current, replacement in blocks)
+        ledgers.append((path, h3_section, actual_diff))
+    return _narrative_ledger.check_narrative_ledger_consistency(plan_path, ledgers, _ALLOWED_DRIFT)
 
 
 def _extract_allowed_repo_roots(text: str) -> list[str]:

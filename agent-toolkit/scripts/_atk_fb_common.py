@@ -12,7 +12,7 @@ import sys
 import tempfile
 from collections.abc import Iterable, Iterator
 
-from _atk_fb_formatters import _parse_target_repo
+from _atk_fb_formatters import _parse_target_repo, _tbd_body_summary
 
 # フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
 # - `inbox`: 未処理の投入直後
@@ -23,6 +23,27 @@ FEEDBACK_STATE_INBOX = "inbox"
 FEEDBACK_STATE_PROCESSING = "processing"
 FEEDBACK_STATE_ADOPTED = "adopted"
 FEEDBACK_STATE_REJECTED = "rejected"
+
+_SPACE_SEPARATED_OPTION_SUBCOMMANDS = frozenset(("adopt", "reject", "tbd-adopt"))
+_SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
+
+
+def warn_space_separated_option(argv: list[str]) -> None:
+    """後始末サブコマンドの値付きオプションが空白区切りの場合に警告する。"""
+    try:
+        fb_index = argv.index("fb")
+        subcommand_index = fb_index + 1
+        subcommand = argv[subcommand_index]
+    except (ValueError, IndexError):
+        return
+    if subcommand not in _SPACE_SEPARATED_OPTION_SUBCOMMANDS:
+        return
+    for index, arg in enumerate(argv[subcommand_index + 1 :], start=subcommand_index + 1):
+        if arg not in _SPACE_SEPARATED_OPTIONS or index + 1 >= len(argv):
+            continue
+        value = argv[index + 1]
+        if not value.startswith("--") and "=" not in value:
+            print(f"警告: {arg}は{arg}=VALUE形式で渡すことを推奨します。", file=sys.stderr)
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
@@ -208,6 +229,21 @@ def _is_tbd_answered(text: str) -> bool:
             continue
         return True
     return False
+
+
+def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
+    """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
+    tbd_dir = private_notes / "tbd" / FEEDBACK_STATE_INBOX
+    entries = [
+        (path, entry_repo, text)
+        for path, entry_repo, text in _iter_inbox_entries(tbd_dir, target_repo)
+        if not _is_tbd_answered(text)
+    ]
+    if not entries:
+        return
+    print("# tbd", file=sys.stderr)
+    for path, entry_repo, text in entries:
+        print(f"{path.name}\t{entry_repo}\t[unanswered] {_tbd_body_summary(text)}", file=sys.stderr)
 
 
 def _count_pending_entries(

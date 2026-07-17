@@ -1,8 +1,7 @@
 ---
 name: spec-driven-init
-description: >
-  既存プロジェクトにspec-drivenを導入するため、現行版ドキュメントの初版を作成する。
-  手動起動（`/agent-toolkit:spec-driven-init`）または`spec-driven`からの明示呼び出しで使用する。
+description: 手動起動専用。
+disable-model-invocation: true
 ---
 
 # spec-driven導入ワークフロー

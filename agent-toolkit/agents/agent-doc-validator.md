@@ -1,12 +1,6 @@
 ---
 name: agent-doc-validator
-description: >
-  コーディングエージェント向け文書（AGENTS.md・CLAUDE.md・agent-toolkit/rules/配下・.claude/rules/配下・
-  .claude/skills/配下・agent-toolkit/agents/配下・agent-toolkit/skills/配下・
-  .chezmoi-source/dot_claude/rules/および.chezmoi-source/dot_claude/skills/配下）の修正時に、
-  agent-toolkit/rules/01-agent.md方針およびagent-toolkit:agent-standardsスキル方針への
-  適合性（Validation観点）を独立にレビューする。
-  agent-toolkit:plan-mode工程7およびagent-toolkit:careful-reviewから並列起動される。
+description: 他エージェントから起動される。
 model: sonnet
 effort: medium
 user-invocable: false

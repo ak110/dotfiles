@@ -351,14 +351,14 @@ def _describe_pending_background_tasks(
     transcript読み取り失敗時は空集合のペアを返す。
 
     走査は2段構成とする。
-    第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合、
-    および`name`付きAgent tool_useのname→tool_use_id集合マップを構築する。
-    第2段の既存ループ内で、`toolUseResult`条件に該当しないuserエントリに対して
+    第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合と
+    宛先別の行位置、および`name`付きAgent tool_useのname→tool_use_id集合マップを構築する。
+    第2段ではtranscriptを時系列に走査し、`toolUseResult`条件に該当しないuserエントリに対して
     SendMessage集合を参照したテキストマーカー判定を追加し、背景再開のtool_resultを起動集合へ加算する。
-    さらに`<teammate-message>`要素内のidle_notification(available)を検出し、
+    `<teammate-message>`要素内のidle_notification(available)を検出した場合は、
     name→tool_use_id集合マップで解決したtool_use_idを完了集合へ加算する。
-    これにより`name`付きteammate起動の完了通知（task-notification非発行経路）でも
-    起動集合との差し引きが成立し擬似pendingが残らない。
+    その後に同じteammate宛のSendMessageがあれば、対応するtool_use_idを起動集合へ戻して
+    完了集合から除去する。再度idle_notification(available)を受信すれば完了集合へ戻す。
     """
     launched: set[str] = set()
     completed: set[str] = set()
@@ -367,9 +367,15 @@ def _describe_pending_background_tasks(
     except (OSError, ValueError):
         return launched, completed
     sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
+    sendmessage_to_map = _collect_sendmessage_to_map(lines)
+    sendmessage_names_by_position: dict[int, set[str]] = {}
+    for teammate_name, positions in sendmessage_to_map.items():
+        for position in positions:
+            sendmessage_names_by_position.setdefault(position, set()).add(teammate_name)
     named_agent_ids = _collect_named_agent_tool_use_ids(lines)
     task_id_map = _collect_task_id_tool_use_ids(lines)
-    for line in lines:
+    idle_teammates: set[str] = set()
+    for position, line in enumerate(lines):
         try:
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
@@ -397,6 +403,15 @@ def _describe_pending_background_tasks(
             completed.update(_extract_task_notification_ids(message, task_id_map, session_id=session_id))
             for teammate_name in _extract_teammate_completion_names(message):
                 completed.update(named_agent_ids.get(teammate_name, set()))
+                idle_teammates.add(teammate_name)
+        elif entry_type == "assistant":
+            for teammate_name in sendmessage_names_by_position.get(position, set()):
+                if teammate_name not in idle_teammates:
+                    continue
+                teammate_ids = named_agent_ids.get(teammate_name, set())
+                launched.update(teammate_ids)
+                completed.difference_update(teammate_ids)
+                idle_teammates.remove(teammate_name)
         elif entry_type == "attachment":
             # Claude Code 2.1系以降、background task完了通知はattachmentエントリ経由で記録される。
             # attachment.commandMode == "task-notification"のエントリのみが完了通知本文を持つ。
@@ -469,6 +484,36 @@ def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
             if isinstance(block_id, str):
                 ids.add(block_id)
     return ids
+
+
+def _collect_sendmessage_to_map(lines: list[str]) -> dict[str, list[int]]:
+    """非sidechain SendMessageの宛先名から行位置のリストへのマップを返す。"""
+    result: dict[str, list[int]] = {}
+    for position, line in enumerate(lines):
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
+                continue
+            tool_input = block.get("input")
+            if not isinstance(tool_input, dict):
+                continue
+            teammate_name = tool_input.get("to")
+            if isinstance(teammate_name, str) and teammate_name:
+                result.setdefault(teammate_name, []).append(position)
+    return result
 
 
 def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:

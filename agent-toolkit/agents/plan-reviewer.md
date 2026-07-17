@@ -1,9 +1,6 @@
 ---
 name: plan-reviewer
-description: >
-  計画ファイル本文の総合レビューを独立コンテキストで実行するサブエージェント。
-  整合性チェックとサブエージェント連携の設計整合性を担当する。
-  親から指定された計画ファイルパスと関連参照ファイルに従いレビューする。
+description: 他エージェントから起動される。
 model: sonnet
 effort: medium
 skills:

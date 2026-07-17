@@ -1,9 +1,6 @@
 ---
 name: plan-codex-reviewer
-description: >
-  plan-modeスキルのcodexレビュー工程から呼び出す。
-  呼び出し時は次の情報をプロンプト本文へ渡す。計画ファイルの絶対パス、プロジェクトルートの絶対パス、
-  初回か継続かの別、継続時は`threadId`（MCP版）または`SESSION_ID`（CLI版）、追加のレビュー観点（任意）
+description: 他エージェントから起動される。
 model: haiku
 effort: medium
 tools:

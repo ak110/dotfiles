@@ -3768,7 +3768,7 @@ def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str]
             for field in ("label", "description"):
                 text = option.get(field)
                 if isinstance(text, str):
-                    match_result = _match_scope_escalation(text)
+                    match_result = _match_scope_escalation(text, exclude_categories={"pattern-conformance"})
                     if match_result is not None:
                         return match_result
     return None

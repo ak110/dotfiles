@@ -1,12 +1,6 @@
 ---
 name: process-feedbacks-finish
-description: >
-  `agent-toolkit:process-feedbacks`の実装・レビュー完遂後の後続工程を実施するときに起動する。
-  `agent-toolkit:process-feedbacks`・`atk fb process-loop`からの到達時に起動する。
-  ユーザー単独起動時も起動する。
-  対象リポジトリのコード変更有無・コミット対象の有無に関わらず必ず起動する
-  （変更なしを理由とする起動省略は`agent-toolkit:agent-standards`配下
-  `references/scope-escalation-phrases.md`の`process-omission`カテゴリに該当し禁止する）。
+description: process-feedbacksからの後続工程またはユーザー手動起動。
 ---
 
 # フィードバック処理の後続工程

@@ -1,8 +1,6 @@
 ---
 name: spec-driven-impl
-description: >
-  `agent-toolkit:spec-driven-plan`で作成した計画ファイル群を自律実行で順次実装するときに起動する。
-  ユーザー回答追記後の再起動時にも起動する。
+description: spec-driven計画の順次実装。他スキル呼び出しまたはユーザー手動起動。
 # 編集時の注意点:
 # 本スキル実行中はユーザー確認規範をオーバーライドする（「2. ユーザー確認規範のオーバーライド」節）。
 # `EnterPlanMode`/`ExitPlanMode`は使用しない（plan modeの編集制約と整合しないため）。

@@ -1,12 +1,6 @@
 ---
 name: exit-session
-description: >
-  現セッションを自律終了するときに起動する。
-  `agent-toolkit:process-feedbacks-finish`工程6、
-  自律終了再促フック、またはユーザーがSkill名を明示指定した
-  場合にのみ起動する。
-  作業完了・振り返り完了・会話の区切りのみを契機に起動しない。
-  「終了」「やめる」等の一般的な意思表示のみでは起動しない。
+description: 自律終了スキル。他スキル呼び出しまたはユーザー手動起動。
 allowed-tools: Bash
 ---
 

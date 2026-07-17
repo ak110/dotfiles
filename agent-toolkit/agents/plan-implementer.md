@@ -1,8 +1,6 @@
 ---
 name: plan-implementer
-description: >
-  タスク単位の実装または検証を担うサブエージェント。
-  親から指定されたプロンプトに従い実装または検証する。
+description: 他エージェントから起動される。
 model: sonnet
 effort: medium
 skills:

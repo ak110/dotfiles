@@ -453,6 +453,61 @@ class TestCheckWcProjection:
         assert result.returncode == 0, result.stderr
         assert result.stderr == ""
 
+    def test_ledger_consistent_diff_zero(self, tmp_path: pathlib.Path) -> None:
+        """「差引0行」宣言と`[現行]`/`[置換後]`差分0行が一致する場合は違反を報告しない。"""
+        _write(tmp_path / "foo.md", "old1\nold2\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行2行, 見込み2行）",
+                h3_heading="### `foo.md`\n\n差引0行。",
+                current_text="old1\nold2",
+                replacement_text="new1\nnew2",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert result.stderr == ""
+
+    def test_ledger_mismatch_reports_violation(self, tmp_path: pathlib.Path) -> None:
+        """「差引0行」宣言に対して実測差が2行の場合は違反を報告する。"""
+        _write(tmp_path / "foo.md", "old1\nold2\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行2行, 見込み4行）",
+                h3_heading="### `foo.md`\n\n差引0行。",
+                current_text="old1\nold2",
+                replacement_text="new1\nnew2\nnew3\nnew4",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "行数収支主張`差引0行`" in result.stderr
+        assert "実測差+2行" in result.stderr
+
+    def test_multiple_expressions_captured(self, tmp_path: pathlib.Path) -> None:
+        """純増・相殺・差引の表記変種がそれぞれ収支主張として抽出される。"""
+        _write(tmp_path / "foo.md", "old\n")
+        plan = _write(
+            tmp_path / "plan.md",
+            _plan_with_single_block(
+                checkbox_line="- [ ] `foo.md`（現行1行, 見込み5行）",
+                h3_heading=(
+                    "### `foo.md`\n\n純増1行。\n\n追記2行、圧縮1行。\n\n"
+                    "現行1行, 実測5行（追記＋2行, 圧縮－2行で相殺）。\n\n差引+1行。"
+                ),
+                current_text="old",
+                replacement_text="new1\nnew2\nnew3\nnew4\nnew5",
+            ),
+        )
+        result = _run(plan, cwd=tmp_path)
+        assert result.returncode == 1
+        assert "行数収支主張`純増1行`" in result.stderr
+        assert "行数収支主張`追記2行、圧縮1行`" in result.stderr
+        assert "行数収支主張`＋2行、－2行で相殺`" in result.stderr
+        assert "行数収支主張`差引+1行`" in result.stderr
+
     def test_addition_reduction_drift_exceeds_threshold(self, tmp_path: pathlib.Path) -> None:
         """現行行数+追記量-縮減量と見込み行数の乖離が2行超の場合は乖離検出。"""
         plan = _write(

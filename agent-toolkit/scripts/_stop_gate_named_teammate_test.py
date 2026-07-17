@@ -61,6 +61,27 @@ def _user_teammate_idle_notification_entry(name: str, *, idle_reason: str = "ava
     return {"type": "user", "isSidechain": sidechain, "message": {"role": "user", "content": text}}
 
 
+def _assistant_sendmessage_to_entry(tool_use_id: str, teammate_name: str) -> dict:
+    """teammate名を`input.to`に持つSendMessage tool_useエントリを生成する。"""
+    return {
+        "type": "assistant",
+        "isSidechain": False,
+        "message": {
+            "id": "msg_sm",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "SendMessage",
+                    "input": {"to": teammate_name, "message": "続きを再開してください"},
+                }
+            ],
+            "stop_reason": "tool_use",
+        },
+    }
+
+
 class TestNamedTeammate:
     """`name`付きteammate並列起動と`<teammate-message>`経由の完了通知を検証する。
 
@@ -163,3 +184,46 @@ class TestNamedTeammate:
         ]
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is True
+
+    def test_idle_then_sendmessage_reactivates_pending(self, tmp_path: pathlib.Path):
+        """idle到達後の同名teammate宛SendMessageでpendingへ復帰する。"""
+        entries = [
+            _user_entry("hello"),
+            _assistant_named_agent_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_spawned_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_idle_notification_entry("explore-boot"),
+            _assistant_sendmessage_to_entry("toolu_sm1", "explore-boot"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is True
+
+    def test_idle_then_sendmessage_then_idle_completes_again(self, tmp_path: pathlib.Path):
+        """SendMessageによる再委譲後の再度のidle到達でcompletedへ戻る。"""
+        entries = [
+            _user_entry("hello"),
+            _assistant_named_agent_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_spawned_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_idle_notification_entry("explore-boot"),
+            _assistant_sendmessage_to_entry("toolu_sm1", "explore-boot"),
+            _user_teammate_idle_notification_entry("explore-boot"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is False
+
+    def test_sendmessage_to_other_teammate_does_not_reactivate(self, tmp_path: pathlib.Path):
+        """idle到達後の別teammate宛SendMessageはcompleted状態へ影響しない。"""
+        entries = [
+            _user_entry("hello"),
+            _assistant_named_agent_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_spawned_entry("toolu_tm1", "explore-boot"),
+            _user_teammate_idle_notification_entry("explore-boot"),
+            _assistant_sendmessage_to_entry("toolu_sm1", "explore-other"),
+            _user_entry("続き"),
+            _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        assert is_pending_async_work(str(t), "") is False

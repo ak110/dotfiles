@@ -184,13 +184,13 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--note",
         metavar="TEXT",
         default=None,
-        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
     adopt.add_argument(
         "--commit",
         metavar="SHA",
         default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
     )
     adopt.add_argument(
         "--category",
@@ -205,13 +205,13 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--note",
         metavar="TEXT",
         default=None,
-        help="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+        help="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
     reject.add_argument(
         "--commit",
         metavar="SHA",
         default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
     )
     _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
@@ -348,13 +348,13 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--note",
         metavar="TEXT",
         default=None,
-        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。",
+        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
     tbd_adopt.add_argument(
         "--commit",
         metavar="SHA",
         default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。",
+        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
     )
     _add_target_repo_arg(tbd_adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
@@ -436,6 +436,7 @@ def main(
     import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # 補完起動時のみ必要なので遅延importする
 
     argcomplete.autocomplete(parser)
+    _common.warn_space_separated_option(argv if argv is not None else sys.argv[1:])
     args = parser.parse_args(argv)
     if home is None:
         home = pathlib.Path.home()
@@ -472,6 +473,8 @@ def main(
         "tbd-rm": lambda: _tbd._cmd_tbd_rm(args, private_notes),
     }
     dispatch[sub]()
+    if not sub.startswith("tbd-"):
+        _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
     sys.exit(0)
 
 

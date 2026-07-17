@@ -1,9 +1,6 @@
 ---
 name: plan-impl-reviewer
-description: >
-  計画ファイル本文の変更方針と対象ファイル現状を突合してレビューするサブエージェント。
-  コード・ドキュメントの単体品質と日本語表現を、対象ファイル単位で先入観なく評価する。
-  親から指定された計画ファイルパスと対象ファイルパスに従いレビューする。
+description: 他エージェントから起動される。
 model: sonnet
 effort: medium
 skills:

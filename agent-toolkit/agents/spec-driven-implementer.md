@@ -1,8 +1,6 @@
 ---
 name: spec-driven-implementer
-description: >
-  `agent-toolkit:spec-driven-impl`から起動される専用サブエージェント。
-  計画ファイル1件を`plan-impl-executor`の工程で完遂する。
+description: 他エージェントから起動される。
 model: inherit
 effort: medium
 skills:

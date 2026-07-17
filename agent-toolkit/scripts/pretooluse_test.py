@@ -1920,17 +1920,6 @@ class TestAgentDocTargetPatternsSsot:
         next_h2 = after.find("\n## ")
         return after if next_h2 == -1 else after[:next_h2]
 
-    def test_frontmatter_description_contains_all_patterns(self):
-        """agent-doc-validator.md frontmatter description が全パターンを含むこと。"""
-        content = self._AGENT_DOC_VALIDATOR_MD.read_text(encoding="utf-8")
-        # frontmatterは先頭の --- で囲まれた領域
-        assert content.startswith("---\n")
-        end = content.find("\n---\n", 4)
-        assert end != -1
-        frontmatter = content[4:end]
-        for snippet in self._expected_path_snippets():
-            assert snippet in frontmatter, f"frontmatter description に {snippet!r} が欠落"
-
     def test_body_scope_section_contains_all_patterns(self):
         """agent-doc-validator.md 本文「適用範囲」節が全パターンを含むこと。"""
         content = self._AGENT_DOC_VALIDATOR_MD.read_text(encoding="utf-8")
@@ -3284,6 +3273,9 @@ class TestBashAgentToolkitVersionBump:
 
 
 _SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()
+_ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS = [
+    (text, category) for text, category in _SCOPE_ESCALATION_INPUTS if category != "pattern-conformance"
+]
 
 
 class TestAskUserQuestionScopeEscalationCheck:
@@ -3293,9 +3285,71 @@ class TestAskUserQuestionScopeEscalationCheck:
     隔離フィクスチャから動的に読み込む（`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
     """
 
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    @pytest.mark.parametrize(("text", "category"), _ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS)
     def test_option_label_text_blocks(self, text: str, category: str):
         """`options[].label`に縮退フレーズが含まれる場合はブロックする。"""
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "approach?",
+                            "header": "header",
+                            "options": [{"label": text, "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "scope-escalation phrase" in result.stderr
+        assert category in result.stderr
+
+    def test_option_label_pattern_conformance_bypassed(self):
+        """選択肢labelではpattern-conformanceカテゴリを検出対象外とする。"""
+        text = next(text for text, category in _SCOPE_ESCALATION_INPUTS if category == "pattern-conformance")
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "approach?",
+                            "header": "header",
+                            "options": [{"label": text, "description": "ok"}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "scope-escalation phrase" not in result.stderr
+
+    def test_option_description_pattern_conformance_bypassed(self):
+        """選択肢descriptionではpattern-conformanceカテゴリを検出対象外とする。"""
+        text = next(text for text, category in _SCOPE_ESCALATION_INPUTS if category == "pattern-conformance")
+        result = _run(
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [
+                        {
+                            "question": "approach?",
+                            "header": "header",
+                            "options": [{"label": "ok", "description": text}],
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "scope-escalation phrase" not in result.stderr
+
+    @pytest.mark.parametrize("category", ["next-cycle-defer", "process-omission"])
+    def test_option_label_other_categories_still_blocked(self, category: str):
+        """選択肢labelではpattern-conformance以外のカテゴリを引き続きブロックする。"""
+        text = next(text for text, fixture_category in _SCOPE_ESCALATION_INPUTS if fixture_category == category)
         result = _run(
             {
                 "tool_name": "AskUserQuestion",

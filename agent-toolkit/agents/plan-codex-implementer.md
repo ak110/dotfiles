@@ -1,12 +1,6 @@
 ---
 name: plan-codex-implementer
-description: >
-  `plan-impl-executor`の実装工程でコード・テストコード・一般ドキュメントの
-  実装タスクをcodex MCPへ委譲するときに起動する。
-  lintエラー対応・レビュー指摘反映の継続呼び出し時も起動する。
-  呼び出し時は次の情報をプロンプト本文へ渡す。実装タスクの内容、対象ファイルの絶対パス、
-  プロジェクトルートの絶対パス、初回か継続かの別、継続時は`threadId`、
-  遵守事項（`agent-toolkit-edit`起動義務等、任意）
+description: 他エージェントから起動される。
 model: haiku
 effort: medium
 tools:

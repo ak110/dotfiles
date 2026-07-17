@@ -1,8 +1,7 @@
 ---
 name: spec-driven-promote
-description: >
-  次版ドキュメントを現行版ドキュメントへ統合する。
-  手動起動（`/agent-toolkit:spec-driven-promote`）または`spec-driven`からの明示呼び出しで使用する。
+description: 手動起動専用。
+disable-model-invocation: true
 ---
 
 # spec-driven昇格ワークフロー
