@@ -12,8 +12,9 @@ norm-inquiry	これはルールに違反していないか
 norm-inquiry	方針に違反してるかな
 norm-inquiry	規範に違反していないのか
 norm-inquiry	説明したはずの理由をいつの間にか忘れてる？
-norm-inquiry	これは前に伝えたはずなんだけど
-norm-inquiry	いつの間にか形骸化してる
+norm-inquiry	これは前に伝えた方針のはずなんだけど
+norm-inquiry	これは規範のはずなんだけど
+norm-inquiry	いつの間にか規範が形骸化してる
 correction-request	この記述を直してください
 correction-request	既存の方針を修正してほしい
 correction-request	コメントが間違っています
@@ -25,3 +26,6 @@ none	対象ファイル一覧を確認する
 none	明日の予定を教えてください
 none	この関数の役割を説明して
 none	typoを直してください
+none	設定ファイルは既に存在するはずだけど確認して
+none	設定ファイルがいつの間にか消えていた
+none	間違ったパスワードを入力

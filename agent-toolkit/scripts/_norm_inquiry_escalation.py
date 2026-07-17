@@ -44,11 +44,18 @@ _NORM_INQUIRY_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "norm-inquiry",
-        re.compile(r"(のはず|はず)(なん)?(だ|です)?(けど|よね|ですよね|なんだけど)"),
+        re.compile(
+            r"(規範|ルール|方針|ポリシー|CLAUDE|指針|規定|フロー|運用|条文|項目)"
+            r"[^。\n？?]{0,30}(のはず|はず)(なん)?(だ|です)?(けど|よね|ですよね|なんだけど)"
+        ),
     ),
     (
         "norm-inquiry",
-        re.compile(r"いつの間にか[^。\n]{0,10}(形骸化|忘れ|消え|変わ|なくな)"),
+        re.compile(
+            r"いつの間にか[^。\n]{0,10}"
+            r"(規範|ルール|方針|ポリシー|CLAUDE|指針|規定|フロー|運用|条文|項目)"
+            r"[^。\n]{0,10}(形骸化|忘れ|消え|変わ|なくな)"
+        ),
     ),
     (
         "correction-request",
@@ -60,7 +67,7 @@ _NORM_INQUIRY_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "correction-request",
-        re.compile(r"(間違っ|誤っ)(ている|ています|ていた|てた|てる|てます|た)"),
+        re.compile(r"(間違っ|誤っ)(ている|ています|ていた|てた|てる|てます)"),
     ),
     (
         "correction-request",
