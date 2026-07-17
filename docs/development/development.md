@@ -21,6 +21,25 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 
 各コマンドの詳細は`Makefile`を参照する。
 
+### CI環境のDocker再現検証
+
+CI固有の失敗（依存ライブラリ不足等）をローカルで切り分ける場合、CIワークフローが使用する
+コンテナーイメージをホストのリポジトリをマウントして起動し、コンテナー内でパッケージインストール・
+依存関係同期を試行する。
+
+```bash
+docker run --rm -it --user root -v "$PWD:/work" -w /work ghcr.io/ak110/pyfltr:latest bash
+```
+
+`--user root`かつボリュームマウント構成でコンテナー内から書き込みを行うと、
+ホスト側ファイル所有者がrootへ変わる。`.venv`配下等が汚染されるとホスト側のPython実行が
+`Permission denied`で失敗するため、検証後は所有権をホスト側ユーザーへ復旧する。
+
+```bash
+sudo chown -R "$(id -u):$(id -g)" .
+uv sync --reinstall  # .venvを再構築する場合
+```
+
 ## サプライチェーン攻撃対策
 
 ロックファイル尊重・公開待機・ピン留め運用の3点を貫徹する。

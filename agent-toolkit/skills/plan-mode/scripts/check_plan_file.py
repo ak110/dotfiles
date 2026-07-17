@@ -9,41 +9,50 @@
 実装後検証の各契機から、1回のプロセス起動で下記検査を実行する。個別スクリプトを都度起動する運用は
 サブプロセス起動段数・出力量が累積してコンテキストを汚染するため、本スクリプトへ統合する。
 
-実行する検査:
+実行する検査は`error`区分と`warning`区分に大別する。
+
+`error`区分（exit codeへ算入。計画が成立しない致命的な問題を検出する）:
 
 - `check_wc_projection._check_wc`: 見込み行数と`wc -l`実測値の乖離検出
-- `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`: 差分ブロック抽出、
-  縮退フレーズの検査（exit codeへ算入）。textlintは警告出力のみで
-  exit codeへ算入しない（体裁・表記系は計画作成の往復削減方針により非ブロック化する）
-- `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
-  宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ、exit codeへ含めない）
-- `check_plan_diff_gates._check_recurrence_prevention_recorded`: `### 恒久化・リファクタリング内容`
-  小見出し配下の再発予防記述要件の照合（ユーザー指示による機械ゲート化、exit codeへ含める）
+- `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`のうち差分ブロック抽出と
+  縮退フレーズ検査部分
+- `check_plan_diff_gates._check_recurrence_prevention_recorded`:
+  `### 恒久化・リファクタリング内容`小見出し配下の再発予防記述要件の照合（ユーザー指示による機械ゲート化）
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・節名実在（パス付き節名参照形式および裸参照形式）の検査
 - `check_self_ref._check_file`: 自己参照曖昧候補・禁止形式候補の検査
 - `check_plan_meta._check_file`: `## 背景`配下`### 計画メタ情報`H3と起動経路・対象リポジトリ2項目の欠落検査
-- `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）。
-  警告出力のみでexit codeへ算入しない
+- `_check_version_bump_matrix`: `## 変更内容`対象ファイル一覧が`agent-toolkit/`配下の`.md`ファイルを
+  含む計画で、`ファイル・改訂節数・節名・判定・該当基準`の5列表または`scripts/agent_toolkit_bump.py`の
+  種別記載のいずれかが計画本文に存在するかを検査する（不在時に違反として報告）
+- `_check_run_method_script_paths`: `## 実行方法`節内のバッククォート囲みコマンドから
+  拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）スクリプトパスを抽出し、
+  プロジェクトルート起点で実在するかを検査する（不在時に違反として報告）
+
+`warning`区分（exit codeへ算入しない。体裁・表記系および計画作成の往復削減方針で非ブロック化する項目）:
+
+- `check_plan_diff_gates._extract_diff_blocks`・`_check_extracted_paths`のうちtextlint部分。
+  差分ブロックへの体裁・表記系検査。体裁・表記系は計画作成の往復削減方針により非ブロック化する
+- `check_plan_diff_gates._check_transcription_declaration_consistency`: 「同構造」「同旨」「同期」
+  宣言表現検出時の対象ファイル本体との整合性検査
+- `writing-standards/scripts/check_dash.py`: 和文ハイフン検査（サブプロセス、ファイル単位）
 - `_check_document_size_upper_limit`: `## 変更内容`対象ファイル一覧の宣言済み見込み行数、
   および追記/縮減対象集計からの計算見込み行数のいずれかが220行超過する`.md`ファイルについて、
   対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
-  （体裁・構成寄りの指摘のためwarning出力のみとしexit codeへ算入しない）
-- `_check_version_bump_matrix`: `## 変更内容`対象ファイル一覧が`agent-toolkit/`配下の`.md`ファイルを
-  含む計画で、`ファイル・改訂節数・節名・判定・該当基準`の5列表または`scripts/agent_toolkit_bump.py`の
-  種別記載のいずれかが計画本文に存在するかを検査する（不在時に違反として報告、exit codeへ算入）
-- `_check_run_method_script_paths`: `## 実行方法`節内のバッククォート囲みコマンドから
-  拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）スクリプトパスを抽出し、
-  プロジェクトルート起点で実在するかを検査する（不在時に違反として報告、exit codeへ算入）
+  （体裁・構成寄りの指摘のため`warning`区分）
 - `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
-  リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する（warn出力のみ、exit code非算入）。
+  リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する
 
-体裁・表記系（和文ハイフン）と、文書サイズ上限検査（`_check_document_size_upper_limit`）は
-全て警告出力のみとしexit codeへ算入しない。textlint・markdownlint・typos・口語表現の全文検査は
-工程7ステップ4の`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行う。
-成功時（構造系0違反）はexit 0で終了する。体裁系のみ違反時もexit 0で終了し、
-警告として`stderr`へ出力する。構造系の違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
+`warning`区分の判定根拠は次のとおり。textlint・markdownlint・typos・口語表現の全文検査は工程7ステップ4の
+`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行い、本ランナー内では警告出力に留める。
+体裁・表記系は`agent-toolkit:plan-mode`の「計画作成プロセス自体」改訂方針で往復削減対象とする方針に沿う。
+文書サイズ上限検査・テストペア検査も即座に計画不成立にならない体裁・構成寄りの指摘として警告扱いとする。
+設計原則は`agent-toolkit:agent-standards`配下`references/check-script-design.md`の
+error・warning区分節を参照する。
+
+成功時（`error`区分0違反）はexit 0で終了する。`warning`区分のみ違反時もexit 0で終了し、
+警告として`stderr`へ出力する。`error`区分の違反検出時は検査名ごとに要点を`stderr`へ集約してexit 1で
 終了する。`uvx pyfltr`のJSONL出力はヘッダ行・succeeded系サマリー行を含み冗長なため生出力を
 転記せず、diagnostics保有行と失敗系command行のみ`file:line: message`形式または
 `[pyfltr] <command>: <status> <message>`形式へ要約する
@@ -54,9 +63,6 @@ import再利用する下位検査関数（`check_wc_projection._check_wc`・
 違反0件でもstderrへ情報出力・warn出力する副作用を持つ。本ランナーは検査単位で
 `contextlib.redirect_stderr`により出力を捕捉し、当該検査の違反件数が1以上またはwarn文言を
 含む場合のみ捕捉内容を再出力する。違反0件かつwarnなしの検査は無出力とする。
-
-設計原則は`agent-toolkit:agent-standards`配下
-`references/check-script-design.md`を参照する。
 """
 
 # pylint: disable=protected-access
