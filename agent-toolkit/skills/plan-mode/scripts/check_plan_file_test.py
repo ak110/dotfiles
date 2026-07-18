@@ -298,6 +298,31 @@ class TestVersionBumpMatrix:
         )
         assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
 
+    def test_matrix_all_none_required_returns_zero_without_bump_script(self, tmp_path: pathlib.Path) -> None:
+        """版更新マトリクスの「判定」列が全行`bump不要`の場合、bump script記載が無くても違反なしとする。"""
+        text = (
+            "# t\n\n## 対応方針\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/skills/foo/SKILL.md` | 1 | 「例」節 | bump不要 | コメントのみの変更 |\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行, 見込み15行）\n"
+        )
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
+
+    def test_matrix_mixed_judgments_treated_as_matrix_present(self, tmp_path: pathlib.Path) -> None:
+        """判定列が`bump不要`と`PATCH`混在の場合、マトリクスありとして既存どおり違反なしとする。"""
+        text = (
+            "# t\n\n## 対応方針\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/skills/foo/SKILL.md` | 1 | 「例」節 | PATCH | バグ修正 |\n"
+            "| `agent-toolkit/skills/foo/SKILL_test.md` | 1 | 「例」節 | bump不要 | docstringのみの変更 |\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/foo/SKILL.md`（現行10行, 見込み15行）\n"
+        )
+        assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
+
 
 class TestRunMethodScriptPaths:
     """`_check_run_method_script_paths`の検査を検証する。"""

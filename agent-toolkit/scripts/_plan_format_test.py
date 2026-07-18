@@ -254,6 +254,53 @@ class TestHasManifestFilesWhenBumpStepPresent:
         assert not _plan_format.has_manifest_files_when_bump_step_present(content)
 
 
+_BUMP_MATRIX_NONE_REQUIRED = (
+    "## 対応方針\n\n### エージェント判断\n\n"
+    "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+    "| --- | --- | --- | --- | --- |\n"
+    "| `agent-toolkit/skills/foo/SKILL.md` | 1 | 「例」節 | bump不要 | コメントのみの変更 |\n"
+    "| `agent-toolkit/skills/foo/SKILL_test.md` | 1 | 「例」節 | bump不要 | docstringのみの変更 |\n\n"
+)
+
+_BUMP_MATRIX_MIXED = (
+    "## 対応方針\n\n### エージェント判断\n\n"
+    "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+    "| --- | --- | --- | --- | --- |\n"
+    "| `agent-toolkit/skills/foo/SKILL.md` | 1 | 「例」節 | PATCH | バグ修正 |\n"
+    "| `agent-toolkit/skills/foo/SKILL_test.md` | 1 | 「例」節 | bump不要 | docstringのみの変更 |\n\n"
+)
+
+
+class TestBumpMatrixSuppression:
+    """版更新マトリクスの「判定」列が全行`bump不要`の場合の抑止動作を検査する。"""
+
+    def test_bump_step_suppressed_by_none_required_matrix(self) -> None:
+        content = (
+            _BUMP_MATRIX_NONE_REQUIRED
+            + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`\n\n"
+            + "## 実行方法\n\nx\n"
+        )
+        assert _plan_format.has_bump_step_when_required(content)
+        assert _plan_format.has_manifest_files_when_bump_step_present(content)
+
+    def test_bump_step_not_suppressed_by_mixed_matrix(self) -> None:
+        content = (
+            _BUMP_MATRIX_MIXED
+            + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`\n\n"
+            + "## 実行方法\n\nx\n"
+        )
+        assert not _plan_format.has_bump_step_when_required(content)
+
+    def test_manifest_not_suppressed_by_mixed_matrix_requires_manifests(self) -> None:
+        """判定列混在時は抑止されず、bump script記載時にmanifest記載要件が通常どおり課される。"""
+        content = (
+            _BUMP_MATRIX_MIXED
+            + "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/foo/SKILL.md`\n\n"
+            + "## 実行方法\n\n`scripts/agent_toolkit_bump.py patch`を実行する。\n"
+        )
+        assert not _plan_format.has_manifest_files_when_bump_step_present(content)
+
+
 class TestHasRecurrencePreventionWhenSectionPresent:
     """has_recurrence_prevention_when_section_present の基本動作を検査する。"""
 

@@ -549,6 +549,72 @@ class TestCheckInnerLabelCoexistence:
         assert violations == []
 
 
+class TestCheckCurrentReplacedBodyIdentity:
+    """`_check_current_replaced_body_identity`の単体テスト。"""
+
+    def test_identical_bodies_detected(self, tmp_path: pathlib.Path) -> None:
+        """同一H3内の`[現行]`/`[置換後]`ペアで両fence本文が完全同一の場合は違反として検出。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nsame\n```\n\n```text\n[置換後]\nsame\n```\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "同一本文で差分不成立" in violations[0]
+
+    def test_different_bodies_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """本文が異なる場合は違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_whitespace_only_difference_still_detected(self, tmp_path: pathlib.Path) -> None:
+        """先頭・末尾の空行差・行末空白差のみの場合も空白正規化後は同一本文として違反検出する。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\n\nsame  \n```\n\n```text\n[置換後]\nsame\n\n```\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+
+    def test_different_h3_independent(self, tmp_path: pathlib.Path) -> None:
+        """別H3配下のペアは独立して判定され、H3をまたいだ同一本文比較は行わない。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nsame\n```\n\n### `bar.md`\n\n```text\n[置換後]\nsame\n```\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_deletion_rationale_between_pair_breaks_chain(self, tmp_path: pathlib.Path) -> None:
+        """`[現行]`と`[置換後]`の間に`[削除根拠]`が介在する場合はペア連鎖が解除され違反なし。"""
+        text = (
+            "## 変更内容\n\n### `foo.md`\n\n"
+            "```text\n[現行]\nsame\n```\n\n"
+            "```text\n[削除根拠]\nunrelated\n```\n\n"
+            "```text\n[置換後]\nsame\n```\n"
+        )
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_empty_input_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """空入力は違反なし。"""
+        assert _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", "") == []
+
+    def test_unclosed_fence_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """未閉じフェンス（EOF終端も含む）は検査対象外として違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nsame\n```\n\n```text\n[置換後]\nsame\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_no_changes_section_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`節が計画ファイルに存在しない場合は違反対象外。"""
+        text = "## 背景\n\n### `foo.md`\n\n```text\n[現行]\nsame\n```\n\n```text\n[置換後]\nsame\n```\n"
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_crlf_detects_same_as_lf(self, tmp_path: pathlib.Path) -> None:
+        """CRLF改行でもLFと同一の検出結果となる。"""
+        text = (
+            "## 変更内容\r\n\r\n### `foo.md`\r\n\r\n"
+            "```text\r\n[現行]\r\nsame\r\n```\r\n\r\n"
+            "```text\r\n[置換後]\r\nsame\r\n```\r\n"
+        )
+        violations = _MOD._check_current_replaced_body_identity(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+
+
 class TestCheckManifestFilesWhenBumpStep:
     """`_check_manifest_files_when_bump_step`の単体テスト。"""
 

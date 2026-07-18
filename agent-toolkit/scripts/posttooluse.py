@@ -23,8 +23,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
    （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer。
    plan-codex-reviewer起動時はplan_codex_reviewer_invokedも同時記録する）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer / mcp__codex__codexツール。
-   mcp__codex__codex成功時はrecorded_codex_thread_idも記録する）
+9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer /
+   mcp__codex__codex・mcp__codex__codex-replyツール。
+   両ツール成功時はrecorded_codex_thread_idも記録する）
 10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
@@ -440,10 +441,12 @@ def main() -> int:
                 update_state(session_id, _set_agent_flag)
         return 0
 
-    # mcp__codex__codex: codex-review起動検出
+    # mcp__codex__codex / mcp__codex__codex-reply: codex-review起動検出
     # `isSidechain`が真（`plan-codex-implementer`内部の実装用途呼び出し）の場合は
     # レビュー起動の誤記録を避けて`codex_review_invoked`を記録しない。
-    if tool_name == "mcp__codex__codex":
+    # `codex-reply`（継続呼び出し）も同一分岐で扱い、継続レビューでも`recorded_codex_thread_id`が
+    # 更新され続ける経路を確立する。
+    if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
         if payload.get("isSidechain") is not True:
 
             def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
@@ -454,7 +457,8 @@ def main() -> int:
 
             update_state(session_id, _set_codex_review_invoked_via_mcp)
 
-            # FB[4]: `mcp__codex__codex`成功時のthreadIdをrecorded_codex_thread_idとして記録する。
+            # FB[4]: `mcp__codex__codex`・`mcp__codex__codex-reply`両ツール成功時の
+            # threadIdをrecorded_codex_thread_idとして記録する。
             tool_response = payload.get("tool_response", {})
             if isinstance(tool_response, dict):
                 thread_id_response = tool_response.get("threadId") or tool_response.get("thread_id")

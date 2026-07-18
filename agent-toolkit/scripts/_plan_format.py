@@ -312,21 +312,50 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
 
 
+# `## 対応方針`または`### エージェント判断`配下に置かれる版更新マトリクスの5列表ヘッダ検出パターン。
+# `check_plan_file.py`側の同名定義を本モジュールへ統合したSSOT。
+_BUMP_MATRIX_HEADER_RE = re.compile(r"\|\s*ファイル\s*\|\s*改訂節数\s*\|\s*節名\s*\|\s*判定\s*\|\s*該当基準\s*\|")
+# 版更新マトリクスの表本体1行（先頭セルがファイルパス、4列目が判定ラベル）を抽出するパターン。
+_BUMP_MATRIX_ROW_RE = re.compile(r"^\|\s*`[^`]+`\s*\|[^|]*\|[^|]*\|\s*(?P<judgment>[^|]+?)\s*\|[^|]*\|\s*$", re.MULTILINE)
+
+
+def _all_bump_matrix_judgments_are_none_required(content: str) -> bool:
+    """版更新マトリクスの「判定」列が全行`bump不要`かを判定する。
+
+    マトリクス自体が存在しない場合、または表本体行が1件も抽出できない場合は`False`を返す
+    （抑止を発動させないための安全側判定）。
+    「判定」列に`bump不要`以外のラベル（`PATCH`・`MINOR`・`MAJOR`等）が1行でも含まれる場合も`False`を返す。
+    `agent-toolkit/scripts/_plan_format.py`のSSOT実装で、
+    `has_bump_step_when_required`・`has_manifest_files_when_bump_step_present`・
+    `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`の`_check_version_bump_matrix`が共有する。
+    """
+    if not _BUMP_MATRIX_HEADER_RE.search(content):
+        return False
+    judgments = [m.group("judgment").strip() for m in _BUMP_MATRIX_ROW_RE.finditer(content)]
+    if not judgments:
+        return False
+    return all(j == "bump不要" for j in judgments)
+
+
 def has_bump_step_when_required(content: str) -> bool:
     """計画ファイル本文がversion bumpステップ要件を満たすかを判定する。
 
     判定手順:
 
-    1. `extract_target_files_from_changes`で対象ファイル一覧を取得する
-    2. 対象ファイル一覧が空、または`agent-toolkit/`で始まるパスを1件も含まない場合は`True`を返す
-    3. 対象ファイル一覧の`agent-toolkit/`配下パス全件が`_test.py`で終わる場合は`True`を返す
-    4. `extract_h2_section_body`で`## 実行方法`節本文を取得し、
+    1. `_all_bump_matrix_judgments_are_none_required`が`True`を返す場合、
+       版更新マトリクスの「判定」列全行が`bump不要`と確定済みのため`True`を返す
+    2. `extract_target_files_from_changes`で対象ファイル一覧を取得する
+    3. 対象ファイル一覧が空、または`agent-toolkit/`で始まるパスを1件も含まない場合は`True`を返す
+    4. 対象ファイル一覧の`agent-toolkit/`配下パス全件が`_test.py`で終わる場合は`True`を返す
+    5. `extract_h2_section_body`で`## 実行方法`節本文を取得し、
        `agent_toolkit_bump.py`リテラル出現があれば`True`、無ければ`False`を返す
 
     `agent-toolkit/scripts/pretooluse.py`と
     `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
     双方からimportして使うSSOT実装。
     """
+    if _all_bump_matrix_judgments_are_none_required(content):
+        return True
     paths = extract_target_files_from_changes(content)
     if not paths:
         return True
@@ -345,16 +374,20 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
 
     判定手順:
 
-    1. `extract_h2_section_body`で`## 実行方法`節本文を取得する
-    2. `agent_toolkit_bump.py`リテラルの出現がなければ`True`を返す（bump不要のため対象外）
-    3. `extract_target_files_from_changes`で対象ファイル一覧を取得する
-    4. 対象ファイル一覧に`agent-toolkit/.claude-plugin/plugin.json`と
+    1. `_all_bump_matrix_judgments_are_none_required`が`True`を返す場合、
+       版更新マトリクスの「判定」列全行が`bump不要`と確定済みのため`True`を返す
+    2. `extract_h2_section_body`で`## 実行方法`節本文を取得する
+    3. `agent_toolkit_bump.py`リテラルの出現がなければ`True`を返す（bump不要のため対象外）
+    4. `extract_target_files_from_changes`で対象ファイル一覧を取得する
+    5. 対象ファイル一覧に`agent-toolkit/.claude-plugin/plugin.json`と
        `.claude-plugin/marketplace.json`の両方が含まれれば`True`、いずれかが欠落していれば`False`を返す
 
     `agent-toolkit/scripts/pretooluse.py`と
     `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
     双方からimportして使うSSOT実装。
     """
+    if _all_bump_matrix_judgments_are_none_required(content):
+        return True
     execution_body = extract_h2_section_body(content, "実行方法")
     execution_text = "\n".join(line for _lineno, line in execution_body)
     if "agent_toolkit_bump.py" not in execution_text:

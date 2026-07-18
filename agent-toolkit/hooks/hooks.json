@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__codex__codex|mcp__codex__codex-reply",
         "hooks": [
           {
             "type": "command",

@@ -1,6 +1,7 @@
 """agent-toolkit/scripts/posttooluse.pyのAgent/Task起動セッション状態フラグ記録のテスト。
 
-subagent_type別フラグ記録・codex-review起動検出・plan-codex-reviewer経由検査用フラグ
+subagent_type別フラグ記録・codex-review起動検出（mcp__codex__codex / mcp__codex__codex-reply）・
+plan-codex-reviewer経由検査用フラグ
 （plan_codex_reviewer_invoked / plan_codex_reviewer_blocked / recorded_codex_thread_id）を検証する。
 `posttooluse_test.py`のpylint too-many-lines回避のため独立ファイルへ配置する。
 """
@@ -107,6 +108,38 @@ class TestAgentInvocationFlags:
         assert state.get("codex_review_invoked") is True
         assert state.get("plan_codex_reviewer_invoked") is not True
         assert state.get("recorded_codex_thread_id") == "th_direct"
+
+    def test_mcp_codex_reply_sets_codex_review_invoked(self, tmp_path: pathlib.Path):
+        """mcp__codex__codex-reply（継続呼び出し）成功時にcodex_review_invokedが真化する。"""
+        sid = "fb-000318-001-codex-reply"
+        _run({"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}}, state_dir=tmp_path)
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_review_invoked") is True
+
+    def test_mcp_codex_reply_records_recorded_thread_id(self, tmp_path: pathlib.Path):
+        """mcp__codex__codex-reply成功時のtool_response.threadIdがrecorded_codex_thread_idへ記録される。"""
+        sid = "fb-000318-001-codex-reply-thread"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {},
+                "isSidechain": False,
+                "tool_response": {"threadId": "th_reply"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("recorded_codex_thread_id") == "th_reply"
+
+    def test_mcp_codex_reply_not_recorded_when_sidechain(self, tmp_path: pathlib.Path):
+        """`isSidechain`が真のmcp__codex__codex-reply呼び出しではcodex_review_invokedを記録しない。"""
+        sid = "fb-000318-001-codex-reply-sidechain"
+        _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
 
     def test_plan_codex_reviewer_post_tool_use_failure_sets_blocked_flag(self, tmp_path: pathlib.Path):
         """PostToolUseFailure（実行時失敗）でplan_codex_reviewer_blockedを真化する。"""

@@ -122,5 +122,8 @@ codex exec resume --sandbox danger-full-access \
 
 codexの指摘全文と継続用の`threadId`（CLIの場合は`SESSION_ID`）を要約・省略せず返す。
 MCPもCLIも利用できない場合はその事実のみを報告して終了する。
+`mcp__codex__codex`・`mcp__codex__codex-reply`のいずれかの呼び出しが未完了の間は、
+状態のみを伝える単文だけで完了報告を発行しない。
+応答本文を受領してから完了報告を発行する。
 
 named background起動時の完了報告規範は`agent-toolkit/agents/plan-implementer.md`「出力」節に従う。

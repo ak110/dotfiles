@@ -132,6 +132,11 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 補完照合の対象は`agent-toolkit/`配下に限定し、`.chezmoi-source/`・`bin/`・`scripts/`配下は対象外。
 計画ファイル本文の`## 実行方法`には検証ステップの手前へ
 `scripts/agent_toolkit_bump.py {patch|minor|major}`の実行ステップを必ず含める（bump不要時のみ省略可）。
+bump不要と判定した計画では、`## 対応方針`配下の`### エージェント判断`節に版更新マトリクス（5列表）を配置し「判定」列の全行に`bump不要`を記載する。
+この場合`_plan_format.py`のSSOT関数がbumpステップ記載を求める警告とmanifest記載欠落の警告を抑止する。
+マトリクス自体が欠落している場合の警告は現行どおり維持する。
+`bump不要`ラベルの定義は`integrity-checks.md`「編集対象スキル固有規定の事前適用」節と意図的に重複する。
+改訂時は両ファイルを同時更新する。
 version bumpを伴う計画では、`agent-toolkit/.claude-plugin/plugin.json`と
 `.claude-plugin/marketplace.json`を`## 変更内容`の対象ファイル一覧へ必ず含める。
 

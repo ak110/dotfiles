@@ -212,7 +212,8 @@ _REDUCTION_HEADING_RE = re.compile(r"^####\s*縮減対象")
 _AGENT_TOOLKIT_MD_RE = re.compile(r"agent-toolkit/.+\.md$")
 
 # 版更新マトリクスの列見出し（`ファイル・改訂節数・節名・判定・該当基準`の5列を持つテーブル行）。
-_BUMP_MATRIX_HEADER_RE = re.compile(r"\|\s*ファイル\s*\|\s*改訂節数\s*\|\s*節名\s*\|\s*判定\s*\|\s*該当基準\s*\|")
+# 定義は`agent-toolkit/scripts/_plan_format.py`のSSOTへ移設済みで、本ファイルは
+# `pretooluse._plan_format._BUMP_MATRIX_HEADER_RE`を参照する（重複回避のため）。
 # `scripts/agent_toolkit_bump.py`実行ステップの検出（`## 実行方法`本文中）。
 _BUMP_SCRIPT_RE = re.compile(r"agent_toolkit_bump\.py")
 
@@ -321,11 +322,16 @@ def _check_version_bump_matrix(plan_path: pathlib.Path, text: str) -> int:
     計画本文に`ファイル・改訂節数・節名・判定・該当基準`の5列テーブルまたは
     `scripts/agent_toolkit_bump.py`の実行記載のいずれかが存在するかを検査する。
     いずれも存在しない場合に違反として報告する。exit codeへ算入する。
+    版更新マトリクスの「判定」列全行が`bump不要`と確定している場合
+    （`pretooluse._plan_format._all_bump_matrix_judgments_are_none_required`）は、
+    以降のOR条件判定をスキップして違反なしと判定する。
     """
     target_paths = _extract_target_file_paths(text)
     if not any(_AGENT_TOOLKIT_MD_RE.search(p) for p in target_paths):
         return 0
-    has_matrix = bool(_BUMP_MATRIX_HEADER_RE.search(text))
+    if pretooluse._plan_format._all_bump_matrix_judgments_are_none_required(text):
+        return 0
+    has_matrix = bool(pretooluse._plan_format._BUMP_MATRIX_HEADER_RE.search(text))
     has_bump_script = bool(_BUMP_SCRIPT_RE.search(text))
     if has_matrix or has_bump_script:
         return 0

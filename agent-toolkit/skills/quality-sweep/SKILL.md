@@ -95,7 +95,7 @@ disable-model-invocation: true
 
 - コミット・pushは実施しない（最終検証サブエージェントが担う）
 - 作業ツリー全体へ影響する操作は禁止
-  （該当例: `git stash`・`git checkout`・`git reset`・`git clean`・引数なしの`pre-commit run`）
+  （該当例: `git stash`（`-- <path>`・`--patch`等のスコープ限定指定を含む）・`git checkout`・`git reset`・`git clean`・引数なしの`pre-commit run`）
 - 担当ファイル外への変更は実施しない（必要が生じた場合は完了報告に記録して呼び出し元へ返す）
 
 ## 完了報告要件

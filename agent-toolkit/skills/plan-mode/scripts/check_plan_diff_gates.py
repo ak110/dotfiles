@@ -28,6 +28,7 @@
 
 - `## 変更内容`本文のfence外側配置ラベルおよび全角化ラベルの全文一括検査（exit 1違反）
 - `## 変更内容`本文のfence内側配置`[現行]`/`[置換後]`併記の全文一括検査（exit 1違反）
+- `## 変更内容`本文の同一H3内`[現行]`/`[置換後]`ペアの本文完全同一検出（exit 1違反）
 - 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）。
     フェンス直前の非フェンス行に抑止マーカー`<!-- scope-escalation-ok -->`を配置すると、
     直後のフェンス1個分の本検査を抑止する（新設カテゴリの代表フレーズ実例を
@@ -199,6 +200,7 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
     violations: list[str] = []
     violations.extend(_check_outer_label_placement(plan_path, text))
     violations.extend(_check_inner_label_coexistence(plan_path, text))
+    violations.extend(_check_current_replaced_body_identity(plan_path, text))
     scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
     for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
         category = None if block_start_line in scope_escalation_allowed_starts else _run_scope_escalation(body)
@@ -376,6 +378,82 @@ def _check_inner_label_coexistence(plan_path: pathlib.Path, text: str) -> list[s
                 fence_has_current = True
             else:
                 fence_has_replaced = True
+    return violations
+
+
+def _normalize_diff_fence_body(body_lines: list[str]) -> str:
+    """差分fence本文を空白正規化する（先頭・末尾の空行除去、各行の行末空白除去）。"""
+    stripped = [ln.rstrip() for ln in body_lines]
+    while stripped and stripped[0] == "":
+        stripped.pop(0)
+    while stripped and stripped[-1] == "":
+        stripped.pop()
+    return "\n".join(stripped)
+
+
+def _check_current_replaced_body_identity(plan_path: pathlib.Path, text: str) -> list[str]:
+    """`## 変更内容`本文で同一H3内の`[現行]`/`[置換後]`ペアの本文が完全同一の場合を検出する。
+
+    `[現行]`単独ラベルの独立フェンスと、同一H3内で後続する`[置換後]`単独ラベルの独立フェンスを
+    順に走査し、両者の本文（ラベル行を除く）が空白正規化後に完全一致する場合を差分不成立として
+    exit 1違反で報告する（plan-file-diff-labels.md「差分ラベル6種」節の`[現行]`ブロック本文原則の機械強制）。
+    検出対象はfence内側配置の`[現行]`/`[置換後]`ペアに限る。fence外側配置は`_check_outer_label_placement`、
+    同一fence内側併記は`_check_inner_label_coexistence`がそれぞれ担当し、本関数と同層に位置する。
+    空白正規化は`_normalize_diff_fence_body`（先頭・末尾の空行除去、行末空白除去）で行う。
+    H3見出しをまたいだペア照合は行わない（H3ごとに`pending_current_body`をリセットする）。
+    `[現行]`直後に`[置換後]`以外のラベル（`[削除根拠]`・`[新設]`等）が介在する場合もペアの連鎖を解除し、
+    `pending_current_body`をリセットする（隣接しないペアの誤照合を防ぐため）。
+    """
+    section, section_start_line = extract_section_with_offset(text, "## 変更内容")
+    if section is None:
+        return []
+    violations: list[str] = []
+    lines = section.splitlines()
+    current_h3 = ""
+    open_marker: str | None = None
+    fence_start_line = 0
+    fence_content_lines: list[str] = []
+    pending_current_body: str | None = None
+    pending_current_line = 0
+    for i, line in enumerate(lines):
+        if open_marker is None:
+            m_h3 = _H3_RE.match(line)
+            if m_h3:
+                current_h3 = m_h3.group("rest").strip()
+                pending_current_body = None
+                continue
+            m_open = TEXT_FENCE_OPEN_RE.match(line)
+            if m_open:
+                open_marker = m_open.group(1)
+                fence_start_line = i
+                fence_content_lines = []
+            continue
+        if is_matching_close(open_marker, line):
+            open_marker = None
+            m_label = _INNER_LABEL_LINE_RE.match(fence_content_lines[0]) if fence_content_lines else None
+            if m_label:
+                label = m_label.group("label")
+                normalized = _normalize_diff_fence_body(fence_content_lines[1:])
+                if label == "現行":
+                    pending_current_body = normalized
+                    pending_current_line = fence_start_line
+                else:  # label == "置換後"
+                    if pending_current_body is not None and pending_current_body == normalized:
+                        absolute_line = section_start_line + fence_start_line + 1
+                        current_absolute_line = section_start_line + pending_current_line + 1
+                        msg = (
+                            f"{plan_path}:{absolute_line}: H3=`{current_h3}` の`[現行]`/`[置換後]`ペアが"
+                            f"同一本文で差分不成立（{current_absolute_line}行目の`[現行]`と比較）。"
+                            f"plan-file-diff-labels.md「差分ラベル6種」節参照。"
+                        )
+                        print(msg, file=sys.stderr)
+                        violations.append(msg)
+                    pending_current_body = None
+            else:
+                # `[現行]`直後に他ラベル（`[削除根拠]`・`[新設]`等）が介在する場合はペア連鎖を解除する。
+                pending_current_body = None
+            continue
+        fence_content_lines.append(line)
     return violations
 
 
@@ -669,6 +747,7 @@ def _extract_diff_blocks(
 
     messages: list[str] = list(_check_outer_label_placement(plan_path, text))
     messages.extend(_check_inner_label_coexistence(plan_path, text))
+    messages.extend(_check_current_replaced_body_identity(plan_path, text))
     prose_paths: list[pathlib.Path] = []
     location_map: dict[str, str] = {}
     scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
