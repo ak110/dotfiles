@@ -277,3 +277,82 @@ def test_non_string_message_passes() -> None:
     result = _run({"last_assistant_message": None})
     assert result.stdout == ""
     assert result.returncode == 0
+
+
+def test_named_subagent_without_main_send_logs_block(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_inspect_named_subagent_send`検査のブロックケースで`append_stop_log`が呼ばれる。"""
+    log_dir = tmp_path / "logdir"
+    log_dir.mkdir()
+    monkeypatch.setenv("TMPDIR", str(log_dir))
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "Bash", "input": {}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    session_id = "test-session-block"
+    _run(
+        {
+            "last_assistant_message": "実装が完了した。差分は3ファイル。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+            "session_id": session_id,
+        }
+    )
+    log_path = log_dir / f"claude-agent-toolkit-stop-{session_id}.log"
+    content = log_path.read_text(encoding="utf-8")
+    assert "decision=block_named_subagent_missing_send" in content
+    assert "agent_name=plan-impl-1" in content
+    assert "tool_use_count=3" in content
+    assert "has_main_send=False" in content
+
+
+def test_named_subagent_with_main_send_logs_allow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_inspect_named_subagent_send`検査の許可ケースで`append_stop_log`が呼ばれる。"""
+    log_dir = tmp_path / "logdir"
+    log_dir.mkdir()
+    monkeypatch.setenv("TMPDIR", str(log_dir))
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+        {"type": "tool_use", "name": "Edit", "input": {}},
+        {"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    session_id = "test-session-allow"
+    _run(
+        {
+            "last_assistant_message": "完了報告を送付した。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+            "session_id": session_id,
+        }
+    )
+    log_path = log_dir / f"claude-agent-toolkit-stop-{session_id}.log"
+    content = log_path.read_text(encoding="utf-8")
+    assert "decision=allow_named_subagent_send" in content
+    assert "has_main_send=True" in content
+
+
+def test_named_subagent_fail_open_logs_allow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_inspect_named_subagent_send`のfail-open（tool_use数閾値未満）ケースでも`append_stop_log`が呼ばれる。"""
+    log_dir = tmp_path / "logdir"
+    log_dir.mkdir()
+    monkeypatch.setenv("TMPDIR", str(log_dir))
+    tool_uses = [
+        {"type": "tool_use", "name": "Read", "input": {}},
+    ]
+    transcript = _make_transcript(tmp_path, tool_uses)
+    session_id = "test-session-fail-open"
+    _run(
+        {
+            "last_assistant_message": "対象ファイルを1件確認した。",
+            "agent_name": "plan-impl-1",
+            "transcript_path": transcript,
+            "session_id": session_id,
+        }
+    )
+    log_path = log_dir / f"claude-agent-toolkit-stop-{session_id}.log"
+    content = log_path.read_text(encoding="utf-8")
+    assert "decision=allow_named_subagent_send" in content
+    assert "tool_use_count=1" in content
+    assert "has_main_send=False" in content

@@ -14,7 +14,7 @@ stdinから公式subagentStatusLine JSON入力（`columns`・`tasks`配列）を
 （いずれか欠落・非数値・contextWindowSizeが0以下の場合は省略）。
 経過時間は`startTime`（エポックミリ秒またはISO 8601）から算出する。
 `description`は改行を空白へ置換して1行化し、連続空白を1個へ畳んでから
-表示幅（East Asian Width基準、全角2セル換算）で残り幅へ切り詰める。
+表示幅（East Asian WidthのW/F/A、曖昧幅を含め全角2セル換算）で残り幅へ切り詰める。
 `id`欠落タスクは出力対象外とする（Claude Code v2.1.205以降が`model`・`contextWindowSize`を提供する。
 effortフィールド（v2.1.214以降）は未使用）。
 """
@@ -27,6 +27,7 @@ import unicodedata
 from typing import Any
 
 _SEP = " · "
+_ELLIPSIS = "…"
 _GAP_MIN = 2
 _DEFAULT_COLUMNS = 80
 _MODEL_SHORT_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -188,27 +189,32 @@ def _as_number(value: Any) -> float | None:
 
 
 def _display_width(text: str) -> int:
-    """East Asian Width基準の表示幅を返す。`W`・`F`の文字は2セル、他は1セル換算とする。"""
-    return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
+    """East Asian Width基準の表示幅を返す。`W`・`F`・`A`（曖昧幅を含む）の文字は2セル、他は1セル換算とする。"""
+    return sum(2 if unicodedata.east_asian_width(char) in "WFA" else 1 for char in text)
 
 
 def _truncate(text: str, budget: int) -> str:
-    """文字列を表示幅`budget`セル以内へ省略記号付きで切り詰める。"""
+    """文字列を表示幅`budget`セル以内へ省略記号付きで切り詰める。
+
+    省略記号`…`（U+2026）はEast Asian Widthが`A`（曖昧幅）のため`_display_width`基準で2セルを占める。
+    ハードコードした1セル前提は表示幅超過を招くため、`_display_width(_ELLIPSIS)`で実測した幅を予約する。
+    """
     if budget <= 0:
         return ""
     if _display_width(text) <= budget:
         return text
-    if budget == 1:
-        return "…"
+    ellipsis_width = _display_width(_ELLIPSIS)
+    if budget < ellipsis_width:
+        return ""
     chars: list[str] = []
     used = 0
     for char in text:
         char_width = _display_width(char)
-        if used + char_width > budget - 1:
+        if used + char_width > budget - ellipsis_width:
             break
         chars.append(char)
         used += char_width
-    return "".join(chars) + "…"
+    return "".join(chars) + _ELLIPSIS
 
 
 if __name__ == "__main__":

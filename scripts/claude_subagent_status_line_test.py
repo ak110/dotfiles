@@ -32,6 +32,8 @@ class TestDisplayWidth:
             ("あ", 2),
             ("ab", 2),
             ("aあ", 3),
+            ("§", 2),
+            ("±", 2),
         ],
     )
     def test_known_width(self, text: str, expected: int) -> None:
@@ -81,19 +83,25 @@ class TestRenderTaskLeft:
         assert result.endswith("…")
 
     def test_description_exact_fit_not_truncated(self) -> None:
-        result = render({"id": "t1", "name": "foo", "description": "x" * 4}, 10)
+        result = render({"id": "t1", "name": "foo", "description": "x" * 4}, 11)
         assert result == f"foo{SEP}xxxx"
 
     def test_description_budget_zero_dropped(self) -> None:
         result = render({"id": "t1", "name": "foo", "description": "bar"}, 6)
         assert result == "foo"
 
-    def test_description_budget_one_ellipsis_only(self) -> None:
-        result = render({"id": "t1", "name": "foo", "description": "bar"}, 7)
+    def test_description_budget_ellipsis_only(self) -> None:
+        result = render({"id": "t1", "name": "foo", "description": "bar"}, 9)
         assert result == f"foo{SEP}…"
 
     def test_fullwidth_description_truncated_by_display_width(self) -> None:
         result = render({"id": "t1", "name": "foo", "description": "あ" * 50}, 20)
+        assert result is not None
+        assert width_of(result) <= 20
+        assert result.endswith("…")
+
+    def test_ambiguous_width_description_truncated_by_display_width(self) -> None:
+        result = render({"id": "t1", "name": "foo", "description": "§" * 50}, 20)
         assert result is not None
         assert width_of(result) <= 20
         assert result.endswith("…")

@@ -8,12 +8,14 @@ tools:
   - mcp__codex__codex-reply
   - Bash
   - Read
+  - SendMessage
 user-invocable: false
 # 編集時の注意点:
 # model: haiku固定の理由: codexへのプロンプト委譲と応答転記が中心で、
 #   本エージェント自身に深い推論を要さないため。
 # tools制限の理由: codex呼び出しとCLIフォールバック実行・結果読み取りのみで完結するため、
 #   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
+#   SendMessageはnamed background起動時の完了報告能動送付（末尾「報告」節参照）のために含める。
 # Bashの用途はCLIフォールバック版の`codex exec`起動に限定する
 #   （agents/frontmatterはSKILL.mdのallowed-tools相当のコマンド単位スコープ指定に対応しないため、
 #   本文側の指示で用途を限定する）。
@@ -116,3 +118,5 @@ codex exec resume --sandbox danger-full-access \
 
 codexの指摘全文と継続用の`threadId`（CLIの場合は`SESSION_ID`）を要約・省略せず返す。
 MCPもCLIも利用できない場合はその事実のみを報告して終了する。
+
+named background起動時の完了報告規範は`agent-toolkit/agents/plan-implementer.md`「出力」節に従う。

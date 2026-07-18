@@ -13,6 +13,7 @@ tools:
   - Grep
   - Glob
   - Bash
+  - SendMessage
 user-invocable: false
 # 編集時の注意点:
 # 過去のコンテキスト（ユーザー発話・要件対話内容・grep等での参照確認）が必要な節はメイン側で実施するため、
@@ -22,6 +23,7 @@ user-invocable: false
 # model: sonnet固定の理由: 節名定義に従う照合作業は確定手順の実行のため。
 # tools制限の理由: 計画ファイル本文の整合性点検は閲覧・調査のみで完結し、
 #   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
+#   SendMessageはnamed background起動時の完了報告能動送付（「出力」節末尾の参照文参照）のために含める。
 # 「入力」節のメイン側実施済み観点の内訳の趣旨は integrity-checks.md「工程7の実施手順」節・
 # launch-prompts-integrity.md のplan-reviewer雛形と意図的に重複する（構成は各ファイルの用途に合わせる）。
 # 改訂時は3ファイルを同時更新する。
@@ -141,3 +143,5 @@ pyfltr標準textlint設定の検査仕様上、コードブロック内の追記
 
 同種違反が複数箇所に出現する場合は代表箇所へ集約し、
 `[{重大度}] path/to/file:123（他N箇所）`: {節名}: {代表例の指摘内容}の形式で示す。
+
+named background起動時の完了報告規範は`agent-toolkit/agents/plan-implementer.md`「出力」節に従う。

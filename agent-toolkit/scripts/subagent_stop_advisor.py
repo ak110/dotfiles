@@ -18,10 +18,12 @@
 named subagent（`agent_name`非空）でtranscript内のtool_use数が閾値以上ある場合、
 メイン宛のSendMessage送付履歴（`name == "SendMessage"`かつ`input.to == "main"`）が
 無い時にblockを返し、完了報告の能動送付（またはメイン受領）を促す。
+当該判定結果は`agent_name`・tool_use数・送付有無を含めて`append_stop_log`で常時ログ化する。
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import sys
@@ -35,7 +37,10 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
     is_empty_completion_report,
 )
-from _stop_gate import has_pending_background_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    append_stop_log,
+    has_pending_background_launches,
+)
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
 
@@ -50,8 +55,23 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def _named_subagent_missing_main_send(payload: dict) -> bool:
-    """Named subagentがメイン宛SendMessageを送付していない場合に真を返す。
+@dataclasses.dataclass(frozen=True)
+class _NamedSubagentSendCheck:
+    """`_inspect_named_subagent_send`の判定内訳。"""
+
+    agent_name: str
+    tool_use_count: int
+    has_main_send: bool
+    missing_main_send: bool
+
+
+def _fail_open_check(agent_name: str) -> _NamedSubagentSendCheck:
+    """判定不能（`agent_name`未指定・transcript読み取り不能）時のfail-open結果を返す。"""
+    return _NamedSubagentSendCheck(agent_name=agent_name, tool_use_count=-1, has_main_send=False, missing_main_send=False)
+
+
+def _inspect_named_subagent_send(payload: dict) -> _NamedSubagentSendCheck:
+    """Named subagentのメイン宛SendMessage送付有無を判定内訳付きで返す。
 
     判定条件:
     - `agent_name`フィールドが非空文字列（named subagent起動）
@@ -59,20 +79,22 @@ def _named_subagent_missing_main_send(payload: dict) -> bool:
     - 当該subagentのtranscript内assistant `tool_use`ブロック総数が閾値以上
     - `name == "SendMessage"`かつ`input.to == "main"`のtool_use呼び出しが1件も存在しない
 
-    上記全てを満たす場合に真。foregroundの短命subagent等でtool_use数が閾値未満の場合、
-    または既にメイン宛SendMessage送付済みの場合は偽を返す。
-    transcript読み取り失敗時は偽を返す（fail-open）。
+    `missing_main_send`は上記全てを満たす場合に真。foregroundの短命subagent等で
+    tool_use数が閾値未満の場合、または既にメイン宛SendMessage送付済みの場合は偽。
+    `agent_name`未指定・transcript読み取り失敗時は`tool_use_count=-1`・`missing_main_send=False`
+    で返す（fail-open）。
     """
     agent_name = payload.get("agent_name")
-    if not isinstance(agent_name, str) or not agent_name:
-        return False
+    agent_name = agent_name if isinstance(agent_name, str) else ""
+    if not agent_name:
+        return _fail_open_check("")
     transcript_path = payload.get("transcript_path")
     if not isinstance(transcript_path, str) or not transcript_path:
-        return False
+        return _fail_open_check(agent_name)
     try:
         raw = pathlib.Path(transcript_path).read_text(encoding="utf-8")
     except (OSError, ValueError):
-        return False
+        return _fail_open_check(agent_name)
     tool_use_count = 0
     sent_to_main = False
     for line in raw.splitlines():
@@ -96,9 +118,28 @@ def _named_subagent_missing_main_send(payload: dict) -> bool:
                 inp = block.get("input")
                 if isinstance(inp, dict) and inp.get("to") == "main":
                     sent_to_main = True
-    if tool_use_count < _NAMED_SUBAGENT_MIN_TOOL_USES:
-        return False
-    return not sent_to_main
+    missing_main_send = tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES and not sent_to_main
+    return _NamedSubagentSendCheck(
+        agent_name=agent_name, tool_use_count=tool_use_count, has_main_send=sent_to_main, missing_main_send=missing_main_send
+    )
+
+
+def _log_named_subagent_check(session_id: object, check: _NamedSubagentSendCheck) -> None:
+    """`_inspect_named_subagent_send`の判定結果を常時ログへ1行追記する。
+
+    `decision`は`missing_main_send`が真なら`block_named_subagent_missing_send`、
+    偽なら`allow_named_subagent_send`とする（`stop_advisor.py`の複合ラベル命名規約に揃える）。
+    `session_id`が非文字列・空文字列の場合はログ出力をスキップする（`append_stop_log`の既定挙動）。
+    """
+    append_stop_log(
+        session_id if isinstance(session_id, str) else "",
+        "block_named_subagent_missing_send" if check.missing_main_send else "allow_named_subagent_send",
+        {
+            "agent_name": check.agent_name or "-",
+            "tool_use_count": check.tool_use_count,
+            "has_main_send": check.has_main_send,
+        },
+    )
 
 
 def main() -> int:
@@ -158,7 +199,9 @@ def main() -> int:
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
 
-    if _named_subagent_missing_main_send(payload):
+    named_subagent_check = _inspect_named_subagent_send(payload)
+    _log_named_subagent_check(payload.get("session_id"), named_subagent_check)
+    if named_subagent_check.missing_main_send:
         reason = _llm_notice(
             "blocked: this named subagent finished without ever calling `SendMessage(to='main')`."
             " Named subagents launched with `run_in_background=true` must actively deliver the completion"
