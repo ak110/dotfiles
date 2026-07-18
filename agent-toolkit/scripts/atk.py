@@ -105,6 +105,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
             "メッセージ先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
+    add.set_defaults(subparser=add)
 
     list_ = sub.add_parser(
         "list", help="feedback/tbd inbox・processing全件を1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する"
@@ -184,6 +185,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         action="store_true",
         help="FILENAME指定時にadopted・rejected配下も探索対象へ含める（--allには影響しない）。",
     )
+    show.set_defaults(subparser=show)
 
     start_processing = sub.add_parser(
         "start-processing",
@@ -323,6 +325,7 @@ def _build_tb_parser(tb: argparse.ArgumentParser) -> None:
         nargs="*",
         help="投入するTBDメッセージ（省略時は$EDITORで編集する）。対象リポジトリは常にカレントディレクトリから解決する。",
     )
+    add.set_defaults(subparser=add)
 
     list_ = sub.add_parser("list", help="TBDをtarget_repoごとに出力する")
     list_.add_argument(

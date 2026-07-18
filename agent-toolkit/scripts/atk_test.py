@@ -117,6 +117,20 @@ class TestTbdAddSourceOptionParser:
         assert args.source == "session-hold"
 
 
+class TestSubcommandSubparserDefault:
+    """`fb add`・`tb add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
+
+    def test_fb_add(self) -> None:
+        """`fb add`解析後、`args.subparser.prog`が`atk fb add`になる。"""
+        args = atk._build_parser().parse_args(["fb", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert args.subparser.prog == "atk fb add"
+
+    def test_tb_add(self) -> None:
+        """`tb add`解析後、`args.subparser.prog`が`atk tb add`になる。"""
+        args = atk._build_parser().parse_args(["tb", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert args.subparser.prog == "atk tb add"
+
+
 class TestSpaceSeparatedOptionWarning:
     """mainがparse前に空白区切りオプションを警告することを検証する。"""
 

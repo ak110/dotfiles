@@ -173,8 +173,11 @@ class TestShowRequiresFilenameOrAll:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
+        assert "usage: atk fb show" in captured.err
         assert "FILENAME" in captured.err
         assert "--all" in captured.err
+        error_line = captured.err.rstrip("\n").splitlines()[-1]
+        assert "表示するファイル名または--allを指定してください" in error_line
 
 
 class TestShowTypeFilter:

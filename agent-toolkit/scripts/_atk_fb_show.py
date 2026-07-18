@@ -42,8 +42,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     （`--all`には影響しない）。
     """
     if args.filename is None and not args.all:
-        print("FILENAMEまたは--allのいずれかを指定してください。", file=sys.stderr)
-        sys.exit(2)
+        args.subparser.error("表示するファイル名または--allを指定してください。")
     if not args.skip_pull:
         _pull(private_notes)
     filter_repo: str | None = None

@@ -68,7 +68,7 @@ def _cmd_add(
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
-    _reject_bare_repo_path_override(repo_path_override, messages, 'atk fb add "フィードバック本文"')
+    _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_repo = _resolve_repo_id(repo_path_override)
     if not messages:
         message = _collect_message_via_editor()

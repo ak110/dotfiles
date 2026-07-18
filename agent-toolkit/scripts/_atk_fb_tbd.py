@@ -75,11 +75,10 @@ def _cmd_tbd_add(
     含まれない場合は投入対象ファイル名を添えて標準エラーへ警告する（投入自体は成功させる）。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
-    _reject_bare_repo_path_override(repo_path_override, messages, 'atk tb add "TBD本文"')
+    _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_repo = _resolve_repo_id(repo_path_override)
     if args.question_type == "choice" and not args.choices:
-        print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
-        sys.exit(2)
+        args.subparser.error("--question-type=choice のときは --choices を指定してください。")
     _pull(private_notes)
     if not messages:
         message = _collect_message_via_editor()

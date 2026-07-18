@@ -4,6 +4,7 @@
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 """
 
+import argparse
 import datetime
 import os
 import pathlib
@@ -344,21 +345,23 @@ def _resolve_repo_path_override(
     return messages[1:], str(candidate)
 
 
-def _reject_bare_repo_path_override(repo_path_override: str | None, messages: list[str], usage_example: str) -> None:
-    """`atk.py`の`_extract_legacy_repo_path`で抽出したREPO_PATHにMESSAGE本体が伴わない場合はexit 2する。
+def _reject_bare_repo_path_override(
+    repo_path_override: str | None,
+    messages: list[str],
+    subparser: argparse.ArgumentParser,
+) -> None:
+    """先頭引数がディレクトリと解釈されたのに本文が続かない呼び出しをusage表示付きで拒否する。
 
-    REPO_PATHは省略してカレントディレクトリから自動解決する仕様のため、REPO_PATHらしき
-    ディレクトリ引数だけが渡されMESSAGEが空の呼び出しは誤指定として拒否する。
+    対象リポジトリは常にカレントディレクトリから自動判定する。ディレクトリらしき引数の後ろに
+    本文が続かない呼び出しは誤指定とみなし、`subparser.error()`でargparse標準のusage行に
+    続けて平易な文言を出力しexit 2する。
     """
     if repo_path_override is None or messages:
         return
-    print(
-        f"MESSAGE引数がディレクトリを指しています: {repo_path_override}\n"
-        "REPO_PATHは省略してカレントディレクトリから自動解決されます。\n"
-        f"使用例: {usage_example}",
-        file=sys.stderr,
+    subparser.error(
+        f"投入する本文の代わりにディレクトリパス（{repo_path_override}）が渡されました。"
+        "対象リポジトリはカレントディレクトリから自動判定されるため、パスの指定は不要です。"
     )
-    sys.exit(2)
 
 
 def _collect_message_via_editor() -> str | None:

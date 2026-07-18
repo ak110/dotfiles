@@ -77,8 +77,9 @@ class TestTbdAdd:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """question-type=choice時に--choices未指定でexit 2。"""
+        """question-type=choice時に--choices未指定でusage表示付きのexit 2になる。"""
         _setup_tbd_env(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -99,6 +100,9 @@ class TestTbdAdd:
                 now=_FIXED_DT,
             )
         assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "usage: atk tb add" in captured.err
+        assert "--choices を指定してください" in captured.err
 
     def test_add_without_question_mark_warns(
         self,
@@ -294,7 +298,7 @@ class TestTbdAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE先頭がディレクトリで本文が続かない場合、誤指定としてexit 2になる。"""
+        """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
         _setup_tbd_env(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -304,7 +308,11 @@ class TestTbdAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "MESSAGE引数がディレクトリを指しています" in captured.err
+        assert "usage: atk tb add" in captured.err
+        error_line = captured.err.rstrip("\n").splitlines()[-1]
+        assert "パスの指定は不要です" in error_line
+        assert "REPO_PATH" not in error_line
+        assert "MESSAGE" not in error_line
 
     def test_directory_followed_by_message_uses_compat_path(
         self,
