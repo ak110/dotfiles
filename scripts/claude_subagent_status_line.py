@@ -3,20 +3,29 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""Claude Code subagentStatusLine: サブエージェント行にモデル短縮名・使用率・経過時間等を表示する。
+"""Claude Code subagentStatusLine: サブエージェント行に名前・モデル短縮名・使用率等を表示する。
 
 stdinから公式subagentStatusLine JSON入力（`columns`・`tasks`配列）を受け取る。
-タスクごとに左寄せグループ`name · 短縮モデル名 · description`と
-右寄せグループ`経過時間 · トークン数/使用率% · status`を組み立て、
-右寄せグループが`columns`幅の右端へ揃うよう空白を充填した1行を
+タスクごとに名前列`{名前} ({短縮モデル名})`と`description`を左側に、
+`経過時間 · トークン数(k単位)/使用率% · status`の右寄せグループを右側に配置した1行を
 `{"id": <task id>, "content": <行>}`のJSON行として標準出力へ出力する。
-`model`未提供タスクはモデル部を省略し、使用率はtokenCount/contextWindowSizeから算出する
-（いずれか欠落・非数値・contextWindowSizeが0以下の場合は省略）。
+
+名前列は同一入力内の全タスクを走査して表示幅を揃え（`columns // 3`セル上限）、
+上限超過時はモデル名を保持したまま名前部分のみ省略記号付きで切り詰める
+（モデル名だけで上限を超える極端な場合は名前列全体を切り詰める）。
+名前の由来は`name`→`label`→`type`の順で非空文字列を採用する
+（実ペイロードは`name`フィールドを持たず`label`に実質同一の値が入る。Claude Code 2.1.214時点で実測確認済み）。
+`model`未提供タスクは括弧書き省略、名前・モデル双方欠落時は名前列が空文字列になる。
+名前列・説明・右寄せグループは実在するセグメントの組合せだけに区切り幅を適用し、行末尾の空白は除去する。
+使用率はtokenCount/contextWindowSizeから算出する（いずれか欠落・非数値・contextWindowSizeが0以下の場合は省略）。
 経過時間は`startTime`（エポックミリ秒またはISO 8601）から算出する。
 `description`は改行を空白へ置換して1行化し、連続空白を1個へ畳んでから
 表示幅（East Asian WidthのW/F/A、曖昧幅を含め全角2セル換算）で残り幅へ切り詰める。
-`id`欠落タスクは出力対象外とする（Claude Code v2.1.205以降が`model`・`contextWindowSize`を提供する。
-effortフィールド（v2.1.214以降）は未使用）。
+`id`欠落タスクは出力対象外とする。最終行は端末幅`columns`セル以内へ収める。
+
+`name`指定＋`run_in_background=true`起動のnamed subagent（teammate）はタスク種別
+`in_process_teammate`として管理され、本スクリプトの適用対象`local_agent`型から構造的に除外される
+（Claude Code 2.1.214実測確認。ドキュメント未記載の制約であり本スクリプト側では対処しない）。
 """
 
 import datetime
@@ -30,6 +39,7 @@ _SEP = " · "
 _ELLIPSIS = "…"
 _GAP_MIN = 2
 _DEFAULT_COLUMNS = 80
+_NAME_WIDTH_DIVISOR = 3
 _MODEL_SHORT_PATTERNS: tuple[tuple[str, str], ...] = (
     ("opus", "Opus"),
     ("sonnet", "Sonnet"),
@@ -53,45 +63,124 @@ def main() -> int:
     if not isinstance(tasks, list):
         return 0
     now = datetime.datetime.now(datetime.UTC)
+    name_width = _compute_name_width(tasks, width)
     for task in tasks:
         if not isinstance(task, dict):
             continue
-        content = render_task(task, width, now)
+        content = render_task(task, width, now, name_width)
         if content is None:
             continue
         sys.stdout.write(json.dumps({"id": task.get("id"), "content": content}, ensure_ascii=False) + "\n")
     return 0
 
 
-def render_task(task: dict[str, Any], width: int, now: datetime.datetime) -> str | None:
-    """タスク1件を1行分の`content`文字列へレンダリングする。`id`欠落時はNoneを返す。"""
+def _compute_name_width(tasks: list[Any], width: int) -> int:
+    """同一入力内の有効タスク全件から名前列の共通表示幅を算出する（`columns // 3`セル上限）。"""
+    cap = max(width // _NAME_WIDTH_DIVISOR, 0)
+    widths = [
+        min(_display_width(_name_column(task)), cap)
+        for task in tasks
+        if isinstance(task, dict) and isinstance(task.get("id"), str) and task.get("id")
+    ]
+    return max(widths, default=0)
+
+
+def render_task(task: dict[str, Any], width: int, now: datetime.datetime, name_width: int | None = None) -> str | None:
+    """タスク1件を1行分の`content`文字列へレンダリングする。`id`欠落時はNoneを返す。
+
+    `name_width`省略時は当該タスク単独の名前列幅（`columns // 3`セル上限）を用いる。
+    実在するセグメント（名前列・説明・右寄せグループ）の組合せだけに区切り幅を適用し、
+    最終行は末尾空白を除去したうえで表示幅`width`セル以内へ収める。
+    """
     task_id = task.get("id")
     if not isinstance(task_id, str) or not task_id:
         return None
 
-    name = task.get("name")
-    name = name if isinstance(name, str) else ""
+    cap = max(width // _NAME_WIDTH_DIVISOR, 0)
+    col_width = name_width if name_width is not None else min(_display_width(_name_column(task)), cap)
+    name_present = col_width > 0
+    padded_name = ""
+    if name_present:
+        name_col = _fit_name_column(task, col_width)
+        padded_name = name_col + " " * max(col_width - _display_width(name_col), 0)
+
     description = task.get("description")
     description = _normalize_description(description) if isinstance(description, str) else ""
-    model = task.get("model")
-    model_label = _short_model_name(model) if isinstance(model, str) and model else None
-
-    left_parts = [part for part in (name, model_label) if part]
     right = _SEP.join(_build_right_parts(task, now))
+    right_present = bool(right)
 
-    reserved = _display_width(_SEP.join(left_parts))
-    if description:
-        reserved += _display_width(_SEP)
-    if right:
+    reserved = _display_width(padded_name) if name_present else 0
+    if name_present and description:
+        reserved += _GAP_MIN
+    if right_present:
         reserved += _GAP_MIN + _display_width(right)
     desc_budget = max(width - reserved, 0)
     desc = _truncate(description, desc_budget) if description else ""
 
-    left = _SEP.join(left_parts + ([desc] if desc else []))
-    if not right:
-        return left
-    gap = max(width - _display_width(left) - _display_width(right), _GAP_MIN)
-    return left + " " * gap + right
+    left_parts = [part for part in ((padded_name if name_present else ""), desc) if part]
+    left = (" " * _GAP_MIN).join(left_parts)
+
+    if right_present:
+        gap = max(width - _display_width(left) - _display_width(right), _GAP_MIN if left else 0)
+        line = left + " " * gap + right
+    else:
+        line = left
+
+    line = line.rstrip()
+    return _truncate(line, width) if _display_width(line) > width else line
+
+
+def _name_column(task: dict[str, Any]) -> str:
+    """名前列の未切り詰め文字列`{名前} ({短縮モデル名})`を組み立てる（表示幅算出専用）。
+
+    双方欠落時は空文字列を返す。実際の描画には`_fit_name_column`を使う。
+    """
+    name = _name_label(task)
+    model = task.get("model")
+    model_label = _short_model_name(model) if isinstance(model, str) and model else None
+    if name and model_label:
+        return f"{name} ({model_label})"
+    if name:
+        return name
+    if model_label:
+        return f"({model_label})"
+    return ""
+
+
+def _fit_name_column(task: dict[str, Any], width_cap: int) -> str:
+    """名前列を`width_cap`セル以内で組み立てる。モデル名を保持したまま名前部分のみ切り詰める。
+
+    モデル名だけで`width_cap`を超える極端な場合は名前列全体を省略記号付きで切り詰める。
+    """
+    if width_cap <= 0:
+        return ""
+    name = _name_label(task)
+    model = task.get("model")
+    model_label = _short_model_name(model) if isinstance(model, str) and model else None
+
+    if name and model_label:
+        suffix = f" ({model_label})"
+        full = f"{name}{suffix}"
+        if _display_width(full) <= width_cap:
+            return full
+        name_budget = width_cap - _display_width(suffix)
+        if name_budget <= 0:
+            return _truncate(full, width_cap)
+        return _truncate(name, name_budget) + suffix
+    if name:
+        return _truncate(name, width_cap)
+    if model_label:
+        return _truncate(f"({model_label})", width_cap)
+    return ""
+
+
+def _name_label(task: dict[str, Any]) -> str:
+    """名前の由来を`name`→`label`→`type`の順で非空文字列を採用する。全欠落時は空文字列を返す。"""
+    for key in ("name", "label", "type"):
+        value = task.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 def _build_right_parts(task: dict[str, Any], now: datetime.datetime) -> list[str]:
@@ -110,11 +199,11 @@ def _build_right_parts(task: dict[str, Any], now: datetime.datetime) -> list[str
 
 
 def _format_tokens(token_count: Any, context_window_size: Any) -> str | None:
-    """トークン数と使用率%を`1,500tok/1%`形式へ整形する。使用率算出不能時はトークン数のみ。"""
+    """トークン数と使用率%を`176.1k/18%`形式へ整形する。使用率算出不能時はトークン数のみ。"""
     count = _as_number(token_count)
     if count is None:
         return None
-    text = f"{int(count):,}tok"
+    text = f"{count / 1000:.1f}k"
     pct = _context_usage_pct(token_count, context_window_size)
     if pct is not None:
         text += f"/{pct:.0f}%"
