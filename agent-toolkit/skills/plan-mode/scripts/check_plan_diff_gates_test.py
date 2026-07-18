@@ -110,6 +110,17 @@ class TestCheckPlanFile:
         assert violations == []
         assert "textlint" in capsys.readouterr().err
 
+    def test_inner_label_coexistence_is_reported(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`_check_plan_file`経由でもfence内側の`[現行]`/`[置換後]`併記を違反として検出する。"""
+        _stub_subprocess(monkeypatch, scope_returncode=0, textlint_returncode=0)
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n[置換後]\nnew\n```\n",
+        )
+        violations = _MOD._check_plan_file(plan, tmp_path)
+        assert len(violations) == 1
+        assert "fence内側配置の`[現行]`/`[置換後]`併記を検出" in violations[0]
+
     def test_missing_file_is_reported(self, tmp_path: pathlib.Path) -> None:
         missing = tmp_path / "missing.md"
         violations = _MOD._check_plan_file(missing, tmp_path)
@@ -379,6 +390,68 @@ class TestCheckOuterLabelPlacement:
         assert len(violations) == 1
 
 
+class TestCheckInnerLabelCoexistence:
+    """`_check_inner_label_coexistence`の単体テスト。"""
+
+    def test_coexistence_in_same_fence_detected(self, tmp_path: pathlib.Path) -> None:
+        """同一fence内側に`[現行]`と`[置換後]`が併記される場合は違反として検出。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n[置換後]\nnew\n```\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "fence内側配置の`[現行]`/`[置換後]`併記を検出" in violations[0]
+
+    def test_independent_fences_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """独立フェンスへ`[現行]`と`[置換後]`を分割配置した場合は違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n```\n\n```text\n[置換後]\nnew\n```\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_current_only_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """`[現行]`のみを含むfenceは違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n```\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_out_of_section_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`節外のfence内併記は違反対象外。"""
+        text = "## 背景\n\n```text\n[現行]\nold\n[置換後]\nnew\n```\n\n## 変更内容\n\n本文なし。\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_empty_input_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """空入力は違反なし。"""
+        assert _MOD._check_inner_label_coexistence(tmp_path / "plan.md", "") == []
+
+    def test_single_line_input_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """単一行入力は併記不可のため違反なし。"""
+        text = "## 変更内容"
+        assert _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text) == []
+
+    def test_empty_fence_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """空フェンス（本文0行）は違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n```\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_crlf_detects_same_as_lf(self, tmp_path: pathlib.Path) -> None:
+        """CRLF改行でもLFと同一の検出結果となる。"""
+        text = "## 変更内容\r\n\r\n### `foo.md`\r\n\r\n```text\r\n[現行]\r\nold\r\n[置換後]\r\nnew\r\n```\r\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+
+    def test_unclosed_fence_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """未閉じフェンス（EOF終端も含む）は検査対象外として違反なし。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n[置換後]\nnew\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+    def test_no_changes_section_no_violation(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`節が計画ファイルに存在しない場合は違反対象外。"""
+        text = "## 背景\n\n```text\n[現行]\nold\n[置換後]\nnew\n```\n"
+        violations = _MOD._check_inner_label_coexistence(tmp_path / "plan.md", text)
+        assert violations == []
+
+
 class TestCheckManifestFilesWhenBumpStep:
     """`_check_manifest_files_when_bump_step`の単体テスト。"""
 
@@ -475,6 +548,19 @@ class TestExtractDiffBlocksPublic:
         assert messages == []
         assert prose_paths == []
         assert location_map == {}
+
+    def test_inner_label_coexistence_is_reported(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`_extract_diff_blocks`経由でもfence内側の`[現行]`/`[置換後]`併記を違反として検出する。"""
+        _stub_subprocess(monkeypatch, scope_returncode=0)
+        plan = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nold\n[置換後]\nnew\n```\n",
+        )
+        messages, (prose_paths, _location_map) = _MOD._extract_diff_blocks(plan)
+        assert len(messages) == 1
+        assert "fence内側配置の`[現行]`/`[置換後]`併記を検出" in messages[0]
+        for path in prose_paths:
+            path.unlink(missing_ok=True)
 
 
 class TestCheckExtractedPaths:

@@ -27,6 +27,7 @@
 無違反時はexit 0で終了する。
 
 - `## 変更内容`本文のfence外側配置ラベルおよび全角化ラベルの全文一括検査（exit 1違反）
+- `## 変更内容`本文のfence内側配置`[現行]`/`[置換後]`併記の全文一括検査（exit 1違反）
 - 縮退フレーズ検出: `agent-toolkit/scripts/_scope_escalation.py` CLI（stdin→exit 2で一致）。
     フェンス直前の非フェンス行に抑止マーカー`<!-- scope-escalation-ok -->`を配置すると、
     直後のフェンス1個分の本検査を抑止する（新設カテゴリの代表フレーズ実例を
@@ -104,6 +105,11 @@ from _plan_format import (  # noqa: E402  # pylint: disable=import-error
 # ラベル直後に注記（半角/全角括弧・コロン）が続く形式も検出する。
 _OUTER_LABEL_LINE_RE = re.compile(r"^\s*`?(?:\[現行\]|\[置換後\])`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
+# fence内側配置検出用: ラベル単独行（`_OUTER_LABEL_LINE_RE`と同形式だがラベル種別ごとに分離し、
+# フェンス本文中の地の文（ラベル文言を引用する説明文等）を誤検出しないよう厳密な単独行一致とする）。
+_INNER_CURRENT_LABEL_LINE_RE = re.compile(r"^\s*`?\[現行\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
+_INNER_REPLACED_LABEL_LINE_RE = re.compile(r"^\s*`?\[置換後\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
+
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
 
@@ -168,6 +174,7 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
 
     violations: list[str] = []
     violations.extend(_check_outer_label_placement(plan_path, text))
+    violations.extend(_check_inner_label_coexistence(plan_path, text))
     scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
     for h3_label, block_start_line, body, h3_ext in _iter_diff_blocks(text):
         category = None if block_start_line in scope_escalation_allowed_starts else _run_scope_escalation(body)
@@ -290,6 +297,56 @@ def _check_outer_label_placement(plan_path: pathlib.Path, text: str) -> list[str
         else:
             if is_matching_close(open_marker, line):
                 open_marker = None
+    return violations
+
+
+def _check_inner_label_coexistence(plan_path: pathlib.Path, text: str) -> list[str]:
+    """`## 変更内容`本文でfence内側に`[現行]`と`[置換後]`が同一フェンス内へ併記される場合を検出する。
+
+    `_check_outer_label_placement`と同層のfence外側検出とは独立し、fence内側走査を専任する。
+    両ラベルを同一フェンス内へ併記すると`_leading_label`（`check_wc_projection.py`）が
+    先頭ラベル種別のみを認識して置換後未検出となるため、exit 1違反として検出する
+    （plan-file-diff-labels.md「フェンス配置」節の禁止規定の機械強制）。
+
+    fence状態追跡は`_check_outer_label_placement`と同等の`open_marker`ロジックを用いる。
+    未閉じフェンス（EOF終端を含む）は検査対象外とする（`_check_outer_label_placement`と同挙動）。
+    空入力・単一行入力はフェンスが開かないため必然的に違反なしとなる。
+    ラベル判定は単独行一致（`_INNER_CURRENT_LABEL_LINE_RE`・`_INNER_REPLACED_LABEL_LINE_RE`）に限定し、
+    ラベル文言を引用する説明文（地の文）を誤検出しない。
+    """
+    section, section_start_line = extract_section_with_offset(text, "## 変更内容")
+    if section is None:
+        return []
+    violations: list[str] = []
+    lines = section.splitlines()
+    open_marker: str | None = None
+    fence_start_line = 0
+    fence_has_current = False
+    fence_has_replaced = False
+    for i, line in enumerate(lines):
+        if open_marker is None:
+            m_open = TEXT_FENCE_OPEN_RE.match(line)
+            if m_open:
+                open_marker = m_open.group(1)
+                fence_start_line = i
+                fence_has_current = False
+                fence_has_replaced = False
+            continue
+        if is_matching_close(open_marker, line):
+            if fence_has_current and fence_has_replaced:
+                absolute_line = section_start_line + fence_start_line + 1
+                msg = (
+                    f"{plan_path}:{absolute_line}: fence内側配置の`[現行]`/`[置換後]`併記を検出。"
+                    f"各ラベルを独立フェンスへ分割する（plan-file-diff-labels.md「フェンス配置」節参照）。"
+                )
+                print(msg, file=sys.stderr)
+                violations.append(msg)
+            open_marker = None
+            continue
+        if _INNER_CURRENT_LABEL_LINE_RE.match(line):
+            fence_has_current = True
+        if _INNER_REPLACED_LABEL_LINE_RE.match(line):
+            fence_has_replaced = True
     return violations
 
 
@@ -531,6 +588,7 @@ def _extract_diff_blocks(
         return [msg], ([], {})
 
     messages: list[str] = list(_check_outer_label_placement(plan_path, text))
+    messages.extend(_check_inner_label_coexistence(plan_path, text))
     prose_paths: list[pathlib.Path] = []
     location_map: dict[str, str] = {}
     scope_escalation_allowed_starts = _scope_escalation_allowed_starts(text)
