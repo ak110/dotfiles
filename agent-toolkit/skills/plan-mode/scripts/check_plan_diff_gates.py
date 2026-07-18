@@ -105,10 +105,10 @@ from _plan_format import (  # noqa: E402  # pylint: disable=import-error
 # ラベル直後に注記（半角/全角括弧・コロン）が続く形式も検出する。
 _OUTER_LABEL_LINE_RE = re.compile(r"^\s*`?(?:\[現行\]|\[置換後\])`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
-# fence内側配置検出用: ラベル単独行（`_OUTER_LABEL_LINE_RE`と同形式だがラベル種別ごとに分離し、
-# フェンス本文中の地の文（ラベル文言を引用する説明文等）を誤検出しないよう厳密な単独行一致とする）。
-_INNER_CURRENT_LABEL_LINE_RE = re.compile(r"^\s*`?\[現行\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
-_INNER_REPLACED_LABEL_LINE_RE = re.compile(r"^\s*`?\[置換後\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
+# fence内側配置検出用: ラベル単独行。`_OUTER_LABEL_LINE_RE`と同形式だが名前付きグループでラベル種別を
+# 判定できるようにする。フェンス本文中の地の文（ラベル文言を引用する説明文等）を誤検出しないよう
+# 厳密な単独行一致とする。
+_INNER_LABEL_LINE_RE = re.compile(r"^\s*`?\[(?P<label>現行|置換後)\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
@@ -311,7 +311,7 @@ def _check_inner_label_coexistence(plan_path: pathlib.Path, text: str) -> list[s
     fence状態追跡は`_check_outer_label_placement`と同等の`open_marker`ロジックを用いる。
     未閉じフェンス（EOF終端を含む）は検査対象外とする（`_check_outer_label_placement`と同挙動）。
     空入力・単一行入力はフェンスが開かないため必然的に違反なしとなる。
-    ラベル判定は単独行一致（`_INNER_CURRENT_LABEL_LINE_RE`・`_INNER_REPLACED_LABEL_LINE_RE`）に限定し、
+    ラベル判定は単独行一致（`_INNER_LABEL_LINE_RE`の名前付きグループ`label`）に限定し、
     ラベル文言を引用する説明文（地の文）を誤検出しない。
     """
     section, section_start_line = extract_section_with_offset(text, "## 変更内容")
@@ -343,10 +343,12 @@ def _check_inner_label_coexistence(plan_path: pathlib.Path, text: str) -> list[s
                 violations.append(msg)
             open_marker = None
             continue
-        if _INNER_CURRENT_LABEL_LINE_RE.match(line):
-            fence_has_current = True
-        if _INNER_REPLACED_LABEL_LINE_RE.match(line):
-            fence_has_replaced = True
+        m_label = _INNER_LABEL_LINE_RE.match(line)
+        if m_label:
+            if m_label.group("label") == "現行":
+                fence_has_current = True
+            else:
+                fence_has_replaced = True
     return violations
 
 
