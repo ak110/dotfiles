@@ -214,7 +214,14 @@ def _check_wc(plan_path: pathlib.Path) -> int:
 
 
 def _check_narrative_ledger_consistency(plan_path: pathlib.Path, text: str) -> int:
-    """H3節と対比ブロックの実測差を収集し、行数収支主張検査へ渡す。"""
+    """H3節と対比ブロックの実測差を収集し、行数収支主張検査へ渡す。
+
+    `actual_diff`集計対象は`_extract_diff_blocks`が返す`[現行]`/`[置換後]`ペアの実測差のみで、
+    `[追記]`ラベル配下は集計対象外（0扱い）とする。`[追記]`のみで表現された節に
+    行数収支主張（「追記N行、縮減M行」等）を書くと実測差0と主張値+Nが乖離し違反となるため、
+    行数収支主張を含む節は`[現行]`/`[置換後]`ペアで書く必要がある
+    （担当スクリプトの非対称性は`plan-file-diff-labels.md`「差分ラベル6種」節と同期）。
+    """
     section = _extract_section(text, "## 変更内容")
     if section is None:
         return 0
