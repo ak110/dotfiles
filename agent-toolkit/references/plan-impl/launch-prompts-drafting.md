@@ -13,6 +13,12 @@
 # `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節と
 # `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の同旨規定と意図的に重複する。
 # 改訂時は3ファイルを同時更新する。
+# 「共通遵守事項」節・コードブロック内`## 完遂条件`欄の`git diff --stat`実体照合バレットは
+# `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節・
+# `agent-toolkit/agents/spec-driven-implementer.md`「出力」節の`verification`欄記述と意図的に重複する。
+# 背景再委譲禁止バレット（fb08反映）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の
+# 非同期処理の完遂義務（background再委譲時の待機義務）とは独立の新設規定であり、当該節をSSOTとしない。
+# 本ファイル内の2箇所（「共通遵守事項」節・「起草・改訂委譲雛形」節コードブロック内`## 完遂条件`欄）を同時更新する。
 ---
 
 # 計画ファイル起草・改訂委譲プロンプト雛形
@@ -66,6 +72,11 @@
 - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
   当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
   （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）
+- 委譲されたタスクは自身で同期実行し、配下エージェントへのbackground再委譲をしない。
+  `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理の完遂義務とは独立の新設規定とする
+- 完了報告前に`git diff --stat`を実行し、対象ファイル一覧の各ファイルが期待する差分を含んでいるか実体照合する。
+  照合結果を完了報告の`verification`欄に含める。
+  版更新（`agent_toolkit_bump.py`）・自動生成物は`pyfltr`のpass結果と差分実体が乖離しやすいため実体差分確認を義務とする
 - 新設ファイル・新設節の変更方針は執筆指示文（「〜を移設する」「〜を記載する」等）ではなく、
   適用後にそのままファイル本文となる完成形の文面で`text`コードブロック内に記載する
 - 起草・改訂対象領域の同期先・SSOT一覧と、計画が新設・拡張する機構の領域固有規約リファレンスの
@@ -131,6 +142,11 @@
     - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
       当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
       （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）
+    - 委譲されたタスクは自身で同期実行し、配下エージェントへのbackground再委譲をしない。
+      `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理の完遂義務とは独立の新設規定とする
+    - 完了報告前に`git diff --stat`を実行し、対象ファイル一覧の各ファイルが期待する差分を含んでいるか実体照合する。
+      照合結果を完了報告の`verification`欄に含める。
+      版更新（`agent_toolkit_bump.py`）・自動生成物は`pyfltr`のpass結果と差分実体が乖離しやすいため実体差分確認を義務とする
     - 新設ファイル・新設節の変更方針は執筆指示文（「〜を移設する」「〜を記載する」等）ではなく、
       適用後にそのままファイル本文となる完成形の文面で`text`コードブロック内に記載する
     - 起草・改訂対象領域の同期先・SSOT一覧と、計画が新設・拡張する機構の領域固有規約リファレンスの
@@ -156,6 +172,7 @@
     レビュー指摘対応等で実装差分が計画ファイル本文diff案・`### エージェント判断`の記述と乖離した場合、
     `changed`欄の別サブバレット（`[乖離]`ラベル付き）で乖離箇所と実装最終形を明示する。
     書式SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-diff-labels.md`「進捗ログの乖離注記」節に集約する。
+    `verification`欄には検証コマンドのpass/failに加えて`git diff --stat`実行結果または差分不一致時の是正内容を含める（対象ファイル一覧の実体照合結果）。
 
 ## 運用ガイダンス
 

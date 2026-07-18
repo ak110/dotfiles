@@ -5167,7 +5167,7 @@ class TestCheckPlanFileNoDeferralExpression:
     検出条件は次の2条件AND成立時。
     条件(a): 「実装時／実装段階」の直後に「精査／選定／確定／評価／検討」等の未確定動詞が続く。
     条件(b): 文末が「判断／決定／選定／確定」+「する」で結ばれる。
-    (a)と(b)の共通動詞（選定・確定）は単独出現でも両条件同時成立として検出する。
+    (a)と(b)の共通動詞（選定・確定・決定）は単独出現でも両条件同時成立として検出する。
     `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
     """
 
@@ -5290,13 +5290,13 @@ class TestCheckPlanFileNoDeferralExpression:
         assert "deferral expressions were detected" not in result.stderr
 
     def test_write_with_condition_a_unsatisfied_is_allowed(self, tmp_path: pathlib.Path):
-        """条件(a)未確定動詞が現れない文（末尾が決定するでも(a)不成立）はブロックされない。"""
+        """条件(a)未確定動詞・(a)(b)共通動詞のいずれも現れない文はブロックされない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "deferral-cond-a-unsat"
         self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body="- 実装時にレビュー内容を確認して最終的に決定する")
+        content = _ABSNUM_BASE_PLAN.format(body="- 実装時にレビュー内容を確認して最終的に反映する")
         result = _run(
             {
                 "tool_name": "Write",

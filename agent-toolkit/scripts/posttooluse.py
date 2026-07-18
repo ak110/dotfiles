@@ -35,6 +35,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
 15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-reviewer起動失敗時のplan_codex_reviewer_blocked記録
+16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
+    `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 """
 
 import json
@@ -203,6 +205,41 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:agent-doc-validator",
     }
 )
+
+# 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
+# `agent-toolkit/rules/04-styles.md`「日本語の品質を保つ」節の全称否定形推奨と
+# 整合しない禁止規定のパターン。誤読を招くため全称否定形または肯定的完遂義務への
+# 書き換えを促す（fb06反映）。初期段階の限定的なパターンであり、将来の検出範囲拡張は拡張候補とする。
+# 全角鍵括弧・バッククォート囲みの引用文脈（他ファイル節名・識別子・規範文言の引用）は
+# 照合前に無害化する。`_scope_escalation._apply_category_exclusions`は該当区間を空文字へ完全除去するが、
+# 本実装は行番号算出（`content`上のオフセットをそのまま使う）を成立させるため文字数を保ったまま
+# 改行以外を空白へ置換する（除去着想のみ同関数を参考にし、実装は異なる）。
+_CONDITIONAL_PROHIBITION_RE = re.compile(r"[^\n]{1,30}?した状態で[^\n]{0,30}?(しない|禁止)")
+_CONDITIONAL_PROHIBITION_KAKKO_RE = re.compile(r"「[^」]*」|『[^』]*』")
+_CONDITIONAL_PROHIBITION_BACKTICK_RE = re.compile(r"`[^`\n]+`")
+
+
+def _blank_out_preserving_length(match: re.Match[str]) -> str:
+    """マッチ区間を、改行はそのまま・それ以外は半角空白へ置換し文字数を保つ。"""
+    return "".join(ch if ch == "\n" else " " for ch in match.group())
+
+
+def _check_conditional_prohibition(file_path: pathlib.Path, content: str) -> list[str]:
+    """条件付き禁止形（「〜した状態で…しない/禁止」）を警告として検出する。"""
+    excluded = _CONDITIONAL_PROHIBITION_BACKTICK_RE.sub(
+        _blank_out_preserving_length,
+        _CONDITIONAL_PROHIBITION_KAKKO_RE.sub(_blank_out_preserving_length, content),
+    )
+    warnings: list[str] = []
+    for m in _CONDITIONAL_PROHIBITION_RE.finditer(excluded):
+        line_num = content[: m.start()].count("\n") + 1
+        warnings.append(
+            f"{file_path}:{line_num}: 条件付き禁止形（「〜した状態で…しない」）を検出。"
+            f"全称否定形（「いかなる理由（例: X）があっても...しない」）"
+            f"または肯定的完遂義務への書き換えを検討する"
+        )
+    return warnings
+
 
 # --- plan file形式検査の定数 ---
 
@@ -560,6 +597,27 @@ def main() -> int:
                 return current_state
 
             update_state(session_id, _append_edited_file)
+        # 条件付き禁止形の警告通知: `is_agent_facing_md`が対象と判定するコーディングエージェント向け
+        # `.md`編集時に、plan-mode起動状態と無関係に常時検査する（対象判定は既存SSOTを再利用）。
+        if is_agent_facing_md(file_path):
+            try:
+                prohibition_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                prohibition_content = None
+            if prohibition_content is not None:
+                prohibition_warnings = _check_conditional_prohibition(pathlib.Path(file_path), prohibition_content)
+                if prohibition_warnings:
+                    print(
+                        json.dumps(
+                            {
+                                "hookSpecificOutput": {
+                                    "hookEventName": "PostToolUse",
+                                    "additionalContext": _llm_notice("\n".join(prohibition_warnings), tag="warn"),
+                                }
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
         # 計画ファイル向け通知: 形式検査違反（plan-mode起動時のみ）と、
         # Write成功時の書き込み後チェック案内（plan-mode起動時のみ）を1つのadditionalContextへまとめる。
         # 状態フラグは追加せず、案内のみを一方向で通知する（詳細は

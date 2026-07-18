@@ -34,6 +34,10 @@ user-invocable: false
 # 本文「委譲プロンプトで対象ファイル集合が計画ファイルの対象一覧に加えて明示指定された場合」バレットは
 # 03-claude-code.md「サブエージェントの活用」節の対象ファイル外編集禁止バレットと意図的に重複させている。
 # 改訂時は両ファイルを同時更新する。
+# `## 出力`節の`verification`欄`git diff --stat`実体照合記述は
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節・「起草・改訂委譲雛形」節、
+# `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/spec-driven-implementer.md`「出力」節と
+# 意図的に重複させている。改訂時は4ファイルを同時更新する。
 ---
 
 # plan-implementer
@@ -194,3 +198,7 @@ unplanned:
 `### エージェント判断`の記述と乖離した場合、`changed`欄の別サブバレット
 （`[乖離]`ラベル付き）で乖離箇所と実装最終形を明示する。
 書式SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-diff-labels.md`「進捗ログの乖離注記」節に集約する。
+
+`verification`欄には`git diff --stat`実行結果または差分不一致時の是正内容を含める。
+対象ファイル一覧の実体照合結果である。`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節、
+および同ファイル「起草・改訂委譲雛形」の`## 完了報告要件`欄の記述と同期する。

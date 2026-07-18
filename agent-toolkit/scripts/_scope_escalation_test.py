@@ -104,6 +104,14 @@ class TestMatchScopeEscalation:
         """`本|この|単一`セッション接頭を伴わない一般的な困難表現は`single-session`と判定しない。"""
         assert _match_scope_escalation("実装完遂は技術的に困難だが対応する。") is None
 
+    def test_deferral_kettei_single_verb_captured(self):
+        """単独動詞（決定）で完結する先送り文の捕捉確認（fb01反映）"""
+        assert _category_of("実装時に対応方針を決定する。") == "plan-deferral-onset"
+
+    def test_deferral_wc_l_kettei_captured(self):
+        """実測値を根拠に添える先送り文の捕捉確認（fb01原理由の事例文）"""
+        assert _category_of("実装時のwc -l実測値に基づき決定する。") == "plan-deferral-onset"
+
     def test_has_inline_choice_offer_detects_numbered_list(self):
         """`選択肢:`直後の番号付きリストは選択肢提示として検出する。"""
         text = "続行方針を選んでください。選択肢:\n1. 現行維持\n2. 次回持ち越し"

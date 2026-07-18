@@ -14,6 +14,10 @@ user-invocable: false
 # plan-impl-executor.md「## 停止禁止」節末尾の同旨パラグラフと意図的に重複させている
 # （本サブエージェントはpush対象外のためpushを完遂対象へ含めない）
 # 文面を変更する場合は両方の整合を取ること
+# `## 出力`節の`verification`欄`git diff --stat`実体照合記述（段1除外の明記を含む）は
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節・「起草・改訂委譲雛形」節、
+# `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節と
+# 意図的に重複させている。改訂時は4ファイルを同時更新する。
 ---
 
 # spec-driven-implementer
@@ -142,3 +146,8 @@ tbd_summary:
 `tbd_summary`にはTBD.md追記内容の要約を含める。
 `plan_gaps`欄は`plan-impl-executor`「## 出力」節と同様、次回の計画作成時の改善提案の元ネタとなるため、
 `escalation_reason`・`tbd_summary`と重複してもよい。
+
+通常モード・段2では`verification`欄へ`git diff --stat`実行結果または差分不一致時の是正内容を含める
+（対象ファイル一覧の実体照合結果、`plan-impl-executor.md`「出力」節と同期）。
+段1は「出力欄の値集合は起動モードで分岐する」規定が定める固定プレースホルダを
+`verification`欄へそのまま記録するため、この`git diff --stat`実体照合の記載義務は段1を対象外とする。

@@ -548,3 +548,30 @@ class TestCheckFrontmatterSyncNoteCoverage:
         monkeypatch.setattr(pathlib.Path, "read_text", _raise_os_error)
         assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
         assert "読み込みに失敗" in capsys.readouterr().err
+
+
+class TestReductionBlockTextFence:
+    """縮減対象H4配下のtextフェンス必須検査"""
+
+    def test_no_reduction_h4_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        """H4が無ければviolation 0を返す"""
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`\n"
+        assert check_plan_file._check_reduction_block_text_fence(tmp_path / "plan.md", text) == 0
+
+    def test_reduction_h4_with_text_fence_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        """H4配下にtextフェンスがあればviolation 0を返す"""
+        text = "# t\n\n## 変更内容\n\n#### 縮減対象（foo.md）\n\n```text\n削除文言案\n```\n"
+        assert check_plan_file._check_reduction_block_text_fence(tmp_path / "plan.md", text) == 0
+
+    def test_reduction_h4_without_text_fence_reports_violation(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """H4配下にtextフェンスが無ければviolation 1を返す"""
+        text = "# t\n\n## 変更内容\n\n#### 縮減対象（foo.md）\n\n本文縮減方針を記す。\n"
+        assert check_plan_file._check_reduction_block_text_fence(tmp_path / "plan.md", text) == 1
+        assert "自立性違反" in capsys.readouterr().err
+
+    def test_reduction_h4_with_heading_like_line_inside_fence_returns_zero(self, tmp_path: pathlib.Path) -> None:
+        """textフェンス内の見出し様の行で本文終端を誤判定しない"""
+        text = "# t\n\n## 変更内容\n\n#### 縮減対象（foo.md）\n\n```text\n#### 縮減対象（例示）\n削除文言案\n```\n"
+        assert check_plan_file._check_reduction_block_text_fence(tmp_path / "plan.md", text) == 0

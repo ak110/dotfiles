@@ -32,6 +32,8 @@
 - `_check_frontmatter_sync_note_coverage`: `## 変更内容`対象ファイル一覧の各ファイルが冒頭に
   frontmatter同期注記を持つ場合、参照先ファイル・参照先節が計画本文の対象ファイル一覧・
   追記記述に含まれるかを検査する（不在時に違反として報告）
+- `_check_reduction_block_text_fence`: `#### 縮減対象`H4節配下に削除文言案の`text`コードブロックが
+  存在するかを検査する（欠落時に違反として報告）
 
 `warning`区分（exit codeへ算入しない。体裁・表記系および計画作成の往復削減方針で非ブロック化する項目）:
 
@@ -169,6 +171,7 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     for msg in _check_test_file_pairing(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
     violations += _check_frontmatter_sync_note_coverage(plan_path, text, repo_root)
+    violations += _check_reduction_block_text_fence(plan_path, text)
 
     _run_subprocess_check([sys.executable, str(_CHECK_DASH_CLI), str(plan_path)], "check_dash", blocking=False)
     return violations
@@ -306,6 +309,46 @@ def _check_document_size_upper_limit(plan_path: pathlib.Path, text: str) -> None
             f"`#### 縮減対象`H4見出しも追記量圧縮の記述も本文に存在しない",
             file=sys.stderr,
         )
+
+
+def _check_reduction_block_text_fence(plan_path: pathlib.Path, text: str) -> int:
+    """`#### 縮減対象`H4配下に削除文言案の`text`フェンスが存在するかを検査する。
+
+    削除文言案のtextフェンス欠落は実装段階まで対応内容の確定を先送りする記述と同義の
+    自立性違反であり、計画ファイル段階で検出する。
+    `_REDUCTION_HEADING_RE`は`re.MULTILINE`フラグを持たないため、
+    `finditer(text)`ではなく行単位の`match`で走査する。
+    削除文言案の例示コードブロック内に見出し様の行（`#### `等）が含まれる場合、
+    フェンス開閉状態を無視すると本文終端誤判定・H4見出しの誤検出の双方を招くため、
+    ファイル全体を走査してフェンス外の行にのみ`_REDUCTION_HEADING_RE`・次見出し判定を適用する。
+    """
+    violations = 0
+    lines = text.splitlines()
+    in_fence = False
+    fence_free_indices: list[int] = []
+    for i, line in enumerate(lines):
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            fence_free_indices.append(i)
+    fence_free_set = frozenset(fence_free_indices)
+    for i in fence_free_indices:
+        if not _REDUCTION_HEADING_RE.match(lines[i]):
+            continue
+        section_lines: list[str] = []
+        for j, next_line in enumerate(lines[i + 1 :], start=i + 1):
+            if j in fence_free_set and re.match(r"^#{2,4} ", next_line):
+                break
+            section_lines.append(next_line)
+        section_body = "\n".join(section_lines)
+        if "```text" not in section_body:
+            print(
+                f"{plan_path}: `#### 縮減対象`H4節配下に削除文言案の`text`コードブロックが存在しない（自立性違反）",
+                file=sys.stderr,
+            )
+            violations += 1
+    return violations
 
 
 def _check_version_bump_matrix(plan_path: pathlib.Path, text: str) -> int:
