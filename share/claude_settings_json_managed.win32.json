@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "requiredMinimumVersion": "2.1.163",
+  "requiredMinimumVersion": "2.1.205",
   "hooks": {
     "PreToolUse": [
       {
@@ -43,5 +43,9 @@
     "type": "command",
     "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_status_line.py }\"",
     "padding": 0
+  },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_subagent_status_line.py }\""
   }
 }

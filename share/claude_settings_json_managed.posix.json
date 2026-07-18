@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "requiredMinimumVersion": "2.1.163",
+  "requiredMinimumVersion": "2.1.205",
   "hooks": {
     "PreToolUse": [
       {
@@ -43,5 +43,9 @@
     "type": "command",
     "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_status_line.py'",
     "padding": 0
+  },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_subagent_status_line.py'"
   }
 }
