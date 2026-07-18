@@ -258,7 +258,7 @@ class TestTbdAddPullBeforeEditor:
 
 
 class TestTbdAddRepoPathOverrideCli:
-    """`fb tb add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`tb add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -580,7 +580,7 @@ class TestTbdAnswer:
 
 
 class TestTbdAdopt:
-    """tb adoptサブコマンド: 採用としてtbd/inboxからtbd/adopted/へ移動しコミットを行う。"""
+    """tb adoptサブコマンド: 採用としてtbd/inboxからtbd/adopted/へ移動しコミットする。"""
 
     def test_single_file_adopted(
         self,

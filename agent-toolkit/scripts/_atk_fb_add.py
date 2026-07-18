@@ -64,7 +64,7 @@ def _cmd_add(
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     エディター経由の本文確定後に`_pull`を実行する順序とし、
-    エディター起動前のブロッキング待ち（他端末の投入分を取り込むgit pull）を無くしてUXを改善する。
+    エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
