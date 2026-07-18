@@ -22,7 +22,7 @@ import pytest
 from _plan_diff_gates_test_helpers import _load_module, _stub_subprocess, _write
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_plan_diff_gates.py"
 _MOD = _load_module(_SCRIPT)
@@ -388,6 +388,103 @@ class TestCheckOuterLabelPlacement:
         plan.write_text(content, encoding="utf-8")
         violations = _MOD._check_outer_label_placement(plan, content)
         assert len(violations) == 1
+
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "[追記]",
+            "[新設]",
+            "[置換後（全文）]",
+            "[削除根拠]",
+            "[追記×2]",
+            "[追記×10]",
+            "[追記（frontmatter）]",
+            "[現行（frontmatter）]",
+            "[置換後（frontmatter）]",
+            "[削除根拠（frontmatter）]",
+        ],
+    )
+    def test_extended_label_outer_placement_detected(self, tmp_path: pathlib.Path, label: str) -> None:
+        """差分ラベル全種・派生形・frontmatterサブラベルのfence外側配置を検出する。"""
+        text = f"## 変更内容\n\n### `foo.md`\n\n{label}\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "fence外側配置" in violations[0]
+
+    def test_appended_zero_times_label_not_detected(self, tmp_path: pathlib.Path) -> None:
+        """`[追記×0]`は`[1-9][0-9]*`パターンにより検出対象外。"""
+        text = "## 変更内容\n\n### `foo.md`\n\n[追記×0]\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert violations == []
+
+    @pytest.mark.parametrize(
+        "fullwidth_label",
+        [
+            "[追記］",
+            "[新設］",
+            "[置換後（全文）］",
+            "[削除根拠］",
+            "[追記×2］",
+            "[追記×10］",
+            "[追記（frontmatter）］",
+            "[現行（frontmatter）］",
+            "[置換後（frontmatter）］",
+            "[削除根拠（frontmatter）］",
+        ],
+    )
+    def test_extended_fullwidth_label_outside_fence_detected(self, tmp_path: pathlib.Path, fullwidth_label: str) -> None:
+        """差分ラベル全種・frontmatterサブラベルの全角化ラベルをfence外側で検出する。"""
+        text = f"## 変更内容\n\n### `foo.md`\n\n{fullwidth_label}\n```text\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert len(violations) == 1
+        assert "全角化ラベル" in violations[0]
+
+    @pytest.mark.parametrize("label", ["[追記]", "[新設]", "[置換後（全文）]", "[削除根拠]", "[追記（frontmatter）]"])
+    def test_extended_label_backticked_outer_placement_detected(self, tmp_path: pathlib.Path, label: str) -> None:
+        """差分ラベル全種のバッククォート囲み形式がfence外側配置なら違反検出する。"""
+        content = f"## 変更内容\n\n`{label}`\n\n```text\nfoo\n```\n"
+        plan = tmp_path / "plan.md"
+        plan.write_text(content, encoding="utf-8")
+        violations = _MOD._check_outer_label_placement(plan, content)
+        assert len(violations) == 1
+
+    @pytest.mark.parametrize(
+        "annotated_line",
+        [
+            "[追記]（説明）",
+            "[追記](説明)",
+            "[追記]:",
+        ],
+    )
+    def test_extended_label_annotation_forms_outer_placement_detected(
+        self, tmp_path: pathlib.Path, annotated_line: str
+    ) -> None:
+        """半角・全角の注記形式付き差分ラベルのfence外側配置を検出する。"""
+        content = f"## 変更内容\n\n{annotated_line}\n\n```text\nfoo\n```\n"
+        plan = tmp_path / "plan.md"
+        plan.write_text(content, encoding="utf-8")
+        violations = _MOD._check_outer_label_placement(plan, content)
+        assert len(violations) == 1
+
+    @pytest.mark.parametrize(
+        "label",
+        [
+            "[追記]",
+            "[新設]",
+            "[置換後（全文）]",
+            "[削除根拠]",
+            "[追記×3]",
+            "[追記（frontmatter）]",
+            "[現行（frontmatter）]",
+            "[置換後（frontmatter）]",
+            "[削除根拠（frontmatter）]",
+        ],
+    )
+    def test_extended_label_inside_fence_first_line_no_violation(self, tmp_path: pathlib.Path, label: str) -> None:
+        """差分ラベル全種・派生形・frontmatterサブラベルがfence直後1行目に配置される場合は違反なし。"""
+        text = f"## 変更内容\n\n### `foo.md`\n\n```text\n{label}\nbody\n```\n"
+        violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
+        assert violations == []
 
 
 class TestCheckInnerLabelCoexistence:

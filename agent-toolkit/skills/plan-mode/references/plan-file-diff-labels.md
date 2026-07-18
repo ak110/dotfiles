@@ -81,11 +81,13 @@ textlintがフェンス内のPython行を日本語文として誤検出し、`se
   - `check_plan_diff_gates.py`（実装は`_plan_diff_gates_scan.py`）も`×N`修飾子込みでラベル判定し、
     `[追記]`と同等の縮退フレーズ検出・textlint併走検査を適用する（集計は行わない）
 - `[新設]`・`[置換後]`・`[置換後（全文）]`は`check_plan_diff_gates.py`が検査する
-- `[現行]`/`[置換後]`のfence外側配置は`check_plan_diff_gates.py`が検査する
-  （対比ペア2種に限定する。textlint autofix全角化の観測実績が同ペアに集中するため）
-- `[現行]`/`[置換後]`の同一fence内側配置は`check_plan_diff_gates.py`が検査する（`_check_inner_label_coexistence`関数。fence外側配置検査と同層）
+- 差分ラベル全種と派生形`[追記×N]`、frontmatterサブラベル4種のfence外側配置は`check_plan_diff_gates.py`が検査する
+  - fence配置ミスをtextlint jtf-style/4.3.2大かっこ違反の間接検出に委ねる状態を回避し、起草直後に直接検出する
+- `[現行]`/`[置換後]`の同一fence内側配置は`check_plan_diff_gates.py`が検査する
+  - `_check_inner_label_coexistence`関数。fence外側配置検査と同層
+  - 対比ペア併記検出専用の機能であり他ラベルは対象外とする
 - 検出対象はラベル文言単独行に加え、バッククォート囲み形式および直後に注記（半角/全角括弧・コロン）が続く形式も含む
-- 全角化`[現行］`/`[置換後］`のfence外側出現も同スクリプトが検査する（同上の限定根拠）
+- 全角化ラベル（textlint autofixで閉じ括弧が全角化された`[現行］`等、上記全ラベルに対応）のfence外側出現も同スクリプトが検査する
 - 各ラベル付きブロックは`### <ファイルパス>`H3配下へ配置する
 - frontmatter変更用サブラベル（`[追記（frontmatter）]`・`[現行（frontmatter）]`・
   `[置換後（frontmatter）]`・`[削除根拠（frontmatter）]`）は既存本体ラベルと同一の

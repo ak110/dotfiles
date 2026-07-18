@@ -2,9 +2,8 @@
 # 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは
 # `agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する。
 # 改訂時は両ファイルを同時更新する。
-# 同期注記: 「共通遵守事項」節の「計画専用機械チェック実行」バレットは
-# `agent-toolkit/rules/03-claude-code.md`「起草をサブエージェントへ委譲するプロンプト」バレットと
-# 意図的に重複する。改訂時は両ファイルを同時更新する。
+# 同期注記: 「共通遵守事項」節の「起草前textlint-violations.md読み込み」バレットおよび「起草完了報告前pyfltr実行」バレットは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節をSSOTとする。
+# 本ファイルと`agent-toolkit/rules/03-claude-code.md`起草関連バレットは当該SSOTを参照する形で同期する（改訂時は3ファイルを同時更新する）。
 # named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節および
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md` と意図的に重複する。
 # 改訂時は3ファイルを同時更新する。
@@ -55,6 +54,9 @@
   `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
 - 計画専用機械チェックとして統合ランナー
   `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
+- 起草前に`agent-toolkit/skills/writing-standards/references/textlint-violations.md`を`Read`で読み込む
+  - 「頻出違反パターン予防策」節に従う。SSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節
+- 起草完了の報告前に`uvx pyfltr run-for-agent --no-fix <対象>`をtextlint検査含めて通過させる
 - named subagentとして`run_in_background=true`起動する場合、
   完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
   `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
@@ -118,6 +120,8 @@
       `tool_name in ("Agent", "Task")`SSOT表記を`grep`で確認して同一集合を使う
     - 計画専用機械チェックとして統合ランナー
       `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`を起草完了前に実行し違反・警告を解消する
+    - 起草前に`agent-toolkit/skills/writing-standards/references/textlint-violations.md`を`Read`で読み込み頻出違反パターン予防策の項に従う（SSOT: `plan-file-guidelines.md`「計画ファイル全体の遵守事項」節）
+    - 起草完了報告前に`uvx pyfltr run-for-agent --no-fix <対象>`をtextlint検査含めて通過させる
     - named subagentとして`run_in_background=true`起動する場合、
       完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
       `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする

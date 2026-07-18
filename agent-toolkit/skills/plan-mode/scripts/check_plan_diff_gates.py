@@ -101,17 +101,30 @@ from _plan_format import (  # noqa: E402  # pylint: disable=import-error
 
 # pylint: enable=wrong-import-position
 
+# fence外側配置検出用の対象ラベル集合。差分ラベル6種、派生形`[追記×N]`、frontmatterサブラベル4種を含む。
+# plan-file-diff-labels.md「フェンス配置」節は全ラベルでfence外側配置を禁止しており本集合で直接検出する。
+_OUTER_LABEL_ALTS = (
+    r"\[追記×[1-9][0-9]*\]"
+    r"|\[追記(?:（frontmatter）)?\]"
+    r"|\[現行(?:（frontmatter）)?\]"
+    r"|\[置換後(?:（全文）|（frontmatter）)?\]"
+    r"|\[削除根拠(?:（frontmatter）)?\]"
+    r"|\[新設\]"
+)
+
 # fence外側配置検出用: ラベル文言行。単独行に加え、バッククォート囲み形式および
 # ラベル直後に注記（半角/全角括弧・コロン）が続く形式も検出する。
-_OUTER_LABEL_LINE_RE = re.compile(r"^\s*`?(?:\[現行\]|\[置換後\])`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
+_OUTER_LABEL_LINE_RE = re.compile(rf"^\s*`?(?:{_OUTER_LABEL_ALTS})`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
-# fence内側配置検出用: ラベル単独行。`_OUTER_LABEL_LINE_RE`と同形式だが名前付きグループでラベル種別を
-# 判定できるようにする。フェンス本文中の地の文（ラベル文言を引用する説明文等）を誤検出しないよう
-# 厳密な単独行一致とする。
+# fence内側配置検出用: `[現行]`/`[置換後]`ペア併記検出専用。対比ペアの無い他ラベルは併記概念が成立せず対象外。
+# ラベル単独行を厳密判定し地の文誤検出を避ける。
 _INNER_LABEL_LINE_RE = re.compile(r"^\s*`?\[(?P<label>現行|置換後)\]`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
-# 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
-_FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")
+# 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された各ラベル。
+# `_OUTER_LABEL_ALTS`の半角閉じ括弧`\]`を全角`］`へ機械的に置換して導出する
+# （二重定義によるラベル集合の更新漏れを防ぐため）。
+_FULLWIDTH_LABEL_ALTS = _OUTER_LABEL_ALTS.replace(r"\]", "］")
+_FULLWIDTH_LABEL_RE = re.compile(rf"(?:{_FULLWIDTH_LABEL_ALTS})")
 
 # fb-3: 新規H2以深節見出し検出用。`pretooluse.py:2297`付近の
 # `_RETROACTIVE_SCAN_NEW_HEADING_PATTERN`と同じ正規表現を採用する。
@@ -246,12 +259,13 @@ def _check_outer_label_placement(plan_path: pathlib.Path, text: str) -> list[str
 
     検出パターンは次の2種類。いずれもexit 1違反として`stderr`へ列挙する。
 
-    1. `[現行]`／`[置換後]`ラベル文言単独の行の後に、空行が0行以上あって
-        textフェンス開始行が続く場合（fence外側配置。
-        plan-file-diff-labels.md「フェンス配置」節の禁止規定の機械強制）
-    2. 全角化`[現行］`／`[置換後］`がtextフェンス外側行へ出現する場合
-        （textlint autofixによる二次被害。フェンス内側のコードブロック区間は
-        textlintのautofix対象外のため全角化自体が発生しない）
+    1. 差分ラベル全種（`[現行]`・`[置換後]`・`[追記]`・`[新設]`・`[置換後（全文）]`・`[削除根拠]`）と派生形`[追記×N]`、
+        frontmatterサブラベル4種（`[追記（frontmatter）]`・`[現行（frontmatter）]`・`[置換後（frontmatter）]`・
+        `[削除根拠（frontmatter）]`）のいずれかのラベル文言単独の行の後に、空行が0行以上あって
+        textフェンス開始行が続く場合（fence外側配置。plan-file-diff-labels.md「フェンス配置」節の禁止規定の機械強制）
+    2. 全角化ラベル（textlint autofixで閉じ括弧が全角化された`[現行］`等、上記全ラベルに対応）が
+        textフェンス外側行へ出現する場合（textlint autofixによる二次被害。
+        フェンス内側のコードブロック区間はtextlintのautofix対象外のため全角化自体が発生しない）
 
     fenceステート追跡でtextフェンス内側を検出対象から除外する
     （テストフィクスチャ等でフェンス内側にラベル単独行が正当に埋め込まれるケースを誤検出しないため）。
