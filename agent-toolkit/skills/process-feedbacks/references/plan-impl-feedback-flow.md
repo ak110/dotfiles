@@ -36,7 +36,7 @@
 受領手順で検収し、次の計画実装型を1件ずつ起動する。
 作業ツリー・コミットの競合を避けるため、計画実装型どうしの実装は直列に限定し並列起動しない。
 バックグラウンド実装は当該の計画実装型フィードバックについて作業ツリーを触る唯一の主体とし、
-検証・コミットまで`plan-impl-executor`へ委譲する。`git push`は委譲せず
+検証・コミット・`agent-toolkit:careful-review`実施まで`plan-impl-executor`へ委譲する。`git push`は委譲せず
 `agent-toolkit:process-feedbacks-finish`で一括実施する。
 通常型の計画実装（`plan-impl-executor`起動）は、先行する全ての計画実装型`plan-impl-executor`のうち
 最後に起動した1件の完了報告本文を呼び出し元が受領した時点で開始条件が成立する。

@@ -102,7 +102,7 @@ plan-mode側の定義は
   後始末コマンドがフィードバック管理側へcommit/pushを伴う場合、
   対象リポジトリ側がレビュー指摘で巻き戻るとフィードバック管理側だけが先行公開され整合性が崩れるため
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
-  `agent-toolkit:careful-review`まで計画側で完遂し、
+  `agent-toolkit:careful-review`まで`plan-impl-executor`側で完遂し、
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は
   `agent-toolkit:process-feedbacks-finish`スキル本文の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う

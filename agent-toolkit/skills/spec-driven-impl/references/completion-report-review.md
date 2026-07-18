@@ -13,8 +13,8 @@
   段2サブエージェントの起動プロンプトに渡せる形で保持する
 - 段2（検証・コミット専従モード）: 上記共通照合に加え、サブエージェント報告の「検証結果」「作成コミットのSHA」を確認する
 - 通常モード・段2では`review_handoff`欄を検収する。
-  「レビューは実施しない」以外は記載のスキル・エージェントを
-  `agent-toolkit/references/plan-impl/caller-reception.md`の手順で起動する
+  「実施完了」形式の場合はspec-driven-implementer側（`plan-impl-executor`工程を継承）でレビュー完遂済みと確認し次工程へ進む。
+  「レビューは実施しない」の場合も次工程へ進む
 - `plan_gaps`欄は当該テーマ計画ファイルの`## 進捗ログ`へ転記して蓄積し、
   後続テーマの計画作成（`agent-toolkit:spec-driven-plan`）の入力として参照する
 
