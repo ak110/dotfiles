@@ -1,12 +1,13 @@
 ---
 # 同期注記: 「起草をサブエージェントへ委譲するプロンプト」バレットの「計画専用機械チェック実行」サブバレットは
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
-# named subagent能動送付規定（Agentツールで`name`指定・`run_in_background=true`起動時の
-# 完了時SendMessage(to: 'main')能動送付義務）は
+# named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`および
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`と意図的に重複する（改訂時は3ファイルを同時更新する）。
 # 「サブエージェントの活用」節の非同期処理に係る完遂義務パラグラフ（「サブエージェントは自身の起動タスク完了前に」で始まるバレット）は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節と
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は3ファイルを同時更新する）。
+# 本ファイル「サブエージェントの活用」節の`git stash`禁止バレットは
+# `agent-toolkit/agents/plan-implementer.md`の`git stash`禁止バレットと意図的に重複する（改訂時は両ファイルを同時更新する）。
 ---
 # 03-claude-code.md
 
@@ -29,9 +30,8 @@
   - 起動プロンプトが「工程Xは必ず完遂せよ」等の完遂義務を明示する場合は該当工程を独立タスク化する対象へ含める
   - `result:`・完了報告・完了宣言を発行する直前に`TaskList`でタスク一覧を確認し、
     `pending`・`in_progress`状態のタスクが存在する場合は発行を保留して当該タスクの実行または明示的な取り消し判定へ移る
-- `cat -A`（および`cat -v`・`cat -e`・`cat -t`・`cat --show-all`等の非印字文字を可視化する系オプション）は禁止
- （非ASCIIバイトがメタ表記に展開され、Claude Code側の安全フィルターが誤検出して操作中断事故を起こす）
-  - 非印字文字の確認は`Read`・`od -c`・`xxd`・`hexdump -C`で代替する
+- `cat -A`（`cat -v`・`cat -e`・`cat -t`・`cat --show-all`等の非印字文字を可視化する系オプションを含む）は禁止
+  （非ASCIIバイトがメタ表記に展開され安全フィルターが誤検出し操作中断を招くため）。非印字文字の確認は`Read`・`od -c`・`xxd`・`hexdump -C`で代替する
 - 複数ファイルに跨る置換・参照除去・キーワード書き換えは`agent-toolkit:pyfltr-usage`スキルのgrep/replaceサブコマンドを使う
   - `sed -i`の手書き正規表現や個別`Edit`の繰り返しは対象漏れや誤爆が起きやすい
 - 100行超の連続ブロックを`Edit`で置換する場合は`old_string`にブロック全体を含めるかPythonスクリプトの
@@ -118,7 +118,8 @@
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する
   - git操作: 作業ツリー全体の状態を変更するgit操作（`git stash`・`git checkout`・`git reset`・`git clean`等）を
     しない（並列実行中の他タスクの編集に影響するため）。`pre-commit run`を`--files`指定なしで起動する場合も
-    内部で`git stash`相当の退避が発生し得るため同等に扱う。テスト失敗の切り分けなどで必要と判断した場合も
+    内部で`git stash`相当の退避が発生し得るため同等に扱う。pylint等の単体検証で全対象を評価する必要がある場合は
+    `--files`で対象ファイル群を明示するか、メイン側で一括検証する。テスト失敗の切り分けなどで必要と判断した場合も
     実行せず作業を中断して報告する。背景セッションでの並列作業をユーザーから通知された場合も同じ前提を適用する。
     単独起動（並列を伴わない`foreground`起動）時に限り、
     メイン側の起動プロンプトでgit操作を明示許可した場合は本制限の対象外とする

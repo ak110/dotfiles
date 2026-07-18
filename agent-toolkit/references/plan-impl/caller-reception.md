@@ -33,7 +33,13 @@
    - named background subagentの完了判定はSendMessageによる問い合わせに依存せず、
      `git log`・`git status`・作業ツリー・commit SHAなどの観測可能事象で先に判定する。
      `idle_notification`受信時も同様に観測事実で判定し、SendMessageは観測事実で判定不能な場合に限定する
-    （実質ハングを避けるため）。CI通過確認等の外部プロセス完了待ちのポーリングは本項の対象外とする
+    （実質ハングを避けるため）。CI通過確認等の外部プロセス完了待ちのポーリングは本項の対象外とする。
+     ただし、呼び出し元が定める切替条件下で当該named background subagentから
+     別の`plan-impl-executor`起動へ引き継ぐ場合は例外とする。
+     この引き継ぎ時の完了判定は完了報告本文の受領を必須とする。
+     観測可能な事象単独では判定しない。
+    （切替条件の詳細は`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`
+     「混在時の並行制御」節に従う）
 2. `changed`欄と計画ファイル`## 変更内容`を照合し、`git diff <計画着手前SHA>..<commit_sha>`の
    実差分で1対1確認する。完了報告の受領時点で作業ツリーはコミット済みでcleanなため、
    作業ツリー差分ではなくコミット範囲差分を照合対象とする

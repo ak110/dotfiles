@@ -38,8 +38,12 @@
 バックグラウンド実装は当該の計画実装型フィードバックについて作業ツリーを触る唯一の主体とし、
 検証・コミットまで`plan-impl-executor`へ委譲する。`git push`は委譲せず
 `agent-toolkit:process-feedbacks-finish`で一括実施する。
-通常型の計画実装（`plan-impl-executor`起動）は、全計画実装型のコミット完了後に開始する
-（作業ツリー全体へ影響する検証・コミットの競合を避けるため直列とする）。
+通常型の計画実装（`plan-impl-executor`起動）は、先行する全ての計画実装型`plan-impl-executor`のうち
+最後に起動した1件の完了報告本文を呼び出し元が受領した時点で開始条件が成立する。
+完了報告本文の必須欄は`agent-toolkit/references/plan-impl/caller-reception.md`手順0のSSOTに従い、
+`review_handoff`欄を含む形式とする。
+作業ツリー全体へ影響する検証・コミットの競合を避けるため直列とする。
+commit SHAの進捗観測を単独の判定根拠にしない。
 
 ## 計画実装型のみの場合
 
