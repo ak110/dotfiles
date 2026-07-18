@@ -1,9 +1,8 @@
 """agent-toolkit/skills/plan-mode/scripts/check_wc_projection.py のテスト（追加シナリオ）。
 
 `check_wc_projection_test.py`からの責務分割先とし、220行超過縮減対象H4検査・
-220行到達済みラベルなし追記検査・チェックボックス投影書式の受理範囲・
-fence内側形式ラベルの直接検証・frontmatterサブラベルの行数集計・
-可変長フェンス対応の各シナリオを扱う。ヘルパー関数は`check_wc_projection_test`から再利用する。
+220行到達済みラベルなし追記検査・fence内側形式ラベルの直接検証・frontmatterサブラベルの
+存在有無集計・可変長フェンス対応の各シナリオを扱う。ヘルパー関数は`check_wc_projection_test`から再利用する。
 """
 
 import pathlib
@@ -14,7 +13,7 @@ from check_wc_projection_test import _MOD, _run, _write
 class TestOverThresholdReductionCheck:
     """`_check_reduction_block_for_over_threshold_files`の警告出力仕様を検証する。
 
-    見込み220行超のファイルを対象に、対応する`#### 縮減対象（<ファイル名>）`
+    現行220行超のファイルを対象に、対応する`#### 縮減対象（<ファイル名>）`
     H4見出しの存在を検査する。警告は情報提供扱いで違反件数には計上しない（returncode 0）。
     """
 
@@ -22,10 +21,11 @@ class TestOverThresholdReductionCheck:
         """220行超過ファイル対象・縮減対象H4不在時に警告が出力される。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行220行, 見込み230行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行230行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
+        assert "[warn]" in result.stderr
         assert "220行超過ファイル" in result.stderr
         assert "`#### 縮減対象（foo.md）`H4見出しが不在" in result.stderr
 
@@ -35,7 +35,7 @@ class TestOverThresholdReductionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行220行, 見込み230行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n\n"
             "### `foo.md`\n\n"
             "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
         )
@@ -49,8 +49,8 @@ class TestOverThresholdReductionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行220行, 見込み230行）\n"
-            "- [ ] `bar.md`（現行220行, 見込み235行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n"
+            "- [ ] `bar.md`（現行235行）\n\n"
             "### `foo.md`\n\n"
             "#### 縮減対象（foo.md）\n\n```text\n[削除根拠]\nold\n```\n",
         )
@@ -60,10 +60,10 @@ class TestOverThresholdReductionCheck:
         assert "220行超過ファイルfoo.md" not in result.stderr
 
     def test_at_threshold_file_skips_check(self, tmp_path: pathlib.Path) -> None:
-        """見込み220行ちょうど・以下のファイルは検査対象外となる（220行以下収束の完了条件）。"""
+        """現行220行ちょうど・以下のファイルは検査対象外となる（220行以下収束の完了条件）。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行150行, 見込み220行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行220行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
@@ -75,7 +75,7 @@ class TestOverThresholdReductionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `agent-toolkit/skills/agent-standards/SKILL.md`（現行220行, 見込み230行）\n\n"
+            "- [ ] `agent-toolkit/skills/agent-standards/SKILL.md`（現行230行）\n\n"
             "### `agent-toolkit/skills/agent-standards/SKILL.md`\n\n"
             "#### 縮減対象（agent-standards SKILL.md）\n\n```text\n[削除根拠]\nold verbose\n```\n",
         )
@@ -87,7 +87,7 @@ class TestOverThresholdReductionCheck:
         """220行を大きく超えるファイル（300行以上）でも220行超過として警告される。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行300行, 見込み300行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行300行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
@@ -98,7 +98,7 @@ class TestOverThresholdReductionCheck:
         """`.py`ファイルが220行超過でもH4見出し警告は発生しない（拡張子フィルタ）。"""
         plan = _write(
             tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行220行, 見込み250行）\n",
+            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行230行）\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0
@@ -119,11 +119,12 @@ class TestOverThresholdLabellessAdditionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n\n"
             "### `foo.md`\n\n追記文言案:\n\n"
             "```text\n追加行A\n追加行B\n追加行C\n追加行D\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
+        assert "[warn]" in result.stderr
         assert "220行到達済みファイルfoo.md" in result.stderr
         assert "差分ラベル付与を検討" in result.stderr
 
@@ -134,7 +135,7 @@ class TestOverThresholdLabellessAdditionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行231行, 見込み231行）\n\n"
+            "- [ ] `foo.md`（現行231行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行]\nline0\n```\n\n"
             "```text\n[置換後]\nnew line\n```\n",
@@ -149,7 +150,7 @@ class TestOverThresholdLabellessAdditionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行230行, 見込み234行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[追記]\n追加行A\n追加行B\n追加行C\n追加行D\n```\n",
         )
@@ -163,13 +164,14 @@ class TestOverThresholdLabellessAdditionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行230行, 見込み236行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[追記]\nラベル付き行A\nラベル付き行B\n```\n\n"
             "追記文言案:\n\n"
             "```text\nラベルなし行A\nラベルなし行B\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
+        assert "[warn]" in result.stderr
         assert "220行到達済みファイルfoo.md" in result.stderr
         assert "差分ラベル付与を検討" in result.stderr
 
@@ -180,53 +182,12 @@ class TestOverThresholdLabellessAdditionCheck:
             tmp_path / "plan.md",
             "# T\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行100行, 見込み104行）\n\n"
+            "- [ ] `foo.md`（現行100行）\n\n"
             "### `foo.md`\n\n追記文言案:\n\n"
             "```text\n追加行A\n追加行B\n```\n",
         )
         result = _run(plan, cwd=tmp_path)
         assert "差分ラベル付与を検討" not in result.stderr
-
-
-class TestCheckboxProjectionAcceptance:
-    """`_CHECKBOX_RE`と`_CHECKBOX_UNDETERMINED_RE`の書式受理範囲を検証する。"""
-
-    def test_short_form_projection_is_accepted(self, tmp_path: pathlib.Path) -> None:
-        """「見込」表記（送り仮名なし）のチェックボックスも受理される。"""
-        source = tmp_path / "foo.md"
-        source.write_text("line1\nline2\nline3\n", encoding="utf-8")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行3行, 見込3行）\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0
-        assert "未記載" not in result.stderr
-
-    def test_undetermined_projection_skips_drift_check(self, tmp_path: pathlib.Path) -> None:
-        """「実装後未確定」表記は乖離判定をスキップし違反にならない。"""
-        source = tmp_path / "foo.py"
-        source.write_text("line1\nline2\n", encoding="utf-8")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（現行2行, 実装後未確定）\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0
-        assert "未記載" not in result.stderr
-
-    def test_non_md_path_without_projection_is_accepted(self, tmp_path: pathlib.Path) -> None:
-        """`.py`パスは見込み行数チェックボックスが存在しなくても違反にならない。"""
-        source = tmp_path / "foo.py"
-        source.write_text("line1\nline2\nline3\n", encoding="utf-8")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# テスト計画\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.py`（新設）\n\n"
-            "### `foo.py`\n\n```text\n[現行]\nline1\n```\n\n```text\n[置換後]\nnew line\n```\n",
-        )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0
-        assert "未記載" not in result.stderr
 
 
 class TestLeadingLabel:
@@ -249,28 +210,25 @@ class TestLeadingLabel:
 
 
 class TestFrontmatterLabelExtraction:
-    """frontmatterサブラベル（`[追記（frontmatter）]`等4種）の行数集計を検証する。"""
+    """frontmatterサブラベル（`[追記（frontmatter）]`等4種）の存在有無集計を検証する。"""
 
-    def test_addition_frontmatter_sublabel_counted(self, tmp_path: pathlib.Path) -> None:
-        """`[追記（frontmatter）]`ブロックの本文行数が追記量として集計される。"""
-        _write(tmp_path / "foo.md", "---\ntitle: t\n---\nbody\n")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行4行, 見込み6行）\n\n"
+    def test_addition_frontmatter_sublabel_not_counted_as_labelless(self) -> None:
+        """`[追記（frontmatter）]`ブロックはラベル付きのため`addition_labelless`へ計上されない。"""
+        section = (
+            "### 対象ファイル一覧\n\n- [ ] `foo.md`（現行4行）\n\n"
             "### `foo.md`\n\n"
-            "```text\n[追記（frontmatter）]\nsummary: s\ntags: []\n```\n",
+            "```text\n[追記（frontmatter）]\nsummary: s\ntags: []\n```\n"
         )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0, result.stderr
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["foo.md"]["addition_labelless"] == 0
 
     def test_current_replacement_frontmatter_pair_applied(self, tmp_path: pathlib.Path) -> None:
-        """`[現行（frontmatter）]`/`[置換後（frontmatter）]`対比ペアが実ファイルへ適用され、見込み行数と照合される。"""
+        """`[現行（frontmatter）]`/`[置換後（frontmatter）]`対比ペアが実ファイルへ適用され一意一致検査を通過する。"""
         _write(tmp_path / "foo.md", "---\ntitle: old\n---\nbody\n")
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行4行, 見込み5行）\n\n"
+            "- [ ] `foo.md`（現行4行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行（frontmatter）]\ntitle: old\n```\n\n"
             "```text\n[置換後（frontmatter）]\ntitle: new\nsummary: s\n```\n",
@@ -278,33 +236,27 @@ class TestFrontmatterLabelExtraction:
         result = _run(plan, cwd=tmp_path)
         assert result.returncode == 0, result.stderr
 
-    def test_deletion_frontmatter_sublabel_counted_as_reduction(self, tmp_path: pathlib.Path) -> None:
+    def test_deletion_frontmatter_sublabel_counted_as_reduction(self) -> None:
         """`[削除根拠（frontmatter）]`ブロックの直前`[現行（frontmatter）]`行数が縮減量として集計される。"""
-        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+        section = (
+            "### 対象ファイル一覧\n\n- [ ] `foo.md`（現行10行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行（frontmatter）]\nold-line1\nold-line2\n```\n\n"
-            "```text\n[削除根拠（frontmatter）]\n陳腐化のため削除\n```\n",
+            "```text\n[削除根拠（frontmatter）]\n陳腐化のため削除\n```\n"
         )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0, result.stderr
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["foo.md"]["reduction"] == 2
 
-    def test_frontmatter_and_body_addition_summed(self, tmp_path: pathlib.Path) -> None:
-        """frontmatter変更（`[追記（frontmatter）]`）と本体変更（`[追記]`）が同一H3内で合算される。"""
-        _write(tmp_path / "foo.md", "\n".join(f"line{i}" for i in range(10)) + "\n")
-        plan = _write(
-            tmp_path / "plan.md",
-            "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行10行, 見込み13行）\n\n"
+    def test_frontmatter_and_body_addition_both_labelled_not_counted(self) -> None:
+        """frontmatter変更（`[追記（frontmatter）]`）と本体変更（`[追記]`）はいずれもラベル付きのため計上されない。"""
+        section = (
+            "### 対象ファイル一覧\n\n- [ ] `foo.md`（現行10行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[追記（frontmatter）]\nfm-line1\n```\n\n"
-            "```text\n[追記]\nbody-line1\nbody-line2\n```\n",
+            "```text\n[追記]\nbody-line1\nbody-line2\n```\n"
         )
-        result = _run(plan, cwd=tmp_path)
-        assert result.returncode == 0, result.stderr
+        result = _MOD.extract_addition_reduction_blocks(section)
+        assert result["foo.md"]["addition_labelless"] == 0
 
 
 class TestDeletionPairUnifiedAccounting:
@@ -314,7 +266,7 @@ class TestDeletionPairUnifiedAccounting:
         """`[削除根拠]`ペアも`replacement_pair_count`へ計上される。"""
         section = (
             "### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行10行, 見込み8行）\n\n"
+            "- [ ] `foo.md`（現行10行）\n\n"
             "### `foo.md`\n\n"
             "```text\n[現行]\nold1\nold2\n```\n\n"
             "```text\n[削除根拠]\n冗長なため削除する\n```\n"
@@ -322,7 +274,6 @@ class TestDeletionPairUnifiedAccounting:
         result = _MOD.extract_addition_reduction_blocks(section)
         assert result["foo.md"]["replacement_pair_count"] == 1
         assert result["foo.md"]["reduction"] == 2
-        assert result["foo.md"]["addition"] == 0
 
 
 class TestVariableLengthFence:
@@ -334,7 +285,7 @@ class TestVariableLengthFence:
         plan = _write(
             tmp_path / "plan.md",
             "# T\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行3行, 見込み3行）\n\n"
+            "- [ ] `foo.md`（現行3行）\n\n"
             "### `foo.md`\n\n"
             "````text\n[現行]\n```\ninner code\n```\n````\n\n"
             "````text\n[置換後]\n```\nnew inner\n```\n````\n",

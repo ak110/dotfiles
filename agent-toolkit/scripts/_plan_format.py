@@ -144,7 +144,7 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 _CHECKBOX_PATTERN = re.compile(r"^\s*-\s+\[[ xX]\]\s+(.+)")
 
 # チェックボックス項目本文の先頭がバッククォート囲みのパスである場合に、
-# 後続の`（現行N行, 見込みM行）`等の付随メタ情報を除いてパス部分のみを取り出すパターン。
+# 後続の`（現行N行）`等の付随メタ情報を除いてパス部分のみを取り出すパターン。
 _LEADING_BACKTICK_PATH_PATTERN = re.compile(r"^`([^`]+)`")
 
 
@@ -226,9 +226,9 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
 def extract_target_files_from_changes(content: str) -> list[str]:
     """`## 変更内容 > ### 対象ファイル一覧`配下のチェックボックス箇条書きから相対パスを抽出する。
 
-    パス記述の慣例（`` `path`（現行N行, 見込みM行） ``形式）に合わせ、
+    パス記述の慣例（`` `path`（現行N行） ``形式）に合わせ、
     前後の全角空白を含む空白除去後、先頭のバッククォート囲み区間のみをパスとして取り出す
-    （後続の`（現行N行, 見込みM行）`等の付随メタ情報は除く）。
+    （後続の`（現行N行）`等の付随メタ情報は除く）。
     バッククォート囲みでない場合は従来どおり前後のバッククォートのみを除去する。
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
     """

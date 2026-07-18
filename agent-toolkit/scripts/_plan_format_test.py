@@ -153,16 +153,13 @@ class TestExtractTargetFilesFromChanges:
     """extract_target_files_from_changes の基本動作を検査する。"""
 
     def test_strips_trailing_line_count_metadata(self) -> None:
-        """`（現行N行, 見込みM行）`等の付随メタ情報がパスから除去される。
+        """`（現行N行）`等の付随メタ情報がパスから除去される。
 
         `plan-file-guidelines.md`が規定する標準形式
-        `` `path`（現行N行, 見込みM行） ``を検査対象とする。
+        `` `path`（現行N行） ``を検査対象とする。
         """
         content = (
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\n"
-            "- [ ] `app/src/foo.svelte`（現行10行, 見込み20行）\n"
-            "- [x] `app/src/bar.ts`（新設, 見込み5行）\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `app/src/foo.svelte`（現行10行）\n- [x] `app/src/bar.ts`（新設）\n"
         )
         assert _plan_format.extract_target_files_from_changes(content) == [
             "app/src/foo.svelte",
@@ -200,7 +197,7 @@ class TestFindInvalidTargetFilePaths:
     def test_find_invalid_target_file_paths_handles_backtick_paths(self) -> None:
         content = (
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `/abs/foo.md`（現行1行, 見込み2行）\n"
+            "- [ ] `/abs/foo.md`（現行1行）\n"
             "- [ ] `agent-toolkit/rules/x.md`（現行10行）\n"
         )
         assert _plan_format.find_invalid_target_file_paths(content) == ["/abs/foo.md"]
@@ -209,8 +206,8 @@ class TestFindInvalidTargetFilePaths:
         content = (
             "<!-- allowed-repo-root: /home/aki/other-repo -->\n\n"
             "## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `/home/aki/other-repo/docs/guide.md`（現行10行, 見込み12行）\n"
-            "- [ ] `/home/aki/unrelated-repo/foo.md`（現行1行, 見込み1行）\n"
+            "- [ ] `/home/aki/other-repo/docs/guide.md`（現行10行）\n"
+            "- [ ] `/home/aki/unrelated-repo/foo.md`（現行1行）\n"
         )
         assert _plan_format.find_invalid_target_file_paths(content) == ["/home/aki/unrelated-repo/foo.md"]
 

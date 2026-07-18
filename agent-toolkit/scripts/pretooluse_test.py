@@ -1878,14 +1878,16 @@ class TestAgentDocTargetPatternsSsot:
     """agent-doc-validator の対象ファイル群列挙 SSOT 整合性検査。
 
     pretooluse.py の _AGENT_DOC_TARGET_FILE_PATTERNS を SSOT とし、
-    agents/agent-doc-validator.md および
-    skills/plan-mode/references/integrity-checks.md の本文にすべての
-    対象パス文字列が現れることを保証する。
+    agents/agent-doc-validator.md、および
+    skills/plan-mode/references/integrity-checks.md と
+    skills/plan-mode/references/process7-bypass-detection.md を結合した本文に
+    すべての対象パス文字列が現れることを保証する。
     """
 
     _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
     _AGENT_DOC_VALIDATOR_MD = _REPO_ROOT / "agent-toolkit" / "agents" / "agent-doc-validator.md"
     _INTEGRITY_CHECKS_MD = _REPO_ROOT / "agent-toolkit" / "skills" / "plan-mode" / "references" / "integrity-checks.md"
+    _PROCESS7_BYPASS_MD = _REPO_ROOT / "agent-toolkit" / "skills" / "plan-mode" / "references" / "process7-bypass-detection.md"
 
     @classmethod
     def _expected_path_snippets(cls) -> list[str]:
@@ -1918,20 +1920,20 @@ class TestAgentDocTargetPatternsSsot:
             assert snippet in section, f"『適用範囲』節に {snippet!r} が欠落"
 
     def test_integrity_checks_condition_section_contains_all_patterns(self):
-        """integrity-checks.md の条件付き起動記述部分が全パターンを含むこと。"""
-        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8")
+        """integrity-checks.md + process7-bypass-detection.md の条件付き起動記述部分が全パターンを含むこと。"""
+        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8") + self._PROCESS7_BYPASS_MD.read_text(encoding="utf-8")
         # `agent-doc-validator` を含む節を検索し、その前後の当該記述行を確認
         assert "agent-doc-validator" in content
         for snippet in self._expected_path_snippets():
-            assert snippet in content, f"integrity-checks.md に {snippet!r} が欠落"
+            assert snippet in content, f"integrity-checks.md + process7-bypass-detection.md に {snippet!r} が欠落"
 
     def test_integrity_checks_bypass_section_contains_all_patterns(self):
-        """integrity-checks.md の工程7バイパスファイル群記述が全パターンを含むこと。"""
-        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8")
+        """integrity-checks.md + process7-bypass-detection.md の工程7バイパスファイル群記述が全パターンを含むこと。"""
+        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8") + self._PROCESS7_BYPASS_MD.read_text(encoding="utf-8")
         # 上のテストで全content確認済みだが、ファイル群の記述部分の存在自体を検証
         assert "工程7" in content or "バイパス" in content or "該当ファイル群" in content
         for snippet in self._expected_path_snippets():
-            assert snippet in content, f"integrity-checks.md に {snippet!r} が欠落"
+            assert snippet in content, f"integrity-checks.md + process7-bypass-detection.md に {snippet!r} が欠落"
 
 
 class TestBashGitCommitWarning:

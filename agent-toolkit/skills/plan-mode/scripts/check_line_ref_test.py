@@ -323,6 +323,19 @@ class TestCheckLineRef:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
 
+    def test_check_path_existence_excludes_deprecated_removed_marker(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル一覧の`（廃止・削除）`マーカー付きパスは実在確認から除外する。"""
+        path = _write(
+            tmp_path / "doc.md",
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `scripts/removed_module.py`（廃止・削除）\n\n"
+            "### `scripts/removed_module.py`\n\n"
+            "対象は`scripts/removed_module.py`を削除する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
     def test_check_path_existence_excludes_skill_relative_suffix_of_new_path(self, tmp_path: pathlib.Path) -> None:
         """新設パスのスキル相対裸表記（`references/xxx.md`形式）も実在確認から除外する。"""
         marker_path = "agent-toolkit/skills/sample-skill/references/new-file.md"

@@ -205,62 +205,46 @@ class TestRunSubprocessCheck:
 
 
 class TestDocumentSizeUpperLimit:
-    """`_check_document_size_upper_limit`の検査を検証する。"""
+    """`_check_document_size_upper_limit`の検査を検証する（縮減計画トリガー200行）。"""
 
     def test_no_over_threshold_files_prints_nothing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行100行, 見込み150行）\n"
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行100行）\n"
+        check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
+        assert capsys.readouterr().err == ""
+
+    def test_at_trigger_boundary_prints_nothing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """現行行数が縮減計画トリガー（200行）ちょうどの場合は超過扱いとしない。"""
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行）\n"
         check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
         assert capsys.readouterr().err == ""
 
     def test_over_threshold_without_reduction_prints_warning(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行200行, 見込み230行）\n"
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行201行）\n"
         check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
         captured = capsys.readouterr().err
         assert "[warn]" in captured
-        assert "文書サイズ上限" in captured
+        assert "縮減計画トリガー" in captured
 
     def test_over_threshold_with_reduction_heading_prints_nothing(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         text = (
             "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行200行, 見込み230行）\n\n"
+            "- [ ] `foo.md`（現行230行）\n\n"
             "#### 縮減対象（foo.md）\n\n本文縮減方針を記す。\n"
         )
         check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
         assert capsys.readouterr().err == ""
 
-    def test_computed_projection_over_threshold_warns_even_if_declared_within_limit(
+    def test_over_threshold_with_reduction_note_prints_nothing(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """宣言済み見込み行数は上限内でも、追記/縮減対象集計からの計算見込みが上限超過なら警告する。"""
-        text = (
-            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行210行, 見込み215行）\n\n"
-            "### `foo.md`\n\n"
-            "```text\n[追記]\n" + "\n".join(f"line{i}" for i in range(15)) + "\n```\n"
-        )
+        """「追記量圧縮」の記述があれば縮減対象H4が無くても警告しない。"""
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（現行230行）\n\n追記量圧縮を実施済み。\n"
         check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
-        captured = capsys.readouterr().err
-        assert "[warn]" in captured
-        assert "文書サイズ上限" in captured
-
-    def test_both_declared_and_computed_projection_over_threshold_warns(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """宣言済み見込み行数と計算見込みの両方が上限超過する場合も、縮減記述が無ければ警告する。"""
-        text = (
-            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
-            "- [ ] `foo.md`（現行210行, 見込み230行）\n\n"
-            "### `foo.md`\n\n"
-            "```text\n[追記]\n" + "\n".join(f"line{i}" for i in range(15)) + "\n```\n"
-        )
-        check_plan_file._check_document_size_upper_limit(tmp_path / "plan.md", text)
-        captured = capsys.readouterr().err
-        assert "[warn]" in captured
-        assert "文書サイズ上限" in captured
+        assert capsys.readouterr().err == ""
 
 
 class TestVersionBumpMatrix:
