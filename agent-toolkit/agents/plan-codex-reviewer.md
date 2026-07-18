@@ -16,6 +16,10 @@ user-invocable: false
 # tools制限の理由: codex呼び出しとCLIフォールバック実行・結果読み取りのみで完結するため、
 #   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
 #   SendMessageはnamed background起動時の完了報告能動送付（末尾「報告」節参照）のために含める。
+# tools欄へ明示列挙したMCPツールは起動時に完全なスキーマで即時ロードされる（実機検証済み）。
+#   deferred tools機構の対象外となるため、ToolSearchをtools欄へ追加する必要はない
+#   （メイン直接実行ではMCPツールがdeferredとなりToolSearchを要する挙動と混同しない）。
+#   本注記はplan-codex-implementer.mdの同注記と意図的に重複する。改訂時は両ファイルを同時更新する。
 # Bashの用途はCLIフォールバック版の`codex exec`起動に限定する
 #   （agents/frontmatterはSKILL.mdのallowed-tools相当のコマンド単位スコープ指定に対応しないため、
 #   本文側の指示で用途を限定する）。
@@ -79,7 +83,7 @@ H1見出し以降を埋め込む。
 
 ### MCPツール版
 
-`ToolSearch`でスキーマを取得した直後の最初のアクションとして該当MCPツールを呼び出す。
+実行開始後の最初のアクションとして該当MCPツールを呼び出す。
 プロンプト生成・パラメーター整形のための自己点検をツール呼び出し前に続けない。
 これは初回・継続を問わず、`mcp__codex__codex-reply`呼び出しも対象に含める。
 
