@@ -132,7 +132,7 @@ def create_app(
     async def index() -> quart.Response:
         base_path = safe_base_path(quart.request.root_path)
         # ページロード時はローカル分`host_info`のみを注入する。リモート分はSSE経由の
-        # `host_info_update`イベントで随時反映する（新規APIエンドポイントは設けない）。
+        # `host_info_update`イベント受信、または`/api/host-info`への再取得で反映する。
         root_dirs_js = {resolved_hostname: state.host_info[resolved_hostname]}
         # HTML属性向けには`html.escape(quote=True)`、JavaScriptリテラル向けには`json.dumps`で
         # 文字列リテラル化し、コンテキスト別のエスケープ経路で埋め込む。
@@ -193,6 +193,14 @@ def create_app(
         # SPA起動時の初期同期用。SSE取りこぼし時の救済経路としても使う。
         async with state.lock:
             snapshot = dict(state.host_status)
+        body = json.dumps(snapshot, ensure_ascii=False)
+        return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/host-info")
+    async def api_host_info() -> quart.Response:
+        # SPA起動時の初期同期用。`host_info_update`のSSE取りこぼし時の救済経路としても使う。
+        async with state.lock:
+            snapshot = dict(state.host_info)
         body = json.dumps(snapshot, ensure_ascii=False)
         return quart.Response(body, content_type="application/json; charset=utf-8", headers={"Cache-Control": "no-store"})
 

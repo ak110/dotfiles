@@ -641,6 +641,7 @@ class TestIndexHtml:
 
         ブラウザの自動再接続中に発生したSSEイベントが取り逃される構造的な問題を解消する契約。
         host-status経路は取りこぼし可能性があるためonopen時の`refreshHostStatus`で救済する。
+        host_info経路も同様に取りこぼし得るため`refreshHostInfo`で救済する。
         """
         html_src = _assets.INDEX_HTML
 
@@ -651,6 +652,7 @@ class TestIndexHtml:
         assert "function resyncFromServer" in html_src or "async function resyncFromServer" in html_src
         # onopenではホスト状態とファイル一覧の両方を再同期する。
         assert "refreshHostStatus" in html_src
+        assert "refreshHostInfo" in html_src
         # onmessageはJSONパース結果のtypeで分岐する`handleSseMessage`に集約されていること。
         assert "handleSseMessage" in html_src
 
@@ -699,8 +701,8 @@ class TestIndexHtml:
     def test_index_html_has_copy_path_button_contract(self):
         """右ペインのtoolbarに計画ファイルパスコピーボタンが存在する契約。
 
-        `ROOT_DIRS`は複数ホスト分（ローカル起動時注入＋リモート分SSEマージ）のホスト情報辞書契約であり、
-        disabled判定は選択ホストが`ROOT_DIRS`に登録済みかどうかで行う。
+        `ROOT_DIRS`は複数ホスト分（ローカル起動時注入＋リモート分SSEマージ＋`/api/host-info`再取得）の
+        ホスト情報辞書契約であり、disabled判定は選択ホストが`ROOT_DIRS`に登録済みかどうかで行う。
         """
         html_src = _assets.INDEX_HTML
 
@@ -713,6 +715,25 @@ class TestIndexHtml:
         # ホスト種別に応じたパス表記変換（POSIXはチルダ、WindowsはUSERPROFILE環境変数）。
         assert 'info.os_type === "nt"' in html_src
         assert "%USERPROFILE%" in html_src
+        # 取りこぼし対策の再取得経路。
+        assert "/api/host-info" in html_src
+        assert "async function refreshHostInfo" in html_src
+
+    def test_index_html_refresh_host_info_avoids_stale_overwrite(self):
+        """`refreshHostInfo`がfetch中に発生したSSE更新による巻き戻りを回避する契約。
+
+        fetch開始前後で`hostInfoEventCounter`を比較し、変化していればカウンタが安定するまで
+        再取得を繰り返すことで、遅れて返った古いスナップショットが新しい更新を上書きしない
+        実装の存在を検証する。単発の見送りだけだと別ホスト由来の更新でもスナップショット全体を
+        破棄してしまうため、リトライで収束させる設計であることを確認する。
+        """
+        html_src = _assets.INDEX_HTML
+
+        assert "let hostInfoEventCounter = 0;" in html_src
+        assert "hostInfoEventCounter++;" in html_src
+        assert "HOST_INFO_REFRESH_MAX_ATTEMPTS" in html_src
+        assert "const counterBefore = hostInfoEventCounter;" in html_src
+        assert "if (hostInfoEventCounter !== counterBefore) continue;" in html_src
 
     def test_index_html_renders_host_and_mtime_in_meta(self):
         """左ペインのmetaが左にホスト名、右にmtimeを並べる。

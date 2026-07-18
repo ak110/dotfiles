@@ -218,8 +218,12 @@ _INDEX_JS = """\
 const BASE_PATH = __BASE_PATH_JS__;
 const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
 // ホスト名 -> {root, os_type}。ページロード時はローカル分のみ注入され、
-// リモート分はSSE経由の`host_info_update`イベントで受信のたびに反映される。
+// リモート分はSSE経由の`host_info_update`イベント受信、または`/api/host-info`への
+// 再取得で反映される。
 const ROOT_DIRS = __ROOT_DIRS_JS__;
+// `host_info_update`受信のたびに加算するカウンタ。`refreshHostInfo`がfetch中に発生した
+// SSE更新を検出し、古いスナップショットで新しい状態を上書きしないようにするために使う。
+let hostInfoEventCounter = 0;
 
 let files = [];
 // ホスト名とパスの組で一意に識別する。
@@ -463,6 +467,33 @@ async function refreshHostStatus() {
   }
 }
 
+// fetch中に届いたSSE更新の検出時、単発の見送りだと当該更新が別ホスト由来でも
+// スナップショット全体を破棄してしまい、取りこぼし救済がその1回で終わらない場合に収束が
+// 遅れる。カウンタが安定するまで最大でこの回数だけfetchを繰り返す。
+const HOST_INFO_REFRESH_MAX_ATTEMPTS = 3;
+
+async function refreshHostInfo() {
+  // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
+  // fetch開始前後でhostInfoEventCounterを比較し、変化していれば当該フェッチのスナップショットは
+  // 新しいSSE更新より古い可能性があるため、カウンタが安定するまで取得し直す。上限到達時は
+  // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
+  for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
+    const counterBefore = hostInfoEventCounter;
+    const res = await fetch(BASE_PATH + "/api/host-info");
+    if (!res.ok) return;
+    const info = await res.json();
+    if (hostInfoEventCounter !== counterBefore) continue;
+    for (const host of Object.keys(ROOT_DIRS)) {
+      if (!(host in info)) delete ROOT_DIRS[host];
+    }
+    Object.assign(ROOT_DIRS, info);
+    if (selectedHost) {
+      document.getElementById("copy-path-btn").disabled = !(selectedHost in ROOT_DIRS);
+    }
+    return;
+  }
+}
+
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("main");
@@ -577,6 +608,7 @@ async function handleSseMessage(event) {
     return;
   }
   if (payload && payload.type === "host_info_update") {
+    hostInfoEventCounter++;
     if (payload.info === null) {
       delete ROOT_DIRS[payload.host];
     } else {
@@ -596,6 +628,7 @@ function connectEvents() {
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
     await refreshHostStatus();
+    await refreshHostInfo();
     await resyncFromServer();
   };
   es.onmessage = handleSseMessage;
@@ -604,6 +637,7 @@ function connectEvents() {
 
 async function main() {
   await refreshHostStatus();
+  await refreshHostInfo();
   await refreshFiles();
   if (files.length > 0) await openFile(files[0].host, files[0].path);
   setupSentinelObserver();
@@ -627,6 +661,7 @@ window.addEventListener("pageshow", (event) => {
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
 async function forceResync() {
   await refreshHostStatus();
+  await refreshHostInfo();
   await resyncFromServer();
 }
 

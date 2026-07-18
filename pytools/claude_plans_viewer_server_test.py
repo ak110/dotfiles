@@ -248,11 +248,43 @@ class TestApiEndpoints:
         assert "ctime_epoch" in data[0]
 
     @pytest.mark.asyncio
+    async def test_api_host_info_returns_snapshot(self, tmp_path: Path):
+        """/api/host-infoが現在の`host_info`スナップショットをJSONで返す。
+
+        `host_info_update`のSSE購読前配信を取りこぼした場合の再取得経路が返す値の契約を検証する。
+        """
+        app = _app.create_app(tmp_path, hostname="test-host")
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        # SSE購読前に配信されたためクライアントが受け取れなかった通知を模した状態を用意する。
+        state.host_info["remote-host"] = {
+            "root": "/home/alice/.claude/plans",
+            "os_type": "posix",
+            "os_name": "posix",
+        }
+        client = app.test_client()
+        response = await client.get("/api/host-info")
+
+        assert response.status_code == 200
+        assert response.content_type == "application/json; charset=utf-8"
+        data = json.loads(await response.get_data())
+        assert data["test-host"] == {
+            "root": str(tmp_path).replace("\\", "/"),
+            "os_type": os.name,
+            "os_name": os.name,
+        }
+        assert data["remote-host"] == {
+            "root": "/home/alice/.claude/plans",
+            "os_type": "posix",
+            "os_name": "posix",
+        }
+
+    @pytest.mark.asyncio
     async def test_index_embeds_copy_path_constants(self, tmp_path: Path):
         """/応答HTMLがパスコピー用のJS定数を埋め込む。
 
         `ROOT_DIRS`はページロード時点ではローカルホスト分のみを含む
-        （リモート分はSSE経由の`host_info_update`で受信のたびに反映される）。
+        （リモート分はSSE経由の`host_info_update`受信、または`/api/host-info`への
+        再取得で反映される）。
         """
         app = _app.create_app(tmp_path, hostname="test-host")
         client = app.test_client()
@@ -364,8 +396,8 @@ class TestHostInfo:
 
     リモート分の登録・削除契約（snapshot受信時の登録、切断時のキー削除）は
     `pytools/claude_plans_viewer_remote_host_test.py`側で検証する。
-    `GET /api/host_info`エンドポイントは設けない（既存SSE経路`host_info_update`イベントへ統合する）方針のため、
-    本クラスはSSE配信契約のみを検証対象とする。
+    `GET /api/host-info`エンドポイントの契約は`TestApiEndpoints.test_api_host_info_returns_snapshot`側で
+    検証する。本クラスはSSE配信契約のみを検証対象とする。
     """
 
     @pytest.mark.asyncio

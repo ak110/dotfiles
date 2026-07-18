@@ -128,7 +128,8 @@ async def deliver_host_info(state: BroadcastState, host: str, info: dict[str, st
     """全購読者へ`{"type":"host_info_update","host":...,"info":...}`を配信する。
 
     `info=None`は該当ホストの`host_info`削除（接続喪失）を意味する。
-    クライアントはこのイベントで`ROOT_DIRS`を更新する（新規APIエンドポイントは設けない）。
+    購読開始前に配信された本イベントは取りこぼされ得るため、`GET /api/host-info`による
+    再取得手段と対で運用する。クライアントは接続確立時・SSE再接続時の双方で両方を呼ぶ。
     """
     payload = json.dumps({"type": "host_info_update", "host": host, "info": info}, ensure_ascii=False)
     await _broadcast(state, payload)
