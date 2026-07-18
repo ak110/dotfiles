@@ -25,7 +25,10 @@ FEEDBACK_STATE_PROCESSING = "processing"
 FEEDBACK_STATE_ADOPTED = "adopted"
 FEEDBACK_STATE_REJECTED = "rejected"
 
-_SPACE_SEPARATED_OPTION_SUBCOMMANDS = frozenset(("adopt", "reject", "tbd-adopt"))
+_SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "fb": frozenset(("adopt", "reject")),
+    "tb": frozenset(("adopt",)),
+}
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
 
 
@@ -43,13 +46,23 @@ def is_existing_dir(path: pathlib.Path) -> bool:
 
 def warn_space_separated_option(argv: list[str]) -> None:
     """後始末サブコマンドの値付きオプションが空白区切りの場合に警告する。"""
-    try:
-        fb_index = argv.index("fb")
-        subcommand_index = fb_index + 1
-        subcommand = argv[subcommand_index]
-    except (ValueError, IndexError):
+    top_command = None
+    top_index = None
+    for cmd in ("fb", "tb"):
+        try:
+            top_index = argv.index(cmd)
+            top_command = cmd
+            break
+        except ValueError:
+            continue
+    if top_command is None or top_index is None:
         return
-    if subcommand not in _SPACE_SEPARATED_OPTION_SUBCOMMANDS:
+    subcommand_index = top_index + 1
+    try:
+        subcommand = argv[subcommand_index]
+    except IndexError:
+        return
+    if subcommand not in _SPACE_SEPARATED_OPTION_SUBCOMMANDS.get(top_command, frozenset()):
         return
     for index, arg in enumerate(argv[subcommand_index + 1 :], start=subcommand_index + 1):
         if arg not in _SPACE_SEPARATED_OPTIONS or index + 1 >= len(argv):

@@ -30,16 +30,20 @@ def _write_tbd(
 class TestWarnSpaceSeparatedOption:
     """空白区切りオプションの検出条件を検証する。"""
 
-    @pytest.mark.parametrize("subcommand", ["adopt", "reject", "tbd-adopt"])
+    @pytest.mark.parametrize(
+        "top_command,subcommand",
+        [("fb", "adopt"), ("fb", "reject"), ("tb", "adopt")],
+    )
     @pytest.mark.parametrize("option", ["--note", "--commit"])
     def test_warns_for_target_subcommands(
         self,
+        top_command: str,
         subcommand: str,
         option: str,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """対象サブコマンドの空白区切り指定では推奨形式を警告する。"""
-        _common.warn_space_separated_option(["fb", subcommand, "item.md", option, "value"])
+        _common.warn_space_separated_option([top_command, subcommand, "item.md", option, "value"])
 
         assert capsys.readouterr().err == f"警告: {option}は{option}=VALUE形式で渡すことを推奨します。\n"
 

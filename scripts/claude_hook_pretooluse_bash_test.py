@@ -30,11 +30,11 @@ _SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()
 
 
 class TestBashAtkFbTbdAddScopeEscalation:
-    """`Bash`経由の`atk fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）。"""
+    """`Bash`経由の`atk tb add`コマンド文字列への縮退フレーズ混入検出（block）。"""
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_blocks(self, text: str, category: str):
-        command = f"atk fb tbd-add glatasks {text}"
+        command = f"atk tb add glatasks {text}"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert category in result.stderr
@@ -51,6 +51,6 @@ class TestBashAtkFbTbdAddScopeEscalation:
         assert result.stdout == ""
 
     def test_tbd_add_without_scope_escalation_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk fb tbd-add glatasks 確認事項です"}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk tb add glatasks 確認事項です"}})
         assert result.returncode == 0
         assert result.stdout == ""

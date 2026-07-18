@@ -128,7 +128,7 @@ Claude Code固有事項として、本体作業に着手する時点で
     該当なしの場合は追加コミットまたはCI再実行で通過確認を得る
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
-- 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk fb tbd-adopt`）は
+- 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk tb adopt`）は
   CI通過確認の完了後に発行する。
   `gh run watch --exit-status`成功を確認できるまで後始末コマンドを実行しない。
   CI失敗時は管理側の採否確定を先行させず、

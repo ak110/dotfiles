@@ -48,7 +48,7 @@ def _render_tbd_entries(entries: list[tuple[pathlib.Path, str, str]]) -> None:
     """TBDエントリ一覧を`# tbd`種別ヘッダ付きの1件1行形式で標準出力へ出力する。
 
     入力は`_iter_inbox_entries`の返り値と同形式の`(path, target_repo, text)`リストとする。
-    `list`サブコマンドと`tbd-list`サブコマンドの双方から共通出力ヘルパーとして呼び出す。
+    `atk fb list`と`atk tb list`の双方から共通出力ヘルパーとして呼び出す。
     入力が空リストの場合は何も出力しない。
     """
     if not entries:

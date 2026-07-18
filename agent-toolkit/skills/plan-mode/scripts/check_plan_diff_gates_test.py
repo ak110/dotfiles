@@ -362,6 +362,22 @@ class TestCheckOuterLabelPlacement:
         violations = _MOD._check_outer_label_placement(tmp_path / "plan.md", text)
         assert violations == []
 
+    def test_backticked_outer_label_before_fence(self, tmp_path: pathlib.Path) -> None:
+        """バッククォート囲みラベル単独行がfence外側配置なら違反検出する。"""
+        content = "## 変更内容\n\n`[現行]`\n\n```text\nfoo\n```\n"
+        plan = tmp_path / "plan.md"
+        plan.write_text(content, encoding="utf-8")
+        violations = _MOD._check_outer_label_placement(plan, content)
+        assert len(violations) == 1
+
+    def test_backticked_labeled_annotation_before_fence(self, tmp_path: pathlib.Path) -> None:
+        """バッククォート囲みと注記コロン形式がfence外側配置なら違反検出する。"""
+        content = "## 変更内容\n\n`[現行]`（内訳バレット末尾）:\n\n```text\nfoo\n```\n"
+        plan = tmp_path / "plan.md"
+        plan.write_text(content, encoding="utf-8")
+        violations = _MOD._check_outer_label_placement(plan, content)
+        assert len(violations) == 1
+
 
 class TestCheckManifestFilesWhenBumpStep:
     """`_check_manifest_files_when_bump_step`の単体テスト。"""

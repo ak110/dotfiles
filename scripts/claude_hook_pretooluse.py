@@ -18,7 +18,7 @@
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
-8. `Bash`経由の`atk fb tbd-add`コマンド文字列への縮退フレーズ混入検出（block）
+8. `Bash`経由の`atk tb add`コマンド文字列への縮退フレーズ混入検出（block）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象はチェックごとに異なる。
@@ -227,11 +227,11 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     return False
 
 
-# --- Bash: atk fb tbd-add 縮退フレーズ check (block) ---
+# --- Bash: atk tb add 縮退フレーズ check (block) ---
 
 
 def _check_bash_atk_fb_tbd_add_scope_escalation(command: str) -> str | None:
-    """Atk fb tbd-add実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロック用メッセージを返す。
+    """`atk tb add`実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロック用メッセージを返す。
 
     `_match_scope_escalation`は`agent-toolkit/scripts/pretooluse.py`定義の
     `_SCOPE_ESCALATION_PHRASES`を再利用する（sys.path経由import）。
@@ -239,14 +239,14 @@ def _check_bash_atk_fb_tbd_add_scope_escalation(command: str) -> str | None:
     """
     if "atk" not in command:
         return None
-    if "tbd-add" not in command:
+    if "tb add" not in command:
         return None
     match_result = _match_scope_escalation(command)
     if match_result is None:
         return None
     category, _matched = match_result
     return (
-        f"blocked: `atk fb tbd-add` includes a scope-escalation phrase (category: {category})."
+        f"blocked: `atk tb add` includes a scope-escalation phrase (category: {category})."
         " See agent-toolkit/rules/01-agent.md session-split prohibition section."
     )
 

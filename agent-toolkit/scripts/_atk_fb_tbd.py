@@ -66,16 +66,16 @@ def _cmd_tbd_add(
     now: datetime.datetime,
     home: pathlib.Path,
 ) -> None:
-    """tbd-addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。
+    """Tb addサブコマンド: TBDをtbd/inboxへ投入してcommit・push。
 
-    対象リポジトリは常にカレントディレクトリから解決する。ただし`fb tbd-add`直後のトークンが実在
+    対象リポジトリは常にカレントディレクトリから解決する。ただし`tb add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     `choice`類型以外は`_looks_like_question`で疑問文の有無を判定し、
     含まれない場合は投入対象ファイル名を添えて標準エラーへ警告する（投入自体は成功させる）。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
-    _reject_bare_repo_path_override(repo_path_override, messages, 'atk fb tbd-add "TBD本文"')
+    _reject_bare_repo_path_override(repo_path_override, messages, 'atk tb add "TBD本文"')
     target_repo = _resolve_repo_id(repo_path_override)
     if args.question_type == "choice" and not args.choices:
         print("--question-type=choice 時は --choices を指定してください。", file=sys.stderr)
@@ -126,7 +126,7 @@ def _cmd_tbd_add(
 
 
 def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """tbd-listサブコマンド: TBD inboxを1件1行（filename・target_repo・本文冒頭要約）で出力する。
+    """Tb listサブコマンド: TBD inboxを1件1行（filename・target_repo・本文冒頭要約）で出力する。
 
     出力形式は`list --type=tbd`と同一とし、target_repoグループ化・本文全文表示は行わない。
     本文全文表示が必要な場合は`show --all --type=tbd`または`show <filename>`を使う。
@@ -149,7 +149,7 @@ def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None
 
 
 def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """tbd-answerサブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。"""
+    """Tb answerサブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。"""
     editor = os.environ.get("EDITOR")
     if not editor:
         print("$EDITORが未設定のため回答経路を利用できません。", file=sys.stderr)
@@ -203,7 +203,7 @@ def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> No
 
 
 def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """tbd-editサブコマンド: $EDITORでTBDを編集してcommit・push。"""
+    """Tb editサブコマンド: $EDITORでTBDを編集してcommit・push。"""
     editor = os.environ.get("EDITOR")
     if not editor:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
@@ -238,7 +238,7 @@ def _resolve_tbd_targets(filenames: list[str], tbd_inbox: pathlib.Path) -> list[
 
 
 def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """tbd-adoptサブコマンド: 回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push。
+    """Tb adoptサブコマンド: 回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push。
 
     全ファイルの存在を移動前に一括検証し、途中失敗による部分移動を防ぐ。
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
@@ -270,7 +270,7 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
 
 
 def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """tbd-rmサブコマンド: TBDをtbd/inboxから単純削除しcommit・push。
+    """Tb rmサブコマンド: TBDをtbd/inboxから単純削除しcommit・push。
 
     全ファイルの存在を削除前に一括検証し、途中失敗による部分削除を防ぐ。
     `--note`が指定された場合はcommit messageへ「(理由: <note>)」形式で追記する。

@@ -81,22 +81,22 @@ class TestMutationTargetRepoParserOption:
     """mutation系サブコマンドの`--target-repo`受理をargparseレベルで検証する。"""
 
     @pytest.mark.parametrize(
-        ("subcommand", "argv_tail"),
+        ("top_command", "subcommand", "argv_tail"),
         [
-            ("adopt", ["20260714-000001-001.md"]),
-            ("reject", ["20260714-000001-001.md"]),
-            ("rm", ["20260714-000001-001.md"]),
-            ("edit", ["20260714-000001-001.md"]),
-            ("start-processing", ["20260714-000001-001.md"]),
-            ("tbd-edit", ["20260714-000001-001.md"]),
-            ("tbd-adopt", ["20260714-000001-001.md"]),
-            ("tbd-rm", ["20260714-000001-001.md"]),
+            ("fb", "adopt", ["20260714-000001-001.md"]),
+            ("fb", "reject", ["20260714-000001-001.md"]),
+            ("fb", "rm", ["20260714-000001-001.md"]),
+            ("fb", "edit", ["20260714-000001-001.md"]),
+            ("fb", "start-processing", ["20260714-000001-001.md"]),
+            ("tb", "edit", ["20260714-000001-001.md"]),
+            ("tb", "adopt", ["20260714-000001-001.md"]),
+            ("tb", "rm", ["20260714-000001-001.md"]),
         ],
     )
-    def test_accepts_target_repo(self, subcommand: str, argv_tail: list[str]) -> None:
+    def test_accepts_target_repo(self, top_command: str, subcommand: str, argv_tail: list[str]) -> None:
         """8種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
+        args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
         assert args.target_repo == "github.com/foo/bar"
 
     def test_commit_has_no_target_repo_option(self) -> None:
@@ -108,22 +108,25 @@ class TestMutationTargetRepoParserOption:
 
 
 class TestTbdAddSourceOptionParser:
-    """tbd-addサブコマンドの`--source`受理をargparseレベルで検証する。"""
+    """tb addサブコマンドの`--source`受理をargparseレベルで検証する。"""
 
     def test_accepts_source(self) -> None:
-        """`tbd-add`が`--source`を受理しargs.sourceへ格納される。"""
+        """`tb add`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", "tbd-add", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["tb", "add", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
 
 
 class TestSpaceSeparatedOptionWarning:
     """mainがparse前に空白区切りオプションを警告することを検証する。"""
 
-    @pytest.mark.parametrize("subcommand", ["adopt", "reject", "tbd-adopt"])
-    def test_warns_before_argument_error(self, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
+    @pytest.mark.parametrize(
+        "top_command,subcommand",
+        [("fb", "adopt"), ("fb", "reject"), ("tb", "adopt")],
+    )
+    def test_warns_before_argument_error(self, top_command: str, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
-            atk.main(["fb", subcommand, "missing.md", "--note", "memo"])
+            atk.main([top_command, subcommand, "missing.md", "--note", "memo"])
         assert "警告: --noteは--note=VALUE形式で渡すことを推奨します。" in capsys.readouterr().err
 
     def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:

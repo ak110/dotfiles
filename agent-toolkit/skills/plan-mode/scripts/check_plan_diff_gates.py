@@ -100,8 +100,9 @@ from _plan_format import (  # noqa: E402  # pylint: disable=import-error
 
 # pylint: enable=wrong-import-position
 
-# fence外側配置検出用: ラベル文言単独行（前後空白のみ許容）。
-_OUTER_LABEL_LINE_RE = re.compile(r"^\s*(?:\[現行\]|\[置換後\])\s*$")
+# fence外側配置検出用: ラベル文言行。単独行に加え、バッククォート囲み形式および
+# ラベル直後に注記（半角/全角括弧・コロン）が続く形式も検出する。
+_OUTER_LABEL_LINE_RE = re.compile(r"^\s*`?(?:\[現行\]|\[置換後\])`?\s*(?:[（(][^)）]*[)）])?\s*[：:]?\s*$")
 
 # 全角化ラベル検出用: textlint autofixで閉じ括弧が全角化された`[現行］`／`[置換後］`。
 _FULLWIDTH_LABEL_RE = re.compile(r"(?:\[現行］|\[置換後］)")

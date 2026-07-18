@@ -39,7 +39,7 @@ push対象shaのCI runが全て成功するまで確認する。
 
 - feedback側の採用ファイル: `atk fb adopt <filename...> --note=<概要> --commit=<sha>`
 - feedback側の不採用ファイル: `atk fb reject <filename...> --note=<不採用理由> --commit=<sha>`
-- TBD側の回答済み採用ファイル: `atk fb tbd-adopt <filename...> --note=<概要> --commit=<sha>`
+- TBD側の回答済み採用ファイル: `atk tb adopt <filename...> --note=<概要> --commit=<sha>`
 - `--note`・`--commit`の詳細規定は`agent-toolkit:process-feedbacks`配下
   `references/decision-format.md`「後始末コマンドの引数」節に従う
 - 保留ファイルは後始末コマンドを実行しない

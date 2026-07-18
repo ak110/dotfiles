@@ -1,6 +1,6 @@
 """atk (agent-toolkit `atk fb`) のtbd系サブコマンドのテスト。
 
-tbd-add/tbd-list/tbd-edit/tbd-answer/tbd-adopt/tbd-rmサブコマンドの単体テストを集約する。
+tb add/tb list/tb edit/tb answer/tb adopt/tb rmサブコマンドの単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に、拡張サブコマンド・オプションのテストは
 `_atk_fb_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
@@ -27,7 +27,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
 
 
 def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """tbd-add検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
+    """tb add検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
 
     def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
@@ -42,7 +42,7 @@ def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
 
 
 class TestTbdAdd:
-    """tbd-addサブコマンドの基本動作検証。"""
+    """tb addサブコマンドの基本動作検証。"""
 
     def test_single_message_generates_one_file(
         self,
@@ -57,7 +57,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "--scope", "theme1", "未確認の挙動"],
+                ["tb", "add", str(myrepo), "--scope", "theme1", "未確認の挙動"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -94,7 +94,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "--question-type", "choice", "q"],
+                ["tb", "add", str(myrepo), "--question-type", "choice", "q"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -114,7 +114,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "実施報告のみで疑問文を含まない本文"],
+                ["tb", "add", str(myrepo), "実施報告のみで疑問文を含まない本文"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -137,7 +137,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "この対応でよいか？"],
+                ["tb", "add", str(myrepo), "この対応でよいか？"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -159,8 +159,8 @@ class TestTbdAdd:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
                 [
-                    "fb",
-                    "tbd-add",
+                    "tb",
+                    "add",
                     str(myrepo),
                     "--question-type",
                     "choice",
@@ -176,7 +176,7 @@ class TestTbdAdd:
 
 
 class TestTbdAddPullBeforeEditor:
-    """tbd-addサブコマンド: `_pull`を`_collect_message_via_editor`より前に呼ぶ順序保証。
+    """tb addサブコマンド: `_pull`を`_collect_message_via_editor`より前に呼ぶ順序保証。
 
     `question_type == "choice" and not args.choices`のバリデーションは`_pull`より前に維持する。
     """
@@ -213,7 +213,7 @@ class TestTbdAddPullBeforeEditor:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(subprocess.CalledProcessError):
-            atk.main(["fb", "tbd-add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["tb", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert not editor_calls
         assert not list((notes / "tbd" / "inbox").iterdir())
@@ -244,7 +244,7 @@ class TestTbdAddPullBeforeEditor:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "--question-type", "choice", "q"],
+                ["tb", "add", str(myrepo), "--question-type", "choice", "q"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -254,7 +254,7 @@ class TestTbdAddPullBeforeEditor:
 
 
 class TestTbdAddRepoPathOverrideCli:
-    """`fb tbd-add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`fb tb add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -283,7 +283,7 @@ class TestTbdAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-add", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["tb", "add", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "tbd" / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -300,7 +300,7 @@ class TestTbdAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["tb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -318,7 +318,7 @@ class TestTbdAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-add", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["tb", "add", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "tbd" / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -327,7 +327,7 @@ class TestTbdAddRepoPathOverrideCli:
 
 
 class TestTbdAddSourceOption:
-    """tbd-addサブコマンド: `--source`指定時にfrontmatterへsource行を記録する。"""
+    """tb addサブコマンド: `--source`指定時にfrontmatterへsource行を記録する。"""
 
     def test_source_recorded_when_given(
         self,
@@ -342,7 +342,7 @@ class TestTbdAddSourceOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-add", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
+                ["tb", "add", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -364,7 +364,7 @@ class TestTbdAddSourceOption:
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-add", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["tb", "add", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         files = sorted((notes / "tbd" / "inbox").iterdir())
@@ -373,7 +373,7 @@ class TestTbdAddSourceOption:
 
 
 class TestTbdMutationTargetRepoVerification:
-    """tbd-edit/tbd-adopt/tbd-rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
+    """tb edit/tb adopt/tb rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
 
     既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_tbd_file`既定値）。
     """
@@ -383,7 +383,7 @@ class TestTbdMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """tbd-edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
+        """tb edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -398,7 +398,7 @@ class TestTbdMutationTargetRepoVerification:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-edit", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                ["tb", "edit", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
                 home=tmp_path,
             )
 
@@ -410,14 +410,14 @@ class TestTbdMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """tbd-adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        """tb adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                ["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
                 home=tmp_path,
             )
 
@@ -430,14 +430,14 @@ class TestTbdMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """tbd-adopt: `--target-repo`一致時は通常通りtbd/adopted/へ移動する。"""
+        """tb adopt: `--target-repo`一致時は通常通りtbd/adopted/へ移動する。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/example/foo"],
+                ["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/example/foo"],
                 home=tmp_path,
             )
 
@@ -449,14 +449,14 @@ class TestTbdMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """tbd-rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
+        """tb rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
+                ["tb", "rm", f"{_FIXED_TIMESTAMP}-001.md", "--target-repo", "github.com/other/repo"],
                 home=tmp_path,
             )
 
@@ -465,7 +465,7 @@ class TestTbdMutationTargetRepoVerification:
 
 
 class TestTbdList:
-    """tbd-listサブコマンドのフィルター動作検証。"""
+    """tb listサブコマンドのフィルター動作検証。"""
 
     def test_status_filter(
         self,
@@ -480,14 +480,14 @@ class TestTbdList:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-list", "--status", "unanswered"], home=tmp_path)
+            atk.main(["tb", "list", "--status", "unanswered"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [unanswered] q1\n"
 
 
 class TestTbdListSkipPull:
-    """tbd-listサブコマンド: --skip-pull指定時はgit pullをスキップする。"""
+    """tb listサブコマンド: --skip-pull指定時はgit pullをスキップする。"""
 
     def test_skip_pull_omits_git_pull(
         self,
@@ -501,14 +501,14 @@ class TestTbdListSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-list", "--skip-pull"], home=tmp_path)
+            atk.main(["tb", "list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
 
 
 class TestTbdEdit:
-    """tbd-editサブコマンドの境界条件検証。"""
+    """tb editサブコマンドの境界条件検証。"""
 
     def test_rejects_traversal(
         self,
@@ -521,7 +521,7 @@ class TestTbdEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-edit", "../escape.md"], home=tmp_path)
+            atk.main(["tb", "edit", "../escape.md"], home=tmp_path)
         assert exc_info.value.code == 2
 
     def test_no_diff_skips_commit(
@@ -538,7 +538,7 @@ class TestTbdEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["tb", "edit", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "差分なし" in captured.out
@@ -547,7 +547,7 @@ class TestTbdEdit:
 
 
 class TestTbdAnswer:
-    """tbd-answerサブコマンドの空集合・差分なし時の挙動検証。"""
+    """tb answerサブコマンドの空集合・差分なし時の挙動検証。"""
 
     def test_no_unanswered_prints_message(
         self,
@@ -563,7 +563,7 @@ class TestTbdAnswer:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-answer"], home=tmp_path)
+            atk.main(["tb", "answer"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "未回答のTBDはありません" in captured.out
@@ -572,21 +572,21 @@ class TestTbdAnswer:
 
 
 class TestTbdAdopt:
-    """tbd-adoptサブコマンド: 採用としてtbd/inboxからtbd/adopted/へ移動しコミットを行う。"""
+    """tb adoptサブコマンド: 採用としてtbd/inboxからtbd/adopted/へ移動しコミットを行う。"""
 
     def test_single_file_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のtbd-adopt実行でtbd/inboxから移動されtbd/adopted/に置かれコミットメッセージが正しいこと。"""
+        """1件のtb adopt実行でtbd/inboxから移動されtbd/adopted/に置かれコミットメッセージが正しいこと。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
@@ -609,8 +609,8 @@ class TestTbdAdopt:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
                 [
-                    "fb",
-                    "tbd-adopt",
+                    "tb",
+                    "adopt",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     "--note",
                     "TBD採用メモ",
@@ -633,7 +633,7 @@ class TestTbdAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """3件のtbd-adoptで全件がtbd/adopted/へ移動し単一コミットが行われること。"""
+        """3件のtb adoptで全件がtbd/adopted/へ移動し単一コミットが行われること。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
@@ -644,8 +644,8 @@ class TestTbdAdopt:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
                 [
-                    "fb",
-                    "tbd-adopt",
+                    "tb",
+                    "adopt",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     f"{_FIXED_TIMESTAMP}-002.md",
                     f"{_FIXED_TIMESTAMP}-003.md",
@@ -667,14 +667,14 @@ class TestTbdAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """tbd-adopt実行後にgit pushが行われること。"""
+        """tb adopt実行後にgit pushが行われること。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert any(c["cmd"] == ["git", "push"] for c in git_calls)
@@ -690,7 +690,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-adopt", "../escape.md"], home=tmp_path)
+            atk.main(["tb", "adopt", "../escape.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -707,7 +707,7 @@ class TestTbdAdopt:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-adopt", "nonexistent.md"], home=tmp_path)
+            atk.main(["tb", "adopt", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -725,7 +725,7 @@ class TestTbdAdopt:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-adopt", f"{_FIXED_TIMESTAMP}-001.md", "nonexistent.md"],
+                ["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md", "nonexistent.md"],
                 home=tmp_path,
             )
 
@@ -735,20 +735,20 @@ class TestTbdAdopt:
 
 
 class TestTbdRm:
-    """tbd-rmサブコマンドの単体テスト。"""
+    """tb rmサブコマンドの単体テスト。"""
 
     def test_single_file_removed(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のtbd-rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
+        """1件のtb rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["tb", "rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
         assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -766,7 +766,7 @@ class TestTbdRm:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", "--note", "誤投入"],
+                ["tb", "rm", f"{_FIXED_TIMESTAMP}-001.md", "--note", "誤投入"],
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
@@ -786,7 +786,7 @@ class TestTbdRm:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
+                ["tb", "rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
@@ -801,7 +801,7 @@ class TestTbdRm:
         """パストラバーサル文字列は削除前検証で拒否されること。"""
         _setup_tbd_env(tmp_path)
         with pytest.raises(SystemExit):
-            atk.main(["fb", "tbd-rm", "../evil.md"], home=tmp_path)
+            atk.main(["tb", "rm", "../evil.md"], home=tmp_path)
 
     def test_missing_file_exits(
         self,
@@ -813,7 +813,7 @@ class TestTbdRm:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "tbd-rm", f"{_FIXED_TIMESTAMP}-999.md"],
+                ["tb", "rm", f"{_FIXED_TIMESTAMP}-999.md"],
                 home=tmp_path,
             )
 
@@ -830,8 +830,8 @@ class TestTbdRm:
         with pytest.raises(SystemExit):
             atk.main(
                 [
-                    "fb",
-                    "tbd-rm",
+                    "tb",
+                    "rm",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     f"{_FIXED_TIMESTAMP}-999.md",
                 ],

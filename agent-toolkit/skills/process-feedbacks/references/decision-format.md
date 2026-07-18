@@ -109,7 +109,7 @@ plan-mode側の定義は
 
 ## 後始末コマンドの引数
 
-`atk fb adopt`・`reject`・`tbd-adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
+`atk fb adopt`・`atk fb reject`・`atk tb adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
 
 - `--note`: 採用時は反映概要、不採用時は不採用理由。1行に収める
   - シェルメタ文字混入をその都度検知せず、常に`$'...'`のANSI-Cクォートで囲む。
@@ -124,7 +124,7 @@ plan-mode側の定義は
   - 値の指定形式は`--commit=VALUE`形式（`=`区切り）で統一する（理由は上記`--note`のサブバレットに同じ）
 - 対象ファイル末尾の`## 処理結果`節は`--note`・`--commit`の指定有無にかかわらず必ず追記される。
   必須項目として採否と処理日時を記録し、指定された任意項目（`--commit`・`--note`）のみを追加行として書き込む
-- `atk fb adopt`・`reject`・`tbd-adopt`は対象を`<filename>`引数で直接解決する。
+- `atk fb adopt`・`atk fb reject`・`atk tb adopt`は対象を`<filename>`引数で直接解決する。
   `--target-repo`オプションを指定した場合はfrontmatter`target_repo`との一致検証を行い、
   不一致でexit 2として誤対象リポジトリでの操作事故を予防する。
   ただし前掲`--commit`値の取得は対象リポジトリの作業ツリー内で行う必要があるため、
