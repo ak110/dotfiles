@@ -47,6 +47,11 @@
 - 実装挙動異常の観測時は採否判定前に、
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「事前調査の徹底」節に従う。
   調査範囲が広い場合は`Explore`サブエージェントへ委譲する
+- 新規に実装規範を追加する時の既存実装への遡及スキャン:
+  フィードバックが新規に実装規範の追加を含む場合、適用範囲の既存実装をスキャンする。
+  手順は`agent-toolkit/skills/plan-mode/references/norm-revision-checklist.md`「規範対象範囲の網羅確認」節に従う。
+  既存実装が新規規範と整合していない箇所を検出した場合、
+  統一対象ファイルを計画対象へ含める判定を批判的検討の時点で確定する
 
 ## 批判的検討チェックリスト
 

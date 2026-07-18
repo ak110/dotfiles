@@ -7078,3 +7078,274 @@ class TestFrontmatterSyncNoteBodyExists:
         assert result.returncode == 0
         assert "section name does not exist" in result.stderr
         assert "存在しない自己節" in result.stderr
+
+
+class TestNamedSubagentSendMessageRegistered:
+    """named subagent定義への`SendMessage`ツール登録欠落検査（block）。"""
+
+    @staticmethod
+    def _target(tmp_path: pathlib.Path, name: str = "sample-agent.md") -> pathlib.Path:
+        target = tmp_path / "agent-toolkit" / "agents" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def test_body_mentions_and_tools_missing_sendmessage_blocks(self, tmp_path: pathlib.Path) -> None:
+        """本文でSendMessage言及ありかつtools欄あり・SendMessage未登録ならblock。"""
+        target = self._target(tmp_path)
+        content = (
+            "---\n"
+            "name: sample-agent\n"
+            "tools: Read, Grep\n"
+            "---\n\n"
+            "# sample-agent\n\n"
+            "完了時はSendMessage(to: 'main')で能動送付する。\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-block-inline",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_body_mentions_and_tools_block_form_missing_sendmessage_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`tools:`ブロック形式で`SendMessage`未登録もblock対象。"""
+        target = self._target(tmp_path)
+        content = "---\nname: sample-agent\ntools:\n  - Read\n  - Grep\n---\n\n# sample-agent\n\n能動送付を必ず実施する。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-block-list",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_body_mentions_and_tools_registered_passes(self, tmp_path: pathlib.Path) -> None:
+        """本文言及ありかつtools欄にSendMessage登録済みなら合格。"""
+        target = self._target(tmp_path)
+        content = (
+            "---\n"
+            "name: sample-agent\n"
+            "tools: Read, Grep, SendMessage\n"
+            "---\n\n"
+            "# sample-agent\n\n"
+            "完了時はSendMessage(to: 'main')で能動送付する。\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-ok-registered",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "blocked: named background subagent" not in result.stderr
+
+    def test_no_body_mention_passes(self, tmp_path: pathlib.Path) -> None:
+        """本文にSendMessage・能動送付の言及が無ければ合格（判定対象外）。"""
+        target = self._target(tmp_path)
+        content = "---\nname: sample-agent\ntools: Read, Grep\n---\n\n# sample-agent\n\n調査のみする。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-no-body",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "blocked: named background subagent" not in result.stderr
+
+    def test_no_tools_field_passes(self, tmp_path: pathlib.Path) -> None:
+        """frontmatter`tools:`欄が無いファイル（全ツール許容）は合格。"""
+        target = self._target(tmp_path)
+        content = (
+            "---\n"
+            "name: sample-agent\n"
+            "description: sample\n"
+            "---\n\n"
+            "# sample-agent\n\n"
+            "完了時はSendMessage(to: 'main')で能動送付する。\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-no-tools",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "blocked: named background subagent" not in result.stderr
+
+    def test_out_of_scope_path_passes(self, tmp_path: pathlib.Path) -> None:
+        """`agent-toolkit/agents/`配下以外のファイルは判定対象外。"""
+        target = tmp_path / "agent-toolkit" / "skills" / "sample" / "SKILL.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = "---\nname: sample\ntools: Read\n---\n\n# sample\n\nSendMessageで送信する。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-out-of-scope",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "blocked: named background subagent" not in result.stderr
+
+    def test_frontmatter_comment_mention_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """frontmatterのコメント行内での`能動送付`言及も判定対象に含まれる。
+
+        `plan-reviewer.md`・`plan-codex-reviewer.md`のように、
+        本文（frontmatter外）に「SendMessage」「能動送付」の直接言及を含まず、
+        frontmatterコメントで登録理由を書く運用パターンを再発防止対象へ含める。
+        """
+        target = self._target(tmp_path)
+        content = (
+            "---\n"
+            "name: sample-agent\n"
+            "# SendMessageはnamed background起動時の能動送付のために含める\n"
+            "tools: Read, Grep\n"
+            "---\n\n"
+            "# sample-agent\n\n"
+            "調査を実施する。\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-frontmatter-comment",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_tools_value_line_is_excluded_from_scan(self, tmp_path: pathlib.Path) -> None:
+        """判定対象範囲は`tools:`欄値行を除外する（自己参照回避）。
+
+        `tools:`欄値行にのみ`SendMessage`が書かれ、他の場所（frontmatterコメント・本文）で
+        言及が無いファイルは判定対象にならず合格する。
+        """
+        target = self._target(tmp_path)
+        content = "---\nname: sample-agent\ntools: Read, Grep, SendMessage\n---\n\n# sample-agent\n\n調査のみする。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-tools-line-excluded",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 0
+        assert "blocked: named background subagent" not in result.stderr
+
+    def test_sendmessage_substring_in_tools_does_not_pass(self, tmp_path: pathlib.Path) -> None:
+        """`tools:`欄に`SendMessage`の部分文字列を含む別ツール名しかない場合はblock。
+
+        例えば`SendMessageFoo`のような架空ツール名が登録されていても、
+        `SendMessage`ツール自体は未登録のためblock対象。完全一致で判定する。
+        """
+        target = self._target(tmp_path)
+        content = "---\nname: sample-agent\ntools: Read, SendMessageFoo\n---\n\n# sample-agent\n\n完了時に能動送付する。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": content},
+                "session_id": "named-sm-substring-only",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_relative_path_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """相対パス`agent-toolkit/agents/<name>.md`形式でも対象判定される（Write経路）。
+
+        `_materialize_post_edit_content`のWrite経路は`content`をそのまま返すため、
+        相対パスでも`_is_named_subagent_definition_target`のパス判定のみで検証できる。
+        """
+        del tmp_path
+        relative_path = "agent-toolkit/agents/sample-agent.md"
+        content = "---\nname: sample-agent\ntools: Read, Grep\n---\n\n# sample-agent\n\n完了時に能動送付する。\n"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": relative_path, "content": content},
+                "session_id": "named-sm-relative-path",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_edit_tool_path_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`Edit`ツール経由の編集でも判定される。"""
+        target = self._target(tmp_path)
+        initial = "---\nname: sample-agent\ntools: Read\n---\n\n# sample-agent\n\n調査する。\n"
+        target.write_text(initial, encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "調査する。",
+                    "new_string": "完了時にSendMessage(to: 'main')で能動送付する。",
+                },
+                "session_id": "named-sm-edit",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_multiedit_tool_path_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`MultiEdit`ツール経由の編集でも判定される。"""
+        target = self._target(tmp_path)
+        initial = "---\nname: sample-agent\ntools: Read\n---\n\n# sample-agent\n\n調査する。\n処理する。\n"
+        target.write_text(initial, encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "調査する。", "new_string": "SendMessageで送る。"},
+                        {"old_string": "処理する。", "new_string": "能動送付する。"},
+                    ],
+                },
+                "session_id": "named-sm-multiedit",
+                "permission_mode": "default",
+            },
+        )
+        assert result.returncode == 2
+        assert "SendMessage" in result.stderr
+
+    def test_current_agent_files_pass(self, tmp_path: pathlib.Path) -> None:
+        """現行の`agent-toolkit/agents/*.md`全件が新規checkでblockされないことを確認する。
+
+        本テストは`agent-toolkit/agents/`配下ファイルを実ファイルで検証する回帰防止テスト。
+        """
+        del tmp_path
+        agents_dir = pathlib.Path(__file__).resolve().parents[1] / "agents"
+        for agent_file in agents_dir.glob("*.md"):
+            content = agent_file.read_text(encoding="utf-8")
+            result = _run(
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(agent_file), "content": content},
+                    "session_id": f"named-sm-regression-{agent_file.stem}",
+                    "permission_mode": "default",
+                },
+            )
+            assert result.returncode == 0, (
+                f"{agent_file.name} unexpectedly blocked by named-subagent SendMessage check: {result.stderr}"
+            )

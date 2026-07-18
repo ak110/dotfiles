@@ -95,6 +95,7 @@ Write / Edit / MultiEdit:
 - シークレット / 鍵ファイルの直接編集 (block)
 - `agent-toolkit/rules/`配下・`agent-toolkit/skills/**/SKILL.md`・計画ファイルへの
   scope-escalationフレーズ転記検出 (block)
+- named subagent定義への`SendMessage`ツール登録欠落 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -543,6 +544,8 @@ def main() -> int:
     if _check_secrets(tool_name, file_path):
         return 2
     if _check_scope_escalation_in_doc_edit(tool_name, tool_input, file_path):
+        return 2
+    if _check_named_subagent_sendmessage_registered(tool_name, tool_input, file_path):
         return 2
 
     # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
@@ -1365,6 +1368,119 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
             " See norm-revision-checklist.md '規範対象範囲の網羅確認' section and verify that the"
             " sync note body matches the target file and section name.",
             tag="warn",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# named background起動想定サブエージェント判定用のキーワード。
+# frontmatterから`tools:`欄値行を除外した残りと本文全体を結合した判定対象範囲に
+# これらのいずれかが出現するファイルを判定対象とし、
+# frontmatter`tools:`欄への`SendMessage`登録有無を検査する。
+_NAMED_SUBAGENT_MARKER_RE = re.compile(r"SendMessage|能動送付")
+
+# `tools:`欄の値パースパターン（トークン境界: カンマ・空白・改行）。
+# 完全一致比較のため値文字列をトークン集合へ分解する。
+_TOOLS_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+
+# frontmatter`tools:`欄の判定パターン。
+# `tools:`に続いて値（インライン形式・ブロック形式）が指定されている場合を判定する。
+_FRONTMATTER_TOOLS_LINE_RE = re.compile(r"^tools:[ \t]*(.*)$", re.MULTILINE)
+
+
+def _is_named_subagent_definition_target(file_path: str) -> bool:
+    """Named subagent SendMessage登録検査の対象ファイルかを判定する。
+
+    対象は`agent-toolkit/agents/`配下の`.md`ファイル。
+    絶対パス・相対パス（`agent-toolkit/agents/<name>.md`形式）の双方で検出する。
+    """
+    if not file_path:
+        return False
+    normalized = pathlib.PurePosixPath(file_path.replace("\\", "/")).as_posix()
+    if not normalized.endswith(".md"):
+        return False
+    return "/agent-toolkit/agents/" in normalized or normalized.startswith("agent-toolkit/agents/")
+
+
+def _extract_frontmatter_tools_field(content: str) -> tuple[bool, list[str], tuple[int, int] | None]:
+    """frontmatter区間から`tools:`欄の存在有無・値トークン一覧・値行の(開始, 終了)位置を抽出する。
+
+    Returns:
+        (tools欄明示ありフラグ, 値トークン一覧, 値行のcontent内(開始, 終了)位置)。
+        次のいずれの場合も(False, [], None)を返す。
+        `tools:`行が存在しない場合、インライン値が空欄（例: `tools:`単独）の場合、
+        ブロック形式で`- <name>`項目が0件の場合。
+        値がインライン形式・ブロック形式のいずれの場合もトークン集合へ分解して返す。
+        値行位置はfrontmatter外の本文検査から`tools:`欄値行を除外する用途で使う。
+    """
+    match = _FRONTMATTER_BLOCK_RE.match(content)
+    if match is None:
+        return False, [], None
+    frontmatter_body = match.group(1)
+    fb_offset = match.start(1)
+    tools_match = _FRONTMATTER_TOOLS_LINE_RE.search(frontmatter_body)
+    if tools_match is None:
+        return False, [], None
+    inline_value = tools_match.group(1).strip()
+    value_start = fb_offset + tools_match.start()
+    value_end = fb_offset + tools_match.end()
+    if inline_value:
+        tokens = _TOOLS_TOKEN_RE.findall(inline_value)
+        return (bool(tokens), tokens, (value_start, value_end))
+    block_tokens: list[str] = []
+    after_tools_offset = tools_match.end()
+    remaining = frontmatter_body[after_tools_offset:]
+    consumed = 0
+    for line in remaining.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.strip() == "":
+            consumed += len(line)
+            continue
+        if stripped.startswith("- "):
+            block_tokens.append(stripped[2:].strip())
+            consumed += len(line)
+            continue
+        break
+    if not block_tokens:
+        return False, [], None
+    value_end = fb_offset + after_tools_offset + consumed
+    return True, block_tokens, (value_start, value_end)
+
+
+def _check_named_subagent_sendmessage_registered(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    """Named background起動想定のサブエージェント定義への`SendMessage`ツール登録欠落をblockする。
+
+    対象は`agent-toolkit/agents/`配下の`.md`。
+    frontmatterから`tools:`欄値行を除外した残りと本文全体を結合した判定対象範囲に
+    `SendMessage`または「能動送付」の言及があり、
+    かつfrontmatter`tools:`欄が明示的に指定されており（全ツール許容の暗黙状態ではない）、
+    かつ`SendMessage`がツール名として完全一致で登録されていない場合にblockする。
+
+    `tools:`欄自体が無いファイル（全ツール許容）と`tools:`欄が空欄・ブロック項目0件のファイルは、
+    能動送付手段が暗黙付与または無指定として扱われ、いずれも合格扱いとする。
+    """
+    if not _is_named_subagent_definition_target(file_path):
+        return False
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
+    if content is None:
+        return False
+    tools_explicit, tools_tokens, tools_value_range = _extract_frontmatter_tools_field(content)
+    if not tools_explicit:
+        return False
+    scan_target = (
+        content[: tools_value_range[0]] + content[tools_value_range[1] :] if tools_value_range is not None else content
+    )
+    if _NAMED_SUBAGENT_MARKER_RE.search(scan_target) is None:
+        return False
+    if "SendMessage" in tools_tokens:
+        return False
+    print(
+        _llm_notice(
+            "blocked: named background subagent definition references SendMessage or 能動送付"
+            f" but frontmatter tools field does not include SendMessage ({tool_name}, target: {file_path})."
+            " Add SendMessage to the tools list so the subagent can actively send its completion report,"
+            " per agent-toolkit/rules/03-claude-code.md 'サブエージェントの活用' section."
         ),
         file=sys.stderr,
     )
