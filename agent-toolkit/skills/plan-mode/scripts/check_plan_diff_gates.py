@@ -43,6 +43,8 @@
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
     小見出しが存在しない場合の全文一括検査（warn出力のみ）
 - 「同構造」「同旨」「同期」宣言表現検出時の対象ファイル本体との整合性検査（warn出力のみ）
+- Skill/Agent誤記検出: 「Agentツール」「Agent tool」表記近傍の`agent-toolkit:<identifier>`が
+    `agent-toolkit/agents/*.md`に実在しない場合の全文一括検査（warn出力のみ）
 
 SSOTコメント: 共通トークンは兄弟モジュール`_plan_diff_parsing.py`へ集約済みでありimportで参照する。
 意味論差異の温存方針は`_plan_diff_parsing.py`のdocstring参照。
@@ -150,6 +152,15 @@ _NEGATION_CONTEXT_WINDOW = 3
 # fb-4: 責務差分表の記入検出用（`### エージェント判断`配下の見出し行に対して判定する）。
 _RESPONSIBILITY_DIFF_HEADING_RE = re.compile(r"^#{1,6}\s*.*責務差分")
 
+# Skill/Agent誤記検出: 「Agentツール」「Agent tool」表記のトリガー行検出用。
+# 和文「ツール」直後は助詞（で・を等）などUnicode単語文字が続くため`\b`を付けない
+# （Pythonの`\b`はUnicode単語文字境界判定であり、和文どうしの連続では境界が成立しない）。
+# 英語形の「tool」のみ直後に`\b`を付け、`toolbox`等の別語への誤爆を避ける。
+_AGENT_TOOL_TRIGGER_RE = re.compile(r"Agent\s*(?:ツール|tool\b)")
+
+# Skill/Agent誤記検出: `agent-toolkit:<identifier>`形式の識別子抽出用。
+_AGENT_TOOLKIT_IDENTIFIER_RE = re.compile(r"agent-toolkit:([a-z][a-z0-9-]*)")
+
 
 def main() -> int:
     """検査のエントリポイント。複数の計画ファイルを位置引数で受け取る。"""
@@ -220,6 +231,8 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
         print(retroactive_scan_warning, file=sys.stderr)
     for transcription_warning in _check_transcription_declaration_consistency(plan_path, text, repo_root):
         print(transcription_warning, file=sys.stderr)
+    for confusion_warning in _check_skill_agent_confusion(plan_path, text, repo_root):
+        print(confusion_warning, file=sys.stderr)
     return violations
 
 
@@ -559,6 +572,51 @@ def _keyword_used_in_negated_context(target_text: str, keyword: str) -> bool:
     return False
 
 
+def _known_agent_identifiers(repo_root: pathlib.Path) -> frozenset[str]:
+    """`agent-toolkit/agents/*.md`のstem集合を返す（Agentツールで起動可能な識別子集合）。"""
+    agents_dir = repo_root / "agent-toolkit" / "agents"
+    if not agents_dir.is_dir():
+        return frozenset()
+    return frozenset(path.stem for path in agents_dir.glob("*.md"))
+
+
+def _check_skill_agent_confusion(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
+    """`## 変更内容`配下の差分ブロック本文でSkill定義をAgentツール起動と誤記した箇所を検出する。
+
+    `_iter_diff_blocks`が返す本文（`[現行]`・`[削除根拠]`ラベル配下は既に対象外）を走査し、
+    `_AGENT_TOOL_TRIGGER_RE`（「Agentツール」「Agent tool」）が出現する行の同一行・直前1行・
+    直後1行の合計3行範囲で`_AGENT_TOOLKIT_IDENTIFIER_RE`（`agent-toolkit:<identifier>`）と共起するかを判定する。
+    共起した識別子が`_known_agent_identifiers`（`agent-toolkit/agents/*.md`のstem集合）に
+    含まれない場合、当該識別子はSkill定義（`agent-toolkit/skills/`配下）である可能性が高く、
+    「Agentツールで起動する」という誤った起動手段の記述として警告を返す。
+    本チェックは体裁系のためwarn出力のみとし、呼び出し元（`_check_plan_file`・`_extract_diff_blocks`）は
+    戻り値をexit codeへ算入しない。
+    """
+    agent_ids = _known_agent_identifiers(repo_root)
+    warnings: list[str] = []
+    reported: set[tuple[int, str]] = set()
+    for h3_label, block_start_line, body, _h3_ext in _iter_diff_blocks(text):
+        lines = body.splitlines()
+        for idx, line in enumerate(lines):
+            if not _AGENT_TOOL_TRIGGER_RE.search(line):
+                continue
+            window = lines[max(0, idx - 1) : idx + 2]
+            for window_line in window:
+                for identifier in _AGENT_TOOLKIT_IDENTIFIER_RE.findall(window_line):
+                    if identifier in agent_ids:
+                        continue
+                    key = (block_start_line, identifier)
+                    if key in reported:
+                        continue
+                    reported.add(key)
+                    warnings.append(
+                        f"{plan_path}:{block_start_line}: H3=`{h3_label}` [warn] "
+                        f"Skill/Agent誤記候補: agent-toolkit:{identifier}は"
+                        f"agent-toolkit/agents/配下に存在しない（Skill定義）"
+                    )
+    return warnings
+
+
 def _extract_judgment_section_body(text: str) -> str:
     """`### エージェント判断`H3節本文を新API`extract_h3_section_with_offset`経由で抽出する。
 
@@ -595,6 +653,12 @@ def _extract_diff_blocks(
     位置マップは一時ファイルパス文字列を`{plan_path}: H3=<label> L<block_start_line>`形式の
     H3位置マーカーへ対応付ける（`_check_extracted_paths`が違反出力内の一時パスを元位置へ
     書き換えるために使用する。バッチ実行で失われる位置情報を復元する目的）。
+
+    Skill/Agent誤記検出（`_check_skill_agent_confusion`）の`repo_root`は、呼び出し元が算出済みの値を
+    引数として受け取らない本関数の既存シグネチャに合わせ、`main()`の`repo_root`解決と同一の
+    `pathlib.Path.cwd()`起点で`check_deprecated_identifier_coverage._find_repo_root`を用いて自己解決する。
+    計画ファイルの配置先（`~/.claude/plans/`等）には`.git`祖先が存在しないため、
+    `plan_path`の親ディレクトリ起点で解決するとAgent識別子集合が常に空集合となり検出が機能しない。
     """
     try:
         text = plan_path.read_text(encoding="utf-8")
@@ -635,6 +699,9 @@ def _extract_diff_blocks(
     retroactive_scan_warning = _check_retroactive_scan_when_new_norm_section(plan_path, text)
     if retroactive_scan_warning is not None:
         print(retroactive_scan_warning, file=sys.stderr)
+    repo_root = check_deprecated_identifier_coverage._find_repo_root(pathlib.Path.cwd())  # pylint: disable=protected-access
+    for confusion_warning in _check_skill_agent_confusion(plan_path, text, repo_root):
+        print(confusion_warning, file=sys.stderr)
 
     return messages, (prose_paths, location_map)
 

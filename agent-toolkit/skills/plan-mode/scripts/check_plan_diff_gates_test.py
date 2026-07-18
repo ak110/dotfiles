@@ -22,7 +22,7 @@ import pytest
 from _plan_diff_gates_test_helpers import _load_module, _stub_subprocess, _write
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_plan_diff_gates.py"
 _MOD = _load_module(_SCRIPT)
@@ -791,3 +791,99 @@ class TestTranscriptionDeclarationConsistency:
         )
         warnings = _MOD._check_transcription_declaration_consistency(pathlib.Path("plan.md"), text, tmp_path)
         assert warnings == []
+
+
+class TestCheckSkillAgentConfusion:
+    """`_check_skill_agent_confusion`のSkill/Agent誤記検出を検証する。"""
+
+    @staticmethod
+    def _make_repo_root(tmp_path: pathlib.Path, agent_names: tuple[str, ...] = ("plan-impl-executor",)) -> pathlib.Path:
+        """`agent-toolkit/agents/<name>.md`を配置したダミーリポジトリルートを構築する。"""
+        agents_dir = tmp_path / "agent-toolkit" / "agents"
+        agents_dir.mkdir(parents=True)
+        for name in agent_names:
+            _write(agents_dir / f"{name}.md", "# ダミー\n")
+        return tmp_path
+
+    def test_agent_identifier_passes(self, tmp_path: pathlib.Path) -> None:
+        """実在するAgent識別子への言及は警告しない。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = (
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[追記]\nAgentツールで`agent-toolkit:plan-impl-executor`を起動する。\n```\n"
+        )
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert warnings == []
+
+    def test_skill_identifier_warns(self, tmp_path: pathlib.Path) -> None:
+        """Skill定義（Agent定義に実在しない識別子）への「Agentツール」表記は警告する。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[追記]\nAgentツールで`agent-toolkit:careful-review`を起動する。\n```\n"
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert len(warnings) == 1
+        assert "agent-toolkit:careful-review" in warnings[0]
+
+    def test_agent_tool_english_form_warns(self, tmp_path: pathlib.Path) -> None:
+        """英語表記「Agent tool」でもトリガーとして検出する。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[追記]\nAgent tool `agent-toolkit:process-feedbacks`を起動する。\n```\n"
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert len(warnings) == 1
+        assert "agent-toolkit:process-feedbacks" in warnings[0]
+
+    def test_adjacent_line_neighborhood_warns(self, tmp_path: pathlib.Path) -> None:
+        """トリガーと識別子が直前・直後1行に別々に出現しても近傍として検出する。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = (
+            "## 変更内容\n\n### `foo.md`\n\n"
+            "```text\n[追記]\nAgentツールで起動する。\n`agent-toolkit:careful-review`を対象とする。\n```\n"
+        )
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert len(warnings) == 1
+        assert "agent-toolkit:careful-review" in warnings[0]
+
+    def test_out_of_neighborhood_no_warn(self, tmp_path: pathlib.Path) -> None:
+        """トリガーと識別子が3行以上離れて出現する場合は近傍外として警告しない。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = (
+            "## 変更内容\n\n### `foo.md`\n\n"
+            "```text\n[追記]\nAgentツールで起動する。\n中間行その1。\n中間行その2。\n"
+            "`agent-toolkit:careful-review`を対象とする。\n```\n"
+        )
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert warnings == []
+
+    def test_current_label_excluded(self, tmp_path: pathlib.Path) -> None:
+        """`[現行]`ラベル配下は`_iter_diff_blocks`が既に対象外とするため警告しない。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = "## 変更内容\n\n### `foo.md`\n\n```text\n[現行]\nAgentツールで`agent-toolkit:careful-review`を起動する。\n```\n"
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert warnings == []
+
+    def test_outside_change_section_no_warn(self, tmp_path: pathlib.Path) -> None:
+        """`## 変更内容`外の記述は`_iter_diff_blocks`が走査しないため警告しない。"""
+        repo_root = self._make_repo_root(tmp_path)
+        text = (
+            "## 背景\n\nAgentツールで`agent-toolkit:careful-review`を起動する。\n\n"
+            "## 変更内容\n\n### `foo.md`\n\n```text\n[追記]\n設定値を更新する。\n```\n"
+        )
+        warnings = _MOD._check_skill_agent_confusion(pathlib.Path("plan.md"), text, repo_root)
+        assert warnings == []
+
+    def test_extract_diff_blocks_real_agent_identifier_no_warn(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """統合ランナー経路（`_extract_diff_blocks`のcwd起点`repo_root`解決）でも実在Agent識別子は警告しない。"""
+        repo_root = self._make_repo_root(tmp_path)
+        (repo_root / ".git").mkdir()
+        _stub_subprocess(monkeypatch, scope_returncode=0)
+        monkeypatch.chdir(repo_root)
+        plan = _write(
+            repo_root / "plan.md",
+            "## 変更内容\n\n### `foo.md`\n\n"
+            "```text\n[追記]\nAgentツールで`agent-toolkit:plan-impl-executor`を起動する。\n```\n",
+        )
+        messages, (prose_paths, _location_map) = _MOD._extract_diff_blocks(plan)
+        assert messages == []
+        assert "Skill/Agent誤記候補" not in capsys.readouterr().err
+        for path in prose_paths:
+            path.unlink(missing_ok=True)
