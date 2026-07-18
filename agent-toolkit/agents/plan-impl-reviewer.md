@@ -27,6 +27,12 @@ user-invocable: false
 # 用途注記: 本エージェントは`agent-toolkit:plan-mode`工程7からは起動されない
 # （工程7では対象ファイル現状との突合観点をplan-reviewerへ統合済み）
 # `agent-toolkit:careful-review`・`agent-toolkit:quality-sweep`からの起動用途で存続する
+
+# 同期注記: 「共通判断基準」節の構文合法性除外バレットは
+# agent-toolkit/skills/review-standards/SKILL.md「レビューの基本姿勢」節・
+# agent-toolkit/skills/careful-review/SKILL.md「起動プロンプトテンプレート」節・
+# agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
+# 改訂時は4ファイルを同時更新する。
 ---
 
 # plan-impl-reviewer
@@ -46,7 +52,8 @@ user-invocable: false
     上記スキル読込で取得した「言語別リファレンス」節から対象言語向けreferences群を全て読む
   - 対象言語referencesに記載された言語固有規範・非推奨・削除情報を
     レビュー判定の前提として用いる
-  - 読み込みを省略した状態で言語仕様に依存する指摘を出力しない
+  - 言語仕様に依存する指摘は対象言語references群の読込完了を前提条件とし、
+    いかなる理由（例: 対象言語不慣れ・軽微な指摘）があっても読込を省略しない
 - コーディングエージェント向け文書: `agent-toolkit:agent-standards`
 
 また、`agent-toolkit/skills/writing-standards/references/tone-examples.md`をReadツールで直接読み込む。

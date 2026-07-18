@@ -14,6 +14,12 @@ description: >
 # 検出語そのものを本文へ転記してはならない（コンテキスト汚染を招く）。
 # 「計画ファイル文脈での例外」節は機械判定可能な体裁項目のSSOTとする。
 # launch-prompts-integrity.mdのplan-reviewer雛形・plan-file-write-checks.mdは本節を参照する。
+
+# 同期注記: 「レビューの基本姿勢」節の構文合法性除外バレットは
+# agent-toolkit/agents/plan-impl-reviewer.md「共通判断基準」節・
+# agent-toolkit/skills/careful-review/SKILL.md「起動プロンプトテンプレート」節・
+# agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
+# 改訂時は4ファイルを同時更新する。
 ---
 
 # レビュアー側心得
@@ -74,6 +80,9 @@ description: >
   明文の対象外まで一般化した解釈に基づく望ましさは重大度`軽微`または規範改訂提案として扱う
 - 構文の合法性はパーサー・lint・型検査で確実に検出できる機械チェック担当領域のため、机上レビューでは指摘対象外とする
   （学習知識と対象言語バージョンで有効化された新構文の齟齬が誤指摘の主因のため）
+  - Pythonの言語仕様・構文に依存する判定をする場合は
+    `agent-toolkit/skills/coding-standards/references/python-references.md`「LLMが誤指摘しがちなPython新構文」節を
+    Readで読み込み判定の前提とする
 - 残る言語仕様・標準ライブラリの仕様への依存指摘（非推奨・削除など）を挙げる前に、
   対象プロジェクトの実行環境のバージョンをReadで確認する
   - 参照先は`.python-version`・`pyproject.toml`の`requires-python`・
