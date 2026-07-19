@@ -15,8 +15,10 @@ from pathlib import Path
 
 import _fork_runner
 import pytest
+from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 from _stop_gate_test import _user_async_launched_entry, _user_task_notification_entry, _write_transcript
+from subagent_stop_advisor import _SELF_LAUNCHED_SUBAGENT_WAIT_RE
 
 _SCRIPT = Path(__file__).parent / "subagent_stop_advisor.py"
 
@@ -158,6 +160,11 @@ def test_blocks_self_launched_subagent_wait_even_with_tracked_background(tmp_pat
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
+
+
+def test_self_launched_subagent_wait_alias_is_shared_constant() -> None:
+    """SSOT不一致の再発防止として`is`identityで共有定数のalias関係を検証する。"""
+    assert _SELF_LAUNCHED_SUBAGENT_WAIT_RE is _ASYNC_WAIT_SELF_LAUNCHED_RE
 
 
 def test_stop_hook_active_bypasses_check() -> None:

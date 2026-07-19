@@ -15,6 +15,7 @@
 ただし完了報告本文が自身の配下でbackground起動したレビュアー系サブエージェント
 （`plan-reviewer`・`plan-codex-reviewer`等）への待機表明である場合
 （`_is_self_launched_subagent_wait`が真の場合）は、上記bypassを適用せず現行どおりブロックする。
+判定に用いる正規表現は`_scope_escalation.py`の共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`をaliasで参照する。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 
@@ -40,6 +41,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _ASYNC_WAIT_SELF_LAUNCHED_RE,
     _STOP_FOCUS_CATEGORIES_EXTENDED,
     _match_scope_escalation,
     is_empty_completion_report,
@@ -258,16 +260,9 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
 # 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明を検出する補助パターン（fb 20260720-035611-001）。
 # `has_pending_background_launches`のbypassはSubagentStop経路が起動主体（自己起動か外部起動か）を
 # 区別せず追跡中background起動の実在のみで通過させる設計であり、自身が配下起動したサブエージェントへの
-# 待機表明も誤って通過させる。本ヘルパーの判定パターンは`_scope_escalation.py`側の新規`async-wait`
-# パターン（レビュアー名+状態語の共起、review subagents宣言形、`wait(?:ing)? for ... background ...
-# reviewers?`共起の3分岐）と同一のフレーズ集合をSSOTとする。
-# `_scope_escalation.py`側の当該エントリを更新した場合は本パターンも同時に更新する。
-_SELF_LAUNCHED_SUBAGENT_WAIT_RE = re.compile(
-    r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
-    r"(?:background|waiting|running|completion notification)"
-    r"|review subagents? (?:are|is) running in the background"
-    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
-)
+# 待機表明も誤って通過させる。本ヘルパーの判定パターンは`_scope_escalation.py`側の共有定数
+# `_ASYNC_WAIT_SELF_LAUNCHED_RE`のaliasとして参照し、独立複製によるSSOT不一致を構造的に排除する。
+_SELF_LAUNCHED_SUBAGENT_WAIT_RE = _ASYNC_WAIT_SELF_LAUNCHED_RE
 
 
 def _is_self_launched_subagent_wait(text: str) -> bool:

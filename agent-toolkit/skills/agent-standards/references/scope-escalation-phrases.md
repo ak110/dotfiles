@@ -82,6 +82,7 @@ async-waitカテゴリの機械検出は、ハーネスが追跡するbackground
 （`plan-reviewer`・`plan-codex-reviewer`等）への待機表明である場合は本除外の適用対象から除く。
 起動記録の有無に関わらず現行どおりブロックする
 （`subagent_stop_advisor.py`の`_is_self_launched_subagent_wait`が担当する）。
+判定パターンは`_scope_escalation.py`の共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`をaliasで参照する。
 
 ## 代替表現例
 

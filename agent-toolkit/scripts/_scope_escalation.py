@@ -3,7 +3,7 @@
 `pretooluse.py`と`stop_advisor.py`の双方から参照する共有モジュール。
 エントリポイントスクリプト間で直接importする構造を避けるため、
 `_SCOPE_ESCALATION_PHRASES`・`_match_scope_escalation`・`_SCOPE_ESCALATION_ALTERNATIVES`・
-`_apply_category_exclusions`を本モジュールへ集約する。
+`_apply_category_exclusions`・`_ASYNC_WAIT_SELF_LAUNCHED_RE`を本モジュールへ集約する。
 
 カテゴリ定義および代表フレーズの詳細は
 `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
@@ -39,6 +39,24 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
         "subagent-hesitation",
         "overhead-tradeoff",
     }
+)
+
+# scope-escalation縮退誘発フレーズ検出パターン。
+# 01-agent.md「完遂原則」項および「縮退表明は発行しない」項目で禁止される、
+# 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
+# および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
+#
+# 自身の配下でbackground起動したレビュアー系サブエージェント
+# （`plan-reviewer`・`plan-codex-reviewer`・`plan-impl-reviewer`等）への待機表明を検出する共有定数。
+# `subagent_stop_advisor.py`の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`はbypass無効化判定に本定数のaliasを用いる
+# （`from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE`）。検出と判定predicateが独立複製構造だと
+# 同期漏れでSSOT不一致が発生するため、他モジュールから判定predicateとして参照される
+# 検出パターン全般は本方式（共有定数として抽出しaliasで参照する）に従う。
+_ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
+    r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
+    r"(?:background|waiting|running|completion notification)"
+    r"|review subagents? (?:are|is) running in the background"
+    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
 )
 
 # scope-escalation縮退誘発フレーズ検出パターン。
@@ -171,24 +189,12 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     # 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明パターン（fb 20260720-035611-001）。
-    # `subagent_stop_advisor.py`の`has_pending_background_launches`によるbypassは、
-    # 自身が配下起動したサブエージェントへの待機表明も誤って通過させるため、
-    # 検出カテゴリ側でレビュアー名との共起・宣言形・background文脈語との共起の3分岐を捕捉する。
-    # 3分岐は`subagent_stop_advisor.py`側の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`と同一SSOTとして
-    # 保守する（片方だけ更新すると宣言形検出とbypass無効化判定の集合が不一致になるため）。
-    # 隔て幅は分岐ごとに異なる（レビュアー名共起は`{0,40}`、background文脈共起は`{0,30}`ずつ）が、
-    # これは名詞句と副詞句それぞれの語順自由度に合わせた設計とする。
-    # 汎用英語形の`wait(?:ing)? for ... reviewer`は既存async-waitエントリ（L124-132）が既に検出する
-    # ため`_match_scope_escalation`単体では冗長だが、`_is_self_launched_subagent_wait`側との
-    # SSOT同期のために本エントリへ明示転記する。
+    # `has_pending_background_launches`によるbypassは自身が配下起動したサブエージェントへの
+    # 待機表明も誤って通過させるため、本エントリで検出しbypass無効化判定へ用いる
+    # （モジュール冒頭で定義した共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`を参照する）。
     (
         "async-wait",
-        re.compile(
-            r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
-            r"(?:background|waiting|running|completion notification)"
-            r"|review subagents? (?:are|is) running in the background"
-            r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
-        ),
+        _ASYNC_WAIT_SELF_LAUNCHED_RE,
     ),
     # 分離形の待機表明パターン（fb3反映）。
     # 「〜完了の通知を待つ」「〜完了を待つ」等、既存の「完了通知」「完了報告」連結形で捕捉できない

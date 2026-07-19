@@ -13,6 +13,8 @@ import typing
 
 import pytest
 from _scope_escalation import (
+    _ASYNC_WAIT_SELF_LAUNCHED_RE,
+    _SCOPE_ESCALATION_PHRASES,
     _STOP_FOCUS_CATEGORIES,
     _apply_category_exclusions,
     _match_scope_escalation,
@@ -280,3 +282,12 @@ class TestIsEmptyCompletionReport:
         """Skill呼び出し後に完了本文が続く正常報告は`False`を返す。"""
         text = "Skill(skill='foo')\n点検実施済。指摘事項なし。"
         assert is_empty_completion_report(text) is False
+
+
+class TestAsyncWaitSelfLaunchedSharedConstant:
+    """`_ASYNC_WAIT_SELF_LAUNCHED_RE`が`_SCOPE_ESCALATION_PHRASES`内で同一オブジェクト参照されること。"""
+
+    def test_phrases_tuple_references_shared_constant(self):
+        """独立複製ではなく共有定数のオブジェクト参照であることを`is`identityで確認する。"""
+        matched = [pattern for category, pattern in _SCOPE_ESCALATION_PHRASES if category == "async-wait"]
+        assert any(pattern is _ASYNC_WAIT_SELF_LAUNCHED_RE for pattern in matched)
