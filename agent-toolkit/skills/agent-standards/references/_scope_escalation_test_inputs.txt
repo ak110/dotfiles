@@ -126,6 +126,10 @@ async-wait	waiting for the report
 async-wait	waiting for registration
 async-wait	waiting for completion
 async-wait	waiting for a notification
+async-wait	Both review subagents are running in the background.
+async-wait	plan-codex-reviewerがbackgroundで起動中である
+async-wait	plan-impl-reviewerがbackgroundで起動中である
+async-wait	plan-reviewerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzbackground
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し

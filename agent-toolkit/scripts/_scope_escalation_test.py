@@ -51,6 +51,9 @@ class TestMatchScopeEscalation:
             "完了報告を提出してから確認する。",
             "gh run listで一覧を確認する。",
             "複雑度に応じてモデルを選択する。",
+            "plan-reviewerの指摘を反映した。",
+            "review subagents finished successfully.",
+            "plan-reviewer" + "z" * 41 + "background",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

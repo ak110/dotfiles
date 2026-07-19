@@ -103,10 +103,17 @@ def test_blocks_overhead_tradeoff_phrases() -> None:
 
 
 def test_approves_async_wait_when_background_tracked(tmp_path: Path) -> None:
-    """async-wait表明でも未消化の追跡中background起動が実在すれば通過する。"""
+    """async-wait表明でも未消化の追跡中background起動が実在すれば通過する。
+
+    ピックされる文言は自身配下起動のレビュアー系サブエージェント名を含まない前提とする
+    （含む場合は`_is_self_launched_subagent_wait`によりbypassが無効化されblockへ倒れるため）。
+    """
     text = _pick_scope_escalation_text("async-wait")
     if not text:
         pytest.skip("scope-escalation fixture for async-wait not available")
+    assert not any(name in text for name in ("plan-reviewer", "plan-codex-reviewer", "plan-impl-reviewer")), (
+        "ピック文言が自身起動サブエージェント名を含むと本テストの前提が崩れる"
+    )
     transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     assert result.stdout == ""
@@ -129,6 +136,25 @@ def test_blocks_async_wait_when_tracked_background_completed(tmp_path: Path) -> 
         pytest.skip("scope-escalation fixture for async-wait not available")
     entries = [_user_async_launched_entry("toolu_bg2"), _user_task_notification_entry("toolu_bg2")]
     transcript = str(_write_transcript(tmp_path, entries))
+    result = _run({"last_assistant_message": text, "transcript_path": transcript})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+
+
+def _pick_scope_escalation_text_containing(category: str, substring: str) -> str:
+    """指定カテゴリかつ指定部分文字列を含む最初のフィクスチャ入力を返す。"""
+    for text, cat in _SCOPE_ESCALATION_INPUTS:
+        if cat == category and substring in text:
+            return text
+    return ""
+
+
+def test_blocks_self_launched_subagent_wait_even_with_tracked_background(tmp_path: Path) -> None:
+    """自身配下起動のレビュアー系サブエージェントへの待機表明はbackground追跡有無に関わらずblockする。"""
+    text = _pick_scope_escalation_text_containing("async-wait", "plan-impl-reviewer")
+    if not text:
+        pytest.skip("scope-escalation fixture for self-launched subagent wait not available")
+    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg3")]))
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"

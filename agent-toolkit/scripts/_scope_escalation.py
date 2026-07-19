@@ -170,6 +170,26 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(?:継続|進行|完了報告受領後)"
         ),
     ),
+    # 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明パターン（fb 20260720-035611-001）。
+    # `subagent_stop_advisor.py`の`has_pending_background_launches`によるbypassは、
+    # 自身が配下起動したサブエージェントへの待機表明も誤って通過させるため、
+    # 検出カテゴリ側でレビュアー名との共起・宣言形・background文脈語との共起の3分岐を捕捉する。
+    # 3分岐は`subagent_stop_advisor.py`側の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`と同一SSOTとして
+    # 保守する（片方だけ更新すると宣言形検出とbypass無効化判定の集合が不一致になるため）。
+    # 隔て幅は分岐ごとに異なる（レビュアー名共起は`{0,40}`、background文脈共起は`{0,30}`ずつ）が、
+    # これは名詞句と副詞句それぞれの語順自由度に合わせた設計とする。
+    # 汎用英語形の`wait(?:ing)? for ... reviewer`は既存async-waitエントリ（L124-132）が既に検出する
+    # ため`_match_scope_escalation`単体では冗長だが、`_is_self_launched_subagent_wait`側との
+    # SSOT同期のために本エントリへ明示転記する。
+    (
+        "async-wait",
+        re.compile(
+            r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
+            r"(?:background|waiting|running|completion notification)"
+            r"|review subagents? (?:are|is) running in the background"
+            r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
+        ),
+    ),
     # 分離形の待機表明パターン（fb3反映）。
     # 「〜完了の通知を待つ」「〜完了を待つ」等、既存の「完了通知」「完了報告」連結形で捕捉できない
     # 動作名詞+「完了」の分離形を対象とする。

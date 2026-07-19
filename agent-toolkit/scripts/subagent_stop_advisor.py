@@ -12,6 +12,9 @@
 `async-wait`カテゴリ検出時は、ハーネスが追跡するbackground起動の未消化実在
 （`has_pending_background_launches`）を確認し、実在する場合はブロックせず通過させる
 （task-notificationで自動発火する経路の待機表明を誤ってブロックしないため）。
+ただし完了報告本文が自身の配下でbackground起動したレビュアー系サブエージェント
+（`plan-reviewer`・`plan-codex-reviewer`等）への待機表明である場合
+（`_is_self_launched_subagent_wait`が真の場合）は、上記bypassを適用せず現行どおりブロックする。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 
@@ -252,6 +255,34 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
     return missing, _detect_plan_impl_executor_background_parallel_violation(text)
 
 
+# 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明を検出する補助パターン（fb 20260720-035611-001）。
+# `has_pending_background_launches`のbypassはSubagentStop経路が起動主体（自己起動か外部起動か）を
+# 区別せず追跡中background起動の実在のみで通過させる設計であり、自身が配下起動したサブエージェントへの
+# 待機表明も誤って通過させる。本ヘルパーの判定パターンは`_scope_escalation.py`側の新規`async-wait`
+# パターン（レビュアー名+状態語の共起、review subagents宣言形、`wait(?:ing)? for ... background ...
+# reviewers?`共起の3分岐）と同一のフレーズ集合をSSOTとする。
+# `_scope_escalation.py`側の当該エントリを更新した場合は本パターンも同時に更新する。
+_SELF_LAUNCHED_SUBAGENT_WAIT_RE = re.compile(
+    r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
+    r"(?:background|waiting|running|completion notification)"
+    r"|review subagents? (?:are|is) running in the background"
+    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
+)
+
+
+def _is_self_launched_subagent_wait(text: str) -> bool:
+    """完了報告本文が自身配下起動のレビュアー系サブエージェントへの待機表明かを判定する。
+
+    `_scope_escalation.py`側の新規`async-wait`パターンと同一のフレーズ集合を照合し、
+    いずれかに一致する場合に真を返す。`main()`が`has_pending_background_launches`による
+    bypassを無効化しブロックへ倒す判定に用いる。
+    非文字列・空文字列は`False`を返す。
+    """
+    if not isinstance(text, str) or not text:
+        return False
+    return bool(_SELF_LAUNCHED_SUBAGENT_WAIT_RE.search(text))
+
+
 def main() -> int:
     """SubagentStop hookのエントリポイント。"""
     try:
@@ -287,6 +318,8 @@ def main() -> int:
         category, _matched = match_result
         # async-waitカテゴリ検出時はハーネス追跡background起動の未消化実在で除外判定する。
         # 完了未消化の起動記録が存在する場合、task-notificationで自動発火する経路に該当するため待機表明を許容する。
+        # ただし完了報告本文が自身配下起動のレビュアー系サブエージェントへの待機表明の場合はbypassを適用しない
+        # （`_is_self_launched_subagent_wait`。配下起動を自己申告しつつ完了扱いにする再発パターンのため）。
         # 起動記録が無い場合・全消化済みの場合（判定不能・素の待機表明）は現行どおりブロックする（fail-closed）。
         transcript_path = payload.get("transcript_path")
         session_id = payload.get("session_id")
@@ -294,6 +327,7 @@ def main() -> int:
             category == "async-wait"
             and isinstance(transcript_path, str)
             and has_pending_background_launches(transcript_path, session_id if isinstance(session_id, str) else "")
+            and not _is_self_launched_subagent_wait(text)
         ):
             return 0
         reason = _llm_notice(

@@ -78,6 +78,11 @@ async-waitカテゴリの機械検出は、ハーネスが追跡するbackground
 除外判定される（`is_pending_async_work`の同一remainder判定を先行して行うStop hook側`stop_advisor.py`では
 本条件が既に非到達となるため対象外）。起動記録が無い場合・判定不能時は現行どおりブロックする（fail-closed）。
 
+ただし完了報告本文が自身の配下でbackground起動したレビュアー系サブエージェント
+（`plan-reviewer`・`plan-codex-reviewer`等）への待機表明である場合は本除外の適用対象から除く。
+起動記録の有無に関わらず現行どおりブロックする
+（`subagent_stop_advisor.py`の`_is_self_launched_subagent_wait`が担当する）。
+
 ## 代替表現例
 
 `agent-toolkit/scripts/_scope_escalation.py`の`_SCOPE_ESCALATION_ALTERNATIVES`辞書に、
