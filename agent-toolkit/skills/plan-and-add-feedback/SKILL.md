@@ -22,7 +22,10 @@ description: >
 
 1. `agent-toolkit:plan-mode`スキルを参照呼び出しする。工程1〜7（要件対話・調査・認識合わせ・
    恒久化検討・リファクタリング検討・計画ファイルの作成・整合性チェックとcodexレビュー）を完遂する。
-   plan mode下の場合、`ExitPlanMode`は通常どおり承認ゲートとして経由する
+   本スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない
+   （PreToolUseフックが`plan_and_add_feedback_skill_invoked`真時にブロックする）。
+   既にplan mode下で起動された場合は、本スキルをplan mode外で実行する旨を`ExitPlanMode`で提示し、
+   承認を得てから工程1へ進む
 2. 工程8（`plan-impl-executor`起動）を実施しない。代わりに`agent-toolkit:add-feedback`スキルを呼び出す。
    「`<計画ファイルの絶対パス>` を実装する」という本文を対象リポジトリへ投入する
    （対象リポジトリの判別は`add-feedback`ステップ2の規定に従う）。

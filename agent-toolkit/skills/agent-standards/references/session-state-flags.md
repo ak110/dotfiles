@@ -15,6 +15,10 @@
 - `user_prompt_counter`・`norm_inquiry_last_injected`: `user_prompt_submit.py`が`update_state`で毎回加算・記録し同ファイル内のクールダウン判定に使う。前者は単調増加カウンター、後者は直近の規範照会リマインダー注入時カウンター値
 - `process_feedbacks_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で`agent-toolkit:process-feedbacks`・各短縮スラッシュを記録。
   Stop hookの拡張照合カテゴリ有効化判定と、PreToolUse(EnterPlanMode)ブロック判定に使う。PostToolUseは`process-feedbacks-finish`スキル起動検知時に偽へ戻し、`process-feedbacks`再起動時に真へ強制上書きする
+- `plan_and_add_feedback_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で
+  `agent-toolkit:plan-and-add-feedback`・各短縮スラッシュを記録。
+  読み取り元はPreToolUse（`EnterPlanMode`発行ブロック）。
+  寿命は`agent-toolkit:add-feedback`起動検知（plan-and-add-feedbackの終端工程）でリセット
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
 - 工程7完遂判定フラグ群はPostToolUse(Agent/Task)が記録する: `plan_reviewer_invoked`・`codex_review_invoked`・

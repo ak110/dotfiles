@@ -790,6 +790,56 @@ class TestProcessFeedbacksInvokedNonIdempotent:
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
 
 
+class TestPlanAndAddFeedbackInvoked:
+    """plan-and-add-feedbackスキル起動検知によるフラグ設定検査。"""
+
+    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path):
+        """Skill起動（`agent-toolkit:plan-and-add-feedback`）で`plan_and_add_feedback_skill_invoked`が真になる。"""
+        sid = "paaf-skill-invoked"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-and-add-feedback"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("plan_and_add_feedback_skill_invoked") is True
+
+    def test_add_feedback_invocation_resets_flag(self, tmp_path: pathlib.Path):
+        """フラグ真の状態でadd-feedback起動を検知すると`plan_and_add_feedback_skill_invoked`が偽へ戻る。"""
+        sid = "paaf-reset-by-add-feedback"
+        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+            json.dumps({"plan_and_add_feedback_skill_invoked": True}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:add-feedback"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("plan_and_add_feedback_skill_invoked") is False
+
+    def test_add_feedback_without_flag_is_noop(self, tmp_path: pathlib.Path):
+        """フラグ未設定でのadd-feedback単独起動ではフラグを新設しない（no-op）。"""
+        sid = "paaf-noop-add-feedback"
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:add-feedback"},
+                "session_id": sid,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "plan_and_add_feedback_skill_invoked" not in _read_state(tmp_path, sid)
+
+
 class TestAmendPendingStatusCheck:
     """`amend_pending_status_check` cwd別フラグの管理（fb3）。
 

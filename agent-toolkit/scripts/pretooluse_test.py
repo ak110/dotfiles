@@ -6479,6 +6479,8 @@ class TestProcessFeedbacksBlocksEnterPlanMode:
         assert result.returncode == 2
         assert "process-feedbacks" in result.stderr
         assert "EnterPlanMode" in result.stderr
+        assert "agent-toolkit:process-feedbacks-finish" in result.stderr
+        assert "agent-toolkit:add-feedback" not in result.stderr
 
     def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
         """フラグ未設定時はEnterPlanMode発行を通過させる。"""
@@ -6508,7 +6510,78 @@ class TestProcessFeedbacksBlocksEnterPlanMode:
             {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
             env_overrides=self._env(tmp_path),
         )
-        assert "issuing EnterPlanMode from within the process-feedbacks skill" not in result.stderr
+        assert "blocked: issuing EnterPlanMode" not in result.stderr
+
+
+class TestPlanAndAddFeedbackBlocksEnterPlanMode:
+    """plan-and-add-feedback経由起動下でのEnterPlanMode発行ブロック検査。"""
+
+    @staticmethod
+    def _env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    def test_blocks_when_flag_true(self, tmp_path: pathlib.Path):
+        """`plan_and_add_feedback_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
+        sid = "epm-paaf-flag-true"
+        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": True})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "plan-and-add-feedback" in result.stderr
+        assert "EnterPlanMode" in result.stderr
+        assert "agent-toolkit:add-feedback" in result.stderr
+        assert "agent-toolkit:process-feedbacks-finish" not in result.stderr
+
+    def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
+        """フラグ未設定時はEnterPlanMode発行を通過させる。"""
+        sid = "epm-paaf-flag-absent"
+        _write_session_state(tmp_path, sid, {})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_passes_when_flag_false(self, tmp_path: pathlib.Path):
+        """フラグが偽の場合はEnterPlanMode発行を通過させる。"""
+        sid = "epm-paaf-flag-false"
+        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": False})
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_ignores_other_tool_names(self, tmp_path: pathlib.Path):
+        """`ExitPlanMode`など他のツール名では本ハンドラは発火しない。"""
+        sid = "epm-paaf-other-tool"
+        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": True})
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert "blocked: issuing EnterPlanMode" not in result.stderr
+
+    def test_both_flags_report_both_reset_paths(self, tmp_path: pathlib.Path):
+        """両フラグが真の場合は両方の解除手段を案内する。"""
+        sid = "epm-both-flags-true"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "process_feedbacks_skill_invoked": True,
+                "plan_and_add_feedback_skill_invoked": True,
+            },
+        )
+        result = _run(
+            {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
+            env_overrides=self._env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "agent-toolkit:process-feedbacks-finish" in result.stderr
+        assert "agent-toolkit:add-feedback" in result.stderr
 
 
 class TestPlanFileBumpStepWhenAgentToolkitTarget:

@@ -401,6 +401,7 @@ class TestContextConditions:
         assert "Skill" in body
         assert "activation policy" in body
         assert "uncommitted" not in body.lower()
+        assert "AskUserQuestion" in body
         assert "end the turn silently" in body
 
     def test_dirty_repo_context_with_both_messages(
@@ -417,6 +418,7 @@ class TestContextConditions:
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
         assert _SESSION_REVIEW_SKILL in body
+        assert "AskUserQuestion" in body
         assert "end the turn silently" in body
         assert "systemMessage" in decision
         assert "changed file(s)" in decision["systemMessage"]

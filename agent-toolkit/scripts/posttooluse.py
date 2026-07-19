@@ -26,7 +26,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer /
    mcp__codex__codex・mcp__codex__codex-replyツール。
    両ツール成功時はrecorded_codex_thread_idも記録する）
-10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)
+10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
+    `plan-and-add-feedback`起動検知による`plan_and_add_feedback_skill_invoked`フラグの設定と、
+    `add-feedback`起動検知による同フラグのリセットも同経路で扱う (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
@@ -169,6 +171,9 @@ _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "
 # process-feedbacks-finishスキル呼び出し検出。フラグリセット経路の第1経路として使う。
 _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks-finish", "process-feedbacks-finish"})
 
+_PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
+_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
+
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
@@ -259,6 +264,20 @@ def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
     if not state.get("process_feedbacks_skill_invoked", False):
         return None
     state["process_feedbacks_skill_invoked"] = False
+    return state
+
+
+def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
+    """plan-and-add-feedbackスキル起動フラグを常時Trueへ上書きする。"""
+    state["plan_and_add_feedback_skill_invoked"] = True
+    return state
+
+
+def _reset_plan_and_add_feedback_invoked(state: dict) -> dict | None:
+    """add-feedback起動検知（plan-and-add-feedbackの終端工程）でフラグをリセットする。"""
+    if not state.get("plan_and_add_feedback_skill_invoked", False):
+        return None
+    state["plan_and_add_feedback_skill_invoked"] = False
     return state
 
 
@@ -451,6 +470,10 @@ def main() -> int:
             update_state(session_id, _set_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES:
             update_state(session_id, _reset_process_feedbacks_invoked)
+        if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
+            update_state(session_id, _set_plan_and_add_feedback_invoked)
+        if isinstance(skill_name, str) and skill_name in _ADD_FEEDBACK_SKILL_NAMES:
+            update_state(session_id, _reset_plan_and_add_feedback_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
