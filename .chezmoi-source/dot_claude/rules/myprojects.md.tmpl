@@ -22,6 +22,9 @@
 ツールチェインやドキュメント構成は極力揃える方針とする。
 
 全プロジェクトに反映する可能性のある変更時は、必ず`/sync-cross-project`スキルを使用する。
+呼び出し漏れは`~/dotfiles/agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が計画ファイル段階で機械検出する。
+対象範囲は同ファイルのマッピングSSOT（`_SYNC_CROSS_PROJECT_BASENAMES`・
+`_SYNC_CROSS_PROJECT_WORKFLOWS_PREFIX`）が定義する。
 同期対象マトリクス・意図的な差異・同期作業に関わるpnpm既知問題・運用ノウハウは同スキルに集約する。
 依存管理一般のpnpm既知問題（v11以降のフィールド廃止など）は`agent-toolkit:coding-standards`スキルの依存管理節に集約する。
 

@@ -30,6 +30,9 @@
 - `_check_run_method_script_paths`: `## 実行方法`節内のバッククォート囲みコマンドから
   拡張子付き（`.py`・`.sh`・`.ps1`・`.js`・`.ts`）スクリプトパスを抽出し、
   プロジェクトルート起点で実在するかを検査する（不在時に違反として報告）
+- `_check_run_method_skill_invocations`: `## 変更内容`対象ファイル一覧のファイルパス集合から
+  必要スキルをマッピングSSOTで判定し、`## 実行方法`節本文に呼び出し記述があるかを検査する
+  （不在時に違反として報告。対象は`agent-toolkit-edit`・`sync-platform-pair`・`sync-cross-project`）
 - `_check_frontmatter_sync_note_coverage`: `## 変更内容`対象ファイル一覧の各ファイルが冒頭に
   frontmatter同期注記を持つ場合、参照先ファイル・参照先節が計画本文の対象ファイル一覧・
   追記記述に含まれるかを検査する（不在時に違反として報告。ただし対象ファイル固有のH3配下スコープに
@@ -173,6 +176,9 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
     violations += _check_version_bump_matrix(plan_path, text)
     _check_version_bump_matrix_consistency(plan_path, text)
     for msg in _check_run_method_script_paths(plan_path, text, repo_root):
+        print(msg, file=sys.stderr)
+        violations += 1
+    for msg in _check_run_method_skill_invocations(plan_path, text):
         print(msg, file=sys.stderr)
         violations += 1
     for msg in _check_test_file_pairing(plan_path, text, repo_root):
@@ -467,6 +473,81 @@ def _check_run_method_script_paths(plan_path: pathlib.Path, text: str, repo_root
                 continue
             if not (repo_root / token).exists():
                 issues.append(f"{plan_path}: `## 実行方法`が参照するスクリプトパスが不在: {token}")
+    return issues
+
+
+# `## 実行方法`欄のスキル呼び出し要否判定マッピングSSOT。agent-toolkit-edit対象の判定基準。
+# AGENTS.mdとmyprojects.md.tmplの同種規定はこのマッピングを参照する旨を記述する。
+_AGENT_TOOLKIT_EDIT_TARGET_RE = re.compile(r"^agent-toolkit/")
+_AGENT_TOOLKIT_EDIT_MARKETPLACE_PATH = ".claude-plugin/marketplace.json"
+_AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
+
+# 同マッピングSSOTのsync-platform-pair対象判定基準。
+# 各要素は片側拡張子と他方拡張子の組。対象ファイル一覧中でペア候補パス双方が
+# 揃って出現する場合のみ判定対象とする。片側単独の一般スクリプトとの誤検出を避けるためである。
+_PLATFORM_PAIR_SUFFIX_PAIRS: tuple[tuple[str, str], ...] = (
+    (".sh", ".cmd"),
+    (".sh", ".ps1"),
+    (".sh.tmpl", "-windows.ps1.tmpl"),
+    (".posix.json", ".win32.json"),
+)
+_SYNC_PLATFORM_PAIR_SKILL = "sync-platform-pair"
+
+# 同マッピングSSOTのsync-cross-project対象判定基準。
+# 姉妹プロジェクト間で共有される足回りファイルの基底名とディレクトリprefix。
+_SYNC_CROSS_PROJECT_BASENAMES = frozenset(
+    {"pyproject.toml", ".textlintrc.yaml", ".markdownlint-cli2.yaml", ".pre-commit-config.yaml", "Makefile", "mise.toml"}
+)
+_SYNC_CROSS_PROJECT_WORKFLOWS_PREFIX = ".github/workflows/"
+_SYNC_CROSS_PROJECT_SKILL = "sync-cross-project"
+
+
+def _platform_pair_counterpart(path: str, suffix_a: str, suffix_b: str) -> str | None:
+    """pathがsuffix_aまたはsuffix_bで終わる場合、対応するペア候補パスを返す。"""
+    if path.endswith(suffix_a):
+        return path[: -len(suffix_a)] + suffix_b
+    if path.endswith(suffix_b):
+        return path[: -len(suffix_b)] + suffix_a
+    return None
+
+
+def _required_skills_for_paths(paths: list[str]) -> dict[str, str]:
+    """対象ファイルパス集合から必要スキル名とtrigger_reasonのマッピングを判定する。
+
+    判定はマッピングSSOT3系統に従う。sync-platform-pairはペア候補パス双方が
+    対象ファイル一覧に揃って出現する場合のみ判定対象とする。
+    """
+    required: dict[str, str] = {}
+    path_set = set(paths)
+    for path in paths:
+        if _AGENT_TOOLKIT_EDIT_TARGET_RE.match(path) or path == _AGENT_TOOLKIT_EDIT_MARKETPLACE_PATH:
+            required.setdefault(_AGENT_TOOLKIT_EDIT_SKILL, f"対象ファイル一覧に{path}を含む")
+        for suffix_a, suffix_b in _PLATFORM_PAIR_SUFFIX_PAIRS:
+            counterpart = _platform_pair_counterpart(path, suffix_a, suffix_b)
+            if counterpart is not None and counterpart in path_set:
+                required.setdefault(_SYNC_PLATFORM_PAIR_SKILL, f"ペアファイル{path}と{counterpart}を含む")
+        basename = pathlib.PurePosixPath(path).name
+        if basename in _SYNC_CROSS_PROJECT_BASENAMES or path.startswith(_SYNC_CROSS_PROJECT_WORKFLOWS_PREFIX):
+            required.setdefault(_SYNC_CROSS_PROJECT_SKILL, f"姉妹プロジェクト共有ファイル{path}を含む")
+    return required
+
+
+def _check_run_method_skill_invocations(plan_path: pathlib.Path, text: str) -> list[str]:
+    """対象ファイル一覧から必要なスキル呼び出しが実行方法欄に記述されているかを検査する。
+
+    _required_skills_for_pathsが返す必要スキル集合の各スキル名が実行方法節本文
+    （バッククォート囲みまたは素の文字列いずれも許容）に出現するかを検査する。
+    欠落時に違反として報告する。
+    """
+    target_paths = _extract_target_file_paths(text)
+    required = _required_skills_for_paths(target_paths)
+    if not required:
+        return []
+    execution_body = "\n".join(line for _, line in pretooluse._plan_format.extract_h2_section_body(text, "実行方法"))
+    issues: list[str] = []
+    for skill, trigger_reason in required.items():
+        if skill not in execution_body:
+            issues.append(f"{plan_path}: 実行方法欄にスキル{skill}の呼び出し記述が不在（{trigger_reason}）")
     return issues
 
 

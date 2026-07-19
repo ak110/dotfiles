@@ -32,14 +32,17 @@
   - 配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
   - 改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
     旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
-- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`スキルを呼び出して両側を同期する
+- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`スキルを呼び出して両側を同期する。
+  呼び出し漏れ（対になるファイルが対象ファイル一覧に揃って出現する場合に限る）は
+  `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が計画ファイル段階で機械検出する
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている
   - UTF-8前提のEdit/Writeツールでは文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する
  （CIチェックアウトや利用者環境で`$HOME`と`~/dotfiles`が一致しない場合にimportが破綻するため）
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う
  （リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する）
-- `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時はSkillツールで`agent-toolkit-edit`を呼び出す
+- `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時はSkillツールで`agent-toolkit-edit`を呼び出す。
+  呼び出し漏れは`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が計画ファイル段階で機械検出する
   - SKILL.mdをReadで読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず警告が返る
   - marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
   - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-standards`・`writing-standards`を併用する

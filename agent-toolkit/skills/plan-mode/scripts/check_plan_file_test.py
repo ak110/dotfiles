@@ -44,6 +44,7 @@ def _stub_check_one(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda _p, _t, _r: [],
     )
     monkeypatch.setattr(check_plan_file, "_check_frontmatter_sync_note_coverage", lambda _p, _t, _r: 0)
+    monkeypatch.setattr(check_plan_file, "_check_run_method_skill_invocations", lambda _p, _t: [])
     monkeypatch.setattr(check_plan_file, "_run_subprocess_check", lambda _cmd, _label, **_kwargs: 0)
 
 
@@ -139,6 +140,13 @@ class TestCheckOne:
         plan_path = _write_plan(tmp_path)
         monkeypatch.setattr(check_plan_file, "_check_frontmatter_sync_note_coverage", lambda _p, _t, _r: 3)
         assert check_plan_file._check_one(plan_path, tmp_path) == 3
+
+    def test_run_method_skill_invocations_violation_counted(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plan_path = _write_plan(tmp_path)
+        monkeypatch.setattr(check_plan_file, "_check_run_method_skill_invocations", lambda _p, _t: ["issue1"])
+        assert check_plan_file._check_one(plan_path, tmp_path) == 1
 
 
 class TestCaptureAndRelay:
@@ -411,6 +419,76 @@ class TestRunMethodScriptPaths:
     def test_flag_or_keyvalue_ignored(self, tmp_path: pathlib.Path) -> None:
         text = "# t\n\n## 実行方法\n\n`--frozen scripts/agent_toolkit_bump.py --script=scripts/nonexistent.py`で更新する。\n"
         assert not check_plan_file._check_run_method_script_paths(tmp_path / "plan.md", text, self._REPO_ROOT)
+
+
+class TestRunMethodSkillInvocations:
+    """`_check_run_method_skill_invocations`の検査を検証する。"""
+
+    def test_no_target_paths_no_requirement(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n## 実行方法\n\n実装する。\n"
+        assert not check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+
+    def test_agent_toolkit_path_requires_skill_present(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/x/y.py`\n\n"
+            "## 実行方法\n\n`agent-toolkit-edit`スキルを呼び出す。\n"
+        )
+        assert not check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+
+    def test_agent_toolkit_path_missing_skill_blocks(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/skills/x/y.py`\n\n## 実行方法\n\n実装する。\n"
+        )
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "agent-toolkit-edit" in issues[0]
+
+    def test_marketplace_json_requires_skill(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `.claude-plugin/marketplace.json`\n\n"
+            "## 実行方法\n\n実装する。\n"
+        )
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "agent-toolkit-edit" in issues[0]
+
+    def test_platform_pair_both_present_requires_skill(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `bin/foo.sh`\n- [ ] `bin/foo.cmd`\n\n"
+            "## 実行方法\n\n実装する。\n"
+        )
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "sync-platform-pair" in issues[0]
+
+    def test_platform_pair_single_side_not_required(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `bin/foo.sh`\n\n## 実行方法\n\n実装する。\n"
+        assert not check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+
+    def test_sync_cross_project_basename_requires_skill(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pyproject.toml`\n\n## 実行方法\n\n実装する。\n"
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "sync-cross-project" in issues[0]
+
+    def test_sync_cross_project_workflows_prefix_requires_skill(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `.github/workflows/ci.yml`\n\n## 実行方法\n\n実装する。\n"
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "sync-cross-project" in issues[0]
+
+    def test_multiple_required_skills_each_checked_independently(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/x/y.py`\n- [ ] `pyproject.toml`\n\n"
+            "## 実行方法\n\n`agent-toolkit-edit`スキルを呼び出す。\n"
+        )
+        issues = check_plan_file._check_run_method_skill_invocations(tmp_path / "plan.md", text)
+        assert len(issues) == 1
+        assert "sync-cross-project" in issues[0]
 
 
 def _write_repo_file(repo_root: pathlib.Path, rel_path: str) -> None:
