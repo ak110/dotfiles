@@ -205,6 +205,47 @@ class TestMatchScopeEscalation:
         assert _match_scope_escalation("実行完了を待って処理を再開した。") is None
         assert _match_scope_escalation("処理完了を待って次工程へ進んだ。") is None
 
+    def test_async_wait_parallel_launch_report_integration_matched(self):
+        """並列起動+完了報告受領+統合の複合パターンがasync-waitで検出される（fb1反映）。"""
+        text = "三つのサブエージェントを並列起動した。各完了報告の受領後に指摘を統合し、計画ファイルへ反映する。"
+        assert _category_of(text) == "async-wait"
+
+    def test_async_wait_parallel_launch_report_aggregation_matched(self):
+        """終端動詞「集約」分岐もasync-waitで検出される（fb1反映）。"""
+        text = "サブエージェント群を並列起動した。完了報告を受信後に集約する。"
+        assert _category_of(text) == "async-wait"
+
+    def test_async_wait_parallel_launch_report_reflection_matched(self):
+        """終端動詞「反映」分岐もasync-waitで検出される（fb1反映）。"""
+        text = "並列起動したレビュアーの完了報告を受領し、計画へ反映する。"
+        assert _category_of(text) == "async-wait"
+
+    def test_async_wait_parallel_launch_report_integration_completed_tense_not_matched(self):
+        """完了時制（統合済み・統合した・集約しました等）の並列起動文は検出されない（fb1反映）。"""
+        assert _match_scope_escalation("並列起動した各サブエージェントの完了報告の受領後、指摘はすでに統合済みである。") is None
+        assert _match_scope_escalation("並列起動して完了報告の受領後に指摘を統合した。") is None
+        assert _match_scope_escalation("並列起動後に完了報告を受信して指摘を集約しました。") is None
+
+    def test_async_wait_parallel_launch_multi_line_not_matched(self):
+        """複数文にまたがる（改行を含む）表現は本パターンでは検出されない（fb1反映、意図的非対象）。"""
+        text = "並列起動を実施した。\n完了報告の受領後に指摘を統合する。"
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_parallel_launch_unrelated_sentence_not_matched(self):
+        """「並列起動」〜「完了報告」間に無関係な別文が入る表現は検出されない（レビュー指摘反映）。"""
+        text = "並列起動の設計について議論した。別件の完了報告書は受領済みで、それとは無関係に統合作業を進める。"
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_parallel_launch_compound_predicate_completed_tense_not_matched(self):
+        """複合述語末尾の完了時制（「統合してレビューへ反映した」等）は検出されない（レビュー指摘反映）。"""
+        text = "並列起動した完了報告を受領し、指摘を統合してレビューへ反映した。"
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_parallel_launch_unrelated_clause_completed_word_matched(self):
+        """後続の読点区切り節内にある無関係な「した」は完了時制除外の対象外（再レビュー指摘反映）。"""
+        text = "並列起動した完了報告を受領し、指摘を統合する予定であり、詳細は後日相談したい。"
+        assert _category_of(text) == "async-wait"
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""

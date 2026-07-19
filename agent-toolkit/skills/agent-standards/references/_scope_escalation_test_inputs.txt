@@ -181,3 +181,6 @@ async-wait	下流のエージェントへ委譲し進行中である
 async-wait	backgroundで委譲し完了報告受領後に確定する
 async-wait	実行完了の通知を待つ
 async-wait	処理完了を待つ
+async-wait	並列起動後の完了報告受領を経て指摘を統合する
+async-wait	サブエージェント群を並列起動した。完了報告を受信後に集約する
+async-wait	並列起動したレビュアーの完了報告を受領し、計画へ反映する
