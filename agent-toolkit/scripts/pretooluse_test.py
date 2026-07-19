@@ -5479,6 +5479,87 @@ class TestCheckPlanFileNoDeferralExpression:
         assert "deferral expressions were detected" not in result.stderr
 
 
+class TestPlanFileBlockingChecksIntegratedReport:
+    """plan file Write検査のblock系check3関数統合報告検査（fb5）。
+
+    複数のblocking check違反が同時発生した場合、単一の`return 2`で全違反メッセージがstderrへ列挙される。
+    既存の呼び出し順序（required-reads→retroactive-scan→no-deferral）を保持する。
+    """
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _make_plan = staticmethod(_make_plan_file)
+
+    def test_required_reads_and_no_deferral_report_together(self, tmp_path: pathlib.Path):
+        """required-readsとno-deferralが同時発生した場合、両違反メッセージが1回の`return 2`でstderrへ列挙される。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "integrated-req-and-deferral"
+        # 意図的にrequired-readsフラグ・plan-file-guidelinesフラグを設定せず、両違反が同時発生する条件を用意する。
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に精査して確定する")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        # required-reads違反メッセージが含まれる
+        assert "attempting to edit a plan file without reading required references" in result.stderr
+        assert "textlint-violations.md" in result.stderr
+        # no-deferral違反メッセージが含まれる
+        assert "deferral expressions were detected" in result.stderr
+        # 両メッセージともにblockタグが付与されている
+        assert result.stderr.count("[auto-generated: agent-toolkit/pretooluse][block]") >= 2
+
+    def test_only_required_reads_reports_alone(self, tmp_path: pathlib.Path):
+        """required-readsのみ違反する場合、no-deferralメッセージは含まれない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "integrated-req-only"
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        content = _ABSNUM_BASE_PLAN.format(body="- 正常な記述")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "attempting to edit a plan file without reading required references" in result.stderr
+        assert "deferral expressions were detected" not in result.stderr
+
+    def test_only_no_deferral_reports_alone(self, tmp_path: pathlib.Path):
+        """no-deferralのみ違反する場合、required-readsメッセージは含まれない。"""
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "integrated-deferral-only"
+        # required-readsフラグを全て真化し、no-deferralのみを違反させる。
+        _absnum_prior_flags(tmp_path, sid)
+        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に精査して確定する")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "deferral expressions were detected" in result.stderr
+        assert "attempting to edit a plan file without reading required references" not in result.stderr
+
+
 class TestPlanFileTargetFilesH3Correspondence:
     """plan file Write/Edit/MultiEdit時の対象ファイル一覧とH3見出し1対1対応検査（FB8）。"""
 

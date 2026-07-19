@@ -9,6 +9,7 @@ scope-escalation検出テストの入力フレーズは
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -356,3 +357,121 @@ def test_named_subagent_fail_open_logs_allow(tmp_path: Path, monkeypatch: pytest
     assert "decision=allow_named_subagent_send" in content
     assert "tool_use_count=1" in content
     assert "has_main_send=False" in content
+
+
+def _run_with_state_dir(payload: dict, state_dir: Path) -> subprocess.CompletedProcess[str]:
+    """`session_state.py`の状態ファイル配置先を`state_dir`へ切り替えて`subagent_stop_advisor.py`を実行する。"""
+    env = os.environ.copy()
+    env["TMPDIR"] = str(state_dir)
+    env["TEMP"] = str(state_dir)
+    env["TMP"] = str(state_dir)
+    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload), env=env)
+
+
+def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, subagent_type: str = "plan-impl-executor") -> None:
+    """`plan_impl_executor_active_subagent_sessions`フラグを事前に書き込む。"""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "plan_impl_executor_active_subagent_sessions": {
+                    sub_session_id: {"subagent_type": subagent_type, "started_at": 0.0},
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _complete_report(**overrides: str) -> str:
+    """`plan-impl-executor`「出力」節の主要欄を全て含む雛形報告を返す。"""
+    fields = {
+        "status": "completed",
+        "summary": "全変更を反映",
+        "changed": "- [x] item — /path",
+        "verification": "- `pytest` — pass",
+        "commit_sha": "abc123",
+        "review_handoff": "実施完了（採用指摘0件反映）",
+        "pending_confirmations": "なし",
+        "plan_gaps": "なし",
+    }
+    fields.update(overrides)
+    return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
+
+
+class TestPlanImplExecutorReportFormat:
+    """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査。"""
+
+    def test_flag_not_registered_passes_without_check(self, tmp_path: Path) -> None:
+        """フラグ未登録時は書式検査を発火せず通過する。"""
+        result = _run_with_state_dir(
+            {"session_id": "sid-format-no-flag", "last_assistant_message": "実装完了"},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_complete_report_passes(self, tmp_path: Path) -> None:
+        """主要欄が全て含まれる報告は通過する。"""
+        sid = "sid-format-complete"
+        _write_flag_state(tmp_path, sid, "sub-a")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": _complete_report()},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_missing_label_blocks(self, tmp_path: Path) -> None:
+        """主要欄が欠落する報告はblockし理由文に欠落ラベルを列挙する。"""
+        sid = "sid-format-missing"
+        _write_flag_state(tmp_path, sid, "sub-b")
+        report = _complete_report()
+        # `plan_gaps:`行を除去する
+        report = "\n".join(line for line in report.splitlines() if not line.startswith("plan_gaps"))
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "plan_gaps" in body["reason"]
+
+    def test_needs_escalation_requires_blockers(self, tmp_path: Path) -> None:
+        """`status: needs_escalation`検出時は`blockers`欄も必須。"""
+        sid = "sid-format-needs-escalation"
+        _write_flag_state(tmp_path, sid, "sub-c")
+        report = _complete_report(status="needs_escalation")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "blockers" in body["reason"]
+
+    def test_needs_escalation_with_blockers_passes(self, tmp_path: Path) -> None:
+        """`status: needs_escalation`かつ`blockers`欄あり報告は通過する。"""
+        sid = "sid-format-escalation-ok"
+        _write_flag_state(tmp_path, sid, "sub-d")
+        report = _complete_report(status="needs_escalation") + "\nblockers:\n- 未解決事項"
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_flag_entry_removed_after_check(self, tmp_path: Path) -> None:
+        """SubagentStop発火時に該当エントリを状態辞書から削除する（E2Eサイクル）。"""
+        sid = "sid-format-cleanup"
+        _write_flag_state(tmp_path, sid, "sub-e")
+        _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": _complete_report()},
+            tmp_path,
+        )
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state.get("plan_impl_executor_active_subagent_sessions") == {}

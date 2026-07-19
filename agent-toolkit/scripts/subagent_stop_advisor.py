@@ -26,6 +26,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+import re
 import sys
 import traceback
 
@@ -37,12 +38,33 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
     is_empty_completion_report,
 )
+from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_pending_background_launches,
 )
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
+
+# `posttooluse.py`の同名定数と同一集合を保つ。
+_PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+
+# `plan-impl-executor`完了報告本文の主要欄ラベル集合。
+# SSOTは`agent-toolkit/references/plan-impl/caller-reception.md`手順0および
+# `agent-toolkit/agents/plan-impl-executor.md`「出力」節。
+# ラベル定義変更時は本定数と両ファイルを同時に更新する。
+_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
+    "status",
+    "summary",
+    "changed",
+    "verification",
+    "commit_sha",
+    "review_handoff",
+    "pending_confirmations",
+    "plan_gaps",
+)
+_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
+_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
 
 # tool_use数がこの閾値未満のnamed subagentは短命扱いで送信検査対象外とする。
 # 起動直後のOSエラー・単一ツール失敗など、能動送付を求めるほど作業が進んでいない
@@ -142,6 +164,46 @@ def _log_named_subagent_check(session_id: object, check: _NamedSubagentSendCheck
     )
 
 
+def _inspect_plan_impl_executor_report_format(payload: dict) -> list[str]:
+    """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査を実施する。
+
+    `posttooluse.py`が親セッション状態へ書き込む`plan_impl_executor_active_subagent_sessions`辞書に
+    現在の`session_id`が登録されている場合のみ発火する。
+    ラベル存在のみを検査し値の内容は問わない。欠落ラベルがある場合はそのリストを返し、
+    ない場合または対象外の場合は空リストを返す。
+    検査後は該当エントリを状態辞書から削除する（呼び出し元セッションの完了検知として消費）。
+    """
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return []
+    state = read_state(session_id)
+    active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
+    if not isinstance(active, dict) or not active:
+        return []
+
+    def _drop_entries(current_state: dict) -> dict | None:
+        current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
+        if not isinstance(current_active, dict) or not current_active:
+            return None
+        current_state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = {}
+        return current_state
+
+    update_state(session_id, _drop_entries)
+
+    text = payload.get("last_assistant_message")
+    if not isinstance(text, str):
+        return []
+    required = list(_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
+    if _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE.search(text):
+        required.append(_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL)
+    missing: list[str] = []
+    for label in required:
+        pattern = re.compile(rf"^{re.escape(label)}:", re.MULTILINE)
+        if not pattern.search(text):
+            missing.append(label)
+    return missing
+
+
 def main() -> int:
     """SubagentStop hookのエントリポイント。"""
     try:
@@ -194,6 +256,19 @@ def main() -> int:
             " For investigation/review reports that must quote a scope-escalation phrase as a normative"
             " reference, follow `agent-toolkit:agent-standards` 'Avoiding context contamination' section and"
             " use the category identifier or section name for indirect reference instead of the raw phrase.",
+            tag="block",
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return 0
+
+    missing_labels = _inspect_plan_impl_executor_report_format(payload)
+    if missing_labels:
+        reason = _llm_notice(
+            "blocked: `plan-impl-executor` completion report is missing required labels:"
+            f" {', '.join(missing_labels)}."
+            " See `agent-toolkit/agents/plan-impl-executor.md` '出力' section for the required format."
+            " When resubmitting, restate the entire original completion report with the missing labels added"
+            " (the main agent does not retain the body across this hook's block).",
             tag="block",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

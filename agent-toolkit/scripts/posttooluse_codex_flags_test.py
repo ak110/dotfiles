@@ -170,3 +170,56 @@ class TestAgentInvocationFlags:
         )
         state = _read_state(tmp_path, sid)
         assert state.get("plan_codex_reviewer_blocked") is True
+
+
+class TestPlanImplExecutorActiveSessions:
+    """`plan-impl-executor`系Agent/Task起動時のサブセッションID辞書記録。"""
+
+    @pytest.mark.parametrize("subagent_type", ["plan-impl-executor", "agent-toolkit:plan-impl-executor"])
+    def test_plan_impl_executor_registers_active_session(self, tmp_path: pathlib.Path, subagent_type: str):
+        sid = f"fb6-active-{subagent_type.replace(':', '-')}"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": subagent_type},
+                "tool_response": {"agentId": "sub-session-123"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        active = state.get("plan_impl_executor_active_subagent_sessions")
+        assert isinstance(active, dict)
+        assert "sub-session-123" in active
+        assert active["sub-session-123"]["subagent_type"] == subagent_type
+        assert isinstance(active["sub-session-123"].get("started_at"), (int, float))
+
+    def test_non_plan_impl_executor_does_not_register(self, tmp_path: pathlib.Path):
+        """`spec-driven-implementer`等の他エージェント起動時はフラグへ書き込まない。"""
+        sid = "fb6-non-plan-impl-executor"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "spec-driven-implementer"},
+                "tool_response": {"agentId": "sub-session-999"},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})
+
+    def test_missing_agent_id_does_not_register(self, tmp_path: pathlib.Path):
+        """`tool_response.agentId`が欠落する場合は書き込みをスキップする。"""
+        sid = "fb6-missing-agent-id"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-impl-executor"},
+                "tool_response": {},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})

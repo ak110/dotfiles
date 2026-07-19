@@ -348,9 +348,14 @@ def main() -> int:
     if _check_direct_agent_toolkit_edits_after_plan_mode(tool_name, tool_input, session_id):
         return 2
 
+    # plan fileWrite検査のblock系check3関数を統合報告する。
+    # 各関数は違反メッセージ`str`または`None`を返す。既存の呼び出し順序（required-reads→retroactive-scan→
+    # no-deferral）を保持しつつ、warn系check群を間に置いて実行し、末尾で蓄積された違反メッセージを一括printしてreturn 2する。
+    # warn系check群の戻り値契約・呼び出し順序は変更しない。
+    blocking_errors: list[str] = []
+
     # plan file編集前の必須リファレンス未読の場合はブロック
-    if _check_plan_file_required_reads_first(tool_name, tool_input, session_id):
-        return 2
+    blocking_errors.append(_check_plan_file_required_reads_first(tool_name, tool_input, session_id) or "")
 
     # plan fileのWriteで文書サイズ上限対象ファイルのwc -l実測値記録漏れがある場合はwarn降格
     # （ExitPlanMode/plan-impl-executor起動時までのブロック検出は`plan-reviewer`・`plan-impl-reviewer`等の
@@ -358,8 +363,7 @@ def main() -> int:
     _check_plan_file_size_limit_target_wc_l_recorded(tool_name, tool_input)
 
     # 規範対象ドキュメントへのメタ規範新設編集時、計画ファイルの遡及スキャン記録未整備をブロック
-    if _check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id):
-        return 2
+    blocking_errors.append(_check_plan_file_retroactive_scan_recorded(tool_name, tool_input, session_id) or "")
 
     # 内容・形式系検査群はwarn降格（ExitPlanMode/plan-impl-executor起動時までのブロック集約は
     # `plan-reviewer`・`plan-impl-reviewer`等のサブエージェント目視レビューへ委譲する）
@@ -375,7 +379,12 @@ def main() -> int:
     _check_plan_file_target_file_paths_relative(tool_name, tool_input)
 
     # plan file `## 変更内容`・`### エージェント判断`配下の先送り含意動詞連結をブロック
-    if _check_plan_file_no_deferral_expression(tool_name, tool_input):
+    blocking_errors.append(_check_plan_file_no_deferral_expression(tool_name, tool_input) or "")
+
+    # 蓄積された違反メッセージを統合報告する。1件でもあればreturn 2する。
+    non_empty_errors = [msg for msg in blocking_errors if msg]
+    if non_empty_errors:
+        print("\n".join(non_empty_errors), file=sys.stderr)
         return 2
 
     # plan mode準備スキル経由の起動下でのEnterPlanMode発行は規範違反のためブロック
@@ -1747,8 +1756,8 @@ def _check_plan_file_required_reads_first(
     tool_name: str,
     tool_input: dict,
     session_id: str,
-) -> bool:
-    """Plan fileを編集しようとした際に`_PLAN_FILE_REQUIRED_READS`の未読要素がある場合にブロックする。
+) -> str | None:
+    """Plan fileを編集しようとした際に`_PLAN_FILE_REQUIRED_READS`の未読要素がある場合の違反メッセージを返す。
 
     判定条件:
 
@@ -1760,37 +1769,34 @@ def _check_plan_file_required_reads_first(
     各リファレンスを一度Readするとフラグが設定され、以降の判定から除外される。
     ブロックメッセージには既読済みも含めた`_PLAN_FILE_REQUIRED_READS`全件を毎回列挙し
     （反復サイクル防止のため初回で全件を一括開示する）、既読済み項目には`(already read)`を付与する。
-    未読要素が1件も無い場合はブロックしない。
+    未読要素が1件も無い場合は`None`を返す。
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
+    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元が統合報告する。
     """
     if not session_id:
-        return False
+        return None
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
+        return None
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return False
+        return None
     state = read_state(session_id)
     read_flags = [state.get(flag_name, False) for flag_name, _, _, _ in _PLAN_FILE_REQUIRED_READS]
     if all(read_flags):
-        return False
+        return None
     lines = [
         f"- `{skill_name}` reference `{reference_path}`: {purpose_sentence}" + (" (already read)" if is_read else "")
         for is_read, (_, skill_name, reference_path, purpose_sentence) in zip(
             read_flags, _PLAN_FILE_REQUIRED_READS, strict=True
         )
     ]
-    print(
-        _llm_notice(
-            "blocked: attempting to edit a plan file without reading required references.\n"
-            "Read them first, then retry the plan file edit.\n"
-            "This check fires only when editing plan files directly under `~/.claude/plans/`."
-            " Read all references below before editing the plan file.\n" + "\n".join(lines),
-            tag="block",
-        ),
-        file=sys.stderr,
+    return _llm_notice(
+        "blocked: attempting to edit a plan file without reading required references.\n"
+        "Read them first, then retry the plan file edit.\n"
+        "This check fires only when editing plan files directly under `~/.claude/plans/`."
+        " Read all references below before editing the plan file.\n" + "\n".join(lines),
+        tag="block",
     )
-    return True
 
 
 # --- plan file edit適用後内容の構築（Write/Edit/MultiEdit共通）---
@@ -2325,22 +2331,23 @@ def _iter_plan_deferral_target_lines(content: str) -> Iterator[tuple[int, str]]:
 def _check_plan_file_no_deferral_expression(
     tool_name: str,
     tool_input: dict,
-) -> bool:
-    """Plan fileのWrite/Edit/MultiEdit時に先送り含意動詞連結パターンをブロックする。
+) -> str | None:
+    """Plan fileのWrite/Edit/MultiEdit時に先送り含意動詞連結パターンの違反メッセージを返す。
 
     走査対象は`## 変更内容`配下および任意H2下の`### エージェント判断`配下の本文行。
     検出パターンは`_scope_escalation._SCOPE_ESCALATION_PHRASES`の`plan-deferral-onset`カテゴリ
     （「実装時／実装段階」直後の未確定動詞＋文末「〜で判断／決定／選定／確定する」連結）。
     `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
+    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元が統合報告する。
     """
     if tool_name not in _PLAN_FILE_EDIT_TOOLS:
-        return False
+        return None
     file_path_raw = tool_input.get("file_path")
     if not isinstance(file_path_raw, str) or not is_plan_file(file_path_raw):
-        return False
+        return None
     content = _materialize_post_edit_content(tool_name, tool_input, file_path_raw)
     if content is None:
-        return False
+        return None
 
     matches: list[tuple[int, str]] = []
     for lineno, line in _iter_plan_deferral_target_lines(content):
@@ -2348,23 +2355,19 @@ def _check_plan_file_no_deferral_expression(
         if match_result is not None:
             matches.append((lineno, line.strip()))
     if not matches:
-        return False
+        return None
     shown = matches[:5]
     shown_str = "; ".join(f"line {ln}: {s!r}" for ln, s in shown)
     overflow = len(matches) - len(shown)
     tail = f"; and {overflow} more" if overflow > 0 else ""
-    print(
-        _llm_notice(
-            "blocked: deferral expressions were detected under plan file `## 変更内容` / `### エージェント判断`."
-            " Rewrite phrases that defer decisions to the implementation phase into definitive execution statements"
-            " (present-tense mandatory execution) or into observation records under `## 進捗ログ`."
-            f" Matches: {shown_str}{tail}."
-            f" Alternatives: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
-            tag="block",
-        ),
-        file=sys.stderr,
+    return _llm_notice(
+        "blocked: deferral expressions were detected under plan file `## 変更内容` / `### エージェント判断`."
+        " Rewrite phrases that defer decisions to the implementation phase into definitive execution statements"
+        " (present-tense mandatory execution) or into observation records under `## 進捗ログ`."
+        f" Matches: {shown_str}{tail}."
+        f" Alternatives: {_format_scope_escalation_alternatives('plan-deferral-onset')}",
+        tag="block",
     )
-    return True
 
 
 # --- plan fileのワークアラウンド語検出時の事前検討メモチェック ---
@@ -2665,8 +2668,10 @@ def _check_plan_file_retroactive_scan_recorded(
     tool_name: str,
     tool_input: dict,
     session_id: str,
-) -> bool:
-    """規範対象ドキュメントへのメタ規範新設編集時、現在の計画ファイルの遡及スキャン記録未整備をブロックする。
+) -> str | None:
+    """規範対象ドキュメントへのメタ規範新設編集時、現在の計画ファイルの遡及スキャン記録未整備の違反メッセージを返す。
+
+    戻り値契約: 違反メッセージ`str`または`None`。呼び出し元が統合報告する。
 
     判定条件:
 
@@ -2682,13 +2687,13 @@ def _check_plan_file_retroactive_scan_recorded(
     計画ファイルパスが未記録の場合は判定不能として通過させる（安全側でブロックしない）。
     """
     if tool_name not in ("Write", "Edit", "MultiEdit"):
-        return False
+        return None
     file_path_raw = tool_input.get("file_path")
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
     if not file_path or is_plan_file(file_path):
-        return False
+        return None
     if not _plan_format.is_agent_doc_target_file(file_path):
-        return False
+        return None
 
     detected = False
     if tool_name == "Write":
@@ -2720,29 +2725,25 @@ def _check_plan_file_retroactive_scan_recorded(
                     detected = True
                     break
     if not detected:
-        return False
+        return None
 
     if not session_id:
-        return False
+        return None
     state = read_state(session_id)
     plan_file_path = state.get("current_plan_file_path")
     if not isinstance(plan_file_path, str) or not plan_file_path:
-        return False
+        return None
     if _plan_file_has_retroactive_scan_record(plan_file_path):
-        return False
-    print(
-        _llm_notice(
-            f"blocked: detected a new meta-norm pattern being added to {file_path},"
-            f" but plan file {plan_file_path} does not record the required items"
-            f" (target pattern, detection count, remediation policy) under the"
-            f" `### 遡及スキャン結果` sub-heading of its `## 調査結果` section."
-            f" Follow skills/plan-mode/references/norm-revision-checklist.md '規範対象範囲の網羅確認' section,"
-            f" record the retroactive scan results in the plan file, then retry the edit.",
-            tag="block",
-        ),
-        file=sys.stderr,
+        return None
+    return _llm_notice(
+        f"blocked: detected a new meta-norm pattern being added to {file_path},"
+        f" but plan file {plan_file_path} does not record the required items"
+        f" (target pattern, detection count, remediation policy) under the"
+        f" `### 遡及スキャン結果` sub-heading of its `## 調査結果` section."
+        f" Follow skills/plan-mode/references/norm-revision-checklist.md '規範対象範囲の網羅確認' section,"
+        f" record the retroactive scan results in the plan file, then retry the edit.",
+        tag="block",
     )
-    return True
 
 
 # --- 工程7（2サブエージェント/codexレビュー）完了チェック ---

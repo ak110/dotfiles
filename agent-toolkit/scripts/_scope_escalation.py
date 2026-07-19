@@ -169,6 +169,25 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(?:継続|進行|完了報告受領後)"
         ),
     ),
+    # 分離形の待機表明パターン（fb3反映）。
+    # 「〜完了の通知を待つ」「〜完了を待つ」等、既存の「完了通知」「完了報告」連結形で捕捉できない
+    # 動作名詞+「完了」の分離形を対象とする。
+    # 肯定平叙形のみを検出するアンカー設計として次の除外を組み込む。
+    # 否定助動詞（必要はない・ことはしない等）は`待つ|待機`の直後で負の先読みにより除外する。
+    # 完了時制の除外として`待って`は継続待機を示す語尾（いる・ください・ほしい等）が続く場合のみ許容し、
+    # 過去時制の後続（〜した・再開）と組み合わさる文は`待って`単独では捕捉しない。
+    # 引用符（全角鍵括弧・バッククォート）内は`_apply_category_exclusions`で事前除去する。
+    (
+        "async-wait",
+        re.compile(
+            r"[^\n、。]{1,15}?完了(?:の通知)?を"
+            r"(?:"
+            r"(?:待つ|待機)"
+            r"(?![^、。\n]{0,15}(?:必要は?ない|ことは?しない|わけでは?ない|べきでは?ない))"
+            r"|待って(?=[^、。\n]{0,5}(?:いる|ください|欲しい|ほしい|から続行|から実施))"
+            r")"
+        ),
+    ),
     (
         "quality-gate-count",
         re.compile(
@@ -355,11 +374,12 @@ def _apply_category_exclusions(text: str, category: str) -> str:
 
     現状は該当カテゴリで引用文脈（全角鍵括弧・バッククォート囲みの各区間）を除外する。
     他ファイル節名・識別子・コマンド名の引用文脈を該当語彙の過検出から保護する。
+    async-waitカテゴリは分離形パターンでの引用文（「〜完了を待つ」等の指摘引用）過検出を保護する。
     他カテゴリは呼び出し元のtextをそのまま返す。
     `_match_scope_escalation`(本モジュール)と
     `_match_scope_escalation_increase`(`pretooluse.py`)の両経路から呼び出す。
     """
-    if category == "priority-consult":
+    if category in {"priority-consult", "async-wait"}:
         return _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text))
     return text
 

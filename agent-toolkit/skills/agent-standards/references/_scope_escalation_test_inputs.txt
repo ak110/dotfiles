@@ -169,3 +169,5 @@ async-wait	待機を継続する
 async-wait	配下のplan-implementerへ再委譲し継続中である
 async-wait	下流のエージェントへ委譲し進行中である
 async-wait	backgroundで委譲し完了報告受領後に確定する
+async-wait	実行完了の通知を待つ
+async-wait	処理完了を待つ

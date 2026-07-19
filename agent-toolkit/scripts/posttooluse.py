@@ -45,6 +45,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -173,6 +174,14 @@ _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES = frozenset({"agent-toolkit:process-feedba
 
 _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
 _ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
+
+# Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
+# フルネームと短縮名の両方を許容する。`pretooluse.py`側の同名定数と同一集合を保つ。
+_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
+
+# `plan-impl-executor`起動時のサブセッション情報を親セッション状態へ記録する辞書のキー名。
+# SubagentStop側の`_inspect_plan_impl_executor_report_format`が完了報告書式検査の発火判定に読み取る。
+_PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
@@ -481,6 +490,27 @@ def main() -> int:
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_end", type=subagent_type)
+        # `plan-impl-executor`系起動時、tool_responseの`agentId`（サブセッションID）を親セッション状態の
+        # 辞書へ記録する。SubagentStop側の完了報告書式検査（`_inspect_plan_impl_executor_report_format`）が
+        # 発火判定に読み取る。
+        if isinstance(subagent_type, str) and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES:
+            tool_response = payload.get("tool_response", {})
+            sub_session_id = tool_response.get("agentId") if isinstance(tool_response, dict) else None
+            if isinstance(sub_session_id, str) and sub_session_id:
+
+                def _register_plan_impl_executor_session(
+                    state: dict, sid: str = sub_session_id, st: str = subagent_type
+                ) -> dict | None:
+                    active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
+                    if not isinstance(active, dict):
+                        active = {}
+                    if sid in active and active[sid].get("subagent_type") == st:
+                        return None
+                    active[sid] = {"subagent_type": st, "started_at": time.time()}
+                    state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = active
+                    return state
+
+                update_state(session_id, _register_plan_impl_executor_session)
         if isinstance(subagent_type, str):
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
             if flag_key is not None:

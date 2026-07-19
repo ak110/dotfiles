@@ -8,6 +8,10 @@ user-invocable: false
 # 本エージェントはplan-modeから続けて使われる想定だが、Agentツール起動のため常に独立コンテキストで開始され、
 # plan-modeセッションの対話内容を持たない前提で本文を書く。
 # 「## 出力」節の書式を変更する場合は`spec-driven-implementer.md`「## 出力」節の追従確認を要する。
+# 「## 出力」節の主要欄ラベル定義を変更する場合、機械検査
+# `agent-toolkit/scripts/subagent_stop_advisor.py`の`_inspect_plan_impl_executor_report_format`関数の
+# 対象ラベル集合（`_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`）も同期更新する
+# （SSOTは`agent-toolkit/references/plan-impl/caller-reception.md`手順0）。
 # 全項目完遂・段階化先送り禁止・自動コンパクション継続前提の方針は
 # 01-agent.md「品質最優先」節「完遂原則」上位原則と意図的重複。
 # 計画実行エージェントで強調するため再掲している。文面を変更する場合は両方の整合を取ること。

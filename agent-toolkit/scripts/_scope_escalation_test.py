@@ -172,6 +172,34 @@ class TestMatchScopeEscalation:
         text = "計画ファイル本文の「スコープ相談節」と`別のスコープ相談節`を確認してから実装する。"
         assert _match_scope_escalation(text) is None
 
+    def test_async_wait_separated_form_notification_matched(self):
+        """分離形「〜完了の通知を待つ」がasync-waitカテゴリで検出される（fb3反映）。"""
+        assert _category_of("実行完了の通知を待つ。") == "async-wait"
+
+    def test_async_wait_separated_form_bare_matched(self):
+        """分離形「〜完了を待つ」がasync-waitカテゴリで検出される（fb3反映）。"""
+        assert _category_of("処理完了を待つ。") == "async-wait"
+
+    def test_async_wait_separated_form_negation_not_matched(self):
+        """否定文「〜完了を待つ必要はない」は検出されない（fb3反映）。"""
+        assert _match_scope_escalation("処理完了を待つ必要はない。") is None
+        assert _match_scope_escalation("実行完了の通知を待つことはしない。") is None
+
+    def test_async_wait_separated_form_inside_zenkaku_kakko_not_matched(self):
+        """全角鍵括弧内へ引用転記された分離形は検出されない（fb3反映）。"""
+        text = "codex指摘「実行完了の通知を待つ」というフレーズを引用する。"
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_separated_form_inside_backtick_not_matched(self):
+        """バッククォート囲み内へ引用転記された分離形は検出されない（fb3反映）。"""
+        text = "指摘引用として`処理完了を待つ`を含める。"
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_separated_form_completed_tense_not_matched(self):
+        """完了時制「〜完了を待って〜した」は検出されない（fb3反映）。"""
+        assert _match_scope_escalation("実行完了を待って処理を再開した。") is None
+        assert _match_scope_escalation("処理完了を待って次工程へ進んだ。") is None
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
