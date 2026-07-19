@@ -603,7 +603,7 @@ class TestCheckWcProjection:
 
 
 class TestCheckboxCurrentLineFormat:
-    """新書式チェックボックス`（現行N行）`単独値のパースを検証する。"""
+    """新書式チェックボックス`（現行N行）`単独値・合算表記双方のパースを検証する。"""
 
     # pylint: disable=protected-access
 
@@ -630,6 +630,12 @@ class TestCheckboxCurrentLineFormat:
         section = "- [ ] `foo.md`（現行3行, 見込み5行）\n"
         result = _MOD._collect_current_line_counts(section)
         assert "foo.md" not in result
+
+    def test_combined_projection_format_is_parsed_as_current(self) -> None:
+        """合算表記`（現行N行、追記見込み+M行、合計K行）`から現行行数のみが抽出される。"""
+        section = "- [ ] `foo.md`（現行140行、追記見込み+1行、合計141行）\n"
+        result = _MOD._collect_current_line_counts(section)
+        assert result["foo.md"] == 140
 
 
 class TestExtractAdditionReductionBlocksMultiplierLabel:

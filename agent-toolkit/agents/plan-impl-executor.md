@@ -25,6 +25,9 @@ user-invocable: false
 # 「## 停止禁止」節末尾の非同期処理に係る完遂義務パラグラフは
 # spec-driven-implementer.md「停止禁止」バレット配下の同旨バレットと意図的に重複させている
 # 文面を変更する場合は両方の整合を取ること
+# 同パラグラフのレビューフェーズ対象範囲（`agent-toolkit:careful-review`起動由来のレビュー
+# サブエージェント群）は、execution-process.md「5. レビュー実施」節のbackground起動時
+# 完了報告義務と同旨の重複である。改訂時は両ファイルの整合を取ること
 # 「停止禁止」節末尾のポインターバレット（plan-implementer起動プロンプトへの埋め込み義務）は
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節をSSOTとして参照する。
 # 同節は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理継続義務と意図的に重複する。
@@ -85,7 +88,10 @@ user-invocable: false
 呼び出し元の起動プロンプトで並列化が明示指定された場合に限り例外扱いとする。
 
 バックグラウンドで進行する検証・コミット・push・レビュー等、および呼び出し元指定による並列実行手段の
-完遂まで動作を継続する。実装フェーズで並列サブエージェント（`plan-implementer`）を起動した場合は、
+完遂まで動作を継続する。対象は実装フェーズの並列サブエージェント（`plan-implementer`）とする。
+レビューフェーズでは`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等
+（`agent-toolkit:careful-review`起動由来）も対象へ加える。
+これら（実装フェーズ・レビューフェーズ双方の対象サブエージェント）を並列起動した場合は、
 全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
 待機表明のみの完了報告は発行しない。待機が現実的に不可能な場合は`needs_escalation`で
 未完遂として起動元へ返却し、残作業を`blockers`欄へ明示する。

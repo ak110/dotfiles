@@ -14,6 +14,9 @@ user-invocable: false
 # plan-impl-executor.md「## 停止禁止」節末尾の同旨パラグラフと意図的に重複させている
 # （本サブエージェントはpush対象外のためpushを完遂対象へ含めない）
 # 文面を変更する場合は両方の整合を取ること
+# 同バレットのレビューフェーズ対象範囲（`agent-toolkit:careful-review`起動由来のレビュー
+# サブエージェント群）は、execution-process.md「5. レビュー実施」節のbackground起動時
+# 完了報告義務と同旨の重複である。改訂時は両ファイルの整合を取ること
 # `## 出力`節の`verification`欄`git diff --stat`実体照合記述（段1除外の明記を含む）は
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節・「起草・改訂委譲雛形」節、
 # `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節と
@@ -78,7 +81,10 @@ frontmatterの`skills:`欄でプリロードされる親スキル本文のうち
   - バックグラウンドで進行する検証・コミット・レビュー等、および呼び出し元指定による並列実行手段の
     完遂まで動作を継続する
     （pushは本サブエージェントの対象外。判断基準節「pushは行わない」を参照）
-  - 実装フェーズで並列サブエージェント（`plan-implementer`）を起動した場合は、
+  - 対象は実装フェーズの並列サブエージェント（`plan-implementer`）とする。
+    レビューフェーズでは`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等
+    （`agent-toolkit:careful-review`起動由来）も対象へ加える。
+    これら（実装フェーズ・レビューフェーズ双方の対象サブエージェント）を並列起動した場合は、
     全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
     待機表明のみの完了報告は発行しない
   - 詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う
