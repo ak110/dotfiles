@@ -120,6 +120,12 @@ async-wait	gh run watchの結果を待機する
 async-wait	wait for the automatic completion notification
 async-wait	rather than continue polling
 async-wait	Still running while awaiting notification.
+async-wait	wait for the subagent to finish
+async-wait	waiting for a response
+async-wait	waiting for the report
+async-wait	waiting for registration
+async-wait	waiting for completion
+async-wait	waiting for a notification
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し

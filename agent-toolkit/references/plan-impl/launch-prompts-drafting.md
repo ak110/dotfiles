@@ -9,7 +9,7 @@
 # `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック
 # と意図的に重複する
 # 改訂時は4ファイルを同時更新する
-# 加えて `agent-toolkit/agents/plan-implementer.md`「## 出力」節との同期は本ファイル
+# 加えて `agent-toolkit/agents/plan-implementer.md`「出力」節との同期は本ファイル
 # 「## 運用ガイダンス」の既存規定に従う。
 # 非同期処理継続義務のバレット（「共通遵守事項」節およびコードブロック内`## 完遂条件`欄）は
 # `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節と
@@ -27,7 +27,7 @@
 
 `plan-impl-executor`の`plan-implementer`起動プロンプトを、
 コピー可能な完全コードブロックで集約する。
-`agent-toolkit/references/plan-impl/execution-process.md`「### サブエージェント起動プロンプト」節から機械転記して使用する。
+`agent-toolkit/references/plan-impl/execution-process.md`「サブエージェント起動プロンプト」節から機械転記して使用する。
 
 ## 共通遵守事項
 
@@ -68,6 +68,8 @@
 - named subagentとして`run_in_background=true`起動する場合、
   完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
   `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
+  - foreground起動時も完了報告本文のasync-wait表明（待機表明のまま完了扱いにする挙動）は
+    PostToolUse側の検出対象に含まれ、検出時は`decision: block`で再委譲または継続駆動を促される
 - 起草・改訂委譲の担当範囲は起草作業と`check_plan_file.py`による機械チェック通過までとする。
   `plan-implementer`は計画本文の起草・改訂に専任し、整合性チェック・codexレビュー相当の
   サブエージェント起動は行わない。当該工程は`agent-toolkit:plan-file-creator`が

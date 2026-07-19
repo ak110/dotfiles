@@ -13,6 +13,7 @@ import subprocess
 
 import _fork_runner
 import pytest
+from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 
@@ -223,3 +224,101 @@ class TestPlanImplExecutorActiveSessions:
         )
         state = _read_state(tmp_path, sid)
         assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})
+
+
+def _async_wait_phrase() -> str:
+    """隔離フィクスチャからasync-waitカテゴリの検出語を1件取得する（検出語の直接転記を避ける）。"""
+    inputs = load_scope_escalation_inputs()
+    for text, category in inputs:
+        if category == "async-wait":
+            return text
+    raise AssertionError("async-waitカテゴリの入力がフィクスチャに存在しない")
+
+
+class TestAgentCompletionAsyncWaitDetection:
+    """AgentとTaskのforeground完了報告本文に対するasync-wait検出 (FB-C)。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    def test_content_text_with_async_wait_blocks(self, tmp_path: pathlib.Path, tool_name: str):
+        """`content`配列内`text`欄の完了報告本文にasync-wait表現を含み、
+
+        かつ`totalToolUseCount`が閾値以上の場合に`decision: block`が出力される。
+        """
+        sid = f"fbc-content-async-wait-{tool_name.lower()}"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": tool_name,
+                "tool_input": {"subagent_type": "claude"},
+                "tool_response": {
+                    "content": [{"type": "text", "text": _async_wait_phrase()}],
+                    "totalToolUseCount": 5,
+                },
+            },
+            state_dir=tmp_path,
+        )
+        output = json.loads(result.stdout)
+        assert output.get("decision") == "block"
+
+    def test_result_string_with_async_wait_blocks(self, tmp_path: pathlib.Path):
+        """`result`欄（文字列）の完了報告本文にasync-wait表現を含む場合も`decision: block`が出力される。"""
+        sid = "fbc-result-async-wait"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude"},
+                "tool_response": {"result": _async_wait_phrase(), "totalToolUseCount": 3},
+            },
+            state_dir=tmp_path,
+        )
+        output = json.loads(result.stdout)
+        assert output.get("decision") == "block"
+
+    def test_below_threshold_tool_use_count_does_not_block(self, tmp_path: pathlib.Path):
+        """`totalToolUseCount`が閾値未満の場合はasync-wait表現を含んでいても`decision: block`を出力しない（fail-open）。"""
+        sid = "fbc-below-threshold"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude"},
+                "tool_response": {
+                    "content": [{"type": "text", "text": _async_wait_phrase()}],
+                    "totalToolUseCount": 2,
+                },
+            },
+            state_dir=tmp_path,
+        )
+        assert result.stdout.strip() == ""
+
+    def test_missing_completion_text_does_not_block(self, tmp_path: pathlib.Path):
+        """完了報告本文が抽出できない場合（候補キーがいずれも存在しない）は無処理で終了する。"""
+        sid = "fbc-no-completion-text"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude"},
+                "tool_response": {"totalToolUseCount": 10},
+            },
+            state_dir=tmp_path,
+        )
+        assert result.stdout.strip() == ""
+
+    def test_normal_completion_text_does_not_block(self, tmp_path: pathlib.Path):
+        """async-wait表現を含まない通常の完了報告本文は`decision: block`を出力しない。"""
+        sid = "fbc-normal-completion"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude"},
+                "tool_response": {
+                    "content": [{"type": "text", "text": "実装・検証・コミットを完了した。"}],
+                    "totalToolUseCount": 10,
+                },
+            },
+            state_dir=tmp_path,
+        )
+        assert result.stdout.strip() == ""

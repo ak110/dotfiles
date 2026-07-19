@@ -1,6 +1,6 @@
 # 変更内容セクションの差分ラベルとフェンス配置
 
-`plan-file-guidelines.md`「変更内容」節の詳細規定。
+`plan-file-guidelines.md`「変更内容（`## 変更内容`）」節の詳細規定。
 
 ## 差分ラベル6種
 

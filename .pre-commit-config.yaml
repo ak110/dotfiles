@@ -90,6 +90,11 @@ repos:
         entry: uv run --no-project agent-toolkit/scripts/check_doc_size.py
         language: system
         files: '^agent-toolkit/(skills/[^/]+/(SKILL\.md|references/.*\.md)|rules/.*\.md)$'
+      - id: check-norm-cross-ref
+        name: 規範文書間参照の実在検査
+        entry: uv run --no-project agent-toolkit/scripts/check_norm_cross_ref.py
+        language: system
+        files: '^agent-toolkit/(rules|skills)/.*\.md$'
       # コミット時にローカルへも反映する（適用漏れ防止のため）。
       - id: chezmoi-apply
         name: chezmoi apply

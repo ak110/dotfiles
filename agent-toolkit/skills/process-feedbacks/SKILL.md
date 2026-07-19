@@ -183,7 +183,7 @@ plan-impl-executor起動プロンプトの`## 追加指示`欄には計画ファ
 後続工程はメイン側が完了報告の受領後に別途起動する運用とする。
 
 plan-modeスキル本文で規定される全工程の遵守を、auto mode下・自律実行系CLI経由の委譲下でも維持する。
-各工程の実施義務は`plan-mode/SKILL.md`「暗黙スキップ・明示バイパスの禁止」節の規定に従う。
+各工程の実施義務は`agent-toolkit/skills/plan-mode/SKILL.md`「工程の進め方」節の「暗黙スキップ・明示バイパスの禁止」バレットの規定に従う。
 plan mode下の場合の最終承認は`agent-toolkit:plan-mode`工程7の`ExitPlanMode`で得る。
 全件採用扱いで計画作成へ進んだ後に採否判定を変更したい場合は、ユーザー側の割り込みで提示する前提とする。
 計画ファイルの`## 実行方法`へ`agent-toolkit:process-feedbacks-finish`呼び出しを書かない。

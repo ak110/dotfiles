@@ -65,9 +65,13 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
     extract_target_files_from_changes,
     is_agent_facing_md,
 )
+from _scope_escalation import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from check_wc_projection import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_addition_reduction_blocks,
+)
+from subagent_stop_advisor import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _NAMED_SUBAGENT_MIN_TOOL_USES,
 )
 
 # このスクリプトの hook 識別子。
@@ -77,6 +81,39 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """コーディングエージェント宛てメッセージを標準プレフィックス/サフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
+
+
+def _extract_agent_completion_text(tool_response: dict) -> str:
+    """Agent/Task tool_responseから完了報告本文を抽出する。
+
+    foreground Agentツールの完了報告本文は`content`配列内`text`欄（複数ブロック時は連結）へ格納される。
+    `result`欄（文字列）は他ツール経路で採用され得る形式のため次点候補として確認する。
+    候補キーがいずれも存在しない場合は空文字列を返す。
+    """
+    content = tool_response.get("content")
+    if isinstance(content, list):
+        texts = [block.get("text") for block in content if isinstance(block, dict) and block.get("type") == "text"]
+        joined = "".join(text for text in texts if isinstance(text, str))
+        if joined:
+            return joined
+    result = tool_response.get("result")
+    if isinstance(result, str):
+        return result
+    return ""
+
+
+def _extract_agent_tool_use_count(tool_response: dict) -> int:
+    """Agent/Task tool_responseの`totalToolUseCount`からツール使用数を取得する。
+
+    本フックはAgentツール呼び出し元（親）の`transcript_path`のみ参照可能で、
+    起動されたサブエージェント自身のtool_use数は反映しない。
+    そのため`tool_response`がAgentツール自身から直接返す集計値`totalToolUseCount`を採用する
+    （`_inspect_named_subagent_send`のtranscript走査とは異なるアプローチ。
+    実データ採取で`tool_response.totalToolUseCount`の実在を確認済み）。
+    欠落・非int時は-1（判定不能・fail-open）を返す。
+    """
+    count = tool_response.get("totalToolUseCount")
+    return count if isinstance(count, int) else -1
 
 
 # --- Bashコマンド前処理 ---
@@ -492,6 +529,33 @@ def main() -> int:
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
+        # foreground完了報告本文のasync-wait検出 (FB-C)。
+        # `_inspect_named_subagent_send`（subagent_stop_advisor.py）と同水準の
+        # 最低ツール使用数条件を満たす場合のみ判定する。閾値未満・抽出不能時はfail-openで通過させる。
+        raw_tool_response = payload.get("tool_response", {})
+        if isinstance(raw_tool_response, dict):
+            completion_text = _extract_agent_completion_text(raw_tool_response)
+            if completion_text:
+                tool_use_count = _extract_agent_tool_use_count(raw_tool_response)
+                if tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES:
+                    match_result = _match_scope_escalation(completion_text, categories={"async-wait"})
+                    if match_result is not None:
+                        print(
+                            json.dumps(
+                                {
+                                    "decision": "block",
+                                    "reason": _llm_notice(
+                                        "The subagent completion report contains an async-wait style"
+                                        " statement instead of an active completion. Re-delegate or"
+                                        " continue driving the work to actual completion.",
+                                        tag="block",
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            )
+                        )
+                        return 0
+
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_end", type=subagent_type)
