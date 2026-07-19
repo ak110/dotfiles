@@ -13,12 +13,20 @@
 （`_check_line_ref_section_ref.py`冒頭docstringが説明する複製方針と同じ扱い）。
 
 パス解決は次の優先順で行う。
-- スラッシュを含むパス: リポジトリルート相対パスとして解決する
 - `agent-toolkit:<skill-name>`形式: `agent-toolkit/skills/<skill-name>/SKILL.md`へ解決する
+- スラッシュを含むパス: 次の順で解決を試みる。
+  1. リポジトリルート相対パス
+  2. 参照元ファイルと同一ディレクトリからの相対パス
+  3. `_search_bases`配下（`agent-toolkit/rules`・`agent-toolkit/skills`・
+     `agent-toolkit/agents`・`agent-toolkit/references`）でのパターン一致
+  4. 末尾ファイル名だけを用いた同`_search_bases`配下でのフォールバック検索
 - スラッシュを含まない裸ファイル名: 参照元ファイルと同一ディレクトリを最優先候補とし、
-  見つからない場合は`agent-toolkit/rules/`・`agent-toolkit/skills/**/references/`・
-  `agent-toolkit/skills/**/SKILL.md`配下をファイル名で走査する。候補が一意に定まらない場合は
-  「解決不能（曖昧）」として違反へ計上する
+  見つからない場合は上記4ディレクトリ配下をファイル名で走査する
+- いずれの経路でも候補が一意に定まらない場合は「解決不能（曖昧）」として違反へ計上する
+
+前処理として、参照抽出前にフェンスコードブロック（```〜```/````〜```` 等）の内容を
+`_strip_fenced_blocks`で除去する。テンプレート例示・サンプル文書内の架空パス参照を
+実在照合対象から外すため。
 """
 
 from __future__ import annotations

@@ -68,8 +68,10 @@
 - named subagentとして`run_in_background=true`起動する場合、
   完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
   `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
-  - foreground起動時も完了報告本文のasync-wait表明（待機表明のまま完了扱いにする挙動）は
-    PostToolUse側の検出対象に含まれ、検出時は`decision: block`で再委譲または継続駆動を促される
+- foreground起動・background起動の別を問わず、Agent/Task/fork系Skillの完了報告本文の
+  async-wait表明はPostToolUse側の検出対象に含まれる。
+  async-wait表明は待機表明のまま完了扱いにする挙動を指す。
+  検出時は`decision: block`で再委譲または継続駆動を促す
 - 起草・改訂委譲の担当範囲は起草作業と`check_plan_file.py`による機械チェック通過までとする。
   `plan-implementer`は計画本文の起草・改訂に専任し、整合性チェック・codexレビュー相当の
   サブエージェント起動は行わない。当該工程は`agent-toolkit:plan-file-creator`が
@@ -142,6 +144,10 @@
     - named subagentとして`run_in_background=true`起動する場合、
       完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
       `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
+    - foreground起動・background起動の別を問わず、Agent/Task/fork系Skillの完了報告本文の
+      async-wait表明はPostToolUse側の検出対象に含まれる。
+      async-wait表明は待機表明のまま完了扱いにする挙動を指す。
+      検出時は`decision: block`で再委譲または継続駆動を促す。
     - 起草・改訂委譲の担当範囲は起草作業と`check_plan_file.py`による機械チェック通過までとする。
       `plan-implementer`は計画本文の起草・改訂に専任し、整合性チェック・codexレビュー相当の
       サブエージェント起動は行わない。当該工程は`agent-toolkit:plan-file-creator`が
