@@ -24,8 +24,8 @@ user-invocable: false
 #   対象ファイル全体のRead必須へ一本化する。
 # tone-examples.mdをskills欄でなく本文Readで直読みする理由: 当該ファイルは独立スキルではなく
 #   writing-standardsスキル配下のreferences単体のため、skills欄でのプリロード対象に含められない。
-# 用途注記: 本エージェントは`agent-toolkit:plan-mode`工程7からは起動されない
-# （工程7では対象ファイル現状との突合観点をplan-reviewerへ統合済み）
+# 用途注記: 本エージェントは`agent-toolkit:plan-file-creator`の整合性チェックからは起動されない
+# （対象ファイル現状との突合観点をplan-reviewerへ統合済み）
 # `agent-toolkit:careful-review`・`agent-toolkit:quality-sweep`からの起動用途で存続する
 
 # 同期注記: 「共通判断基準」節の構文合法性除外バレットは

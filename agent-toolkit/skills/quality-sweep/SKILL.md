@@ -64,10 +64,11 @@ disable-model-invocation: true
 6. 全分担サブエージェント完了後、`git status --short`・`git diff --stat`で作業ツリー実態を照合し、
    「最終検証とコミットサブエージェント（claude）の起動」節に従い最終検証サブエージェントを起動する
 
-`plan-mode`工程7は対象ファイル現状との突合観点を`plan-reviewer`へ統合済みのため
-`plan-impl-reviewer`を起動しない（`integrity-checks.md`「工程7の実施手順」節参照）。
-本フローの手順3における`plan-impl-reviewer`起動は工程7とは独立した用途であり、
-対象範囲全体（分担ファイル群）への重複起動は発生しない。
+`plan-file-creator`の整合性チェックは対象ファイル現状との突合観点を`plan-reviewer`へ統合済みである。
+そのため`plan-impl-reviewer`を起動しない
+（`integrity-checks.md`「整合性チェック・codexレビューの実施手順」節参照）。
+本フローの手順3における`plan-impl-reviewer`起動は`plan-file-creator`の整合性チェックとは
+独立した用途であり、対象範囲全体（分担ファイル群）への重複起動は発生しない。
 
 ## 分担サブエージェント（claude）の起動
 

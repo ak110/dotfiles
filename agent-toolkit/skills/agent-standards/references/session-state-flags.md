@@ -21,15 +21,20 @@
   寿命は`agent-toolkit:add-feedback`起動検知（plan-and-add-feedbackの終端工程）でリセット
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
-- 工程7完遂判定フラグ群はPostToolUse(Agent/Task)が記録する: `plan_reviewer_invoked`・`codex_review_invoked`・
-  `agent_doc_validator_invoked`（末尾は文書対象時のみ必須。`plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に存続するが工程7の対象外）。
-  `codex_review_invoked`は`plan-codex-reviewer`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する
+- plan-file-creatorの整合性チェック完遂判定フラグ群はPostToolUse(Agent/Task)が記録する:
+  `plan_reviewer_invoked`・`codex_review_invoked`・`agent_doc_validator_invoked`
+  （末尾は文書対象時のみ必須。`plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に
+  存続するが本フラグ群の対象外）。
+  `codex_review_invoked`は`plan-codex-reviewer`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
+  記録判定は`subagent_type`一致のみに依拠し`isSidechain`値を条件に含まないため、
+  `agent-toolkit:plan-file-creator`内部からのAgent/Task起動（サイドチェーン内起動）でも同様に記録される
 - `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動時のみ真化する（PostToolUse(Agent/Task)が記録）。`mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
 - `plan_codex_reviewer_blocked`: `plan-codex-reviewer`起動失敗時（auto mode下のブロック等）に真化する。
   PostToolUseFailure・PermissionDenied（Agent/Task限定）が検出し、`mcp__codex__codex`直接呼び出しのauto mode例外条件に使う
 - `recorded_codex_thread_id`: `mcp__codex__codex`成功時のPostToolUseが`tool_response.threadId`を記録する。
   `mcp__codex__codex-reply`のPreToolUseがthreadId一致検査で参照する（`plan_codex_reviewer_invoked`・
-  `plan_codex_reviewer_blocked`・`recorded_codex_thread_id`の3件は新計画着手時に工程7完了フラグと共にリセットされる）
+  `plan_codex_reviewer_blocked`・`recorded_codex_thread_id`の3件は新計画着手時に
+  plan-file-creatorの整合性チェック完了フラグと共にリセットされる）
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時の再読込と、`plan-impl-executor`系Agent起動時の起動プロンプト参照先パス一致判定に使う
 - 計画ファイル未作成時の直接編集検知フラグ群（`plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`）はPreToolUseが更新する。agent-toolkit配下編集連続を検知し、2件目warn・3件目blockとする

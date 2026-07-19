@@ -5,7 +5,8 @@
 # ///
 """計画ファイル向け機械チェックの統合ランナー。
 
-`agent-toolkit:plan-mode`の書き込み後チェック（工程6-2直後）・工程7メイン側セルフチェック・
+`agent-toolkit:plan-mode`の書き込み後チェック（計画ファイル本体作成直後）・
+`agent-toolkit:plan-file-creator`の整合性チェック時のセルフチェック・
 実装後検証の各契機から、1回のプロセス起動で下記検査を実行する。個別スクリプトを都度起動する運用は
 サブプロセス起動段数・出力量が累積してコンテキストを汚染するため、本スクリプトへ統合する。
 
@@ -49,8 +50,9 @@
 - `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
   リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する
 
-`warning`区分の判定根拠は次のとおり。textlint・markdownlint・typos・口語表現の全文検査は工程7ステップ4の
-`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行い、本ランナー内では警告出力に留める。
+`warning`区分の判定根拠は次のとおり。textlint・markdownlint・typos・口語表現の全文検査は
+plan-file-creatorの整合性チェックステップ4の`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行い、
+本ランナー内では警告出力に留める。
 体裁・表記系は`agent-toolkit:plan-mode`の「計画作成プロセス自体」改訂方針で往復削減対象とする方針に沿う。
 文書サイズ上限検査・テストペア検査も即座に計画不成立にならない体裁・構成寄りの指摘として警告扱いとする。
 設計原則は`agent-toolkit:agent-standards`配下`references/check-script-design.md`の

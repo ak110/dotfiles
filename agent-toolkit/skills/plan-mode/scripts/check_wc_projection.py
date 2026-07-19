@@ -5,7 +5,7 @@
 # ///
 """計画ファイル内の[現行]/[置換後]対比ブロックを機械適用し、対象ファイル実体との一意一致を検査する。
 
-`agent-toolkit:plan-mode`工程7のメイン側セルフチェックから呼び出される。
+`agent-toolkit:plan-file-creator`の整合性チェック時のセルフチェックから呼び出される。
 アルゴリズムの詳細は`_parse_plan_file`・`_extract_diff_blocks`・`_check_one_file`各関数のdocstringを参照する。
 出力形式は兄弟スクリプト`check_line_ref.py`と揃える（stderrへメッセージ、違反ありでexit 1）。
 

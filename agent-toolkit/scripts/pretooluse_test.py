@@ -4457,7 +4457,7 @@ def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 class TestProcess7CompletionCheck:
-    """ExitPlanMode / `plan-impl-executor`起動時の工程7完了未達ブロック。"""
+    """ExitPlanMode / `plan-impl-executor`起動時のplan-file-creatorの整合性チェック完了未達ブロック。"""
 
     def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
         """2フラグ全て真の場合はExitPlanModeを通過する。"""
@@ -4497,7 +4497,7 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 0
 
     def test_plan_impl_executor_agent_also_checked(self, tmp_path: pathlib.Path):
-        """`plan-impl-executor`のAgent起動も同様に工程7完了未達をブロックする。"""
+        """`plan-impl-executor`のAgent起動も同様にplan-file-creatorの整合性チェック完了未達をブロックする。"""
         sid = "process7-plan-impl-executor-agent"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: False for flag in _PROCESS7_FLAGS})
@@ -4514,7 +4514,7 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 2
 
     def test_agent_referenced_matching_current_plan_blocks(self, tmp_path: pathlib.Path):
-        """起動プロンプトが現行計画パスと一致する場合は工程7完了未達をブロックする。"""
+        """起動プロンプトが現行計画パスと一致する場合はplan-file-creatorの整合性チェック完了未達をブロックする。"""
         plan_path = str(tmp_path / ".claude" / "plans" / "current.md")
         sid = "process7-agent-path-match"
         state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
@@ -4561,7 +4561,7 @@ class TestProcess7CompletionCheck:
     def test_agent_referenced_nonexistent_other_plan_blocks(self, tmp_path: pathlib.Path):
         """起動プロンプトが現行計画と異なる非実在パスを指す場合は従来どおりブロックする。
 
-        実在確認が無ければ、任意の非実在パスを記述するだけで工程7未達を回避できてしまうため、
+        実在確認が無ければ、任意の非実在パスを記述するだけでplan-file-creatorの整合性チェック未達を回避できてしまうため、
         実在しないパスへの参照はブロック（returncode 2）を維持することを確認する。
         """
         current_path = str(tmp_path / ".claude" / "plans" / "current.md")
@@ -4725,10 +4725,10 @@ class TestProcess7CompletionCheck:
 
 
 class TestPlanModeFlagReset:
-    """`agent-toolkit:plan-mode`スキル起動時の工程7完了フラグリセット。"""
+    """`agent-toolkit:plan-mode`スキル起動時のplan-file-creatorの整合性チェック完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時に工程7完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
+        """新計画着手時にplan-file-creatorの整合性チェック完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
         `current_plan_file_path`が消去される。
         """
         sid = "process7-reset"

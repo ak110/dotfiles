@@ -185,6 +185,10 @@ _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
+# `agent-toolkit:plan-file-creator`が内部でAgent/Taskツールにより`plan-reviewer`・
+# `plan-codex-reviewer`を起動する場合も、判定は`subagent_type`一致のみで`isSidechain`値に
+# 依存しないため、サイドチェーン内起動（`plan-file-creator`自身がAgent起動によるサブエージェントの場合）
+# でも本辞書の各フラグは正しく記録される。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
@@ -217,6 +221,8 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-spec-reviewer",
         "agent-doc-validator",
         "agent-toolkit:agent-doc-validator",
+        "plan-file-creator",
+        "agent-toolkit:plan-file-creator",
     }
 )
 

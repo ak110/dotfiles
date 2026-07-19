@@ -33,7 +33,7 @@ user-invocable: false
 
 # plan-impl-executor
 
-呼び出し元（`agent-toolkit:plan-mode`工程8・`agent-toolkit:overhaul-project`・
+呼び出し元（`agent-toolkit:plan-mode`工程7・`agent-toolkit:overhaul-project`・
 `agent-toolkit-edit`等）からAgentツール経由で起動される。
 渡された計画ファイル1件を工程1〜5
 （タスク分解・実装・検収・検証・コミット・レビュー）まで完遂する。

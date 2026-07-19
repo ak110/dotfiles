@@ -44,7 +44,7 @@ EnterPlanMode:
 
 ExitPlanMode:
 
-- 工程7（plan-reviewer / codexレビュー、
+- `plan-file-creator`の整合性チェック（plan-reviewer / codexレビュー、
   対象ファイル一覧にコーディングエージェント向け文書を含む計画では条件付きでagent-doc-validatorも追加）
   完了未達のブロック (block)
 
@@ -80,12 +80,13 @@ AskUserQuestion:
 
 Skill:
 
-- `agent-toolkit:plan-mode`起動時の工程7完了フラグリセット（新計画着手の合図） (auto-fix)
+- `agent-toolkit:plan-mode`起動時の`plan-file-creator`の整合性チェック完了フラグリセット（新計画着手の合図） (auto-fix)
 
 Agent / Task:
 
 - 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
-- `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の工程7完了未達のブロック (block)
+- `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の
+  `plan-file-creator`の整合性チェック完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 
 Write / Edit / MultiEdit:
@@ -391,14 +392,14 @@ def main() -> int:
     if _check_plan_prep_skills_block_enter_plan_mode(tool_name, session_id):
         return 2
 
-    # ExitPlanMode: 工程7（2サブエージェント/codexレビュー）の完了未達をブロック
+    # ExitPlanMode: `plan-file-creator`の整合性チェック（2サブエージェント/codexレビュー）の完了未達をブロック
     if tool_name == "ExitPlanMode":
         if _check_process7_completion_before_exit_plan_mode(session_id):
             return 2
         flush_pending_language_warning()
         return 0
 
-    # Skill: plan-mode起動時は工程7完了フラグをリセット
+    # Skill: plan-mode起動時は`plan-file-creator`の整合性チェック完了フラグをリセット
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
@@ -519,7 +520,7 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: plan-impl-executor起動時の工程7完了未達ブロック +
+    # Agent/Task: plan-impl-executor起動時の`plan-file-creator`の整合性チェック完了未達ブロック +
     # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
     # process-loop観測用のサブエージェント起動時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
@@ -2746,7 +2747,7 @@ def _check_plan_file_retroactive_scan_recorded(
     )
 
 
-# --- 工程7（2サブエージェント/codexレビュー）完了チェック ---
+# --- `plan-file-creator`の整合性チェック（2サブエージェント/codexレビュー）完了チェック ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
@@ -2776,10 +2777,12 @@ _TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-spec-reviewer",
         "agent-doc-validator",
         "agent-toolkit:agent-doc-validator",
+        "plan-file-creator",
+        "agent-toolkit:plan-file-creator",
     }
 )
 
-# 工程7の完遂を示すセッション状態フラグ。
+# `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
 _PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = (
@@ -2973,7 +2976,7 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
 
 
 def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dict | None = None) -> bool:
-    """ExitPlanModeまたは`plan-impl-executor`起動時、工程7完了未達をブロックする。
+    """ExitPlanModeまたは`plan-impl-executor`起動時、`plan-file-creator`の整合性チェック完了未達をブロックする。
 
     `plan-impl-executor`起動時は`_check_process7_completion_for_plan_impl_executor_agent`
     経由で呼ばれる。
@@ -2982,7 +2985,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
 
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が真
-      （plan-modeスキルを使わない文脈では工程7の完遂義務が生じないため対象外）
+      （plan-modeスキルを使わない文脈では`plan-file-creator`の整合性チェックの完遂義務が生じないため対象外）
     - `_PROCESS7_COMPLETION_FLAGS`のいずれかが偽。
       計画の対象ファイル一覧にコーディングエージェント向け文書対象ファイルが含まれる場合は、
       `agent_doc_validator_invoked`も必須フラグに加える
@@ -3006,9 +3009,11 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
     print(
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
-            " before completing Phase 7 (plan-reviewer / codex review)."
+            " before completing the plan-file-creator integrity check"
+            " (plan-reviewer / codex review)."
             f" Missing flags: {missing}."
-            " See agent-toolkit/skills/plan-mode/references/integrity-checks.md '工程7の実施手順' section.",
+            " See agent-toolkit/skills/plan-mode/references/integrity-checks.md"
+            " '整合性チェック・codexレビューの実施手順' section.",
             tag="block",
         ),
         file=sys.stderr,
@@ -3050,16 +3055,16 @@ def _normalize_plan_file_path(path_text: str) -> pathlib.Path | None:
 
 
 def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, tool_input: dict) -> bool:
-    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ工程7完了未達をブロックする。
+    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ`plan-file-creator`の整合性チェック完了未達をブロックする。
 
     起動プロンプトの`prompt`欄から計画ファイルパスを抽出し、正規化のうえセッション状態の
     `current_plan_file_path`と一致する場合のみ`_check_process7_completion_before_exit_plan_mode`を適用する。
     別セッションでplan-modeにより完遂済みの計画（例:`plan-and-add-feedback`投入の計画実装型フィードバック）を
-    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの工程7未達を理由にブロックしない。
+    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの`plan-file-creator`の整合性チェック未達を理由にブロックしない。
     `prompt`が文字列でない場合、パスが一意に抽出できない場合、
     `current_plan_file_path`が未記録・非文字列の場合、正規化に失敗した場合、
     または不一致の参照パスが実在しない場合は安全側として従来どおり判定する
-    （実在確認が無いと、任意の非実在パスを記述するだけで工程7未達を回避できてしまうため）。
+    （実在確認が無いと、任意の非実在パスを記述するだけで`plan-file-creator`の整合性チェック未達を回避できてしまうため）。
     """
     if not session_id:
         return False
@@ -3085,7 +3090,7 @@ def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, too
 
 
 def _reset_process7_completion_flags(session_id: str) -> None:
-    """`agent-toolkit:plan-mode`スキル起動を検出した際に工程7完了フラグをリセットする。
+    """`agent-toolkit:plan-mode`スキル起動を検出した際に`plan-file-creator`の整合性チェック完了フラグをリセットする。
 
     新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`と条件付きフラグ
     `agent_doc_validator_invoked`を偽へ戻す。前計画の`current_plan_file_path`も

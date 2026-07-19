@@ -1,6 +1,6 @@
 ---
 # 同期注記: plan-reviewer雛形内「メイン側実施済み観点の内訳」欄の趣旨は
-# integrity-checks.md「工程7の実施手順」節・plan-reviewer.md「入力」節と
+# integrity-checks.md「整合性チェック・codexレビューの実施手順」節・plan-reviewer.md「入力」節と
 # 意図的に重複する（構成は各ファイルの用途に合わせる）
 # 改訂時は3ファイルを同時更新する
 # named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
@@ -12,12 +12,12 @@
 # named subagent能動送付規定は本ファイル本文へは追加せず、frontmatter同期注記のみを配置する
 ---
 
-# 工程7サブエージェント起動プロンプト雛形
+# 整合性チェック・codexレビュー サブエージェント起動プロンプト雛形
 
-`agent-toolkit:plan-mode`スキル工程7で起動する各サブエージェント
+`agent-toolkit:plan-file-creator`が内部で起動する各サブエージェント
 （うち`agent-doc-validator`は条件付き起動）の起動プロンプトを、
 コピー可能な完全コードブロックで集約する。
-`integrity-checks.md`「工程7の実施手順」節から機械転記して使用する。
+integrity-checks.md「整合性チェック・codexレビューの実施手順」の節から機械転記して使用する。
 共通の遵守事項として、いずれの雛形も次を含める。
 
 - 呼び出し元の暗黙前提（メイン側の会話履歴・拡張思考・他サブエージェント出力）を排除する

@@ -174,8 +174,8 @@ uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
 
 - 検出対象: U+2014（EM DASH）の単発・U+2015（HORIZONTAL BAR）の単発・U+2500（BOX DRAWINGS LIGHT HORIZONTAL）の2連続
 - 検査範囲: Markdown地の文と見出し（フェンス付きコードブロック・インラインコード・URL内は除外する）
-- 計画ファイル作成段階・実装段階での検出のため、`agent-toolkit:plan-mode`工程7のステップ1（機械チェック）で
-  計画ファイル全体および`## 変更内容`配下のdiff +側一時ファイルへ自動適用する
+- 計画ファイル作成段階・実装段階での検出のため、`agent-toolkit:plan-file-creator`の
+  整合性チェックステップ1（機械チェック）で計画ファイル全体および`## 変更内容`配下のdiff +側一時ファイルへ自動適用する
 
 ## Markdown記述スタイル
 
