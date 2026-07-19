@@ -549,6 +549,117 @@ class TestCheckFrontmatterSyncNoteCoverage:
         assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
         assert "読み込みに失敗" in capsys.readouterr().err
 
+    def test_downgrades_unrelated_path_reference_to_warning(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """対象ファイル固有H3配下スコープに参照先ファイル名が現れない場合はwarning格下げ。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "### `agent-toolkit/skills/a.md`\n\n無関係な追記内容。\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+        captured = capsys.readouterr()
+        assert "[warn]" in captured.err
+
+    def test_downgrades_unrelated_section_reference_to_warning(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """対象ファイル固有H3配下スコープに参照節名が現れない場合はwarning格下げ。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `テスト用`節と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "### `agent-toolkit/skills/a.md`\n\n無関係な追記内容。\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+        captured = capsys.readouterr()
+        assert "[warn]" in captured.err
+
+    def test_still_errors_when_referenced_within_target_h3(self, tmp_path: pathlib.Path) -> None:
+        """対象ファイル固有H3配下スコープに参照が言及される場合は従来どおりerror扱い。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "### `agent-toolkit/skills/a.md`\n\n"
+            "`agent-toolkit/skills/b.md`への参照を含む追記内容。\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+
+    def test_preserves_agent_judgment_mention_despite_h3_text_overlap(self, tmp_path: pathlib.Path) -> None:
+        """対象H3本文と偶然同一の文字列が`### エージェント判断`側にも現れても充足判定を誤らない。
+
+        対象ファイル固有H3スコープの除外を部分文字列除去ではなく行番号ベースで行うことを検証する
+        （部分文字列除去では対象H3本文と同一の文字列が判断根拠側にも出現する場合、
+        判断根拠側の正当な充足証跡まで誤って除去されてしまう）。
+        """
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `節A`節と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 対応方針\n\n### エージェント判断\n\n"
+            "節Aは判断根拠として言及済み。\n\n"
+            "## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "### `agent-toolkit/skills/a.md`\n\n"
+            "節A\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 0
+
+    def test_replacement_pattern_h3_does_not_match_path_substring(self, tmp_path: pathlib.Path) -> None:
+        """集約H3のsublist照合はバッククォート囲み完全一致で行い、他パスの部分文字列に誤反応しない。"""
+        target_a = tmp_path / "agent-toolkit" / "skills" / "a.md"
+        target_a.parent.mkdir(parents=True)
+        target_a.write_text(
+            "---\n# 同期注記: `agent-toolkit/skills/b.md`と同期する。\n---\n本文\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "agent-toolkit" / "skills" / "b.md").write_text("# B\n", encoding="utf-8")
+        plan = tmp_path / "plan.md"
+        plan.write_text(
+            "# タイトル\n\n## 変更内容\n\n### 対象ファイル一覧\n\n"
+            "- [ ] `agent-toolkit/skills/a.md`\n\n"
+            "### 置換パターン: 旧 → 新（対象: 他ファイル群）\n\n"
+            "- `agent-toolkit/skills/xa.md`\n",
+            encoding="utf-8",
+        )
+        text = plan.read_text(encoding="utf-8")
+        assert check_plan_file._check_frontmatter_sync_note_coverage(plan, text, tmp_path) == 1
+
 
 class TestReductionBlockTextFence:
     """縮減対象H4配下のtextフェンス必須検査"""

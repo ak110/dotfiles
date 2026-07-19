@@ -31,7 +31,8 @@
   プロジェクトルート起点で実在するかを検査する（不在時に違反として報告）
 - `_check_frontmatter_sync_note_coverage`: `## 変更内容`対象ファイル一覧の各ファイルが冒頭に
   frontmatter同期注記を持つ場合、参照先ファイル・参照先節が計画本文の対象ファイル一覧・
-  追記記述に含まれるかを検査する（不在時に違反として報告）
+  追記記述に含まれるかを検査する（不在時に違反として報告。ただし対象ファイル固有のH3配下スコープに
+  現れない参照は無関係な既存同期注記とみなし`warning`区分へ格下げしexit codeへ算入しない）
 - `_check_reduction_block_text_fence`: `#### 縮減対象`H4節配下に削除文言案の`text`コードブロックが
   存在するかを検査する（欠落時に違反として報告）
 
@@ -83,6 +84,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable
+from typing import Literal
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
@@ -441,15 +443,21 @@ def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: path
     return warnings
 
 
-def _acknowledgement_scope_text(text: str) -> str:
+def _acknowledgement_scope_text(text: str, *, exclude_line_numbers: frozenset[int] = frozenset()) -> str:
     """`## 変更内容`本文と`### エージェント判断`本文を連結し、追記漏れ判定の照合対象を限定する。
 
     `## 背景`配下の原文転記領域（ユーザー発話・提示素材）を含む計画全域を照合対象とすると、
     追記漏れとは無関係な文脈での偶然の文字列一致を追記漏れ判定の充足条件として誤って許容し得るため、
     判断根拠が実際に記述される`## 変更内容`（対象ファイル一覧・追記記述）と
     `### エージェント判断`（採否判断・却下理由）の2箇所へ限定する。
+    `exclude_line_numbers`に含まれる行は`## 変更内容`本文から除外する
+    （対象ファイル自身のH3本文を部分文字列除去ではなく行番号で除いた充足判定スコープを得るために用いる）。
     """
-    changes_body = "\n".join(line for _, line in pretooluse._plan_format.extract_h2_section_body(text, "変更内容"))
+    changes_body = "\n".join(
+        line
+        for line_num, line in pretooluse._plan_format.extract_h2_section_body(text, "変更内容")
+        if line_num not in exclude_line_numbers
+    )
     judgment_lines: list[str] = []
     for heading, body in pretooluse._plan_format.iter_h3_sections_under_h2(text, "対応方針"):
         if heading == "エージェント判断":
@@ -458,24 +466,64 @@ def _acknowledgement_scope_text(text: str) -> str:
     return changes_body + "\n" + "\n".join(judgment_lines)
 
 
+def _target_file_h3_line_numbers(text: str, path: str) -> frozenset[int]:
+    """対象ファイル`path`に対応する`## 変更内容`配下H3配下の行番号集合を返す。
+
+    バッククォート囲みの`path`と一致するH3見出し、または`change-content-supplement.md`
+    規定の集約H3（`置換パターン:`prefix）配下でsublistに`path`を含むH3を対象H3として扱う。
+    対応するH3が存在しない場合は空集合を返す。
+    """
+    line_numbers: set[int] = set()
+    for heading, body in pretooluse._plan_format.iter_h3_sections_under_h2(text, "変更内容"):
+        heading_stripped = heading.strip().strip("`")
+        body_text = "\n".join(line for _, line in body)
+        if heading_stripped == path or (heading.startswith("置換パターン:") and f"`{path}`" in body_text):
+            line_numbers.update(line_num for line_num, _ in body)
+    return frozenset(line_numbers)
+
+
+def _target_file_h3_scope_text(text: str, line_numbers: frozenset[int]) -> str:
+    """`line_numbers`が指す`## 変更内容`配下の行を本文順に連結して返す。
+
+    「対象ファイル固有スコープに参照が言及されるか」という追加照合の限定判定に用いる。
+    """
+    return "\n".join(
+        line for line_num, line in pretooluse._plan_format.extract_h2_section_body(text, "変更内容") if line_num in line_numbers
+    )
+
+
+def _sync_note_reference_verdict(needles: tuple[str, ...], h3_scope_text: str) -> Literal["error", "warning"]:
+    """充足しなかった同期注記参照1件を`error`／`warning`のいずれで扱うかを判定する。
+
+    `h3_scope_text`が空（対象H3が計画本文に存在しない）場合は、`plan-file-guidelines.md`
+    「変更内容（`## 変更内容`）」節が規定するH3見出しラベルとファイルパスの1対1対応が
+    将来的に遵守される前提として据え置き`error`を返す。
+    `h3_scope_text`が非空で`needles`をいずれも含まない場合は無関係な既存同期注記とみなし`warning`を返す。
+    `h3_scope_text`が非空で`needles`のいずれかを含む場合は計画の実際の追記/置換位置と
+    概念的に関連する参照とみなし`error`を返す。
+    """
+    if not h3_scope_text or any(needle in h3_scope_text for needle in needles):
+        return "error"
+    return "warning"
+
+
 def _check_frontmatter_sync_note_coverage(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> int:
     """対象ファイル一覧の各ファイルが冒頭に同期注記を持つ場合の追記漏れを検査する。
 
     対象判定・同期注記の抽出・分離・参照抽出は`pretooluse.py`のSSOT実装
     （`_is_frontmatter_sync_check_target`・`_extract_frontmatter_sync_notes`・
     `_split_sync_note_block`・`_extract_sync_note_references`）を再利用する。
-    参照先ファイル・参照先節が計画本文の`## 変更内容`対象ファイル一覧・関連追記記述から
-    欠落する場合、`error`区分として報告する。参照先ファイルパスは対象ファイル一覧への包含に加え、
-    `_acknowledgement_scope_text`が返す判断根拠限定スコープ（`## 変更内容`・`### エージェント判断`）
-    への文字列言及（レビュー済みで更新不要と判断した旨の記述等）でも充足とみなす
-    （参照節名の判定と同一の緩和基準。対象ファイル一覧への機械的な空エントリ追加を避けるため）。
+    充足判定は`_acknowledgement_scope_text`が返すスコープから対象ファイル自身のH3本文を除いた
+    範囲への言及（対象ファイル一覧への追加・他ファイルH3での言及・`### エージェント判断`での
+    明示的な更新不要判断）で行う。充足しない場合の`error`／`warning`区分判定は
+    `_sync_note_reference_verdict`へ委譲する（対象ファイル固有H3配下スコープに参照が
+    現れるかどうかで、計画の実際の追記/置換位置と概念的に関連する参照のみを`error`として残す）。
     参照先ファイルは`repo_root`起点で解決し、実在しない参照は対象外として扱う。
     `read_text()`実行時の`OSError`・`UnicodeDecodeError`等の例外は捕捉し、
     stderr出力・違反件数1加算後に検査を継続する（統合ランナー全体の異常終了を防ぐ）。
     """
     target_paths = _extract_target_file_paths(text)
     target_set = set(target_paths)
-    scope_text = _acknowledgement_scope_text(text)
     violations = 0
     for path in target_paths:
         if not pretooluse._is_frontmatter_sync_check_target(path):
@@ -489,6 +537,9 @@ def _check_frontmatter_sync_note_coverage(plan_path: pathlib.Path, text: str, re
             print(f"{plan_path}: {path} の読み込みに失敗: {exc}", file=sys.stderr)
             violations += 1
             continue
+        h3_line_numbers = _target_file_h3_line_numbers(text, path)
+        h3_scope_text = _target_file_h3_scope_text(text, h3_line_numbers)
+        other_scope_text = _acknowledgement_scope_text(text, exclude_line_numbers=h3_line_numbers)
         notes = pretooluse._extract_frontmatter_sync_notes(content)
         for note in notes:
             paths, sections = pretooluse._extract_sync_note_references(note)
@@ -501,25 +552,30 @@ def _check_frontmatter_sync_note_coverage(plan_path: pathlib.Path, text: str, re
                 except ValueError:
                     continue
                 rel_str = rel.as_posix()
-                if rel_str == path or rel_str in target_set or rel_str in scope_text or referenced in scope_text:
+                if rel_str == path or rel_str in target_set or rel_str in other_scope_text or referenced in other_scope_text:
                     continue
+                verdict = _sync_note_reference_verdict((rel_str, referenced), h3_scope_text)
+                prefix = "" if verdict == "error" else "[warn] "
+                suffix = "" if verdict == "error" else "（対象ファイル固有H3配下では言及なし）"
                 print(
-                    f"{plan_path}: {path} の冒頭同期注記が参照する {rel_str} が対象ファイル一覧に不在",
+                    f"{plan_path}: {prefix}{path} の冒頭同期注記が参照する {rel_str} が対象ファイル一覧に不在{suffix}",
                     file=sys.stderr,
                 )
-                violations += 1
+                if verdict == "error":
+                    violations += 1
             for section_name in sections:
-                # 参照節が計画本文の追記記述内で言及されているかを照合する。
-                # `scope_text`（`## 変更内容`・`### エージェント判断`）に節名文字列が
-                # 出現しない場合を欠落とみなす。節名は同期注記から抽出済み文字列で、
-                # `「」`または`` `` ``囲みを外した素の文字列。
-                if section_name in scope_text:
+                if section_name in other_scope_text:
                     continue
+                verdict = _sync_note_reference_verdict((section_name,), h3_scope_text)
+                prefix = "" if verdict == "error" else "[warn] "
+                suffix = "" if verdict == "error" else "（対象ファイル固有H3配下では言及なし）"
                 print(
-                    f"{plan_path}: {path} の冒頭同期注記が参照する節「{section_name}」が計画本文の追記記述に不在",
+                    f"{plan_path}: {prefix}{path} の冒頭同期注記が参照する節"
+                    f"「{section_name}」が計画本文の追記記述に不在{suffix}",
                     file=sys.stderr,
                 )
-                violations += 1
+                if verdict == "error":
+                    violations += 1
     return violations
 
 

@@ -5,6 +5,8 @@
 # 同期注記: 観点1のマッピング手順への参照関係は、
 # `agent-toolkit/skills/process-feedbacks/references/review-checklists.md`「網羅調査チェックリスト」節1項目目と
 # 意図的に同期させる。改訂時は両ファイルを同時更新する。
+# 同期注記: 「Explore委譲雛形」節配下「制約」ブロックのnamed subagent能動送付義務バレットは`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`
+# 「共通遵守事項」節をSSOTとする（改訂時は両ファイルを同時更新する）。
 ---
 # Explore委譲雛形集
 
@@ -87,3 +89,4 @@ Explore委譲プロンプトの冒頭にクラスタ識別子を明記する。
 
     - `Explore`は規範非読込型サブエージェントのため、必要な規範は本プロンプトへ引用転記済み
     - 改善案・修正案の提案は返却しない（事実列挙のみ）
+    - `Explore`を`run_in_background=true`かつ`name`指定で起動する場合、調査完了時に結果本文をSendMessage(to: 'main')で能動送付する（`idle_notification(available)`のみでメイン要求を待たない）。SSOTは`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節の該当規定
