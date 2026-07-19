@@ -179,18 +179,21 @@ class TestTbdAdd:
         assert "警告" not in capsys.readouterr().err
 
 
-class TestTbdAddPullBeforeEditor:
-    """tb addサブコマンド: `_pull`を`_collect_message_via_editor`より前に呼ぶ順序保証。
+class TestTbdAddEditorBeforePull:
+    """tb addサブコマンド: `_collect_message_via_editor`を`_pull`より前に呼ぶ順序保証。
 
-    `question_type == "choice" and not args.choices`のバリデーションは`_pull`より前に維持する。
+    エディター起動はロック外・ロック取得前に行う設計であり、`_pull`失敗はエディターで
+    確定済みの本文取得後（`_repo_lock`保持下）に発生する。
+    `question_type == "choice" and not args.choices`のバリデーションは
+    エディター起動より前に維持する。
     """
 
-    def test_editor_not_invoked_when_pull_fails(
+    def test_pull_fails_after_editor_invoked(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """messages省略時にpullが失敗した場合、エディターは起動されずユーザー入力消失を予防する（対象リポジトリはcwdから解決）。"""
+        """messages省略時、エディターは起動された後にpullが失敗して例外が送出される（対象リポジトリはcwdから解決）。"""
         notes = _setup_tbd_env(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -211,6 +214,7 @@ class TestTbdAddPullBeforeEditor:
                 raise subprocess.CalledProcessError(returncode=1, cmd=cmd)
             if cmd[0] == "fake-editor":
                 editor_calls.append(list(cmd))
+                pathlib.Path(cmd[1]).write_text("編集後の本文\n", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
@@ -219,7 +223,7 @@ class TestTbdAddPullBeforeEditor:
         with pytest.raises(subprocess.CalledProcessError):
             atk.main(["tb", "add"], home=tmp_path, now=_FIXED_DT)
 
-        assert not editor_calls
+        assert editor_calls
         assert not list((notes / "tbd" / "inbox").iterdir())
 
     def test_choice_validation_fires_before_pull(

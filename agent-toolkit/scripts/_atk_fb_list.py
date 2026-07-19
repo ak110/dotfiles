@@ -18,6 +18,7 @@ from _atk_fb_common import (
     _iter_feedback_entries_with_state,
     _iter_inbox_entries,
     _pull,
+    _repo_lock,
 )
 from _atk_fb_formatters import _body_summary, _display_width, _tbd_body_summary
 from _atk_fb_repo import _resolve_repo_id
@@ -78,7 +79,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     種別ヘッダ・エントリ行は出力しない。
     """
     if not args.skip_pull:
-        _pull(private_notes)
+        with _repo_lock(private_notes):
+            _pull(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)

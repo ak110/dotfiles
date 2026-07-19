@@ -18,7 +18,9 @@ from _atk_fb_common import (
     FEEDBACK_STATE_PROCESSING,
     FEEDBACK_STATE_REJECTED,
     _commit_and_push,
+    _copy_to_tempfile,
     _pull,
+    _repo_lock,
     _stamp_result,
     _subdir,
     _validate_filename,
@@ -79,41 +81,42 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
-    _pull(private_notes)
-    for filename in args.filenames:
-        _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
-    paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
-    adopted_dir = _subdir(private_notes, FEEDBACK_STATE_ADOPTED)
-    for p in paths:
-        _stamp_result(
-            p,
-            outcome=FEEDBACK_STATE_ADOPTED,
-            now=now,
-            commit=args.commit,
-            note=args.note,
-            category=args.category,
-        )
-        shutil.move(p, adopted_dir / p.name)
-    if args.category is not None:
-        adopted_count = sum(
-            1
-            for entry_path in adopted_dir.iterdir()
-            if entry_path.is_file() and _has_category(entry_path.read_text(encoding="utf-8"), args.category)
-        )
-        if adopted_count >= _CATEGORY_GATE_THRESHOLD:
-            print(
-                f"カテゴリ「{args.category}」の採用件数が{adopted_count}件に到達した。"
-                "上位カテゴリでの規範化・仕組み化の検討を必須とする"
-                "（agent-toolkit:agent-standards配下references/feedback-review-common.md"
-                "「同一カテゴリ累積時の規範化ゲート」参照）。",
-                file=sys.stderr,
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        for filename in args.filenames:
+            _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
+        paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
+        adopted_dir = _subdir(private_notes, FEEDBACK_STATE_ADOPTED)
+        for p in paths:
+            _stamp_result(
+                p,
+                outcome=FEEDBACK_STATE_ADOPTED,
+                now=now,
+                commit=args.commit,
+                note=args.note,
+                category=args.category,
             )
-    count = len(paths)
-    _commit_and_push(
-        private_notes,
-        f"chore: process {count} feedback {'item' if count == 1 else 'items'} (adopted)",
-        ["feedback"],
-    )
+            shutil.move(p, adopted_dir / p.name)
+        if args.category is not None:
+            adopted_count = sum(
+                1
+                for entry_path in adopted_dir.iterdir()
+                if entry_path.is_file() and _has_category(entry_path.read_text(encoding="utf-8"), args.category)
+            )
+            if adopted_count >= _CATEGORY_GATE_THRESHOLD:
+                print(
+                    f"カテゴリ「{args.category}」の採用件数が{adopted_count}件に到達した。"
+                    "上位カテゴリでの規範化・仕組み化の検討を必須とする"
+                    "（agent-toolkit:agent-standards配下references/feedback-review-common.md"
+                    "「同一カテゴリ累積時の規範化ゲート」参照）。",
+                    file=sys.stderr,
+                )
+        count = len(paths)
+        _commit_and_push(
+            private_notes,
+            f"chore: process {count} feedback {'item' if count == 1 else 'items'} (adopted)",
+            ["feedback"],
+        )
     print(f"{count}件採用処理: {', '.join(p.name for p in paths)}")
 
 
@@ -126,20 +129,21 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
-    _pull(private_notes)
-    for filename in args.filenames:
-        _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
-    paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
-    rejected_dir = _subdir(private_notes, FEEDBACK_STATE_REJECTED)
-    for p in paths:
-        _stamp_result(p, outcome=FEEDBACK_STATE_REJECTED, now=now, commit=args.commit, note=args.note)
-        shutil.move(p, rejected_dir / p.name)
-    count = len(paths)
-    _commit_and_push(
-        private_notes,
-        f"chore: process {count} feedback {'item' if count == 1 else 'items'} (rejected)",
-        ["feedback"],
-    )
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        for filename in args.filenames:
+            _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
+        paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
+        rejected_dir = _subdir(private_notes, FEEDBACK_STATE_REJECTED)
+        for p in paths:
+            _stamp_result(p, outcome=FEEDBACK_STATE_REJECTED, now=now, commit=args.commit, note=args.note)
+            shutil.move(p, rejected_dir / p.name)
+        count = len(paths)
+        _commit_and_push(
+            private_notes,
+            f"chore: process {count} feedback {'item' if count == 1 else 'items'} (rejected)",
+            ["feedback"],
+        )
     print(f"{count}件不採用処理: {', '.join(p.name for p in paths)}")
 
 
@@ -151,19 +155,20 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
     """
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
-    _pull(private_notes)
-    for filename in args.filenames:
-        _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
-    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
-    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
-    for p in paths:
-        shutil.move(p, processing_dir / p.name)
-    count = len(paths)
-    _commit_and_push(
-        private_notes,
-        f"chore: start processing {count} feedback {'item' if count == 1 else 'items'}",
-        ["feedback"],
-    )
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        for filename in args.filenames:
+            _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
+        paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+        processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
+        for p in paths:
+            shutil.move(p, processing_dir / p.name)
+        count = len(paths)
+        _commit_and_push(
+            private_notes,
+            f"chore: start processing {count} feedback {'item' if count == 1 else 'items'}",
+            ["feedback"],
+        )
     print(f"{count}件処理開始: {', '.join(p.name for p in paths)}")
 
 
@@ -171,18 +176,19 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: inboxから単純削除しcommit・push。"""
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
-    _pull(private_notes)
-    for filename in args.filenames:
-        _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
-    paths = _resolve_feedback_targets(args.filenames, inbox_dir)
-    for p in paths:
-        p.unlink()
-    count = len(paths)
-    _commit_and_push(
-        private_notes,
-        f"chore: remove {count} feedback {'item' if count == 1 else 'items'}",
-        ["feedback"],
-    )
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        for filename in args.filenames:
+            _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
+        paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+        for p in paths:
+            p.unlink()
+        count = len(paths)
+        _commit_and_push(
+            private_notes,
+            f"chore: remove {count} feedback {'item' if count == 1 else 'items'}",
+            ["feedback"],
+        )
     print(f"{count}件削除: {', '.join(p.name for p in paths)}")
 
 
@@ -196,31 +202,45 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
         sys.exit(1)
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
-    if args.filename is None:
-        _pull(private_notes)
-        candidates = sorted(
-            (p for p in inbox_dir.iterdir() if p.suffix == ".md" and p.is_file()),
-            key=lambda p: p.name,
-        )
-        if not candidates:
-            print("inboxが空のため編集対象がありません。", file=sys.stderr)
+    with _repo_lock(private_notes):
+        if args.filename is None:
+            _pull(private_notes)
+            candidates = sorted(
+                (p for p in inbox_dir.iterdir() if p.suffix == ".md" and p.is_file()),
+                key=lambda p: p.name,
+            )
+            if not candidates:
+                print("inboxが空のため編集対象がありません。", file=sys.stderr)
+                sys.exit(2)
+            path = candidates[-1]
+        else:
+            path = _validate_filename(args.filename, inbox_dir)
+            _pull(private_notes)
+        _verify_frontmatter_target_repo(path.name, [inbox_dir], args.target_repo)
+        if not path.exists():
+            print(f"inboxに存在しません: {path.name}", file=sys.stderr)
             sys.exit(2)
-        path = candidates[-1]
-    else:
-        path = _validate_filename(args.filename, inbox_dir)
-        _pull(private_notes)
-    _verify_frontmatter_target_repo(path.name, [inbox_dir], args.target_repo)
-    if not path.exists():
-        print(f"inboxに存在しません: {path.name}", file=sys.stderr)
-        sys.exit(2)
-    before = path.read_bytes()
-    subprocess.run([editor, str(path)], check=True)
-    after = path.read_bytes()
-    if before == after:
+        snapshot = path.read_bytes()
+    tmp_path = _copy_to_tempfile(snapshot)
+    subprocess.run([editor, str(tmp_path)], check=True)
+    edited = tmp_path.read_bytes()
+    if edited == snapshot:
+        tmp_path.unlink(missing_ok=True)
         print("差分なし。")
         return
-    rel = str(path.relative_to(private_notes))
-    _commit_and_push(private_notes, "chore: edit feedback item", [rel])
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        if not path.exists() or path.read_bytes() != snapshot:
+            print(
+                f"編集中に他プロセスが対象を変更しました: {path.name}。"
+                f"編集内容は{tmp_path}に残しています。再度atk fb editを実行してください。",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        path.write_bytes(edited)
+        rel = str(path.relative_to(private_notes))
+        _commit_and_push(private_notes, "chore: edit feedback item", [rel])
+    tmp_path.unlink(missing_ok=True)
     print(f"編集反映: {path.name}")
 
 
@@ -229,17 +249,18 @@ def _cmd_commit(private_notes: pathlib.Path) -> None:
 
     inbox配下に未コミット変更が無い場合は早期return。
     """
-    _pull(private_notes)
-    inbox_rel = "feedback/inbox"
-    status = subprocess.run(
-        ["git", "status", "--porcelain", "--", inbox_rel],
-        cwd=private_notes,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if not status.stdout.strip():
-        print("差分なし。")
-        return
-    _commit_and_push(private_notes, "chore: edit feedback items externally", [inbox_rel])
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        inbox_rel = "feedback/inbox"
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--", inbox_rel],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if not status.stdout.strip():
+            print("差分なし。")
+            return
+        _commit_and_push(private_notes, "chore: edit feedback items externally", [inbox_rel])
     print("外部編集分をコミット・pushしました。")

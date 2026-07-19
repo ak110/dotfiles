@@ -17,6 +17,7 @@ from _atk_fb_common import (
     _max_existing_seq,
     _pull,
     _reject_bare_repo_path_override,
+    _repo_lock,
     _resolve_repo_path_override,
     _subdir,
 )
@@ -75,34 +76,35 @@ def _cmd_add(
         if message is None:
             sys.exit(1)
         messages = [message]
-    try:
-        _pull(private_notes)
-    except subprocess.CalledProcessError:
-        print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+    with _repo_lock(private_notes):
+        try:
+            _pull(private_notes)
+        except subprocess.CalledProcessError:
+            print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+            for message in messages:
+                print("---", file=sys.stderr)
+                print(message, file=sys.stderr)
+            sys.exit(1)
+        timestamp = now.strftime("%Y%m%d-%H%M%S")
+        inbox_dir = _subdir(private_notes, "inbox")
+        counter = _max_existing_seq(inbox_dir, timestamp) + 1
+        generated: list[str] = []
         for message in messages:
-            print("---", file=sys.stderr)
-            print(message, file=sys.stderr)
-        sys.exit(1)
-    timestamp = now.strftime("%Y%m%d-%H%M%S")
-    inbox_dir = _subdir(private_notes, "inbox")
-    counter = _max_existing_seq(inbox_dir, timestamp) + 1
-    generated: list[str] = []
-    for message in messages:
-        fm, body = _parse_leading_frontmatter(message)
-        item_target_repo = fm.get("target_repo", target_repo)
-        item_source = fm.get("source", args.source)
-        item_source_line = f"source: {item_source}\n" if item_source else ""
-        filename = f"{timestamp}-{counter:03d}.md"
-        content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}---\n\n{body}\n"
-        (inbox_dir / filename).write_text(content, encoding="utf-8")
-        generated.append(filename)
-        counter += 1
-    count = len(generated)
-    _commit_and_push(
-        private_notes,
-        f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
-        ["feedback"],
-    )
+            fm, body = _parse_leading_frontmatter(message)
+            item_target_repo = fm.get("target_repo", target_repo)
+            item_source = fm.get("source", args.source)
+            item_source_line = f"source: {item_source}\n" if item_source else ""
+            filename = f"{timestamp}-{counter:03d}.md"
+            content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}---\n\n{body}\n"
+            (inbox_dir / filename).write_text(content, encoding="utf-8")
+            generated.append(filename)
+            counter += 1
+        count = len(generated)
+        _commit_and_push(
+            private_notes,
+            f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
+            ["feedback"],
+        )
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")

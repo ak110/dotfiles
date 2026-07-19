@@ -7,6 +7,7 @@ dependencies = [
     "argcomplete>=3.6.3",
     "bashplotlib",
     "businesstimedelta",
+    "filelock>=3.30",
     "holidays",
     "httpx",
     "libarchive-c",
@@ -74,6 +75,7 @@ exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
 
 [dependency-groups]
 dev = [
+    "filelock>=3.30",
     "pyfltr[python]>=3.14.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
@@ -182,6 +184,8 @@ show_error_codes = true
 [tool.typos.default.extend-words]
 # gitエイリアス名（ba = branch --all）・CSSクラス名（.pl-ba）
 ba = "ba"
+# filelockパッケージの実際のAPIパラメータ名（後方互換のため残置されたtypo）
+intervall = "intervall"
 # gitエイリアス名（aci = add-commit-in-one）
 aci = "aci"
 # 人名（Antony Stubbs）

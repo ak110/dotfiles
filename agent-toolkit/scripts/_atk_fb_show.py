@@ -18,6 +18,7 @@ from _atk_fb_common import (
     _iter_feedback_entries_with_state,
     _iter_inbox_entries,
     _pull,
+    _repo_lock,
     _validate_filename,
 )
 from _atk_fb_formatters import _parse_target_repo
@@ -44,7 +45,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if args.filename is None and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
     if not args.skip_pull:
-        _pull(private_notes)
+        with _repo_lock(private_notes):
+            _pull(private_notes)
     filter_repo: str | None = None
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)

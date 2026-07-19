@@ -183,6 +183,27 @@ class TestWaitForChanges:
 
         assert pull_calls == [private_notes]
 
+    def test_pull_failure_is_caught_and_warned(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """タイムアウト時に`_pull`が`subprocess.CalledProcessError`を送出しても、
+        例外を送出せずstderr警告を出力して復帰すること。"""
+        private_notes = self._make_private_notes(tmp_path)
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
+
+        def fake_pull(_path: pathlib.Path) -> None:
+            raise subprocess.CalledProcessError(1, ["git", "pull", "--ff-only"])
+
+        monkeypatch.setattr(_process_loop, "_pull", fake_pull)
+
+        _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert "git pullに失敗" in capsys.readouterr().err
+
     def test_change_event_skips_pull(
         self,
         monkeypatch: pytest.MonkeyPatch,

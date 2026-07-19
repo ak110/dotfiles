@@ -2,18 +2,27 @@
 
 旧`pytools/dotfiles_fb/_common.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
+
+不変条件: フィードバック保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
+`_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
+運用（`atk fb process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
+pullとファイル操作・commitの交錯によるfast-forward失敗を招く。
 """
 
 import argparse
 import datetime
+import hashlib
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator
+import threading
+from collections.abc import Callable, Iterable, Iterator
 
+import filelock
+import platformdirs
 from _atk_fb_formatters import _display_width, _parse_target_repo, _tbd_body_summary
 
 # フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
@@ -125,16 +134,134 @@ def _run_git(args: list[str], cwd: pathlib.Path) -> None:
 
 
 def _pull(private_notes: pathlib.Path) -> None:
-    """フィードバック保存リポジトリで`git pull --ff-only`を実行する。"""
+    """フィードバック保存リポジトリで`git pull --ff-only`を実行する。
+
+    不変条件表明: `_repo_lock`保持下でのみ呼び出す。
+    """
+    _assert_repo_lock_held(private_notes)
     _run_git(["pull", "--ff-only"], cwd=private_notes)
 
 
+class _ThreadLocalHeldPaths(threading.local):
+    """現在の実行スレッドが保持中の`_repo_lock`対象パスと保持回数を保持する。"""
+
+    def __init__(self) -> None:
+        self.paths: dict[pathlib.Path, int] = {}
+
+
+# スレッドごとの保持記録。他スレッドの保持を自スレッドの保持と誤認しないよう、
+# プロセス共有の`set`ではなく`threading.local`派生で分離する。
+_LOCK_HELD_PATHS = _ThreadLocalHeldPaths()
+
+
+def _assert_repo_lock_held(private_notes: pathlib.Path) -> None:
+    """`private_notes`が現在の実行スレッドで`_repo_lock`保持中でなければ`RuntimeError`を送出する（不変条件表明）。"""
+    if _LOCK_HELD_PATHS.paths.get(private_notes.resolve(), 0) <= 0:
+        raise RuntimeError(
+            "不変条件違反: private_notesへのgit操作・ファイル変更は_repo_lock保持下でのみ実行できる。"
+            "呼び出し元でwith _repo_lock(private_notes):を用いること。"
+        )
+
+
+def _repo_lock_path(private_notes: pathlib.Path) -> pathlib.Path:
+    """`private_notes`に対応するロックファイルの絶対パスを返す。
+
+    配置先は`platformdirs.user_state_dir("agent-toolkit")`配下`locks/`ディレクトリとし、
+    ファイル名は`private_notes.resolve()`のSHA-1ハッシュ値とする（`.git/`配下を選択しない理由は
+    計画の`### 却下した代替案`参照）。取得時にロック用ディレクトリを自動作成する。
+    """
+    resolved = str(private_notes.resolve())
+    digest = hashlib.sha1(resolved.encode("utf-8"), usedforsecurity=False).hexdigest()
+    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit")) / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    return lock_dir / f"{digest}.lock"
+
+
+class _RepoLock(filelock.FileLock):
+    """`_repo_lock`が返すロック。保持区間を`_LOCK_HELD_PATHS`へ登録・解除する。"""
+
+    def __init__(self, private_notes: pathlib.Path) -> None:
+        self._target = private_notes.resolve()
+        super().__init__(str(_repo_lock_path(private_notes)))
+
+    def acquire(
+        self,
+        timeout: float | None = None,
+        poll_interval: float | None = None,
+        *,
+        poll_intervall: float | None = None,
+        blocking: bool | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> filelock.AcquireReturnProxy:
+        result = super().acquire(
+            timeout,
+            poll_interval,
+            poll_intervall=poll_intervall,
+            blocking=blocking,
+            cancel_check=cancel_check,
+        )
+        _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
+        return result
+
+    def release(self, force: bool = False) -> None:
+        super().release(force)
+        if not self.is_locked:
+            _LOCK_HELD_PATHS.paths.pop(self._target, None)
+
+
+def _repo_lock(private_notes: pathlib.Path) -> filelock.FileLock:
+    """フィードバック保存リポジトリのgit操作・ファイル変更を排他するプロセス間ロックを返す。
+
+    `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
+    本計画のロック区間分割設計では同一関数内のネスト`with`は発生しない。
+    タイムアウトは指定せず、取得できるまで無期限に待機する
+    （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
+    臨界区間はgit操作前後の短時間に限るため）。
+    """
+    return _RepoLock(private_notes)
+
+
+def _copy_to_tempfile(content: bytes) -> pathlib.Path:
+    """バイト列を`.md`拡張子の一時ファイルへ書き込み、そのパスを返す。
+
+    エディター起動をロック外で行う経路（`_cmd_edit`等）が、ロック保持下で取得した
+    対象ファイルのスナップショットを一時ファイルへ複製する用途に用いる。
+    """
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".md", delete=False) as f:
+        f.write(content)
+        return pathlib.Path(f.name)
+
+
 def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterable[str]) -> None:
-    """指定パスをaddしcommit・pushする。"""
+    """指定パスをaddしcommit・pushする。
+
+    不変条件表明: `_repo_lock`保持下でのみ呼び出す。
+    push失敗時（他プロセス・他端末による先行pushとの非fast-forward等）は
+    `git pull --rebase`を経由してpushを1回だけ再試行する。経由した`pull --rebase`自体が
+    失敗した場合は`git rebase --abort`の成否を確認してからリベース開始前の状態への
+    復元結果をstderrへ出力し、元の例外を送出する。
+    再試行後のpushが失敗した場合はその例外をそのまま送出する。
+    """
+    _assert_repo_lock_held(private_notes)
     rel_list = list(rel_paths)
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
-    _run_git(["push"], cwd=private_notes)
+    try:
+        _run_git(["push"], cwd=private_notes)
+    except subprocess.CalledProcessError:
+        try:
+            _run_git(["pull", "--rebase"], cwd=private_notes)
+        except subprocess.CalledProcessError:
+            abort_result = subprocess.run(["git", "rebase", "--abort"], cwd=private_notes, check=False)
+            if abort_result.returncode != 0:
+                print(
+                    "git rebase --abortが失敗しました。rebase中間状態が残存している可能性があり、手動復旧が必要です。",
+                    file=sys.stderr,
+                )
+            else:
+                print("git rebase --abortでリベース開始前の状態へ復元しました。", file=sys.stderr)
+            raise
+        _run_git(["push"], cwd=private_notes)
 
 
 def _stamp_result(

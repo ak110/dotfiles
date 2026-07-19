@@ -7,8 +7,12 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-07-18T06:20:46.071369917Z"
 exclude-newer-span = "P1D"
+
+[options.exclude-newer-package]
+pytilpack = false
+pyfltr = false
 
 [[package]]
 name = "aiofiles"
@@ -530,11 +534,11 @@ wheels = [
 
 [[package]]
 name = "filelock"
-version = "3.29.0"
+version = "3.31.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b5/fe/997687a931ab51049acce6fa1f23e8f01216374ea81374ddee763c493db5/filelock-3.29.0.tar.gz", hash = "sha256:69974355e960702e789734cb4871f884ea6fe50bd8404051a3530bc07809cf90", size = 57571, upload-time = "2026-04-19T15:39:10.068Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4a/9f/994e80905542b748eb5b9f36d71458f0aea51a7be0fcb52ad959787dc1b7/filelock-3.31.0.tar.gz", hash = "sha256:c188cbc4307c18894c5424fa73f97ea7fa127ddf62192487546da3a214d0a381", size = 180931, upload-time = "2026-07-18T05:53:29.262Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/47/dd9a212ef6e343a6857485ffe25bba537304f1913bdbed446a23f7f592e1/filelock-3.29.0-py3-none-any.whl", hash = "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258", size = 39812, upload-time = "2026-04-19T15:39:08.752Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/4a/e213905d3b8ad3d35d14fc056b36134a274e7f6a1050e94428b5be10a94c/filelock-3.31.0-py3-none-any.whl", hash = "sha256:739b73e580fe88bb78d830aeddbc492519ece3d97ac8368de13a2032c61010c1", size = 96080, upload-time = "2026-07-18T05:53:27.732Z" },
 ]
 
 [[package]]
@@ -1860,6 +1864,7 @@ dependencies = [
     { name = "argcomplete" },
     { name = "bashplotlib" },
     { name = "businesstimedelta" },
+    { name = "filelock" },
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
@@ -1884,6 +1889,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "filelock" },
     { name = "pyfltr" },
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
@@ -1897,6 +1903,7 @@ requires-dist = [
     { name = "argcomplete", specifier = ">=3.6.3" },
     { name = "bashplotlib" },
     { name = "businesstimedelta" },
+    { name = "filelock", specifier = ">=3.30" },
     { name = "holidays" },
     { name = "httpx" },
     { name = "libarchive-c" },
@@ -1921,6 +1928,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "filelock", specifier = ">=3.30" },
     { name = "pyfltr", extras = ["python"], specifier = ">=3.14.1" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },

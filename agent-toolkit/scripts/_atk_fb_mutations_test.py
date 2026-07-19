@@ -426,14 +426,16 @@ class TestEditWithChanges:
     ) -> None:
         """編集後にファイル差分があればコミット・pushが実行される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        path = _write_feedback_file(notes, "fb-001.md", body="編集前")
+        _write_feedback_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
 
         git_calls: list[_GitCall] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
-                path.write_text("編集後\n", encoding="utf-8")
+                # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
+                # 複製した一時ファイルのため、元ファイルではなくcmd[1]を書き換える。
+                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -500,8 +502,10 @@ class TestEditNoArg:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
-                assert cmd[1] == str(latest)
-                latest.write_text("編集後\n", encoding="utf-8")
+                # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
+                # 複製した一時ファイルのため、元ファイルではなくcmd[1]を書き換える。
+                # 対象選択（最終追加分）の検証はcommit対象の相対パスで行う。
+                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -514,6 +518,8 @@ class TestEditNoArg:
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: edit feedback item" in commit_cmd
+        add_cmd = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "add"]][0]
+        assert str(latest.relative_to(notes)) in add_cmd
 
     def test_edit_no_arg_exits_on_empty_inbox(
         self,

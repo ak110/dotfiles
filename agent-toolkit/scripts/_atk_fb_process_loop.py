@@ -15,7 +15,7 @@ import time
 import _process_loop_log
 import watchdog.events
 import watchdog.observers
-from _atk_fb_common import _count_pending_entries, _pull
+from _atk_fb_common import _count_pending_entries, _pull, _repo_lock
 from _atk_fb_repo import _resolve_local_worktree, _resolve_repo_id
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
@@ -90,7 +90,9 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
 
     変更検知時はデバウンス窓（3秒）で追加イベントを畳み込んでから返る
     （他端末書き込みは10分タイムアウト側の`_pull`で拾うため、変更検知時は`_pull`しない）。
-    タイムアウト時は他端末投入を反映するため`_pull`する。
+    タイムアウト時は他端末投入を反映するため`_repo_lock`保持下で`_pull`する。
+    他プロセスとの一時的な競合・ネットワーク断等で`_pull`が失敗した場合は例外を捕捉して
+    stderrへ警告出力し、常駐ループの待機動作を続ける。
     """
     del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
     change_event = threading.Event()
@@ -107,7 +109,11 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
                 if not change_event.wait(timeout=_DEBOUNCE_SEC):
                     break
         else:
-            _pull(private_notes)
+            try:
+                with _repo_lock(private_notes):
+                    _pull(private_notes)
+            except subprocess.CalledProcessError as exc:
+                print(f"git pullに失敗（pull失敗、待機ループ続行）: {exc}", file=sys.stderr)
     finally:
         observer.stop()
         observer.join()

@@ -2,7 +2,7 @@
 # PYTHON_ARGCOMPLETE_OK
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0"]
+# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30"]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
