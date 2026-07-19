@@ -300,3 +300,159 @@ class TestAddRepoPathOverrideCli:
         content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/cwdrepo" in content
         assert oversized_message in content
+
+
+class TestAddEmptyBodyRejection:
+    """`fb add`の実質空本文投入拒否を検証する。"""
+
+    def test_empty_string_body_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """本文が空文字のみのとき非ゼロ終了し、エラー出力に検出理由が含まれる。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), ""], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "実質空" in captured.err
+
+    def test_single_dash_body_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """本文が単一の`-`のみのとき非ゼロ終了する。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "-"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+
+    def test_multiline_bullet_markers_only_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """複数行の箇条書きマーカーのみ（`-\\n-\\n`等）のとき非ゼロ終了する。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        # 先頭ハイフンの複数文字列引数はargparseがオプションと誤認するため`--`で区切る
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "--", "-\n-\n"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+
+    def test_valid_body_with_content_still_accepted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """内容ありの箇条書き（`- 理由: ...`）は従来通り投入が成立する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "- 理由: 動作確認済みのため採用"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        assert list((notes / "feedback" / "inbox").iterdir())
+
+    def test_editor_confirmed_empty_body_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エディター経由で空本文が確定した場合も非ゼロ終了する。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            empty: Any = "" if kwargs.get("text") else b""
+            if cmd == ["git", "rev-parse", "--show-toplevel"]:
+                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text("-\n", encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1

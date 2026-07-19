@@ -52,6 +52,20 @@ def _parse_leading_frontmatter(message: str) -> tuple[dict[str, str], str]:
     return parsed, body
 
 
+def _body_is_effectively_empty(body: str) -> bool:
+    """本文が実質空か判定する。
+
+    実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
+    （`-`・`*`・`+`のいずれか単独文字）のみで構成される状態を指す。
+    session-review自動投入・ユーザー直接投入いずれの経路でも、
+    実効的な指示・観察事象を含まない投入をCLI側で一律検出するための基準とする。
+    """
+    non_empty_lines = [line.strip() for line in body.split("\n") if line.strip()]
+    if not non_empty_lines:
+        return True
+    return all(line in ("-", "*", "+") for line in non_empty_lines)
+
+
 def _cmd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -67,6 +81,7 @@ def _cmd_add(
     エディター経由の本文確定後に`_pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
+    各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
@@ -76,6 +91,17 @@ def _cmd_add(
         if message is None:
             sys.exit(1)
         messages = [message]
+    for message in messages:
+        _, body = _parse_leading_frontmatter(message)
+        if _body_is_effectively_empty(body):
+            preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
+            print(
+                "投入を拒否しました: 本文が実質空です"
+                "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
+                f"該当メッセージの先頭: {preview}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
     with _repo_lock(private_notes):
         try:
             _pull(private_notes)
