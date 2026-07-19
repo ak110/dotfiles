@@ -88,6 +88,7 @@ Agent / Task:
 - `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の
   `plan-file-creator`の整合性チェック完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
+- `plan-codex-reviewer`起動検知時の`plan_codex_reviewer_invoked`即時記録 (side-effect)
 
 Write / Edit / MultiEdit:
 
@@ -275,6 +276,24 @@ def _check_agent_norm_reference(tool_input: dict) -> str | None:
         "Include explicit reference to agent-toolkit:agent-standards or 01-agent.md in prompt.",
         tag="warn",
     )
+
+
+def _record_plan_codex_reviewer_invoked(session_id: str) -> None:
+    """`plan-codex-reviewer`起動検知時に経路遵守検査用フラグを即時記録する（PreToolUse側、FB[2]）。
+
+    サイドチェーン内（`plan-codex-reviewer`自身が`mcp__codex__codex`を呼ぶ場面）でも
+    起動記録を参照できるよう、PostToolUse完了を待たずPreToolUse時点で真化する。
+    """
+    if not session_id:
+        return
+
+    def _set(state: dict) -> dict | None:
+        if state.get("plan_codex_reviewer_invoked", False):
+            return None
+        state["plan_codex_reviewer_invoked"] = True
+        return state
+
+    update_state(session_id, _set)
 
 
 def _language_notice(body: str) -> str:
@@ -522,11 +541,17 @@ def main() -> int:
 
     # Agent/Task: plan-impl-executor起動時の`plan-file-creator`の整合性チェック完了未達ブロック +
     # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
-    # process-loop観測用のサブエージェント起動時刻記録 (fb-1)
+    # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
+    # plan-codex-reviewer起動記録の前倒し
     if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_start", type=subagent_type)
+        if isinstance(subagent_type, str) and subagent_type in (
+            "plan-codex-reviewer",
+            "agent-toolkit:plan-codex-reviewer",
+        ):
+            _record_plan_codex_reviewer_invoked(session_id)
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
@@ -3849,7 +3874,7 @@ def _check_codex_review_not_read(state: dict) -> bool:
 def _check_codex_mcp_via_plan_codex_reviewer(state: dict, *, tool_name: str) -> bool:
     """plan-codex-reviewerサブエージェント経由の実施履歴が無い直接呼び出しをブロックする。
 
-    `plan_codex_reviewer_invoked`(成功起動記録)と`plan_codex_reviewer_blocked`(起動失敗記録)の
+    `plan_codex_reviewer_invoked`(起動要求検知時点の記録、成功未確定)と`plan_codex_reviewer_blocked`(起動失敗記録)の
     いずれも偽の場合にTrueを返す（ブロック方向）。auto mode下でサブエージェント経由が
     ブロックされた場合は`plan_codex_reviewer_blocked`が真となるため直接呼び出しが許容される
     （`codex-review.md`「実行経路」節の既存例外条件と整合）。

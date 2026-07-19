@@ -19,6 +19,9 @@ named subagent（`agent_name`非空）でtranscript内のtool_use数が閾値以
 メイン宛のSendMessage送付履歴（`name == "SendMessage"`かつ`input.to == "main"`）が
 無い時にblockを返し、完了報告の能動送付（またはメイン受領）を促す。
 当該判定結果は`agent_name`・tool_use数・送付有無を含めて`append_stop_log`で常時ログ化する。
+
+`plan-impl-executor`完了報告（`plan_impl_executor_active_subagent_sessions`登録時のみ発火）は、
+主要欄ラベルの欠落検査と、background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 """
 
 from __future__ import annotations
@@ -65,6 +68,50 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
 )
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
+
+# `plan-impl-executor`が自身の判断でbackground並列起動した宣言と、
+# `changed`欄の未消化項目（`- [ ]`）が共起するかの判定パターン（FB[3]）。
+# `plan-impl-executor.md`「停止禁止」節が禁止するbackground並列起動の再発検出用。
+_PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE = re.compile(r"run_in_background\s*=\s*true|バックグラウンドで?並列起動")
+_PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE = re.compile(r"^-\s*\[\s\]", re.MULTILINE)
+_PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(r"^status:\s*completed\b", re.MULTILINE)
+
+# `changed:`欄本文（次の主要ラベル行直前まで）を抽出する境界パターン（FB[3]）。
+# `_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS`・`_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL`と同じラベル集合を
+# 境界として使い、`verification`・`blockers`等の他欄に含まれるチェックボックス様の記述を誤検出しない。
+_PLAN_IMPL_EXECUTOR_ALL_LABELS: tuple[str, ...] = _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS + (
+    _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL,
+)
+_PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE = re.compile(
+    r"^changed:\s*\n((?:(?!^(?:" + "|".join(re.escape(label) for label in _PLAN_IMPL_EXECUTOR_ALL_LABELS) + r"):).*\n?)*)",
+    re.MULTILINE,
+)
+
+
+def _extract_changed_section_body(text: str) -> str:
+    """完了報告本文の`changed:`欄本文（次の主要ラベル行直前まで）を抽出する（FB[3]）。
+
+    `changed:`欄が存在しない場合は空文字列を返す。
+    """
+    match = _PLAN_IMPL_EXECUTOR_CHANGED_SECTION_RE.search(text)
+    return match.group(1) if match else ""
+
+
+def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:
+    """`plan-impl-executor`完了報告のbackground並列起動宣言と`changed`欄未消化項目の共起を検出する（FB[3]）。
+
+    `status: completed`かつ`run_in_background=true`相当の宣言があり、
+    `changed`欄本文に限定して未チェック項目（`- [ ]`）が残る場合を違反として`True`を返す。
+    `changed`欄本文への限定は`verification`・`blockers`等の他欄に現れるチェックボックス様の
+    記述による誤検出を防ぐため。
+    """
+    if not _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE.search(text):
+        return False
+    if not _PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE.search(text):
+        return False
+    changed_body = _extract_changed_section_body(text)
+    return bool(_PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE.search(changed_body))
+
 
 # tool_use数がこの閾値未満のnamed subagentは短命扱いで送信検査対象外とする。
 # 起動直後のOSエラー・単一ツール失敗など、能動送付を求めるほど作業が進んでいない
@@ -164,22 +211,23 @@ def _log_named_subagent_check(session_id: object, check: _NamedSubagentSendCheck
     )
 
 
-def _inspect_plan_impl_executor_report_format(payload: dict) -> list[str]:
-    """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査を実施する。
+def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool]:
+    """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査とbackground並列起動宣言矛盾検査を実施する。
 
     `posttooluse.py`が親セッション状態へ書き込む`plan_impl_executor_active_subagent_sessions`辞書に
     現在の`session_id`が登録されている場合のみ発火する。
-    ラベル存在のみを検査し値の内容は問わない。欠落ラベルがある場合はそのリストを返し、
-    ない場合または対象外の場合は空リストを返す。
+    戻り値は「欠落ラベルのリスト」と「background並列起動宣言と`changed`欄未消化項目の矛盾有無」の組とする。
+    ラベル欠落とbackground並列起動宣言矛盾は原因が異なるため、呼び出し元で別々のblock理由文を組み立てる（FB[3]）。
+    いずれも該当なしの場合または対象外の場合は`([], False)`を返す。
     検査後は該当エントリを状態辞書から削除する（呼び出し元セッションの完了検知として消費）。
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return []
+        return [], False
     state = read_state(session_id)
     active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
     if not isinstance(active, dict) or not active:
-        return []
+        return [], False
 
     def _drop_entries(current_state: dict) -> dict | None:
         current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
@@ -192,7 +240,7 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> list[str]:
 
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
-        return []
+        return [], False
     required = list(_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
     if _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE.search(text):
         required.append(_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL)
@@ -201,7 +249,7 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> list[str]:
         pattern = re.compile(rf"^{re.escape(label)}:", re.MULTILINE)
         if not pattern.search(text):
             missing.append(label)
-    return missing
+    return missing, _detect_plan_impl_executor_background_parallel_violation(text)
 
 
 def main() -> int:
@@ -261,7 +309,7 @@ def main() -> int:
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
 
-    missing_labels = _inspect_plan_impl_executor_report_format(payload)
+    missing_labels, has_background_parallel_violation = _inspect_plan_impl_executor_report_format(payload)
     if missing_labels:
         reason = _llm_notice(
             "blocked: `plan-impl-executor` completion report is missing required labels:"
@@ -269,6 +317,18 @@ def main() -> int:
             " See `agent-toolkit/agents/plan-impl-executor.md` '出力' section for the required format."
             " When resubmitting, restate the entire original completion report with the missing labels added"
             " (the main agent does not retain the body across this hook's block).",
+            tag="block",
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return 0
+    if has_background_parallel_violation:
+        reason = _llm_notice(
+            "blocked: `plan-impl-executor` completion report declares a self-initiated background parallel"
+            " subagent launch (`run_in_background=true`) while the `changed` section still has unchecked"
+            " (`- [ ]`) items. This violates `agent-toolkit/agents/plan-impl-executor.md` '停止禁止' section,"
+            " which prohibits self-judged background parallel launches. Complete the unfinished work"
+            " (directly or via `run_in_background=false` delegation) before reporting completion, unless the"
+            " caller's launch prompt explicitly authorized the parallel launch.",
             tag="block",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

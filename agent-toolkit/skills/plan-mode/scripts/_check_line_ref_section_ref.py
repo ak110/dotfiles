@@ -80,9 +80,10 @@ _SECTION_ALLOW_MARKER = "<!-- section-ref-ok -->"
 _NEW_FILE_CHECKBOX_RE = re.compile(r"^-\s*\[[ xX]\]\s*`?(?P<path>[^`\n]+?)`?\s*[（(](?:新設[^）)]*|廃止・削除)[）)]")
 
 # `## 変更内容`H3配下の`text`フェンスにおける新設節抽出対象ラベル判定。
-# `[追記]`・`[新設]`本体、および`[追記（frontmatter）]`等のサブラベル形式に一致する。
-# `[置換後]`は既存節の書き換えであり新設節を意味しないため対象外とする。
-_NEW_SECTION_FENCE_LABEL_RE = re.compile(r"^\s*\[(?:追記|新設)(?:（[^）]*）)?\]\s*$")
+# `[追記]`・`[新設]`・`[置換後]`本体、および`[追記（frontmatter）]`等のサブラベル形式に一致する。
+# `[置換後]`ブロック内の改称後見出しは新設節として扱う
+# （改称前と同一見出しの再掲時は既存節として実在確認されるため挙動不変）。
+_NEW_SECTION_FENCE_LABEL_RE = re.compile(r"^\s*\[(?:追記|新設|置換後)(?:（[^）]*）)?\]\s*$")
 
 # 新設節見出し抽出パターン。`^##\s+<title>$`・`^###\s+<title>$`のみを対象とし、
 # 前置記号`+`は許容するが削除記号`-`は対象外とする。
@@ -110,7 +111,9 @@ _TARGET_HEADING_RE = re.compile(r"^#+\s+(.+?)\s*$", re.MULTILINE)
 
 # 節名参照検査で検査対象へ含める`text`フェンスのラベル判定。`[追記]`・`[置換後]`・`[置換後（全文）]`・
 # `[新設]`本体、および`[追記（frontmatter）]`等のサブラベル形式に一致する。
-_INCLUDED_SECTION_REF_FENCE_LABEL_RE = re.compile(r"^\s*\[(?:追記|置換後|新設)(?:（[^）]*）)?\]\s*$")
+# 新設節抽出対象ラベル判定（`_NEW_SECTION_FENCE_LABEL_RE`）と対象ラベル集合が一致するため、
+# 同一パターンを共有する（FB[1]反映で両者が同一集合になった）。
+_INCLUDED_SECTION_REF_FENCE_LABEL_RE = _NEW_SECTION_FENCE_LABEL_RE
 
 # frontmatter同期注記行の判定（`# 同期注記: <path>「<節名>」節`形式）。当該行と直後の継続コメント行は
 # 節名参照検査から除外する（同期先パス・節名の記述は規範文書の正当な同期メタ情報であり違反ではないため）。
@@ -156,7 +159,7 @@ def _is_newly_created_path(token: str, new_paths: frozenset[str]) -> bool:
 def _collect_newly_created_sections(text: str) -> dict[str, frozenset[str]]:
     r"""`## 変更内容`H2配下の`### <path>`H3ブロック配下で新設される節見出しを集約する。
 
-    各H3配下の`[追記]`・`[新設]`ラベル付き`text`フェンス内の`##`・`###`見出しを
+    各H3配下の`[追記]`・`[新設]`・`[置換後]`ラベル付き`text`フェンス内の`##`・`###`見出しを
     新設節として対象ファイルパスごとに集約する。
     節名実在検査で「同一計画内で新設予定の節」を実在確認対象から除外するために用いる
     （`_check_section_name_existence`から呼び出される）。
@@ -165,7 +168,7 @@ def _collect_newly_created_sections(text: str) -> dict[str, frozenset[str]]:
 
     抽出条件は次のとおり。
     - `## 変更内容`H2配下の`### <path>`H3のみを対象とする（`<path>`はH3行頭のバッククォート囲みまたは裸表記）
-    - 各H3配下の言語指定`text`フェンス内で、直後1行目が`[追記]`・`[新設]`ラベル
+    - 各H3配下の言語指定`text`フェンス内で、直後1行目が`[追記]`・`[新設]`・`[置換後]`ラベル
       （およびfrontmatterサブラベル形式）に一致する場合のみ抽出対象とする
     - 抽出対象は`^##\\s+<title>$`・`^###\\s+<title>$`パターンのみ。
       前置記号（`+`）は許容し、削除記号（`-`）は対象外とする

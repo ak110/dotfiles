@@ -44,6 +44,10 @@ Nは1以上の整数で、`[追記×2]`・`[追記×3]`のように書く。
 HEADが本計画の追記変更を既にコミット済みで含む場合（HEAD到達済み）、`git log --oneline`で当該追記コミットを特定し、
 `git show <その1つ前のSHA>:<path>`で追記前状態を取得する。
 
+`[置換後]`ブロック内で新設・改称されるH2/H3見出しは、節名実在検査（`_check_line_ref_section_ref.py`の
+`_collect_newly_created_sections`）の新設節の収集対象に含める。既存見出しの再掲は既存節として実在確認され、
+改称後見出しへの参照のみが新設節として許容される。
+
 ## frontmatter変更用サブラベル
 
 frontmatter部分（`^---$`と`^---$`区間内）の変更を対象とするサブラベルを次の4種類とする。
@@ -81,6 +85,8 @@ textlintがフェンス内のPython行を日本語文として誤検出し、`se
   - `check_plan_diff_gates.py`（実装は`_plan_diff_gates_scan.py`）も`×N`修飾子込みでラベル判定し、
     `[追記]`と同等の縮退フレーズ検出・textlint併走検査を適用する（集計は行わない）
 - `[新設]`・`[置換後]`・`[置換後（全文）]`は`check_plan_diff_gates.py`が検査する
+- `[追記]`・`[新設]`・`[置換後]`（フェンス直後1行目ラベルおよびfrontmatterサブラベル形式）は
+  `_check_line_ref_section_ref.py`の`_collect_newly_created_sections`が、節名実在検査における新設節の収集対象として扱う
 - 差分ラベル全種と派生形`[追記×N]`、frontmatterサブラベル4種のfence外側配置は`check_plan_diff_gates.py`が検査する
   - fence配置ミスをtextlint jtf-style/4.3.2大かっこ違反の間接検出に委ねる状態を回避し、起草直後に直接検出する
 - `[現行]`/`[置換後]`の同一fence内側配置は`check_plan_diff_gates.py`が検査する

@@ -4724,6 +4724,44 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 0
 
 
+class TestPlanCodexReviewerInvokedPreToolUse:
+    """FB[2]案(a): `plan-codex-reviewer`起動検知をPreToolUse側で即時記録する。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("subagent_type", ["plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer"])
+    def test_pre_tool_use_sets_plan_codex_reviewer_invoked(
+        self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str
+    ) -> None:
+        sid = f"fb2-pre-{tool_name.lower()}-{subagent_type.replace(':', '-')}"
+        result = _run(
+            {"tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = _read_session_state(tmp_path, sid)
+        assert state.get("plan_codex_reviewer_invoked") is True
+
+    def test_other_subagent_type_does_not_set_flag(self, tmp_path: pathlib.Path) -> None:
+        sid = "fb2-pre-other"
+        _run(
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "claude"}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_codex_reviewer_invoked") is not True
+
+    def test_second_invocation_does_not_overwrite_existing_true(self, tmp_path: pathlib.Path) -> None:
+        """既に真化済みのフラグを冪等に保つ（`update_state`のno-op復帰を検証）。"""
+        sid = "fb2-pre-idempotent"
+        _write_session_state(tmp_path, sid, {"plan_codex_reviewer_invoked": True})
+        result = _run(
+            {"tool_name": "Task", "tool_input": {"subagent_type": "plan-codex-reviewer"}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert _read_session_state(tmp_path, sid).get("plan_codex_reviewer_invoked") is True
+
+
 class TestPlanModeFlagReset:
     """`agent-toolkit:plan-mode`スキル起動時のplan-file-creatorの整合性チェック完了フラグリセット。"""
 

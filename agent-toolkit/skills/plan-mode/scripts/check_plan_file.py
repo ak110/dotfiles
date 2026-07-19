@@ -49,6 +49,8 @@
   （体裁・構成寄りの指摘のため`warning`区分）
 - `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
   リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する
+- `_check_version_bump_matrix_consistency`: 版更新マトリクスの改訂節数・該当基準列と判定列の整合、
+  および`## 実行方法`のbump種別と判定列最大値の整合を検査する（不一致時に警告）
 
 `warning`区分の判定根拠は次のとおり。textlint・markdownlint・typos・口語表現の全文検査は
 plan-file-creatorの整合性チェックステップ4の`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行い、
@@ -169,6 +171,7 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
 
     _check_document_size_upper_limit(plan_path, text)
     violations += _check_version_bump_matrix(plan_path, text)
+    _check_version_bump_matrix_consistency(plan_path, text)
     for msg in _check_run_method_script_paths(plan_path, text, repo_root):
         print(msg, file=sys.stderr)
         violations += 1
@@ -382,6 +385,59 @@ def _check_version_bump_matrix(plan_path: pathlib.Path, text: str) -> int:
         file=sys.stderr,
     )
     return 1
+
+
+# 版更新マトリクスの判定列ラベルとbump種別ランクの対応（FB[4]）。
+# `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節「判定基準」の
+# MAJORがMINORより大きく、MINORがPATCHより大きく、PATCHがbump不要より大きい順と対応させる。
+_BUMP_JUDGMENT_RANK: dict[str, int] = {"bump不要": 0, "PATCH": 1, "PATCH寄与": 1, "MINOR": 2, "MAJOR": 3}
+_BUMP_SCRIPT_ARG_RANK: dict[str, int] = {"patch": 1, "minor": 2, "major": 3}
+_BUMP_SCRIPT_ARG_RE = re.compile(r"agent_toolkit_bump\.py\s+(major|minor|patch)", re.IGNORECASE)
+
+
+def _check_version_bump_matrix_consistency(plan_path: pathlib.Path, text: str) -> None:
+    """版更新マトリクスの行単位判定・全体bump最大値の整合を機械照合し不整合時にwarn出力する（FB[4]）。
+
+    改訂節数列が`1`かつ該当基準列に「新設」を含まない行で判定列が`MINOR`・`MAJOR`の場合、
+    単一節追記に対する過大判定として警告する
+    （`.claude/skills/agent-toolkit-edit/SKILL.md`「複数ファイルへそれぞれ単一節分の追記をする変更は、
+    各ファイル単位でPATCH判定の対象とする」規定に基づく）。
+    該当基準列に「新設」を含む行（節新設による`MINOR`・`MAJOR`判定）は正当な判定のため警告対象から除外する。
+    `## 実行方法`H2セクション本文（コードフェンス除外）中のbump script引数（major/minor/patch）が
+    マトリクス全行の判定列最大値（MAJORがMINORより大きく、MINORがPATCHより大きく、
+    PATCHがbump不要より大きい順）と一致するかも警告対象とする。
+    引数抽出を`## 実行方法`セクション本文に限定するのは、計画本文中の他箇所（変更案コードブロック等）に
+    出現するbump引数文字列の誤認を避けるため。
+    いずれも警告のみでexit codeへ算入しない（`_check_version_bump_matrix`の必須判定とは独立させる）。
+    """
+    rows = list(pretooluse._plan_format._BUMP_MATRIX_ROW_RE.finditer(text))
+    if not rows:
+        return
+    for m in rows:
+        revision_count = m.group("revision_count").strip()
+        judgment = m.group("judgment").strip()
+        criteria = m.group("criteria").strip()
+        if revision_count == "1" and judgment in ("MINOR", "MAJOR") and "新設" not in criteria:
+            print(
+                f"{plan_path}: [warn] 版更新マトリクスの`{m.group('file')}`行は改訂節数1だが判定が`{judgment}`"
+                "（単一節追記はPATCH相当が既定。過大判定の可能性）",
+                file=sys.stderr,
+            )
+    ranks = [_BUMP_JUDGMENT_RANK.get(m.group("judgment").strip()) for m in rows]
+    ranks = [r for r in ranks if r is not None]
+    if not ranks:
+        return
+    expected_max = max(ranks)
+    execution_body = "\n".join(line for _, line in pretooluse._plan_format.extract_h2_section_body(text, "実行方法"))
+    script_match = _BUMP_SCRIPT_ARG_RE.search(execution_body)
+    if script_match is None:
+        return
+    actual_rank = _BUMP_SCRIPT_ARG_RANK[script_match.group(1).lower()]
+    if actual_rank != expected_max:
+        print(
+            f"{plan_path}: [warn] `## 実行方法`のbump種別と版更新マトリクス判定列の最大値が不一致",
+            file=sys.stderr,
+        )
 
 
 def _check_run_method_script_paths(plan_path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:

@@ -18,6 +18,10 @@ user-invocable: false
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節・「起草・改訂委譲雛形」節、
 # `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節と
 # 意図的に重複させている。改訂時は4ファイルを同時更新する。
+# 「- 停止禁止」バレット配下のbackground並列起動抑制バレットは
+# plan-impl-executor.md「## 停止禁止」節の同旨パラグラフ、および
+# execution-process.md「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節手順5の
+# 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
 ---
 
 # spec-driven-implementer
@@ -62,12 +66,22 @@ frontmatterの`skills:`欄でプリロードされる親スキル本文のうち
   - `01-agent.md`「縮退表明は発行しない」項の規定に従う
   - 計画ファイル記載の全変更を実装・検証・コミットまで完遂する
   - 確認事項はTBD.mdへQブロックとして記録し続行根拠とする
-  - バックグラウンドで進行する検証・コミット・レビュー等の完遂まで動作を継続する
-    （pushは本サブエージェントの対象外。判断基準節「pushは行わない」を参照）。
-    実装フェーズで並列サブエージェント（`plan-implementer`）を起動した場合は、
+  - `spec-driven-implementer`も実装フェーズにおいて、自身の判断で並列実行手段を選択しない
+    - 対象は`run_in_background=true`の`plan-implementer`委譲・同一メッセージ内での
+      複数`mcp__codex__codex`同時呼び出し等とする
+    - 工程5のレビューサブエージェント起動時の並列度判断は対象外とする。
+      `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節に従う
+    - 本禁止規定は、`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節が認める
+      並列度の自律裁量に対する、実装委譲固有の限定的な例外とする
+    - 実装は自身の直接編集または`plan-implementer`等の`run_in_background=false`委譲で完遂する
+    - 呼び出し元の起動プロンプトで並列化が明示指定された場合に限り例外扱いとする
+  - バックグラウンドで進行する検証・コミット・レビュー等、および呼び出し元指定による並列実行手段の
+    完遂まで動作を継続する
+    （pushは本サブエージェントの対象外。判断基準節「pushは行わない」を参照）
+  - 実装フェーズで並列サブエージェント（`plan-implementer`）を起動した場合は、
     全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
-    待機表明のみの完了報告は発行しない。
-    詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う
+    待機表明のみの完了報告は発行しない
+  - 詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う
 - 破壊的操作・外部送信の取扱
   - 計画ファイルに記載された破壊的操作・外部送信は通常工程として実行する
   - 該当する操作は`git push`・外部APIへの送信・データ削除等を含む

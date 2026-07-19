@@ -819,22 +819,37 @@ class TestNewlyCreatedSectionExclusion:
         assert result.returncode == 0
 
     def test_excluded_fence_forms_are_not_treated_as_new_sections(self, tmp_path: pathlib.Path) -> None:
-        """抽出対象外（`[置換後]`ラベル・言語指定なしフェンス・削除記号`-`前置）は新設節に含まれない。"""
+        """抽出対象外（言語指定なしフェンス・削除記号`-`前置）は新設節に含まれない。"""
         (tmp_path / "docs").mkdir()
         (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
         path = _write(
             tmp_path / "plan.md",
             "## 変更内容\n\n### `docs/guide.md`\n\n"
-            "```text\n[置換後]\n## 置換後節\n本文。\n```\n\n"
             "```text\n## 無ラベル節\n本文。\n```\n\n"
             "```text\n[追記]\n-## 削除予定節\n本文。\n```\n\n"
-            "詳細は`docs/guide.md`「置換後節」節・`docs/guide.md`「無ラベル節」節・"
-            "`docs/guide.md`「削除予定節」節を参照する。\n",
+            "詳細は`docs/guide.md`「無ラベル節」"
+            "節・`docs/guide.md`「削除予定節」"
+            "節を参照する。\n",
         )
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 1
         violations = [line for line in result.stderr.splitlines() if "節名不在" in line]
-        assert len(violations) == 3
+        assert len(violations) == 2
+
+    def test_replaced_label_fence_heading_is_included_as_new_section(self, tmp_path: pathlib.Path) -> None:
+        """FB[1]: `[置換後]`ラベルフェンス内の改称後見出しも新設節として実在確認をスキップする。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 既存節\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[現行]\n## 既存節\n本文。\n```\n\n"
+            "```text\n[置換後]\n## 改称後節\n本文案。\n```\n\n"
+            "詳細は`docs/guide.md`「改称後節」"
+            "節を参照する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
 
     def test_file_level_and_section_level_new_exclusions_are_independent(self, tmp_path: pathlib.Path) -> None:
         """ファイル自体の新設除外（既存機構）と節新設除外（本機構）が同一計画内で独立して機能する。"""

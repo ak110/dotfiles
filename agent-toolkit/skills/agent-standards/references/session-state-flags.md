@@ -28,7 +28,9 @@
   `codex_review_invoked`は`plan-codex-reviewer`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
   記録判定は`subagent_type`一致のみに依拠し`isSidechain`値を条件に含まないため、
   `agent-toolkit:plan-file-creator`内部からのAgent/Task起動（サイドチェーン内起動）でも同様に記録される
-- `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動時のみ真化する（PostToolUse(Agent/Task)が記録）。`mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
+- `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動検知時点で前倒しして真化する。
+  PreToolUse(Agent/Task)が記録し、サイドチェーン内からも参照できる。
+  `mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
 - `plan_codex_reviewer_blocked`: `plan-codex-reviewer`起動失敗時（auto mode下のブロック等）に真化する。
   PostToolUseFailure・PermissionDenied（Agent/Task限定）が検出し、`mcp__codex__codex`直接呼び出しのauto mode例外条件に使う
 - `recorded_codex_thread_id`: `mcp__codex__codex`成功時のPostToolUseが`tool_response.threadId`を記録する。

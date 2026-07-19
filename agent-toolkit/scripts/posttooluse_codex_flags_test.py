@@ -80,16 +80,16 @@ class TestAgentInvocationFlags:
         assert state.get("agent_doc_validator_invoked") is not True
         assert state.get("codex_review_invoked") is not True
 
-    def test_plan_codex_reviewer_subagent_sets_both_flags(self, tmp_path: pathlib.Path):
-        """plan-codex-reviewer起動時はcodex_review_invokedとplan_codex_reviewer_invokedを両方真化する。"""
-        sid = "fb4-both-flags"
+    def test_plan_codex_reviewer_subagent_sets_codex_review_invoked_only(self, tmp_path: pathlib.Path):
+        """plan-codex-reviewer起動時はcodex_review_invokedのみ真化する（FB[2]反映後、`plan_codex_reviewer_invoked`はPreToolUse側の責務）。"""
+        sid = "fb2-post-codex-review-only"
         _run(
             {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": "agent-toolkit:plan-codex-reviewer"}},
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_invoked") is True
-        assert state.get("plan_codex_reviewer_invoked") is True
+        assert state.get("plan_codex_reviewer_invoked") is not True
 
     def test_mcp_codex_direct_call_sets_only_codex_review_invoked(self, tmp_path: pathlib.Path):
         """mcp__codex__codex直接呼び出しはcodex_review_invokedのみ真化し、threadIdを記録する。"""

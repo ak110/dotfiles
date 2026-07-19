@@ -315,8 +315,13 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
 # `## 対応方針`または`### エージェント判断`配下に置かれる版更新マトリクスの5列表ヘッダ検出パターン。
 # `check_plan_file.py`側の同名定義を本モジュールへ統合したSSOT。
 _BUMP_MATRIX_HEADER_RE = re.compile(r"\|\s*ファイル\s*\|\s*改訂節数\s*\|\s*節名\s*\|\s*判定\s*\|\s*該当基準\s*\|")
-# 版更新マトリクスの表本体1行（先頭セルがファイルパス、4列目が判定ラベル）を抽出するパターン。
-_BUMP_MATRIX_ROW_RE = re.compile(r"^\|\s*`[^`]+`\s*\|[^|]*\|[^|]*\|\s*(?P<judgment>[^|]+?)\s*\|[^|]*\|\s*$", re.MULTILINE)
+# 版更新マトリクスの表本体1行（1列目がファイルパス、2列目が改訂節数、4列目が判定ラベル、5列目が該当基準）を
+# 抽出するパターン。FB[4]: 改訂節数列を`revision_count`、該当基準列を`criteria`の名前付きグループで抽出し、
+# 行単位のPATCH判定整合照合（節新設行の除外判定を含む）に使う。
+_BUMP_MATRIX_ROW_RE = re.compile(
+    r"^\|\s*`(?P<file>[^`]+)`\s*\|\s*(?P<revision_count>[^|]*?)\s*\|[^|]*\|\s*(?P<judgment>[^|]+?)\s*\|\s*(?P<criteria>[^|]+?)\s*\|\s*$",
+    re.MULTILINE,
+)
 
 
 def _all_bump_matrix_judgments_are_none_required(content: str) -> bool:

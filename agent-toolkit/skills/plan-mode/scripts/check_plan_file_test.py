@@ -308,6 +308,79 @@ class TestVersionBumpMatrix:
         assert check_plan_file._check_version_bump_matrix(tmp_path / "plan.md", text) == 0
 
 
+class TestVersionBumpMatrixConsistency:
+    """FB[4]: `_check_version_bump_matrix_consistency`の改訂節数整合・bump最大値整合を検証する。"""
+
+    def test_revision_count_one_with_minor_warns(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        text = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/example.md`\n\n"
+            "### エージェント判断\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 1 | `対象節` | MINOR | 機能追加 |\n\n"
+            "## 実行方法\n\n- `scripts/agent_toolkit_bump.py minor`\n"
+        )
+        check_plan_file._check_version_bump_matrix_consistency(tmp_path / "plan.md", text)
+        assert "過大判定の可能性" in capsys.readouterr().err
+
+    def test_revision_count_one_with_new_section_criteria_no_warning(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """該当基準列が「節新設」を含む場合、改訂節数1でもMINOR判定は正当なため警告しない。"""
+        text = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/example.md`\n\n"
+            "### エージェント判断\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 1 | `新設節` | MINOR | 節新設 |\n\n"
+            "## 実行方法\n\n- `scripts/agent_toolkit_bump.py minor`\n"
+        )
+        check_plan_file._check_version_bump_matrix_consistency(tmp_path / "plan.md", text)
+        assert "過大判定の可能性" not in capsys.readouterr().err
+
+    def test_revision_count_one_with_patch_no_warning(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        text = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/example.md`\n\n"
+            "### エージェント判断\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 1 | `対象節` | PATCH | 単一節改訂 |\n\n"
+            "## 実行方法\n\n- `scripts/agent_toolkit_bump.py patch`\n"
+        )
+        check_plan_file._check_version_bump_matrix_consistency(tmp_path / "plan.md", text)
+        assert "過大判定の可能性" not in capsys.readouterr().err
+
+    def test_bump_script_mismatched_with_matrix_max_warns(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        text = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/example.md`\n\n"
+            "### エージェント判断\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 2 | `対象節` | MINOR | 機能追加 |\n\n"
+            "## 実行方法\n\n- `scripts/agent_toolkit_bump.py patch`\n"
+        )
+        check_plan_file._check_version_bump_matrix_consistency(tmp_path / "plan.md", text)
+        assert "bump種別と版更新マトリクス判定列の最大値が不一致" in capsys.readouterr().err
+
+    def test_bump_arg_outside_execution_section_is_ignored(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """FB[4]是正: `## 実行方法`外（コードブロック内の変更案等）のbump引数文字列は誤認しない。"""
+        text = (
+            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/rules/example.md`\n\n"
+            "### エージェント判断\n\n"
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 1 | `対象節` | PATCH | 単一節改訂 |\n\n"
+            "```text\nscripts/agent_toolkit_bump.py minor\n```\n\n"
+            "## 実行方法\n\n- `scripts/agent_toolkit_bump.py patch`\n"
+        )
+        check_plan_file._check_version_bump_matrix_consistency(tmp_path / "plan.md", text)
+        assert capsys.readouterr().err == ""
+
+
 class TestRunMethodScriptPaths:
     """`_check_run_method_script_paths`の検査を検証する。"""
 

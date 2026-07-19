@@ -138,6 +138,11 @@ plan-file-creatorの整合性チェックステップ4で行う。
   `plan-reviewer`はマトリクスと`## 実行方法`の`scripts/agent_toolkit_bump.py {種別}`記述の整合を照合する
   - 「判定」列は`bump不要`ラベルも許容する（コメント・docstring・非配布ファイルのみの変更等でbump不要と確定した場合）。
     `_plan_format.py`のSSOT関数が本ラベルを検出してbumpステップ記載を求める警告を抑止する
+  - `check_plan_file.py`の`_check_version_bump_matrix_consistency`は次の条件で警告を出力する
+    （exit codeへ算入しない）
+    - 改訂節数1かつ該当基準列に「新設」を含まない行で判定列が`MINOR`・`MAJOR`の場合
+    - `## 実行方法`本文（コードフェンス除外）のbump種別が判定列最大値
+      （MAJORをMINORより大、MINORをPATCHより大、PATCHをbump不要より大とする順）と不一致の場合
 
 ## サブエージェント連携の設計整合性
 

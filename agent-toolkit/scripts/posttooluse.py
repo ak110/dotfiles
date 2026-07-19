@@ -20,8 +20,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer。
-   plan-codex-reviewer起動時はplan_codex_reviewer_invokedも同時記録する）
+   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer /
    mcp__codex__codex・mcp__codex__codex-replyツール。
@@ -521,18 +520,11 @@ def main() -> int:
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
             if flag_key is not None:
 
-                def _set_agent_flag(state: dict, flag_key: str = flag_key, subagent_type: str = subagent_type) -> dict | None:
-                    changed = False
-                    if not state.get(flag_key, False):
-                        state[flag_key] = True
-                        changed = True
-                    # FB[4]: plan-codex-reviewer起動時は経路遵守検査用のplan_codex_reviewer_invokedも同時に真化する。
-                    if subagent_type in ("plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer") and not state.get(
-                        "plan_codex_reviewer_invoked", False
-                    ):
-                        state["plan_codex_reviewer_invoked"] = True
-                        changed = True
-                    return state if changed else None
+                def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:
+                    if state.get(flag_key, False):
+                        return None
+                    state[flag_key] = True
+                    return state
 
                 update_state(session_id, _set_agent_flag)
         return 0

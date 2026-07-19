@@ -475,3 +475,42 @@ class TestPlanImplExecutorReportFormat:
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state.get("plan_impl_executor_active_subagent_sessions") == {}
+
+    def test_background_parallel_declaration_with_unchecked_item_blocks(self, tmp_path: Path) -> None:
+        """FB[3]: background並列起動宣言と`changed`欄未消化項目が共起する完了報告をblockする。"""
+        sid = "sid-format-bg-violation"
+        _write_flag_state(tmp_path, sid, "sub-f")
+        report = _complete_report(changed="- [ ] item — /path（run_in_background=trueで並列起動）")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+
+    def test_background_parallel_declaration_with_all_checked_passes(self, tmp_path: Path) -> None:
+        """全項目チェック済みならbackground並列起動宣言があっても通過する。"""
+        sid = "sid-format-bg-ok"
+        _write_flag_state(tmp_path, sid, "sub-g")
+        report = _complete_report(changed="- [x] item — /path（run_in_background=trueで並列起動）")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_unchecked_item_outside_changed_section_does_not_block(self, tmp_path: Path) -> None:
+        """FB[3]是正: `changed`欄以外の未チェック項目はbackground並列起動宣言と共起しても誤ってblockしない。"""
+        sid = "sid-format-bg-outside-changed"
+        _write_flag_state(tmp_path, sid, "sub-h")
+        report = _complete_report(
+            changed="- [x] item — /path（run_in_background=trueで並列起動）",
+            blockers="- [ ] 未解決の論点",
+        )
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0

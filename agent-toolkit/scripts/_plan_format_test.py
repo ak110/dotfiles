@@ -298,6 +298,23 @@ class TestBumpMatrixSuppression:
         assert not _plan_format.has_manifest_files_when_bump_step_present(content)
 
 
+class TestBumpMatrixRowNamedGroups:
+    """FB[4]: `_BUMP_MATRIX_ROW_RE`が`file`・`revision_count`・`criteria`列を抽出できることを検証する。"""
+
+    def test_extracts_file_revision_count_and_criteria(self) -> None:
+        content = (
+            "| ファイル | 改訂節数 | 節名 | 判定 | 該当基準 |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| `agent-toolkit/rules/example.md` | 1 | `対象節` | PATCH | 単一節改訂 |\n"
+        )
+        matches = list(_plan_format._BUMP_MATRIX_ROW_RE.finditer(content))  # pylint: disable=protected-access  # noqa: SLF001
+        assert len(matches) == 1
+        assert matches[0].group("file") == "agent-toolkit/rules/example.md"
+        assert matches[0].group("revision_count") == "1"
+        assert matches[0].group("judgment") == "PATCH"
+        assert matches[0].group("criteria") == "単一節改訂"
+
+
 class TestHasRecurrencePreventionWhenSectionPresent:
     """has_recurrence_prevention_when_section_present の基本動作を検査する。"""
 
