@@ -152,6 +152,10 @@ _SECTION_REF_PATTERN = re.compile(r"(?P<path>`?[\w./:-]+\.md`?|`?agent-toolkit:[
 # 計画本文中の前置きパスを持たない`「<節名>」節`形式の参照抽出パターン。
 _BARE_SECTION_REF_PATTERN = re.compile(r"「(?P<section>[^」]+)」節")
 
+# バッククォート囲み`.md`パスへの明示的言及抽出パターン。
+# `_find_bare_section_ref_violations`が別ファイル言及行を判定するため使用する。
+_QUALIFIED_PATH_MENTION_RE = re.compile(r"`(?P<path>[\w./:-]+\.md)`")
+
 # `### <path>`形式H3の対象パス抽出パターン。先頭のパスのみを抽出し、後続の丸括弧注記は無視する。
 _H3_TARGET_PATH_RE = re.compile(r"^(?:`(?P<quoted>[^`]+)`|(?P<bare>[^\s（(]+))(?:[\s（(].*)?$")
 
@@ -161,9 +165,8 @@ _SKILL_REF_TARGET_RE = re.compile(r"^agent-toolkit:([A-Za-z0-9_-]+)$")
 # 節見出し抽出パターン。`^#+ +<節名>$`（trim後の完全一致照合に用いる）。
 _TARGET_HEADING_RE = re.compile(r"^#+\s+(.+?)\s*$", re.MULTILINE)
 
-# 節名参照検査で検査対象へ含める`text`フェンスのラベル判定。
-# `[追記]`・`[置換後]`・`[置換後（全文）]`・`[新設]`本体、および
-# `[追記（frontmatter）]`・`[置換後（frontmatter）]`等のサブラベル形式に一致する。
+# 節名参照検査で検査対象へ含める`text`フェンスのラベル判定。`[追記]`・`[置換後]`・`[置換後（全文）]`・
+# `[新設]`本体、および`[追記（frontmatter）]`等のサブラベル形式に一致する。
 _INCLUDED_SECTION_REF_FENCE_LABEL_RE = re.compile(r"^\s*\[(?:追記|置換後|新設)(?:（[^）]*）)?\]\s*$")
 
 
@@ -179,8 +182,7 @@ type _ResolvedTargetHeadings = frozenset[str] | None | _NewTargetSkip
 def _find_repo_root(start: pathlib.Path) -> pathlib.Path:
     """`start`から`.git`を遡り探索してリポジトリルートを解決する。
 
-    見つからない場合は`start`自体をリポジトリルートとみなす
-    （CLI起動時のカレントディレクトリへのフォールバック）。
+    見つからない場合は`start`自体をリポジトリルートとみなす。
     """
     resolved = start.resolve()
     for candidate in (resolved, *resolved.parents):
@@ -220,11 +222,10 @@ def main() -> int:
 def _check_content_level_violations(path: pathlib.Path, text: str, repo_root: pathlib.Path) -> list[str]:
     """パス実在検査・スキル名・サブエージェント名実在検査・節名実在検査をまとめて実行し、違反行メッセージ一覧を返す。
 
-    `text`は呼び出し側（`main`）で読み込み済みのファイル内容を受け取り、ここでは再読み込みしない。
-    フェンス付きコードブロックはいずれの検査からも除外するため、`_strip_fenced_blocks`で
-    あらかじめ空行化した内容を各検査へ渡す。各検査の戻り値へ`path`を付与して`_check_file`と出力形式を揃える。
-    節名実在検査（`_check_section_name_existence`）のみ、追記/置換ラベル配下の`text`フェンス内文面を
-    検査対象へ含める必要があるため、フェンス空行化前の`text`をそのまま渡す（内部で独自のフェンス制御を行う）。
+    `text`は`main`で読み込み済みの内容をそのまま受け取り再読み込みしない。フェンス付きコードブロックは
+    `_strip_fenced_blocks`で空行化した内容を各検査へ渡すが、節名実在検査のみ追記/置換ラベル配下の
+    `text`フェンス内文面も検査対象とするため未加工の`text`を渡す（内部で独自のフェンス制御を行う）。
+    各検査の戻り値へ`path`を付与し`_check_file`と出力形式（`f"{path}: {msg}"`）を揃える。
     """
     content = _strip_fenced_blocks(text)
     violations: list[str] = []
@@ -240,8 +241,7 @@ def _check_content_level_violations(path: pathlib.Path, text: str, repo_root: pa
 def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """ファイル/ディレクトリ混在の入力を検査対象ファイルの一覧へ展開する。
 
-    ディレクトリは再帰的に対象拡張子のファイルを収集する。
-    `_EXCLUDED_DIRS`配下は除外する。順序の安定性のため、ディレクトリ展開分はpath順に並べる。
+    ディレクトリは`_EXCLUDED_DIRS`配下を除き対象拡張子のファイルを再帰収集し、path順に並べる。
     """
     expanded: list[pathlib.Path] = []
     seen: set[pathlib.Path] = set()
@@ -252,9 +252,8 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             for sub in sorted(p.rglob("*")):
                 if not sub.is_file():
                     continue
-                # 除外判定は引数ディレクトリ`p`からの相対パス成分のみで行う。
-                # 絶対パス全体（`sub.parts`）で判定すると、引数ディレクトリ自身が`site`・`dist`等の
-                # 汎用名を含む場合に配下全体が誤って除外される。
+                # 除外判定は引数ディレクトリ`p`からの相対パス成分のみで行う
+                # （絶対パス全体で判定すると`p`自身が`site`・`dist`等を含む場合に配下全体が誤って除外される）。
                 if any(part in _EXCLUDED_DIRS for part in sub.relative_to(p).parts):
                     continue
                 name_lower = sub.name.lower()
@@ -289,7 +288,6 @@ def _check_file(path: pathlib.Path, text: str) -> list[str]:
     in_investigation = False
 
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        # フェンス開閉判定。バッククォート3個以上またはチルダ3個以上。
         m_fence = _FENCE_RE.match(raw)
         if m_fence:
             marker = m_fence.group(2)
@@ -305,7 +303,6 @@ def _check_file(path: pathlib.Path, text: str) -> list[str]:
         if in_fence:
             continue
 
-        # H2見出し判定。`## 調査結果`配下かどうかの状態を更新する。
         m_h2 = _H2_HEADING_RE.match(raw)
         if m_h2:
             in_investigation = m_h2.group(1) == _INVESTIGATION_HEADING
@@ -337,16 +334,13 @@ def _strip_inline_code(line: str) -> str:
     i = 0
     while i < len(line):
         if line[i] == "`":
-            # バッククォートの連続長を数える（開きバッククォートの個数）。
             j = i
             while j < len(line) and line[j] == "`":
                 j += 1
             tick_len = j - i
-            # 同じ長さの閉じバッククォートを探す。
             close_pat = "`" * tick_len
             close_idx = line.find(close_pat, j)
             if close_idx != -1:
-                # インラインコードスパン全体を空白に置換する。
                 end = close_idx + tick_len
                 for k in range(i, end):
                     result[k] = " "
@@ -361,8 +355,8 @@ def _strip_inline_code(line: str) -> str:
 def _strip_fenced_blocks(text: str) -> str:
     """フェンス付きコードブロック内の行を空行へ置換する。
 
-    `_check_file`と同じフェンス検出ロジックを踏襲する。行数を維持したまま空行化するため、
-    呼び出し側の行番号（`enumerate`）はフェンス除去後も元ファイルの行番号と一致する。
+    `_check_file`と同じフェンス検出ロジックを踏襲し、行数を維持したまま空行化するため
+    呼び出し側の行番号は元ファイルの行番号と一致する。
     """
     out_lines: list[str] = []
     in_fence = False
@@ -557,15 +551,14 @@ def _check_path_existence(content: str, repo_root: pathlib.Path, plan_path: path
 
     対象は`.md`・`.py`・`.json`・`.toml`・`.sh`・`.yaml`・`.yml`・`.cmd`・`.ps1`・`.tmpl`拡張子と
     スラッシュを含むディレクトリパス。実在しないパスを検出した場合は違反メッセージ一覧を返す。
-    「対象ファイル一覧」で新設マーカーまたは廃止・削除マーカーが付与されたパスは実在確認対象から除外する。
-    当該パスをスキル相対の裸表記（`references/xxx.md`形式）で引用したトークンも、
-    `_is_newly_created_path`（新設・廃止削除判定の共通ヘルパー）で除外する。
-    `_EXCLUDED_DIRS`配下（`.venv`・`node_modules`等）を先頭ディレクトリ名に持つパスも実在確認対象から除外する
-    （依存物配下の一時生成物・サンプルパスを誤検出しないため）。
+    「対象ファイル一覧」で新設マーカーまたは廃止・削除マーカーが付与されたパス、
+    それをスキル相対の裸表記（`references/xxx.md`形式）で引用したトークンは
+    `_is_newly_created_path`（新設・廃止削除判定の共通ヘルパー）で実在確認対象から除外する。
+    `_EXCLUDED_DIRS`配下（`.venv`・`node_modules`等）を先頭ディレクトリ名に持つパスも
+    依存物配下の一時生成物・サンプルパス誤検出防止のため除外する。
     実在しないと判定したパスが短縮パス候補と判定できる場合、`_suggest_path_candidates`による
-    補完候補（もしかして候補）を警告本文へ付記する（違反判定自体は解除しない）。
-    `content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提とする
-    （フェンス内の例示パスを誤検出しないため）。
+    補完候補を警告本文へ付記する（違反判定自体は解除しない）。
+    `content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提（フェンス内の例示パス誤検出防止）。
     `plan_path`は検査対象の計画ファイル自身を指し、補完候補探索時の自己除外に用いる。
     出力形式は初出行の行番号を`{lineno}行目:`形式で先頭に付す。
     """
@@ -599,9 +592,8 @@ def _check_skill_name_existence(content: str, repo_root: pathlib.Path) -> list[s
     （既定`~/dotfiles/agent-toolkit/`）配下の`skills/`・`agents/`を追加探索先とする。
     いずれにも一致しない識別子を検出した場合は違反メッセージ一覧を返す。
     同一計画内で新設予定・廃止削除予定と明記されたスキル名（「対象ファイル一覧」の新設・廃止削除パスから導出）は
-    実在確認対象から除外する。
-    `content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提とする
-    （フェンス内の例示スキル名を誤検出しないため）。
+    実在確認対象から除外する。`content`は呼び出し側で`_strip_fenced_blocks`済みの内容を渡す前提
+    （フェンス内の例示スキル名誤検出防止）。
     出力形式は初出行の行番号を`{lineno}行目:`形式で先頭に付す。
     """
     new_skill_names = _collect_newly_created_skill_names(_collect_newly_created_paths(content))
@@ -650,10 +642,8 @@ def _resolve_section_ref_target(raw_path: str, repo_root: pathlib.Path) -> pathl
     ディレクトリ区切りを含まない裸のファイル名は`_EXCLUDED_DIRS`配下を除く`repo_root`直下から
     ファイル名一致で探索し、最初に見つかった実在パスを返す
     （見つからない場合は`repo_root`直下パスとして解決し、後続の実在確認で不在と判定させる）。
-    ディレクトリ区切りを含むパスの解決先が実在しない場合は、`references/`接頭辞の有無を問わず
-    ディレクトリ区切りを含む未解決の`.md`パス全般に対応するため`agent-toolkit/skills/*/`配下から
-    ファイル名一致でフォールバック再解決する
-    （見つからない場合は`repo_root`相対パスをそのまま返す）。
+    ディレクトリ区切りを含むパスの解決先が実在しない場合は`agent-toolkit/skills/*/`配下から
+    ファイル名一致でフォールバック再解決する（見つからない場合は`repo_root`相対パスをそのまま返す）。
     """
     stripped = raw_path.strip("`")
     m = _SKILL_REF_TARGET_RE.match(stripped)
@@ -732,15 +722,13 @@ def _find_section_ref_violations(
     `new_paths`に含まれる新設予定・廃止削除予定パス（対象ファイル一覧の新設マーカーまたは
     廃止・削除マーカー付きパス）への節名参照は`_is_newly_created_path`
     （`_check_path_existence`と共通の新設・廃止削除判定ヘルパー）で検査対象から除外する。
-    参照表記そのもの（`raw_path`）が本文中でスキル相対の裸表記
-    （`references/xxx.md`形式）である場合のサフィックス一致も同ヘルパーが判定する。
-    新設・廃止削除いずれかと判定した場合は`_resolve_section_ref_target`によるフォールバック解決
-    （無関係な同名ファイルへの誤解決を招き得る）を行わずスキップする。
+    参照表記そのもの（`raw_path`）が本文中でスキル相対の裸表記（`references/xxx.md`形式）である場合の
+    サフィックス一致も同ヘルパーが判定し、該当時は`_resolve_section_ref_target`による
+    フォールバック解決（無関係な同名ファイルへの誤解決を招き得る）をスキップする。
     `new_sections`は同一計画内で新設予定の節集合（`_collect_newly_created_sections`）を表し、
     `_resolve_target_headings`へ委譲して既存節との合成判定に用いる。
     実在見出しへの参照は違反として扱わない。実在見出しに一致せず山括弧文字（`<`または`>`）を
-    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で
-    擬陽性除外する。
+    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で擬陽性除外する。
     """
     violations: list[str] = []
     for m in _SECTION_REF_PATTERN.finditer(raw):
@@ -819,14 +807,19 @@ def _find_bare_section_ref_violations(
     section_cache: dict[str, frozenset[str] | None],
     new_paths: frozenset[str],
     new_sections: dict[str, frozenset[str]] | None = None,
+    *,
+    in_labeled_fence: bool = False,
 ) -> list[str]:
     """対象H3配下の裸節名参照を抽出し、H3対象ファイル内での節見出し実在を検査する。
 
     実在見出しへの参照は違反として扱わない。実在見出しに一致せず山括弧文字（`<`または`>`）を
-    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で
-    擬陽性除外する。
+    含む参照は、書式規範の説明用プレースホルダーとして`_is_angle_bracket_placeholder`で擬陽性除外する。
+    `in_labeled_fence`が真の場合に限り、マッチ位置より前の同一行内で最も近い`.md`ファイルへの
+    明示的な言及がH3対象ファイルと異なるとき当該別ファイルの節とみなし実在確認をスキップする
+    （`[置換後]`・`[追記]`ブロックが別ファイルの完成形文面を引用する計画での誤検出防止）。
+    フェンス外の地の文では偶発的な別ファイル言及による偽陰性を避けるため本スキップを適用しない。
     違反発報時、他Markdownファイルに同名見出しが実在すれば
-    `_find_other_markdown_file_with_heading`で探索し、警告本文へ補完候補として付記する
+    `_find_other_markdown_file_with_heading`で補完候補として警告本文へ付記する
     （違反判定自体は解除せず、誤配置か記述漏れかの切り分けを支援する目的）。
     """
     if target_path is None or _SECTION_ALLOW_MARKER in raw:
@@ -844,6 +837,11 @@ def _find_bare_section_ref_violations(
     for m in _BARE_SECTION_REF_PATTERN.finditer(raw):
         if _is_span_covered(m.span(), path_ref_spans):
             continue
+        if in_labeled_fence:
+            preceding = raw[: m.start()]
+            mentions = list(_QUALIFIED_PATH_MENTION_RE.finditer(preceding))
+            if mentions and mentions[-1].group("path") != target_path:
+                continue
         section = m.group("section").strip()
         if headings is not None and section in headings:
             continue
@@ -869,11 +867,22 @@ def _find_all_section_ref_violations(
     new_paths: frozenset[str],
     bare_target_path: str | None,
     new_sections: dict[str, frozenset[str]] | None = None,
+    *,
+    in_labeled_fence: bool = False,
 ) -> list[str]:
     """パス付き形式と裸形式の節名参照違反を1行分まとめて返す。"""
     violations = _find_section_ref_violations(raw, lineno, repo_root, section_cache, new_paths, new_sections)
     violations.extend(
-        _find_bare_section_ref_violations(raw, lineno, bare_target_path, repo_root, section_cache, new_paths, new_sections)
+        _find_bare_section_ref_violations(
+            raw,
+            lineno,
+            bare_target_path,
+            repo_root,
+            section_cache,
+            new_paths,
+            new_sections,
+            in_labeled_fence=in_labeled_fence,
+        )
     )
     return violations
 
@@ -882,15 +891,13 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
     """計画本文中の節名参照を抽出し、対象ファイル内での節見出し実在を検査する。
 
     `<path>「<節名>」節`形式に加え、`## 変更内容`H2配下の`### <path>`形式H3内にある
-    裸`「<節名>」節`形式も検査対象に含める。
-    通常の言語指定付きコードフェンス（`python`・`bash`等、および言語指定無し）は検査対象から除外する。
-    `text`フェンスは原則除外するが、フェンス直後1行目が`[追記]`・`[置換後]`・`[置換後（全文）]`・`[新設]`
-    ラベルまたはそのfrontmatterサブラベル形式（`[追記（frontmatter）]`等）に一致する場合は検査対象に含める
+    裸`「<節名>」節`形式も検査対象に含める。通常の言語指定付きコードフェンスは検査対象から除外するが、
+    `text`フェンスはフェンス直後1行目が`[追記]`・`[置換後]`・`[置換後（全文）]`・`[新設]`ラベルまたは
+    そのfrontmatterサブラベル形式（`[追記（frontmatter）]`等）に一致する場合は検査対象に含める
     （計画本文の追記案・置換案・frontmatter変更案に埋め込まれた節名参照も検査するため）。
-    `## 調査結果`配下で`_LINE_ALLOW_MARKER`を同一行に持つ行、`## 背景`配下の原文転記領域は検査対象から除外する。
-    裸形式は`_SECTION_ALLOW_MARKER`を同一行に持つ行を検査対象から除外する。
-    節名の表記揺れ処理は前後空白のtrimのみ実施する。
-    ラベル付き`text`フェンス内でネストしたフェンス付きコードブロック区画は検査対象外とする。
+    `## 調査結果`配下で`_LINE_ALLOW_MARKER`を同一行に持つ行、`## 背景`配下の原文転記領域、
+    裸形式で`_SECTION_ALLOW_MARKER`を同一行に持つ行は検査対象から除外する。
+    節名の表記揺れ処理は前後空白のtrimのみ実施し、ラベル付き`text`フェンス内のネストフェンス区画は対象外とする。
 
     同一計画内で新設予定の節（`## 変更内容`H3配下の`[追記]`・`[新設]`ラベル付き`text`フェンス内の
     `##`・`###`見出し）は`_collect_newly_created_sections`で抽出し、対象ファイルの見出し集合と合成した
@@ -948,7 +955,14 @@ def _check_section_name_existence(text: str, repo_root: pathlib.Path) -> list[st
                 continue
             violations.extend(
                 _find_all_section_ref_violations(
-                    raw, lineno, repo_root, section_cache, new_paths, current_change_target, new_sections
+                    raw,
+                    lineno,
+                    repo_root,
+                    section_cache,
+                    new_paths,
+                    current_change_target,
+                    new_sections,
+                    in_labeled_fence=True,
                 )
             )
             continue

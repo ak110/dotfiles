@@ -167,6 +167,69 @@ class TestBareSectionNameExistence:
         assert len(result.stderr.splitlines()) == 1
         assert "docs/guide.md 「存在しない節」" in result.stderr
 
+    def test_bare_ref_qualified_by_other_file_mention_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """H3対象ファイルとは異なる`.md`ファイルへの明示的言及を伴う裸節名参照は検査対象外。
+
+        計画ファイルのサンプル・記述例内で、H3対象ファイル自身ではなく別ファイルの節を
+        「`path`の「節名」節」（助詞「の」が介在し`_SECTION_REF_PATTERN`にマッチしない形）で
+        参照するケースを扱う。対象は`sample.md`のような、他の計画ファイルの完成形文面を
+        サンプルとして含むファイルへの改訂を計画するケース。
+        """
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[置換後]\n`docs/other.md`の「存在しない節」節へ全称禁止形バレットを追加する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_qualified_by_same_target_path_mention_still_checked(self, tmp_path: pathlib.Path) -> None:
+        """H3対象ファイル自身へのパス言及を伴う裸節名参照は、実在確認をスキップせず引き続き検査する。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[置換後]\n`docs/guide.md`の対応として「存在しない節」節へ全称禁止形バレットを追加する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_bare_ref_with_two_path_mentions_uses_nearest_one(self, tmp_path: pathlib.Path) -> None:
+        """同一行に複数`.md`言及がある場合、マッチ直前に最も近い言及で判定する。
+
+        H3対象ファイルへの言及が先、別ファイルへの言及が後（マッチ直前）にある行では、
+        直近の別ファイル言及を優先しスキップする。
+        """
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[置換後]\n`docs/guide.md`の対応として`docs/other.md`の「存在しない節」節へバレットを追加する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_bare_ref_qualified_by_other_file_mention_outside_fence_still_checked(self, tmp_path: pathlib.Path) -> None:
+        """ラベル付きフェンス外の地の文では別ファイル言及によるスキップを適用せず引き続き検査する。
+
+        `## 変更内容`H3配下でも通常の説明文（`[置換後]`・`[追記]`ラベル付き`text`フェンス外）は
+        偶発的な別ファイル言及で実在確認がすり抜けないよう、常にH3対象ファイル自身の節として検査する。
+        """
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 仕様\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n`docs/other.md`の内容を確認した。次に「存在しない節」節を追加する。\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
     def test_bare_ref_with_angle_bracket_placeholder_is_excluded(self, tmp_path: pathlib.Path) -> None:
         """山括弧完結型のプレースホルダー参照は擬陽性として検査対象から除外される。"""
         (tmp_path / "docs").mkdir()
