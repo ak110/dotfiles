@@ -216,5 +216,5 @@ amend後は`git status`で取り残しが無いことを確認する。
 （機械チェックが検出した違反はpush後CIで顕在化するため「実装挙動に影響しない」の暗黙前提が成立しない）。
 
 サイクル3以降で新規重大指摘が連続する場合の判定基準は
-`agent-toolkit/skills/plan-mode/references/codex-review.md`「3ラウンド連続で新規の重大指摘が出る場合の扱い」節に従う。
+`agent-toolkit/skills/plan-mode/references/codex-review.md`「codexレビューの進め方」節に従う。
 ユーザー再確認は不要とし不対応の内訳を進捗ログへ記録し、指摘がなければ作業を完了する。
