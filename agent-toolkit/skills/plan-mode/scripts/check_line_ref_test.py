@@ -764,6 +764,17 @@ class TestSectionNameExistence:
         result = _run(str(path), cwd=tmp_path)
         assert result.returncode == 0
 
+    def test_sync_note_line_with_path_prefixed_ref_is_not_flagged(self, tmp_path: pathlib.Path) -> None:
+        """パス付き`<path>「<節名>」節`形式が`# 同期注記:`行内に現れる場合もスキップされる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 変更内容\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "doc.md",
+            "```text\n[追記]\n# 同期注記: `docs/guide.md`「存在しない節」節\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
 
 class TestNewlyCreatedSectionExclusion:
     """既存ファイル内で新設される節の実在確認除外（FB1対応）の主要シナリオをまとめて検証する。"""

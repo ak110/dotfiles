@@ -3102,6 +3102,175 @@ class TestCodexMcpLanguageWarningMerge:
         assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
 
 
+class TestIssSidechainProbe:
+    """`_record_iss_sidechain_probe`によるisSidechain実値採取デバッグログ（FB7対応）。"""
+
+    _state_env = staticmethod(_plan_file_state_env)
+    _write_state = staticmethod(_write_session_state)
+
+    @staticmethod
+    def _log_path(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
+        safe = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
+        return tmp_path / f"claude-agent-toolkit-issidechain-{safe}.log"
+
+    def test_writes_one_jsonl_line_under_tempdir(self, tmp_path: pathlib.Path):
+        """`tempfile.gettempdir()`起点、session_id含むパスへJSONL 1行を追記する。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "probe1", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe1",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        log_path = self._log_path(tmp_path, "probe1")
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+
+    def test_recorded_fields_include_expected_keys(self, tmp_path: pathlib.Path):
+        """記録項目に`isSidechain`・`session_id`・`tool_name`・`transcript_path`・`cwd`・`current_plan_file_path`が含まれる。"""
+        env = self._state_env(tmp_path)
+        self._write_state(
+            tmp_path,
+            "probe2",
+            {
+                "codex_review_read": True,
+                "plan_codex_reviewer_invoked": True,
+                "current_plan_file_path": "/tmp/plan.md",
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe2",
+                "isSidechain": False,
+                "transcript_path": "/tmp/transcript.jsonl",
+                "cwd": "/tmp/workdir",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        entry = json.loads(self._log_path(tmp_path, "probe2").read_text(encoding="utf-8").splitlines()[0])
+        assert entry["isSidechain"] is False
+        assert entry["session_id"] == "probe2"
+        assert entry["tool_name"] == "mcp__codex__codex"
+        assert entry["transcript_path"] == "/tmp/transcript.jsonl"
+        assert entry["cwd"] == "/tmp/workdir"
+        assert entry["current_plan_file_path"] == "/tmp/plan.md"
+
+    def test_iss_sidechain_absent_is_recorded_as_null(self, tmp_path: pathlib.Path):
+        """`isSidechain`欠落時に`null`が記録される。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "probe3", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe3",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        entry = json.loads(self._log_path(tmp_path, "probe3").read_text(encoding="utf-8").splitlines()[0])
+        assert entry["isSidechain"] is None
+
+    def test_iss_sidechain_non_boolean_is_recorded_as_is(self, tmp_path: pathlib.Path):
+        """`isSidechain`が非boolean型（整数・文字列など）でもそのまま記録される。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "probe4", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe4",
+                "isSidechain": "yes",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        entry = json.loads(self._log_path(tmp_path, "probe4").read_text(encoding="utf-8").splitlines()[0])
+        assert entry["isSidechain"] == "yes"
+
+    def test_os_error_is_swallowed_and_execution_continues(self, tmp_path: pathlib.Path):
+        """ログ出力先の書き込みで`OSError`が発生しても例外を送出せず処理を継続する。"""
+        blocked_tmpdir = tmp_path / "not-a-directory"
+        blocked_tmpdir.write_text("x", encoding="utf-8")
+        env = {"TMPDIR": str(blocked_tmpdir), "TEMP": str(blocked_tmpdir), "TMP": str(blocked_tmpdir)}
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe-oserror",
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
+        """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "probe-rotate", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        log_path = self._log_path(tmp_path, "probe-rotate")
+        log_path.write_text("x" * (1_000_001), encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe-rotate",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        rotated = log_path.with_suffix(log_path.suffix + ".1")
+        assert rotated.exists()
+        assert len(rotated.read_text(encoding="utf-8")) == 1_000_001
+        assert len(log_path.read_text(encoding="utf-8").splitlines()) == 1
+
+    def test_called_for_codex_reply_tool(self, tmp_path: pathlib.Path):
+        """`mcp__codex__codex-reply`の呼び出し時にも本ヘルパーが呼ばれる。"""
+        env = self._state_env(tmp_path)
+        self._write_state(tmp_path, "probe-reply", {"recorded_codex_thread_id": "abc"})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "abc", "prompt": "next"},
+                "session_id": "probe-reply",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        log_path = self._log_path(tmp_path, "probe-reply")
+        entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+        assert entry["tool_name"] == "mcp__codex__codex-reply"
+
+    def test_called_even_when_iss_sidechain_true(self, tmp_path: pathlib.Path):
+        """`isSidechain=True`ケースでも本ヘルパーが呼ばれる（既存ゲートより前で実行される確認）。"""
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "probe-sidechain-true",
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        log_path = self._log_path(tmp_path, "probe-sidechain-true")
+        entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+        assert entry["isSidechain"] is True
+
+
 class TestBashAgentToolkitVersionBump:
     """agent-toolkit/配下コミット時のversion bump漏れ警告。
 

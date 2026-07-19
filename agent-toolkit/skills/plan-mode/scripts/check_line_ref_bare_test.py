@@ -322,3 +322,76 @@ class TestBareSectionNameExistence:
         assert result.returncode == 1
         assert "節名不在" in result.stderr
         assert "同名見出しがある他候補" not in result.stderr
+
+    def test_sync_note_line_with_bare_ref_under_replaced_label_is_not_flagged(self, tmp_path: pathlib.Path) -> None:
+        """`[置換後]`ラベル配下の`text`フェンス内の同期注記行は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n```text\n[置換後]\n# 同期注記: docs/guide.md「存在しない節」節\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_sync_note_line_with_bare_ref_under_appended_label_is_not_flagged(self, tmp_path: pathlib.Path) -> None:
+        """`[追記]`ラベル配下の`text`フェンス内で裸の節名参照が同期注記行にある場合は違反として報告されない。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n```text\n[追記]\n# 同期注記: 「存在しない節」節\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_sync_note_continuation_comment_line_is_skipped(self, tmp_path: pathlib.Path) -> None:
+        """`# 同期注記:`行の直後の`# ...`継続行内の節名参照もスキップされる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[追記]\n# 同期注記: docs/guide.md\n"
+            "# 続き: 「存在しない節」節にも言及\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 0
+
+    def test_sync_note_block_resets_on_non_comment_line(self, tmp_path: pathlib.Path) -> None:
+        """`# 同期注記:`行の後の非コメント行に含まれる節名参照は通常通り検査される（状態リセット確認）。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n"
+            "```text\n[追記]\n# 同期注記: docs/guide.md\n"
+            "「存在しない節」節を参照する。\n```\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_sync_note_text_outside_fence_is_checked_normally(self, tmp_path: pathlib.Path) -> None:
+        """フェンス外の通常本文中の`# 同期注記:`文言はスキップ対象外で通常通り検査される。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        path = _write(
+            tmp_path / "plan.md",
+            "## 変更内容\n\n### `docs/guide.md`\n\n# 同期注記: 「存在しない節」節\n",
+        )
+        result = _run(str(path), cwd=tmp_path)
+        assert result.returncode == 1
+        assert "節名不在" in result.stderr
+
+    def test_sync_note_line_under_sub_labels_is_not_flagged(self, tmp_path: pathlib.Path) -> None:
+        """サブラベル形式`[置換後（frontmatter）]`・`[追記（frontmatter）]`・`[置換後（全文）]`・`[新設]`配下でも同一挙動になる。"""
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "guide.md").write_text("## 使い方\n\n本文。\n", encoding="utf-8")
+        for label in ("置換後（frontmatter）", "追記（frontmatter）", "置換後（全文）", "新設"):
+            path = _write(
+                tmp_path / "plan.md",
+                f"## 変更内容\n\n### `docs/guide.md`\n\n```text\n[{label}]\n# 同期注記: docs/guide.md「存在しない節」節\n```\n",
+            )
+            result = _run(str(path), cwd=tmp_path)
+            assert result.returncode == 0, f"label={label}: {result.stderr}"
