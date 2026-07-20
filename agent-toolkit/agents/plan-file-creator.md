@@ -93,9 +93,10 @@ user-invocable: false
    工程2〜5の合意事項・解釈・恒久化文面・周辺対応をテンプレート規定の各セクションへ転記する
 3. 書き込み直後に`uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
    実行し、検出違反を是正する。実施範囲が`起草のみ`の場合は本ステップ完了後に`## 出力`の完了報告書式へ進む
-4. `agent-toolkit/skills/plan-mode/references/integrity-checks.md`を読み込み、
+4. `agent-toolkit/skills/plan-mode/references/integrity-checks.md`と
+   `agent-toolkit/skills/plan-mode/references/process7-bypass-detection.md`を読み込み、
    節名定義に従い整合性チェック・codexレビューを実施する。
-   実施手順はintegrity-checks.md「整合性チェック・codexレビューの実施手順」の節に従う。
+   実施手順はprocess7-bypass-detection.md「整合性チェック・codexレビューの実施手順」の節に従う。
    起動対象は`codexレビュー`・`plan-reviewer`とし、`agent-doc-validator`は条件成立時のみ加える。
    起動はAgentツールの`run_in_background=false`によるforeground並列起動に限定し、
    同一メッセージ内に複数のAgent tool_useブロックを並置して並列実行を維持する。

@@ -25,7 +25,7 @@ user-invocable: false
 #   ファイル編集系（Edit・Write）とサブエージェント再帰起動（Agent）を除外する。
 #   SendMessageはnamed background起動時の完了報告能動送付（「出力」節末尾の参照文参照）のために含める。
 # 「入力」節のメイン側実施済み観点の内訳の趣旨は
-# integrity-checks.md「整合性チェック・codexレビューの実施手順」の節・
+# process7-bypass-detection.md「整合性チェック・codexレビューの実施手順」の節・
 # launch-prompts-integrity.md のplan-reviewer雛形と意図的に重複する（構成は各ファイルの用途に合わせる）。
 # 改訂時は3ファイルを同時更新する。
 ---

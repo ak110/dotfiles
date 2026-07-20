@@ -1,6 +1,6 @@
 ---
 # 同期注記: plan-reviewer雛形内「メイン側実施済み観点の内訳」欄の趣旨は
-# integrity-checks.md「整合性チェック・codexレビューの実施手順」節・plan-reviewer.md「入力」節と
+# process7-bypass-detection.md「整合性チェック・codexレビューの実施手順」節・plan-reviewer.md「入力」節と
 # 意図的に重複する（構成は各ファイルの用途に合わせる）
 # 改訂時は3ファイルを同時更新する
 # 参考: named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
@@ -19,7 +19,7 @@
 `agent-toolkit:plan-file-creator`が内部で起動する各サブエージェント
 （うち`agent-doc-validator`は条件付き起動）の起動プロンプトを、
 コピー可能な完全コードブロックで集約する。
-integrity-checks.md「整合性チェック・codexレビューの実施手順」の節から機械転記して使用する。
+process7-bypass-detection.md「整合性チェック・codexレビューの実施手順」の節から機械転記して使用する。
 共通の遵守事項として、いずれの雛形も次を含める。
 
 - `plan-file-creator`が起動する各サブエージェントはAgentツールの`run_in_background=false`による
