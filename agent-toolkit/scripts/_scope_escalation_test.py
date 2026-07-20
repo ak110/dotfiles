@@ -262,6 +262,19 @@ class TestMatchScopeEscalation:
         """反映済み表明も誤検出しない。"""
         assert _category_of("並列レビューを起動して待機中の間に集約を反映した。") is None
 
+    def test_async_wait_sentence_separated_notification_matched(self):
+        """文をまたぐ分離形（待機中宣言の直後に完了通知受領表現が続く）が
+        async-waitで検出される（fb 20260720-162742-001反映）。実発生文言全体を用いる。"""
+        text = "待機中。次のメッセージは各レビュアーからの完了通知を受け取った後に送る。"
+        assert _category_of(text) == "async-wait"
+
+    def test_async_wait_english_observed_phrase_matched(self):
+        """実発生した英語の観測文言全体が既存パターンで検出される（fb 20260720-162742-001反映）。"""
+        text = (
+            "All four review agents are launched in parallel. I'll wait for their completion notifications before proceeding."
+        )
+        assert _category_of(text) == "async-wait"
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
