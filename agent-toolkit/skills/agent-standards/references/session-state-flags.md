@@ -26,8 +26,10 @@
   （末尾は文書対象時のみ必須。`plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に
   存続するが本フラグ群の対象外）。
   `codex_review_invoked`は`plan-codex-reviewer`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
-  記録判定は`subagent_type`一致のみに依拠し`isSidechain`値を条件に含まないため、
-  `agent-toolkit:plan-file-creator`内部からのAgent/Task起動（サイドチェーン内起動）でも同様に記録される
+  `agent-toolkit:plan-file-creator`配下から起動された場合、各フラグはplan-file-creator自身のセッション状態に
+  記録され起動元（親）へは反映されない。
+  親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
+  対応するフラグを親自身のセッション状態へ設定する経路で行う
 - `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動検知時点で前倒しして真化する。
   PreToolUse(Agent/Task)が記録し、サイドチェーン内からも参照できる。
   `mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
@@ -43,3 +45,6 @@
 - 新規フラグ追加時は当該フラグの寿命（セッション終了まで維持・新計画着手時にリセット・
   特定イベントで消去等）を明示する。寿命が「新計画着手時にリセット」に該当する場合は
   既存のリセット関数（`pretooluse.py`の`_reset_process7_completion_flags`等）へ追加する
+- Agent tool経由のサブエージェントで記録されるフラグは呼び出し元セッションに閉じる。
+  親側での判定は完了報告本文の機械パース経路を要する。
+  詳細は本バレット上部のplan-file-creator関連フラグ項を参照する

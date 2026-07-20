@@ -24,6 +24,7 @@
   `AGENTS.md`、`CLAUDE.md`
 
 記録は`agent-toolkit/scripts/posttooluse.py`が担う。
+`agent-toolkit:plan-file-creator`配下から起動された場合の記録先・伝播経路は、`session-state-flags.md`のplan-file-creator関連フラグ項を参照する。
 `agent-toolkit/scripts/pretooluse.py`は`ExitPlanMode`と`plan-impl-executor`起動
 （Agentツール`subagent_type`判定）の両ハンドラを持つ。
 上記2フラグ（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。

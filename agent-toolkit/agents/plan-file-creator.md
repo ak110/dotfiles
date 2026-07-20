@@ -38,6 +38,10 @@ user-invocable: false
 # 同期注記: 配下3種サブエージェントのforeground限定・named background禁止規定は
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`本文冒頭の
 # 共通遵守事項バレット列挙と意図的に重複する。改訂時は両ファイルを同時更新する。
+# 同期注記: `## 出力`節`invoked_subagents:`欄が許容する識別子
+# （`plan-reviewer`・`codex-review`・`agent-doc-validator`）は`agent-toolkit/scripts/posttooluse.py`の
+# `_PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS`定数のキー集合と同期する
+# 改訂時は両ファイルを同時更新する
 ---
 
 # plan-file-creator
@@ -164,6 +168,7 @@ review_summary:
 - plan-reviewer: {致命的/重大指摘の反映件数、軽微指摘の取捨方針}
 - codexレビュー: {致命的/重大指摘の反映件数、軽微指摘の取捨方針}
 - agent-doc-validator: {起動有無、起動時は指摘反映件数、非起動時は対象ファイル一覧の機械照合結果に基づく判定根拠}
+invoked_subagents: {実際に起動したサブエージェント名をカンマ区切りで列挙する}
 check_results:
 - `check_plan_file.py`: pass | fail（違反件数）
 - `uvx pyfltr run-for-agent --no-fix`: pass | fail（違反件数）
@@ -173,6 +178,13 @@ pending_confirmations:
 - {ユーザー確認が必要な事項（該当なしの場合は「なし」）}
 ```
 
+`invoked_subagents:`の直後に半角スペースを1つ置き、対象識別子をカンマ区切りで列挙する。
+識別子は`plan-reviewer`・`codex-review`・`agent-doc-validator`のみを許容し、他の文字列を記載しない。
+`plan-reviewer`は同名のサブエージェントを起動した場合に記載する。
+`codex-review`は`plan-codex-reviewer`を起動した場合、または`mcp__codex__codex`を直接呼び出して代行した場合に記載する。
+`agent-doc-validator`は起動条件が成立し、同名のサブエージェントを起動した場合に記載する。
+該当なしの場合は「なし」と明記する。
+本欄の値は`review_summary`各行の起動有無の記述と一致させる。
 `escalation_points`欄の省略は許容せず、該当なしの場合は「なし」と明記する。
 `pending_confirmations`欄はユーザー確認が必要と判断した事項（設計判断以外の軽微な確認事項）を記録する。
 省略は許容せず、該当なしの場合は「なし」と明記する。

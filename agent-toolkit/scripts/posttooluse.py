@@ -38,6 +38,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-reviewer起動失敗時のplan_codex_reviewer_blocked記録
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
+17. `plan-file-creator`完了報告本文の`invoked_subagents:`行のパースによる
+    親セッション状態へのフラグ設定 (Agent/Task)
 """
 
 import json
@@ -221,10 +223,12 @@ _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
-# `agent-toolkit:plan-file-creator`が内部でAgent/Taskツールにより`plan-reviewer`・
-# `plan-codex-reviewer`を起動する場合も、判定は`subagent_type`一致のみで`isSidechain`値に
-# 依存しないため、サイドチェーン内起動（`plan-file-creator`自身がAgent起動によるサブエージェントの場合）
-# でも本辞書の各フラグは正しく記録される。
+# 本辞書は呼び出し元（Agent/Taskツールを実行した側）の`session_id`が指すセッション状態へ記録する。
+# `agent-toolkit:plan-file-creator`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
+# `plan-codex-reviewer`・`agent-doc-validator`を起動する場合、記録先はplan-file-creator自身の
+# セッション状態であり、起動元（親）のセッション状態には反映されない。
+# 親への反映は、plan-file-creator自身の完了報告本文の`invoked_subagents:`行を
+# main()関数内のAgent/Task完了ハンドラがパースして設定する。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
@@ -235,6 +239,19 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-codex-reviewer": "codex_review_invoked",
     "agent-toolkit:plan-codex-reviewer": "codex_review_invoked",
 }
+
+_PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-creator", "agent-toolkit:plan-file-creator"})
+
+# plan-file-creator完了報告本文の`invoked_subagents:`行に列挙される識別子から
+# 対応するセッション状態フラグへのマップ。
+_PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
+    "plan-reviewer": "plan_reviewer_invoked",
+    "codex-review": "codex_review_invoked",
+    "agent-doc-validator": "agent_doc_validator_invoked",
+}
+
+# `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
+_INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
 
 # `_process_loop_log`による終了時刻記録の対象サブエージェント種別（fb-1）。
 # `pretooluse.py`側の同名定数（起動時刻記録用）と対応させる。
@@ -533,28 +550,27 @@ def main() -> int:
         # `_inspect_named_subagent_send`（subagent_stop_advisor.py）と同水準の
         # 最低ツール使用数条件を満たす場合のみ判定する。閾値未満・抽出不能時はfail-openで通過させる。
         raw_tool_response = payload.get("tool_response", {})
-        if isinstance(raw_tool_response, dict):
-            completion_text = _extract_agent_completion_text(raw_tool_response)
-            if completion_text:
-                tool_use_count = _extract_agent_tool_use_count(raw_tool_response)
-                if tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES:
-                    match_result = _match_scope_escalation(completion_text, categories={"async-wait"})
-                    if match_result is not None:
-                        print(
-                            json.dumps(
-                                {
-                                    "decision": "block",
-                                    "reason": _llm_notice(
-                                        "The subagent completion report contains an async-wait style"
-                                        " statement instead of an active completion. Re-delegate or"
-                                        " continue driving the work to actual completion.",
-                                        tag="block",
-                                    ),
-                                },
-                                ensure_ascii=False,
-                            )
+        completion_text = _extract_agent_completion_text(raw_tool_response) if isinstance(raw_tool_response, dict) else ""
+        if completion_text:
+            tool_use_count = _extract_agent_tool_use_count(raw_tool_response)
+            if tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES:
+                match_result = _match_scope_escalation(completion_text, categories={"async-wait"})
+                if match_result is not None:
+                    print(
+                        json.dumps(
+                            {
+                                "decision": "block",
+                                "reason": _llm_notice(
+                                    "The subagent completion report contains an async-wait style"
+                                    " statement instead of an active completion. Re-delegate or"
+                                    " continue driving the work to actual completion.",
+                                    tag="block",
+                                ),
+                            },
+                            ensure_ascii=False,
                         )
-                        return 0
+                    )
+                    return 0
 
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
@@ -591,6 +607,29 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _set_agent_flag)
+        # plan-file-creator完了時、完了報告本文の`invoked_subagents:`行をパースし、
+        # このイベント自身のセッション（plan-file-creatorの呼び出し元）へ対応フラグを設定する。
+        # `invoked_subagents:`行が無い、または既知識別子を含まない場合は無処理（fail-safe）。
+        if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_CREATOR_SUBAGENT_TYPES:
+            invoked_match = _INVOKED_SUBAGENTS_LINE_RE.search(completion_text)
+            if invoked_match:
+                identifiers = {token.strip() for token in invoked_match.group(1).split(",") if token.strip()}
+                invoked_flags = frozenset(
+                    _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS[name]
+                    for name in identifiers
+                    if name in _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS
+                )
+                if invoked_flags:
+
+                    def _set_plan_file_creator_invoked_flags(state: dict, flags: frozenset[str] = invoked_flags) -> dict | None:
+                        changed = False
+                        for flag_name in flags:
+                            if not state.get(flag_name, False):
+                                state[flag_name] = True
+                                changed = True
+                        return state if changed else None
+
+                    update_state(session_id, _set_plan_file_creator_invoked_flags)
         return 0
 
     # mcp__codex__codex / mcp__codex__codex-reply: codex-review起動検出
