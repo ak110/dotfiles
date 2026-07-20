@@ -484,7 +484,6 @@ def _check_run_method_script_paths(plan_path: pathlib.Path, text: str, repo_root
 # `## 実行方法`欄のスキル呼び出し要否判定マッピングSSOT。agent-toolkit-edit対象の判定基準。
 # AGENTS.mdとmyprojects.md.tmplの同種規定はこのマッピングを参照する旨を記述する。
 _AGENT_TOOLKIT_EDIT_TARGET_RE = re.compile(r"^agent-toolkit/")
-_AGENT_TOOLKIT_EDIT_MARKETPLACE_PATH = ".claude-plugin/marketplace.json"
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
 
 # 同マッピングSSOTのsync-platform-pair対象判定基準。
@@ -525,7 +524,7 @@ def _required_skills_for_paths(paths: list[str]) -> dict[str, str]:
     required: dict[str, str] = {}
     path_set = set(paths)
     for path in paths:
-        if _AGENT_TOOLKIT_EDIT_TARGET_RE.match(path) or path == _AGENT_TOOLKIT_EDIT_MARKETPLACE_PATH:
+        if _AGENT_TOOLKIT_EDIT_TARGET_RE.match(path) or path in pretooluse._plan_format.BUMP_MANIFEST_PATHS:
             required.setdefault(_AGENT_TOOLKIT_EDIT_SKILL, f"対象ファイル一覧に{path}を含む")
         for suffix_a, suffix_b in _PLATFORM_PAIR_SUFFIX_PAIRS:
             counterpart = _platform_pair_counterpart(path, suffix_a, suffix_b)

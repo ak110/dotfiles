@@ -18,5 +18,11 @@
 例外形式として同一パターン置換時の集約H3（`### 置換パターン: <旧> → <新>（対象: <sublist>）`）と`quality-sweep`配下計画の分担バッチ単位列挙を許容する。
 集約H3の適用条件は同一の旧文言から新文言への置換が3ファイル以上に及ぶ場合とし、文脈依存の変更を伴うファイルは個別差分ブロックへ切り出す。
 
+例外形式としてversion bump対象manifest H3のtext/diff fence省略を許容する。
+対象は`_plan_format.py`の`BUMP_MANIFEST_PATHS`定数が示すファイル集合とする。
+`scripts/agent_toolkit_bump.py`実行時に`version`値が自動更新され事前確定できないため、
+H3配下は自動適用対象である旨と参照案内文（bump種別・対象キー）を記載する。
+`scripts/agent_toolkit_bump.py`のリテラルとのSSOT一致は`scripts/agent_toolkit_bump_test.py`が検証する。
+
 配下にバッククォート囲みで削除・改名する識別子（スキル名・パス・関数名・変数名を含む）を1行ずつ列挙する。
 機械可読形式は`` - `<identifier>` ``形式のリスト項目とする。

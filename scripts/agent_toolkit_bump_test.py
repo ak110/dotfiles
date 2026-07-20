@@ -1,9 +1,14 @@
 """scripts/agent_toolkit_bump.py の純関数テスト。"""
 
 import json
+import pathlib
+import sys
 
 import agent_toolkit_bump as bump
 import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
+import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class TestParseVersion:
@@ -120,3 +125,15 @@ class TestWriteVersion:
             bump._write_version("0.1.1")  # pylint: disable=protected-access  # noqa: SLF001
 
         assert json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"] == "0.1.0"
+
+
+class TestBumpManifestPathsSsot:
+    """`_plan_format.BUMP_MANIFEST_PATHS`とのSSOT整合性検証。"""
+
+    def test_bump_target_paths_match_plan_format_ssot(self) -> None:
+        """`_PLUGIN_MANIFEST`・`_MARKETPLACE_MANIFEST`と`_plan_format.BUMP_MANIFEST_PATHS`が一致する。"""
+        bump_paths = {
+            bump._PLUGIN_MANIFEST.relative_to(bump._REPO_ROOT).as_posix(),  # pylint: disable=protected-access  # noqa: SLF001
+            bump._MARKETPLACE_MANIFEST.relative_to(bump._REPO_ROOT).as_posix(),  # pylint: disable=protected-access  # noqa: SLF001
+        }
+        assert bump_paths == set(_plan_format.BUMP_MANIFEST_PATHS)

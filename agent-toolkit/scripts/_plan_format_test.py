@@ -415,3 +415,38 @@ def test_iter_h3_sections_under_h2_preserves_code_fence_lines() -> None:
     body_texts = [line for _, line in result[0][1]]
     assert "```text" in body_texts
     assert "```" in body_texts
+
+
+def test_iter_h3_sections_under_h2_heading_like_lines_inside_fence_are_not_boundaries() -> None:
+    """フェンス内の`##`・`###`で始まる行を実見出しと誤認せず、以降のH3走査が継続することを検査する。"""
+    content = "## 変更内容\n\n### foo.md\n```text\n## 偽見出し\n### 偽H3\n```\n\n### bar.md\nbody\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    headings = [h for h, _ in result]
+    assert headings == ["foo.md", "bar.md"]
+
+
+def test_iter_h3_sections_under_h2_heading_like_lines_inside_tilde_fence_are_not_boundaries() -> None:
+    """チルダフェンス内の`##`・`###`で始まる行も実見出しと誤認しない。"""
+    content = "## 変更内容\n\n### foo.md\n~~~text\n## 偽見出し\n### 偽H3\n~~~\n\n### bar.md\nbody\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    headings = [h for h, _ in result]
+    assert headings == ["foo.md", "bar.md"]
+
+
+def test_iter_h3_sections_under_h2_unclosed_fence_to_eof_keeps_heading_like_lines_in_body() -> None:
+    """フェンスがEOFまで閉じない場合、内部の見出し類似行を境界判定せず本文行として保持する。"""
+    content = "## 変更内容\n\n### foo.md\n```text\n## 偽見出し\n### 偽H3\n本文\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    headings = [h for h, _ in result]
+    assert headings == ["foo.md"]
+    body_lines = [line for _lineno, line in result[0][1]]
+    assert "## 偽見出し" in body_lines
+    assert "### 偽H3" in body_lines
+
+
+def test_iter_h3_sections_under_h2_tilde_line_inside_backtick_fence_does_not_close_it() -> None:
+    """バッククォートフェンス内に出現するチルダ行は閉じ判定にならない（フェンス種別混在）。"""
+    content = "## 変更内容\n\n### foo.md\n```text\n~~~\n## 偽見出し\n```\n\n### bar.md\nbody\n"
+    result = list(_plan_format.iter_h3_sections_under_h2(content, "変更内容"))
+    headings = [h for h, _ in result]
+    assert headings == ["foo.md", "bar.md"]

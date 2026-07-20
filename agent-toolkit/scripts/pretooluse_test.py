@@ -6603,6 +6603,80 @@ class TestPlanFileChangeH3HasCodeBlock:
         )
         assert result.returncode == 0
 
+    def test_bump_manifest_h3_is_skipped_when_bump_step_present(self, tmp_path: pathlib.Path):
+        """version bump対象manifest H3（`_plan_format.BUMP_MANIFEST_PATHS`）は、
+        `## 実行方法`にbumpステップが記載されている場合に限りtext/diffコードブロック検査の対象外。
+        """
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3cb-bump-manifest-present"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo/bar.py`\n\n"
+            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n\n"
+            "### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n"
+            "### agent-toolkit/.claude-plugin/plugin.json\n\nversion bump自動適用のみ。\n\n"
+            "## 実行方法\n\n`scripts/agent_toolkit_bump.py`を実行する。\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "missing a text/diff code block" not in result.stderr
+
+    def test_bump_manifest_h3_warns_when_bump_step_absent(self, tmp_path: pathlib.Path):
+        """`## 実行方法`にbumpステップの記載が無い場合、version bump対象manifest H3は
+        免除されず通常どおりtext/diffコードブロック欠落の警告対象となる。
+        """
+        home = tmp_path / "home"
+        plan = self._make_plan(home)
+        env = self._state_env(tmp_path, home)
+        sid = "h3cb-bump-manifest-absent"
+        content = (
+            "# タイトル\n\n"
+            "## 変更履歴\n\nx\n\n"
+            "## 背景\n\nx\n\n"
+            "## 対応方針\n\nx\n\n"
+            "## 調査結果\n\nx\n\n"
+            "## 変更内容\n\n"
+            "### 対象ファイル一覧\n\n"
+            "- [ ] `foo/bar.py`\n\n"
+            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n\n"
+            "### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n"
+            "### agent-toolkit/.claude-plugin/plugin.json\n\nversion bump自動適用のみ。\n\n"
+            "## 実行方法\n\nx\n\n"
+            "## 進捗ログ\n\nx\n\n"
+            "## 計画ファイル（本ファイル）のパス\n\nx\n"
+        )
+        self._prior_flags(tmp_path, sid, content)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": content},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "missing a text/diff code block" in result.stderr
+
 
 class TestReadIsolatedReferenceCheck:
     """Read: メインエージェントからの隔離指定リファレンス直接Readをブロックする検査。"""

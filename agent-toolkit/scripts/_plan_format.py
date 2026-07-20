@@ -20,6 +20,21 @@ PLAN_REQUIRED_H2: tuple[str, ...] = (
     "計画ファイル（本ファイル）のパス",
 )
 
+PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
+"""`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
+
+MARKETPLACE_MANIFEST_PATH: str = ".claude-plugin/marketplace.json"
+"""`scripts/agent_toolkit_bump.py`が更新するmarketplace manifestの相対パス。"""
+
+BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLACE_MANIFEST_PATH})
+"""`scripts/agent_toolkit_bump.py`が更新するmanifestファイルの相対パス集合。
+
+`pretooluse.py`のH3コードブロック検査免除、
+`has_manifest_files_when_bump_step_present`の対象一覧検査、
+`check_plan_file.py`のagent-toolkit-edit要否判定でSSOTとして参照する。
+`agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
+"""
+
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 _H2_PATTERN = re.compile(r"^## (.+?)\s*$")
 _RECURRENCE_MARKER_PATTERN = re.compile(r"再発予防|上位カテゴリ|独立節新設が実効性を欠く")
@@ -194,6 +209,9 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
     素朴に全行走査する（`## 変更内容`H2はフロントマターより後方の慣例のため十分）。
     コードフェンス内の行はスキップせず生body行として返す
     （呼び出し側でコードフェンス出現を判定できるようにするため）。
+    見出し境界判定（H2/H3行の検知）はコードフェンス内を除外する（`extract_h2_sections`と同一の
+    フェンス判定ロジックを用いる）。対象ファイルのH2/H3見出しを`text`フェンス内へ埋め込む差分表記で、
+    実見出しと誤認して以降のH3走査が打ち切られる事象を防ぐ。
     指定H2の直下にH3が現れる前の本文行は無視する。
     pretooluse / posttooluse の双方からimportして使うSSOT実装。
     """
@@ -201,23 +219,31 @@ def iter_h3_sections_under_h2(content: str, h2_heading: str) -> Iterator[tuple[s
     in_target_h2 = False
     current_h3: str | None = None
     current_body: list[tuple[int, str]] = []
+    fence_marker: str | None = None
     for lineno, line in enumerate(lines, start=1):
-        if line.startswith("## "):
-            if current_h3 is not None:
-                yield current_h3, current_body
-                current_h3 = None
+        stripped = line.strip()
+        fence_match = _FENCE_PATTERN.match(stripped)
+        if fence_match:
+            candidate = fence_match.group(1)
+            if fence_marker is None:
+                fence_marker = candidate
+            elif stripped[0] == fence_marker[0] and len(stripped) >= len(fence_marker) and set(stripped) == {fence_marker[0]}:
+                fence_marker = None
+        elif fence_marker is None:
+            if line.startswith("## "):
+                if current_h3 is not None:
+                    yield current_h3, current_body
+                    current_h3 = None
+                    current_body = []
+                in_target_h2 = line[3:].strip() == h2_heading
+                continue
+            if in_target_h2 and line.startswith("### "):
+                if current_h3 is not None:
+                    yield current_h3, current_body
+                current_h3 = line[4:].strip()
                 current_body = []
-            in_target_h2 = line[3:].strip() == h2_heading
-            continue
-        if not in_target_h2:
-            continue
-        if line.startswith("### "):
-            if current_h3 is not None:
-                yield current_h3, current_body
-            current_h3 = line[4:].strip()
-            current_body = []
-            continue
-        if current_h3 is not None:
+                continue
+        if in_target_h2 and current_h3 is not None:
             current_body.append((lineno, line))
     if current_h3 is not None:
         yield current_h3, current_body
@@ -398,7 +424,7 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
     if "agent_toolkit_bump.py" not in execution_text:
         return True
     paths = extract_target_files_from_changes(content)
-    return "agent-toolkit/.claude-plugin/plugin.json" in paths and ".claude-plugin/marketplace.json" in paths
+    return PLUGIN_MANIFEST_PATH in paths and MARKETPLACE_MANIFEST_PATH in paths
 
 
 def has_recurrence_prevention_when_section_present(content: str) -> bool:
