@@ -246,6 +246,22 @@ class TestMatchScopeEscalation:
         text = "並列起動した完了報告を受領し、指摘を統合する予定であり、詳細は後日相談したい。"
         assert _category_of(text) == "async-wait"
 
+    def test_async_wait_parallel_review_launch_waiting_matched(self):
+        """短表明「並列レビューを起動して待機中」がasync-waitで検出される（fb 20260720-152203-001反映）。"""
+        assert _category_of("並列レビューを起動して待機中です。") == "async-wait"
+
+    def test_async_wait_subordinate_agent_launch_waiting_matched(self):
+        """語彙の別形（配下エージェント起動＋待機中）も検出される。"""
+        assert _category_of("配下エージェントを起動し待機中。") == "async-wait"
+
+    def test_async_wait_parallel_review_launch_waiting_completed_not_matched(self):
+        """完了時制の完遂報告は誤検出しない（完了時制除外パターン）。"""
+        assert _category_of("並列レビューを起動して待機中だったが、現在は集約済み。") is None
+
+    def test_async_wait_parallel_review_launch_waiting_reflected_not_matched(self):
+        """反映済み表明も誤検出しない。"""
+        assert _category_of("並列レビューを起動して待機中の間に集約を反映した。") is None
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""

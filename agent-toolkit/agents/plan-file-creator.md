@@ -103,9 +103,13 @@ user-invocable: false
 `01-agent.md`「縮退表明は発行しない」項に従う。
 対象は配下並列サブエージェント（`plan-reviewer`・`plan-codex-reviewer`・
 条件成立時の`agent-doc-validator`）である。
-これらを進め方4.で起動した場合、全ての完了報告受領および
-呼び出し元への統合報告完了までを自身の担当範囲とする。
+進め方4.でこれらを並列起動した場合、全サブエージェントの完了報告を受領してから
+指摘集約・計画ファイルへの反映へ進む。
+反映後は「エスカレーション基準」に基づき`needs_escalation`判定をし、
+最終的な`completed`報告を発行する。
 完了報告本文にasync-wait表明（待機表明のまま完了扱いにする記述）を含めない。
+例として、配下並列レビュー起動のみを述べて集約・反映・判定を実施しない
+完了報告はasync-wait表明に該当する。
 含めた時点で当該完了報告は未完遂扱いとする。
 
 ## エスカレーション基準
@@ -118,6 +122,8 @@ user-invocable: false
   （`codex-review.md`「codexレビューの進め方」節の確認要件に該当する場合を含む）
 - `plan-codex-reviewer`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
   自身で行わない方針（frontmatterコメント参照）により継続不能な場合
+- 配下並列サブエージェントの完了通知待機が現実的に不可能な場合
+  （サブエージェントの応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
 
 `needs_escalation`時は論点・観測事実・暫定案を`escalation_points`欄へ明記する。
 加えて受領済みの全レビュー結果（`plan-reviewer`・`agent-doc-validator`・codexの各完了報告の原文）を

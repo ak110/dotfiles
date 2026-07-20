@@ -50,6 +50,9 @@
 - `_check_document_size_upper_limit`: 現行行数が縮減計画トリガー（200行）を超える対象`.md`ファイルについて、
   対応する`#### 縮減対象`H4見出しまたは追記量圧縮の記述が計画本文に存在するかを検査する
   （体裁・構成寄りの指摘のため`warning`区分）
+- `_check_referent_table_roles`: `### 用語対応表`配下のMarkdown表について、役割列の値が
+  `referent-table.md`「表の書式」節が定めるSSOT7種（開始条件・状態・事象・値・記録・目的・手段）に
+  収まるかを検査する（体裁・表記系のため`warning`区分）
 - `_check_test_file_pairing`: 対象ファイル一覧の`.py`実装ファイルに対応する`<basename>_test.py`が
   リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する
 - `_check_version_bump_matrix_consistency`: 版更新マトリクスの改訂節数・該当基準列と判定列の整合、
@@ -173,6 +176,8 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         print(msg, file=sys.stderr)
 
     _check_document_size_upper_limit(plan_path, text)
+    for msg in _check_referent_table_roles(plan_path, text):
+        print(msg, file=sys.stderr)
     violations += _check_version_bump_matrix(plan_path, text)
     _check_version_bump_matrix_consistency(plan_path, text)
     for msg in _check_run_method_script_paths(plan_path, text, repo_root):
@@ -579,6 +584,71 @@ def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: path
             f"{plan_path}: [warn] 対象ファイル{basename}に対応するテスト"
             f"{pathlib.PurePosixPath(test_path).name}が対象ファイル一覧に不在"
         )
+    return warnings
+
+
+# 用語対応表の役割列許容値。`referent-table.md`「表の書式」節が定めるSSOTを転記する
+# （新しい役割語を追加する場合は同節の列挙も同時に更新する）。
+_REFERENT_TABLE_ALLOWED_ROLES = frozenset({"開始条件", "状態", "事象", "値", "記録", "目的", "手段"})
+
+# `### 用語対応表`H3見出しとMarkdown表の行を抽出するためのパターン。
+_H3_HEADING_RE = re.compile(r"^###\s+(?P<title>.+?)\s*$")
+_TABLE_ROW_RE = re.compile(r"^\s*\|(?P<cells>.+)\|\s*$")
+_TABLE_SEPARATOR_CELL_RE = re.compile(r"^:?-+:?$")
+
+
+def _check_referent_table_roles(plan_path: pathlib.Path, text: str) -> list[str]:
+    """`### 用語対応表`配下のMarkdown表について、役割列が許容7種に収まるかを検査する。
+
+    許容値は`referent-table.md`「表の書式」節のSSOTを`_REFERENT_TABLE_ALLOWED_ROLES`として転記する。
+    体裁・表記系の検査のためwarning区分とし、exit codeへは算入しない。
+
+    境界条件の扱い:
+    - 列位置は見出し行の「役割」列名から判定し、列順の変更にも追従する
+    - 見出し行に「役割」列が存在しない場合は当該表を検査対象外として扱い警告を返さない
+      （誤検出防止のため。役割列を持つ表のみを検査対象とする）
+    - 空表・見出し行のみ・区切り行のみで終わる表は警告を返さない
+    - 複数の`### 用語対応表`H3が登場した場合はそれぞれを独立に検査する
+      （H3見出し検出時に状態を初期化する）
+    - `## `見出しの登場でセクション走査を終える
+    """
+    warnings: list[str] = []
+    in_section = False
+    header_seen = False
+    role_index: int | None = None
+    for line in text.splitlines():
+        heading = _H3_HEADING_RE.match(line)
+        if heading is not None:
+            in_section = heading.group("title") == "用語対応表"
+            header_seen = False
+            role_index = None
+            continue
+        if line.startswith("## "):
+            in_section = False
+            header_seen = False
+            role_index = None
+            continue
+        if not in_section:
+            continue
+        row = _TABLE_ROW_RE.match(line)
+        if row is None:
+            continue
+        cells = [cell.strip() for cell in row.group("cells").split("|")]
+        if all(_TABLE_SEPARATOR_CELL_RE.match(cell) for cell in cells if cell):
+            continue
+        if not header_seen:
+            if "役割" in cells:
+                role_index = cells.index("役割")
+            header_seen = True
+            continue
+        if role_index is None or role_index >= len(cells):
+            continue
+        role_value = cells[role_index]
+        if role_value and role_value not in _REFERENT_TABLE_ALLOWED_ROLES:
+            warnings.append(
+                f"{plan_path}: [warn] `### 用語対応表`の役割列に許容値外の値「{role_value}」が存在する"
+                f"（許容値: 開始条件・状態・事象・値・記録・目的・手段）"
+            )
     return warnings
 
 

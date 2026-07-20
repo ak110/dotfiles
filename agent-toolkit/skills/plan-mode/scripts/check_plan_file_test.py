@@ -255,6 +255,89 @@ class TestDocumentSizeUpperLimit:
         assert capsys.readouterr().err == ""
 
 
+class TestCheckReferentTableRoles:
+    """`_check_referent_table_roles`のテスト。"""
+
+    def test_allowed_role_values_no_warning(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| ユーザー指摘 | 例 | 対象X | 事象 | 検知→反映 | 語A | 語Aとは〜を指す |\n"
+        )
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_disallowed_role_value_warns(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| ユーザー指摘 | 例 | 対象X | 概念 | 検知→反映 | 語A | 語Aとは〜を指す |\n"
+        )
+        warnings = check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+        assert "概念" in warnings[0]
+
+    def test_no_referent_table_section_no_warning(self, tmp_path: pathlib.Path) -> None:
+        text = "### 対象ファイルの現状\n\n- `foo.py`: 現行10行\n"
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_section_ends_at_next_h2(self, tmp_path: pathlib.Path) -> None:
+        """`## `見出しの出現で用語対応表セクションの走査を終える。"""
+        text = (
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "## 調査結果\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| x | x | x | 概念 | x | x | x |\n"
+        )
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_no_role_column_in_header_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """見出し行に「役割」列が不在の場合は検査対象外として警告を返さない。"""
+        text = "### 用語対応表\n\n| 名前 | 意味 | 備考 |\n| --- | --- | --- |\n| A | 概念 | メモ |\n"
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_empty_table_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """データ行なしの表では警告を返さない。"""
+        text = (
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+        )
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_header_only_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """見出し行のみで区切り行・データ行なしの場合も警告を返さない。"""
+        text = "### 用語対応表\n\n| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_separator_row_only_no_warning(self, tmp_path: pathlib.Path) -> None:
+        """区切り行のみで見出し行・データ行なしの場合も警告を返さない。"""
+        text = "### 用語対応表\n\n| --- | --- | --- | --- | --- | --- | --- |\n"
+        assert not check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+
+    def test_multiple_referent_table_sections_warn_each(self, tmp_path: pathlib.Path) -> None:
+        """複数の`### 用語対応表`が登場する場合それぞれ独立に検査する。"""
+        text = (
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| a | b | c | 概念 | d | e | f |\n\n"
+            "### 別の節\n\n"
+            "### 用語対応表\n\n"
+            "| 出典 | 目的 | 具体対象 | 役割 | 前後関係 | 候補語 | 初出定義 |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| a | b | c | 手法 | d | e | f |\n"
+        )
+        warnings = check_plan_file._check_referent_table_roles(tmp_path / "plan.md", text)
+        assert len(warnings) == 2
+        assert "概念" in warnings[0]
+        assert "手法" in warnings[1]
+
+
 class TestVersionBumpMatrix:
     """`_check_version_bump_matrix`の検査を検証する。"""
 
