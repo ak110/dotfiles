@@ -3,16 +3,14 @@ name: careful-review
 description: >
   対象範囲を指定してレビューするときに起動する。
   `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方で起動する。
-# 編集時の注意点:
-# サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身は
-# メイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。
-# 起動経路（plan-impl-executor経由・手動起動）で動作分岐させない。
-# 計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
+# 編集時の注意点: サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身はメイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。
+# 起動経路（plan-impl-executor経由・手動起動）で動作分岐させない。計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
 
-# 同期注記: 「起動プロンプトテンプレート」節の構文合法性除外バレットは
-# agent-toolkit/skills/review-standards/SKILL.md「レビューの基本姿勢」節・agent-toolkit/agents/plan-impl-reviewer.md「共通判断基準」節・
-# agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
+# 同期注記: 「起動プロンプトテンプレート」節の構文合法性除外バレットはagent-toolkit/skills/review-standards/SKILL.md「レビューの基本姿勢」節・agent-toolkit/agents/plan-impl-reviewer.md「共通判断基準」節・agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
 # 改訂時は4ファイルを同時更新する。
+# named subagent能動送付規定（本ファイル「制約」節）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロックと意図的に重複する（改訂時は4ファイルを同時更新する）。
+# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`は同期対象外とする（同ファイルの雛形はforeground限定運用のため当該規定を保持しない）。
 ---
 
 # レビュー工程
@@ -103,6 +101,8 @@ description: >
   - 例外: `plan-impl-reviewer`起動時は本制約を適用せず「plan-impl-reviewerの分割起動」節の運用で担当分を1000行以内へ収める
 - 構文の合法性を根拠とする指摘は機械チェック担当領域のため指摘対象外とすること。対象言語バージョンで有効化された新構文
   （Python 3.14のPEP 758による`except`括弧省略等）を学習知識との齟齬で構文エラーと判定しないこと
+- named subagentとして`run_in_background=true`起動される場合、完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+  `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
 ```
 
 ## 指摘の統合と修正依頼

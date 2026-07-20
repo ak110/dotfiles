@@ -3,11 +3,10 @@
 # integrity-checks.md「整合性チェック・codexレビューの実施手順」節・plan-reviewer.md「入力」節と
 # 意図的に重複する（構成は各ファイルの用途に合わせる）
 # 改訂時は3ファイルを同時更新する
-# named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
+# 参考: named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・
-# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック
-# と意図的に重複する
-# 改訂時は4ファイルを同時更新する
+# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・
+# `agent-toolkit/skills/careful-review/SKILL.md`「制約」節の間で意図的に重複するが、本ファイルは同期対象外とする。
 # 本ファイル本文の2雛形はforeground並列起動限定運用のため、
 # named subagent能動送付規定（`background`起動・`name`指定時のSendMessage送付規定）を伴わない。
 # 適用理由は本文冒頭の共通遵守事項バレット列挙へ明示規範として記載する。

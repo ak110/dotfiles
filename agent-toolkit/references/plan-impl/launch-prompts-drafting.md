@@ -5,10 +5,10 @@
 # 同期注記: 「共通遵守事項」節の「起草前textlint-violations.md読み込み」バレットは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節をSSOTとする。
 # 本ファイルと`agent-toolkit/rules/03-claude-code.md`起草関連バレットは当該SSOTを参照する形で同期する（改訂時は3ファイルを同時更新する）。
 # named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
-# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`・
-# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック
-# と意図的に重複する
-# 改訂時は4ファイルを同時更新する
+# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・
+# `agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイルを同時更新する）。
+# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`は同期対象外とする
+# （同ファイルの雛形はforeground限定運用のため当該規定を保持しない）。
 # 加えて `agent-toolkit/agents/plan-implementer.md`「出力」節との同期は本ファイル
 # 「## 運用ガイダンス」の既存規定に従う。
 # 同期注記: 「共通遵守事項」節・「起草・改訂委譲雛形」コードブロックの

@@ -1,3 +1,12 @@
+---
+# 同期注記: 「plan-impl-executor自身がnamed background起動された場合」段落のnamed subagent能動送付規定は
+# `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・
+# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・
+# `agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する。
+# 本ファイルは対象読者・自己完結の要否が異なる受信側手順書であるため、
+# 上記4ファイルの「改訂時は4ファイルを同時更新する」宣言のカウント対象には含めない（改訂時は本ファイルも参照確認する）。
+---
+
 # plan-impl-executor呼び出し元の起動前準備・完了報告の受領口
 
 `agent-toolkit/agents/plan-impl-executor.md`から参照されるSSOTとする。
@@ -66,5 +75,9 @@
 
 非同期処理の待機表明を含む完了報告の判定は、上記手順0〜6のいずれとも独立に適用し、
 `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う。
+
+`plan-impl-executor`自身がAgentツールの`name`指定・`run_in_background=true`でnamed subagentとして起動される場合がある。
+この場合、作業完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+`idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする。
 
 呼び出し元は本ファイルを参照し、固有差分（起動タイミング・追加の確認事項）のみを自スキル側へ記述する。

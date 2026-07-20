@@ -2,8 +2,8 @@
 # 同期注記: 起草関連バレット（サブエージェント委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節に置き、
 # 本ファイルと`launch-prompts-drafting.md`「共通遵守事項」節は当該SSOTを参照する形で同期する（改訂時は3ファイルを同時更新する）。
 # named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は
-# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`・`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・
-# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロックと意図的に重複する（改訂時は4ファイルを同時更新する）。
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイルを同時更新する）。
+# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`は同期対象外とする（同ファイルの雛形はforeground限定運用のため当該規定を保持しない）。
 # 「サブエージェントの活用」節の非同期処理に係る完遂義務パラグラフ（「サブエージェントは自身の起動タスク完了前に」で始まるバレット）は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節と
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は3ファイルを同時更新する）。
 # 本ファイル「サブエージェントの活用」節の`git stash`禁止バレットは`agent-toolkit/agents/plan-implementer.md`・
