@@ -22,6 +22,8 @@
 対象は`_plan_format.py`の`BUMP_MANIFEST_PATHS`定数が示すファイル集合とする。
 `scripts/agent_toolkit_bump.py`実行時に`version`値が自動更新され事前確定できないため、
 H3配下は自動適用対象である旨と参照案内文（bump種別・対象キー）を記載する。
+免除の適用条件は、計画ファイルの`## 実行方法`本文に`agent_toolkit_bump.py`実行への言及がある場合に限る
+（機械チェックの判定条件と同一）。言及が無い場合は免除されず、通常どおりtext/diffコードブロックを記載する。
 `scripts/agent_toolkit_bump.py`のリテラルとのSSOT一致は`scripts/agent_toolkit_bump_test.py`が検証する。
 
 配下にバッククォート囲みで削除・改名する識別子（スキル名・パス・関数名・変数名を含む）を1行ずつ列挙する。
