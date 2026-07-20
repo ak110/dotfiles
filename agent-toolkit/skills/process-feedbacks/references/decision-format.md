@@ -106,6 +106,9 @@ plan-mode側の定義は
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は
   `agent-toolkit:process-feedbacks-finish`スキル本文の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
+- ステップ3時点は採否ラベルの確定に留める。`atk fb adopt`・`atk fb reject`・`atk tb adopt`の
+  実行タイミングは、「後始末順序」節の「標準順序は実装→検証→…」で始まるバレットが定める
+  `process-feedbacks-finish`への引き継ぎ工程に従う
 
 ## 後始末コマンドの引数
 
