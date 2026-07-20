@@ -82,7 +82,8 @@
   自身の担当範囲として実施する（`plan-implementer`とは役割が異なる別エージェントであり、
   本雛形の起草・改訂委譲先ではない）。`plan-file-creator`は当該サブエージェント群の
   完了報告受領・統合報告完了までを自身の担当とし、完了報告本文にasync-wait表明を
-  含めない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
+  含めない。`plan-file-creator`による配下3種サブエージェント群の起動はforeground並列起動に限定し、
+  named background起動はしない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
 - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
   当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
   （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）
@@ -160,7 +161,8 @@
       自身の担当範囲として実施する（`plan-implementer`とは役割が異なる別エージェントであり、
       本雛形の起草・改訂委譲先ではない）。`plan-file-creator`は当該サブエージェント群の
       完了報告受領・統合報告完了までを自身の担当とし、完了報告本文にasync-wait表明を
-      含めない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
+      含めない。`plan-file-creator`による配下3種サブエージェント群の起動はforeground並列起動に限定し、
+      named background起動はしない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
     - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
       当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
       （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）

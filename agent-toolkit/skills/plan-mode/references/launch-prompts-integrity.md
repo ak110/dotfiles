@@ -8,8 +8,11 @@
 # `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック
 # と意図的に重複する
 # 改訂時は4ファイルを同時更新する
-# 本ファイル本文の2雛形は `background` 起動・`name` 指定を伴わない前提運用のため、
-# named subagent能動送付規定は本ファイル本文へは追加せず、frontmatter同期注記のみを配置する
+# 本ファイル本文の2雛形はforeground並列起動限定運用のため、
+# named subagent能動送付規定（`background`起動・`name`指定時のSendMessage送付規定）を伴わない。
+# 適用理由は本文冒頭の共通遵守事項バレット列挙へ明示規範として記載する。
+# 当該foreground限定規定は`agent-toolkit/agents/plan-file-creator.md`
+# （進め方4.節・完遂義務節）と意図的に重複する。改訂時は両ファイルを同時更新する
 ---
 
 # 整合性チェック・codexレビュー サブエージェント起動プロンプト雛形
@@ -20,6 +23,11 @@
 integrity-checks.md「整合性チェック・codexレビューの実施手順」の節から機械転記して使用する。
 共通の遵守事項として、いずれの雛形も次を含める。
 
+- `plan-file-creator`が起動する各サブエージェントはAgentツールの`run_in_background=false`による
+  foreground並列起動に限定する。`run_in_background=true`かつ`name`指定によるnamed background起動をしない。
+  同一メッセージ内に複数のAgent tool_useブロックを並置して並列実行を維持し、
+  呼び出しスレッドが全ブロックの完了を同期的に受け取る構造とする
+  （SendMessage経由の非同期の受信経路は発生しない）
 - 呼び出し元の暗黙前提（メイン側の会話履歴・拡張思考・他サブエージェント出力）を排除する
 - 独立コンテキストで完結する形で情報を漏れなく含める
 - 入力欠落時は該当サブエージェント定義の規定に従い出力冒頭で欠落事実を明示報告する
