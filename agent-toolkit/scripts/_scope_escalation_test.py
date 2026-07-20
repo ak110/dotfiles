@@ -275,6 +275,15 @@ class TestMatchScopeEscalation:
         )
         assert _category_of(text) == "async-wait"
 
+    def test_async_wait_sentence_separated_negative_with_completion_tense_received_completed(self):
+        """完了時制が受領動詞から10文字以内にある場合、当該パターンが誤検出しないことを確認する。"""
+        texts = (
+            "待機中、完了報告を受領済みである。",
+            "並列レビューを起動して待機中。しばらくして各エージェントからの完了報告を受領した。指摘を統合し計画へ反映済みである。",
+        )
+        for text in texts:
+            assert _category_of(text) is None
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
