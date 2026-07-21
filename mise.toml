@@ -1,4 +1,5 @@
 [tools]
 actionlint = "latest"
 pinact = "latest"
+rust = { version = "latest", components = "rustfmt,clippy" }
 typos = "latest"

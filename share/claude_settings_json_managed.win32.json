@@ -41,11 +41,11 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_status_line.py }\"",
+    "command": "__HOME__\\.local\\bin\\claude-statusline.exe statusline",
     "padding": 0
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_subagent_status_line.py }\""
+    "command": "__HOME__\\.local\\bin\\claude-statusline.exe subagent-statusline"
   }
 }

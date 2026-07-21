@@ -8,6 +8,7 @@
 - `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
 - `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
 - `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
+- `rust/`: Rust製コマンドラインツール群（CIでビルドしGitHub Releaseへ配布）
 - `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（pre-commit・Makefile・Claude Codeフック等。配布対象外）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`

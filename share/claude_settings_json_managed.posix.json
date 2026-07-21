@@ -41,11 +41,11 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_status_line.py'",
+    "command": "__HOME__/.local/bin/claude-statusline statusline",
     "padding": 0
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_subagent_status_line.py'"
+    "command": "__HOME__/.local/bin/claude-statusline subagent-statusline"
   }
 }

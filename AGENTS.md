@@ -53,8 +53,16 @@
 - privateなヘルパー（chezmoi運用補助・共通ユーティリティなど）は`pytools/_internal/`配下に集約する
 - エージェント・hook・自動化など手で起動しないスクリプトは`scripts/`配下へ置く
  （`[project.scripts]`登録は行わず、PEP 723形式の単独実行スクリプトとして書く）
-- Claude Codeのhook・statuslineから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す。
-  対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`
+- 高頻度起動するhook・statusLine相当のスクリプトなどは、Windowsでの`uv run`起動コストを
+  考慮し、ネイティブバイナリ化を実装方式の第一候補として検討する。既存のPython実装を
+  維持する場合は維持理由を計画ファイルへ明記する
+  - statusLine・subagentStatusLineは先行事例として`rust/claude-statusline/`へ移行済み。
+    リリース・配布手順の詳細は`.github/workflows/release-statusline.yaml`・
+    `pytools/_internal/setup_statusline_binary.py`を参照する
+- Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す。
+  対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`とする。
+  statusLine・subagentStatusLineはRust製バイナリへ移行済みのため対象外とする（前掲のネイティブ
+  バイナリ化バレット参照）
 - PEP 723スクリプト（`agent-toolkit/scripts/atk.py`等）の`dependencies`へパッケージを追加・更新する場合、リポジトリ本体の`pyproject.toml`にも同一制約で登録する
   - `watchdog`・`argcomplete`・`platformdirs`は既に`pyproject.toml`とPEP 723 header双方へ登録されている既存重複登録パターンに揃える
   - テスト実行が間接依存で偶然解決する状態を防ぐため
@@ -76,8 +84,8 @@
     - importしたい場合はファイル名をアンダースコア区切り（`<name>.py`）で命名する
     - shebangを持つスクリプトは`chmod +x`で実行権限を付与する（pre-commitの`check-shebang-scripts-are-executable`が強制する）
 - `pytools/_internal/claude_common.py`は共通基盤モジュールとして以下を提供する
-  - `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_json()`・
-    `load_json_dict()`・`write_settings_hybrid()`
+  - `find_dotfiles_root()`・`run_subprocess()`・`atomic_write_text()`・`atomic_write_bytes()`・
+    `atomic_write_json()`・`load_json_dict()`・`write_settings_hybrid()`
   - 新規ヘルパーを書き起こす前に公開APIを確認し、重複定義を避ける
 - `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる
   - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する

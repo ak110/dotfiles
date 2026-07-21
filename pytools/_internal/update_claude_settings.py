@@ -9,6 +9,7 @@ import copy
 import json
 import logging
 import sys
+import typing
 from pathlib import Path
 
 import pytilpack.jsonc
@@ -80,6 +81,12 @@ _MAX_INLINE_DIFF = 3
 #: `$schema` は配布元 JSON の IDE 補完用メタ情報であり、ユーザー設定に伝播させない。
 _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 
+# 設定コマンド文字列内でホームディレクトリ絶対パスへ置換するプレースホルダー。
+# share/claude_settings_json_managed.*.json の statusLine/subagentStatusLine command で使う。
+# JSONマージはテンプレートエンジンを介さない生のdictマージのため、シェルの`~`展開に
+# 依存せずバイナリを直接起動できるよう本関数で明示的に絶対パスへ解決する。
+_HOME_PLACEHOLDER = "__HOME__"
+
 
 def main() -> None:
     """スタンドアロン実行用エントリポイント。"""
@@ -141,6 +148,7 @@ def update_claude_settings(
     managed = json.loads(managed_path.read_text(encoding="utf-8"))
     for override_path in overrides or []:
         _merge(managed, json.loads(override_path.read_text(encoding="utf-8")))
+    managed = typing.cast("dict[str, typing.Any]", _substitute_home_placeholder(managed))
 
     # settings.jsonはJSONC形式（コメント・末尾カンマ許容）で書かれる場合があるため
     # `pytilpack.jsonc.loads`でパースする。純JSONも受理する。
@@ -163,6 +171,17 @@ def update_claude_settings(
     for line in _diff_lines(original, data):
         logger.info(line)
     return True
+
+
+def _substitute_home_placeholder(value: object) -> object:
+    """`_HOME_PLACEHOLDER` をホームディレクトリの絶対パスへ再帰的に置換する。"""
+    if isinstance(value, str):
+        return value.replace(_HOME_PLACEHOLDER, str(Path.home())) if _HOME_PLACEHOLDER in value else value
+    if isinstance(value, dict):
+        return {k: _substitute_home_placeholder(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_substitute_home_placeholder(v) for v in value]
+    return value
 
 
 def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:

@@ -5,6 +5,7 @@
 import json
 import os
 import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -121,6 +122,28 @@ class TestCollectValueOnlyUpdates:
             {"a": 10, "b": 2, "c": {"d": 30}},
         )
         assert result == {("a",): 10, ("c", "d"): 30}
+
+
+class TestAtomicWriteBytes:
+    """`atomic_write_bytes()`の原子的置換・パーミッション設定・失敗時温存を検証する。"""
+
+    def test_writes_content_and_sets_executable_mode(self, tmp_path: Path):
+        target = tmp_path / "bin" / "tool"
+        assert claude_common.atomic_write_bytes(target, b"BINARY", mode=0o755) is True
+        assert target.read_bytes() == b"BINARY"
+        if sys.platform != "win32":
+            assert target.stat().st_mode & 0o777 == 0o755
+
+    def test_existing_file_preserved_on_replace_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        target = tmp_path / "tool"
+        target.write_bytes(b"OLD")
+
+        def _boom(self, *_args, **_kwargs):
+            raise OSError("boom")
+
+        monkeypatch.setattr(Path, "replace", _boom)
+        assert claude_common.atomic_write_bytes(target, b"NEW") is False
+        assert target.read_bytes() == b"OLD"
 
 
 class TestAtomicEditJsonc:

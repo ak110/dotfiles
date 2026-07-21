@@ -7,7 +7,8 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+import typing
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -164,13 +165,14 @@ def load_json_dict(
     return cast("dict[str, object]", data)
 
 
-def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag: str | None = None) -> bool:
-    """テキストファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
+def _atomic_write(
+    path: Path, writer: Callable[[typing.IO[typing.Any]], object], *, binary: bool, mode: int | None, tag: str | None
+) -> bool:
+    """同一ディレクトリのtempfile + `Path.replace` で原子的に保存する共通実装。
 
-    Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
-    ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
-    ``mode`` を指定すると書き込み後に ``chmod`` でパーミッションを設定する（Unixのみ）。
-    ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
+    `atomic_write_text()`・`atomic_write_bytes()`の共通処理（ディレクトリ作成・tempfile経由の
+    書き込み・パーミッション設定・失敗時の後始末）を集約する。`writer`が開いたファイルへ内容を
+    書き込み、`binary`でテキスト/バイナリのopenモードを切り替える。
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,14 +183,14 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
     tmp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
+            mode="wb" if binary else "w",
+            encoding=None if binary else "utf-8",
             dir=path.parent,
             delete=False,
             prefix=f"{path.name}.",
             suffix=".tmp",
         ) as tmp:
-            tmp.write(content)
+            writer(tmp)
             tmp_path = Path(tmp.name)
         if mode is not None and sys.platform != "win32":
             tmp_path.chmod(mode)
@@ -201,6 +203,26 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag:
             with contextlib.suppress(OSError):
                 tmp_path.unlink()
         return False
+
+
+def atomic_write_text(path: Path, content: str, *, mode: int | None = None, tag: str | None = None) -> bool:
+    """テキストファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
+
+    Claude Code起動中の排他や他プロセスとの競合による書き込み失敗を捕捉し、
+    ``False`` を返して呼び出し元に委ねる（post_apply全体を中断させない）。
+    ``mode`` を指定すると書き込み後に ``chmod`` でパーミッションを設定する（Unixのみ）。
+    ``tag`` を指定するとログメッセージのラベルに使用する。``None`` の場合はエラーログを出力しない。
+    """
+    return _atomic_write(path, lambda tmp: tmp.write(content), binary=False, mode=mode, tag=tag)
+
+
+def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None, tag: str | None = None) -> bool:
+    """バイナリファイルを同一ディレクトリのtempfile + `Path.replace` で原子的に保存する。
+
+    `atomic_write_text()`のバイナリ版。書き込み・パーミッション設定の途中で失敗しても
+    `path`の既存内容を保持する（実行ファイル配置など破損置換を避けたい用途向け）。
+    """
+    return _atomic_write(path, lambda tmp: tmp.write(content), binary=True, mode=mode, tag=tag)
 
 
 def _collect_value_only_updates(

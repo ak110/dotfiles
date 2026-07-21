@@ -141,6 +141,16 @@ class TestRun:
         assert exc_info.value.code == 0
 
 
+class TestDefaultSteps:
+    """`_DEFAULT_STEPS`に想定ステップが登録されていることを検証する。"""
+
+    def test_statusline_binary_step_registered(self):
+        """claude-statuslineバイナリ取得ステップが登録され、libarchiveステップの後に続く。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        assert "claude-statusline バイナリの取得" in names
+        assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
+
+
 class TestPluginRecommendations:
     """``install_claude_plugins.run()`` の推奨コマンド戻り値による案内出力。"""
 
