@@ -424,7 +424,9 @@ mod tests {
         });
         assert_eq!(
             render(data),
-            format!("{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} {MAGENTA}@custom{RESET}")
+            format!(
+                "{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} {MAGENTA}@custom{RESET}"
+            )
         );
     }
 
