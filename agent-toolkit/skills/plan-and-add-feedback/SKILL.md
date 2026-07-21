@@ -48,9 +48,9 @@ description: >
 
 ## 複数リポジトリ横断作業の分解投入
 
-作業が複数リポジトリを対象とする場合の分解投入運用は、次の節をSSOTとする。
-`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`の
-「複数リポジトリ横断作業の分解投入」節。
+作業が複数リポジトリを対象とする場合に適用する。分解投入運用のSSOTは
+`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`
+「複数リポジトリ横断作業の分解投入」節とする。
 
 ## 想定動作モード
 
