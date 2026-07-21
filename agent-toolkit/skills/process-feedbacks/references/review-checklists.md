@@ -20,6 +20,8 @@
     判定は既存採否語彙（採用／部分採用／不採用）に従う
 - 規範側の再発予防案の併記検討: 詳細は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「規範改善案の併記」節を参照する
+- 総量規制の努力目標: 規範追記を伴う採用計画は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「総量規制の努力目標」節に従い既存規範の削減候補を検討する
 - 既存SSOT規範との衝突回避:
   フィードバック原文の改善方針案を機械的に反映する前に、既存SSOT規範との衝突有無を点検する。
   対象は`agent-toolkit:review-standards`の重大度ラベル規定・
@@ -96,7 +98,10 @@
 - 背景方針の推定: ユーザーが背景方針を直接表現していない場合でも、
   フィードバック群の傾向から推定して判定軸に含める。
   規範緩和に関するフィードバックが複数同時に提示された場合は、
-  採否判定前に`AskUserQuestion`でユーザー方針確認を発行してよい
+  採否判定前に`AskUserQuestion`でユーザー方針確認を発行してよい。
+  ユーザーの過去方針・選好の一次資料確認は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`
+  「ユーザー過去方針の一次資料確認」節に従う
 - 汎用観点の判定: `agent-toolkit:critical-thinking`スキル「批判的検討の汎用観点」節
  （既存記述との重複・矛盾、コンテキストコスト対効果、適用範囲との整合、論理整合性）に従い判定する
 - 振り返り由来フィードバックの再帰検討:
@@ -119,6 +124,8 @@
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「不採用根拠の限定」節を参照する。
   実測結果はステップ4の提示書式「理由」欄へ具体数値・観測事実として転記し、
   実効性が対象範囲の一部にとどまる場合は「採用」へ再判定する
+- 方針固定化: 詳細は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「方針固定化」節を参照する
 - 採用時の反映内容の縮小禁止:
   原文の反映内容を「過剰」「実効性に対して負担が大きい」「実装の手間が見合わない」等の自己判断で薄めた形の採用や、
   過剰と判断した箇所だけを除いて反映する部分採用は禁止する。

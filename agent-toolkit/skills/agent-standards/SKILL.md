@@ -55,6 +55,8 @@ description: >
 - 200行超過見込み時は既存節縮減・`references/`分離を同一計画に含め、概算200行以下に収める設計にする。
   縮減手順・判定基準・縮減根拠4類型・references/分離判定基準は`agent-toolkit:trim-agent-docs`を参照する
 - 実装後の最終形検査は`uvx pyfltr run-for-agent`と`check_doc_size.py`（220行超過でexit 1）で行う
+- 本2段構造方針はユーザー明示方針（2026-07-21確定）であり、緩和・撤回・例外新設の制約・出典は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「方針固定化」節に集約する
 
 ### メタ記述の禁止
 
