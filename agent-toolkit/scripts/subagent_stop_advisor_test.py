@@ -547,3 +547,215 @@ class TestPlanImplExecutorReportFormat:
         )
         assert result.stdout == ""
         assert result.returncode == 0
+
+
+def _write_explore_named_background_state(state_dir: Path, session_id: str, agent_name: str) -> None:
+    """`explore_named_background_active_names`リストへ`agent_name`を事前登録する。"""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"claude-agent-toolkit-{session_id}.json"
+    state_path.write_text(
+        json.dumps({"explore_named_background_active_names": [agent_name]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+class TestExploreNamedBackgroundSend:
+    """Explore named background起動の完了報告能動送付検査（閾値バイパス）。"""
+
+    def test_registered_without_main_send_blocks_below_threshold(self, tmp_path: Path) -> None:
+        """登録済みExploreがtool_use数1件でもSendMessage(to='main')が無ければblockする。"""
+        sid = "sid-explore-missing"
+        _write_explore_named_background_state(tmp_path, sid, "explore-1")
+        transcript = _make_transcript(tmp_path, [{"type": "tool_use", "name": "Grep", "input": {}}])
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-1",
+                "last_assistant_message": "調査結果をまとめた。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "SendMessage" in body["reason"]
+
+    def test_registered_with_main_send_passes(self, tmp_path: Path) -> None:
+        """登録済みExploreがSendMessage(to='main')送付済みなら通過する。"""
+        sid = "sid-explore-sent"
+        _write_explore_named_background_state(tmp_path, sid, "explore-2")
+        transcript = _make_transcript(
+            tmp_path,
+            [{"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}}],
+        )
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-2",
+                "last_assistant_message": "調査結果を送付した。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_unregistered_agent_not_gated(self, tmp_path: Path) -> None:
+        """未登録の`agent_name`は新規ゲート対象外（一般named subagent検査のみ適用）。"""
+        sid = "sid-explore-unregistered"
+        transcript = _make_transcript(tmp_path, [{"type": "tool_use", "name": "Grep", "input": {}}])
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-3",
+                "last_assistant_message": "調査結果をまとめた。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_entry_removed_after_check(self, tmp_path: Path) -> None:
+        """SubagentStop発火時に該当名を状態リストから消費（削除）する。"""
+        sid = "sid-explore-cleanup"
+        _write_explore_named_background_state(tmp_path, sid, "explore-4")
+        transcript = _make_transcript(
+            tmp_path,
+            [{"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}}],
+        )
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-4",
+                "last_assistant_message": "完了。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state.get("explore_named_background_active_names") == []
+
+    def test_empty_agent_name_not_gated(self, tmp_path: Path) -> None:
+        """`agent_name`が空文字列の場合は新規ゲート対象外として通過する。"""
+        sid = "sid-explore-empty-agent-name"
+        _write_explore_named_background_state(tmp_path, sid, "explore-5")
+        transcript = _make_transcript(tmp_path, [{"type": "tool_use", "name": "Grep", "input": {}}])
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "",
+                "last_assistant_message": "調査結果をまとめた。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_empty_session_id_not_gated(self, tmp_path: Path) -> None:
+        """`session_id`が空文字列の場合は新規ゲート対象外として通過する。"""
+        transcript = _make_transcript(tmp_path, [{"type": "tool_use", "name": "Grep", "input": {}}])
+        result = _run_with_state_dir(
+            {
+                "session_id": "",
+                "agent_name": "explore-6",
+                "last_assistant_message": "調査結果をまとめた。",
+                "transcript_path": transcript,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_concurrent_same_name_each_consumed_independently(self, tmp_path: Path) -> None:
+        """同名の並行起動（2件登録）はSubagentStop発火ごとに1件ずつ消費される。"""
+        sid = "sid-explore-concurrent"
+        state_dir = tmp_path
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_path = state_dir / f"claude-agent-toolkit-{sid}.json"
+        state_path.write_text(
+            json.dumps({"explore_named_background_active_names": ["explore-7", "explore-7"]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        transcript_missing = _make_transcript(tmp_path, [{"type": "tool_use", "name": "Grep", "input": {}}])
+        result_first = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-7",
+                "last_assistant_message": "1件目の調査結果。",
+                "transcript_path": transcript_missing,
+            },
+            tmp_path,
+        )
+        body_first = json.loads(result_first.stdout)
+        assert body_first["decision"] == "block"
+        state_after_first = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state_after_first.get("explore_named_background_active_names") == ["explore-7"]
+
+        transcript_sent = _make_transcript(
+            tmp_path,
+            [{"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}}],
+        )
+        result_second = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-7",
+                "last_assistant_message": "2件目の調査結果を送付した。",
+                "transcript_path": transcript_sent,
+            },
+            tmp_path,
+        )
+        assert result_second.stdout == ""
+        state_after_second = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state_after_second.get("explore_named_background_active_names") == []
+
+    def test_second_stop_after_consumption_not_regated(self, tmp_path: Path) -> None:
+        """1件消費済みの名前へ対する2回目のSubagentStop発火は新規ゲート対象外として通過する。"""
+        sid = "sid-explore-double-fire"
+        _write_explore_named_background_state(tmp_path, sid, "explore-8")
+        transcript_sent = _make_transcript(
+            tmp_path,
+            [{"type": "tool_use", "name": "SendMessage", "input": {"to": "main", "message": "done"}}],
+        )
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-8",
+                "last_assistant_message": "完了。",
+                "transcript_path": transcript_sent,
+            },
+            tmp_path,
+        )
+        result_second = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-8",
+                "last_assistant_message": "再度の完了報告。",
+                "transcript_path": transcript_sent,
+            },
+            tmp_path,
+        )
+        assert result_second.stdout == ""
+        assert result_second.returncode == 0
+
+    def test_unreadable_transcript_not_consumed_allows_retry(self, tmp_path: Path) -> None:
+        """transcript読み取り不能時はfail-openで通過し、状態のエントリは消費せず残す。"""
+        sid = "sid-explore-unreadable"
+        _write_explore_named_background_state(tmp_path, sid, "explore-9")
+        missing_transcript_path = str(tmp_path / "does-not-exist.jsonl")
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "agent_name": "explore-9",
+                "last_assistant_message": "調査結果をまとめた。",
+                "transcript_path": missing_transcript_path,
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state.get("explore_named_background_active_names") == ["explore-9"]

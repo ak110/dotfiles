@@ -419,3 +419,78 @@ class TestAgentCompletionAsyncWaitDetection:
             state_dir=tmp_path,
         )
         assert result.stdout.strip() == ""
+
+
+class TestExploreNamedBackgroundRegistration:
+    """Explore named background起動（`name`非空・`run_in_background=true`）時の名前リスト記録。"""
+
+    def test_registers_when_named_and_background(self, tmp_path: pathlib.Path):
+        sid = "fb-explore-register"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "Explore", "name": "explore-1", "run_in_background": True},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        active = state.get("explore_named_background_active_names")
+        assert isinstance(active, list)
+        assert "explore-1" in active
+
+    def test_does_not_register_when_not_background(self, tmp_path: pathlib.Path):
+        """`run_in_background`が真でない（foreground起動）場合は記録しない。"""
+        sid = "fb-explore-foreground"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "Explore", "name": "explore-2", "run_in_background": False},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("explore_named_background_active_names") in (None, [])
+
+    def test_does_not_register_when_name_missing(self, tmp_path: pathlib.Path):
+        """`name`未指定（匿名Explore）は記録しない。"""
+        sid = "fb-explore-unnamed"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "Explore", "run_in_background": True},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("explore_named_background_active_names") in (None, [])
+
+    def test_does_not_register_for_non_explore_subagent(self, tmp_path: pathlib.Path):
+        """`Explore`以外のsubagent_typeは記録しない。"""
+        sid = "fb-explore-other-type"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "name": "worker-1", "run_in_background": True},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("explore_named_background_active_names") in (None, [])
+
+    def test_concurrent_same_name_registers_each_launch(self, tmp_path: pathlib.Path):
+        """同一`name`の並行起動（サブセッション複数）はそれぞれ個別のエントリとして追記される。"""
+        sid = "fb-explore-concurrent"
+        payload = {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "Explore", "name": "explore-3", "run_in_background": True},
+        }
+        _run(payload, state_dir=tmp_path)
+        _run(payload, state_dir=tmp_path)
+        state = _read_state(tmp_path, sid)
+        active = state.get("explore_named_background_active_names")
+        assert active == ["explore-3", "explore-3"]

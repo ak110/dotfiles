@@ -40,6 +40,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `plan-file-creator`完了報告本文の`invoked_subagents:`行のパースによる
     親セッション状態へのフラグ設定 (Agent/Task)
+18. Explore named background起動（subagent_type=Explore・name非空・run_in_background=true）の
+    親セッション状態への名前記録 (Agent/Task)。SubagentStop側の
+    `_inspect_explore_named_background_send`が完了報告能動送付検査の発火判定に読み取る
 """
 
 import json
@@ -223,6 +226,11 @@ _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:p
 # `plan-impl-executor`起動時のサブセッション情報を親セッション状態へ記録する辞書のキー名。
 # SubagentStop側の`_inspect_plan_impl_executor_report_format`が完了報告書式検査の発火判定に読み取る。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+
+# Explore named background起動時の`name`集合を親セッション状態へ記録する名前リストのキー名。
+# SubagentStop側の`_inspect_explore_named_background_send`（subagent_stop_advisor.py）が
+# 完了報告能動送付検査の発火判定に読み取る。`subagent_stop_advisor.py`の同名定数と同一値を保つ。
+_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
 
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
@@ -573,6 +581,24 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _register_plan_impl_executor_session)
+        # Explore named background起動（`name`非空・`run_in_background=true`）を検出し、
+        # SubagentStop側の`_inspect_explore_named_background_send`が能動送付検査の発火判定に読み取る
+        # 名前リストとして親セッション状態へ記録する。同名の並行起動を想定し、
+        # 既存登録の有無に関わらず常に追記する（各起動につき1エントリ、消費側は1件ずつ`list.remove`する）。
+        if subagent_type == "Explore":
+            teammate_name = tool_input.get("name")
+            teammate_background = tool_input.get("run_in_background")
+            if isinstance(teammate_name, str) and teammate_name and teammate_background is True:
+
+                def _register_explore_named_background(state: dict, name: str = teammate_name) -> dict | None:
+                    active = state.get(_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY)
+                    if not isinstance(active, list):
+                        active = []
+                    active.append(name)
+                    state[_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY] = active
+                    return state
+
+                update_state(session_id, _register_explore_named_background)
         if isinstance(subagent_type, str):
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
             if flag_key is not None:

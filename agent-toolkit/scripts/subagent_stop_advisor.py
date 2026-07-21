@@ -24,6 +24,10 @@ named subagent（`agent_name`非空）でtranscript内のtool_use数が閾値以
 無い時にblockを返し、完了報告の能動送付（またはメイン受領）を促す。
 当該判定結果は`agent_name`・tool_use数・送付有無を含めて`append_stop_log`で常時ログ化する。
 
+Explore named background起動（`posttooluse.py`が記録した名前リストに`agent_name`が
+含まれる場合）は、`_NAMED_SUBAGENT_MIN_TOOL_USES`閾値を適用せず同一水準の能動送付検査を行う
+（`_inspect_explore_named_background_send`。Explore短命終了時の未発火事象を解消するため）。
+
 `plan-impl-executor`完了報告（`plan_impl_executor_active_subagent_sessions`登録時のみ発火）は、
 主要欄ラベルの欠落検査と、background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 """
@@ -56,6 +60,10 @@ _HOOK_ID = "agent-toolkit/subagent-stop"
 
 # `posttooluse.py`の同名定数と同一集合を保つ。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+
+# Explore named background起動時の`name`集合を記録する状態辞書キー名。
+# `posttooluse.py`の同名定数と同一値を保つ。
+_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
 
 # `plan-impl-executor`完了報告本文の主要欄ラベル集合。
 # SSOTは`agent-toolkit/references/plan-impl/caller-reception.md`手順0および
@@ -144,31 +152,16 @@ def _fail_open_check(agent_name: str) -> _NamedSubagentSendCheck:
     return _NamedSubagentSendCheck(agent_name=agent_name, tool_use_count=-1, has_main_send=False, missing_main_send=False)
 
 
-def _inspect_named_subagent_send(payload: dict) -> _NamedSubagentSendCheck:
-    """Named subagentのメイン宛SendMessage送付有無を判定内訳付きで返す。
+def _scan_transcript_tool_uses(transcript_path: str) -> tuple[int, bool] | None:
+    """transcriptを走査し`(tool_use総数, メイン宛SendMessage送付有無)`を返す。
 
-    判定条件:
-    - `agent_name`フィールドが非空文字列（named subagent起動）
-    - `transcript_path`が読み取り可能
-    - 当該subagentのtranscript内assistant `tool_use`ブロック総数が閾値以上
-    - `name == "SendMessage"`かつ`input.to == "main"`のtool_use呼び出しが1件も存在しない
-
-    `missing_main_send`は上記全てを満たす場合に真。foregroundの短命subagent等で
-    tool_use数が閾値未満の場合、または既にメイン宛SendMessage送付済みの場合は偽。
-    `agent_name`未指定・transcript読み取り失敗時は`tool_use_count=-1`・`missing_main_send=False`
-    で返す（fail-open）。
+    読み取り不能時は`None`を返す（fail-open判定は呼び出し元に委ねる）。
+    `_inspect_named_subagent_send`・`_inspect_explore_named_background_send`が共用する。
     """
-    agent_name = payload.get("agent_name")
-    agent_name = agent_name if isinstance(agent_name, str) else ""
-    if not agent_name:
-        return _fail_open_check("")
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return _fail_open_check(agent_name)
     try:
         raw = pathlib.Path(transcript_path).read_text(encoding="utf-8")
     except (OSError, ValueError):
-        return _fail_open_check(agent_name)
+        return None
     tool_use_count = 0
     sent_to_main = False
     for line in raw.splitlines():
@@ -192,27 +185,121 @@ def _inspect_named_subagent_send(payload: dict) -> _NamedSubagentSendCheck:
                 inp = block.get("input")
                 if isinstance(inp, dict) and inp.get("to") == "main":
                     sent_to_main = True
+    return tool_use_count, sent_to_main
+
+
+def _inspect_named_subagent_send(payload: dict) -> _NamedSubagentSendCheck:
+    """Named subagentのメイン宛SendMessage送付有無を判定内訳付きで返す。
+
+    判定条件:
+    - `agent_name`フィールドが非空文字列（named subagent起動）
+    - `transcript_path`が読み取り可能
+    - 当該subagentのtranscript内assistant `tool_use`ブロック総数が閾値以上
+    - `name == "SendMessage"`かつ`input.to == "main"`のtool_use呼び出しが1件も存在しない
+
+    `missing_main_send`は上記全てを満たす場合に真。foregroundの短命subagent等で
+    tool_use数が閾値未満の場合、または既にメイン宛SendMessage送付済みの場合は偽。
+    `agent_name`未指定・transcript読み取り失敗時は`tool_use_count=-1`・`missing_main_send=False`
+    で返す（fail-open）。
+    """
+    agent_name = payload.get("agent_name")
+    agent_name = agent_name if isinstance(agent_name, str) else ""
+    if not agent_name:
+        return _fail_open_check("")
+    transcript_path = payload.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return _fail_open_check(agent_name)
+    scan_result = _scan_transcript_tool_uses(transcript_path)
+    if scan_result is None:
+        return _fail_open_check(agent_name)
+    tool_use_count, sent_to_main = scan_result
     missing_main_send = tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES and not sent_to_main
     return _NamedSubagentSendCheck(
         agent_name=agent_name, tool_use_count=tool_use_count, has_main_send=sent_to_main, missing_main_send=missing_main_send
     )
 
 
-def _log_named_subagent_check(session_id: object, check: _NamedSubagentSendCheck) -> None:
-    """`_inspect_named_subagent_send`の判定結果を常時ログへ1行追記する。
+def _log_send_check(session_id: object, check: _NamedSubagentSendCheck, *, label_stem: str) -> None:
+    """Named subagent送付判定結果を常時ログへ1行追記する。
 
-    `decision`は`missing_main_send`が真なら`block_named_subagent_missing_send`、
-    偽なら`allow_named_subagent_send`とする（`stop_advisor.py`の複合ラベル命名規約に揃える）。
-    `session_id`が非文字列・空文字列の場合はログ出力をスキップする（`append_stop_log`の既定挙動）。
+    `_inspect_named_subagent_send`・`_inspect_explore_named_background_send`が共用する。
+    `decision`は`missing_main_send`が真なら`block_{label_stem}_missing_send`、
+    偽なら`allow_{label_stem}_send`（`stop_advisor.py`の複合ラベル命名規約に揃える）。
+    `session_id`が非文字列・空文字列の場合は`append_stop_log`の既定挙動でスキップする。
     """
     append_stop_log(
         session_id if isinstance(session_id, str) else "",
-        "block_named_subagent_missing_send" if check.missing_main_send else "allow_named_subagent_send",
+        f"block_{label_stem}_missing_send" if check.missing_main_send else f"allow_{label_stem}_send",
         {
             "agent_name": check.agent_name or "-",
             "tool_use_count": check.tool_use_count,
             "has_main_send": check.has_main_send,
         },
+    )
+
+
+# 判定内訳のフィールド構造が`_NamedSubagentSendCheck`と完全一致するため型エイリアスとして統合する
+# （dataclass二重定義とlogger二重定義のSRP違反を解消）。
+_ExploreNamedBackgroundSendCheck = _NamedSubagentSendCheck
+
+
+def _inspect_explore_named_background_send(payload: dict) -> _ExploreNamedBackgroundSendCheck | None:
+    """登録済みExplore named background起動のメイン宛SendMessage送付有無を判定する。
+
+    判定条件:
+    - `session_id`・`agent_name`が非空文字列
+    - `posttooluse.py`が記録した`_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY`名前リストに`agent_name`を含む
+      （含まない場合は本ゲートの対象外として`None`を返す。`_inspect_named_subagent_send`と異なり
+      `_NAMED_SUBAGENT_MIN_TOOL_USES`閾値は適用しない。Explore短命終了時の未発火事象を解消するため）
+
+    一致した場合は`transcript_path`をtool_use走査する。
+    走査成功時のみ該当名を状態から1件消費（削除）し、判定結果を確定させる。
+    走査失敗時（`transcript_path`欠落・読み取り不能）は状態を変更せず、fail-open（非block）で返す。
+    エントリを未消費のまま残すことで、後続のSubagentStop再発火時に再判定できる
+    （codexレビュー指摘: 走査失敗時の消費により再試行不能になる不備を是正する）。
+
+    同名の並行起動を複数登録した場合、消費対象の同定は`agent_name`一致のみに依拠し、
+    どの物理起動に対応するかは区別しない（`list.remove`は先頭一致1件を消費する）。
+    これは既知の受容済み制約とする。理由: `SendMessage(to=<name>)`によるteammate宛送付も
+    同名衝突時は宛先解決が本質的に曖昧であり、運用上は同名重複起動を避けることが前提となる。
+    `session_id`・`agent_name`未指定時、または登録名前リストに`agent_name`が含まれない場合は`None`を返す
+    （本ゲートの対象外を意味し、`main()`側は判定・ログ出力をスキップする）。
+    """
+    session_id = payload.get("session_id")
+    agent_name = payload.get("agent_name")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    if not isinstance(agent_name, str) or not agent_name:
+        return None
+    state = read_state(session_id)
+    active = state.get(_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY)
+    if not isinstance(active, list) or agent_name not in active:
+        return None
+
+    transcript_path = payload.get("transcript_path")
+    scan_result = _scan_transcript_tool_uses(transcript_path) if isinstance(transcript_path, str) and transcript_path else None
+
+    if scan_result is None:
+        return _ExploreNamedBackgroundSendCheck(
+            agent_name=agent_name, tool_use_count=-1, has_main_send=False, missing_main_send=False
+        )
+
+    def _consume_entry(current_state: dict, name: str = agent_name) -> dict | None:
+        current_active = current_state.get(_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY)
+        if not isinstance(current_active, list) or name not in current_active:
+            return None
+        current_active.remove(name)
+        current_state[_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY] = current_active
+        return current_state
+
+    update_state(session_id, _consume_entry)
+
+    tool_use_count, sent_to_main = scan_result
+    return _ExploreNamedBackgroundSendCheck(
+        agent_name=agent_name,
+        tool_use_count=tool_use_count,
+        has_main_send=sent_to_main,
+        missing_main_send=not sent_to_main,
     )
 
 
@@ -364,7 +451,7 @@ def main() -> int:
         return 0
 
     named_subagent_check = _inspect_named_subagent_send(payload)
-    _log_named_subagent_check(payload.get("session_id"), named_subagent_check)
+    _log_send_check(payload.get("session_id"), named_subagent_check, label_stem="named_subagent")
     if named_subagent_check.missing_main_send:
         reason = _llm_notice(
             "blocked: this named subagent finished without ever calling `SendMessage(to='main')`."
@@ -378,6 +465,22 @@ def main() -> int:
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
+
+    explore_check = _inspect_explore_named_background_send(payload)
+    if explore_check is not None:
+        _log_send_check(payload.get("session_id"), explore_check, label_stem="explore_named_background")
+        if explore_check.missing_main_send:
+            reason = _llm_notice(
+                "blocked: this named background Explore subagent finished without ever calling"
+                " `SendMessage(to='main')`. Explore subagents launched with `name` and"
+                " `run_in_background=true` must actively deliver their findings to the main agent via"
+                " `SendMessage(to='main', message=<full body>)`; waiting for the main agent to poll is"
+                " treated as incomplete."
+                " Send the findings to main now and then stop.",
+                tag="block",
+            )
+            print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+            return 0
 
     return 0
 

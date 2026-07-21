@@ -38,7 +38,7 @@
     を呼び出す。フェンス内文面へ計画段階でcolloquial-checkを到達させるための併走。
     体裁系のため警告出力のみでexit codeへ算入しない
 - 対象ファイル一覧の`agent-toolkit/`配下パスに対するversion bumpステップ欠落の全文一括検査（warn出力のみ）
-- `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（warn出力のみ）
+- `## 実行方法`にbump stepが記載されている場合のmanifest対象ファイル記載欠落の全文一括検査（exit 1違反）
 - 対象ファイル一覧に絶対パスまたは親ディレクトリ参照（`..`を含むパス）を検出した場合の全文一括検査（warn出力のみ）
 - 対象ファイル一覧に規範ファイル（`agent-toolkit/rules/*.md`等）を含み、`## 変更内容`本文の
     差分ブロックで新規H2以深節見出しの追加を検出したが`## 調査結果`配下に`### 遡及スキャン結果`
@@ -222,9 +222,10 @@ def _check_plan_file(plan_path: pathlib.Path, repo_root: pathlib.Path) -> list[s
     if recurrence_error is not None:
         print(recurrence_error, file=sys.stderr)
         violations.append(recurrence_error)
-    manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
-    if manifest_warning is not None:
-        print(manifest_warning, file=sys.stderr)
+    manifest_error = _check_manifest_files_when_bump_step(plan_path, text)
+    if manifest_error is not None:
+        print(manifest_error, file=sys.stderr)
+        violations.append(manifest_error)
     target_path_warning = _check_target_file_paths_relative(plan_path, text)
     if target_path_warning is not None:
         print(target_path_warning, file=sys.stderr)
@@ -458,16 +459,16 @@ def _check_current_replaced_body_identity(plan_path: pathlib.Path, text: str) ->
 
 
 def _check_manifest_files_when_bump_step(plan_path: pathlib.Path, text: str) -> str | None:
-    """計画ファイル本文へmanifest対象ファイル記載要件を照合する。違反時は警告メッセージを返す。
+    """計画ファイル本文へmanifest対象ファイル記載要件を照合する。違反時はエラーメッセージを返す。
 
     判定ロジックのSSOTは`_plan_format.has_manifest_files_when_bump_step_present`。
-    既存`_check_bump_step`と対称のwarn降格とし、呼び出し元はexit codeへ含めずstderr出力のみに使う
+    両manifest欠落はerror扱いとし、bump step自体の欠落（`_check_bump_step`）とは非対称に扱う
     （`agent-toolkit-edit`スキル「バージョン更新」節との整合を保つ）。
     """
     if has_manifest_files_when_bump_step_present(text):
         return None
     return (
-        f"{plan_path}: [warn] `## 実行方法`本文にbump stepが記載されているが、"
+        f"{plan_path}: [error] `## 実行方法`本文にbump stepが記載されているが、"
         f"対象ファイル一覧に両manifestの記載が欠落している。"
         f"`agent-toolkit-edit`スキル「バージョン更新」節参照。"
     )
@@ -718,7 +719,7 @@ def _extract_diff_blocks(
 
     戻り値は`(違反メッセージ一覧, (textlint対象, 一時パス→H3位置マップ))`。
 
-    fence外側配置検査・縮退フレーズ検査・bump/manifest/遡及スキャン警告はここで実行して
+    fence外側配置検査・縮退フレーズ検査・bump/遡及スキャン警告・manifest欠落検査（exit 1違反）はここで実行して
     メッセージまたは`stderr`出力へ反映する。散文系拡張子（`_PROSE_EXTENSIONS`）ブロック本文は
     一時ファイル（`.md`拡張子）へ保存してパスのみ返し、textlint検査自体は`_check_extracted_paths`へ委譲する
     （1計画ファイル分の全ブロックをまとめて1回のsubprocess呼び出しへ渡すため）。
@@ -769,9 +770,10 @@ def _extract_diff_blocks(
     if recurrence_error is not None:
         print(recurrence_error, file=sys.stderr)
         messages.append(recurrence_error)
-    manifest_warning = _check_manifest_files_when_bump_step(plan_path, text)
-    if manifest_warning is not None:
-        print(manifest_warning, file=sys.stderr)
+    manifest_error = _check_manifest_files_when_bump_step(plan_path, text)
+    if manifest_error is not None:
+        print(manifest_error, file=sys.stderr)
+        messages.append(manifest_error)
     target_path_warning = _check_target_file_paths_relative(plan_path, text)
     if target_path_warning is not None:
         print(target_path_warning, file=sys.stderr)

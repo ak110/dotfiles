@@ -636,26 +636,40 @@ class TestCheckManifestFilesWhenBumpStep:
         assert _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text) is None
 
     def test_bump_step_missing_plugin_json(self, tmp_path: pathlib.Path) -> None:
-        """bump step記載かつplugin.json欠落: warn文言を返す。"""
+        """bump step記載かつplugin.json欠落: error文言を返す。"""
         text = _bump_plan(
             ["agent-toolkit/scripts/pretooluse.py", ".claude-plugin/marketplace.json"],
             include_bump=True,
         )
         result = _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text)
         assert result is not None
-        assert "[warn]" in result
+        assert "[error]" in result
         assert "manifest" in result
 
     def test_bump_step_missing_marketplace_json(self, tmp_path: pathlib.Path) -> None:
-        """bump step記載かつmarketplace.json欠落: warn文言を返す。"""
+        """bump step記載かつmarketplace.json欠落: error文言を返す。"""
         text = _bump_plan(
             ["agent-toolkit/scripts/pretooluse.py", "agent-toolkit/.claude-plugin/plugin.json"],
             include_bump=True,
         )
         result = _MOD._check_manifest_files_when_bump_step(tmp_path / "plan.md", text)
         assert result is not None
-        assert "[warn]" in result
+        assert "[error]" in result
         assert "manifest" in result
+
+    def test_missing_manifest_causes_nonzero_exit(self, tmp_path: pathlib.Path) -> None:
+        """manifest欠落はexit 1へ反映される（`_check_bump_step`のwarn降格とは非対称）。"""
+        plan = _write(
+            tmp_path / "plan.md",
+            _bump_plan(
+                ["agent-toolkit/scripts/pretooluse.py", ".claude-plugin/marketplace.json"],
+                include_bump=True,
+            ),
+        )
+        result = _fork_runner.run_script(_SCRIPT, argv=(str(plan),))
+        assert result.returncode == 1
+        assert "[error]" in result.stderr
+        assert "manifest" in result.stderr
 
 
 class TestCheckTargetFilePathsRelative:

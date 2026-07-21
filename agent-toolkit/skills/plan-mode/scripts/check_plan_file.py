@@ -19,6 +19,10 @@
   縮退フレーズ検査部分
 - `check_plan_diff_gates._check_recurrence_prevention_recorded`:
   `### 恒久化・リファクタリング内容`小見出し配下の再発予防記述要件の照合（ユーザー指示による機械ゲート化）
+- `check_plan_diff_gates._check_manifest_files_when_bump_step`:
+  `## 実行方法`にbump stepが記載されている計画で、対象ファイル一覧に両manifestファイル
+  （`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）の
+  記載が欠落していないかを照合する
 - `check_deprecated_identifier_coverage._check_plan`: `#### 廃止・改名対象一覧`存在時の残存参照照合
 - `check_line_ref._check_file`・`_check_content_level_violations`: 行番号参照・パス実在・
   スキル名実在・節名実在（パス付き節名参照形式および裸参照形式）の検査

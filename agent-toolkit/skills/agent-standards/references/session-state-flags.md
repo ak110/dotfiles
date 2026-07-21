@@ -30,6 +30,15 @@
   記録され起動元（親）へは反映されない。
   親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
   対応するフラグを親自身のセッション状態へ設定する経路で行う
+- `plan_impl_executor_active_subagent_sessions`: PostToolUse(Agent/Task)が`plan-impl-executor`系起動時に記録する。
+  サブセッションID（`agentId`）をキーとする辞書形式で保持する。
+  SubagentStop側の`_inspect_plan_impl_executor_report_format`が読み取り検査後、空辞書へリセットする
+  （寿命: 当該サブエージェントの完了検知まで）
+- `explore_named_background_active_names`: PostToolUse(Agent/Task)がExplore named background起動時に記録する。
+  対象は`name`非空・`run_in_background=true`起動で、名前をリストへ追記する。
+  同名の並行起動も個別に追記する。
+  SubagentStop側の`_inspect_explore_named_background_send`が読み取り、一致した名前を1件消費（削除）する
+  （寿命: 各起動の完了検知まで。リスト要素ごとに個別消費する）
 - `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動検知時点で前倒しして真化する。
   PreToolUse(Agent/Task)が記録し、サイドチェーン内からも参照できる。
   `mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
