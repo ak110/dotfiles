@@ -71,7 +71,7 @@ exclude-newer = "1 day"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pytools"]
-exclude = ["pytools/**/*_test.py", "pytools/**/_test_helpers.py"]
+exclude = ["pytools/**/*_test.py", "pytools/**/*_test_helpers.py"]
 
 [dependency-groups]
 dev = [

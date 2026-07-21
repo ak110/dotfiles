@@ -1,7 +1,8 @@
 """計画ファイル走査系の独立実行スクリプト群が共有する要素を集約するモジュール。
 
 `check_plan_diff_gates.py`・`check_wc_projection.py`・`check_plan_meta.py`・
-`check_self_ref.py`・`check_deprecated_identifier_coverage.py`から利用する。
+`check_self_ref.py`・`check_deprecated_identifier_coverage.py`・`posttooluse.py`・
+`_plan_diff_gates_scan.py`から利用する。
 呼び出し側はスクリプト自身のディレクトリが実行時に`sys.path`へ含まれるため、
 `import _plan_diff_parsing`で直接importできる（`uv run --script`実行時・
 `python <path>`直接実行時のいずれもスクリプト自身のディレクトリが`sys.path[0]`となるため）。

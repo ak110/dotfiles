@@ -115,21 +115,6 @@ def _assistant_text_only(text: str = "作業を継続します。") -> dict:
     }
 
 
-def _assistant_with_skill(skill: str) -> dict:
-    """Skill tool_use を含む assistant エントリを生成する。"""
-    return {
-        "type": "assistant",
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "スキルを起動します。"},
-                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill}},
-            ],
-            "stop_reason": "end_turn",
-        },
-    }
-
-
 def _assistant_with_async_tool(tool_name: str) -> dict:
     """非同期待機系tool_useで終わるアシスタントエントリを生成する。"""
     return {
@@ -146,6 +131,21 @@ def _assistant_with_async_tool(tool_name: str) -> dict:
 
 
 # pylint: enable=duplicate-code
+
+
+def _assistant_with_skill(skill: str) -> dict:
+    """Skill tool_use を含む assistant エントリを生成する。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "スキルを起動します。"},
+                {"type": "tool_use", "id": "x", "name": "Skill", "input": {"skill": skill}},
+            ],
+            "stop_reason": "end_turn",
+        },
+    }
 
 
 def _user_entry(text: str = "hello") -> dict:
