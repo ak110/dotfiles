@@ -4,7 +4,7 @@ description: >
   対象範囲を指定してレビューするときに起動する。
   `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方で起動する。
 # 編集時の注意点: サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身はメイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。起動経路（plan-impl-executor経由・手動起動）で動作分岐させず、計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
-# 同期注記: 「起動プロンプトテンプレート」節の構文合法性除外バレットは`agent-toolkit/skills/review-standards/SKILL.md`「レビューの基本姿勢」節・`agent-toolkit/agents/plan-impl-reviewer.md`「共通判断基準」節・`agent-toolkit/agents/plan-codex-reviewer.md`「プロンプト構築」節の同旨規定と意図的に重複する（改訂時は4ファイルを同時更新する）。
+# 同期注記: 「制約」節の構文合法性除外バレットは`agent-toolkit/skills/review-standards/SKILL.md`「レビューの基本姿勢」節の同旨規定と意図的に重複する（改訂時は2ファイルを同時更新する。`plan-impl-reviewer.md`「共通判断基準」節・`plan-codex-delegate.md`「プロンプト構築」節は本節への直接参照へ置換済みのため重複対象から除く）。
 # named subagent能動送付規定（本ファイル「制約」節）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロックと意図的に重複する（改訂時は4ファイルを同時更新する。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
 ---
 
@@ -12,8 +12,10 @@ description: >
 
 対象範囲（ファイル群または差分）の評価を複数エージェントへ並列に委ね、指摘を統合する。
 
-- `plan-spec-reviewer`: 計画適合性および成果物間の整合性
-- `plan-impl-reviewer`: コード単体品質・ドキュメント単体品質・日本語表現
+- `plan-spec-reviewer`: 計画適合性および成果物間の整合性（claude据え置き）
+- `plan-codex-delegate`（`用途: 実装差分レビュー`）: コード単体品質・ドキュメント単体品質・日本語表現
+  （モード「codex寄り」の既定経路）
+- `plan-impl-reviewer`: 同上観点（モード「claude寄り」の既定経路、または「codex寄り」でcodex利用不可時のフォールバック）
 
 ## 入力
 
@@ -34,33 +36,24 @@ description: >
 
 ## サブエージェント起動方針
 
-`plan-spec-reviewer`と`plan-impl-reviewer`を並列起動する。
+実装レビュー担当は環境のバランスモードで決まる。
+`test -f ~/.config/agent-toolkit/review-balance-mode.claude-heavy`が真の場合「claude寄り」、
+偽の場合（既定）「codex寄り」とする。
+「claude寄り」は`plan-spec-reviewer`と`plan-impl-reviewer`を並列起動する（現行構成を維持する）。
+「codex寄り」は`plan-spec-reviewer`と`plan-codex-delegate`（`用途: 実装差分レビュー`）を並列起動する。
 計画ファイルの有無は`plan-spec-reviewer`の担当観点のみに影響する。
 
 - 計画ファイルあり: 仕様適合性と成果物間の整合性を評価する
 - 計画ファイル無し: 成果物間の整合性のみ評価する（仕様への適合性評価が成立しないため）
 
+`codex-review.md`「codex利用可否の3段階判定」節の段階3が成立した場合は
+`plan-codex-delegate`の代わりに`plan-impl-reviewer`を起動する。
+本フォールバックはモードによらず共通で適用する。
+分担・並列度の詳細は`references/impl-review-launch.md`を参照する。
+
 対象範囲にコーディングエージェント向け文書カテゴリが含まれる場合、
-`agent-doc-validator`を`plan-impl-reviewer`・`plan-spec-reviewer`と並列に独立起動する。
-`plan-impl-reviewer`は単体品質、`agent-doc-validator`は`01-agent.md`・`agent-standards`方針への適合性を担当する。
-
-### plan-impl-reviewerの分割起動
-
-`plan-impl-reviewer`は対象ファイル件数と種別に応じて分割起動を検討する
-（種別ごとに呼び出すスキルが異なるため件数が多いほど分割効果が大きい）。
-
-- 対象が多い場合は次カテゴリに分けて並列起動する
-  - コード・テストコード（`agent-toolkit:coding-standards`＋`agent-toolkit:writing-standards`）
-  - 一般ドキュメント（`agent-toolkit:writing-standards`）
-  - コーディングエージェント向け文書（`agent-toolkit:writing-standards`＋`agent-toolkit:agent-standards`）
-- 対象が合計5ファイル以上または合計差分が概ね300行以上の場合はカテゴリ分割を優先する
-  （自動bumpで連動更新される`plugin.json`・`marketplace.json`等は閾値カウント対象外）
-- 単一カテゴリ内の対象ファイル数が10以上または合計行数が概ね2000行以上の場合は当該カテゴリ内で更に分割起動する。
-  APIエラー等の異常終了時の再委譲手順は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う
-- 対象合計ファイル数が30以上または合計差分が2000行以上の場合は`plan-impl-reviewer`の初回並列度を3以下に抑える。
-  一般ドキュメント・コーディングエージェント向け文書を統合し2グループへ集約する（併読は`agent-toolkit:writing-standards`・
-  `agent-toolkit:agent-standards`）。本条件は単一カテゴリ内分割ルールより優先し、`plan-spec-reviewer`・
-  `agent-doc-validator`の独立起動は維持する。重大以上の指摘が集中する領域のみ2サイクル目で追加分割する
+`agent-doc-validator`を上記と並列に独立起動する。
+単体品質担当（`plan-codex-delegate`または`plan-impl-reviewer`）と`agent-doc-validator`（`01-agent.md`・`agent-standards`方針への適合性）は担当観点を分離する。
 
 ## 起動プロンプトテンプレート
 
@@ -69,6 +62,7 @@ description: >
 - `spec`（`plan-spec-reviewer`）: 計画ファイルと成果物の仕様適合性、および成果物間の整合性
   （計画ファイル未提示の場合は仕様適合性をスキップし整合性のみ評価）
 - `impl`（`plan-impl-reviewer`）: コード単体品質・ドキュメント単体品質・日本語表現
+  （バランスモード「claude寄り」時は既定経路、「codex寄り」時は段階3成立時のフォールバック経路として使用）
 - `doc-validator`（`agent-doc-validator`）: `01-agent.md`方針および`agent-standards`スキル方針への適合性
   （コーディングエージェント向け文書カテゴリを含む場合のみ起動）
 
@@ -93,12 +87,22 @@ description: >
 - 対象範囲のいずれかが1ファイル1000行を超える場合、`autocompact thrashing`予防のため次の制約を適用すること
   - 当該ファイルの全文`Read`を避け、`git diff`出力範囲・該当節（H2/H3単位）・差分周辺のシンボル単位・特定行範囲のみを`Read`する
   - 「該当ファイル全体から全件を列挙」観点は当該ファイル内で差分周辺と該当節範囲に限定される
-  - 例外: `plan-impl-reviewer`起動時は本制約を適用せず「plan-impl-reviewerの分割起動」節の運用で担当分を1000行以内へ収める
+  - 例外: `plan-impl-reviewer`起動時は本制約を適用せず、
+    `references/impl-review-launch.md`「plan-impl-reviewerの分割起動（フォールバック時）」節の
+    運用で担当分を1000行以内へ収める
 - 構文の合法性を根拠とする指摘は機械チェック担当領域のため指摘対象外とすること。対象言語バージョンで有効化された新構文
   （Python 3.14のPEP 758による`except`括弧省略等）を学習知識との齟齬で構文エラーと判定しないこと
 - named subagentとして`run_in_background=true`起動される場合、完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
   `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする
 ```
+
+## codex実装レビューの起動
+
+`plan-codex-delegate`をAgentツールで`用途: 実装差分レビュー`指定で起動する。
+渡す情報（対象範囲・対象外ファイル・計画ファイルパス・差分取得コマンド・担当カテゴリ）と
+並列度・カテゴリ分担の閾値は`references/impl-review-launch.md`を参照する。
+起動プロンプトの構成自体は`plan-codex-delegate`エージェント定義側が担うため、
+本ファイルはカテゴリ分担と並列起動可否の判断のみを担当する。
 
 ## 指摘の統合と修正依頼
 
@@ -153,10 +157,10 @@ specとimpl指摘が同一変更箇所で相反する場合、重大度が異な
 
 対応が必要な指摘が1件以上あれば修正内容をユーザーへ簡潔に報告して修正再実装へ進み、完了後に検証タスクで合格を確認する。
 修正実装はcodexを優先する。
-詳細は`agent-toolkit/references/plan-impl/execution-process.md`「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節に従う。
-進捗ログに`threadId`記録があればAgentツールで`plan-codex-implementer`サブエージェントを継続呼び出し
+詳細は`agent-toolkit/references/plan-impl/execution-process.md`「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節に従う。
+進捗ログに`threadId`記録があればAgentツールで`plan-codex-delegate`（`用途: 実装`）サブエージェントを継続呼び出し
 （`threadId`引き渡し）で同一スレッドへ差し戻す。
-`threadId`記録が無い場合も`mcp__codex__codex`が利用可能なら新規に`plan-codex-implementer`サブエージェントへ委譲する。
+`threadId`記録が無い場合も`mcp__codex__codex`が利用可能なら新規に`plan-codex-delegate`（`用途: 実装`）サブエージェントへ委譲する。
 MCPが利用不可の場合のみ修正再実装モードで`plan-implementer`へ委譲する。
 
 修正のコミット反映は、直前の未プッシュコミットがレビュー対象計画と件名・対象範囲の両面で整合する場合に
@@ -170,6 +174,10 @@ amend後は`git status`で取り残しが無いことを確認する。
 新しい`Agent`で並列起動する（先入観排除のため`SendMessage`再開は採らない）。対象範囲は修正再実装で書き換えた
 個別ファイル群とし、メインが修正方針および完了後の`git status`／`git diff`から確定して起動プロンプトへ列挙する
 （計画ファイル・永続化情報には記録しない）。
+`plan-codex-delegate`も本項の新規`Agent`起動方式に従う（`threadId`継続は使わない）。
+理由は`agent-toolkit/skills/review-standards/SKILL.md`「レビューの基本姿勢」節の独立評価原則を実装レビューへ適用するためである。
+本節の上限なしサイクルモデルは`codex-review.md`の反映確認レビュー上限（初回+1回）と不整合であり、
+計画ファイルレビューの`threadId`継続方式とも非対称とする。
 
 起動対象は次のいずれかに該当する種別に限定する。
 

@@ -19,7 +19,8 @@ user-invocable: false
 # で起動しSendMessageを介さない）、本エージェント自身がnamed background起動された場合の
 # 完了報告能動送付（SendMessage）を単一エージェントが担うため、`plan-impl-executor.md`と
 # 同様に全ツール許可とする。
-# codexレビューは常に`plan-codex-reviewer`のAgent起動経由で行い、`mcp__codex__codex`への
+# codexレビューは既定で`plan-codex-delegate`（用途: 計画レビュー）の観点分担並列起動経由で行い、
+# codex利用不可時のみ`plan-reviewer`を代替起動する。いずれも`mcp__codex__codex`への
 # 自律フォールバックはしない（理由は`agent-toolkit/skills/plan-mode/references/codex-review.md`
 # 「plan-file-creatorからの起動」節を参照）。
 # 本ファイル`## 出力`節は`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`
@@ -29,7 +30,7 @@ user-invocable: false
 # 工程7「整合性チェック・codexレビュー」相当を統合したものである。
 # 同期注記: 「完遂義務」節はplan-impl-executor.md「停止禁止」節末尾の
 # 完遂義務パラグラフと同種の役割を担う。
-# 対象サブエージェント集合はplan-reviewer・plan-codex-reviewer・
+# 対象サブエージェント集合はplan-codex-delegate・plan-reviewer（代替経路）・
 # agent-doc-validatorであり、plan-impl-executor側とは異なる。
 # よって文言は独立とする。
 # 同期注記: 「`plan-file-creator`は当該サブエージェント群の完了報告受領...」の
@@ -99,7 +100,11 @@ user-invocable: false
    `agent-toolkit/skills/plan-mode/references/process7-bypass-detection.md`を読み込み、
    節名定義に従い整合性チェック・codexレビューを実施する。
    実施手順はprocess7-bypass-detection.md「整合性チェック・codexレビューの実施手順」の節に従う。
-   起動対象は`codexレビュー`・`plan-reviewer`とし、`agent-doc-validator`は条件成立時のみ加える。
+   起動対象は既定で`codexレビュー`（`plan-codex-delegate`を観点分担で2〜3並列起動する。
+   詳細は`codex-review.md`「plan-file-creatorからの起動」節）とする。
+   `plan-reviewer`は`codex-review.md`「codex利用可否の3段階判定」節の段階3が
+   成立した場合のみ代替起動する。
+   `agent-doc-validator`は条件成立時のみ加える。
    起動はAgentツールの`run_in_background=false`によるforeground並列起動に限定し、
    同一メッセージ内に複数のAgent tool_useブロックを並置して並列実行を維持する。
    `run_in_background=true`かつ`name`指定によるnamed background起動はしない。
@@ -116,8 +121,8 @@ user-invocable: false
 ## 完遂義務
 
 `01-agent.md`「縮退表明は発行しない」項に従う。
-対象は配下並列サブエージェント（`plan-reviewer`・`plan-codex-reviewer`・
-条件成立時の`agent-doc-validator`）である。
+対象は配下並列サブエージェント（既定経路の`plan-codex-delegate`、
+codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-validator`）である。
 進め方4.の起動方式（foreground並列起動限定・named background禁止）に従う。
 全サブエージェントの完了報告を受領してから指摘集約・計画ファイルへの反映へ進む
 （SendMessage経由の非同期の受信経路は発生しない）。
@@ -136,7 +141,7 @@ user-invocable: false
   委譲情報だけで確定できない場合
 - レビュー・codex指摘の対応方針についてユーザー確認が必要と判断した場合
   （`codex-review.md`「codexレビューの進め方」節の確認要件に該当する場合を含む）
-- `plan-codex-reviewer`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
+- `plan-codex-delegate`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
   自身で行わない方針（frontmatterコメント参照）により継続不能な場合
 - foreground並列起動下でサブエージェントの応答が得られない場合
   （サブエージェントの応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
@@ -146,7 +151,7 @@ user-invocable: false
 完了報告本文へ引き継ぐ。呼び出し元は再委譲時にこれを
 「実施済みレビュー結果の転記」欄へ機械転記し、再起動後の指摘反映で全指摘を再現可能にする。
 呼び出し元は返却論点のみを解決し、確定方針込みの縮減プロンプトで`plan-file-creator`を新規起動する。
-`plan-codex-reviewer`起動ブロックによる`needs_escalation`の場合、呼び出し元が
+`plan-codex-delegate`起動ブロックによる`needs_escalation`の場合、呼び出し元が
 `mcp__codex__codex`直接呼び出しでcodexレビューを代行実施する。
 代行実施したレビュー結果を「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
 再起動された本エージェントは転記結果を実施済みとして扱い、指摘反映（進め方5.）以降から再開する。
@@ -184,7 +189,7 @@ pending_confirmations:
 `invoked_subagents:`の直後に半角スペースを1つ置き、対象識別子をカンマ区切りで列挙する。
 識別子は`plan-reviewer`・`codex-review`・`agent-doc-validator`のみを許容し、他の文字列を記載しない。
 `plan-reviewer`は同名のサブエージェントを起動した場合に記載する。
-`codex-review`は`plan-codex-reviewer`を起動した場合、または`mcp__codex__codex`を直接呼び出して代行した場合に記載する。
+`codex-review`は`plan-codex-delegate`を起動した場合、または`mcp__codex__codex`を直接呼び出して代行した場合に記載する。
 `agent-doc-validator`は起動条件が成立し、同名のサブエージェントを起動した場合に記載する。
 該当なしの場合は「なし」と明記する。
 本欄の値は`review_summary`各行の起動有無の記述と一致させる。

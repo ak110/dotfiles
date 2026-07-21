@@ -1803,13 +1803,13 @@ class TestManifestSsot:
 
 
 _AGENTS_DIR_PATH = pathlib.Path(__file__).resolve().parents[1] / "agents"
-_PERMITTED_CODEX_MCP_AGENTS = frozenset({"plan-codex-reviewer", "plan-codex-implementer"})
+_PERMITTED_CODEX_MCP_AGENTS = frozenset({"plan-codex-delegate"})
 
 
 class TestCodexMcpToolDeclarationGuardrail:
     """`mcp__codex__codex`系ツールをfrontmatterへ宣言できるエージェント定義の限定検査。
 
-    `subagent-collaboration.md`「実装委譲3者の関係」節のガードレールを機械検証する。
+    `subagent-collaboration.md`「実装委譲（plan-codex-delegate / plan-implementer）の関係」節のガードレールを機械検証する。
     """
 
     def test_only_permitted_agents_declare_codex_mcp_tools(self) -> None:
@@ -2797,7 +2797,7 @@ class TestCodexReviewNotRead:
 
     def test_allowed_when_read(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """codex-review.md読み込み済みの場合は強制承認して通過する。"""
-        self._write_state(tmp_path, "with-review", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "with-review", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2852,7 +2852,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
-        self._write_state(tmp_path, "fix1", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "fix1", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
             env_overrides=state_dir,
@@ -2866,7 +2866,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
-        self._write_state(tmp_path, "fix2", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "fix2", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2882,7 +2882,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_read_only_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox=read-onlyの明示指定もdanger-full-accessへ強制昇格する（本環境の要件）。"""
-        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2898,7 +2898,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_workspace_write_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox=workspace-writeの明示指定もdanger-full-accessへ強制昇格する。"""
-        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2914,7 +2914,7 @@ class TestCodexMcpSandbox:
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandboxが既にdanger-full-accessの場合、updatedInputは返すがsystemMessageを含めない。"""
-        self._write_state(tmp_path, "fix3", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "fix3", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2955,8 +2955,8 @@ class TestCodexMcpReply:
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
-class TestCodexMcpPlanCodexReviewerGate:
-    """FB[4]: plan-codex-reviewer経由検査によるmcp__codex__codex直接呼び出しブロック。"""
+class TestCodexMcpPlanCodexDelegateGate:
+    """FB[4]: plan-codex-delegate経由検査によるmcp__codex__codex直接呼び出しブロック。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -2965,7 +2965,7 @@ class TestCodexMcpPlanCodexReviewerGate:
     _write_state = staticmethod(_write_session_state)
 
     def test_blocked_when_not_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """plan_codex_reviewer_invoked/blockedとも偽なら`mcp__codex__codex`をブロックする。"""
+        """plan_codex_delegate_invoked/blockedとも偽なら`mcp__codex__codex`をブロックする。"""
         self._write_state(tmp_path, "gate-blocked", {"codex_review_read": True})
         result = _run(
             {
@@ -2977,11 +2977,11 @@ class TestCodexMcpPlanCodexReviewerGate:
             env_overrides=state_dir,
         )
         assert result.returncode == 2
-        assert "plan-codex-reviewer" in result.stderr
+        assert "plan-codex-delegate" in result.stderr
 
     def test_allowed_when_invoked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """plan_codex_reviewer_invoked真なら通過を許可する。"""
-        self._write_state(tmp_path, "gate-invoked", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        """plan_codex_delegate_invoked真なら通過を許可する。"""
+        self._write_state(tmp_path, "gate-invoked", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -2994,8 +2994,8 @@ class TestCodexMcpPlanCodexReviewerGate:
         assert result.returncode == 0
 
     def test_allowed_when_blocked_flag_set(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """plan_codex_reviewer_blocked真ならauto mode例外として通過を許可する。"""
-        self._write_state(tmp_path, "gate-fallback", {"codex_review_read": True, "plan_codex_reviewer_blocked": True})
+        """plan_codex_delegate_blocked真ならauto mode例外として通過を許可する。"""
+        self._write_state(tmp_path, "gate-fallback", {"codex_review_read": True, "plan_codex_delegate_blocked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -3065,7 +3065,7 @@ class TestCodexMcpLanguageWarningMerge:
     def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
         """mcp__codex__codex分岐で保留警告が承認JSONへ統合される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "codex-lang", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "codex-lang", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
@@ -3116,7 +3116,7 @@ class TestIssSidechainProbe:
     def test_writes_one_jsonl_line_under_tempdir(self, tmp_path: pathlib.Path):
         """`tempfile.gettempdir()`起点、session_id含むパスへJSONL 1行を追記する。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe1", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "probe1", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -3139,7 +3139,7 @@ class TestIssSidechainProbe:
             "probe2",
             {
                 "codex_review_read": True,
-                "plan_codex_reviewer_invoked": True,
+                "plan_codex_delegate_invoked": True,
                 "current_plan_file_path": "/tmp/plan.md",
             },
         )
@@ -3166,7 +3166,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_absent_is_recorded_as_null(self, tmp_path: pathlib.Path):
         """`isSidechain`欠落時に`null`が記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe3", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "probe3", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -3182,7 +3182,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_non_boolean_is_recorded_as_is(self, tmp_path: pathlib.Path):
         """`isSidechain`が非boolean型（整数・文字列など）でもそのまま記録される。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe4", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "probe4", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
@@ -3217,7 +3217,7 @@ class TestIssSidechainProbe:
     def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
         """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
         env = self._state_env(tmp_path)
-        self._write_state(tmp_path, "probe-rotate", {"codex_review_read": True, "plan_codex_reviewer_invoked": True})
+        self._write_state(tmp_path, "probe-rotate", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         log_path = self._log_path(tmp_path, "probe-rotate")
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
         result = _run(
@@ -4446,10 +4446,7 @@ class TestWorkaroundMemoGate:
         assert result.returncode == 0
 
 
-_PROCESS7_FLAGS = (
-    "plan_reviewer_invoked",
-    "codex_review_invoked",
-)
+_PROCESS7_FLAGS = ("codex_review_invoked",)
 
 
 def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
@@ -4460,7 +4457,7 @@ class TestProcess7CompletionCheck:
     """ExitPlanMode / `plan-impl-executor`起動時のplan-file-creatorの整合性チェック完了未達ブロック。"""
 
     def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
-        """2フラグ全て真の場合はExitPlanModeを通過する。"""
+        """必須フラグが全て真の場合はExitPlanModeを通過する。"""
         sid = "process7-all-set"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -4473,7 +4470,7 @@ class TestProcess7CompletionCheck:
 
     @pytest.mark.parametrize("missing_flag", _PROCESS7_FLAGS)
     def test_missing_flag_blocks(self, tmp_path: pathlib.Path, missing_flag: str):
-        """2フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
+        """必須フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
         sid = f"process7-missing-{missing_flag}"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: (flag != missing_flag) for flag in _PROCESS7_FLAGS})
@@ -4485,6 +4482,17 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 2
         assert missing_flag in result.stderr
         assert "integrity-checks.md" in result.stderr
+
+    def test_missing_plan_reviewer_flag_does_not_block(self, tmp_path: pathlib.Path):
+        """`plan_reviewer_invoked`は本ゲートの必須対象外のため、codex_review_invokedのみでも通過する。"""
+        sid = "process7-plan-reviewer-not-required"
+        state = {"plan_mode_skill_invoked": True, "codex_review_invoked": True, "plan_reviewer_invoked": False}
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
 
     def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
         """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件を説明する。"""
@@ -4739,12 +4747,12 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 0
 
 
-class TestPlanCodexReviewerInvokedPreToolUse:
-    """FB[2]案(a): `plan-codex-reviewer`起動検知をPreToolUse側で即時記録する。"""
+class TestPlanCodexDelegateInvokedPreToolUse:
+    """FB[2]案(a): `plan-codex-delegate`起動検知をPreToolUse側で即時記録する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize("subagent_type", ["plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer"])
-    def test_pre_tool_use_sets_plan_codex_reviewer_invoked(
+    @pytest.mark.parametrize("subagent_type", ["plan-codex-delegate", "agent-toolkit:plan-codex-delegate"])
+    def test_pre_tool_use_sets_plan_codex_delegate_invoked(
         self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str
     ) -> None:
         sid = f"fb2-pre-{tool_name.lower()}-{subagent_type.replace(':', '-')}"
@@ -4754,7 +4762,7 @@ class TestPlanCodexReviewerInvokedPreToolUse:
         )
         assert result.returncode == 0
         state = _read_session_state(tmp_path, sid)
-        assert state.get("plan_codex_reviewer_invoked") is True
+        assert state.get("plan_codex_delegate_invoked") is True
 
     def test_other_subagent_type_does_not_set_flag(self, tmp_path: pathlib.Path) -> None:
         sid = "fb2-pre-other"
@@ -4763,18 +4771,18 @@ class TestPlanCodexReviewerInvokedPreToolUse:
             env_overrides=_process7_env(tmp_path),
         )
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_codex_reviewer_invoked") is not True
+        assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_codex_delegate_invoked") is not True
 
     def test_second_invocation_does_not_overwrite_existing_true(self, tmp_path: pathlib.Path) -> None:
         """既に真化済みのフラグを冪等に保つ（`update_state`のno-op復帰を検証）。"""
         sid = "fb2-pre-idempotent"
-        _write_session_state(tmp_path, sid, {"plan_codex_reviewer_invoked": True})
+        _write_session_state(tmp_path, sid, {"plan_codex_delegate_invoked": True})
         result = _run(
-            {"tool_name": "Task", "tool_input": {"subagent_type": "plan-codex-reviewer"}, "session_id": sid},
+            {"tool_name": "Task", "tool_input": {"subagent_type": "plan-codex-delegate"}, "session_id": sid},
             env_overrides=_process7_env(tmp_path),
         )
         assert result.returncode == 0
-        assert _read_session_state(tmp_path, sid).get("plan_codex_reviewer_invoked") is True
+        assert _read_session_state(tmp_path, sid).get("plan_codex_delegate_invoked") is True
 
 
 class TestPlanModeFlagReset:
@@ -4815,8 +4823,8 @@ class TestPlanModeFlagReset:
             tmp_path,
             session_id,
             {
-                "plan_codex_reviewer_invoked": True,
-                "plan_codex_reviewer_blocked": True,
+                "plan_codex_delegate_invoked": True,
+                "plan_codex_delegate_blocked": True,
                 "recorded_codex_thread_id": "th_old_session",
             },
         )
@@ -4831,8 +4839,8 @@ class TestPlanModeFlagReset:
         )
         assert result.returncode == 0
         state = _read_session_state(tmp_path, session_id)
-        assert state.get("plan_codex_reviewer_invoked", False) is False
-        assert state.get("plan_codex_reviewer_blocked", False) is False
+        assert state.get("plan_codex_delegate_invoked", False) is False
+        assert state.get("plan_codex_delegate_blocked", False) is False
         assert "recorded_codex_thread_id" not in state
 
 
@@ -7656,7 +7664,7 @@ class TestNamedSubagentSendMessageRegistered:
     def test_frontmatter_comment_mention_is_detected(self, tmp_path: pathlib.Path) -> None:
         """frontmatterのコメント行内での`能動送付`言及も判定対象に含まれる。
 
-        `plan-reviewer.md`・`plan-codex-reviewer.md`のように、
+        `plan-reviewer.md`・`plan-codex-delegate.md`のように、
         本文（frontmatter外）に「SendMessage」「能動送付」の直接言及を含まず、
         frontmatterコメントで登録理由を書く運用パターンを再発防止対象へ含める。
         """

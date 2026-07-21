@@ -150,6 +150,15 @@ class TestDefaultSteps:
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
+    def test_review_balance_mode_step_registered(self):
+        """レビューバランスモード設定ステップが登録され、フィードバック蓄積ステップの直後に続く。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        assert "レビューバランスモード設定 (特定ホスト)" in names
+        assert (
+            names.index("レビューバランスモード設定 (特定ホスト)")
+            == names.index("フィードバック蓄積セットアップ (特定ホスト)") + 1
+        )
+
 
 class TestPluginRecommendations:
     """``install_claude_plugins.run()`` の推奨コマンド戻り値による案内出力。"""

@@ -18,9 +18,12 @@
 ## 整合性チェック・codexレビューの実施手順
 
 1. 計画ファイル初版Write完了後、同一メッセージ内で次を並列起動する
-   - codexレビュー: `codex-review.md`の手順に従う
+   - codexレビュー: `plan-codex-delegate`を観点分担で並列起動する。
+     並列度・観点分担の詳細は`codex-review.md`「plan-file-creatorからの起動」節に従う
      （`mcp__codex__codex`直接経路でも事前のReadを必須とする。別ターンでの先行実行は不採用とする）
-   - サブエージェント`plan-reviewer`: 独立コンテキスト点検を次の観点で委譲する。
+   - サブエージェント`plan-reviewer`: `codex-review.md`「codex利用可否の3段階判定」節の
+     段階3が成立した場合のみ起動するフォールバックとする。
+     起動する場合の観点・雛形・埋め込み欄は次のとおり（既定経路では本項は適用しない）。
      観点は「計画文内・他ファイルとの整合」「変更履歴と変更内容の対応照合」「機械チェック適合性」
      「編集対象スキル固有規定の事前適用」「サブエージェント連携の設計整合性」とする。
      これに「対象ファイル現状との突合による単体品質・日本語表現の重大不備」を新たに追加する
@@ -82,8 +85,10 @@
 `plan-file-creator`が内部で起動する各サブエージェント（`codexレビュー`・`plan-reviewer`）の起動は
 次のセッション状態フラグへ記録される（`agent-doc-validator`は条件付きフラグとして扱う）。
 
-- `plan_reviewer_invoked`
-- `codex_review_invoked`
+- `plan_reviewer_invoked`（記録は継続するが、下記のPreToolUseゲートは本フラグを必須としない。
+  `codex-review.md`「codex利用可否の3段階判定」節の段階3が成立した場合のみ
+  `plan-reviewer`を起動しフラグを立てる自己統治規定とする）
+- `codex_review_invoked`（PreToolUseゲートの必須フラグ）
 - `agent_doc_validator_invoked`は条件付きで扱い、対象は`## 変更内容`「対象ファイル一覧」に
   コーディングエージェント向け文書対象ファイルが含まれる計画とする。
   該当ファイル群: `agent-toolkit/rules/`・`.claude/rules/`・`.claude/skills/`・`agent-toolkit/agents/`配下、
@@ -94,7 +99,8 @@
 `agent-toolkit:plan-file-creator`配下から起動された場合の記録先・伝播経路は、`session-state-flags.md`のplan-file-creator関連フラグ項を参照する。
 `agent-toolkit/scripts/pretooluse.py`は`ExitPlanMode`と`plan-impl-executor`起動
 （Agentツール`subagent_type`判定）の両ハンドラを持つ。
-上記2フラグ（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。
+`codex_review_invoked`（条件成立時は`agent_doc_validator_invoked`を含む）の未起動時にブロックする。
+`plan_reviewer_invoked`は本ゲートの判定対象外とする。
 フラグは新計画着手時（`agent-toolkit:plan-mode`スキル起動時）にリセットする。
 
 ## サブエージェント連携の設計整合性

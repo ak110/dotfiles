@@ -13,7 +13,7 @@
 （`has_pending_background_launches`）を確認し、実在する場合はブロックせず通過させる
 （task-notificationで自動発火する経路の待機表明を誤ってブロックしないため）。
 ただし完了報告本文が自身の配下でbackground起動したレビュアー系サブエージェント
-（`plan-reviewer`・`plan-codex-reviewer`等）への待機表明である場合
+（`plan-reviewer`・`plan-codex-delegate`等）への待機表明である場合
 （`_is_self_launched_subagent_wait`が真の場合）は、上記bypassを適用せず現行どおりブロックする。
 判定に用いる正規表現は`_scope_escalation.py`の共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`をaliasで参照する。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、

@@ -20,7 +20,7 @@
       - 遡及スキャン結果: {norm-revision-checklist.md規定に従い実施した結果}
       - 横断grep確認の結果: {実施内容と検出件数}
     - permission_mode: {plan | 非plan}
-    - 実施済みレビュー結果の転記（該当時）: {`plan-codex-reviewer`起動ブロックにより
+    - 実施済みレビュー結果の転記（該当時）: {`plan-codex-delegate`起動ブロックにより
       呼び出し元が`mcp__codex__codex`直接呼び出しで代行実施したcodexレビュー結果に加え、
       前回の`plan-file-creator`起動が完了報告へ引き継いだ`plan-reviewer`・`agent-doc-validator`の
       完了報告原文も含める。該当なしの場合は「なし」と明記}
@@ -30,8 +30,8 @@
 
     - 計画の成否を左右する設計判断・ユーザー確認要事項・レビュー重大指摘の対応方針を
       委譲情報だけで確定できない場合は`needs_escalation`で返却する
-    - codexレビューは`plan-codex-reviewer`のAgent起動経由で行い、`mcp__codex__codex`への
-      直接フォールバックはしない
+    - codexレビューは`plan-codex-delegate`（用途: 計画レビュー）の観点分担並列起動経由で行い、
+      `mcp__codex__codex`への直接フォールバックはしない
     - 「実施済みレビュー結果の転記」欄に内容がある場合、当該codexレビューを実施済みとして扱い、
       指摘反映以降の工程から再開する
 

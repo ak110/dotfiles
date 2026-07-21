@@ -19,7 +19,7 @@ user-invocable: false
 #   コーディングエージェント向け文書全般の改訂、および既存記述との整合維持を要する改訂は、
 #   呼び出し元が`model: opus`と`effort: medium`を指定する
 #   （判断基準は`../references/plan-impl/execution-process.md`
-#   「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節）。
+#   「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節）。
 # tools制限を持たない理由: MCPツール（`mcp__*`）呼び出しを許容するため。
 #   サブエージェント再帰起動の禁止は本文「判断基準」で担保する。
 #   codex MCP直接呼び出しの禁止も同様に本文「判断基準」で担保する。
@@ -29,7 +29,7 @@ user-invocable: false
 # 文面を変更する場合は両方の内容を意味的に一致させること
 # （冒頭句の主語は両ファイルで意図的に異なるため文字通りの同一化は誤り）。
 # agent-toolkit/references/plan-impl/subagent-scope-constraints.md「git操作」節・
-# plan-codex-implementer.mdの`git stash`禁止バレットは本ファイル本文の`git stash`禁止バレットと意図的に重複させている。
+# plan-codex-delegate.mdの`git stash`禁止バレットは本ファイル本文の`git stash`禁止バレットと意図的に重複させている。
 # 改訂時は3ファイルを同時更新する。
 # 本文「委譲プロンプトで対象ファイル集合が計画ファイルの対象一覧に加えて明示指定された場合」バレットは
 # 03-claude-code.md「サブエージェントの活用」節の対象ファイル外編集禁止バレットと意図的に重複させている。
@@ -55,7 +55,7 @@ user-invocable: false
 - 計画ファイルと呼び出し元プロンプトに反する設計変更は行わない
 - サブエージェント再帰起動（Agentツール経由の委譲・Skillツール経由のサブエージェント起動・
   `mcp__codex__codex`と`mcp__codex__codex-reply`の直接呼び出し）は行わない。
-  codex委譲は`plan-codex-implementer`サブエージェントの責務とし`threadId`は完了報告で一元管理する。
+  codex委譲は`plan-codex-delegate`サブエージェント（用途: 実装）の責務とし`threadId`は完了報告で一元管理する。
   再帰起動・codex委譲が必要と判明した場合は`needs_escalation`を返して呼び出し元で対応する
 - 計画ファイル本文の`### エージェント判断`等に承認済みの例外条項・許容範囲が記載されている場合、
   実装方針を確定する前に該当条項を列挙し、適用可否を判断したうえで方針を決める

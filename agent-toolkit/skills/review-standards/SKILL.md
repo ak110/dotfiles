@@ -16,10 +16,10 @@ description: >
 # launch-prompts-integrity.mdのplan-reviewer雛形・plan-file-write-checks.mdは本節を参照する。
 
 # 同期注記: 「レビューの基本姿勢」節の構文合法性除外バレットは
-# agent-toolkit/agents/plan-impl-reviewer.md「共通判断基準」節・
-# agent-toolkit/skills/careful-review/SKILL.md「起動プロンプトテンプレート」節・
-# agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
-# 改訂時は4ファイルを同時更新する。
+# agent-toolkit/skills/careful-review/SKILL.md「制約」節の同旨規定と意図的に重複する。
+# 改訂時は2ファイルを同時更新する。
+# plan-impl-reviewer.md「共通判断基準」節・plan-codex-delegate.md「プロンプト構築」節は
+# 本節への直接参照（スキル呼び出しまたはRead）へ置換済みのため重複対象から除く。
 ---
 
 # レビュアー側心得
@@ -103,7 +103,7 @@ description: >
 
 `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`のplan-reviewer雛形は本節を参照する。
 `agent-toolkit/skills/plan-mode/references/plan-file-write-checks.md`も本節を参照する。
-詳細は`agent-toolkit/agents/plan-codex-reviewer.md`の規定にも従う。
+詳細は`agent-toolkit/agents/plan-codex-delegate.md`の規定にも従う。
 
 ## 指摘の表現
 

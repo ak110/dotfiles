@@ -20,9 +20,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-reviewer）
+   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-delegate）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-reviewer /
+9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-delegate /
    mcp__codex__codex・mcp__codex__codex-replyツール。
    両ツール成功時はrecorded_codex_thread_idも記録する）
 10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
@@ -35,7 +35,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-reviewer起動失敗時のplan_codex_reviewer_blocked記録
+15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-delegate起動失敗時のplan_codex_delegate_blocked記録
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `plan-file-creator`完了報告本文の`invoked_subagents:`行のパースによる
@@ -236,7 +236,7 @@ _EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
 # フルネームと短縮名の両方を許容する。
 # 本辞書は呼び出し元（Agent/Taskツールを実行した側）の`session_id`が指すセッション状態へ記録する。
 # `agent-toolkit:plan-file-creator`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
-# `plan-codex-reviewer`・`agent-doc-validator`を起動する場合、記録先はplan-file-creator自身の
+# `plan-codex-delegate`・`agent-doc-validator`を起動する場合、記録先はplan-file-creator自身の
 # セッション状態であり、起動元（親）のセッション状態には反映されない。
 # 親への反映は、plan-file-creator自身の完了報告本文の`invoked_subagents:`行を
 # main()関数内のAgent/Task完了ハンドラがパースして設定する。
@@ -247,8 +247,8 @@ _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
     "agent-doc-validator": "agent_doc_validator_invoked",
     "agent-toolkit:agent-doc-validator": "agent_doc_validator_invoked",
-    "plan-codex-reviewer": "codex_review_invoked",
-    "agent-toolkit:plan-codex-reviewer": "codex_review_invoked",
+    "plan-codex-delegate": "codex_review_invoked",
+    "agent-toolkit:plan-codex-delegate": "codex_review_invoked",
 }
 
 _PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-creator", "agent-toolkit:plan-file-creator"})
@@ -466,17 +466,17 @@ def main() -> int:
         return 0
 
     # 通番4: PostToolUseFailure（実行時失敗）・PermissionDenied（権限拒否）はAgent/Task限定で
-    # plan_codex_reviewer_blockedのみ検知し、通常のPostToolUse成功分岐（flag_key記録等）は実行しない。
+    # plan_codex_delegate_blockedのみ検知し、通常のPostToolUse成功分岐（flag_key記録等）は実行しない。
     hook_event_name = payload.get("hook_event_name", "")
     if hook_event_name in ("PostToolUseFailure", "PermissionDenied"):
         if tool_name in ("Agent", "Task"):
             subagent_type = tool_input.get("subagent_type")
-            if subagent_type in ("plan-codex-reviewer", "agent-toolkit:plan-codex-reviewer"):
+            if subagent_type in ("plan-codex-delegate", "agent-toolkit:plan-codex-delegate"):
 
                 def _set_blocked(state: dict) -> dict | None:
-                    if state.get("plan_codex_reviewer_blocked", False):
+                    if state.get("plan_codex_delegate_blocked", False):
                         return None
-                    state["plan_codex_reviewer_blocked"] = True
+                    state["plan_codex_delegate_blocked"] = True
                     return state
 
                 update_state(session_id, _set_blocked)
@@ -636,7 +636,7 @@ def main() -> int:
         return 0
 
     # mcp__codex__codex / mcp__codex__codex-reply: codex-review起動検出
-    # `isSidechain`が真（`plan-codex-implementer`内部の実装用途呼び出し）の場合は
+    # `isSidechain`が真（`plan-codex-delegate`内部の実装用途呼び出し）の場合は
     # レビュー起動の誤記録を避けて`codex_review_invoked`を記録しない。
     # `codex-reply`（継続呼び出し）も同一分岐で扱い、継続レビューでも`recorded_codex_thread_id`が
     # 更新され続ける経路を確立する。

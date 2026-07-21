@@ -149,8 +149,8 @@ pyfltr内蔵の辞書ファイルはメインから直接Readしない。
 確認はExploreサブエージェント経由、修正はAgentツールで`subagent_type: claude`を起動して行う
 （`plan-impl-reviewer`のReadは例外として許容）。
 `plan-implementer`は実装の委譲先専用であり、本用途では指名しない。
-詳細は`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
-「実装委譲3者の関係」節を参照する。
+参照先は`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`とする。
+該当節は「実装委譲（plan-codex-delegate / plan-implementer）の関係」とする。
 口語禁止語を計画ファイル本文・PR説明・チャット転記等で議論する場合は語そのものを書かず、
 `references/tone-examples.md`の節名（比喩動詞・主観評価語など）で間接参照する。
 LLM口調の禁止語彙・対比例は`references/tone-examples-llm-tone.md`に従う。

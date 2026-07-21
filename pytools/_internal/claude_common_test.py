@@ -14,6 +14,45 @@ import pytest
 from pytools._internal import claude_common
 
 
+class TestTargetHosts:
+    """``TARGET_HOSTS``定数の内容検証。"""
+
+    def test_contains_expected_hostnames(self):
+        """バランスモード・フィードバック蓄積が対象とする5ホストを含む。"""
+        assert claude_common.TARGET_HOSTS == ("stheno", "circe", "circe-container", "euryale", "euryale-container")
+
+
+class TestIsTargetHost:
+    """``is_target_host``の大文字小文字・FQDN接尾辞の扱いを検証する。"""
+
+    @pytest.mark.parametrize(
+        ("hostname", "expected"),
+        [
+            pytest.param("stheno", True, id="exact-match"),
+            pytest.param("STHENO", True, id="uppercase"),
+            pytest.param("Circe", True, id="mixed-case"),
+            pytest.param("circe.local", True, id="fqdn-suffix-stripped"),
+            pytest.param("other-host", False, id="non-target-host"),
+        ],
+    )
+    def test_matches_target_hosts_case_and_fqdn_insensitively(self, hostname: str, expected: bool):
+        assert claude_common.is_target_host(hostname) is expected
+
+
+class TestEnsureFlagFilePresent:
+    """``ensure_flag_file_present``の冪等生成挙動を検証する。"""
+
+    def test_creates_file_and_returns_true_when_absent(self, tmp_path: Path):
+        flag = tmp_path / "sub" / "flag"
+        assert claude_common.ensure_flag_file_present(flag, tag="test-tag") is True
+        assert flag.exists()
+
+    def test_returns_false_when_already_present(self, tmp_path: Path):
+        flag = tmp_path / "flag"
+        flag.write_bytes(b"")
+        assert claude_common.ensure_flag_file_present(flag, tag="test-tag") is False
+
+
 class TestRunSubprocess:
     """``run_subprocess`` が ``subprocess.run`` へ渡す引数の検証。"""
 

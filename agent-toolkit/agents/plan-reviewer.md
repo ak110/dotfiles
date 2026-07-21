@@ -17,6 +17,8 @@ user-invocable: false
 # 編集時の注意点:
 # 過去のコンテキスト（ユーザー発話・要件対話内容・grep等での参照確認）が必要な節はメイン側で実施するため、
 # 本エージェントの担当節へ含めない。
+# 本エージェントはcodexのMCP・CLI双方が利用不可と判明した場合のみ`plan-file-creator`から起動される
+# フォールバック経路である（既定経路は`plan-codex-delegate`。詳細は`codex-review.md`「plan-file-creatorからの起動」節）。
 # このエージェントはplan-mode, plan-impl-executorなどを呼び出さないため、
 # それらの知識を持たないことに注意。
 # model: sonnet固定の理由: 節名定義に従う照合作業は確定手順の実行のため。

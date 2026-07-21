@@ -47,13 +47,13 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 #
 # 自身の配下でbackground起動したレビュアー系サブエージェント
-# （`plan-reviewer`・`plan-codex-reviewer`・`plan-impl-reviewer`等）への待機表明を検出する共有定数。
+# （`plan-reviewer`・`plan-codex-delegate`・`plan-impl-reviewer`等）への待機表明を検出する共有定数。
 # `subagent_stop_advisor.py`の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`はbypass無効化判定に本定数のaliasを用いる
 # （`from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE`）。検出と判定predicateが独立複製構造だと
 # 同期漏れでSSOT不一致が発生するため、他モジュールから判定predicateとして参照される
 # 検出パターン全般は本方式（共有定数として抽出しaliasで参照する）に従う。
 _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
-    r"(?i:(?:plan-reviewer|plan-codex-reviewer|plan-impl-reviewer)[^,.\n]{0,40}"
+    r"(?i:(?:plan-reviewer|plan-codex-delegate|plan-impl-reviewer)[^,.\n]{0,40}"
     r"(?:background|waiting|running|completion notification)"
     r"|review subagents? (?:are|is) running in the background"
     r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
@@ -419,6 +419,11 @@ _ZENKAKU_KAKKO_RE: re.Pattern[str] = re.compile(r"「[^」]*」")
 # 全角鍵括弧と同格の除外対象として扱う。改行を含まない同一行内の囲み区間を対象とする。
 _BACKTICK_RE: re.Pattern[str] = re.compile(r"`[^`\n]+`")
 
+# async-waitカテゴリの照合対象からMarkdown引用ブロック（`>`始まりの行）を除去するためのパターン。
+# 調査・報告委譲プロンプトの完了報告本文が既存設計文書の記述をMarkdown引用形式で転記する場合、
+# 全角鍵括弧・バッククォート囲みのいずれにも該当せず過検出を招く事象を予防する。
+_MARKDOWN_BLOCKQUOTE_RE: re.Pattern[str] = re.compile(r"^>.*$", re.MULTILINE)
+
 
 def has_inline_choice_offer(text: str) -> bool:
     """テキストへ地の文の番号付き選択肢提示が含まれる場合に真を返す。
@@ -457,11 +462,14 @@ def _apply_category_exclusions(text: str, category: str) -> str:
     現状は該当カテゴリで引用文脈（全角鍵括弧・バッククォート囲みの各区間）を除外する。
     他ファイル節名・識別子・コマンド名の引用文脈を該当語彙の過検出から保護する。
     async-waitカテゴリは分離形パターンでの引用文（「〜完了を待つ」等の指摘引用）過検出を保護する。
+    async-waitカテゴリはMarkdown引用ブロック（`>`行）内の引用も同様に保護する。
     他カテゴリは呼び出し元のtextをそのまま返す。
     `_match_scope_escalation`(本モジュール)と
     `_match_scope_escalation_increase`(`pretooluse.py`)の両経路から呼び出す。
     """
-    if category in {"priority-consult", "async-wait"}:
+    if category == "async-wait":
+        return _MARKDOWN_BLOCKQUOTE_RE.sub("", _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text)))
+    if category == "priority-consult":
         return _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text))
     return text
 

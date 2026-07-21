@@ -23,7 +23,7 @@ user-invocable: false
 # 意図的に重複させている。改訂時は4ファイルを同時更新する。
 # 「- 停止禁止」バレット配下のbackground並列起動抑制バレットは
 # plan-impl-executor.md「## 停止禁止」節の同旨パラグラフ、および
-# execution-process.md「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節手順5の
+# execution-process.md「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節手順5の
 # 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
 # 「停止禁止」バレット末尾の能動完了検知パターン参照バレットは
 # `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群をSSOTとする

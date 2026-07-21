@@ -201,6 +201,11 @@ class TestMatchScopeEscalation:
         text = "指摘引用として`処理完了を待つ`を含める。"
         assert _match_scope_escalation(text) is None
 
+    def test_async_wait_phrase_inside_markdown_blockquote_not_matched(self):
+        """Markdown引用ブロック（`>`行）内へ引用転記された分離形は検出されない。"""
+        text = "調査結果を報告する。\n> 実行完了の通知を待つ\n上記は既存設計文書からの引用である。"
+        assert _match_scope_escalation(text) is None
+
     def test_async_wait_separated_form_completed_tense_not_matched(self):
         """完了時制「〜完了を待って〜した」は検出されない（fb3反映）。"""
         assert _match_scope_escalation("実行完了を待って処理を再開した。") is None

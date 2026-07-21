@@ -32,6 +32,28 @@ MARKETPLACE_NAME = "ak110-dotfiles"
 # GitHub からの初回 clone や install 処理で時間がかかる場合があるため余裕を持たせる
 CLAUDE_TIMEOUT = 30
 
+# バランスモード・フィードバック蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
+TARGET_HOSTS: tuple[str, ...] = ("stheno", "circe", "circe-container", "euryale", "euryale-container")
+
+
+def is_target_host(hostname: str) -> bool:
+    """ホスト名が`TARGET_HOSTS`に含まれるかを判定する（大文字小文字無視・FQDN接尾辞除去）。"""
+    return hostname.lower().split(".")[0] in TARGET_HOSTS
+
+
+def ensure_flag_file_present(flag_path: Path, *, tag: str) -> bool:
+    """フラグファイルを冪等に生成する。
+
+    Returns:
+        新規生成した場合True、既存のため生成不要の場合False。
+    """
+    if flag_path.exists():
+        return False
+    flag_path.parent.mkdir(parents=True, exist_ok=True)
+    flag_path.write_bytes(b"")
+    logger.info(log_format.format_status(tag, f"フラグファイルを生成: {flag_path}"))
+    return True
+
 
 def find_dotfiles_root() -> Path | None:
     """Dotfiles ルートディレクトリを返す。

@@ -44,15 +44,15 @@ EnterPlanMode:
 
 ExitPlanMode:
 
-- `plan-file-creator`の整合性チェック（plan-reviewer / codexレビュー、
+- `plan-file-creator`の整合性チェック（codexレビュー、codex利用不可時はplan-reviewerで代替、
   対象ファイル一覧にコーディングエージェント向け文書を含む計画では条件付きでagent-doc-validatorも追加）
   完了未達のブロック (block)
 
 mcp__codex__codex:
 
 - codex-review.md未読時のブロック (block)
-- `plan-codex-reviewer`サブエージェント経由の実施履歴（`plan_codex_reviewer_invoked`・
-  `plan_codex_reviewer_blocked`のいずれかが真）が無い直接呼び出しのブロック (block)
+- `plan-codex-delegate`サブエージェント経由の実施履歴（`plan_codex_delegate_invoked`・
+  `plan_codex_delegate_blocked`のいずれかが真）が無い直接呼び出しのブロック (block)
 - `sandbox`未指定時のみ`danger-full-access`へ既定昇格。
   明示指定（`read-only`, `workspace-write`, `danger-full-access`）は尊重する (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
@@ -60,8 +60,8 @@ mcp__codex__codex:
 mcp__codex__codex-reply:
 
 - `threadId`が`recorded_codex_thread_id`と不一致かつ
-  `plan-codex-reviewer`経由の実施履歴が無い場合のブロック (block)
-- `threadId`一致または`plan-codex-reviewer`経由の実施履歴がある場合の強制承認 (auto-approve)
+  `plan-codex-delegate`経由の実施履歴が無い場合のブロック (block)
+- `threadId`一致または`plan-codex-delegate`経由の実施履歴がある場合の強制承認 (auto-approve)
 
 Bash:
 
@@ -88,7 +88,7 @@ Agent / Task:
 - `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の
   `plan-file-creator`の整合性チェック完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
-- `plan-codex-reviewer`起動検知時の`plan_codex_reviewer_invoked`即時記録 (side-effect)
+- `plan-codex-delegate`起動検知時の`plan_codex_delegate_invoked`即時記録 (side-effect)
 
 Write / Edit / MultiEdit:
 
@@ -282,19 +282,19 @@ def _check_agent_norm_reference(tool_input: dict) -> str | None:
     )
 
 
-def _record_plan_codex_reviewer_invoked(session_id: str) -> None:
-    """`plan-codex-reviewer`起動検知時に経路遵守検査用フラグを即時記録する（PreToolUse側、FB[2]）。
+def _record_plan_codex_delegate_invoked(session_id: str) -> None:
+    """`plan-codex-delegate`起動検知時に経路遵守検査用フラグを即時記録する（PreToolUse側、FB[2]）。
 
-    サイドチェーン内（`plan-codex-reviewer`自身が`mcp__codex__codex`を呼ぶ場面）でも
+    サイドチェーン内（`plan-codex-delegate`自身が`mcp__codex__codex`を呼ぶ場面）でも
     起動記録を参照できるよう、PostToolUse完了を待たずPreToolUse時点で真化する。
     """
     if not session_id:
         return
 
     def _set(state: dict) -> dict | None:
-        if state.get("plan_codex_reviewer_invoked", False):
+        if state.get("plan_codex_delegate_invoked", False):
             return None
-        state["plan_codex_reviewer_invoked"] = True
+        state["plan_codex_delegate_invoked"] = True
         return state
 
     update_state(session_id, _set)
@@ -462,13 +462,13 @@ def main() -> int:
             state = read_state(session_id)
             if _check_codex_review_not_read(state):
                 return 2
-            # plan-codex-reviewerサブエージェント経由の実施履歴が無ければブロックする。
-            if _check_codex_mcp_via_plan_codex_reviewer(state, tool_name=tool_name):
+            # plan-codex-delegateサブエージェント経由の実施履歴が無ければブロックする。
+            if _check_codex_mcp_via_plan_codex_delegate(state, tool_name=tool_name):
                 return 2
         emit_json(_check_codex_mcp_sandbox(tool_input))
         return 0
 
-    # mcp__codex__codex-reply: 強制承認（threadId不一致時はplan-codex-reviewer経由検査へ回す）
+    # mcp__codex__codex-reply: 強制承認（threadId不一致時はplan-codex-delegate経由検査へ回す）
     if tool_name == "mcp__codex__codex-reply":
         _record_iss_sidechain_probe(session_id, tool_name, payload)
         if payload.get("isSidechain") is not True:
@@ -476,7 +476,7 @@ def main() -> int:
             thread_id_arg = tool_input.get("threadId")
             recorded = state.get("recorded_codex_thread_id")
             thread_id_matches = isinstance(thread_id_arg, str) and thread_id_arg == recorded
-            if not thread_id_matches and _check_codex_mcp_via_plan_codex_reviewer(state, tool_name=tool_name):
+            if not thread_id_matches and _check_codex_mcp_via_plan_codex_delegate(state, tool_name=tool_name):
                 return 2
         emit_json(
             {
@@ -546,16 +546,16 @@ def main() -> int:
     # Agent/Task: plan-impl-executor起動時の`plan-file-creator`の整合性チェック完了未達ブロック +
     # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
     # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
-    # plan-codex-reviewer起動記録の前倒し
+    # plan-codex-delegate起動記録の前倒し
     if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
             _process_loop_log.append("subagent_start", type=subagent_type)
         if isinstance(subagent_type, str) and subagent_type in (
-            "plan-codex-reviewer",
-            "agent-toolkit:plan-codex-reviewer",
+            "plan-codex-delegate",
+            "agent-toolkit:plan-codex-delegate",
         ):
-            _record_plan_codex_reviewer_invoked(session_id)
+            _record_plan_codex_delegate_invoked(session_id)
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
@@ -2799,10 +2799,10 @@ _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:p
 # `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
-_PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = (
-    "plan_reviewer_invoked",
-    "codex_review_invoked",
-)
+# `plan_reviewer_invoked`はcodex利用不可時の代替起動記録用に残るが、本ゲートのタプルには含めない
+# （hookは「MCP・CLI双方利用不可」という意味論的状態を機械判定できないため、
+# フォールバック要否の判断は`plan-file-creator`・`codex-review.md`側の自己統治に委ねる）。
+_PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = ("codex_review_invoked",)
 
 # agent-doc-validatorの条件付き必須化対象ファイル群の判定に使う、計画ファイル全文走査時の
 # フォールバックパターン。`### 対象ファイル一覧`節が抽出できる通常時は
@@ -3024,10 +3024,11 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
             " before completing the plan-file-creator integrity check"
-            " (plan-reviewer / codex review)."
+            " (codex review, or plan-reviewer fallback when codex is unavailable)."
             f" Missing flags: {missing}.\n"
             "Why this gate exists: it forces `plan-file-creator` to actually run"
-            " plan-reviewer and the codex review before implementation starts.\n"
+            " the codex review (or plan-reviewer fallback when codex is unavailable)"
+            " before implementation starts.\n"
             "Normal fix: invoke `agent-toolkit:plan-file-creator` for the current"
             " plan; its review steps set the missing flags as a side effect.\n"
             "plan-impl feedback processing: follow"
@@ -3119,9 +3120,10 @@ def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, too
 def _reset_process7_completion_flags(session_id: str) -> None:
     """`agent-toolkit:plan-mode`スキル起動を検出した際に`plan-file-creator`の整合性チェック完了フラグをリセットする。
 
-    新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`と条件付きフラグ
-    `agent_doc_validator_invoked`を偽へ戻す。前計画の`current_plan_file_path`も
-    新計画の対象ファイル判定へ誤流用しないよう消去する。
+    新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`・`plan_reviewer_invoked`・
+    `agent_doc_validator_invoked`・`plan_codex_delegate_invoked`・`plan_codex_delegate_blocked`を偽へ戻す。
+    前計画の`current_plan_file_path`・`recorded_codex_thread_id`も新計画へ誤流用しないよう消去し、
+    `plan_file_written`等の直接編集連続check状態も初期化する。
     """
     if not session_id:
         return
@@ -3130,9 +3132,10 @@ def _reset_process7_completion_flags(session_id: str) -> None:
         changed = False
         for flag in (
             *_PROCESS7_COMPLETION_FLAGS,
+            "plan_reviewer_invoked",
             "agent_doc_validator_invoked",
-            "plan_codex_reviewer_invoked",
-            "plan_codex_reviewer_blocked",
+            "plan_codex_delegate_invoked",
+            "plan_codex_delegate_blocked",
         ):
             if current.get(flag, False):
                 current[flag] = False
@@ -3820,27 +3823,27 @@ def _check_codex_review_not_read(state: dict) -> bool:
     return True
 
 
-def _check_codex_mcp_via_plan_codex_reviewer(state: dict, *, tool_name: str) -> bool:
-    """plan-codex-reviewerサブエージェント経由の実施履歴が無い直接呼び出しをブロックする。
+def _check_codex_mcp_via_plan_codex_delegate(state: dict, *, tool_name: str) -> bool:
+    """plan-codex-delegateサブエージェント経由の実施履歴が無い直接呼び出しをブロックする。
 
-    `plan_codex_reviewer_invoked`(起動要求検知時点の記録、成功未確定)と`plan_codex_reviewer_blocked`(起動失敗記録)の
+    `plan_codex_delegate_invoked`(起動要求検知時点の記録、成功未確定)と`plan_codex_delegate_blocked`(起動失敗記録)の
     いずれも偽の場合にTrueを返す（ブロック方向）。auto mode下でサブエージェント経由が
-    ブロックされた場合は`plan_codex_reviewer_blocked`が真となるため直接呼び出しが許容される
+    ブロックされた場合は`plan_codex_delegate_blocked`が真となるため直接呼び出しが許容される
     （`codex-review.md`「実行経路」節の既存例外条件と整合）。
     `tool_name`は通知文で呼び出し元ツール名（`mcp__codex__codex`または`mcp__codex__codex-reply`）を
     明示するために使う。
     """
-    if state.get("plan_codex_reviewer_invoked", False):
+    if state.get("plan_codex_delegate_invoked", False):
         return False
-    if state.get("plan_codex_reviewer_blocked", False):
+    if state.get("plan_codex_delegate_blocked", False):
         return False
     print(
         _llm_notice(
-            f"{tool_name} call is blocked because it did not go through `agent-toolkit:plan-codex-reviewer` subagent."
-            " The default path is via `agent-toolkit:plan-codex-reviewer` subagent"
+            f"{tool_name} call is blocked because it did not go through `agent-toolkit:plan-codex-delegate` subagent."
+            " The default path is via `agent-toolkit:plan-codex-delegate` subagent"
             " (see `agent-toolkit/skills/plan-mode/references/codex-review.md` execution route section)."
             " Invoke the subagent first. If the subagent invocation is blocked by the environment,"
-            " it will set `plan_codex_reviewer_blocked` and this hook will allow the direct call.",
+            " it will set `plan_codex_delegate_blocked` and this hook will allow the direct call.",
             tag="block",
         ),
         file=sys.stderr,

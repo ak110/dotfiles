@@ -23,9 +23,15 @@
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
 - plan-file-creatorの整合性チェック完遂判定フラグ群はPostToolUse(Agent/Task)が記録する:
   `plan_reviewer_invoked`・`codex_review_invoked`・`agent_doc_validator_invoked`
-  （末尾は文書対象時のみ必須。`plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に
+  （PreToolUseゲートの必須対象は`codex_review_invoked`のみで、`agent_doc_validator_invoked`は
+  文書対象時のみ条件付き必須とする。`plan_reviewer_invoked`は`codex-review.md`
+  「codex利用可否の3段階判定」節の段階3が成立した場合の代替起動を記録する用途に残り、ゲート必須対象ではない。
+  `plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に
   存続するが本フラグ群の対象外）。
-  `codex_review_invoked`は`plan-codex-reviewer`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
+  `codex_review_invoked`は`plan-codex-delegate`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
+  `_reset_process7_completion_flags`のリセット対象タプルは`_PROCESS7_COMPLETION_FLAGS`と別に
+  `plan_reviewer_invoked`を明示追加し、新計画着手時に前計画のフォールバック起動記録を持ち越さない
+  （`_PROCESS7_COMPLETION_FLAGS`縮小に伴うリセット対象脱落の是正、plan-reviewer指摘反映）。
   `agent-toolkit:plan-file-creator`配下から起動された場合、各フラグはplan-file-creator自身のセッション状態に
   記録され起動元（親）へは反映されない。
   親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
@@ -39,15 +45,19 @@
   同名の並行起動も個別に追記する。
   SubagentStop側の`_inspect_explore_named_background_send`が読み取り、一致した名前を1件消費（削除）する
   （寿命: 各起動の完了検知まで。リスト要素ごとに個別消費する）
-- `plan_codex_reviewer_invoked`: `plan-codex-reviewer`サブエージェント起動検知時点で前倒しして真化する。
+- `plan_codex_delegate_invoked`: `plan-codex-delegate`サブエージェント起動検知時点で前倒しして真化する。
   PreToolUse(Agent/Task)が記録し、サイドチェーン内からも参照できる。
   `mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
-- `plan_codex_reviewer_blocked`: `plan-codex-reviewer`起動失敗時（auto mode下のブロック等）に真化する。
+- `plan_codex_delegate_blocked`: `plan-codex-delegate`起動失敗時（auto mode下のブロック等）に真化する。
   PostToolUseFailure・PermissionDenied（Agent/Task限定）が検出し、`mcp__codex__codex`直接呼び出しのauto mode例外条件に使う
 - `recorded_codex_thread_id`: `mcp__codex__codex`成功時のPostToolUseが`tool_response.threadId`を記録する。
-  `mcp__codex__codex-reply`のPreToolUseがthreadId一致検査で参照する（`plan_codex_reviewer_invoked`・
-  `plan_codex_reviewer_blocked`・`recorded_codex_thread_id`の3件は新計画着手時に
+  `mcp__codex__codex-reply`のPreToolUseがthreadId一致検査で参照する（`plan_codex_delegate_invoked`・
+  `plan_codex_delegate_blocked`・`recorded_codex_thread_id`の3件は新計画着手時に
   plan-file-creatorの整合性チェック完了フラグと共にリセットされる）
+  並列`plan-codex-delegate`インスタンスはいずれも`isSidechain`真のため、本フラグのthreadId厳密一致検査は
+  スキップされ`_check_codex_mcp_via_plan_codex_delegate`の起動履歴検査のみが適用される。
+  並列時に本フラグの単一値設計が競合する事象は生じない
+  （メインセッション直接の`mcp__codex__codex`エスカレーション呼び出しのみ本フラグを参照し、当該呼び出しは逐次的である）
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時の再読込と、`plan-impl-executor`系Agent起動時の起動プロンプト参照先パス一致判定に使う
 - 計画ファイル未作成時の直接編集検知フラグ群（`plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`）はPreToolUseが更新する。agent-toolkit配下編集連続を検知し、2件目warn・3件目blockとする

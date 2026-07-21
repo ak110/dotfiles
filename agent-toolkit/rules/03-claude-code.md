@@ -1,7 +1,7 @@
 ---
 # 同期注記: 起草関連バレット（委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。本ファイルと`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節は同節参照で同期（改訂時3ファイル同時更新）。
 # named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は上記`launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複（改訂時4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
-# 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複（改訂時は関連ファイルを同時更新する）。`git stash`禁止バレットは分離先`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「git操作」節が`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-implementer.md`の対応箇所と意図的に重複する（改訂時は同節と関連ファイルを同時更新する）。
+# 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複（改訂時は関連ファイルを同時更新する）。`git stash`禁止バレットは分離先`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「git操作」節が`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-delegate.md`の対応箇所と意図的に重複する（改訂時は同節と関連ファイルを同時更新する）。
 # 同期注記: 「再開時はモデルを変更できない」バレットの停止済みエージェント宛`SendMessage`可否記述は
 # `agent-toolkit/skills/spec-driven-impl/SKILL.md`「ユーザー割り込み指示の対応」節と同期する（改訂時2ファイル同時更新）。
 ---
@@ -111,8 +111,9 @@ Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
     重なると`autocompact thrashing`を誘発する。
     該当時はタスク分割または`subagent_type: claude`への切替
     （規範スキル読込を省略し起動プロンプトで関連規範を明示引用）を選ぶ。
-    適用範囲・`plan-codex-implementer`との使い分けの判断基準は
-    `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節とする
+    適用範囲・`plan-codex-delegate`（用途: 実装）との使い分けの判断基準は
+    `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`
+    「実装委譲（plan-codex-delegate / plan-implementer）の関係」節とする
 - 機械検出対象の文字列（縮退表明の代表フレーズ等）の照合・分析をサブエージェントへ委譲する場合、
   委譲プロンプトで判定対象フレーズを原文のまま報告本文へ引用させず部分伏字または間接記述（「〜という構造の文」等）で表記させる
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する。

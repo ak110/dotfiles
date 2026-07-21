@@ -81,14 +81,14 @@ Agentツール起動は常に独立コンテキストで開始される確定事
 受信側の処理規定を伴わない起動プロンプト欄追加は無効情報の埋め込みとなり、
 計画レビューで重大指摘対象とする。
 
-## 実装委譲3者の関係
+## 実装委譲（plan-codex-delegate / plan-implementer）の関係
 
-`plan-impl-executor`・`plan-codex-implementer`・`plan-implementer`の相互関係を本節でSSOT化する。
+`plan-impl-executor`・`plan-codex-delegate`・`plan-implementer`の相互関係を本節でSSOT化する。
 各定義の本文改訂時は要約と本節への参照のみを置き、詳細記述を重複させない。
 
 - `plan-impl-executor`: `plan-mode`が確定した計画ファイル1件の実行全体（タスク分解・実装・検証・
   コミット・レビュー実施）を担う起動主体。実装委譲先の選定と`careful-review`起動を担当する
-- `plan-codex-implementer`: 実装委譲先の第一候補
+- `plan-codex-delegate`: 実装委譲先の第一候補（用途: 実装）
   - コード・テストコード・一般ドキュメント・コーディングエージェント向け文書の実装タスクを
     codex MCPへ委譲するサブエージェントである
   - `mcp__codex__codex`が利用可能な場合に常に優先する
@@ -98,14 +98,38 @@ Agentツール起動は常に独立コンテキストで開始される確定事
   - 実装委譲以外の用途（レビュー指摘の一律差し戻し先・隔離リファレンスの確認・修正窓口等）へ指名しない
 - 判定基準の詳細（委譲手順・並列実行・`threadId`管理）は
   `agent-toolkit/references/plan-impl/execution-process.md`
-  「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節を正典とする
+  「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節を正典とする
 - 設計指針: 同一役割層（実装委譲先）に属するコンポーネントは委譲形態を揃える。
-  `plan-codex-implementer`・`plan-implementer`はいずれもサブエージェント定義とし、
+  `plan-codex-delegate`・`plan-implementer`はいずれもサブエージェント定義とし、
   一方のみをスキル定義にする非対称構成を新設しない
 - ガードレール: `agent-toolkit/agents/`配下のエージェント定義frontmatterの`tools:`へ
-  `mcp__codex__codex`・`mcp__codex__codex-reply`を宣言してよいのは`plan-codex-reviewer`・
-  `plan-codex-implementer`の2定義に限る。他のエージェント定義へ追加する場合も本節の制約に従う
+  `mcp__codex__codex`・`mcp__codex__codex-reply`を宣言してよいのは`plan-codex-delegate`の
+  1定義に限る。他のエージェント定義へ追加する場合も本節の制約に従う
   （機械検証は`agent-toolkit/scripts/pretooluse_test.py`の該当テストを参照）
+
+## レビュー委譲の関係
+
+計画レビュー・実装レビューで、codexレビュー（`plan-codex-delegate`）とclaude側レビュアーの関係を本節でSSOT化する。
+各定義の本文改訂時は要約と「レビュー委譲の関係」節への参照のみを置き、詳細記述を重複させない。
+トークン配分方針として、レビュー系工程はcodex優先とし、claudeは統括・計画適合性・規範適合性の
+観点に限定する。この構造は「実装委譲（plan-codex-delegate / plan-implementer）の関係」節と対称とする。
+
+計画レビューのcodex並列化は環境設定によらず常時適用する。
+実装レビューのみ環境単位のバランスモード（既定「codex寄り」）で経路が分岐する。
+判定手段・既定値の詳細は`agent-toolkit/skills/careful-review/SKILL.md`「サブエージェント起動方針」節を正典とする。
+
+- `plan-codex-delegate`: 計画レビューの第一候補（常時）、実装レビューの第一候補（モード「codex寄り」時）。
+  観点・カテゴリ分担で並列起動する。
+  計画レビューの分担は`codex-review.md`「plan-file-creatorからの起動」節を正典とする。
+  実装レビューの分担は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`を正典とする
+- `plan-reviewer`: 計画レビューのフォールバック。`codex-review.md`「codex利用可否の3段階判定」節の
+  段階3が成立した場合のみ起動する
+- `plan-impl-reviewer`: 実装レビューの既定経路（モード「claude寄り」時）、または段階3成立時のフォールバック
+  （モード「codex寄り」時、`plan-codex-delegate`の代わりに起動する）
+- `plan-spec-reviewer`: 実装レビューでclaude側に据え置く（バランスモードによらず常時）。
+  計画適合性・成果物間の整合性の判断はローカルの計画ファイル文脈に依存するため、codexへ移管しない
+- `agent-doc-validator`: 条件起動でclaude側に据え置く（バランスモードによらず常時）。`01-agent.md`・
+  `agent-standards`方針への適合性判断はローカル規範知識の前提を要するため、codexへ移管しない
 
 ## 出力節への追加要素導入
 

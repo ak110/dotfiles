@@ -34,7 +34,8 @@ disable-model-invocation: true
 ## 対象範囲と分割方針
 
 対象ファイルをカテゴリで分類してから`claude`サブエージェントへ分担する。
-分割の判定基準は`agent-toolkit:careful-review`「plan-impl-reviewerの分割起動」節をSSOTとして参照する。
+分割基準SSOTは`agent-toolkit/skills/careful-review/references/impl-review-launch.md`
+「plan-impl-reviewerの分割起動（フォールバック時）」節とする。
 件数閾値・カテゴリ統合条件・自動bumpファイルの扱いは当該節の規定に従う。
 
 カテゴリ分類は次の3種で、`careful-review`規定と同一とする。
@@ -53,7 +54,8 @@ disable-model-invocation: true
    （plan mode外の場合は先に`EnterPlanMode`でplan modeへ移行する）
 2. 計画ファイルで対象範囲・除外パス・カテゴリ別分担単位・検証コマンド・コミット件名案を確定する
 3. `plan-impl-reviewer`をカテゴリ別に分担並列起動する（plan mode内で実施）。
-   起動方針は`agent-toolkit:careful-review`「plan-impl-reviewerの分割起動」節に従う
+   起動方針は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`
+   「plan-impl-reviewerの分割起動（フォールバック時）」節に従う
 4. 指摘を統合し、指摘統合表を計画ファイル`## 調査結果`へ、
    ファイル別の具体修正方針を`## 変更内容`へ書く。
    規模超過時の計画粒度は`plan-mode`配下`references/plan-file-guidelines.md`「変更内容（`## 変更内容`）」節の

@@ -26,13 +26,10 @@ user-invocable: false
 #   writing-standardsスキル配下のreferences単体のため、skills欄でのプリロード対象に含められない。
 # 用途注記: 本エージェントは`agent-toolkit:plan-file-creator`の整合性チェックからは起動されない
 # （対象ファイル現状との突合観点をplan-reviewerへ統合済み）
-# `agent-toolkit:careful-review`・`agent-toolkit:quality-sweep`からの起動用途で存続する
-
-# 同期注記: 「共通判断基準」節の構文合法性除外バレットは
-# agent-toolkit/skills/review-standards/SKILL.md「レビューの基本姿勢」節・
-# agent-toolkit/skills/careful-review/SKILL.md「起動プロンプトテンプレート」節・
-# agent-toolkit/agents/plan-codex-reviewer.md「プロンプト構築」節の同旨規定と意図的に重複する。
-# 改訂時は4ファイルを同時更新する。
+# `agent-toolkit:careful-review`からはバランスモード「claude寄り」時に既定経路として起動される。
+# 「codex寄り」時は`codex-review.md`「codex利用可否の3段階判定」節の段階3が成立した場合のみ
+# `plan-codex-delegate`（用途: 実装差分レビュー）の代替として起動される。
+# `agent-toolkit:quality-sweep`からの起動用途は変更せず存続する
 ---
 
 # plan-impl-reviewer
@@ -40,7 +37,9 @@ user-invocable: false
 呼び出し元から渡された対象ファイル群について、コード・ドキュメントの単体品質と日本語表現を評価するエージェント。
 ファイル書き込み、コード変更、外部通信は行わない。
 対象ファイルは部分読解（Grep一致箇所抽出・行範囲を指定した読込等）を避け、必ず全体を`Read`で取得してから評価する。
-対象ファイルが1000行を超える場合は`agent-toolkit:careful-review`スキル「plan-impl-reviewerの分割起動」節に従う。
+対象ファイルが1000行を超える場合は分割起動を検討する。
+分割の閾値は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`
+「plan-impl-reviewerの分割起動（フォールバック時）」節に従う。
 分割起動で担当分が1000行以内に収まる前提で動作し、1000行超の単一ファイルはH2/H3単位で複数エージェントへ分担する。
 
 ## 担当スキルの呼び出し
@@ -70,16 +69,8 @@ user-invocable: false
 - Bashは`git diff`、`git status`、`git log`、`ls`相当の読み取り系操作に限定する
   （`rg`等の部分検索は対象ファイル全体`Read`原則に反するため除外する）
 - gitコミット・pushは行わない（コミットはメインが直接行う）
-- 重大度ラベルは`致命的`・`重大`・`軽微`の3段階固定とする。
-  上記3段階以外のラベル（「中程度」「警告」「軽度」等）を出力しない。
-  3段階のいずれにも自己分類できない指摘は追加調査で3段階のいずれかを確定する。
-  追加調査で確定できない指摘は取り下げる。
-- 構文の合法性は機械チェック担当領域のため机上レビューでは指摘対象外とする
-  （学習知識と対象言語バージョンで有効化された新構文の齟齬が誤指摘の主因のため）
-- 残る言語仕様・標準ライブラリ仕様への依存指摘（非推奨・削除など）は、対象プロジェクトの言語バージョン
-  （`pyproject.toml`・`package.json`・shebangなど）を先に確認する
-  - バージョン特有の機能（PEP・TC39・新版標準ライブラリなど）は学習データの一般知識ではなく
-    公式仕様で照合する
+- 重大度ラベルの3段階固定・構文の合法性の指摘対象外・残る言語仕様に依存する指摘の確認手順は
+  `agent-toolkit/skills/review-standards/SKILL.md`「レビューの基本姿勢」節に従う
 
 ## 担当観点
 
