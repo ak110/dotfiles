@@ -88,7 +88,9 @@ user-invocable: false
 1. 参照テンプレート読み込み: `agent-toolkit/skills/plan-mode/references/reference-template-loading.md`・
    `plan-file-guidelines.md`・`sample.md`・
    `agent-toolkit/skills/writing-standards/references/textlint-violations.md`「頻出違反パターン予防策」節・
-   差分ラベルを含む計画では`plan-file-diff-labels.md`「フェンス配置」節と「差分ラベル6種」節を`Read`する
+   差分ラベルを含む計画では`plan-file-diff-labels.md`「フェンス配置」節と「差分ラベル6種」節を`Read`する。
+   全称禁止バレット・汎用禁止形バレット・新規節見出し追加のいずれかを伴うメタ規範新設計画では
+   `sample-meta-norm.md`も`Read`する
 2. `plan-file-guidelines.md`のテンプレートに従い所定パスへ計画ファイルを作成・改訂する。
    工程2〜5の合意事項・解釈・恒久化文面・周辺対応をテンプレート規定の各セクションへ転記する
 3. 書き込み直後に`uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を

@@ -1,14 +1,7 @@
 ---
-# 同期注記: 起草関連バレット（サブエージェント委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節に置き、
-# 本ファイルと`launch-prompts-drafting.md`「共通遵守事項」節は当該SSOTを参照する形で同期する（改訂時は3ファイルを同時更新する）。
-# named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は
-# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイルを同時更新する）。
-# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`は同期対象外とする（同ファイルの雛形はforeground限定運用のため当該規定を保持しない）。
-# 「サブエージェントの活用」節の非同期処理に係る完遂義務パラグラフ（「サブエージェントは自身の起動タスク完了前に」で始まるバレット）は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節と
-# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複する（改訂時は3ファイルを同時更新する）。
-# 本ファイル「サブエージェントの活用」節の`git stash`禁止バレットは`agent-toolkit/agents/plan-implementer.md`・
-# `agent-toolkit/agents/plan-codex-implementer.md`の`git stash`禁止バレットと意図的に重複する（改訂時は3ファイルを同時更新する）。
-# 「サブエージェントは委譲プロンプトで明示指定された対象ファイル集合」バレットは`agent-toolkit/agents/plan-implementer.md`の対応バレットと意図的に重複する（改訂時は両ファイルを同時更新する）。
+# 同期注記: 起草関連バレット（委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。本ファイルと`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節は同節参照で同期（改訂時3ファイル同時更新）。
+# named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は上記`launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複（改訂時4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
+# 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・`git stash`禁止バレット・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節・`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-implementer.md`の対応箇所と意図的に重複（改訂時は関連ファイルを同時更新する）。
 ---
 # 03-claude-code.md
 
@@ -86,30 +79,29 @@
   - 規範非読込型`subagent_type`の完全一覧SSOTは`subagent-collaboration.md`「必要な規範スキルの明示」節（追加・変更時は当該SSOTを併せて更新）
 - `foreground`／`background`起動の使い分け: 独立した複数タスクを同時に進める場合のみ`background`並列起動する
   - 並列起動時はメイン側の単一メッセージ内に複数のサブエージェント起動ブロックを並べる
-   （`Agent`ツール直接呼び出しと`agent-toolkit:shell-exec`等のforkスキル呼び出しを混在させてよい）
-  - `background`起動時は完了報告として結果全文をメイン宛1回で送付する規定を起動プロンプトへ明記する
+    （`Agent`ツール直接呼び出しとforkスキル呼び出しの混在可）。`background`起動時は完了報告として
+    結果全文をメイン宛1回で送付する規定を起動プロンプトへ明記する
   - Agentツールで`name`指定した`run_in_background=true`起動のnamed subagent（teammate）を扱う。
     作業完了時のSendMessage(to: 'main')による完了報告本文の能動送付を必須ゲートとする。
     メイン明示要求を待たず`idle_notification(available)`のみで待機しない（SubagentStopフックがブロックする）
 - 再開時はモデルを変更できない。異なるモデルが必要なら新規`Agent`起動を使う
-  - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い、
-    元タスク・修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める
-- 実行途中のサブエージェントへ追加指示・スコープ変更を送る場合、起動プロンプトの制約
-  （編集対象範囲・git操作禁止・外部公開操作の禁止等）が追加指示にも引き続き適用される旨を追加指示本文へ明記する。
-  制約対象の作業を追加指示で新たに委譲する場合はその旨を明示的に許可する
-- 並列起動のたびに各タスクの編集対象ファイル集合の重複を起動前に点検し、重複があればタスク境界を再設計する
-  （修正再実装ループでの再並列起動でも省略しない）
+  - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い元タスク・
+    修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める
+- 実行途中のサブエージェントへ追加指示・スコープ変更を送る場合、起動プロンプトの制約（編集対象範囲・git操作禁止・
+  外部公開操作の禁止等）が追加指示にも引き続き適用される旨を明記する。制約対象作業を新たに委譲する場合は明示的に許可する
+- 並列起動のたびに各タスクの編集対象ファイル集合の重複を起動前に点検し、重複があればタスク境界を再設計する（再並列起動でも省略しない）
 - `plan-impl-executor`起動用の`TaskCreate`時は`description`欄へ計画ファイルの絶対パスを含める
 - 起動着手前に`TaskList`で同一計画ファイルパスを対象とする`pending`・`in_progress`タスクの他teammate所有分（自身作成の起動用タスクを除く）を点検する。検知時は新規起動をせず、当該所有者へ`SendMessage`で役割一本化してから進める
-- 並列Claudeセッション検知時、`git status`・`git log --oneline`で検知した予期しないコミットは`git reflog --date=iso`で他セッションの`commit (amend)`発生時刻を特定する。
+- 並列Claudeセッション検知時、`git status`・`git log --oneline`での予期しないコミットは`git reflog --date=iso`で他セッションの`commit (amend)`発生時刻を特定する。
   ローカルHEADと`origin`の分岐時はユーザー確認のうえ`git pull --rebase --autostash`または`git push --force-with-lease`を選択する
 - 対象ファイルの編集が定型パターンの反復であり規範適合性の判断を要さないタスクは
   `plan-implementer`ではなく`subagent_type: claude`を選び、スキル呼び出しを伴わない直接編集を指示する
-  - `plan-implementer`は規範適合性の判断を伴う実装に適するが、併読規範スキル・対象ファイル数等の
-    膨張要因が重なると`autocompact thrashing`を誘発するため、該当時はタスク分割または
-    `subagent_type: claude`への切替（規範スキル読込を省略し起動プロンプトで関連規範
-    `agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`等を明示引用）を選ぶ
-    （適用範囲・`plan-codex-implementer`との使い分けは`agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節を正典とする）
+  - `plan-implementer`は規範適合性の判断を伴う実装に適するが、併読規範スキル・対象ファイル数等の膨張要因が
+    重なると`autocompact thrashing`を誘発する。
+    該当時はタスク分割または`subagent_type: claude`への切替
+    （規範スキル読込を省略し起動プロンプトで関連規範を明示引用）を選ぶ。
+    適用範囲・`plan-codex-implementer`との使い分けの判断基準は
+    `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節とする
 - 機械検出対象の文字列（縮退表明の代表フレーズ等）の照合・分析をサブエージェントへ委譲する場合、
   委譲プロンプトで判定対象フレーズを原文のまま報告本文へ引用させず部分伏字または間接記述（「〜という構造の文」等）で表記させる
 - サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する
@@ -117,23 +109,19 @@
     しない（並列実行中の他タスクの編集に影響するため）。`pre-commit run`を`--files`指定なしで起動する場合も
     内部で`git stash`相当の退避が発生し得るため同等に扱う。pylint等の単体検証で全対象を評価する必要がある場合は
     `--files`で対象ファイル群を明示するか、メイン側で一括検証する。テスト失敗の切り分けなどで必要と判断した場合も
-    実行せず作業を中断して報告する。背景セッションでの並列作業をユーザーから通知された場合も同じ前提を適用する。
-    単独起動（並列を伴わない`foreground`起動）時に限り、
-    メイン側の起動プロンプトでgit操作を明示許可した場合は本制限の対象外とする
-    - `git stash`は`-- <path>`・`--patch`等のスコープ限定指定を含めて全面禁止とする
-      （単一ファイル指定でも並列実行中の他タスクのインデックス・作業ツリーへ影響し得るため）
+    実行せず作業を中断して報告する（背景セッションでの並列作業をユーザーから通知された場合も同前提）。
+    単独起動（並列を伴わない`foreground`起動）時に限り、メイン側の起動プロンプトでgit操作を明示許可した場合は
+    本制限の対象外とする。`git stash`は`-- <path>`・`--patch`等のスコープ限定指定を含めて全面禁止とする
+    （単一ファイル指定でも並列実行中の他タスクのインデックス・作業ツリーへ影響し得るため）
   - push: `git push`・`gh release create`・`git push --tags`などの不可逆な外部公開操作を実行しない
-   （並列実行中の他タスク成否を知らないままpushすると部分状態がリモートへ公開されるため）。
-    単独起動（並列を伴わない`foreground`起動）は本制限の対象外とし、計画ファイル記載の`git push`を委譲してよい
-  - 文書構造: 許可されたファイル内であっても、追記タスクで指示された追加内容の隣接以外の
-    H2/H3節の追加・削除・改名・順序変更などの構造変更を独自判断で実行しない。
-    必要と判断した場合は完了報告に改修候補として記述してメイン側へ返却する。
+    （並列実行中の他タスク成否を知らないままpushすると部分状態がリモートへ公開されるため）。単独起動は本制限の対象外とし、計画ファイル記載の`git push`を委譲してよい
+  - 文書構造: 許可されたファイル内であっても、追記タスクで指示された追加内容の隣接以外のH2/H3節の
+    追加・削除・改名・順序変更などの構造変更を独自判断で実行せず、必要な場合は完了報告へ改修候補として記述する。
     他ファイルからの参照を持つ可能性のある節はリンク欠落の追従修正が発生する前提で扱う
-  - 背景セッションが並行中は`git add`を作業対象ファイルへ限定し、
-    `git add -A`・`git commit -am`等の全変更一括ステージング・コミットは使わない。
-    `git status --short`が変動し得るため都度`git diff --cached --stat`で実体確認してから次工程へ進む。
-    担当ファイル集合が同一ファイルへ重なる並列運用が発生した場合、やむを得ず
-    `git hash-object`・`update-index`・`commit-tree`・`update-ref`のplumbingで分離コミットする運用を例外扱いとし直列化させる
+  - 背景セッションが並行中は`git add`を作業対象ファイルへ限定し、`git add -A`・`git commit -am`等の
+    全変更一括ステージング・コミットは使わない。`git status --short`が変動し得るため都度
+    `git diff --cached --stat`で実体確認してから次工程へ進む。担当ファイル集合が同一ファイルへ重なる並列運用が
+    発生した場合、やむを得ず`git hash-object`等のplumbingで分離コミットする運用を例外扱いとし直列化させる
 - サブエージェントは独立コンテキストで動作し、計画ファイルと指示プロンプトの記述だけが情報源となる
   - 公開インターフェースに関わる変更では変更箇所と維持箇所を分けて記述し、対象外参照を残す前提を確認する
   - サブエージェント委譲プロンプトでは、完了報告本文の各項目を独立に完結した記述として要求する。
@@ -146,24 +134,21 @@
   - 例外: `plan-impl-executor`手順配下の`plan-implementer`は実装委譲に専念し、検証・コミットは呼び出し元が担う
 - `Agent`ツールの`name`指定で起動したサブエージェント（teammate）から
   `idle_notification`（`{"type":"idle_notification", "idleReason":"available", ...}`形式）を受信した場合、
-  当該通知は休止状態を意味し実装工程の完了を意味しない。
-  完了確認は完了報告本文の受領・`git log`・`gh run list`・作業ツリーの実測などの観測可能な事実で判定する。
-  `idle_notification`のみを根拠に後続工程へ進まない
+  当該通知は休止状態を意味し実装工程の完了を意味しない。完了確認は完了報告本文の受領・`git log`・
+  `gh run list`・作業ツリーの実測などの観測可能な事実で判定し、`idle_notification`のみを根拠に後続工程へ進まない
   - Stopフック（`agent-toolkit/scripts/_stop_gate.py`）はteammateの`idle_notification(available)`を完了集合へ加算する。
     Stop許可判定と後続進行判定は別レイヤーで両立するため、`idle_notification`受信時の完了判定規定とは意図的に別ロジックとする
-- サブエージェント完了報告に異常終了の兆候（thrashing文言、`tool_uses`欄が`0`、
-  `result`欄が起動プロンプトの再掲のみ等）が含まれる場合、完了とみなさず同タスクをメイン直接実装で再実施する
+- サブエージェント完了報告に異常終了の兆候（thrashing文言、`tool_uses`欄が`0`、`result`欄が起動プロンプトの
+  再掲のみ等）が含まれる場合、完了とみなさず同タスクをメイン直接実装で再実施する
   - 同じプロンプトで再起動せず、縮減版プロンプト（読込対象削減・規範スキル限定・`subagent_type: claude`切替）で新規起動する
-- 委譲先サブエージェントが完了通知を返さず状態照会にも応答しない場合、反復せず、
-  起動プロンプトを縮減した新規サブエージェント起動またはメイン直接実行へ切り替えて完遂する
-  （読み取り専用の調査タスクはメイン直接実行を許容する）。
+- 委譲先サブエージェントが完了通知を返さず状態照会にも応答しない場合、反復せず起動プロンプトを縮減した
+  新規サブエージェント起動またはメイン直接実行へ切り替えて完遂する（読み取り専用調査はメイン直接実行を許容）。
   切替後に元委譲先の結果が遅延到着した場合は、確定済み成果物と突合し差分があれば同一セッション内で是正する
   - 切替直前に対象タスクの明示停止（Claude Codeでは`TaskStop`）を発行し、委譲先の書き込みを排除してからメイン側編集または再委譲へ移る
   - ファイル痕跡のgrep有無のみを死活判定の単独根拠とせず、作業ツリー・タスク状態・`git log`等の観測事実を併用する
-- サブエージェントは自身の起動タスク完了前に非同期処理（`run_in_background=true`のBashジョブ・
-  外部プロセス起動・別コマンドの完了待ちなど）を伴う場合、当該待機の完了まで動作を継続する。
-  完了報告の本文に「〜の完了通知を待つ」「〜完了後に続行」などの待機表明を含めた時点で
-  当該タスクは未完遂と扱い、completed報告を発行しない。
+- サブエージェントは自身の起動タスク完了前に非同期処理（`run_in_background=true`のBashジョブ・外部プロセス起動・
+  別コマンドの完了待ちなど）を伴う場合、当該待機の完了まで動作を継続する。完了報告の本文に「〜の完了通知を待つ」
+  「〜完了後に続行」などの待機表明を含めた時点で当該タスクは未完遂と扱いcompleted報告を発行しない。
   待機が現実的に不可能な場合は未完遂として呼び出し元へ返却し、残作業を報告の本文に明示する
   - 待機表明を含む完了報告を受け取ったメイン側は次の手順で受領検査する
     - `git status`・`git log`・作業ツリー差分でサブエージェント側の実施状況を観測する
@@ -198,7 +183,8 @@
 - サブエージェント出力（レビュー指摘・調査結果・整合性チェック等）を統合する際は、
   要約のみで修正着手せず、指摘・観測事象と対応方針を固定書式の表で提示してから実装へ移行する
   - 表の列は「通番・重大度／観点・区分・箇所・内容・対応方針」の6列に固定する。
-    既存`careful-review/SKILL.md`「指摘の統合と修正依頼」節の列名「重大度」はレビュー用途に特化した表現であり、
+    既存`agent-toolkit/skills/careful-review/SKILL.md`「指摘の統合と修正依頼」節の列名「重大度」は
+    レビュー用途に特化した表現である。
     本規範ではレビュー以外の用途も含む拡張として「重大度／観点」と併記する
   - 「重大度／観点」列にはレビュー系では`致命的`・`重大`・`軽微`を、調査・整合性チェック系では観点区分（構造・網羅性・実在性など）を記入する。
     「区分」列にはレビュー系では`差分起因`・`既存違反`を、調査・整合性チェック系では出典サブエージェント名を記入する
@@ -213,8 +199,7 @@
   （計画ファイル`## 変更内容`経由の間接指定を含む）の外側を独自判断で編集せず、
   必要と判断した場合は完了報告で対象ファイル追加候補として呼び出し元へ返却する
 - 長時間検証プロセスの完了検知パターンは`agent-toolkit/rules/01-agent.md`完遂原則配下の
-  `長時間実行コマンド（検証・ビルド・CIポーリング等）`バレットに従う。Claude Code固有事項として、
-  Monitor toolを完了検知の代表例に含め、`idle_notification`の扱いは以下のサブバレットに従う
+  `長時間実行コマンド（検証・ビルド・CIポーリング等）`バレットに従う（Monitor toolを完了検知の代表例に含め、`idle_notification`の扱いは以下のサブバレットに従う）
   - `idle_notification`送信後に呼び出し元から催促された場合、経過時間ベースの推測で「まだ実行中」と返さず
     `ps -p`または該当プロセスの終了ステータスを実測してから応答する
   - 単発`ps`確認1回だけで以降の状態変化を推測しない

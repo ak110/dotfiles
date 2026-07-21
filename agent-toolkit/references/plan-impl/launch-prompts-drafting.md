@@ -1,30 +1,12 @@
 ---
-# 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは
-# `agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する。
-# 改訂時は両ファイルを同時更新する。
-# 同期注記: 「共通遵守事項」節の「起草前textlint-violations.md読み込み」バレットは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節をSSOTとする。
-# 本ファイルと`agent-toolkit/rules/03-claude-code.md`起草関連バレットは当該SSOTを参照する形で同期する（改訂時は3ファイルを同時更新する）。
-# named subagent能動送付規定は `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
-# `agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・
-# `agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイルを同時更新する）。
-# `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`は同期対象外とする
-# （同ファイルの雛形はforeground限定運用のため当該規定を保持しない）。
-# 加えて `agent-toolkit/agents/plan-implementer.md`「出力」節との同期は本ファイル
-# 「## 運用ガイダンス」の既存規定に従う。
-# 同期注記: 「共通遵守事項」節・「起草・改訂委譲雛形」コードブロックの
-# 起草・改訂委譲の担当範囲バレット末尾にある`plan-file-creator`の完遂義務への参照文は
-# `agent-toolkit/agents/plan-file-creator.md`「完遂義務」節と意図的に重複する。
-# 改訂時は両ファイルを同時更新する。
-# 非同期処理継続義務のバレット（「共通遵守事項」節およびコードブロック内`## 完遂条件`欄）は
-# `agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節と
-# `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の同旨規定と意図的に重複する。
-# 改訂時は3ファイルを同時更新する。
-# 「共通遵守事項」節・コードブロック内`## 完遂条件`欄の`git diff --stat`実体照合バレットは
-# `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節・
-# `agent-toolkit/agents/spec-driven-implementer.md`「出力」節の`verification`欄記述と意図的に重複する。
-# 背景再委譲禁止バレット（fb08反映）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の
-# 非同期処理の完遂義務（background再委譲時の待機義務）とは独立の新設規定であり、当該節をSSOTとしない。
-# 本ファイル内の2箇所（「共通遵守事項」節・「起草・改訂委譲雛形」節コードブロック内`## 完遂条件`欄）を同時更新する。
+# 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは`agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
+# 同期注記: 「共通遵守事項」節の「起草前textlint-violations.md読み込み」バレットは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節をSSOTとし、本ファイルと`agent-toolkit/rules/03-claude-code.md`起草関連バレットは同節を参照して同期する（改訂時は3ファイル同時更新）。
+# named subagent能動送付規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
+# 加えて`agent-toolkit/agents/plan-implementer.md`「出力」節との同期は本ファイル「## 運用ガイダンス」の既存規定に従う。
+# 同期注記: 「共通遵守事項」節・「起草・改訂委譲雛形」コードブロックの起草・改訂委譲の担当範囲バレット末尾にある`plan-file-creator`の完遂義務への参照文は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節と意図的に重複する（改訂時は両ファイル同時更新）。
+# 非同期処理継続義務のバレット（「共通遵守事項」節およびコードブロック内`## 完遂条件`欄）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節と`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の同旨規定と意図的に重複する（改訂時は3ファイル同時更新）。
+# 「共通遵守事項」節・コードブロック内`## 完遂条件`欄の`git diff --stat`実体照合バレットは`agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節・`agent-toolkit/agents/spec-driven-implementer.md`「出力」節の`verification`欄記述と意図的に重複する。
+# 背景再委譲禁止バレット（fb08反映）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理の完遂義務（background再委譲時の待機義務）とは独立の新設規定であり当該節をSSOTとしない（本ファイル内の2箇所「共通遵守事項」節・「起草・改訂委譲雛形」節コードブロック内`## 完遂条件`欄を同時更新する）。
 ---
 
 # 計画ファイル起草・改訂委譲プロンプト雛形

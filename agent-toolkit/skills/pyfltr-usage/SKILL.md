@@ -15,8 +15,7 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 ### 既存プロジェクトでの通常運用
 
 - 通常運用は`uvx pyfltr ...`を使う
-  - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が
-    本体依存に統合されたため、`uvx pyfltr`単発で揃う
+  - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が本体依存に統合され`uvx pyfltr`単発で揃う
   - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される
 - pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える
   - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）
@@ -25,9 +24,8 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 
 ### 新規プロジェクトへの導入
 
-pyfltr関連設定は原則として下記の公式推奨例をそのまま採用し、独自の順序やオプション構成は避ける。
-推奨例は`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsを一貫した構成で揃える。
-既存プロジェクトで乖離した設定を見つけた場合も、揃える方向の提案を優先する。
+pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsの一貫構成）に揃える。
+独自の順序・オプション構成や既存プロジェクトの乖離した設定も同様に揃える。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
 - 非Pythonプロジェクト（TypeScript／JS・Rust・.NET）: <https://ak110.github.io/pyfltr/guide/recommended-nonpython/index.md>
@@ -96,9 +94,8 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 text出力が必要な場合のみ`--output-format=text`を明示する（環境変数`PYFLTR_OUTPUT_FORMAT=text`でも同等）。
 エージェントからの呼び出しは可読性のため`run-for-agent`を推奨する。
 
-> 注記: mypy / pyright / pylint / ty 併用時は同じ型エラーが複数の`diagnostic`行に別ツール名で重複し得る。
-> 1件の問題への複数ツール報告として扱い、修正計画を重複させない。
-> 単一ツールに限定するには`--commands=mypy`等で指定する。
+> 注記: mypy / pyright / pylint / ty 併用時は同じ型エラーが複数の`diagnostic`行に別ツール名で重複し得るため、
+> 1件の問題への複数ツール報告として扱い修正計画を重複させない（単一ツールに限定するには`--commands=mypy`等を指定する）。
 
 ### messageの切り詰め仕様
 
@@ -179,9 +176,8 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 ### 静音モード時の挙動
 
-- 成功時commandレコード抑止
-- headerレコード縮約（run_id・commands・filesの3フィールドのみ）
-- precommitガイダンス（stderr）抑止
+- 成功時commandレコード・precommitガイダンス（stderr）を抑止し、headerレコードを縮約する
+  （run_id・commands・filesの3フィールドのみ）
 
 ## トラブルシューティング
 
@@ -203,5 +199,5 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 ## 詳細情報
 
-設定リファレンス・カスタムコマンドの追加方法・pre-commit連携の詳細が必要な場合は、
+設定リファレンス・カスタムコマンドの追加方法・pre-commit連携の詳細は
 [llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得し、各ページへのリンクから個別に取得する。
