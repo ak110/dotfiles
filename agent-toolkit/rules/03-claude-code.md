@@ -9,6 +9,8 @@
 
 ## Claude Code固有事項
 
+Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
+
 - 複数の事前呼び出しトリガーに該当した場合は該当スキルを全て呼び出す
 - Skillツールで起動可能なスキルは、SKILL.mdを`Read`で読み込まずSkillツール経由で起動する
   - 例外は当該ファイル自体の編集・調査目的、`references/`配下のRead、Skillツール利用不可な起動元での代替Readとする
@@ -40,8 +42,9 @@
 - `gh workflow run`・`git push --tags`・`gh release create`等の不可逆操作は`run_in_background=true`を採用しない
   - `background`判定は空ログ停止時の再起動が二重実行に直結する
   - `foreground`想定の停止は再実行せず`gh run list`等で状態確認する
-- 同一メッセージ内に複数のツール呼び出しを並べると、先頭がhookブロックやエラーでキャンセルされた際に
-  後続の独立した`Edit`・`Write`・`Bash`も連鎖キャンセルされる
+- `agent-toolkit/rules/01-agent.md`「ツール呼び出しの並列化」節の並列既定を前提とする。
+  1つの応答メッセージ内で先頭の呼び出しがhookブロックやエラーでキャンセルされた場合、
+  後続の独立した`Edit`・`Write`・`Bash`も連鎖キャンセルされる点に注意する
   - 各ツールの成否を確かめ、未反映の編集を完了扱いにせず`git diff`・`Read`で個別確認してから次へ進む
 - auto modeでBash・Write・Edit・MultiEdit等のツール呼び出しが拒否された場合、推測でフラグ追加・迂回・オプション改変を試みない
   - `agent-toolkit:agent-standards`スキルの`references/auto-mode.md`を参照してカスタムルール追加の要否を判断する
