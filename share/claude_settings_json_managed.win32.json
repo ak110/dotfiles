@@ -41,11 +41,11 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "__HOME__\\.local\\bin\\claude-statusline.exe statusline",
+    "command": "__HOME__/.local/bin/claude-statusline.exe statusline",
     "padding": 0
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "__HOME__\\.local\\bin\\claude-statusline.exe subagent-statusline"
+    "command": "__HOME__/.local/bin/claude-statusline.exe subagent-statusline"
   }
 }

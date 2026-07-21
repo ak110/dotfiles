@@ -85,6 +85,8 @@ _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 # share/claude_settings_json_managed.*.json の statusLine/subagentStatusLine command で使う。
 # JSONマージはテンプレートエンジンを介さない生のdictマージのため、シェルの`~`展開に
 # 依存せずバイナリを直接起動できるよう本関数で明示的に絶対パスへ解決する。
+# Windows環境ではGit Bash経由でシェルへ渡される場合バックスラッシュがエスケープシーケンスとして
+# 解釈されるため、command側はフォワードスラッシュ表記に統一する（_substitute_home_placeholder参照）。
 _HOME_PLACEHOLDER = "__HOME__"
 
 
@@ -174,9 +176,15 @@ def update_claude_settings(
 
 
 def _substitute_home_placeholder(value: object) -> object:
-    """`_HOME_PLACEHOLDER` をホームディレクトリの絶対パスへ再帰的に置換する。"""
+    """`_HOME_PLACEHOLDER` をホームディレクトリの絶対パスへ再帰的に置換する。
+
+    Windows環境ではGit Bash経由でシェルへ渡される場合バックスラッシュがエスケープ
+    シーケンスとして解釈され`command`文字列が破壊されるため、置換後の絶対パスは
+    フォワードスラッシュ表記へ正規化する。
+    """
     if isinstance(value, str):
-        return value.replace(_HOME_PLACEHOLDER, str(Path.home())) if _HOME_PLACEHOLDER in value else value
+        home = str(Path.home()).replace("\\", "/") if sys.platform == "win32" else str(Path.home())
+        return value.replace(_HOME_PLACEHOLDER, home) if _HOME_PLACEHOLDER in value else value
     if isinstance(value, dict):
         return {k: _substitute_home_placeholder(v) for k, v in value.items()}
     if isinstance(value, list):

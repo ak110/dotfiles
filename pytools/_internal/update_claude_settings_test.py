@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -126,6 +127,20 @@ class TestHomePlaceholder:
         managed = {"language": "japanese"}
         result = _run(tmp_path, managed)
         assert result["language"] == "japanese"
+
+    def test_windows_path_backslash_normalized_to_forward_slash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("C:\\Users\\test")))
+        managed = {"statusLine": {"command": "__HOME__/.local/bin/claude-statusline.exe statusline"}}
+        result = _run(tmp_path, managed)
+        assert "\\" not in result["statusLine"]["command"]
+
+    def test_windows_path_result_uses_forward_slash_format(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("C:\\Users\\test")))
+        managed = {"statusLine": {"command": "__HOME__/.local/bin/claude-statusline.exe statusline"}}
+        result = _run(tmp_path, managed)
+        assert result["statusLine"]["command"] == "C:/Users/test/.local/bin/claude-statusline.exe statusline"
 
 
 class TestJsoncCommentPreservation:

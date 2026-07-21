@@ -1,10 +1,10 @@
 //! Claude Code statusLine: セッション状況を2行で可視化する。
 //!
 //! `scripts/claude_status_line.py`の後継。stdinから公式statusLine JSON入力を受け取る。
-//! 1行目にモデル名・effort・cwd・output_style名（既定値以外）・コンテキスト・コスト・
-//! 経過時間・消費量(5h/7d)・追加/削除行数をパイプ区切りで、2行目にセッション名・
-//! セッションID・worktree情報（存在時のみ）を出力する。数値項目には日本語ラベルを付与し、
-//! 欠落・null・空文字列の要素は省略する。
+//! 1行目はモデル名・effort・cwd・追加/削除行数・output_style名（既定値以外）を半角スペース区切りで
+//! 結合したのち、コンテキスト・コスト・経過時間・消費量(5h/7d)とパイプ区切りで連結する。
+//! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）
+//! とパイプ区切りで連結する。数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
 
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ const LABEL_CONTEXT: &str = "コンテキスト";
 const LABEL_COST: &str = "コスト";
 const LABEL_DURATION: &str = "経過時間";
 const LABEL_RATE_LIMITS: &str = "消費量(5h/7d)";
-const LABEL_SESSION_ID: &str = "セッションID";
+const LABEL_SESSION: &str = "セッション";
 const LABEL_WORKTREE: &str = "worktree";
 
 /// stdinから受け取った生JSON文字列を解釈し、標準出力へ最大2行を出力する。
@@ -73,11 +73,13 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     let lines_added = get_nested_number(data, &["cost", "total_lines_added"]);
     let lines_removed = get_nested_number(data, &["cost", "total_lines_removed"]);
 
+    let lines_changed_seg = build_lines_changed_segment(lines_added, lines_removed);
     let head = build_head_segment(
         model_name.as_deref(),
         effort_level.as_deref(),
         cwd.as_deref(),
         style_name.as_deref(),
+        lines_changed_seg,
         home,
     );
 
@@ -100,9 +102,6 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     if let Some(seg) = build_rate_limits_segment(five_hour_pct, seven_day_pct) {
         tail.push(seg);
     }
-    if let Some(seg) = build_lines_changed_segment(lines_added, lines_removed) {
-        tail.push(seg);
-    }
 
     let mut segments: Vec<String> = Vec::new();
     if !head.is_empty() {
@@ -112,19 +111,24 @@ fn render_primary_line(data: &Value, home: Option<&str>) -> String {
     segments.join(" | ")
 }
 
-/// 2行目: セッション名・セッションID・worktree情報（いずれも存在時のみ）。
+/// 2行目: セッションID・セッション名・worktree情報（いずれも存在時のみ）。
 fn render_session_line(data: &Value) -> String {
     let session_name = get_nested_str(data, &["session_name"]);
     let session_id = get_nested_str(data, &["session_id"]);
     let worktree_name = get_nested_str(data, &["worktree", "name"]);
     let worktree_branch = get_nested_str(data, &["worktree", "branch"]);
 
-    let mut segments: Vec<String> = Vec::new();
-    if let Some(name) = &session_name {
-        segments.push(color(name, CYAN));
-    }
+    let mut id_name_parts: Vec<String> = Vec::new();
     if let Some(id) = &session_id {
-        segments.push(color(&format!("{LABEL_SESSION_ID}: {id}"), GRAY));
+        id_name_parts.push(color(&format!("{LABEL_SESSION}: {id}"), GRAY));
+    }
+    if let Some(name) = &session_name {
+        id_name_parts.push(color(name, CYAN));
+    }
+
+    let mut segments: Vec<String> = Vec::new();
+    if !id_name_parts.is_empty() {
+        segments.push(id_name_parts.join(" "));
     }
     if let Some(seg) = build_worktree_segment(worktree_name.as_deref(), worktree_branch.as_deref())
     {
@@ -159,6 +163,7 @@ fn build_head_segment(
     effort_level: Option<&str>,
     cwd: Option<&str>,
     style_name: Option<&str>,
+    lines_changed: Option<String>,
     home: Option<&str>,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -168,6 +173,9 @@ fn build_head_segment(
     }
     if let Some(cwd) = cwd {
         parts.push(color(&shorten_home(cwd, home), BLUE));
+    }
+    if let Some(seg) = lines_changed {
+        parts.push(seg);
     }
     if let Some(style) = style_name {
         parts.push(color(&format!("@{style}"), MAGENTA));
@@ -408,7 +416,35 @@ mod tests {
     }
 
     #[test]
-    fn session_line_combines_name_id_worktree() {
+    fn lines_changed_after_cwd_with_output_style() {
+        let data = serde_json::json!({
+            "workspace": {"current_dir": "/home/test/repo"},
+            "output_style": {"name": "custom"},
+            "cost": {"total_lines_added": 11, "total_lines_removed": 11}
+        });
+        assert_eq!(
+            render(data),
+            format!("{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} {MAGENTA}@custom{RESET}")
+        );
+    }
+
+    #[test]
+    fn lines_changed_before_context_in_tail() {
+        let data = serde_json::json!({
+            "workspace": {"current_dir": "/home/test/repo"},
+            "cost": {"total_lines_added": 11, "total_lines_removed": 11},
+            "context_window": {"used_percentage": 24.0}
+        });
+        assert_eq!(
+            render(data),
+            format!(
+                "{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} | {GREEN}{LABEL_CONTEXT}: 24%{RESET}"
+            )
+        );
+    }
+
+    #[test]
+    fn session_line_combines_id_name_worktree() {
         let data = serde_json::json!({
             "session_name": "my-session",
             "session_id": "abc123",
@@ -419,7 +455,7 @@ mod tests {
         assert_eq!(
             lines[0],
             format!(
-                "{CYAN}my-session{RESET} | {GRAY}{LABEL_SESSION_ID}: abc123{RESET} | {BLUE}{LABEL_WORKTREE}: my-feature (worktree-my-feature){RESET}"
+                "{GRAY}{LABEL_SESSION}: abc123{RESET} {CYAN}my-session{RESET} | {BLUE}{LABEL_WORKTREE}: my-feature (worktree-my-feature){RESET}"
             )
         );
     }
