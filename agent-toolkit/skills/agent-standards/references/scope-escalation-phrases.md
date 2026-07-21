@@ -57,6 +57,8 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
 | `overhead-tradeoff` | オーバーヘッドや複雑度上限を根拠とした対応範囲の縮小 | 「オーバーヘッドが上回るため」「複雑度が高くなり過ぎない範囲」「実装コストが大きいため」 |
 
 `pattern-conformance`カテゴリの例外は`agent-toolkit/rules/01-agent.md`「品質最優先」節の条件付き例外規定を参照する。
+`agent-toolkit:plan-mode`工程5の別課題化は`quality-first-exceptions.md`「正規追加経路の非対称原則」節が定める第三の対応区分に該当し得る。
+限定条件を満たす場合は同節を判定基準（SSOT）とし、本カテゴリの誤検出対象ではなく正規判断として扱う。
 
 ## 検出パターン設計原則
 

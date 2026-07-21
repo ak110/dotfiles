@@ -16,6 +16,7 @@
 を全ての判断における最上位の指針とする。
 
 本節配下の条件付き例外規定は`agent-toolkit/skills/agent-standards/references/quality-first-exceptions.md`に集約する。
+同ファイル「正規追加経路の非対称原則」節が、登録済み手順の省略禁止と手順外の品質作業追加の正規経路を定める。
 任意規模の作業を1セッションで完遂する根拠は完遂成立モデルに集約する。
 参照先は`agent-toolkit/skills/agent-standards/references/completion-model.md`とする。
 
@@ -64,6 +65,11 @@
     定性的な進捗記述（実施済み工程・残工程・観測事象）は許容する。
     代表フレーズは`agent-toolkit:agent-standards`配下
     `references/scope-escalation-phrases.md`の`process-omission`カテゴリを参照する
+  - 本禁止は作業の着手・継続・停止可否の判断材料としての用法に限定する。
+    恒久化候補の要否を判断する材料（`agent-toolkit:critical-thinking`「コンテキストコスト対効果」観点等）
+    としての用法は判断対象が異なる別軸であり、本禁止の対象外とする。
+    例えば「トークン消費量が多いため停止する」は禁止対象だが、
+    「追記文書が全読込者の恒久的なコンテキストコストとなるため縮減候補とする」は対象外である
   - 規範で完遂義務が明記された工程（`agent-toolkit:plan-mode`工程4〜8等のサブエージェント起動）の実施可否・
     実施範囲・実施順序を`AskUserQuestion`で確認せず技術的最適案を自律判断で確定する。
     1計画に含まれる採用フィードバック件数・実装完遂範囲・レビュー指摘の対応範囲も同様に扱う。
