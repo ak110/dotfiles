@@ -18,7 +18,7 @@ from _atk_fb_common import (
     FEEDBACK_STATE_PROCESSING,
     FEEDBACK_STATE_REJECTED,
     _commit_and_push,
-    _copy_to_tempfile,
+    _edit_and_commit_via_editor,
     _pull,
     _repo_lock,
     _stamp_result,
@@ -225,27 +225,14 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = paths[0]
         _verify_frontmatter_target_repo(path.name, [inbox_dir, processing_dir], args.target_repo)
         snapshot = path.read_bytes()
-    tmp_path = _copy_to_tempfile(snapshot)
-    subprocess.run([editor, str(tmp_path)], check=True)
-    edited = tmp_path.read_bytes()
-    if edited == snapshot:
-        tmp_path.unlink(missing_ok=True)
-        print("差分なし。")
-        return
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        if not path.exists() or path.read_bytes() != snapshot:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                f"編集内容は{tmp_path}に残しています。再度atk fb editを実行してください。",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        path.write_bytes(edited)
-        rel = str(path.relative_to(private_notes))
-        _commit_and_push(private_notes, "chore: edit feedback item", [rel])
-    tmp_path.unlink(missing_ok=True)
-    print(f"編集反映: {path.name}")
+    _edit_and_commit_via_editor(
+        private_notes,
+        path,
+        snapshot,
+        editor=editor,
+        commit_message="chore: edit feedback item",
+        retry_hint="再度atk fb editを実行してください。",
+    )
 
 
 def _cmd_commit(private_notes: pathlib.Path) -> None:

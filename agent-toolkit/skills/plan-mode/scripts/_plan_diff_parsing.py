@@ -1,20 +1,12 @@
-"""計画ファイル`## 変更内容`配下の差分ブロック走査に共通する要素を集約する共有モジュール。
+"""計画ファイル走査系の独立実行スクリプト群が共有する要素を集約するモジュール。
 
-`check_plan_diff_gates.py`と`check_wc_projection.py`の両者から利用する。
-呼び出し側はPEP 723単独実行スクリプトのため、次のパス操作を経由してimportする。
+`check_plan_diff_gates.py`・`check_wc_projection.py`・`check_plan_meta.py`・
+`check_self_ref.py`・`check_deprecated_identifier_coverage.py`から利用する。
+呼び出し側はスクリプト自身のディレクトリが実行時に`sys.path`へ含まれるため、
+`import _plan_diff_parsing`で直接importできる（`uv run --script`実行時・
+`python <path>`直接実行時のいずれもスクリプト自身のディレクトリが`sys.path[0]`となるため）。
 
-    import pathlib
-    import sys
-    sys.path.insert(0, str(pathlib.Path(__file__).parent))
-    from _plan_diff_parsing import (
-        TEXT_FENCE_OPEN_RE,
-        REDUCTION_HEADING_RE,
-        is_matching_close,
-        iter_non_fenced_lines,
-        extract_section_with_offset,
-    )
-
-集約対象は両スクリプト間で完全一致する要素に限る。
+集約対象は複数スクリプト間で完全一致する要素に限る。
 意味論的差異のある要素（`_H3_RE`のグループ名の差・
 `_CURRENT_LABEL_TOKEN`／`_REPLACEMENT_LABEL_TOKEN`の角括弧の有無など）は各スクリプト固有として温存する。
 """
@@ -22,7 +14,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+import sys
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
 # `text`フェンス開始行の判定。言語指定が`text`のフェンスのみを対象とする。
 # CommonMark仕様に従い、フェンスは3個以上のバッククォートで開始可能。
@@ -140,6 +134,39 @@ def extract_h3_section_with_offset(text: str, heading: str) -> tuple[str, int]:
             break
         body_lines.append(line)
     return "\n".join(body_lines), start_line
+
+
+def read_text_or_none(path: Path) -> str | None:
+    """ファイルを読み込む。読み込み失敗時は`None`を返す。
+
+    `check_plan_meta.py`・`check_self_ref.py`等の複数の独立実行スクリプトが
+    同一実装を必要とするため本モジュールへ集約する。
+    """
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def run_violation_cli(paths: list[Path], check_file: Callable[[Path, str], list[str]]) -> int:
+    """検査対象パス一覧を読み込み`check_file`で検査し、違反をstderrへ出力して終了コードを返す。
+
+    読み込み失敗パスは`read-error`として違反一覧へ記録する。
+    `check_plan_meta.py`・`check_self_ref.py`等の独立実行スクリプトが共有する
+    `main()`本体のCLI実行パターン（読み込み→検査→stderr出力→終了コード決定）を集約する。
+    """
+    all_violations: list[str] = []
+    for path in paths:
+        text = read_text_or_none(path)
+        if text is None:
+            print(f"{path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
+            all_violations.append(f"{path}: read-error")
+            continue
+        all_violations.extend(check_file(path, text))
+
+    for line in all_violations:
+        print(line, file=sys.stderr)
+    return 1 if all_violations else 0
 
 
 def iter_reduction_headings(section: str) -> Iterator[str]:

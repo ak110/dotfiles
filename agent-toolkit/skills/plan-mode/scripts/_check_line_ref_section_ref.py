@@ -33,6 +33,7 @@ import pathlib
 import re
 
 # ディレクトリ展開時にスキップするディレクトリ名。`check_line_ref.py`の`_EXCLUDED_DIRS`と同一集合。
+# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 _EXCLUDED_DIRS = frozenset(
     {
         ".git",
@@ -50,6 +51,7 @@ _EXCLUDED_DIRS = frozenset(
         ".vscode",
     }
 )
+# pylint: enable=duplicate-code
 
 # フェンス開始の最小バッククォート/チルダ数。`check_line_ref.py`の`_FENCE_RE`と同一。
 _FENCE_RE = re.compile(r"^( *)(```+|~~~+)")

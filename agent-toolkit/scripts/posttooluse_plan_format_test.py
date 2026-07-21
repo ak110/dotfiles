@@ -17,6 +17,7 @@ import _plan_format
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 
 
+# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 def _run(
     payload: dict | str,
     *,
@@ -50,6 +51,9 @@ def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# pylint: enable=duplicate-code
 
 
 # plan file形式検査で使う各種Markdown断片。テスト全体で共用する。

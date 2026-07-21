@@ -50,6 +50,9 @@ from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,
     is_pending_async_work,
 )
 
+# pylint: disable-next=wrong-import-position,import-error
+from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
+
 # このスクリプトの hook 識別子。
 _HOOK_ID = "dotfiles/claude_hook_autonomous_exit"
 
@@ -96,16 +99,10 @@ def _emit_block(reason: str) -> None:
 
 def main() -> int:
     """`exit-session`呼び忘れを検知し再促するエントリポイント。"""
-    try:
-        payload = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
-        _approve()
+    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    if resolved is None:
         return 0
-
-    session_id = payload.get("session_id", "")
-    if not isinstance(session_id, str) or not session_id:
-        _approve()
-        return 0
+    session_id, payload = resolved
 
     # 常駐ループ外のセッションでは本hookの誘導対象外とする。
     if os.environ.get(_ENV_REQUIRED) != "1":

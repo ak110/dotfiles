@@ -71,6 +71,12 @@ from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,
     is_pending_async_work,
 )
 
+# pylint: disable-next=wrong-import-position,import-error
+from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from _transcript import iter_assistant_content_blocks as _iter_assistant_content_blocks  # noqa: E402
+
 # `\bpyfltr\b` に相当する正規表現。
 # uv run pyfltr / pyfltr / uv run --script ... pyfltr など典型的な呼び出し形式を網羅する。
 _PYFLTR_PATTERN = re.compile(r"\bpyfltr\b")
@@ -103,22 +109,9 @@ def _iter_tool_use_blocks(transcript_path: str) -> collections.abc.Iterator[dict
         lines = pathlib.Path(transcript_path).read_text(encoding="utf-8").splitlines()
     except (OSError, ValueError):
         return
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if entry.get("type") != "assistant" or entry.get("isSidechain"):
-            continue
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_use":
-                yield block
+    for _position, block in _iter_assistant_content_blocks(lines):
+        if block.get("type") == "tool_use":
+            yield block
 
 
 def _has_tool_usage(
@@ -164,16 +157,10 @@ def _emit_block(reason: str) -> None:
 
 def main() -> int:
     """dotfiles個人環境専用セッション振り返りを誘導するエントリポイント。"""
-    try:
-        payload = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
-        _approve()
+    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    if resolved is None:
         return 0
-
-    session_id = payload.get("session_id", "")
-    if not isinstance(session_id, str) or not session_id:
-        _approve()
-        return 0
+    session_id, payload = resolved
 
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、即座にapproveする。

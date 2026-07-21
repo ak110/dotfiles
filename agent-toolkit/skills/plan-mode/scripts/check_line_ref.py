@@ -63,6 +63,7 @@ _DEFAULT_EXTENSIONS = frozenset({".md", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
 # `check_dash.py`の`_EXCLUDED_DIRS`と同一集合。
+# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 _EXCLUDED_DIRS = frozenset(
     {
         ".git",
@@ -80,6 +81,7 @@ _EXCLUDED_DIRS = frozenset(
         ".vscode",
     }
 )
+# pylint: enable=duplicate-code
 
 # 検出対象のパターン集合。`agent-toolkit/scripts/pretooluse.py`の`_LINE_NUMBER_PATTERNS`と同範囲。
 # `L\d+`形式はASCII英数字への否定先読み・後読みで`HTML5`・`URL2`等の識別子内包を除外する。

@@ -50,7 +50,9 @@ sys.path.insert(
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from pretooluse import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from pretooluse import _collect_new_fields, _match_scope_escalation  # noqa: E402
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -145,32 +147,6 @@ def main() -> int:
         )
 
     return 0
-
-
-def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]] | None:
-    """対象ツールの「新規書き込みフィールド」を（field 名, 値）のリストで返す。
-
-    対象外ツールの場合は None を返す。値が文字列でないものはスキップする。
-    """
-    if tool_name == "Write":
-        value = tool_input.get("content")
-        return [("content", value)] if isinstance(value, str) else []
-    if tool_name == "Edit":
-        value = tool_input.get("new_string")
-        return [("new_string", value)] if isinstance(value, str) else []
-    if tool_name == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        if not isinstance(edits, list):
-            return []
-        result: list[tuple[str, str]] = []
-        for index, edit in enumerate(edits):
-            if not isinstance(edit, dict):
-                continue
-            new_string = edit.get("new_string")
-            if isinstance(new_string, str):
-                result.append((f"edits[{index}].new_string", new_string))
-        return result
-    return None
 
 
 # --- PowerShell 必須ディレクティブ check (block) ---

@@ -15,7 +15,7 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, _plugin_list_json
+from ._test_helpers import _FakeResult, _plugin_list_json, make_installed_two_plugin_fake
 
 
 class TestComputeRecommendedCommands:
@@ -304,23 +304,7 @@ class TestRunNoAutomaticStateChange:
         )
 
         calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
-                return _FakeResult(
-                    returncode=0,
-                    stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
-                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
-                    ),
-                )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
-                return _FakeResult(
-                    returncode=0,
-                    stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
-                )
-            return _FakeResult(returncode=0)
+        fake_run = make_installed_two_plugin_fake(calls)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 

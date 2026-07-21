@@ -16,6 +16,7 @@ import pytest
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
 
 
+# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 def _run(
     payload: dict | str,
     *,
@@ -72,6 +73,9 @@ def _build_valid_plan(
         parts.append(overrides.get(h2, _PLAN_BODY[h2]))
         parts.append("")
     return prefix + "\n".join(parts) + "\n"
+
+
+# pylint: enable=duplicate-code
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:

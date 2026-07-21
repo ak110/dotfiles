@@ -15,6 +15,7 @@ from _atk_fb_common import (
     _collect_message_via_editor,
     _commit_and_push,
     _copy_to_tempfile,
+    _edit_and_commit_via_editor,
     _is_tbd_answered,
     _iter_inbox_entries,
     _max_existing_seq,
@@ -240,27 +241,14 @@ def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None
             print(f"tbd/inboxに存在しません: {path.name}", file=sys.stderr)
             sys.exit(2)
         snapshot = path.read_bytes()
-    tmp_path = _copy_to_tempfile(snapshot)
-    subprocess.run([editor, str(tmp_path)], check=True)
-    edited = tmp_path.read_bytes()
-    if edited == snapshot:
-        tmp_path.unlink(missing_ok=True)
-        print("差分なし。")
-        return
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        if not path.exists() or path.read_bytes() != snapshot:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                f"編集内容は{tmp_path}に残しています。再度atk tb editを実行してください。",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        path.write_bytes(edited)
-        rel = str(path.relative_to(private_notes))
-        _commit_and_push(private_notes, "chore: edit tbd item", [rel])
-    tmp_path.unlink(missing_ok=True)
-    print(f"編集反映: {path.name}")
+    _edit_and_commit_via_editor(
+        private_notes,
+        path,
+        snapshot,
+        editor=editor,
+        commit_message="chore: edit tbd item",
+        retry_hint="再度atk tb editを実行してください。",
+    )
 
 
 def _resolve_tbd_targets(filenames: list[str], tbd_inbox: pathlib.Path) -> list[pathlib.Path]:

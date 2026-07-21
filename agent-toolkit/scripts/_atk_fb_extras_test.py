@@ -2,7 +2,7 @@
 
 `add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
-共通ヘルパーは`atk_test.py`から再利用する。
+共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
 import pathlib
@@ -16,6 +16,12 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+
+# pylint: disable-next=wrong-import-position,import-error
+from _atk_git_fake_test_helpers import fake_git_worktree_remote_response as _fake_git_worktree_remote_response  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from _atk_git_fake_test_helpers import make_git_remote_fake as _make_git_remote_fake  # noqa: E402
 from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
@@ -40,18 +46,7 @@ class TestAddSourceOption:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -74,18 +69,7 @@ class TestAddSourceOption:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
@@ -680,17 +664,10 @@ class TestAddViaEditor:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)

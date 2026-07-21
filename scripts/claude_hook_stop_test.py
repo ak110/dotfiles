@@ -99,6 +99,10 @@ def _assistant_entry_with_bash(command: str, *, run_in_background: bool = False)
     }
 
 
+# `agent-toolkit/scripts/stop_advisor_test.py`と同一のtranscriptエントリ生成関数を意図的に複製する。
+# claude_hook_stop_test.pyはdotfiles個人環境専用、stop_advisor_test.pyは配布物agent-toolkitプラグイン側の
+# テストであり、プラグイン境界を越えた依存を持ち込まないため共通モジュール化しない。
+# pylint: disable=duplicate-code
 def _assistant_text_only(text: str = "作業を継続します。") -> dict:
     """テキストのみのend_turnアシスタントエントリを生成する。"""
     return {
@@ -139,6 +143,9 @@ def _assistant_with_async_tool(tool_name: str) -> dict:
             "stop_reason": "end_turn",
         },
     }
+
+
+# pylint: enable=duplicate-code
 
 
 def _user_entry(text: str = "hello") -> dict:

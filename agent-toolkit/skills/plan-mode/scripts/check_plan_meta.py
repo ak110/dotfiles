@@ -37,27 +37,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="計画ファイルの`### 計画メタ情報`H3と必須2項目を検査する。")
     parser.add_argument("paths", nargs="+", type=pathlib.Path, help="検査対象の計画ファイル（複数指定可）")
     args = parser.parse_args()
-
-    all_violations: list[str] = []
-    for path in args.paths:
-        text = _read_text_or_none(path)
-        if text is None:
-            print(f"{path}: 計画ファイルの読み込みに失敗", file=sys.stderr)
-            all_violations.append(f"{path}: read-error")
-            continue
-        all_violations.extend(_check_file(path, text))
-
-    for line in all_violations:
-        print(line, file=sys.stderr)
-    return 1 if all_violations else 0
-
-
-def _read_text_or_none(path: pathlib.Path) -> str | None:
-    """ファイルを読み込む。読み込み失敗時は`None`を返す。"""
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
+    return _plan_diff_parsing.run_violation_cli(args.paths, _check_file)
 
 
 def _check_file(path: pathlib.Path, text: str) -> list[str]:

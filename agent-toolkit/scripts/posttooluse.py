@@ -69,6 +69,9 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
 )
 from _scope_escalation import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES,
+)
 from check_wc_projection import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_addition_reduction_blocks,
 )
@@ -252,32 +255,6 @@ _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
 
 # `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
 _INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
-
-# `_process_loop_log`による終了時刻記録の対象サブエージェント種別（fb-1）。
-# `pretooluse.py`側の同名定数（起動時刻記録用）と対応させる。
-# フルネームと短縮名の両方を許容する。
-_TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
-    {
-        "plan-impl-executor",
-        "agent-toolkit:plan-impl-executor",
-        "plan-implementer",
-        "agent-toolkit:plan-implementer",
-        "plan-codex-implementer",
-        "agent-toolkit:plan-codex-implementer",
-        "plan-impl-reviewer",
-        "agent-toolkit:plan-impl-reviewer",
-        "plan-codex-reviewer",
-        "agent-toolkit:plan-codex-reviewer",
-        "plan-reviewer",
-        "agent-toolkit:plan-reviewer",
-        "plan-spec-reviewer",
-        "agent-toolkit:plan-spec-reviewer",
-        "agent-doc-validator",
-        "agent-toolkit:agent-doc-validator",
-        "plan-file-creator",
-        "agent-toolkit:plan-file-creator",
-    }
-)
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
 # `agent-toolkit/rules/04-styles.md`「日本語の品質を保つ」節の全称否定形推奨と

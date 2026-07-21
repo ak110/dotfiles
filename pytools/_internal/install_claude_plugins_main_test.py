@@ -14,7 +14,13 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, _plugin_list_json
+from ._test_helpers import (
+    _FakeResult,
+    _plugin_list_json,
+    assert_scope_user_install_calls,
+    make_fresh_install_fake,
+    make_installed_two_plugin_fake,
+)
 
 
 @pytest.fixture(name="fake_which_present")
@@ -87,24 +93,12 @@ class TestRunFlow:
         """GitHub 型残存環境: version 一致で update も install も呼ばれない (回帰防止)。"""
         calls: list[list[str]] = []
 
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001 -- subprocess.run 互換シグネチャ
-            calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
-                return _FakeResult(
-                    returncode=0,
-                    stdout=_plugin_list_json(
-                        {"id": "agent-toolkit@ak110-dotfiles", "version": "0.2.0", "scope": "user"},
-                        {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
-                    ),
-                )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
-                return _FakeResult(
-                    returncode=0,
-                    stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
-                )
+        def _extra(cmd: list[str]) -> _FakeResult | None:
             if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
                 return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1, stderr="should not be called")
+            return None
+
+        fake_run = make_installed_two_plugin_fake(calls, _extra, default_returncode=1, default_stderr="should not be called")
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
@@ -159,18 +153,7 @@ class TestRunFlow:
     def test_fresh_install_happy_path(self, monkeypatch: pytest.MonkeyPatch):
         """未インストール + marketplace 未登録の場合、add → 全プラグイン install の順に呼ぶ。"""
         calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
-                return _FakeResult(returncode=0)
-            if cmd[:3] == ["claude", "plugin", "install"]:
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1)
+        fake_run = make_fresh_install_fake(calls)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
@@ -477,22 +460,8 @@ class TestRunFlowDirectoryType:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run()[0] is True
-        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
         # 対象プラグイン 2 件に対して install が --scope=user で再実行される
-        assert [
-            "claude",
-            "plugin",
-            "install",
-            "agent-toolkit@ak110-dotfiles",
-            "--scope=user",
-        ] in install_calls
-        assert [
-            "claude",
-            "plugin",
-            "install",
-            "sample-plugin@ak110-dotfiles",
-            "--scope=user",
-        ] in install_calls
+        assert_scope_user_install_calls(calls)
         # plugin update / marketplace update は呼ばれない
         assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)
         assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)

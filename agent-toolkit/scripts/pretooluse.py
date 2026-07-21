@@ -132,6 +132,7 @@ import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-po
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     GitEvent,
     extract_git_events,
+    split_bash_segments,
 )
 from _file_lock import rotate_if_needed as _rotate_if_needed  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -143,6 +144,9 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES,
+)
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
@@ -2792,32 +2796,6 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
-# `_process_loop_log`による起動時刻記録の対象サブエージェント種別（fb-1）。
-# `process-feedbacks`実行時のplan-impl系観測基盤で使う。フルネームと短縮名の両方を許容する。
-# `posttooluse.py`側の同名定数（終了時刻記録用）と対応させる。
-_TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
-    {
-        "plan-impl-executor",
-        "agent-toolkit:plan-impl-executor",
-        "plan-implementer",
-        "agent-toolkit:plan-implementer",
-        "plan-codex-implementer",
-        "agent-toolkit:plan-codex-implementer",
-        "plan-impl-reviewer",
-        "agent-toolkit:plan-impl-reviewer",
-        "plan-codex-reviewer",
-        "agent-toolkit:plan-codex-reviewer",
-        "plan-reviewer",
-        "agent-toolkit:plan-reviewer",
-        "plan-spec-reviewer",
-        "agent-toolkit:plan-spec-reviewer",
-        "agent-doc-validator",
-        "agent-toolkit:agent-doc-validator",
-        "plan-file-creator",
-        "agent-toolkit:plan-file-creator",
-    }
-)
-
 # `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
@@ -3479,7 +3457,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
     # heredocを含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる。
     if "<<" in command:
         return False
-    segments = _split_bash_segments(command)
+    segments = split_bash_segments(command)
     cwd_changed_before = False
     for segment in segments:
         try:
@@ -3497,59 +3475,6 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
         if _segment_changes_cwd(tokens):
             cwd_changed_before = True
     return False
-
-
-def _split_bash_segments(command: str) -> list[str]:
-    """Bashコマンドを`;` / `&&` / `||` / `|` / `&`で分割する。
-
-    クォート（`'` / `"`）内のメタ文字は分割対象外とする。
-    バックスラッシュエスケープやheredocは厳密に扱わないため、heredocを含む
-    コマンドは呼び出し側で除外する想定。
-    """
-    segments: list[str] = []
-    buf: list[str] = []
-    in_single = False
-    in_double = False
-    i = 0
-    while i < len(command):
-        c = command[i]
-        if in_single:
-            buf.append(c)
-            if c == "'":
-                in_single = False
-            i += 1
-            continue
-        if in_double:
-            buf.append(c)
-            if c == '"':
-                in_double = False
-            i += 1
-            continue
-        if c == "'":
-            in_single = True
-            buf.append(c)
-            i += 1
-            continue
-        if c == '"':
-            in_double = True
-            buf.append(c)
-            i += 1
-            continue
-        if c in ("&", "|") and i + 1 < len(command) and command[i + 1] == c:
-            segments.append("".join(buf))
-            buf = []
-            i += 2
-            continue
-        if c in (";", "&", "|"):
-            segments.append("".join(buf))
-            buf = []
-            i += 1
-            continue
-        buf.append(c)
-        i += 1
-    if buf:
-        segments.append("".join(buf))
-    return [s.strip() for s in segments if s.strip()]
 
 
 def _skip_env_assignments(tokens: list[str], start: int) -> int:

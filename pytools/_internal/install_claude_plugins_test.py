@@ -13,7 +13,7 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult
+from ._test_helpers import _FakeResult, make_fresh_install_fake
 
 
 @pytest.fixture(name="fake_which_present")
@@ -194,18 +194,7 @@ class TestExtractPluginVersionMap:
     def test_empty_list_results_in_full_install(self, monkeypatch: pytest.MonkeyPatch):
         """空リストは全プラグイン未インストール扱いとなり install が発行される。"""
         calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
-                return _FakeResult(returncode=0)
-            if cmd[:3] == ["claude", "plugin", "install"]:
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1)
+        fake_run = make_fresh_install_fake(calls)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
@@ -372,18 +361,7 @@ class TestReadTargetInfo:
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
         monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
         calls: list[list[str]] = []
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
-                return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
-                return _FakeResult(returncode=0)
-            if cmd[:3] == ["claude", "plugin", "install"]:
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1)
+        fake_run = make_fresh_install_fake(calls)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 

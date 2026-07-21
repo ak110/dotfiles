@@ -1,64 +1,13 @@
 """pytools._internal.setup_sendto_shortcuts のテスト。"""
 
 import pathlib
-import subprocess
-import typing
-from collections.abc import Callable
 
 import pytest
 
 from pytools._internal import setup_sendto_shortcuts
-
-_FakeRun = Callable[..., subprocess.CompletedProcess[str] | None]
-
-
-def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
-
-
-def _make_static_fake(
-    calls: list[list[str]],
-    response: subprocess.CompletedProcess[str] | None = None,
-) -> _FakeRun:
-    """全呼び出しに同じレスポンスを返す run_subprocess の差し替え関数。"""
-    fixed = response if response is not None else _ok()
-
-    def fake(
-        cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: pathlib.Path | None = None,
-        tag: str | None = None,
-        **kwargs: typing.Any,
-    ) -> subprocess.CompletedProcess[str] | None:
-        del timeout, cwd, tag, kwargs
-        calls.append(list(cmd))
-        return fixed
-
-    return fake
-
-
-def _make_branching_fake(
-    calls: list[list[str]],
-    create_result: subprocess.CompletedProcess[str],
-    read_result: subprocess.CompletedProcess[str],
-) -> _FakeRun:
-    """script 内容に応じて Save()（生成）と TargetPath 読み取りを切り替える。"""
-
-    def fake(
-        cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: pathlib.Path | None = None,
-        tag: str | None = None,
-        **kwargs: typing.Any,
-    ) -> subprocess.CompletedProcess[str] | None:
-        del timeout, cwd, tag, kwargs
-        calls.append(list(cmd))
-        script = " ".join(cmd)
-        return create_result if "Save()" in script else read_result
-
-    return fake
+from pytools._internal._test_helpers import make_branching_fake as _make_branching_fake
+from pytools._internal._test_helpers import make_static_fake as _make_static_fake
+from pytools._internal._test_helpers import ok_result as _ok
 
 
 @pytest.fixture(name="windows_home")

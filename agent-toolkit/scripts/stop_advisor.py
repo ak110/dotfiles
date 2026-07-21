@@ -75,6 +75,9 @@ from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,
     has_command_invocation,
     is_pending_async_work,
 )
+
+# pylint: disable-next=wrong-import-position,import-error
+from _stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
 from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     assistant_text,
     iter_latest_assistant_messages,
@@ -174,16 +177,10 @@ def _emit_block_with_status(reason: str, cwd: str = "") -> None:
 
 def main() -> int:
     """Stop hookでセッション終了時通知を出力するエントリポイント。"""
-    try:
-        payload = json.loads(sys.stdin.read())
-    except (json.JSONDecodeError, ValueError):
-        _approve()
+    resolved = _parse_stop_session(sys.stdin.read(), _approve)
+    if resolved is None:
         return 0
-
-    session_id = payload.get("session_id", "")
-    if not isinstance(session_id, str) or not session_id:
-        _approve()
-        return 0
+    session_id, payload = resolved
 
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、

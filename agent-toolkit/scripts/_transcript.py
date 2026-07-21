@@ -79,6 +79,33 @@ def latest_main_assistant_entry(transcript_path: str) -> dict | None:
     return None
 
 
+def iter_assistant_content_blocks(lines: list[str]) -> collections.abc.Iterator[tuple[int, dict]]:
+    """非sidechain assistantエントリの`content`配下dict要素を`(行位置, block)`で順に返す。
+
+    `_stop_gate.py`のSendMessage集計系関数と`claude_hook_stop.py`の
+    tool_use列挙関数が同一の走査ロジック（JSONL全行を前方から走査し、
+    assistant・非sidechain・`message.content`がリストのエントリからdict要素を取り出す）を
+    必要とするため本モジュールへ集約する。`iter_latest_assistant_messages`と異なり、
+    末尾からの直前ターン限定ではなく全行を前方から走査する。
+    """
+    for position, line in enumerate(lines):
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict):
+                yield position, block
+
+
 def assistant_text(message: typing.Any) -> str:
     """Assistant message dictのテキストブロックを連結して返す。
 

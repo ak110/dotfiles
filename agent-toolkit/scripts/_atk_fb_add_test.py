@@ -15,10 +15,10 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
-    _FIXED_DT,
-    _setup_flag_and_notes,
+from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
+    fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
+from atk_test import _FIXED_DT, _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class TestAddOrderEditorFirst:
@@ -78,17 +78,10 @@ class TestAddOrderEditorFirst:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd[0] == "fake-editor":
                 pathlib.Path(cmd[1]).write_text("消失させたくない本文", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)

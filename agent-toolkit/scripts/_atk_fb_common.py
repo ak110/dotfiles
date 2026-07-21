@@ -264,6 +264,47 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
         _run_git(["push"], cwd=private_notes)
 
 
+def _edit_and_commit_via_editor(
+    private_notes: pathlib.Path,
+    path: pathlib.Path,
+    snapshot: bytes,
+    *,
+    editor: str,
+    commit_message: str,
+    retry_hint: str,
+) -> None:
+    """スナップショット取得済みの`path`を`$EDITOR`で編集し、差分があれば競合検知のうえcommit・pushする。
+
+    呼び出し側は`_repo_lock`保持下でpull・frontmatter検証・対象存在確認・
+    スナップショット取得（`path.read_bytes()`）まで完了させたうえで本関数を呼び出す。
+    本関数はエディタ起動（対話的入力を待つためロック非保持）から、再ロック内での
+    他プロセスによる競合変更検知・書き込み・commit・pushまでを担う。
+    `fb edit`（`_atk_fb_mutations._cmd_edit`）と`tb edit`（`_atk_fb_tbd._cmd_tbd_edit`）が
+    同一の編集ワークフローを必要とするため集約する。
+    `retry_hint`には競合検知時の再実行案内文（例:「再度atk fb editを実行してください。」）を渡す。
+    """
+    tmp_path = _copy_to_tempfile(snapshot)
+    subprocess.run([editor, str(tmp_path)], check=True)
+    edited = tmp_path.read_bytes()
+    if edited == snapshot:
+        tmp_path.unlink(missing_ok=True)
+        print("差分なし。")
+        return
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        if not path.exists() or path.read_bytes() != snapshot:
+            print(
+                f"編集中に他プロセスが対象を変更しました: {path.name}。編集内容は{tmp_path}に残しています。{retry_hint}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        path.write_bytes(edited)
+        rel = str(path.relative_to(private_notes))
+        _commit_and_push(private_notes, commit_message, [rel])
+    tmp_path.unlink(missing_ok=True)
+    print(f"編集反映: {path.name}")
+
+
 def _stamp_result(
     path: pathlib.Path,
     *,

@@ -1,66 +1,18 @@
 """pytools._internal.setup_media_remote のテスト。"""
 
 import pathlib
-import subprocess
-import typing
-from collections.abc import Callable
 
 import pytest
 
 from pytools._internal import setup_media_remote
-
-_FakeRun = Callable[..., subprocess.CompletedProcess[str] | None]
+from pytools._internal._test_helpers import make_branching_fake as _make_branching_fake
+from pytools._internal._test_helpers import make_static_fake as _make_static_fake
+from pytools._internal._test_helpers import ok_result as _ok
 
 
 def _expected_vbs(exe: pathlib.Path) -> str:
     """テスト用VBS本文（本体の生成ロジックと一致する形式）。"""
     return f'CreateObject("WScript.Shell").Run """{exe}"" serve", 0, False\n'
-
-
-def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
-
-
-def _make_static_fake(
-    calls: list[list[str]],
-    response: subprocess.CompletedProcess[str] | None = None,
-) -> _FakeRun:
-    fixed = response if response is not None else _ok()
-
-    def fake(
-        cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: pathlib.Path | None = None,
-        tag: str | None = None,
-        **kwargs: typing.Any,
-    ) -> subprocess.CompletedProcess[str] | None:
-        del timeout, cwd, tag, kwargs
-        calls.append(list(cmd))
-        return fixed
-
-    return fake
-
-
-def _make_branching_fake(
-    calls: list[list[str]],
-    create_result: subprocess.CompletedProcess[str],
-    read_result: subprocess.CompletedProcess[str],
-) -> _FakeRun:
-    def fake(
-        cmd: list[str],
-        *,
-        timeout: float | None = None,
-        cwd: pathlib.Path | None = None,
-        tag: str | None = None,
-        **kwargs: typing.Any,
-    ) -> subprocess.CompletedProcess[str] | None:
-        del timeout, cwd, tag, kwargs
-        calls.append(list(cmd))
-        script = " ".join(cmd)
-        return create_result if "Save()" in script else read_result
-
-    return fake
 
 
 @pytest.fixture(name="windows_stheno")
