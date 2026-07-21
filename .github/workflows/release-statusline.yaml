@@ -1,6 +1,11 @@
 name: Release statusLine
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - rust/claude-statusline/**
   workflow_dispatch:
     inputs:
       bump:
@@ -26,11 +31,37 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.final.outputs.version }}
+      skip_self_trigger: ${{ steps.self_trigger.outputs.skip }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+      - name: 既存リリースタグの確認
+        id: existing
+        run: |
+          set -euo pipefail
+          tag=$(git tag --points-at=HEAD | grep -E '^statusline-v[0-9]' | head -n1 || true)
+          if [ -n "$tag" ]; then
+            echo "version=${tag#statusline-v}" >> "$GITHUB_OUTPUT"
+            echo "rerun=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rerun=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 自己トリガーの判定
+        id: self_trigger
+        run: |
+          set -euo pipefail
+          # `push`起動かつHEADが既にリリース済みタグの場合、
+          # 本ワークフロー自身が作成した「コミットとタグ付け」ステップのpushによる
+          # 自己再トリガーとみなし、以降のCI待機・build・releaseを省略する。
+          # `workflow_dispatch`での意図的な再実行（build失敗後の再ビルド等）は対象外とする。
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ steps.existing.outputs.rerun }}" = "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: CI通過を確認
+        if: steps.self_trigger.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -38,9 +69,10 @@ jobs:
           max_attempts=30
           interval_sec=20
           for i in $(seq 1 "$max_attempts"); do
-            # `--workflow=ci.yaml`でワークフロー名を明示的に限定し、本ワークフロー
+            # `--workflow`にワークフロー名（ファイル名ではない）を指定し、本ワークフロー
             # （release-statusline.yaml）自身の実行中チェックを誤って対象に含めないようにする。
-            run_json=$(gh run list --workflow=ci.yaml --commit="${{ github.sha }}" \
+            # ファイル名指定（例: `ci.yaml`）は実際のworkflowNameと一致せず対象runが常に空になるため使わない。
+            run_json=$(gh run list --workflow="CI" --commit="${{ github.sha }}" \
               --json status,conclusion --limit 1)
             state=$(echo "$run_json" | jq -r '.[0].status // "missing"')
             conclusion=$(echo "$run_json" | jq -r '.[0].conclusion // "null"')
@@ -57,17 +89,6 @@ jobs:
           done
           echo "Timed out waiting for CI to complete." >&2
           exit 1
-      - name: 既存リリースタグの確認
-        id: existing
-        run: |
-          set -euo pipefail
-          tag=$(git tag --points-at=HEAD | grep -E '^statusline-v[0-9]' | head -n1 || true)
-          if [ -n "$tag" ]; then
-            echo "version=${tag#statusline-v}" >> "$GITHUB_OUTPUT"
-            echo "rerun=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "rerun=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: gitユーザー情報を設定
         if: steps.existing.outputs.rerun != 'true'
         run: |
@@ -82,7 +103,8 @@ jobs:
           current=$(grep -m1 -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"' rust/claude-statusline/Cargo.toml \
             | sed -E 's/version = "([0-9]+)\.([0-9]+)\.([0-9]+)"/\1 \2 \3/')
           read -r major minor patch <<< "$current"
-          case "${{ inputs.bump }}" in
+          bump_type="${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'PATCH' }}"
+          case "$bump_type" in
             PATCH) patch=$((patch + 1)) ;;
             MINOR) minor=$((minor + 1)); patch=0 ;;
             MAJOR) major=$((major + 1)); minor=0; patch=0 ;;
@@ -117,6 +139,7 @@ jobs:
 
   build:
     needs: bump
+    if: needs.bump.outputs.skip_self_trigger != 'true'
     strategy:
       matrix:
         include:
@@ -150,6 +173,7 @@ jobs:
 
   release:
     needs: [bump, build]
+    if: needs.bump.outputs.skip_self_trigger != 'true'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

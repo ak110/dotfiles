@@ -111,6 +111,10 @@ Claude Code固有事項として、本体作業に着手する時点で
 - 手順
   - `git rev-parse HEAD`でpush対象shaを取得する
   - `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
+  - `--workflow`引数を追加指定する場合はworkflow名・workflowファイル名・数値IDのいずれも受理するが、
+    ファイル名指定時は実際の`workflowName`と一致しない場合がある。
+    `gh workflow list`で正確な`workflowName`または数値IDを事前確認するか、
+    commit限定で十分なら`--workflow`を省略し`--commit`のみで対象commitのrunを取得する
   - 各run IDについて`gh run watch <run-id> --exit-status`で完了を待つ
 - run未登録・件数不足時の対処
   - GitHub側の登録遅延に備え、初回0件時は数十秒待って再取得する
@@ -141,6 +145,13 @@ Claude Code固有事項として、本体作業に着手する時点で
   でpipeline一覧を取得し、status=successまで待つ。
   いずれも実行不可能な場合はユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
   詳細は`agent-toolkit:gitlab-ci-usage`スキルを参照する
+- `git push`実行結果に`remote: GitHub found N vulnerabilities`等のセキュリティ警告、
+  または依存bump系のdependabot PR通知が出力された場合、
+  `gh pr list --author dependabot --state open`でオープン中のPRを確認する
+  - 各PRは`gh pr view <PR番号> --json title,files`で変更内容・バージョン区分
+   （MAJOR/MINOR/PATCH）を事前判定する
+  - マイナー・パッチ更新かつCI通過済みのPRは`gh pr merge <PR番号> --squash --auto`で統合する
+  - メジャー更新が疑われるPRはユーザーへ確認してから対応する
 
 ## コミットメッセージとリリース
 

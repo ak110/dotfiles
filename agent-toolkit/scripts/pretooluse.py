@@ -3025,8 +3025,21 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
             " before completing the plan-file-creator integrity check"
             " (plan-reviewer / codex review)."
-            f" Missing flags: {missing}."
-            " See agent-toolkit/skills/plan-mode/references/integrity-checks.md"
+            f" Missing flags: {missing}.\n"
+            "Why this gate exists: it forces `plan-file-creator` to actually run"
+            " plan-reviewer and the codex review before implementation starts.\n"
+            "Normal fix: invoke `agent-toolkit:plan-file-creator` for the current"
+            " plan; its review steps set the missing flags as a side effect.\n"
+            "plan-impl feedback processing: follow"
+            " agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md"
+            " '混在時の並行制御' section and start the plan-impl-type"
+            " `plan-impl-executor` before the normal-type plan-mode invocation"
+            " (this check does not fire while `plan_mode_skill_invoked` is false).\n"
+            "Pre-existing plan bypass: a `plan-impl-executor` launch referencing a"
+            " different, already-existing plan file path than the session's"
+            " `current_plan_file_path` is not blocked; only a launch referencing"
+            " the current plan path is.\n"
+            "See agent-toolkit/skills/plan-mode/references/integrity-checks.md"
             " '整合性チェック・codexレビューの実施手順' section.",
             tag="block",
         ),

@@ -15,8 +15,8 @@ user-invocable: false
 # （本サブエージェントはpush対象外のためpushを完遂対象へ含めない）
 # 文面を変更する場合は両方の整合を取ること
 # 同バレットのレビューフェーズ対象範囲（`agent-toolkit:careful-review`起動由来のレビュー
-# サブエージェント群）は、execution-process.md「5. レビュー実施」節のbackground起動時
-# 完了報告義務と同旨の重複である。改訂時は両ファイルの整合を取ること
+# サブエージェント群）は、execution-process.md「5. レビュー実施」節のforeground統一方針を前提とする。
+# 同節の記述を変更する場合は本バレットとの整合を取ること
 # `## 出力`節の`verification`欄`git diff --stat`実体照合記述（段1除外の明記を含む）は
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節・「起草・改訂委譲雛形」節、
 # `agent-toolkit/agents/plan-impl-executor.md`「出力」節・`agent-toolkit/agents/plan-implementer.md`「出力」節と
@@ -27,9 +27,8 @@ user-invocable: false
 # 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
 # 「停止禁止」バレット末尾の能動完了検知パターン参照バレットは
 # `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群をSSOTとする
-# `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節・
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的重複
-# 改訂時は4ファイルの整合を取ること
+# 改訂時は3ファイルの整合を取ること
 ---
 
 # spec-driven-implementer
@@ -83,13 +82,16 @@ frontmatterの`skills:`欄でプリロードされる親スキル本文のうち
       並列度の自律裁量に対する、実装委譲固有の限定的な例外とする
     - 実装は自身の直接編集または`plan-implementer`等の`run_in_background=false`委譲で完遂する
     - 呼び出し元の起動プロンプトで並列化が明示指定された場合に限り例外扱いとする
-  - バックグラウンドで進行する検証・コミット・レビュー等、および呼び出し元指定による並列実行手段の
+  - バックグラウンドで進行する検証・コミット等、および呼び出し元指定による並列実行手段の
     完遂まで動作を継続する
     （pushは本サブエージェントの対象外。判断基準節「pushは行わない」を参照）
   - 対象は実装フェーズの並列サブエージェント（`plan-implementer`）とする。
-    レビューフェーズでは`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等
-    （`agent-toolkit:careful-review`起動由来）も対象へ加える。
-    これら（実装フェーズ・レビューフェーズ双方の対象サブエージェント）を並列起動した場合は、
+    レビューフェーズの`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等は
+    `agent-toolkit:careful-review`由来のサブエージェントである。
+    これらは`agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節の規定により
+    foreground並列起動へ統一されている。
+    本サブエージェントのターンが全レビュアー完了まで維持されるため、これらはbackground完了待ちの対象から外れる。
+    実装フェーズの並列サブエージェントを並列起動した場合は、
     全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
     待機表明のみの完了報告は発行しない
   - 詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う

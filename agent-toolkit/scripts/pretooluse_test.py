@@ -4486,6 +4486,21 @@ class TestProcess7CompletionCheck:
         assert missing_flag in result.stderr
         assert "integrity-checks.md" in result.stderr
 
+    def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
+        """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件を説明する。"""
+        sid = "process7-message-explains"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "plan-impl-feedback-flow.md" in result.stderr
+        assert "混在時の並行制御" in result.stderr
+        assert "current_plan_file_path" in result.stderr
+
     def test_no_plan_mode_context_passes(self, tmp_path: pathlib.Path):
         """`plan_mode_skill_invoked`が偽の場合は検査対象外として通過する。"""
         sid = "process7-no-plan-mode"

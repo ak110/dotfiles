@@ -9,9 +9,8 @@
 # 背景再委譲禁止バレット（fb08反映）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理の完遂義務（background再委譲時の待機義務）とは独立の新設規定であり当該節をSSOTとしない（本ファイル内の2箇所「共通遵守事項」節・「起草・改訂委譲雛形」節コードブロック内`## 完遂条件`欄を同時更新する）。
 # 「共通遵守事項」節末尾の能動完了検知パターン参照バレットは
 # `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群をSSOTとする
-# `agent-toolkit/agents/spec-driven-implementer.md`「停止禁止」バレット・
-# `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節と意図的重複
-# 改訂時は4ファイルの整合を取ること
+# `agent-toolkit/agents/spec-driven-implementer.md`「停止禁止」バレットと意図的重複
+# 改訂時は3ファイルの整合を取ること
 ---
 
 # 計画ファイル起草・改訂委譲プロンプト雛形

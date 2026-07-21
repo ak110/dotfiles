@@ -26,8 +26,8 @@ user-invocable: false
 # spec-driven-implementer.md「停止禁止」バレット配下の同旨バレットと意図的に重複させている
 # 文面を変更する場合は両方の整合を取ること
 # 同パラグラフのレビューフェーズ対象範囲（`agent-toolkit:careful-review`起動由来のレビュー
-# サブエージェント群）は、execution-process.md「5. レビュー実施」節のbackground起動時
-# 完了報告義務と同旨の重複である。改訂時は両ファイルの整合を取ること
+# サブエージェント群）は、execution-process.md「5. レビュー実施」節のforeground統一方針を前提とする。
+# 同節の記述を変更する場合は本パラグラフとの整合を取ること
 # 「停止禁止」節末尾のポインターバレット（plan-implementer起動プロンプトへの埋め込み義務）は
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節をSSOTとして参照する。
 # 同節は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理継続義務と意図的に重複する。
@@ -38,9 +38,8 @@ user-invocable: false
 # 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
 # 「停止禁止」節末尾の能動完了検知パターンバレット群のSSOTは本ファイルとする
 # `agent-toolkit/agents/spec-driven-implementer.md`「停止禁止」バレット・
-# `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節・
 # `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的重複
-# 改訂時は4ファイルの整合を取ること（参照側3ファイルはパターンの再列挙を行わず参照文のみを配置する運用とする）
+# 改訂時は3ファイルの整合を取ること（参照側2ファイルはパターンの再列挙を行わず参照文のみを配置する運用とする）
 ---
 
 # plan-impl-executor
@@ -92,11 +91,14 @@ user-invocable: false
 実装は自身の直接編集または`plan-implementer`等の`run_in_background=false`委譲で完遂する。
 呼び出し元の起動プロンプトで並列化が明示指定された場合に限り例外扱いとする。
 
-バックグラウンドで進行する検証・コミット・push・レビュー等、および呼び出し元指定による並列実行手段の
+バックグラウンドで進行する検証・コミット・push等、および呼び出し元指定による並列実行手段の
 完遂まで動作を継続する。対象は実装フェーズの並列サブエージェント（`plan-implementer`）とする。
-レビューフェーズでは`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等
-（`agent-toolkit:careful-review`起動由来）も対象へ加える。
-これら（実装フェーズ・レビューフェーズ双方の対象サブエージェント）を並列起動した場合は、
+レビューフェーズの`plan-spec-reviewer`・`plan-impl-reviewer`・`agent-doc-validator`等は
+`agent-toolkit:careful-review`由来のサブエージェントである。
+これらは`agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節の規定により
+foreground並列起動へ統一されている。
+本エージェントのターンが全レビュアー完了まで維持されるため、これらはbackground完了待ちの対象から外れる。
+実装フェーズの並列サブエージェントを並列起動した場合は、
 全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
 待機表明のみの完了報告は発行しない。待機が現実的に不可能な場合は`needs_escalation`で
 未完遂として起動元へ返却し、残作業を`blockers`欄へ明示する。
