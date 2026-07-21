@@ -85,6 +85,21 @@ repos:
         types_or: [python, markdown, toml, shell, bash]
         require_serial: true
         language: system
+      # cargo系はpyfltrのサブプロジェクト検出が pyproject.toml ベースで Cargo.toml 単独
+      # ディレクトリを認識しないため、`rust/claude-statusline/` を作業ディレクトリに
+      # 指定して直接呼び出す。将来pyfltrがハイブリッド構成に対応した時点で統合する。
+      - id: cargo-fmt
+        name: cargo fmt --check
+        entry: bash -c 'cd rust/claude-statusline && cargo fmt --check'
+        language: system
+        pass_filenames: false
+        files: '^rust/claude-statusline/.*\.(rs|toml)$'
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cd rust/claude-statusline && cargo clippy --all-targets -- -D warnings'
+        language: system
+        pass_filenames: false
+        files: '^rust/claude-statusline/.*\.(rs|toml)$'
       - id: check-doc-size
         name: agent-toolkitドキュメントサイズ上限検査
         entry: uv run --no-project agent-toolkit/scripts/check_doc_size.py
