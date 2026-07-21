@@ -46,3 +46,10 @@ class TestHostInfo:
 
         assert info["os_type"] == os.name
         assert info["os_name"] == os.name
+
+    def test_home_matches_pathlib_home_with_forward_slash(self) -> None:
+        """`home`は`pathlib.Path.home()`を`/`区切りへ正規化した値と一致する。"""
+        info = _remote_helper._host_info()  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+        assert "\\" not in info["home"]
+        assert info["home"] == str(pathlib.Path.home()).replace("\\", "/")

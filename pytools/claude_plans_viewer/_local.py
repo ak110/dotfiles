@@ -187,12 +187,20 @@ def _ctime_epoch(st: os.stat_result) -> float:
 
 
 def local_host_info(root: pathlib.Path) -> dict[str, str]:
-    """ローカルホストの`host_info`エントリ（`root`・`os_type`・`os_name`）を組み立てる。
+    """ローカルホストの`host_info`エントリ（`root`・`home`・`os_type`・`os_name`）を組み立てる。
 
     `_app.py`が起動時に`BroadcastState.host_info`へ登録し、`index()`のJS注入にも使う。
-    `root`はクライアント側のパス結合と表記を統一するため常に`/`区切りへ正規化する。
+    `root`・`home`はクライアント側のパス結合と表記を統一するため常に`/`区切りへ正規化する。
+    `home`はクライアント側`copySelectedPath`のチルダ表記変換の基準パスとして使う
+    （`root`はplansディレクトリ等のroot直下パスでありホームディレクトリと一致しない場合があるため）。
     """
-    return {"root": str(root).replace("\\", "/"), "os_type": os.name, "os_name": os.name}
+    home = str(pathlib.Path.home()).replace("\\", "/")
+    return {
+        "root": str(root).replace("\\", "/"),
+        "home": home,
+        "os_type": os.name,
+        "os_name": os.name,
+    }
 
 
 def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:

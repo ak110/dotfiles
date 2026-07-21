@@ -48,12 +48,18 @@ def _ctime_epoch(st: os.stat_result) -> float:
 
 
 def _host_info() -> dict[str, str]:
-    """このリモートホストの`host_info`エントリ（`root`・`os_type`・`os_name`）を組み立てる。
+    """このリモートホストの`host_info`エントリ（`root`・`home`・`os_type`・`os_name`）を組み立てる。
 
-    `root`は`/`区切りへ正規化する（`_local.py`の`local_host_info`と同一の正規化。
-    クライアント側`copySelectedPath`が`root`を`/`区切り前提で解析するため）。
+    `root`・`home`は`/`区切りへ正規化する（`_local.py`の`local_host_info`と同一の正規化。
+    クライアント側`copySelectedPath`が`root`・`home`を`/`区切り前提で解析するため）。
     """
-    return {"root": str(ROOT.resolve()).replace("\\", "/"), "os_type": os.name, "os_name": os.name}
+    home = str(pathlib.Path.home()).replace("\\", "/")
+    return {
+        "root": str(ROOT.resolve()).replace("\\", "/"),
+        "home": home,
+        "os_type": os.name,
+        "os_name": os.name,
+    }
 
 
 def _scan_entries() -> list[dict[str, typing.Any]]:
@@ -226,7 +232,7 @@ def _watch_files() -> int:
 
     行プロトコル（行区切りJSON）:
         - {"type":"snapshot","entries":[{"path":..., "name":..., "mtime_epoch":..., "ctime_epoch":...}, ...],
-           "host_info":{"root":..., "os_type":..., "os_name":...}}
+           "host_info":{"root":..., "home":..., "os_type":..., "os_name":...}}
         - {"type":"upsert","path":..., "name":..., "mtime_epoch":..., "ctime_epoch":...}
         - {"type":"deleted","path":...}
         - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする

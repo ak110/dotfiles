@@ -269,6 +269,7 @@ class TestApiEndpoints:
         data = json.loads(await response.get_data())
         assert data["test-host"] == {
             "root": str(tmp_path).replace("\\", "/"),
+            "home": str(Path.home()).replace("\\", "/"),
             "os_type": os.name,
             "os_name": os.name,
         }
@@ -294,7 +295,10 @@ class TestApiEndpoints:
         expected_root = str(tmp_path).replace("\\", "/")
         assert response.status_code == 200
         assert f"const LOCAL_HOST_NAME = {json.dumps('test-host')};" in body
-        expected_root_dirs = {"test-host": {"root": expected_root, "os_type": os.name, "os_name": os.name}}
+        expected_home = str(Path.home()).replace("\\", "/")
+        expected_root_dirs = {
+            "test-host": {"root": expected_root, "home": expected_home, "os_type": os.name, "os_name": os.name}
+        }
         assert f"const ROOT_DIRS = {json.dumps(expected_root_dirs, ensure_ascii=False)};" in body
 
     @pytest.mark.asyncio
@@ -408,6 +412,7 @@ class TestHostInfo:
 
         assert state.host_info["local-host"] == {
             "root": str(tmp_path).replace("\\", "/"),
+            "home": str(Path.home()).replace("\\", "/"),
             "os_type": os.name,
             "os_name": os.name,
         }

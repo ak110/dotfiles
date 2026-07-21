@@ -51,7 +51,8 @@ class BroadcastState:
     # 型を`typing.Any`にしているのは`_state` → `_remote`の循環import回避のため
     # （`_remote`が`_state`をimportしているのと逆方向の参照になるため）。
     remote_watchers: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
-    # ホスト名 -> {"root": <ホスト側ROOT絶対パス>, "os_type": "posix"|"nt", "os_name": <os.name値>}。
+    # ホスト名 -> {"root": <ホスト側ROOT絶対パス>, "home": <ホスト側ホームディレクトリ絶対パス>,
+    #   "os_type": "posix"|"nt", "os_name": <os.name値>}。
     # ローカル分は`_app.py`起動時に即座にセットする。リモート分は初回snapshot受信時に追加し、
     # 接続喪失時（heartbeat応答途絶・SSE切断検知等）はキー自体を削除する（`None`値保持ではない）。
     host_info: dict[str, dict[str, str]] = dataclasses.field(default_factory=dict)

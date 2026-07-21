@@ -217,7 +217,7 @@ _INDEX_JS = """\
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 const BASE_PATH = __BASE_PATH_JS__;
 const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
-// ホスト名 -> {root, os_type}。ページロード時はローカル分のみ注入され、
+// ホスト名 -> {root, home, os_type, os_name}。ページロード時はローカル分のみ注入され、
 // リモート分はSSE経由の`host_info_update`イベント受信、または`/api/host-info`への
 // 再取得で反映される。
 const ROOT_DIRS = __ROOT_DIRS_JS__;
@@ -569,13 +569,16 @@ async function copySelectedPath() {
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
   // ホスト種別に応じてチルダ表記（POSIX）または%USERPROFILE%表記（Windows）へ変換する。
+  // 置換基準はinfo.homeとする（info.rootはplansディレクトリ等のroot直下パスであり
+  // ホームディレクトリと一致しない場合があるため）。
   let absolutePath;
   if (info.os_type === "nt") {
     const winRoot = info.root.split("/").join("\\\\");
+    const winHome = info.home.split("/").join("\\\\");
     const winRelative = selectedPath.split("/").join("\\\\");
-    absolutePath = (winRoot + "\\\\" + winRelative).replace(winRoot, "%USERPROFILE%");
+    absolutePath = (winRoot + "\\\\" + winRelative).replace(winHome, "%USERPROFILE%");
   } else {
-    absolutePath = (info.root + "/" + selectedPath).replace(info.root, "~");
+    absolutePath = (info.root + "/" + selectedPath).replace(info.home, "~");
   }
   try {
     await navigator.clipboard.writeText(absolutePath);

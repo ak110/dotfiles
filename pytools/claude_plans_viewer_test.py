@@ -72,6 +72,17 @@ class TestListFiles:
         assert sorted(e.path for e in entries) == ["a.md", "sub/c.md"]
 
 
+class TestLocalHostInfo:
+    """local_host_info のテスト。"""
+
+    def test_returns_home_key(self, tmp_path: Path):
+        """`home`キーにホームディレクトリの絶対パスを含む契約。"""
+        info = _local.local_host_info(tmp_path)
+
+        assert info["home"] == str(Path.home()).replace("\\", "/")
+        assert info["root"] == str(tmp_path).replace("\\", "/")
+
+
 class TestResolveUnderRoot:
     """resolve_under_root のテスト。"""
 
@@ -715,6 +726,9 @@ class TestIndexHtml:
         # ホスト種別に応じたパス表記変換（POSIXはチルダ、WindowsはUSERPROFILE環境変数）。
         assert 'info.os_type === "nt"' in html_src
         assert "%USERPROFILE%" in html_src
+        # パス置換基準はinfo.home（info.rootはplans直下パス等でホームディレクトリと一致しない場合がある）。
+        assert '.replace(info.home, "~")' in html_src
+        assert '.replace(winHome, "%USERPROFILE%")' in html_src
         # 取りこぼし対策の再取得経路。
         assert "/api/host-info" in html_src
         assert "async function refreshHostInfo" in html_src
