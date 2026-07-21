@@ -4,7 +4,7 @@
 //! 1行目にモデル名・effort・cwd・output_style名（既定値以外）・コンテキスト・コスト・
 //! 経過時間・消費量(5h/7d)・追加/削除行数をパイプ区切りで、2行目にセッション名・
 //! セッションID・worktree情報（存在時のみ）を出力する。数値項目には日本語ラベルを付与し、
-//! 欠落・null要素は省略する。
+//! 欠落・null・空文字列の要素は省略する。
 
 use serde_json::Value;
 
@@ -40,9 +40,10 @@ pub fn run(raw: &str) {
 
 /// 入力JSON値を最大2行のステータス文字列へレンダリングする（テスト容易性のため`home`を引数化）。
 ///
-/// `home`はcwd短縮（`~`置換）専用の注入値。本番経路は`home_dir()`（`HOME`→`USERPROFILE`の順に
-/// 参照する簡易実装。Windowsの正式なホーム解決はレジストリ参照を要するが、本ツールはstatusLine
-/// 表示専用でありcwd短縮が失敗しても絶対パス表示にフォールバックするだけのため許容する）。
+/// `home`はcwd短縮（`~`置換）専用の注入値。本番経路は`home_dir()`を使う。
+/// `home_dir()`は`HOME`→`USERPROFILE`の順に参照する簡易実装であり、Windowsの正式な
+/// ホーム解決にはレジストリ参照を要する。本ツールはstatusLine表示専用であり、
+/// cwd短縮が失敗しても絶対パス表示にフォールバックするだけのためこの簡易実装を許容する。
 fn render_lines(data: &Value, home: Option<&str>) -> Vec<String> {
     let mut lines = Vec::new();
     let line1 = render_primary_line(data, home);
