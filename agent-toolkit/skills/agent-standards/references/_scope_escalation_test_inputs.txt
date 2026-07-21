@@ -188,3 +188,4 @@ async-wait	サブエージェント群を並列起動した。完了報告を受
 async-wait	並列起動したレビュアーの完了報告を受領し、計画へ反映する
 async-wait	待機中。完了通知を受け取った
 async-wait	wait for their completion notifications
+async-wait	3つのレビューエージェントを並列起動した。各エージェントの通知を受領後に指摘を統合する

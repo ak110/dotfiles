@@ -46,6 +46,25 @@ class TestAdoptSingle:
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 feedback item (adopted)" in commit_cmd
 
+    def test_adopt_bare_stem_from_inbox(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """拡張子.md省略入力がinbox側の実体を解決してadoptedへ移動する（fb 20260721-164301-001反映）。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "20260721-160220-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            # 拡張子.mdを省略した引数でadoptを呼ぶ
+            atk.main(["fb", "adopt", "20260721-160220-001"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (notes / "feedback" / "inbox" / "20260721-160220-001.md").exists()
+        assert (notes / "feedback" / "adopted" / "20260721-160220-001.md").exists()
+
 
 class TestAdoptMultiple:
     """adoptサブコマンド: 複数件指定で単一コミットへまとめる。"""

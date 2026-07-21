@@ -36,6 +36,11 @@ user-invocable: false
 # spec-driven-implementer.md「停止禁止」バレット配下の同旨パラグラフ、および
 # execution-process.md「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節手順5の
 # 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
+# 「停止禁止」節末尾の能動完了検知パターン3手段バレット群のSSOTは本ファイルとする
+# `agent-toolkit/agents/spec-driven-implementer.md`「停止禁止」バレット・
+# `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節・
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的重複
+# 改訂時は4ファイルの整合を取ること（参照側3ファイルは3手段の再列挙を行わず参照文のみを配置する運用とする）
 ---
 
 # plan-impl-executor
@@ -100,6 +105,15 @@ user-invocable: false
 
 - `plan-implementer`起動プロンプトへ本規定を必須遵守事項として埋め込む。
   実装SSOTは`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節とする
+- 配下並列named background subagentを起動した場合、能動完了検知パターンで全配下の完了を確認する。
+  完了確認まで動作を継続する。対象手段は次の3種のいずれかとする
+  - 各配下への`SendMessage`での状態照会
+  - `Bash`のブロッキング完了検知パターン（`wait <PID>`・`until ! ps -p <PID>`等）
+  - `Monitor`ツールでのマーカー観察
+- 委譲先が`plan-codex-implementer`の場合の追加手順を定める。
+  当該サブエージェントがpretooluseフックのブロック検知によりMCP不可分岐相当の完了報告を返した場合、
+  追加のユーザー確認を発行せず`plan-implementer`起動へ自動切り替える。
+  ブロック判定の詳細は`agent-toolkit/agents/plan-codex-implementer.md`に集約する
 
 ## 出力
 

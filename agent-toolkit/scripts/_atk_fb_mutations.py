@@ -57,14 +57,15 @@ def _resolve_processable_targets(
     missing: list[str] = []
     for name in filenames:
         # 検証はinbox基準ディレクトリで行うが、実体はいずれか片方の状態フォルダに存在する。
+        # `_validate_filename`側で拡張子`.md`の省略を正規形へ補完する。
         inbox_path = _validate_filename(name, inbox_dir)
-        processing_path = processing_dir / name
+        processing_path = _validate_filename(inbox_path.name, processing_dir)
         if processing_path.exists():
             resolved.append(processing_path)
         elif inbox_path.exists():
             resolved.append(inbox_path)
         else:
-            missing.append(name)
+            missing.append(inbox_path.name)
     if missing:
         for name in missing:
             print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)

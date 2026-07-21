@@ -345,6 +345,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     r"""ファイル名が基準ディレクトリ直下の単純名であることを検証して絶対パスを返す。
 
     `/`・`\`・`..`・絶対パス・空文字列・カレント参照は早期に拒否する。
+    拡張子`.md`が省略された入力は正規形（`.md`付き）へ補完する。
     """
     parts = pathlib.Path(filename).parts
     if (
@@ -356,6 +357,8 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     ):
         print(f"不正なファイル名: {filename}", file=sys.stderr)
         sys.exit(2)
+    if not filename.endswith(".md"):
+        filename = f"{filename}.md"
     path = base_dir / filename
     base_resolved = base_dir.resolve()
     try:

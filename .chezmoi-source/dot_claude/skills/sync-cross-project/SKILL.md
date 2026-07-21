@@ -39,6 +39,12 @@ description: >
 - CI: `.github/workflows/**`
 - ドキュメント: `README.md` / `CLAUDE.md` / `docs/**/development.md` / `docs/**/security.md`
 
+## 複数リポジトリ横断作業の分解投入
+
+同期対象を複数リポジトリへ反映する場合の分解投入運用は、次の節をSSOTとする。
+`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`の
+「複数リポジトリ横断作業の分解投入」節。
+
 ## 変更時の同期対象マトリクス
 
 変更内容に応じて確認すべきプロジェクトを示す。

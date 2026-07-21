@@ -25,6 +25,11 @@ user-invocable: false
 # plan-impl-executor.md「## 停止禁止」節の同旨パラグラフ、および
 # execution-process.md「実装委譲（plan-codex-implementer / plan-implementer）の判断指針」節手順5の
 # 並列化条件記述と意図的に重複させている。文面を変更する場合は3ファイルの整合を取ること
+# 「停止禁止」バレット末尾の能動完了検知パターン参照バレットは
+# `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群をSSOTとする
+# `agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節・
+# `agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節と意図的重複
+# 改訂時は4ファイルの整合を取ること
 ---
 
 # spec-driven-implementer
@@ -88,6 +93,7 @@ frontmatterの`skills:`欄でプリロードされる親スキル本文のうち
     全ての完了通知を受領してから本サブエージェントの完了報告を発行する。
     待機表明のみの完了報告は発行しない
   - 詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節に従う
+  - 配下並列named background subagentを起動した場合は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群に従う
 - 破壊的操作・外部送信の取扱
   - 計画ファイルに記載された破壊的操作・外部送信は通常工程として実行する
   - 該当する操作は`git push`・外部APIへの送信・データ削除等を含む

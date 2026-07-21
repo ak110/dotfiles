@@ -41,6 +41,12 @@ description: >
      `session-review-dotfiles`等）が起動された場合は当該スキルの終了手順
      （`agent-toolkit:exit-session`遷移を含む）に従う
 
+## 複数リポジトリ横断作業の分解投入
+
+作業が複数リポジトリを対象とする場合の分解投入運用は、次の節をSSOTとする。
+`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`の
+「複数リポジトリ横断作業の分解投入」節。
+
 ## 想定動作モード
 
 `agent-toolkit/rules/02-collaboration.md`の判定基準上、`acceptEdits`等の協調モードでの
