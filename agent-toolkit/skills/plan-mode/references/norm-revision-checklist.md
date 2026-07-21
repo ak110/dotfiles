@@ -54,14 +54,10 @@
 
 ### 遡及スキャン結果の記述テンプレート
 
-遡及スキャン結果は、textlintのsentence-length違反・jtf-style/1.1.3.箇条書き違反を予防するため
-次の書式で記述する。
+書式は`agent-toolkit/skills/plan-mode/references/norm-revision-templates.md`「遡及スキャン結果の記述テンプレート」節に集約する。
 
-- 実行したgrepコマンドは`text`コードブロックへまとめて記述する。
-  複数コマンドは`# <ラベル>`コメント付きで列挙する。
-- 各対象範囲の検出結果は「ラベル: 検出概要（句点なし）」形式の短文箇条書きで列挙する。
-  120字を超える説明を含めない。
-- 長文説明を要する場合は`text`コードブロック外に別段落として補足する。
+「規範対象範囲の網羅確認」節の前方向照合に対応する逆方向照合は、
+「節本文の他ファイル分離移設時の参照残置点検」節を参照する。
 
 ## 追記先節の選定
 
@@ -102,11 +98,18 @@
   追記文面の主題（点検項目・観点・要件・書式定義など）が転記先で使う内容と対応するかを照合する
 - 対応が確認できた場合、追記側の変更と同期して機械転記元テンプレート・転記先スキルの両ファイルへ
   追随項目を追加または既存項目を更新する
-- 既知の機械転記ペア例:
-  - `process-feedbacks/SKILL.md`ステップ2.5節と`process-feedbacks/references/explore-template.md`「Explore委譲雛形」節
-  - `agents/plan-impl-executor.md`が参照する`references/plan-impl/execution-process.md`と
-    `references/plan-impl/launch-prompts-drafting.md`「起草・改訂委譲雛形」節
-  - `plan-mode/references/integrity-checks.md`と`plan-mode/references/launch-prompts-integrity.md`の各雛形節
+- 既知の機械転記ペア例は`agent-toolkit/skills/plan-mode/references/norm-revision-templates.md`「機械転記ペア例」節に集約する
+
+## 節本文の他ファイル分離移設時の参照残置点検
+
+節本文を他ファイルへ分離移設する計画では、参照側ファイルが旧参照先を示し続ける状態を防ぐため、
+移設対象節の見出し文字列と旧参照先ファイルパスを対象に`grep -rn`でリポジトリ全体を横断抽出し、
+該当箇所を追従改訂の対象に含める。
+
+- 抽出コマンドは`grep -rn -E '<旧見出し文字列>|<旧ファイルパス>' <対象ディレクトリ>`とする
+- 抽出結果の各行を`Read`で確認し、参照文の追従改訂要否を判定する
+- 追従改訂が必要と判定したファイルは、同一計画の対象ファイル一覧へ組み込む
+- 本節は「規範対象範囲の網羅確認」節が扱う前方向照合（誘導文言から被参照節への網羅）と対をなし、逆方向照合（節本文喪失に伴う旧参照残置の抽出）を扱う
 
 ## 既存規範文の短縮・言い換え時の並列列挙要素・根拠段落の照合
 
