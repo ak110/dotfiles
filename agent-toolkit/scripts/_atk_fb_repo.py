@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 
+from _atk_fb_common import _normalize_md_filename
 from _atk_fb_formatters import _parse_target_repo
 
 
@@ -152,9 +153,11 @@ def _verify_frontmatter_target_repo(
     実在確認し、最初に見つかった候補のfrontmatterのみ検証する。frontmatterに
     `target_repo`が無い場合、および正規化後の値が`expected`と不一致の場合はexit 2。
     候補がいずれのパスにも存在しない場合は後続の存在検証に委ねてno-opとする。
+    `filename`は拡張子`.md`省略入力も`_validate_filename`と同一規約で正規化してから解決する。
     """
     if expected is None:
         return
+    filename = _normalize_md_filename(filename)
     normalized_expected = _resolve_repo_id(expected)
     for base_dir in inbox_paths:
         candidate = base_dir / filename

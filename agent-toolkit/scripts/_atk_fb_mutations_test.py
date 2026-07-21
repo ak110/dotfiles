@@ -946,6 +946,20 @@ class TestTargetRepoVerification:
         assert exc_info.value.code == 0
         assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
 
+    def test_adopt_bare_stem_mismatch_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """adopt: 拡張子.md省略入力でも`--target-repo`不一致時に検証が回避されない（回帰確認）。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "adopt", "fb-001", "--target-repo", "github.com/other/repo"], home=tmp_path)
+        assert exc_info.value.code == 2
+        assert not (notes / "feedback" / "adopted" / "fb-001.md").exists()
+
 
 class TestPathTraversalRejection:
     """パストラバーサル系の不正引数は早期に拒否されること。"""

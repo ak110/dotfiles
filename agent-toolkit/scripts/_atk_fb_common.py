@@ -341,6 +341,17 @@ def _stamp_result(
     path.write_text(body, encoding="utf-8")
 
 
+def _normalize_md_filename(filename: str) -> str:
+    """拡張子`.md`が省略されたファイル名を正規形（`.md`付き）へ補完して返す。
+
+    `_validate_filename`と`_verify_frontmatter_target_repo`の双方が同一の正規化規約を
+    使うためのSSOT。パス妥当性検証は行わない（呼び出し元が別途`_validate_filename`等で担う）。
+    """
+    if not filename.endswith(".md"):
+        return f"{filename}.md"
+    return filename
+
+
 def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     r"""ファイル名が基準ディレクトリ直下の単純名であることを検証して絶対パスを返す。
 
@@ -357,8 +368,7 @@ def _validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
     ):
         print(f"不正なファイル名: {filename}", file=sys.stderr)
         sys.exit(2)
-    if not filename.endswith(".md"):
-        filename = f"{filename}.md"
+    filename = _normalize_md_filename(filename)
     path = base_dir / filename
     base_resolved = base_dir.resolve()
     try:

@@ -85,7 +85,14 @@
   読込指示を含める。対象ファイル一覧の網羅確認と領域固有規約の適合確認に用いる。
   対象が`agent-toolkit/`配下の場合は、編集用スキル（`agent-toolkit-edit`等）の
   同期先ドキュメント節・セッション状態フラグ節・関連規範referencesを対象とする
-- 配下並列named background subagentを起動した場合は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群に従う
+- 変更対象の関数・定数・フィクスチャについて定義元ファイルを`grep`で特定し、
+  シグネチャ・形式の変更を伴う場合は定義元とその利用側・対応テスト・共有フィクスチャを
+  対象ファイル一覧へ含める
+- 配下並列named background subagentを起動した場合は`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節末尾のバレット群に従う。
+  `plan-implementer`は`agent-toolkit/agents/plan-implementer.md`「判断基準」節の
+  サブエージェント再帰起動禁止バレットにより配下サブエージェントを起動しないため、
+  本バレットは`plan-implementer`自身の完遂条件へは転記しない
+  （`spec-driven-implementer`・`plan-impl-executor`等の呼び出し元向けSSOT参照として本節にのみ配置する）
 
 ## 起草・改訂委譲雛形
 
@@ -118,6 +125,9 @@
     - 計画本文に記載する対象ファイル一覧の行数は現行`wc -l`実測値のみとし、見込み行数の厳密な事前算出（scratchpad複製・仮適用実測を含む）は行わない
     - 計画本文に書く関数名・シグネチャは節間`grep`で一致確認する
     - 計画に記載するファイルパス・規範名は`test -e`または`Read`で実在確認する
+    - 変更対象の関数・定数・フィクスチャについて定義元ファイルを`grep`で特定し、
+      シグネチャ・形式の変更を伴う場合は定義元とその利用側・対応テスト・共有フィクスチャを
+      対象ファイル一覧へ含める
     - 完了報告前に`uvx pyfltr run-for-agent --no-fix <対象>`を通過させる
       （`--no-fix`はfixステージを止めるため、事前に別途fixステージを実行済みとする）
     - 計画ファイル本文の起草・改訂タスクでは`<対象>`に計画ファイル自体も含める

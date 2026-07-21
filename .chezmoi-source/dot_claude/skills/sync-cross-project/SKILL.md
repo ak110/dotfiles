@@ -4,6 +4,12 @@ description: >
   作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、pre-commit、GitHub Actionsなど）や
   ドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」
   「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
+# 編集時の注意点:
+# 「複数リポジトリ横断作業の分解投入」節は
+# `agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`
+# 「複数リポジトリ横断作業の分解投入」節をSSOTとする参照節であり、
+# `agent-toolkit/skills/plan-and-add-feedback/SKILL.md`の同名節と意図的重複する
+# （改訂時は3ファイルの整合を取ること）。
 ---
 
 # 姉妹プロジェクト間のツールチェイン・ドキュメント構成同期

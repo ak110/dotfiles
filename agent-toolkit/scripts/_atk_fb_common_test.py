@@ -325,15 +325,17 @@ class TestCommitAndPushRetry:
         assert "手動復旧が必要です" in capsys.readouterr().err
 
 
-def test_validate_filename_appends_md_extension_when_missing(tmp_path: pathlib.Path) -> None:
-    """拡張子.md省略入力は正規形へ補完される（fb 20260721-164301-001反映）。"""
-    (tmp_path / "20260721-160220-001.md").write_text("dummy", encoding="utf-8")
-    path = _common._validate_filename("20260721-160220-001", tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-    assert path == tmp_path / "20260721-160220-001.md"
+class TestValidateFilename:
+    """`_validate_filename`の拡張子`.md`省略入力の正規化を検証する（fb 20260721-164301-001反映）。"""
 
+    def test_appends_md_extension_when_missing(self, tmp_path: pathlib.Path) -> None:
+        """拡張子.md省略入力は正規形へ補完される。"""
+        (tmp_path / "20260721-160220-001.md").write_text("dummy", encoding="utf-8")
+        path = _common._validate_filename("20260721-160220-001", tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        assert path == tmp_path / "20260721-160220-001.md"
 
-def test_validate_filename_preserves_md_extension_when_present(tmp_path: pathlib.Path) -> None:
-    """拡張子.md付き入力は従来どおり解決される（後方互換）。"""
-    (tmp_path / "20260721-160220-001.md").write_text("dummy", encoding="utf-8")
-    path = _common._validate_filename("20260721-160220-001.md", tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-    assert path == tmp_path / "20260721-160220-001.md"
+    def test_preserves_md_extension_when_present(self, tmp_path: pathlib.Path) -> None:
+        """拡張子.md付き入力は従来どおり解決される（後方互換）。"""
+        (tmp_path / "20260721-160220-001.md").write_text("dummy", encoding="utf-8")
+        path = _common._validate_filename("20260721-160220-001.md", tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        assert path == tmp_path / "20260721-160220-001.md"

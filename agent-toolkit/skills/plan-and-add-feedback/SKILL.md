@@ -9,6 +9,11 @@ description: >
 # 本スキルは`agent-toolkit:plan-mode`工程7（plan-impl-executor起動）の代替として
 # `agent-toolkit:add-feedback`を呼ぶ。`plan-mode`・`add-feedback`のロジックは複製せず
 # 参照呼び出しに徹する。
+# 「複数リポジトリ横断作業の分解投入」節は
+# `agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`
+# 「複数リポジトリ横断作業の分解投入」節をSSOTとする参照節であり、
+# `.chezmoi-source/dot_claude/skills/sync-cross-project/SKILL.md`の同名節と意図的重複する
+# （改訂時は3ファイルの整合を取ること）。
 ---
 
 # 計画作成とフィードバック投入による終了

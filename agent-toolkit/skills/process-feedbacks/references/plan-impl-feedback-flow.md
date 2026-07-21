@@ -1,3 +1,10 @@
+---
+# 同期注記: 「複数リポジトリ横断作業の分解投入」節は本ファイルをSSOTとし、
+# `agent-toolkit/skills/plan-and-add-feedback/SKILL.md`・
+# `.chezmoi-source/dot_claude/skills/sync-cross-project/SKILL.md`の同名節が参照する
+# （改訂時は3ファイルの整合を取ること）。
+---
+
 # 計画実装型フィードバックの処理フロー
 
 計画実装型フィードバック（既存レビュー済み計画の実装のみを要求するフィードバック）の
