@@ -3,6 +3,7 @@
 エディター経由の本文確定後に`_pull`を実行しUXブロッキング待ちを最小化する順序
 （エディター起動 → 本文確定 → `_pull` → 書込 → commit&push）が維持されていることを検証する。
 基本動作テストは`atk_test.py`・`_atk_fb_extras_test.py`側に集約する。
+共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
 import pathlib
@@ -37,17 +38,10 @@ class TestAddOrderEditorFirst:
         call_order: list[str] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd[0] == "fake-editor":
                 call_order.append("editor")
                 pathlib.Path(cmd[1]).write_text("本文テスト", encoding="utf-8")
@@ -111,14 +105,10 @@ class TestAddOrderEditorFirst:
         inbox = notes / "feedback" / "inbox"
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd[0] == "git":
                 git_cmds.append(list(cmd))
                 if cmd[:2] == ["git", "add"]:
@@ -149,17 +139,10 @@ class TestAddRepoPathOverrideCli:
         cwd_repo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{cwd_repo}\n" if kwargs.get("text") else f"{cwd_repo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(cwd_repo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/cwdrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/cwdrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -169,7 +152,9 @@ class TestAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 0
         content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
-        assert "target_repo: github.com/example/cwdrepo" in content
+        # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
+        # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
+        assert "target_repo: github.com/example/myrepo" in content
 
     def test_message_only_directory_errors(
         self,
@@ -203,14 +188,10 @@ class TestAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -234,14 +215,10 @@ class TestAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -271,17 +248,10 @@ class TestAddRepoPathOverrideCli:
         oversized_message = "本文" * 5000
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{cwd_repo}\n" if kwargs.get("text") else f"{cwd_repo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(cwd_repo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/cwdrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/cwdrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -291,7 +261,9 @@ class TestAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 0
         content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
-        assert "target_repo: github.com/example/cwdrepo" in content
+        # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
+        # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
+        assert "target_repo: github.com/example/myrepo" in content
         assert oversized_message in content
 
 
@@ -310,14 +282,10 @@ class TestAddEmptyBodyRejection:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -340,14 +308,10 @@ class TestAddEmptyBodyRejection:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -368,14 +332,10 @@ class TestAddEmptyBodyRejection:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -397,14 +357,10 @@ class TestAddEmptyBodyRejection:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -427,17 +383,10 @@ class TestAddEmptyBodyRejection:
         myrepo.mkdir()
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
             empty: Any = "" if kwargs.get("text") else b""
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=empty)
             if cmd[0] == "fake-editor":
                 pathlib.Path(cmd[1]).write_text("-\n", encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
