@@ -255,6 +255,46 @@ class TestDocumentSizeUpperLimit:
         assert capsys.readouterr().err == ""
 
 
+class TestSimilarReviewRecord:
+    """`_check_similar_review_record`のテスト。"""
+
+    def test_bugfix_trigger_without_record_warns(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n## 背景\n\n### バグ調査結果\n\n| 根本原因 |\n| --- |\n"
+        warnings = check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+        assert "類似見直し" in warnings[0]
+
+    def test_feedback_route_trigger_without_record_warns(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n### 計画メタ情報\n\n- 起動経路: process-feedbacks経由\n"
+        warnings = check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+
+    def test_feedback_route_fullwidth_colon_trigger_without_record_warns(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n### 計画メタ情報\n\n- 起動経路：process-feedbacks経由\n"
+        warnings = check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+
+    def test_record_present_suppresses_warning(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n### バグ調査結果\n\n類似見直し結果: 該当なし\n"
+        assert not check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+
+    def test_no_trigger_no_warning(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n### 計画メタ情報\n\n- 起動経路: その他（直接起動等）\n"
+        assert not check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+
+    def test_fenced_example_text_does_not_trigger(self, tmp_path: pathlib.Path) -> None:
+        text = (
+            "# t\n\n### 計画メタ情報\n\n- 起動経路: その他（直接起動等）\n\n"
+            "```text\n### バグ調査結果\n- 起動経路: process-feedbacks経由\n```\n"
+        )
+        assert not check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+
+    def test_fenced_only_record_does_not_suppress_warning(self, tmp_path: pathlib.Path) -> None:
+        text = "# t\n\n### バグ調査結果\n\n```text\n類似見直し結果: 該当なし\n```\n"
+        warnings = check_plan_file._check_similar_review_record(tmp_path / "plan.md", text)
+        assert len(warnings) == 1
+
+
 class TestCheckReferentTableRoles:
     """`_check_referent_table_roles`のテスト。"""
 

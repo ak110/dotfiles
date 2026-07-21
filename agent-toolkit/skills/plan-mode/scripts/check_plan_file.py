@@ -57,6 +57,9 @@
   リポジトリに実在するのに対象ファイル一覧から欠落していないかを検査する
 - `_check_version_bump_matrix_consistency`: 版更新マトリクスの改訂節数・該当基準列と判定列の整合、
   および`## 実行方法`のbump種別と判定列最大値の整合を検査する（不一致時に警告）
+- `_check_similar_review_record`: `### バグ調査結果`存在時またはフィードバック採用計画
+  （起動経路が`process-feedbacks経由`）で、本文に「類似見直し」の記述が存在するかを検査する
+  （体裁・網羅性チェックの前段警告のため`warning`区分）
 
 `warning`区分の判定根拠は次のとおり。textlint・markdownlint・typos・口語表現の全文検査は
 plan-file-creatorの整合性チェックステップ4の`uvx pyfltr run-for-agent`実行（本ランナー外）でのみ行い、
@@ -98,6 +101,7 @@ from typing import Literal
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 # pylint: disable=wrong-import-position
+import _plan_diff_parsing  # noqa: E402
 import check_deprecated_identifier_coverage  # noqa: E402
 import check_line_ref  # noqa: E402
 import check_plan_diff_gates  # noqa: E402
@@ -176,6 +180,8 @@ def _check_one(plan_path: pathlib.Path, repo_root: pathlib.Path) -> int:
         print(msg, file=sys.stderr)
 
     _check_document_size_upper_limit(plan_path, text)
+    for msg in _check_similar_review_record(plan_path, text):
+        print(msg, file=sys.stderr)
     for msg in _check_referent_table_roles(plan_path, text):
         print(msg, file=sys.stderr)
     violations += _check_version_bump_matrix(plan_path, text)
@@ -584,6 +590,38 @@ def _check_test_file_pairing(plan_path: pathlib.Path, text: str, repo_root: path
             f"{pathlib.PurePosixPath(test_path).name}が対象ファイル一覧に不在"
         )
     return warnings
+
+
+# 「起動経路が`process-feedbacks経由`」の記述を検出する。セクション限定はせずフェンス外の全文を対象とする
+# （`### 計画メタ情報`外への引用転記等での取りこぼしを避けるため。`check_plan_meta.py`の
+# `_LAUNCH_ROUTE_RE`とは異なり`### 計画メタ情報`セクション限定ではない）。
+# 半角・全角コロン双方を許容する点は`_LAUNCH_ROUTE_RE`と同様。
+_SIMILAR_REVIEW_FEEDBACK_ROUTE_RE = re.compile(r"起動経路\s*[:：]\s*process-feedbacks経由")
+
+
+def _check_similar_review_record(plan_path: pathlib.Path, text: str) -> list[str]:
+    """バグ対応・フィードバック採用計画で「類似見直し」の記録欠落を検査する。
+
+    トリガーは`### バグ調査結果`の記述、または「起動経路が`process-feedbacks経由`」の記述の
+    いずれかがフェンス外に存在することとし、`### 計画メタ情報`セクションへの限定はしない
+    （キーワード有無のみの前段警告のため過検出よりも見落とし回避を優先する）。
+    いずれもフェンス外の行のみを対象とし、コードブロック内の例示文字列を誤検出しない
+    （`_check_reduction_block_text_fence`と同様にフェンス開閉状態を追跡する）。
+    トリガー該当時に本文（フェンス外）へ「類似見直し」の記述が無い場合にwarn文言を返す。
+    キーワード有無のみの検査（体裁・網羅性チェックの前段警告）のためexit codeへは算入しない。
+    """
+    lines = text.splitlines()
+    non_fenced_lines = [line for _idx, line in _plan_diff_parsing.iter_non_fenced_lines(lines)]
+    non_fenced_text = "\n".join(non_fenced_lines)
+    triggered = "### バグ調査結果" in non_fenced_text or any(
+        _SIMILAR_REVIEW_FEEDBACK_ROUTE_RE.search(line) for line in non_fenced_lines
+    )
+    if not triggered or "類似見直し" in non_fenced_text:
+        return []
+    return [
+        f"{plan_path}: [warn] バグ対応またはフィードバック採用計画に「類似見直し」の記録が存在しない"
+        f"（母集団の悉皆点検は`agent-toolkit:plan-mode`配下`references/similar-review.md`に従う）"
+    ]
 
 
 # 用語対応表の役割列許容値。`referent-table.md`「表の書式」節が定めるSSOTを転記する
