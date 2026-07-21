@@ -16,7 +16,7 @@
 - fb start-processing: feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push
 - fb adopt: 採用としてinboxまたはprocessingからadopted/へ移動しコミット・push
 - fb reject: 不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push
-- fb rm: inboxから単純削除しコミット・push
+- fb rm: inbox・processingいずれかから単純削除しコミット・push
 - fb edit: $EDITORで対象ファイルを編集しコミット・push
 - fb commit: 外部編集後のinbox配下未コミット変更をコミット・push
 - fb enable/disable/status: feedback-inbox有効化フラグの操作・判定
@@ -69,6 +69,33 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         return argv, None
     new_argv = argv[:candidate_index] + argv[candidate_index + 1 :]
     return new_argv, str(candidate_path)
+
+
+def _source_filter_type(value: str) -> str:
+    """`--source`の値を検証するargparse `type=`コールバック。
+
+    先頭`!`を除いた残りが空文字列の場合（`--source=`・`--source=!`）は`ArgumentTypeError`を送出する。
+    """
+    remainder = value[1:] if value.startswith("!") else value
+    if not remainder:
+        raise argparse.ArgumentTypeError("空文字列は指定できません（例: --source=session-review）")
+    return value
+
+
+def _add_source_arg(parser: argparse.ArgumentParser) -> None:
+    """`--source`オプションを共通形式で登録する。"""
+    parser.add_argument(
+        "--source",
+        metavar="NAME",
+        type=_source_filter_type,
+        default=None,
+        help=(
+            "投入元識別子（frontmatterのsource）で限定する。完全一致の値、"
+            "または先頭に`!`を付けた否定指定（無指定エントリも対象に含む）を指定する。"
+            "空文字列（`--source=`・`--source=!`）は拒否する。"
+            "例: --source=session-review、--source=!session-review"
+        ),
+    )
 
 
 def _add_target_repo_arg(parser: argparse.ArgumentParser, *, help_extra: str = "") -> None:
@@ -132,8 +159,10 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument(
         "--category",
         default=None,
-        help="指定時、同ラベルが付与されたfeedbackのみへ限定する。",
+        help="採用時に付与される再発防止分類ラベル（`## 処理結果`節の`カテゴリ:`行）で、"
+        "指定時は同ラベルが付与されたfeedbackのみへ限定する。",
     )
+    _add_source_arg(list_)
     list_.add_argument(
         "--count",
         action="store_true",
@@ -175,6 +204,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
             "`answered`・`unanswered`はtbd側のみに作用しfeedback側には作用しない。"
         ),
     )
+    _add_source_arg(show)
     show.add_argument(
         "--skip-pull",
         action="store_true",
@@ -236,7 +266,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     )
     _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
-    rm = sub.add_parser("rm", help="inboxから単純削除しコミット・push")
+    rm = sub.add_parser("rm", help="inbox・processingいずれかから単純削除しコミット・push")
     rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
     _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 

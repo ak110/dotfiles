@@ -47,6 +47,32 @@ class TestRenderTaskLeft:
     def test_name_fallback_order_name_then_label_then_type(self, task: dict[str, Any], expected: str) -> None:
         assert render(task) == expected
 
+    def test_label_matching_description_falls_back_to_type(self) -> None:
+        assert (
+            render({"id": "t1", "label": "同一文言", "type": "local_agent", "description": "同一文言"})
+            == "local_agent  同一文言"
+        )
+
+    def test_label_matching_description_without_type_omits_name(self) -> None:
+        assert render({"id": "t1", "label": "同一文言", "description": "同一文言"}) == "同一文言"
+
+    def test_label_differing_from_description_kept(self) -> None:
+        assert render({"id": "t1", "label": "foo", "description": "bar"}) == "foo  bar"
+
+    def test_label_matching_description_with_newline_falls_back_to_type(self) -> None:
+        """labelが改行を含み、正規化後にdescriptionと一致する場合もtypeへフォールバックする。"""
+        assert (
+            render(
+                {
+                    "id": "t1",
+                    "label": "計画B（trim）起草を委譲\n",
+                    "type": "local_agent",
+                    "description": "計画B（trim）起草を委譲",
+                }
+            )
+            == "local_agent  計画B（trim）起草を委譲"
+        )
+
     def test_model_only_without_name(self) -> None:
         assert render({"id": "t1", "model": "claude-sonnet-5"}) == "(Sonnet)"
 

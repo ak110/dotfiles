@@ -18,7 +18,7 @@ user-invocable: false
 #   deferred tools機構の対象外となるため、ToolSearchをtools欄へ追加する必要はない
 #   （メイン直接実行ではMCPツールがdeferredとなりToolSearchを要する挙動と混同しない）。
 #   本注記はplan-codex-reviewer.mdの同注記と意図的に重複する。改訂時は両ファイルを同時更新する。
-# 本ファイル「git stash」禁止バレットは`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・
+# 本ファイル「git stash」禁止バレットは`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「git操作」節・
 # `agent-toolkit/agents/plan-implementer.md`の`git stash`禁止バレットと意図的に重複する（改訂時は3ファイルを同時更新する）。
 ---
 

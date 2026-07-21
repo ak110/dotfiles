@@ -2,8 +2,8 @@
 
 FILENAME指定表示・--all全件表示・型フィルター・状態フィルター・
 --include-processed（adopted・rejected配下探索）・--skip-pullの単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_mutations_test.py`・
-`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_list_test.py`・
+`_atk_fb_mutations_test.py`・`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
@@ -236,6 +236,65 @@ class TestShowTypeFilter:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"### {_FIXED_TIMESTAMP}-001.md [unanswered]" in captured.out
+
+
+class TestShowSourceFilter:
+    """showサブコマンド: --source指定でfrontmatterのsourceが一致するエントリのみ出力する。"""
+
+    def test_all_filter_matches_exact_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--all --source=NAME指定時、同一sourceのエントリのみ出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1", source="session-review")
+        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2", source=None)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "--all", "--source=session-review"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "本文1" in captured.out
+        assert "本文2" not in captured.out
+
+    def test_filename_filter_negation_excludes_matching_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """FILENAME指定＋--source=!NAME指定時、一致するsourceのファイルは未検出扱いになる。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", source="session-review")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "fb-001.md", "--source=!session-review"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+
+    def test_all_filter_matches_exact_source_for_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--all --source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, "tbd-001.md", question="質問1", source="session-review")
+        _write_tbd_file(notes, "tbd-002.md", question="質問2", source=None)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "show", "--all", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "質問1" in captured.out
+        assert "質問2" not in captured.out
 
 
 class TestShowStatusFilter:

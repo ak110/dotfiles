@@ -39,6 +39,31 @@ def _parse_target_repo(text: str) -> str:
     return "(unknown)"
 
 
+def _parse_source(text: str) -> str | None:
+    """フィードバック/TBDファイル本文先頭のfrontmatterからsourceを抽出する。未指定時はNoneを返す。"""
+    if not text.startswith("---\n"):
+        return None
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return None
+    for line in text[4:end].splitlines():
+        if line.startswith("source:"):
+            value = line.split(":", 1)[1].strip()
+            return value or None
+    return None
+
+
+def _source_matches(entry_source: str | None, filter_value: str) -> bool:
+    """`--source`フィルター値とエントリのsourceを照合する。
+
+    先頭`!`は否定指定とし、無指定（None）エントリも否定側の一致に含める。
+    """
+    if filter_value.startswith("!"):
+        return entry_source != filter_value[1:]
+    return entry_source == filter_value
+
+
 def _truncate_summary(line: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
     """要約1行を表示幅`available_width`で切り詰め、超過時は`...`を付与する。
 

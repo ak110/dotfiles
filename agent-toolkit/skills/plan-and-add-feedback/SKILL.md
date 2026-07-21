@@ -33,6 +33,9 @@ description: >
    計画実装型として扱われ、計画作成を経ずに実装される
 3. フィードバック投入結果をユーザーへ提示して終了する。`agent-toolkit:exit-session`は
    呼ばずセッションを継続する
+   - 提示本文へ、`atk fb process-loop`常駐環境では投入分が自動的に実装開始される旨を予告する。
+     意図と異なる場合の取り消し手段（`atk fb rm <投入ファイル名>`・`atk fb edit <投入ファイル名>`）も
+     対象ファイル名付きで併記する
    - 本規定の適用範囲は本スキル自身の手順内に限定する
    - 後続でStopフック起点の振り返りスキル（`agent-toolkit:session-review`・
      `session-review-dotfiles`等）が起動された場合は当該スキルの終了手順

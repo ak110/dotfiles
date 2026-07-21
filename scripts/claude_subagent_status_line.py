@@ -14,7 +14,9 @@ stdinから公式subagentStatusLine JSON入力（`columns`・`tasks`配列）を
 上限超過時はモデル名を保持したまま名前部分のみ省略記号付きで切り詰める
 （モデル名だけで上限を超える極端な場合は名前列全体を切り詰める）。
 名前の由来は`name`→`label`→`type`の順で非空文字列を採用する
-（実ペイロードは`name`フィールドを持たず`label`に実質同一の値が入る。Claude Code 2.1.214時点で実測確認済み）。
+（実ペイロードは`name`フィールドを持たず`label`に`description`と実質同一の値が入る。
+Claude Code 2.1.214時点で実測確認済み）。`label`値が`description`（正規化後）と一致する場合は
+`label`を採用せず`type`を採用する（`description`欄と重複表示になる冗長を避けるため）。
 `model`未提供タスクは括弧書き省略、名前・モデル双方欠落時は名前列が空文字列になる。
 名前列・説明・右寄せグループは実在するセグメントの組合せだけに区切り幅を適用し、行末尾の空白は除去する。
 使用率はtokenCount/contextWindowSizeから算出する（いずれか欠落・非数値・contextWindowSizeが0以下の場合は省略）。
@@ -78,11 +80,17 @@ def _compute_name_width(tasks: list[Any], width: int) -> int:
     """同一入力内の有効タスク全件から名前列の共通表示幅を算出する（`columns // 3`セル上限）。"""
     cap = max(width // _NAME_WIDTH_DIVISOR, 0)
     widths = [
-        min(_display_width(_name_column(task)), cap)
+        min(_display_width(_name_column(task, _task_description(task))), cap)
         for task in tasks
         if isinstance(task, dict) and isinstance(task.get("id"), str) and task.get("id")
     ]
     return max(widths, default=0)
+
+
+def _task_description(task: dict[str, Any]) -> str:
+    """タスクの`description`値を正規化して返す（欠落・非文字列は空文字列）。"""
+    value = task.get("description")
+    return _normalize_description(value) if isinstance(value, str) else ""
 
 
 def render_task(task: dict[str, Any], width: int, now: datetime.datetime, name_width: int | None = None) -> str | None:
@@ -96,16 +104,16 @@ def render_task(task: dict[str, Any], width: int, now: datetime.datetime, name_w
     if not isinstance(task_id, str) or not task_id:
         return None
 
+    description = _task_description(task)
+
     cap = max(width // _NAME_WIDTH_DIVISOR, 0)
-    col_width = name_width if name_width is not None else min(_display_width(_name_column(task)), cap)
+    col_width = name_width if name_width is not None else min(_display_width(_name_column(task, description)), cap)
     name_present = col_width > 0
     padded_name = ""
     if name_present:
-        name_col = _fit_name_column(task, col_width)
+        name_col = _fit_name_column(task, col_width, description)
         padded_name = name_col + " " * max(col_width - _display_width(name_col), 0)
 
-    description = task.get("description")
-    description = _normalize_description(description) if isinstance(description, str) else ""
     right = _SEP.join(_build_right_parts(task, now))
     right_present = bool(right)
 
@@ -130,12 +138,13 @@ def render_task(task: dict[str, Any], width: int, now: datetime.datetime, name_w
     return _truncate(line, width) if _display_width(line) > width else line
 
 
-def _name_column(task: dict[str, Any]) -> str:
+def _name_column(task: dict[str, Any], description: str = "") -> str:
     """名前列の未切り詰め文字列`{名前} ({短縮モデル名})`を組み立てる（表示幅算出専用）。
 
     双方欠落時は空文字列を返す。実際の描画には`_fit_name_column`を使う。
+    `description`は`_name_label`へ渡し、`label`値との重複判定に用いる。
     """
-    name = _name_label(task)
+    name = _name_label(task, description)
     model = task.get("model")
     model_label = _short_model_name(model) if isinstance(model, str) and model else None
     if name and model_label:
@@ -147,14 +156,15 @@ def _name_column(task: dict[str, Any]) -> str:
     return ""
 
 
-def _fit_name_column(task: dict[str, Any], width_cap: int) -> str:
+def _fit_name_column(task: dict[str, Any], width_cap: int, description: str = "") -> str:
     """名前列を`width_cap`セル以内で組み立てる。モデル名を保持したまま名前部分のみ切り詰める。
 
     モデル名だけで`width_cap`を超える極端な場合は名前列全体を省略記号付きで切り詰める。
+    `description`は`_name_label`へ渡し、`label`値との重複判定に用いる。
     """
     if width_cap <= 0:
         return ""
-    name = _name_label(task)
+    name = _name_label(task, description)
     model = task.get("model")
     model_label = _short_model_name(model) if isinstance(model, str) and model else None
 
@@ -174,12 +184,23 @@ def _fit_name_column(task: dict[str, Any], width_cap: int) -> str:
     return ""
 
 
-def _name_label(task: dict[str, Any]) -> str:
-    """名前の由来を`name`→`label`→`type`の順で非空文字列を採用する。全欠落時は空文字列を返す。"""
+def _name_label(task: dict[str, Any], description: str = "") -> str:
+    """名前の由来を`name`→`label`→`type`の順で非空文字列を採用する。全欠落時は空文字列を返す。
+
+    採用値は`_normalize_description`で改行・連続空白を1行化してから返す
+    （名前列は1エントリ1行の前提であり、`description`同様に改行混入を防ぐため）。
+    `label`値を正規化した結果が非空の`description`と一致する場合は`label`を採用せず`type`へ
+    フォールバックする（`label`に`description`と同一内容が入る既知の重複パターンのため。
+    フォールバック先も`description`と一致する場合はそのまま採用する）。
+    """
     for key in ("name", "label", "type"):
         value = task.get(key)
-        if isinstance(value, str) and value:
-            return value
+        if not (isinstance(value, str) and value):
+            continue
+        normalized = _normalize_description(value)
+        if key == "label" and description and normalized == description:
+            continue
+        return normalized
     return ""
 
 

@@ -21,7 +21,7 @@ from _atk_fb_common import (
     _repo_lock,
     _validate_filename,
 )
-from _atk_fb_formatters import _parse_target_repo
+from _atk_fb_formatters import _parse_source, _parse_target_repo, _source_matches
 from _atk_fb_repo import _resolve_repo_id
 
 
@@ -36,6 +36,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     （既定`active`はinbox・processing、`all`は4状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
+    `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--status`は`--all`分岐でfeedback走査集合を切り替え、tbd側のフィルタ（active・answered・unanswered）を制御する。
     `FILENAME`単発指定分岐は`--include-processed`のみ有効で、`--status=active`のtbd未回答除外は適用しない
     （個別ファイル指定は明示的照会のため状態フィルタを迂回する既定挙動）。
@@ -71,6 +72,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             target_repo = _parse_target_repo(text)
             if filter_repo is not None and target_repo != filter_repo:
                 continue
+            if args.source is not None and not _source_matches(_parse_source(text), args.source):
+                continue
             answered = _is_tbd_answered(text)
             if kind == "tbd" and args.status == "answered" and not answered:
                 continue
@@ -101,6 +104,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             feedback_states = FEEDBACK_ACTIVE_STATES
         entries: dict[str, list[tuple[str, str, str]]] = {}
         for path, target_repo, text, state in _iter_feedback_entries_with_state(private_notes, feedback_states, filter_repo):
+            if args.source is not None and not _source_matches(_parse_source(text), args.source):
+                continue
             entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
             print("# feedback")
@@ -121,6 +126,8 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if args.status == "unanswered" and answered:
                 continue
             if args.status == "active" and not answered:
+                continue
+            if args.source is not None and not _source_matches(_parse_source(text), args.source):
                 continue
             tbd_entries.setdefault(target_repo, []).append((path.name, text))
         if tbd_entries:

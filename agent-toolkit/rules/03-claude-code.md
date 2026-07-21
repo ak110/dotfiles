@@ -1,7 +1,9 @@
 ---
 # 同期注記: 起草関連バレット（委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。本ファイルと`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節は同節参照で同期（改訂時3ファイル同時更新）。
 # named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は上記`launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複（改訂時4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
-# 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・`git stash`禁止バレット・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節・`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-implementer.md`の対応箇所と意図的に重複（改訂時は関連ファイルを同時更新する）。
+# 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複（改訂時は関連ファイルを同時更新する）。`git stash`禁止バレットは分離先`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「git操作」節が`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-implementer.md`の対応箇所と意図的に重複する（改訂時は同節と関連ファイルを同時更新する）。
+# 同期注記: 「再開時はモデルを変更できない」バレットの停止済みエージェント宛`SendMessage`可否記述は
+# `agent-toolkit/skills/spec-driven-impl/SKILL.md`「ユーザー割り込み指示の対応」節と同期する（改訂時2ファイル同時更新）。
 ---
 # 03-claude-code.md
 
@@ -85,8 +87,15 @@
     作業完了時のSendMessage(to: 'main')による完了報告本文の能動送付を必須ゲートとする。
     メイン明示要求を待たず`idle_notification(available)`のみで待機しない（SubagentStopフックがブロックする）
 - 再開時はモデルを変更できない。異なるモデルが必要なら新規`Agent`起動を使う
-  - `completed`状態のサブエージェントへの`SendMessage`は失敗するため、追加指示は新規`Agent`起動で行い元タスク・
-    修正指摘・参照すべき計画ファイル位置をプロンプトに省略せず含める
+  - 停止済みサブエージェントへの`SendMessage`はトランスクリプトからの再開として成功し得るが、
+    実装・是正の追加委譲は新規`Agent`起動を既定とする。起動時は元タスク・修正指摘・
+    参照すべき計画ファイル位置をプロンプトに省略せず含める
+- サブエージェント完了報告に含まれる定量値（終了コード・行数・バイト数・タイムスタンプ等）を採用する前に
+  受領検査を実施する。検査対象は完了報告本文に明記された実行コマンド（コマンド文字列・引数・
+  実行ディレクトリ）とし、メイン側で同一のまま再実行し出力値を照合する。委譲プロンプトには
+  定量値を伴う完了報告へ実行コマンドを明記させる旨を含める。実行コマンドが明記されない完了報告は
+  当該定量値を未検証として差し戻す。再実行結果と報告値が一致しない場合、当該完了報告を未完遂として扱い、
+  対象タスクの再実施または縮減した新規サブエージェント起動へ切り替える
 - 実行途中のサブエージェントへ追加指示・スコープ変更を送る場合、起動プロンプトの制約（編集対象範囲・git操作禁止・
   外部公開操作の禁止等）が追加指示にも引き続き適用される旨を明記する。制約対象作業を新たに委譲する場合は明示的に許可する
 - 並列起動のたびに各タスクの編集対象ファイル集合の重複を起動前に点検し、重複があればタスク境界を再設計する（再並列起動でも省略しない）
@@ -104,24 +113,8 @@
     `agent-toolkit/skills/agent-standards/references/subagent-collaboration.md`「実装委譲3者の関係」節とする
 - 機械検出対象の文字列（縮退表明の代表フレーズ等）の照合・分析をサブエージェントへ委譲する場合、
   委譲プロンプトで判定対象フレーズを原文のまま報告本文へ引用させず部分伏字または間接記述（「〜という構造の文」等）で表記させる
-- サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する
-  - git操作: 作業ツリー全体の状態を変更するgit操作（`git stash`・`git checkout`・`git reset`・`git clean`等）を
-    しない（並列実行中の他タスクの編集に影響するため）。`pre-commit run`を`--files`指定なしで起動する場合も
-    内部で`git stash`相当の退避が発生し得るため同等に扱う。pylint等の単体検証で全対象を評価する必要がある場合は
-    `--files`で対象ファイル群を明示するか、メイン側で一括検証する。テスト失敗の切り分けなどで必要と判断した場合も
-    実行せず作業を中断して報告する（背景セッションでの並列作業をユーザーから通知された場合も同前提）。
-    単独起動（並列を伴わない`foreground`起動）時に限り、メイン側の起動プロンプトでgit操作を明示許可した場合は
-    本制限の対象外とする。`git stash`は`-- <path>`・`--patch`等のスコープ限定指定を含めて全面禁止とする
-    （単一ファイル指定でも並列実行中の他タスクのインデックス・作業ツリーへ影響し得るため）
-  - push: `git push`・`gh release create`・`git push --tags`などの不可逆な外部公開操作を実行しない
-    （並列実行中の他タスク成否を知らないままpushすると部分状態がリモートへ公開されるため）。単独起動は本制限の対象外とし、計画ファイル記載の`git push`を委譲してよい
-  - 文書構造: 許可されたファイル内であっても、追記タスクで指示された追加内容の隣接以外のH2/H3節の
-    追加・削除・改名・順序変更などの構造変更を独自判断で実行せず、必要な場合は完了報告へ改修候補として記述する。
-    他ファイルからの参照を持つ可能性のある節はリンク欠落の追従修正が発生する前提で扱う
-  - 背景セッションが並行中は`git add`を作業対象ファイルへ限定し、`git add -A`・`git commit -am`等の
-    全変更一括ステージング・コミットは使わない。`git status --short`が変動し得るため都度
-    `git diff --cached --stat`で実体確認してから次工程へ進む。担当ファイル集合が同一ファイルへ重なる並列運用が
-    発生した場合、やむを得ず`git hash-object`等のplumbingで分離コミットする運用を例外扱いとし直列化させる
+- サブエージェントは委譲されたタスク範囲を超える不可逆・広域影響操作を実行せず、完了報告で委譲元へ返却する。
+  詳細な制約は[references/plan-impl/subagent-scope-constraints.md](../references/plan-impl/subagent-scope-constraints.md)を参照する
 - サブエージェントは独立コンテキストで動作し、計画ファイルと指示プロンプトの記述だけが情報源となる
   - 公開インターフェースに関わる変更では変更箇所と維持箇所を分けて記述し、対象外参照を残す前提を確認する
   - サブエージェント委譲プロンプトでは、完了報告本文の各項目を独立に完結した記述として要求する。

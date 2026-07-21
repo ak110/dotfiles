@@ -173,14 +173,18 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
 
 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """rmサブコマンド: inboxから単純削除しcommit・push。"""
+    """rmサブコマンド: inbox・processingいずれかから単純削除しcommit・push。
+
+    processing優先で解決する（`_resolve_processable_targets`と同じ規約）。
+    """
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
     with _repo_lock(private_notes):
         _pull(private_notes)
         for filename in args.filenames:
-            _verify_frontmatter_target_repo(filename, [inbox_dir], args.target_repo)
-        paths = _resolve_feedback_targets(args.filenames, inbox_dir)
+            _verify_frontmatter_target_repo(filename, [inbox_dir, processing_dir], args.target_repo)
+        paths = _resolve_processable_targets(args.filenames, inbox_dir, processing_dir)
         for p in paths:
             p.unlink()
         count = len(paths)
@@ -202,6 +206,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print("$EDITORが未設定のため編集できません。", file=sys.stderr)
         sys.exit(1)
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     with _repo_lock(private_notes):
         if args.filename is None:
             _pull(private_notes)
@@ -214,12 +219,11 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 sys.exit(2)
             path = candidates[-1]
         else:
-            path = _validate_filename(args.filename, inbox_dir)
+            _validate_filenames_only([args.filename], inbox_dir)
             _pull(private_notes)
-        _verify_frontmatter_target_repo(path.name, [inbox_dir], args.target_repo)
-        if not path.exists():
-            print(f"inboxに存在しません: {path.name}", file=sys.stderr)
-            sys.exit(2)
+            paths = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)
+            path = paths[0]
+        _verify_frontmatter_target_repo(path.name, [inbox_dir, processing_dir], args.target_repo)
         snapshot = path.read_bytes()
     tmp_path = _copy_to_tempfile(snapshot)
     subprocess.run([editor, str(tmp_path)], check=True)

@@ -28,8 +28,8 @@ user-invocable: false
 # `## 完了報告要件`欄と意図的に重複させている。
 # 文面を変更する場合は両方の内容を意味的に一致させること
 # （冒頭句の主語は両ファイルで意図的に異なるため文字通りの同一化は誤り）。
-# サブエージェントの活用節（03-claude-code.md）・plan-codex-implementer.mdの`git stash`禁止バレットは
-# 本ファイル本文の`git stash`禁止バレットと意図的に重複させている。
+# agent-toolkit/references/plan-impl/subagent-scope-constraints.md「git操作」節・
+# plan-codex-implementer.mdの`git stash`禁止バレットは本ファイル本文の`git stash`禁止バレットと意図的に重複させている。
 # 改訂時は3ファイルを同時更新する。
 # 本文「委譲プロンプトで対象ファイル集合が計画ファイルの対象一覧に加えて明示指定された場合」バレットは
 # 03-claude-code.md「サブエージェントの活用」節の対象ファイル外編集禁止バレットと意図的に重複させている。

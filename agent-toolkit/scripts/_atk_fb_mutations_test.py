@@ -1,8 +1,8 @@
 """atk (agent-toolkit `atk fb`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_show_test.py`・
-`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_list_test.py`・
+`_atk_fb_show_test.py`・`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
@@ -369,6 +369,45 @@ class TestRmSingle:
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 feedback item" in commit_cmd
 
+    def test_processing_file_removed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """start-processing後（processing配下）のファイルもrm対象として解決される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing_dir = notes / "feedback" / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / "fb-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nテスト本文\n",
+            encoding="utf-8",
+        )
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (processing_dir / "fb-001.md").exists()
+
+    def test_missing_file_reports_inbox_and_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "rm", "fb-missing.md"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "inbox・processingのいずれにも存在しません" in captured.err
+
 
 class TestRmMultiple:
     """rmサブコマンド: 複数件指定で単一コミットへまとめる。"""
@@ -448,6 +487,56 @@ class TestEditWithChanges:
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: edit feedback item" in commit_cmd
+
+    def test_processing_file_edited(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """start-processing後（processing配下）のファイルも編集対象として解決される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing_dir = notes / "feedback" / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / "fb-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\n編集前\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        git_calls: list[_GitCall] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert (processing_dir / "fb-001.md").read_text(encoding="utf-8") == "編集後\n"
+
+    def test_missing_file_reports_inbox_and_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
+        _setup_flag_and_notes(tmp_path)
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "edit", "fb-missing.md"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "inbox・processingのいずれにも存在しません" in captured.err
 
 
 class TestEditNoChanges:

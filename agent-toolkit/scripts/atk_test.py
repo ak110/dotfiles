@@ -1,11 +1,12 @@
 """atk (agent-toolkit `atk fb`) のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
-add/list/本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-show系は`_atk_fb_show_test.py`、mutation系は`_atk_fb_mutations_test.py`、process-loop・リポジトリ解決は
-`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、TBD系は`_atk_fb_tbd_test.py`、
-本文要約の切り詰め境界ケースは`_atk_fb_formatters_test.py`に分離する。
-TBD共通ヘルパーは本ファイルとTBD系テストの双方から使うため本ファイルに残置する。
+add・本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
+list系は`_atk_fb_list_test.py`、show系は`_atk_fb_show_test.py`、mutation系は`_atk_fb_mutations_test.py`、
+process-loop・リポジトリ解決は`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、
+TBD系は`_atk_fb_tbd_test.py`、本文要約の切り詰め境界ケースは`_atk_fb_formatters_test.py`に分離する。
+TBD共通ヘルパーは本ファイルと分割先テストの双方から使うため本ファイルに残置する。
+gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
 """
 
 import datetime
@@ -21,6 +22,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_fb_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+
+# pylint: disable-next=wrong-import-position,import-error
+from _atk_git_fake_test_helpers import make_git_remote_fake as _make_git_remote_fake  # noqa: E402
 
 _GitCall = dict[str, Any]
 
@@ -65,13 +69,15 @@ def _write_feedback_file(
     filename: str,
     target_repo: str = "github.com/example/foo",
     body: str = "テスト本文",
+    source: str | None = None,
 ) -> pathlib.Path:
-    """feedback/inbox配下に1ファイルを書き込み、絶対パスを返す。"""
+    """feedback/inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
     inbox_dir = notes / "feedback" / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
     path = inbox_dir / filename
+    source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\n{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -348,18 +354,7 @@ class TestAddRepoPathExpansion:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
@@ -425,18 +420,7 @@ class TestAddFrontmatterOverride:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
 
@@ -463,18 +447,7 @@ class TestAddFrontmatterOverride:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         msg_with_fm = "---\ntarget_repo: github.com/override/repo\n---\n\nfm付き本文"
         msg_plain = "frontmatter無し本文"
@@ -503,18 +476,7 @@ class TestAddFrontmatterOverride:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
 
@@ -528,447 +490,6 @@ class TestAddFrontmatterOverride:
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/other/repo" in content
         assert "source: cli-source" in content
-
-
-class TestListEmpty:
-    """listサブコマンド: inbox空の場合は何も出力しない。"""
-
-    def test_empty_inbox(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """inbox空時は標準出力が空であること。"""
-        _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-
-class TestListSingle:
-    """listサブコマンド: 1件のフィードバックを1行で出力する。"""
-
-    def test_single_entry(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """1件のフィードバックがfilename・target_repo・本文冒頭要約のtab区切り1行で出力されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
-
-
-class TestListMalformedFrontmatter:
-    """listサブコマンド: 異常frontmatterは`(unknown)`グループへ振り分けられる。"""
-
-    @pytest.mark.parametrize(
-        ("content", "label"),
-        [
-            ("本文のみ\n", "frontmatterなし"),
-            ("---\ncreated: 2024\n本文\n", "閉じ区切りなし"),
-            ("---\ncreated: 2024\n---\n\n本文\n", "target_repo欠落"),
-        ],
-    )
-    def test_malformed_frontmatter_falls_back_to_unknown(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-        content: str,
-        label: str,
-    ) -> None:
-        """異常frontmatter形式は`(unknown)`のtarget_repo欄として出力される。"""
-        del label  # parametrize idのみ
-        notes = _setup_flag_and_notes(tmp_path)
-        (notes / "feedback" / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out.startswith("# feedback\nmalformed.md: (unknown) [inbox] ")
-
-
-class TestListMultipleRepos:
-    """listサブコマンド: 複数target_repo混在でも1件1行で全件出力される。"""
-
-    def test_multiple_repos_grouped(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """target_repoが異なる複数のフィードバックがそれぞれ1行で出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out.splitlines() == [
-            "# feedback",
-            "fb-001.md: github.com/example/foo [inbox] テスト本文",
-            "fb-002.md: github.com/example/bar [inbox] テスト本文",
-        ]
-
-
-class TestListTargetRepoFilter:
-    """listサブコマンド: --target-repo指定で一致するエントリのみ出力する。"""
-
-    def test_filter_matches_single_group(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """複数target_repo混在でも--target-repo指定値と一致するエントリのみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=github.com/example/foo"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "github.com/example/foo" in captured.out
-        assert "github.com/example/bar" not in captured.out
-
-    def test_filter_expands_tilde(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """~プレフィックスのローカルパスがgit remote get-urlで正規化され、対応するエントリが出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/myrepo")
-        monkeypatch.setenv("HOME", str(tmp_path))
-
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
-                stdout: Any = (
-                    "https://github.com/example/myrepo.git\n"
-                    if kwargs.get("text")
-                    else b"https://github.com/example/myrepo.git\n"
-                )
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=~/myrepo"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox] テスト本文\n"
-
-    def test_filter_no_match_outputs_nothing(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """一致するエントリが存在しない場合、標準出力は空になる。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-
-class TestListTypeFilter:
-    """listサブコマンド: --typeでfeedback/tbd出力を限定する。"""
-
-    def test_type_feedback_outputs_only_feedback_section(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--type=feedback指定時はfeedback部のみ出力されtbdヘッダは出力されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
-
-    def test_type_tbd_outputs_status_label(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--type=tbd指定時はtbd部のみ出力され回答状況ラベルが付与される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [unanswered] q1\n"
-
-    def test_type_all_omits_empty_section_header(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--type=all（既定）でtbd側が0件の場合はtbd種別ヘッダを省略する。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "# feedback" in captured.out
-        assert "# tbd" not in captured.out
-
-
-class TestListSkipPull:
-    """listサブコマンド: --skip-pull指定時はgit pullをスキップする。"""
-
-    def test_skip_pull_omits_git_pull(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--skip-pull"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
-
-
-class TestListStatusFilter:
-    """listサブコマンド: --statusでtbd側のみ回答状況を限定する。"""
-
-    def test_status_answered_excludes_unanswered_tbd(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--status=answered指定時に未回答TBDが除外される。"""
-        notes = _setup_tbd_env(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=answered"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
-
-    def test_status_unanswered_excludes_answered_tbd(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--status=unanswered指定時に回答済みTBDが除外される。"""
-        notes = _setup_tbd_env(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
-
-    def test_status_all_outputs_every_tbd(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--status=all指定時に全TBDが出力される。"""
-        notes = _setup_tbd_env(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=all"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
-
-    def test_status_answered_does_not_affect_feedback(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--status=answered指定時にfeedback側は影響を受けず全件出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=answered"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n" in captured.out
-        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
-
-    def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
-        """--statusに不正値を指定するとargparseがexit 2で終了する。"""
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=invalid"], home=tmp_path)
-
-        assert exc_info.value.code == 2
-
-    @pytest.mark.parametrize("status", ["active", "rejected"])
-    def test_active_and_rejected_are_accepted_choices(self, status: str) -> None:
-        """--status=active・--status=rejectedがargparseのchoicesとして受理されること。
-
-        機能的な出力検証（feedback側の状態別除外・tbd側の回答状況連動）は
-        `_atk_fb_extras_test.py`のTestListFeedbackStatusActive・
-        TestListFeedbackStatusRejectedへ集約する。
-        """
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", "list", f"--status={status}"])
-        assert args.status == status
-
-
-class TestListCount:
-    """listサブコマンド: --count指定時は種別ヘッダ・エントリ行を抑制し件数のみ出力する。"""
-
-    def test_count_outputs_total_of_feedback_and_tbd(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--count指定時にfeedback件数とTBD件数の合計が整数1行で出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        _write_feedback_file(notes, "fb-002.md")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count", "--status=all"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "3\n"
-
-    def test_count_suppresses_headers_and_entries(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--count指定時は種別ヘッダ・エントリ行を出力しない。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "1\n"
-
-    def test_count_with_status_filter(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--countと--statusを併用すると、statusフィルター適用後の件数が出力される。"""
-        notes = _setup_tbd_env(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=answered", "--count"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "1\n"
-
-    def test_count_empty_inbox_outputs_zero(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """inbox空時は0を出力する。"""
-        _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "0\n"
 
 
 def _setup_tbd_env(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -987,13 +508,15 @@ def _write_tbd_file(
     target_repo: str = "github.com/example/foo",
     question: str = "テスト質問",
     answer: str = "",
+    source: str | None = None,
 ) -> pathlib.Path:
-    """tbd/inbox配下に1ファイルを書き込み、絶対パスを返す。"""
+    """tbd/inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
     tbd_dir = notes / "tbd" / "inbox"
     tbd_dir.mkdir(parents=True, exist_ok=True)
     path = tbd_dir / filename
+    source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\nquestion_type: free\n---\n\n"
+        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\nquestion_type: free\n{source_line}---\n\n"
         f"## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )

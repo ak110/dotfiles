@@ -20,7 +20,7 @@ from _atk_fb_common import (
     _pull,
     _repo_lock,
 )
-from _atk_fb_formatters import _body_summary, _display_width, _tbd_body_summary
+from _atk_fb_formatters import _body_summary, _display_width, _parse_source, _source_matches, _tbd_body_summary
 from _atk_fb_repo import _resolve_repo_id
 
 
@@ -72,6 +72,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     tbd側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`processing`・`adopted`・`rejected`・`all`は
     tbd側に作用せず、tbd inboxの全件を返す）。
     `--category`指定時はfeedback側のみを指定ラベルへ限定する。
+    `--source`指定時はfeedback・tbd双方をfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--type=all`（既定）指定時、該当部エントリが1件以上ある場合のみ種別ヘッダを出力する。
@@ -115,6 +116,10 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             feedback_entries_with_state = [
                 entry for entry in feedback_entries_with_state if _has_category(entry[2], args.category)
             ]
+        if args.source is not None:
+            feedback_entries_with_state = [
+                entry for entry in feedback_entries_with_state if _source_matches(_parse_source(entry[2]), args.source)
+            ]
 
     tbd_entries: list[tuple[pathlib.Path, str, str]] = []
     if args.type in ("all", "tbd"):
@@ -126,6 +131,8 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             if args.status == "unanswered" and answered:
                 continue
             if args.status == "active" and not answered:
+                continue
+            if args.source is not None and not _source_matches(_parse_source(text), args.source):
                 continue
             tbd_entries.append((path, target_repo, text))
 
