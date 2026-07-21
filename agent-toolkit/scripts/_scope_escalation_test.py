@@ -56,6 +56,7 @@ class TestMatchScopeEscalation:
             "plan-reviewerの指摘を反映した。",
             "review subagents finished successfully.",
             "plan-reviewer" + "z" * 41 + "background",
+            "後続の実施記録を報告した。この文書は仕様対象外の項目を含まない。",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

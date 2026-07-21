@@ -94,6 +94,7 @@ next-cycle-defer	後続作業へ送る
 next-cycle-defer	後続PRで対応
 next-cycle-defer	後続チケットで扱う
 next-cycle-defer	後続issueで扱う
+next-cycle-defer	後続、対象外
 next-cycle-defer	次回対応とする
 next-cycle-defer	次回対応に回す
 process-scale	膨大な工程を要するため簡略化する
