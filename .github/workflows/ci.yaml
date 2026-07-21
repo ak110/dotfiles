@@ -143,7 +143,9 @@ jobs:
           # chezmoi-apply はローカルコミット時専用の pre-commit hook であるため CI ではスキップする
           # claude-plugin-validate は claude CLI が必要で CI 環境への導入は pnpm/npm の
           # minimum-release-age 機構とメタデータ欠落で安定せず現実的でないためスキップする
-          SKIP: chezmoi-apply,claude-plugin-validate
+          # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
+          # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
+          SKIP: chezmoi-apply,claude-plugin-validate,cargo-fmt,cargo-clippy
         run: pyfltr ci
 
       - name: Prune uv cache for CI
