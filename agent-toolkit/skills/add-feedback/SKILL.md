@@ -79,6 +79,21 @@ TBD投入（`atk tb add`）を伴う場合の書式は
 項目間に共通する前置きは各メッセージ本文へ複写する。
 フィードバックは個別ファイルへ分割して保管されるためファイル間参照は機能しない。
 
+### 完了条件と連鎖feedback
+
+投入対象が実装完了後に他リポジトリへの後続feedback投入を要する場合、
+feedback本文末尾へ`### 完了条件と連鎖feedback`見出しで始まるブロックとして次を明示する。
+後続工程`agent-toolkit:process-feedbacks-finish`「工程4.5」は本見出しの有無で検出対象を判定する。
+
+- 実装完了条件: 実装完了と判定するための具体的な観測条件を、直接観測可能な手段
+  （`git tag <name>`存在確認・`gh run list --commit=<sha>`のconclusion確認・
+  `curl <URL>/<pypi-package>/json`のバージョン反映確認・`gh release view <tag>`存在確認など）と
+  併記して1つ以上列挙する。プロジェクトの配布形態（PyPIパッケージ・GitHub Release・
+  内部リポジトリのpatch release・タグのみなど）に応じて必要な条件を選ぶ
+- 連鎖投入する後続feedbackの完全な内容: 後続feedback本文の全文（target_repo・反映先・
+  反映内容・経緯を含む）を明示する
+- 関連feedback ID: 後続feedback本文冒頭または末尾へ「関連feedback: <元feedback ID>」形式で明示する
+
 ## ステップ4: 投入
 
 target_repoごとに、対応するメッセージ群を位置引数で渡して`atk fb add`を呼び出す。

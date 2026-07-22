@@ -108,28 +108,37 @@ Claude Code固有事項として、本体作業に着手する時点で
 `git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
 `git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
 
-- 手順
-  - `git rev-parse HEAD`でpush対象shaを取得する
-  - `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
-  - `--workflow`引数を追加指定する場合はworkflow名・workflowファイル名・数値IDのいずれも受理するが、
-    ファイル名指定時は実際の`workflowName`と一致しない場合がある。
-    `gh workflow list`で正確な`workflowName`または数値IDを事前確認するか、
-    commit限定で十分なら`--workflow`を省略し`--commit`のみで対象commitのrunを取得する
+- 推奨手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --sha=<sha>`を
+  Bashツールで`run_in_background=true`起動して全run完了まで待機する。
+  既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
+  background起動が前提となる
+  - 組み込み機能: タイムアウト・登録遅延リトライ・進捗ログ・
+    シグナル受信時の即時exit（`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
+  - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
+    `--subprocess-timeout`・`--follow-cancelled`
+  - exit code: 0=全run success、1=いずれか非success（failure・cancelled・timed_out・action_required等）、2=タイムアウト
+  - exit code（続き）: 3=gh呼び出し失敗、4=登録猶予が経過してもrun未登録、130=シグナル終了
+  - 登録遅延・タイムアウト未設定の手書きpollループは非推奨とする
+- `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
+  （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
+  - `git log <sha>..HEAD`で得た後続SHA上のrun成功をもって通過と判定する
+  - 全runがcancelledの場合のみ発動し、混在（一部success/一部cancelled）は
+    非success扱いで失敗exitする（safe default）
+  - `<sha>`が現在HEADの祖先でない場合は`EXIT_GH_ERROR`で終了する
+- 手動確認手順（プラグイン未導入環境などスクリプトを利用できない場合の代替）
+  - `git rev-parse HEAD`でpush対象shaを取得し、
+    `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
+  - `--workflow`引数を追加指定する場合はworkflow名・数値IDのいずれも受理するが、
+    ファイル名指定時は`workflowName`と一致しない場合があるため、
+    `gh workflow list`で正確な`workflowName`を事前確認するか`--commit`のみで代替する
   - 各run IDについて`gh run watch <run-id> --exit-status`で完了を待つ
-- run未登録・件数不足時の対処
-  - GitHub側の登録遅延に備え、初回0件時は数十秒待って再取得する
-  - `.github/workflows/`配下（`*.yml`・`*.yaml`両方）のpush起動条件を対象shaの変更パス・ブランチと照合する。
-    対象条件はbranches・paths・branches-ignore・paths-ignoreを含む。
-    起動対象がある想定なのに十分なrunが集まらない場合は原因を特定する
-    - 登録遅延の場合はrun登録・成功まで引き続き待つ
-    - ワークフロー無効化・トリガー未定義などでCIが実行不能な場合は、
-      ユーザーの明示判断（当該pushをCI通過確認なしで完了扱いとしてよい確認）を得てから完了扱いとする
+- run未登録・件数不足時の対処（`wait_ci.py`使用時は`--registration-grace`と`EXIT_NO_RUNS`が同等処理を担う）
+  - `.github/workflows/`配下（`*.yml`・`*.yaml`両方）のpush起動条件
+    （branches・paths・branches-ignore・paths-ignore）を対象shaの変更パス・ブランチと照合する
+  - 起動対象がある想定なのに十分なrunが集まらない場合は原因を特定する
+  - 登録遅延なら引き続き待ち、ワークフロー無効化・トリガー未定義などでCI実行不能なら
+    ユーザーの明示判断を得てから完了扱いとする
   - 判定困難な場合はユーザーへ確認する
-  - 自コミットのrunが後続pushによる`concurrency.cancel-in-progress`打ち切りでcancelled終了した場合は、
-    `gh run list --branch <branch> --json databaseId,headSha,status,conclusion,createdAt`で当該ブランチのrun一覧を取得し、
-    自コミットSHA以降のコミット（`git log --format=%H <自コミット>..HEAD`で列挙）に対応するrunで
-    `conclusion == success`のものが1件以上あれば、自コミットを履歴に含む後続runの成功をもって通過確認とする。
-    該当なしの場合は追加コミットまたはCI再実行で通過確認を得る
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
 - 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk tb adopt`）は

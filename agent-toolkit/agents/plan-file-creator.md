@@ -43,6 +43,11 @@ user-invocable: false
 # （`plan-reviewer`・`codex-review`・`agent-doc-validator`）は`agent-toolkit/scripts/posttooluse.py`の
 # `_PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS`定数のキー集合と同期する
 # 改訂時は両ファイルを同時更新する
+# 同期注記: `agent-doc-validator`起動ブロック時の代行手順は、`plan-codex-delegate`ブロック時代行
+# パターンと対称に、本ファイル「エスカレーション基準」節・「実施済みレビュー結果の転記」パラグラフと
+# `agent-toolkit/skills/plan-mode/references/codex-review.md`
+# 「plan-file-creatorからの起動」節・`agent-toolkit/skills/plan-mode/references/launch-prompts-plan-file-creator.md`
+# 「起動プロンプト雛形」節の計4箇所へ意図的に重複させている。改訂時は4箇所を同時更新する。
 ---
 
 # plan-file-creator
@@ -112,6 +117,8 @@ user-invocable: false
    「実施済みレビュー結果の転記」欄に内容がある場合は転記済みレビューを実施済みとして扱い、
    転記された全指摘を反映対象に含めて5.から再開する（未転記のレビューのみ新規起動する）
 5. 全指摘が出揃った時点で重大度に基づき対応要否を判断し、対応する指摘を計画ファイルへ反映する。
+   反映時は`integrity-checks.md`「計画文内・他ファイルとの整合」節が定める
+   改訂委譲時の既存記述の整合性チェックに従い、旧方針を参照する記述の残置を横断grepで検知する。
    設計判断を要する指摘で確定できない場合は「エスカレーション基準」に従い`needs_escalation`で返却する
 6. 反映後に`uvx pyfltr run-for-agent --no-fix --work-dir=. <計画ファイルパス>`を実行し、
    検出違反を計画ファイル本文へ反映する
@@ -143,6 +150,10 @@ codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-vali
   （`codex-review.md`「codexレビューの進め方」節の確認要件に該当する場合を含む）
 - `plan-codex-delegate`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
   自身で行わない方針（frontmatterコメント参照）により継続不能な場合
+- `agent-doc-validator`起動がauto mode下でブロックされ、直接フォールバックを
+  行わない方針により継続不能な場合。代行規定は
+  `agent-toolkit/skills/plan-mode/references/codex-review.md`
+  「plan-file-creatorからの起動」節配下の`agent-doc-validator`代行規定を参照する
 - foreground並列起動下でサブエージェントの応答が得られない場合
   （サブエージェントの応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
 
@@ -155,6 +166,9 @@ codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-vali
 `mcp__codex__codex`直接呼び出しでcodexレビューを代行実施する。
 代行実施したレビュー結果を「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
 再起動された本エージェントは転記結果を実施済みとして扱い、指摘反映（進め方5.）以降から再開する。
+`agent-doc-validator`起動ブロックによる`needs_escalation`の場合、呼び出し元が
+`subagent_type: agent-toolkit:agent-doc-validator`をAgentツールで起動する。
+代行実施したレビュー結果も同様に「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
 
 ## plan modeサンドボックス対応
 

@@ -1,3 +1,12 @@
+---
+# 同期注記: 「実施済みレビュー結果の転記」欄の`agent-doc-validator`代行規定は、
+# `plan-codex-delegate`ブロック時代行パターンと対称に、
+# `agent-toolkit/agents/plan-file-creator.md`「エスカレーション基準」節・
+# 「実施済みレビュー結果の転記」パラグラフと
+# `agent-toolkit/skills/plan-mode/references/codex-review.md`
+# 「plan-file-creatorからの起動」節の計4箇所へ意図的に重複させている。改訂時は4箇所を同時更新する。
+---
+
 # plan-file-creator起動プロンプト雛形
 
 `agent-toolkit:plan-mode`工程6で`plan-file-creator`を起動する際の起動プロンプトを、
@@ -21,7 +30,9 @@
       - 横断grep確認の結果: {実施内容と検出件数}
     - permission_mode: {plan | 非plan}
     - 実施済みレビュー結果の転記（該当時）: {`plan-codex-delegate`起動ブロックにより
-      呼び出し元が`mcp__codex__codex`直接呼び出しで代行実施したcodexレビュー結果に加え、
+      呼び出し元が`mcp__codex__codex`直接呼び出しで代行実施したcodexレビュー結果、
+      `agent-doc-validator`起動ブロックにより呼び出し元が
+      `subagent_type: agent-toolkit:agent-doc-validator`で代行実施したレビュー結果に加え、
       前回の`plan-file-creator`起動が完了報告へ引き継いだ`plan-reviewer`・`agent-doc-validator`の
       完了報告原文も含める。該当なしの場合は「なし」と明記}
     - 実施範囲: {起草のみ | 起草＋整合性チェック（既定値、省略時はこちら）}
