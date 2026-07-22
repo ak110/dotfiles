@@ -73,6 +73,15 @@ def test_process_omission_blocks() -> None:
     assert body["decision"] == "block"
 
 
+def test_scope_volume_blocks() -> None:
+    text = _pick_scope_escalation_text("scope-volume")
+    if not text:
+        pytest.skip("scope-escalation fixture for scope-volume not available")
+    result = _run({"last_assistant_message": text})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+
+
 def test_single_session_blocks() -> None:
     text = _pick_scope_escalation_text("single-session")
     if not text:

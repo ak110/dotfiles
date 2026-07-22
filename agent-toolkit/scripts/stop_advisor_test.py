@@ -863,6 +863,48 @@ class TestScopeEscalationDetection:
         body = _block_reason(decision)
         assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
+    def test_extended_categories_apply_under_plan_and_add_feedback(self, tmp_path: pathlib.Path):
+        """`plan_and_add_feedback_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
+
+        3系統のスキル起動フラグ（plan_mode／process_feedbacks／plan_and_add_feedback）は
+        いずれも`_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
+        """
+        phrase = _pick_scope_escalation_text("single-session")
+        if not phrase:
+            pytest.skip("scope-escalation fixture for single-session not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        _write_state(tmp_path, "test-plan-and-add-feedback", {"plan_and_add_feedback_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-plan-and-add-feedback", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "scope-escalation-phrases" in body or "scope-escalation" in body
+
+    def test_scope_volume_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
+        """拡張フォーカス有効時、`scope-volume`カテゴリを検出しblockする。"""
+        phrase = _pick_scope_escalation_text("scope-volume")
+        if not phrase:
+            pytest.skip("scope-escalation fixture for scope-volume not available")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _assistant_text_only(phrase)],
+        )
+        _write_state(tmp_path, "test-scope-volume", {"plan_mode_skill_invoked": True})
+        result = _run(
+            {"session_id": "test-scope-volume", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        body = _block_reason(decision)
+        assert "scope-volume" in body or "scope-escalation-phrases" in body or "scope-escalation" in body
+
     def test_overhead_tradeoff_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
         """拡張フォーカス有効時、`overhead-tradeoff`カテゴリを検出しblockする。"""
         phrase = _pick_scope_escalation_text("overhead-tradeoff")

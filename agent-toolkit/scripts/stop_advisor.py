@@ -96,11 +96,16 @@ _SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-r
 def _build_stop_focus_categories(state: dict) -> frozenset[str]:
     """スキル起動フラグに応じてStop経路の照合カテゴリ集合を決定する。
 
-    `plan_mode_skill_invoked`・`process_feedbacks_skill_invoked`のいずれかが真の場合、
+    `plan_mode_skill_invoked`・`process_feedbacks_skill_invoked`・
+    `plan_and_add_feedback_skill_invoked`のいずれかが真の場合、
     縮退表明を含む可能性が高い文脈と判断し`_STOP_FOCUS_CATEGORIES_EXTENDED`を返す。
     いずれも偽の場合は基本カテゴリ`_STOP_FOCUS_CATEGORIES`を返す。
     """
-    if state.get("plan_mode_skill_invoked") or state.get("process_feedbacks_skill_invoked"):
+    if (
+        state.get("plan_mode_skill_invoked")
+        or state.get("process_feedbacks_skill_invoked")
+        or state.get("plan_and_add_feedback_skill_invoked")
+    ):
         return _STOP_FOCUS_CATEGORIES_EXTENDED
     return _STOP_FOCUS_CATEGORIES
 

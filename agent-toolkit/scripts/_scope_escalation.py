@@ -38,6 +38,7 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
         "approach-confirm",
         "subagent-hesitation",
         "overhead-tradeoff",
+        "scope-volume",
     }
 )
 
@@ -100,7 +101,20 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"((着手|対応|実装)(を)?(延期|後回し|別途|別計画)|別作業(と|扱い|化)|別(issue|チケット|PR)(と|扱い|化))"),
     ),
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
-    ("scope-volume", re.compile(r"(対象|作業)(件数|範囲)が(多|広|膨大)")),
+    (
+        "scope-volume",
+        re.compile(
+            r"(対象|作業)(件数|範囲)が(多|広|膨大)[^。\n]{0,30}"
+            r"(相談し|委ねたい|決めてほしい|進め方の相談|進め方を委ね)"
+        ),
+    ),
+    (
+        "scope-volume",
+        re.compile(
+            r"範囲が広い(ため)?[^。\n]{0,45}(のみ|に限定|限って|限る)"
+            r"(?![^。\n]{0,10}(せず|しない|ない))"
+        ),
+    ),
     (
         "pattern-conformance",
         re.compile(
@@ -121,6 +135,10 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|観測事象として[^、。\n]{0,10}(記録|残)"
             r"|(実施|起動)[はがを]?不要(と)?判断)"
         ),
+    ),
+    (
+        "process-omission",
+        re.compile(r"現実的には[^。\n]{0,60}(のみ(で)?書く|要旨のみ|概要のみ|方針で書く)"),
     ),
     (
         "process-scale",
@@ -282,6 +300,21 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|時間的制約|時間コストを考慮|効率優先"
             r"|(極めて|著しく)?大規模になる"
             r"|規模[^、。\n]{0,20}(大規模|過大))"
+        ),
+    ),
+    (
+        "quality-tradeoff",
+        re.compile(
+            r"(情報量|記述量|文書量)[^。\n]{0,15}(膨大|大量)[^。\n]{0,60}"
+            r"(要旨のみ|概要のみ|のみ記載|のみ記述|に代替)"
+            r"(?![^。\n]{0,10}(せず|しない|ない))"
+        ),
+    ),
+    (
+        "quality-tradeoff",
+        re.compile(
+            r"工数[^。\n]{0,15}バランス[^。\n]{0,40}(のみ|要旨|概要|省略|省く|代替|限定)"
+            r"(?![^。\n]{0,10}(せず|しない|ない))"
         ),
     ),
     (

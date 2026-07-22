@@ -38,7 +38,8 @@ defer-onset	別PR化する
 priority-consult	優先順位を相談
 priority-consult	優先順位判断を委ね
 priority-consult	範囲を決め
-scope-volume	対象件数が多い
+scope-volume	対象件数が多いため相談したい
+scope-volume	範囲が広いため要点のみ記載する
 pattern-conformance	本計画外
 pattern-conformance	本タスク範囲外
 pattern-conformance	本タスクスコープ外
@@ -66,6 +67,7 @@ process-omission	session-reviewで観測事象として記録する
 process-omission	振り返りで観測事象として記録して続行する
 process-omission	観測事象として記録して続行する
 process-omission	コミット対象がないため実施不要と判断
+process-omission	現実的には要旨のみ書く
 quality-tradeoff	規模が大きすぎる
 quality-tradeoff	品質を維持できない
 quality-tradeoff	品質維持が困難
@@ -75,6 +77,8 @@ quality-tradeoff	工数見合わないため
 quality-tradeoff	時間的制約
 quality-tradeoff	時間コストを考慮
 quality-tradeoff	効率優先
+quality-tradeoff	情報量が膨大で数千行になるため要旨のみ記載する
+quality-tradeoff	工数とのバランスから省く
 next-cycle-defer	次サイクルで再評価
 next-cycle-defer	次セッションに対応
 next-cycle-defer	別セッションで再評価
