@@ -1,6 +1,7 @@
 """atk (agent-toolkit `atk fb`) の拡張サブコマンド・オプションのテスト。
 
-`add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`の単体テストを集約する。
+`add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`・
+`add`のファイルパス誤投入拒否・`fb add`/`tb add`の`--target-repo`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
 共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
 """
@@ -28,6 +29,7 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
+    _setup_tbd_env,
     _write_feedback_file,
     _write_tbd_file,
 )
@@ -700,3 +702,209 @@ class TestAddViaEditor:
         captured = capsys.readouterr()
         assert "終了コード2" in captured.err
         assert not list((notes / "feedback" / "inbox").iterdir())
+
+
+class TestAddFilePathArgumentRejected:
+    """`fb add`の位置引数がファイルパスに解釈される場合の誤操作拒否を検証する。"""
+
+    def test_md_file_path_argument_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """既存の`.md`ファイルパスを単独の位置引数として渡すと拒否される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("投入したい本文", encoding="utf-8")
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ファイルパス" in captured.err
+        assert not list((notes / "feedback" / "inbox").glob("*.md"))
+
+    def test_nonexistent_md_path_string_not_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`.md`で終わるが実在しないパス文字列は本文として通常投入される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.chdir(tmp_path)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "docs/architecture.md"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "docs/architecture.md" in content
+
+    def test_extensionless_temp_file_argument_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`mktemp`生成の拡張子なし一時ファイルパスを単独の位置引数として渡すと拒否される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        body_file = tmp_path / "tmp.abc123"
+        body_file.write_text("投入したい本文", encoding="utf-8")
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ファイルパス" in captured.err
+        assert not list((notes / "feedback" / "inbox").glob("*.md"))
+
+
+class TestAddTargetRepoOption:
+    """`fb add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
+
+    def test_target_repo_option_used_as_fallback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`--target-repo`指定時、frontmatter未指定の本文はCLI値がtarget_repoとして記録される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        cwd_repo = tmp_path / "cwdrepo"
+        cwd_repo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "add", "--target-repo", "github.com/example/otherrepo", "本文"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/otherrepo" in content
+
+    def test_frontmatter_target_repo_overrides_cli_option(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """frontmatterでtarget_repoが明示された本文は`--target-repo`より優先される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        cwd_repo = tmp_path / "cwdrepo"
+        cwd_repo.mkdir()
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
+            if resp is not None:
+                return resp
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        frontmatter_body = "---\ntarget_repo: github.com/example/fmrepo\n---\n\n本文"
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["fb", "add", "--target-repo", "github.com/example/otherrepo", frontmatter_body],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+
+        assert exc_info.value.code == 0
+        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/fmrepo" in content
+
+
+class TestTbdAddTargetRepoOption:
+    """`tb add --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
+
+    def test_target_repo_option_used_as_fallback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """`--target-repo`指定時、位置引数を省略した呼び出しではCLI値がtarget_repoとして記録される。"""
+        notes = _setup_tbd_env(tmp_path)
+        cwd_repo = tmp_path / "cwdrepo"
+        cwd_repo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["tb", "add", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+
+        files = sorted((notes / "tbd" / "inbox").iterdir())
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/otherrepo" in content
+
+    def test_legacy_repo_path_takes_priority_over_target_repo_option(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧REPO_PATH位置引数形式が併用された場合、`--target-repo`より優先される。"""
+        notes = _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["tb", "add", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+
+        files = sorted((notes / "tbd" / "inbox").iterdir())
+        content = files[0].read_text(encoding="utf-8")
+        assert "target_repo: github.com/example/myrepo" in content

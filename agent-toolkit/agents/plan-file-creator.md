@@ -44,7 +44,8 @@ user-invocable: false
 # `_PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS`定数のキー集合と同期する
 # 改訂時は両ファイルを同時更新する
 # 同期注記: `agent-doc-validator`起動ブロック時の代行手順は、`plan-codex-delegate`ブロック時代行
-# パターンと対称に、本ファイル「エスカレーション基準」節・「実施済みレビュー結果の転記」パラグラフと
+# パターンと対称に、`agent-toolkit/references/plan-file-creator/escalation-criteria.md`・
+# 本ファイル「実施済みレビュー結果の転記」パラグラフと
 # `agent-toolkit/skills/plan-mode/references/codex-review.md`
 # 「plan-file-creatorからの起動」節・`agent-toolkit/skills/plan-mode/references/launch-prompts-plan-file-creator.md`
 # 「起動プロンプト雛形」節の計4箇所へ意図的に重複させている。改訂時は4箇所を同時更新する。
@@ -99,7 +100,7 @@ user-invocable: false
    `sample-meta-norm.md`も`Read`する
 2. `plan-file-guidelines.md`のテンプレートに従い所定パスへ計画ファイルを作成・改訂する。
    工程2〜5の合意事項・解釈・恒久化文面・周辺対応をテンプレート規定の各セクションへ転記する
-3. 書き込み直後に`uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
+3. 書き込み直後に`uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
    実行し、検出違反を是正する。実施範囲が`起草のみ`の場合は本ステップ完了後に`## 出力`の完了報告書式へ進む
 4. `agent-toolkit/skills/plan-mode/references/integrity-checks.md`と
    `agent-toolkit/skills/plan-mode/references/process7-bypass-detection.md`を読み込み、
@@ -119,7 +120,9 @@ user-invocable: false
 5. 全指摘が出揃った時点で重大度に基づき対応要否を判断し、対応する指摘を計画ファイルへ反映する。
    反映時は`integrity-checks.md`「計画文内・他ファイルとの整合」節が定める
    改訂委譲時の既存記述の整合性チェックに従い、旧方針を参照する記述の残置を横断grepで検知する。
-   設計判断を要する指摘で確定できない場合は「エスカレーション基準」に従い`needs_escalation`で返却する
+   設計判断を要する指摘で確定できない場合は`../references/plan-file-creator/escalation-criteria.md`を
+   `Read`し「エスカレーション基準」に従い`needs_escalation`で返却する
+   - 起動プロンプトの「全廃対象grepパターン」欄に内容がある場合、指摘反映後の計画ファイル全文へ当該grepを実行して置換後ブロック内が指定件数以下であることを確認してからレビュー工程（進め方4.）へ戻る。走査除外は`## 背景`・`### 却下した代替案`・`[現行]`ブロックとし、`[置換後]`ブロック・本文記述は走査対象に含める
 6. 反映後に`uvx pyfltr run-for-agent --no-fix --work-dir=. <計画ファイルパス>`を実行し、
    検出違反を計画ファイル本文へ反映する
 7. 完了条件（各レビュー・機械チェック1周実施、重大以上の指摘の全消化または明示的な不対応判定、
@@ -141,33 +144,9 @@ codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-vali
 
 ## エスカレーション基準
 
-次のいずれかに該当する場合、直接補正で解消せず`needs_escalation`で呼び出し元へ返却する。
-
-- 計画の成否を左右する設計判断（構成要素の配置先・責務帰属・データの格納先・方式選択等）を
-  委譲情報だけで確定できない場合
-- レビュー・codex指摘の対応方針についてユーザー確認が必要と判断した場合
-  （`codex-review.md`「codexレビューの進め方」節の確認要件に該当する場合を含む）
-- `plan-codex-delegate`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
-  自身で行わない方針（frontmatterコメント参照）により継続不能な場合
-- `agent-doc-validator`起動がauto mode下でブロックされ、直接フォールバックを
-  行わない方針により継続不能な場合。代行規定は
-  `agent-toolkit/skills/plan-mode/references/codex-review.md`
-  「plan-file-creatorからの起動」節配下の`agent-doc-validator`代行規定を参照する
-- background並列起動下でサブエージェントの応答が得られない場合
-  （催促・状態照会後も応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
-
-`needs_escalation`時は論点・観測事実・暫定案を`escalation_points`欄へ明記する。
-加えて受領済みの全レビュー結果（`plan-reviewer`・`agent-doc-validator`・codexの各完了報告の原文）を
-完了報告本文へ引き継ぐ。呼び出し元は再委譲時にこれを
-「実施済みレビュー結果の転記」欄へ機械転記し、再起動後の指摘反映で全指摘を再現可能にする。
-呼び出し元は返却論点のみを解決し、確定方針込みの縮減プロンプトで`plan-file-creator`を新規起動する。
-`plan-codex-delegate`起動ブロックによる`needs_escalation`の場合、呼び出し元が
-`mcp__codex__codex`直接呼び出しでcodexレビューを代行実施する。
-代行実施したレビュー結果を「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
-再起動された本エージェントは転記結果を実施済みとして扱い、指摘反映（進め方5.）以降から再開する。
-`agent-doc-validator`起動ブロックによる`needs_escalation`の場合、呼び出し元が
-`subagent_type: agent-toolkit:agent-doc-validator`をAgentツールで起動する。
-代行実施したレビュー結果も同様に「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
+該当条件の一覧・`needs_escalation`時の記載事項・呼び出し元の代行手順は
+[../references/plan-file-creator/escalation-criteria.md](../references/plan-file-creator/escalation-criteria.md)に集約する。
+`needs_escalation`判定を要する場面（進め方5.等）では同ファイルを`Read`してから判定する。
 
 ## plan modeサンドボックス対応
 

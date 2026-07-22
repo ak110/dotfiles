@@ -123,6 +123,22 @@ class TestTbdAddSourceOptionParser:
         assert args.source == "session-hold"
 
 
+class TestAddTargetRepoOptionParser:
+    """`fb add`・`tb add`の`--target-repo`受理をargparseレベルで検証する。"""
+
+    def test_fb_add_accepts_target_repo(self) -> None:
+        """`fb add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["fb", "add", "--target-repo", "github.com/foo/bar", "本文"])
+        assert args.target_repo == "github.com/foo/bar"
+
+    def test_tb_add_accepts_target_repo(self) -> None:
+        """`tb add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["tb", "add", "--target-repo", "github.com/foo/bar", "本文"])
+        assert args.target_repo == "github.com/foo/bar"
+
+
 class TestSubcommandSubparserDefault:
     """`fb add`・`tb add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
 

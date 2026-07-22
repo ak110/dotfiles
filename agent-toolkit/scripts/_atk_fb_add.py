@@ -78,20 +78,43 @@ def _cmd_add(
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
+    `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
+    無い場合のfallback値として使う。
     エディター経由の本文確定後に`_pull`を実行する順序とし、
     エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
+    本文文字列（位置引数またはエディター確定内容）が実在する通常ファイルのパスと解釈できる場合は、
+    本文文字列でなくファイル内容の渡し忘れによる誤操作とみなし`_repo_lock`取得前に拒否する
+    （拡張子は問わない。`mktemp`が生成する拡張子なしの一時ファイルパスの誤投入も検出対象に含めるためである）。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
-    target_repo = _resolve_repo_id(repo_path_override)
+    if repo_path_override is not None:
+        target_repo = _resolve_repo_id(repo_path_override)
+    elif args.target_repo:
+        target_repo = _resolve_repo_id(args.target_repo)
+    else:
+        target_repo = _resolve_repo_id(None)
     if not messages:
         message = _collect_message_via_editor()
         if message is None:
             sys.exit(1)
         messages = [message]
     for message in messages:
+        candidate = pathlib.Path(message.strip())
+        try:
+            if message.strip() and candidate.is_file():
+                print(
+                    f"投入を拒否しました: 位置引数がファイルパス '{message.strip()}' として解釈できます。"
+                    "atk fb addは本文文字列を位置引数として受け取ります。"
+                    f'ファイル内容を投入する場合は "$(cat {message.strip()})" のように展開してください。',
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        except OSError:
+            # パス長制限などで検査できない文字列は本文として扱う。
+            pass
         _, body = _parse_leading_frontmatter(message)
         if _body_is_effectively_empty(body):
             preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"

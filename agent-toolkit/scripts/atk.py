@@ -132,6 +132,10 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
             "メッセージ先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
+    _add_target_repo_arg(
+        add,
+        help_extra="frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。",
+    )
     add.set_defaults(subparser=add)
 
     list_ = sub.add_parser(
@@ -354,6 +358,10 @@ def _build_tb_parser(tb: argparse.ArgumentParser) -> None:
         metavar="MESSAGE",
         nargs="*",
         help="投入するTBDメッセージ（省略時は$EDITORで編集する）。対象リポジトリは常にカレントディレクトリから解決する。",
+    )
+    _add_target_repo_arg(
+        add,
+        help_extra="投入するTBDのtarget_repoのfallback値として扱う。",
     )
     add.set_defaults(subparser=add)
 

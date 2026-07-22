@@ -74,12 +74,18 @@ def _cmd_tbd_add(
     対象リポジトリは常にカレントディレクトリから解決する。ただし`tb add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
+    `--target-repo`指定時は、レガシーREPO_PATH位置引数が無い場合のfallback値として使う。
     `choice`類型以外は`_looks_like_question`で疑問文の有無を判定し、
     含まれない場合は投入対象ファイル名を添えて標準エラーへ警告する（投入自体は成功させる）。
     """
     messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
-    target_repo = _resolve_repo_id(repo_path_override)
+    if repo_path_override is not None:
+        target_repo = _resolve_repo_id(repo_path_override)
+    elif args.target_repo:
+        target_repo = _resolve_repo_id(args.target_repo)
+    else:
+        target_repo = _resolve_repo_id(None)
     if args.question_type == "choice" and not args.choices:
         args.subparser.error("--question-type=choice のときは --choices を指定してください。")
     if not messages:

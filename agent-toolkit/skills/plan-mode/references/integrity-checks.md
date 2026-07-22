@@ -1,7 +1,8 @@
 ---
 # 同期注記: `wc -l`実測値の記載先定義SSOTは`plan-file-guidelines.md`「調査結果（`## 調査結果`）」節。改訂時は同節と`integrity-checks.md`「編集対象スキル固有規定の事前適用」節を同時更新する。
 # 同期注記: `### 計画メタ情報`・`### 現状`の例外規定は`plan-file-guidelines.md`のH3構成と同期させる。
-# 同期注記: 「判定」列の`bump不要`ラベル定義は`.claude/skills/agent-toolkit-edit/SKILL.md`
+# 同期注記: 「判定」列の`bump不要`ラベル定義は
+# `.claude/skills/agent-toolkit-edit/references/version-bump.md`
 # 「plan modeでの取り扱い」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
 ---
 # 計画ファイル整合性チェック
@@ -93,7 +94,7 @@
 `plan-file-creator`が自身のBashツールで実施する部分（会話コンテキスト非依存のため委譲可能）:
 
 - 各サブエージェント起動（条件成立時の`agent-doc-validator`含む）前に、次を機械的にセルフチェックする
-  - `uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイルパス>`を実行する。
+  - `uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイルパス>`を実行する。
     検査項目は同スクリプトのdocstringを典拠とする
   - `## 変更内容`H3節配下の`[現行]/[置換後]`テキスト対比ブロックが対象ファイル実体と一意一致するか
     （転記の陳腐化防止）を検査対象とする。不一致検出時は`[現行]`ブロックへ周辺行を含めて一意化する
