@@ -115,7 +115,7 @@ Agentツール起動は常に独立コンテキストで開始される確定事
 観点に限定する。この構造は「実装委譲（plan-codex-delegate / plan-implementer）の関係」節と対称とする。
 
 計画レビューのcodex並列化は環境設定によらず常時適用する。
-実装レビューのみ環境単位のバランスモード（既定「codex寄り」）で経路が分岐する。
+実装レビューのみバランスモード（既定「codex寄り」）で経路が分岐する。
 判定手段・既定値の詳細は`agent-toolkit/skills/careful-review/SKILL.md`「サブエージェント起動方針」節を正典とする。
 
 - `plan-codex-delegate`: 計画レビューの第一候補（常時）、実装レビューの第一候補（モード「codex寄り」時）。

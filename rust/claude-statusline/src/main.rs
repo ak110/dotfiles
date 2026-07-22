@@ -6,6 +6,7 @@
 //! - `statusline`: `scripts/claude_status_line.py`の後継
 //! - `subagent-statusline`: `scripts/claude_subagent_status_line.py`の後継
 
+mod balance_mode;
 mod statusline;
 mod subagent;
 

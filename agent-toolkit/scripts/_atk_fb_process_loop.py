@@ -13,6 +13,7 @@ import threading
 import time
 
 import _process_loop_log
+import _review_balance_usage
 import watchdog.events
 import watchdog.observers
 from _atk_fb_common import _count_pending_entries, _pull, _repo_lock
@@ -149,6 +150,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
     （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
+    `session_start`直前・`session_end`直後には`usage_snapshot`イベント
+    （`phase="start"`/`phase="end"`）も記録し、`_review_balance_usage.snapshot()`が
+    返すClaude/Codexの使用率とモードをまとめて残す。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
@@ -167,6 +171,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                 _process_loop_log.append("loop_iter_start", count=count)
                 if count > 0:
                     print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
+                    _process_loop_log.append("usage_snapshot", phase="start", **_review_balance_usage.snapshot())
                     _process_loop_log.append("session_start")
                     session_started_at = time.monotonic()
                     # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
@@ -183,6 +188,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         elapsed_sec=round(time.monotonic() - session_started_at, 3),
                         returncode=result.returncode,
                     )
+                    _process_loop_log.append("usage_snapshot", phase="end", **_review_balance_usage.snapshot())
                     if result.returncode not in _NORMAL_EXIT_CODES:
                         print(
                             f"claudeがexit code {result.returncode}で異常終了しました。",
