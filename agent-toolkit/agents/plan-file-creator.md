@@ -15,8 +15,8 @@ user-invocable: false
 # ユーザー発話・提示素材との照合など会話コンテキスト依存の点検は呼び出し元が起動前に実施し、
 # 結果のみを受け取る（詳細は「入力」節）。
 # tools制限をしない理由: 計画ファイルの新規作成・改訂（Write/Edit/MultiEdit）、機械チェック実行
-# （Bash）、内部サブエージェント起動（Agent/Task。配下3種のレビュー系サブエージェントはforeground限定
-# で起動しSendMessageを介さない）、本エージェント自身がnamed background起動された場合の
+# （Bash）、内部サブエージェント起動（Agent/Task。配下3種のレビュー系サブエージェントはbackground既定
+# で起動しSendMessage経由で完了報告を受領する）、本エージェント自身がnamed background起動された場合の
 # 完了報告能動送付（SendMessage）を単一エージェントが担うため、`plan-impl-executor.md`と
 # 同様に全ツール許可とする。
 # codexレビューは既定で`plan-codex-delegate`（用途: 計画レビュー）の観点分担並列起動経由で行い、
@@ -36,7 +36,7 @@ user-invocable: false
 # 同期注記: 「`plan-file-creator`は当該サブエージェント群の完了報告受領...」の
 # 重複記述は`launch-prompts-drafting.md`「共通遵守事項」節にある。
 # 改訂時は両ファイルを同時更新する。
-# 同期注記: 配下3種サブエージェントのforeground限定・named background禁止規定は
+# 同期注記: 配下3種サブエージェントのbackground並列起動既定・SendMessage能動送付義務規定は
 # `agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`本文冒頭の
 # 共通遵守事項バレット列挙と意図的に重複する。改訂時は両ファイルを同時更新する。
 # 同期注記: `## 出力`節`invoked_subagents:`欄が許容する識別子
@@ -110,9 +110,9 @@ user-invocable: false
    `plan-reviewer`は`codex-review.md`「codex利用可否の3段階判定」節の段階3が
    成立した場合のみ代替起動する。
    `agent-doc-validator`は条件成立時のみ加える。
-   起動はAgentツールの`run_in_background=false`によるforeground並列起動に限定し、
+   起動はAgentツールの`name`指定・`run_in_background=true`によるbackground並列起動を既定とし、
    同一メッセージ内に複数のAgent tool_useブロックを並置して並列実行を維持する。
-   `run_in_background=true`かつ`name`指定によるnamed background起動はしない。
+   各サブエージェントの完了報告本文はSendMessage(to: 'main')経由で受領する。
    起動プロンプトは`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`を機械転記する。
    「実施済みレビュー結果の転記」欄に内容がある場合は転記済みレビューを実施済みとして扱い、
    転記された全指摘を反映対象に含めて5.から再開する（未転記のレビューのみ新規起動する）
@@ -130,9 +130,8 @@ user-invocable: false
 `01-agent.md`「縮退表明は発行しない」項に従う。
 対象は配下並列サブエージェント（既定経路の`plan-codex-delegate`、
 codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-validator`）である。
-進め方4.の起動方式（foreground並列起動限定・named background禁止）に従う。
-全サブエージェントの完了報告を受領してから指摘集約・計画ファイルへの反映へ進む
-（SendMessage経由の非同期の受信経路は発生しない）。
+進め方4.の起動方式（background並列起動既定・SendMessage経由の完了報告受領）に従う。
+全サブエージェントの完了報告（SendMessage経由）を受領してから指摘集約・計画ファイルへの反映へ進む。
 反映後は「エスカレーション基準」に基づき`needs_escalation`判定をし、
 最終的な`completed`報告を発行する。
 完了報告本文にasync-wait表明（待機表明のまま完了扱いにする記述）を含めない。
@@ -154,8 +153,8 @@ codex利用不可時の代替`plan-reviewer`、条件成立時の`agent-doc-vali
   行わない方針により継続不能な場合。代行規定は
   `agent-toolkit/skills/plan-mode/references/codex-review.md`
   「plan-file-creatorからの起動」節配下の`agent-doc-validator`代行規定を参照する
-- foreground並列起動下でサブエージェントの応答が得られない場合
-  （サブエージェントの応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
+- background並列起動下でサブエージェントの応答が得られない場合
+  （催促・状態照会後も応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
 
 `needs_escalation`時は論点・観測事実・暫定案を`escalation_points`欄へ明記する。
 加えて受領済みの全レビュー結果（`plan-reviewer`・`agent-doc-validator`・codexの各完了報告の原文）を

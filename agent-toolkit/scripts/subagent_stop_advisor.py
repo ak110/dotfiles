@@ -443,7 +443,7 @@ def main() -> int:
             " subagent launch (`run_in_background=true`) while the `changed` section still has unchecked"
             " (`- [ ]`) items. This violates `agent-toolkit/agents/plan-impl-executor.md` '停止禁止' section,"
             " which prohibits self-judged background parallel launches. Complete the unfinished work"
-            " (directly or via `run_in_background=false` delegation) before reporting completion, unless the"
+            " (directly or via a single non-parallel background delegation) before reporting completion, unless the"
             " caller's launch prompt explicitly authorized the parallel launch.",
             tag="block",
         )

@@ -5,7 +5,7 @@ description: >
   `plan-impl-executor`からの自動起動と、`/agent-toolkit:careful-review`によるユーザー手動起動の双方で起動する。
 # 編集時の注意点: サブエージェント(../agents/plan-spec-reviewer.md, ../agents/plan-impl-reviewer.md)の中身はメイン側では読み込まないため、起動プロンプトの内容はこのファイルから漏れなく渡す必要がある。起動経路（plan-impl-executor経由・手動起動）で動作分岐させず、計画ファイルの有無のみで`plan-spec-reviewer`の起動可否を切り替える。
 # 同期注記: 「制約」節の構文合法性除外バレットは`agent-toolkit/skills/review-standards/SKILL.md`「レビューの基本姿勢」節の同旨規定と意図的に重複する（改訂時は2ファイルを同時更新する。`plan-impl-reviewer.md`「共通判断基準」節・`plan-codex-delegate.md`「プロンプト構築」節は本節への直接参照へ置換済みのため重複対象から除く）。
-# named subagent能動送付規定（本ファイル「制約」節）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロックと意図的に重複する（改訂時は4ファイルを同時更新する。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
+# named subagent能動送付規定（本ファイル「制約」節）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節配下「制約」ブロック・`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`と意図的に重複する（改訂時は5ファイルを同時更新する）。
 ---
 
 # レビュー工程

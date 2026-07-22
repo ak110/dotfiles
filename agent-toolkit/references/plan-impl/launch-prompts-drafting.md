@@ -1,7 +1,7 @@
 ---
 # 同期注記: 「共通遵守事項」節の「サブエージェント検知コードのSSOT参照確認」バレットは`agent-toolkit/skills/agent-standards/SKILL.md`「セッション状態フラグ」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
 # 同期注記: 「共通遵守事項」節の「起草前textlint-violations.md読み込み」バレットは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節をSSOTとし、本ファイルと`agent-toolkit/rules/03-claude-code.md`起草関連バレットは同節を参照して同期する（改訂時は3ファイル同時更新）。
-# named subagent能動送付規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複する（改訂時は4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
+# named subagent能動送付規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節・`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`と意図的に重複する（改訂時は5ファイル同時更新）。
 # 加えて`agent-toolkit/agents/plan-implementer.md`「出力」節との同期は本ファイル「## 運用ガイダンス」の既存規定に従う。
 # 同期注記: 「共通遵守事項」節・「起草・改訂委譲雛形」コードブロックの起草・改訂委譲の担当範囲バレット末尾にある`plan-file-creator`の完遂義務への参照文は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節と意図的に重複する（改訂時は両ファイル同時更新）。
 # 非同期処理継続義務のバレット（「共通遵守事項」節およびコードブロック内`## 完遂条件`欄）は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節と`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の同旨規定と意図的に重複する（改訂時は3ファイル同時更新）。
@@ -69,8 +69,9 @@
   自身の担当範囲として実施する（`plan-implementer`とは役割が異なる別エージェントであり、
   本雛形の起草・改訂委譲先ではない）。`plan-file-creator`は当該サブエージェント群の
   完了報告受領・統合報告完了までを自身の担当とし、完了報告本文にasync-wait表明を
-  含めない。`plan-file-creator`による配下3種サブエージェント群の起動はforeground並列起動に限定し、
-  named background起動はしない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
+  含めない。`plan-file-creator`による配下3種サブエージェント群の起動はbackground並列起動を既定とする。
+  各サブエージェントはSendMessage(to: 'main')で完了報告を能動送付する
+  （詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
 - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
   当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
   （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）
@@ -156,8 +157,9 @@
       自身の担当範囲として実施する（`plan-implementer`とは役割が異なる別エージェントであり、
       本雛形の起草・改訂委譲先ではない）。`plan-file-creator`は当該サブエージェント群の
       完了報告受領・統合報告完了までを自身の担当とし、完了報告本文にasync-wait表明を
-      含めない。`plan-file-creator`による配下3種サブエージェント群の起動はforeground並列起動に限定し、
-      named background起動はしない（詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
+      含めない。`plan-file-creator`による配下3種サブエージェント群の起動はbackground並列起動を既定とする。
+      各サブエージェントはSendMessage(to: 'main')で完了報告を能動送付する
+      （詳細は`agent-toolkit/agents/plan-file-creator.md`「完遂義務」節）
     - `plan-implementer`が非同期処理（`run_in_background=true`のBashジョブ・別コマンドの完了待ち等）を伴う場合は
       当該待機の完了まで動作を継続する。完了報告本文に待機表明を含めない
       （詳細規定は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節の非同期処理に係る完遂義務に従う）

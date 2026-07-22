@@ -1,6 +1,6 @@
 ---
 # 同期注記: 起草関連バレット（委譲プロンプトへの引用転記義務）のSSOTは`plan-file-guidelines.md`「計画ファイル全体の遵守事項」節。本ファイルと`agent-toolkit/references/plan-impl/launch-prompts-drafting.md`「共通遵守事項」節は同節参照で同期（改訂時3ファイル同時更新）。
-# named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は上記`launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節と意図的に重複（改訂時4ファイル同時更新。`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`はforeground限定運用のため同期対象外）。
+# named subagent能動送付規定（`name`指定・`run_in_background=true`起動時のSendMessage(to: 'main')能動送付義務）は上記`launch-prompts-drafting.md`・`agent-toolkit/skills/process-feedbacks/references/explore-template.md`「Explore委譲雛形」節「制約」ブロック・`agent-toolkit/skills/careful-review/SKILL.md`「制約」節・`agent-toolkit/skills/plan-mode/references/launch-prompts-integrity.md`と意図的に重複（改訂時5ファイル同時更新）。
 # 「サブエージェントの活用」節の非同期処理完遂義務パラグラフ・対象ファイル集合バレットは`agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節・上記`launch-prompts-drafting.md`「共通遵守事項」節と意図的に重複（改訂時は関連ファイルを同時更新する）。`git stash`禁止バレットは分離先`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「git操作」節が`agent-toolkit/agents/plan-implementer.md`・`agent-toolkit/agents/plan-codex-delegate.md`の対応箇所と意図的に重複する（改訂時は同節と関連ファイルを同時更新する）。
 # 同期注記: 「再開時はモデルを変更できない」バレットの停止済みエージェント宛`SendMessage`可否記述は
 # `agent-toolkit/skills/spec-driven-impl/SKILL.md`「ユーザー割り込み指示の対応」節と同期する（改訂時2ファイル同時更新）。
@@ -39,7 +39,9 @@ Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
   Monitorはマーカー作成源が明確に存在する外部プロセスの状態変化・ログ出力の逐次観察等に限定する
 - `git merge`進行中に`git stash`は禁止（stash/pop後に`MERGE_HEAD`が失われ通常コミット形式へ降格するため）。
   退避は対象ファイルを別パスへ`cp`、`git switch -c`で別ブランチへ退避、または`git reset --hard ORIG_HEAD`で再マージする
-- `gh workflow run`・`git push --tags`・`gh release create`等の不可逆操作は`run_in_background=true`を採用しない
+- `gh workflow run`・`git push --tags`・`gh release create`等の不可逆操作はBashツールの`run_in_background=true`を
+  採用しない。本規定はBashツール単体呼び出しの背景実行を対象とする。
+  Agentツール起動の委譲可否は`agent-toolkit/references/plan-impl/subagent-scope-constraints.md`「push」節が別途規定する
   - `background`判定は空ログ停止時の再起動が二重実行に直結する
   - `foreground`想定の停止は再実行せず`gh run list`等で状態確認する
 - `agent-toolkit/rules/01-agent.md`「ツール呼び出しの並列化」節の並列既定を前提とする。
@@ -81,13 +83,14 @@ Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
   - CLAUDE.mdを読み込まず`"haiku"`で実行してよい単純作業はforkスキル（`agent: Explore`と`model: haiku`指定）を使う
   - 品質規範の継承・タスクごとのモデル選択・ファイル編集・多段工程を要する作業はagents定義とAgentツール起動を使う（fork起動はUI上の扱いが多段工程の進捗可視性が低いため）
   - 規範非読込型`subagent_type`の完全一覧SSOTは`subagent-collaboration.md`「必要な規範スキルの明示」節（追加・変更時は当該SSOTを併せて更新）
-- `foreground`／`background`起動の使い分け: 独立した複数タスクを同時に進める場合のみ`background`並列起動する
+- サブエージェントの起動形態: `name`指定・`run_in_background=true`の
+  `background`起動を既定とする（foreground起動は追加指示の割り込み操作を要するため、即応性を優先する）
   - 並列起動時はメイン側の単一メッセージ内に複数のサブエージェント起動ブロックを並べる
-    （`Agent`ツール直接呼び出しとforkスキル呼び出しの混在可）。`background`起動時は完了報告として
-    結果全文をメイン宛1回で送付する規定を起動プロンプトへ明記する
+    （`Agent`ツール直接呼び出しとforkスキル呼び出しの混在可）。起動プロンプトへ、完了報告として
+    結果全文をメイン宛1回で送付する規定を明記する
   - Agentツールで`name`指定した`run_in_background=true`起動のnamed subagent（teammate）を扱う。
-    作業完了時のSendMessage(to: 'main')による完了報告本文の能動送付を必須ゲートとする。
-    メイン明示要求を待たず`idle_notification(available)`のみで待機しない（SubagentStopフックがブロックする）
+    作業完了時のSendMessage(to: 'main')による完了報告本文の能動送付を必須ゲートとする。メイン明示要求を
+    待たず`idle_notification(available)`のみで待機しない（SubagentStopフックがブロックする）
 - 再開時はモデルを変更できない。異なるモデルが必要なら新規`Agent`起動を使う
   - 停止済みサブエージェントへの`SendMessage`はトランスクリプトからの再開として成功し得るが、
     実装・是正の追加委譲は新規`Agent`起動を既定とする。起動時は元タスク・修正指摘・
@@ -123,10 +126,14 @@ Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
   - サブエージェント委譲プロンプトでは、完了報告本文の各項目を独立に完結した記述として要求する。
     相対参照（「上記」「別途」「先ほど」「前述」等）は含めず、完全な内容を本メッセージ本文内に記述するよう明示する。
     複数ファイル分の変更後の最終文面・unified diff・詳細指摘一覧などをサブエージェントに生成させる場合も同様とする
-- サブエージェントへの検証・コミット委譲可否は起動形態で分ける
-  - 単独起動（並列を伴わない`foreground`起動）時は、計画ファイルの`## 実行方法`に従う検証・コミットまで委譲してよい
-  - 並列起動時は作業ツリー全体へ影響する操作（pre-commit起動・コミット作成等）を起動プロンプトで明示禁止し、
-    検証・コミットはメイン側で全タスク完了後にまとめて実施する
+- サブエージェントへの検証・コミット委譲可否は並列度で分ける
+  - 単独起動時は起動形態を問わず計画ファイルの`## 実行方法`に従う検証・コミットまで委譲してよい。
+    background起動時に委譲先が権限プロンプト起因で停滞した場合は`agent-toolkit/rules/06-monitoring.md`
+    「停滞検知時の対応」節の手順（催促後も進捗なしならメイン側で巻き取る）に従う。
+    foreground起動時はメイン側のターンが直接権限プロンプトを受け取るため
+    `06-monitoring.md`「停滞検知時の対応」節は適用対象外とする
+  - 並列起動時は起動形態を問わず作業ツリー全体へ影響する操作（pre-commit起動・コミット作成等）を
+    起動プロンプトで明示禁止し、検証・コミットはメイン側で全タスク完了後にまとめて実施する
   - 例外: `plan-impl-executor`手順配下の`plan-implementer`は実装委譲に専念し、検証・コミットは呼び出し元が担う
 - `Agent`ツールの`name`指定で起動したサブエージェント（teammate）から
   `idle_notification`（`{"type":"idle_notification", "idleReason":"available", ...}`形式）を受信した場合、
@@ -153,7 +160,9 @@ Claude Code固有の実装挙動・制約・運用上の注意点を扱う。
     - 反映されていない場合のみメイン側で巻き取るか、縮減した起動プロンプトで
       新規サブエージェントへ再委譲する（同一プロンプトの再委譲は禁止）
   - 委譲されたタスクを自身の配下へbackground再委譲したまま完了報告を発行しない（配下完了まで自身のタスクとして継続する。`_scope_escalation.py`の`async-wait`カテゴリが検出する）
-- `run_in_background=true`はBash権限プロンプトに応答不可のため、検証・コミット委譲時は`foreground`起動するかメイン側で巻き取る（権限不可時は`git diff`照合と検証コマンドをメイン側で再実行する）
+- `run_in_background=true`のBashは権限プロンプトに応答できない。検証・コミット委譲時の対応は
+  「サブエージェントへの検証・コミット委譲可否」バレットのbackground起動時の手順（`06-monitoring.md`
+  参照）に従う。観測後の巻き取りには`git diff`照合と検証コマンドの再実行を含める
 - 外部主体（サブエージェント・pre-commit・chezmoi・linter等）による作業ツリー変更の可能性がある契機の直後は、
   メイン側の認識・キャッシュを実体と照合してから次工程へ進む。
   契機は並列起動バッチの全完了通知の受領直後・pre-commit実行後・chezmoi apply後・

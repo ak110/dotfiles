@@ -11,6 +11,7 @@ tools:
   - Read
   - Glob
   - Bash
+  - SendMessage
 user-invocable: false
 # 編集時の注意点:
 # このエージェントはplan-mode, plan-impl-executorなどを呼び出さないため、
@@ -20,6 +21,9 @@ user-invocable: false
 # model: sonnet固定の理由: 単体品質レビューは確定したチェック項目の照合が中心のため。
 # tools制限の理由: レビュー作業は閲覧・調査のみで完結し、ファイル編集系（Edit・Write）と
 #   サブエージェント再帰起動（Agent）を除外する。
+# SendMessageはbackground起動既定化に伴う完了報告能動送付専用として許可する。
+# 本文末尾のbackground起動既定文言は`agent-toolkit/agents/plan-spec-reviewer.md`本文末尾と
+# 一字一句同一の意図的重複である。改訂時は両ファイルを同時更新する。
 # Grep除外の理由: ファイル全体での整合性把握が重要なため部分読解に繋がるGrepを禁止し、
 #   対象ファイル全体のRead必須へ一本化する。
 # tone-examples.mdをskills欄でなく本文Readで直読みする理由: 当該ファイルは独立スキルではなく
@@ -134,3 +138,9 @@ user-invocable: false
 各区分で指摘が無い場合は本文を`指摘なし`とする。両区分とも指摘が無い場合も両見出しを残し本文をそれぞれ`指摘なし`とする。
 差分起因は対象計画の改訂で新たに生じた違反、既存違反は改訂前から存在する違反を指す。
 既存違反は補足情報として位置付け、差分起因と混在させない。
+
+本サブエージェントは`agent-toolkit:careful-review`起動由来のレビューフェーズにおいて
+background起動（`name`指定・`run_in_background=true`）を既定とする。
+詳細は`agent-toolkit/references/plan-impl/execution-process.md`「5. レビュー実施」節を参照する。
+作業完了時はSendMessage(to: 'main')で完了報告本文を能動送付する
+（`idle_notification(available)`のみでメイン要求を待たない）。

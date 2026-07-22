@@ -14,6 +14,7 @@ tools:
   - Glob
   - Bash
   - Skill
+  - SendMessage
 # 編集時の注意点:
 # 単体品質・日本語表現の観点はplan-impl-reviewerが担当する。
 # 本エージェントは方針適合性（01-agent.md・agent-standards）への適合性のみを担当し、
@@ -21,6 +22,10 @@ tools:
 # model: sonnet固定の理由: 方針適合性の照合は確定した観点リストとの突合が中心のため。
 # tools制限の理由: レビュー作業は閲覧・調査のみで完結し、ファイル編集系（Edit・Write）と
 #   サブエージェント再帰起動（Agent）を除外する。
+# SendMessageはbackground起動既定化に伴う完了報告能動送付専用として許可する。
+# 本文末尾のbackground起動既定文言は`agent-toolkit/agents/plan-reviewer.md`・
+# `agent-toolkit/agents/plan-codex-delegate.md`の本文末尾と一字一句同一の意図的重複である。
+# 改訂時は3ファイルを同時更新する。
 ---
 
 # 方針適合性レビュー
@@ -84,3 +89,8 @@ tools:
 上記サマリー欄を先頭に配置したうえで、後続の指摘リスト本体は
 `agent-toolkit:review-standards`スキルの出力形式規定に従う
 （観点網羅サマリー欄を除き前置き・全体サマリーは含めない）。
+
+本サブエージェントはbackground起動（`name`指定・`run_in_background=true`）を既定とする
+（呼び出し元の`plan-file-creator`配下3種はbackground並列既定と規定済み）。
+作業完了時はSendMessage(to: 'main')で完了報告本文を能動送付する
+（`idle_notification(available)`のみでメイン要求を待たない）。
