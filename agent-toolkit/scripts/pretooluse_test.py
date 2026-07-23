@@ -1775,10 +1775,11 @@ class TestGeneralBehavior:
 
 
 class TestManifestSsot:
-    """plugin.jsonとmarketplace.jsonのSSOT整合性。
+    """Claude Code向け正本manifest間のSSOT整合性。
 
     version / description / nameを2箇所で重複管理しているため、
     片方だけ更新して配布されない事故を防ぐためのハードチェック。
+    Codex向け派生manifestはsync_codex_plugin_manifests.pyが検証する。
     """
 
     def test_plugin_manifest_matches_marketplace(self):

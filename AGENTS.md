@@ -23,7 +23,12 @@
  （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）
   - 指示の対象を必ず確認する（詳細は「固有差分」の「ディレクトリ構造の注意」を参照）
 - `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
-  - Claude Code側と共有できるルール・スキルはコピーせず、`post_apply`の専用ステップで原本へリンクする
+  - agent-toolkitのスキルはCodex plugin marketplaceで配布し、`post_apply`で導入・更新する
+  - dotfiles固有スキルとplugin非対応のagents・rulesは、`post_apply`の専用ステップで原本へリンクする
+  - Codex向けplugin・marketplace manifestはClaude Code向けmanifestを正本として
+    `scripts/sync_codex_plugin_manifests.py`で生成し、手動編集しない
+  - pre-commitはCodex向け派生manifestを毎回再生成する。Codex hookはイベント名、matcher、
+    入力契約を確認した許可表へ登録した定義だけを生成する
   - chezmoiの`symlink_`はWindowsで特権不足により失敗するため未使用で、
     Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクションを生成する
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、

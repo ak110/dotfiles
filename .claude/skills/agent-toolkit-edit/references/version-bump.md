@@ -66,8 +66,11 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 bump不要と判定した計画では、`## 対応方針`配下の`### エージェント判断`節に版更新マトリクス（5列表）を配置し「判定」列の全行に`bump不要`を記載する。
 この場合`_plan_format.py`のSSOT関数がbumpステップ記載を求める警告とmanifest記載欠落の警告を抑止する。
 マトリクス自体が欠落している場合の警告は現行どおり維持する。
-version bumpを伴う計画では、`agent-toolkit/.claude-plugin/plugin.json`と
-`.claude-plugin/marketplace.json`を`## 変更内容`の対象ファイル一覧へ必ず含める。
+version bumpを伴う計画では、Claude Code向け正本2ファイルを`## 変更内容`の対象ファイル一覧へ必ず含める。
+正本は`agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`である。
+Codex向け派生manifestも対象ファイル一覧へ含める。
+Codex向けmanifestは`agent_toolkit_bump.py`の直接更新対象に含めない。
+Claude Code向け正本2ファイルを更新した後、`scripts/sync_codex_plugin_manifests.py`で反映する。
 
 ## 新規CLI公開時の疎通経路確認
 

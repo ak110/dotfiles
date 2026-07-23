@@ -5,8 +5,9 @@
 # ///
 """agent-toolkitプラグインのバージョンbumpツール。
 
-`agent-toolkit/.claude-plugin/plugin.json`と`.claude-plugin/marketplace.json`の
-`version`を同時に更新する。
+Claude Code向け正本である`agent-toolkit/.claude-plugin/plugin.json`と
+`.claude-plugin/marketplace.json`の`version`を同時に更新する。
+Codex向け派生manifestは同期スクリプトで生成する。
 
 使い方:
     scripts/agent_toolkit_bump.py [patch|minor|major]

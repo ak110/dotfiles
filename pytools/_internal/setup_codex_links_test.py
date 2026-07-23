@@ -149,22 +149,21 @@ def test_returns_false_when_dotfiles_root_unresolved(
 # pylint: disable=protected-access
 
 
-def test_links_contains_process_feedbacks() -> None:
-    """`_LINKS`辞書に`skills/process-feedbacks`エントリが含まれること。"""
-    assert "skills/process-feedbacks" in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["skills/process-feedbacks"] == "agent-toolkit/skills/process-feedbacks"
+def test_links_excludes_agent_toolkit_skills() -> None:
+    """agent-toolkitスキルはplugin配布へ移行したため個別リンクに含めない。"""
+    assert not any(source.startswith("agent-toolkit/skills/") for source in setup_codex_links._LINKS.values())
 
 
-def test_links_contains_add_feedback() -> None:
-    """`_LINKS`辞書に`skills/add-feedback`エントリが含まれること。"""
-    assert "skills/add-feedback" in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["skills/add-feedback"] == "agent-toolkit/skills/add-feedback"
+def test_links_contains_dotfiles_skills() -> None:
+    """dotfiles固有スキルのリンクは維持する。"""
+    assert setup_codex_links._LINKS["skills/refine-prompt"].startswith(".chezmoi-source/")
 
 
 def test_links_contains_agent_toolkit_agents() -> None:
     """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれること。"""
     assert "agent-toolkit/agents" in setup_codex_links._LINKS
     assert setup_codex_links._LINKS["agent-toolkit/agents"] == "agent-toolkit/agents"
+    assert setup_codex_links._LINKS["agent-toolkit/rules"] == "agent-toolkit/rules"
 
 
 def test_windows_recreates_link_when_junction_like_dangling(

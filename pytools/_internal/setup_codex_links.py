@@ -1,4 +1,4 @@
-"""`~/.codex/`配下にClaude Code側スキル・agent-toolkitルールへのリンクを生成する。
+"""`~/.codex/`配下にdotfiles固有スキル・agent-toolkit補助資料へのリンクを生成する。
 
 chezmoiの`symlink_`はWindowsで`CreateSymbolicLinkW`の特権不足により失敗するため採用しない。
 Linux/macOSではシンボリックリンクを、Windowsではディレクトリジャンクションを生成する。
@@ -17,24 +17,10 @@ CODEX_HOME = Path.home() / ".codex"
 # 配布先（`~/.codex/`起点）→配布元（dotfilesルート起点）のマップ。
 # 配布先は全てディレクトリで、Windowsではディレクトリジャンクションで実現する。
 _LINKS: dict[str, str] = {
-    "skills/agent-standards": "agent-toolkit/skills/agent-standards",
-    "skills/coding-standards": "agent-toolkit/skills/coding-standards",
-    "skills/export-for-resume": "agent-toolkit/skills/export-for-resume",
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
-    "skills/add-feedback": "agent-toolkit/skills/add-feedback",
-    "skills/gitlab-ci-usage": "agent-toolkit/skills/gitlab-ci-usage",
-    "skills/plan-mode": "agent-toolkit/skills/plan-mode",
-    "skills/pyfltr-usage": "agent-toolkit/skills/pyfltr-usage",
-    "skills/pytilpack-usage": "agent-toolkit/skills/pytilpack-usage",
-    "skills/process-feedbacks": "agent-toolkit/skills/process-feedbacks",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
-    "skills/review-standards": "agent-toolkit/skills/review-standards",
     "skills/session-review-dotfiles": ".chezmoi-source/dot_claude/skills/session-review-dotfiles",
-    "skills/spec-driven": "agent-toolkit/skills/spec-driven",
-    "skills/spec-driven-init": "agent-toolkit/skills/spec-driven-init",
-    "skills/spec-driven-promote": "agent-toolkit/skills/spec-driven-promote",
     "skills/sync-cross-project": ".chezmoi-source/dot_claude/skills/sync-cross-project",
-    "skills/writing-standards": "agent-toolkit/skills/writing-standards",
     "agent-toolkit/agents": "agent-toolkit/agents",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }

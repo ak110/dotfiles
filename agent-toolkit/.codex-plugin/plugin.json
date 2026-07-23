@@ -1,0 +1,32 @@
+{
+  "name": "agent-toolkit",
+  "version": "1.183.0",
+  "description": "Claude Codeの成果物の品質を向上させるプラグイン。不適切な動作をフックで防止し、コード・ドキュメント・計画・バグ調査などの作業指針をオンデマンド提供する。",
+  "author": {
+    "name": "aki",
+    "url": "https://github.com/ak110"
+  },
+  "homepage": "https://github.com/ak110/dotfiles",
+  "repository": "https://github.com/ak110/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "pretooluse",
+    "guardrails",
+    "safety",
+    "bash"
+  ],
+  "skills": "./skills/",
+  "hooks": {
+    "hooks": {}
+  },
+  "interface": {
+    "displayName": "agent-toolkit",
+    "shortDescription": "コード、文書、計画、レビューの作業指針",
+    "developerName": "aki",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Skills"
+    ]
+  }
+}
