@@ -157,6 +157,11 @@ class TestDefaultSteps:
         assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin のインストール")
         assert names.index("Codex plugin のインストール") < names.index("codex MCP サーバーの登録")
 
+    def test_codex_logs_step_registered_after_links(self):
+        """Codex診断ログの共有メモリー配置をリンク同期の直後に実行する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        assert names.index("Codex 診断ログの共有メモリー配置 (Linux)") == names.index("Codex リンクの同期") + 1
+
 
 class TestPluginRecommendations:
     """``install_claude_plugins.run()`` の推奨コマンド戻り値による案内出力。"""
