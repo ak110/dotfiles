@@ -67,7 +67,7 @@ def _install_native(client: httpx.Client | None) -> subprocess.CompletedProcess[
             temp.write(response.content)
             temp_path = Path(temp.name)
         command = (
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
             if sys.platform == "win32"
             else ["bash", str(temp_path)]
         )

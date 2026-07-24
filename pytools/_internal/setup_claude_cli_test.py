@@ -59,7 +59,7 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
         calls.append(command)
-        if command[0] == "powershell":
+        if command[0] == "pwsh":
             launcher.parent.mkdir(parents=True)
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "ok", "")
@@ -70,7 +70,7 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
         assert setup_claude_cli.run(client)
     finally:
         client.close()
-    assert calls[0][:5] == ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+    assert calls[0][:5] == ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert calls[1] == [str(launcher), "--version"]
 
 
@@ -86,7 +86,7 @@ def test_windows_install_prepends_canonical_path_before_noncanonical(monkeypatch
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
-        if command[0] == "powershell":
+        if command[0] == "pwsh":
             launcher.parent.mkdir(parents=True)
             launcher.write_text("", encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
