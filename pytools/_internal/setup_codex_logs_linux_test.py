@@ -36,11 +36,14 @@ def test_moves_existing_database_and_creates_symlink(
 
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
 
-    target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite"
-    assert database.is_symlink()
-    assert database.readlink() == target
-    assert target.read_bytes() == b"existing diagnostic logs"
-    assert target.stat().st_mode & 0o777 == 0o600
+    for suffix in ("", "-wal", "-shm"):
+        link = pathlib.Path(f"{database}{suffix}")
+        target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite{suffix}"
+        assert link.is_symlink()
+        assert link.readlink() == target
+    main_target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite"
+    assert main_target.read_bytes() == b"existing diagnostic logs"
+    assert main_target.stat().st_mode & 0o777 == 0o600
 
 
 def test_missing_database_creates_dangling_symlink_idempotently(
@@ -57,10 +60,12 @@ def test_missing_database_creates_dangling_symlink_idempotently(
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is False
 
     database = home_dir / ".codex" / "logs_2.sqlite"
-    target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite"
-    assert database.is_symlink()
-    assert database.readlink() == target
-    assert not target.exists()
+    for suffix in ("", "-wal", "-shm"):
+        link = pathlib.Path(f"{database}{suffix}")
+        target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite{suffix}"
+        assert link.is_symlink()
+        assert link.readlink() == target
+        assert not target.exists()
 
 
 def test_replaces_wrong_symlink(
@@ -80,6 +85,28 @@ def test_replaces_wrong_symlink(
 
     target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite"
     assert database.readlink() == target
+
+
+def test_existing_shm_file_takes_precedence_over_stale_home_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """共有メモリー側が存在する場合は保持し、古いホーム側ファイルをリンクへ置換する。"""
+    monkeypatch.setattr(setup_codex_logs_linux.sys, "platform", "linux")
+    home_dir = tmp_path / "home"
+    shm_root = tmp_path / "shm"
+    wal = home_dir / ".codex" / "logs_2.sqlite-wal"
+    wal.parent.mkdir(parents=True)
+    wal.write_bytes(b"stale")
+    shm_root.mkdir()
+    target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite-wal"
+    target.write_bytes(b"active")
+
+    assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
+
+    assert wal.is_symlink()
+    assert wal.readlink() == target
+    assert target.read_bytes() == b"active"
 
 
 def test_missing_shm_root_fails_without_replacing_database(
