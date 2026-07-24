@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import sync_codex_plugin_manifests as subject
 
 from pytools._internal import claude_common
-from scripts import sync_codex_plugin_manifests as subject
 
 
 @pytest.fixture(name="manifest_root")

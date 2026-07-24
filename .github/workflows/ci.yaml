@@ -28,7 +28,19 @@ jobs:
       - name: chezmoi インストール
         run: |
           set -euo pipefail
-          sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
+          install_chezmoi() {
+            local attempt=1
+            local installer
+            until installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+              sh -c "$installer" -- -b "$HOME/.local/bin"; do
+              if [ "$attempt" -ge 3 ]; then
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              sleep 2
+            done
+          }
+          install_chezmoi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: install.sh 実行
         run: ~/dotfiles/install.sh
@@ -64,7 +76,21 @@ jobs:
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - name: chezmoi インストール
         shell: bash
-        run: sh -c "$(curl -fsSL get.chezmoi.io)" -- -b "$HOME/.local/bin"
+        run: |
+          set -euo pipefail
+          install_chezmoi() {
+            local attempt=1
+            local installer
+            until installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+              sh -c "$installer" -- -b "$HOME/.local/bin"; do
+              if [ "$attempt" -ge 3 ]; then
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              sleep 2
+            done
+          }
+          install_chezmoi
       - name: chezmoi 適用
         shell: bash
         run: |

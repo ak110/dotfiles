@@ -3,7 +3,7 @@
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -50,7 +50,7 @@ def _installed_state() -> dict[str, object]:
 def test_registers_installs_and_removes_expected_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = _legacy_link(plugin_env)
     calls: list[list[str]] = []
-    responses: Iterator[dict[str, object] | None] = iter(
+    responses: Iterator[dict[str, Any] | None] = iter(
         [
             {"marketplaces": []},
             {"installed": []},
@@ -89,7 +89,7 @@ def test_noop_state_still_resyncs_plugin(plugin_env: Path, monkeypatch: pytest.M
 
 def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = _legacy_link(plugin_env)
-    responses: Iterator[dict[str, object] | None] = iter(
+    responses: Iterator[dict[str, Any] | None] = iter(
         [
             {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
             {"installed": []},
@@ -103,7 +103,7 @@ def test_plugin_add_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pyt
 
 def test_post_install_json_failure_keeps_legacy_link(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = _legacy_link(plugin_env)
-    responses: Iterator[dict[str, object] | None] = iter(
+    responses: Iterator[dict[str, Any] | None] = iter(
         [
             {"marketplaces": [{"name": "ak110-dotfiles", "root": str(plugin_env)}]},
             {"installed": []},

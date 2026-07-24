@@ -13,10 +13,24 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 
 set -x
+
+install_chezmoi() {
+    local attempt=1
+    local installer
+    until installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+        sh -c "$installer" -- -b ~/.local/bin; do
+        if [ "$attempt" -ge 3 ]; then
+            return 1
+        fi
+        attempt=$((attempt + 1))
+        sleep 2
+    done
+}
+
 # 既に chezmoi が入っていればダウンロードをスキップする（冪等性とテスト用途）
 export PATH="$HOME/.local/bin:$PATH"
 if ! command -v chezmoi >/dev/null 2>&1; then
-    sh -c "$(curl -fsSL get.chezmoi.io)" -- -b ~/.local/bin
+    install_chezmoi
 fi
 if [ ! -d ~/dotfiles ]; then
     git clone https://github.com/ak110/dotfiles.git ~/dotfiles
