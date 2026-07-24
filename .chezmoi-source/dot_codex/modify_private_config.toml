@@ -1,0 +1,7 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $config := dict -}}
+{{- if ne (trim .chezmoi.stdin) "" -}}
+{{-   $config = fromToml .chezmoi.stdin -}}
+{{- end -}}
+{{- $config = setValueAtPath "project_doc_max_bytes" 131072 $config -}}
+{{ toToml $config }}

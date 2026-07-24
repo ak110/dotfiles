@@ -21,7 +21,7 @@ repos:
       - id: check-json
         exclude: '(^|/)modify_|environment\.json$'
       - id: check-toml
-        exclude: '\.tmpl$'
+        exclude: '(^|/)modify_|\.tmpl$'
       - id: check-ast
       # セキュリティ。
       - id: detect-private-key
@@ -38,62 +38,14 @@ repos:
 
   - repo: local
     hooks:
-      - id: sync-codex-plugin-manifests
-        name: Codex plugin manifestの同期
-        entry: uv run --script scripts/sync_codex_plugin_manifests.py
-        language: system
-        pass_filenames: false
-        files: '^(\.claude-plugin/marketplace\.json|agent-toolkit/(\.claude-plugin/plugin\.json|\.codex-plugin/plugin\.json|hooks/hooks(\.codex)?\.json)|\.agents/plugins/marketplace\.json|scripts/sync_codex_plugin_manifests\.py)$'
-      - id: check-cmd-encoding
-        name: Check .cmd files CP932 encoding
-        entry: scripts/check-cmd-encoding.sh
-        language: script
-        pass_filenames: false
-        files: '\.cmd$'
-      - id: check-templates
-        name: chezmoi template check
-        entry: scripts/check-templates.sh
-        language: script
-        files: '\.(sh|ps1)\.tmpl$'
-      - id: require-ps1-bom
-        name: Require UTF-8 BOM on .ps1 files
-        entry: scripts/check-ps1-bom.sh
-        language: script
-        files: '\.ps1(\.tmpl)?$'
-      - id: powershell-analyzer
-        name: PSScriptAnalyzer
-        entry: scripts/run-psscriptanalyzer.sh
-        language: script
-        files: '\.ps1$'
-        exclude: '\.tmpl$'
-      - id: claude-plugin-validate
-        name: Validate Claude plugin manifests
-        # `claude plugin validate` は 1 ファイルずつしか受け付けないため
-        # pass_filenames=true で渡される複数引数を sh -c のループで 1 つずつ処理する。
-        entry: sh -c 'for f; do claude plugin validate "$f" || exit 1; done' --
-        language: system
-        files: '\.claude-plugin/(plugin|marketplace)\.json$'
-      - id: gen-completions
-        name: bash補完スクリプトの再生成
-        entry: uv run --frozen python scripts/gen-completions.py
-        language: system
-        pass_filenames: false
-        files: '^(pyproject\.toml|pytools/.*\.py|agent-toolkit/scripts/.*\.py|scripts/gen-completions\.py|completions/_pytools\.bash|agent-toolkit/completions/atk\.bash)$'
-      - id: gen-install-files
-        name: install script FILES一覧の再生成
-        entry: uv run --frozen python scripts/gen-install-files.py
-        language: system
-        pass_filenames: false
-        files: '^(agent-toolkit/rules/.*\.md|install-claude\.(sh|ps1)|scripts/gen-install-files\.py)$'
       - id: pyfltr
         name: pyfltr
         entry: uvx pyfltr fast
-        types_or: [python, markdown, toml, shell, bash]
+        always_run: true
         require_serial: true
         language: system
-      # cargo系はpyfltrのサブプロジェクト検出が pyproject.toml ベースで Cargo.toml 単独
-      # ディレクトリを認識しないため、`rust/claude-statusline/` を作業ディレクトリに
-      # 指定して直接呼び出す。将来pyfltrがハイブリッド構成に対応した時点で統合する。
+      # pyfltr 3.14.1はCargoサブプロジェクトを指定してもリポジトリルートで実行し、
+      # cargo metadataの失敗を成功扱いするため、Rust検査は作業ディレクトリを指定して直接実行する。
       - id: cargo-fmt
         name: cargo fmt --check
         entry: bash -c 'cd rust/claude-statusline && cargo fmt --check'
@@ -106,16 +58,6 @@ repos:
         language: system
         pass_filenames: false
         files: '^rust/claude-statusline/.*\.(rs|toml)$'
-      - id: check-doc-size
-        name: agent-toolkitドキュメントサイズ上限検査
-        entry: uv run --no-project agent-toolkit/scripts/check_doc_size.py
-        language: system
-        files: '^agent-toolkit/(skills/[^/]+/(SKILL\.md|references/.*\.md)|rules/.*\.md)$'
-      - id: check-norm-cross-ref
-        name: 規範文書間参照の実在検査
-        entry: uv run --no-project agent-toolkit/scripts/check_norm_cross_ref.py
-        language: system
-        files: '^agent-toolkit/(rules|skills)/.*\.md$'
       # コミット時にローカルへも反映する（適用漏れ防止のため）。
       - id: chezmoi-apply
         name: chezmoi apply

@@ -36,23 +36,24 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_sync_and_check_are_deterministic(manifest_root: Path) -> None:
+def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert subject.sync(manifest_root) is True
     assert subject.sync(manifest_root) is False
-    assert subject.sync(manifest_root, check=True) is False
     generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())
     assert generated["version"] == "1.2.3"
     assert generated["hooks"] == {"hooks": {}}
     assert (manifest_root / subject.PLUGIN_TARGET).read_text().endswith("\n")
 
 
-def test_check_detects_stale_and_extra_hooks(manifest_root: Path) -> None:
+def test_sync_replaces_stale_and_extra_hooks(manifest_root: Path) -> None:
     subject.sync(manifest_root)
     (manifest_root / subject.PLUGIN_TARGET).write_text("{}")
     extra = manifest_root / subject.HOOKS_TARGET
     extra.parent.mkdir(parents=True, exist_ok=True)
     extra.write_text("{}")
-    assert subject.sync(manifest_root, check=True) is True
+    assert subject.sync(manifest_root) is True
+    assert json.loads((manifest_root / subject.PLUGIN_TARGET).read_text())["version"] == "1.2.3"
+    assert not extra.exists()
 
 
 def test_rejects_mismatched_sources(manifest_root: Path) -> None:

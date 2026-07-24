@@ -24,4 +24,3 @@ if [ "$errors" -gt 0 ]; then
     echo "ERROR: ${errors} file(s) with invalid CP932 encoding"
     exit 1
 fi
-echo "OK: all .cmd files are valid CP932"

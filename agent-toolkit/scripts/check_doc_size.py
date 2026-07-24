@@ -13,6 +13,14 @@ import pathlib
 import sys
 
 LIMIT = 220
+GENERATED_AGENTS_PATH = ".chezmoi-source/dot_codex/AGENTS.md"
+GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
+
+
+def _is_generated_codex_agents(path: pathlib.Path, content: str) -> bool:
+    """限定されたCodex向け生成AGENTS.mdか判定する。"""
+    normalized = path.as_posix().removeprefix("./")
+    return normalized == GENERATED_AGENTS_PATH and content.startswith(GENERATED_MARKER + "\n")
 
 
 def main(argv: list[str]) -> int:
@@ -21,12 +29,12 @@ def main(argv: list[str]) -> int:
     for path_str in argv:
         path = pathlib.Path(path_str)
         try:
-            with path.open("r", encoding="utf-8") as f:
-                line_count = sum(1 for _ in f)
+            content = path.read_text(encoding="utf-8")
         except OSError as exc:
             print(f"{path_str}: 読み込み失敗: {exc}", file=sys.stderr)
             return 1
-        if line_count > LIMIT:
+        line_count = len(content.splitlines())
+        if line_count > LIMIT and not _is_generated_codex_agents(path, content):
             violations.append((path_str, line_count))
     if violations:
         print("agent-toolkitドキュメントサイズ上限（220行）違反:", file=sys.stderr)

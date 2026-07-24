@@ -11,6 +11,10 @@ import re
 import sys
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+
+from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+
 _RULES_DIR = _REPO_ROOT / "agent-toolkit" / "rules"
 _INSTALL_SH = _REPO_ROOT / "install-claude.sh"
 _INSTALL_PS1 = _REPO_ROOT / "install-claude.ps1"
@@ -23,8 +27,13 @@ def main(argv: list[str] | None = None) -> int:
     argparse.ArgumentParser(description="install scriptのFILES一覧を生成する。").parse_args(argv)
 
     names = _list_rules()
-    _update_file(_INSTALL_SH, _gen_sh_block(names))
-    _update_file(_INSTALL_PS1, _gen_ps1_block(names))
+    outputs = (
+        _build_output(_INSTALL_SH, _gen_sh_block(names)),
+        _build_output(_INSTALL_PS1, _gen_ps1_block(names)),
+    )
+    for path, data, changed in outputs:
+        if changed and not claude_common.atomic_write_bytes(path, data, tag="install files"):
+            raise OSError(f"install scriptの書き込みに失敗: {path}")
     return 0
 
 
@@ -43,12 +52,11 @@ def _gen_ps1_block(names: list[str]) -> str:
     return f"# {_BEGIN}\n$files = @(\n{body}\n)\n# {_END}"
 
 
-def _update_file(path: pathlib.Path, new_block: str) -> None:
+def _build_output(path: pathlib.Path, new_block: str) -> tuple[pathlib.Path, bytes, bool]:
     text, had_bom, newline = _read_text(path)
     new_text = _replace_block(text, new_block, path)
-    if new_text == text:
-        return
-    _write_text(path, new_text, had_bom, newline)
+    data = _encode_text(new_text, had_bom, newline)
+    return path, data, new_text != text
 
 
 def _read_text(path: pathlib.Path) -> tuple[str, bool, str]:
@@ -60,11 +68,11 @@ def _read_text(path: pathlib.Path) -> tuple[str, bool, str]:
     return data.decode("utf-8").replace("\r\n", "\n"), had_bom, newline
 
 
-def _write_text(path: pathlib.Path, text: str, had_bom: bool, newline: str) -> None:
+def _encode_text(text: str, had_bom: bool, newline: str) -> bytes:
     data = text.replace("\n", newline).encode("utf-8")
     if had_bom:
         data = b"\xef\xbb\xbf" + data
-    path.write_bytes(data)
+    return data
 
 
 def _replace_block(text: str, new_block: str, path: pathlib.Path) -> str:

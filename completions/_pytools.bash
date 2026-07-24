@@ -1,5 +1,5 @@
 # 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
-# 再生成: `uv run --script scripts/gen-completions.py`
+# 再生成: `uv run --frozen python scripts/sync_generated_files.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、

@@ -37,3 +37,26 @@ def test_short_passes(tmp_path):
 def test_missing_file_fails(tmp_path):
     missing = tmp_path / "missing.md"
     assert check_doc_size.main([str(missing)]) == 1
+
+
+def test_generated_codex_agents_is_exempt(tmp_path, monkeypatch):
+    path = tmp_path / check_doc_size.GENERATED_AGENTS_PATH
+    path.parent.mkdir(parents=True)
+    path.write_text(check_doc_size.GENERATED_MARKER + "\n" + "x\n" * (check_doc_size.LIMIT + 1), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert check_doc_size.main([check_doc_size.GENERATED_AGENTS_PATH]) == 0
+
+
+def test_generated_path_without_marker_is_not_exempt(tmp_path, monkeypatch):
+    path = tmp_path / check_doc_size.GENERATED_AGENTS_PATH
+    path.parent.mkdir(parents=True)
+    path.write_text("x\n" * (check_doc_size.LIMIT + 1), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert check_doc_size.main([check_doc_size.GENERATED_AGENTS_PATH]) == 1
+
+
+def test_similar_path_is_not_exempt(tmp_path):
+    path = tmp_path / "other" / check_doc_size.GENERATED_AGENTS_PATH
+    path.parent.mkdir(parents=True)
+    path.write_text(check_doc_size.GENERATED_MARKER + "\n" + "x\n" * (check_doc_size.LIMIT + 1), encoding="utf-8")
+    assert check_doc_size.main([str(path)]) == 1

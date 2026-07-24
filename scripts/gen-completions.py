@@ -21,6 +21,10 @@ import sys
 import tomllib
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT))
+
+from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
+
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
 _ATK_OUTPUT = _REPO_ROOT / "agent-toolkit" / "completions" / "atk.bash"
@@ -31,7 +35,7 @@ _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
 _HEADER_PYTOOLS = """\
 # 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
-# 再生成: `uv run --script scripts/gen-completions.py`
+# 再生成: `uv run --frozen python scripts/sync_generated_files.py`
 #
 # argcomplete対応の`pytools`系コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
@@ -40,7 +44,7 @@ _HEADER_PYTOOLS = """\
 
 _HEADER_ATK = """\
 # 自動生成ファイル。scripts/gen-completions.py が出力する。手編集禁止。
-# 再生成: `uv run --script scripts/gen-completions.py`
+# 再生成: `uv run --frozen python scripts/sync_generated_files.py`
 #
 # argcomplete対応の`atk`コマンドにbash補完を提供する。
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
@@ -86,10 +90,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists() and output.read_text(encoding="utf-8") == content:
         return
-    output.write_text(content, encoding="utf-8")
+    if not claude_common.atomic_write_text(output, content, tag="bash completions"):
+        raise OSError(f"bash補完ファイルの書き込みに失敗: {output}")
     print(f"生成: {output.relative_to(_REPO_ROOT)} ({count}コマンド)")
 
 

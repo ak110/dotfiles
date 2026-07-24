@@ -52,6 +52,7 @@
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
 `completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
 `scripts/gen-completions.py`は生成先を2箇所へ分岐して書き込む。
+通常はpyfltrのcustom formatterから統合生成ランナー経由で実行する。
 `pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
 `agent-toolkit/scripts/*.py`のうちargcompleteマーカーを持つスクリプトが対象で、
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンド（`atk`等）に限る。
@@ -63,8 +64,8 @@
 ### 補完スクリプトの再生成・検証
 
 ```bash
-uv run --script scripts/gen-completions.py          # 再生成
-uv run --script scripts/gen-completions.py --check  # 検証（pre-commitフックで自動実行）
+uv run --frozen python scripts/sync_generated_files.py  # 全生成物を冪等同期
+uvx pyfltr fast                                         # 高速ツールと生成物を同期
 ```
 
 手書き補完が必要な場合（`bin/`配下コマンドのうち`gen-completions.py`の収集対象外のものなど）は
@@ -79,7 +80,7 @@ uv run --script scripts/gen-completions.py --check  # 検証（pre-commitフッ�
 ## Codex向けagent-toolkit配布
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Codex向けmanifestは
-  Claude Code向けmanifestを正本として`scripts/sync_codex_plugin_manifests.py`で生成する
+  Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
 - `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、Codex MCPの順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める

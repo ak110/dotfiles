@@ -5,7 +5,6 @@
 # ///
 """Claude Code向けmanifestからCodex向けplugin JSONを生成する。"""
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -105,16 +104,12 @@ def _outputs(root: Path) -> dict[Path, str]:
     return result
 
 
-def sync(root: Path = REPO_ROOT, *, check: bool = False) -> bool:
+def sync(root: Path = REPO_ROOT) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
     stale = [path for path, content in expected.items() if not (root / path).exists() or (root / path).read_text() != content]
     if HOOKS_TARGET not in expected and (root / HOOKS_TARGET).exists():
         stale.append(HOOKS_TARGET)
-    if check:
-        for path in stale:
-            print(f"同期が必要: {path}")
-        return bool(stale)
     for path, content in expected.items():
         if path in stale and not claude_common.atomic_write_text(root / path, content, tag="codex plugin manifests"):
             raise OSError(f"Codex plugin manifestの書き込みに失敗: {path}")
@@ -124,12 +119,9 @@ def sync(root: Path = REPO_ROOT, *, check: bool = False) -> bool:
 
 
 def main() -> int:
-    """CLI引数を解析して同期または差分検査を実行する。"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    changed = sync(check=args.check)
-    return int(changed) if args.check else 0
+    """Codex向け派生manifestを冪等同期する。"""
+    sync()
+    return 0
 
 
 if __name__ == "__main__":
