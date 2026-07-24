@@ -316,12 +316,9 @@ fi
 # 終了時に画面をクリアするラッパー関数。
 # エイリアスではなく関数にしているのは、claude 本体の終了コードを保持しつつ
 # 終了後に clear を実行する必要があるため。
-# claude の所在は環境によって異なる:
-#   - ~/.claude/local/claude: Claude Code 公式インストーラー (migrate-installer)
-#     が生成する固定パス。PATH には通っていないので絶対パスで呼ぶ
-#   - PATH 上の claude: npm global など別経路で導入した場合 (~/.local/bin/claude 等)
-# 両方に対応するため、ガードでは OR で判定し、本体では公式版があればそれを優先する。
-if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
+# Anthropic公式ネイティブ版の既定配置を絶対パスで呼び出す。
+# 関数と同名の実体をPATH検索せず、npm版など別経路への切り替わりを防ぐ。
+if [ -x "$HOME/.local/bin/claude" ]; then
     claude() {
         # フラグのみの呼び出し（例: --model=sonnet）も対話セッションとみなして clear する。
         # -で始まらない引数またはヘルプ・非対話フラグがあれば非対話とみなす。
@@ -341,12 +338,7 @@ if [ -x ~/.claude/local/claude ] || command -v claude >/dev/null 2>&1; then
                 ;;
             esac
         done
-        if [ -x ~/.claude/local/claude ]; then
-            ~/.claude/local/claude "$@"
-        else
-            # 組み込み command で関数自身を bypass して PATH 上の本物を呼ぶ
-            command claude "$@"
-        fi
+        "$HOME/.local/bin/claude" "$@"
         local rc=$?
         # stdout/stderr が TTY のときだけ clear する。
         # パイプやリダイレクト経由で呼ばれた場合に端末制御シーケンスが

@@ -130,6 +130,22 @@ class TestRun:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
         assert exc_info.value.code == 1
 
+    def test_cli_install_failure_marks_step_failed_continues_and_exits_1(self):
+        """CLI導入失敗を失敗結果へ変換し、後続実行後に終了コード1とする。"""
+        calls: list[str] = []
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("Codex CLI の導入と更新", _make_broken_step("codex", calls)),
+            ("後続ステップ", _make_step("later", calls)),
+        ]
+
+        results, _ = post_apply.run(steps=steps)
+
+        assert calls == ["codex", "later"]
+        assert [(result.ok, result.changed) for result in results] == [(False, False), (True, False)]
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: (results, []))
+        assert exc_info.value.code == 1
+
     def test_main_exits_0_on_success(self):
         """全て成功なら main() は SystemExit(0) で正常終了する。"""
         calls: list[str] = []
@@ -161,6 +177,23 @@ class TestDefaultSteps:
         """Codex診断ログの共有メモリー配置をリンク同期の直後に実行する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert names.index("Codex 診断ログの共有メモリー配置 (Linux)") == names.index("Codex リンクの同期") + 1
+
+    def test_cli_setup_precedes_dependent_steps(self):
+        """CLI本体をplugin、リンク、MCPより前に準備する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        ordered = [
+            "npm/pnpm サプライチェーン対策",
+            "mise セットアップ",
+            "Codex CLI の導入と更新",
+            "Claude Code CLI の導入と更新",
+            "agent-toolkit ルールの同期",
+            "Codex リンクの同期",
+            "Claude Code plugin のインストール",
+            "Codex plugin のインストール",
+            "codex MCP サーバーの登録",
+        ]
+        indexes = [names.index(name) for name in ordered]
+        assert indexes == sorted(indexes)
 
 
 class TestPluginRecommendations:

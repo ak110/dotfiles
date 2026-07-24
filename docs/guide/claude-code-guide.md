@@ -35,6 +35,10 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 
 ## クイックスタート
 
+dotfiles配布利用者では、`chezmoi apply`後の処理がAnthropic公式ネイティブ版を管理する。
+未導入時は公式インストーラーで導入し、導入済みの場合は`claude update`で更新する。
+WindowsでClaude Codeが実行中の場合は停止せず、更新と旧npm版の整理を次回へ延期する。
+
 ### 1. uvのインストール
 
 プラグインは[uv](https://docs.astral.sh/uv/)に依存する。
@@ -45,7 +49,8 @@ agent-toolkitはルールファイルとプラグインの2つのコンポーネ
 
 ### 2. ツールキットのインストール
 
-先にClaude Codeをインストールしておく。
+`install-claude.sh`と`install-claude.ps1`はagent-toolkit単体導入用であり、Claude Code本体は導入しない。
+単体利用者はAnthropic公式手順でClaude Code本体を先にインストールしておく。
 インストーラーは`claude` CLIの存在を前提としており、未検出時はエラー終了する。
 
 Stopフックが`hookSpecificOutput.additionalContext`を利用するため、Claude Code 2.1.163以上を要求する。

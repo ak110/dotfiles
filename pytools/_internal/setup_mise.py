@@ -264,7 +264,8 @@ def _ensure_windows_user_path_has_shims() -> bool:
     # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
     current_process_path = os.environ.get("PATH", "")
     if str(shims_dir) not in current_process_path.split(os.pathsep):
-        os.environ["PATH"] = str(shims_dir) + os.pathsep + current_process_path
+        separator = os.pathsep if current_process_path else ""
+        os.environ["PATH"] = current_process_path + separator + str(shims_dir)
 
     return not already_registered
 

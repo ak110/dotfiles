@@ -2,6 +2,17 @@
 
 dotfiles利用者は`update-dotfiles`/`chezmoi apply`により、Codex向け設定も`~/.codex/`へ配布される。
 
+## Codex CLI本体
+
+dotfiles配布利用者では、`chezmoi apply`後の処理が現在有効なNode環境へCodexを導入する。
+導入には`npm install --global @openai/codex@latest`を使用する。
+
+選択したnpmのglobal prefix上でCodexの起動を確認した後、mise npmバックエンドの全版を除去する。
+PATHから解決される非正規npm版も、package帰属を確認したうえで除去する。
+PATH外の非アクティブNode環境は自動削除しない。
+認証情報、設定、セッションは除去しない。
+WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版の整理を次回へ延期する。
+
 ## 推奨構成
 
 配布内容は以下の構成とする。

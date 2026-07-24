@@ -1,6 +1,7 @@
 """pytools._internal.setup_mise のテスト。"""
 
 import json
+import os
 import subprocess
 import typing
 from pathlib import Path
@@ -343,6 +344,35 @@ class TestRunWindowsPathSetup:
         )
         _setup_mise.run()
         assert len(windows_env["writes"]) == 1
+
+
+class TestWindowsProcessPathPriority:
+    """現プロセスPATHの既存優先順位を維持する。"""
+
+    def test_appends_shims_after_existing_node_path(
+        self,
+        windows_env: dict[str, typing.Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """既存Nodeのパスをmise shimsより前に保つ。"""
+        node_path = r"C:\DATA\Apps\node"
+        monkeypatch.setenv("PATH", node_path)
+
+        _setup_mise.run()
+
+        assert os.environ["PATH"] == os.pathsep.join((node_path, str(windows_env["shims_dir"])))
+
+    def test_sets_shims_without_separator_when_path_empty(
+        self,
+        windows_env: dict[str, typing.Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """空PATHではshimsだけを設定する。"""
+        monkeypatch.setenv("PATH", "")
+
+        _setup_mise.run()
+
+        assert os.environ["PATH"] == str(windows_env["shims_dir"])
 
 
 class TestNonInteractiveEnvInjection:

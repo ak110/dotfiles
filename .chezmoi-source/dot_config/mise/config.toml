@@ -1,6 +1,5 @@
 [tools]
 "npm:@google/gemini-cli" = "latest"
-"npm:@openai/codex" = "latest"
 "npm:aws-cdk" = "latest"
 actionlint = "latest"
 chezmoi = "latest"
