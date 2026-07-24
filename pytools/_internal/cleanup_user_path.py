@@ -5,6 +5,7 @@ WindowsのPATHはシステム（HKLM）側とユーザー（HKCU）側に分か�
 
 - フルパスを `%LOCALAPPDATA%` / `%APPDATA%` / `%USERPROFILE%` プレースホルダーへ置換する
 - システム側 PATH と重複するエントリーをユーザー側から除外する
+- ユーザー側 PATH 内で重複するエントリーを除外する
 - 存在しないディレクトリを指すエントリーを検出した際に警告ログを出力する（自動削除はしない）
 """
 
@@ -34,7 +35,7 @@ _PLACEHOLDER_VAR_ORDER: tuple[str, ...] = ("LOCALAPPDATA", "APPDATA", "USERPROFI
 def run() -> bool:
     """ユーザー側 PATH を整理する (Windows のみ)。
 
-    プレースホルダー化・システム側重複除外・存在チェック警告の3点を実施する。
+    プレースホルダー化・システム側およびユーザー側の重複除外・存在チェック警告を実施する。
     存在しないエントリーは警告ログを出力するのみで自動削除はしない。
 
     Returns:
@@ -144,23 +145,26 @@ def _replace_placeholders(entry: str, env_map: Mapping[str, str]) -> str:
 
 
 def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str]]:
-    """ユーザー側PATHからシステム側と重複するエントリーを除いた文字列を返す。
+    """ユーザー側PATHからシステム側またはユーザー側で重複するエントリーを除く。
 
     比較は各エントリーを `ntpath.expandvars` で環境変数展開し `PureWindowsPath`
-    で表記正規化したキーで行う。残すエントリーは元の生値（プレースホルダーを含む）
-    のまま保持する。
+    で表記正規化したキーで行う。ユーザー側の重複は先頭を残す。残すエントリーは
+    元の生値（プレースホルダーを含む）のまま保持する。
 
     Returns:
         `(整理後のPATH文字列, 削除した元エントリー一覧)` のタプル。
     """
     system_keys = {key for key in (_normalize_entry(entry) for entry in _split(system_value)) if key}
+    seen_user_keys: set[str] = set()
     kept: list[str] = []
     removed: list[str] = []
     for entry in _split(user_value):
         key = _normalize_entry(entry)
-        if key and key in system_keys:
+        if key and (key in system_keys or key in seen_user_keys):
             removed.append(entry)
             continue
+        if key:
+            seen_user_keys.add(key)
         kept.append(entry)
     return _PATH_SEPARATOR.join(kept), removed
 

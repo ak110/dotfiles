@@ -1,6 +1,6 @@
 """pytools._internal.cleanup_user_path のテスト。
 
-`run()` 経由でプレースホルダー化・重複除外・存在チェック警告・値型昇格・
+`run()` 経由でプレースホルダー化・システム側およびユーザー側の重複除外・存在チェック警告・値型昇格・
 レジストリ I/O・ブロードキャスト連動・非 Windows 早期 return を検証する。
 レジストリ I/O は monkeypatch で `winutils` 関数を差し替え、Linux 上でも実行可能にする。
 """
@@ -29,7 +29,7 @@ def _userprofile(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestFilterUserPath:
-    """`run()` 経由でシステム側との重複除外・表記正規化の動作を検証する。
+    """`run()` 経由でシステム側・ユーザー側の重複除外と表記正規化を検証する。
 
     テストデータは USERPROFILE 配下以外のパスを使い、プレースホルダー化との干渉を避ける。
     """
@@ -114,6 +114,42 @@ class TestFilterUserPath:
         assert cleanup_user_path.run() is False
         assert not write_calls
         assert not broadcast_calls
+
+    def test_duplicate_user_entries_keep_first(self, monkeypatch: pytest.MonkeyPatch):
+        """ユーザー側で完全一致するエントリーは先頭だけを残す。"""
+        write_calls, broadcast_calls = _stub_winutils(
+            monkeypatch,
+            user_value=r"D:\app;D:\tools;D:\app;D:\app",
+            user_reg_type=_REG_EXPAND_SZ,
+            system_value="",
+        )
+        assert cleanup_user_path.run() is True
+        assert write_calls == [("Path", r"D:\app;D:\tools", _REG_EXPAND_SZ)]
+        assert broadcast_calls == [True]
+
+    def test_normalized_duplicate_user_entries_keep_first(self, monkeypatch: pytest.MonkeyPatch):
+        """表記が異なっても正規化後に同じユーザー側エントリーは先頭だけを残す。"""
+        write_calls, broadcast_calls = _stub_winutils(
+            monkeypatch,
+            user_value=r"D:\Apps\bin;d:/apps/bin/;D:\other",
+            user_reg_type=_REG_EXPAND_SZ,
+            system_value="",
+        )
+        assert cleanup_user_path.run() is True
+        assert write_calls == [("Path", r"D:\Apps\bin;D:\other", _REG_EXPAND_SZ)]
+        assert broadcast_calls == [True]
+
+    def test_placeholder_and_expanded_user_entries_are_deduplicated(self, monkeypatch: pytest.MonkeyPatch):
+        """プレースホルダー表記と展開済み表記が混在しても先頭だけを残す。"""
+        write_calls, broadcast_calls = _stub_winutils(
+            monkeypatch,
+            user_value=rf"%USERPROFILE%\bin;{_USERPROFILE}\bin;D:\other",
+            user_reg_type=_REG_EXPAND_SZ,
+            system_value="",
+        )
+        assert cleanup_user_path.run() is True
+        assert write_calls == [("Path", r"%USERPROFILE%\bin;D:\other", _REG_EXPAND_SZ)]
+        assert broadcast_calls == [True]
 
 
 class TestReplacePlaceholders:
