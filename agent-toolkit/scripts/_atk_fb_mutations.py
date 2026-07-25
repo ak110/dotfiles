@@ -18,6 +18,7 @@ from _atk_fb_common import (
     FEEDBACK_STATE_PROCESSING,
     FEEDBACK_STATE_REJECTED,
     _commit_and_push,
+    _dedup_positional_filenames,
     _edit_and_commit_via_editor,
     _pull,
     _repo_lock,
@@ -78,7 +79,9 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "adopt")
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
@@ -126,7 +129,9 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
 
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "reject")
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)
@@ -153,7 +158,9 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
     （最終処理結果の記録は`adopt`・`reject`側で行う）。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "start-processing")
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     _validate_filenames_only(args.filenames, inbox_dir)
     with _repo_lock(private_notes):
@@ -177,7 +184,9 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: inbox・processingいずれかから単純削除しcommit・push。
 
     processing優先で解決する（`_resolve_processable_targets`と同じ規約）。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "rm")
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
     processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     _validate_filenames_only(args.filenames, inbox_dir)

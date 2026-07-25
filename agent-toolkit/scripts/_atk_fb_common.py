@@ -23,7 +23,13 @@ from collections.abc import Callable, Iterable, Iterator
 
 import filelock
 import platformdirs
-from _atk_fb_formatters import _display_width, _parse_target_repo, _tbd_body_summary
+from _atk_fb_formatters import (
+    _display_width,
+    _parse_target_repo,
+    _target_repo_budget,
+    _tbd_body_summary,
+    _truncate_target_repo,
+)
 
 # フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
 # - `inbox`: 未処理の投入直後
@@ -385,6 +391,32 @@ def _validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> No
         _validate_filename(f, base_dir)
 
 
+def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[str]:
+    """位置引数として渡された`filenames`から重複を除去し、除去件数が0より大きい場合はstderrへ警告する。
+
+    正規化後の同一性で重複判定するため、`_normalize_md_filename`で正規化した値をキーに
+    順序保存する（例: `name`と`name.md`は同一項目として1件へ集約）。
+    呼び出し元は`_atk_fb_mutations.py`の`_cmd_start_processing`・`_cmd_adopt`・`_cmd_reject`・`_cmd_rm`と、
+    `_atk_fb_tbd.py`の`_cmd_tbd_adopt`・`_cmd_tbd_rm`の計6サブコマンドとする。
+    戻り値は正規化前の原文字列のうち初出のものを保持する（正規化は判定にのみ用いる）。
+    """
+    seen: dict[str, str] = {}
+    duplicates: list[str] = []
+    for name in filenames:
+        key = _normalize_md_filename(name)
+        if key in seen:
+            duplicates.append(name)
+        else:
+            seen[key] = name
+    if duplicates:
+        unique_duplicates = list(dict.fromkeys(duplicates))
+        print(
+            f"警告: {subcommand}の引数リストに重複が含まれます（重複除去して処理を継続）: {', '.join(unique_duplicates)}",
+            file=sys.stderr,
+        )
+    return list(seen.values())
+
+
 def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) -> Iterator[tuple[pathlib.Path, str, str]]:
     """inbox配下の`.md`ファイルを名前順に走査し、`(path, target_repo, text)`を返す。
 
@@ -451,7 +483,9 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         return
     print("# tbd", file=sys.stderr)
     for path, entry_repo, text in entries:
-        prefix = f"{path.name}: {entry_repo} [unanswered] "
+        repo_budget = _target_repo_budget(path.name, "unanswered")
+        display_repo = _truncate_target_repo(entry_repo, max_width=repo_budget)
+        prefix = f"{path.name}: {display_repo} [unanswered] "
         available_width = shutil.get_terminal_size().columns - _display_width(prefix)
         print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 

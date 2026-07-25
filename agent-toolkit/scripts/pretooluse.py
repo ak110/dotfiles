@@ -453,7 +453,7 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # mcp__codex__codex: codex-review.md未読ブロック + sandbox自動修正 + 強制承認
+    # mcp__codex__codex: codex-review.md未読ブロック + sandbox・approval-policy自動修正
     # `isSidechain`が真（サブエージェント内部からの呼び出し）の場合は実装用途の呼び出しのため
     # codex-review.md未読ブロックを回避する。
     if tool_name == "mcp__codex__codex":
@@ -465,7 +465,7 @@ def main() -> int:
             # plan-codex-delegateサブエージェント経由の実施履歴が無ければブロックする。
             if _check_codex_mcp_via_plan_codex_delegate(state, tool_name=tool_name):
                 return 2
-        emit_json(_check_codex_mcp_sandbox(tool_input))
+        emit_json(_check_codex_mcp_execution(tool_input))
         return 0
 
     # mcp__codex__codex-reply: 強制承認（threadId不一致時はplan-codex-delegate経由検査へ回す）
@@ -3851,24 +3851,26 @@ def _check_codex_mcp_via_plan_codex_delegate(state: dict, *, tool_name: str) -> 
     return True
 
 
-# --- mcp__codex__codex: sandbox自動修正 ---
+# --- mcp__codex__codex: sandbox・approval-policy自動修正 ---
 
 
-def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
-    """Codex MCP呼び出しのsandboxを常にdanger-full-accessへ強制固定する。
+def _check_codex_mcp_execution(tool_input: dict) -> dict:
+    """Codex MCP呼び出しのsandboxとapproval-policyを常時強制固定する。
 
-    本環境ではread-only・workspace-writeでcodexプロセスがハングして復帰しないため、
-    呼び出し側の指定値によらずdanger-full-access固定運用とする。
-    呼び出し側は`sandbox`パラメーターを渡す必要が無い
-    （渡しても本フックが上書きするため、指定は無視される）。
+    sandboxは`danger-full-access`固定。本環境ではread-only・workspace-writeでcodexプロセスが
+    ハングして復帰しないため、呼び出し側の指定値によらず固定運用とする。
+    approval-policyは`never`固定。承認プロンプトの発生を抑止し、失敗時はモデルへ結果を返す挙動へ統一する。
+    呼び出し側は`sandbox`・`approval-policy`を渡す必要が無い（渡しても本フックが上書きする）。
 
     設計意図（回帰予防）: 過去に「利用者の明示指定を尊重する」形へ変更された履歴があるが、
-    本環境ではハング回避を優先し安全側の強制固定を採用する。
+    本環境ではハング回避と承認プロンプト抑止を優先し安全側の強制固定を採用する。
     フィードバック反映等で「利用者の明示指定を尊重する」形へ再度変更しないこと。
     """
     updated_input = dict(tool_input)
-    already_correct = tool_input.get("sandbox") == "danger-full-access"
+    sandbox_ok = tool_input.get("sandbox") == "danger-full-access"
+    approval_ok = tool_input.get("approval-policy") == "never"
     updated_input["sandbox"] = "danger-full-access"
+    updated_input["approval-policy"] = "never"
     result: dict = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -3876,8 +3878,8 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> dict:
             "updatedInput": updated_input,
         },
     }
-    if not already_correct:
-        result["systemMessage"] = "[agent-toolkit] forced codex MCP sandbox to danger-full-access."
+    if not sandbox_ok or not approval_ok:
+        result["systemMessage"] = "[agent-toolkit] forced codex MCP sandbox to danger-full-access and approval-policy to never."
     return result
 
 

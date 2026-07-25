@@ -38,3 +38,29 @@ class TestBodySummaryTruncation:
         text = f"---\ntarget_repo: github.com/example/foo\n---\n\n{body}\n"
         result = _formatters._body_summary(text, available_width=available_width)  # noqa: SLF001  # pylint: disable=protected-access
         assert result == expected
+
+
+class TestTruncateTargetRepo:
+    def test_short_repo_unchanged(self) -> None:
+        assert _formatters._truncate_target_repo("~/dotfiles") == "~/dotfiles"  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_long_repo_center_truncated(self) -> None:
+        long_repo = "github.com/organization-name/very-long-repository-name"
+        result = _formatters._truncate_target_repo(long_repo)  # noqa: SLF001  # pylint: disable=protected-access
+        assert "..." in result
+        assert _formatters._display_width(result) <= 30  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_boundary_width_exact_thirty(self) -> None:
+        exact = "x" * 30
+        assert _formatters._truncate_target_repo(exact) == exact  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_boundary_width_one_over(self) -> None:
+        over = "x" * 31
+        result = _formatters._truncate_target_repo(over)  # noqa: SLF001  # pylint: disable=protected-access
+        assert "..." in result
+        assert _formatters._display_width(result) <= 30  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_east_asian_width_mixed(self) -> None:
+        mixed = "組織名/長い日本語リポジトリ名/subpath/example"
+        result = _formatters._truncate_target_repo(mixed)  # noqa: SLF001  # pylint: disable=protected-access
+        assert _formatters._display_width(result) <= 30  # noqa: SLF001  # pylint: disable=protected-access

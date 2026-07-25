@@ -163,6 +163,9 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|サブエージェント[^、。\n]{0,10}(終了|完了|応答|通知)[^、。\n]{0,10}(待つ|待機|待って)"
             r"|(?i:wait(?:ing)? for[^,.\n]{0,80}(background|parallel|subagent|reviewer"
             r"|response|report|registration|completion|notification))"
+            r"|(?i:monitor(?:ing)? for[^,.\n]{0,80}(background|parallel|subagent|reviewer)"
+            r"[^,.\n]{0,60}(complete|completion|completing|finish(?:ed|ing)?|response|notification"
+            r"|report(?:s|ed)?|registration))"
             r"|(?i:background agents[^,.\n]{0,40}(complete|finish|end)))"
         ),
     ),

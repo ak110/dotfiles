@@ -5,7 +5,9 @@ feedback/tbd一覧出力・各種フィルター（target-repo・source・type�
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -536,3 +538,73 @@ class TestListCount:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "0\n"
+
+
+class TestListNarrowTerminalTargetRepo:
+    """listサブコマンド: 狭幅端末で長い`target_repo`を扱う場合の動的省略幅の検証。
+
+    固定30幅では`path.name`・状態ラベルとの合算でprefix自体が端末幅を超過し得るため、
+    検証対象は`target_repo`表示部が`_target_repo_budget`の戻り値以下に収まること・
+    `_TARGET_REPO_MIN_WIDTH`を下回らないこと・出力が例外なく完了することとし、
+    prefix全体の端末幅内収納は要求しない。
+    """
+
+    _LONG_REPO = "github.com/organization-name/very-long-repository-name-example"
+
+    def test_feedback_narrow_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """feedback部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
+        import _atk_fb_formatters  # pylint: disable=import-outside-toplevel
+        import _atk_fb_list  # pylint: disable=import-outside-toplevel
+
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body="本文1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        line = captured.out.splitlines()[1]
+        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
+        budget = _atk_fb_list._target_repo_budget("fb-001.md", "inbox")  # noqa: SLF001  # pylint: disable=protected-access
+        assert _atk_fb_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
+        assert budget >= _atk_fb_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_tbd_narrow_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """tbd部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
+        import _atk_fb_formatters  # pylint: disable=import-outside-toplevel
+        import _atk_fb_list  # pylint: disable=import-outside-toplevel
+
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(
+            notes,
+            f"{_FIXED_TIMESTAMP}-001.md",
+            question="q1",
+            answer="",
+            target_repo=self._LONG_REPO,
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        line = captured.out.splitlines()[1]
+        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
+        budget = _atk_fb_list._target_repo_budget(f"{_FIXED_TIMESTAMP}-001.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
+        assert _atk_fb_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
+        assert budget >= _atk_fb_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access

@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_fb_tbd import _detect_self_containment_deficiency  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
@@ -39,6 +40,84 @@ def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run
+
+
+class TestDetectSelfContainmentDeficiency:
+    """`_detect_self_containment_deficiency`単体テスト（FB2: TBD本文の自己完結性検査）。"""
+
+    def test_temporary_identifier_alone(self) -> None:
+        assert _detect_self_containment_deficiency("fb 090830 これでよいか") == "一時識別子の単独使用"
+
+    def test_too_short(self) -> None:
+        assert _detect_self_containment_deficiency("採否は?") == "本文が短すぎる"
+
+    def test_no_reasoning_vocabulary(self) -> None:
+        long_body = (
+            "対象ファイルの現在の実装状況を確認した。今回変更するコードの分量は限定的であり、"
+            "既存のテストケースを維持しながら新しい関数を追加する。実装完了後は担当者へ結果を共有し、"
+            "必要に応じて追加の修正を行う予定である。"
+        )
+        assert _detect_self_containment_deficiency(long_body) == "判定根拠語彙の欠落"
+
+    def test_self_contained_message(self) -> None:
+        body = (
+            "採否判定を実施したい。理由は自己完結性欠如を検出したいためであり、判定根拠として"
+            "一時識別子の単独使用の有無・本文の長さ・判定根拠語彙の有無をそれぞれ確認した結果、"
+            "いずれの欠落条件にも該当しないと判断した。選択肢は警告のみか投入拒否かのトレードオフを含む。"
+        )
+        assert _detect_self_containment_deficiency(body) is None
+
+    def test_identifier_with_context_words_not_flagged(self) -> None:
+        """一時識別子の近傍に文脈語がある場合、判定Aでは警告しない。ただし短文なら判定Bで該当し得る。"""
+        body = (
+            "fb 090830についての背景として、既存実装の対象範囲を確認したうえで反映方針を判定した"
+            "経緯があり、実装完了後の採否は本文のみで判定可能であり、判定根拠・選択肢・トレードオフも"
+            "すべて本文中に記載済みである。"
+        )
+        assert len(body.strip()) >= 100
+        assert _detect_self_containment_deficiency(body) is None
+
+    def test_only_length_boundary_short(self) -> None:
+        """判定Bのみ発火（100文字未満だが識別子・語彙欠落は無し）。"""
+        body = "理由は根拠が薄いためであり、選択肢は採用と却下の二択で背景も明確である。"
+        assert len(body.strip()) < 100
+        assert _detect_self_containment_deficiency(body) == "本文が短すぎる"
+
+    def test_only_identifier_boundary_long(self) -> None:
+        """判定Aのみ発火（100文字以上だが単独識別子）。近傍30文字以内に文脈語を含めない冗長文とする。"""
+        body = (
+            "あああああああああああああああああああああああああああああああ"
+            "fb090830いいいいいいいいいいいいいいいいいいいいいいいいいいいいいい"
+            "ううううううううううううううううううううううううううううううう"
+        )
+        assert len(body.strip()) >= 100
+        assert _detect_self_containment_deficiency(body) == "一時識別子の単独使用"
+
+
+class TestCmdTbdAddSelfContainmentWarning:
+    """`_cmd_tbd_add`: 自己完結性ヒューリスティック警告と疑問文警告の併存を検証する。"""
+
+    def test_warning_printed_for_short_body(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """短い本文投入時に自己完結性警告が出力され、疑問文警告と併存し得ること。"""
+        _setup_tbd_env(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["tb", "add", str(myrepo), "採否は?"],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert exc_info.value.code == 0
+        stderr = capsys.readouterr().err
+        assert "自己完結" in stderr
 
 
 class TestTbdAdd:
@@ -141,7 +220,14 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["tb", "add", str(myrepo), "この対応でよいか？"],
+                [
+                    "tb",
+                    "add",
+                    str(myrepo),
+                    "この対応でよいか？判定根拠は既存実装の挙動確認結果であり、"
+                    "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
+                    "バランスを考慮した経緯を踏まえて判断してほしい。背景として前提となる範囲・方針も併記する。",
+                ],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -170,7 +256,9 @@ class TestTbdAdd:
                     "choice",
                     "--choices",
                     "A,B",
-                    "実施報告のみで疑問文を含まない選択式本文",
+                    "実施報告のみで疑問文を含まない選択式本文。判定根拠は既存実装の挙動確認結果であり、"
+                    "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
+                    "バランスを考慮した経緯を踏まえて判断してほしい。",
                 ],
                 home=tmp_path,
                 now=_FIXED_DT,
@@ -745,6 +833,37 @@ class TestTbdAdopt:
         assert (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert not (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
 
+    def test_duplicate_filenames_deduplicated_with_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。
+
+        重複除去前は`src.rename(dst)`が1回目の成功後に2回目で対象不在となり
+        `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
+        """
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["tb", "adopt", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-001.md"],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert (notes / "tbd" / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        stderr = capsys.readouterr().err
+        assert "重複が含まれます" in stderr
+        commit_calls = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+        assert len(commit_calls) == 1
+        assert "chore: adopt 1 tbd item" in commit_calls[0]
+
 
 class TestTbdRm:
     """tb rmサブコマンドの単体テスト。"""
@@ -851,3 +970,30 @@ class TestTbdRm:
             )
         assert existing.exists()
         assert not [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
+
+    def test_duplicate_filenames_deduplicated_with_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ削除されること。
+
+        重複除去前は`p.unlink()`が1回目の成功後に2回目で対象不在となり
+        `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
+        """
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                ["tb", "rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-001.md"],
+                home=tmp_path,
+            )
+        assert exc_info.value.code == 0
+        assert not (notes / "tbd" / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        stderr = capsys.readouterr().err
+        assert "重複が含まれます" in stderr
+        commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
+        assert "chore: remove 1 tbd item" in " ".join(commit_cmd)

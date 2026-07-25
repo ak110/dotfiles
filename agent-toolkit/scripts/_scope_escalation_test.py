@@ -66,6 +66,9 @@ class TestMatchScopeEscalation:
             "範囲が広いため要旨のみでは判断せず全内容を記載する。",
             "要旨のみにせず全て記載する。",
             "工数とのバランスを理由に省略しない。",
+            "Monitoring the deployment dashboard for anomalies is part of routine ops.",
+            "The dashboard continues monitoring for background service anomalies as part of daily operations.",
+            "この関数は品質ゲートの状態を定期的にmonitorする設計方針である。",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):

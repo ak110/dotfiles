@@ -8,6 +8,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -15,6 +16,7 @@ from _atk_fb_common import (
     _collect_message_via_editor,
     _commit_and_push,
     _copy_to_tempfile,
+    _dedup_positional_filenames,
     _edit_and_commit_via_editor,
     _is_tbd_answered,
     _iter_inbox_entries,
@@ -61,6 +63,67 @@ def _looks_like_question(message: str) -> bool:
     if "？" in message or "?" in message:
         return True
     return message.rstrip().rstrip("。").endswith("か")
+
+
+def _detect_self_containment_deficiency(message: str) -> str | None:
+    """メッセージ本文が単独で判断可能な情報を欠くかをヒューリスティックで判定する。
+
+    次の3判定を順に適用し、該当した最初の理由文字列を返す（該当なしなら`None`）。
+
+    判定A（単独使用検出）: 一時識別子（`fb12345`・`Q12`等）を検出し、識別子の前後30文字
+    以内に文脈語（「〜のため」「〜という」「〜について」「背景」「経緯」「対象」「実装」
+    「反映」「採否」「判定」等）が無い場合に該当する。文脈語が近接する場合は自己完結と
+    判断し警告しない。
+
+    判定B（本文の短さ）: 本文の前後空白除去後の文字数が100文字未満の場合に該当する。
+    判定Aで既に該当している場合は判定Bを重複起動せず、判定Aの理由のみを返す。
+
+    判定C（判定根拠語彙の欠落）: 判定根拠に相当する語彙（「のため」「根拠」「選択肢」
+    「理由」「背景」「トレードオフ」「観測事実」「判定」「経緯」「前提」「範囲」「方針」等）
+    が本文中に皆無の場合に該当する。
+
+    理由文字列は「一時識別子の単独使用」・「本文が短すぎる」・「判定根拠語彙の欠落」の
+    3種を返す。判定は上記順序でショートサーキットする。
+    """
+    identifier_pattern = re.compile(r"(?:fb|Q|FB)\s?\d{2,}")
+    context_words = (
+        "のため",
+        "という",
+        "について",
+        "背景",
+        "経緯",
+        "対象",
+        "実装",
+        "反映",
+        "採否",
+        "判定",
+    )
+    match = identifier_pattern.search(message)
+    if match is not None:
+        window_start = max(0, match.start() - 30)
+        window_end = min(len(message), match.end() + 30)
+        surrounding = message[window_start:window_end]
+        if not any(word in surrounding for word in context_words):
+            return "一時識別子の単独使用"
+    if len(message.strip()) < 100:
+        return "本文が短すぎる"
+    reasoning_words = (
+        "のため",
+        "根拠",
+        "選択肢",
+        "理由",
+        "背景",
+        "トレードオフ",
+        "観測事実",
+        "判定",
+        "経緯",
+        "前提",
+        "範囲",
+        "方針",
+    )
+    if not any(word in message for word in reasoning_words):
+        return "判定根拠語彙の欠落"
+    return None
 
 
 def _cmd_tbd_add(
@@ -113,6 +176,14 @@ def _cmd_tbd_add(
                 print(
                     f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
                     "回答者が何に答えるべきか分かる文面か確認してください。",
+                    file=sys.stderr,
+                )
+            self_contained_reason = _detect_self_containment_deficiency(message)
+            if self_contained_reason is not None:
+                print(
+                    f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります"
+                    f"（{self_contained_reason}）。"
+                    "02-collaboration.mdが定める自己完結要件を満たす形に見直してください。",
                     file=sys.stderr,
                 )
             content = (
@@ -272,8 +343,10 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
     """`tb adopt`サブコマンド: 回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push。
 
     全ファイルの存在を移動前に一括検証し、途中失敗による部分移動を防ぐ。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "tb adopt")
     tbd_inbox = private_notes / "tbd" / "inbox"
     tbd_adopted = private_notes / "tbd" / "adopted"
     _validate_filenames_only(args.filenames, tbd_inbox)
@@ -305,8 +378,10 @@ def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`tb rm`サブコマンド: TBDをtbd/inboxから単純削除しcommit・push。
 
     全ファイルの存在を削除前に一括検証し、途中失敗による部分削除を防ぐ。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     `--note`が指定された場合はcommit messageへ「(理由: <note>)」形式で追記する。
     """
+    args.filenames = _dedup_positional_filenames(args.filenames, "tb rm")
     tbd_inbox = private_notes / "tbd" / "inbox"
     _validate_filenames_only(args.filenames, tbd_inbox)
     with _repo_lock(private_notes):

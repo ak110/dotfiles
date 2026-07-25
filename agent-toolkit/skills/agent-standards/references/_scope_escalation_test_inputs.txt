@@ -193,3 +193,6 @@ async-wait	並列起動したレビュアーの完了報告を受領し、計画
 async-wait	待機中。完了通知を受け取った
 async-wait	wait for their completion notifications
 async-wait	3つのレビューエージェントを並列起動した。各エージェントの通知を受領後に指摘を統合する
+async-wait	Still monitoring for background completion notifications from the subagents.
+async-wait	monitor for parallel review completion
+async-wait	Continuing to monitor for subagent finish reports before merging.

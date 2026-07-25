@@ -1,6 +1,8 @@
 """`atk fb`共通の警告・通知処理を検証する。"""
 
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import threading
@@ -114,6 +116,29 @@ class TestNotifyUnansweredTbdsIfAny:
         assert capsys.readouterr().err == (
             "# tbd\n001.md: github.com/example/repo [unanswered] 質問1\n002.md: github.com/example/repo [unanswered] 質問2\n"
         )
+
+    def test_narrow_terminal_truncates_long_target_repo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。
+
+        `_atk_fb_list.py`の狭幅端末対応（`_target_repo_budget`・`_truncate_target_repo`）を
+        本関数も共有して適用していることを検証する。
+        """
+        long_repo = "github.com/organization-name/very-long-repository-name-example"
+        _write_tbd(tmp_path, "one.md", target_repo=long_repo, question="最初の質問")
+        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
+
+        _common.notify_unanswered_tbds_if_any(tmp_path, None)
+
+        line = capsys.readouterr().err.splitlines()[1]
+        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
+        budget = _common._target_repo_budget("one.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
+        assert _common._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
+        assert display_repo != long_repo
 
 
 class TestIsExistingDir:

@@ -2842,8 +2842,8 @@ class TestCodexReviewNotRead:
         assert "codex-review.md" in result.stderr
 
 
-class TestCodexMcpSandbox:
-    """codex MCP sandbox自動修正。"""
+class TestCodexMcpExecution:
+    """codex MCP sandbox・approval-policy自動修正（CLI統合テスト）。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -2914,12 +2914,12 @@ class TestCodexMcpSandbox:
         assert updated["sandbox"] == "danger-full-access"
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが既にdanger-full-accessの場合、updatedInputは返すがsystemMessageを含めない。"""
+        """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
         self._write_state(tmp_path, "fix3", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "approval-policy": "never"},
                 "session_id": "fix3",
             },
             env_overrides=state_dir,
@@ -2928,7 +2928,52 @@ class TestCodexMcpSandbox:
         out = json.loads(result.stdout)
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
         assert out["hookSpecificOutput"]["updatedInput"]["sandbox"] == "danger-full-access"
+        assert out["hookSpecificOutput"]["updatedInput"]["approval-policy"] == "never"
         assert "systemMessage" not in out
+
+    def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandboxが正しい値でもapproval-policyのみ誤りなら単独でneverへ強制修正する。"""
+        self._write_state(tmp_path, "fix_ap", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {
+                    "prompt": "hello",
+                    "sandbox": "danger-full-access",
+                    "approval-policy": "on-request",
+                },
+                "session_id": "fix_ap",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert updated["approval-policy"] == "never"
+        assert "forced" in out["systemMessage"]
+
+
+class TestCheckCodexMcpExecution:
+    """`_check_codex_mcp_execution`単体テスト（sandbox・approval-policy双方の強制固定）。"""
+
+    def test_forces_sandbox_and_approval_policy(self) -> None:
+        result = pretooluse._check_codex_mcp_execution({"prompt": "test"})  # noqa: SLF001  # pylint: disable=protected-access
+        updated = result["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert updated["approval-policy"] == "never"
+
+    def test_overrides_user_specified_values(self) -> None:
+        tool_input = {"prompt": "test", "sandbox": "read-only", "approval-policy": "on-request"}
+        result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
+        updated = result["hookSpecificOutput"]["updatedInput"]
+        assert updated["sandbox"] == "danger-full-access"
+        assert updated["approval-policy"] == "never"
+
+    def test_no_system_message_when_both_already_correct(self) -> None:
+        tool_input = {"prompt": "test", "sandbox": "danger-full-access", "approval-policy": "never"}
+        result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
+        assert "systemMessage" not in result
 
 
 class TestCodexMcpReply:

@@ -2,7 +2,9 @@
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
 既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_list_test.py`・
-`_atk_fb_show_test.py`・`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
+`_atk_fb_show_test.py`・`_atk_fb_process_loop_test.py`に分離する。
+位置引数の重複除去（FB7）テストは`too-many-lines`回避のため`_atk_fb_dedup_test.py`へ分離する。
+共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
