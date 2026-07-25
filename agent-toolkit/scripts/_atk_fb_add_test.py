@@ -6,6 +6,7 @@
 共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
+import contextlib
 import pathlib
 import subprocess
 import sys
@@ -15,11 +16,32 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_fb_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
 from atk_test import _FIXED_DT, _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """平引数操作が生成名を返し、frontmatter付きファイルを書き込む。"""
+    notes = tmp_path / "private-notes"
+    (notes / "feedback/inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    generated = add_module.add_feedback(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source="test",
+        now=_FIXED_DT,
+    )
+    assert generated == [f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"]
+    content = (notes / "feedback/inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "target_repo: github.com/example/repo" in content
+    assert "source: test" in content
 
 
 class TestAddOrderEditorFirst:

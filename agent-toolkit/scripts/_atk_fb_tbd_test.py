@@ -5,6 +5,9 @@ tb add/tb list/tb edit/tb answer/tb adopt/tb rmサブコマンドの単体テス
 `_atk_fb_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+# pylint: disable=too-many-lines
+
+import contextlib
 import pathlib
 import subprocess
 import sys
@@ -15,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_fb_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_fb_tbd import _detect_self_containment_deficiency  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -40,6 +44,28 @@ def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run
+
+
+def test_flat_tbd_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """平引数追加が生成名を返し、回答欄付きTBDを書き込む。"""
+    notes = tmp_path / "private-notes"
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    generated = tbd_module.add_tbd(
+        notes,
+        messages=["この方針を採用しますか？"],
+        target_repo="github.com/example/repo",
+        scope="test",
+        source=None,
+        question_type="yes-no",
+        choices=None,
+        now=_FIXED_DT,
+    )
+    assert generated == [f"{_FIXED_TIMESTAMP}-001.md"]
+    content = (notes / "tbd/inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "question_type: yes-no" in content
+    assert "ユーザーはこの行以降に回答を追記する" in content
 
 
 class TestDetectSelfContainmentDeficiency:

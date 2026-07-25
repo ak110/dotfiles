@@ -7,6 +7,9 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+# pylint: disable=too-many-lines
+
+import contextlib
 import pathlib
 import subprocess
 import sys
@@ -15,13 +18,32 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_fb_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
+    _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
+    notes = _setup_flag_and_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    filenames = mutations.transition_feedback(
+        notes,
+        action="start-processing",
+        filenames=["entry.md"],
+        now=_FIXED_DT,
+    )
+    assert filenames == ["entry.md"]
+    assert (notes / "feedback/processing/entry.md").is_file()
 
 
 class TestAdoptSingle:

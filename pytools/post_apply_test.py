@@ -195,6 +195,15 @@ class TestDefaultSteps:
         indexes = [names.index(name) for name in ordered]
         assert indexes == sorted(indexes)
 
+    def test_atk_serve_follows_plans_viewer_before_windows_steps(self) -> None:
+        """atk serveセットアップをplans viewer直後かつWindows固有処理前に1回登録する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        serve_name = "atk serve 自動起動セットアップ (Linux)"
+        plans_name = "claude-plans-viewer 自動起動セットアップ (Linux)"
+        assert names.count(serve_name) == 1
+        assert names.index(serve_name) == names.index(plans_name) + 1
+        assert names.index(serve_name) < names.index("Windowsレジストリ設定")
+
 
 class TestPluginRecommendations:
     """``install_claude_plugins.run()`` の推奨コマンド戻り値による案内出力。"""

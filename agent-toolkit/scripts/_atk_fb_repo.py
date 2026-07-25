@@ -9,7 +9,13 @@ import re
 import subprocess
 import sys
 
-from _atk_fb_common import _normalize_md_filename
+from _atk_fb_common import (
+    _commit_and_push,
+    _normalize_md_filename,
+    _pull,
+    _repo_lock,
+    _validate_filename,
+)
 from _atk_fb_formatters import _parse_target_repo
 
 
@@ -142,6 +148,11 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
         sys.exit(2)
 
 
+def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
+    """CLIとWeb APIで共有するリポジトリ識別子を解決する。"""
+    return _resolve_repo_id(value, cwd=cwd)
+
+
 def _verify_frontmatter_target_repo(
     filename: str,
     inbox_paths: list[pathlib.Path],
@@ -176,3 +187,34 @@ def _verify_frontmatter_target_repo(
             )
             sys.exit(2)
         return
+
+
+def edit_entry(
+    private_notes: pathlib.Path,
+    *,
+    directory: pathlib.Path,
+    filename: str,
+    content: str,
+    target_repo: str | None,
+    lock_timeout: float,
+    expected_content: str | None,
+    commit_message: str,
+) -> bool:
+    """feedback・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
+
+    `_atk_fb_mutations.edit_feedback`・`_atk_fb_tbd.edit_tbd`が共有する。
+    """
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        _verify_frontmatter_target_repo(filename, [directory], target_repo)
+        path = _validate_filename(filename, directory)
+        if not path.is_file():
+            raise FileNotFoundError(filename)
+        previous = path.read_text(encoding="utf-8")
+        if expected_content is not None and previous != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if previous == content:
+            return False
+        path.write_text(content, encoding="utf-8")
+        _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
+    return True

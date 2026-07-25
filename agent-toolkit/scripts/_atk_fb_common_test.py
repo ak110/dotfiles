@@ -180,6 +180,25 @@ class TestRepoLock:
         finally:
             lock1.release()
 
+    def test_constructor_timeout_bounds_plain_with_statement(self, tmp_path: pathlib.Path) -> None:
+        """`_repo_lock(..., timeout=...)`のコンストラクタ既定値が`with lock:`（引数無し取得）へ伝搬する。
+
+        Web要求経路は`acquire(timeout=...)`を明示呼び出しせず`with _repo_lock(private_notes, timeout=...):`
+        の形でロックを使うため、コンストラクタで指定した`timeout`が実際の`with`文へ反映されることを保証する。
+        """
+        target = tmp_path / "private-notes"
+        target.mkdir()
+        lock1 = _common._repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
+        lock1.acquire()
+        try:
+            with (
+                pytest.raises(filelock.Timeout),
+                _common._repo_lock(target, timeout=0.2),  # pylint: disable=protected-access  # noqa: SLF001
+            ):
+                pass
+        finally:
+            lock1.release()
+
     def test_second_acquire_succeeds_after_release(self, tmp_path: pathlib.Path) -> None:
         """1つ目のロック解放後は、別インスタンスからの2つ目の取得が成功する。"""
         target = tmp_path / "private-notes"

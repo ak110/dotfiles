@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from _atk_fb_common import (
+    WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
     _count_feedback,
@@ -64,6 +65,47 @@ def _body_is_effectively_empty(body: str) -> bool:
     if not non_empty_lines:
         return True
     return all(line in ("-", "*", "+") for line in non_empty_lines)
+
+
+def add_feedback(
+    private_notes: pathlib.Path,
+    *,
+    messages: list[str],
+    target_repo: str,
+    source: str | None,
+    now: datetime.datetime,
+    lock_timeout: float = -1,
+) -> list[str]:
+    """平引数でfeedbackを追加し、生成ファイル名を返す。"""
+    if not messages:
+        raise WebInputError("messagesには1件以上を指定してください")
+    for message in messages:
+        _, body = _parse_leading_frontmatter(message)
+        if _body_is_effectively_empty(body):
+            raise WebInputError("feedback本文が実質空です")
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        timestamp = now.strftime("%Y%m%d-%H%M%S")
+        inbox_dir = _subdir(private_notes, "inbox")
+        counter = _max_existing_seq(inbox_dir, timestamp) + 1
+        generated: list[str] = []
+        for message in messages:
+            frontmatter, body = _parse_leading_frontmatter(message)
+            item_target_repo = frontmatter.get("target_repo", target_repo)
+            item_source = frontmatter.get("source", source)
+            source_line = f"source: {item_source}\n" if item_source else ""
+            filename = f"{timestamp}-{counter:03d}.md"
+            content = f"---\ntarget_repo: {item_target_repo}\n{source_line}---\n\n{body}\n"
+            (inbox_dir / filename).write_text(content, encoding="utf-8")
+            generated.append(filename)
+            counter += 1
+        count = len(generated)
+        _commit_and_push(
+            private_notes,
+            f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
+            ["feedback"],
+        )
+    return generated
 
 
 def _cmd_add(
@@ -125,35 +167,22 @@ def _cmd_add(
                 file=sys.stderr,
             )
             sys.exit(1)
-    with _repo_lock(private_notes):
-        try:
-            _pull(private_notes)
-        except subprocess.CalledProcessError:
-            print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
-            for message in messages:
-                print("---", file=sys.stderr)
-                print(message, file=sys.stderr)
-            sys.exit(1)
-        timestamp = now.strftime("%Y%m%d-%H%M%S")
-        inbox_dir = _subdir(private_notes, "inbox")
-        counter = _max_existing_seq(inbox_dir, timestamp) + 1
-        generated: list[str] = []
-        for message in messages:
-            fm, body = _parse_leading_frontmatter(message)
-            item_target_repo = fm.get("target_repo", target_repo)
-            item_source = fm.get("source", args.source)
-            item_source_line = f"source: {item_source}\n" if item_source else ""
-            filename = f"{timestamp}-{counter:03d}.md"
-            content = f"---\ntarget_repo: {item_target_repo}\n{item_source_line}---\n\n{body}\n"
-            (inbox_dir / filename).write_text(content, encoding="utf-8")
-            generated.append(filename)
-            counter += 1
-        count = len(generated)
-        _commit_and_push(
+    try:
+        generated = add_feedback(
             private_notes,
-            f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
-            ["feedback"],
+            messages=messages,
+            target_repo=target_repo,
+            source=args.source,
+            now=now,
         )
+    except subprocess.CalledProcessError:
+        print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
+        for message in messages:
+            print("---", file=sys.stderr)
+            print(message, file=sys.stderr)
+        sys.exit(1)
+    count = len(generated)
+    inbox_dir = _subdir(private_notes, "inbox")
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")

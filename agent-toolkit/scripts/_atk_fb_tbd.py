@@ -13,11 +13,11 @@ import subprocess
 import sys
 
 from _atk_fb_common import (
+    WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
-    _edit_and_commit_via_editor,
     _is_tbd_answered,
     _iter_inbox_entries,
     _max_existing_seq,
@@ -33,6 +33,7 @@ from _atk_fb_common import (
 from _atk_fb_formatters import _parse_target_repo, _shorten_home
 from _atk_fb_list import _render_tbd_entries
 from _atk_fb_repo import _resolve_repo_id, _verify_frontmatter_target_repo
+from _atk_fb_repo import edit_entry as _edit_entry
 
 
 def _tbd_subdir(private_notes: pathlib.Path) -> pathlib.Path:
@@ -126,6 +127,159 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     return None
 
 
+def add_tbd(
+    private_notes: pathlib.Path,
+    *,
+    messages: list[str],
+    target_repo: str,
+    scope: str | None,
+    source: str | None,
+    question_type: str,
+    choices: str | None,
+    now: datetime.datetime,
+    lock_timeout: float = -1,
+) -> list[str]:
+    """平引数でTBDを追加する。"""
+    if question_type not in {"choice", "yes-no", "free-form"}:
+        raise WebInputError("question_typeが不正です")
+    if question_type == "choice" and not choices:
+        raise WebInputError("choice形式にはchoicesが必要です")
+    if not messages:
+        raise WebInputError("messagesには1件以上を指定してください")
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        timestamp = now.strftime("%Y%m%d-%H%M%S")
+        tbd_dir = _tbd_subdir(private_notes)
+        counter = _max_existing_seq(tbd_dir, timestamp) + 1
+        extra = (f"scope: {scope}\n" if scope else "") + (f"source: {source}\n" if source else "")
+        extra += f"question_type: {question_type}\n"
+        if choices:
+            extra += f"choices: {choices}\n"
+        generated: list[str] = []
+        for message in messages:
+            filename = f"{timestamp}-{counter:03d}.md"
+            if question_type != "choice" and not _looks_like_question(message):
+                print(
+                    f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
+                    "回答者が何に答えるべきか分かる文面か確認してください。",
+                    file=sys.stderr,
+                )
+            self_contained_reason = _detect_self_containment_deficiency(message)
+            if self_contained_reason is not None:
+                print(
+                    f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります"
+                    f"（{self_contained_reason}）。"
+                    "02-collaboration.mdが定める自己完結要件を満たす形に見直してください。",
+                    file=sys.stderr,
+                )
+            content = (
+                f"---\ntarget_repo: {target_repo}\n{extra}---\n\n"
+                f"## 質問\n\n{message}\n\n## 回答\n\n"
+                "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+            )
+            (tbd_dir / filename).write_text(content, encoding="utf-8")
+            generated.append(filename)
+            counter += 1
+        count = len(generated)
+        _commit_and_push(private_notes, f"chore: add {count} tbd items", ["tbd"])
+    return generated
+
+
+def edit_tbd(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    content: str,
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+    expected_content: str | None = None,
+) -> bool:
+    """平引数でTBD本文を更新する。"""
+    directory = private_notes / "tbd/inbox"
+    return _edit_entry(
+        private_notes,
+        directory=directory,
+        filename=filename,
+        content=content,
+        target_repo=target_repo,
+        lock_timeout=lock_timeout,
+        expected_content=expected_content,
+        commit_message="chore: edit tbd item",
+    )
+
+
+def answer_tbd(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    answer: str,
+    lock_timeout: float = -1,
+    expected_content: str | None = None,
+) -> bool:
+    """平引数でTBD回答欄を更新する。"""
+    directory = private_notes / "tbd/inbox"
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        path = _validate_filename(filename, directory)
+        if not path.is_file():
+            raise FileNotFoundError(filename)
+        marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
+        text = path.read_text(encoding="utf-8")
+        if expected_content is not None and text != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if marker not in text:
+            raise WebInputError("回答欄マーカーがありません")
+        content = text.split(marker, maxsplit=1)[0] + marker + "\n" + answer.strip() + "\n"
+        if text == content:
+            return False
+        path.write_text(content, encoding="utf-8")
+        if not _is_tbd_answered(content):
+            raise RuntimeError("TBD回答の保存後判定に失敗しました")
+        _commit_and_push(private_notes, "chore: answer tbd item", [str(path.relative_to(private_notes))])
+    return True
+
+
+def transition_tbd(
+    private_notes: pathlib.Path,
+    *,
+    action: str,
+    filenames: list[str],
+    now: datetime.datetime,
+    note: str | None = None,
+    commit: str | None = None,
+    target_repo: str | None = None,
+    lock_timeout: float = -1,
+) -> list[str]:
+    """平引数でTBDを採用又は削除する。"""
+    if action not in {"adopt", "remove"}:
+        raise WebInputError("TBD操作が不正です")
+    inbox = private_notes / "tbd/inbox"
+    _validate_filenames_only(filenames, inbox)
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        for filename in filenames:
+            _verify_frontmatter_target_repo(filename, [inbox], target_repo)
+        paths = _resolve_tbd_targets(filenames, inbox)
+        rel_paths: list[str] = []
+        if action == "adopt":
+            adopted = private_notes / "tbd/adopted"
+            adopted.mkdir(parents=True, exist_ok=True)
+            for path in paths:
+                _stamp_result(path, outcome="tbd-adopted", now=now, commit=commit, note=note)
+                target = adopted / path.name
+                path.rename(target)
+                rel_paths.extend([str(path.relative_to(private_notes)), str(target.relative_to(private_notes))])
+        else:
+            for path in paths:
+                path.unlink()
+                rel_paths.append(str(path.relative_to(private_notes)))
+        count = len(paths)
+        item_word = "item" if count == 1 else "items"
+        suffix = f" (理由: {note})" if action == "remove" and note else ""
+        _commit_and_push(private_notes, f"chore: {action} {count} tbd {item_word}{suffix}", rel_paths)
+    return [path.name for path in paths]
+
+
 def _cmd_tbd_add(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -156,50 +310,19 @@ def _cmd_tbd_add(
         if message is None:
             sys.exit(1)
         messages = [message]
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        timestamp = now.strftime("%Y%m%d-%H%M%S")
-        tbd_dir = _tbd_subdir(private_notes)
-        counter = _max_existing_seq(tbd_dir, timestamp) + 1
-        fm_extra = ""
-        if args.scope:
-            fm_extra += f"scope: {args.scope}\n"
-        if args.source:
-            fm_extra += f"source: {args.source}\n"
-        fm_extra += f"question_type: {args.question_type}\n"
-        if args.question_type == "choice":
-            fm_extra += f"choices: {args.choices}\n"
-        generated: list[str] = []
-        for message in messages:
-            filename = f"{timestamp}-{counter:03d}.md"
-            if args.question_type != "choice" and not _looks_like_question(message):
-                print(
-                    f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
-                    "回答者が何に答えるべきか分かる文面か確認してください。",
-                    file=sys.stderr,
-                )
-            self_contained_reason = _detect_self_containment_deficiency(message)
-            if self_contained_reason is not None:
-                print(
-                    f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります"
-                    f"（{self_contained_reason}）。"
-                    "02-collaboration.mdが定める自己完結要件を満たす形に見直してください。",
-                    file=sys.stderr,
-                )
-            content = (
-                f"---\ntarget_repo: {target_repo}\n{fm_extra}---\n\n"
-                f"## 質問\n\n{message}\n\n## 回答\n\n"
-                "<!-- ユーザーはこの行以降に回答を追記する -->\n"
-            )
-            (tbd_dir / filename).write_text(content, encoding="utf-8")
-            generated.append(filename)
-            counter += 1
-        count = len(generated)
-        _commit_and_push(
-            private_notes,
-            f"chore: add {count} tbd {'item' if count == 1 else 'items'}",
-            ["tbd"],
-        )
+    question_type = {"free": "free-form", "yesno": "yes-no", "choice": "choice"}[args.question_type]
+    generated = add_tbd(
+        private_notes,
+        messages=messages,
+        target_repo=target_repo,
+        scope=args.scope,
+        source=args.source,
+        question_type=question_type,
+        choices=args.choices,
+        now=now,
+    )
+    count = len(generated)
+    tbd_dir = _tbd_subdir(private_notes)
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(tbd_dir / filename, home)}")
@@ -280,19 +403,26 @@ def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> No
         if answered == snapshot:
             tmp_path.unlink(missing_ok=True)
             continue
-        with _repo_lock(private_notes):
-            _pull(private_notes)
-            if not path.exists() or path.read_bytes() != snapshot:
-                print(
-                    f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                    f"編集内容は{tmp_path}に残しています。スキップします。",
-                    file=sys.stderr,
-                )
-                had_conflict = True
-                continue
-            path.write_bytes(answered)
-            rel = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: answer 1 tbd item", [rel])
+        marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
+        edited_text = answered.decode("utf-8")
+        if marker not in edited_text:
+            print(f"回答欄マーカーがありません: {path.name}", file=sys.stderr)
+            tmp_path.unlink(missing_ok=True)
+            continue
+        try:
+            answer_tbd(
+                private_notes,
+                filename=path.name,
+                answer=edited_text.split(marker, maxsplit=1)[1],
+                expected_content=snapshot.decode("utf-8"),
+            )
+        except RuntimeError:
+            print(
+                f"編集中に他プロセスが対象を変更しました: {path.name}。編集内容は{tmp_path}に残しています。スキップします。",
+                file=sys.stderr,
+            )
+            had_conflict = True
+            continue
         tmp_path.unlink(missing_ok=True)
         edited.append(path.name)
     if edited:
@@ -318,14 +448,31 @@ def _cmd_tbd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None
             print(f"tbd/inboxに存在しません: {path.name}", file=sys.stderr)
             sys.exit(2)
         snapshot = path.read_bytes()
-    _edit_and_commit_via_editor(
-        private_notes,
-        path,
-        snapshot,
-        editor=editor,
-        commit_message="chore: edit tbd item",
-        retry_hint="再度atk tb editを実行してください。",
-    )
+    tmp_path = _copy_to_tempfile(snapshot)
+    subprocess.run([editor, str(tmp_path)], check=True)
+    edited = tmp_path.read_text(encoding="utf-8")
+    original = snapshot.decode("utf-8")
+    if edited == original:
+        tmp_path.unlink(missing_ok=True)
+        print("差分なし。")
+        return
+    try:
+        edit_tbd(
+            private_notes,
+            filename=path.name,
+            content=edited,
+            target_repo=args.target_repo,
+            expected_content=original,
+        )
+    except RuntimeError:
+        print(
+            f"編集中に他プロセスが対象を変更しました: {path.name}。"
+            f"編集内容は{tmp_path}に残しています。再度atk tb editを実行してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    tmp_path.unlink(missing_ok=True)
+    print(f"編集反映: {path.name}")
 
 
 def _resolve_tbd_targets(filenames: list[str], tbd_inbox: pathlib.Path) -> list[pathlib.Path]:
@@ -347,31 +494,16 @@ def _cmd_tbd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: d
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "tb adopt")
-    tbd_inbox = private_notes / "tbd" / "inbox"
-    tbd_adopted = private_notes / "tbd" / "adopted"
-    _validate_filenames_only(args.filenames, tbd_inbox)
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        for filename in args.filenames:
-            _verify_frontmatter_target_repo(filename, [tbd_inbox], args.target_repo)
-        paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
-        tbd_adopted.mkdir(parents=True, exist_ok=True)
-        moved: list[str] = []
-        rel_paths: list[str] = []
-        for src in paths:
-            _stamp_result(src, outcome="tbd-adopted", now=now, commit=args.commit, note=args.note)
-            dst = tbd_adopted / src.name
-            src.rename(dst)
-            moved.append(src.name)
-            rel_paths.append(str(src.relative_to(private_notes)))
-            rel_paths.append(str(dst.relative_to(private_notes)))
-        count = len(moved)
-        _commit_and_push(
-            private_notes,
-            f"chore: adopt {count} tbd {'item' if count == 1 else 'items'}",
-            rel_paths,
-        )
-    print(f"{count}件採用: {', '.join(moved)}")
+    moved = transition_tbd(
+        private_notes,
+        action="adopt",
+        filenames=args.filenames,
+        now=now,
+        note=args.note,
+        commit=args.commit,
+        target_repo=args.target_repo,
+    )
+    print(f"{len(moved)}件採用: {', '.join(moved)}")
 
 
 def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -382,20 +514,12 @@ def _cmd_tbd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--note`が指定された場合はcommit messageへ「(理由: <note>)」形式で追記する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "tb rm")
-    tbd_inbox = private_notes / "tbd" / "inbox"
-    _validate_filenames_only(args.filenames, tbd_inbox)
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        for filename in args.filenames:
-            _verify_frontmatter_target_repo(filename, [tbd_inbox], args.target_repo)
-        paths = _resolve_tbd_targets(args.filenames, tbd_inbox)
-        for p in paths:
-            p.unlink()
-        count = len(paths)
-        suffix = f" (理由: {args.note})" if args.note else ""
-        _commit_and_push(
-            private_notes,
-            f"chore: remove {count} tbd {'item' if count == 1 else 'items'}{suffix}",
-            ["tbd"],
-        )
-    print(f"{count}件削除: {', '.join(p.name for p in paths)}")
+    removed = transition_tbd(
+        private_notes,
+        action="remove",
+        filenames=args.filenames,
+        now=datetime.datetime.now(),
+        note=args.note,
+        target_repo=args.target_repo,
+    )
+    print(f"{len(removed)}件削除: {', '.join(removed)}")

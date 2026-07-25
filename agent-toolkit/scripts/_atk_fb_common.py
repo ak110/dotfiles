@@ -186,9 +186,9 @@ def _repo_lock_path(private_notes: pathlib.Path) -> pathlib.Path:
 class _RepoLock(filelock.FileLock):
     """`_repo_lock`が返すロック。保持区間を`_LOCK_HELD_PATHS`へ登録・解除する。"""
 
-    def __init__(self, private_notes: pathlib.Path) -> None:
+    def __init__(self, private_notes: pathlib.Path, *, timeout: float = -1) -> None:
         self._target = private_notes.resolve()
-        super().__init__(str(_repo_lock_path(private_notes)))
+        super().__init__(str(_repo_lock_path(private_notes)), timeout=timeout)
 
     def acquire(
         self,
@@ -215,16 +215,16 @@ class _RepoLock(filelock.FileLock):
             _LOCK_HELD_PATHS.paths.pop(self._target, None)
 
 
-def _repo_lock(private_notes: pathlib.Path) -> filelock.FileLock:
+def _repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
     """フィードバック保存リポジトリのgit操作・ファイル変更を排他するプロセス間ロックを返す。
 
     `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
     本計画のロック区間分割設計では同一関数内のネスト`with`は発生しない。
-    タイムアウトは指定せず、取得できるまで無期限に待機する
+    CLIは既定値により取得できるまで無期限に待機する
     （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
     臨界区間はgit操作前後の短時間に限るため）。
     """
-    return _RepoLock(private_notes)
+    return _RepoLock(private_notes, timeout=timeout)
 
 
 def _copy_to_tempfile(content: bytes) -> pathlib.Path:
@@ -268,47 +268,6 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
                 print("git rebase --abortでリベース開始前の状態へ復元しました。", file=sys.stderr)
             raise
         _run_git(["push"], cwd=private_notes)
-
-
-def _edit_and_commit_via_editor(
-    private_notes: pathlib.Path,
-    path: pathlib.Path,
-    snapshot: bytes,
-    *,
-    editor: str,
-    commit_message: str,
-    retry_hint: str,
-) -> None:
-    """スナップショット取得済みの`path`を`$EDITOR`で編集し、差分があれば競合検知のうえcommit・pushする。
-
-    呼び出し側は`_repo_lock`保持下でpull・frontmatter検証・対象存在確認・
-    スナップショット取得（`path.read_bytes()`）まで完了させたうえで本関数を呼び出す。
-    本関数はエディタ起動（対話的入力を待つためロック非保持）から、再ロック内での
-    他プロセスによる競合変更検知・書き込み・commit・pushまでを担う。
-    `fb edit`（`_atk_fb_mutations._cmd_edit`）と`tb edit`（`_atk_fb_tbd._cmd_tbd_edit`）が
-    同一の編集ワークフローを必要とするため集約する。
-    `retry_hint`には競合検知時の再実行案内文（例:「再度atk fb editを実行してください。」）を渡す。
-    """
-    tmp_path = _copy_to_tempfile(snapshot)
-    subprocess.run([editor, str(tmp_path)], check=True)
-    edited = tmp_path.read_bytes()
-    if edited == snapshot:
-        tmp_path.unlink(missing_ok=True)
-        print("差分なし。")
-        return
-    with _repo_lock(private_notes):
-        _pull(private_notes)
-        if not path.exists() or path.read_bytes() != snapshot:
-            print(
-                f"編集中に他プロセスが対象を変更しました: {path.name}。編集内容は{tmp_path}に残しています。{retry_hint}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        path.write_bytes(edited)
-        rel = str(path.relative_to(private_notes))
-        _commit_and_push(private_notes, commit_message, [rel])
-    tmp_path.unlink(missing_ok=True)
-    print(f"編集反映: {path.name}")
 
 
 def _stamp_result(
@@ -603,3 +562,52 @@ def _collect_message_via_editor() -> str | None:
         return message
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+class WebInputError(ValueError):
+    """Web APIへ安全に公開できる入力エラー。"""
+
+
+def flag_path(home: pathlib.Path) -> pathlib.Path:
+    """feedback-inbox有効化フラグのパスを返す。"""
+    return _flag_path(home)
+
+
+def ensure_environment(home: pathlib.Path) -> pathlib.Path:
+    """private-notes環境を検証してパスを返す。"""
+    return _ensure_environment(home)
+
+
+def pull(private_notes: pathlib.Path) -> None:
+    """リポジトリをfast-forward更新する。"""
+    _pull(private_notes)
+
+
+def repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+    """private-notesの排他ロックを返す。"""
+    return _repo_lock(private_notes, timeout=timeout)
+
+
+def commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterable[str]) -> None:
+    """指定差分をcommitしてpushする。"""
+    _commit_and_push(private_notes, message, rel_paths)
+
+
+def is_tbd_answered(text: str) -> bool:
+    """TBD本文が回答済みか判定する。"""
+    return _is_tbd_answered(text)
+
+
+def validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:
+    """basenameのMarkdownファイル名を検証し、許可ディレクトリ内へ解決する。"""
+    try:
+        return _validate_filename(filename, base_dir)
+    except SystemExit as error:
+        raise WebInputError(f"不正なファイル名です: {filename}") from error
+
+
+def validate_filenames(filenames: list[str], base_dir: pathlib.Path) -> list[pathlib.Path]:
+    """複数ファイル名を全件検証してから解決結果を返す。"""
+    if not filenames:
+        raise WebInputError("filenamesには1件以上を指定してください")
+    return [validate_filename(filename, base_dir) for filename in filenames]

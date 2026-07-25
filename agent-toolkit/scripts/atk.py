@@ -2,11 +2,11 @@
 # PYTHON_ARGCOMPLETE_OK
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30"]
+# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30", "pytilpack[quart]>=1.47.0"]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成: `atk fb <sub>`・`atk tb <sub>`形式。
+サブコマンド構成: `atk fb <sub>`・`atk tb <sub>`・`atk serve`形式。
 `fb`・`tb`サブパーサ配下にフィードバック・TBD操作サブコマンドを登録する。
 
 - fb add: inboxへフィードバックを投入する
@@ -46,6 +46,7 @@ import _atk_fb_mutations as _mutations  # noqa: E402
 import _atk_fb_process_loop as _process_loop  # noqa: E402
 import _atk_fb_show as _show  # noqa: E402
 import _atk_fb_tbd as _tbd  # noqa: E402
+import _atk_serve as _serve  # noqa: E402
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
@@ -80,6 +81,17 @@ def _source_filter_type(value: str) -> str:
     if not remainder:
         raise argparse.ArgumentTypeError("空文字列は指定できません（例: --source=session-review）")
     return value
+
+
+def _port_type(value: str) -> int:
+    """`--port`の値を1から65535までの整数として検証する。"""
+    try:
+        port = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください") from error
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください")
+    return port
 
 
 def _add_source_arg(parser: argparse.ArgumentParser) -> None:
@@ -448,6 +460,14 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_fb_parser(fb)
     tb = top.add_parser("tb", help="TBD項目操作")
     _build_tb_parser(tb)
+    serve = top.add_parser("serve", help="フィードバック管理Web UIを起動する")
+    serve.add_argument("--host", default=None, help="待受ホスト（既定値は設定から解決する）")
+    serve.add_argument(
+        "--port",
+        default=None,
+        type=_port_type,
+        help="待受ポート（既定値は設定から解決する）",
+    )
     return parser
 
 
@@ -507,6 +527,9 @@ def main(
         home = pathlib.Path.home()
     if now is None:
         now = datetime.datetime.now()
+    if args.command == "serve":
+        _serve.run(host=args.host, port=args.port, home=home)
+        sys.exit(0)
     if args.command not in ("fb", "tb"):
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     if args.command == "fb":

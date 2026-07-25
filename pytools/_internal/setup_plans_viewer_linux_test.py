@@ -305,3 +305,25 @@ class TestLingerWarning:
             setup_plans_viewer_linux.run()
 
         assert any("linger 無効" in record.message for record in caplog.records)
+
+
+def test_run_delegates_service_values_to_shared_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """plans viewer固有値だけを共通systemd処理へ渡す。"""
+    _run_linux_euryale(monkeypatch, tmp_path)
+    viewer = tmp_path / ".local/bin/claude-plans-viewer"
+    viewer.parent.mkdir(parents=True)
+    viewer.touch()
+    received: dict[str, object] = {}
+
+    def setup(**kwargs: object) -> bool:
+        received.update(kwargs)
+        return True
+
+    monkeypatch.setattr(setup_plans_viewer_linux.systemd_user_unit, "setup", setup)
+    assert setup_plans_viewer_linux.run()
+    assert received["executable_path"] == viewer
+    assert received["service_name"] == "claude-plans-viewer.service"
+    assert "ExecStart=%h/.local/bin/claude-plans-viewer" in str(received["unit_content"])
