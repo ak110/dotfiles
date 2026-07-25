@@ -139,6 +139,8 @@ def update_claude_settings(
     マージ前に `settings_path` から `removed_hook_substrings` に該当する hooks エントリ、
     `removed_env_keys` に該当する env キー、`removed_list_item_substrings` に該当する
     配列要素を除去することで、配布元から削除されたエントリが残り続けるのを防ぐ。
+    現行の管理対象フックもイベント別に一度除去してから再追加し、管理対象側のグループ
+    構造を変更した場合に旧構造が残るのを防ぐ。
 
     `removed_list_item_substrings` の既定値は空タプル。settings.json 専用の配列項目を
     対象とする場合は呼び出し元で明示指定する（managed JSON が当該配列を管理していない
@@ -158,6 +160,7 @@ def update_claude_settings(
 
     original = copy.deepcopy(data)
     _strip_removed_hooks(data, removed_hook_substrings)
+    _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
     _strip_removed_list_items(data, removed_list_item_substrings)
     _merge(data, managed)
@@ -257,10 +260,52 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
     """
     if not substrings:
         return
+    _strip_hooks(data, lambda _event, command: any(substring in command for substring in substrings))
+
+
+def _strip_managed_hooks(data: dict, managed: dict) -> None:
+    """現行の管理対象フックを同じイベントの既存設定から除去する。
+
+    管理対象フックを通常のunionマージ前に除去し、管理対象側の現在のグループ構造だけを
+    再追加できる状態にする。これにより、構造変更前の個別要素と現在の結合要素が併存しない。
+    """
+    managed_hooks = managed.get("hooks")
+    if not isinstance(managed_hooks, dict):
+        return
+    commands_by_event: dict[str, set[str]] = {}
+    for event_name, matchers in managed_hooks.items():
+        if not isinstance(event_name, str) or not isinstance(matchers, list):
+            continue
+        commands: set[str] = set()
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                continue
+            inner_hooks = matcher.get("hooks")
+            if not isinstance(inner_hooks, list):
+                continue
+            commands.update(
+                hook["command"] for hook in inner_hooks if isinstance(hook, dict) and isinstance(hook.get("command"), str)
+            )
+        if commands:
+            commands_by_event[event_name] = commands
+    if not commands_by_event:
+        return
+
+    def is_managed(event: str, command: str) -> bool:
+        event_commands = commands_by_event.get(event)
+        return event_commands is not None and command in event_commands
+
+    _strip_hooks(data, is_managed)
+
+
+def _strip_hooks(data: dict, should_remove: typing.Callable[[str, str], bool]) -> None:
+    """条件に一致する内部フックを除去し、空になった要素とイベントを整理する。"""
     hooks_root = data.get("hooks")
     if not isinstance(hooks_root, dict):
         return
     for event_name in list(hooks_root.keys()):
+        if not isinstance(event_name, str):
+            continue
         matchers = hooks_root.get(event_name)
         if not isinstance(matchers, list):
             continue
@@ -273,13 +318,12 @@ def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
             if not isinstance(inner_hooks, list):
                 kept_matchers.append(matcher)
                 continue
-            kept_inner = [
-                h
-                for h in inner_hooks
-                if not (
-                    isinstance(h, dict) and isinstance(h.get("command"), str) and any(s in h["command"] for s in substrings)
-                )
-            ]
+            kept_inner = []
+            for hook in inner_hooks:
+                command = hook.get("command") if isinstance(hook, dict) else None
+                if isinstance(command, str) and should_remove(event_name, command):
+                    continue
+                kept_inner.append(hook)
             if not kept_inner:
                 continue
             matcher["hooks"] = kept_inner

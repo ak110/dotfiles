@@ -667,6 +667,86 @@ class TestStripRemovedHooks:
             assert result["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == command
 
 
+class TestNormalizeManagedHooks:
+    """管理対象フックを現在の構造へ正規化する回帰テスト。"""
+
+    @pytest.mark.parametrize(
+        "override_path",
+        [
+            _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json",
+            _REPO_ROOT / "share" / "claude_settings_json_managed.win32.json",
+        ],
+        ids=("posix", "windows"),
+    )
+    def test_production_old_split_and_current_combined_entries_are_normalized(
+        self,
+        tmp_path: Path,
+        override_path: Path,
+    ):
+        """実在するOS別配布元で旧個別要素を正規化し、再実行しても変更しない。"""
+        override = json.loads(override_path.read_text(encoding="utf-8"))
+        managed_entry = override["hooks"]["Stop"][0]
+        managed_hooks = managed_entry["hooks"]
+        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + [managed_entry]
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"hooks": {"Stop": existing_entries}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(
+            _PROD_MANAGED_SETTINGS,
+            target_path,
+            overrides=[override_path],
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+        first = json.loads(target_path.read_text(encoding="utf-8"))
+        changed_again = update_claude_settings(
+            _PROD_MANAGED_SETTINGS,
+            target_path,
+            overrides=[override_path],
+            removed_hook_substrings=(),
+            removed_env_keys=(),
+            removed_list_item_substrings=(),
+        )
+        second = json.loads(target_path.read_text(encoding="utf-8"))
+
+        assert first["hooks"]["Stop"] == [managed_entry]
+        assert second == first
+        assert not changed_again
+
+    def test_custom_command_in_same_entry_is_preserved(self, tmp_path: Path):
+        """管理対象コマンドと同居する利用者独自コマンドを保持する。"""
+        managed_command = "managed-stop"
+        custom_hook = {"type": "command", "command": "custom-stop"}
+        managed_entry = {"hooks": [{"type": "command", "command": managed_command}]}
+        existing_entry = {"hooks": [managed_entry["hooks"][0], custom_hook]}
+
+        result = _run(
+            tmp_path,
+            {"hooks": {"Stop": [managed_entry]}},
+            {"hooks": {"Stop": [existing_entry]}},
+        )
+
+        assert result["hooks"]["Stop"] == [{"hooks": [custom_hook]}, managed_entry]
+
+    def test_unmanaged_event_is_preserved(self, tmp_path: Path):
+        """同じコマンド文字列でも管理対象外イベントのフックは保持する。"""
+        managed_hook = {"type": "command", "command": "managed-command"}
+        unmanaged_entry = {"hooks": [managed_hook]}
+
+        result = _run(
+            tmp_path,
+            {"hooks": {"Stop": [{"hooks": [managed_hook]}]}},
+            {"hooks": {"PostToolUse": [unmanaged_entry]}},
+        )
+
+        assert result["hooks"]["PostToolUse"] == [unmanaged_entry]
+        assert result["hooks"]["Stop"] == [{"hooks": [managed_hook]}]
+
+
 class TestStripRemovedEnvKeys:
     """配布元から削除された env キーの自動除去テスト。"""
 

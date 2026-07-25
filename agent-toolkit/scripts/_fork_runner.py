@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import os
 import runpy
@@ -22,10 +23,15 @@ from pathlib import Path
 _HAS_FORK = hasattr(os, "fork")
 _LOCK = threading.Lock()
 _SERVER: subprocess.Popen[bytes] | None = None
+_SERVER_SHUTDOWN_TIMEOUT = 1.0
 
 
-class _ServerUnavailable(Exception):
-    """fork-serverの起動・応答に失敗したことを示す内部例外。呼び出し元でsubprocess.runへフォールバックする。"""
+class ForkServerCommunicationError(RuntimeError):
+    """要求送信後にfork-serverとの通信が途絶したことを示す。"""
+
+
+class _ServerStartFailed(Exception):
+    """fork-serverの起動失敗を示す内部例外。呼び出し元でsubprocess.runへフォールバックする。"""
 
 
 def run_script(
@@ -40,12 +46,13 @@ def run_script(
     """スクリプトを実行しsubprocess.CompletedProcess互換の結果を返す。
 
     fork-serverが利用できる環境ではサーバーへリクエストを送って実行し、
-    利用できない場合・サーバー起動や応答に失敗した場合はsubprocess.runへ委譲する。
+    利用できない場合またはサーバー起動に失敗した場合はsubprocess.runへ委譲する。
+    要求送信後の通信失敗では実行結果が確定しないためForkServerCommunicationErrorを送出し、再実行しない。
     """
     if _HAS_FORK:
         try:
             return _run_via_server(script_path, argv=argv, input=input, env=env, cwd=cwd, timeout=timeout)
-        except _ServerUnavailable:
+        except _ServerStartFailed:
             pass
     return subprocess.run(
         [sys.executable, str(script_path), *argv],
@@ -95,15 +102,15 @@ def _run_via_server(
                 response_line = server.stdout.readline()
             except OSError as exc:
                 _terminate_server()
-                raise _ServerUnavailable(f"fork-serverとの通信に失敗した: {exc}") from exc
+                raise ForkServerCommunicationError(f"fork-serverとの通信に失敗した: {exc}") from exc
             if not response_line:
                 _terminate_server()
-                raise _ServerUnavailable("fork-serverが応答を返さなかった")
+                raise ForkServerCommunicationError("fork-serverが応答を返さなかった")
             try:
                 response = json.loads(response_line)
             except json.JSONDecodeError as exc:
                 _terminate_server()
-                raise _ServerUnavailable(f"fork-serverの応答が不正だった: {exc}") from exc
+                raise ForkServerCommunicationError(f"fork-serverの応答が不正だった: {exc}") from exc
             stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
             stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
     if response.get("timeout"):
@@ -125,6 +132,9 @@ def _ensure_server() -> subprocess.Popen[bytes]:
     global _SERVER  # noqa: PLW0603 -- テストプロセスごとの遅延シングルトン  # pylint: disable=global-statement
     if _SERVER is not None and _SERVER.poll() is None:
         return _SERVER
+    if _SERVER is not None:
+        _close_server(_SERVER)
+        _SERVER = None
     try:
         server = subprocess.Popen(  # noqa: S603 -- 自モジュールの再起動でありユーザー入力を経由しない  # pylint: disable=consider-using-with
             [sys.executable, str(Path(__file__).resolve())],
@@ -132,17 +142,40 @@ def _ensure_server() -> subprocess.Popen[bytes]:
             stdout=subprocess.PIPE,
         )
     except OSError as exc:
-        raise _ServerUnavailable(f"fork-server起動に失敗した: {exc}") from exc
+        raise _ServerStartFailed(f"fork-server起動に失敗した: {exc}") from exc
     _SERVER = server
-    atexit.register(_terminate_server)
     return server
 
 
 def _terminate_server() -> None:
     global _SERVER  # noqa: PLW0603  # pylint: disable=global-statement
-    if _SERVER is not None and _SERVER.poll() is None:
-        _SERVER.terminate()
+    server = _SERVER
     _SERVER = None
+    if server is not None:
+        _close_server(server)
+
+
+def _close_server(server: subprocess.Popen[bytes]) -> None:
+    """fork-serverを終了し、所有するパイプを解放する。"""
+    try:
+        if server.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                server.terminate()
+            try:
+                server.wait(timeout=_SERVER_SHUTDOWN_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    server.kill()
+                server.wait()
+    finally:
+        if server.stdin is not None:
+            with contextlib.suppress(BrokenPipeError):
+                server.stdin.close()
+        if server.stdout is not None:
+            server.stdout.close()
+
+
+atexit.register(_terminate_server)
 
 
 # --- サーバー本体（`subprocess.Popen`で子プロセスとして起動される） ---

@@ -10,6 +10,7 @@ import pathlib
 import signal
 import subprocess
 import sys
+import typing
 
 import _fork_runner
 import pytest
@@ -70,6 +71,44 @@ def test_fallback_without_fork(tmp_path: pathlib.Path, monkeypatch: pytest.Monke
     result = _fork_runner.run_script(script, input="fallback")
     assert result.returncode == 0
     assert result.stdout == "fallback"
+
+
+def test_server_start_failure_falls_back_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    count_path = tmp_path / "count.txt"
+    script = _write_script(
+        tmp_path,
+        (
+            "import pathlib, sys\n"
+            f"path = pathlib.Path({str(count_path)!r})\n"
+            "count = int(path.read_text()) + 1 if path.exists() else 1\n"
+            "path.write_text(str(count))\n"
+            "sys.stdout.write('fallback')\n"
+        ),
+    )
+    original_popen = subprocess.Popen
+    server_start_attempts = 0
+    _fork_runner._terminate_server()  # noqa: SLF001 -- サーバー起動経路を確実に通す  # pylint: disable=protected-access
+    monkeypatch.setattr(_fork_runner, "_HAS_FORK", True)
+
+    def fail_server_start(
+        args: typing.Any,
+        *popen_args: typing.Any,
+        **popen_kwargs: typing.Any,
+    ) -> subprocess.Popen[typing.Any]:
+        nonlocal server_start_attempts
+        if len(args) >= 2 and pathlib.Path(args[1]) == pathlib.Path(_fork_runner.__file__).resolve():
+            server_start_attempts += 1
+            raise OSError("server start failed")
+        return original_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", fail_server_start)
+
+    result = _fork_runner.run_script(script)
+
+    assert result.returncode == 0
+    assert result.stdout == "fallback"
+    assert count_path.read_text(encoding="utf-8") == "1"
+    assert server_start_attempts == 1
 
 
 def test_large_io_exceeding_pipe_buffer_roundtrips(tmp_path: pathlib.Path) -> None:
@@ -148,7 +187,7 @@ def test_unspecified_cwd_reflects_current_directory(tmp_path: pathlib.Path, monk
 
 
 def test_server_death_recovers_on_next_call(tmp_path: pathlib.Path) -> None:
-    # サーバー強制終了後の呼び出しが再起動またはフォールバックで正常結果を返す。
+    # サーバー強制終了後の呼び出しが再起動し、旧サーバーのパイプを解放する。
     script = _write_script(tmp_path, "import sys\nsys.stdout.write(sys.stdin.read())\n")
     _fork_runner.run_script(script, input="first")  # サーバーを起動させる
     server = _fork_runner._SERVER  # noqa: SLF001 -- 障害系再現のため内部状態へアクセスする  # pylint: disable=protected-access
@@ -158,3 +197,45 @@ def test_server_death_recovers_on_next_call(tmp_path: pathlib.Path) -> None:
     result = _fork_runner.run_script(script, input="recovered")
     assert result.returncode == 0
     assert result.stdout == "recovered"
+    assert server.stdin is not None
+    assert server.stdin.closed
+    assert server.stdout is not None
+    assert server.stdout.closed
+    assert _fork_runner._SERVER is not server  # noqa: SLF001  # pylint: disable=protected-access
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fork-serverとsignal.SIGKILLを利用できないため")
+def test_server_response_loss_does_not_execute_script_twice(tmp_path: pathlib.Path) -> None:
+    count_path = tmp_path / "count.txt"
+    script = _write_script(
+        tmp_path,
+        (
+            "import os, pathlib, signal\n"
+            f"path = pathlib.Path({str(count_path)!r})\n"
+            "count = int(path.read_text()) + 1 if path.exists() else 1\n"
+            "path.write_text(str(count))\n"
+            "if count == 1:\n"
+            "    os.kill(os.getppid(), signal.SIGKILL)\n"
+        ),
+    )
+
+    with pytest.raises(_fork_runner.ForkServerCommunicationError):
+        _fork_runner.run_script(script)
+
+    assert count_path.read_text(encoding="utf-8") == "1"
+
+
+def test_terminate_server_waits_and_closes_pipes(tmp_path: pathlib.Path) -> None:
+    script = _write_script(tmp_path, "pass\n")
+    _fork_runner.run_script(script)
+    server = _fork_runner._SERVER  # noqa: SLF001 -- 終了処理の観測に必要  # pylint: disable=protected-access
+    assert server is not None
+
+    _fork_runner._terminate_server()  # noqa: SLF001  # pylint: disable=protected-access
+
+    assert server.poll() is not None
+    assert server.stdin is not None
+    assert server.stdin.closed
+    assert server.stdout is not None
+    assert server.stdout.closed
+    assert _fork_runner._SERVER is None  # noqa: SLF001  # pylint: disable=protected-access
