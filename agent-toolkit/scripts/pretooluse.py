@@ -138,6 +138,7 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
@@ -302,7 +303,7 @@ def _record_plan_codex_delegate_invoked(session_id: str) -> None:
     update_state(session_id, _set)
 
 
-def _record_subagent_type_flag_invoked(session_id: str, subagent_type: str) -> None:
+def _record_subagent_type_flag_invoked(session_id: str, subagent_type: str, prompt: str = "") -> None:
     """レビュー担当エージェントの起動要求検知時点で実施済みフラグを即時記録する。
 
     `_SUBAGENT_TYPE_FLAGS`（`plan_reviewer_invoked`・`codex_review_invoked`）が対象。
@@ -311,9 +312,14 @@ def _record_subagent_type_flag_invoked(session_id: str, subagent_type: str) -> N
     起動要求検知の時点で前倒し記録することで、裏側実行時も実装工程の事前チェックを正しく通過させる。
     完了時点の記録（posttooluse.py側）は`update_state`のno-op復帰により二重記録が起きても
     状態を壊さないため、既存のまま残す。
+
+    `plan-codex-delegate`は用途がレビューの起動に限って記録する。
+    用途が実装の起動を記録するとレビュー未実施のまま完遂判定を通過できてしまうためである。
     """
     flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
     if not session_id or flag_key is None:
+        return
+    if flag_key == "codex_review_invoked" and not _is_review_purpose(prompt):
         return
 
     def _set(state: dict) -> dict | None:
@@ -579,7 +585,8 @@ def main() -> int:
         ):
             _record_plan_codex_delegate_invoked(session_id)
         if isinstance(subagent_type, str):
-            _record_subagent_type_flag_invoked(session_id, subagent_type)
+            agent_prompt = tool_input.get("prompt")
+            _record_subagent_type_flag_invoked(session_id, subagent_type, agent_prompt if isinstance(agent_prompt, str) else "")
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES

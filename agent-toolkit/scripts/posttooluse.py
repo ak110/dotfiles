@@ -66,6 +66,7 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
 from subagent_stop_advisor import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -494,6 +495,12 @@ def main() -> int:
                 update_state(session_id, _register_explore_named_background)
         if isinstance(subagent_type, str):
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
+            # `plan-codex-delegate`は用途がレビューの起動に限って記録する。
+            # 用途が実装の起動を記録すると、レビュー未実施のまま計画作成工程の完遂判定を通過できてしまう。
+            if flag_key == "codex_review_invoked":
+                agent_prompt = tool_input.get("prompt")
+                if not _is_review_purpose(agent_prompt if isinstance(agent_prompt, str) else ""):
+                    flag_key = None
             if flag_key is not None:
 
                 def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:

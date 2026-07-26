@@ -30,7 +30,12 @@
   「codex利用可否の2段階判定」節でMCP利用不可時の代替起動を記録する用途に残り、ゲート必須対象ではない）。
   状態更新は既に真の場合に何も書き込まないため、起動時点と完了時点で二重に記録しても結果は同一となる。
   前倒し記録により、完了通知前でも起動要求が受理された時点からフラグは真となる。
-  `codex_review_invoked`は`plan-codex-delegate`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
+  `codex_review_invoked`は`plan-codex-delegate`を用途`計画レビュー`・`実装差分レビュー`で起動した時、
+  または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
+  用途`実装`での起動は記録対象から除く。実装用途の起動を記録するとレビュー未実施のまま
+  計画作成工程の完遂判定を通過できるためである。
+  用途は起動プロンプト本文の`用途: <値>`行から判定し、記述が無い場合は記録側へ倒す
+  （レビュー起動を実装起動と誤判定すると正当な進行がブロックされるため）。
   `_reset_process7_completion_flags`のリセット対象タプルは`_PROCESS7_COMPLETION_FLAGS`と別に
   `plan_reviewer_invoked`を明示追加し、新計画着手時に前計画のフォールバック起動記録を持ち越さない
   （`_PROCESS7_COMPLETION_FLAGS`縮小に伴うリセット対象脱落の是正、plan-reviewer指摘反映）。

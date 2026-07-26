@@ -7,9 +7,16 @@
 `SUBAGENT_TYPE_FLAGS`はレビュー担当エージェント種別→セッション状態フラグ名のマップであり、
 `pretooluse.py`（起動要求検知時点での即時記録）と`posttooluse.py`（完了時点での記録）の
 両方が参照する。
+
+`is_review_purpose`は`plan-codex-delegate`の起動プロンプトが指定する用途を判定する。
+同エージェントは計画レビュー・実装差分レビュー・実装の3用途を持ち、
+用途が実装の起動でレビュー実施済みフラグを記録すると、レビュー未実施のまま
+計画作成工程の完遂判定を通過できてしまうため、記録をレビュー2用途へ限定する目的で使う。
 """
 
 from __future__ import annotations
+
+import re
 
 TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
     {
@@ -32,3 +39,18 @@ SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-codex-delegate": "codex_review_invoked",
     "agent-toolkit:plan-codex-delegate": "codex_review_invoked",
 }
+
+_PURPOSE_RE = re.compile(r"用途\s*[:：]\s*(\S+)")
+
+
+def is_review_purpose(prompt: str) -> bool:
+    """起動プロンプトがレビュー用途を指定しているかを返す。
+
+    用途の記述が見つからない場合は真を返す。
+    レビュー起動を実装起動と誤判定するとレビュー実施済みの記録が漏れ、
+    実装工程の事前チェックが正当な進行をブロックするため、判定不能時は記録側へ倒す。
+    """
+    match = _PURPOSE_RE.search(prompt)
+    if match is None:
+        return True
+    return "レビュー" in match.group(1)
