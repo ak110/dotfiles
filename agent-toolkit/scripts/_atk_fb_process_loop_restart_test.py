@@ -1,0 +1,207 @@
+"""atk (agent-toolkit `atk fb`) のprocess-loop待機ループ自動再起動のテスト。
+
+待機ループがタイムアウト復帰した際の上流差分反映・常駐コードのハッシュ比較・再起動を
+公開CLI経由で検証する。process-loopサブコマンドの他のテストは`_atk_fb_process_loop_test.py`に、
+既存サブコマンドの残テストは`atk_test.py`にある。共通ヘルパーは両ファイルから再利用する。
+"""
+
+import os
+import pathlib
+import subprocess
+import sys
+from typing import Any
+
+import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import _atk_fb_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_fb_process_loop_test import _fake_run_with_remote_url  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+class TestWaitLoopAutoRestart:
+    """待機ループ復帰時の自動更新反映・再起動を公開CLI経由で検証する。"""
+
+    def _run_until_stop(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        *,
+        wait_return: bool,
+        has_upstream_diff: bool,
+        changed_file_name: str | None = None,
+        extra_argv: list[str] | None = None,
+        dotfiles_root_missing: bool = False,
+        create_canonical_entry: bool = False,
+    ) -> tuple[list[list[str]], list[tuple[str, list[str]]]]:
+        """件数0固定・`_wait_for_changes`を`wait_return`固定でモックしてprocess-loopを1回実行する。
+
+        戻り値は(subprocess呼び出し記録, execvp呼び出し記録)。
+        `changed_file_name`指定時は初回の待機復帰直前に対象ファイルの内容を変更する。
+        `dotfiles_root_missing=True`時は`_resolve_dotfiles_root`が`None`を返す
+        （`~/dotfiles`未検出）状況を模擬する。
+        `create_canonical_entry=True`時はダミーチェックアウト配下へ`atk.py`を配置し、
+        再起動先の切り替え先が実在する状況を模擬する。
+        """
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_flag_and_notes(tmp_path)
+        fake_dotfiles_root = tmp_path / "dotfiles_root"
+        fake_scripts_dir = fake_dotfiles_root / "agent-toolkit" / "scripts"
+        fake_scripts_dir.mkdir(parents=True)
+        (fake_scripts_dir / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (fake_scripts_dir / "a_test.py").write_text("def test_a(): pass\n", encoding="utf-8")
+        if create_canonical_entry:
+            (fake_scripts_dir / "atk.py").write_text("# canonical entry point\n", encoding="utf-8")
+        # `_resolve_dotfiles_root`は`~/dotfiles`を直接参照するため、
+        # `atk`実行コード自体の物理配置（`__file__`）とは独立にテスト用ダミーへ差し替える。
+        resolved_root = None if dotfiles_root_missing else fake_dotfiles_root
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: resolved_root)
+        subprocess_calls: list[list[str]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            subprocess_calls.append(list(cmd))
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 0)
+
+        wait_calls = {"n": 0}
+
+        def fake_wait(*_a: object, **_kw: object) -> bool:
+            wait_calls["n"] += 1
+            if wait_calls["n"] > 1:
+                raise KeyboardInterrupt
+            if changed_file_name is not None:
+                (fake_scripts_dir / changed_file_name).write_text("changed = True\n", encoding="utf-8")
+            return wait_return
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        monkeypatch.setattr(_process_loop, "_has_upstream_diff", lambda *_a, **_kw: has_upstream_diff)
+
+        execv_calls: list[tuple[str, list[str]]] = []
+
+        def fake_execvp(path: str, argv: list[str]) -> None:
+            execv_calls.append((path, list(argv)))
+            raise SystemExit(0)
+
+        monkeypatch.setattr(os, "execvp", fake_execvp)
+
+        argv = ["fb", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
+        with pytest.raises((SystemExit, KeyboardInterrupt)):
+            atk.main(argv, home=tmp_path)
+        return subprocess_calls, execv_calls
+
+    def test_hash_diff_on_timeout_triggers_restart(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """タイムアウト復帰・上流差分なし・ハッシュ差分ありの場合に再起動されること。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            changed_file_name="a.py",
+        )
+        assert execv_calls, "ハッシュ差分検知時はos.execvpが呼ばれる必要がある"
+
+    def test_restart_targets_dotfiles_checkout_entry_point(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """再起動先が`~/dotfiles`チェックアウト配下の`atk.py`へ切り替わること。
+
+        プラグインキャッシュ配下から起動された場合、切り替えないと旧コードを再実行し続ける。
+        """
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            changed_file_name="a.py",
+            create_canonical_entry=True,
+        )
+
+        assert execv_calls
+        canonical_entry = tmp_path / "dotfiles_root" / "agent-toolkit" / "scripts" / "atk.py"
+        _, restart_argv = execv_calls[0]
+        assert str(canonical_entry) in restart_argv
+
+    def test_test_file_change_on_timeout_skips_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """タイムアウト復帰時に`*_test.py`のみが変化しても再起動されないこと。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            changed_file_name="a_test.py",
+        )
+        assert not execv_calls
+
+    def test_upstream_diff_present_calls_update_dotfiles(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """上流差分ありの場合のみ`update-dotfiles`が実行されること。"""
+        subprocess_calls, _ = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=True,
+        )
+        assert ["update-dotfiles"] in subprocess_calls
+
+    def test_no_upstream_diff_skips_update_dotfiles(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """上流差分なしの場合は`update-dotfiles`が実行されないこと。"""
+        subprocess_calls, _ = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+        )
+        assert ["update-dotfiles"] not in subprocess_calls
+
+    def test_no_update_flag_skips_check_after_timeout(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """`--no-update`指定時はタイムアウト復帰後の上流差分確認・再起動チェックが行われないこと。"""
+        subprocess_calls, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=True,
+            changed_file_name="a.py",
+            extra_argv=["--no-update"],
+        )
+        assert ["update-dotfiles"] not in subprocess_calls
+        assert not execv_calls
+
+    def test_change_detected_skips_update_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """変更検知（`wait_return=True`）で復帰した場合は更新チェック自体を行わないこと。"""
+        subprocess_calls, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=True,
+            has_upstream_diff=True,
+            changed_file_name="a.py",
+        )
+        assert ["update-dotfiles"] not in subprocess_calls
+        assert not execv_calls
+
+    def test_missing_dotfiles_root_skips_check_entirely(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """`~/dotfiles`が見つからない環境ではタイムアウト復帰時の更新チェック自体を行わないこと。
+
+        `atk`がプラグインキャッシュ配下から実行され、かつ`~/dotfiles`チェックアウトが
+        見つからない場合の防御的フォールバックを検証する。
+        """
+        subprocess_calls, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=True,
+            changed_file_name="a.py",
+            dotfiles_root_missing=True,
+        )
+        assert ["update-dotfiles"] not in subprocess_calls
+        assert not execv_calls

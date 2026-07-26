@@ -5,12 +5,14 @@
 """
 
 import argparse
+import hashlib
 import os
 import pathlib
 import subprocess
 import sys
 import threading
 import time
+import typing
 
 import _process_loop_log
 import watchdog.events
@@ -104,7 +106,7 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     return base
 
 
-def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
     """watchdogでinbox配下を監視し、変更検知またはタイムアウトまで待機する。
 
     変更検知時はデバウンス窓（3秒）で追加イベントを畳み込んでから返る
@@ -112,6 +114,8 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     タイムアウト時は他端末投入を反映するため`_repo_lock`保持下で`_pull`する。
     他プロセスとの一時的な競合・ネットワーク断等で`_pull`が失敗した場合は例外を捕捉して
     stderrへ警告出力し、常駐ループの待機動作を続ける。
+    戻り値は`True`=変更検知で復帰、`False`=タイムアウトで復帰を表す。
+    呼び出し元は`False`復帰時のみ常駐コードの更新チェック（`_check_and_restart_on_update`）を行う。
     """
     del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
     change_event = threading.Event()
@@ -127,12 +131,13 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
                 change_event.clear()
                 if not change_event.wait(timeout=_DEBOUNCE_SEC):
                     break
-        else:
-            try:
-                with _repo_lock(private_notes):
-                    _pull(private_notes)
-            except subprocess.CalledProcessError as exc:
-                print(f"git pullに失敗（pull失敗、待機ループ続行）: {exc}", file=sys.stderr)
+            return True
+        try:
+            with _repo_lock(private_notes):
+                _pull(private_notes)
+        except subprocess.CalledProcessError as exc:
+            print(f"git pullに失敗（pull失敗、待機ループ続行）: {exc}", file=sys.stderr)
+        return False
     finally:
         observer.stop()
         observer.join()
@@ -144,10 +149,103 @@ def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
     (private_notes / "tbd" / "inbox").mkdir(parents=True, exist_ok=True)
 
 
-def _build_restart_argv(argv: list[str]) -> list[str]:
-    """PEP 723スクリプトとしてprocess-loopを再起動するargvを返す。"""
+def _build_restart_argv(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> list[str]:
+    """PEP 723スクリプトとしてprocess-loopを再起動するargvを返す。
+
+    `dotfiles_root`を解決できた場合は再起動先を当該チェックアウト配下の`atk.py`へ切り替える。
+    `atk`がプラグインキャッシュ配下のバージョン別コピーから起動された場合、`argv[0]`は
+    更新前バージョンのディレクトリを指す。更新は新しいバージョンディレクトリへ展開されるため、
+    `argv[0]`のまま再起動すると更新を検知するたびに旧コードを再実行し続ける。
+    """
     script = pathlib.Path(argv[0]).resolve()
+    if dotfiles_root is not None:
+        canonical = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
+        if canonical.exists():
+            script = canonical
     return ["uv", "run", "--no-project", "--script", str(script), *argv[1:]]
+
+
+def _restart_process_loop(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> typing.NoReturn:
+    """自プロセスをPEP 723スクリプトとして`os.execvp`で置き換えて再起動する。
+
+    セッション終了後経路・待機中経路の双方から呼ぶ共通ヘルパーとする。
+    """
+    os.execvp("uv", _build_restart_argv(argv, dotfiles_root))
+
+
+def _code_hash(scripts_dir: pathlib.Path) -> str:
+    """`scripts_dir`配下の`*.py`（`*_test.py`除く）内容から安定ハッシュを算出する。
+
+    ファイル名でソートしてから相対順序を固定し、ファイル名とバイト列を連結してSHA-256を取る。
+    常駐プロセスが起動時に読み込んだPythonコード群と現在のコード群の同一性判定に用いる。
+    テストコードの変更では再起動を要さないため`*_test.py`は対象から除く。
+    """
+    digest = hashlib.sha256()
+    for path in sorted(p for p in scripts_dir.glob("*.py") if not p.name.endswith("_test.py")):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _resolve_dotfiles_root() -> pathlib.Path | None:
+    """dotfiles本体チェックアウトの絶対パスを解決する。存在しなければ`None`を返す。
+
+    `atk`コマンドは`~/.claude/plugins/cache/<marketplace>/agent-toolkit/<version>/`配下の
+    バージョン別キャッシュコピーから実行される場合がある
+    （`install-claude.sh`が生成する`~/.local/bin/atk`ラッパーが実行時に解決する参照先）。
+    その場合`pathlib.Path(__file__)`はdotfilesチェックアウトの外側（キャッシュ配下のバージョンディレクトリ）を
+    指すため、自己コード更新検知の基準には使用できない
+    （キャッシュ配下は`agent-toolkit/`のみを含む部分ツリーで、`.git`もdotfiles全体の履歴も持たない）。
+    利用者ごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
+    （`.bashrc`が`$HOME/dotfiles/bin`を直接PATHへ追加する既存運用と同じ前提。
+    `atk fb process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
+    ホームディレクトリ直下の`dotfiles/`を直接の解決先とする。
+    """
+    candidate = pathlib.Path.home() / "dotfiles"
+    return candidate if (candidate / ".git").exists() else None
+
+
+def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
+    """`dotfiles_root`のgit upstreamとの間に未取込コミットがあるかを判定する。
+
+    `git fetch`失敗・upstream未設定等でコマンドが失敗した場合は差分なし扱いとし、
+    警告をstderrへ出力したうえで待機ループを継続させる（常駐を終了させない）。
+    """
+    try:
+        subprocess.run(["git", "-C", str(dotfiles_root), "fetch", "--quiet"], check=True)
+        result = subprocess.run(
+            ["git", "-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return int(result.stdout.strip()) > 0
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        print(f"上流差分確認に失敗しました（待機ループを続行します）: {exc}", file=sys.stderr)
+        return False
+
+
+def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str, argv: list[str]) -> None:
+    """待機ループのタイムアウト復帰時に上流差分確認・`update-dotfiles`実行・再起動判定を行う。
+
+    上流差分がある場合のみ`update-dotfiles`を実行し（無条件実行による無出力ノイズを避けるため）、
+    その成否に関わらず常駐コードのハッシュを再計算して起動時ハッシュと比較する。
+    ハッシュが変化した場合のみ再起動する（他プロセスが先に`update-dotfiles`を完了させ
+    リポジトリが最新化済みのケース、ローカル手編集のケースの双方を検知できる）。
+    出力は静音を基本とし、上流差分なし・ハッシュ不変の場合は無出力とする。
+    """
+    if _has_upstream_diff(dotfiles_root):
+        result = subprocess.run(["update-dotfiles"], check=False)
+        if result.returncode != 0:
+            print(
+                f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
+                file=sys.stderr,
+            )
+    current_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts")
+    if current_hash != startup_hash:
+        print("常駐コードの更新を検知したためprocess-loopを再起動します。")
+        _process_loop_log.append("restart_on_wait_loop_update")
+        _restart_process_loop(argv, dotfiles_root)
 
 
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -158,20 +256,28 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     オーケストレーション品質を維持する目的で設定する。
     claudeが正常終了（0・-15・15・143のいずれか）した場合、
     `--no-update`未指定なら`update-dotfiles`を実行してから
-    自身のプロセスを`os.execv`で置き換えて再起動する。
-    `--no-update`指定時は従来のループ継続挙動を維持する。
+    自身のプロセスを`_restart_process_loop`（`os.execv`）で置き換えて再起動する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進み、
     待機に入った旨を1度出力する。
+    待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
+    `~/dotfiles`チェックアウト内`agent-toolkit/scripts/`配下コードの起動時ハッシュと現在のハッシュを比較し、
+    差異があれば同じく`_restart_process_loop`で再起動する。他プロセスが先に`update-dotfiles`を
+    完了させていてもローカルコードの変更を独立して検知できる。`--no-update`指定時はこの待機中の
+    更新反映・再起動チェックも抑止する。`~/dotfiles`チェックアウトが見つからない環境
+    （`atk`がプラグインキャッシュ配下から実行され、かつ`~/dotfiles`が存在しない場合）ではこのチェック自体を行わない。
     Ctrl+Cで常駐ループを終了する。
 
     各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
     （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
+    待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
     prompt = _build_process_loop_prompt(local_path, target_repo_id)
+    dotfiles_root = _resolve_dotfiles_root()
+    startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
@@ -218,10 +324,12 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     if not args.no_update:
                         print("update-dotfilesを実行してprocess-loopを再起動します。")
                         subprocess.run(["update-dotfiles"], check=False)
-                        os.execvp("uv", _build_restart_argv(sys.argv))
+                        _restart_process_loop(sys.argv, dotfiles_root)
                     continue
                 print("0件のため変更検知を待機します。")
-                _wait_for_changes(private_notes, target_repo_id)
+                changed = _wait_for_changes(private_notes, target_repo_id)
+                if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
+                    _check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
         except KeyboardInterrupt:
             print("Ctrl+Cを検知しました。常駐モードを終了します。")
     finally:

@@ -334,7 +334,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     loop.add_argument(
         "--no-update",
         action="store_true",
-        help="1反復完了後のupdate-dotfiles実行と自身再起動を抑止する。",
+        help="セッション完了後・待機中いずれの経路でもupdate-dotfiles実行と自身再起動を抑止する。",
     )
     loop.add_argument(
         "--model",
