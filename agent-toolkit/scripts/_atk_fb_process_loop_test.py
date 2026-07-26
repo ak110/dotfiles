@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -735,6 +736,130 @@ class TestResolveRepoId:
         with pytest.raises(SystemExit) as exc_info:
             _repo._resolve_repo_id(None)  # pylint: disable=protected-access  # noqa: SLF001
         assert exc_info.value.code == 2
+
+
+class TestAlertMonitoring:
+    """process-loop常駐ループへのアラート自動検出統合。"""
+
+    def test_alert_check_invoked_when_pending_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """件数0の反復でアラート確認が呼ばれ、投入0件なら待機へ進む。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: 0)
+        calls: list[str] = []
+
+        def fake_check(*_args: object, **_kwargs: object) -> int:
+            calls.append("checked")
+            return 0
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            fake_check,
+        )
+
+        def fake_wait(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        with pytest.raises(SystemExit):
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        assert calls == ["checked"]
+
+    def test_no_alerts_flag_skips_check(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--no-alerts指定時はアラート確認を呼ばない。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: 0)
+
+        def fail_check(*_args: object, **_kwargs: object) -> int:
+            raise AssertionError("アラート確認を呼ばないはず")
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            fail_check,
+        )
+
+        def fake_wait(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["fb", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                home=tmp_path,
+            )
+
+    def test_alert_submission_triggers_immediate_reiteration(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """投入件数が正なら待機せず次反復のclaude起動へ進む。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        counts = iter([0, 1])
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 2))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: next(counts))
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            lambda *_a, **_k: 1,
+        )
+
+        def fail_wait(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("待機ループへ入らないはず")
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fail_wait)
+        with pytest.raises(SystemExit):
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+        assert len(claude_calls) == 1
+
+    def test_alert_interval_suppresses_repeated_checks(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """指定間隔未経過の反復ではアラート確認を呼ばない。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_k: 0)
+        times = iter([1000.0, 1010.0])
+        monkeypatch.setattr(time, "monotonic", lambda: next(times))
+        calls: list[str] = []
+
+        def fake_check(*_args: object, **_kwargs: object) -> int:
+            calls.append("checked")
+            return 0
+
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _process_loop._alerts,  # pylint: disable=protected-access
+            "check_and_submit_alerts",
+            fake_check,
+        )
+        wait_calls: list[int] = []
+
+        def fake_wait(*_args: object, **_kwargs: object) -> None:
+            wait_calls.append(1)
+            if len(wait_calls) >= 2:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
+        with pytest.raises(SystemExit):
+            atk.main(
+                [
+                    "fb",
+                    "process-loop",
+                    f"--target-repo={myrepo}",
+                    "--no-update",
+                    "--alert-interval=3600",
+                ],
+                home=tmp_path,
+            )
+        assert calls == ["checked"]
 
 
 class TestProcessLoopUrlInput:

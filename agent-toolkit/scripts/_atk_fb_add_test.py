@@ -44,6 +44,28 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     assert "source: test" in content
 
 
+def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """target_repo・source以外のfrontmatterキー（alert_keys等）を入力順で引き継ぐ。"""
+    notes = tmp_path / "private-notes"
+    (notes / "feedback/inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    message = "---\ntarget_repo: github.com/example/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
+    generated = add_module.add_feedback(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+    content = (notes / "feedback/inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "alert_keys: github-run:1" in content
+    assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
+
+
 class TestAddOrderEditorFirst:
     """addサブコマンド: エディター起動を`_pull`より前に呼ぶ順序保証。"""
 

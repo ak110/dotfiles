@@ -113,6 +113,24 @@ def _parse_source(text: str) -> str | None:
     return None
 
 
+def _parse_alert_keys(text: str) -> list[str]:
+    """フィードバックファイル本文先頭のfrontmatterからalert_keys（カンマ区切り）を抽出する。
+
+    未指定・空文字列時は空リストを返す。各要素の前後空白は除去する。
+    """
+    if not text.startswith("---\n"):
+        return []
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return []
+    for line in text[4:end].splitlines():
+        if line.startswith("alert_keys:"):
+            value = line.split(":", 1)[1].strip()
+            return [key.strip() for key in value.split(",") if key.strip()] if value else []
+    return []
+
+
 def _source_matches(entry_source: str | None, filter_value: str) -> bool:
     """`--source`フィルター値とエントリのsourceを照合する。
 

@@ -13,6 +13,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_fb_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 
+# `_parse_alert_keys`のテストは`_atk_fb_alerts_test.py`側で公開関数`existing_alert_keys`
+# 経由で行う（private関数直接テストを避けるため。`coding-standards`の
+# `references/testing.md`「private関数の直接テスト禁止」節参照）。
+
 
 class TestBodySummaryTruncation:
     """_body_summary: 表示幅（`available_width`）境界での切り詰め動作を検証する。"""

@@ -20,7 +20,8 @@
 - fb edit: $EDITORで対象ファイルを編集しコミット・push
 - fb commit: 外部編集後のinbox配下未コミット変更をコミット・push
 - fb enable/disable/status: feedback-inbox有効化フラグの操作・判定
-- fb process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する
+- fb process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
+  待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - tb add/list/answer/edit/adopt/rm: TBD項目の操作
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
@@ -340,6 +341,24 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         "--model",
         default="opus",
         help="claude起動時の--modelオプションの既定はopusとする。",
+    )
+    loop.add_argument(
+        "--no-alerts",
+        action="store_true",
+        help="CI失敗・Dependabotアラートの自動検出を無効化する（既定は有効）。",
+    )
+    loop.add_argument(
+        "--alert-interval",
+        type=float,
+        default=1800.0,
+        metavar="SECONDS",
+        help="アラート確認の最短間隔秒数（既定1800）。",
+    )
+    loop.add_argument(
+        "--alert-forge",
+        choices=("auto", "github", "gitlab"),
+        default="auto",
+        help="アラート検出対象のホスティング種別（既定auto。repo_idのhostから自動判定）。",
     )
 
 

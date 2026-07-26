@@ -5,6 +5,7 @@
 """
 
 import argparse
+import datetime
 import hashlib
 import os
 import pathlib
@@ -14,6 +15,7 @@ import threading
 import time
 import typing
 
+import _atk_fb_alerts as _alerts
 import _process_loop_log
 import watchdog.events
 import watchdog.observers
@@ -258,6 +260,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `--no-update`未指定なら`update-dotfiles`を実行してから
     自身のプロセスを`_restart_process_loop`（`os.execv`）で置き換えて再起動する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
+    件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
+    秒間隔で実行し、新規アラートを検知した場合はfeedbackへ投入して即座に次反復へ進む。
+    `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔の`git pull`を含む待機ループへ進み、
     待機に入った旨を1度出力する。
     待機ループがタイムアウト（変更未検知）で復帰した場合、上流差分があれば`update-dotfiles`を実行したうえで、
@@ -279,6 +284,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
+    last_alert_check: float | None = None
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
@@ -326,6 +332,25 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         subprocess.run(["update-dotfiles"], check=False)
                         _restart_process_loop(sys.argv, dotfiles_root)
                     continue
+                if not args.no_alerts:
+                    monotonic_now = time.monotonic()
+                    if last_alert_check is None or monotonic_now - last_alert_check >= args.alert_interval:
+                        last_alert_check = monotonic_now
+                        try:
+                            submitted = _alerts.check_and_submit_alerts(
+                                private_notes,
+                                target_repo_id,
+                                local_path,
+                                forge=args.alert_forge,
+                                now=datetime.datetime.now(),
+                            )
+                        except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
+                            print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
+                            submitted = 0
+                        _process_loop_log.append("alert_check", submitted=submitted)
+                        if submitted > 0:
+                            print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
+                            continue
                 print("0件のため変更検知を待機します。")
                 changed = _wait_for_changes(private_notes, target_repo_id)
                 if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:

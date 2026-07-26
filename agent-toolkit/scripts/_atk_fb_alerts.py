@@ -1,0 +1,314 @@
+"""agent-toolkitプラグイン配下の`atk fb process-loop`アラート自動検出補助モジュール。
+
+対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）とGitHub
+Dependabotアラートの未解決分を収集し、フィードバックへの重複投入を防いだうえで
+`add_feedback`へ引き渡す本文を組み立てる。GitLabの脆弱性アラート（Dependency Scanning等）は
+GitLab Ultimateプラン限定機能のため対象外とする。
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime
+import json
+import pathlib
+import subprocess
+import sys
+from collections.abc import Callable
+
+import _atk_fb_add as _add
+from _atk_fb_common import (
+    FEEDBACK_STATE_ADOPTED,
+    FEEDBACK_STATE_INBOX,
+    FEEDBACK_STATE_PROCESSING,
+    FEEDBACK_STATE_REJECTED,
+    _iter_feedback_entries_with_state,
+)
+from _atk_fb_formatters import _parse_alert_keys
+
+_GH_SUBPROCESS_TIMEOUT = 30.0
+_GLAB_SUBPROCESS_TIMEOUT = 30.0
+_GIT_SUBPROCESS_TIMEOUT = 10.0
+_FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
+_ALL_FEEDBACK_STATES = (
+    FEEDBACK_STATE_INBOX,
+    FEEDBACK_STATE_PROCESSING,
+    FEEDBACK_STATE_ADOPTED,
+    FEEDBACK_STATE_REJECTED,
+)
+
+GhRunListFn = Callable[[str, str], list[dict]]
+GhDependabotAlertsFn = Callable[[str], list[dict]]
+GlabCiListFn = Callable[[str, str], list[dict]]
+GitCaptureFn = Callable[[pathlib.Path, list[str]], str | None]
+
+
+class AlertCollectError(RuntimeError):
+    """CI・Dependabotアラート収集中に発生した回復不能な失敗（CLI不在・非ゼロ終了・JSON不正等）。"""
+
+
+@dataclasses.dataclass(frozen=True)
+class Alert:
+    """収集した1件のアラート候補。`keys`は重複除外に使う安定識別子の集合。"""
+
+    keys: tuple[str, ...]
+    title: str
+    body: str
+
+
+def _now_iso() -> str:
+    """検知日時をローカルタイムゾーン付きISO8601秒精度で返す。"""
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _run_git_capture(local_path: pathlib.Path, args: list[str]) -> str | None:
+    """`git -C <local_path> <args>`を実行し、成功時はstdout（末尾改行除去）を返す。"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(local_path), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_SUBPROCESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _run_git_capture) -> str | None:
+    """CI失敗収集の対象ブランチを解決する。"""
+    upstream = git_fn(local_path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    if upstream is not None:
+        remotes = (git_fn(local_path, ["remote"]) or "").splitlines()
+        for remote in remotes:
+            prefix = f"{remote}/"
+            if upstream.startswith(prefix):
+                return upstream[len(prefix) :]
+    head_ref = git_fn(local_path, ["symbolic-ref", "refs/remotes/origin/HEAD"])
+    prefix = "refs/remotes/origin/"
+    if head_ref is not None and head_ref.startswith(prefix):
+        return head_ref[len(prefix) :]
+    return None
+
+
+def _run_json_command(command: list[str], *, timeout: float, operation: str) -> list[dict]:
+    """外部CLIを実行し、JSON配列応答を返す。"""
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AlertCollectError(f"{operation}がタイムアウトしました") from exc
+    except FileNotFoundError as exc:
+        raise AlertCollectError(f"{command[0]}コマンドが見つかりません") from exc
+    if result.returncode != 0:
+        raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {result.stderr.strip()}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise AlertCollectError(f"{operation}の応答をJSONとして解析できません: {exc}") from exc
+    if not isinstance(payload, list):
+        raise AlertCollectError(f"{operation}の応答形状が不正です: {result.stdout[:200]!r}")
+    return payload
+
+
+def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
+    """`gh run list`結果を返す。"""
+    return _run_json_command(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--branch",
+            branch,
+            "--limit",
+            "20",
+            "--json",
+            "databaseId,workflowName,status,conclusion,headSha,url,createdAt,event",
+        ],
+        timeout=_GH_SUBPROCESS_TIMEOUT,
+        operation=f"gh run list（{repo}）",
+    )
+
+
+def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunListFn = _run_gh_run_list) -> list[Alert]:
+    """ワークフローごとの直近完了runが失敗している場合のみアラート化する。"""
+    latest_by_workflow: dict[str, dict] = {}
+    for run in run_list_fn(repo, branch):
+        name = run.get("workflowName")
+        if name is None or name in latest_by_workflow or run.get("status") != "completed":
+            continue
+        latest_by_workflow[name] = run
+    alerts: list[Alert] = []
+    for name, run in latest_by_workflow.items():
+        if run.get("conclusion") not in _FAILURE_CONCLUSIONS:
+            continue
+        run_id = run.get("databaseId")
+        if run_id is None:
+            continue
+        body = (
+            f"ワークフロー`{name}`がブランチ`{branch}`で失敗している。\n\n"
+            f"- 実行URL: {run.get('url', '')}\n"
+            f"- 対象コミット: {str(run.get('headSha', ''))[:8]}\n"
+            f"- 検知日時: {_now_iso()}\n\n"
+            f"`gh run view {run_id} --log-failed`で失敗ログを取得し、根本原因を特定して修正する。\n"
+            "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
+        )
+        alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body))
+    return alerts
+
+
+def _run_gh_dependabot_alerts(repo: str) -> list[dict]:
+    """`gh api --paginate`で未解決Dependabotアラート全件を返す。"""
+    return _run_json_command(
+        ["gh", "api", "--paginate", f"/repos/{repo}/dependabot/alerts?state=open&per_page=100"],
+        timeout=_GH_SUBPROCESS_TIMEOUT,
+        operation=f"dependabot/alerts取得（{repo}）",
+    )
+
+
+def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts) -> Alert | None:
+    """未解決Dependabotアラート全件を1件のAlertへまとめる。未解決0件なら`None`を返す。"""
+    payload = alerts_fn(repo)
+    if not payload:
+        return None
+    keys = tuple(f"github-dependabot:{item['number']}" for item in payload)
+    rows = "\n".join(
+        f"| {item['number']} | {item.get('security_advisory', {}).get('severity', '?')} | "
+        f"{item.get('dependency', {}).get('package', {}).get('name', '?')} | "
+        f"{item.get('security_advisory', {}).get('summary', '?')} |"
+        for item in payload
+    )
+    body = (
+        f"Dependabotが未解決の脆弱性アラートを{len(payload)}件報告している。\n\n"
+        "| 番号 | 深刻度 | パッケージ | 概要 |\n"
+        "| --- | --- | --- | --- |\n"
+        f"{rows}\n\n"
+        f"対象依存を更新して解消する。詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。\n"
+        "更新できない・誤検知と判断した場合は理由を記録して不採用とする。"
+    )
+    return Alert(keys=keys, title=f"Dependabot未解決アラート{len(payload)}件", body=body)
+
+
+def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
+    """`glab ci list`結果（created_at降順）を返す。"""
+    return _run_json_command(
+        ["glab", "ci", "list", "-R", repo, "--ref", ref, "-F", "json", "--per-page", "5"],
+        timeout=_GLAB_SUBPROCESS_TIMEOUT,
+        operation=f"glab ci list（{repo}）",
+    )
+
+
+def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiListFn = _run_glab_ci_list) -> list[Alert]:
+    """最新パイプラインが失敗している場合のみアラート化する。"""
+    pipelines = ci_list_fn(repo, branch)
+    if not pipelines or pipelines[0].get("status") != "failed":
+        return []
+    latest = pipelines[0]
+    pipeline_id = latest.get("id")
+    if pipeline_id is None:
+        return []
+    body = (
+        f"パイプライン`{pipeline_id}`がブランチ`{branch}`で失敗している。\n\n"
+        f"- 実行URL: {latest.get('web_url', '')}\n"
+        f"- 対象コミット: {str(latest.get('sha', ''))[:8]}\n"
+        f"- 検知日時: {_now_iso()}\n\n"
+        f"`glab ci view {pipeline_id} -R {repo}`で失敗ログを取得し、根本原因を特定して修正する。\n"
+        "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
+    )
+    return [Alert(keys=(f"gitlab-pipeline:{pipeline_id}",), title=f"パイプライン{pipeline_id}失敗", body=body)]
+
+
+def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
+    """対象リポジトリに限定したfeedback全状態の`alert_keys`を集合として返す。"""
+    keys: set[str] = set()
+    for _path, _entry_repo, text, _state in _iter_feedback_entries_with_state(private_notes, _ALL_FEEDBACK_STATES, target_repo):
+        keys.update(_parse_alert_keys(text))
+    return keys
+
+
+def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
+    """`add_feedback`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
+    return (
+        f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{alert.body}\n"
+    )
+
+
+def collect_new_alerts(
+    repo_id: str,
+    branch: str | None,
+    private_notes: pathlib.Path,
+    *,
+    forge: str,
+    run_list_fn: GhRunListFn = _run_gh_run_list,
+    dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
+    ci_list_fn: GlabCiListFn = _run_glab_ci_list,
+) -> list[Alert]:
+    """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。"""
+    host = repo_id.split("/", 1)[0]
+    resolved_forge = forge if forge != "auto" else ("github" if host == "github.com" else "gitlab")
+    repo_path = repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
+    candidates: list[Alert] = []
+    if resolved_forge == "github":
+        if branch is not None:
+            try:
+                candidates.extend(collect_github_ci_failures(repo_path, branch, run_list_fn=run_list_fn))
+            except AlertCollectError as exc:
+                print(f"警告: GitHub CI状態の取得に失敗しました: {exc}", file=sys.stderr)
+        try:
+            dependabot_alert = collect_github_dependabot_alerts(repo_path, alerts_fn=dependabot_fn)
+        except AlertCollectError as exc:
+            print(f"警告: Dependabotアラートの取得に失敗しました: {exc}", file=sys.stderr)
+            dependabot_alert = None
+        if dependabot_alert is not None:
+            candidates.append(dependabot_alert)
+    elif branch is not None:
+        try:
+            candidates.extend(collect_gitlab_ci_failures(repo_path, branch, ci_list_fn=ci_list_fn))
+        except AlertCollectError as exc:
+            print(f"警告: GitLab CI状態の取得に失敗しました: {exc}", file=sys.stderr)
+    existing = existing_alert_keys(private_notes, repo_id)
+    return [alert for alert in candidates if any(key not in existing for key in alert.keys)]
+
+
+def check_and_submit_alerts(
+    private_notes: pathlib.Path,
+    repo_id: str,
+    local_path: pathlib.Path,
+    *,
+    forge: str,
+    now: datetime.datetime,
+    git_fn: GitCaptureFn = _run_git_capture,
+    run_list_fn: GhRunListFn = _run_gh_run_list,
+    dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
+    ci_list_fn: GlabCiListFn = _run_glab_ci_list,
+) -> int:
+    """アラートを収集・重複除外し、新規分をfeedbackへ投入した件数を返す。"""
+    alerts = collect_new_alerts(
+        repo_id,
+        resolve_target_branch(local_path, git_fn=git_fn),
+        private_notes,
+        forge=forge,
+        run_list_fn=run_list_fn,
+        dependabot_fn=dependabot_fn,
+        ci_list_fn=ci_list_fn,
+    )
+    if not alerts:
+        return 0
+    generated = _add.add_feedback(
+        private_notes,
+        messages=[_build_alert_message(repo_id, alert) for alert in alerts],
+        target_repo=repo_id,
+        source="alert-monitor",
+        now=now,
+    )
+    return len(generated)

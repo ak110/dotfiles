@@ -77,7 +77,10 @@ def add_feedback(
     now: datetime.datetime,
     lock_timeout: float = -1,
 ) -> list[str]:
-    """平引数でfeedbackを追加し、生成ファイル名を返す。"""
+    """平引数でfeedbackを追加し、生成ファイル名を返す。
+
+    frontmatterの`target_repo`・`source`以外のキーは入力順で出力frontmatterへ引き継ぐ。
+    """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
     for message in messages:
@@ -95,8 +98,11 @@ def add_feedback(
             item_target_repo = frontmatter.get("target_repo", target_repo)
             item_source = frontmatter.get("source", source)
             source_line = f"source: {item_source}\n" if item_source else ""
+            extra_lines = "".join(
+                f"{key}: {value}\n" for key, value in frontmatter.items() if key not in ("target_repo", "source")
+            )
             filename = f"{timestamp}-{counter:03d}.md"
-            content = f"---\ntarget_repo: {item_target_repo}\n{source_line}---\n\n{body}\n"
+            content = f"---\ntarget_repo: {item_target_repo}\n{source_line}{extra_lines}---\n\n{body}\n"
             (inbox_dir / filename).write_text(content, encoding="utf-8")
             generated.append(filename)
             counter += 1
