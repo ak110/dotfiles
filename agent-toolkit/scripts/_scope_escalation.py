@@ -32,13 +32,9 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
     {
         "process-omission",
         "async-wait",
-        "single-session",
-        "quality-tradeoff",
-        "next-cycle-defer",
         "approach-confirm",
         "subagent-hesitation",
         "overhead-tradeoff",
-        "scope-volume",
     }
 )
 
@@ -48,17 +44,23 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 #
 # 自身の配下でbackground起動したレビュアー系サブエージェント
-# （`plan-reviewer`・`plan-codex-delegate`・`plan-impl-reviewer`等）への待機表明を検出する共有定数。
+# （`plan-reviewer`・`plan-codex-delegate`等）への待機表明を検出する共有定数。
 # `subagent_stop_advisor.py`の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`はbypass無効化判定に本定数のaliasを用いる
 # （`from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE`）。検出と判定predicateが独立複製構造だと
 # 同期漏れでSSOT不一致が発生するため、他モジュールから判定predicateとして参照される
 # 検出パターン全般は本方式（共有定数として抽出しaliasで参照する）に従う。
 _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
-    r"(?i:(?:plan-reviewer|plan-codex-delegate|plan-impl-reviewer)[^,.\n]{0,40}"
+    r"(?i:(?:plan-reviewer|plan-codex-delegate)[^,.\n]{0,40}"
     r"(?:background|waiting|running|completion notification)"
     r"|review subagents? (?:are|is) running in the background"
     r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
 )
+
+# async-waitカテゴリの誤検出除外: 自身の作業先送りではなく他プロセス・他セッションとの
+# 競合回避・順序調整を述べる文脈を対象から除外する。
+# 「別セッションの完了を待つ」「並行実行中のため完了を待つ」「競合を避けるため待機する」等、
+# 協調目的の待機表明は縮退表明（自身の作業を先送りする表明）に該当しないため除外する。
+_ASYNC_WAIT_COORDINATION_RE = re.compile(r"別セッション|並行(?:実行|作業|処理)?|競合(?:を)?避け")
 
 # scope-escalation縮退誘発フレーズ検出パターン。
 # 01-agent.md「完遂原則」項および「縮退表明は発行しない」項目で禁止される、
@@ -66,28 +68,12 @@ _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
-        "workload",
-        re.compile(r"作業量(的|面)?(で|に|が)?(困難|厳しい|多い|膨大|大きい)|作業残量(を考慮|が多い)"),
-    ),
-    (
-        "single-session",
-        re.compile(
-            r"(本|この|単一)セッション(の|で|内|下)?(リソース|残|容量)?では?(?:.{0,15})?(完遂|完了|完結|遂行)(?:.{0,10})?(困難|厳しい|現実的では?ない|不可能|できない)"
-            r"|\d+件を1(計画|セッション)で完遂は(難し|困難)"
-        ),
-    ),
-    (
-        "single-session",
-        re.compile(r"規模(的に|として)?(本|この|単一)?セッション(の|で|内|下)?(?:.{0,15})?(困難|厳しい|現実的では?ない)"),
-    ),
-    (
         "approach-confirm",
         re.compile(
             r"(進め方を(確認|相談|決め|聞|教え)|完遂か最小限か|完遂は時間がかかる|規範遵守で時間がかかる|どう進めるべきか指示"
             r"|完遂を試みる[^。\n]{0,30}(保存|次回|後で|継続|再開|先送り))"
         ),
     ),
-    ("split-execution", re.compile(r"分割(して|で)(進|対応|実装|完了|処理)")),
     (
         "context-shortage",
         re.compile(
@@ -96,25 +82,7 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|次回?サイクル[^、。\n]{0,5}(持ち越し|送り|回))"
         ),
     ),
-    (
-        "defer-onset",
-        re.compile(r"((着手|対応|実装)(を)?(延期|後回し|別途|別計画)|別作業(と|扱い|化)|別(issue|チケット|PR)(と|扱い|化))"),
-    ),
     ("priority-consult", re.compile(r"(優先順位|スコープ|範囲)[^、。\n]{0,8}(相談|確認|聞|委ね|任せ|決め)")),
-    (
-        "scope-volume",
-        re.compile(
-            r"(対象|作業)(件数|範囲)が(多|広|膨大)[^。\n]{0,30}"
-            r"(相談し|委ねたい|決めてほしい|進め方の相談|進め方を委ね)"
-        ),
-    ),
-    (
-        "scope-volume",
-        re.compile(
-            r"範囲が広い(ため)?[^。\n]{0,45}(のみ|に限定|限って|限る)"
-            r"(?![^。\n]{0,10}(せず|しない|ない))"
-        ),
-    ),
     (
         "pattern-conformance",
         re.compile(
@@ -139,14 +107,6 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "process-omission",
         re.compile(r"現実的には[^。\n]{0,60}(のみ(で)?書く|要旨のみ|概要のみ|方針で書く)"),
-    ),
-    (
-        "process-scale",
-        re.compile(
-            r"工程(?:規模|数|ceremony|セレモニー)?[^、。\n]{0,10}(多すぎ|大きすぎ|膨大|重すぎ|簡略化|圧縮する|省略する|バイパスする|スキップする)"
-            r"|セレモニー[^、。\n]{0,10}(重すぎ|省略する|スキップする)"
-            r"|(plan-mode|規範)[^、。\n]{0,10}ceremony[^、。\n]{0,10}(省略する|スキップする|バイパスする)"
-        ),
     ),
     (
         "mitigation-in-adoption",
@@ -297,47 +257,6 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
-        "quality-tradeoff",
-        re.compile(
-            r"(規模が大きすぎ|品質(が|を)?維持(が|を)?(できない|困難)|工数(対効果|見合い|見合わ)"
-            r"|時間的制約|時間コストを考慮|効率優先"
-            r"|(極めて|著しく)?大規模になる"
-            r"|規模[^、。\n]{0,20}(大規模|過大))"
-        ),
-    ),
-    (
-        "quality-tradeoff",
-        re.compile(
-            r"(情報量|記述量|文書量)[^。\n]{0,15}(膨大|大量)[^。\n]{0,60}"
-            r"(要旨のみ|概要のみ|のみ記載|のみ記述|に代替)"
-            r"(?![^。\n]{0,10}(せず|しない|ない))"
-        ),
-    ),
-    (
-        "quality-tradeoff",
-        re.compile(
-            r"工数[^。\n]{0,15}バランス[^。\n]{0,40}(のみ|要旨|概要|省略|省く|代替|限定)"
-            r"(?![^。\n]{0,10}(せず|しない|ない))"
-        ),
-    ),
-    (
-        "next-cycle-defer",
-        re.compile(
-            r"((次(の|回)?(サイクル|セッション|計画|ラウンド)|別セッション|独立(の)?セッション)"
-            r"(で|に|へ)?(扱う|再評価|再検討|対応|送り|持ち越|引き継ぐ|回す)"
-            r"|(スコープ|テーマ|計画)を超える"
-            r"|今回(の)?(スコープ|対応|対象)(外|から外)"
-            r"|(影響(が)?(大き|大)い|影響大)(ため|のため|により)"
-            r"|現行アーキテクチャ(の)?(大幅|根本)(な?)(見直し|改修)"
-            r"|後続(作業|対応|PR|チケット|issue)(で|に|へ)?(委ね|扱う|対応|送)"
-            r"|後続[^。\n]{0,6}(対象外|除外)"
-            r"|次回対応(と|扱い|とする|に回す)"
-            r"|次回起動(時)?[^、。\n]{0,15}(継続|実装|再開|対応|進行)"
-            r"|外側(スキル)?[^、。\n]{0,10}(復帰|戻)"
-            r"|保存して[^、。\n]{0,15}(次回|後で)[^、。\n]{0,10}(継続|再開))"
-        ),
-    ),
-    (
         "plan-deferral-onset",
         # 計画ファイル本文の`## 変更内容`・`### エージェント判断`配下で、
         # 次の2条件をANDで満たす先送り含意パターンを検出する。
@@ -404,25 +323,17 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
 # 代替表現の意図: 縮退・先送りに帰結する発話ではなく、規範に即した観測事象の記述・完遂宣言・
 # 根本対応の提示へ書き直すよう誘導する。
 _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
-    "workload": ("観測可能な技術的制約を根拠に述べる", "同一セッション内で完遂する方針を述べる"),
-    "single-session": ("同一セッション内で完遂する方針を述べる", "計画分割の対象は同一セッション内に限定する"),
     "approach-confirm": ("技術的最適案を第1選択肢に置いた選択肢を提示する", "自律実行できる範囲は自律決定する"),
-    "split-execution": ("同一セッション内での複数計画ファイル併用として提示する", "並列サブエージェント委譲として提示する"),
     "context-shortage": ("公式仕様に基づく制約のみを根拠に述べる", "自己推定を根拠とした打診を発行しない"),
-    "defer-onset": ("同一計画内で対処項目として組み込む", "根本原因への対応方針を提示する"),
     "priority-consult": ("技術的最適順序を第1提案として提示する", "自律判断で順序を決めて着手する"),
-    "scope-volume": ("並列サブエージェント委譲による分担案を提示する", "自律実行で完遂する方針を述べる"),
     "pattern-conformance": ("既存違反も同一計画内で是正対象として組み込む", "根本対応案を主提案として提示する"),
     "process-omission": ("各工程の実施義務を果たす", "各工程は実施対象として扱う"),
-    "process-scale": ("工程数に依らず全工程を実施する", "規範上の必須工程は完遂対象として扱う"),
     "mitigation-in-adoption": ("原文どおり採用するか不採用とする二択", "反映内容の縮小は不採用根拠にならない"),
     "async-wait": ("進捗中間報告・状態確認・別作業への切替で動作を継続する",),
     "quality-gate-count": (
         "品質ゲートのブロックを正常動作として扱い1件ずつ修正して再試行する方針を述べる",
         "ブロック回数・違反件数・修正量を遂行可能性の判断材料にしない方針を述べる",
     ),
-    "quality-tradeoff": ("観測可能な技術的不成立の根拠を述べる", "同一計画内で完遂する方針を述べる"),
-    "next-cycle-defer": ("同一計画内で対処項目として組み込む", "同一セッション内で完遂する"),
     "plan-deferral-onset": (
         "確定的な実施文（現在形の実施義務文）で記述する",
         "実装段階での観測記録は`## 進捗ログ`側へ配置する",
@@ -540,9 +451,26 @@ def _match_scope_escalation(
             continue
         target_text = _apply_category_exclusions(text, category)
         m = pattern.search(target_text)
-        if m is not None:
-            return (category, m.group(0))
+        if m is None:
+            continue
+        if category == "async-wait" and _is_async_wait_coordination_context(target_text, m):
+            continue
+        return (category, m.group(0))
     return None
+
+
+def _is_async_wait_coordination_context(text: str, match: re.Match[str]) -> bool:
+    """async-waitマッチが他プロセス・他セッションとの協調目的の待機かを判定する。
+
+    マッチを含む文（直前・直後の句点で区切られた範囲）に`_ASYNC_WAIT_COORDINATION_RE`が
+    共起する場合、自身の作業を先送りする縮退表明ではなく協調目的の待機と判定しTrueを返す。
+    """
+    sentence_start = text.rfind("。", 0, match.start()) + 1
+    sentence_end = text.find("。", match.end())
+    if sentence_end == -1:
+        sentence_end = len(text)
+    sentence = text[sentence_start:sentence_end]
+    return _ASYNC_WAIT_COORDINATION_RE.search(sentence) is not None
 
 
 def _cli_main(argv: list[str]) -> int:

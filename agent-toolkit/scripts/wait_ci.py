@@ -9,7 +9,7 @@
 かつconclusion=successになるまでポーリングする。境界条件（run未登録・コマンド失敗・
 登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 `agent-toolkit:commit`スキル「push後のCI通過確認」節・
-`agent-toolkit/rules/06-monitoring.md`「Bash background loop運用」節から参照される。
+`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節から参照される。
 """
 
 from __future__ import annotations

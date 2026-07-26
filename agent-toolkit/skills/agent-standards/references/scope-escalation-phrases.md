@@ -12,7 +12,7 @@ Stop hook直近アシスタント発話／SubagentStop hookサブエージェン
 修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
 （`plan-implementer`は実装委譲先専用のため本用途では指名しない）。
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
-引用ブロック回避規範は`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節を参照する。
+引用ブロック回避規範は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を参照する。
 
 ## 対象カテゴリと代表フレーズ
 

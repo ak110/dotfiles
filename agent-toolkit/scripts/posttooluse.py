@@ -12,7 +12,8 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 検出対象:
 
 1. テスト実行 (Bash)
-2. Git状態確認 (Bash) とgit log確認状態のリセット (commit/rebase/push/編集後)
+2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
+   変化する操作＝commit/rebase/resetでリセット)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 振り返りスキル呼び出し検出 (Skill)
@@ -20,16 +21,17 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 6. codex-review.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
 8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / plan-impl-reviewer / agent-doc-validator / plan-codex-delegate）
+   （plan-reviewer / plan-codex-delegate）
    および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-delegate /
    mcp__codex__codex・mcp__codex__codex-replyツール。
    両ツール成功時はrecorded_codex_thread_idも記録する）
-10. process-feedbacks-finish起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
+10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
     `plan-and-add-feedback`起動検知による`plan_and_add_feedback_skill_invoked`フラグの設定と、
-    `add-feedback`起動検知による同フラグのリセットも同経路で扱う (Skill)
+    `process-feedbacks`起動検知による同フラグのリセットも同経路で扱う (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
-    （pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定に使用）
+    （pretooluse.py側の遡及スキャン記録検査・process7完了検査が計画ファイル本文を
+    再読み込みする際に使用）
 12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
     （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
 13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
@@ -58,25 +60,16 @@ import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import extract_git_events  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_diff_parsing import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_section_with_offset,
-    iter_reduction_headings,
-)
 from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_h2_section_body,
     extract_h2_sections,
     extract_h3_headings_under_h2,
-    extract_target_files_from_changes,
     is_agent_facing_md,
 )
 from _scope_escalation import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES,
-)
-from check_wc_projection import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_addition_reduction_blocks,
 )
 from subagent_stop_advisor import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _NAMED_SUBAGENT_MIN_TOOL_USES,
@@ -161,11 +154,9 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 # --- git関連サブコマンドの分類 ---
 
-# `git status` / `git log` / `git diff` のいずれかを実行した場合に状態確認済みとみなす。
-_GIT_STATUS_SUBCOMMANDS: frozenset[str] = frozenset({"status", "log", "diff"})
-
-# git_log_checked をリセットするサブコマンド（既存コミットを書き換える・送出する系統）。
-_GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "push"})
+# git_log_checked をリセットするサブコマンド（対象コミットの親子関係が変化する操作に限定する。
+# `push`は既存コミットを送出するのみで親子関係を変えないためリセット対象から除外する）。
+_GIT_LOG_RESET_SUBCOMMANDS: frozenset[str] = frozenset({"commit", "rebase", "reset"})
 
 
 def _set_amend_pending_status_check(state: dict, cwd: str) -> dict | None:
@@ -213,11 +204,11 @@ _SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
 # Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
 
-# process-feedbacks-finishスキル呼び出し検出。フラグリセット経路の第1経路として使う。
-_PROCESS_FEEDBACKS_FINISH_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks-finish", "process-feedbacks-finish"})
+# exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
+# （process-feedbacks/SKILL.md「ステップ8: 振り返りとセッション終了」がexit-sessionで終端する）。
+_EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 
 _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
-_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
 
 # Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
 # フルネームと短縮名の両方を許容する。`pretooluse.py`側の同名定数と同一集合を保つ。
@@ -236,17 +227,13 @@ _EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
 # フルネームと短縮名の両方を許容する。
 # 本辞書は呼び出し元（Agent/Taskツールを実行した側）の`session_id`が指すセッション状態へ記録する。
 # `agent-toolkit:plan-file-creator`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
-# `plan-codex-delegate`・`agent-doc-validator`を起動する場合、記録先はplan-file-creator自身の
+# `plan-codex-delegate`を起動する場合、記録先はplan-file-creator自身の
 # セッション状態であり、起動元（親）のセッション状態には反映されない。
 # 親への反映は、plan-file-creator自身の完了報告本文の`invoked_subagents:`行を
 # main()関数内のAgent/Task完了ハンドラがパースして設定する。
 _SUBAGENT_TYPE_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
-    "plan-impl-reviewer": "plan_impl_reviewer_invoked",
-    "agent-toolkit:plan-impl-reviewer": "plan_impl_reviewer_invoked",
-    "agent-doc-validator": "agent_doc_validator_invoked",
-    "agent-toolkit:agent-doc-validator": "agent_doc_validator_invoked",
     "plan-codex-delegate": "codex_review_invoked",
     "agent-toolkit:plan-codex-delegate": "codex_review_invoked",
 }
@@ -258,16 +245,15 @@ _PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-creato
 _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "codex-review": "codex_review_invoked",
-    "agent-doc-validator": "agent_doc_validator_invoked",
 }
 
 # `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
 _INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
-# `agent-toolkit/rules/04-styles.md`「日本語の品質を保つ」節の全称否定形推奨と
-# 整合しない禁止規定のパターン。誤読を招くため全称否定形または肯定的完遂義務への
-# 書き換えを促す（fb06反映）。初期段階の限定的なパターンであり、将来の検出範囲拡張は拡張候補とする。
+# 「Xした状態でYしない」形式は「Xでなければ`Y`してよい」と誤読され得るため、
+# 全称否定形（「いかなる理由があっても`Y`しない」）または肯定的完遂義務への
+# 書き換えを促す。初期段階の限定的なパターンであり、将来の検出範囲拡張は拡張候補とする。
 # 全角鍵括弧・バッククォート囲みの引用文脈（他ファイル節名・識別子・規範文言の引用）は
 # 照合前に無害化する。`_scope_escalation._apply_category_exclusions`は該当区間を空文字へ完全除去するが、
 # 本実装は行番号算出（`content`上のオフセットをそのまま使う）を成立させるため文字数を保ったまま
@@ -306,7 +292,7 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     """process-feedbacksスキル起動フラグを常時Trueへ上書きする。
 
     新規process-feedbacksラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
-    リセット経路は`_reset_process_feedbacks_invoked`（process-feedbacks-finish完了検知）と併用する。
+    リセット経路は`_reset_process_feedbacks_invoked`（exit-session起動検知）と併用する。
     """
     state["process_feedbacks_skill_invoked"] = True
     return state
@@ -327,100 +313,23 @@ def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
 
 
 def _reset_plan_and_add_feedback_invoked(state: dict) -> dict | None:
-    """add-feedback起動検知（plan-and-add-feedbackの終端工程）でフラグをリセットする。"""
+    """process-feedbacks起動検知（plan-and-add-feedbackの終端工程が委譲する先）でフラグをリセットする。
+
+    `plan-and-add-feedback/SKILL.md`「手順」節2は`agent-toolkit:process-feedbacks`
+    「フィードバック投入」節を参照呼び出しして終端するため、当該スキルの起動を終端シグナルとする。
+    """
     if not state.get("plan_and_add_feedback_skill_invoked", False):
         return None
     state["plan_and_add_feedback_skill_invoked"] = False
     return state
 
 
-def _collect_reduction_heading_files(content: str) -> set[str]:
-    """`## 変更内容`配下の`#### 縮減対象（<ファイル名>）`H4見出しからファイル名集合を抽出する。
-
-    完全パスとbasenameのどちらの記述も許容する運用のため、記載通りの文字列をそのまま集合へ格納する
-    （呼び出し側でパス・basenameのいずれとの一致でも除外対象と判定する）。
-    フェンス内・インラインコード等の除外領域は`extract_h2_section_body`側で処理済みとする。
-    正規表現SSOTは`_plan_diff_parsing.iter_reduction_headings`とし、当モジュールは共通ヘルパーを再利用する。
-    """
-    section_text = "\n".join(line for _lineno, line in extract_h2_section_body(content, "変更内容"))
-    return set(iter_reduction_headings(section_text))
-
-
-def _check_target_file_line_counts(content: str, cwd: str) -> str | None:
-    """対象ファイル一覧の各パスの行数を確認し、220行超過の対象種別ファイルがあれば警告メッセージを返す。
-
-    `## 変更内容`配下に対応する`#### 縮減対象（<ファイル名>）`H4見出しが存在するファイル、
-    および`[現行]`/`[置換後]`ペア・`[削除根拠]`ペアで縮減量・置換ペアが計上済みのファイルは、
-    縮減計画済みとして警告対象から除外する（`check_wc_projection.py`の判定条件と同一のSSOTを使う）。
-    ファイル名は完全パス表記・basename表記のいずれも許容する。
-    """
-    paths = extract_target_files_from_changes(content)
-    if not paths:
-        return None
-    reduction_files = _collect_reduction_heading_files(content)
-    section_text, _offset = extract_section_with_offset(content, "## 変更内容")
-    addition_reduction = extract_addition_reduction_blocks(section_text or "")
-    base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
-    over_limit: list[tuple[str, int]] = []
-    for rel in paths:
-        if not is_agent_facing_md(rel):
-            continue
-        # 完全パス一致・basename一致のいずれかで縮減対象H4見出しが存在する場合は除外する。
-        basename = rel.rsplit("/", 1)[-1]
-        if rel in reduction_files or basename in reduction_files:
-            continue
-        entry = addition_reduction.get(rel, {})
-        if entry.get("replacement_pair_count", 0) > 0 or entry.get("reduction", 0) > 0:
-            continue
-        target = base / rel
-        try:
-            text = target.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
-        if line_count > 220:
-            over_limit.append((rel, line_count))
-    if not over_limit:
-        return None
-    listed = ", ".join(f"{p} ({n} lines)" for p, n in over_limit)
-    return (
-        f"plan file contains target files exceeding 220 lines: {listed}."
-        " Per agent-standards 'document size limit' section (over 220 lines is a violation),"
-        " add a `#### 縮減対象（<ファイル名>）` H4 section under `## 変更内容` for each violation."
-        " Write the file name in full path form."
-    )
-
-
-def _mark_line_count_warned(session_id: str, file_path: str) -> None:
-    """対象ファイル行数超過警告を発火済みとしてセッション状態へアトミックに記録する。"""
-
-    def _mutator(state: dict, file_path: str = file_path) -> dict | None:
-        warned = state.get("plan_target_file_line_count_warned", {})
-        if not isinstance(warned, dict):
-            warned = {}
-        if warned.get(file_path, False):
-            return None
-        warned[file_path] = True
-        state["plan_target_file_line_count_warned"] = warned
-        return state
-
-    update_state(session_id, _mutator)
-
-
-def _line_count_already_warned(session_id: str, file_path: str) -> bool:
-    """対象ファイル行数超過警告が当該計画ファイルへ既に発火済みかを判定する。"""
-    warned = read_state(session_id).get("plan_target_file_line_count_warned", {})
-    return isinstance(warned, dict) and warned.get(file_path, False) is True
-
-
-def _check_plan_format(file_path: str, cwd: str, session_id: str) -> list[str]:
+def _check_plan_format(file_path: str) -> list[str]:
     """Plan fileの構成を検査して違反メッセージの一覧を返す。
 
-    検出する違反:
-
-    - `## 変更内容`配下の先頭H3が「対象ファイル一覧」でない
-    - `## 変更内容 > ### 対象ファイル一覧`配下の対象種別ファイルが220行以上
-      （同一計画ファイルへ1度発火済みの場合は抑止し、H3順序違反等の他違反は毎回発火継続する）
+    検出する違反は`## 変更内容`配下の先頭H3が「対象ファイル一覧」でないこと。
+    `agent-toolkit/skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節の
+    `## 変更内容`の項（冒頭に`### 対象ファイル一覧`を置く規定）に対応する。
 
     読み取り失敗時は空リストを返す。
     H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
@@ -440,11 +349,6 @@ def _check_plan_format(file_path: str, cwd: str, session_id: str) -> list[str]:
         if first_h3 != "対象ファイル一覧":
             actual = first_h3 if first_h3 is not None else "(no H3 present)"
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
-
-    line_count_warning = _check_target_file_line_counts(content, cwd)
-    if line_count_warning and not _line_count_already_warned(session_id, file_path):
-        violations.append(line_count_warning)
-        _mark_line_count_warned(session_id, file_path)
 
     return violations
 
@@ -521,12 +425,11 @@ def main() -> int:
             update_state(session_id, _set_review_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
-        if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_FINISH_SKILL_NAMES:
+            update_state(session_id, _reset_plan_and_add_feedback_invoked)
+        if isinstance(skill_name, str) and skill_name in _EXIT_SESSION_SKILL_NAMES:
             update_state(session_id, _reset_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
             update_state(session_id, _set_plan_and_add_feedback_invoked)
-        if isinstance(skill_name, str) and skill_name in _ADD_FEEDBACK_SKILL_NAMES:
-            update_state(session_id, _reset_plan_and_add_feedback_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
@@ -691,34 +594,12 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _set_textlint_violations_read)
-            if file_path_normalized.endswith("plan-mode/references/plan-file-guidelines.md"):
-
-                def _set_plan_file_guidelines_read(state: dict) -> dict | None:
-                    if state.get("plan_file_guidelines_read", False):
-                        return None
-                    state["plan_file_guidelines_read"] = True
-                    return state
-
-                update_state(session_id, _set_plan_file_guidelines_read)
         return 0
 
-    # Write / Edit / MultiEdit: ファイル編集はgit log確認状態を全エントリリセットする
-    # （cwd別判定の細粒度は維持せず、編集後は全cwdの再確認を要求する）。
+    # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
+    # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
+    # commit / rebase / resetのみとする）。
     if tool_name in ("Write", "Edit", "MultiEdit"):
-
-        def _reset_log(state: dict) -> dict | None:
-            log_state = state.get("git_log_checked", False)
-            if isinstance(log_state, dict):
-                if not log_state:
-                    return None
-                state["git_log_checked"] = {}
-                return state
-            if log_state:
-                state["git_log_checked"] = False
-                return state
-            return None
-
-        update_state(session_id, _reset_log)
         # plan file形式検査: ~/.claude/plans/直下の.mdのみ対象。
         # plan-modeスキル未呼び出し時はPreToolUse側の警告で先行催促済みのため、
         # 構造検査をスキップして二重警告を避ける。
@@ -727,8 +608,8 @@ def main() -> int:
         file_path = file_path_raw if isinstance(file_path_raw, str) else ""
         if is_plan_file(file_path):
             # 現在の計画ファイルパスを記録する。
-            # pretooluse.py側で`agent_doc_validator_invoked`の条件付き必須化を判定する際、
-            # 対象ファイル一覧の内容確認のため計画ファイルを再読み込みする用途に使う。
+            # pretooluse.py側の`_check_process7_completion_before_exit_plan_mode`
+            # （`codex_review_invoked`の必須化判定）が計画ファイルを再読み込みする用途に使う。
 
             def _set_current_plan_file_path(current_state: dict, file_path: str = file_path) -> dict | None:
                 if current_state.get("current_plan_file_path") == file_path:
@@ -777,20 +658,17 @@ def main() -> int:
                     )
         # 計画ファイル向け通知: 形式検査違反（plan-mode起動時のみ）と、
         # Write成功時の書き込み後チェック案内（plan-mode起動時のみ）を1つのadditionalContextへまとめる。
-        # 状態フラグは追加せず、案内のみを一方向で通知する（詳細は
-        # skills/plan-mode/references/plan-file-write-checks.md「書き込み後チェック」節）。
+        # 状態フラグは追加せず、案内のみを一方向で通知する。
         if state.get("plan_mode_skill_invoked", False) and is_plan_file(file_path):
-            cwd_raw = payload.get("cwd", "")
-            cwd = cwd_raw if isinstance(cwd_raw, str) else ""
             messages: list[str] = []
-            violations = _check_plan_format(file_path, cwd, session_id)
+            violations = _check_plan_format(file_path)
             if violations:
                 messages.append(
                     _llm_notice(
                         f"plan file {file_path} does not conform to the expected structure."
                         f" {' '.join(violations)}"
-                        f" Fix the structure per skills/plan-mode/references/plan-file-guidelines.md"
-                        f" (read it first if not yet).",
+                        f" Fix the structure per the '計画ファイルの完成条件' section of"
+                        f" agent-toolkit/skills/plan-mode/SKILL.md (read it first if not yet).",
                         tag="warn",
                     )
                 )
@@ -799,8 +677,7 @@ def main() -> int:
                     _llm_notice(
                         f"plan file {file_path} was written. Run the post-write checks:"
                         f" `uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py"
-                        f" {file_path}`."
-                        f" See skills/plan-mode/references/plan-file-write-checks.md for details.",
+                        f" {file_path}`.",
                         tag="notice",
                     )
                 )
@@ -841,14 +718,7 @@ def main() -> int:
                     changed = True
                     break
 
-        # Git状態確認の検出（status / log / diff）
-        if not state.get("git_status_checked", False) and any(
-            event.subcommand in _GIT_STATUS_SUBCOMMANDS for event in git_events
-        ):
-            state["git_status_checked"] = True
-            changed = True
-
-        # git_log_checked: log で記録、commit / rebase / push でリセット。
+        # git_log_checked: log で記録、commit / rebase / reset でリセット。
         # cwd別の辞書`{cwd: True}`で記録する。cwd空イベントは旧形式の単一bool値で記録する。
         log_state = state.get("git_log_checked")
         log_modified = False

@@ -13,7 +13,6 @@ import threading
 import time
 
 import _process_loop_log
-import _review_balance_usage
 import watchdog.events
 import watchdog.observers
 from _atk_fb_common import _count_pending_entries, _pull, _repo_lock
@@ -75,14 +74,15 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
         "処理対象のフィードバックはフィードバック管理リポジトリに保存された指示であり、"
         "投入元（ユーザー投入か`source: session-review`等の自己生成起点か）は各フィードバックのfrontmatterで確認できます。\n"
         "主目標は取得した全件のフィードバックの実装完遂と、"
-        "agent-toolkit:process-feedbacks-finish が定める後続工程の完遂です。\n"
+        "agent-toolkit:process-feedbacks が定める後続工程（採否確定の後始末・振り返り・"
+        "セッション終了）の完遂です。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
         "コンテキストは自動コンパクションで継続されます。\n"
         "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません。\n"
         "本プロンプトの完遂順序の列挙全体がユーザー明示指示を構成します。"
         "後続工程の到達要求を先行工程の縮退の根拠に解釈しないでください。\n"
-        "後続工程の個別手順は agent-toolkit:process-feedbacks-finish に従い、"
-        "その最終工程（セッション終了）まで完遂してください。"
+        "後続工程の個別手順は agent-toolkit:process-feedbacks に従い、"
+        "その最終ステップ（セッション終了）まで完遂してください。"
     )
 
 
@@ -150,9 +150,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     各反復で件数取得直後・claude起動前後に`_process_loop_log.append`で観測イベント
     （`loop_iter_start`・`session_start`・`session_end`）を記録する
     （`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`未設定時はno-op）。
-    `session_start`直前・`session_end`直後には`usage_snapshot`イベント
-    （`phase="start"`/`phase="end"`）も記録し、`_review_balance_usage.snapshot()`が
-    返すClaude/Codexの使用率とモードをまとめて残す。
     """
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
@@ -171,7 +168,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                 _process_loop_log.append("loop_iter_start", count=count)
                 if count > 0:
                     print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
-                    _process_loop_log.append("usage_snapshot", phase="start", **_review_balance_usage.snapshot())
                     _process_loop_log.append("session_start")
                     session_started_at = time.monotonic()
                     # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
@@ -188,7 +184,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         elapsed_sec=round(time.monotonic() - session_started_at, 3),
                         returncode=result.returncode,
                     )
-                    _process_loop_log.append("usage_snapshot", phase="end", **_review_balance_usage.snapshot())
                     if result.returncode not in _NORMAL_EXIT_CODES:
                         print(
                             f"claudeがexit code {result.returncode}で異常終了しました。",

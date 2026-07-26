@@ -8,6 +8,7 @@
 import argparse
 import pathlib
 import re
+import stat
 import sys
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -34,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
     for path, data, changed in outputs:
         if changed and not claude_common.atomic_write_bytes(path, data, tag="install files"):
             raise OSError(f"install scriptの書き込みに失敗: {path}")
+    # 原子的書き込みは一時ファイルを生成して置き換えるため元ファイルの実行権限が失われる。
+    # install-claude.shはshebangを持ち利用者がそのまま実行するファイルであり、
+    # pre-commitのcheck-shebang-scripts-are-executableも実行権限を要求するため復元する。
+    _INSTALL_SH.chmod(_INSTALL_SH.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return 0
 
 

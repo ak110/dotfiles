@@ -1,8 +1,7 @@
 """計画ファイルの構造検査の共通モジュール。
 
 PreToolUseのWrite/Edit/MultiEditブロック判定と、PostToolUseの構造検査の両方で使う。
-SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`の
-「セクション構成と記述要件」節。
+SSOTは`agent-toolkit/skills/plan-mode/SKILL.md`の「計画ファイルの完成条件」節。
 """
 
 import pathlib
@@ -37,7 +36,6 @@ BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLA
 
 _FENCE_PATTERN = re.compile(r"^(`{3,}|~{3,})")
 _H2_PATTERN = re.compile(r"^## (.+?)\s*$")
-_RECURRENCE_MARKER_PATTERN = re.compile(r"再発予防|上位カテゴリ|独立節新設が実効性を欠く")
 
 
 def extract_h2_sections(content: str) -> list[str]:
@@ -323,9 +321,7 @@ AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     """パス文字列がコーディングエージェント向け文書サイズ上限対象かを判定する。
 
-    `agent-toolkit/scripts/pretooluse.py`（`_is_agent_doc_target_file`）と
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`（`_NORM_TARGET_PATH_RE`）が
-    独立に持っていた非対称な対象パス正規表現を、本関数へ統合したSSOTとする。
+    `agent-toolkit/scripts/pretooluse.py`が参照する対象パス判定のSSOTとする。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
     `is_agent_facing_md`とは判定対象範囲が異なる（本関数は文書サイズ上限チェック専用）。
@@ -381,9 +377,7 @@ def has_bump_step_when_required(content: str) -> bool:
     5. `extract_h2_section_body`で`## 実行方法`節本文を取得し、
        `agent_toolkit_bump.py`リテラル出現があれば`True`、無ければ`False`を返す
 
-    `agent-toolkit/scripts/pretooluse.py`と
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
-    双方からimportして使うSSOT実装。
+    `agent-toolkit/scripts/pretooluse.py`からimportして使うSSOT実装。
     """
     if _all_bump_matrix_judgments_are_none_required(content):
         return True
@@ -413,9 +407,7 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
     5. 対象ファイル一覧に`agent-toolkit/.claude-plugin/plugin.json`と
        `.claude-plugin/marketplace.json`の両方が含まれれば`True`、いずれかが欠落していれば`False`を返す
 
-    `agent-toolkit/scripts/pretooluse.py`と
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`の
-    双方からimportして使うSSOT実装。
+    `agent-toolkit/scripts/pretooluse.py`からimportして使うSSOT実装。
     """
     if _all_bump_matrix_judgments_are_none_required(content):
         return True
@@ -427,27 +419,6 @@ def has_manifest_files_when_bump_step_present(content: str) -> bool:
     return PLUGIN_MANIFEST_PATH in paths and MARKETPLACE_MANIFEST_PATH in paths
 
 
-def has_recurrence_prevention_when_section_present(content: str) -> bool:
-    """`### 恒久化・リファクタリング内容`小見出し配下が再発予防記述を含むかを判定する。
-
-    判定手順:
-
-    1. `iter_h3_sections_under_h2`で`## 対応方針`直下のH3見出しを走査し、見出し文言が
-       `### 恒久化・リファクタリング内容`と一致する本文を取得する
-    2. 小見出しが存在しない場合は`True`を返す（本関数は小見出し存在時のみを判定対象とする）
-    3. 本文が`_RECURRENCE_MARKER_PATTERN`（「再発予防」「上位カテゴリ」「独立節新設が実効性を欠く」の
-       いずれかに一致する正規表現）へ一致すれば`True`、しなければ`False`を返す
-
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_diff_gates.py`からimportして使うSSOT実装。
-    """
-    for h3_heading, body_lines in iter_h3_sections_under_h2(content, "対応方針"):
-        if h3_heading != "恒久化・リファクタリング内容":
-            continue
-        body_text = "\n".join(line for _lineno, line in body_lines)
-        return _RECURRENCE_MARKER_PATTERN.search(body_text) is not None
-    return True
-
-
 _ALLOWED_REPO_ROOT_RE = re.compile(r"<!--\s*allowed-repo-root:\s*(?P<root>[^\s]+?)\s*-->")
 
 
@@ -456,8 +427,6 @@ def extract_allowed_repo_roots(content: str) -> list[str]:
 
     複数宣言時は宣言順に全て収集する。宣言が無い場合は空リストを返す。
     本ファイル内`find_invalid_target_file_paths`が参照するSSOT実装。
-    `check_wc_projection.py`は同種処理（`_ALLOWED_REPO_ROOT_RE`・`_extract_allowed_repo_roots`）を
-    独自実装として別途保持しており、本関数への統合は見送っている。
     """
     return [m.group("root") for m in _ALLOWED_REPO_ROOT_RE.finditer(content)]
 
@@ -467,8 +436,8 @@ def find_invalid_target_file_paths(content: str) -> list[str]:
 
     絶対パス（`/`始まり）または親ディレクトリ参照（パス部品に`..`を含む）を
     プロジェクトルート相対の完全パス規範への違反として返す。
-    `skills/plan-mode/references/plan-file-guidelines.md`「計画ファイル全体の遵守事項」節の
-    「既存パスはプロジェクトルート相対の完全パスで記述する」規定の機械強制。
+    `agent-toolkit/skills/plan-mode/SKILL.md`「計画ファイルの完成条件」節の
+    `## 変更内容`の項が定めるパス記述形式の機械強制。
     `<!-- allowed-repo-root: /abs/path -->`宣言済みルート配下の絶対パスは、
     複数リポジトリに跨る計画（姉妹プロジェクトのドキュメント更新等）を許容するため違反対象から除外する。
     """

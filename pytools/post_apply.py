@@ -78,8 +78,16 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("rules/agent-toolkit/02-claude-code.md"),
         Path("rules/agent-toolkit/03-styles.md"),
         Path("rules/agent-toolkit/04-terminology.md"),
-        # autopilotスキルは02-collaboration.mdへ吸収し廃止。配布先から旧スキルディレクトリを削除する。
+        # autopilotスキルは協調・自律の規範へ吸収し廃止。配布先から旧スキルディレクトリを削除する。
         Path("skills/autopilot"),
+        # ルール層を01-agent.md / 02-claude-code.mdの2ファイルへ統合したため、
+        # 統合元の旧ファイルを配布先から削除する。
+        # chezmoiは配布元の削除を配布先へ伝播しないため、本一覧への登録が必要となる。
+        Path("rules/agent-toolkit/02-collaboration.md"),
+        Path("rules/agent-toolkit/03-claude-code.md"),
+        Path("rules/agent-toolkit/04-styles.md"),
+        Path("rules/agent-toolkit/05-terminology.md"),
+        Path("rules/agent-toolkit/06-monitoring.md"),
     ],
     Path.home() / ".codex": [
         # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、

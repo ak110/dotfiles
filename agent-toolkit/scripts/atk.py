@@ -6,7 +6,7 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成: `atk fb <sub>`・`atk tb <sub>`・`atk serve`形式。
+サブコマンド構成: `atk fb <sub>`・`atk tb <sub>`・`atk serve`・`atk config <sub>`形式。
 `fb`・`tb`サブパーサ配下にフィードバック・TBD操作サブコマンドを登録する。
 
 - fb add: inboxへフィードバックを投入する
@@ -22,6 +22,7 @@
 - fb enable/disable/status: feedback-inbox有効化フラグの操作・判定
 - fb process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する
 - tb add/list/answer/edit/adopt/rm: TBD項目の操作
+- config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
 ハンドラ実装は`_atk_fb_add`・`_atk_fb_list`・`_atk_fb_show`・`_atk_fb_mutations`・
 `_atk_fb_process_loop`・`_atk_fb_tbd`の各補助モジュールに分割し、
@@ -39,6 +40,7 @@ import typing
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+import _atk_config as _config_cmd  # noqa: E402
 import _atk_fb_add as _add  # noqa: E402
 import _atk_fb_common as _common  # noqa: E402
 import _atk_fb_list as _list  # noqa: E402
@@ -284,6 +286,11 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
 
     rm = sub.add_parser("rm", help="inbox・processingいずれかから単純削除しコミット・push")
     rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
+    rm.add_argument(
+        "--force",
+        action="store_true",
+        help="processing状態のファイルも削除する（既定では処理中のファイルを保護し拒否する）。",
+    )
     _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
@@ -468,12 +475,17 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_port_type,
         help="待受ポート（既定値は設定から解決する）",
     )
+    config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
+    _config_cmd.build_parser(config)
     return parser
 
 
-def _cmd_enable(home: pathlib.Path) -> None:
-    """enableサブコマンド: feedback-inboxフラグファイルを作成する。"""
-    path = _common._flag_path(home)
+def _cmd_enable() -> None:
+    """enableサブコマンド: feedback-inboxフラグファイルを作成する。
+
+    inbox常時有効化に伴い有効性判定には作用しない後方互換操作である。
+    """
+    path = _common._flag_path()
     if path.exists():
         print(f"既に有効です: {path}")
         return
@@ -482,9 +494,12 @@ def _cmd_enable(home: pathlib.Path) -> None:
     print(f"有効化しました: {path}")
 
 
-def _cmd_disable(home: pathlib.Path) -> None:
-    """disableサブコマンド: feedback-inboxフラグファイルを削除する。"""
-    path = _common._flag_path(home)
+def _cmd_disable() -> None:
+    """disableサブコマンド: feedback-inboxフラグファイルを削除する。
+
+    inbox常時有効化に伴い有効性判定には作用しない後方互換操作である。
+    """
+    path = _common._flag_path()
     if not path.exists():
         print(f"既に無効です: {path}")
         return
@@ -530,15 +545,17 @@ def main(
     if args.command == "serve":
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
+    if args.command == "config":
+        _config_cmd.dispatch(args, home)
     if args.command not in ("fb", "tb"):
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     if args.command == "fb":
         sub = args.fb_subcommand
         if sub == "enable":
-            _cmd_enable(home)
+            _cmd_enable()
             sys.exit(0)
         if sub == "disable":
-            _cmd_disable(home)
+            _cmd_disable()
             sys.exit(0)
         if sub == "status":
             _cmd_status(home)

@@ -19,7 +19,7 @@
 加えて、非スラッシュコマンド入力（先頭行が`/`で始まらない発話）に対しては
 規範照会・是正要求の兆候（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`）を検出し、
 クールダウン判定を経て`hookSpecificOutput.additionalContext`でメタ視点点検・恒久化検討の実施を促す
-リマインダーを注入する（`agent-toolkit/rules/02-collaboration.md`「メタ視点」バレット項の対象事象）。
+リマインダーを注入する（`agent-toolkit/rules/01-agent.md`「指摘発生時の扱い」節の対象事象）。
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -56,7 +56,7 @@ _NORM_INQUIRY_COOLDOWN_TURNS = 5
 
 _NORM_INQUIRY_REMINDER_BODY = (
     "Norm-inquiry or correction-request phrasing was detected in the user's message. "
-    "Per agent-toolkit/rules/02-collaboration.md's meta-perspective checkpoint, inspect why the "
+    "Per agent-toolkit/rules/01-agent.md's handling-of-corrections section, inspect why the "
     "existing norm failed to prevent this, and drive the permanent-fix decision (adopt/reject with "
     "reason) to completion within this session instead of only logging a one-line report."
 )

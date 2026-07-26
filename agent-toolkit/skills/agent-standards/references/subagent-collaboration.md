@@ -26,14 +26,14 @@
 
 ## 独立コンテキスト前提の認識
 
-Claude Code固有のサブエージェント実装制約は`agent-toolkit/rules/03-claude-code.md`
-「サブエージェントの活用」節に集約する。本節は独立コンテキスト起動全般に共通する一般原則のみを扱う。
+Claude Code固有のサブエージェント実装制約は`agent-toolkit/rules/02-claude-code.md`
+「サブエージェント運用」節に集約する。本節は独立コンテキスト起動全般に共通する一般原則のみを扱う。
 
 サブエージェントはメイン側の会話履歴・拡張思考・他サブエージェント出力を
 参照できない。このため起動プロンプトから以下を排除する。
 
-- 相対参照（具体的な語彙は`agent-toolkit/rules/03-claude-code.md`
-  「サブエージェントの活用」節に集約する。本節は当該参照のみを配置する）
+- 相対参照（具体的な語彙は`agent-toolkit/rules/02-claude-code.md`
+  「サブエージェント運用」節に集約する。本節は当該参照のみを配置する）
 - 呼び出し元の暗黙前提
   （プロジェクト固有ディレクトリ構成の暗黙認識など）
 - メイン側で確定済みの判断結果への参照
@@ -114,22 +114,17 @@ Agentツール起動は常に独立コンテキストで開始される確定事
 トークン配分方針として、レビュー系工程はcodex優先とし、claudeは統括・計画適合性・規範適合性の
 観点に限定する。この構造は「実装委譲（plan-codex-delegate / plan-implementer）の関係」節と対称とする。
 
-計画レビューのcodex並列化は環境設定によらず常時適用する。
-実装レビューのみバランスモード（既定「codex寄り」）で経路が分岐する。
-判定手段・既定値の詳細は`agent-toolkit/skills/careful-review/SKILL.md`「サブエージェント起動方針」節を正典とする。
+計画レビュー・実装レビューとも、codexのMCP（`mcp__codex__codex`・`mcp__codex__codex-reply`）利用可否で
+経路が分岐する2段階判定を用いる。判定手順の詳細は`codex-review.md`「codex利用可否の2段階判定」節を正典とする。
 
-- `plan-codex-delegate`: 計画レビューの第一候補（常時）、実装レビューの第一候補（モード「codex寄り」時）。
-  観点・カテゴリ分担で並列起動する。
+- `plan-codex-delegate`: 計画レビュー・実装レビューいずれも第一候補（MCP利用可能時）。
+  `用途: 計画レビュー`／`用途: 実装差分レビュー`で担当観点を分岐する。
+  単体品質・日本語表現に加え、計画/成果物間の仕様適合性・`01-agent.md`・`agent-standards`規範適合性を
+  一括して担う（従来別エージェントだった`plan-spec-reviewer`・`agent-doc-validator`の担当観点を吸収済み）。
   計画レビューの分担は`codex-review.md`「plan-file-creatorからの起動」節を正典とする。
   実装レビューの分担は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`を正典とする
-- `plan-reviewer`: 計画レビューのフォールバック。`codex-review.md`「codex利用可否の3段階判定」節の
-  段階3が成立した場合のみ起動する
-- `plan-impl-reviewer`: 実装レビューの既定経路（モード「claude寄り」時）、または段階3成立時のフォールバック
-  （モード「codex寄り」時、`plan-codex-delegate`の代わりに起動する）
-- `plan-spec-reviewer`: 実装レビューでclaude側に据え置く（バランスモードによらず常時）。
-  計画適合性・成果物間の整合性の判断はローカルの計画ファイル文脈に依存するため、codexへ移管しない
-- `agent-doc-validator`: 条件起動でclaude側に据え置く（バランスモードによらず常時）。`01-agent.md`・
-  `agent-standards`方針への適合性判断はローカル規範知識の前提を要するため、codexへ移管しない
+- `plan-reviewer`: 計画レビュー・実装レビューいずれもフォールバック（MCP利用不可時のみ起動）。
+  `plan-codex-delegate`が吸収した担当観点を含めて単独で担う
 
 ## 出力節への追加要素導入
 

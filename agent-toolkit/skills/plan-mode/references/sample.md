@@ -1,6 +1,3 @@
----
-# 同期注記: 本ファイルのサンプル`### 計画メタ情報`H3見出し文言は`plan-file-guidelines.md`と同期させる。
----
 # 計画ファイル サンプル例
 
 ````markdown
@@ -38,22 +35,43 @@
 
 ### 恒久化・リファクタリング内容
 
-- 恒久化: 3層整合運用方針を`docs/architecture/limits.md`へ追記。リファクタリング: クライアント側独立保持を解消し設定API経由のSSOTへ統一
+#### 恒久化
+
+なし
+
+#### リファクタリング
+
+クライアント側の独立保持を解消し設定API経由のSSOTへ統一する（本計画に含める）。
+
+#### 類似見直し
+
+上限値を直書きする箇所は`server/config.py`・`client/limits.ts`・`infra/nginx.conf`の3箇所のみで、他に残存なし。
 
 ## 調査結果
 
-- `server/config.py:34`サーバー側上限を10MBとして定義。`client/limits.ts:12`クライアント側で同値を独立保持し整合機構なし
-- `infra/nginx.conf:58`リバースプロキシ`client_max_body_size`が20MB。`tests/upload_test.py:40-78`上限境界テストはいずれも10MB前提
+### 対象ファイルの現状
+
+- `server/config.py`: 現行40行
+- `client/limits.ts`: 現行18行
+- `infra/nginx.conf`: 現行62行
+- `tests/upload_test.py`: 現行85行
+
+### 事実確認済み事項
+
+- `server/config.py`サーバー側上限を10MBとして定義（Read確認）
+- `client/limits.ts`クライアント側で同値を独立保持し整合機構なし（Read確認）
+- `infra/nginx.conf`リバースプロキシ`client_max_body_size`が20MB（Read確認）
+- `tests/upload_test.py`の上限境界テストはいずれも10MB前提（Read確認）
 
 ## 変更内容
 
 ### 対象ファイル一覧
 
-- [ ] `server/config.py`
-- [ ] `client/limits.ts`
-- [ ] `infra/nginx.conf`
-- [ ] `tests/upload_test.py`
-- [ ] `docs/architecture/limits.md`
+- [ ] `server/config.py`（現行40行）
+- [ ] `client/limits.ts`（現行18行）
+- [ ] `infra/nginx.conf`（現行62行）
+- [ ] `tests/upload_test.py`（現行85行）
+- [ ] `docs/architecture/limits.md`（現行30行）
 
 ### `server/config.py`
 
@@ -106,7 +124,7 @@
 - Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
 - 計画に従い実装する
-- 検証: `uvx pyfltr run-for-agent tests/upload_test.py`
+- 検証: `uvx pyfltr run-for-agent <対象テストファイル>`（対象はupload_testモジュール）
 - `agent-toolkit:commit`スキルを呼び出す
 - コミットする
   - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
@@ -118,10 +136,3 @@
 
 `~/.claude/plans/upload-limit-increase-concurrent-hickey.md`
 ````
-
-対象ファイルの現状H3の配置規定は`plan-file-guidelines.md`の「調査結果（`## 調査結果`）」見出し配下を参照する。
-
-## メタ規範新設計画のサンプル
-
-規範改訂計画（メタ規範新設パターン: 新規節見出し追加・全称禁止バレット・汎用禁止形バレット）のサンプルは
-[sample-meta-norm.md](sample-meta-norm.md)を参照する。

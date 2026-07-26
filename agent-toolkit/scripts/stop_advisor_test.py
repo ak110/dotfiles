@@ -525,28 +525,32 @@ class TestEdgeCases:
         assert "decision" not in decision
 
 
-class TestGitLogCheckedReset:
-    """Stop時に`git_log_checked`を全エントリクリアする。"""
+class TestGitLogCheckedNotResetOnStop:
+    """Stopは`git_log_checked`をリセットしない（対象コミットの親子関係を変えないため）。
+
+    リセット対象は`posttooluse.py` `_GIT_LOG_RESET_SUBCOMMANDS`が定める
+    commit / rebase / resetのみに限定する。
+    """
 
     @pytest.mark.parametrize(
-        ("initial", "expected"),
+        "initial",
         [
-            # cwd別辞書 → 全エントリクリア
-            ({"/repo/a": True, "/repo/b": True}, {}),
-            # 旧形式bool True → {} （全エントリクリアで現行形式へ収束）
-            (True, {}),
+            # cwd別辞書はそのまま維持される
+            {"/repo/a": True, "/repo/b": True},
+            # 旧形式bool Trueもそのまま維持される
+            True,
         ],
     )
-    def test_reset_on_stop(self, tmp_path: pathlib.Path, initial: object, expected: object):
-        _write_state(tmp_path, "log-reset", {"git_log_checked": initial})
+    def test_no_reset_on_stop(self, tmp_path: pathlib.Path, initial: object):
+        _write_state(tmp_path, "log-no-reset", {"git_log_checked": initial})
         transcript = _write_transcript(tmp_path, [_user_entry()])
         _run(
-            {"session_id": "log-reset", "transcript_path": str(transcript)},
+            {"session_id": "log-no-reset", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
-        state_path = tmp_path / "claude-agent-toolkit-log-reset.json"
+        state_path = tmp_path / "claude-agent-toolkit-log-no-reset.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state.get("git_log_checked") == expected
+        assert state.get("git_log_checked") == initial
 
     def test_no_change_when_empty(self, tmp_path: pathlib.Path):
         """空dictのときはStopで他のフィールドを書き換えない。"""
@@ -786,10 +790,10 @@ class TestScopeEscalationDetection:
         "category",
         [
             "priority-consult",
-            "next-cycle-defer",
+            "pattern-conformance",
             "approach-confirm",
-            "workload",
-            "split-execution",
+            "context-shortage",
+            "mitigation-in-adoption",
             "fabricated-metrics",
         ],
     )
@@ -824,13 +828,15 @@ class TestScopeEscalationDetection:
     def test_extended_categories_apply_under_plan_mode(self, tmp_path: pathlib.Path):
         """`plan_mode_skill_invoked`真ならStop経路の照合対象を`_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する。
 
-        通常フォーカスでは対象外の`single-session`カテゴリ相当フレーズも、
+        通常フォーカスでは対象外の`approach-confirm`カテゴリ相当フレーズも、
         拡張フォーカス下ではblockされることを検証する。
         """
-        text = "本セッションのリソースでは完遂困難と判断する。"
+        phrase = _pick_scope_escalation_text("approach-confirm")
+        if not phrase:
+            pytest.skip("scope-escalation fixture for approach-confirm not available")
         transcript = _write_transcript(
             tmp_path,
-            [_user_entry(), _assistant_text_only(text)],
+            [_user_entry(), _assistant_text_only(phrase)],
         )
         _write_state(tmp_path, "test-plan-mode", {"plan_mode_skill_invoked": True})
         result = _run(
@@ -848,10 +854,12 @@ class TestScopeEscalationDetection:
         2系統のスキル起動フラグ（plan_mode／process_feedbacks）はいずれも
         `_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
         """
-        text = "本セッションのリソースでは完遂困難と判断する。"
+        phrase = _pick_scope_escalation_text("subagent-hesitation")
+        if not phrase:
+            pytest.skip("scope-escalation fixture for subagent-hesitation not available")
         transcript = _write_transcript(
             tmp_path,
-            [_user_entry(), _assistant_text_only(text)],
+            [_user_entry(), _assistant_text_only(phrase)],
         )
         _write_state(tmp_path, "test-process-feedbacks", {"process_feedbacks_skill_invoked": True})
         result = _run(
@@ -869,9 +877,9 @@ class TestScopeEscalationDetection:
         3系統のスキル起動フラグ（plan_mode／process_feedbacks／plan_and_add_feedback）は
         いずれも`_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
         """
-        phrase = _pick_scope_escalation_text("single-session")
+        phrase = _pick_scope_escalation_text("async-wait")
         if not phrase:
-            pytest.skip("scope-escalation fixture for single-session not available")
+            pytest.skip("scope-escalation fixture for async-wait not available")
         transcript = _write_transcript(
             tmp_path,
             [_user_entry(), _assistant_text_only(phrase)],
@@ -885,25 +893,6 @@ class TestScopeEscalationDetection:
         assert decision.get("decision") == "block"
         body = _block_reason(decision)
         assert "scope-escalation-phrases" in body or "scope-escalation" in body
-
-    def test_scope_volume_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
-        """拡張フォーカス有効時、`scope-volume`カテゴリを検出しblockする。"""
-        phrase = _pick_scope_escalation_text("scope-volume")
-        if not phrase:
-            pytest.skip("scope-escalation fixture for scope-volume not available")
-        transcript = _write_transcript(
-            tmp_path,
-            [_user_entry(), _assistant_text_only(phrase)],
-        )
-        _write_state(tmp_path, "test-scope-volume", {"plan_mode_skill_invoked": True})
-        result = _run(
-            {"session_id": "test-scope-volume", "transcript_path": str(transcript)},
-            state_dir=tmp_path,
-        )
-        decision = _parse_decision(result)
-        assert decision.get("decision") == "block"
-        body = _block_reason(decision)
-        assert "scope-volume" in body or "scope-escalation-phrases" in body or "scope-escalation" in body
 
     def test_overhead_tradeoff_blocks_under_extended_focus(self, tmp_path: pathlib.Path):
         """拡張フォーカス有効時、`overhead-tradeoff`カテゴリを検出しblockする。"""

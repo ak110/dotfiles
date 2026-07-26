@@ -132,17 +132,6 @@ class TestTestExecution:
         assert state.get("test_executed") is not True
 
 
-class TestGitStatusCheck:
-    """Git 状態確認検出。"""
-
-    @pytest.mark.parametrize("command", ["git status", "git log --decorate --oneline -5", "git diff"])
-    def test_git_commands_detected(self, tmp_path: pathlib.Path, command: str):
-        sid = "test-git-status"
-        _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("git_status_checked") is True
-
-
 class TestPlanModeSkillInvocation:
     """plan-mode スキル呼び出し検出 (Skill ツール)。"""
 
@@ -297,8 +286,8 @@ class TestSubagentEndProcessLoopLog:
 class TestCurrentPlanFilePathTracking:
     """plan file編集時の`current_plan_file_path`記録。
 
-    pretooluse.py側の`agent_doc_validator_invoked`条件付き必須化判定
-    （`_should_require_agent_doc_validator`）が計画ファイル本文を再読み込みする際に使う。
+    pretooluse.py側の遡及スキャン記録検査・process7完了検査が
+    計画ファイル本文を再読み込みする際に使う。
     """
 
     def test_write_records_current_plan_file_path(self, tmp_path: pathlib.Path):
@@ -359,8 +348,9 @@ class TestGitLogChecked:
 
     cwdを伴うpayloadではcwd別辞書`{cwd: True}`で記録する。
     cwd空文字列環境では旧形式の単一bool値で記録し後方互換を保つ。
-    Write / Edit / MultiEditは編集の事実が裏で他コミットを動かしている可能性に備え、
-    辞書全体をクリアする（cwd別の細粒度リセットは行わない）。
+    リセット対象は対象コミットの親子関係が変化する操作（commit / rebase / reset）に限定する。
+    push・Write / Edit / MultiEditはリセットしない
+    （push・ファイル編集はコミット木を書き換えないため再確認を強制する必要がない）。
     """
 
     def test_git_log_sets_checked_dict_when_cwd_present(self, tmp_path: pathlib.Path):
@@ -389,13 +379,13 @@ class TestGitLogChecked:
         [
             ("commit", "git commit -m 'x'", "/repo/a"),
             ("rebase", "GIT_SEQUENCE_EDITOR=: git rebase -i HEAD~2", "/repo/a"),
-            ("push", "git push origin master", "/repo/a"),
+            ("reset", "git reset --hard HEAD~1", "/repo/a"),
         ],
     )
     def test_same_cwd_reset_removes_only_target_entry(
         self, tmp_path: pathlib.Path, label: str, reset_command: str, reset_cwd: str
     ):
-        """同cwdでのcommit/rebase/pushは該当cwdのみリセットする。"""
+        """同cwdでのcommit/rebase/resetは該当cwdのみリセットする。"""
         sid = f"log-reset-{label}"
         _run(
             {
@@ -443,9 +433,9 @@ class TestGitLogChecked:
             {"tool_name": "Edit", "tool_input": {"file_path": "/tmp/x.txt"}},
         ],
     )
-    def test_edit_resets_dict(self, tmp_path: pathlib.Path, edit_payload: dict):
-        """Write/Editは辞書全体をクリアする。"""
-        sid = "log-reset-edit"
+    def test_edit_does_not_reset_dict(self, tmp_path: pathlib.Path, edit_payload: dict):
+        """Write/Editはコミット木を書き換えないためリセットしない。"""
+        sid = "log-no-reset-edit"
         _run(
             {
                 "session_id": sid,
@@ -456,18 +446,30 @@ class TestGitLogChecked:
             state_dir=tmp_path,
         )
         _run({"session_id": sid, **edit_payload}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("git_log_checked") == {}
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True}
 
-    def test_edit_resets_legacy_bool(self, tmp_path: pathlib.Path):
-        """旧形式bool値の場合もWrite/Editでリセットする（後方互換）。"""
-        sid = "log-reset-edit-legacy"
-        _run({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log --oneline"}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("git_log_checked") is True
+    def test_push_does_not_reset(self, tmp_path: pathlib.Path):
+        """pushは対象コミットの親子関係を変えないためリセットしない。"""
+        sid = "log-no-reset-push"
         _run(
-            {"session_id": sid, "tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt", "content": "x"}},
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline"},
+                "cwd": "/repo/a",
+            },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("git_log_checked") is False
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push origin master"},
+                "cwd": "/repo/a",
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("git_log_checked") == {"/repo/a": True}
 
     def test_unrelated_bash_no_reset(self, tmp_path: pathlib.Path):
         sid = "log-no-reset"
@@ -563,14 +565,6 @@ class TestReadHandler:
                 r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
                 "textlint_violations_read",
             ),
-            (
-                "/home/user/dotfiles/agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md",
-                "plan_file_guidelines_read",
-            ),
-            (
-                r"C:\Users\user\dotfiles\agent-toolkit\skills\plan-mode\references\plan-file-guidelines.md",
-                "plan_file_guidelines_read",
-            ),
         ],
     )
     def test_read_sets_flag_for_both_posix_and_windows_paths(
@@ -605,7 +599,6 @@ class TestReadHandler:
         state = _read_state(tmp_path, sid)
         assert state.get("codex_review_read") is not True
         assert state.get("textlint_violations_read") is not True
-        assert state.get("plan_file_guidelines_read") is not True
 
 
 class TestPlanFilePostWriteNotice:
@@ -716,16 +709,20 @@ class TestFeedbackSkillFlags:
         assert _read_state(tmp_path, sid).get(flag) is True
 
 
-class TestProcessFeedbacksFinishResetsFlag:
-    """process-feedbacks-finishスキル起動検知時のフラグリセット。"""
+class TestExitSessionResetsProcessFeedbacksFlag:
+    """exit-sessionスキル起動検知時のprocess_feedbacks_skill_invokedフラグリセット。
+
+    process-feedbacks/SKILL.md「ステップ8: 振り返りとセッション終了」がexit-sessionで終端するため、
+    exit-session起動を完了シグナルとする。
+    """
 
     @pytest.mark.parametrize(
         "skill",
-        ["agent-toolkit:process-feedbacks-finish", "process-feedbacks-finish"],
+        ["agent-toolkit:exit-session", "exit-session"],
     )
-    def test_reset_when_finish_skill_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
-        """process-feedbacks-finish起動でprocess_feedbacks_skill_invokedが偽になる。"""
-        sid = f"finish-{skill.replace(':', '-')}"
+    def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
+        """exit-session起動でprocess_feedbacks_skill_invokedが偽になる。"""
+        sid = f"exit-{skill.replace(':', '-')}"
         # 事前にフラグを立てる。
         (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
             json.dumps({"process_feedbacks_skill_invoked": True}, ensure_ascii=False),
@@ -735,8 +732,8 @@ class TestProcessFeedbacksFinishResetsFlag:
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でfinishスキルが起動されても状態は変わらない。"""
-        sid = "finish-idem"
+        """既に偽の状態でexit-sessionが起動されても状態は変わらない。"""
+        sid = "exit-idem"
         (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
             json.dumps({"process_feedbacks_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
@@ -745,7 +742,7 @@ class TestProcessFeedbacksFinishResetsFlag:
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks-finish"},
+                "tool_input": {"skill": "agent-toolkit:exit-session"},
             },
             state_dir=tmp_path,
         )
@@ -756,7 +753,7 @@ class TestProcessFeedbacksInvokedNonIdempotent:
     """process-feedbacksスキル再起動時のフラグ強制上書き。"""
 
     def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
-        """finish後の再起動でフラグが確実にTrueへ戻る。"""
+        """exit-session後の再起動でフラグが確実にTrueへ戻る。"""
         sid = "reinvoke"
         # 事前にフラグを立てる。
         _run(
@@ -768,12 +765,12 @@ class TestProcessFeedbacksInvokedNonIdempotent:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
-        # finish起動でリセット。
+        # exit-session起動でリセット。
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks-finish"},
+                "tool_input": {"skill": "agent-toolkit:exit-session"},
             },
             state_dir=tmp_path,
         )
@@ -807,9 +804,13 @@ class TestPlanAndAddFeedbackInvoked:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_and_add_feedback_skill_invoked") is True
 
-    def test_add_feedback_invocation_resets_flag(self, tmp_path: pathlib.Path):
-        """フラグ真の状態でadd-feedback起動を検知すると`plan_and_add_feedback_skill_invoked`が偽へ戻る。"""
-        sid = "paaf-reset-by-add-feedback"
+    def test_process_feedbacks_invocation_resets_flag(self, tmp_path: pathlib.Path):
+        """フラグ真の状態でprocess-feedbacks起動を検知すると`plan_and_add_feedback_skill_invoked`が偽へ戻る。
+
+        `plan-and-add-feedback/SKILL.md`「手順」節2は`agent-toolkit:process-feedbacks`
+        「フィードバック投入」節を参照呼び出しして終端するため、当該起動を終端シグナルとする。
+        """
+        sid = "paaf-reset-by-process-feedbacks"
         (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
             json.dumps({"plan_and_add_feedback_skill_invoked": True}, ensure_ascii=False),
             encoding="utf-8",
@@ -817,7 +818,7 @@ class TestPlanAndAddFeedbackInvoked:
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:add-feedback"},
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
                 "session_id": sid,
             },
             state_dir=tmp_path,
@@ -825,13 +826,13 @@ class TestPlanAndAddFeedbackInvoked:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_and_add_feedback_skill_invoked") is False
 
-    def test_add_feedback_without_flag_is_noop(self, tmp_path: pathlib.Path):
-        """フラグ未設定でのadd-feedback単独起動ではフラグを新設しない（no-op）。"""
-        sid = "paaf-noop-add-feedback"
+    def test_process_feedbacks_without_flag_is_noop(self, tmp_path: pathlib.Path):
+        """フラグ未設定でのprocess-feedbacks単独起動では当該フラグを新設しない（no-op）。"""
+        sid = "paaf-noop-process-feedbacks"
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:add-feedback"},
+                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
                 "session_id": sid,
             },
             state_dir=tmp_path,

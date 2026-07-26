@@ -14,20 +14,19 @@
   `autonomous_exit_invoked`（`agent-toolkit:exit-session`呼び出し記録、`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`下のStop hook未呼び出し判定用）
 - `user_prompt_counter`・`norm_inquiry_last_injected`: `user_prompt_submit.py`が`update_state`で毎回加算・記録し同ファイル内のクールダウン判定に使う。前者は単調増加カウンター、後者は直近の規範照会リマインダー注入時カウンター値
 - `process_feedbacks_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で`agent-toolkit:process-feedbacks`・各短縮スラッシュを記録。
-  Stop hookの拡張照合カテゴリ有効化判定と、PreToolUse(EnterPlanMode)ブロック判定に使う。PostToolUseは`process-feedbacks-finish`スキル起動検知時に偽へ戻し、`process-feedbacks`再起動時に真へ強制上書きする
+  Stop hookの拡張照合カテゴリ有効化判定と、PreToolUse(EnterPlanMode)ブロック判定に使う。
+  PostToolUseは`process-feedbacks`起動検知時に真へ強制上書きし、`exit-session`スキル起動検知時に偽へ戻す
+  （`process-feedbacks/SKILL.md`「ステップ8」がexit-sessionで終端するため）
 - `plan_and_add_feedback_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で
   `agent-toolkit:plan-and-add-feedback`・各短縮スラッシュを記録。
   読み取り元はPreToolUse（`EnterPlanMode`発行ブロック）。
-  寿命は`agent-toolkit:add-feedback`起動検知（plan-and-add-feedbackの終端工程）でリセット
+  寿命は`agent-toolkit:process-feedbacks`起動検知（plan-and-add-feedbackの終端工程が参照呼び出しする先）でリセット
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
 - plan-file-creatorの整合性チェック完遂判定フラグ群はPostToolUse(Agent/Task)が記録する:
-  `plan_reviewer_invoked`・`codex_review_invoked`・`agent_doc_validator_invoked`
-  （PreToolUseゲートの必須対象は`codex_review_invoked`のみで、`agent_doc_validator_invoked`は
-  文書対象時のみ条件付き必須とする。`plan_reviewer_invoked`は`codex-review.md`
-  「codex利用可否の3段階判定」節の段階3が成立した場合の代替起動を記録する用途に残り、ゲート必須対象ではない。
-  `plan_impl_reviewer_invoked`は`careful-review`・`quality-sweep`起動記録用に
-  存続するが本フラグ群の対象外）。
+  `plan_reviewer_invoked`・`codex_review_invoked`
+  （PreToolUseゲートの必須対象は`codex_review_invoked`のみ。`plan_reviewer_invoked`は`codex-review.md`
+  「codex利用可否の2段階判定」節でMCP利用不可時の代替起動を記録する用途に残り、ゲート必須対象ではない）。
   `codex_review_invoked`は`plan-codex-delegate`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
   `_reset_process7_completion_flags`のリセット対象タプルは`_PROCESS7_COMPLETION_FLAGS`と別に
   `plan_reviewer_invoked`を明示追加し、新計画着手時に前計画のフォールバック起動記録を持ち越さない

@@ -88,6 +88,9 @@ Claude Code固有事項として、本体作業に着手する時点で
   amend／rebase／fixup統合により対象コミットのSHAが変動している可能性があるため、
   `git log --oneline --decorate`の出力から件名で照合したうえで、
   `git show --stat <sha>`を実行してファイル集合が計画作成時点の対象と一致するか確認する
+- `git commit --fixup=<sha>`作成後は、pushする前に必ず
+  `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`でsquash統合を完了させる。
+  fixupコミットを未統合のままpushしない
 - ユーザーが別途更新したファイルなどを見つけた場合は、コミットが混ざらないよう注意する
   - pre-commitが自動的にstashを実行するため作業ミスが発生しやすい
   - この場合に限り、事前に`pre-commit run --files <対象ファイル>`を手動実行して問題がないことを確認したうえで、
@@ -141,11 +144,6 @@ Claude Code固有事項として、本体作業に着手する時点で
   - 判定困難な場合はユーザーへ確認する
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
-- 後始末コマンド（`atk fb adopt`・`atk fb reject`・`atk tb adopt`）は
-  CI通過確認の完了後に発行する。
-  `gh run watch --exit-status`成功を確認できるまで後始末コマンドを実行しない。
-  CI失敗時は管理側の採否確定を先行させず、
-  対象リポジトリ側の是正commit・再push・CI通過確認の完了後に後始末を発行する
 - GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
 - GitLab CI利用リポジトリ（`.gitlab-ci.yml`存在）は`gh`の代わりに`glab`を用いる。
   自己署名のTLS証明書を使うGitLab私設ホストは`glab config set skip_tls_verify true --host <host>`と

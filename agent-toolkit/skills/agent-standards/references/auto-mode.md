@@ -54,8 +54,9 @@ auto mode classifierは`kill -TERM $PPID`を「エージェントが作成して
 ### サブエージェント委譲経路のcommit/edit拒否
 
 本節はharnessレベルの技術的ブロック（classifier拒否）への対応フローであり、
-`agent-toolkit/rules/02-collaboration.md`「自律実行モード」節のオーバーライド対象外とする。
-自律実行モード下でも本フローの`AskUserQuestion`はTBD記録へ置換せず通常発行する。
+`agent-toolkit/rules/01-agent.md`「協調と自律」節が定める自律モードの確認省略
+（`AskUserQuestion`を`atk tb add`記録へ置換する扱い）の対象外とする。
+自律モード下でも本フローの`AskUserQuestion`はTBD記録へ置換せず通常発行する。
 
 `plan-impl-executor`等のサブエージェント委譲経路で発行される操作を対象とする。
 対象は`git commit`・`git commit --amend`・`Write`／`Edit`／`MultiEdit`によるファイル編集である。

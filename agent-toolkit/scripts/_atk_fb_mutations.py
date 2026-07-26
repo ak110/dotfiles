@@ -46,8 +46,14 @@ def transition_feedback(
     commit: str | None = None,
     category: str | None = None,
     lock_timeout: float = -1,
+    force: bool = False,
 ) -> list[str]:
-    """平引数でfeedbackの一括状態遷移又は削除を実行する。"""
+    """平引数でfeedbackの一括状態遷移又は削除を実行する。
+
+    `action="remove"`かつ`force=False`（既定）の場合、processing状態のファイルが
+    対象に含まれるとexit 2で拒否する（`atk fb rm`の既定保護。処理中ファイルの
+    意図しない削除を防ぐ。解除するには`force=True`を渡す）。
+    """
     if action not in {"start-processing", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のfeedback操作です: {action}")
     inbox_dir = private_notes / "feedback" / FEEDBACK_STATE_INBOX
@@ -63,6 +69,15 @@ def transition_feedback(
             if action == "start-processing"
             else _resolve_processable_targets(filenames, inbox_dir, processing_dir)
         )
+        if action == "remove" and not force:
+            protected = [path.name for path in paths if path.parent.name == FEEDBACK_STATE_PROCESSING]
+            if protected:
+                print(
+                    "processing状態のファイルは既定で削除を保護します。"
+                    f"削除するには--force（Web APIはforce指定）を指定してください: {', '.join(protected)}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
         destination_name = {
             "start-processing": FEEDBACK_STATE_PROCESSING,
             "adopt": FEEDBACK_STATE_ADOPTED,
@@ -258,6 +273,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """rmサブコマンド: inbox・processingいずれかから単純削除しcommit・push。
 
     processing優先で解決する（`_resolve_processable_targets`と同じ規約）。
+    processing状態のファイルは既定で削除を保護し、`--force`指定時のみ削除を許可する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "rm")
@@ -267,6 +283,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         filenames=args.filenames,
         now=datetime.datetime.now(),
         target_repo=args.target_repo,
+        force=args.force,
     )
     print(f"{len(filenames)}件削除: {', '.join(filenames)}")
 

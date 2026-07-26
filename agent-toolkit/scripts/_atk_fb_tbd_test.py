@@ -697,6 +697,40 @@ class TestTbdAnswer:
         assert commit_calls == []
 
 
+class TestTbdAnswerEditorFailure:
+    """tb answerサブコマンド: エディター非ゼロ終了時にexit 0を返さないことを検証する。"""
+
+    def test_nonzero_editor_exit_is_treated_as_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """エディターが非ゼロ終了コードで終了した場合、中断してexit 1を返しcommitしない。"""
+        notes = _setup_tbd_env(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer="")
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        git_calls: list[_GitCall] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:1] == ["fake-editor"]:
+                return subprocess.CompletedProcess(cmd, returncode=1)
+            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["tb", "answer"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "エディターが終了コード1で終了しました" in captured.err
+        commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+        assert commit_calls == []
+
+
 class TestTbdAdopt:
     """tb adoptサブコマンド: 採用としてtbd/inboxからtbd/adopted/へ移動しコミットする。"""
 

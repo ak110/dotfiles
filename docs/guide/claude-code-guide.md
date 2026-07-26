@@ -170,7 +170,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
   （`## 調査結果`配下を除く）の絶対行番号の直書きを検査して警告
 - 計画ファイルの`## 変更履歴`記載内容と`## 変更内容`側対象ファイル一覧・H3見出しとの対応欠落をブロック
 - 計画ファイル編集前の参照ドキュメント
- （`references/textlint-violations.md`・`references/plan-file-guidelines.md`）未読をブロック
+ （`references/textlint-violations.md`・`agent-toolkit:plan-mode`スキル本体）未読をブロック
 - 修正指示やcodexレビュー不合格の多さに応じてCLAUDE.md更新を提案
 - Gitワークツリー配下のコーディングエージェント向け文書や`~/.claude/plans/`への書き込み時に確認ダイアログを自動許可
 - ユーザー発話中の規範照会・是正要求の兆候を検出し、メタ視点点検・恒久化検討の実施を促す
@@ -185,17 +185,18 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `/plan-mode`: plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/careful-review`: レビューワークフロー
+- `/review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
+- `/process-feedbacks`: 対象リポジトリのフィードバックの取得・検討・適用、およびフィードバック本文の投入
+- `/plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/export-for-resume`: 決定事項・未決事項・進捗を整理した引き継ぎ用Markdownを出力する
 - `/shell-exec`: 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
 - `/exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
 
 ### 明示呼び出し専用のスキル
 
-- `/overhaul-project`: プロジェクト全体の網羅的改善（コード改善・ドキュメント整備・足元整備）
-- `/quality-sweep`: `plan-impl-reviewer`観点で既存不良を網羅的に検出し`claude`サブエージェントへ修正を分担委譲する
+- `/session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動する
 
 ## 更新方法
 

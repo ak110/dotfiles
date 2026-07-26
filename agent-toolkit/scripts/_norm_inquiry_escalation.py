@@ -17,12 +17,12 @@ from __future__ import annotations
 import re
 
 # 疑問符相当の文末表現。「か」「かな」「？」等の文末表現を指す
-# （agent-toolkit/rules/02-collaboration.md「メタ視点」バレット項の対象文言例と対応する）。
+# （agent-toolkit/rules/01-agent.md「指摘発生時の扱い」節の対象文言例と対応する）。
 # 単独の「か」は文末（改行・句読点・文字列終端）に接する場合のみ疑問符扱いとする。
 _QUESTION_END = r"(?:[？?]|かな[？?]?|のか[？?]?|だろうか[？?]?|か(?=[。、\n\s]|\Z))"
 
 # 規範照会・是正要求検出パターン。
-# `agent-toolkit/rules/02-collaboration.md`「メタ視点」バレット項が対象とする、
+# `agent-toolkit/rules/01-agent.md`「指摘発生時の扱い」節が対象とする、
 # 既存規範の変更経緯・遵守状況をユーザーが疑問文で問う発話（`norm-inquiry`）、
 # および既存規範・実装の誤りを明示的に是正要求する発話（`correction-request`）を検出する。
 # 単純な質問・要望一般（規範・ルール・既存挙動への言及を伴わないもの）は対象外とする。

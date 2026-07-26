@@ -312,7 +312,7 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         prompt = claude_calls[0]["cmd"][-1]
         assert "/process-feedbacks" in prompt
-        assert "process-feedbacks-finish" in prompt
+        assert "agent-toolkit:process-feedbacks" in prompt
         # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
         assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "opus"]
@@ -320,50 +320,6 @@ class TestProcessLoopPromptAndEnv:
         assert len(wait_calls) == 2
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
-
-    def test_usage_snapshot_logged_around_session(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """セッション開始直前・終了直後に`usage_snapshot`イベントが記録されること。"""
-        _setup_flag_and_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
-
-        count_calls: list[int] = []
-
-        def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
-            del private_notes, target_repo
-            count_calls.append(len(count_calls))
-            return 1 if len(count_calls) == 1 else 0
-
-        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
-            del private_notes, target_repo_id
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(_process_loop, "_count_pending_entries", fake_count_pending_entries)
-        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
-
-        logged_events: list[tuple[str, dict[str, object]]] = []
-        monkeypatch.setattr(
-            _process_loop._process_loop_log,  # pylint: disable=protected-access  # noqa: SLF001
-            "append",
-            lambda event, **fields: logged_events.append((event, fields)),
-        )
-        monkeypatch.setattr(
-            _process_loop._review_balance_usage,  # pylint: disable=protected-access  # noqa: SLF001
-            "snapshot",
-            lambda: {"mode": "codex-heavy"},
-        )
-
-        with pytest.raises(SystemExit):
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
-
-        snapshot_events = [fields for event, fields in logged_events if event == "usage_snapshot"]
-        assert [e["phase"] for e in snapshot_events] == ["start", "end"]
-        assert all(e["mode"] == "codex-heavy" for e in snapshot_events)
 
     def test_prompt_emphasizes_completion_over_exit_session(self) -> None:
         """プロンプトが取得した全件の完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
@@ -381,13 +337,13 @@ class TestProcessLoopPromptAndEnv:
         assert "後続工程" in prompt
         assert "縮退の根拠に" in prompt
 
-    def test_prompt_references_process_feedbacks_finish(self) -> None:
-        """プロンプトが後続工程の集約先としてprocess-feedbacks-finishスキルを参照すること。"""
+    def test_prompt_references_process_feedbacks(self) -> None:
+        """プロンプトが後続工程の集約先としてprocess-feedbacksスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
         )
-        assert "process-feedbacks-finish" in prompt
+        assert "agent-toolkit:process-feedbacks" in prompt
 
     def test_prompt_includes_target_repo(self) -> None:
         """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。

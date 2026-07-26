@@ -223,28 +223,36 @@ class TestUnansweredTbdNotification:
         assert stderr.startswith("# tbd\n") if count else not stderr
 
 
-class TestFlagFileMissing:
-    """フラグファイル不在時にexit 1とstderr案内を返すこと。"""
+class TestInboxAlwaysEnabled:
+    """inbox常時有効化: フラグファイル不在でもprivate-notesさえ揃えば通常どおり動作すること。"""
 
-    def test_exits_with_error(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグファイルが存在しない場合はexit 1でstderrに案内を出力する。"""
+    def test_add_succeeds_without_flag_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """フラグファイルを作成しなくても、private-notesが存在すれば`fb add`が成功する。"""
+        notes = tmp_path / "private-notes"
+        notes.mkdir()
+        (notes / "feedback" / "inbox").mkdir(parents=True)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["fb", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "feedback-inbox機能が無効" in captured.err
+        assert exc_info.value.code == 0
+        assert "1件投入:" in capsys.readouterr().out
 
 
 class TestPrivateNotesMissing:
-    """管理repo root不在時にexit 1とディレクトリ不在案内を返すこと。"""
+    """`AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定したパスが不在の場合にexit 1とディレクトリ不在案内を返すこと。
+
+    conftestの`_atk_private_notes_env`が全テストへ`AGENT_TOOLKIT_PRIVATE_NOTES=tmp_path/private-notes`を
+    設定するため、当該ディレクトリを作成しない限り「明示指定パスが不在」の分岐（自動生成の対象外）を検証できる。
+    """
 
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
 
@@ -330,6 +338,53 @@ class TestAddSingleMessage:
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
         assert f"  atk fb edit {files[0].name}\n" in captured.out
+
+
+class TestAddCompletionShowsProcessingCount:
+    """addサブコマンド: 完了表示の「inbox: 計X件」にprocessing件数を併記する（フィードバック20260724-075120-001反映）。"""
+
+    def test_processing_count_shown_alongside_inbox_count(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """processing配下に既存ファイルがある状態で`fb add`すると、その件数が併記される。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing_dir = notes / "feedback" / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / "existing-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
+        )
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inbox: 計1件（processing: 1件）" in captured.out
+
+    def test_processing_count_is_zero_when_none_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """processing配下が空の状態でも0件と明示される。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inbox: 計1件（processing: 0件）" in captured.out
 
 
 class TestAddMultipleMessages:

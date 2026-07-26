@@ -133,10 +133,10 @@ class Operations:
         self.private_notes = private_notes
 
     def status(self) -> bool:
-        return common.flag_path(pathlib.Path.home()).exists()
+        return common.flag_path().exists()
 
     def set_enabled(self, enabled: bool) -> bool:
-        path = common.flag_path(pathlib.Path.home())
+        path = common.flag_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         if enabled:
             path.touch()
@@ -273,8 +273,13 @@ class Operations:
         commit: str | None = None,
         category: str | None = None,
         target_repo: str | None = None,
+        force: bool = False,
     ) -> list[str]:
-        """複数エントリを全件検証後に移動又は削除する。"""
+        """複数エントリを全件検証後に移動又は削除する。
+
+        `force`は`kind="feedback"`かつ`action="remove"`の場合のみ意味を持ち、
+        processing状態のファイルへの既定保護（`atk fb rm`の`--force`と同義）を解除する。
+        """
         try:
             if kind == "feedback":
                 return feedback_mutations.transition_feedback(
@@ -287,6 +292,7 @@ class Operations:
                     commit=commit,
                     category=category,
                     lock_timeout=_WEB_LOCK_TIMEOUT,
+                    force=force,
                 )
             return tbd_mutations.transition_tbd(
                 self.private_notes,

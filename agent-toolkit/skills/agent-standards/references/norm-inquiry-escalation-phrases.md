@@ -1,6 +1,7 @@
 # 規範照会・是正要求フレーズ集（隔離リファレンス）
 
-`agent-toolkit/rules/02-collaboration.md`「協調モード」節のメタ視点バレット項の典拠である。
+`agent-toolkit/rules/01-agent.md`「指摘発生時の扱い」節の
+自身の判断軸の齟齬・既存規範が機能しなかった原因を点検するバレット項の典拠である。
 `agent-toolkit/scripts/_norm_inquiry_escalation.py`が対象とする検出フレーズの典拠でもある。
 配布物フックは`UserPromptSubmit`経路（`agent-toolkit/scripts/user_prompt_submit.py`）でこの辞書を参照する。
 

@@ -412,12 +412,12 @@ class TestRmSingle:
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 feedback item" in commit_cmd
 
-    def test_processing_file_removed(
+    def test_processing_file_removed_with_force(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """start-processing後（processing配下）のファイルもrm対象として解決される。"""
+        """start-processing後（processing配下）のファイルは`--force`指定時のみrm対象として解決される。"""
         notes = _setup_flag_and_notes(tmp_path)
         processing_dir = notes / "feedback" / "processing"
         processing_dir.mkdir(parents=True)
@@ -429,10 +429,35 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
+            atk.main(["fb", "rm", "--force", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (processing_dir / "fb-001.md").exists()
+
+    def test_processing_file_rejected_without_force(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--force`未指定時、processing配下のファイルは削除を拒否されexit 2する（フィードバック20260723-153526-001反映）。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing_dir = notes / "feedback" / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / "fb-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\n---\n\nテスト本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert (processing_dir / "fb-001.md").exists()
+        captured = capsys.readouterr()
+        assert "processing状態のファイルは既定で削除を保護します" in captured.err
+        assert "fb-001.md" in captured.err
 
     def test_missing_file_reports_inbox_and_processing(
         self,

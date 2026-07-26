@@ -460,7 +460,14 @@ class TestListFeedbackStatusRejected:
 
 
 class TestEnableSubcommand:
-    """enableサブコマンド: フラグファイル不在時に作成、存在時は冪等。"""
+    """enableサブコマンド: フラグファイル不在時に作成、存在時は冪等（inbox常時有効化に伴う後方互換操作）。"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """フラグファイル配置先を実環境の`user_config_dir`から隔離する。"""
+        config_dir = tmp_path / ".config" / "agent-toolkit"
+        # pylint: disable-next=protected-access
+        monkeypatch.setattr(atk._common.platformdirs, "user_config_dir", lambda _name: str(config_dir))  # noqa: SLF001
 
     def test_enable_creates_flag(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが無い状態でも実行でき、生成される。"""
@@ -490,7 +497,14 @@ class TestEnableSubcommand:
 
 
 class TestDisableSubcommand:
-    """disableサブコマンド: フラグファイル存在時に削除、不在時は冪等。"""
+    """disableサブコマンド: フラグファイル存在時に削除、不在時は冪等（inbox常時有効化に伴う後方互換操作）。"""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """フラグファイル配置先を実環境の`user_config_dir`から隔離する。"""
+        config_dir = tmp_path / ".config" / "agent-toolkit"
+        # pylint: disable-next=protected-access
+        monkeypatch.setattr(atk._common.platformdirs, "user_config_dir", lambda _name: str(config_dir))  # noqa: SLF001
 
     def test_disable_removes_flag(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが存在する場合は削除される。"""
@@ -519,15 +533,17 @@ class TestDisableSubcommand:
 class TestStatusSubcommand:
     """statusサブコマンド: 有効状態をexit codeと出力先で通知する。"""
 
-    def test_status_disabled_when_flag_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグファイル不在時はexit 1で標準エラー出力に無効案内を出力する。"""
+    def test_status_enabled_even_when_flag_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """inbox常時有効化により、フラグファイル不在でもprivate-notesさえ存在すればexit 0で有効案内を出力する。"""
+        (tmp_path / "private-notes").mkdir()
+
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "status"], home=tmp_path)
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "feedback-inbox機能が無効" in captured.err
-        assert captured.out == ""
+        assert "feedback-inboxは有効" in captured.out
+        assert captured.err == ""
 
     def test_status_disabled_when_notes_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグありかつ管理repo root不在時はexit 1で標準エラー出力にディレクトリ不在案内を出力する。"""

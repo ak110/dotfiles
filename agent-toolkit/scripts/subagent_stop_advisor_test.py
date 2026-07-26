@@ -122,7 +122,7 @@ def test_approves_async_wait_when_background_tracked(tmp_path: Path) -> None:
     text = _pick_scope_escalation_text("async-wait")
     if not text:
         pytest.skip("scope-escalation fixture for async-wait not available")
-    assert not any(name in text for name in ("plan-reviewer", "plan-codex-delegate", "plan-impl-reviewer")), (
+    assert not any(name in text for name in ("plan-reviewer", "plan-codex-delegate")), (
         "ピック文言が自身起動サブエージェント名を含むと本テストの前提が崩れる"
     )
     transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
@@ -162,7 +162,7 @@ def _pick_scope_escalation_text_containing(category: str, substring: str) -> str
 
 def test_blocks_self_launched_subagent_wait_even_with_tracked_background(tmp_path: Path) -> None:
     """自身配下起動のレビュアー系サブエージェントへの待機表明はbackground追跡有無に関わらずblockする。"""
-    text = _pick_scope_escalation_text_containing("async-wait", "plan-impl-reviewer")
+    text = _pick_scope_escalation_text_containing("async-wait", "plan-reviewerが")
     if not text:
         pytest.skip("scope-escalation fixture for self-launched subagent wait not available")
     transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg3")]))

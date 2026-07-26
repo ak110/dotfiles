@@ -389,17 +389,19 @@ _VALID_H2_PLAN_CONTENT = (
 
 
 class TestPlanModeSkillFirstCheck:
-    """plan file編集全般で plan-mode スキル未起動をブロックする検査。
+    """plan file編集全般で plan-mode スキル未起動を警告する検査（block降格済み）。
 
     plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
     一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
-    Write/Edit/MultiEditのみがブロック対象となる。`permission_mode`の値には依存しない。
+    Write/Edit/MultiEditのみが警告対象となる。`permission_mode`の値には依存しない。
+    完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
+    ブロックへ集約する。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
-    def test_blocks_plan_file_write_without_skill(self, tmp_path: pathlib.Path):
+    def test_warns_plan_file_write_without_skill(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -412,12 +414,12 @@ class TestPlanModeSkillFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "plan-mode" in result.stderr
         assert "Phase 1" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_blocks_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
+    def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
@@ -430,7 +432,7 @@ class TestPlanModeSkillFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
 
     def test_allows_plan_file_when_skill_invoked(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -443,7 +445,6 @@ class TestPlanModeSkillFirstCheck:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
         result = _run(
@@ -519,18 +520,17 @@ class TestPlanModeSkillFirstCheck:
         assert result.stdout == ""
 
     def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
-        """plan mode 外でも plan-mode スキル未起動時は plan file 編集をブロックする。"""
+        """plan mode 外でも plan-mode スキル未起動時は plan file 編集を警告する（block降格済み）。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "non-plan-mode"
-        # textlint_violations_read・plan_file_guidelines_readを設定して独立checkとの干渉を回避
+        # textlint_violations_readを設定して独立checkとの干渉を回避
         _write_session_state(
             tmp_path,
             sid,
             {
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
         result = _run(
@@ -542,7 +542,7 @@ class TestPlanModeSkillFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "plan-mode" in result.stderr
 
 
@@ -596,18 +596,19 @@ class TestPlanModeSkillCallSites:
 
 
 class TestPlanFileRequiredReadsFirstCheck:
-    """plan file 編集前に必須リファレンス未読の場合のブロック検査。
+    """plan file 編集前に必須リファレンス未読の場合の警告検査（block降格済み）。
 
     `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
-    Write/Edit/MultiEditのみがブロック対象となる。plan file以外の操作は
-    一切ブロック・警告しない。
+    Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
+    一切ブロック・警告しない。完成条件を満たさない状態での次工程移行の抑止は
+    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
-    def test_blocks_when_both_unread(self, tmp_path: pathlib.Path):
-        """両方未読の場合、ブロックメッセージに両参照パスが含まれる。"""
+    def test_warns_when_unread(self, tmp_path: pathlib.Path):
+        """未読の場合、警告メッセージに参照パスが含まれる。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -622,23 +623,18 @@ class TestPlanFileRequiredReadsFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "textlint-violations.md" in result.stderr
-        assert "plan-file-guidelines.md" in result.stderr
         assert "(already read)" not in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_blocks_when_only_textlint_violations_unread(self, tmp_path: pathlib.Path):
-        """片方のみ未読の場合、両参照が列挙され読了済み側に`(already read)`が付く。"""
+    def test_warns_on_edit_when_unread(self, tmp_path: pathlib.Path):
+        """Editでも同様に未読を警告する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
         sid = "req-textlint-unread"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "plan_file_guidelines_read": True},
-        )
+        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
         result = _run(
             {
                 "tool_name": "Edit",
@@ -648,54 +644,22 @@ class TestPlanFileRequiredReadsFirstCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "textlint-violations.md" in result.stderr
-        assert "plan-file-guidelines.md" in result.stderr
-        assert "plan-file-guidelines.md`: internalize plan file structure requirements (already read)" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
-    def test_blocks_when_only_plan_file_guidelines_unread(self, tmp_path: pathlib.Path):
-        """片方のみ未読の場合、両参照が列挙され読了済み側に`(already read)`が付く。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home, "multi.md")
-        env = self._state_env(tmp_path, home)
-        sid = "req-guidelines-unread"
-        _write_session_state(
-            tmp_path,
-            sid,
-            {"plan_mode_skill_invoked": True, "textlint_violations_read": True},
-        )
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "edits": [{"old_string": "a", "new_string": "b"}],
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert "plan-file-guidelines.md" in result.stderr
-        assert "textlint-violations.md" in result.stderr
-        assert "textlint-violations.md`: internalize frequent textlint violation patterns (already read)" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
-
-    def test_allows_plan_file_when_both_read(self, tmp_path: pathlib.Path):
-        """両方読了の場合は通過する。"""
+    def test_allows_plan_file_when_read(self, tmp_path: pathlib.Path):
+        """読了済みの場合は通過する。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
-        sid = "req-both-read"
+        sid = "req-read"
         _write_session_state(
             tmp_path,
             sid,
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
         result = _run(
@@ -725,816 +689,6 @@ class TestPlanFileRequiredReadsFirstCheck:
         )
         assert result.returncode == 0
         assert result.stdout == ""
-
-
-class TestPlanFileSizeLimitTargetWcLRecorded:
-    """plan file Write時の文書サイズ上限対象ファイルwc -l実測値記録漏れ検出。
-
-    `## 変更内容`に文書サイズ上限対象パスが列挙され、実ファイルが220行以上にもかかわらず
-    `## 調査結果`または`### エージェント判断`にwc -l実測値（±2許容）が未記載の場合にブロックする。
-    対象外パス・220行未満・Write以外のツール・plan file以外は一切ブロックしない。
-    """
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _run_with_cwd(
-        payload: object,
-        cwd: pathlib.Path,
-        env_overrides: dict[str, str] | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        text = json.dumps(payload, ensure_ascii=False)
-        env = os.environ.copy()
-        if env_overrides:
-            env.update(env_overrides)
-        return _fork_runner.run_script(_SCRIPT, input=text, env=env, cwd=cwd)
-
-    @staticmethod
-    def _all_prior_flags(tmp_path: pathlib.Path, session_id: str, content: str | None = None) -> None:
-        # `content`パラメーターは旧prelint検査用の状態設定に使っていたが撤廃済み。
-        # 互換のためシグネチャは維持する（呼び出し側の書き換え範囲を最小化する）。
-        del content
-        state: dict = {
-            "plan_mode_skill_invoked": True,
-            "textlint_violations_read": True,
-            "plan_file_guidelines_read": True,
-        }
-        _write_session_state(tmp_path, session_id, state)
-
-    @staticmethod
-    def _make_target_file(base: pathlib.Path, rel: str, lines: int = 230) -> pathlib.Path:
-        target = base / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(f"line {i}" for i in range(lines)) + "\n", encoding="utf-8")
-        return target
-
-    def test_blocks_when_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """変更内容に対象パスがあり実ファイルが220行以上だが調査結果に基名未記載の場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-no-record"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "test-rule.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_number_deviation_exceeds_2(self, tmp_path: pathlib.Path):
-        """調査結果に基名はあるが記載行数が実測値から±3以上ずれている場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-wrong-count"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 100 行。\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "test-rule.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_passes_when_file_under_220_lines(self, tmp_path: pathlib.Path):
-        """実ファイルが220行未満の場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-small-file"
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=50)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_path_not_in_scope(self, tmp_path: pathlib.Path):
-        """文書サイズ上限対象外パスは220行以上でも通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-out-of-scope"
-
-        target_rel = "some/other/file.md"
-        self._make_target_file(tmp_path, target_rel, lines=300)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_wc_l_recorded_in_survey_results(self, tmp_path: pathlib.Path):
-        """調査結果に実測値±2の数値が記載されている場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-correct-chosa"
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\ntest-rule.md は 230 行。\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_wc_l_recorded_in_agent_judgment(self, tmp_path: pathlib.Path):
-        """エージェント判断に実測値±2の数値が記載されている場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-agent-judgment"
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\n調査内容。\n\n"
-            "### エージェント判断\n\ntest-rule.md: 229行。\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_wc_l_recorded_in_agent_judgment_under_changes_section(self, tmp_path: pathlib.Path):
-        """`### エージェント判断`が`## 調査結果`配下でなく`## 変更内容`配下にある場合でも通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-agent-judgment-only"
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        # `### エージェント判断`を`## 変更内容`配下に置き、`## 調査結果`配下でなくても認識されることを検証する
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "### エージェント判断\n\ntest-rule.md: 229行。\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_for_non_write_tool(self, tmp_path: pathlib.Path):
-        """Write以外のツール（Editなど）は本検査の対象外。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        # H2節順検査がEdit/MultiEditにも適用されるため、plan初期内容をvalid H2にする
-        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
-        env = self._state_env(tmp_path, home)
-        sid = "psl-non-write"
-        self._all_prior_flags(tmp_path, sid)
-
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "old_string": "# タイトル",
-                    "new_string": "# タイトル",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_for_non_plan_file(self, tmp_path: pathlib.Path):
-        """plan file以外のWriteは通過する。"""
-        home = tmp_path / "home"
-        home.mkdir(parents=True, exist_ok=True)
-        env = self._state_env(tmp_path, home)
-        # file_pathが計画ファイル外のため、本checkは先行する全checkで即時returnする（事前フラグ不要）
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "not-a-plan.md"), "content": content},
-                "session_id": "psl-not-plan",
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_number_deviation_is_2(self, tmp_path: pathlib.Path):
-        """記載値が実測値から±2の場合は通過する（上限境界値）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-dev-2-pass"
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        # 228（実測値230から-2）で通過することを検証
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            f"## 調査結果\n\ntest-rule.md は 228 行。\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._all_prior_flags(tmp_path, sid, content=content)
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_when_number_deviation_is_3(self, tmp_path: pathlib.Path):
-        """記載値が実測値から±3の場合はブロックする（上限+1境界値）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-dev-3-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        # 227（実測値230から-3）でブロックすることを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 227 行。\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_passes_when_number_deviation_is_plus_2(self, tmp_path: pathlib.Path):
-        """記載値が実測値から+2の場合は通過する（上限境界値・正方向）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-dev-plus-2-pass"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        # 232（実測値230から+2）で通過することを検証
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            f"## 調査結果\n\ntest-rule.md は 232 行。\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_when_number_deviation_is_plus_3(self, tmp_path: pathlib.Path):
-        """記載値が実測値から+3の場合はブロックする（上限+1境界値・正方向）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-dev-plus-3-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        # 233（実測値230から+3）でブロックすることを検証
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\ntest-rule.md は 233 行。\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_agents_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`_plan_format.AGENT_DOC_TARGET_BASENAMES`照合によりAGENTS.mdが対象となる場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-agents-md-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "some/dir/AGENTS.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "AGENTS.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_claude_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`_plan_format.AGENT_DOC_TARGET_BASENAMES`照合によりCLAUDE.mdが対象となる場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-claude-md-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "some/dir/CLAUDE.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "CLAUDE.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_passes_when_path_backquote_missing(self, tmp_path: pathlib.Path):
-        """`## 変更内容`にバッククォートパスが存在しない場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-no-changes-section"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            "## 変更内容\n\nファイル参照なし。\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_target_file_does_not_exist(self, tmp_path: pathlib.Path):
-        """`## 変更内容`に対象パスが列挙されても実ファイルが存在しない場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-no-file"
-        self._all_prior_flags(tmp_path, sid)
-
-        # 実ファイルを作成しない
-        target_rel = "agent-toolkit/rules/nonexistent.md"
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_passes_when_lines_just_below_220(self, tmp_path: pathlib.Path):
-        """実ファイルが219行（閾値未満）の場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-219-lines"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=219)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nなし\n\n"
-            f"## 変更内容\n\n- `{target_rel}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_when_lines_exactly_220(self, tmp_path: pathlib.Path):
-        """実ファイルが220行（閾値ちょうど）の場合は照合対象となりブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-220-lines"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/rules/test-rule.md"
-        self._make_target_file(tmp_path, target_rel, lines=220)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_skill_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`agent-toolkit/skills/foo/SKILL.md`相当のパスが対象として認識される場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-skill-md-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/skills/foo/SKILL.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "SKILL.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_references_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`agent-toolkit/skills/foo/references/bar.md`相当のパスが対象として認識される場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-references-md-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/skills/foo/references/bar.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "bar.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_agents_definition_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`agent-toolkit/agents/foo.md`相当のパスが対象として認識される場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-agents-def-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/agents/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "foo.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_agent_references_md_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`agent-toolkit/references/plan-impl/foo.md`相当のパスが対象として認識される場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-agent-references-def-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = "agent-toolkit/references/plan-impl/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "foo.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_blocks_when_chezmoi_dot_claude_rules_wc_l_not_recorded(self, tmp_path: pathlib.Path):
-        """`.chezmoi-source/dot_claude/rules/foo.md`相当のパスが対象として認識される場合にブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-chezmoi-rules-block"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel = ".chezmoi-source/dot_claude/rules/foo.md"
-        self._make_target_file(tmp_path, target_rel, lines=230)
-
-        content = f"## 変更内容\n\n- `{target_rel}` を変更する\n\n## 調査結果\n\nなし\n"
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "foo.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_passes_when_all_files_have_wc_l_recorded(self, tmp_path: pathlib.Path):
-        """`## 変更内容`に複数ファイルが列挙されており全ファイルの行数が`## 調査結果`に記載済みの場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-multi-all-recorded"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel1 = "agent-toolkit/rules/test-rule1.md"
-        target_rel2 = "agent-toolkit/rules/test-rule2.md"
-        self._make_target_file(tmp_path, target_rel1, lines=230)
-        self._make_target_file(tmp_path, target_rel2, lines=230)
-
-        content = (
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\n"
-            "test-rule1.md は 230 行。\ntest-rule2.md は 230 行。\n\n"
-            "## 変更内容\n\n"
-            f"- `{target_rel1}` を変更する\n"
-            f"- `{target_rel2}` を変更する\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_when_first_file_recorded_but_second_missing(self, tmp_path: pathlib.Path):
-        """`## 変更内容`に複数ファイルが列挙され先頭ファイルは記載済みでも後続ファイルが未記載の場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "psl-multi-second-missing"
-        self._all_prior_flags(tmp_path, sid)
-
-        target_rel1 = "agent-toolkit/rules/test-rule1.md"
-        target_rel2 = "agent-toolkit/rules/test-rule2.md"
-        self._make_target_file(tmp_path, target_rel1, lines=230)
-        self._make_target_file(tmp_path, target_rel2, lines=230)
-
-        content = (
-            "## 変更内容\n\n"
-            f"- `{target_rel1}` を変更する\n"
-            f"- `{target_rel2}` を変更する\n\n"
-            "## 調査結果\n\n"
-            "test-rule1.md は 230 行。\n"
-        )
-        result = self._run_with_cwd(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            cwd=tmp_path,
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "test-rule2.md" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
 
 class TestResponseLanguageCheck:
@@ -1875,68 +1029,6 @@ class TestHookEntryPointsPep723Dependencies:
         )
 
 
-class TestAgentDocTargetPatternsSsot:
-    """agent-doc-validator の対象ファイル群列挙 SSOT 整合性検査。
-
-    pretooluse.py の _AGENT_DOC_TARGET_FILE_PATTERNS を SSOT とし、
-    agents/agent-doc-validator.md、および
-    skills/plan-mode/references/integrity-checks.md と
-    skills/plan-mode/references/process7-bypass-detection.md を結合した本文に
-    すべての対象パス文字列が現れることを保証する。
-    """
-
-    _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-    _AGENT_DOC_VALIDATOR_MD = _REPO_ROOT / "agent-toolkit" / "agents" / "agent-doc-validator.md"
-    _INTEGRITY_CHECKS_MD = _REPO_ROOT / "agent-toolkit" / "skills" / "plan-mode" / "references" / "integrity-checks.md"
-    _PROCESS7_BYPASS_MD = _REPO_ROOT / "agent-toolkit" / "skills" / "plan-mode" / "references" / "process7-bypass-detection.md"
-
-    @classmethod
-    def _expected_path_snippets(cls) -> list[str]:
-        """_AGENT_DOC_TARGET_FILE_PATTERNS からエスケープを解いてパス文字列を取得する。"""
-        # 実装SSOTを直接参照する
-        from pretooluse import _AGENT_DOC_TARGET_FILE_PATTERNS  # noqa: C0415  # pylint: disable=import-outside-toplevel
-
-        snippets: list[str] = []
-        for pat in _AGENT_DOC_TARGET_FILE_PATTERNS:
-            src = pat.pattern
-            # 正規表現エスケープ(\.)をリテラル(.)へ復元する
-            snippets.append(src.replace("\\.", "."))
-        return snippets
-
-    def _extract_h2_section(self, content: str, heading: str) -> str:
-        """指定H2見出し配下の本文を抽出する（次のH2または末尾まで）。"""
-        marker = f"## {heading}"
-        idx = content.find(marker)
-        assert idx != -1, f"見出し '{heading}' が見つからない"
-        after = content[idx + len(marker) :]
-        # 次のH2見出しを検索
-        next_h2 = after.find("\n## ")
-        return after if next_h2 == -1 else after[:next_h2]
-
-    def test_body_scope_section_contains_all_patterns(self):
-        """agent-doc-validator.md 本文「適用範囲」節が全パターンを含むこと。"""
-        content = self._AGENT_DOC_VALIDATOR_MD.read_text(encoding="utf-8")
-        section = self._extract_h2_section(content, "適用範囲")
-        for snippet in self._expected_path_snippets():
-            assert snippet in section, f"『適用範囲』節に {snippet!r} が欠落"
-
-    def test_integrity_checks_condition_section_contains_all_patterns(self):
-        """integrity-checks.md + process7-bypass-detection.md の条件付き起動記述部分が全パターンを含むこと。"""
-        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8") + self._PROCESS7_BYPASS_MD.read_text(encoding="utf-8")
-        # `agent-doc-validator` を含む節を検索し、その前後の当該記述行を確認
-        assert "agent-doc-validator" in content
-        for snippet in self._expected_path_snippets():
-            assert snippet in content, f"integrity-checks.md + process7-bypass-detection.md に {snippet!r} が欠落"
-
-    def test_integrity_checks_bypass_section_contains_all_patterns(self):
-        """integrity-checks.md + process7-bypass-detection.md の工程7バイパスファイル群記述が全パターンを含むこと。"""
-        content = self._INTEGRITY_CHECKS_MD.read_text(encoding="utf-8") + self._PROCESS7_BYPASS_MD.read_text(encoding="utf-8")
-        # 上のテストで全content確認済みだが、ファイル群の記述部分の存在自体を検証
-        assert "工程7" in content or "バイパス" in content or "該当ファイル群" in content
-        for snippet in self._expected_path_snippets():
-            assert snippet in content, f"integrity-checks.md + process7-bypass-detection.md に {snippet!r} が欠落"
-
-
 class TestBashGitCommitWarning:
     """git commit未検証警告。
 
@@ -2016,6 +1108,17 @@ class TestBashGitCommitWarning:
 
     def test_non_commit_command_unaffected(self, state_dir: dict[str, str]):
         result = self._invoke("git status", "x", state_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_grep_search_pattern_does_not_trigger(self, state_dir: dict[str, str]):
+        """`grep`の検索パターン文字列に`git commit`が含まれても実際のコミットではないため無反応。"""
+        result = self._invoke("grep -n 'git commit' agent-toolkit/scripts/pretooluse.py", "grep-pattern", state_dir)
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_grep_search_pattern_double_quoted_does_not_trigger(self, state_dir: dict[str, str]):
+        result = self._invoke('grep -rn "git commit" .', "grep-pattern-dq", state_dir)
         assert result.returncode == 0
         assert result.stdout == ""
 
@@ -3446,6 +2549,35 @@ _ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS = [
 ]
 
 
+class TestBashAtkTbAddScopeEscalation:
+    """`Bash`経由の`atk tb add`コマンド文字列への縮退フレーズ混入検出（block）。
+
+    旧`scripts/claude_hook_pretooluse_bash_test.py`が対象としていたが、当該検査は
+    `agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）へ統合済みのため、
+    テストも本ファイルへ移設する。
+    """
+
+    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
+    def test_blocks(self, text: str, category: str):
+        command = f"atk tb add glatasks {text}"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert category in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+
+    def test_unrelated_command_allowed(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk fb list --type=tbd"}})
+        assert result.returncode == 0
+
+    def test_non_atk_command_allowed(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo tbd-add"}})
+        assert result.returncode == 0
+
+    def test_tbd_add_without_scope_escalation_allowed(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk tb add glatasks 確認事項です"}})
+        assert result.returncode == 0
+
+
 class TestAskUserQuestionScopeEscalationCheck:
     """AskUserQuestion向け縮退誘発フレーズ検出ブロック。
 
@@ -3514,7 +2646,7 @@ class TestAskUserQuestionScopeEscalationCheck:
         assert result.returncode == 0
         assert "scope-escalation phrase" not in result.stderr
 
-    @pytest.mark.parametrize("category", ["next-cycle-defer", "process-omission"])
+    @pytest.mark.parametrize("category", ["async-wait", "process-omission"])
     def test_option_label_other_categories_still_blocked(self, category: str):
         """選択肢labelではpattern-conformance以外のカテゴリを引き続きブロックする。"""
         text = next(text for text, fixture_category in _SCOPE_ESCALATION_INPUTS if fixture_category == category)
@@ -3618,7 +2750,7 @@ class TestAskUserQuestionScopeEscalationCheck:
                         {
                             "question": "approach?",
                             "options": [
-                                {"label": "本セッションで完遂困難", "description": "do all at once"},
+                                {"label": "優先順位について相談してから着手する", "description": "ask first"},
                                 {"label": "ok", "description": "ok"},
                             ],
                         }
@@ -3688,10 +2820,13 @@ class TestAskUserQuestionScopeEscalationCheck:
 
 
 class TestScopeEscalationInDocEditCheck:
-    """対象ドキュメント編集時のscope-escalationフレーズ転記検出ブロック。
+    """対象ドキュメント編集時のscope-escalationフレーズ転記検出警告（block降格済み）。
 
     対象は`agent-toolkit/rules/`配下と`agent-toolkit/skills/**/SKILL.md`（`references/`配下を除く）。
-    フレーズ本文は隔離フィクスチャから動的に読み込む。
+    フレーズ本文は隔離フィクスチャから動的に読み込む。テストメソッド名の`blocks` /
+    `detects_phrase`は検出時の警告出力を指し、いずれも`returncode`は0を維持する
+    （完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
+    ブロックへ集約する）。
     """
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
@@ -3705,7 +2840,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "scope-escalation" in result.stderr
         assert category in result.stderr
         # 検出契機の特定のため、hookブロックメッセージへマッチ文言を含める
@@ -3725,7 +2860,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
         assert "matched:" in result.stderr
 
@@ -3744,7 +2879,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
         assert "matched:" in result.stderr
 
@@ -3760,7 +2895,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
 
     def test_old_string_not_inspected_on_target(self, tmp_path: pathlib.Path):
         """対象ファイルでも`old_string`内のフレーズは検出しない（既存違反の修正を妨げない）。
@@ -3806,7 +2941,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
         assert "matched:" in result.stderr
 
@@ -3832,7 +2967,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
         assert "matched:" in result.stderr
 
@@ -3887,7 +3022,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
 
     def test_plan_file_target_blocks(self, tmp_path: pathlib.Path):
         """計画ファイル（`~/.claude/plans/*.md`）もscope-escalation転記検出の対象に含まれる。"""
@@ -3903,7 +3038,6 @@ class TestScopeEscalationInDocEditCheck:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
         result = _run(
@@ -3915,7 +3049,7 @@ class TestScopeEscalationInDocEditCheck:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "scope-escalation" in result.stderr
         assert category in result.stderr
 
@@ -3931,13 +3065,13 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "review-checklists.md" in result.stderr
         assert "採用時の反映内容の縮小禁止" in result.stderr
 
     def test_other_category_references_01_agent_md(self):
         """`mitigation-in-adoption`以外のカテゴリは01-agent.mdの節を参照する。"""
-        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "workload")
+        text = next(t for t, c in _SCOPE_ESCALATION_INPUTS if c == "process-omission")
         result = _run(
             {
                 "tool_name": "Write",
@@ -3947,10 +3081,10 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "agent-toolkit/rules/01-agent.md" in result.stderr
         assert "01-01-agent.md" not in result.stderr
-        assert "完遂原則" in result.stderr
+        assert "完遂と先送り" in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_edit_preserves_existing_phrase_in_unchanged_region(
@@ -4025,7 +3159,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
@@ -4054,7 +3188,7 @@ class TestScopeEscalationInDocEditCheck:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
 
 
@@ -4082,7 +3216,6 @@ class TestScopeEscalationPlanFileFenceExclusion:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
         result = _run(
@@ -4159,7 +3292,7 @@ class TestScopeEscalationPlanFileFenceExclusion:
         assert result.returncode == 0
 
     def test_priority_consult_in_norm_doc_still_detected(self):
-        """計画ファイル以外（規範文書本体）はフェンス内でも従来どおり検出する。"""
+        """計画ファイル以外（規範文書本体）はフェンス内でも従来どおり検出する（警告、block降格済み）。"""
         text, category = _SCOPE_ESCALATION_INPUTS[0]
         result = _run(
             {
@@ -4170,7 +3303,7 @@ class TestScopeEscalationPlanFileFenceExclusion:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
 
 
@@ -4199,7 +3332,7 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
         assert result.returncode == 0
 
     def test_outside_bracket_priority_consult_blocked(self, tmp_path: pathlib.Path):
-        """全角鍵括弧の外側のpriority-consult語彙は増分検出でブロックする。"""
+        """全角鍵括弧の外側のpriority-consult語彙は増分検出で警告する（block降格済み）。"""
         old = "既存記述のみ。"
         new = "既存記述のみ。優先順位について相談してから着手する。"
         target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
@@ -4213,11 +3346,11 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "priority-consult" in result.stderr
 
     def test_bracket_and_outside_mixed_blocked_by_outside(self, tmp_path: pathlib.Path):
-        """内側と外側の両方にある場合、外側の増分でブロックする。"""
+        """内側と外側の両方にある場合、外側の増分で警告する（block降格済み）。"""
         old = "既存記述のみ。"
         new = "既存記述のみ。計画ファイル本文の「スコープ相談節」を参照しつつ、優先順位について相談してから着手する。"
         target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", f"{old}\n")
@@ -4231,7 +3364,7 @@ class TestMatchScopeEscalationIncreaseBracketExclusion:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "priority-consult" in result.stderr
 
 
@@ -4316,182 +3449,6 @@ class TestFabricatedMetricsScopeEscalation:
         assert "fabricated-metrics" not in result.stderr
 
 
-class TestWorkaroundMemoGate:
-    """plan fileのWrite時、ワークアラウンド語検出に伴う事前検討メモの未整備ブロック。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-    # メモパスは計画ファイル自身のstemから導出するため、`_make_plan`が生成する
-    # 既定のplan file名（`test.md`）のstemに合わせる。
-    # フィードバック起因かどうかを問わず全ての計画ファイルへ一律適用できるため、
-    # 複数inbox問題（複数の採否確定ファイルが1計画ファイルに列挙されるケース）を検証するテストは不要になった。
-    _PLAN_STEM = "test"
-
-    @classmethod
-    def _prior_flags(cls, tmp_path: pathlib.Path, sid: str) -> None:
-        _write_session_state(
-            tmp_path,
-            sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-            },
-        )
-
-    @classmethod
-    def _changes_body_with_workaround(cls) -> str:
-        return "### 対象ファイル一覧\n\n- 失敗時対処として代替経路を追加する\n"
-
-    @staticmethod
-    def _content(changes_body: str) -> str:
-        return (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            f"## 変更内容\n\n{changes_body}\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-
-    def test_no_workaround_terms_passes(self, tmp_path: pathlib.Path):
-        """ワークアラウンド語を含まない場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-clean"
-        self._prior_flags(tmp_path, sid)
-        content = self._content("### 対象ファイル一覧\n\nx\n")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_missing_memo_blocks(self, tmp_path: pathlib.Path):
-        """ワークアラウンド語検出時にメモファイルが不在の場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-missing"
-        self._prior_flags(tmp_path, sid)
-        content = self._content(self._changes_body_with_workaround())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    @classmethod
-    def _memo_path(cls, home: pathlib.Path) -> pathlib.Path:
-        return home / ".claude" / "plans" / f"{cls._PLAN_STEM}-workaround-check.md"
-
-    def test_incomplete_memo_blocks(self, tmp_path: pathlib.Path):
-        """メモファイルは存在するが必須項目の記入漏れがある場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-incomplete"
-        self._prior_flags(tmp_path, sid)
-        self._memo_path(home).write_text("根本原因の候補: 未整理\n", encoding="utf-8")
-        content = self._content(self._changes_body_with_workaround())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_complete_memo_passes(self, tmp_path: pathlib.Path):
-        """メモファイルに必須3項目が記入済みの場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-complete"
-        self._prior_flags(tmp_path, sid)
-        self._memo_path(home).write_text(
-            "根本原因の候補: A\n根本対応が成立するか: 否\n成立しない場合の理由: 外部制約\n",
-            encoding="utf-8",
-        )
-        content = self._content(self._changes_body_with_workaround())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_empty_body_items_block(self, tmp_path: pathlib.Path):
-        """必須項目名は全て存在するが本文が空欄の場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-empty"
-        self._prior_flags(tmp_path, sid)
-        self._memo_path(home).write_text(
-            "根本原因の候補:\n根本対応が成立するか:\n成立しない場合の理由:\n",
-            encoding="utf-8",
-        )
-        content = self._content(self._changes_body_with_workaround())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
-
-    def test_body_on_next_line_passes(self, tmp_path: pathlib.Path):
-        """項目名の次行に本文がある場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "workaround-next-line"
-        self._prior_flags(tmp_path, sid)
-        self._memo_path(home).write_text(
-            "根本原因の候補\n候補A\n根本対応が成立するか\n否\n成立しない場合の理由\n外部制約\n",
-            encoding="utf-8",
-        )
-        content = self._content(self._changes_body_with_workaround())
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-
 _PROCESS7_FLAGS = ("codex_review_invoked",)
 
 
@@ -4527,7 +3484,7 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 2
         assert missing_flag in result.stderr
-        assert "integrity-checks.md" in result.stderr
+        assert "plan-file-creator.md" in result.stderr
 
     def test_missing_plan_reviewer_flag_does_not_block(self, tmp_path: pathlib.Path):
         """`plan_reviewer_invoked`は本ゲートの必須対象外のため、codex_review_invokedのみでも通過する。"""
@@ -4724,74 +3681,6 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 2
 
-    def test_agent_doc_validator_required_when_target_file_listed(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧にコーディングエージェント向け文書が含まれる場合、agent_doc_validator_invokedも必須化する。"""
-        plan_path = tmp_path / "plan.md"
-        plan_path.write_text(
-            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `agent-toolkit/agents/agent-doc-validator.md`\n",
-            encoding="utf-8",
-        )
-        sid = "process7-agent-doc-validator-required"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "agent_doc_validator_invoked" in result.stderr
-
-    def test_agent_doc_validator_not_required_when_target_file_absent(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧にコーディングエージェント向け文書が含まれない場合、agent_doc_validator_invokedを必須化しない。"""
-        plan_path = tmp_path / "plan.md"
-        plan_path.write_text(
-            "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `pytools/example.py`\n",
-            encoding="utf-8",
-        )
-        sid = "process7-agent-doc-validator-not-required"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    def test_agent_doc_validator_required_via_fallback_when_target_list_section_missing(self, tmp_path: pathlib.Path):
-        """`### 対象ファイル一覧`節が無い場合は計画ファイル全文を走査対象とし、フォールバック判定で必須化する。"""
-        plan_path = tmp_path / "plan.md"
-        plan_path.write_text(
-            "## 変更内容\n\n`agent-toolkit/rules/01-agent.md`の該当節へ改訂内容を追記する。\n",
-            encoding="utf-8",
-        )
-        sid = "process7-agent-doc-validator-fallback"
-        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert "agent_doc_validator_invoked" in result.stderr
-
-    def test_agent_doc_validator_not_required_when_plan_file_path_missing(self, tmp_path: pathlib.Path):
-        """`current_plan_file_path`が存在しないファイルを指す場合は要否判定不能として必須化しない（安全側フォールバック）。"""
-        sid = "process7-agent-doc-validator-missing-plan-file"
-        state = {
-            "plan_mode_skill_invoked": True,
-            "current_plan_file_path": str(tmp_path / "does-not-exist.md"),
-        }
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
-
 
 class TestPlanCodexDelegateInvokedPreToolUse:
     """FB[2]案(a): `plan-codex-delegate`起動検知をPreToolUse側で即時記録する。"""
@@ -4835,13 +3724,12 @@ class TestPlanModeFlagReset:
     """`agent-toolkit:plan-mode`スキル起動時のplan-file-creatorの整合性チェック完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時にplan-file-creatorの整合性チェック完了フラグ・`agent_doc_validator_invoked`が偽へリセットされ、
+        """新計画着手時にplan-file-creatorの整合性チェック完了フラグが偽へリセットされ、
         `current_plan_file_path`が消去される。
         """
         sid = "process7-reset"
         state = {
             "plan_mode_skill_invoked": True,
-            "agent_doc_validator_invoked": True,
             "current_plan_file_path": "/tmp/previous-plan.md",
         }
         state.update({flag: True for flag in _PROCESS7_FLAGS})
@@ -4859,7 +3747,6 @@ class TestPlanModeFlagReset:
         updated = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
         for flag in _PROCESS7_FLAGS:
             assert updated[flag] is False
-        assert updated["agent_doc_validator_invoked"] is False
         assert "current_plan_file_path" not in updated
 
     def test_resets_new_codex_fields_on_plan_mode_skill_invocation(self, tmp_path: pathlib.Path):
@@ -4910,7 +3797,6 @@ class TestCheckPlanFileH2SectionOrder:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
 
@@ -5004,10 +3890,13 @@ class TestCheckPlanFileH2SectionOrder:
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_allows_non_write_tool(self, tmp_path: pathlib.Path):
-        """Edit/MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。"""
+        """Edit/MultiEditで正規H2順の既存内容を保つ編集はH2節順違反を発生させない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
         env = self._state_env(tmp_path, home)
+        sid = "h2order-edit"
+        self._prior_flags(tmp_path, sid, _VALID_H2_PLAN_CONTENT)
         result = _run(
             {
                 "tool_name": "Edit",
@@ -5016,19 +3905,21 @@ class TestCheckPlanFileH2SectionOrder:
                     "old_string": "x",
                     "new_string": "y",
                 },
-                "session_id": "h2order-edit",
+                "session_id": sid,
                 "permission_mode": "default",
             },
             env_overrides=env,
         )
-        # 別checkでブロックされ得るが、本テストの関心はH2節順違反メッセージが出ないこと
         assert "H2 section order" not in result.stderr
 
     def test_allows_multi_edit_tool(self, tmp_path: pathlib.Path):
-        """MultiEditはH2節順検査の判定に入るがcontentフィールドがないため通過する。"""
+        """MultiEditで正規H2順の既存内容を保つ編集はH2節順違反を発生させない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
+        plan.write_text(_VALID_H2_PLAN_CONTENT, encoding="utf-8")
         env = self._state_env(tmp_path, home)
+        sid = "h2order-multiedit"
+        self._prior_flags(tmp_path, sid, _VALID_H2_PLAN_CONTENT)
         result = _run(
             {
                 "tool_name": "MultiEdit",
@@ -5036,12 +3927,11 @@ class TestCheckPlanFileH2SectionOrder:
                     "file_path": str(plan),
                     "edits": [{"old_string": "x", "new_string": "y"}],
                 },
-                "session_id": "h2order-multiedit",
+                "session_id": sid,
                 "permission_mode": "default",
             },
             env_overrides=env,
         )
-        # 別checkでブロックされ得るが、本テストの関心はH2節順違反メッセージが出ないこと
         assert "H2 section order" not in result.stderr
 
     def test_allows_non_plan_file(self, tmp_path: pathlib.Path):
@@ -5072,7 +3962,6 @@ def _absnum_prior_flags(state_dir: pathlib.Path, sid: str) -> None:
         {
             "plan_mode_skill_invoked": True,
             "textlint_violations_read": True,
-            "plan_file_guidelines_read": True,
         },
     )
 
@@ -5091,330 +3980,6 @@ _ABSNUM_BASE_PLAN = (
     "## 進捗ログ\n\nx\n\n"
     "## 計画ファイル（本ファイル）のパス\n\nx\n"
 )
-
-
-class TestCheckPlanFileAbsoluteLineNumbers:
-    """plan file Write/Edit/MultiEdit時の絶対行番号トークン直書きブロック検査。
-
-    posttooluseから移管された既存挙動の完全互換を維持する:
-    - 検出パターン: L\\d+ / N行目 / N-N行 / NからN行
-    - 許容: `## 調査結果`配下かつ`<!-- line-ref-ok -->`マーカー付与行のみ
-    - 除外領域: コードフェンス内 / 複数行HTMLコメント内 / フロントマター内
-    - 単一行HTMLコメント内は検出対象（既存仕様継承）
-    - 上限5件・「; and N more」省略表記
-    """
-
-    _state_env = staticmethod(_absnum_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-    _prior_flags = staticmethod(_absnum_prior_flags)
-
-    _LINE_TOKEN = "現行" + "L" + "66"
-    _LINE_RANGE_HYPHEN = "148" + "-" + "151行"
-    _LINE_RANGE_KARA = "148から151行"
-    _LINE_NTH = "100行目"
-    _ALPHA_PREFIX_TOKEN = "Graph" + "QL2"
-    _COUNT_EXPR = "3件・5項目"
-
-    @pytest.mark.parametrize(
-        ("session_id", "token", "expected_match"),
-        [
-            ("absnum-token", _LINE_TOKEN, "L" + "66"),
-            ("absnum-range", _LINE_RANGE_HYPHEN, "148" + "-" + "151行"),
-            ("absnum-kara", _LINE_RANGE_KARA, "148から151行"),
-            ("absnum-nth", _LINE_NTH, "100行目"),
-        ],
-    )
-    def test_write_with_absolute_line_number_blocks(
-        self, tmp_path: pathlib.Path, session_id: str, token: str, expected_match: str
-    ):
-        """`## 変更内容`配下の各種行番号トークンがWriteでブロックされる。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        self._prior_flags(tmp_path, session_id)
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {token}")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": session_id,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-        assert repr(expected_match) in result.stderr
-
-    def test_write_in_research_section_with_marker_is_allowed(self, tmp_path: pathlib.Path):
-        """`## 調査結果`配下でマーカー付き行の行番号トークンはブロックされない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-research-marker"
-        self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.replace(
-            "## 調査結果\n\nx\n", f"## 調査結果\n\n- {self._LINE_TOKEN} <!-- line-ref-ok -->\n"
-        ).format(body="x")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_write_in_research_section_without_marker_blocks(self, tmp_path: pathlib.Path):
-        """`## 調査結果`配下でもマーカー無しの行番号トークンはブロックされる。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-research-nomarker"
-        self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.replace("## 調査結果\n\nx\n", f"## 調査結果\n\n- {self._LINE_TOKEN}\n").format(body="x")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-
-    def test_write_outside_research_section_with_marker_blocks(self, tmp_path: pathlib.Path):
-        """`## 調査結果`外の節ではマーカー付与でも行番号トークンはブロックされる。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-outside-marker"
-        self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._LINE_TOKEN} <!-- line-ref-ok -->")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-
-    def test_write_inside_code_fence_is_allowed(self, tmp_path: pathlib.Path):
-        """コードフェンス内の行番号トークンはブロックされない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-fence"
-        self._prior_flags(tmp_path, sid)
-        body = f"```text\n{self._LINE_TOKEN}\n```"
-        content = _ABSNUM_BASE_PLAN.format(body=body)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_write_inside_multiline_html_comment_is_allowed(self, tmp_path: pathlib.Path):
-        """複数行HTMLコメント内の行番号トークンはブロックされない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-multicomment"
-        self._prior_flags(tmp_path, sid)
-        body = f"<!--\n{self._LINE_TOKEN}\n-->"
-        content = _ABSNUM_BASE_PLAN.format(body=body)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_write_inside_single_line_html_comment_is_blocked(self, tmp_path: pathlib.Path):
-        """単一行HTMLコメント内の行番号トークンはブロックされる（既存挙動継承）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-singlecomment"
-        self._prior_flags(tmp_path, sid)
-        body = f"<!-- {self._LINE_TOKEN} -->"
-        content = _ABSNUM_BASE_PLAN.format(body=body)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-
-    def test_alpha_prefix_is_not_false_positive(self, tmp_path: pathlib.Path):
-        """英字接頭のトークン（`GraphQL2`等）はブロックされない（負の後読み）。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-alpha"
-        self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._ALPHA_PREFIX_TOKEN}")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_count_expression_is_not_false_positive(self, tmp_path: pathlib.Path):
-        """件数表現はパターン対象外でブロックされない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-count"
-        self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._COUNT_EXPR}")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_frontmatter_token_does_not_affect_body_check(self, tmp_path: pathlib.Path):
-        """フロントマター内の行番号トークンは本文の検出に影響しない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-frontmatter"
-        self._prior_flags(tmp_path, sid)
-        prefix = f"---\nfm: {self._LINE_TOKEN}\n---\n\n"
-        content = prefix + _ABSNUM_BASE_PLAN.format(body="x")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_truncates_at_five_matches(self, tmp_path: pathlib.Path):
-        """6件以上の行番号トークンを含む場合、最大5件まで列挙され`and N more`表記が付く。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-truncate"
-        self._prior_flags(tmp_path, sid)
-        tokens = "\n".join(f"- {self._LINE_TOKEN}" for _ in range(6))
-        content = _ABSNUM_BASE_PLAN.format(body=tokens)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stderr.count("line ") == 5
-        assert "and 1 more." in result.stderr
-
-    def test_edit_introduces_violation_blocks(self, tmp_path: pathlib.Path):
-        """Edit適用後のcontentに違反が混入する場合はブロックされる。"""
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True, exist_ok=True)
-        plan = plans_dir / "test.md"
-        plan.write_text(_ABSNUM_BASE_PLAN.format(body="placeholder-content"), encoding="utf-8")
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-edit"
-        self._prior_flags(tmp_path, sid)
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "old_string": "placeholder-content",
-                    "new_string": f"changed-{self._LINE_TOKEN}",
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-
-    def test_multiedit_introduces_violation_blocks(self, tmp_path: pathlib.Path):
-        """MultiEdit適用後のcontentに違反が混入する場合はブロックされる。"""
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True, exist_ok=True)
-        plan = plans_dir / "test.md"
-        plan.write_text(_ABSNUM_BASE_PLAN.format(body="placeholder-content"), encoding="utf-8")
-        env = self._state_env(tmp_path, home)
-        sid = "absnum-multiedit"
-        self._prior_flags(tmp_path, sid)
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(plan),
-                    "edits": [
-                        {"old_string": "placeholder-content", "new_string": f"changed-{self._LINE_TOKEN}"},
-                    ],
-                },
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "absolute line-number references" in result.stderr
-
-    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスへの書き込みは検査対象外。"""
-        env = self._state_env(tmp_path, tmp_path / "home")
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {self._LINE_TOKEN}")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
-                "session_id": "absnum-nonplan",
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
 
 
 def _h3corr_build_content(extra_h3: str) -> str:
@@ -5437,7 +4002,7 @@ def _h3corr_build_content(extra_h3: str) -> str:
 
 
 class TestCheckPlanFileNoDeferralExpression:
-    """plan file Write/Edit/MultiEdit時の先送り含意動詞連結ブロック検査。
+    """plan file Write/Edit/MultiEdit時の先送り含意動詞連結警告検査（block降格済み）。
 
     走査対象は`## 変更内容`配下および任意H2下の`### エージェント判断`配下。
     検出条件は次の2条件AND成立時。
@@ -5462,7 +4027,7 @@ class TestCheckPlanFileNoDeferralExpression:
         ],
     )
     def test_write_with_deferral_phrase_blocks(self, tmp_path: pathlib.Path, phrase: str):
-        """`## 変更内容`配下の先送り含意動詞連結パターンがWriteでブロックされる。"""
+        """`## 変更内容`配下の先送り含意動詞連結パターンがWriteで警告される。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -5478,9 +4043,9 @@ class TestCheckPlanFileNoDeferralExpression:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "deferral expressions were detected" in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse][block]" in result.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse][warn]" in result.stderr
 
     def test_write_with_deferral_phrase_in_text_block_is_allowed(self, tmp_path: pathlib.Path):
         """`text`コードブロック内の先送り含意動詞連結パターンはブロックされない。"""
@@ -5586,23 +4151,24 @@ class TestCheckPlanFileNoDeferralExpression:
         assert "deferral expressions were detected" not in result.stderr
 
 
-class TestPlanFileBlockingChecksIntegratedReport:
-    """plan file Write検査のblock系check3関数統合報告検査（fb5）。
+class TestPlanFileWarningChecksCoexist:
+    """plan file Write検査のrequired-reads・no-deferral警告共存検査（block降格後のfb5後継）。
 
-    複数のblocking check違反が同時発生した場合、単一の`return 2`で全違反メッセージがstderrへ列挙される。
-    既存の呼び出し順序（required-reads→retroactive-scan→no-deferral）を保持する。
+    required-reads・no-deferralは共にwarnへ降格済みのため、単一の`return 2`集約ではなく
+    各違反メッセージが個別にstderrへ出力され、`returncode`は常に0を維持する
+    （呼び出し順序＝required-reads→retroactive-scan→no-deferralは維持する）。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
     def test_required_reads_and_no_deferral_report_together(self, tmp_path: pathlib.Path):
-        """required-readsとno-deferralが同時発生した場合、両違反メッセージが1回の`return 2`でstderrへ列挙される。"""
+        """required-readsとno-deferralが同時発生した場合、両違反メッセージがstderrへ列挙される。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "integrated-req-and-deferral"
-        # 意図的にrequired-readsフラグ・plan-file-guidelinesフラグを設定せず、両違反が同時発生する条件を用意する。
+        # 意図的にrequired-readsフラグを設定せず、両違反が同時発生する条件を用意する。
         _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
         content = _ABSNUM_BASE_PLAN.format(body="- 実装時に精査して確定する")
         result = _run(
@@ -5614,14 +4180,14 @@ class TestPlanFileBlockingChecksIntegratedReport:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         # required-reads違反メッセージが含まれる
-        assert "attempting to edit a plan file without reading required references" in result.stderr
+        assert "editing a plan file without reading required references" in result.stderr
         assert "textlint-violations.md" in result.stderr
         # no-deferral違反メッセージが含まれる
         assert "deferral expressions were detected" in result.stderr
-        # 両メッセージともにblockタグが付与されている
-        assert result.stderr.count("[auto-generated: agent-toolkit/pretooluse][block]") >= 2
+        # 両メッセージともにwarnタグが付与されている
+        assert result.stderr.count("[auto-generated: agent-toolkit/pretooluse][warn]") >= 2
 
     def test_only_required_reads_reports_alone(self, tmp_path: pathlib.Path):
         """required-readsのみ違反する場合、no-deferralメッセージは含まれない。"""
@@ -5640,8 +4206,8 @@ class TestPlanFileBlockingChecksIntegratedReport:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
-        assert "attempting to edit a plan file without reading required references" in result.stderr
+        assert result.returncode == 0
+        assert "editing a plan file without reading required references" in result.stderr
         assert "deferral expressions were detected" not in result.stderr
 
     def test_only_no_deferral_reports_alone(self, tmp_path: pathlib.Path):
@@ -5662,149 +4228,9 @@ class TestPlanFileBlockingChecksIntegratedReport:
             },
             env_overrides=env,
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert "deferral expressions were detected" in result.stderr
-        assert "attempting to edit a plan file without reading required references" not in result.stderr
-
-
-class TestPlanFileTargetFilesH3Correspondence:
-    """plan file Write/Edit/MultiEdit時の対象ファイル一覧とH3見出し1対1対応検査（FB8）。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
-        _write_session_state(
-            tmp_path,
-            session_id,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-            },
-        )
-
-    def test_allows_full_correspondence(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧の各パスに対応するH3見出しが揃っている場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3corr-valid"
-        # H3配下にはtext/diffコードブロックを含める（`_check_plan_file_change_h3_has_code_block`検査通過のため）。
-        content = _h3corr_build_content("### foo/bar.py\n\n```text\nx\n```\n\n### foo/baz.py\n\n```text\nx\n```\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_missing_h3(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧に対応するH3見出しが不足する場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3corr-missing"
-        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "target files without a corresponding H3 heading" in result.stderr
-
-    def test_blocks_extra_h3(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧に無い余分なH3見出しがある場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3corr-extra"
-        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n### foo/baz.py\n\nx\n\n### foo/extra.py\n\nx\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "H3 headings not listed in the target file list" in result.stderr
-
-    def test_allows_no_target_files(self, tmp_path: pathlib.Path):
-        """対象ファイル一覧が空の場合は検査対象外で通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3corr-empty"
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\n### 対象ファイル一覧\n\nなし\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスへの書き込みは検査対象外。"""
-        content = _h3corr_build_content("### foo/bar.py\n\nx\n\n")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
-                "session_id": "h3corr-nonplan",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-
-    def test_allows_replacement_pattern_h3(self, tmp_path: pathlib.Path):
-        """「置換パターン: 」で始まるH3は対象ファイル一覧との1対1対応判定から除外される。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3corr-replacement"
-        content = _h3corr_build_content("### 置換パターン: old-name → atk fb（対象: foo/bar.py foo/baz.py）\n\nx\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
+        assert "editing a plan file without reading required references" not in result.stderr
 
 
 def _history_sync_build_content(*, history_line: str) -> str:
@@ -5823,142 +4249,6 @@ def _history_sync_build_content(*, history_line: str) -> str:
         "## 進捗ログ\n\nx\n\n"
         "## 計画ファイル（本ファイル）のパス\n\nx\n"
     )
-
-
-class TestPlanFileHistoryContentSync:
-    """plan file Write/Edit/MultiEdit時の変更履歴と変更内容の対応照合検査（FB5）。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
-        _write_session_state(
-            tmp_path,
-            session_id,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-            },
-        )
-
-    def test_history_content_sync_matches(self, tmp_path: pathlib.Path):
-        """変更履歴の対象ファイル・節名アンカーが変更内容側と一致する場合はブロックしない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "histsync-match"
-        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/bar.py`を修正。")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0, result.stderr
-
-    def test_history_content_sync_detects_missing_correspondence(self, tmp_path: pathlib.Path):
-        """変更履歴の対象ファイル・節名アンカーが変更内容側に無い場合はブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "histsync-missing"
-        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "foo/missing.py" in result.stderr
-
-    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスへの書き込みは検査対象外。"""
-        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
-                "session_id": "histsync-nonplan",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-
-    def test_history_content_sync_ignores_non_correspondence_path_mention(self, tmp_path: pathlib.Path):
-        """対応関係を意図しない参考言及のパス記載は誤検出しない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "histsync-mention"
-        content = _history_sync_build_content(history_line="- 初版。例として`foo/example.py`を参照した。")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0, result.stderr
-
-    def test_history_content_sync_ignores_rejected_entry(self, tmp_path: pathlib.Path):
-        """却下項目に含まれるパスは`## 変更内容`側に対応記述が無くてもブロックしない。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "histsync-rejected"
-        content = _history_sync_build_content(
-            history_line="- 却下: 指摘の対象は`foo/rejected.py`。既存機構でカバー済みのため却下。",
-        )
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0, result.stderr
-
-    @pytest.mark.parametrize("tool_name", ["Edit", "MultiEdit"])
-    def test_history_content_sync_checks_edit_and_multiedit(self, tmp_path: pathlib.Path, tool_name: str):
-        """Edit・MultiEditの適用後contentも検査対象とする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = f"histsync-{tool_name.lower()}"
-        content = _history_sync_build_content(history_line="- 指摘反映（1回目）。`foo/missing.py`を修正。")
-        self._prior_flags(tmp_path, sid, content)
-        if tool_name == "Edit":
-            tool_input = {"file_path": str(plan), "old_string": "# t\n", "new_string": content}
-        else:
-            tool_input = {"file_path": str(plan), "edits": [{"old_string": "# t\n", "new_string": content}]}
-        result = _run(
-            {
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "foo/missing.py" in result.stderr
 
 
 class TestPlanFileRetroactiveScanRecorded:
@@ -5997,7 +4287,8 @@ class TestPlanFileRetroactiveScanRecorded:
             env_overrides=env,
         )
         assert result.returncode == 2
-        assert "遡及スキャン" in result.stderr
+        assert "new meta-norm pattern" in result.stderr
+        assert "`## 調査結果` section" in result.stderr
 
     def test_allows_when_scan_record_present(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -6095,7 +4386,6 @@ class TestPlanFilePathSectionMatchesFilePath:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
 
@@ -6292,7 +4582,6 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         state: dict = {
             "plan_mode_skill_invoked": True,
             "textlint_violations_read": True,
-            "plan_file_guidelines_read": True,
         }
         if extra:
             state.update(extra)
@@ -6553,200 +4842,6 @@ def _h3_codeblock_build_content(extra_h3: str) -> str:
     )
 
 
-class TestPlanFileChangeH3HasCodeBlock:
-    """plan file Write/Edit/MultiEdit時の`## 変更内容`配下H3のtext/diffコードブロック存在検査。"""
-
-    _state_env = staticmethod(_plan_file_state_env)
-    _make_plan = staticmethod(_make_plan_file)
-
-    @staticmethod
-    def _prior_flags(tmp_path: pathlib.Path, session_id: str, _content: str) -> None:
-        _write_session_state(
-            tmp_path,
-            session_id,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
-            },
-        )
-
-    def test_non_target_tool_is_skipped(self):
-        """対象外ツール名（Bash）は検査対象外。"""
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "echo hello"},
-                "session_id": "h3cb-bash",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-
-    def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスは検査対象外。"""
-        content = _h3_codeblock_build_content("### foo/bar.py\n\nテキストのみ\n\n")
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": content},
-                "session_id": "h3cb-nonplan",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-
-    def test_allows_when_text_code_block_present(self, tmp_path: pathlib.Path):
-        """text/diffコードブロックが揃っている場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3cb-ok"
-        content = _h3_codeblock_build_content("### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_blocks_when_code_block_missing(self, tmp_path: pathlib.Path):
-        """コードブロック欠落H3を検出してブロックする。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3cb-missing"
-        content = _h3_codeblock_build_content("### foo/bar.py\n\n概念記述のみ\n\n")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "missing a text/diff code block" in result.stderr
-
-    def test_exception_prefixes_are_skipped(self, tmp_path: pathlib.Path):
-        """例外プレフィックス（`置換パターン:`・`fix-`）および`対象ファイル一覧`は検査対象外として通過する。
-
-        対象ファイル一覧を空にしてh3-correspondence検査をバイパスしたうえで、
-        `text`/`diff`コードブロックを持たない例外プレフィックスH3のみを配置し、
-        本検査が例外プレフィックスを検査対象から除外することを確認する。
-        """
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3cb-exception"
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\nなし\n\n"
-            "### 置換パターン: foo → bar（対象: foo/bar.py）\n\nx\n\n"
-            "### fix-a\n\nx\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-
-    def test_bump_manifest_h3_is_skipped_when_bump_step_present(self, tmp_path: pathlib.Path):
-        """version bump対象manifest H3（`_plan_format.BUMP_MANIFEST_PATHS`）は、
-        `## 実行方法`にbumpステップが記載されている場合に限りtext/diffコードブロック検査の対象外。
-        """
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3cb-bump-manifest-present"
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\n"
-            "- [ ] `foo/bar.py`\n\n"
-            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n\n"
-            "### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n"
-            "### agent-toolkit/.claude-plugin/plugin.json\n\nversion bump自動適用のみ。\n\n"
-            "## 実行方法\n\n`scripts/agent_toolkit_bump.py`を実行する。\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "missing a text/diff code block" not in result.stderr
-
-    def test_bump_manifest_h3_warns_when_bump_step_absent(self, tmp_path: pathlib.Path):
-        """`## 実行方法`にbumpステップの記載が無い場合、version bump対象manifest H3は
-        免除されず通常どおりtext/diffコードブロック欠落の警告対象となる。
-        """
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "h3cb-bump-manifest-absent"
-        content = (
-            "# タイトル\n\n"
-            "## 変更履歴\n\nx\n\n"
-            "## 背景\n\nx\n\n"
-            "## 対応方針\n\nx\n\n"
-            "## 調査結果\n\nx\n\n"
-            "## 変更内容\n\n"
-            "### 対象ファイル一覧\n\n"
-            "- [ ] `foo/bar.py`\n\n"
-            "- [ ] `agent-toolkit/.claude-plugin/plugin.json`\n\n"
-            "### foo/bar.py\n\n```text\n変更後の最終文面\n```\n\n"
-            "### agent-toolkit/.claude-plugin/plugin.json\n\nversion bump自動適用のみ。\n\n"
-            "## 実行方法\n\nx\n\n"
-            "## 進捗ログ\n\nx\n\n"
-            "## 計画ファイル（本ファイル）のパス\n\nx\n"
-        )
-        self._prior_flags(tmp_path, sid, content)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert "missing a text/diff code block" in result.stderr
-
-
 class TestReadIsolatedReferenceCheck:
     """Read: メインエージェントからの隔離指定リファレンス直接Readをブロックする検査。"""
 
@@ -6811,8 +4906,10 @@ def test_isolated_targets_excludes_phrases_md() -> None:
     )
 
 
-class TestScopeEscalationBlockMessageIncludesMatchedPhrase:
-    """AskUserQuestion経路・Edit経路のブロックメッセージにマッチ文言が含まれることを検証する。"""
+class TestScopeEscalationMessageIncludesMatchedPhrase:
+    """AskUserQuestion経路（block）・doc edit経路（warn、block降格済み）の
+    通知メッセージにマッチ文言が含まれることを検証する。
+    """
 
     def test_askuserquestion_block_message_includes_matched_phrase(self):
         text, _category = _SCOPE_ESCALATION_INPUTS[0]
@@ -6833,7 +4930,7 @@ class TestScopeEscalationBlockMessageIncludesMatchedPhrase:
         assert result.returncode == 2
         assert "matched:" in result.stderr
 
-    def test_doc_edit_block_message_includes_matched_phrase(self):
+    def test_doc_edit_warn_message_includes_matched_phrase(self):
         text, category = _SCOPE_ESCALATION_INPUTS[0]
         result = _run(
             {
@@ -6844,7 +4941,7 @@ class TestScopeEscalationBlockMessageIncludesMatchedPhrase:
                 },
             }
         )
-        assert result.returncode == 2
+        assert result.returncode == 0
         assert category in result.stderr
         assert "matched:" in result.stderr
 
@@ -6910,8 +5007,8 @@ class TestProcessFeedbacksBlocksEnterPlanMode:
         assert result.returncode == 2
         assert "process-feedbacks" in result.stderr
         assert "EnterPlanMode" in result.stderr
-        assert "agent-toolkit:process-feedbacks-finish" in result.stderr
-        assert "agent-toolkit:add-feedback" not in result.stderr
+        assert "agent-toolkit:exit-session" in result.stderr
+        assert "agent-toolkit:process-feedbacks`" not in result.stderr
 
     def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
         """フラグ未設定時はEnterPlanMode発行を通過させる。"""
@@ -6962,8 +5059,8 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
         assert result.returncode == 2
         assert "plan-and-add-feedback" in result.stderr
         assert "EnterPlanMode" in result.stderr
-        assert "agent-toolkit:add-feedback" in result.stderr
-        assert "agent-toolkit:process-feedbacks-finish" not in result.stderr
+        assert "agent-toolkit:process-feedbacks`" in result.stderr
+        assert "agent-toolkit:exit-session" not in result.stderr
 
     def test_passes_when_flag_absent(self, tmp_path: pathlib.Path):
         """フラグ未設定時はEnterPlanMode発行を通過させる。"""
@@ -7011,8 +5108,8 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
             env_overrides=self._env(tmp_path),
         )
         assert result.returncode == 2
-        assert "agent-toolkit:process-feedbacks-finish" in result.stderr
-        assert "agent-toolkit:add-feedback" in result.stderr
+        assert "agent-toolkit:exit-session" in result.stderr
+        assert "agent-toolkit:process-feedbacks`" in result.stderr
 
 
 class TestPlanFileBumpStepWhenAgentToolkitTarget:
@@ -7029,7 +5126,6 @@ class TestPlanFileBumpStepWhenAgentToolkitTarget:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
 
@@ -7139,7 +5235,6 @@ class TestPlanFileManifestWhenBumpStep:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
 
@@ -7260,7 +5355,6 @@ class TestPlanFileTargetFilePathsRelative:
             {
                 "plan_mode_skill_invoked": True,
                 "textlint_violations_read": True,
-                "plan_file_guidelines_read": True,
             },
         )
 

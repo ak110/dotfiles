@@ -87,7 +87,7 @@ class TestMatchScopeEscalation:
     def test_categories_filter_limits_matches(self):
         """`categories`引数で指定したカテゴリのみを照合対象とする。
 
-        Stop経路で他カテゴリ（`priority-consult`・`next-cycle-defer`・`approach-confirm`等）が
+        Stop経路で他カテゴリ（`priority-consult`・`pattern-conformance`・`approach-confirm`等）が
         照合対象から除外されることを、各カテゴリの代表フレーズを渡して確認する。
         """
         by_category: dict[str, str] = {}
@@ -110,16 +110,8 @@ class TestMatchScopeEscalation:
         for text, category in _INPUTS:
             assert _category_of(text, categories=None) == category
 
-    def test_completion_difficulty_matches_single_session(self):
-        """`本セッションのリソースでは完遂困難`は`single-session`を返す。"""
-        assert _category_of("本セッションのリソースでは完遂困難と判断する。") == "single-session"
-
-    def test_scale_difficulty_matches_single_session(self):
-        """`規模的に本セッションでは困難`は`single-session`を返す。"""
-        assert _category_of("規模的に本セッションでは困難のため一度に処理できない。") == "single-session"
-
     def test_general_completion_difficulty_not_matched(self):
-        """`本|この|単一`セッション接頭を伴わない一般的な困難表現は`single-session`と判定しない。"""
+        """一般的な完遂困難表現は縮退表明カテゴリとして誤検出しない。"""
         assert _match_scope_escalation("実装完遂は技術的に困難だが対応する。") is None
 
     def test_deferral_kettei_single_verb_captured(self):
@@ -309,6 +301,26 @@ class TestMatchScopeEscalation:
         （直後1文相当、句点直後の読点混在も許容）の回帰対象である。"""
         assert _category_of(text) is None
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "別セッションが並行して同一ファイルを編集中のため、完了報告を待つ。",
+            "並行して実行される作業との競合を避けるため、完了通知を待って着手する。",
+            "他プロセスとの競合を避けるため処理完了を待つ。",
+        ],
+    )
+    def test_async_wait_coordination_context_not_matched(self, text: str):
+        """他プロセス・他セッションとの協調目的の待機は縮退表明として検出しない。
+
+        自身の作業先送りではなく、別セッション・並行処理との競合回避を理由とする
+        待機表明はasync-waitカテゴリの誤検出対象から除外する。
+        """
+        assert _match_scope_escalation(text) is None
+
+    def test_async_wait_self_defer_without_coordination_words_still_matched(self):
+        """協調目的の語彙を伴わない自身の待機表明は引き続きasync-waitで検出される。"""
+        assert _category_of("処理完了を待つ。") == "async-wait"
+
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
@@ -321,9 +333,9 @@ class TestApplyCategoryExclusions:
         assert "計画ファイル本文の" in result
 
     def test_other_category_returns_text_unchanged(self):
-        """`priority-consult`以外のカテゴリはtextをそのまま返す。"""
+        """`priority-consult`・`async-wait`以外のカテゴリはtextをそのまま返す。"""
         text = "計画ファイル本文の「スコープ相談節」を確認する。"
-        assert _apply_category_exclusions(text, "workload") == text
+        assert _apply_category_exclusions(text, "process-omission") == text
 
     def test_priority_consult_without_kakko_returns_unchanged(self):
         """全角鍵括弧を含まないtextは`priority-consult`でも無変換で返す。"""

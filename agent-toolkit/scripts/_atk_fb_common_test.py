@@ -383,3 +383,114 @@ class TestValidateFilename:
         (tmp_path / "20260721-160220-001.md").write_text("dummy", encoding="utf-8")
         path = _common._validate_filename("20260721-160220-001.md", tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
         assert path == tmp_path / "20260721-160220-001.md"
+
+
+class TestPrivateNotesAutoCreate:
+    """`AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ既定パス不在時のローカルリポジトリ自動生成を検証する。
+
+    conftestの`_atk_private_notes_env`autouseフィクスチャが全テストへ環境変数を設定するため、
+    本クラスの各テストは`monkeypatch.delenv`で明示的に解除してから検証する。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """自動生成先を実環境の`user_data_dir`から隔離し、既定の環境変数上書きを解除する。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
+        monkeypatch.setattr(_common.platformdirs, "user_data_dir", lambda _name: str(tmp_path / "data"))
+
+    def test_private_notes_path_falls_back_to_platformdirs_when_default_missing(self, tmp_path: pathlib.Path) -> None:
+        """既定パス`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
+        assert resolved == tmp_path / "data" / "private-notes"
+
+    def test_private_notes_path_prefers_existing_default(self, tmp_path: pathlib.Path) -> None:
+        """既定パスが実在する場合はplatformdirsへフォールバックせずそちらを返す。"""
+        home = tmp_path / "home"
+        (home / "private-notes").mkdir(parents=True)
+        resolved = _common._private_notes_path(home)  # pylint: disable=protected-access  # noqa: SLF001
+        assert resolved == home / "private-notes"
+
+    def test_ensure_environment_initializes_local_repo(self, tmp_path: pathlib.Path) -> None:
+        """既定パス不在時、`_ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        root = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
+        assert root == tmp_path / "data" / "private-notes"
+        assert (root / ".git").is_dir()
+        assert (root / _common._LOCAL_ONLY_MARKER).exists()  # pylint: disable=protected-access  # noqa: SLF001
+        expected_state_dirs = (
+            "feedback/inbox",
+            "feedback/processing",
+            "feedback/adopted",
+            "feedback/rejected",
+            "tbd/inbox",
+            "tbd/adopted",
+        )
+        for name in expected_state_dirs:
+            assert (root / name).is_dir()
+
+    def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
+        """2回連続で呼んでも2回目は既存のローカルリポジトリをそのまま返す（再初期化しない）。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        first = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
+        marker = first / "sentinel.txt"
+        marker.write_text("kept", encoding="utf-8")
+        second = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
+        assert second == first
+        assert marker.read_text(encoding="utf-8") == "kept"
+
+    def test_check_environment_reports_enabled_when_default_missing(self, tmp_path: pathlib.Path) -> None:
+        """既定パス不在（未生成）でも`_check_environment`は無効と判定しない（自動生成対象のため）。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        code, message = _common._check_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
+        assert code == 0
+        assert "有効です" in message
+
+
+class TestHasRemote:
+    """`_has_remote`のローカル限定マーカー判定を検証する。"""
+
+    def test_true_when_marker_absent(self, tmp_path: pathlib.Path) -> None:
+        """マーカーファイルが無い場合はTrue（通常のremote設定済みリポジトリ扱い）。"""
+        assert _common._has_remote(tmp_path) is True  # pylint: disable=protected-access  # noqa: SLF001
+
+    def test_false_when_marker_present(self, tmp_path: pathlib.Path) -> None:
+        """マーカーファイルが存在する場合はFalse（ローカル限定自動生成リポジトリ扱い）。"""
+        (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        assert _common._has_remote(tmp_path) is False  # pylint: disable=protected-access  # noqa: SLF001
+
+
+class TestPullAndCommitPushSkipWithoutRemote:
+    """remote未設定のローカル限定リポジトリではpull・pushをスキップすることを検証する。"""
+
+    def test_pull_is_noop_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """マーカー付きディレクトリでは`_pull`が`git pull`を実行しない。"""
+        (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._pull(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        assert not calls
+
+    def test_commit_and_push_skips_push_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """マーカー付きディレクトリでは`_commit_and_push`がadd・commitのみ実行しpushしない。"""
+        (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        calls: list[list[str]] = []
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert calls == [["add", "feedback"], ["commit", "-m", "chore: test"]]
+
+
+class TestFlagPathUsesPlatformdirs:
+    """`_flag_path`の設定ディレクトリ解決がplatformdirsへ統一されていることを検証する。"""
+
+    def test_uses_user_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`platformdirs.user_config_dir("agent-toolkit")`配下を返す。"""
+        config_dir = tmp_path / ".config" / "agent-toolkit"
+        monkeypatch.setattr(_common.platformdirs, "user_config_dir", lambda _name: str(config_dir))
+        assert _common._flag_path() == tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"  # pylint: disable=protected-access  # noqa: SLF001

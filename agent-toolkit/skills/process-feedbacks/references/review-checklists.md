@@ -82,8 +82,7 @@
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「事前調査の徹底」節に従う。
   調査範囲が広い場合は`Explore`サブエージェントへ委譲する
 - 新規に実装規範を追加する時の既存実装への遡及スキャン:
-  フィードバックが新規に実装規範の追加を含む場合、適用範囲の既存実装をスキャンする。
-  手順は`agent-toolkit/skills/plan-mode/references/norm-revision-checklist.md`「規範対象範囲の網羅確認」節に従う。
+  フィードバックが新規に実装規範の追加を含む場合、適用範囲の既存実装を`grep`等で網羅的にスキャンする。
   既存実装が新規規範と整合していない箇所を検出した場合、
   統一対象ファイルを計画対象へ含める判定を批判的検討の時点で確定する
 
@@ -102,7 +101,7 @@
   ユーザーの過去方針・選好の一次資料確認は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`
   「ユーザー過去方針の一次資料確認」節に従う
-- 汎用観点の判定: `agent-toolkit:critical-thinking`スキル「批判的検討の汎用観点」節
+- 汎用観点の判定: `agent-toolkit/rules/01-agent.md`「判断の妥当性を評価する観点」節
  （既存記述との重複・矛盾、コンテキストコスト対効果、適用範囲との整合、論理整合性）に従い判定する
 - 振り返り由来フィードバックの再帰検討:
   frontmatterに`source: session-review`を持つフィードバックは、生成元スキル側の改善案も併記検討する対象に含める。

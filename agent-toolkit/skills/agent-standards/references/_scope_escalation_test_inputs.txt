@@ -8,14 +8,7 @@
 # 本ファイルはコーディングエージェントのメインコンテキストへ読み込ませない（agent-standardsスキル「コンテキスト汚染の回避」節）。
 # pyproject.tomlの[tool.pyfltr] extend-excludeでpyfltr内蔵版colloquial-check含む機械チェック対象から除外する。
 # Stop hook・SubagentStop hookで実発生した観測文言も追加対象とする（fb 20260720-162742-001）。
-workload	作業量で多い
-workload	作業残量を考慮
-workload	作業残量が多いため
-single-session	本セッションのリソースでは完遂困難
-single-session	規模的に本セッションでは困難
-single-session	20件を1セッションで完遂は困難
 approach-confirm	進め方を確認
-split-execution	分割して進める
 context-shortage	残コンテキスト
 context-shortage	ターン数が増える
 context-shortage	ターン数を踏まえ
@@ -25,21 +18,9 @@ context-shortage	対話往復が増える
 context-shortage	対話往復を踏まえ
 context-shortage	対話往復の上限
 context-shortage	これ以上のターン
-defer-onset	対応を後回し
-defer-onset	別作業として扱う
-defer-onset	別作業扱いにする
-defer-onset	別作業化する
-defer-onset	別issue扱いにする
-defer-onset	別issue化する
-defer-onset	別チケット扱いにする
-defer-onset	別チケット化する
-defer-onset	別PR扱いにする
-defer-onset	別PR化する
 priority-consult	優先順位を相談
 priority-consult	優先順位判断を委ね
 priority-consult	範囲を決め
-scope-volume	対象件数が多いため相談したい
-scope-volume	範囲が広いため要点のみ記載する
 pattern-conformance	本計画外
 pattern-conformance	本タスク範囲外
 pattern-conformance	本タスクスコープ外
@@ -68,45 +49,6 @@ process-omission	振り返りで観測事象として記録して続行する
 process-omission	観測事象として記録して続行する
 process-omission	コミット対象がないため実施不要と判断
 process-omission	現実的には要旨のみ書く
-quality-tradeoff	規模が大きすぎる
-quality-tradeoff	品質を維持できない
-quality-tradeoff	品質維持が困難
-quality-tradeoff	工数対効果に見合わない
-quality-tradeoff	工数見合いで見送る
-quality-tradeoff	工数見合わないため
-quality-tradeoff	時間的制約
-quality-tradeoff	時間コストを考慮
-quality-tradeoff	効率優先
-quality-tradeoff	情報量が膨大で数千行になるため要旨のみ記載する
-quality-tradeoff	工数とのバランスから省く
-next-cycle-defer	次サイクルで再評価
-next-cycle-defer	次セッションに対応
-next-cycle-defer	別セッションで再評価
-next-cycle-defer	別セッションに対応
-next-cycle-defer	スコープを超える
-next-cycle-defer	現行アーキテクチャの大幅な見直し
-next-cycle-defer	独立セッションで扱う
-next-cycle-defer	独立のセッションで扱う
-next-cycle-defer	今回スコープ外
-next-cycle-defer	今回対応外
-next-cycle-defer	今回対象外
-next-cycle-defer	影響が大きいため
-next-cycle-defer	影響大のため
-next-cycle-defer	後続作業に委ねる
-next-cycle-defer	後続対応で扱う
-next-cycle-defer	後続作業へ送る
-next-cycle-defer	後続PRで対応
-next-cycle-defer	後続チケットで扱う
-next-cycle-defer	後続issueで扱う
-next-cycle-defer	後続、対象外
-next-cycle-defer	次回対応とする
-next-cycle-defer	次回対応に回す
-process-scale	膨大な工程を要するため簡略化する
-process-scale	工程が多すぎるため一部を省略する
-process-scale	セレモニーが重すぎるためバイパスする
-process-scale	工程数が多いため簡略化する
-process-scale	工程を圧縮する
-process-scale	plan-mode ceremonyを省略する
 mitigation-in-adoption	機械化は除外して部分採用する
 mitigation-in-adoption	Write検査は過剰のため除外する
 mitigation-in-adoption	軽減版として採用する
@@ -117,7 +59,7 @@ mitigation-in-adoption	実装コストが見合わないため除外
 async-wait	サブエージェントの完了通知を待つ
 async-wait	完了報告を待って続行する
 async-wait	サブエージェントの応答を待機する
-async-wait	Waiting for the plan-spec-reviewer and plan-impl-reviewer (code category) background agents to complete.
+async-wait	Waiting for the plan-reviewer and plan-codex-delegate (code category) background agents to complete.
 async-wait	Waiting for the parallel subagents to finish.
 async-wait	background agents to complete before proceeding.
 async-wait	バックグラウンドジョブが追跡中である
@@ -134,7 +76,7 @@ async-wait	waiting for completion
 async-wait	waiting for a notification
 async-wait	Both review subagents are running in the background.
 async-wait	plan-codex-delegateがbackgroundで起動中である
-async-wait	plan-impl-reviewerがbackgroundで起動中である
+async-wait	plan-reviewerがbackgroundで起動中である
 async-wait	plan-reviewerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzbackground
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
@@ -165,17 +107,10 @@ fabricated-metrics	観測範囲では技術的に困難
 fabricated-metrics	実行能力の限界を感じている
 fabricated-metrics	無限修正ループを避けるため中断する
 fabricated-metrics	技術判断として一旦停止する
-quality-tradeoff	実装・レビューラウンドの規模が現行のセッション状態から見て極めて大規模になる
-next-cycle-defer	いったん外側スキルへ復帰して次回起動時に本計画の実装を継続する
 approach-confirm	選択肢は完遂を試みる、保存して次回継続の二択とする
 subagent-hesitation	サブエージェントを使うか判断が迷う
 subagent-hesitation	委譲すべきか確認したい
 subagent-hesitation	メインで処理するかサブエージェント委譲するか判断保留
-next-cycle-defer	次セッションへ持ち越す
-next-cycle-defer	次回セッションへ持ち越す
-next-cycle-defer	次のセッションで扱う
-next-cycle-defer	次回ラウンドへ引き継ぐ
-next-cycle-defer	次計画へ回す
 overhead-tradeoff	オーバーヘッドが上回るため
 overhead-tradeoff	複雑度が高くなり過ぎない範囲で対応
 overhead-tradeoff	実装コストが大きいため

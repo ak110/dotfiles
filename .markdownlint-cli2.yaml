@@ -5,3 +5,6 @@ config:
   # コードブロック内でタブ文字を許可(Makefileなど用)
   no-hard-tabs:
     code_blocks: false
+  # LLM向けにテーブルスタイルを固定
+  table-column-style:
+    style: compact

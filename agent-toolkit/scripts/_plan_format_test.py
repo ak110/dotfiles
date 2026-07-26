@@ -9,7 +9,7 @@ import re
 
 import _plan_format
 
-_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-guidelines.md"
+_PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
 
 _VALID_CONTENT = (
     "# タイトル\n\n"
@@ -155,7 +155,7 @@ class TestExtractTargetFilesFromChanges:
     def test_strips_trailing_line_count_metadata(self) -> None:
         """`（現行N行）`等の付随メタ情報がパスから除去される。
 
-        `plan-file-guidelines.md`が規定する標準形式
+        `plan-mode/SKILL.md`が規定する標準形式
         `` `path`（現行N行） ``を検査対象とする。
         """
         content = (
@@ -315,22 +315,6 @@ class TestBumpMatrixRowNamedGroups:
         assert matches[0].group("criteria") == "単一節改訂"
 
 
-class TestHasRecurrencePreventionWhenSectionPresent:
-    """has_recurrence_prevention_when_section_present の基本動作を検査する。"""
-
-    def test_no_section(self) -> None:
-        content = "## 対応方針\n\n### 実装方針\n\n本文。\n"
-        assert _plan_format.has_recurrence_prevention_when_section_present(content)
-
-    def test_section_with_marker(self) -> None:
-        content = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n再発予防として検査を追加する。\n"
-        assert _plan_format.has_recurrence_prevention_when_section_present(content)
-
-    def test_section_without_marker(self) -> None:
-        content = "## 対応方針\n\n### 恒久化・リファクタリング内容\n\n検査を追加する。\n"
-        assert not _plan_format.has_recurrence_prevention_when_section_present(content)
-
-
 class TestIsAgentDocTargetFile:
     """is_agent_doc_target_file の対象パス判定を検査する。"""
 
@@ -360,24 +344,24 @@ class TestIsAgentDocTargetFile:
 
 
 class TestPlanFormatSsot:
-    """PLAN_REQUIRED_H2がplan-file-guidelines.mdと整合することを検査する。"""
+    """PLAN_REQUIRED_H2がplan-modeスキル本文の「計画ファイルの完成条件」節と整合することを検査する。"""
 
     def test_required_h2_appear_in_plan_file_ref(self):
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
         for heading in _plan_format.PLAN_REQUIRED_H2:
-            assert f"## {heading}" in text, f"plan-file-guidelines.md に `## {heading}` が無い"
+            assert f"## {heading}" in text, f"plan-mode/SKILL.md に `## {heading}` が無い"
 
     def test_section_definition_order_matches_required_h2(self):
-        """`plan-file-guidelines.md`のセクション定義H3と`PLAN_REQUIRED_H2`の順序が一致することを検査する。
+        """`plan-mode/SKILL.md`のセクション定義H3と`PLAN_REQUIRED_H2`の順序が一致することを検査する。
 
-        セクション定義H3は`### XXX（`## YYY`）`形式で記述されており、
+        セクション定義H3は`` ### `## YYY` ``形式で記述されており、
         バッククォート内のH2名（YYY）が登場順に`PLAN_REQUIRED_H2`と完全一致するべき。
         """
         text = _PLAN_FILE_REF.read_text(encoding="utf-8")
-        pattern = re.compile(r"^### .+?（`## ([^`]+)`）", re.MULTILINE)
+        pattern = re.compile(r"^### `## ([^`]+)`", re.MULTILINE)
         defined_h2 = tuple(pattern.findall(text))
         assert defined_h2 == _plan_format.PLAN_REQUIRED_H2, (
-            f"plan-file-guidelines.md のセクション定義順 {defined_h2} が"
+            f"plan-mode/SKILL.md のセクション定義順 {defined_h2} が"
             f" PLAN_REQUIRED_H2 {_plan_format.PLAN_REQUIRED_H2} と一致しない"
         )
 

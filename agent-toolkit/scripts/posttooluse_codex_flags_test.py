@@ -42,10 +42,6 @@ class TestAgentInvocationFlags:
         [
             ("plan-reviewer", "plan_reviewer_invoked"),
             ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
-            ("plan-impl-reviewer", "plan_impl_reviewer_invoked"),
-            ("agent-toolkit:plan-impl-reviewer", "plan_impl_reviewer_invoked"),
-            ("agent-doc-validator", "agent_doc_validator_invoked"),
-            ("agent-toolkit:agent-doc-validator", "agent_doc_validator_invoked"),
             ("plan-codex-delegate", "codex_review_invoked"),
             ("agent-toolkit:plan-codex-delegate", "codex_review_invoked"),
         ],
@@ -77,8 +73,6 @@ class TestAgentInvocationFlags:
         _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("plan_reviewer_invoked") is not True
-        assert state.get("plan_impl_reviewer_invoked") is not True
-        assert state.get("agent_doc_validator_invoked") is not True
         assert state.get("codex_review_invoked") is not True
 
     def test_plan_codex_delegate_subagent_sets_codex_review_invoked_only(self, tmp_path: pathlib.Path):
@@ -196,13 +190,13 @@ class TestPlanImplExecutorActiveSessions:
         assert isinstance(active["sub-session-123"].get("started_at"), (int, float))
 
     def test_non_plan_impl_executor_does_not_register(self, tmp_path: pathlib.Path):
-        """`spec-driven-implementer`等の他エージェント起動時はフラグへ書き込まない。"""
+        """`claude`等の他エージェント起動時はフラグへ書き込まない。"""
         sid = "fb6-non-plan-impl-executor"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "spec-driven-implementer"},
+                "tool_input": {"subagent_type": "claude"},
                 "tool_response": {"agentId": "sub-session-999"},
             },
             state_dir=tmp_path,
@@ -229,11 +223,11 @@ class TestPlanImplExecutorActiveSessions:
 class TestPlanFileCreatorFlagPropagation:
     """plan-file-creator完了報告本文の`invoked_subagents:`行から親セッション状態へフラグを設定する。"""
 
-    _ALL_FLAGS = ("plan_reviewer_invoked", "codex_review_invoked", "agent_doc_validator_invoked")
+    _ALL_FLAGS = ("plan_reviewer_invoked", "codex_review_invoked")
 
     @pytest.mark.parametrize("subagent_type", ["plan-file-creator", "agent-toolkit:plan-file-creator"])
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_all_three_identifiers_set_all_flags(self, tmp_path: pathlib.Path, subagent_type: str, tool_name: str):
+    def test_both_identifiers_set_all_flags(self, tmp_path: pathlib.Path, subagent_type: str, tool_name: str):
         sid = f"pfc-all-{subagent_type.replace(':', '-')}-{tool_name.lower()}"
         _run(
             {
@@ -244,7 +238,7 @@ class TestPlanFileCreatorFlagPropagation:
                     "content": [
                         {
                             "type": "text",
-                            "text": "status: completed\ninvoked_subagents: plan-reviewer, codex-review, agent-doc-validator\n",
+                            "text": "status: completed\ninvoked_subagents: plan-reviewer, codex-review\n",
                         }
                     ],
                 },
@@ -254,24 +248,6 @@ class TestPlanFileCreatorFlagPropagation:
         state = _read_state(tmp_path, sid)
         for flag in self._ALL_FLAGS:
             assert state.get(flag) is True
-
-    def test_two_identifiers_excludes_agent_doc_validator(self, tmp_path: pathlib.Path):
-        sid = "pfc-two"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
-                "tool_response": {
-                    "content": [{"type": "text", "text": "invoked_subagents: plan-reviewer, codex-review\n"}],
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is True
-        assert state.get("codex_review_invoked") is True
-        assert state.get("agent_doc_validator_invoked") is not True
 
     def test_missing_invoked_subagents_line_sets_no_flags(self, tmp_path: pathlib.Path):
         sid = "pfc-missing-line"
@@ -296,13 +272,12 @@ class TestPlanFileCreatorFlagPropagation:
                 "session_id": sid,
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "plan-file-creator"},
-                "tool_response": {"result": "invoked_subagents: agent-doc-validator\n"},
+                "tool_response": {"result": "invoked_subagents: plan-reviewer\n"},
             },
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("agent_doc_validator_invoked") is True
-        assert state.get("plan_reviewer_invoked") is not True
+        assert state.get("plan_reviewer_invoked") is True
         assert state.get("codex_review_invoked") is not True
 
     def test_unknown_identifier_is_ignored(self, tmp_path: pathlib.Path):
@@ -320,7 +295,6 @@ class TestPlanFileCreatorFlagPropagation:
         state = _read_state(tmp_path, sid)
         assert state.get("plan_reviewer_invoked") is True
         assert state.get("codex_review_invoked") is not True
-        assert state.get("agent_doc_validator_invoked") is not True
 
 
 def _async_wait_phrase() -> str:

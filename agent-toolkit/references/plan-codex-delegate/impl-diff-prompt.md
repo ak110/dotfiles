@@ -4,7 +4,7 @@
 `{plan_impl_reviewer_agent_path}`・`{review_standards_skill_path}`は
 `plan-codex-delegate`が本文中の`${CLAUDE_PLUGIN_ROOT}`基準パスで埋め込む。
 `danger-full-access`サンドボックスのcodexはプロジェクトcwd外の絶対パスも読み込み可能である。
-プロンプト共通化の設計方針は、claude側`plan-impl-reviewer.md`と定義を共有する。
+プロンプト共通化の設計方針は、claude側`plan-reviewer.md`と定義を共有する。
 
 以下がプロンプト本文である。
 

@@ -44,7 +44,7 @@
 作業ツリー・コミットの競合を避けるため、計画実装型どうしの実装は直列に限定し並列起動しない。
 バックグラウンド実装は当該の計画実装型フィードバックについて作業ツリーを触る唯一の主体とし、
 検証・コミット・`agent-toolkit:careful-review`実施まで`plan-impl-executor`へ委譲する。`git push`は委譲せず
-`agent-toolkit:process-feedbacks-finish`で一括実施する。
+本スキル「ステップ7: 採否確定の後始末」で一括実施する。
 通常型の計画実装（`plan-impl-executor`起動）は、先行する全ての計画実装型`plan-impl-executor`のうち
 最後に起動した1件の完了報告本文を呼び出し元が受領した時点で開始条件が成立する。
 完了報告本文の必須欄は`agent-toolkit/references/plan-impl/caller-reception.md`手順0のSSOTに従い、
@@ -55,8 +55,8 @@ commit SHAの進捗観測を単独の判定根拠にしない。
 ## 計画実装型のみの場合
 
 計画実装型フィードバックのみを処理対象とする場合、計画作成工程を実施しない。
-直列実装の消化完了後、`agent-toolkit:process-feedbacks-finish`へ進む。
-採否確定はいずれの場合も`process-feedbacks-finish`工程4（`atk fb adopt`等の後始末コマンド）で行う。
+直列実装の消化完了後、本スキル「ステップ6: 連鎖feedbackの自律投入」以降へ進む。
+採否確定はいずれの場合も「ステップ7: 採否確定の後始末」（`atk fb adopt`等の後始末コマンド）で行う。
 
 ## 複数リポジトリ横断作業の分解投入
 
@@ -79,8 +79,8 @@ commit SHAの進捗観測を単独の判定根拠にしない。
 ## `run_in_background`起動の制約
 
 `run_in_background`起動は権限プロンプトへ応答できない制約
-（`agent-toolkit/rules/03-claude-code.md`「サブエージェントの活用」節）を持つ。
-委譲先が権限プロンプト起因で停滞した場合、`agent-toolkit/rules/06-monitoring.md`「停滞検知時の対応」節の
-手順に従いメイン側で検証・コミットを巻き取る。
+（`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節）を持つ。
+委譲先が権限プロンプト起因で停滞した場合、同節の停滞検知手順に従い
+メイン側で検証・コミットを巻き取る。
 本フローは自律実行モード・協調モードを問わず適用する。
 自律実行モード（`atk fb process-loop`経由等）はユーザー不在のため本制約の顕在化頻度が高い。

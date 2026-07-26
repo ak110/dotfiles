@@ -169,7 +169,7 @@ def add_tbd(
                 print(
                     f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります"
                     f"（{self_contained_reason}）。"
-                    "02-collaboration.mdが定める自己完結要件を満たす形に見直してください。",
+                    "agent-toolkit:process-feedbacksが定める自己完結要件を満たす形に見直してください。",
                     file=sys.stderr,
                 )
             content = (
@@ -353,7 +353,11 @@ def _cmd_tbd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None
 
 
 def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """`tb answer`サブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。"""
+    """`tb answer`サブコマンド: 未回答TBDを1件ずつ画面表示し$EDITORで回答する。
+
+    エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す
+    （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
+    """
     editor = os.environ.get("EDITOR")
     if not editor:
         print("$EDITORが未設定のため回答経路を利用できません。", file=sys.stderr)
@@ -382,6 +386,7 @@ def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> No
         return
     edited: list[str] = []
     had_conflict = False
+    editor_failed = False
     for path in targets:
         with _repo_lock(private_notes):
             _pull(private_notes)
@@ -398,6 +403,7 @@ def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> No
                 file=sys.stderr,
             )
             tmp_path.unlink(missing_ok=True)
+            editor_failed = True
             break
         answered = tmp_path.read_bytes()
         if answered == snapshot:
@@ -427,9 +433,9 @@ def _cmd_tbd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> No
         edited.append(path.name)
     if edited:
         print(f"{len(edited)}件回答反映: {', '.join(edited)}")
-    elif not had_conflict:
+    elif not had_conflict and not editor_failed:
         print("差分なし。")
-    if had_conflict:
+    if had_conflict or editor_failed:
         sys.exit(1)
 
 

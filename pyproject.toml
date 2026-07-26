@@ -103,7 +103,8 @@ lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 # tone-examples.md・tone-examples-llm-tone.md・scope-escalation-phrases.md・
 # _scope_escalation_test_inputs.txt・norm-inquiry-escalation-phrases.md・
 # _norm_inquiry_escalation_test_inputs.txtは
-# 危険語彙または縮退誘発フレーズを含む隔離ファイルのためいずれも検査対象外とする
+# 危険語彙または縮退誘発フレーズを含む隔離ファイルのためいずれも検査対象外とする。
+# .claude/archive/は削除済み規範文書の全文転記アーカイブのため検査対象外とする
 extend-exclude = [
     "*/profile_ipy/*",
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
@@ -112,6 +113,7 @@ extend-exclude = [
     "agent-toolkit/skills/agent-standards/references/_scope_escalation_test_inputs.txt",
     "agent-toolkit/skills/agent-standards/references/norm-inquiry-escalation-phrases.md",
     "agent-toolkit/skills/agent-standards/references/_norm_inquiry_escalation_test_inputs.txt",
+    ".claude/archive/",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトをshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*"]
@@ -190,24 +192,18 @@ targets = [
     "**/.claude-plugin/marketplace.json",
 ]
 
-[tool.pyfltr.custom-commands.check-doc-size]
+[tool.pyfltr.custom-commands.check-agent-toolkit-total-size]
 type = "linter"
-path = "uv"
-args = ["run", "--no-project", "agent-toolkit/scripts/check_doc_size.py"]
+path = "agent-toolkit/scripts/check_total_size.py"
 targets = [
-    ".chezmoi-source/dot_codex/AGENTS.md",
-    "agent-toolkit/rules/*.md",
-    "agent-toolkit/skills/*/SKILL.md",
-    "agent-toolkit/skills/*/references/*.md",
+    "agent-toolkit/rules/**/*.md",
+    "agent-toolkit/skills/**/*.md",
+    "agent-toolkit/skills/**/*.py",
+    "agent-toolkit/agents/**/*.md",
+    "agent-toolkit/references/**/*.md",
 ]
 fast = true
-
-[tool.pyfltr.custom-commands.check-norm-cross-ref]
-type = "linter"
-path = "uv"
-args = ["run", "--no-project", "agent-toolkit/scripts/check_norm_cross_ref.py"]
-targets = ["agent-toolkit/rules/*.md", "agent-toolkit/skills/**/*.md"]
-fast = true
+pass-filenames = false
 
 [tool.pylint."messages control"]
 disable = [
@@ -253,8 +249,9 @@ convention = "google"
 
 [tool.pyright]
 # scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを import するため
-# そのパスを追加する。agent-toolkit/scripts/posttooluse.py が plan-mode 配下の
-# _plan_diff_parsing を sys.path 経由で共有利用するため当該パスも追加する。
+# そのパスを追加する。agent-toolkit/scripts/posttooluse.py が
+# agent-toolkit/skills/plan-mode/scripts配下のモジュールを sys.path 経由で
+# 共有利用するため当該パスも追加する。
 extraPaths = ["agent-toolkit/scripts", "agent-toolkit/skills/plan-mode/scripts"]
 
 [tool.mypy]

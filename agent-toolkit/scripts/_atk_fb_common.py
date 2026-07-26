@@ -95,43 +95,123 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     return path
 
 
-def _flag_path(home: pathlib.Path) -> pathlib.Path:
-    """feedback-inboxの有効化フラグファイルの絶対パスを返す。"""
-    return home / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
+def _flag_path() -> pathlib.Path:
+    """feedback-inboxの有効化フラグファイルの絶対パスを返す。
+
+    `atk fb enable`/`disable`の後方互換操作対象として残すが、inbox常時有効化に伴い
+    `_check_environment`の判定には用いない。設定ディレクトリ解決はロック・状態
+    ディレクトリ（`_repo_lock_path`参照）と同じくplatformdirsへ統一し、
+    `XDG_CONFIG_HOME`等の環境変数を尊重する。
+    """
+    return pathlib.Path(platformdirs.user_config_dir("agent-toolkit")) / "feedback-inbox.enabled"
 
 
 def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     """フィードバック保存ディレクトリのroot絶対パスを返す。
 
-    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていれば当該値を優先し、
-    未設定時は`~/private-notes/`へフォールバックする。
+    環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていれば当該値を優先する。
+    未設定時は`~/private-notes/`へフォールバックし、当該パスが不在の場合は
+    `platformdirs.user_data_dir("agent-toolkit")`配下のローカル管理用パスへさらにフォールバックする
+    （`_ensure_environment`が当該パスへ実体のgitリポジトリを自動生成する）。
     """
     override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
     if override:
         return pathlib.Path(override).expanduser()
-    return home / "private-notes"
+    default = home / "private-notes"
+    if default.exists():
+        return default
+    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit")) / "private-notes"
+
+
+_LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
+"""`_init_local_private_notes_repo`生成のローカル限定リポジトリ直下に置くマーカーファイル名。
+
+remote未設定であることを`git remote`の実行結果に頼らずファイル存在のみで判定するための目印。
+通常運用（既存クローン済みリポジトリ・テストの一時ディレクトリ）にはこのファイルが存在しないため、
+既存のgit呼び出し経路（`subprocess.run`のフェイク差し替え等）に影響を与えない。
+"""
+
+
+def _has_remote(private_notes: pathlib.Path) -> bool:
+    """`private_notes`がremote設定済みの通常リポジトリか判定する。
+
+    `_LOCAL_ONLY_MARKER`が存在する場合のみFalse（`_init_local_private_notes_repo`が
+    生成したremote未設定のローカル管理リポジトリ）とみなし、`_pull`・`_commit_and_push`は
+    この判定でpull・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
+    Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し経路を変えないため）。
+    """
+    return not (private_notes / _LOCAL_ONLY_MARKER).exists()
+
+
+def _init_local_private_notes_repo(root: pathlib.Path) -> None:
+    """ローカル管理用のgitリポジトリを`root`へ自動生成する。
+
+    `AGENT_TOOLKIT_PRIVATE_NOTES`未設定かつ既定パス`~/private-notes/`が不在の場合に、
+    `root`（`platformdirs.user_data_dir("agent-toolkit")`配下）へ生成する。
+    remoteは設定せず`_LOCAL_ONLY_MARKER`を配置する（`_has_remote`がFalseを返し、
+    以後の`_pull`・`_commit_and_push`はpush・pullをスキップしてローカルコミットのみで完結する）。
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    _run_git(["init"], cwd=root)
+    (root / _LOCAL_ONLY_MARKER).write_text(
+        "このファイルはprivate-notesリポジトリがローカル限定自動生成であることを示すマーカーである。\n"
+        "削除するとpull/pushの自動スキップが解除され、remote未設定のままgit操作が失敗しうる。\n",
+        encoding="utf-8",
+    )
+    for name in (
+        "feedback/inbox",
+        "feedback/processing",
+        "feedback/adopted",
+        "feedback/rejected",
+        "tbd/inbox",
+        "tbd/adopted",
+    ):
+        state_dir = root / name
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / ".gitkeep").touch()
+    _run_git(["add", "-A"], cwd=root)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=agent-toolkit@localhost",
+            "-c",
+            "user.name=agent-toolkit",
+            "commit",
+            "-m",
+            "chore: initialize local private-notes repository",
+        ],
+        cwd=root,
+        check=True,
+    )
 
 
 def _check_environment(home: pathlib.Path) -> tuple[int, str]:
     """feedback-inboxの有効状態を判定し、(exit_code, message)を返す。
 
-    正常時は(0, 有効案内)、フラグファイル不在・フィードバック保存ディレクトリ不在時は(1, 原因案内)。
+    inbox常時有効化に伴いフラグファイルの存在は判定に用いない。既定パス不在時は
+    `_ensure_environment`が自動生成するため無効とみなさず、`AGENT_TOOLKIT_PRIVATE_NOTES`で
+    明示指定されたパスが不在の場合のみ(1, 原因案内)を返す。
     """
-    if not _flag_path(home).exists():
-        return 1, "feedback-inbox機能が無効です（フラグファイルが存在しません）。"
     root = _private_notes_path(home)
-    if not root.exists():
+    if not root.exists() and os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
         return 1, f"フィードバック保存ディレクトリが見つかりません: {root}"
     return 0, "feedback-inboxは有効です。"
 
 
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
-    """フラグファイルとフィードバック保存ディレクトリの存在を確認し、rootパスを返す。"""
-    code, message = _check_environment(home)
-    if code != 0:
-        print(message, file=sys.stderr)
-        sys.exit(code)
-    return _private_notes_path(home)
+    """フィードバック保存ディレクトリの存在を確認し、rootパスを返す。
+
+    `AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定されたパスが不在の場合はexit 1で原因を案内する。
+    未指定かつ既定パスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
+    """
+    root = _private_notes_path(home)
+    if not root.exists():
+        if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
+            print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
+            sys.exit(1)
+        _init_local_private_notes_repo(root)
+    return root
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
@@ -143,8 +223,11 @@ def _pull(private_notes: pathlib.Path) -> None:
     """フィードバック保存リポジトリで`git pull --ff-only`を実行する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
+    remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は無動作。
     """
     _assert_repo_lock_held(private_notes)
+    if not _has_remote(private_notes):
+        return
     _run_git(["pull", "--ff-only"], cwd=private_notes)
 
 
@@ -247,11 +330,15 @@ def _commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Itera
     失敗した場合は`git rebase --abort`の成否を確認してからリベース開始前の状態への
     復元結果をstderrへ出力し、元の例外を送出する。
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
+    remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
+    commitのみ実行しpushをスキップする。
     """
     _assert_repo_lock_held(private_notes)
     rel_list = list(rel_paths)
     _run_git(["add", *rel_list], cwd=private_notes)
     _run_git(["commit", "-m", message], cwd=private_notes)
+    if not _has_remote(private_notes):
+        return
     try:
         _run_git(["push"], cwd=private_notes)
     except subprocess.CalledProcessError:
@@ -568,9 +655,9 @@ class WebInputError(ValueError):
     """Web APIへ安全に公開できる入力エラー。"""
 
 
-def flag_path(home: pathlib.Path) -> pathlib.Path:
+def flag_path() -> pathlib.Path:
     """feedback-inbox有効化フラグのパスを返す。"""
-    return _flag_path(home)
+    return _flag_path()
 
 
 def ensure_environment(home: pathlib.Path) -> pathlib.Path:

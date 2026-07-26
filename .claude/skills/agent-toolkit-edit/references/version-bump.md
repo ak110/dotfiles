@@ -1,9 +1,3 @@
----
-# 同期注記: 「判定」列の`bump不要`ラベル定義は
-# `agent-toolkit/skills/plan-mode/references/integrity-checks.md`
-# 「編集対象スキル固有規定の事前適用」節と意図的に重複する（改訂時は両ファイルを同時更新する）。
----
-
 # バージョン更新の詳細手順
 
 `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細手順を集約する。
@@ -54,7 +48,6 @@ push済みコミット範囲の既往bumpは判定対象に含めない。
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
 「判定基準」節に基づく種別選定根拠を`### エージェント判断`欄へ記述する。
 対象ファイル×H2/H3節数マトリクスも同欄へ並記する。
-書式は`agent-toolkit/skills/plan-mode/references/integrity-checks.md`「編集対象スキル固有規定の事前適用」節に従う。
 具体的なversion数値（`x.y.z`形式）は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。
 判定は計画段階で対象ファイル一覧と変更内容から目視照合する。
 実装フェーズで`scripts/agent_toolkit_bump.py {種別}`を実行する

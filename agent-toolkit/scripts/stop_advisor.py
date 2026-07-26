@@ -5,49 +5,14 @@
 # ///
 """Claude Code plugin agent-toolkit: Stop hook。
 
-Claude Codeが停止しようとするタイミングで発火する。
-approve・通知の分岐は以下のとおり。
-
-- `stop_hook_active`が真（直前の本hook呼び出しが当該ターンの終了を一度ブロックした再呼び出し）:
-  連続ブロック上限到達による強制終了を避けるため、構造判定・通知生成をせず無条件approveのみ返す
-- 構造的にセッション継続中（非同期待機ツールまたは未完了background task（Agent・Bash双方）あり）:
-  サブエージェント等の継続作業中にノイズを増やさないため、approveのみ返し
-  git status表示を抑止する
-- 直近アシスタントターン応答テキストにscope-escalationフレーズを検出:
-  `_scope_escalation._match_scope_escalation`で該当カテゴリを検出した場合、
-  `decision: "block"`＋矯正指示`reason`を返し、正規工程へ復帰させる。
-  Stop経路の照合カテゴリは通常`_STOP_FOCUS_CATEGORIES`（`process-omission`単独）だが、
-  plan-mode/process-feedbacks等のスキル実行中フラグ成立時は
-  `_STOP_FOCUS_CATEGORIES_EXTENDED`へ拡張する
-  （`_build_stop_focus_categories`が判定）。
-  拡張時は地の文選択肢提示も`approach-confirm`カテゴリでblockする。
-  自由文脈テキスト全体を走査する経路のため、他カテゴリの日常的な報告文言との誤検出を回避する。
-  `fabricated-metrics`はPreToolUseの`AskUserQuestion`・`Write`・`Edit`経路のみで検出しStop経路の対象外とする。
-  振り返りスキル起動済み・拡張章pending等のapprove分岐より先に判定するため、
-  以降のセッションでもscope-escalation発話を検出時点で矯正する
-  （`stop_hook_active`真の場合は本分岐をバイパスして無条件approveする）
-- 既に`agent-toolkit:session-review`スキルが起動済み:
-  再Stop間にユーザーが変更を加える可能性に備え、approveに加えて
-  git status表示を付与する
-- `session_review_extension_pending`フラグが真（個人フックPostToolUseが拡張章対象の
-  作業を観測済み）: 配布物側の振り返り誘導を抑制し`approve`を返す
-  （未コミット変更があれば`systemMessage`でgit statusを併記する）。
-  拡張章フックが配布物誘導と個人章を統合した誘導文を送出する
-- 上記いずれでもない通常終了: `decision: "block"`＋`reason`でセッション振り返り誘導文を出力し、
-  未コミット変更があれば`systemMessage`でgit statusを付与する
-
-終了判定の言語的判定基準（完了文言・質問・待機表明の判別）は
-`agent-toolkit:session-review`スキル本体の「起動方針」節で定義する。
-本hookは誘導文の先頭に同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を
-事前チェックとして埋め込み、質問直後等の終了相当ケースでスキル起動を抑止する。
-構造判定（非同期待機ツール残存・未完了background task検出・
-`stop_hook_active`）はhook側（`_stop_gate.py`・本ファイル）が担当し、判定レイヤーを分離する。
-
-対象スキルは`session_review_invoked`辞書経由の起動済みフラグを主判定とする。
-このフラグはPostToolUse（Skill）とUserPromptSubmit（スラッシュコマンド）の両経路で記録される。
-補助的にtranscript内のユーザーターンに`<command-name>/agent-toolkit:session-review</command-name>`が
-含まれるスラッシュコマンド起動痕跡（`_stop_gate.has_command_invocation`）でも起動済み扱いとする
-（UserPromptSubmit hookがfail-openで記録漏れした場合のsafety net）。
+Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
+概要は次のとおり。`stop_hook_active`真時・非同期作業継続中は無条件approve、
+直近アシスタント発話にscope-escalationフレーズを検出した場合は`decision: "block"`で
+矯正指示を返す（照合カテゴリは`_build_stop_focus_categories`が通常時／
+plan-mode等のスキル実行中で切り替える）。`agent-toolkit:session-review`起動済み・
+拡張章pending時はapprove、それ以外の通常終了時は振り返り誘導文をblockで返す。
+終了判定の言語的基準は`agent-toolkit:session-review`「起動方針」節をSSOTとし、
+誘導文冒頭へ同一基準（`_message_format.SESSION_REVIEW_PRECHECK`）を事前チェックとして埋め込む。
 
 各判定分岐の最終判定ラベルと根拠は`_stop_gate.append_stop_log`で常時ログへ記録する。
 """
@@ -69,7 +34,7 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
     has_inline_choice_offer,
 )
-from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     append_stop_log,
     has_command_invocation,
@@ -195,18 +160,9 @@ def main() -> int:
         _approve()
         return 0
 
-    # Stopのたびにgit_log_checkedをリセットする。
-    # セッション停止中にユーザーがpushしている可能性があるため、
-    # 再開後のamend / rebaseには改めてlog確認を要求する。
-    # `git_log_checked`はcwd別辞書`{cwd: True}`を採用するため、
-    # 全エントリをまとめてクリアする。
-    def _reset_git_log_checked(state: dict) -> dict | None:
-        if not state.get("git_log_checked"):
-            return None
-        state["git_log_checked"] = {}
-        return state
-
-    update_state(session_id, _reset_git_log_checked)
+    # git_log_checkedのリセットはStop契機から除外する
+    # （対象コミットの親子関係が変化する操作＝commit / rebase / resetに限定する。
+    # posttooluse.py `_GIT_LOG_RESET_SUBCOMMANDS`が単一のリセット判定箇所である）。
 
     cwd = payload.get("cwd", "")
     raw_transcript = payload.get("transcript_path", "")
@@ -238,12 +194,10 @@ def main() -> int:
                 category = "approach-confirm"
             if category is not None:
                 reason = _llm_notice(
-                    f"blocked: the latest assistant response matched scope-escalation category `{category}`"
-                    " (a phrase that induces skipping normative steps or bypasses required workflow)."
-                    " Retract that judgment, return to the mandatory workflow defined by the applicable norms,"
-                    " and continue the work."
-                    " Category definitions are documented in `agent-toolkit:agent-standards`"
-                    " `references/scope-escalation-phrases.md`.",
+                    f"blocked: matched scope-escalation category `{category}`"
+                    " (a phrase that skips normative steps or bypasses required workflow)."
+                    " Retract that judgment and continue the mandatory workflow"
+                    " (see `agent-toolkit:agent-standards` `references/scope-escalation-phrases.md`).",
                     tag="block",
                 )
                 append_stop_log(session_id, "block_scope_escalation", {"category": category})

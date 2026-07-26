@@ -11,7 +11,7 @@
 ## 事前調査の徹底
 
 候補事象に関連する既存規範文書の関連節を網羅的に`Read`してから抽象化階層を確定する。
-対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/03-claude-code.md`・該当作業のスキル本体・
+対象は`agent-toolkit/rules/01-agent.md`・`agent-toolkit/rules/02-claude-code.md`・該当作業のスキル本体・
 対応する`references/`配下を含む。当該事象を特殊ケースとして包含する既存上位節がある場合は
 新規追加ではなく既存節の表現強化・対象類型追加・例示拡張へ変換する。
 
@@ -40,7 +40,7 @@ adopted配下のユーザー起草フィードバック（frontmatterに`source:
 
 - 該当する場合は実機再現に加えて計画段階で該当実装コードの`Read`で裏付ける。
   実装ソースパス・確認関数名・照合結果を
-  `agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`が定める
+  `agent-toolkit:plan-mode`スキル本体が定める
   `### 事実確認済み事項`へ記述してから反映内容を確定する
 - 観測事象が真だが因果解釈のみ誤っている場合は、原主旨（観測事象の解消）を保ちつつ
   因果部分を正確な実装挙動に整えた表現へ書き換えて反映する（縮小ではなく事実訂正扱いとする）
@@ -100,14 +100,14 @@ adopted配下のユーザー起草フィードバック（frontmatterに`source:
 これにより同種事象の再発を予防する。本節は`agent-toolkit:plan-mode`工程4「恒久化検討」と
 同一のSSOTを構成する。条件を問わず全採否判定で実施する。
 規範改善案の併記は、成果物側の水平展開点検を指す「類似見直し」
-（`agent-toolkit/skills/plan-mode/references/similar-review.md`）とは別の観点である。
+（`agent-toolkit:plan-mode`スキル本体が定める`#### 類似見直し`）とは別の観点である。
 検討対象は、複数フィードバックに共通する上位カテゴリの規範化候補・仕組み化候補・
 既存規範との衝突回避パターンなどとする。
 上位カテゴリでの独立節新設が実効性を欠く場合はその判断根拠を明記し、
 各フィードバック反映内容の相互参照で代替する。
 
 フィードバック採用計画の`### 却下した代替案`節では、対策強度の序列に従い上位層から順に成立可否を評価する。
-対策強度の序列は`agent-toolkit/skills/plan-mode/references/bugfix-process.md`「再発防止策」節が定義する。
+対策強度の序列は`agent-toolkit/skills/plan-mode/references/bugfix.md`「再発防止策」節が定義する。
 不成立の場合は根拠を明記したうえで下位層を選ぶ。上位層評価を省略して下位層のみを列挙する形は認めない。
 
 ## 総量規制の努力目標

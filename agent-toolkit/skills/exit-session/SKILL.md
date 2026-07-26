@@ -14,7 +14,7 @@ allowed-tools: Bash
 
 次のいずれかを満たすときに限り呼び出す。
 
-- `agent-toolkit:process-feedbacks-finish`工程6から呼ばれた場合
+- `agent-toolkit:process-feedbacks`ステップ8から呼ばれた場合
 - 自律終了再促フック（`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`環境変数のStopフック。dotfiles個人環境専用）から
   未起動判定時の再促として誘導された場合
 - ユーザーがSkill名を明示的に指定して本スキルを起動した場合

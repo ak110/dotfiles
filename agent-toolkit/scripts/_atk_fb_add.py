@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from _atk_fb_common import (
+    FEEDBACK_STATE_PROCESSING,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
@@ -183,10 +184,11 @@ def _cmd_add(
         sys.exit(1)
     count = len(generated)
     inbox_dir = _subdir(private_notes, "inbox")
+    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
-    print(f"inbox: 計{_count_feedback(inbox_dir)}件")
+    print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
     print("編集する場合:")
     for filename in generated:
         print(f"  atk fb edit {filename}")

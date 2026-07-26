@@ -8,8 +8,6 @@
 
 use serde_json::Value;
 
-use crate::balance_mode;
-
 const RESET: &str = "\x1b[0m";
 const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
@@ -36,7 +34,6 @@ pub fn run(raw: &str) {
         return;
     }
     let home = home_dir();
-    balance_mode::update(&data, home.as_deref());
     for line in render_lines(&data, home.as_deref()) {
         println!("{line}");
     }

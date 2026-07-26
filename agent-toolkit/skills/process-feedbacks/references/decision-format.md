@@ -2,8 +2,7 @@
 
 本ファイルは`agent-toolkit:process-feedbacks`スキルのステップ4での検討結果の提示専用の書式を定義する。
 `agent-toolkit:plan-mode`の計画ファイル書式（`### エージェント判断`等のH3見出し）は別体系である。
-plan-mode側の定義は
-`agent-toolkit/skills/plan-mode/references/plan-file-guidelines.md`にある。
+plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
 
 ## 提示書式
 
@@ -104,11 +103,11 @@ plan-mode側の定義は
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
   `agent-toolkit:careful-review`まで`plan-impl-executor`側で完遂し、
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は
-  `agent-toolkit:process-feedbacks-finish`スキル本文の工程順序へ引き継ぐ
+  本スキル「ステップ7: 採否確定の後始末」以降の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
 - ステップ3時点は採否ラベルの確定に留める。`atk fb adopt`・`atk fb reject`・`atk tb adopt`の
   実行タイミングは、「後始末順序」節の「標準順序は実装→検証→…」で始まるバレットが定める
-  `process-feedbacks-finish`への引き継ぎ工程に従う
+  「ステップ7: 採否確定の後始末」への引き継ぎ工程に従う
 
 ## 後始末コマンドの引数
 
@@ -116,7 +115,7 @@ plan-mode側の定義は
 
 - `--note`: 採用時は反映概要、不採用時は不採用理由。1行に収める
   - シェルメタ文字混入をその都度検知せず、常に`$'...'`のANSI-Cクォートで囲む。
-    引用符規範は`agent-toolkit/skills/add-feedback/SKILL.md`「ステップ4: 投入」節の`<message>`引用符規範と同一とする
+    引用符規範は`agent-toolkit/skills/process-feedbacks/SKILL.md`「フィードバック投入」節の`<message>`引用符規範と同一とする
   - 本文中にシングルクォートを含む場合は`'`を`\'`へエスケープする
   - 二重引用符囲みでバッククォート囲み識別子（例: `` `_plan_diff_gates_scan.py` ``）を渡すとbashがコマンド置換として解釈する。
     該当文字列が実在コマンドと一致する場合は誤実行の危険があり、一致しない場合は`--note`値から

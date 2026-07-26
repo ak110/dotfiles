@@ -18,12 +18,12 @@
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. 計画ファイル（`~/.claude/plans/*.md`）の`agent-toolkit/`編集を伴う変更でのbump宣言欠落警告（warn、非ブロック）
 7. 計画ファイルの`## 変更内容`配下の`agent-toolkit/`パスを示すH3配下diffブロック+行へのdotfiles固有名混入検出（block）
-8. `Bash`経由の`atk tb add`コマンド文字列への縮退フレーズ混入検出（block）
 
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
-検査対象はチェックごとに異なる。
-`Write`/`Edit`/`MultiEdit`向けチェック（1〜7）は「新規に書き込まれる側」（`content`/`new_string`）のみを対象とする。
-`Bash`向けチェック（8）は`command`文字列を対象とする。
+検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
+本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
+`Bash`向けの縮退フレーズ混入検出（`atk tb add`コマンド文字列対象）は
+`agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）が担う。
 予期せぬ例外はexit codeを0として通過させる（フックが破損して編集できなくなる事故を避けるため）。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 
@@ -52,7 +52,7 @@ from _plan_file import is_plan_file  # noqa: E402  # pylint: disable=wrong-impor
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable-next=wrong-import-position,import-error
-from pretooluse import _collect_new_fields, _match_scope_escalation  # noqa: E402
+from pretooluse import _collect_new_fields  # noqa: E402
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -79,15 +79,6 @@ def main() -> int:
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
     if not isinstance(tool_input, dict):
-        return 0
-
-    if tool_name == "Bash":
-        command_raw = tool_input.get("command")
-        command = command_raw if isinstance(command_raw, str) else ""
-        block_msg = _check_bash_atk_fb_tbd_add_scope_escalation(command)
-        if block_msg is not None:
-            print(_llm_notice(block_msg), file=sys.stderr)
-            return 2
         return 0
 
     fields = _collect_new_fields(tool_name, tool_input)
@@ -201,30 +192,6 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
             )
             return True
     return False
-
-
-# --- Bash: atk tb add 縮退フレーズ check (block) ---
-
-
-def _check_bash_atk_fb_tbd_add_scope_escalation(command: str) -> str | None:
-    """`atk tb add`実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロック用メッセージを返す。
-
-    `_match_scope_escalation`は`agent-toolkit/scripts/pretooluse.py`定義の
-    `_SCOPE_ESCALATION_PHRASES`を再利用する（sys.path経由import）。
-    検査対象はコマンド文字列全体とする。
-    """
-    if "atk" not in command:
-        return None
-    if "tb add" not in command:
-        return None
-    match_result = _match_scope_escalation(command)
-    if match_result is None:
-        return None
-    category, _matched = match_result
-    return (
-        f"blocked: `atk tb add` includes a scope-escalation phrase (category: {category})."
-        " See agent-toolkit/rules/01-agent.md session-split prohibition section."
-    )
 
 
 # --- ~/.claude/ 配下の直接編集 check (warn) ---
