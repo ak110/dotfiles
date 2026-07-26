@@ -396,3 +396,64 @@ class TestMainEntrypoint:
         with pytest.raises(SystemExit) as exc_info:
             wait_ci.main(["--registration-grace", "-1"])
         assert exc_info.value.code == 2
+
+
+class TestResolveShaViaMain:
+    """`--sha`明示指定時も完全形式へ解決してから`wait_for_ci`へ渡す。"""
+
+    def test_explicit_short_sha_is_resolved_to_full_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_wait_for_ci(sha: str, *args: object, **kwargs: object) -> int:
+            del args, kwargs
+            captured["sha"] = sha
+            return wait_ci.EXIT_SUCCESS
+
+        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            del kwargs
+            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "17561bd"]
+            return subprocess.CompletedProcess(
+                cmd, returncode=0, stdout="17561bd376c5fb8ace04153871b2a2d6993c380d\n", stderr=""
+            )
+
+        monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = wait_ci.main(["--sha", "17561bd"])
+        assert result == wait_ci.EXIT_SUCCESS
+        assert captured["sha"] == "17561bd376c5fb8ace04153871b2a2d6993c380d"
+
+    def test_explicit_sha_resolution_failure_is_distinguished_from_no_runs(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            del cmd, kwargs
+            return subprocess.CompletedProcess([], returncode=128, stdout="", stderr="fatal: bad revision")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        result = wait_ci.main(["--sha", "deadbee"])
+        assert result == wait_ci.EXIT_GH_ERROR
+        err = capsys.readouterr().err
+        assert "deadbee" in err
+        assert "sha解決に失敗" in err
+
+    def test_missing_git_returns_sha_resolution_failure(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(subprocess, "run", mock.Mock(side_effect=FileNotFoundError("git")))
+
+        result = wait_ci.main(["--sha", "17561bd"])
+
+        assert result == wait_ci.EXIT_GH_ERROR
+        assert "sha解決に失敗" in capsys.readouterr().err
+
+    def test_option_like_sha_is_passed_after_end_of_options(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            del kwargs
+            assert cmd == ["git", "rev-parse", "--verify", "--end-of-options", "--not-an-option"]
+            return subprocess.CompletedProcess(cmd, returncode=128, stdout="", stderr="fatal: bad revision")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = wait_ci.main(["--sha=--not-an-option"])
+
+        assert result == wait_ci.EXIT_GH_ERROR

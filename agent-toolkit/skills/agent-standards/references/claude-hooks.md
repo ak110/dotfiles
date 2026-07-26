@@ -65,11 +65,11 @@ PreToolUseの`permissionDecision: "allow"`時にコーディングエージェ�
 `.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできない。
 確認ダイアログを抑制したい場合はPermissionRequestイベントで`decision.behavior: "allow"`を返す。
 
-`sandbox`パラメーターの強制固定（PreToolUseフックの一例）を採用する。
-read-only・workspace-writeではcodexプロセスがハングして復帰しないため、
-呼び出し側の指定値によらず常に`danger-full-access`固定へ上書きする。
-呼び出し側は`sandbox`を渡す必要は無い（渡しても上書きされる）。
-利用者側の明示指定を尊重する形への回帰は禁止する（ハング回避を優先する）。
+`updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
+ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う
+（`sandbox`パラメーターの検査がこの一例である。`danger-full-access`以外の値では
+codexプロセスが承認待ちのまま復帰しないため、書き換えに依存せず呼び出し側へ明示指定を求める）。
+呼び出し側の明示指定を尊重する形への回帰は禁止する（停止事象の回避を優先する）。
 
 ### PermissionRequest
 

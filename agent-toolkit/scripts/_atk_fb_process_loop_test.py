@@ -757,3 +757,62 @@ class TestProcessLoopUrlInput:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["fb", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2
+
+    def test_prompt_adds_worktree_push_instruction_for_dotfiles(self) -> None:
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+            "github.com/ak110/dotfiles",
+        )
+        assert "git worktree内で起動" in prompt
+        assert "origin/master" in prompt
+
+    def test_prompt_omits_worktree_push_instruction_for_other_repos(self) -> None:
+        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
+            pathlib.Path("/repo"),
+            "github.com/example/repo",
+        )
+        assert "git worktree内で起動" not in prompt
+
+    @pytest.mark.parametrize(
+        ("remote_url", "expects_worktree"),
+        [
+            ("https://github.com/ak110/dotfiles.git\n", True),
+            ("https://github.com/example/repo.git\n", False),
+        ],
+    )
+    def test_worktree_flag_depends_on_target_repo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        remote_url: str,
+        expects_worktree: bool,
+    ) -> None:
+        """対象リポジトリに応じてclaude起動引数へworktree指定を付与すること。"""
+        _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        counts = iter([1, 0])
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:1] == ["claude"]:
+                claude_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=remote_url, stderr="")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
+            del private_notes, target_repo_id
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+
+        assert len(claude_calls) == 1
+        assert ("--worktree=process-loop" in claude_calls[0]["cmd"]) is expects_worktree

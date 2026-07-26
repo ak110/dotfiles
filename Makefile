@@ -8,7 +8,7 @@ help:
 # 依存パッケージをアップグレードし全テスト実行
 update:
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
-	uvx pre-commit autoupdate
+	uvx prek autoupdate
 	$(MAKE) update-actions
 	$(MAKE) test
 
@@ -20,14 +20,14 @@ update-actions:
 # 開発環境のセットアップ
 setup:
 	uv sync --all-groups --all-extras
-	uvx pre-commit install
+	uvx prek install -c .pre-commit-config.yaml
 	git config --local commit.template .gitmessage
 	uv tool install --editable .
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。
-# pre-commit の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
+# prek の PSScriptAnalyzer / chezmoi template check (.ps1.tmpl) を
 # ローカルでも実行可能にするための開発者向けターゲット。
 setup-pwsh:
 	sudo apt-get update

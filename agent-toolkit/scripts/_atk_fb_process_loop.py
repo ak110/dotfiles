@@ -59,14 +59,23 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
         self._change_event.set()
 
 
+# github.com/ak110/dotfiles編集時のみ、影響範囲の大きいホーム直下チェックアウトを避けるため
+# git worktreeでセッションを起動する。worktree名は反復ごとに固定値とし、常駐ループの再起動
+# （`--no-update`未指定時の`os.execvp`再起動）を経ても同一worktreeを継続利用させる。
+_DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
+_DOTFILES_WORKTREE_NAME = "process-loop"
+
+
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
     """claude起動プロンプトを構築する。
 
     主目標は取得した全件の完遂であり、exit-sessionは完遂後の後処理として位置付ける。
     対象リポジトリはcwdではなくtarget_repo_idで一意に固定する
     （プロンプト本文へ対象範囲を限定する指示を明記し、他リポジトリのfeedback処理を防ぐ）。
+    `target_repo_id`が`github.com/ak110/dotfiles`の場合、git worktreeで起動される旨と
+    publish先をorigin/masterへ直接pushする旨を追記する。
     """
-    return (
+    base = (
         f"/process-feedbacks {local_path} を実行してください。\n"
         f"対象リポジトリは`--target-repo={target_repo_id}`で必ず限定してください。"
         "cwd由来の暗黙解決に依存せず、フィードバック取得・処理・後始末のいずれの段階でも"
@@ -84,6 +93,15 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
         "後続工程の個別手順は agent-toolkit:process-feedbacks に従い、"
         "その最終ステップ（セッション終了）まで完遂してください。"
     )
+    if target_repo_id == _DOTFILES_REPO_ID:
+        base += (
+            "\n本セッションはgit worktree内で起動されています。"
+            "publish（`git push`）はworktree用に作成されたブランチではなく、"
+            "origin/masterへ直接反映してください（例: `git push origin HEAD:master`）。"
+            "他リポジトリでは起動されたブランチへ素直にpushする既定挙動を維持し、"
+            "本追記はdotfilesリポジトリの場合のみ適用してください。"
+        )
+    return base
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> None:
@@ -173,8 +191,15 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
                     # claude起動セッション内でcwd依存の子コマンドが発行された場合、
                     # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
+                    claude_argv = ["claude", "--permission-mode=auto", "--model", args.model]
+                    if target_repo_id == _DOTFILES_REPO_ID:
+                        # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
+                        # `--worktree`はclaude自身がcwd基準のリポジトリからworktreeを作成する機能で
+                        # あり、`cwd=local_path`固定と競合しない。
+                        claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
+                    claude_argv.append(prompt)
                     result = subprocess.run(
-                        ["claude", "--permission-mode=auto", "--model", args.model, prompt],
+                        claude_argv,
                         check=False,
                         env=env,
                         cwd=local_path,

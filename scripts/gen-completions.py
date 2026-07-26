@@ -8,7 +8,7 @@
 `pyproject.toml`の`[project.scripts]`に登録された`pytools`系コマンドと、
 `agent-toolkit/scripts/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンドを補完対象とする。
-出力先ファイルは手編集禁止（pre-commitフックで再生成される）。
+出力先ファイルは手編集禁止（prekフックで再生成される）。
 
 使い方:
     scripts/gen-completions.py    # 生成または更新する（既存と同一なら書き換えない）

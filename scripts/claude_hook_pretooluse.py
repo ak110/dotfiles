@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """Claude Code PreToolUseフック: dotfiles個人環境専用チェック集。
 
 汎用的なチェック（mojibake検出・PowerShell LF-only検出など）は`agent-toolkit`
@@ -24,7 +19,7 @@
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
 `Bash`向けの縮退フレーズ混入検出（`atk tb add`コマンド文字列対象）は
 `agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）が担う。
-予期せぬ例外はexit codeを0として通過させる（フックが破損して編集できなくなる事故を避けるため）。
+予期せぬ例外の処理は共通エントリポイント（`scripts/claude_hook.py`）が担う。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 
 LLM宛て出力は`agent-toolkit/scripts/_message_format.llm_notice`経由で整形する。
@@ -39,7 +34,6 @@ import pathlib
 import re
 import sys
 import tomllib
-import traceback
 
 # agent-toolkit のメッセージ整形ヘルパーを sys.path 経由で再利用する。
 # plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
@@ -682,12 +676,3 @@ def _collect_word_hits(tool_name: str, fields: list[tuple[str, str]], names: fro
                 hits.append(f"'{name}' in {tool_name}.{field}")
                 seen.add(name)
     return hits
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
-        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースは stderr に出力する。
-        traceback.print_exc()
-        sys.exit(0)

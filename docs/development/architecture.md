@@ -9,7 +9,7 @@
 - `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
 - `pytools/`: Pythonコマンドラインツール群（`uv tool install`でインストール）
 - `rust/`: Rust製コマンドラインツール群（CIでビルドしGitHub Releaseへ配布）
-- `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（pre-commit・Makefile・Claude Codeフック等。配布対象外）
+- `scripts/`: リポジトリ内部から呼ばれるスクリプト置き場（prek・Makefile・Claude Codeフック等。配布対象外）
 - テンプレートからリポジトリルートのファイルを参照する場合は`{{ .chezmoi.workingTree }}`を使用
   - 例: `{{ include (joinPath .chezmoi.workingTree "pyproject.toml") }}`
 
@@ -19,11 +19,11 @@
 
 - 利用者: Linux+Windows（配布対象。`install.sh`/`install.ps1`/`install-claude.sh`/`install-claude.ps1`/
   chezmoi管理ファイルはすべて両OS対応とする）
-- 開発者: Linuxのみ（`make test`/pre-commit/CIの開発系ジョブはLinux前提。macOS/Windowsでのローカル開発は非対応で構わない）
+- 開発者: Linuxのみ（`make test`/prek/CIの開発系ジョブはLinux前提。macOS/Windowsでのローカル開発は非対応で構わない）
 
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
-- `scripts/`: pre-commit・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
+- `scripts/`: prek・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
   - chezmoiで配布しない。Linux前提で書いてよい
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
     `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`scripts/claude_hook_pretooluse.py`
@@ -32,7 +32,7 @@
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
-判断に迷ったら「他者の環境で直接実行されるか」で切り分ける。pre-commit経由でしか動かないなら`scripts/`が適切。
+判断に迷ったら「他者の環境で直接実行されるか」で切り分ける。prek経由でしか動かないなら`scripts/`が適切。
 
 単純なコマンドラッパーのペアは`scripts/new-bin-cmd.py <name> <command...>`で生成できる。
 `bin/<name>`と`bin/<name>.cmd`を生成する。

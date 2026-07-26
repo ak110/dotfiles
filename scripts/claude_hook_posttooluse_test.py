@@ -14,7 +14,7 @@ import threading
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_posttooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
 
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
@@ -29,7 +29,7 @@ def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 def _run(payload: object, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
 
 
 def _state_path(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:

@@ -23,10 +23,13 @@
   寿命は`agent-toolkit:process-feedbacks`起動検知（plan-and-add-feedbackの終端工程が参照呼び出しする先）でリセット
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
-- plan-file-creatorの整合性チェック完遂判定フラグ群はPostToolUse(Agent/Task)が記録する:
+- plan-file-creatorの整合性チェック完遂判定フラグ群は、PreToolUse(Agent/Task)がサブエージェントの
+  起動要求検知時点で前倒しして記録し、PostToolUse(Agent/Task)も完了時点で記録する:
   `plan_reviewer_invoked`・`codex_review_invoked`
   （PreToolUseゲートの必須対象は`codex_review_invoked`のみ。`plan_reviewer_invoked`は`codex-review.md`
   「codex利用可否の2段階判定」節でMCP利用不可時の代替起動を記録する用途に残り、ゲート必須対象ではない）。
+  状態更新は既に真の場合に何も書き込まないため、起動時点と完了時点で二重に記録しても結果は同一となる。
+  前倒し記録により、完了通知前でも起動要求が受理された時点からフラグは真となる。
   `codex_review_invoked`は`plan-codex-delegate`起動時、または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
   `_reset_process7_completion_flags`のリセット対象タプルは`_PROCESS7_COMPLETION_FLAGS`と別に
   `plan_reviewer_invoked`を明示追加し、新計画着手時に前計画のフォールバック起動記録を持ち越さない

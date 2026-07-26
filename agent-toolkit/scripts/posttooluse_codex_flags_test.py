@@ -15,7 +15,7 @@ import _fork_runner
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -23,7 +23,12 @@ def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProce
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload, ensure_ascii=False), env=env)
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("posttooluse",),
+        input=json.dumps(payload, ensure_ascii=False),
+        env=env,
+    )
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:

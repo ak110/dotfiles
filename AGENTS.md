@@ -5,7 +5,7 @@
 
 ## 開発手順
 
-- `make update`: 依存更新 + pre-commit autoupdate + pinactアクション更新 + 全テスト実行
+- `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `uvx pyfltr run-for-agent`
   - プロジェクト設定済みコマンドの再現が必要な場合は`pyfltr run-for-agent <path>`を使う。

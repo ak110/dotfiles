@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["platformdirs>=4.0"]
-# ///
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
 Bash / Write / Edit / MultiEdit / Skill / Read / EnterPlanMode / Agent / Taskの実行後にイベントを検出し、
@@ -52,7 +47,6 @@ import pathlib
 import re
 import sys
 import time
-import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
@@ -68,9 +62,12 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
 )
 from _scope_escalation import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES,
-)
+
+# pylint: disable=wrong-import-position,import-error
+from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
+from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+
+# pylint: enable=wrong-import-position,import-error
 from subagent_stop_advisor import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _NAMED_SUBAGENT_MIN_TOOL_USES,
 )
@@ -141,7 +138,7 @@ _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     # 直接実行系
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
     re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pre-commit\s+run\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
     # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
     # test / check / validateアクション
@@ -231,13 +228,6 @@ _EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
 # セッション状態であり、起動元（親）のセッション状態には反映されない。
 # 親への反映は、plan-file-creator自身の完了報告本文の`invoked_subagents:`行を
 # main()関数内のAgent/Task完了ハンドラがパースして設定する。
-_SUBAGENT_TYPE_FLAGS: dict[str, str] = {
-    "plan-reviewer": "plan_reviewer_invoked",
-    "agent-toolkit:plan-reviewer": "plan_reviewer_invoked",
-    "plan-codex-delegate": "codex_review_invoked",
-    "agent-toolkit:plan-codex-delegate": "codex_review_invoked",
-}
-
 _PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-creator", "agent-toolkit:plan-file-creator"})
 
 # plan-file-creator完了報告本文の`invoked_subagents:`行に列挙される識別子から
@@ -763,11 +753,3 @@ def main() -> int:
 
     update_state(session_id, _apply_bash_updates)
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- plugin が破損して編集できなくなる事故を避けるため
-        traceback.print_exc()
-        sys.exit(0)

@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
 
 `atk fb process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
@@ -35,7 +30,6 @@ import json
 import os
 import pathlib
 import sys
-import traceback
 
 # agent-toolkit の共通ゲートモジュールを import する。
 # plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
@@ -133,12 +127,3 @@ def main() -> int:
     append_stop_log(session_id, "block_autonomous_exit", {})
     _emit_block(_llm_notice(_REASON_BODY))
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001
-        traceback.print_exc()
-        _approve()
-        sys.exit(0)

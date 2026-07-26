@@ -42,8 +42,10 @@ CLIフォールバックは持たない。
 ## 共通処理
 
 Edit・Writeは`用途: 実装`でのみ使用する。他用途はファイルを編集せず指摘内容を報告する。
-`sandbox`・`approval-policy`は指定しない
-（PreToolUseフックが`sandbox=danger-full-access`・`approval-policy=never`固定へ強制する）。
+`mcp__codex__codex`呼び出しには`sandbox`へ`danger-full-access`を必ず明示指定する。
+`read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
+これら以外の値ではcodexプロセスが承認待ちのまま復帰せず、呼び出し元が完了を検知できないまま停止する。
+`approval-policy`は指定しない（PreToolUseフックが`never`固定へ強制する）。
 
 `用途: 実装`でcodex応答が不可逆操作の実行確認を求める文面でありタスク未完了と判定できる場合、
 自動承認・自動継続はせず応答全文を添えて`status: needs_escalation`で返却する。
@@ -70,7 +72,7 @@ MCP不可と判定する。MCP不可の場合はcodexへ委譲せず、その旨
 
 実行開始後の最初のアクションとして該当MCPツールを呼び出す。プロンプト生成・パラメーター整形の
 ための自己点検をツール呼び出し前に続けない。初回は`mcp__codex__codex`
-（`cwd`: プロジェクトルートの絶対パス、`prompt`: 初回プロンプト）を使う。
+（`cwd`: プロジェクトルートの絶対パス、`prompt`: 初回プロンプト、`sandbox`: `danger-full-access`）を使う。
 継続（`計画レビュー`・`実装`のみ）は`mcp__codex__codex-reply`
 （`threadId`: 前回の戻り値、`prompt`: 継続プロンプト）を使う。
 

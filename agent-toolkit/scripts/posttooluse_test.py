@@ -17,7 +17,7 @@ import types
 import _fork_runner
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "posttooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
 
 @functools.cache
@@ -65,7 +65,7 @@ def _run(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
@@ -94,6 +94,9 @@ class TestTestExecution:
             "pre-commit run",
             "pre-commit run --all-files",
             "uvx pre-commit run -a",
+            "prek run",
+            "prek run --all-files",
+            "uvx prek run -a",
             "cargo test",
             # タスクランナー経由（test / check / validateアクションを各ランナーで網羅）
             "make test",

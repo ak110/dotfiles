@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """Claude Code PostToolUseフック: dotfiles個人環境専用のSkill呼び出し記録。
 
 dotfilesローカル配布対象外のため`agent-toolkit`プラグイン本体からは検出できない
@@ -34,7 +29,6 @@ exit codeは常に0（PostToolUseはブロック不可）。
 import json
 import pathlib
 import sys
-import traceback
 
 # agent-toolkit のセッション状態ヘルパーを sys.path 経由で再利用する。
 sys.path.insert(
@@ -117,11 +111,3 @@ def main() -> int:
         return 0
 
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
-        traceback.print_exc()
-        sys.exit(0)

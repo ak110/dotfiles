@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pyfltr>=3.14.1", "platformdirs>=4.0"]
-# ///
 # pylint: disable=too-many-lines  # ハンドラ網羅のためチェック実装が多く、分割するとモジュール間の依存関係が複雑化するため許容する
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
@@ -49,8 +44,8 @@ mcp__codex__codex:
 - codex-review.md未読時のブロック (block)
 - `plan-codex-delegate`サブエージェント経由の実施履歴（`plan_codex_delegate_invoked`・
   `plan_codex_delegate_blocked`のいずれかが真）が無い直接呼び出しのブロック (block)
-- `sandbox`未指定時のみ`danger-full-access`へ既定昇格。
-  明示指定（`read-only`, `workspace-write`, `danger-full-access`）は尊重する (auto-fix)
+- `sandbox`が`danger-full-access`以外（未指定を含む）の呼び出しのブロック (block)
+- `approval-policy`の`never`固定 (auto-fix)
 - 全チェック通過時の強制承認 (auto-approve)
 
 mcp__codex__codex-reply:
@@ -117,7 +112,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import traceback
 from collections.abc import Iterable, Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -140,9 +134,12 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     _match_scope_escalation,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES,
-)
+
+# pylint: disable=wrong-import-position,import-error
+from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
+from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+
+# pylint: enable=wrong-import-position,import-error
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
@@ -288,7 +285,7 @@ def _check_agent_norm_reference(tool_input: dict) -> str | None:
 
 
 def _record_plan_codex_delegate_invoked(session_id: str) -> None:
-    """`plan-codex-delegate`起動検知時に経路遵守検査用フラグを即時記録する（PreToolUse側、FB[2]）。
+    """`plan-codex-delegate`起動検知時に経路遵守検査用フラグを即時記録する。
 
     サイドチェーン内（`plan-codex-delegate`自身が`mcp__codex__codex`を呼ぶ場面）でも
     起動記録を参照できるよう、PostToolUse完了を待たずPreToolUse時点で真化する。
@@ -300,6 +297,29 @@ def _record_plan_codex_delegate_invoked(session_id: str) -> None:
         if state.get("plan_codex_delegate_invoked", False):
             return None
         state["plan_codex_delegate_invoked"] = True
+        return state
+
+    update_state(session_id, _set)
+
+
+def _record_subagent_type_flag_invoked(session_id: str, subagent_type: str) -> None:
+    """レビュー担当エージェントの起動要求検知時点で実施済みフラグを即時記録する。
+
+    `_SUBAGENT_TYPE_FLAGS`（`plan_reviewer_invoked`・`codex_review_invoked`）が対象。
+    background起動では完了通知がSendMessage経由の別イベントとして届くため、
+    PostToolUse側の完了時点記録だけでは実施済み判定に反映されない場合がある。
+    起動要求検知の時点で前倒し記録することで、裏側実行時も実装工程の事前チェックを正しく通過させる。
+    完了時点の記録（posttooluse.py側）は`update_state`のno-op復帰により二重記録が起きても
+    状態を壊さないため、既存のまま残す。
+    """
+    flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
+    if not session_id or flag_key is None:
+        return
+
+    def _set(state: dict) -> dict | None:
+        if state.get(flag_key, False):
+            return None
+        state[flag_key] = True
         return state
 
     update_state(session_id, _set)
@@ -449,9 +469,10 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # mcp__codex__codex: codex-review.md未読ブロック + sandbox・approval-policy自動修正
+    # mcp__codex__codex: codex-review.md未読ブロック + sandbox明示指定の強制 + approval-policy自動修正
     # `isSidechain`が真（サブエージェント内部からの呼び出し）の場合は実装用途の呼び出しのため
-    # codex-review.md未読ブロックを回避する。
+    # codex-review.md未読ブロックを回避する。sandbox検査はサブエージェント側の呼び出しが
+    # 停止事象の発生源となるため`isSidechain`の真偽を問わず適用する。
     if tool_name == "mcp__codex__codex":
         _record_iss_sidechain_probe(session_id, tool_name, payload)
         if payload.get("isSidechain") is not True:
@@ -461,6 +482,8 @@ def main() -> int:
             # plan-codex-delegateサブエージェント経由の実施履歴が無ければブロックする。
             if _check_codex_mcp_via_plan_codex_delegate(state, tool_name=tool_name):
                 return 2
+        if _check_codex_mcp_sandbox(tool_input):
+            return 2
         emit_json(_check_codex_mcp_execution(tool_input))
         return 0
 
@@ -555,6 +578,8 @@ def main() -> int:
             "agent-toolkit:plan-codex-delegate",
         ):
             _record_plan_codex_delegate_invoked(session_id)
+        if isinstance(subagent_type, str):
+            _record_subagent_type_flag_invoked(session_id, subagent_type)
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
@@ -3232,25 +3257,45 @@ def _check_codex_mcp_via_plan_codex_delegate(state: dict, *, tool_name: str) -> 
     return True
 
 
-# --- mcp__codex__codex: sandbox・approval-policy自動修正 ---
+# --- mcp__codex__codex: sandbox明示指定の強制・approval-policy自動修正 ---
+
+
+def _check_codex_mcp_sandbox(tool_input: dict) -> bool:
+    """`sandbox`が`danger-full-access`以外の呼び出しを検出してブロック要否を返す。
+
+    未指定も対象に含める。`read-only`・`workspace-write`ではcodexプロセスが承認待ちのまま
+    復帰せず、呼び出し元が完了を検知できないまま停止する事象を実測している。
+    `updatedInput`による書き換えは承認ダイアログの発生自体を抑止できないため、
+    書き換えに依存せず呼び出し側へ明示指定を求める。
+    """
+    if tool_input.get("sandbox") == "danger-full-access":
+        return False
+    specified = tool_input.get("sandbox")
+    actual = f"`{specified}`" if isinstance(specified, str) else "unspecified"
+    print(
+        _llm_notice(
+            f'blocked: mcp__codex__codex requires sandbox="danger-full-access" (got {actual}).'
+            " Other sandbox modes leave the codex process waiting for approval and it never returns."
+            ' Retry with sandbox="danger-full-access".'
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _check_codex_mcp_execution(tool_input: dict) -> dict:
-    """Codex MCP呼び出しのsandboxとapproval-policyを常時強制固定する。
+    """Codex MCP呼び出しのapproval-policyを`never`へ強制固定する。
 
-    sandboxは`danger-full-access`固定。本環境ではread-only・workspace-writeでcodexプロセスが
-    ハングして復帰しないため、呼び出し側の指定値によらず固定運用とする。
     approval-policyは`never`固定。承認プロンプトの発生を抑止し、失敗時はモデルへ結果を返す挙動へ統一する。
-    呼び出し側は`sandbox`・`approval-policy`を渡す必要が無い（渡しても本フックが上書きする）。
+    `sandbox`は`_check_codex_mcp_sandbox`が`danger-full-access`の明示指定を必須とするため、
+    本関数へ到達した時点で条件を満たす。
 
     設計意図（回帰予防）: 過去に「利用者の明示指定を尊重する」形へ変更された履歴があるが、
-    本環境ではハング回避と承認プロンプト抑止を優先し安全側の強制固定を採用する。
+    本環境では承認プロンプト抑止を優先し安全側の強制固定を採用する。
     フィードバック反映等で「利用者の明示指定を尊重する」形へ再度変更しないこと。
     """
     updated_input = dict(tool_input)
-    sandbox_ok = tool_input.get("sandbox") == "danger-full-access"
     approval_ok = tool_input.get("approval-policy") == "never"
-    updated_input["sandbox"] = "danger-full-access"
     updated_input["approval-policy"] = "never"
     result: dict = {
         "hookSpecificOutput": {
@@ -3259,8 +3304,8 @@ def _check_codex_mcp_execution(tool_input: dict) -> dict:
             "updatedInput": updated_input,
         },
     }
-    if not sandbox_ok or not approval_ok:
-        result["systemMessage"] = "[agent-toolkit] forced codex MCP sandbox to danger-full-access and approval-policy to never."
+    if not approval_ok:
+        result["systemMessage"] = "[agent-toolkit] forced codex MCP approval-policy to never."
     return result
 
 
@@ -3294,12 +3339,3 @@ def _check_askuserquestion_scope_escalation(tool_input: dict) -> tuple[str, str]
                     if match_result is not None:
                         return match_result
     return None
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- pluginが破損して編集できなくなる事故を避けるため広範に捕捉
-        # 予期せぬ例外は安全側として通過させる。デバッグのためスタックトレースはstderrに出力する。
-        traceback.print_exc()
-        sys.exit(0)

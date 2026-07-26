@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
 import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_autonomous_exit.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
 _ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 
@@ -78,7 +78,7 @@ def _run(
         env[_ENV_REQUIRED] = "1"
     else:
         env.pop(_ENV_REQUIRED, None)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("autonomous_exit",), input=text, env=env)
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:

@@ -289,17 +289,22 @@ def _follow_cancelled(
 
 
 def _resolve_sha(sha: str | None, subprocess_timeout: float) -> str | None:
-    if sha is not None:
-        return sha
+    """`git rev-parse`で完全形式のcommit shaへ解決する。
+
+    `sha`省略時は`HEAD`を対象とする。明示指定時も同一経路で完全形式へ変換することで、
+    短縮形式を受理しない外部コマンド（`gh run list --commit`）との扱いを揃える。
+    解決失敗時は`None`を返し、呼び出し元で識別子解決失敗として区別できるようにする。
+    """
+    target = sha if sha is not None else "HEAD"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "rev-parse", "--verify", "--end-of-options", target],
             capture_output=True,
             text=True,
             check=False,
             timeout=subprocess_timeout,
         )
-    except subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
         return None
@@ -385,7 +390,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     sha = _resolve_sha(args.sha, args.subprocess_timeout)
     if sha is None:
-        print("[wait_ci] HEADのsha取得に失敗", file=sys.stderr)
+        target_desc = args.sha if args.sha is not None else "HEAD"
+        print(f"[wait_ci] {target_desc}のsha解決に失敗（git rev-parse）", file=sys.stderr)
         return EXIT_GH_ERROR
     return wait_for_ci(
         sha,

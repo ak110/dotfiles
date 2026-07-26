@@ -18,7 +18,7 @@ import yaml
 from _scope_escalation_test_helpers import load_scope_escalation_inputs as _load_scope_escalation_inputs
 from pyfltr.colloquial import check as _colloquial_check
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "pretooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
 
@@ -28,7 +28,7 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
     env = os.environ.copy()
     if env_overrides:
         env.update(env_overrides)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -1946,7 +1946,7 @@ class TestCodexReviewNotRead:
 
 
 class TestCodexMcpExecution:
-    """codex MCP sandbox・approval-policy自動修正（CLI統合テスト）。"""
+    """codex MCP sandbox明示指定の強制・approval-policy自動修正（CLI統合テスト）。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -1954,67 +1954,45 @@ class TestCodexMcpExecution:
 
     _write_state = staticmethod(_write_session_state)
 
-    def test_sandbox_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが未指定の場合、danger-full-accessに自動修正される。"""
+    def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """sandboxが未指定の場合はブロックする。"""
         self._write_state(tmp_path, "fix1", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {"tool_name": "mcp__codex__codex", "tool_input": {"prompt": "hello"}, "session_id": "fix1"},
             env_overrides=state_dir,
         )
-        assert result.returncode == 0
-        out = json.loads(result.stdout)
-        updated = out["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
-        assert updated["prompt"] == "hello"
-        assert "forced" in out["systemMessage"]
+        assert result.returncode == 2
+        assert "danger-full-access" in result.stderr
 
-    def test_sandbox_wrong_value_auto_fix(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandboxが未知の値の場合は未指定扱いでdanger-full-accessへ昇格する。"""
+    @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
+    def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """`danger-full-access`以外のsandbox指定はブロックする。"""
         self._write_state(tmp_path, "fix2", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "network-only"},
+                "tool_input": {"prompt": "hello", "sandbox": sandbox},
                 "session_id": "fix2",
             },
             env_overrides=state_dir,
         )
-        assert result.returncode == 0
-        out = json.loads(result.stdout)
-        updated = out["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
+        assert result.returncode == 2
+        assert "danger-full-access" in result.stderr
 
-    def test_sandbox_read_only_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandbox=read-onlyの明示指定もdanger-full-accessへ強制昇格する（本環境の要件）。"""
-        self._write_state(tmp_path, "fix_ro", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+    def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
+        """サブエージェント内部からの呼び出しでもsandbox検査を適用する。"""
+        self._write_state(tmp_path, "fix_side", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
                 "tool_input": {"prompt": "hello", "sandbox": "read-only"},
-                "session_id": "fix_ro",
+                "session_id": "fix_side",
+                "isSidechain": True,
             },
             env_overrides=state_dir,
         )
-        assert result.returncode == 0
-        out = json.loads(result.stdout)
-        updated = out["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
-
-    def test_sandbox_workspace_write_upgraded(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """sandbox=workspace-writeの明示指定もdanger-full-accessへ強制昇格する。"""
-        self._write_state(tmp_path, "fix_ww", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
-        result = _run(
-            {
-                "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "workspace-write"},
-                "session_id": "fix_ww",
-            },
-            env_overrides=state_dir,
-        )
-        assert result.returncode == 0
-        out = json.loads(result.stdout)
-        updated = out["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
+        assert result.returncode == 2
+        assert "danger-full-access" in result.stderr
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
         """sandbox・approval-policyが共に既定値の場合、updatedInputは返すがsystemMessageを含めない。"""
@@ -2057,23 +2035,43 @@ class TestCodexMcpExecution:
         assert "forced" in out["systemMessage"]
 
 
+class TestCheckCodexMcpSandbox:
+    """`_check_codex_mcp_sandbox`単体テスト（`danger-full-access`明示指定の強制）。"""
+
+    @pytest.mark.parametrize("sandbox", ["read-only", "workspace-write"])
+    def test_blocks_other_sandbox_modes(self, sandbox: str, capsys: pytest.CaptureFixture[str]) -> None:
+        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": sandbox})  # noqa: SLF001  # pylint: disable=protected-access
+        assert blocked is True
+        assert sandbox in capsys.readouterr().err
+
+    def test_blocks_unspecified_sandbox(self, capsys: pytest.CaptureFixture[str]) -> None:
+        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test"})  # noqa: SLF001  # pylint: disable=protected-access
+        assert blocked is True
+        assert "unspecified" in capsys.readouterr().err
+
+    def test_allows_danger_full_access(self, capsys: pytest.CaptureFixture[str]) -> None:
+        blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": "danger-full-access"})  # noqa: SLF001  # pylint: disable=protected-access
+        assert blocked is False
+        assert capsys.readouterr().err == ""
+
+
 class TestCheckCodexMcpExecution:
-    """`_check_codex_mcp_execution`単体テスト（sandbox・approval-policy双方の強制固定）。"""
+    """`_check_codex_mcp_execution`単体テスト（approval-policyの強制固定）。"""
 
-    def test_forces_sandbox_and_approval_policy(self) -> None:
-        result = pretooluse._check_codex_mcp_execution({"prompt": "test"})  # noqa: SLF001  # pylint: disable=protected-access
-        updated = result["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
-        assert updated["approval-policy"] == "never"
-
-    def test_overrides_user_specified_values(self) -> None:
-        tool_input = {"prompt": "test", "sandbox": "read-only", "approval-policy": "on-request"}
+    def test_forces_approval_policy(self) -> None:
+        tool_input = {"prompt": "test", "sandbox": "danger-full-access"}
         result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
         updated = result["hookSpecificOutput"]["updatedInput"]
-        assert updated["sandbox"] == "danger-full-access"
         assert updated["approval-policy"] == "never"
 
-    def test_no_system_message_when_both_already_correct(self) -> None:
+    def test_overrides_user_specified_value(self) -> None:
+        tool_input = {"prompt": "test", "sandbox": "danger-full-access", "approval-policy": "on-request"}
+        result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
+        updated = result["hookSpecificOutput"]["updatedInput"]
+        assert updated["approval-policy"] == "never"
+        assert "forced" in result["systemMessage"]
+
+    def test_no_system_message_when_already_correct(self) -> None:
         tool_input = {"prompt": "test", "sandbox": "danger-full-access", "approval-policy": "never"}
         result = pretooluse._check_codex_mcp_execution(tool_input)  # noqa: SLF001  # pylint: disable=protected-access
         assert "systemMessage" not in result
@@ -2105,7 +2103,7 @@ class TestCodexMcpReply:
 
 
 class TestCodexMcpPlanCodexDelegateGate:
-    """FB[4]: plan-codex-delegate経由検査によるmcp__codex__codex直接呼び出しブロック。"""
+    """plan-codex-delegate経由検査によるmcp__codex__codex直接呼び出しブロック。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -2134,7 +2132,7 @@ class TestCodexMcpPlanCodexDelegateGate:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
                 "session_id": "gate-invoked",
                 "isSidechain": False,
             },
@@ -2148,7 +2146,7 @@ class TestCodexMcpPlanCodexDelegateGate:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
                 "session_id": "gate-fallback",
                 "isSidechain": False,
             },
@@ -3683,7 +3681,7 @@ class TestProcess7CompletionCheck:
 
 
 class TestPlanCodexDelegateInvokedPreToolUse:
-    """FB[2]案(a): `plan-codex-delegate`起動検知をPreToolUse側で即時記録する。"""
+    """`plan-codex-delegate`起動検知をPreToolUse側で即時記録する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("subagent_type", ["plan-codex-delegate", "agent-toolkit:plan-codex-delegate"])
@@ -5949,3 +5947,52 @@ class TestNamedSubagentSendMessageRegistered:
             assert result.returncode == 0, (
                 f"{agent_file.name} unexpectedly blocked by named-subagent SendMessage check: {result.stderr}"
             )
+
+
+class TestSubagentTypeFlagsInvokedPreToolUse:
+    """`_SUBAGENT_TYPE_FLAGS`対象種別の起動検知をPreToolUse側で即時記録する。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize(
+        ("subagent_type", "flag_key"),
+        [
+            ("plan-reviewer", "plan_reviewer_invoked"),
+            ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
+            ("plan-codex-delegate", "codex_review_invoked"),
+            ("agent-toolkit:plan-codex-delegate", "codex_review_invoked"),
+        ],
+    )
+    def test_pre_tool_use_sets_subagent_type_flag(
+        self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str
+    ) -> None:
+        sid = f"fb2b-pre-{tool_name.lower()}-{subagent_type.replace(':', '-')}"
+        result = _run(
+            {"tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state = _read_session_state(tmp_path, sid)
+        assert state.get(flag_key) is True
+
+    def test_other_subagent_type_does_not_set_any_flag(self, tmp_path: pathlib.Path) -> None:
+        sid = "fb2b-pre-other"
+        _run(
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "claude"}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        if state_path.exists():
+            state = _read_session_state(tmp_path, sid)
+            assert state.get("plan_reviewer_invoked") is not True
+            assert state.get("codex_review_invoked") is not True
+
+    def test_second_invocation_does_not_overwrite_existing_true(self, tmp_path: pathlib.Path) -> None:
+        """既に真化済みのフラグを冪等に保つ（`update_state`のno-op復帰を検証、二重記録対策）。"""
+        sid = "fb2b-pre-idempotent"
+        _write_session_state(tmp_path, sid, {"plan_reviewer_invoked": True})
+        result = _run(
+            {"tool_name": "Task", "tool_input": {"subagent_type": "plan-reviewer"}, "session_id": sid},
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert _read_session_state(tmp_path, sid).get("plan_reviewer_invoked") is True

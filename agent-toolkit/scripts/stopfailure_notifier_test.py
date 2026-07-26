@@ -10,7 +10,7 @@ import pathlib
 import _fork_runner
 from stopfailure_notifier import append_log
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "stopfailure_notifier.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _FIXED_NOW = datetime.datetime(2026, 5, 26, 12, 0, 0, tzinfo=datetime.UTC)
 
 
@@ -62,5 +62,5 @@ def test_append_log_appends_across_sessions(tmp_path: pathlib.Path):
 
 def test_invalid_json_exits_safely():
     """不正JSON入力でも例外を送出せず正常終了する。"""
-    result = _fork_runner.run_script(_SCRIPT, input="not json")
+    result = _fork_runner.run_script(_SCRIPT, argv=("stopfailure_notifier",), input="not json")
     assert result.returncode == 0

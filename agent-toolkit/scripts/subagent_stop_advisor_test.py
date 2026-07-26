@@ -20,7 +20,7 @@ from _scope_escalation_test_helpers import load_scope_escalation_inputs
 from _stop_gate_test import _user_async_launched_entry, _user_task_notification_entry, _write_transcript
 from subagent_stop_advisor import _SELF_LAUNCHED_SUBAGENT_WAIT_RE
 
-_SCRIPT = Path(__file__).parent / "subagent_stop_advisor.py"
+_SCRIPT = Path(__file__).parent / "claude_hook.py"
 
 _SCOPE_ESCALATION_INPUTS = load_scope_escalation_inputs()
 
@@ -39,7 +39,7 @@ def _pick_scope_escalation_text(category: str) -> str:
 
 
 def _run(payload: dict) -> subprocess.CompletedProcess[str]:
-    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload))
+    return _fork_runner.run_script(_SCRIPT, argv=("subagent_stop_advisor",), input=json.dumps(payload))
 
 
 def test_no_message_passes() -> None:
@@ -407,7 +407,12 @@ def _run_with_state_dir(payload: dict, state_dir: Path) -> subprocess.CompletedP
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return _fork_runner.run_script(_SCRIPT, input=json.dumps(payload), env=env)
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("subagent_stop_advisor",),
+        input=json.dumps(payload),
+        env=env,
+    )
 
 
 def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, subagent_type: str = "plan-impl-executor") -> None:

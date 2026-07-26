@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明・待機表明辞書で検査する。
 
 公式仕様の`last_assistant_message`を直参照し、
@@ -39,7 +34,6 @@ import json
 import pathlib
 import re
 import sys
-import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
@@ -483,11 +477,3 @@ def main() -> int:
             return 0
 
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:
-        traceback.print_exc(file=sys.stderr)
-        sys.exit(0)

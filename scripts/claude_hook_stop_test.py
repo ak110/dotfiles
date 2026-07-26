@@ -7,6 +7,7 @@ dotfiles 個人環境専用の Stop フックのテスト。
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -20,7 +21,7 @@ sys.path.insert(
 import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_stop.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 
 _EXTENSION_SKILL = "session-review-dotfiles"
 _TARGET_SESSION_REVIEW = "agent-toolkit:session-review"
@@ -47,7 +48,7 @@ def _run(
     if home is not None:
         env["HOME"] = str(home)
         env["USERPROFILE"] = str(home)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("stop",), input=text, env=env)
 
 
 def _parse_decision(result: subprocess.CompletedProcess[str]) -> dict:
@@ -496,6 +497,60 @@ class TestEdgeCases:
         result = _run({"transcript_path": "/x"}, state_dir=tmp_path)
         decision = _parse_decision(result)
         assert "decision" not in decision
+
+
+class TestEntrypointExceptionStages:
+    """共通エントリポイントが例外の発生段階に応じて出力を分けることを検証する。"""
+
+    @staticmethod
+    def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
+        entrypoint = tmp_path / "claude_hook.py"
+        shutil.copy2(_SCRIPT, entrypoint)
+        return entrypoint
+
+    def test_main_import_error_emits_summary_traceback_and_empty_json(self, tmp_path: pathlib.Path) -> None:
+        entrypoint = self._copy_entrypoint(tmp_path)
+        (tmp_path / "claude_hook_stop.py").write_text(
+            "import json\n\n"
+            "def _approve() -> None:\n"
+            "    print(json.dumps({}))\n\n"
+            "def main() -> int:\n"
+            "    raise ImportError('main failure')\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "stop"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert result.stdout == "{}\n"
+        assert result.stderr.startswith("[stop] 想定外エラー: ImportError: main failure")
+        assert "Traceback (most recent call last):" in result.stderr
+
+    def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
+        entrypoint = self._copy_entrypoint(tmp_path)
+        (tmp_path / "claude_hook_stop.py").write_text(
+            "raise ImportError('module failure')\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "stop"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert not result.stdout
+        assert result.stderr.startswith("Traceback (most recent call last):")
+        assert "[stop] 想定外エラー" not in result.stderr
 
 
 class TestHomeIndependent:

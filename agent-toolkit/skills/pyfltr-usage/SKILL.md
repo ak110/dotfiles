@@ -17,14 +17,14 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
 - 通常運用は`uvx pyfltr ...`を使う
   - v3.8以降、Python系ツール一式（ruff / mypy / pylint / pyright / ty / pytest / uv-sort等）が本体依存に統合され`uvx pyfltr`単発で揃う
   - cwdに`uv.lock`があれば`{command}-runner = "uv"`既定でプロジェクトvenvのツール版が優先される
-- pre-commit hookの`entry:`も`uvx pyfltr fast`に揃える
-  - `uv run`系を使う場合は`--frozen`必須（pre-commitは親環境の`UV_FROZEN`を引き継がないため）
+- prek hookの`entry:`も`uvx pyfltr fast`に揃える
+  - `uv run`系を使う場合は`--frozen`必須（prekは親環境の`UV_FROZEN`を引き継がないため）
 - pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す
 - pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う
 
 ### 新規プロジェクトへの導入
 
-pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・pre-commitフック・タスクランナー・GitHub Actionsの一貫構成）に揃える。
+pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・prekフック・タスクランナー・GitHub Actionsの一貫構成）に揃える。
 独自の順序・オプション構成や既存プロジェクトの乖離した設定も同様に揃える。
 
 - Pythonプロジェクト: <https://ak110.github.io/pyfltr/guide/recommended/index.md>
@@ -36,7 +36,7 @@ pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・pre-commitフ
 
 - コーディングエージェントが呼び出す → `run-for-agent`
 - CI環境で実行する → `ci`
-- pre-commitフックで実行する → `fast`
+- prekフックで実行する → `fast`
 - ローカル開発で手動実行する → `run`
 
 | サブコマンド | 用途 | fixステージ | formatter変更で失敗するか |
@@ -169,7 +169,7 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 `--commands`にはエイリアスも指定できる。
 
-- `format`: 全formatter（pre-commit、ruff-format、prettier、uv-sort、shfmt、cargo-fmt、dotnet-format等）
+- `format`: 全formatter（prek、ruff-format、prettier、uv-sort、shfmt、cargo-fmt、dotnet-format等）
 - `lint`: 全linter（ruff-check、mypy、pylint、pyright、ty、markdownlint、textlint等。Rust／dotnet系も含む）
 - `test`: 全tester（pytest、vitest、cargo-test、dotnet-test等）
 - `fast`: fastサブコマンド対象のコマンド
@@ -199,5 +199,5 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 
 ## 詳細情報
 
-設定リファレンス・カスタムコマンドの追加方法・pre-commit連携の詳細は
+設定リファレンス・カスタムコマンドの追加方法・prek連携の詳細は
 [llms.txt](https://ak110.github.io/pyfltr/llms.txt)をWebFetchで取得し、各ページへのリンクから個別に取得する。

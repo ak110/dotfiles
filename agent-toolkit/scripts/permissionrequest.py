@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 r"""Claude Code plugin agent-toolkit: PermissionRequestフック。
 
 PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
@@ -46,7 +41,6 @@ import json
 import pathlib
 import shlex
 import sys
-import traceback
 
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
 # 病的に深いパスでの暴走を防ぐガード。
@@ -467,11 +461,3 @@ def _extract_read_op_paths(cmd: str, args: list[str]) -> list[str] | None:
                 return None
         paths.append(arg)
     return paths
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- フックが破損して編集できなくなる事故を避けるため広範に捕捉
-        traceback.print_exc()
-        sys.exit(0)

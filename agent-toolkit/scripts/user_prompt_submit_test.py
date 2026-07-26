@@ -22,7 +22,7 @@ import _fork_runner
 import pytest
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
-_SCRIPT = _SCRIPTS_DIR / "user_prompt_submit.py"
+_SCRIPT = _SCRIPTS_DIR / "claude_hook.py"
 _NORM_INQUIRY_INPUTS_PATH = (
     _SCRIPTS_DIR.parent / "skills" / "agent-standards" / "references" / "_norm_inquiry_escalation_test_inputs.txt"
 )
@@ -64,7 +64,7 @@ def _run(
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("user_prompt_submit",), input=text, env=env)
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:

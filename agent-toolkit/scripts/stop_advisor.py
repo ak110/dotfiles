@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """Claude Code plugin agent-toolkit: Stop hook。
 
 Claude Codeが停止しようとするタイミングで発火する。判定分岐は`main()`の各節を参照する。
@@ -22,7 +17,6 @@ import pathlib
 import re
 import subprocess
 import sys
-import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -238,12 +232,3 @@ def main() -> int:
     append_stop_log(session_id, "block_session_review", {})
     _emit_block_with_status(reason, cwd=cwd if isinstance(cwd, str) else "")
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- hook自身の異常終了をホスト側プロセスへ波及させないため広範に捕捉（fail-open）
-        traceback.print_exc()
-        _approve()
-        sys.exit(0)

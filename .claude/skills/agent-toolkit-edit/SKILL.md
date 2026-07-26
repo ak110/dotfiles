@@ -147,7 +147,7 @@ agent-toolkitのhookが利用者環境の他hookと同一イベントで共存�
   Claude Code再起動か`/reload-plugins`で反映する（version bumpは不要）
 
 Codex向け`.codex-plugin/plugin.json`と`.agents/plugins/marketplace.json`はClaude Code向けmanifestを
-正本として専用同期スクリプトで生成する。pre-commitは書き込みモードで毎回再生成する。
+正本として専用同期スクリプトで生成する。prekは書き込みモードで毎回再生成する。
 Codex生成物を手動編集せず、正本の変更後に同期スクリプトを実行する。
 Codex hookはイベント名、matcher、入力契約を確認した許可表の定義だけを生成する。
 `chezmoi apply`後処理はCodex marketplaceを登録し、agent-toolkit pluginを導入・更新する。

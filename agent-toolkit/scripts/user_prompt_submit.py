@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["platformdirs>=4.0"]
-# ///
 """Claude Code plugin agent-toolkit: UserPromptSubmit セッション状態記録。
 
 スラッシュコマンド形式（`/agent-toolkit:<name>`または`/<name>`）でのスキル起動を検出し、
@@ -30,7 +25,6 @@ import json
 import pathlib
 import re
 import sys
-import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
@@ -234,11 +228,3 @@ def main() -> int:
         update_state(session_id, _set_plan_and_add_feedback_invoked)
 
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001  # pylint: disable=broad-exception-caught  # hook fail-open原則
-        traceback.print_exc(file=sys.stderr)
-        sys.exit(0)

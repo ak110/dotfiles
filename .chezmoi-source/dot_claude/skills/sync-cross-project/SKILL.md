@@ -1,7 +1,7 @@
 ---
 name: sync-cross-project
 description: >
-  作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、pre-commit、GitHub Actionsなど）や
+  作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、prek、GitHub Actionsなど）や
   ドキュメント構成を揃える際に必ず使う。`/sync-cross-project`、「他プロジェクトへの反映」
   「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
 # 編集時の注意点:
@@ -29,7 +29,7 @@ description: >
 
 変更内容を受け取ったら以下を実施する。
 
-- 変更内容の分類を特定する（例: pre-commit設定、mise設定、CI workflow、README構成など）
+- 変更内容の分類を特定する（例: prek設定、mise設定、CI workflow、README構成など）
 - 「変更時の同期対象マトリクス」で波及プロジェクトを決める
 - 「意図的に維持している差異」に該当しないか確認する
 - 該当プロジェクトに対してサブエージェント（`general-purpose`）で並列調査して差分を把握する
@@ -119,14 +119,14 @@ description: >
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
   - cargo-clippy / cargo-test / cargo-denyはWindowsターゲットのためLinuxでは失敗する
-- Makefileではなく`mise.toml`のタスクを使用する。pre-commitフレームワークは`uvx pre-commit`で呼び出す
+- Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
 - `package.json`の`lint`/`lint:fix`スクリプトは`CLAUDE.md`もtextlint/markdownlint-cli2対象に含めている
   - 新規Node系プロジェクトでも同様に設定する
 - `taiki-e/install-action@cargo-deny`はツール名タグ形式のためpinactでハッシュピン不可（gvの`.pinact.yaml`で除外済み）
 
-### pre-commit / pyfltr / ビルド関連
+### prek / pyfltr / ビルド関連
 
-- 全プロジェクトでpre-commitフレームワークにより`pyfltr fast`が実行される
+- 全プロジェクトでprekフレームワークにより`pyfltr fast`が実行される
   - `markdownlint-fast`／`textlint-fast`によりmd変更時のlintが軽量に実行される
   - 全プロジェクト共通で`uvx pyfltr fast`を呼び出す
 

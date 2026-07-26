@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-# ///
 """Claude Code plugin agent-toolkit: StopFailure hook。
 
 ターンがAPIエラーで終了したときに発火する観測専用イベント`StopFailure`のフック。
@@ -17,7 +12,6 @@ import json
 import pathlib
 import sys
 import tempfile
-import traceback
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from _transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -72,11 +66,3 @@ def main() -> int:
         return 0
     append_log(payload, log_path=_log_path(), now=datetime.datetime.now(datetime.UTC))
     return 0
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except Exception:  # noqa: BLE001 -- hook自身の異常終了をホスト側プロセスへ波及させないため広範に捕捉（fail-open）
-        traceback.print_exc()
-        sys.exit(0)

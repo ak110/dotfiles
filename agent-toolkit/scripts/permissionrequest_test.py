@@ -7,7 +7,7 @@ import _fork_runner
 import permissionrequest as hook
 import pytest
 
-_SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "permissionrequest.py"
+_SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 
 
 @pytest.fixture(name="_disable_tmp_root_allow", autouse=True)
@@ -445,7 +445,12 @@ class TestEndToEnd:
     """サブプロセス経由で stdin / stdout の応答を検証する。"""
 
     def _run(self, payload: dict) -> tuple[int, str]:
-        result = _fork_runner.run_script(_SCRIPT_PATH, input=json.dumps(payload), timeout=30)
+        result = _fork_runner.run_script(
+            _SCRIPT_PATH,
+            argv=("permissionrequest",),
+            input=json.dumps(payload),
+            timeout=30,
+        )
         return result.returncode, result.stdout
 
     def test_write_to_plans_returns_allow(self, home: pathlib.Path) -> None:
@@ -526,7 +531,12 @@ class TestEndToEnd:
         assert stdout == ""
 
     def test_invalid_json_input_emits_nothing(self) -> None:
-        result = _fork_runner.run_script(_SCRIPT_PATH, input="not-json", timeout=30)
+        result = _fork_runner.run_script(
+            _SCRIPT_PATH,
+            argv=("permissionrequest",),
+            input="not-json",
+            timeout=30,
+        )
         assert result.returncode == 0
         assert result.stdout == ""
 

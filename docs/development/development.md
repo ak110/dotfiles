@@ -48,5 +48,6 @@ uv sync --reinstall  # .venvを再構築する場合
 - 公開待機: `exclude-newer`および`mise`の`minimum_release_age`で公開から一定の期間を経たパッケージのみ採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
 
-設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`を参照する。
+設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
+設定ファイルで、ファイル名自体は変更しない）を参照する。
 利用者向けのグローバル設定一覧は[docs/guide/security.md](../guide/security.md)を参照する。

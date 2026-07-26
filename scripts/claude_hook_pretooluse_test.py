@@ -20,7 +20,7 @@ import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
 
 _HOME = pathlib.Path.home()
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook_pretooluse.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
 _AT_RULES_DIR = _AT_DIR / "rules"
@@ -32,7 +32,7 @@ _LOCAL_MD = "CLAUDE" + ".local.md"
 
 def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    return _fork_runner.run_script(_SCRIPT, input=text, env=env)
+    return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
 
 
 def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:

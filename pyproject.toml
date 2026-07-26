@@ -257,6 +257,7 @@ extraPaths = ["agent-toolkit/scripts", "agent-toolkit/skills/plan-mode/scripts"]
 [tool.mypy]
 allow_redefinition = true
 check_untyped_defs = true
+explicit_package_bases = true
 ignore_missing_imports = true
 strict_optional = true
 strict_equality = true

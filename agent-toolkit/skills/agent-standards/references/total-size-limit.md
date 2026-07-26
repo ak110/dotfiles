@@ -16,4 +16,4 @@
   `check_total_size.py`へ設定する。固定値を先に決めると、実装完了時点で既に上限へ達した状態から
   運用が始まる恐れがある
 - 検査: `agent-toolkit/scripts/check_total_size.py`が実装完了時に上限超過を検出しexit 1で失敗する
-  （pre-commit hookへ登録。個別ファイル単位の判定は行わない）
+  （prek hookへ登録。個別ファイル単位の判定は行わない）

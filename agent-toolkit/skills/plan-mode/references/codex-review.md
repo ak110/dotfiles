@@ -13,6 +13,10 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
   - サブエージェント経由の起動がauto mode下でブロックされた場合、
     メインが`mcp__codex__codex`（初回）・`mcp__codex__codex-reply`（継続）を直接呼び出して継続する
 
+`mcp__codex__codex`を呼び出す際は`sandbox`へ`danger-full-access`を必ず明示指定する。
+`read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
+これら以外の値ではcodexプロセスが承認待ちのまま復帰せず、呼び出し元が完了を検知できないまま停止する。
+
 ## codex利用可否の2段階判定
 
 - 段階1（MCP利用）: `mcp__codex__codex`系が呼び出し可能な環境。既定でこの経路を使う
