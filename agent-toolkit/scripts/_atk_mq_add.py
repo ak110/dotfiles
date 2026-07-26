@@ -1,4 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq`コマンド用補助モジュール。
 
 旧`pytools/dotfiles_fb/_add.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
@@ -10,8 +10,12 @@ import pathlib
 import subprocess
 import sys
 
-from _atk_fb_common import (
-    FEEDBACK_STATE_PROCESSING,
+import _atk_mq_tbd as _tbd
+from _atk_mq_common import (
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATES,
+    MQ_TYPE_FEEDBACK,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
@@ -23,8 +27,8 @@ from _atk_fb_common import (
     _resolve_repo_path_override,
     _subdir,
 )
-from _atk_fb_formatters import _shorten_home
-from _atk_fb_repo import _resolve_repo_id
+from _atk_mq_formatters import _shorten_home
+from _atk_mq_repo import _resolve_repo_id
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, str], str]:
@@ -68,49 +72,85 @@ def _body_is_effectively_empty(body: str) -> bool:
     return all(line in ("-", "*", "+") for line in non_empty_lines)
 
 
-def add_feedback(
+_RESERVED_FRONTMATTER_KEYS = ("target_repo", "type", "source", "scope", "question_type", "choices")
+"""frontmatter生成で単一箇所（`add_entries`）が専有するキー。
+
+入力メッセージのfrontmatterへ同名キーが含まれていても、ここに列挙したキーは
+入力側の値を採用せず出力側で必ず単一の値へ確定させる。除外を怠ると
+`lines.extend`由来の入力値と、種別別ブロックが追記する値との重複キーを生成してしまう。
+"""
+
+
+def add_entries(
     private_notes: pathlib.Path,
     *,
     messages: list[str],
     target_repo: str,
     source: str | None,
     now: datetime.datetime,
+    entry_type: str = MQ_TYPE_FEEDBACK,
+    scope: str | None = None,
+    question_type: str | None = None,
+    choices: str | None = None,
     lock_timeout: float = -1,
 ) -> list[str]:
-    """平引数でfeedbackを追加し、生成ファイル名を返す。
+    """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
-    frontmatterの`target_repo`・`source`以外のキーは入力順で出力frontmatterへ引き継ぐ。
+    frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
-    for message in messages:
-        _, body = _parse_leading_frontmatter(message)
-        if _body_is_effectively_empty(body):
-            raise WebInputError("feedback本文が実質空です")
+    if entry_type == MQ_TYPE_FEEDBACK:
+        for message in messages:
+            _, body = _parse_leading_frontmatter(message)
+            if _body_is_effectively_empty(body):
+                raise WebInputError("feedback本文が実質空です")
+    elif question_type not in {"choice", "yes-no", "free-form"}:
+        raise WebInputError("question_typeが不正です")
+    if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
+        raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         timestamp = now.strftime("%Y%m%d-%H%M%S")
-        inbox_dir = _subdir(private_notes, "inbox")
-        counter = _max_existing_seq(inbox_dir, timestamp) + 1
+        inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
+        counter = _max_existing_seq(private_notes, timestamp) + 1
         generated: list[str] = []
         for message in messages:
             frontmatter, body = _parse_leading_frontmatter(message)
             item_target_repo = frontmatter.get("target_repo", target_repo)
             item_source = frontmatter.get("source", source)
-            source_line = f"source: {item_source}\n" if item_source else ""
-            extra_lines = "".join(
-                f"{key}: {value}\n" for key, value in frontmatter.items() if key not in ("target_repo", "source")
-            )
             filename = f"{timestamp}-{counter:03d}.md"
-            content = f"---\ntarget_repo: {item_target_repo}\n{source_line}{extra_lines}---\n\n{body}\n"
+            while any((private_notes / state / filename).exists() for state in MQ_STATES):
+                counter += 1
+                filename = f"{timestamp}-{counter:03d}.md"
+            lines = [f"target_repo: {item_target_repo}", f"type: {entry_type}"]
+            if item_source:
+                lines.append(f"source: {item_source}")
+            lines.extend(f"{key}: {value}" for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
+            if entry_type == MQ_TYPE_FEEDBACK:
+                content = "---\n" + "\n".join(lines) + f"\n---\n\n{body}\n"
+            else:
+                if scope:
+                    lines.append(f"scope: {scope}")
+                lines.append(f"question_type: {question_type}")
+                if choices:
+                    lines.append(f"choices: {choices}")
+                content = (
+                    "---\n"
+                    + "\n".join(lines)
+                    + f"\n---\n\n## 質問\n\n{body}\n\n## 回答\n\n"
+                    + "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+                )
             (inbox_dir / filename).write_text(content, encoding="utf-8")
+            if entry_type != MQ_TYPE_FEEDBACK:
+                _tbd.warn_question_quality(filename, body, question_type)
             generated.append(filename)
             counter += 1
         count = len(generated)
         _commit_and_push(
             private_notes,
-            f"chore: add {count} feedback {'item' if count == 1 else 'items'}",
-            ["feedback"],
+            f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
+            [MQ_STATE_INBOX],
         )
     return generated
 
@@ -123,7 +163,7 @@ def _cmd_add(
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
-    対象リポジトリは常にカレントディレクトリから解決する。ただし`fb add`直後のトークンが実在
+    対象リポジトリは常にカレントディレクトリから解決する。ただし`mq add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     当該引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
@@ -156,7 +196,7 @@ def _cmd_add(
             if message.strip() and candidate.is_file():
                 print(
                     f"投入を拒否しました: 位置引数がファイルパス '{message.strip()}' として解釈できます。"
-                    "atk fb addは本文文字列を位置引数として受け取ります。"
+                    "atk mq addは本文文字列を位置引数として受け取ります。"
                     f'ファイル内容を投入する場合は "$(cat {message.strip()})" のように展開してください。',
                     file=sys.stderr,
                 )
@@ -165,7 +205,7 @@ def _cmd_add(
             # パス長制限などで検査できない文字列は本文として扱う。
             pass
         _, body = _parse_leading_frontmatter(message)
-        if _body_is_effectively_empty(body):
+        if args.type == MQ_TYPE_FEEDBACK and _body_is_effectively_empty(body):
             preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
             print(
                 "投入を拒否しました: 本文が実質空です"
@@ -175,12 +215,16 @@ def _cmd_add(
             )
             sys.exit(1)
     try:
-        generated = add_feedback(
+        generated = add_entries(
             private_notes,
             messages=messages,
             target_repo=target_repo,
             source=args.source,
             now=now,
+            entry_type=args.type,
+            scope=args.scope,
+            question_type=args.question_type,
+            choices=args.choices,
         )
     except subprocess.CalledProcessError:
         print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
@@ -190,11 +234,11 @@ def _cmd_add(
         sys.exit(1)
     count = len(generated)
     inbox_dir = _subdir(private_notes, "inbox")
-    processing_dir = _subdir(private_notes, FEEDBACK_STATE_PROCESSING)
+    processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     print(f"{count}件投入:")
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
     print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
     print("編集する場合:")
     for filename in generated:
-        print(f"  atk fb edit {filename}")
+        print(f"  atk mq edit {filename}")

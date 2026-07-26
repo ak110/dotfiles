@@ -105,13 +105,13 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
   以降の後続工程（`git push`から振り返り・`exit-session`まで）は
   本スキル「ステップ7: 採否確定の後始末」以降の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
-- ステップ3時点は採否ラベルの確定に留める。`atk fb adopt`・`atk fb reject`・`atk tb adopt`の
+- ステップ3時点は採否ラベルの確定に留める。`atk mq adopt`・`atk mq reject`の
   実行タイミングは、「後始末順序」節の「標準順序は実装→検証→…」で始まるバレットが定める
   「ステップ7: 採否確定の後始末」への引き継ぎ工程に従う
 
 ## 後始末コマンドの引数
 
-`atk fb adopt`・`atk fb reject`・`atk tb adopt`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
+`atk mq adopt`・`atk mq reject`は`--note`と`--commit`を渡して結果を対象ファイルへ追記する。
 
 - `--note`: 採用時は反映概要、不採用時は不採用理由。1行に収める
   - シェルメタ文字混入をその都度検知せず、常に`$'...'`のANSI-Cクォートで囲む。
@@ -126,7 +126,7 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
   - 値の指定形式は`--commit=VALUE`形式（`=`区切り）で統一する（理由は上記`--note`のサブバレットに同じ）
 - 対象ファイル末尾の`## 処理結果`節は`--note`・`--commit`の指定有無にかかわらず必ず追記される。
   必須項目として採否と処理日時を記録し、指定された任意項目（`--commit`・`--note`）のみを追加行として書き込む
-- `atk fb adopt`・`atk fb reject`・`atk tb adopt`は対象を`<filename>`引数で直接解決する。
+- `atk mq adopt`・`atk mq reject`は対象を`<filename>`引数で直接解決する。
   `--target-repo`オプションを指定した場合はfrontmatter`target_repo`との一致検証を行い、
   不一致でexit 2として誤対象リポジトリでの操作事故を予防する。
   ただし前掲`--commit`値の取得は対象リポジトリの作業ツリー内で行う必要があるため、

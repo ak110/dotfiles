@@ -22,7 +22,7 @@ user-invocable: false
 
 - 処理対象: 起動プロンプトで渡された計画ファイル1件
 - 完了判定基準: `## 変更内容`記載の全変更の実装・検証・コミット完遂と`## 実行方法`のレビュー実施・指摘反映
-- ユーザー確認事項の記録先: `atk tb add`（不在時は呼び出し元が確立したTBD.mdパス）
+- ユーザー確認事項の記録先: `atk mq add --type=tbd`（不在時は呼び出し元が確立したTBD.mdパス）
 
 実装は`${CLAUDE_PLUGIN_ROOT}/references/plan-impl/execution-process.md`の判断指針に従い、
 codexを優先し（`plan-codex-delegate`、用途: 実装）、MCP不可時のみ`plan-implementer`へ委譲する。

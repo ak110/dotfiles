@@ -1,7 +1,7 @@
-"""`_atk_fb_formatters`モジュール（本文要約の表示幅ベース切り詰め）のテスト。
+"""`_atk_mq_formatters`モジュール（本文要約の表示幅ベース切り詰め）のテスト。
 
 `atk_test.py`側の肥大化（pylint `too-many-lines`）回避のため、
-`_atk_fb_formatters._body_summary`の切り詰め境界ケースを本ファイルへ分離する。
+`_atk_mq_formatters._body_summary`の切り詰め境界ケースを本ファイルへ分離する。
 """
 
 import pathlib
@@ -11,9 +11,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 
-# `_parse_alert_keys`のテストは`_atk_fb_alerts_test.py`側で公開関数`existing_alert_keys`
+# `_parse_alert_keys`のテストは`_atk_mq_alerts_test.py`側で公開関数`existing_alert_keys`
 # 経由で行う（private関数直接テストを避けるため。`coding-standards`の
 # `references/testing.md`「private関数の直接テスト禁止」節参照）。
 

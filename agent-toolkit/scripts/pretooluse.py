@@ -32,7 +32,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 EnterPlanMode:
 
 - `process-feedbacks`・`plan-and-add-feedback`スキル経由
-  （`process_feedbacks_skill_invoked`または`plan_and_add_feedback_skill_invoked`真）でのEnterPlanMode発行のブロック (block)
+  （`process_feedbacks_skill_invoked`または`plan_and_add_entries_skill_invoked`真）でのEnterPlanMode発行のブロック (block)
 
 ExitPlanMode:
 
@@ -535,8 +535,8 @@ def main() -> int:
         # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
             return 2
-        # atk tb add コマンド文字列への縮退フレーズ混入検出
-        if _check_bash_atk_tb_add_scope_escalation(command):
+        # atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出
+        if _check_bash_atk_mq_add_tbd_scope_escalation(command):
             return 2
         # git commit未検証警告
         result = _check_bash_git_commit(command, session_id, cwd)
@@ -2244,13 +2244,13 @@ def _check_plan_prep_skills_block_enter_plan_mode(tool_name: str, session_id: st
 
     - `tool_name`が`EnterPlanMode`
     - `session_id`が空でない
-    - セッション状態の`process_feedbacks_skill_invoked`または`plan_and_add_feedback_skill_invoked`が真
+    - セッション状態の`process_feedbacks_skill_invoked`または`plan_and_add_entries_skill_invoked`が真
 
     process-feedbacks・plan-and-add-feedback両スキルはplan mode外で実行する規範
     （`agent-toolkit/skills/plan-and-add-feedback/SKILL.md`「本スキルはplan mode外で実行する」規定）を機械化する。
     `process_feedbacks_skill_invoked`のフラグリセットは`agent-toolkit/scripts/posttooluse.py`が
     `exit-session`起動検知時に担う。
-    `plan_and_add_feedback_skill_invoked`のリセットは同スクリプトが
+    `plan_and_add_entries_skill_invoked`のリセットは同スクリプトが
     `process-feedbacks`起動検知時（plan-and-add-feedbackの終端工程が委譲する先）に担う。
     """
     if tool_name != "EnterPlanMode":
@@ -2259,13 +2259,13 @@ def _check_plan_prep_skills_block_enter_plan_mode(tool_name: str, session_id: st
         return False
     state = read_state(session_id)
     process_feedbacks_invoked = state.get("process_feedbacks_skill_invoked", False)
-    plan_and_add_feedback_invoked = state.get("plan_and_add_feedback_skill_invoked", False)
-    if not process_feedbacks_invoked and not plan_and_add_feedback_invoked:
+    plan_and_add_entries_invoked = state.get("plan_and_add_entries_skill_invoked", False)
+    if not process_feedbacks_invoked and not plan_and_add_entries_invoked:
         return False
     reset_guidance = ""
     if process_feedbacks_invoked:
         reset_guidance += " Reset the process-feedbacks flag by invoking the `agent-toolkit:exit-session` skill."
-    if plan_and_add_feedback_invoked:
+    if plan_and_add_entries_invoked:
         reset_guidance += " Reset the plan-and-add-feedback flag by invoking the `agent-toolkit:process-feedbacks` skill."
     print(
         _llm_notice(
@@ -2949,16 +2949,16 @@ def _run_git_lines(args: list[str], cwd: str) -> list[str] | None:
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
-# --- Bash: atk tb add コマンド文字列への縮退フレーズ混入検出 ---
+# --- Bash: atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出 ---
 
 
-def _check_bash_atk_tb_add_scope_escalation(command: str) -> bool:
-    """`atk tb add`実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロックする。
+def _check_bash_atk_mq_add_tbd_scope_escalation(command: str) -> bool:
+    """`atk mq add --type=tbd`実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロックする。
 
     TBD登録文へ縮退フレーズを混入させたまま投入する事象を防ぐ。
     検査対象はコマンド文字列全体とする。
     """
-    if "atk" not in command or "tb add" not in command:
+    if "atk" not in command or "mq add" not in command or "--type=tbd" not in command:
         return False
     match_result = _match_scope_escalation(command)
     if match_result is None:
@@ -2966,7 +2966,7 @@ def _check_bash_atk_tb_add_scope_escalation(command: str) -> bool:
     category, _matched = match_result
     print(
         _llm_notice(
-            f"blocked: `atk tb add` includes a scope-escalation phrase (category: {category})."
+            f"blocked: `atk mq add --type=tbd` includes a scope-escalation phrase (category: {category})."
             " See agent-toolkit/rules/01-agent.md session-split prohibition section."
         ),
         file=sys.stderr,

@@ -130,7 +130,7 @@ Codexには同等のネイティブ機能が存在しないため、以下のエ
 - 作業中に発見した既存不良（既存バグ・既存lint違反・既存規範違反・陳腐化した記述）
 - 指示された変更に伴って必要になった周辺の追随修正
 
-`atk fb add`で次回セッションへ回してよいもの。
+`atk mq add`で次回セッションへ回してよいもの。
 
 - 根本原因が現在の作業と独立し、成果物の品質（テスト・lint・規範適合・コミット可能性）に影響しない事象
 - 対応にユーザー合意・別リポジトリ横断作業・独立した新規計画の立案を要する事象
@@ -178,8 +178,8 @@ Codexには同等のネイティブ機能が存在しないため、以下のエ
 `agent-toolkit:process-feedbacks`の起動中を自律モードとし、それ以外を協調モードとする。
 常駐実行から起動されたかユーザーが手動で起動したかは区別しない。
 
-- 自律モード: `AskUserQuestion`を発行せず、確認事項を`atk tb add`で記録して暫定判断で続行する
-- 協調モード: `AskUserQuestion`で確認する。応答なく終了した場合は`atk tb add`で記録して暫定判断で続行する
+- 自律モード: `AskUserQuestion`を発行せず、確認事項を`atk mq add --type=tbd`で記録して暫定判断で続行する
+- 協調モード: `AskUserQuestion`で確認する。応答なく終了した場合は`atk mq add --type=tbd`で記録して暫定判断で続行する
 
 判定にはセッション状態フラグ`process_feedbacks_skill_invoked`を用いる。
 
@@ -308,7 +308,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 ## 識別子・環境変数
 
 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする。
-代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk fb`管理repoのroot、既定`~/private-notes/`）と
+代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk mq`管理repoのroot、既定`~/private-notes/`）と
 `AGENT_TOOLKIT_STOP_GATE_DEBUG`（デバッグ出力）である。個人環境完結は`DOTFILES_`を使う。
 `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を保つ。
 

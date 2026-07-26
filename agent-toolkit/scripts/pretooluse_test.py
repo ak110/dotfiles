@@ -2548,7 +2548,7 @@ _ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS = [
 
 
 class TestBashAtkTbAddScopeEscalation:
-    """`Bash`経由の`atk tb add`コマンド文字列への縮退フレーズ混入検出（block）。
+    """`Bash`経由の`atk mq add --type=tbd`コマンド文字列への縮退フレーズ混入検出（block）。
 
     旧`scripts/claude_hook_pretooluse_bash_test.py`が対象としていたが、当該検査は
     `agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）へ統合済みのため、
@@ -2557,14 +2557,14 @@ class TestBashAtkTbAddScopeEscalation:
 
     @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
     def test_blocks(self, text: str, category: str):
-        command = f"atk tb add glatasks {text}"
+        command = f"atk mq add --type=tbd glatasks {text}"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert category in result.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
 
     def test_unrelated_command_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk fb list --type=tbd"}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk mq list --type=tbd"}})
         assert result.returncode == 0
 
     def test_non_atk_command_allowed(self):
@@ -2572,7 +2572,7 @@ class TestBashAtkTbAddScopeEscalation:
         assert result.returncode == 0
 
     def test_tbd_add_without_scope_escalation_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk tb add glatasks 確認事項です"}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk mq add --type=tbd glatasks 確認事項です"}})
         assert result.returncode == 0
 
 
@@ -5047,9 +5047,9 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
         return {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
 
     def test_blocks_when_flag_true(self, tmp_path: pathlib.Path):
-        """`plan_and_add_feedback_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
+        """`plan_and_add_entries_skill_invoked=True`時、EnterPlanMode発行がブロックされる。"""
         sid = "epm-paaf-flag-true"
-        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": True})
+        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": True})
         result = _run(
             {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
             env_overrides=self._env(tmp_path),
@@ -5073,7 +5073,7 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
     def test_passes_when_flag_false(self, tmp_path: pathlib.Path):
         """フラグが偽の場合はEnterPlanMode発行を通過させる。"""
         sid = "epm-paaf-flag-false"
-        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": False})
+        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": False})
         result = _run(
             {"tool_name": "EnterPlanMode", "tool_input": {}, "session_id": sid},
             env_overrides=self._env(tmp_path),
@@ -5083,7 +5083,7 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
     def test_ignores_other_tool_names(self, tmp_path: pathlib.Path):
         """`ExitPlanMode`など他のツール名では本ハンドラは発火しない。"""
         sid = "epm-paaf-other-tool"
-        _write_session_state(tmp_path, sid, {"plan_and_add_feedback_skill_invoked": True})
+        _write_session_state(tmp_path, sid, {"plan_and_add_entries_skill_invoked": True})
         result = _run(
             {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid},
             env_overrides=self._env(tmp_path),
@@ -5098,7 +5098,7 @@ class TestPlanAndAddFeedbackBlocksEnterPlanMode:
             sid,
             {
                 "process_feedbacks_skill_invoked": True,
-                "plan_and_add_feedback_skill_invoked": True,
+                "plan_and_add_entries_skill_invoked": True,
             },
         )
         result = _run(

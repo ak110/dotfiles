@@ -1,9 +1,9 @@
-"""atk (agent-toolkit `atk fb`) のshowサブコマンドのテスト。
+"""atk (agent-toolkit `atk mq`) のshowサブコマンドのテスト。
 
-FILENAME指定表示・--all全件表示・型フィルター・状態フィルター・
---include-processed（adopted・rejected配下探索）・--skip-pullの単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_list_test.py`・
-`_atk_fb_mutations_test.py`・`_atk_fb_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
+FILENAME指定表示（`--status`・`--answered`を迂回した全状態探索を含む）・--all全件表示・
+型フィルター・状態フィルター・--skip-pullの単体テストを集約する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_mq_list_test.py`・
+`_atk_mq_mutations_test.py`・`_atk_mq_process_loop_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import pathlib
@@ -41,7 +41,7 @@ class TestShowSingleFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "show", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -62,11 +62,11 @@ class TestShowSingleFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "nonexistent.md"], home=tmp_path)
+            atk.main(["mq", "show", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox/tbdに存在しません" in captured.err
+        assert "全状態フォルダに存在しません" in captured.err
 
     def test_target_repo_mismatch_falls_through_and_exits(
         self,
@@ -81,14 +81,14 @@ class TestShowSingleFile:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "show", "fb-001.md", "--target-repo=github.com/example/bar"],
+                ["mq", "show", "fb-001.md", "--target-repo=github.com/example/bar"],
                 home=tmp_path,
             )
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert "inbox/tbdに存在しません" in captured.err
+        assert "全状態フォルダに存在しません" in captured.err
 
 
 class TestShowAll:
@@ -107,7 +107,7 @@ class TestShowAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all"], home=tmp_path)
+            atk.main(["mq", "show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -131,22 +131,22 @@ class TestShowStatusAll:
         """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
-        adopted_dir = notes / "feedback" / "adopted"
+        adopted_dir = notes / "adopted"
         adopted_dir.mkdir(parents=True, exist_ok=True)
         (adopted_dir / "fb-adopted.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\nadopted本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nadopted本文\n",
             encoding="utf-8",
         )
-        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nrejected本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--status=all"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -169,11 +169,11 @@ class TestShowRequiresFilenameOrAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show"], home=tmp_path)
+            atk.main(["mq", "show"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk fb show" in captured.err
+        assert "usage: atk mq show" in captured.err
         assert "FILENAME" in captured.err
         assert "--all" in captured.err
         error_line = captured.err.rstrip("\n").splitlines()[-1]
@@ -181,7 +181,7 @@ class TestShowRequiresFilenameOrAll:
 
 
 class TestShowTypeFilter:
-    """showサブコマンド: --typeでFILENAME探索対象inboxを限定する。"""
+    """showサブコマンド: --typeでFILENAME探索対象種別を限定する（探索範囲は4状態フォルダ全体）。"""
 
     def test_type_tbd_finds_tbd_entry(
         self,
@@ -189,17 +189,17 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=tbd指定時はtbd/inboxのみを探索しstatusラベル付きで出力する。"""
+        """--type=tbd指定時はinboxのみを探索しstatusラベル付きで出力する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=tbd"], home=tmp_path)
+            atk.main(["mq", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=tbd"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"### {_FIXED_TIMESTAMP}-001.md [unanswered]" in captured.out
+        assert f"### {_FIXED_TIMESTAMP}-001.md [inbox/unanswered]" in captured.out
 
     def test_type_feedback_excludes_tbd_entry(
         self,
@@ -207,17 +207,17 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=feedback指定時はtbd/inboxを探索せず該当なしでexit 2になる。"""
+        """--type=feedback指定時はtbdエントリを種別不一致として除外し該当なしでexit 2になる。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=feedback"], home=tmp_path)
+            atk.main(["mq", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=feedback"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox/tbdに存在しません" in captured.err
+        assert "全状態フォルダに存在しません" in captured.err
 
     def test_type_all_searches_feedback_then_tbd(
         self,
@@ -225,17 +225,17 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=all（既定）はfeedback/inbox→tbd/inboxの順で探索し先に見つかった方を表示する。"""
+        """--type=all（既定）は種別を問わず探索し該当エントリを表示する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
+            atk.main(["mq", "show", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"### {_FIXED_TIMESTAMP}-001.md [unanswered]" in captured.out
+        assert f"### {_FIXED_TIMESTAMP}-001.md [inbox/unanswered]" in captured.out
 
 
 class TestShowSourceFilter:
@@ -254,7 +254,7 @@ class TestShowSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--source=session-review"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -272,7 +272,7 @@ class TestShowSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-001.md", "--source=!session-review"], home=tmp_path)
+            atk.main(["mq", "show", "fb-001.md", "--source=!session-review"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -289,7 +289,7 @@ class TestShowSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -298,15 +298,15 @@ class TestShowSourceFilter:
 
 
 class TestShowStatusFilter:
-    """showサブコマンド: --statusでtbd側エントリのみ回答状況を限定する。"""
+    """showサブコマンド: --answeredでTBDの回答状況を限定する（--all分岐のみ有効）。"""
 
-    def test_all_status_answered_excludes_unanswered_tbd_but_keeps_feedback(
+    def test_all_answered_excludes_unanswered_tbd_and_feedback(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --status=answeredはtbd側の未回答を除外し、feedback側には作用しない。"""
+        """--all --answered=yesは回答済みTBDだけを表示する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -314,34 +314,34 @@ class TestShowStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--status=answered"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--answered=yes"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "### fb-001.md" in captured.out
-        assert f"### {_FIXED_TIMESTAMP}-002.md [answered]" in captured.out
+        assert "### fb-001.md" not in captured.out
+        assert f"### {_FIXED_TIMESTAMP}-002.md [inbox/answered]" in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
-    def test_filename_status_mismatch_treated_as_not_found(
+    def test_filename_bypasses_answered_filter(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時、対象tbdの回答状況が--statusと不一致なら未検出扱いでexit 2になる。"""
+        """FILENAME指定時は--answeredを迂回し、未回答tbdでも--answered=yesと無関係に表示される。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "show", f"{_FIXED_TIMESTAMP}-001.md", "--status=answered"],
+                ["mq", "show", f"{_FIXED_TIMESTAMP}-001.md", "--answered=yes"],
                 home=tmp_path,
             )
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "inbox/tbdに存在しません" in captured.err
+        assert f"### {_FIXED_TIMESTAMP}-001.md [inbox/unanswered]" in captured.out
 
 
 def _write_feedback_state_file(
@@ -351,12 +351,12 @@ def _write_feedback_state_file(
     target_repo: str = "github.com/example/foo",
     body: str = "state本文",
 ) -> pathlib.Path:
-    """feedback/<state>配下（processing・adopted・rejected等）に1ファイルを書き込み、絶対パスを返す。"""
-    state_dir = notes / "feedback" / state
+    """指定状態配下にfeedbackファイルを書き込み、絶対パスを返す。"""
+    state_dir = notes / state
     state_dir.mkdir(parents=True, exist_ok=True)
     path = state_dir / filename
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -368,7 +368,7 @@ def _write_feedback_processing_file(
     target_repo: str = "github.com/example/foo",
     body: str = "processing本文",
 ) -> pathlib.Path:
-    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す（`_write_feedback_state_file`の薄いラッパー）。"""
+    """processing配下に1ファイルを書き込み、絶対パスを返す（`_write_feedback_state_file`の薄いラッパー）。"""
     return _write_feedback_state_file(notes, "processing", filename, target_repo=target_repo, body=body)
 
 
@@ -387,7 +387,7 @@ class TestShowProcessing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-processing.md"], home=tmp_path)
+            atk.main(["mq", "show", "fb-processing.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -407,7 +407,7 @@ class TestShowProcessing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-dup.md"], home=tmp_path)
+            atk.main(["mq", "show", "fb-dup.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -427,7 +427,7 @@ class TestShowProcessing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all"], home=tmp_path)
+            atk.main(["mq", "show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -437,72 +437,78 @@ class TestShowProcessing:
         assert "processing本文" in captured.out
 
 
-class TestShowIncludeProcessed:
-    """showサブコマンド: --include-processed指定時にFILENAME探索へadopted・rejectedを追加する。"""
+class TestShowProcessedStates:
+    """showサブコマンド: 処理済み状態の探索と、FILENAME単発指定時の`--status`迂回を検証する。"""
 
-    def test_include_processed_finds_adopted(
+    def test_finds_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--include-processed指定時にadopted配下のFILENAMEを参照できる。"""
+        """adopted配下のFILENAMEを参照できる。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-adopted.md", "--include-processed"], home=tmp_path)
+            atk.main(["mq", "show", "fb-adopted.md", "--status=adopted"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "### fb-adopted.md" in captured.out
         assert "adopted本文" in captured.out
 
-    def test_include_processed_finds_rejected(
+    def test_finds_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--include-processed指定時にrejected配下のFILENAMEを参照できる。"""
+        """rejected配下のFILENAMEを参照できる。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-rejected.md", "--include-processed"], home=tmp_path)
+            atk.main(["mq", "show", "fb-rejected.md", "--status=rejected"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "### fb-rejected.md" in captured.out
         assert "rejected本文" in captured.out
 
-    def test_include_processed_default_off(
+    def test_default_status_still_finds_adopted_via_filename(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--include-processed未指定時はadopted配下のFILENAMEを渡してもexit 2になる。"""
+        """`--status`未指定（既定active）でもFILENAME指定時はadopted配下を探索し表示できる。
+
+        既定の`--status=active`をFILENAME単発指定分岐へ適用すると、`atk mq show <FILENAME>`
+        でadopted・rejected状態のエントリを一切参照できなくなるため、単発指定は`--status`を
+        迂回する契約になっている（指摘2の修正と対で成立する）。
+        """
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "fb-adopted.md"], home=tmp_path)
+            atk.main(["mq", "show", "fb-adopted.md"], home=tmp_path)
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "inbox/tbdに存在しません" in captured.err
+        assert "### fb-adopted.md" in captured.out
+        assert "adopted本文" in captured.out
 
-    def test_all_ignores_include_processed(
+    def test_all_status_all_includes_processed(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--allモードは--include-processedの影響を受けずadopted・rejectedを含めない。"""
+        """--all --status=allは全状態を表示する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
@@ -510,13 +516,13 @@ class TestShowIncludeProcessed:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--include-processed"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "### fb-inbox.md" in captured.out
-        assert "adopted本文" not in captured.out
-        assert "rejected本文" not in captured.out
+        assert "adopted本文" in captured.out
+        assert "rejected本文" in captured.out
 
 
 class TestShowSkipPull:
@@ -534,7 +540,7 @@ class TestShowSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all", "--skip-pull"], home=tmp_path)
+            atk.main(["mq", "show", "--all", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)

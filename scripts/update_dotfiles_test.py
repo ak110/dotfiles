@@ -113,7 +113,7 @@ class TestLockExclusion:
     """排他ロックが機能すること（別プロセス保持中はタイムアウトしてexit code 1）を検証する。
 
     同一プロセス内で2個の`FileLock`オブジェクトを取得するだけでは、プロセス間排他という
-    中核要件（複数の`atk fb process-loop`常駐・手動実行の同時実行対策）を検証できないため、
+    中核要件（複数の`atk mq process-loop`常駐・手動実行の同時実行対策）を検証できないため、
     `subprocess.Popen`で別プロセスにロックを保持させる。
     """
 

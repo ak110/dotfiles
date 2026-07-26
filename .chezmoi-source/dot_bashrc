@@ -102,8 +102,8 @@ case $- in
 esac
 
 # 対話シェル起動時に未回答TBDを通知する
-if command -v atk >/dev/null 2>&1 && atk fb status >/dev/null 2>&1; then
-    atk fb list --type=tbd --status=unanswered --skip-pull || true
+if command -v atk >/dev/null 2>&1 && atk mq status >/dev/null 2>&1; then
+    atk mq list --type=tbd --answered=no --skip-pull || true
 fi
 
 # SSH対話ログイン時にtmuxへ自動アタッチする

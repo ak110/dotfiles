@@ -8,8 +8,8 @@ import subprocess
 import threading
 import typing
 
-import _atk_fb_common as common
-import _atk_fb_repo as feedback_repo
+import _atk_mq_common as common
+import _atk_mq_repo as feedback_repo
 import _atk_serve_app as serve_app
 import _atk_serve_assets as assets
 import _atk_serve_config as config
@@ -148,8 +148,8 @@ process.stdout.write(JSON.stringify({{
     assert "answered: false" in rendered["texts"]
 
 
-def test_batch_kind_rejects_mixed_feedback_and_tbd_selection() -> None:
-    """一括操作のkind検証がFeedbackとTBDの混在選択を拒否する。"""
+def test_action_allowed_is_type_independent() -> None:
+    """一括操作の可否判定が状態のみで決まり、feedbackとTBDで差を持たない。"""
     function_source = assets.JS.partition("function updateActions(){")[0]
     script = f"""
 globalThis.document = {{
@@ -158,15 +158,15 @@ globalThis.document = {{
   querySelectorAll() {{ return []; }}
 }};
 eval({json.dumps(function_source)});
-const feedback = {{kind: 'feedback'}};
-const tbd = {{kind: 'tbd'}};
-process.stdout.write(JSON.stringify([
-  batchKind([]),
-  batchKind([feedback]),
-  batchKind([tbd]),
-  batchKind([feedback, feedback]),
-  batchKind([feedback, tbd])
-]));
+const states = ['inbox', 'processing', 'adopted', 'rejected'];
+const actions = ['start-processing', 'adopt', 'reject', 'remove'];
+const result = {{}};
+for (const action of actions) {{
+  for (const kind of ['feedback', 'tbd']) {{
+    result[`${{action}}/${{kind}}`] = states.map(state => actionAllowed(action, {{kind, state}}));
+  }}
+}}
+process.stdout.write(JSON.stringify(result));
 """
     completed = subprocess.run(
         ["node", "--input-type=commonjs"],
@@ -175,19 +175,40 @@ process.stdout.write(JSON.stringify([
         capture_output=True,
         check=True,
     )
-    assert json.loads(completed.stdout) == [None, "feedback", "tbd", "feedback", None]
+    rendered = json.loads(completed.stdout)
+    # start-processingはinboxのみ、他の操作はinbox・processingの2状態で許可する。
+    for kind in ("feedback", "tbd"):
+        assert rendered[f"start-processing/{kind}"] == [True, False, False, False]
+        for action in ("adopt", "reject", "remove"):
+            assert rendered[f"{action}/{kind}"] == [True, True, False, False]
+    # 種別による差が無いことを明示的に確認する。
+    for action in ("start-processing", "adopt", "reject", "remove"):
+        assert rendered[f"{action}/feedback"] == rendered[f"{action}/tbd"]
 
 
 def test_batch_payloads_follow_action_contract() -> None:
     """一括操作の入力を対応するAPI操作だけへ送る。"""
-    assert "action==='remove'&&kind==='tbd'" in assets.JS
-    assert "action==='adopt'&&kind==='feedback'" in assets.JS
+    assert "if(note&&['adopt','reject','remove'].includes(action))" in assets.JS
+    assert "if(category&&action==='adopt'&&items.every(e=>e.kind==='feedback'))" in assets.JS
     assert "['adopt','reject'].includes(action)" in assets.JS
-    assert "kind=batchKind(chosen)" in assets.JS
-    assert "if(!kind){showError" in assets.JS
-    assert "await api(`/api/${kind}/${action}`" in assets.JS
+    # 種別混在の禁止は統合により不要となったため、判定と警告表示を持たない。
+    assert "batchKind" not in assets.JS
+    assert "FeedbackとTBDを同時に一括操作できません" not in assets.JS
+    assert "await api(`/api/entries/${action}`" in assets.JS
     assert "Object.groupBy" not in assets.JS
     assert "for(const id of ['batch-note','batch-category','batch-commit'])" in assets.JS
+
+
+def test_batch_category_is_feedback_only() -> None:
+    """カテゴリはFeedback単独選択時のみAPIへ送信し、TBD混在時は入力を無効化する。"""
+    assert "items.every(e=>e.kind==='feedback')" in assets.JS
+    assert "$('#batch-category').disabled=!(chosen.length&&chosen.every(e=>e.kind==='feedback'))" in assets.JS
+
+
+def test_batch_remove_forces_processing_deletion() -> None:
+    """processing状態を含む削除は確認付きでforceを送信する。"""
+    assert "if(action==='remove'&&items.some(e=>e.state==='processing'))body.force=true" in assets.JS
+    assert "action==='remove'&&chosen.some(e=>e.state==='processing')" in assets.JS
 
 
 def test_state_keeps_latest_event(tmp_path: pathlib.Path) -> None:
@@ -204,21 +225,15 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     expected = {
         "/api/status",
         "/api/entries",
-        "/api/entries/<kind>/<state_name>/<filename>",
-        "/api/feedback",
-        "/api/feedback/<state_name>/<filename>",
-        "/api/feedback/start-processing",
-        "/api/feedback/adopt",
-        "/api/feedback/reject",
-        "/api/feedback/remove",
-        "/api/feedback/commit",
+        "/api/entries/<state_name>/<filename>",
+        "/api/entries/start-processing",
+        "/api/entries/adopt",
+        "/api/entries/reject",
+        "/api/entries/remove",
+        "/api/entries/commit",
+        "/api/entries/answer",
         "/api/enable",
         "/api/disable",
-        "/api/tbd",
-        "/api/tbd/<filename>",
-        "/api/tbd/<filename>/answer",
-        "/api/tbd/adopt",
-        "/api/tbd/remove",
         "/api/events",
     }
     assert expected <= rules
@@ -281,10 +296,13 @@ def test_entries_hold_lock_through_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """一覧取得はpullからファイル読取りまで同一ロックを保持する。"""
-    inbox = tmp_path / "feedback/inbox"
+    inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     entry = inbox / "entry.md"
-    entry.write_text("---\ntarget_repo: example/repo\nsource: test\n---\n\n要約本文\n", encoding="utf-8")
+    entry.write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: test\n---\n\n要約本文\n",
+        encoding="utf-8",
+    )
     calls: list[str] = []
     locked = False
 
@@ -322,20 +340,195 @@ def test_entries_hold_lock_through_snapshot(
     }
 
 
+def test_operations_answered_filter_returns_only_answered_tbds(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`answered=yes`は回答済みTBDのみを返し、未回答TBD・feedbackを除外する。"""
+    monkeypatch.setattr(common, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
+    monkeypatch.setattr(common, "pull", lambda _path: None)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "answered.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n回答済み\n",
+        encoding="utf-8",
+    )
+    (inbox / "unanswered.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    (inbox / "feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\nフィードバック本文\n",
+        encoding="utf-8",
+    )
+    result = serve_app.Operations(tmp_path).entries({"answered": "yes"})
+    assert [item["filename"] for item in result] == ["answered.md"]
+
+
+@pytest.mark.asyncio
+async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
+    """`type`欠落は必須キー不足として400を返す。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await app.test_client().post(
+        "/api/entries",
+        json={"messages": ["x"], "target_repo": "example/repo"},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_add_api_rejects_tbd_only_scope_on_feedback(tmp_path: pathlib.Path) -> None:
+    """TBD専用の`scope`をfeedbackへ指定すると拒否する。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await app.test_client().post(
+        "/api/entries",
+        json={"type": "feedback", "messages": ["x"], "target_repo": "example/repo", "scope": "s"},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_tbd_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TBDエントリも他種別と同様に不採用遷移が成功する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "_repo_lock", lock)
+    monkeypatch.setattr(common, "_pull", lambda _path: None)
+    monkeypatch.setattr(common, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(
+        "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await app.test_client().post("/api/entries/reject", json={"filenames": ["entry.md"]})
+    assert response.status_code == 200
+    assert (tmp_path / "rejected" / "entry.md").is_file()
+    assert not (inbox / "entry.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_answer_api_rejects_feedback_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """feedbackエントリへの回答送信は拒否する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "_repo_lock", lock)
+    monkeypatch.setattr(common, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.tbd_mutations, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.tbd_mutations, "_pull", lambda _path: None)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(
+        "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await app.test_client().post(
+        "/api/entries/answer",
+        json={"filename": "entry.md", "answer": "回答"},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_adopt_api_rejects_category_for_tbd(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TBDエントリへのカテゴリ付き採用は拒否する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    monkeypatch.setattr(common, "_repo_lock", lock)
+    monkeypatch.setattr(common, "_pull", lambda _path: None)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
+    monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(
+        "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n回答\n",
+        encoding="utf-8",
+    )
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await app.test_client().post(
+        "/api/entries/adopt",
+        json={"filenames": ["entry.md"], "category": "some-category"},
+    )
+    assert response.status_code == 400
+
+
+def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状態監視は平坦化後の4状態フォルダのみを対象とし、旧feedback/tbd階層を生成しない。"""
+    current = state.ServeState(tmp_path)
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        current.observer,
+        "schedule",
+        lambda _handler, path, recursive=False: scheduled.append(path),
+    )
+    monkeypatch.setattr(current.observer, "start", lambda: None)
+    current.start(asyncio.new_event_loop())
+    assert sorted(pathlib.Path(p).name for p in scheduled) == ["adopted", "inbox", "processing", "rejected"]
+    assert not (tmp_path / "feedback").exists()
+    assert not (tmp_path / "tbd").exists()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("method", "path", "payload"),
     [
         ("get", "/api/entries?status=unknown", None),
         ("get", "/api/entries?target_repo=", None),
-        ("post", "/api/feedback", {"messages": ["x"], "source": ""}),
         (
             "post",
-            "/api/tbd",
-            {"messages": ["x"], "scope": "s", "question_type": "free-form", "choices": ["a"]},
+            "/api/entries",
+            {"type": "feedback", "messages": ["x"], "target_repo": "example/repo", "source": ""},
         ),
-        ("post", "/api/feedback/adopt", {"filenames": ["x.md"], "note": 1}),
-        ("post", "/api/feedback/adopt", {"filenames": ["../x.md"]}),
+        (
+            "post",
+            "/api/entries",
+            {
+                "type": "tbd",
+                "messages": ["x"],
+                "target_repo": "example/repo",
+                "scope": "s",
+                "question_type": "free-form",
+                "choices": ["a"],
+            },
+        ),
+        ("post", "/api/entries/adopt", {"filenames": ["x.md"], "note": 1}),
+        ("post", "/api/entries/adopt", {"filenames": ["../x.md"]}),
     ],
 )
 async def test_api_rejects_invalid_inputs(
@@ -359,10 +552,10 @@ async def test_api_rejects_invalid_inputs(
 @pytest.mark.parametrize(
     ("path", "payload"),
     [
-        ("/api/feedback", {"messages": ["feedback"]}),
+        ("/api/entries", {"type": "feedback", "messages": ["feedback"]}),
         (
-            "/api/tbd",
-            {"messages": ["TBDですか？"], "scope": "test", "question_type": "free-form"},
+            "/api/entries",
+            {"type": "tbd", "messages": ["TBDですか？"], "scope": "test", "question_type": "free-form"},
         ),
     ],
 )
@@ -386,10 +579,11 @@ async def test_web_add_mutations_require_target_repo(
 @pytest.mark.parametrize(
     ("path", "payload"),
     [
-        ("/api/feedback", {"messages": ["feedback"], "target_repo": None}),
+        ("/api/entries", {"type": "feedback", "messages": ["feedback"], "target_repo": None}),
         (
-            "/api/tbd",
+            "/api/entries",
             {
+                "type": "tbd",
                 "messages": ["TBDですか？"],
                 "scope": "test",
                 "question_type": "free-form",
@@ -431,10 +625,10 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
     monkeypatch.setattr(serve_app.feedback_mutations, "_repo_lock", lock)
     monkeypatch.setattr(serve_app.feedback_mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(serve_app.feedback_mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    inbox = tmp_path / "feedback" / "inbox"
+    inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
-        "---\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+        "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
         encoding="utf-8",
     )
     app = serve_app.create_app(
@@ -442,9 +636,9 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
         config.ServeConfig("127.0.0.1", 28766),
         state.ServeState(tmp_path),
     )
-    response = await app.test_client().post("/api/feedback/adopt", json={"filenames": ["entry.md"]})
+    response = await app.test_client().post("/api/entries/adopt", json={"filenames": ["entry.md"]})
     assert response.status_code == 200
-    assert (tmp_path / "feedback" / "adopted" / "entry.md").is_file()
+    assert (tmp_path / "adopted" / "entry.md").is_file()
     assert not (inbox / "entry.md").exists()
 
 
@@ -457,7 +651,7 @@ async def test_invalid_json_returns_json_error(tmp_path: pathlib.Path) -> None:
         state.ServeState(tmp_path),
     )
     response = await app.test_client().post(
-        "/api/feedback",
+        "/api/entries",
         data='{"messages":',
         headers={"Content-Type": "application/json"},
     )
@@ -490,13 +684,18 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
     ("path", "payload", "expected_target"),
     [
         (
-            "/api/feedback",
-            {"messages": ["feedback"], "target_repo": "https://github.com/Example/Specified.git"},
+            "/api/entries",
+            {
+                "type": "feedback",
+                "messages": ["feedback"],
+                "target_repo": "https://github.com/Example/Specified.git",
+            },
             "github.com/example/specified",
         ),
         (
-            "/api/tbd",
+            "/api/entries",
             {
+                "type": "tbd",
                 "messages": ["TBDですか？"],
                 "scope": "test",
                 "question_type": "free-form",
@@ -545,7 +744,6 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     response = await app.test_client().post(path, json=payload)
     assert response.status_code == 201
     body = await response.get_json()
-    kind = "feedback" if path == "/api/feedback" else "tbd"
-    content = (tmp_path / kind / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
+    content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
     assert f"target_repo: {expected_target}" in content
     assert "target_repo: \n" not in content

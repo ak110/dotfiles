@@ -29,7 +29,7 @@
 
 規範改訂・スコープ判断・方針衝突の解釈でユーザーの過去方針・選好を参照する場合、
 adopted配下のユーザー起草フィードバック（frontmatterに`source: session-review`を持たないもの）を
-一次資料とする。確認は`atk fb show --include-processed <FILENAME>`で実施する。
+一次資料とする。確認は`atk mq show <FILENAME>`で実施する。
 
 ## 候補技術主張の実機検証
 
@@ -126,10 +126,10 @@ adopted配下のユーザー起草フィードバック（frontmatterに`source:
 
 ## 同一カテゴリ累積時の規範化ゲート
 
-`atk fb list --type=feedback --status=adopted --category=<カテゴリ名>`で
+`atk mq list --type=feedback --status=adopted --category=<カテゴリ名>`で
 過去の同一カテゴリ採用数を確認する。判定対象は定数`_CATEGORY_GATE_THRESHOLD`
-（`agent-toolkit/scripts/_atk_fb_mutations.py`定義）である。
-`atk fb adopt --category`実行時、CLIが同カテゴリの累積件数を集計し閾値到達時に標準エラーへ警告を出力する。
+（`agent-toolkit/scripts/_atk_mq_mutations.py`定義）である。
+`atk mq adopt --category`実行時、CLIが同カテゴリの累積件数を集計し閾値到達時に標準エラーへ警告を出力する。
 警告出力時は、上位カテゴリでの規範化・仕組み化の検討を「規範改善案の併記」の必須項目へ格上げする。
 
 ## 不採用根拠の限定

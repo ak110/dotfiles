@@ -1,4 +1,4 @@
-"""Claude Code agent-toolkit: `atk fb process-loop`実行時の観測ログモジュール。
+"""Claude Code agent-toolkit: `atk mq process-loop`実行時の観測ログモジュール。
 
 目的は`process-loop`起動セッションのフィードバック件数・セッション全体の所要時間・
 plan-impl系サブエージェントの所要時間を後から分析できるよう機械記録することにある。

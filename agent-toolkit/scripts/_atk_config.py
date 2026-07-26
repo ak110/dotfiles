@@ -11,7 +11,7 @@ import pathlib
 import sys
 
 import platformdirs
-from _atk_fb_common import _private_notes_path
+from _atk_mq_common import _private_notes_path
 
 _CONFIG_FILENAME = "config.json"
 

@@ -6,27 +6,19 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成: `atk fb <sub>`・`atk tb <sub>`・`atk serve`・`atk config <sub>`形式。
-`fb`・`tb`サブパーサ配下にフィードバック・TBD操作サブコマンドを登録する。
+サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`形式とする。
+フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
-- fb add: inboxへフィードバックを投入する
-- fb list: feedback/tbd inbox・processing全件を1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する
-- fb show: feedback/tbd inboxの1件または全件（--all）の本文を表示する
-  （`--include-processed`でFILENAME指定時にadopted・rejected配下も探索）
-- fb start-processing: feedbackをinboxからprocessing/へ移動し処理中状態に遷移させコミット・push
-- fb adopt: 採用としてinboxまたはprocessingからadopted/へ移動しコミット・push
-- fb reject: 不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push
-- fb rm: inbox・processingいずれかから単純削除しコミット・push
-- fb edit: $EDITORで対象ファイルを編集しコミット・push
-- fb commit: 外部編集後のinbox配下未コミット変更をコミット・push
-- fb enable/disable/status: feedback-inbox有効化フラグの操作・判定
-- fb process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
+- mq add/list/show: エントリの投入・一覧・本文表示
+- mq start-processing/adopt/reject/rm/edit/commit: エントリの状態遷移・編集・コミット
+- mq answer: TBDへの回答
+- mq enable/disable/status: メッセージキュー有効化フラグの操作・判定
+- mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
-- tb add/list/answer/edit/adopt/rm: TBD項目の操作
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
-ハンドラ実装は`_atk_fb_add`・`_atk_fb_list`・`_atk_fb_show`・`_atk_fb_mutations`・
-`_atk_fb_process_loop`・`_atk_fb_tbd`の各補助モジュールに分割し、
+ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
+`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
 """
 
@@ -36,33 +28,40 @@ import pathlib
 import sys
 import typing
 
-# 兄弟モジュール（_atk_fb_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
+# 兄弟モジュール（_atk_mq_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
 # sys.path挿入前の相対解決を避けるため、モジュール内importはこの下に配置する。
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 import _atk_config as _config_cmd  # noqa: E402
-import _atk_fb_add as _add  # noqa: E402
-import _atk_fb_common as _common  # noqa: E402
-import _atk_fb_list as _list  # noqa: E402
-import _atk_fb_mutations as _mutations  # noqa: E402
-import _atk_fb_process_loop as _process_loop  # noqa: E402
-import _atk_fb_show as _show  # noqa: E402
-import _atk_fb_tbd as _tbd  # noqa: E402
+import _atk_mq_add as _add  # noqa: E402
+import _atk_mq_common as _common  # noqa: E402
+import _atk_mq_list as _list  # noqa: E402
+import _atk_mq_mutations as _mutations  # noqa: E402
+import _atk_mq_process_loop as _process_loop  # noqa: E402
+import _atk_mq_show as _show  # noqa: E402
+import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_serve as _serve  # noqa: E402
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
-    """`fb add`・`tb add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
+    """`mq add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
 
     REPO_PATH位置引数廃止後の後方互換のため、argparse解析前の生argvへ適用する。
     `messages`側のnargs="*"単一positionalでは、オプションで分断され前後2箇所に分かれた
     位置引数を一括で解決できない（argparseの既知の制約）ため、サブコマンド名直後という
     先頭位置に限定して抽出することで後続のオプション・MESSAGE位置を通常解析に委ねる。
     """
-    if len(argv) < 2 or (argv[0], argv[1]) not in (("fb", "add"), ("tb", "add")):
+    if len(argv) < 2 or (argv[0], argv[1]) != ("mq", "add"):
         return argv, None
     candidate_index = 2
+    value_options = {"--type", "--source", "--scope", "--question-type", "--choices", "--target-repo"}
+    while candidate_index < len(argv) and argv[candidate_index].startswith("-"):
+        option = argv[candidate_index].split("=", 1)[0]
+        if "=" not in argv[candidate_index] and option in value_options:
+            candidate_index += 2
+        else:
+            candidate_index += 1
     if candidate_index >= len(argv):
         return argv, None
     candidate = argv[candidate_index]
@@ -123,21 +122,25 @@ def _add_target_repo_arg(parser: argparse.ArgumentParser, *, help_extra: str = "
     )
 
 
-def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
-    """`fb`サブパーサ配下にfeedback/TBD操作用サブコマンドを登録する。"""
-    sub = fb.add_subparsers(dest="fb_subcommand", required=True)
+def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
+    """`mq`サブパーサ配下にメッセージキュー操作を登録する。"""
+    sub = mq.add_subparsers(dest="mq_subcommand", required=True)
 
-    add = sub.add_parser("add", help="フィードバックをinboxへ投入する")
+    add = sub.add_parser("add", help="エントリをinboxへ投入する")
     add.add_argument(
         "messages",
         metavar="MESSAGE",
         nargs="*",
         help=(
-            "投入するフィードバックメッセージ（省略時は$EDITORで編集する）。"
+            "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
             "対象リポジトリは常にカレントディレクトリから解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
         ),
     )
+    add.add_argument("--type", choices=("feedback", "tbd"), default="feedback")
+    add.add_argument("--scope", metavar="NAME", default=None)
+    add.add_argument("--question-type", choices=("free-form", "yes-no", "choice"), default=None)
+    add.add_argument("--choices", metavar="A,B,C", default=None)
     add.add_argument(
         "--source",
         metavar="NAME",
@@ -153,9 +156,7 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     )
     add.set_defaults(subparser=add)
 
-    list_ = sub.add_parser(
-        "list", help="feedback/tbd inbox・processing全件を1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する"
-    )
+    list_ = sub.add_parser("list", help="エントリを1件1行（filename・target_repo・状態ラベル・本文冒頭要約）で出力する")
     list_.add_argument(
         "--target-repo",
         metavar="REPO",
@@ -165,15 +166,19 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "active", "answered", "unanswered", "inbox", "processing", "adopted", "rejected"),
+        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
         default="active",
         help=(
-            "表示範囲を限定する（既定: active）。"
-            "`active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。"
-            "feedback側は`inbox`・`processing`・`adopted`・`rejected`・`all`で状態フォルダを切り替える。"
-            "tbd側は`answered`・`unanswered`で回答状況を限定する"
-            "（`inbox`・`processing`・`adopted`・`rejected`はtbd側では全件出力扱い）。"
+            "状態フォルダで表示範囲を限定する（既定: active）。"
+            "`active`はinbox・processingを指す（feedback・tbd共通）。"
+            "回答状況での限定は`--answered`で別途行う。"
         ),
+    )
+    list_.add_argument(
+        "--answered",
+        choices=("all", "yes", "no"),
+        default="all",
+        help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
     )
     list_.add_argument(
         "--category",
@@ -193,18 +198,18 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
     )
 
-    show = sub.add_parser("show", help="feedback/tbd inboxの1件または全件（--all）の本文を表示する")
+    show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
     show.add_argument(
         "filename",
         metavar="FILENAME",
         nargs="?",
         default=None,
-        help="表示する単一のinboxファイル名（省略時は--allの指定が必要）。",
+        help="表示する単一のファイル名（省略時は--allの指定が必要）。全状態フォルダを探索する。",
     )
     show.add_argument(
         "--all",
         action="store_true",
-        help="inbox全件をtarget_repoごとにグループ化して表示する。",
+        help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
     show.add_argument(
         "--target-repo",
@@ -215,24 +220,25 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
-        choices=("all", "active", "answered", "unanswered"),
+        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
         default="active",
         help=(
-            "表示範囲を限定する（既定: active）。"
-            "`active`はfeedback側`inbox`・`processing`とtbd側`answered`を出力する。"
-            "`answered`・`unanswered`はtbd側のみに作用しfeedback側には作用しない。"
+            "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
+            "`active`はinbox・processingを指す（feedback・tbd共通）。"
+            "FILENAME単発指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
+    )
+    show.add_argument(
+        "--answered",
+        choices=("all", "yes", "no"),
+        default="all",
+        help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。yes・no指定時はfeedbackを除外する。",
     )
     _add_source_arg(show)
     show.add_argument(
         "--skip-pull",
         action="store_true",
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
-    )
-    show.add_argument(
-        "--include-processed",
-        action="store_true",
-        help="FILENAME指定時にadopted・rejected配下も探索対象へ含める（--allには影響しない）。",
     )
     show.set_defaults(subparser=show)
 
@@ -249,7 +255,9 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     _add_target_repo_arg(start_processing, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
-    adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するinboxファイル名（1個以上）。")
+    adopt.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
+    )
     adopt.add_argument(
         "--note",
         metavar="TEXT",
@@ -270,7 +278,9 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     reject = sub.add_parser("reject", help="不採用としてinboxまたはprocessingからrejected/へ移動しコミット・push")
-    reject.add_argument("filenames", metavar="FILENAME", nargs="+", help="不採用とするinboxファイル名（1個以上）。")
+    reject.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
+    )
     reject.add_argument(
         "--note",
         metavar="TEXT",
@@ -286,12 +296,15 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     rm = sub.add_parser("rm", help="inbox・processingいずれかから単純削除しコミット・push")
-    rm.add_argument("filenames", metavar="FILENAME", nargs="+", help="削除するinboxファイル名（1個以上）。")
+    rm.add_argument(
+        "filenames", metavar="FILENAME", nargs="+", help="削除するファイル名（1個以上。inbox・processingいずれも対象）。"
+    )
     rm.add_argument(
         "--force",
         action="store_true",
         help="processing状態のファイルも削除する（既定では処理中のファイルを保護し拒否する）。",
     )
+    rm.add_argument("--note", metavar="TEXT", default=None)
     _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
@@ -300,13 +313,16 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
         metavar="FILENAME",
         nargs="?",
         default=None,
-        help="編集対象のinboxファイル名。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
+        help="編集対象のファイル名（inbox・processingいずれも対象）。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
+    answer = sub.add_parser("answer", help="未回答TBDを1件ずつ画面表示し$EDITORで回答する")
+    _add_target_repo_arg(answer)
+
     sub.add_parser(
         "commit",
-        help="外部編集後にinbox配下の未コミット変更をコミット・push（差分なしなら無動作）",
+        help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分なしなら無動作）",
     )
 
     sub.add_parser(
@@ -362,119 +378,6 @@ def _build_fb_parser(fb: argparse.ArgumentParser) -> None:
     )
 
 
-def _build_tb_parser(tb: argparse.ArgumentParser) -> None:
-    """`tb`サブパーサ配下にTBD操作用サブコマンドを登録する。"""
-    sub = tb.add_subparsers(dest="tb_subcommand", required=True)
-
-    add = sub.add_parser("add", help="TBDをtbd/inboxへ投入する")
-    add.add_argument(
-        "--scope",
-        metavar="NAME",
-        default=None,
-        help="呼び出し元固有のスコープ識別子（任意。frontmatterにscope: <NAME>として記録）。",
-    )
-    add.add_argument(
-        "--source",
-        metavar="NAME",
-        default=None,
-        help="投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: session-hold）。",
-    )
-    add.add_argument(
-        "--question-type",
-        choices=("free", "yesno", "choice"),
-        default="free",
-        help="質問種別（既定: free）。",
-    )
-    add.add_argument(
-        "--choices",
-        metavar="A,B,C",
-        default=None,
-        help="question-type=choice時の選択肢（カンマ区切り）。",
-    )
-    add.add_argument(
-        "messages",
-        metavar="MESSAGE",
-        nargs="*",
-        help="投入するTBDメッセージ（省略時は$EDITORで編集する）。対象リポジトリは常にカレントディレクトリから解決する。",
-    )
-    _add_target_repo_arg(
-        add,
-        help_extra="投入するTBDのtarget_repoのfallback値として扱う。",
-    )
-    add.set_defaults(subparser=add)
-
-    list_ = sub.add_parser("list", help="TBDをtarget_repoごとに出力する")
-    list_.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
-    )
-    list_.add_argument(
-        "--status",
-        choices=("all", "answered", "unanswered"),
-        default="all",
-        help="回答状況でフィルターする（既定: all）。",
-    )
-    list_.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
-    )
-
-    answer = sub.add_parser(
-        "answer",
-        help="未回答TBDを1件ずつ画面表示し$EDITORで回答する",
-    )
-    answer.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        default=None,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターする。",
-    )
-
-    edit = sub.add_parser("edit", help="$EDITORでTBDを編集してcommit・push")
-    edit.add_argument("filename", metavar="FILENAME", help="編集対象のtbd/inboxファイル名。")
-    _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
-
-    adopt = sub.add_parser(
-        "adopt",
-        help="回答済みTBDをtbd/inboxからtbd/adopted/へ移動しcommit・push",
-    )
-    adopt.add_argument("filenames", metavar="FILENAME", nargs="+", help="採用するTBDファイル名（1個以上）。")
-    adopt.add_argument(
-        "--note",
-        metavar="TEXT",
-        default=None,
-        help="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
-    )
-    adopt.add_argument(
-        "--commit",
-        metavar="SHA",
-        default=None,
-        help="対応する対象リポジトリのcommit hash（本文末尾の`## 処理結果`節へ追記する）。--commit=VALUE形式で渡すことを推奨。",
-    )
-    _add_target_repo_arg(adopt, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
-
-    rm = sub.add_parser(
-        "rm",
-        help="TBD項目をtbd/inboxから単純削除しcommit・push",
-    )
-    rm.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="+",
-        help="削除するTBDファイル名（1個以上）。",
-    )
-    rm.add_argument(
-        "--note",
-        metavar="TEXT",
-        default=None,
-        help="削除理由のメモ（commit messageへ追記する）。",
-    )
-    _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
-
-
 def _build_parser() -> argparse.ArgumentParser:
     """`atk`トップレベルargparseパーサーを構築する。"""
     parser = argparse.ArgumentParser(
@@ -482,10 +385,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description="agent-toolkitプラグイン提供CLI。",
     )
     top = parser.add_subparsers(dest="command", required=True)
-    fb = top.add_parser("fb", help="フィードバック操作")
-    _build_fb_parser(fb)
-    tb = top.add_parser("tb", help="TBD項目操作")
-    _build_tb_parser(tb)
+    mq = top.add_parser("mq", help="メッセージキュー操作（フィードバック・TBD）")
+    _build_mq_parser(mq)
     serve = top.add_parser("serve", help="フィードバック管理Web UIを起動する")
     serve.add_argument("--host", default=None, help="待受ホスト（既定値は設定から解決する）")
     serve.add_argument(
@@ -557,6 +458,28 @@ def main(
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     args = parser.parse_args(raw_argv)
     args.repo_path_override = repo_path_override
+    if args.command == "mq" and args.mq_subcommand == "add" and args.type != "tbd":
+        tbd_only = [
+            name
+            for name, value in (
+                ("--scope", args.scope),
+                ("--question-type", args.question_type),
+                ("--choices", args.choices),
+            )
+            if value is not None
+        ]
+        if tbd_only:
+            args.subparser.error(f"{'・'.join(tbd_only)}は--type=tbdでのみ指定できます。")
+    if args.command == "mq" and args.mq_subcommand == "add" and args.type == "tbd" and args.question_type is None:
+        args.question_type = "free-form"
+    if (
+        args.command == "mq"
+        and args.mq_subcommand == "add"
+        and args.type == "tbd"
+        and args.question_type == "choice"
+        and not args.choices
+    ):
+        args.subparser.error("--question-type=choice のときは --choices を指定してください。")
     if home is None:
         home = pathlib.Path.home()
     if now is None:
@@ -566,44 +489,32 @@ def main(
         sys.exit(0)
     if args.command == "config":
         _config_cmd.dispatch(args, home)
-    if args.command not in ("fb", "tb"):
+    if args.command != "mq":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
-    if args.command == "fb":
-        sub = args.fb_subcommand
-        if sub == "enable":
-            _cmd_enable()
-            sys.exit(0)
-        if sub == "disable":
-            _cmd_disable()
-            sys.exit(0)
-        if sub == "status":
-            _cmd_status(home)
-        private_notes = _common._ensure_environment(home)
-        dispatch = {
-            "add": lambda: _add._cmd_add(args, private_notes, now, home),
-            "list": lambda: _list._cmd_list(args, private_notes),
-            "show": lambda: _show._cmd_show(args, private_notes),
-            "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
-            "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
-            "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
-            "rm": lambda: _mutations._cmd_rm(args, private_notes),
-            "edit": lambda: _mutations._cmd_edit(args, private_notes),
-            "commit": lambda: _mutations._cmd_commit(private_notes),
-            "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
-        }
-        dispatch[sub]()
-    else:
-        sub = args.tb_subcommand
-        private_notes = _common._ensure_environment(home)
-        dispatch = {
-            "add": lambda: _tbd._cmd_tbd_add(args, private_notes, now, home),
-            "list": lambda: _tbd._cmd_tbd_list(args, private_notes),
-            "answer": lambda: _tbd._cmd_tbd_answer(args, private_notes),
-            "edit": lambda: _tbd._cmd_tbd_edit(args, private_notes),
-            "adopt": lambda: _tbd._cmd_tbd_adopt(args, private_notes, now),
-            "rm": lambda: _tbd._cmd_tbd_rm(args, private_notes),
-        }
-        dispatch[sub]()
+    sub = args.mq_subcommand
+    if sub == "enable":
+        _cmd_enable()
+        sys.exit(0)
+    if sub == "disable":
+        _cmd_disable()
+        sys.exit(0)
+    if sub == "status":
+        _cmd_status(home)
+    private_notes = _common._ensure_environment(home)
+    dispatch = {
+        "add": lambda: _add._cmd_add(args, private_notes, now, home),
+        "list": lambda: _list._cmd_list(args, private_notes),
+        "show": lambda: _show._cmd_show(args, private_notes),
+        "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
+        "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
+        "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
+        "rm": lambda: _mutations._cmd_rm(args, private_notes),
+        "edit": lambda: _mutations._cmd_edit(args, private_notes),
+        "answer": lambda: _tbd._cmd_answer(args, private_notes),
+        "commit": lambda: _mutations._cmd_commit(private_notes),
+        "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
+    }
+    dispatch[sub]()
     _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
     sys.exit(0)
 

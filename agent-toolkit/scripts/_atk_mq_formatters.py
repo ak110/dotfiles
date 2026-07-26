@@ -1,4 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq`コマンド用補助モジュール。
 
 旧`pytools/dotfiles_fb/_formatters.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
@@ -42,7 +42,7 @@ def _target_repo_budget(path_name: str, bracket_label: str) -> int:
     端末幅から`path_name`・角括弧ラベル部分・要約本文用の最小予約幅
     （`_MIN_BODY_RESERVED_WIDTH`）を差し引いた残りを上限候補とし、
     `_TARGET_REPO_MIN_WIDTH`以上`_TARGET_REPO_MAX_WIDTH`以下へクランプする。
-    `atk fb list`・`atk tb list`・対話シェル起動時の未回答TBD通知が共通で使う。
+    `atk mq list`・`atk mq list --type=tbd`・対話シェル起動時の未回答TBD通知が共通で使う。
     """
     terminal_columns = shutil.get_terminal_size().columns
     reserved = _display_width(f"{path_name}: ") + _display_width(f" [{bracket_label}] ") + _MIN_BODY_RESERVED_WIDTH

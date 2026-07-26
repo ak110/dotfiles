@@ -1,6 +1,6 @@
-"""`atk fb`系テストが共有するgitリモート応答フェイクのヘルパー。
+"""`atk mq`系テストが共有するgitリモート応答フェイクのヘルパー。
 
-`atk_test.py`・`_atk_fb_extras_test.py`・`_atk_fb_add_test.py`の複数テストが、
+`atk_test.py`・`_atk_mq_extras_test.py`・`_atk_mq_add_test.py`の複数テストが、
 `git -C <myrepo> remote get-url origin`・`git rev-parse --show-toplevel`への
 固定応答パターンを個別に定義していたため本モジュールへ集約する。
 """

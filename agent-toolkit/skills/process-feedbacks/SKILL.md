@@ -10,7 +10,7 @@ description: >
 
 # フィードバックの投入・取得・批判的検討・適用
 
-`atk fb`と`atk tb`の全サブコマンドは内部で`git pull --ff-only`を実行する。手動`git pull`は不要。
+`atk mq`の全サブコマンドは内部で`git pull --ff-only`を実行する。手動`git pull`は不要。
 自律実行モード下では`agent-toolkit/rules/01-agent.md`「協調と自律」節の運用を本スキルの
 処理単位（フィードバック全件の採否確定と対象リポジトリのcommit・push完了）へ適用する。
 
@@ -19,7 +19,7 @@ description: >
 各採否判定の最優先基準は品質向上への寄与とする。形式整合のみを根拠とした判定を避ける。
 フィードバックを処理する際は、言及された対象だけでなく、使い勝手・整合性の観点で
 関連する改善点にも能動的に気付いて提案する（例: 新設した表示欄の隣接欄も併せて整備する）。
-気付いた改善は`atk tb add`で記録しつつ本計画へ実装まで含める。
+気付いた改善は`atk mq add --type=tbd`で記録しつつ本計画へ実装まで含める。
 
 ## フィードバック投入
 
@@ -28,11 +28,11 @@ description: >
 判別困難な場合は`AskUserQuestion`で確認する。各メッセージは単体で読んで意味が完結する形に整え、
 出典URL・関連提案との関係・対象を一意に特定する前置きを含める。
 
-投入前に`atk fb list --status=active --target-repo=<repo>`で対象リポジトリ宛の既存フィードバック
+投入前に`atk mq list --status=active --target-repo=<repo>`で対象リポジトリ宛の既存フィードバック
 一覧を照会し、主題が重複するものの有無を確認する。重複を検出した場合は新規投入せず、
-`atk fb edit`で既存フィードバックへ差分情報（実測値・再現手順・出典）を追記して統合する。
+`atk mq edit`で既存フィードバックへ差分情報（実測値・再現手順・出典）を追記して統合する。
 
-投入は`cd <repo-path> && atk fb add "<message>"`で行う。本文は`$'...'`のANSI-Cクォートで囲み、
+投入は`cd <repo-path> && atk mq add "<message>"`で行う。本文は`$'...'`のANSI-Cクォートで囲み、
 ヒアドキュメント・パイプ・ファイルリダイレクトで渡さない（`$EDITOR`が対話的に起動し失敗する）。
 
 投入対象が実装完了後に他リポジトリへの後続feedback投入を要する場合、feedback本文末尾へ
@@ -45,13 +45,13 @@ description: >
 実在ディレクトリでなければフィードバック本文の直接入力として扱う。引数省略時は
 `git rev-parse --show-toplevel`の現リポジトリを対象とする。
 
-`atk fb list --status=processing --target-repo=<repo>`でprocessing残存を確認し、
+`atk mq list --status=processing --target-repo=<repo>`でprocessing残存を確認し、
 残存時は前セッションの中断とみなし再実施対象へ最優先で組み込む。続いて
-`atk fb show --all --status=active --target-repo=<repo>`でfeedback（inbox・processing）と
+`atk mq show --all --status=active --target-repo=<repo>`でfeedback（inbox・processing）と
 回答済みTBDを一括取得する。取得した全件を本セッションの処理対象とし、
-`atk fb start-processing <filename...>`でfeedback分をprocessingへ遷移させてから着手する。
+`atk mq start-processing <filename...>`でfeedback分をprocessingへ遷移させてから着手する。
 
-target_repoが誤設定と判明した場合は`atk fb edit`で書き換え`atk fb commit`で確定し、
+target_repoが誤設定と判明した場合は`atk mq edit`で書き換え`atk mq commit`で確定し、
 当該分は本セッションの処理対象から外す。
 
 ## ステップ2: 内容の調整
@@ -65,9 +65,9 @@ target_repoが誤設定と判明した場合は`atk fb edit`で書き換え`atk 
 `references/review-checklists.md`「網羅調査チェックリスト」節）。複数件の場合は
 `Explore`サブエージェントへ個別並列委譲する。
 
-前提条件付きフィードバックは実機検証で充足確認し、未充足なら`atk tb add --scope=hold`で
+前提条件付きフィードバックは実機検証で充足確認し、未充足なら`atk mq add --type=tbd --scope=hold`で
 保留理由・確認手段・再評価契機を記録したうえで「保留」として次回へ持ち越す
-（`atk fb reject`しない）。「他の処理が全て終わったら」等の順序依存フィードバックも
+（`atk mq reject`しない）。「他の処理が全て終わったら」等の順序依存フィードバックも
 本ステップの保留判定で扱い、無条件でprocessing化しない。
 
 ## ステップ3: 批判的検討
@@ -79,7 +79,7 @@ target_repoが誤設定と判明した場合は`atk fb edit`で書き換え`atk 
 ## ステップ4: 検討結果の提示
 
 詳細は`references/decision-format.md`に従う。採否ラベルと反映概要を記録する
-（`atk fb adopt`等の実行はステップ7で行う）。
+（`atk mq adopt`等の実行はステップ7で行う）。
 
 ## ステップ5: 計画作成と実行
 
@@ -98,16 +98,16 @@ target_repoが誤設定と判明した場合は`atk fb edit`で書き換え`atk 
 
 対象は採用フィードバックが`### 完了条件と連鎖feedback`ブロックを含む場合とする。
 実装完了条件を元feedback記載の確認手段で1件ずつ確認し、既定30分以内に全条件充足なら
-後続feedback本文を`atk fb add`で投入する。未充足の場合は`atk tb add --scope=chain-feedback`へ
+後続feedback本文を`atk mq add`で投入する。未充足の場合は`atk mq add --type=tbd --scope=chain-feedback`へ
 永続化し本工程を終了する。該当なしの場合は次工程へ進む。
 
 ## ステップ7: 採否確定の後始末
 
 コミット・push・CI通過確認の完遂後、対象ファイルを後始末する。
 
-- feedback側の採用ファイル: `atk fb adopt <filename...> --note=<概要> --commit=<sha>`
-- feedback側の不採用ファイル: `atk fb reject <filename...> --note=<不採用理由> --commit=<sha>`
-- TBD側の回答済み採用ファイル: `atk tb adopt <filename...> --note=<概要> --commit=<sha>`
+- feedback側の採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
+- feedback側の不採用ファイル: `atk mq reject <filename...> --note=<不採用理由> --commit=<sha>`
+- TBD側の回答済み採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
 - 保留ファイルは後始末コマンドを実行しない
 - `--note`・`--commit`の詳細は`references/decision-format.md`「後始末コマンドの引数」節に従う
 

@@ -1,6 +1,6 @@
 r"""Claude Code Stopフック: dotfiles個人環境専用の`exit-session`呼び忘れ防止。
 
-`atk fb process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
+`atk mq process-loop`CLIが常駐ループの1反復ごとに起動するclaudeサブプロセスは、
 環境変数`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`を設定した状態で起動される。
 本hookは同環境変数が設定されたセッションに限り、`agent-toolkit:exit-session`スキルの
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
@@ -60,7 +60,7 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 順序制約の再促文。process-feedbacksの多段処理途中でexit-session呼び出しが
 # 忘却されることを防ぐため、工程順序を明示する。
 _REASON_BODY = """\
-This session was launched in autonomous execution mode by the atk fb process-loop CLI.
+This session was launched in autonomous execution mode by the atk mq process-loop CLI.
 After processing completes, you must call /agent-toolkit:exit-session to end the session.
 Before calling exit-session, fully complete the following steps.
 1. process-feedbacks skill steps 1-3 (feedback adoption decision, commit, push, cleanup)

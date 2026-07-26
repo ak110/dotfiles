@@ -1,4 +1,4 @@
-"""`atk fb`共通の警告・通知処理を検証する。"""
+"""`atk mq`共通の警告・通知処理を検証する。"""
 
 import os
 import pathlib
@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _write_tbd(
@@ -25,10 +25,10 @@ def _write_tbd(
     answer: str = "",
 ) -> None:
     """テスト用TBDをinboxへ書き込む。"""
-    inbox = private_notes / "tbd" / "inbox"
+    inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / filename).write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
+        f"---\ntarget_repo: {target_repo}\ntype: tbd\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )
 
@@ -38,7 +38,7 @@ class TestWarnSpaceSeparatedOption:
 
     @pytest.mark.parametrize(
         "top_command,subcommand",
-        [("fb", "adopt"), ("fb", "reject"), ("tb", "adopt")],
+        [("mq", "adopt"), ("mq", "reject"), ("mq", "adopt")],
     )
     @pytest.mark.parametrize("option", ["--note", "--commit"])
     def test_warns_for_target_subcommands(
@@ -56,11 +56,10 @@ class TestWarnSpaceSeparatedOption:
     @pytest.mark.parametrize(
         "argv",
         [
-            ["fb", "rm", "item.md", "--note", "value"],
-            ["fb", "add", "/repo", "adopt", "--note", "value"],
-            ["fb", "adopt", "item.md", "--note=value"],
-            ["fb", "adopt", "item.md", "--note", "value=with-equals"],
-            ["fb", "adopt", "item.md", "--note", "--target-repo=example/repo"],
+            ["mq", "add", "/repo", "adopt", "--note", "value"],
+            ["mq", "adopt", "item.md", "--note=value"],
+            ["mq", "adopt", "item.md", "--note", "value=with-equals"],
+            ["mq", "adopt", "item.md", "--note", "--target-repo=example/repo"],
         ],
     )
     def test_does_not_warn_for_excluded_forms(
@@ -99,7 +98,7 @@ class TestNotifyUnansweredTbdsIfAny:
 
         _common.notify_unanswered_tbds_if_any(tmp_path, None)
 
-        assert capsys.readouterr().err == "# tbd\none.md: github.com/example/repo [unanswered] 最初の質問\n"
+        assert capsys.readouterr().err == "# tbd\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
 
     def test_notifies_matching_unanswered_entries_in_filename_order(
         self,
@@ -114,7 +113,8 @@ class TestNotifyUnansweredTbdsIfAny:
         _common.notify_unanswered_tbds_if_any(tmp_path, "github.com/example/repo")
 
         assert capsys.readouterr().err == (
-            "# tbd\n001.md: github.com/example/repo [unanswered] 質問1\n002.md: github.com/example/repo [unanswered] 質問2\n"
+            "# tbd\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
+            "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
         )
 
     def test_narrow_terminal_truncates_long_target_repo(
@@ -125,7 +125,7 @@ class TestNotifyUnansweredTbdsIfAny:
     ) -> None:
         """狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。
 
-        `_atk_fb_list.py`の狭幅端末対応（`_target_repo_budget`・`_truncate_target_repo`）を
+        `_atk_mq_list.py`の狭幅端末対応（`_target_repo_budget`・`_truncate_target_repo`）を
         本関数も共有して適用していることを検証する。
         """
         long_repo = "github.com/organization-name/very-long-repository-name-example"
@@ -421,12 +421,12 @@ class TestPrivateNotesAutoCreate:
         assert (root / ".git").is_dir()
         assert (root / _common._LOCAL_ONLY_MARKER).exists()  # pylint: disable=protected-access  # noqa: SLF001
         expected_state_dirs = (
-            "feedback/inbox",
-            "feedback/processing",
-            "feedback/adopted",
-            "feedback/rejected",
-            "tbd/inbox",
-            "tbd/adopted",
+            "inbox",
+            "processing",
+            "adopted",
+            "rejected",
+            "inbox",
+            "adopted",
         )
         for name in expected_state_dirs:
             assert (root / name).is_dir()

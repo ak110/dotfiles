@@ -7,11 +7,11 @@ import re
 import subprocess
 import typing
 
-import _atk_fb_add as feedback_add
-import _atk_fb_common as common
-import _atk_fb_mutations as feedback_mutations
-import _atk_fb_repo as feedback_repo
-import _atk_fb_tbd as tbd_mutations
+import _atk_mq_add as feedback_add
+import _atk_mq_common as common
+import _atk_mq_mutations as feedback_mutations
+import _atk_mq_repo as feedback_repo
+import _atk_mq_tbd as tbd_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
@@ -20,12 +20,19 @@ import quart
 import werkzeug.exceptions
 
 type JsonObject = dict[str, typing.Any]
-_ENTRY_STATES = {
-    "feedback": {"inbox", "processing", "adopted", "rejected"},
-    "tbd": {"inbox", "adopted"},
-}
-_STATUS_FILTERS = {"all", "inbox", "processing", "adopted", "rejected", "answered", "unanswered"}
+_ENTRY_STATES = set(common.MQ_STATES)
+_STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
+_ANSWERED_FILTERS = {"all", "yes", "no"}
 _WEB_LOCK_TIMEOUT = 2.0
+
+
+def _resolve_states(status: str) -> tuple[str, ...]:
+    """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
+    if status == "active":
+        return common.MQ_ACTIVE_STATES
+    if status == "all":
+        return common.MQ_STATES
+    return (status,)
 
 
 async def _request_json() -> typing.Any:
@@ -150,50 +157,36 @@ class Operations:
             common.pull(self.private_notes)
             kind_filter = filters.get("type", "all")
             status_filter = filters.get("status", "all")
-            for kind, states in _ENTRY_STATES.items():
-                if kind_filter not in ("all", kind):
+            answered_filter = filters.get("answered", "all")
+            states = _resolve_states(status_filter)
+            for path, _repo, text, state, kind in common.iter_entries(self.private_notes, states, None, kind_filter):
+                item = _entry(path, kind, state, text)
+                if answered_filter == "yes" and item["answered"] is not True:
                     continue
-                for state in states:
-                    if status_filter not in ("all", state, "answered", "unanswered"):
-                        continue
-                    directory = self.private_notes / kind / state
-                    for path in sorted(directory.glob("*.md")):
-                        text = path.read_text(encoding="utf-8")
-                        item = _entry(path, kind, state, text)
-                        if status_filter == "answered" and item["answered"] is not True:
-                            continue
-                        if status_filter == "unanswered" and item["answered"] is not False:
-                            continue
-                        if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "source", "category")):
-                            continue
-                        result.append(item)
+                if answered_filter == "no" and item["answered"] is not False:
+                    continue
+                if any(filters.get(key) and item[key] != filters[key] for key in ("target_repo", "source", "category")):
+                    continue
+                result.append(item)
         return result
 
-    def detail(self, kind: str, state: str, filename: str) -> dict[str, object]:
-        if kind not in _ENTRY_STATES or state not in _ENTRY_STATES[kind]:
-            raise common.WebInputError("kind又はstateが不正です")
+    def detail(self, state: str, filename: str) -> dict[str, object]:
+        if state not in _ENTRY_STATES:
+            raise common.WebInputError("stateが不正です")
         with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
             common.pull(self.private_notes)
-            path = common.validate_filename(filename, self.private_notes / kind / state)
+            path = common.validate_filename(filename, self.private_notes / state)
             if not path.is_file():
                 raise FileNotFoundError(filename)
             text = path.read_text(encoding="utf-8")
+            kind = common.entry_type_of(path, text)
             return {**_entry(path, kind, state, text), "content": text}
 
-    def edit(self, kind: str, state: str, filename: str, content: str) -> bool:
+    def edit(self, state: str, filename: str, content: str) -> bool:
         try:
-            if kind == "feedback":
-                return feedback_mutations.edit_feedback(
-                    self.private_notes,
-                    state=state,
-                    filename=filename,
-                    content=content,
-                    lock_timeout=_WEB_LOCK_TIMEOUT,
-                )
-            if state != "inbox":
-                raise common.WebInputError("このTBD状態は編集できません")
-            return tbd_mutations.edit_tbd(
+            return feedback_mutations.edit_entry_content(
                 self.private_notes,
+                state=state,
                 filename=filename,
                 content=content,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
@@ -201,56 +194,43 @@ class Operations:
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
-    def add_feedback(
-        self,
-        messages: list[str],
-        source: str | None,
-        target_repo: str | None,
-    ) -> list[str]:
-        """feedbackを原子的に追加する。"""
-        try:
-            resolved_target_repo = feedback_repo.resolve_repo_id(target_repo)
-        except SystemExit as error:
-            raise common.WebInputError("target_repoを解決できません") from error
-        return feedback_add.add_feedback(
-            self.private_notes,
-            messages=messages,
-            target_repo=resolved_target_repo,
-            source=source,
-            now=datetime.datetime.now(),
-            lock_timeout=_WEB_LOCK_TIMEOUT,
-        )
-
-    def add_tbd(
+    def add(
         self,
         messages: list[str],
         *,
-        scope: str,
-        question_type: str,
-        choices: list[str] | None,
+        entry_type: str,
         target_repo: str | None,
         source: str | None,
+        scope: str | None = None,
+        question_type: str | None = None,
+        choices: list[str] | None = None,
     ) -> list[str]:
-        """TBDを原子的に追加する。"""
-        if question_type not in {"choice", "yes-no", "free-form"}:
-            raise common.WebInputError("question_typeが不正です")
-        if question_type == "choice" and (choices is None or len(choices) < 2):
-            raise common.WebInputError("choice形式には2件以上のchoicesが必要です")
-        if question_type != "choice" and choices is not None:
-            raise common.WebInputError("choicesはchoice形式でのみ指定できます")
+        """エントリを原子的に追加する。"""
+        if entry_type not in common.MQ_TYPES:
+            raise common.WebInputError("typeが不正です")
+        if entry_type == common.MQ_TYPE_FEEDBACK and (scope or question_type or choices):
+            raise common.WebInputError("scope・question_type・choicesはtype=tbdでのみ指定できます")
+        if entry_type == common.MQ_TYPE_TBD:
+            if question_type not in {"choice", "yes-no", "free-form"}:
+                raise common.WebInputError("question_typeが不正です")
+            if question_type == "choice" and (choices is None or len(choices) < 2):
+                raise common.WebInputError("choice形式には2件以上のchoicesが必要です")
+            if question_type != "choice" and choices is not None:
+                raise common.WebInputError("choicesはchoice形式でのみ指定できます")
         try:
             resolved_target_repo = feedback_repo.resolve_repo_id(target_repo)
         except SystemExit as error:
             raise common.WebInputError("target_repoを解決できません") from error
-        return tbd_mutations.add_tbd(
+        return feedback_add.add_entries(
             self.private_notes,
             messages=messages,
             target_repo=resolved_target_repo,
-            scope=scope,
             source=source,
+            now=datetime.datetime.now(),
+            entry_type=entry_type,
+            scope=scope,
             question_type=question_type,
             choices=",".join(choices) if choices else None,
-            now=datetime.datetime.now(),
             lock_timeout=_WEB_LOCK_TIMEOUT,
         )
 
@@ -265,7 +245,6 @@ class Operations:
 
     def transition(
         self,
-        kind: str,
         action: str,
         filenames: list[str],
         *,
@@ -277,24 +256,11 @@ class Operations:
     ) -> list[str]:
         """複数エントリを全件検証後に移動又は削除する。
 
-        `force`は`kind="feedback"`かつ`action="remove"`の場合のみ意味を持ち、
-        processing状態のファイルへの既定保護（`atk fb rm`の`--force`と同義）を解除する。
+        `force`は`action="remove"`の場合のみ意味を持ち、
+        processing状態のファイルへの既定保護（`atk mq rm`の`--force`と同義）を解除する。
         """
         try:
-            if kind == "feedback":
-                return feedback_mutations.transition_feedback(
-                    self.private_notes,
-                    action=action,
-                    filenames=filenames,
-                    now=datetime.datetime.now(),
-                    target_repo=target_repo,
-                    note=note,
-                    commit=commit,
-                    category=category,
-                    lock_timeout=_WEB_LOCK_TIMEOUT,
-                    force=force,
-                )
-            return tbd_mutations.transition_tbd(
+            return feedback_mutations.transition_entries(
                 self.private_notes,
                 action=action,
                 filenames=filenames,
@@ -302,14 +268,16 @@ class Operations:
                 note=note,
                 commit=commit,
                 target_repo=target_repo,
+                category=category,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
+                force=force,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
     def commit(self) -> bool:
         """外部編集差分をcommitしてpushする。"""
-        return feedback_mutations.commit_feedback(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
+        return feedback_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
 
 def create_app(
@@ -363,7 +331,7 @@ def create_app(
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "target_repo", "category", "source"}
+        allowed = {"type", "status", "answered", "target_repo", "category", "source"}
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
@@ -372,129 +340,110 @@ def create_app(
             raise common.WebInputError("typeが不正です")
         if filters.get("status", "all") not in _STATUS_FILTERS:
             raise common.WebInputError("statusが不正です")
+        if filters.get("answered", "all") not in _ANSWERED_FILTERS:
+            raise common.WebInputError("answeredが不正です")
         for name in ("target_repo", "category", "source"):
             if name in filters and not filters[name].strip():
                 raise common.WebInputError(f"{name}は空でない文字列で指定してください")
         return quart.jsonify(entries=await workers.run(ops.entries, filters))
 
-    @app.get("/api/entries/<kind>/<state_name>/<filename>")
-    async def detail(kind: str, state_name: str, filename: str) -> quart.Response:
-        return quart.jsonify(entry=await workers.run(ops.detail, kind, state_name, filename))
+    @app.get("/api/entries/<state_name>/<filename>")
+    async def detail(state_name: str, filename: str) -> quart.Response:
+        return quart.jsonify(entry=await workers.run(ops.detail, state_name, filename))
 
-    @app.put("/api/feedback/<state_name>/<filename>")
-    async def edit_feedback(state_name: str, filename: str) -> quart.Response:
+    @app.put("/api/entries/<state_name>/<filename>")
+    async def edit_entry(state_name: str, filename: str) -> quart.Response:
         data = _json_object(await _request_json(), allowed={"content"}, required={"content"})
         if not isinstance(data["content"], str) or not data["content"].strip():
             raise common.WebInputError("contentは空でない文字列で指定してください")
-        return quart.jsonify(changed=await workers.run(ops.edit, "feedback", state_name, filename, data["content"]))
+        return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"]))
 
-    @app.put("/api/tbd/<filename>")
-    async def edit_tbd(filename: str) -> quart.Response:
-        data = _json_object(await _request_json(), allowed={"content"}, required={"content"})
-        if not isinstance(data["content"], str) or not data["content"].strip():
-            raise common.WebInputError("contentは空でない文字列で指定してください")
-        return quart.jsonify(changed=await workers.run(ops.edit, "tbd", "inbox", filename, data["content"]))
-
-    @app.post("/api/feedback")
-    async def add_feedback() -> tuple[quart.Response, int]:
+    @app.post("/api/entries")
+    async def add_entry() -> tuple[quart.Response, int]:
         data = _json_object(
             await _request_json(),
-            allowed={"messages", "source", "target_repo"},
-            required={"messages", "target_repo"},
+            allowed={"type", "messages", "source", "target_repo", "scope", "question_type", "choices"},
+            required={"type", "messages", "target_repo"},
         )
+        if data["type"] not in common.MQ_TYPES:
+            raise common.WebInputError("typeが不正です")
         messages = _strings(data["messages"], "messages")
         for key in ("source", "target_repo"):
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise common.WebInputError(f"{key}は空でない文字列で指定してください")
-        filenames = await workers.run(ops.add_feedback, messages, data.get("source"), data.get("target_repo"))
-        return quart.jsonify(filenames=filenames), 201
-
-    @app.post("/api/tbd")
-    async def add_tbd() -> tuple[quart.Response, int]:
-        data = _json_object(
-            await _request_json(),
-            allowed={"messages", "target_repo", "source", "scope", "question_type", "choices"},
-            required={"messages", "scope", "question_type", "target_repo"},
-        )
-        messages = _strings(data["messages"], "messages")
-        if not isinstance(data["scope"], str) or not data["scope"]:
-            raise common.WebInputError("scopeは空でない文字列で指定してください")
-        if not isinstance(data["question_type"], str):
-            raise common.WebInputError("question_typeは文字列で指定してください")
-        choices = _strings(data["choices"], "choices") if "choices" in data else None
-        if not isinstance(data["target_repo"], str) or not data["target_repo"]:
-            raise common.WebInputError("target_repoは空でない文字列で指定してください")
-        target_repo = data["target_repo"]
-        source = _optional_string(data, "source")
+        # question_typeの既定値補完はTBDのみに適用する。feedbackへ補完すると
+        # `ops.add`のTBD専用オプション併用検査が誤って発火するため。
+        question_type = data.get("question_type")
+        if data["type"] == common.MQ_TYPE_TBD and question_type is None:
+            question_type = "free-form"
         filenames = await workers.run(
-            ops.add_tbd,
+            ops.add,
             messages,
-            scope=data["scope"],
-            question_type=data["question_type"],
-            choices=choices,
-            target_repo=target_repo,
-            source=source,
+            entry_type=data["type"],
+            target_repo=data.get("target_repo"),
+            source=_optional_string(data, "source"),
+            scope=data.get("scope"),
+            question_type=question_type,
+            choices=_strings(data["choices"], "choices") if "choices" in data else None,
         )
         return quart.jsonify(filenames=filenames), 201
 
-    @app.post("/api/tbd/<filename>/answer")
-    async def answer_tbd(filename: str) -> quart.Response:
-        data = _json_object(await _request_json(), allowed={"answer"}, required={"answer"})
+    @app.post("/api/entries/answer")
+    async def answer_tbd() -> quart.Response:
+        data = _json_object(await _request_json(), allowed={"filename", "answer"}, required={"filename", "answer"})
         if not isinstance(data["answer"], str) or not data["answer"].strip():
             raise common.WebInputError("answerは空でない文字列で指定してください")
-        return quart.jsonify(changed=await workers.run(ops.answer_tbd, filename, data["answer"]))
+        if not isinstance(data["filename"], str):
+            raise common.WebInputError("filenameは文字列で指定してください")
+        return quart.jsonify(changed=await workers.run(ops.answer_tbd, data["filename"], data["answer"]))
 
-    async def transition(kind: str, action: str, allowed: set[str]) -> quart.Response:
+    async def transition(action: str, allowed: set[str]) -> quart.Response:
         # target_repoは`_verify_frontmatter_target_repo`の任意検証にのみ使われ、常駐プロセスの
         # カレントディレクトリには依存しない（filenameで対象を一意に特定できるため）。
-        # CWD依存回避のため必須化するのは新規追加系（add_feedback/add_tbd）のみでよい。
+        # CWD依存回避のため必須化するのは新規追加系（add）のみでよい。
         data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
         filenames = _strings(data["filenames"], "filenames")
         optional = {
             name: _optional_string(data, name) for name in ("note", "commit", "category", "target_repo") if name in allowed
         }
+        force = False
+        if "force" in allowed and "force" in data:
+            if not isinstance(data["force"], bool):
+                raise common.WebInputError("forceはbooleanで指定してください")
+            force = data["force"]
         result = await workers.run(
             ops.transition,
-            kind,
             action,
             filenames,
             note=optional.get("note"),
             commit=optional.get("commit"),
             category=optional.get("category"),
             target_repo=optional.get("target_repo"),
+            force=force,
         )
         return quart.jsonify(filenames=result)
 
-    @app.post("/api/feedback/start-processing")
+    @app.post("/api/entries/start-processing")
     async def start_processing() -> quart.Response:
-        return await transition("feedback", "start-processing", {"filenames", "target_repo"})
+        return await transition("start-processing", {"filenames", "target_repo"})
 
-    @app.post("/api/feedback/adopt")
+    @app.post("/api/entries/adopt")
     async def adopt_feedback() -> quart.Response:
         return await transition(
-            "feedback",
             "adopt",
             {"filenames", "note", "commit", "category", "target_repo"},
         )
 
-    @app.post("/api/feedback/reject")
+    @app.post("/api/entries/reject")
     async def reject_feedback() -> quart.Response:
-        return await transition("feedback", "reject", {"filenames", "note", "commit", "target_repo"})
+        return await transition("reject", {"filenames", "note", "commit", "target_repo"})
 
-    @app.post("/api/feedback/remove")
+    @app.post("/api/entries/remove")
     async def remove_feedback() -> quart.Response:
-        return await transition("feedback", "remove", {"filenames", "target_repo"})
+        return await transition("remove", {"filenames", "note", "target_repo", "force"})
 
-    @app.post("/api/tbd/adopt")
-    async def adopt_tbd() -> quart.Response:
-        return await transition("tbd", "adopt", {"filenames", "note", "commit", "target_repo"})
-
-    @app.post("/api/tbd/remove")
-    async def remove_tbd() -> quart.Response:
-        return await transition("tbd", "remove", {"filenames", "note", "target_repo"})
-
-    @app.post("/api/feedback/commit")
-    async def commit_feedback() -> quart.Response:
+    @app.post("/api/entries/commit")
+    async def commit_entries() -> quart.Response:
         _json_object(await _request_json(), allowed=set())
         return quart.jsonify(changed=await workers.run(ops.commit))
 

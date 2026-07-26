@@ -1,7 +1,7 @@
-"""atk (agent-toolkit `atk fb`) のprocess-loop待機ループ自動再起動のテスト。
+"""atk (agent-toolkit `atk mq`) のprocess-loop待機ループ自動再起動のテスト。
 
 待機ループがタイムアウト復帰した際の上流差分反映・常駐コードのハッシュ比較・再起動を
-公開CLI経由で検証する。process-loopサブコマンドの他のテストは`_atk_fb_process_loop_test.py`に、
+公開CLI経由で検証する。process-loopサブコマンドの他のテストは`_atk_mq_process_loop_test.py`に、
 既存サブコマンドの残テストは`atk_test.py`にある。共通ヘルパーは両ファイルから再利用する。
 """
 
@@ -15,9 +15,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from _atk_fb_process_loop_test import _fake_run_with_remote_url  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_mq_process_loop_test import _fake_run_with_remote_url  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -90,7 +90,7 @@ class TestWaitLoopAutoRestart:
 
         monkeypatch.setattr(os, "execvp", fake_execvp)
 
-        argv = ["fb", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
+        argv = ["mq", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
         with pytest.raises((SystemExit, KeyboardInterrupt)):
             atk.main(argv, home=tmp_path)
         return subprocess_calls, execv_calls

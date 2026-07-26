@@ -183,16 +183,16 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 
 ### 対話シェル起動時のTBD未回答表示
 
-対話シェル起動時に`atk fb list --type=tbd --status=unanswered --skip-pull`を自動実行し、未回答TBDを1件1行で画面へ通知する。
+対話シェル起動時に`atk mq list --type=tbd --answered=no --skip-pull`を自動実行し、未回答TBDを1件1行で画面へ通知する。
 `--skip-pull`でログイン時のリポジトリアクセスを避け、0件時は出力なしで終了する。
 
 通知は次の全条件を満たした場合のみ実行される。
 
 - 対話シェル
 - `atk`コマンド存在（`command -v atk`）
-- feedback-inbox有効（`atk fb status`が終了コード0）
+- feedback-inbox有効（`atk mq status`が終了コード0）
 
-`atk fb disable`でfeedback-inboxを無効化すると`atk fb status`が非ゼロ終了し、通知は自動的にスキップされる。
+`atk mq disable`でfeedback-inboxを無効化すると`atk mq status`が非ゼロ終了し、通知は自動的にスキップされる。
 
 ### Windowsの電源設定の最適化（dotfiles-setup）
 

@@ -1,4 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq`コマンド用補助モジュール。
 
 旧`pytools/dotfiles_fb/_process_loop.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
@@ -15,12 +15,12 @@ import threading
 import time
 import typing
 
-import _atk_fb_alerts as _alerts
+import _atk_mq_alerts as _alerts
 import _process_loop_log
 import watchdog.events
 import watchdog.observers
-from _atk_fb_common import _count_pending_entries, _pull, _repo_lock
-from _atk_fb_repo import _resolve_local_worktree, _resolve_repo_id
+from _atk_mq_common import _count_pending_entries, _pull, _repo_lock
+from _atk_mq_repo import _resolve_local_worktree, _resolve_repo_id
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
 WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (
@@ -124,8 +124,8 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
     observer = watchdog.observers.Observer()
     handler = _ChangeHandler(change_event)
     _ensure_inbox_dirs(private_notes)
-    observer.schedule(handler, str(private_notes / "feedback" / "inbox"), recursive=False)
-    observer.schedule(handler, str(private_notes / "tbd" / "inbox"), recursive=False)
+    observer.schedule(handler, str(private_notes / "processing"), recursive=False)
+    observer.schedule(handler, str(private_notes / "inbox"), recursive=False)
     observer.start()
     try:
         if change_event.wait(timeout=_POLL_INTERVAL_SEC):
@@ -147,8 +147,8 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
 
 def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
     """watchdog監視対象のinboxディレクトリを事前作成する。"""
-    (private_notes / "feedback" / "inbox").mkdir(parents=True, exist_ok=True)
-    (private_notes / "tbd" / "inbox").mkdir(parents=True, exist_ok=True)
+    (private_notes / "processing").mkdir(parents=True, exist_ok=True)
+    (private_notes / "inbox").mkdir(parents=True, exist_ok=True)
 
 
 def _build_restart_argv(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> list[str]:
@@ -200,7 +200,7 @@ def _resolve_dotfiles_root() -> pathlib.Path | None:
     （キャッシュ配下は`agent-toolkit/`のみを含む部分ツリーで、`.git`もdotfiles全体の履歴も持たない）。
     利用者ごとに単一の`~/dotfiles`チェックアウトを持つ運用前提
     （`.bashrc`が`$HOME/dotfiles/bin`を直接PATHへ追加する既存運用と同じ前提。
-    `atk fb process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
+    `atk mq process-loop`の対象リポジトリ（`--target-repo`）とは独立に、常に`~/dotfiles`を指す）に基づき、
     ホームディレクトリ直下の`dotfiles/`を直接の解決先とする。
     """
     candidate = pathlib.Path.home() / "dotfiles"
@@ -283,7 +283,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     prompt = _build_process_loop_prompt(local_path, target_repo_id)
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
-    print(f"atk fb process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
+    print(f"atk mq process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     last_alert_check: float | None = None
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。

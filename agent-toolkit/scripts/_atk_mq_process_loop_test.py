@@ -1,9 +1,9 @@
-"""atk (agent-toolkit `atk fb`) のprocess-loopサブコマンド・リポジトリID解決のテスト。
+"""atk (agent-toolkit `atk mq`) のprocess-loopサブコマンド・リポジトリID解決のテスト。
 
 process-loopサブコマンド（常駐ループ）、リモートURL正規化（`_normalize_remote_url`）、
 リポジトリID解決（`_resolve_repo_id`）の単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_show_test.py`・
-`_atk_fb_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_mq_show_test.py`・
+`_atk_mq_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
 import os
@@ -19,8 +19,8 @@ import watchdog.events
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_fb_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -62,19 +62,19 @@ class TestProcessLoopIncludesProcessingInCount:
         """
         _setup_flag_and_notes(tmp_path)
         private_notes = tmp_path / "private-notes"
-        inbox_dir = private_notes / "feedback" / "inbox"
-        processing_dir = private_notes / "feedback" / "processing"
+        inbox_dir = private_notes / "inbox"
+        processing_dir = private_notes / "processing"
         processing_dir.mkdir(parents=True)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         # `_fake_run_with_remote_url`が返す正規化後IDと一致させる。
         target_repo_id = "github.com/example/myrepo"
         (inbox_dir / "a.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\n---\n\n本文A\n",
+            f"---\ntarget_repo: {target_repo_id}\ntype: feedback\n---\n\n本文A\n",
             encoding="utf-8",
         )
         (processing_dir / "b.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\n---\n\n本文B\n",
+            f"---\ntarget_repo: {target_repo_id}\ntype: feedback\n---\n\n本文B\n",
             encoding="utf-8",
         )
 
@@ -97,7 +97,7 @@ class TestProcessLoopIncludesProcessingInCount:
 
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                ["mq", "process-loop", "--target-repo", str(myrepo), "--no-update"],
                 home=tmp_path,
             )
 
@@ -146,8 +146,8 @@ class TestWaitForChanges:
     @staticmethod
     def _make_private_notes(tmp_path: pathlib.Path) -> pathlib.Path:
         private_notes = tmp_path / "private-notes"
-        (private_notes / "feedback" / "inbox").mkdir(parents=True)
-        (private_notes / "tbd" / "inbox").mkdir(parents=True)
+        (private_notes / "processing").mkdir(parents=True)
+        (private_notes / "inbox").mkdir(parents=True)
         return private_notes
 
     def test_missing_inbox_dirs_are_created(
@@ -164,8 +164,8 @@ class TestWaitForChanges:
 
         _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert (private_notes / "feedback" / "inbox").is_dir()
-        assert (private_notes / "tbd" / "inbox").is_dir()
+        assert (private_notes / "processing").is_dir()
+        assert (private_notes / "inbox").is_dir()
         assert pull_calls == [private_notes]
 
     def test_timeout_triggers_pull(
@@ -212,7 +212,7 @@ class TestWaitForChanges:
     ) -> None:
         """タイムアウト前に`.md`ファイル変更を検知した場合、`_pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "feedback" / "inbox"
+        inbox = private_notes / "inbox"
         monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
         pull_calls: list[pathlib.Path] = []
@@ -234,7 +234,7 @@ class TestWaitForChanges:
     ) -> None:
         """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで畳み込まれること。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "feedback" / "inbox"
+        inbox = private_notes / "inbox"
         monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.3)
         monkeypatch.setattr(
@@ -307,7 +307,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
@@ -396,7 +396,7 @@ class TestProcessLoopPromptAndEnv:
 
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", f"--target-repo={myrepo}", "--no-update", "--model=sonnet"],
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--model=sonnet"],
                 home=tmp_path,
             )
 
@@ -432,7 +432,7 @@ class TestProcessLoopClaudeReturncode:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert len(claude_calls) == 1
@@ -458,7 +458,7 @@ class TestProcessLoopClaudeReturncode:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert exc_info.value.code == 42
         captured = capsys.readouterr()
@@ -500,7 +500,7 @@ class TestProcessLoopUpdateAndRestart:
         monkeypatch.setattr(os, "execvp", fake_execvp)
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", "--target-repo", str(myrepo)],
+                ["mq", "process-loop", "--target-repo", str(myrepo)],
                 home=tmp_path,
             )
         assert execv_calls
@@ -546,7 +546,7 @@ class TestProcessLoopUpdateAndRestart:
         )
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                ["mq", "process-loop", "--target-repo", str(myrepo), "--no-update"],
                 home=tmp_path,
             )
         assert not execv_calls
@@ -579,7 +579,7 @@ class TestProcessLoopWaitMessage:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", "--target-repo", str(myrepo), "--no-update"],
+                ["mq", "process-loop", "--target-repo", str(myrepo), "--no-update"],
                 home=tmp_path,
             )
         captured = capsys.readouterr()
@@ -765,7 +765,7 @@ class TestAlertMonitoring:
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
         with pytest.raises(SystemExit):
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert calls == ["checked"]
 
     def test_no_alerts_flag_skips_check(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -791,7 +791,7 @@ class TestAlertMonitoring:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait)
         with pytest.raises(SystemExit):
             atk.main(
-                ["fb", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"],
                 home=tmp_path,
             )
 
@@ -817,7 +817,7 @@ class TestAlertMonitoring:
 
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fail_wait)
         with pytest.raises(SystemExit):
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert len(claude_calls) == 1
 
     def test_alert_interval_suppresses_repeated_checks(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -851,7 +851,7 @@ class TestAlertMonitoring:
         with pytest.raises(SystemExit):
             atk.main(
                 [
-                    "fb",
+                    "mq",
                     "process-loop",
                     f"--target-repo={myrepo}",
                     "--no-update",
@@ -880,7 +880,7 @@ class TestProcessLoopUrlInput:
         monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
+            atk.main(["mq", "process-loop", "--target-repo", "github.com/example/foo"], home=tmp_path)
         assert exc_info.value.code == 2
 
     def test_prompt_adds_worktree_push_instruction_for_dotfiles(self) -> None:
@@ -937,7 +937,7 @@ class TestProcessLoopUrlInput:
         monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
 
         with pytest.raises(SystemExit):
-            atk.main(["fb", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
 
         assert len(claude_calls) == 1
         assert ("--worktree=process-loop" in claude_calls[0]["cmd"]) is expects_worktree

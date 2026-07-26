@@ -17,7 +17,7 @@
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
-`Bash`向けの縮退フレーズ混入検出（`atk tb add`コマンド文字列対象）は
+`Bash`向けの縮退フレーズ混入検出（`atk mq add --type=tbd`コマンド文字列対象）は
 `agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）が担う。
 予期せぬ例外の処理は共通エントリポイント（`scripts/claude_hook.py`）が担う。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。

@@ -3,7 +3,7 @@
 import asyncio
 import pathlib
 
-import _atk_fb_common as common
+import _atk_mq_common as common
 import _atk_serve_app
 import _atk_serve_config
 import _atk_serve_state

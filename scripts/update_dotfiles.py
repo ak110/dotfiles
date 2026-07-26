@@ -9,7 +9,7 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi apply`の4段を、
 プロセス間排他ロック下で直列実行する。
 
-複数の`update-dotfiles`起動（`atk fb process-loop`の複数常駐・手動実行との重複等）が
+複数の`update-dotfiles`起動（`atk mq process-loop`の複数常駐・手動実行との重複等）が
 同時に`git pull`・`chezmoi apply`を実行するとpullとファイル操作の競合を招くため、
 `filelock`でプロセス間直列化する。ロック取得に失敗（タイムアウト）した場合は
 exit code 1で終了し、他プロセスの完了を待って再実行するよう促す。

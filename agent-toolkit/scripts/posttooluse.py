@@ -22,7 +22,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
    mcp__codex__codex・mcp__codex__codex-replyツール。
    両ツール成功時はrecorded_codex_thread_idも記録する）
 10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
-    `plan-and-add-feedback`起動検知による`plan_and_add_feedback_skill_invoked`フラグの設定と、
+    `plan-and-add-feedback`起動検知による`plan_and_add_entries_skill_invoked`フラグの設定と、
     `process-feedbacks`起動検知による同フラグのリセットも同経路で扱う (Skill)
 11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
     （pretooluse.py側の遡及スキャン記録検査・process7完了検査が計画ファイル本文を
@@ -297,21 +297,21 @@ def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
-def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
+def _set_plan_and_add_entries_invoked(state: dict) -> dict | None:
     """plan-and-add-feedbackスキル起動フラグを常時Trueへ上書きする。"""
-    state["plan_and_add_feedback_skill_invoked"] = True
+    state["plan_and_add_entries_skill_invoked"] = True
     return state
 
 
-def _reset_plan_and_add_feedback_invoked(state: dict) -> dict | None:
+def _reset_plan_and_add_entries_invoked(state: dict) -> dict | None:
     """process-feedbacks起動検知（plan-and-add-feedbackの終端工程が委譲する先）でフラグをリセットする。
 
     `plan-and-add-feedback/SKILL.md`「手順」節2は`agent-toolkit:process-feedbacks`
     「フィードバック投入」節を参照呼び出しして終端するため、当該スキルの起動を終端シグナルとする。
     """
-    if not state.get("plan_and_add_feedback_skill_invoked", False):
+    if not state.get("plan_and_add_entries_skill_invoked", False):
         return None
-    state["plan_and_add_feedback_skill_invoked"] = False
+    state["plan_and_add_entries_skill_invoked"] = False
     return state
 
 
@@ -416,11 +416,11 @@ def main() -> int:
             update_state(session_id, _set_review_invoked)
         if isinstance(skill_name, str) and skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
             update_state(session_id, _set_process_feedbacks_invoked)
-            update_state(session_id, _reset_plan_and_add_feedback_invoked)
+            update_state(session_id, _reset_plan_and_add_entries_invoked)
         if isinstance(skill_name, str) and skill_name in _EXIT_SESSION_SKILL_NAMES:
             update_state(session_id, _reset_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
-            update_state(session_id, _set_plan_and_add_feedback_invoked)
+            update_state(session_id, _set_plan_and_add_entries_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)

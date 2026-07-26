@@ -9,7 +9,7 @@
 - plan-mode → `plan_mode_skill_invoked`
 - session-review → `session_review_invoked`（辞書。キーは`agent-toolkit:session-review`で正規化）
 - process-feedbacks → `process_feedbacks_skill_invoked`
-- plan-and-add-feedback → `plan_and_add_feedback_skill_invoked`
+- plan-and-add-feedback → `plan_and_add_entries_skill_invoked`
 
 加えて、非スラッシュコマンド入力（先頭行が`/`で始まらない発話）に対しては
 規範照会・是正要求の兆候（`_norm_inquiry_escalation.py`の`_match_norm_inquiry_escalation`）を検出し、
@@ -126,10 +126,10 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
     return state
 
 
-def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
-    if state.get("plan_and_add_feedback_skill_invoked", False):
+def _set_plan_and_add_entries_invoked(state: dict) -> dict | None:
+    if state.get("plan_and_add_entries_skill_invoked", False):
         return None
-    state["plan_and_add_feedback_skill_invoked"] = True
+    state["plan_and_add_entries_skill_invoked"] = True
     return state
 
 
@@ -225,6 +225,6 @@ def main() -> int:
     if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
     if name in _PLAN_AND_ADD_FEEDBACK_NAMES_EXTENDED or full_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
-        update_state(session_id, _set_plan_and_add_feedback_invoked)
+        update_state(session_id, _set_plan_and_add_entries_invoked)
 
     return 0

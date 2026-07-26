@@ -6,6 +6,7 @@ import pathlib
 import threading
 import time
 
+import _atk_mq_common as common
 import watchdog.events
 import watchdog.observers
 
@@ -25,14 +26,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         """監視を開始する。"""
         self._loop = loop
-        for relative in (
-            "feedback/inbox",
-            "feedback/processing",
-            "feedback/adopted",
-            "feedback/rejected",
-            "tbd/inbox",
-            "tbd/adopted",
-        ):
+        for relative in common.MQ_STATES:
             path = self.root / relative
             path.mkdir(parents=True, exist_ok=True)
             self.observer.schedule(self, str(path), recursive=False)

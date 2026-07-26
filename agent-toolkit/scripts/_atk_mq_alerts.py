@@ -1,8 +1,8 @@
-"""agent-toolkitプラグイン配下の`atk fb process-loop`アラート自動検出補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq process-loop`アラート自動検出補助モジュール。
 
 対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）とGitHub
 Dependabotアラートの未解決分を収集し、フィードバックへの重複投入を防いだうえで
-`add_feedback`へ引き渡す本文を組み立てる。GitLabの脆弱性アラート（Dependency Scanning等）は
+`add_entries`へ引き渡す本文を組み立てる。GitLabの脆弱性アラート（Dependency Scanning等）は
 GitLab Ultimateプラン限定機能のため対象外とする。
 """
 
@@ -16,25 +16,25 @@ import subprocess
 import sys
 from collections.abc import Callable
 
-import _atk_fb_add as _add
-from _atk_fb_common import (
-    FEEDBACK_STATE_ADOPTED,
-    FEEDBACK_STATE_INBOX,
-    FEEDBACK_STATE_PROCESSING,
-    FEEDBACK_STATE_REJECTED,
-    _iter_feedback_entries_with_state,
+import _atk_mq_add as _add
+from _atk_mq_common import (
+    MQ_STATE_ADOPTED,
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_REJECTED,
+    _iter_entries,
 )
-from _atk_fb_formatters import _parse_alert_keys
+from _atk_mq_formatters import _parse_alert_keys
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
 _GLAB_SUBPROCESS_TIMEOUT = 30.0
 _GIT_SUBPROCESS_TIMEOUT = 10.0
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
 _ALL_FEEDBACK_STATES = (
-    FEEDBACK_STATE_INBOX,
-    FEEDBACK_STATE_PROCESSING,
-    FEEDBACK_STATE_ADOPTED,
-    FEEDBACK_STATE_REJECTED,
+    MQ_STATE_INBOX,
+    MQ_STATE_PROCESSING,
+    MQ_STATE_ADOPTED,
+    MQ_STATE_REJECTED,
 )
 
 GhRunListFn = Callable[[str, str], list[dict]]
@@ -231,13 +231,15 @@ def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiList
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
     """対象リポジトリに限定したfeedback全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
-    for _path, _entry_repo, text, _state in _iter_feedback_entries_with_state(private_notes, _ALL_FEEDBACK_STATES, target_repo):
+    for _path, _entry_repo, text, _state, _entry_type in _iter_entries(
+        private_notes, _ALL_FEEDBACK_STATES, target_repo, "feedback"
+    ):
         keys.update(_parse_alert_keys(text))
     return keys
 
 
 def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
-    """`add_feedback`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
+    """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
     return (
         f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{alert.body}\n"
     )
@@ -304,7 +306,7 @@ def check_and_submit_alerts(
     )
     if not alerts:
         return 0
-    generated = _add.add_feedback(
+    generated = _add.add_entries(
         private_notes,
         messages=[_build_alert_message(repo_id, alert) for alert in alerts],
         target_repo=repo_id,

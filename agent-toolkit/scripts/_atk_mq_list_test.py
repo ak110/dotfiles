@@ -1,4 +1,4 @@
-"""atk (agent-toolkit `atk fb`) のlistサブコマンドのテスト。
+"""atk (agent-toolkit `atk mq`) のlistサブコマンドのテスト。
 
 feedback/tbd一覧出力・各種フィルター（target-repo・source・type・status・skip-pull・count）の
 単体テストを集約する。他サブコマンドの分割先はatk_test.pyの分割方針一覧docstringを参照する。
@@ -44,7 +44,7 @@ class TestListEmpty:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -66,7 +66,7 @@ class TestListSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -92,18 +92,19 @@ class TestListMalformedFrontmatter:
         content: str,
         label: str,
     ) -> None:
-        """異常frontmatter形式は`(unknown)`のtarget_repo欄として出力される。"""
+        """typeを確定できない異常frontmatter形式は拒否される。"""
         del label  # parametrize idのみ
         notes = _setup_flag_and_notes(tmp_path)
-        (notes / "feedback" / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
+        (notes / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
-        assert exc_info.value.code == 0
+        assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert captured.out.startswith("# feedback\nmalformed.md: (unknown) [inbox] ")
+        assert not captured.out
+        assert "frontmatterのtypeが不正または欠落" in captured.err
 
 
 class TestListMultipleRepos:
@@ -122,7 +123,7 @@ class TestListMultipleRepos:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -149,7 +150,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=github.com/example/foo"], home=tmp_path)
+            atk.main(["mq", "list", "--target-repo=github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -173,7 +174,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=~/myrepo"], home=tmp_path)
+            atk.main(["mq", "list", "--target-repo=~/myrepo"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -191,7 +192,7 @@ class TestListTargetRepoFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
+            atk.main(["mq", "list", "--target-repo=github.com/example/nomatch"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -214,7 +215,7 @@ class TestListSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--source=session-review"], home=tmp_path)
+            atk.main(["mq", "list", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -234,7 +235,7 @@ class TestListSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--source=!session-review"], home=tmp_path)
+            atk.main(["mq", "list", "--source=!session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -253,7 +254,7 @@ class TestListSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", value], home=tmp_path)
+            atk.main(["mq", "list", value], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -270,7 +271,7 @@ class TestListSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -294,7 +295,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -312,11 +313,11 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [unanswered] q1\n"
+        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
     def test_type_all_omits_empty_section_header(
         self,
@@ -330,7 +331,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -353,14 +354,14 @@ class TestListSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--skip-pull"], home=tmp_path)
+            atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] == ["git", "pull"] for c in git_calls)
 
 
 class TestListStatusFilter:
-    """listサブコマンド: --statusでtbd側のみ回答状況を限定する。"""
+    """listサブコマンド: --answeredでtbd側のみ回答状況を限定する。"""
 
     def test_status_answered_excludes_unanswered_tbd(
         self,
@@ -368,14 +369,14 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=answered指定時に未回答TBDが除外される。"""
+        """--answered=yes指定時に未回答TBDが除外される。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=answered"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -388,14 +389,14 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=unanswered指定時に回答済みTBDが除外される。"""
+        """--answered=no指定時に回答済みTBDが除外される。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -415,7 +416,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=all"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -428,24 +429,24 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=answered指定時にfeedback側は影響を受けず全件出力される。"""
+        """--answered=yes指定時に回答概念を持たないfeedbackは除外される。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=answered"], home=tmp_path)
+            atk.main(["mq", "list", "--answered=yes"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n" in captured.out
+        assert "# feedback" not in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
         """--statusに不正値を指定するとargparseがexit 2で終了する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=invalid"], home=tmp_path)
+            atk.main(["mq", "list", "--status=invalid"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -454,11 +455,11 @@ class TestListStatusFilter:
         """--status=active・--status=rejectedがargparseのchoicesとして受理されること。
 
         機能的な出力検証（feedback側の状態別除外・tbd側の回答状況連動）は
-        `_atk_fb_extras_test.py`のTestListFeedbackStatusActive・
+        `_atk_mq_extras_test.py`のTestListFeedbackStatusActive・
         TestListFeedbackStatusRejectedへ集約する。
         """
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", "list", f"--status={status}"])
+        args = parser.parse_args(["mq", "list", f"--status={status}"])
         assert args.status == status
 
 
@@ -479,7 +480,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count", "--status=all"], home=tmp_path)
+            atk.main(["mq", "list", "--count", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -497,7 +498,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count"], home=tmp_path)
+            atk.main(["mq", "list", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -516,7 +517,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=answered", "--count"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered=yes", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -533,7 +534,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--count"], home=tmp_path)
+            atk.main(["mq", "list", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -558,8 +559,8 @@ class TestListNarrowTerminalTargetRepo:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """feedback部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
-        import _atk_fb_formatters  # pylint: disable=import-outside-toplevel
-        import _atk_fb_list  # pylint: disable=import-outside-toplevel
+        import _atk_mq_formatters  # pylint: disable=import-outside-toplevel
+        import _atk_mq_list  # pylint: disable=import-outside-toplevel
 
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body="本文1")
@@ -567,15 +568,15 @@ class TestListNarrowTerminalTargetRepo:
         monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         line = captured.out.splitlines()[1]
         display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
-        budget = _atk_fb_list._target_repo_budget("fb-001.md", "inbox")  # noqa: SLF001  # pylint: disable=protected-access
-        assert _atk_fb_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
-        assert budget >= _atk_fb_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
+        budget = _atk_mq_list._target_repo_budget("fb-001.md", "inbox")  # noqa: SLF001  # pylint: disable=protected-access
+        assert _atk_mq_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
+        assert budget >= _atk_mq_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
 
     def test_tbd_narrow_terminal(
         self,
@@ -584,8 +585,8 @@ class TestListNarrowTerminalTargetRepo:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """tbd部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
-        import _atk_fb_formatters  # pylint: disable=import-outside-toplevel
-        import _atk_fb_list  # pylint: disable=import-outside-toplevel
+        import _atk_mq_formatters  # pylint: disable=import-outside-toplevel
+        import _atk_mq_list  # pylint: disable=import-outside-toplevel
 
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(
@@ -599,12 +600,12 @@ class TestListNarrowTerminalTargetRepo:
         monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=tbd", "--status=unanswered"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         line = captured.out.splitlines()[1]
         display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
-        budget = _atk_fb_list._target_repo_budget(f"{_FIXED_TIMESTAMP}-001.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
-        assert _atk_fb_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
-        assert budget >= _atk_fb_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
+        budget = _atk_mq_list._target_repo_budget(f"{_FIXED_TIMESTAMP}-001.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
+        assert _atk_mq_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
+        assert budget >= _atk_mq_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access

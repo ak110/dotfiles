@@ -1,8 +1,8 @@
-"""atk (agent-toolkit `atk fb`) の位置引数重複除去（FB7）のテスト。
+"""atk (agent-toolkit `atk mq`) の位置引数重複除去（FB7）のテスト。
 
 `_dedup_positional_filenames`を経由するadopt・reject・rm・start-processingの4サブコマンドで、
 同一ファイル名の重複指定時に警告出力のうえ1回のみ処理されることを検証する。
-`_atk_fb_mutations_test.py`の肥大化（pylint `too-many-lines`）回避のため本ファイルへ分離した。
+`_atk_mq_mutations_test.py`の肥大化（pylint `too-many-lines`）回避のため本ファイルへ分離した。
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
@@ -43,16 +43,16 @@ class TestAdoptDuplicate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "adopted" / "fb-001.md").exists()
         stderr = capsys.readouterr().err
         assert "重複が含まれます" in stderr
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: process 1 feedback item (adopted)" in commit_cmds[0]
+        assert "chore: process 1 entry (adopted)" in commit_cmds[0]
 
 
 class TestRejectDuplicate:
@@ -71,16 +71,16 @@ class TestRejectDuplicate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-001.md", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-001.md", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "rejected" / "fb-001.md").exists()
         stderr = capsys.readouterr().err
         assert "重複が含まれます" in stderr
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: process 1 feedback item (rejected)" in commit_cmds[0]
+        assert "chore: process 1 entry (rejected)" in commit_cmds[0]
 
 
 class TestRmDuplicate:
@@ -99,15 +99,15 @@ class TestRmDuplicate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-001.md", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
         stderr = capsys.readouterr().err
         assert "重複が含まれます" in stderr
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: remove 1 feedback item" in commit_cmds[0]
+        assert "chore: remove 1 entry" in commit_cmds[0]
 
 
 class TestStartProcessingDuplicate:
@@ -126,13 +126,13 @@ class TestStartProcessingDuplicate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "start-processing", "fb-001.md", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "start-processing", "fb-001.md", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "processing" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "processing" / "fb-001.md").exists()
         stderr = capsys.readouterr().err
         assert "重複が含まれます" in stderr
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: start processing 1 feedback item" in commit_cmds[0]
+        assert "chore: start processing 1 entry" in commit_cmds[0]

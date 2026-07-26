@@ -871,10 +871,10 @@ class TestScopeEscalationDetection:
         body = _block_reason(decision)
         assert "scope-escalation-phrases" in body or "scope-escalation" in body
 
-    def test_extended_categories_apply_under_plan_and_add_feedback(self, tmp_path: pathlib.Path):
-        """`plan_and_add_feedback_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
+    def test_extended_categories_apply_under_plan_and_add_entries(self, tmp_path: pathlib.Path):
+        """`plan_and_add_entries_skill_invoked`単独真化でも拡張カテゴリ照合が有効になる。
 
-        3系統のスキル起動フラグ（plan_mode／process_feedbacks／plan_and_add_feedback）は
+        3系統のスキル起動フラグ（plan_mode／process_feedbacks／plan_and_add_entries）は
         いずれも`_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
         """
         phrase = _pick_scope_escalation_text("async-wait")
@@ -884,7 +884,7 @@ class TestScopeEscalationDetection:
             tmp_path,
             [_user_entry(), _assistant_text_only(phrase)],
         )
-        _write_state(tmp_path, "test-plan-and-add-feedback", {"plan_and_add_feedback_skill_invoked": True})
+        _write_state(tmp_path, "test-plan-and-add-feedback", {"plan_and_add_entries_skill_invoked": True})
         result = _run(
             {"session_id": "test-plan-and-add-feedback", "transcript_path": str(transcript)},
             state_dir=tmp_path,

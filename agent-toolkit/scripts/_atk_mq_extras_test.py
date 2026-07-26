@@ -1,7 +1,7 @@
-"""atk (agent-toolkit `atk fb`) の拡張サブコマンド・オプションのテスト。
+"""atk (agent-toolkit `atk mq`) の拡張サブコマンド・オプションのテスト。
 
 `add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`・
-`add`のファイルパス誤投入拒否・`fb add`/`tb add`の`--target-repo`の単体テストを集約する。
+`add`のファイルパス誤投入拒否・`mq add`の`--target-repo`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
 共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
 """
@@ -52,13 +52,13 @@ class TestAddSourceOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "add", "--source=session-review", str(myrepo), "メッセージ"],
+                ["mq", "add", "--source=session-review", str(myrepo), "メッセージ"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "source: session-review" in content
 
     def test_source_absent_when_not_given(
@@ -74,10 +74,10 @@ class TestAddSourceOption:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "source:" not in content
 
 
@@ -95,7 +95,7 @@ class TestListPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -116,7 +116,7 @@ class TestShowAllPullsBeforeRead:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "show", "--all"], home=tmp_path)
+            atk.main(["mq", "show", "--all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
@@ -139,21 +139,21 @@ class TestCommitSubcommand:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             if cmd[:3] == ["git", "status", "--porcelain"]:
-                stdout: Any = " M feedback/inbox/x.md\n" if kwargs.get("text") else b" M feedback/inbox/x.md\n"
+                stdout: Any = " M inbox/x.md\n" if kwargs.get("text") else b" M inbox/x.md\n"
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "commit"], home=tmp_path)
+            atk.main(["mq", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         git_cmds = [c["cmd"] for c in calls]
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
         assert git_cmds[1][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[2] == ["git", "add", "feedback/inbox"]
-        assert git_cmds[3] == ["git", "commit", "-m", "chore: edit feedback items externally"]
+        assert git_cmds[2] == ["git", "add", "inbox", "processing"]
+        assert git_cmds[3] == ["git", "commit", "-m", "chore: edit queue items externally"]
         assert git_cmds[4] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
@@ -179,7 +179,7 @@ class TestCommitSubcommand:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "commit"], home=tmp_path)
+            atk.main(["mq", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in calls if "commit" in c["cmd"] or c["cmd"][:2] == ["git", "push"]]
@@ -194,12 +194,12 @@ def _write_processing_file(
     target_repo: str = "github.com/example/foo",
     body: str = "処理中本文",
 ) -> pathlib.Path:
-    """feedback/processing配下に1ファイルを書き込み、絶対パスを返す。"""
-    processing_dir = notes / "feedback" / "processing"
+    """processing配下に1ファイルを書き込み、絶対パスを返す。"""
+    processing_dir = notes / "processing"
     processing_dir.mkdir(parents=True, exist_ok=True)
     path = processing_dir / filename
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -212,12 +212,13 @@ def _write_adopted_file(
     target_repo: str = "github.com/example/foo",
     body: str = "採用済み本文",
 ) -> pathlib.Path:
-    """feedback/adopted配下にカテゴリ付きファイルを書き込み、絶対パスを返す。"""
-    adopted_dir = notes / "feedback" / "adopted"
+    """adopted配下にカテゴリ付きファイルを書き込み、絶対パスを返す。"""
+    adopted_dir = notes / "adopted"
     adopted_dir.mkdir(parents=True, exist_ok=True)
     path = adopted_dir / filename
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n- カテゴリ: {category}\n",
+        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n"
+        f"{body}\n\n## 処理結果\n\n- 採否: adopted\n- カテゴリ: {category}\n",
         encoding="utf-8",
     )
     return path
@@ -239,7 +240,7 @@ class TestListFeedbackStatusDefaultAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -263,7 +264,7 @@ class TestListFeedbackStatusProcessing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=processing"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=processing"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -288,7 +289,7 @@ class TestListFeedbackStatusAdopted:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=adopted"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=adopted"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -314,7 +315,7 @@ class TestListFeedbackCategory:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "list", "--type=feedback", "--status=adopted", "--category", "scope-escalation"],
+                ["mq", "list", "--type=feedback", "--status=adopted", "--category", "scope-escalation"],
                 home=tmp_path,
             )
 
@@ -340,7 +341,7 @@ class TestListFeedbackStatusAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=all"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -362,16 +363,16 @@ class TestListFeedbackStatusActive:
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted-body")
-        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=active"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=active"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -395,19 +396,19 @@ class TestListFeedbackStatusActive:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list"], home=tmp_path)
+            atk.main(["mq", "list"], home=tmp_path)
         assert exc_info.value.code == 0
         default_out = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=active"], home=tmp_path)
+            atk.main(["mq", "list", "--status=active"], home=tmp_path)
         assert exc_info.value.code == 0
         active_out = capsys.readouterr().out
 
         assert default_out == active_out
         assert "fb-inbox.md: github.com/example/foo [inbox] inbox本文" in default_out
         assert "fb-adopted.md" not in default_out
-        assert f"{_FIXED_TIMESTAMP}-001.md" not in default_out
+        assert f"{_FIXED_TIMESTAMP}-001.md" in default_out
         assert f"{_FIXED_TIMESTAMP}-002.md" in default_out
 
 
@@ -423,16 +424,16 @@ class TestListFeedbackStatusRejected:
         """`--status=rejected`指定時、feedback側はrejected配下のみ出力する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
-        rejected_dir = notes / "feedback" / "rejected"
+        rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--status=rejected"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--status=rejected"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -447,16 +448,16 @@ class TestListFeedbackStatusRejected:
     ) -> None:
         """`--status=rejected`指定時、tbd側は状態フォルダを持たないため全件出力される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        (notes / "tbd" / "inbox").mkdir(parents=True, exist_ok=True)
+        (notes / "inbox").mkdir(parents=True, exist_ok=True)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--status=rejected"], home=tmp_path)
+            atk.main(["mq", "list", "--status=rejected"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.err
 
 
 class TestEnableSubcommand:
@@ -475,7 +476,7 @@ class TestEnableSubcommand:
         assert not flag.exists()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "enable"], home=tmp_path)
+            atk.main(["mq", "enable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert flag.exists()
@@ -489,7 +490,7 @@ class TestEnableSubcommand:
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "enable"], home=tmp_path)
+            atk.main(["mq", "enable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -513,7 +514,7 @@ class TestDisableSubcommand:
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "disable"], home=tmp_path)
+            atk.main(["mq", "disable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not flag.exists()
@@ -523,7 +524,7 @@ class TestDisableSubcommand:
     def test_disable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """フラグファイルが存在しない場合は無動作で完了する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "disable"], home=tmp_path)
+            atk.main(["mq", "disable"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -538,7 +539,7 @@ class TestStatusSubcommand:
         (tmp_path / "private-notes").mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "status"], home=tmp_path)
+            atk.main(["mq", "status"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -552,7 +553,7 @@ class TestStatusSubcommand:
         flag.touch()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "status"], home=tmp_path)
+            atk.main(["mq", "status"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -567,7 +568,7 @@ class TestStatusSubcommand:
         (tmp_path / "private-notes").mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "status"], home=tmp_path)
+            atk.main(["mq", "status"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -631,17 +632,17 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_body, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        files = list((notes / "feedback" / "inbox").iterdir())
+        files = list((notes / "inbox").iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "エディター経由の本文" in content
 
         captured = capsys.readouterr()
         assert "編集する場合:\n" in captured.out
-        assert f"  atk fb edit {files[0].name}\n" in captured.out
+        assert f"  atk mq edit {files[0].name}\n" in captured.out
 
     def test_editor_empty_save_aborts(
         self,
@@ -662,12 +663,12 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(write_blanks, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "本文が空" in captured.err
-        assert not list((notes / "feedback" / "inbox").iterdir())
+        assert not list((notes / "inbox").iterdir())
 
     def test_editor_missing_env_exits(
         self,
@@ -691,7 +692,7 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -712,16 +713,16 @@ class TestAddViaEditor:
         monkeypatch.setattr(subprocess, "run", _editor_fake_run(lambda _tmp: 2, myrepo=myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "終了コード2" in captured.err
-        assert not list((notes / "feedback" / "inbox").iterdir())
+        assert not list((notes / "inbox").iterdir())
 
 
 class TestAddFilePathArgumentRejected:
-    """`fb add`の位置引数がファイルパスに解釈される場合の誤操作拒否を検証する。"""
+    """`mq add`の位置引数がファイルパスに解釈される場合の誤操作拒否を検証する。"""
 
     def test_md_file_path_argument_rejected(
         self,
@@ -746,12 +747,12 @@ class TestAddFilePathArgumentRejected:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "ファイルパス" in captured.err
-        assert not list((notes / "feedback" / "inbox").glob("*.md"))
+        assert not list((notes / "inbox").glob("*.md"))
 
     def test_nonexistent_md_path_string_not_rejected(
         self,
@@ -774,10 +775,10 @@ class TestAddFilePathArgumentRejected:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "docs/architecture.md"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "docs/architecture.md"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "docs/architecture.md" in content
 
     def test_extensionless_temp_file_argument_rejected(
@@ -803,16 +804,16 @@ class TestAddFilePathArgumentRejected:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "ファイルパス" in captured.err
-        assert not list((notes / "feedback" / "inbox").glob("*.md"))
+        assert not list((notes / "inbox").glob("*.md"))
 
 
 class TestAddTargetRepoOption:
-    """`fb add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
+    """`mq add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -835,13 +836,13 @@ class TestAddTargetRepoOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "add", "--target-repo", "github.com/example/otherrepo", "本文"],
+                ["mq", "add", "--target-repo", "github.com/example/otherrepo", "本文"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
     def test_frontmatter_target_repo_overrides_cli_option(
@@ -866,18 +867,18 @@ class TestAddTargetRepoOption:
         frontmatter_body = "---\ntarget_repo: github.com/example/fmrepo\n---\n\n本文"
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "add", "--target-repo", "github.com/example/otherrepo", frontmatter_body],
+                ["mq", "add", "--target-repo", "github.com/example/otherrepo", frontmatter_body],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/fmrepo" in content
 
 
 class TestTbdAddTargetRepoOption:
-    """`tb add --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
+    """`mq add --type=tbd --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -892,13 +893,13 @@ class TestTbdAddTargetRepoOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["tb", "add", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                ["mq", "add", "--type=tbd", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
         assert exc_info.value.code == 0
 
-        files = sorted((notes / "tbd" / "inbox").iterdir())
+        files = sorted((notes / "inbox").iterdir())
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
@@ -915,12 +916,12 @@ class TestTbdAddTargetRepoOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["tb", "add", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                ["mq", "add", "--type=tbd", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
         assert exc_info.value.code == 0
 
-        files = sorted((notes / "tbd" / "inbox").iterdir())
+        files = sorted((notes / "inbox").iterdir())
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content

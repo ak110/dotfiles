@@ -1,4 +1,4 @@
-"""`_atk_fb_alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
+"""`_atk_mq_alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
 
 import contextlib
 import datetime
@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_alerts as alerts  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_alerts as alerts  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
@@ -78,17 +78,17 @@ def test_resolve_target_branch_paths() -> None:
 def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) -> None:
     """同一リポジトリの既出キーだけを重複除外する。"""
     notes = tmp_path / "private-notes"
-    adopted = notes / "feedback" / "adopted"
+    adopted = notes / "adopted"
     adopted.mkdir(parents=True)
     (adopted / "other.md").write_text(
-        "---\ntarget_repo: github.com/other/repo\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/other/repo\ntype: feedback\nalert_keys: github-dependabot:21\n---\n\n本文\n",
         encoding="utf-8",
     )
     payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
     result = alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
     assert [alert.keys for alert in result] == [("github-dependabot:21",)]
     (adopted / "same.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\nalert_keys: github-dependabot:21\n---\n\n本文\n",
         encoding="utf-8",
     )
     assert not alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
@@ -102,17 +102,18 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
     （`coding-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
     """
     notes = tmp_path / "private-notes"
-    inbox = notes / "feedback" / "inbox"
+    inbox = notes / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "absent.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\n---\n\n本文\n",
         encoding="utf-8",
     )
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == set()
 
     (inbox / "absent.md").unlink()
     (inbox / "multiple.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\nalert_keys: github-dependabot:21, github-dependabot:22\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\n"
+        "alert_keys: github-dependabot:21, github-dependabot:22\n---\n\n本文\n",
         encoding="utf-8",
     )
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == {
@@ -122,16 +123,16 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
     (inbox / "multiple.md").unlink()
     (inbox / "empty.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\nalert_keys: \n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\nalert_keys: \n---\n\n本文\n",
         encoding="utf-8",
     )
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == set()
 
 
-def test_check_and_submit_alerts_invokes_add_feedback(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """新規アラートをfeedbackへ投入し、件数とfrontmatterを返す。"""
     notes = tmp_path / "private-notes"
-    (notes / "feedback/inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(  # pylint: disable=protected-access
         alerts._add,  # pylint: disable=protected-access
         "_repo_lock",
@@ -154,7 +155,7 @@ def test_check_and_submit_alerts_invokes_add_feedback(monkeypatch: pytest.Monkey
         dependabot_fn=lambda _r: payload,
     )
     assert count == 1
-    content = next((notes / "feedback/inbox").iterdir()).read_text(encoding="utf-8")
+    content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
     assert "alert_keys: github-dependabot:21" in content
     assert "source: alert-monitor" in content
 
@@ -162,14 +163,14 @@ def test_check_and_submit_alerts_invokes_add_feedback(monkeypatch: pytest.Monkey
 def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """新規アラートが無い場合は投入しない。"""
     notes = tmp_path / "private-notes"
-    (notes / "feedback/inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     calls: list[int] = []
 
     def fake_add(*_args: object, **_kwargs: object) -> list[str]:
         calls.append(1)
         return []
 
-    monkeypatch.setattr(alerts._add, "add_feedback", fake_add)  # pylint: disable=protected-access
+    monkeypatch.setattr(alerts._add, "add_entries", fake_add)  # pylint: disable=protected-access
     count = alerts.check_and_submit_alerts(
         notes,
         "github.com/owner/repo",

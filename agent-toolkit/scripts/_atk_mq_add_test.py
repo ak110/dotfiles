@@ -1,8 +1,8 @@
-"""atk (agent-toolkit `atk fb`) の`add`サブコマンド順序保証テスト。
+"""atk (agent-toolkit `atk mq`) の`add`サブコマンド順序保証テスト。
 
 エディター経由の本文確定後に`_pull`を実行しUXブロッキング待ちを最小化する順序
 （エディター起動 → 本文確定 → `_pull` → 書込 → commit&push）が維持されていることを検証する。
-基本動作テストは`atk_test.py`・`_atk_fb_extras_test.py`側に集約する。
+基本動作テストは`atk_test.py`・`_atk_mq_extras_test.py`側に集約する。
 共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
@@ -27,11 +27,11 @@ from atk_test import _FIXED_DT, _setup_flag_and_notes  # noqa: E402  # pylint: d
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """平引数操作が生成名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"
-    (notes / "feedback/inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    generated = add_module.add_feedback(
+    generated = add_module.add_entries(
         notes,
         messages=["本文"],
         target_repo="github.com/example/repo",
@@ -39,7 +39,7 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
         now=_FIXED_DT,
     )
     assert generated == [f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"]
-    content = (notes / "feedback/inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source: test" in content
 
@@ -49,19 +49,19 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
 ) -> None:
     """target_repo・source以外のfrontmatterキー（alert_keys等）を入力順で引き継ぐ。"""
     notes = tmp_path / "private-notes"
-    (notes / "feedback/inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     message = "---\ntarget_repo: github.com/example/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
-    generated = add_module.add_feedback(
+    generated = add_module.add_entries(
         notes,
         messages=[message],
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
     )
-    content = (notes / "feedback/inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
     assert "alert_keys: github-run:1" in content
     assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
 
@@ -97,11 +97,11 @@ class TestAddOrderEditorFirst:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert call_order == ["editor", "pull"]
-        assert list((notes / "feedback" / "inbox").iterdir())
+        assert list((notes / "inbox").iterdir())
 
     def test_message_preserved_when_pull_fails(
         self,
@@ -130,7 +130,7 @@ class TestAddOrderEditorFirst:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -146,7 +146,7 @@ class TestAddOrderEditorFirst:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         git_cmds: list[list[str]] = []
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
@@ -163,14 +163,14 @@ class TestAddOrderEditorFirst:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert git_cmds[0] == ["git", "pull", "--ff-only"]
 
 
 class TestAddRepoPathOverrideCli:
-    """`fb add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`mq add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -192,10 +192,10 @@ class TestAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
         # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
         assert "target_repo: github.com/example/myrepo" in content
@@ -211,11 +211,11 @@ class TestAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk fb add" in captured.err
+        assert "usage: atk mq add" in captured.err
         error_line = captured.err.rstrip("\n").splitlines()[-1]
         assert "パスの指定は不要です" in error_line
         assert "REPO_PATH" not in error_line
@@ -241,10 +241,10 @@ class TestAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert "本文" in content
 
@@ -269,13 +269,13 @@ class TestAddRepoPathOverrideCli:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "add", str(myrepo), "--source", "session-review", "本文"],
+                ["mq", "add", str(myrepo), "--source", "session-review", "本文"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert "本文" in content
         assert "source: session-review" in content
@@ -301,10 +301,10 @@ class TestAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", oversized_message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", oversized_message], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "feedback" / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
         # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
         assert "target_repo: github.com/example/myrepo" in content
@@ -312,7 +312,7 @@ class TestAddRepoPathOverrideCli:
 
 
 class TestAddEmptyBodyRejection:
-    """`fb add`の実質空本文投入拒否を検証する。"""
+    """`mq add`の実質空本文投入拒否を検証する。"""
 
     def test_empty_string_body_rejected(
         self,
@@ -335,7 +335,7 @@ class TestAddEmptyBodyRejection:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), ""], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), ""], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -361,7 +361,7 @@ class TestAddEmptyBodyRejection:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "-"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "-"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
 
@@ -386,7 +386,7 @@ class TestAddEmptyBodyRejection:
 
         # 先頭ハイフンの複数文字列引数はargparseがオプションと誤認するため`--`で区切る
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "--", "-\n-\n"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "--", "-\n-\n"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
 
@@ -410,10 +410,10 @@ class TestAddEmptyBodyRejection:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "- 理由: 動作確認済みのため採用"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "- 理由: 動作確認済みのため採用"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert list((notes / "feedback" / "inbox").iterdir())
+        assert list((notes / "inbox").iterdir())
 
     def test_editor_confirmed_empty_body_rejected(
         self,
@@ -439,6 +439,6 @@ class TestAddEmptyBodyRejection:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1

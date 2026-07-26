@@ -1,11 +1,11 @@
-"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq`コマンド用補助モジュール。
 
 旧`pytools/dotfiles_fb/_common.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 
 不変条件: フィードバック保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
 `_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
-運用（`atk fb process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
+運用（`atk mq process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
 pullとファイル操作・commitの交錯によるfast-forward失敗を招く。
 """
 
@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterable, Iterator
 
 import filelock
 import platformdirs
-from _atk_fb_formatters import (
+from _atk_mq_formatters import (
     _display_width,
     _parse_target_repo,
     _target_repo_budget,
@@ -36,14 +36,18 @@ from _atk_fb_formatters import (
 # - `processing`: `start-processing`で処理中に移動された途中状態
 # - `adopted`: 採用として最終処理された状態
 # - `rejected`: 不採用として最終処理された状態
-FEEDBACK_STATE_INBOX = "inbox"
-FEEDBACK_STATE_PROCESSING = "processing"
-FEEDBACK_STATE_ADOPTED = "adopted"
-FEEDBACK_STATE_REJECTED = "rejected"
+MQ_STATE_INBOX = "inbox"
+MQ_STATE_PROCESSING = "processing"
+MQ_STATE_ADOPTED = "adopted"
+MQ_STATE_REJECTED = "rejected"
+MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
+MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+MQ_TYPE_FEEDBACK = "feedback"
+MQ_TYPE_TBD = "tbd"
+MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
-    "fb": frozenset(("adopt", "reject")),
-    "tb": frozenset(("adopt",)),
+    "mq": frozenset(("adopt", "reject", "rm")),
 }
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
 
@@ -64,7 +68,7 @@ def warn_space_separated_option(argv: list[str]) -> None:
     """後始末サブコマンドの値付きオプションが空白区切りの場合に警告する。"""
     top_command = None
     top_index = None
-    for cmd in ("fb", "tb"):
+    for cmd in ("mq",):
         try:
             top_index = argv.index(cmd)
             top_command = cmd
@@ -90,7 +94,7 @@ def warn_space_separated_option(argv: list[str]) -> None:
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     """feedback/配下の指定サブディレクトリパスを返す。必要時に作成する。"""
-    path = private_notes / "feedback" / name
+    path = private_notes / name
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -98,7 +102,7 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
 def _flag_path() -> pathlib.Path:
     """feedback-inboxの有効化フラグファイルの絶対パスを返す。
 
-    `atk fb enable`/`disable`の後方互換操作対象として残すが、inbox常時有効化に伴い
+    `atk mq enable`/`disable`の後方互換操作対象として残すが、inbox常時有効化に伴い
     `_check_environment`の判定には用いない。設定ディレクトリ解決はロック・状態
     ディレクトリ（`_repo_lock_path`参照）と同じくplatformdirsへ統一し、
     `XDG_CONFIG_HOME`等の環境変数を尊重する。
@@ -158,14 +162,7 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
         "削除するとpull/pushの自動スキップが解除され、remote未設定のままgit操作が失敗しうる。\n",
         encoding="utf-8",
     )
-    for name in (
-        "feedback/inbox",
-        "feedback/processing",
-        "feedback/adopted",
-        "feedback/rejected",
-        "tbd/inbox",
-        "tbd/adopted",
-    ):
+    for name in MQ_STATES:
         state_dir = root / name
         state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / ".gitkeep").touch()
@@ -211,7 +208,24 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
             print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
             sys.exit(1)
         _init_local_private_notes_repo(root)
+    _reject_legacy_layout(root)
     return root
+
+
+_LEGACY_DIR_NAMES = ("feedback", "tbd")
+
+
+def _reject_legacy_layout(private_notes: pathlib.Path) -> None:
+    """旧2階層レイアウトが残る管理repoの操作を拒否する。"""
+    legacy = [name for name in _LEGACY_DIR_NAMES if (private_notes / name).is_dir()]
+    if not legacy:
+        return
+    print(
+        f"旧レイアウトのディレクトリが残っています: {', '.join(legacy)}（{private_notes}）。"
+        "管理repoで最新のリモート状態を取り込み、平坦レイアウトへの移行済みコミットへ更新してください。",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
@@ -368,10 +382,10 @@ def _stamp_result(
 ) -> None:
     """対象ファイル末尾へ`## 処理結果`節を追記する。
 
-    outcomeは`adopted`・`rejected`・`tbd-adopted`のいずれかを受け取る。
+    outcomeは`adopted`・`rejected`のいずれかを受け取る。
     commit・note・categoryは省略可能で、指定時のみ対応する箇条書き項目を追加する。
     categoryは採用フィードバックの再発防止分類ラベルを受け取る。
-    値は`atk fb adopt --category`由来とする。
+    値は`atk mq adopt --category`由来とする。
     """
     body = path.read_text(encoding="utf-8")
     if not body.endswith("\n"):
@@ -442,8 +456,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
 
     正規化後の同一性で重複判定するため、`_normalize_md_filename`で正規化した値をキーに
     順序保存する（例: `name`と`name.md`は同一項目として1件へ集約）。
-    呼び出し元は`_atk_fb_mutations.py`の`_cmd_start_processing`・`_cmd_adopt`・`_cmd_reject`・`_cmd_rm`と、
-    `_atk_fb_tbd.py`の`_cmd_tbd_adopt`・`_cmd_tbd_rm`の計6サブコマンドとする。
+    呼び出し元は`_atk_mq_mutations.py`の`_cmd_start_processing`・`_cmd_adopt`・
+    `_cmd_reject`・`_cmd_rm`の4サブコマンドとする。
     戻り値は正規化前の原文字列のうち初出のものを保持する（正規化は判定にのみ用いる）。
     """
     seen: dict[str, str] = {}
@@ -481,20 +495,46 @@ def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None)
         yield path, entry_repo, text
 
 
-# `--status=active`が指す集合: feedbackは`inbox`・`processing`、tbdは`answered`。
-FEEDBACK_ACTIVE_STATES = (FEEDBACK_STATE_INBOX, FEEDBACK_STATE_PROCESSING)
+def _parse_type(text: str) -> str | None:
+    """本文先頭のfrontmatterから`type`を抽出する。"""
+    if not text.startswith("---\n"):
+        return None
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return None
+    for line in text[4:end].splitlines():
+        if line.startswith("type:"):
+            return line.split(":", 1)[1].strip() or None
+    return None
 
 
-def _iter_feedback_entries_with_state(
+def _require_type(path: pathlib.Path, text: str) -> str:
+    """エントリの種別を検証して返す。"""
+    entry_type = _parse_type(text)
+    if entry_type not in MQ_TYPES:
+        print(
+            f"frontmatterのtypeが不正または欠落しています（feedback・tbdのいずれかが必要）: {path}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return entry_type
+
+
+def _iter_entries(
     private_notes: pathlib.Path,
     states: Iterable[str],
     filter_repo: str | None,
-) -> Iterator[tuple[pathlib.Path, str, str, str]]:
-    """指定状態フォルダのfeedbackエントリを`(path, target_repo, text, state)`形式で列挙する。"""
+    entry_type: str = "all",
+) -> Iterator[tuple[pathlib.Path, str, str, str, str]]:
+    """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
     for state in states:
-        state_dir = private_notes / "feedback" / state
+        state_dir = private_notes / state
         for path, target_repo, text in _iter_inbox_entries(state_dir, filter_repo):
-            yield path, target_repo, text, state
+            actual_type = _require_type(path, text)
+            if entry_type not in ("all", actual_type):
+                continue
+            yield path, target_repo, text, state, actual_type
 
 
 def _is_tbd_answered(text: str) -> bool:
@@ -519,19 +559,19 @@ def _is_tbd_answered(text: str) -> bool:
 
 def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
     """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
-    tbd_dir = private_notes / "tbd" / FEEDBACK_STATE_INBOX
     entries = [
-        (path, entry_repo, text)
-        for path, entry_repo, text in _iter_inbox_entries(tbd_dir, target_repo)
+        (path, entry_repo, text, state)
+        for path, entry_repo, text, state, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
         if not _is_tbd_answered(text)
     ]
     if not entries:
         return
     print("# tbd", file=sys.stderr)
-    for path, entry_repo, text in entries:
-        repo_budget = _target_repo_budget(path.name, "unanswered")
+    for path, entry_repo, text, state in entries:
+        label = f"{state}/unanswered"
+        repo_budget = _target_repo_budget(path.name, label)
         display_repo = _truncate_target_repo(entry_repo, max_width=repo_budget)
-        prefix = f"{path.name}: {display_repo} [unanswered] "
+        prefix = f"{path.name}: {display_repo} [{label}] "
         available_width = shutil.get_terminal_size().columns - _display_width(prefix)
         print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
 
@@ -547,13 +587,12 @@ def _count_pending_entries(
     """
     # inbox・processingの両状態を未処理として合算する（`start-processing`で移動済みの
     # 途中状態は`adopt`・`reject`未完了のため次反復での再処理対象に含める）。
-    feedback_inbox = private_notes / "feedback" / FEEDBACK_STATE_INBOX
-    feedback_processing = private_notes / "feedback" / FEEDBACK_STATE_PROCESSING
-    feedback_count = sum(1 for _ in _iter_inbox_entries(feedback_inbox, target_repo)) + sum(
-        1 for _ in _iter_inbox_entries(feedback_processing, target_repo)
+    feedback_count = sum(1 for _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_FEEDBACK))
+    tbd_count = sum(
+        1
+        for _, _, text, _, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
+        if _is_tbd_answered(text)
     )
-    tbd_dir = private_notes / "tbd" / FEEDBACK_STATE_INBOX
-    tbd_count = sum(1 for _, _, text in _iter_inbox_entries(tbd_dir, target_repo) if _is_tbd_answered(text))
     return feedback_count + tbd_count
 
 
@@ -564,23 +603,28 @@ def _count_feedback(feedback_dir: pathlib.Path) -> int:
     return sum(1 for p in feedback_dir.iterdir() if p.suffix == ".md")
 
 
-def _max_existing_seq(feedback_dir: pathlib.Path, timestamp_prefix: str) -> int:
-    """同一タイムスタンププレフィックスを持つinboxファイルの最大連番を返す。
+def _max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
+    """同一タイムスタンププレフィックスを持つファイルの最大連番を、4状態すべてから返す。
 
     例えば`{prefix}-001.md`と`{prefix}-003.md`が存在する場合は3を返す。
     非連続連番でも新規生成側で既存ファイルへ衝突しないよう最大値を基準にする。
+    inboxのみを走査すると、同一秒に採番したエントリが別状態へ遷移した後の再投入で
+    連番が再発行され、`adopted`・`rejected`等の既存エントリと同名衝突を起こすため、
+    4状態フォルダすべてを走査対象にする。
     """
-    if not feedback_dir.exists():
-        return 0
     max_seq = 0
-    for p in feedback_dir.iterdir():
-        if not p.name.startswith(f"{timestamp_prefix}-"):
+    for state in MQ_STATES:
+        state_dir = private_notes / state
+        if not state_dir.exists():
             continue
-        try:
-            seq = int(p.stem.rsplit("-", 1)[-1])
-        except ValueError:
-            continue
-        max_seq = max(max_seq, seq)
+        for p in state_dir.iterdir():
+            if not p.name.startswith(f"{timestamp_prefix}-"):
+                continue
+            try:
+                seq = int(p.stem.rsplit("-", 1)[-1])
+            except ValueError:
+                continue
+            max_seq = max(max_seq, seq)
     return max_seq
 
 
@@ -683,6 +727,21 @@ def commit_and_push(private_notes: pathlib.Path, message: str, rel_paths: Iterab
 def is_tbd_answered(text: str) -> bool:
     """TBD本文が回答済みか判定する。"""
     return _is_tbd_answered(text)
+
+
+def entry_type_of(path: pathlib.Path, text: str) -> str:
+    """エントリの種別を返す。欠落・未知値はexit 2で終了する。"""
+    return _require_type(path, text)
+
+
+def iter_entries(
+    private_notes: pathlib.Path,
+    states: Iterable[str],
+    filter_repo: str | None,
+    entry_type: str = "all",
+) -> Iterator[tuple[pathlib.Path, str, str, str, str]]:
+    """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
+    return _iter_entries(private_notes, states, filter_repo, entry_type)
 
 
 def validate_filename(filename: str, base_dir: pathlib.Path) -> pathlib.Path:

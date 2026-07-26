@@ -63,7 +63,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 ## 識別子・環境変数
 
 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする。
-代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk fb`管理repoのroot、既定`~/private-notes/`）と
+代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`（`atk mq`管理repoのroot、既定`~/private-notes/`）と
 `AGENT_TOOLKIT_STOP_GATE_DEBUG`（デバッグ出力）である。個人環境完結は`DOTFILES_`を使う。
 `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を保つ。
 

@@ -1,10 +1,10 @@
-"""atk (agent-toolkit `atk fb`) のテスト。
+"""atk (agent-toolkit `atk mq`) のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add・本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-list系は`_atk_fb_list_test.py`、show系は`_atk_fb_show_test.py`、mutation系は`_atk_fb_mutations_test.py`、
-process-loop・リポジトリ解決は`_atk_fb_process_loop_test.py`、拡張機能は`_atk_fb_extras_test.py`、
-TBD系は`_atk_fb_tbd_test.py`、本文要約の切り詰め境界ケースは`_atk_fb_formatters_test.py`に分離する。
+list系は`_atk_mq_list_test.py`、show系は`_atk_mq_show_test.py`、mutation系は`_atk_mq_mutations_test.py`、
+process-loop・リポジトリ解決は`_atk_mq_process_loop_test.py`、拡張機能は`_atk_mq_extras_test.py`、
+TBD系は`_atk_mq_tbd_test.py`、本文要約の切り詰め境界ケースは`_atk_mq_formatters_test.py`に分離する。
 TBD共通ヘルパーは本ファイルと分割先テストの双方から使うため本ファイルに残置する。
 gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
 """
@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -60,7 +60,7 @@ def _setup_flag_and_notes(tmp_path: pathlib.Path) -> pathlib.Path:
     flag.touch()
     notes = tmp_path / "private-notes"
     notes.mkdir()
-    (notes / "feedback" / "inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     return notes
 
 
@@ -71,13 +71,13 @@ def _write_feedback_file(
     body: str = "テスト本文",
     source: str | None = None,
 ) -> pathlib.Path:
-    """feedback/inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
-    inbox_dir = notes / "feedback" / "inbox"
+    """inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
+    inbox_dir = notes / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
     path = inbox_dir / filename
     source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\n{source_line}---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\ntype: feedback\n{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -89,14 +89,14 @@ class TestMutationTargetRepoParserOption:
     @pytest.mark.parametrize(
         ("top_command", "subcommand", "argv_tail"),
         [
-            ("fb", "adopt", ["20260714-000001-001.md"]),
-            ("fb", "reject", ["20260714-000001-001.md"]),
-            ("fb", "rm", ["20260714-000001-001.md"]),
-            ("fb", "edit", ["20260714-000001-001.md"]),
-            ("fb", "start-processing", ["20260714-000001-001.md"]),
-            ("tb", "edit", ["20260714-000001-001.md"]),
-            ("tb", "adopt", ["20260714-000001-001.md"]),
-            ("tb", "rm", ["20260714-000001-001.md"]),
+            ("mq", "adopt", ["20260714-000001-001.md"]),
+            ("mq", "reject", ["20260714-000001-001.md"]),
+            ("mq", "rm", ["20260714-000001-001.md"]),
+            ("mq", "edit", ["20260714-000001-001.md"]),
+            ("mq", "start-processing", ["20260714-000001-001.md"]),
+            ("mq", "edit", ["20260714-000001-001.md"]),
+            ("mq", "adopt", ["20260714-000001-001.md"]),
+            ("mq", "rm", ["20260714-000001-001.md"]),
         ],
     )
     def test_accepts_target_repo(self, top_command: str, subcommand: str, argv_tail: list[str]) -> None:
@@ -109,17 +109,17 @@ class TestMutationTargetRepoParserOption:
         """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["fb", "commit", "--target-repo", "github.com/foo/bar"])
+            parser.parse_args(["mq", "commit", "--target-repo", "github.com/foo/bar"])
         assert exc_info.value.code == 2
 
 
 class TestTbdAddSourceOptionParser:
-    """tb addサブコマンドの`--source`受理をargparseレベルで検証する。"""
+    """TBD投入時の`--source`受理をargparseレベルで検証する。"""
 
     def test_accepts_source(self) -> None:
-        """`tb add`が`--source`を受理しargs.sourceへ格納される。"""
+        """`mq add --type=tbd`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["tb", "add", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["mq", "add", "--type=tbd", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
 
 
@@ -157,33 +157,36 @@ class TestServeParser:
 
 
 class TestAddTargetRepoOptionParser:
-    """`fb add`・`tb add`の`--target-repo`受理をargparseレベルで検証する。"""
+    """`mq add`の`--target-repo`受理をargparseレベルで検証する。"""
 
     def test_fb_add_accepts_target_repo(self) -> None:
-        """`fb add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
+        """`mq add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["fb", "add", "--target-repo", "github.com/foo/bar", "本文"])
+        args = parser.parse_args(["mq", "add", "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
 
     def test_tb_add_accepts_target_repo(self) -> None:
-        """`tb add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
+        """`mq add --type=tbd`が`--target-repo`を受理しargs.target_repoへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["tb", "add", "--target-repo", "github.com/foo/bar", "本文"])
+        args = parser.parse_args(["mq", "add", "--type=tbd", "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
 
 
 class TestSubcommandSubparserDefault:
-    """`fb add`・`tb add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
+    """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
 
     def test_fb_add(self) -> None:
-        """`fb add`解析後、`args.subparser.prog`が`atk fb add`になる。"""
-        args = atk._build_parser().parse_args(["fb", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert args.subparser.prog == "atk fb add"
+        """`mq add`解析後、`args.subparser.prog`が`atk mq add`になる。"""
+        args = atk._build_parser().parse_args(["mq", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert args.subparser.prog == "atk mq add"
 
     def test_tb_add(self) -> None:
-        """`tb add`解析後、`args.subparser.prog`が`atk tb add`になる。"""
-        args = atk._build_parser().parse_args(["tb", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert args.subparser.prog == "atk tb add"
+        """`mq add --type=tbd`解析後も`args.subparser.prog`は`atk mq add`のままになる。
+
+        サブパーサは`--type`の値で分岐しないため。
+        """
+        args = atk._build_parser().parse_args(["mq", "add", "--type=tbd", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert args.subparser.prog == "atk mq add"
 
 
 class TestSpaceSeparatedOptionWarning:
@@ -191,7 +194,7 @@ class TestSpaceSeparatedOptionWarning:
 
     @pytest.mark.parametrize(
         "top_command,subcommand",
-        [("fb", "adopt"), ("fb", "reject"), ("tb", "adopt")],
+        [("mq", "adopt"), ("mq", "reject"), ("mq", "adopt")],
     )
     def test_warns_before_argument_error(self, top_command: str, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
@@ -200,7 +203,7 @@ class TestSpaceSeparatedOptionWarning:
 
     def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
-            atk.main(["fb", "adopt", "missing.md", "--note=memo"])
+            atk.main(["mq", "adopt", "missing.md", "--note=memo"])
         assert "警告:" not in capsys.readouterr().err
 
 
@@ -216,10 +219,10 @@ class TestUnansweredTbdNotification:
             _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
+            atk.main(["mq", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         stderr = capsys.readouterr().err
-        assert stderr.count("[unanswered]") == count
+        assert stderr.count("[inbox/unanswered]") == count
         assert stderr.startswith("# tbd\n") if count else not stderr
 
 
@@ -229,16 +232,16 @@ class TestInboxAlwaysEnabled:
     def test_add_succeeds_without_flag_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """フラグファイルを作成しなくても、private-notesが存在すれば`fb add`が成功する。"""
+        """フラグファイルを作成しなくても、private-notesが存在すれば`mq add`が成功する。"""
         notes = tmp_path / "private-notes"
         notes.mkdir()
-        (notes / "feedback" / "inbox").mkdir(parents=True)
+        (notes / "inbox").mkdir(parents=True)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert "1件投入:" in capsys.readouterr().out
@@ -254,7 +257,7 @@ class TestPrivateNotesMissing:
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["mq", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -306,11 +309,11 @@ class TestAddSingleMessage:
         message = "テストメッセージ"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
-        inbox_dir = notes / "feedback" / "inbox"
+        inbox_dir = notes / "inbox"
         files = sorted(inbox_dir.iterdir())
         assert len(files) == 1
 
@@ -325,7 +328,7 @@ class TestAddSingleMessage:
         remote_url_cmd = ["git", "-C", str(myrepo), "remote", "get-url", "origin"]
         assert remote_url_cmd in git_cmds
         pull_idx = git_cmds.index(["git", "pull", "--ff-only"])
-        assert git_cmds[pull_idx + 1] == ["git", "add", "feedback"]
+        assert git_cmds[pull_idx + 1] == ["git", "add", "inbox"]
         assert git_cmds[pull_idx + 2] == ["git", "commit", "-m", "chore: add 1 feedback item"]
         assert git_cmds[pull_idx + 3] == ["git", "push"]
         for call in git_calls:
@@ -334,10 +337,10 @@ class TestAddSingleMessage:
 
         captured = capsys.readouterr()
         assert "1件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  atk fb edit {files[0].name}\n" in captured.out
+        assert f"  atk mq edit {files[0].name}\n" in captured.out
 
 
 class TestAddCompletionShowsProcessingCount:
@@ -349,19 +352,19 @@ class TestAddCompletionShowsProcessingCount:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """processing配下に既存ファイルがある状態で`fb add`すると、その件数が併記される。"""
+        """processing配下に既存ファイルがある状態で`mq add`すると、その件数が併記される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing_dir = notes / "feedback" / "processing"
+        processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "existing-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
         )
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -380,7 +383,7 @@ class TestAddCompletionShowsProcessingCount:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -420,11 +423,11 @@ class TestAddMultipleMessages:
         repo_path = str(myrepo)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
-        inbox_dir = notes / "feedback" / "inbox"
+        inbox_dir = notes / "inbox"
         files = sorted(inbox_dir.iterdir())
         assert len(files) == 2
         assert files[0].name == f"{_FIXED_TIMESTAMP}-001.md"
@@ -435,12 +438,12 @@ class TestAddMultipleMessages:
 
         captured = capsys.readouterr()
         assert "2件投入:\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[0].name}\n" in captured.out
-        assert f"  ~/private-notes/feedback/inbox/{files[1].name}\n" in captured.out
+        assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  atk fb edit {files[0].name}\n" in captured.out
-        assert f"  atk fb edit {files[1].name}\n" in captured.out
+        assert f"  atk mq edit {files[0].name}\n" in captured.out
+        assert f"  atk mq edit {files[1].name}\n" in captured.out
 
 
 class TestAddRepoPathExpansion:
@@ -461,11 +464,11 @@ class TestAddRepoPathExpansion:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -529,10 +532,10 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\nテスト本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -557,10 +560,10 @@ class TestAddFrontmatterOverride:
         msg_plain = "frontmatter無し本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         files = sorted(inbox.iterdir())
         assert len(files) == 2
         content_first = files[0].read_text(encoding="utf-8")
@@ -585,10 +588,10 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["mq", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -597,12 +600,12 @@ class TestAddFrontmatterOverride:
 
 
 def _setup_tbd_env(tmp_path: pathlib.Path) -> pathlib.Path:
-    """フラグファイルとprivate-notes・tbd/inboxディレクトリを準備する。"""
+    """フラグファイルとprivate-notes・inboxディレクトリを準備する。"""
     flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
     flag.parent.mkdir(parents=True, exist_ok=True)
     flag.touch()
     notes = tmp_path / "private-notes"
-    (notes / "tbd" / "inbox").mkdir(parents=True)
+    (notes / "inbox").mkdir(parents=True)
     return notes
 
 
@@ -614,13 +617,14 @@ def _write_tbd_file(
     answer: str = "",
     source: str | None = None,
 ) -> pathlib.Path:
-    """tbd/inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
-    tbd_dir = notes / "tbd" / "inbox"
+    """inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
+    tbd_dir = notes / "inbox"
     tbd_dir.mkdir(parents=True, exist_ok=True)
     path = tbd_dir / filename
     source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\nquestion_type: free\n{source_line}---\n\n"
+        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\ntype: tbd\n"
+        f"question_type: free-form\n{source_line}---\n\n"
         f"## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )

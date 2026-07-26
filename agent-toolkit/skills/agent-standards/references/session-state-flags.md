@@ -17,7 +17,7 @@
   Stop hookの拡張照合カテゴリ有効化判定と、PreToolUse(EnterPlanMode)ブロック判定に使う。
   PostToolUseは`process-feedbacks`起動検知時に真へ強制上書きし、`exit-session`スキル起動検知時に偽へ戻す
   （`process-feedbacks/SKILL.md`「ステップ8」がexit-sessionで終端するため）
-- `plan_and_add_feedback_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で
+- `plan_and_add_entries_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で
   `agent-toolkit:plan-and-add-feedback`・各短縮スラッシュを記録。
   読み取り元はPreToolUse（`EnterPlanMode`発行ブロック）。
   寿命は`agent-toolkit:process-feedbacks`起動検知（plan-and-add-feedbackの終端工程が参照呼び出しする先）でリセット

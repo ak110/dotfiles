@@ -1,9 +1,9 @@
-"""atk (agent-toolkit `atk fb`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
+"""atk (agent-toolkit `atk mq`) のadopt/reject/rm/edit・パストラバーサル検証のテスト。
 
 adopt・reject・rm・editサブコマンドと、ファイル名引数の不正値拒否の単体テストを集約する。
-既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_fb_list_test.py`・
-`_atk_fb_show_test.py`・`_atk_fb_process_loop_test.py`に分離する。
-位置引数の重複除去（FB7）テストは`too-many-lines`回避のため`_atk_fb_dedup_test.py`へ分離する。
+既存サブコマンドの残テストは`atk_test.py`に、他サブコマンドの分割先は`_atk_mq_list_test.py`・
+`_atk_mq_show_test.py`・`_atk_mq_process_loop_test.py`に分離する。
+位置引数の重複除去（FB7）テストは`too-many-lines`回避のため`_atk_mq_dedup_test.py`へ分離する。
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_fb_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
@@ -36,14 +36,14 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    filenames = mutations.transition_feedback(
+    filenames = mutations.transition_entries(
         notes,
         action="start-processing",
         filenames=["entry.md"],
         now=_FIXED_DT,
     )
     assert filenames == ["entry.md"]
-    assert (notes / "feedback/processing/entry.md").is_file()
+    assert (notes / "processing/entry.md").is_file()
 
 
 class TestAdoptSingle:
@@ -61,14 +61,14 @@ class TestAdoptSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "adopted" / "fb-001.md").exists()
 
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: process 1 feedback item (adopted)" in commit_cmd
+        assert "chore: process 1 entry (adopted)" in commit_cmd
 
     def test_adopt_bare_stem_from_inbox(
         self,
@@ -83,11 +83,11 @@ class TestAdoptSingle:
 
         with pytest.raises(SystemExit) as exc_info:
             # 拡張子.mdを省略した引数でadoptを呼ぶ
-            atk.main(["fb", "adopt", "20260721-160220-001"], home=tmp_path)
+            atk.main(["mq", "adopt", "20260721-160220-001"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "20260721-160220-001.md").exists()
-        assert (notes / "feedback" / "adopted" / "20260721-160220-001.md").exists()
+        assert not (notes / "inbox" / "20260721-160220-001.md").exists()
+        assert (notes / "adopted" / "20260721-160220-001.md").exists()
 
 
 class TestAdoptMultiple:
@@ -107,21 +107,21 @@ class TestAdoptMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         assert not (inbox / "fb-001.md").exists()
         assert not (inbox / "fb-002.md").exists()
         assert not (inbox / "fb-003.md").exists()
-        adopted = notes / "feedback" / "adopted"
+        adopted = notes / "adopted"
         assert (adopted / "fb-001.md").exists()
         assert (adopted / "fb-002.md").exists()
         assert (adopted / "fb-003.md").exists()
 
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: process 3 feedback items (adopted)" in commit_cmds[0]
+        assert "chore: process 3 entries (adopted)" in commit_cmds[0]
 
 
 class TestAdoptZeroArgs:
@@ -137,7 +137,7 @@ class TestAdoptZeroArgs:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt"], home=tmp_path)
+            atk.main(["mq", "adopt"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -156,7 +156,7 @@ class TestAdoptMissing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "nonexistent.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -179,12 +179,12 @@ class TestAdoptStampWithNoteAndCommit:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
+                ["mq", "adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
                 home=tmp_path,
             )
 
         assert exc_info.value.code == 0
-        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        adopted_text = (notes / "adopted" / "fb-001.md").read_text(encoding="utf-8")
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
@@ -207,10 +207,10 @@ class TestAdoptStampWithCategory:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        adopted_text = (notes / "adopted" / "fb-001.md").read_text(encoding="utf-8")
         assert "- カテゴリ: scope-escalation" in adopted_text
 
 
@@ -230,7 +230,7 @@ class TestAdoptCategoryGate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -244,7 +244,7 @@ class TestAdoptCategoryGate:
     ) -> None:
         """同一カテゴリの採用件数が閾値へ到達した場合は標準エラー出力へ警告する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        adopted = notes / "feedback" / "adopted"
+        adopted = notes / "adopted"
         adopted.mkdir(parents=True, exist_ok=True)
         for index in range(1, 3):
             (adopted / f"old-{index}.md").write_text(
@@ -259,7 +259,7 @@ class TestAdoptCategoryGate:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "--category", "scope-escalation"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -282,10 +282,10 @@ class TestAdoptStampWithoutOptional:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        adopted_text = (notes / "feedback" / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        adopted_text = (notes / "adopted" / "fb-001.md").read_text(encoding="utf-8")
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
@@ -309,13 +309,13 @@ class TestRejectDeletes:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "rejected" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "rejected" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: process 1 feedback item (rejected)" in commit_cmd
+        assert "chore: process 1 entry (rejected)" in commit_cmd
 
 
 class TestRejectStampWithNote:
@@ -333,10 +333,10 @@ class TestRejectStampWithNote:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-001.md", "--note", "不採用理由"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-001.md", "--note", "不採用理由"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        rejected_text = (notes / "feedback" / "rejected" / "fb-001.md").read_text(encoding="utf-8")
+        rejected_text = (notes / "rejected" / "fb-001.md").read_text(encoding="utf-8")
         assert "## 処理結果" in rejected_text
         assert "- 採否: rejected" in rejected_text
         assert "- メモ: 不採用理由" in rejected_text
@@ -358,18 +358,18 @@ class TestRejectMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-001.md", "fb-002.md"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "feedback" / "inbox"
+        inbox = notes / "inbox"
         assert not (inbox / "fb-001.md").exists()
         assert not (inbox / "fb-002.md").exists()
-        rejected = notes / "feedback" / "rejected"
+        rejected = notes / "rejected"
         assert (rejected / "fb-001.md").exists()
         assert (rejected / "fb-002.md").exists()
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: process 2 feedback items (rejected)" in commit_cmds[0]
+        assert "chore: process 2 entries (rejected)" in commit_cmds[0]
 
 
 class TestRejectZeroArgs:
@@ -385,7 +385,7 @@ class TestRejectZeroArgs:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject"], home=tmp_path)
+            atk.main(["mq", "reject"], home=tmp_path)
 
         assert exc_info.value.code == 2
 
@@ -405,12 +405,12 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: remove 1 feedback item" in commit_cmd
+        assert "chore: remove 1 entry" in commit_cmd
 
     def test_processing_file_removed_with_force(
         self,
@@ -419,7 +419,7 @@ class TestRmSingle:
     ) -> None:
         """start-processing後（processing配下）のファイルは`--force`指定時のみrm対象として解決される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing_dir = notes / "feedback" / "processing"
+        processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
             "---\ntarget_repo: github.com/example/foo\n---\n\nテスト本文\n",
@@ -429,7 +429,7 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "--force", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "rm", "--force", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (processing_dir / "fb-001.md").exists()
@@ -442,7 +442,7 @@ class TestRmSingle:
     ) -> None:
         """`--force`未指定時、processing配下のファイルは削除を拒否されexit 2する（フィードバック20260723-153526-001反映）。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing_dir = notes / "feedback" / "processing"
+        processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
             "---\ntarget_repo: github.com/example/foo\n---\n\nテスト本文\n",
@@ -451,7 +451,7 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         assert (processing_dir / "fb-001.md").exists()
@@ -470,7 +470,7 @@ class TestRmSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-missing.md"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-missing.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -493,12 +493,12 @@ class TestRmMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md", "fb-002.md"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: remove 2 feedback items" in commit_cmds[0]
+        assert "chore: remove 2 entries" in commit_cmds[0]
 
 
 class TestEditNoEditor:
@@ -516,7 +516,7 @@ class TestEditNoEditor:
         monkeypatch.delenv("EDITOR", raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -542,7 +542,8 @@ class TestEditWithChanges:
             if cmd[0] == "fake-editor":
                 # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
                 # 複製した一時ファイルのため、元ファイルではなくcmd[1]を書き換える。
-                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
+                editor_path = pathlib.Path(cmd[1])
+                editor_path.write_text(editor_path.read_text(encoding="utf-8").replace("編集前", "編集後"), encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -550,7 +551,7 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -563,10 +564,10 @@ class TestEditWithChanges:
     ) -> None:
         """start-processing後（processing配下）のファイルも編集対象として解決される。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing_dir = notes / "feedback" / "processing"
+        processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\n編集前\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n編集前\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -575,7 +576,8 @@ class TestEditWithChanges:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
-                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
+                editor_path = pathlib.Path(cmd[1])
+                editor_path.write_text(editor_path.read_text(encoding="utf-8").replace("編集前", "編集後"), encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -583,10 +585,10 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (processing_dir / "fb-001.md").read_text(encoding="utf-8") == "編集後\n"
+        assert (processing_dir / "fb-001.md").read_text(encoding="utf-8").endswith("\n編集後\n")
 
     def test_missing_file_reports_inbox_and_processing(
         self,
@@ -600,7 +602,7 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-missing.md"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-missing.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -632,7 +634,7 @@ class TestEditNoChanges:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
@@ -662,7 +664,9 @@ class TestEditNoArg:
                 # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
                 # 複製した一時ファイルのため、元ファイルではなくcmd[1]を書き換える。
                 # 対象選択（最終追加分）の検証はcommit対象の相対パスで行う。
-                pathlib.Path(cmd[1]).write_text("編集後\n", encoding="utf-8")
+                editor_path = pathlib.Path(cmd[1])
+                content = editor_path.read_text(encoding="utf-8")
+                editor_path.write_text(content.replace("編集前", "編集後"), encoding="utf-8")
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
             git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
@@ -670,7 +674,7 @@ class TestEditNoArg:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit"], home=tmp_path)
+            atk.main(["mq", "edit"], home=tmp_path)
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -690,7 +694,7 @@ class TestEditNoArg:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit"], home=tmp_path)
+            atk.main(["mq", "edit"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -712,13 +716,13 @@ class TestStartProcessingSingle:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "start-processing", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "start-processing", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert (notes / "feedback" / "processing" / "fb-001.md").exists()
+        assert not (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "processing" / "fb-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: start processing 1 feedback item" in commit_cmd
+        assert "chore: start processing 1 entry" in commit_cmd
 
 
 class TestStartProcessingMultiple:
@@ -737,15 +741,15 @@ class TestStartProcessingMultiple:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "start-processing", "fb-001.md", "fb-002.md"], home=tmp_path)
+            atk.main(["mq", "start-processing", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        processing = notes / "feedback" / "processing"
+        processing = notes / "processing"
         assert (processing / "fb-001.md").exists()
         assert (processing / "fb-002.md").exists()
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
-        assert "chore: start processing 2 feedback items" in commit_cmds[0]
+        assert "chore: start processing 2 entries" in commit_cmds[0]
 
 
 class TestStartProcessingMissing:
@@ -762,7 +766,7 @@ class TestStartProcessingMissing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "start-processing", "nonexistent.md"], home=tmp_path)
+            atk.main(["mq", "start-processing", "nonexistent.md"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -779,21 +783,21 @@ class TestAdoptFromProcessing:
     ) -> None:
         """processing/配下のファイルがadopt対象に含まれadopted/へ移動する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing = notes / "feedback" / "processing"
+        processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-p.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-p.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (processing / "fb-p.md").exists()
-        assert (notes / "feedback" / "adopted" / "fb-p.md").exists()
+        assert (notes / "adopted" / "fb-p.md").exists()
 
 
 class TestRejectFromProcessing:
@@ -806,21 +810,21 @@ class TestRejectFromProcessing:
     ) -> None:
         """processing/配下のファイルがreject対象に含まれrejected/へ移動する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        processing = notes / "feedback" / "processing"
+        processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-p.md"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-p.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not (processing / "fb-p.md").exists()
-        assert (notes / "feedback" / "rejected" / "fb-p.md").exists()
+        assert (notes / "rejected" / "fb-p.md").exists()
 
 
 class TestProcessingPrecedence:
@@ -834,29 +838,29 @@ class TestProcessingPrecedence:
         """同名ファイルがinbox・processing双方に存在する場合、processing側が移動元として選ばれる。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-dup.md")
-        inbox_path = notes / "feedback" / "inbox" / "fb-dup.md"
+        inbox_path = notes / "inbox" / "fb-dup.md"
         inbox_path.write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\ninbox本文\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\ninbox本文\n",
             encoding="utf-8",
         )
-        processing = notes / "feedback" / "processing"
+        processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntarget_repo: github.com/example/foo\n---\n\nprocessing本文\n",
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-dup.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-dup.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
         # processing側が移動元として選ばれるため、inbox側は残存しprocessing側は消える。
         assert inbox_path.exists()
         assert not processing_path.exists()
-        adopted_path = notes / "feedback" / "adopted" / "fb-dup.md"
+        adopted_path = notes / "adopted" / "fb-dup.md"
         assert adopted_path.exists()
         # 実際に移動されたのはprocessing側の内容であることを確認する。
         assert "processing本文" in adopted_path.read_text(encoding="utf-8")
@@ -880,13 +884,13 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "target_repo不一致" in captured.err
-        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
-        assert not (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-001.md").exists()
+        assert not (notes / "adopted" / "fb-001.md").exists()
 
     def test_adopt_match_succeeds(
         self,
@@ -899,10 +903,10 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md", "--target-repo", "github.com/example/foo"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md", "--target-repo", "github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert (notes / "adopted" / "fb-001.md").exists()
 
     def test_reject_mismatch_exits_2(
         self,
@@ -915,10 +919,10 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "reject", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+            atk.main(["mq", "reject", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-001.md").exists()
 
     def test_rm_mismatch_exits_2(
         self,
@@ -931,10 +935,10 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "rm", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+            atk.main(["mq", "rm", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-001.md").exists()
 
     def test_start_processing_mismatch_exits_2(
         self,
@@ -948,12 +952,12 @@ class TestTargetRepoVerification:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["fb", "start-processing", "fb-001.md", "--target-repo", "github.com/other/repo"],
+                ["mq", "start-processing", "fb-001.md", "--target-repo", "github.com/other/repo"],
                 home=tmp_path,
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "feedback" / "inbox" / "fb-001.md").exists()
+        assert (notes / "inbox" / "fb-001.md").exists()
 
     def test_edit_mismatch_exits_2(
         self,
@@ -974,7 +978,7 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "edit", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
+            atk.main(["mq", "edit", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
         assert not editor_calls
@@ -990,10 +994,10 @@ class TestTargetRepoVerification:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001.md"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert (notes / "adopted" / "fb-001.md").exists()
 
     def test_adopt_bare_stem_mismatch_exits_2(
         self,
@@ -1005,9 +1009,9 @@ class TestTargetRepoVerification:
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", "fb-001", "--target-repo", "github.com/other/repo"], home=tmp_path)
+            atk.main(["mq", "adopt", "fb-001", "--target-repo", "github.com/other/repo"], home=tmp_path)
         assert exc_info.value.code == 2
-        assert not (notes / "feedback" / "adopted" / "fb-001.md").exists()
+        assert not (notes / "adopted" / "fb-001.md").exists()
 
 
 class TestPathTraversalRejection:
@@ -1037,7 +1041,7 @@ class TestPathTraversalRejection:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["fb", "adopt", bad], home=tmp_path)
+            atk.main(["mq", "adopt", bad], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()

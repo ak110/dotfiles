@@ -1,4 +1,4 @@
-"""agent-toolkitプラグイン配下の`atk fb`コマンド用補助モジュール。
+"""agent-toolkitプラグイン配下の`atk mq`コマンド用補助モジュール。
 
 旧`pytools/dotfiles_fb/_repo.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
@@ -9,14 +9,16 @@ import re
 import subprocess
 import sys
 
-from _atk_fb_common import (
+from _atk_mq_common import (
     _commit_and_push,
     _normalize_md_filename,
+    _parse_type,
     _pull,
     _repo_lock,
+    _require_type,
     _validate_filename,
 )
-from _atk_fb_formatters import _parse_target_repo
+from _atk_mq_formatters import _parse_target_repo
 
 
 def _normalize_remote_url(url: str) -> str:
@@ -202,7 +204,10 @@ def edit_entry(
 ) -> bool:
     """feedback・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
-    `_atk_fb_mutations.edit_feedback`・`_atk_fb_tbd.edit_tbd`が共有する。
+    `_atk_mq_mutations.edit_entry_content`が呼び出す。
+    編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
+    （`_verify_frontmatter_target_repo`と同じくexit 2で拒否する。種別は平坦化後の唯一の
+    分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
@@ -215,6 +220,14 @@ def edit_entry(
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         if previous == content:
             return False
+        previous_type = _require_type(path, previous)
+        new_type = _parse_type(content)
+        if new_type != previous_type:
+            print(
+                f"typeを変更または欠落させることはできません（現在値: {previous_type}）: {filename}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         path.write_text(content, encoding="utf-8")
         _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
     return True

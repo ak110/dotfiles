@@ -120,14 +120,14 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
 
-    def test_detects_short_skill_command_plan_and_add_feedback(self, tmp_path: pathlib.Path):
+    def test_detects_short_skill_command_plan_and_add_entries(self, tmp_path: pathlib.Path):
         sid = "short-plan-and-add-feedback"
         result = _run(
             {"session_id": sid, "prompt": "/plan-and-add-feedback"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("plan_and_add_feedback_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("plan_and_add_entries_skill_invoked") is True
 
     def test_detects_short_skill_command_session_review(self, tmp_path: pathlib.Path):
         """短縮名`/session-review`もフルスキル名キーで正規化して保存する。"""

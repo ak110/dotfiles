@@ -20,7 +20,7 @@ description: >
 
 ## 前提
 
-`atk fb status`が正常終了する環境でのみ動作する。非正常終了の場合は標準エラー出力を
+`atk mq status`が正常終了する環境でのみ動作する。非正常終了の場合は標準エラー出力を
 ユーザーへ提示して終了する。
 
 ## 手順
@@ -28,7 +28,7 @@ description: >
 1. `agent-toolkit:plan-mode`スキルを参照呼び出しする。工程1〜6（要件対話・調査・認識合わせ・
    恒久化検討・リファクタリング検討・計画ファイルの作成と整合性チェック・codexレビュー）を完遂する。
    本スキルはplan mode外で実行する。メイン側で`EnterPlanMode`を発行しない
-   （PreToolUseフックが`plan_and_add_feedback_skill_invoked`真時にブロックする）。
+   （PreToolUseフックが`plan_and_add_entries_skill_invoked`真時にブロックする）。
    既にplan mode下で起動された場合は、本スキルをplan mode外で実行する旨を`ExitPlanMode`で提示し、
    承認を得てから工程1へ進む
 2. 工程7（`plan-impl-executor`起動）を実施しない。代わりに`agent-toolkit:process-feedbacks`「フィードバック投入」節の手順を実行する。
@@ -38,8 +38,8 @@ description: >
    計画実装型として扱われ、計画作成を経ずに実装される
 3. フィードバック投入結果をユーザーへ提示して終了する。`agent-toolkit:exit-session`は
    呼ばずセッションを継続する
-   - 提示本文へ、`atk fb process-loop`常駐環境では投入分が自動的に実装開始される旨を予告する。
-     意図と異なる場合の取り消し手段（`atk fb rm <投入ファイル名>`・`atk fb edit <投入ファイル名>`）も
+   - 提示本文へ、`atk mq process-loop`常駐環境では投入分が自動的に実装開始される旨を予告する。
+     意図と異なる場合の取り消し手段（`atk mq rm <投入ファイル名>`・`atk mq edit <投入ファイル名>`）も
      対象ファイル名付きで併記する
    - 本規定の適用範囲は本スキル自身の手順内に限定する
    - 後続でStopフック起点の振り返りスキル（`agent-toolkit:session-review`・
@@ -56,5 +56,5 @@ description: >
 
 `agent-toolkit/rules/01-agent.md`「協調と自律」節の判定基準上、本スキルの起動自体は
 `process_feedbacks_skill_invoked`を伴わないため協調モードで動作する。`AskUserQuestion`での
-確認を基本とし、応答が得られない場合は`atk tb add`で記録して暫定判断のまま続行する
-（本スキルは`atk fb status`の正常終了を前提とするため`atk`不在分岐はない）。
+確認を基本とし、応答が得られない場合は`atk mq add --type=tbd`で記録して暫定判断のまま続行する
+（本スキルは`atk mq status`の正常終了を前提とするため`atk`不在分岐はない）。
