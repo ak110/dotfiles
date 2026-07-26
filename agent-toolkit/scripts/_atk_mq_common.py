@@ -305,6 +305,8 @@ def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
     ディレクトリへ移し、旧ディレクトリを削除してcommit・pushする。
 
     旧ディレクトリが無い場合は無動作で戻る（通常運用でのロック取得・pullを避けるため）。
+    移行前のバージョンのコマンドが並行稼働していると空の旧ディレクトリが再生成されうるため、
+    commit対象が生じない場合はcommitへ進まず削除のみで完結させる。
     """
     if not any((private_notes / name).is_dir() for name in MQ_TYPES):
         return
@@ -324,6 +326,9 @@ def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
         for legacy_dir in legacy_dirs:
             shutil.rmtree(legacy_dir)
         count = len(planned)
+        if not count and not tracked_legacy_names:
+            print(f"旧レイアウトの空ディレクトリを削除しました: {private_notes}", file=sys.stderr)
+            return
         _commit_and_push(
             private_notes,
             f"chore: migrate {count} {'entry' if count == 1 else 'entries'} to flat layout",

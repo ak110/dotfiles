@@ -527,6 +527,19 @@ class TestMigrateLegacyLayout:
 
         assert _git_stdout(root, "rev-parse", "HEAD") == head
 
+    def test_removes_empty_legacy_dirs_without_commit(self, tmp_path: pathlib.Path) -> None:
+        """エントリを含まない旧ディレクトリだけがある場合は削除のみで完結する。"""
+        root = tmp_path / "private-notes"
+        _init_legacy_repo(root, {"inbox/20260101-000000-001.md": "---\ntarget_repo: r\ntype: feedback\n---\n\n本文\n"})
+        (root / "feedback" / "inbox").mkdir(parents=True)
+        head = _git_stdout(root, "rev-parse", "HEAD")
+
+        _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert not (root / "feedback").exists()
+        assert _git_stdout(root, "rev-parse", "HEAD") == head
+        assert not _git_stdout(root, "status", "--porcelain")
+
     def test_aborts_without_changes_when_entry_is_broken(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
