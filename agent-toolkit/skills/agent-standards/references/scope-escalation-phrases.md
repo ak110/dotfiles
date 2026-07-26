@@ -1,6 +1,6 @@
 # 縮退誘発フレーズ集（隔離リファレンス）
 
-本ファイルは`agent-toolkit/rules/01-agent.md`「完遂原則」項および「縮退表明は発行しない」項目の典拠。
+本ファイルは`agent-toolkit/rules/01-agent.md`「完遂と先送り」節および「縮退表明は発行しない」項目の典拠。
 また`agent-toolkit/scripts/_scope_escalation.py`が対象とする禁止フレーズの典拠。
 さらに`agent-toolkit/scripts/_norm_inquiry_escalation.py`が対象とする規範照会・是正要求フレーズの典拠。
 配布物フックは4経路（PreToolUse `AskUserQuestion`／PreToolUse `Write`・`Edit`・`MultiEdit`／

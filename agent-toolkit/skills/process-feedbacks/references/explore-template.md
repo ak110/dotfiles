@@ -87,4 +87,4 @@ Explore委譲プロンプトの冒頭にクラスタ識別子を明記する。
 
     - `Explore`は規範非読込型サブエージェントのため、必要な規範は本プロンプトへ引用転記済み
     - 改善案・修正案の提案は返却しない（事実列挙のみ）
-    - `Explore`を`run_in_background=true`かつ`name`指定で起動する場合、調査完了時に結果本文をSendMessage(to: 'main')で能動送付する（`idle_notification(available)`のみでメイン要求を待たない）
+    - `Explore`を`run_in_background=true`かつ`name`指定で起動する場合、調査完了時に結果本文を起動元宛のSendMessageで能動送付する（起動プロンプトで指定された識別子。指定が無い場合は`main`。`idle_notification(available)`のみでメイン要求を待たない）

@@ -147,7 +147,8 @@ unplanned項目は`[CLAUDE.md追記候補]`・`[即時相談候補]`・`[該当�
 一時ファイル一覧を引き渡す。指摘統合・修正再実装・再レビューは`agent-toolkit:careful-review`スキル本文の手順に従う。
 対象は`plan-reviewer`・`plan-codex-delegate`（`用途: 実装差分レビュー`）とする。
 `name`指定・`run_in_background=true`によるbackground並列起動を既定とし、
-各レビュアーの完了報告はSendMessage(to: 'main')経由で受領する。本エージェント自身のターンは
+各レビュアーの完了報告は起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）
+経由で受領する。本エージェント自身のターンは
 全レビュアーの完了報告受領まで維持する。
 最終的な指摘の反映完了状態を完了報告の`review_handoff`欄へ
 「実施完了（採用指摘N件反映）」または「レビューは実施しない」の形式で記録する。

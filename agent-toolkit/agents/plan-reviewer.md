@@ -21,6 +21,8 @@ user-invocable: false
 # 本エージェントはcodexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`careful-review`から
 # 起動されるフォールバック経路である（既定経路は`plan-codex-delegate`。詳細は`codex-review.md`
 # 「plan-file-creatorからの起動」節）。
+# 本文末尾の完了報告能動送付の一文は`agent-toolkit/agents/plan-codex-delegate.md`本文末尾の
+# 同一文と意図的な重複である。改訂時は2ファイルを同時更新する。
 ---
 
 # plan-reviewer
@@ -85,4 +87,5 @@ codexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`care
 
 各区分で指摘が無い場合は本文を`指摘なし`とする。同種違反が複数箇所に出現する場合は
 代表箇所へ集約し`（他N箇所）`を付す。本サブエージェントはbackground起動を既定とし、
-完了時にSendMessage(to: 'main')で完了報告を能動送付する。
+完了時に起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）で
+完了報告を能動送付する。

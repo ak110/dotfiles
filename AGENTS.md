@@ -7,8 +7,8 @@
 
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
-- コミット前の検証方法: `uvx pyfltr run-for-agent`
-  - プロジェクト設定済みコマンドの再現が必要な場合は`pyfltr run-for-agent <path>`を使う。
+- コミット前の検証方法: `make test`
+  - 特定ファイルに限定する場合は`uvx pyfltr run <path>`を使う。
     デバッガ・最小再現・環境切り分けでは直接実行してよい
   - 修正後の再実行時は`--commands=mypy,ruff-check`等で限定して実行する（最終検証はCIに委ねる前提）
 
@@ -37,9 +37,7 @@
   - 配布先から除去するには`pytools/post_apply.py`の`_REMOVED_PATHS`に対象パスを追記する（`chezmoi apply`後処理で削除される）
   - 改名時は`_REMOVED_PATHS`の`~/.claude`欄（Codex側にもリンクがある対象は`~/.codex`欄も）へ
     旧パスを追記し、`setup_codex_links.py`の`_LINKS`マッピングを新名へ更新する
-- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`スキルを呼び出して両側を同期する。
-  呼び出し漏れ（対になるファイルが対象ファイル一覧に揃って出現する場合に限る）は
-  `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が計画ファイル段階で機械検出する
+- プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`スキルを呼び出して両側を同期する
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）で書かれている
   - UTF-8前提のEdit/Writeツールでは文字化けや破損のリスクがあるため、ASCIIのみの修正は`sed -i`で対応する
 - リポジトリ内リソースを参照するスクリプトは`Path.home()`起点ではなく`Path(__file__)`起点で解決する
@@ -47,7 +45,7 @@
 - 単純なコマンドラッパーの新規追加には`scripts/new-bin-cmd.py <name> <command...>`を使う
  （リポジトリ直下の`bin/<name>`と`bin/<name>.cmd`のペアを生成する）
 - `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時はSkillツールで`agent-toolkit-edit`を呼び出す。
-  呼び出し漏れは`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が計画ファイル段階で機械検出する
+  呼び出し漏れは編集時にPreToolUseフックが警告を返す
   - SKILL.mdをReadで読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず警告が返る
   - marketplace管理・フック実装の配置先判断・version bump手順も同スキルへ集約する
   - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-standards`・`writing-standards`を併用する

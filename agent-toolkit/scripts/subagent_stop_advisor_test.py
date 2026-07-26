@@ -288,8 +288,13 @@ def test_unnamed_subagent_missing_send_passes(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
-def test_named_subagent_send_to_other_target_blocks(tmp_path: Path) -> None:
-    """SendMessage送付先が`main`以外の場合はメイン報告未送とみなしblockする。"""
+def test_named_subagent_send_to_other_target_passes(tmp_path: Path) -> None:
+    """SendMessage送付先が`main`以外の起動元識別子でも送付済みとみなし通過する。
+
+    宛先識別子は起動プロンプトで指定された任意の値を取り得るため、`main`固定では
+    起動元が`main`以外の中間層（多段委譲の親サブエージェント等）である場合を
+    誤ってblockしてしまう（fb 165038-001）。
+    """
     tool_uses = [
         {"type": "tool_use", "name": "Read", "input": {}},
         {"type": "tool_use", "name": "Edit", "input": {}},
@@ -303,8 +308,8 @@ def test_named_subagent_send_to_other_target_blocks(tmp_path: Path) -> None:
             "transcript_path": transcript,
         }
     )
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
+    assert result.stdout == ""
+    assert result.returncode == 0
 
 
 def test_skill_invocation_with_body_passes() -> None:
@@ -443,6 +448,7 @@ def _complete_report(**overrides: str) -> str:
         "review_handoff": "実施完了（採用指摘0件反映）",
         "pending_confirmations": "なし",
         "plan_gaps": "なし",
+        "applied_instructions": "なし",
     }
     fields.update(overrides)
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
@@ -485,6 +491,35 @@ class TestPlanImplExecutorReportFormat:
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
         assert "plan_gaps" in body["reason"]
+
+    def test_missing_applied_instructions_label_blocks(self, tmp_path: Path) -> None:
+        """`applied_instructions`欄が欠落する報告はblockし理由文に当該ラベルを列挙する。"""
+        sid = "sid-format-missing-applied-instructions"
+        _write_flag_state(tmp_path, sid, "sub-i")
+        report = _complete_report()
+        report = "\n".join(line for line in report.splitlines() if not line.startswith("applied_instructions"))
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "applied_instructions" in body["reason"]
+
+    def test_unchecked_item_inside_applied_instructions_does_not_block(self, tmp_path: Path) -> None:
+        """`changed`欄の境界検査は`applied_instructions`欄の追加後も正しく`changed`欄末尾で止まる。"""
+        sid = "sid-format-applied-instructions-boundary"
+        _write_flag_state(tmp_path, sid, "sub-j")
+        report = _complete_report(
+            changed="- [x] item — /path（run_in_background=trueで並列起動）",
+            applied_instructions="- [ ] チェックボックス形式だが検査対象外の記述",
+        )
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
 
     def test_needs_escalation_requires_blockers(self, tmp_path: Path) -> None:
         """`status: needs_escalation`検出時は`blockers`欄も必須。"""

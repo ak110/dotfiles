@@ -77,7 +77,7 @@ async-wait	waiting for a notification
 async-wait	Both review subagents are running in the background.
 async-wait	plan-codex-delegateがbackgroundで起動中である
 async-wait	plan-reviewerがbackgroundで起動中である
-async-wait	plan-reviewerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzbackground
+async-wait	plan-reviewerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzwaiting
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し

@@ -121,10 +121,10 @@
 
 ## 実行方法
 
-- Agentツールで`agent-toolkit:plan-impl-executor`を起動する
+- （呼び出し元が実施）Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
 - 計画に従い実装する
-- 検証: `uvx pyfltr run-for-agent <対象テストファイル>`（対象はupload_testモジュール）
+- 検証: `uvx pyfltr run <対象テストファイル>`（対象はupload_testモジュール）
 - `agent-toolkit:commit`スキルを呼び出す
 - コミットする
   - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`

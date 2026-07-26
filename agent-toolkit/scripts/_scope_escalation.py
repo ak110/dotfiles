@@ -39,21 +39,52 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
 )
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂原則」項および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂と先送り」節および「縮退表明は発行しない」項目で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 #
-# 自身の配下でbackground起動したレビュアー系サブエージェント
-# （`plan-reviewer`・`plan-codex-delegate`等）への待機表明を検出する共有定数。
+# 自身の配下でbackground起動したサブエージェント全般
+# （`plan-reviewer`・`plan-codex-delegate`・`careful-review`・`codex-impl-*`等）への
+# 待機表明を検出する共有定数。対象エージェント名は`plan-*`・`careful-review`・`codex-impl-*`の
+# パターンへ一般化する（個別列挙では新設・改名されたエージェントを取りこぼすため）。
 # `subagent_stop_advisor.py`の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`はbypass無効化判定に本定数のaliasを用いる
 # （`from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE`）。検出と判定predicateが独立複製構造だと
 # 同期漏れでSSOT不一致が発生するため、他モジュールから判定predicateとして参照される
 # 検出パターン全般は本方式（共有定数として抽出しaliasで参照する）に従う。
+#
+# 日本語の待機表明は、未完了・待機を示す述語（「待つ」「待機」「未着」「未受領」「待ち」）との
+# 共起を必須とする。本正規表現は完了報告のブロック判定にも使われるため、起動の事実のみを
+# 述べる文（「バックグラウンドで起動した」等、完了済み作業の報告にも現れる表現）を単独で
+# 一致させない。「完了次第」「受領後に」等の状態遷移表現も、単独では未完了を意味しないため
+# 上記の待機述語との共起がある場合のみ一致対象に含める。
+# 共起の相手はエージェント名だけでなく待機対象の名詞（「完了報告」「完了通知」等）も許容する。
+# 実運用の待機表明はエージェント名を伴わない形（「完了報告は未着」「完了通知を待つ」）が
+# 大半を占め、名前との共起のみを条件とすると検出できないため。
+# 英語分岐も同様に待機述語との共起を必須とする。かつては`background`・`running`・
+# `completion notification`が単独一致条件だったため、「エージェント名+background」の
+# 近接だけで完了済み作業の報告（「plan-reviewerの結果をbackgroundで受領し統合した」等）まで
+# 誤検出していた。`waiting`単独は待機述語として成立するため残し、
+# 現在進行形の継続宣言（`is/are running in the background`）に限定して一致対象へ含める。
+_SELF_LAUNCHED_AGENT_NAME_RE = r"(?:plan-[a-z-]+|careful-review|codex-impl-[a-z0-9-]+)"
+_WAIT_PREDICATE_JA_RE = r"(?:待つ|待ち|待って|待ちます|待機|未着|未受領)"
+# 待機対象を示す名詞。エージェント名を含まない待機表明
+# （「完了報告は未着」「完了通知を待つ」等）を検出するために用いる。
+_WAIT_TARGET_JA_RE = r"(?:完了報告|完了通知|レビュー結果|検証結果)"
+# 否定助動詞・完了時制の除外。肯定平叙形の待機表明のみを対象とするため、
+# 「待つ必要はない」「待って再開した」等を負の先読みで除外する。
+# 既存の分離形パターン（`async-wait`カテゴリ）と同一の設計に揃える。
+_WAIT_NEGATION_LOOKAHEAD_RE = r"(?![^、。\n]{0,15}(?:必要は?ない|ことは?しない|わけでは?ない|べきでは?ない))"
 _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
-    r"(?i:(?:plan-reviewer|plan-codex-delegate)[^,.\n]{0,40}"
-    r"(?:background|waiting|running|completion notification)"
+    rf"(?i:{_SELF_LAUNCHED_AGENT_NAME_RE}[^,.\n]{{0,40}}"
+    r"(?:waiting|(?:is|are)\s+running\s+in\s+the\s+background)"
     r"|review subagents? (?:are|is) running in the background"
-    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?)"
+    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?"
+    rf"|(?:wait|waiting) for[^,.\n]{{0,30}}{_SELF_LAUNCHED_AGENT_NAME_RE})"
+    rf"|{_SELF_LAUNCHED_AGENT_NAME_RE}[^、。\n]{{0,40}}backgroundで起動中(?:である)?"
+    rf"|{_SELF_LAUNCHED_AGENT_NAME_RE}[^、。\n]{{0,40}}{_WAIT_PREDICATE_JA_RE}"
+    rf"|{_WAIT_PREDICATE_JA_RE}[^、。\n]{{0,40}}{_SELF_LAUNCHED_AGENT_NAME_RE}"
+    rf"|{_WAIT_TARGET_JA_RE}[^、。\n]{{0,20}}{_WAIT_PREDICATE_JA_RE}{_WAIT_NEGATION_LOOKAHEAD_RE}"
+    rf"|{_WAIT_PREDICATE_JA_RE}{_WAIT_NEGATION_LOOKAHEAD_RE}[^、。\n]{{0,20}}{_WAIT_TARGET_JA_RE}"
 )
 
 # async-waitカテゴリの誤検出除外: 自身の作業先送りではなく他プロセス・他セッションとの
@@ -63,7 +94,7 @@ _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
 _ASYNC_WAIT_COORDINATION_RE = re.compile(r"別セッション|並行(?:実行|作業|処理)?|競合(?:を)?避け")
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂原則」項および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂と先送り」節および「縮退表明は発行しない」項目で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (

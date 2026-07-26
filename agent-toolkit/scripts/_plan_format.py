@@ -28,9 +28,6 @@ MARKETPLACE_MANIFEST_PATH: str = ".claude-plugin/marketplace.json"
 BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLACE_MANIFEST_PATH})
 """`scripts/agent_toolkit_bump.py`が更新するmanifestファイルの相対パス集合。
 
-`pretooluse.py`のH3コードブロック検査免除、
-`has_manifest_files_when_bump_step_present`の対象一覧検査、
-`check_plan_file.py`のagent-toolkit-edit要否判定でSSOTとして参照する。
 `agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
 """
 

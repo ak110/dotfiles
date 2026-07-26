@@ -15,8 +15,9 @@
 連続ブロック上限による強制終了を回避する。
 
 named subagent（`agent_name`非空）でtranscript内のtool_use数が閾値以上ある場合、
-メイン宛のSendMessage送付履歴（`name == "SendMessage"`かつ`input.to == "main"`）が
-無い時にblockを返し、完了報告の能動送付（またはメイン受領）を促す。
+起動元宛のSendMessage送付履歴（`name == "SendMessage"`かつ`input.to`が非空文字列。
+宛先の具体的な識別子は起動プロンプト依存のため`to`の値は問わない）が
+無い時にblockを返し、完了報告の能動送付を促す。
 当該判定結果は`agent_name`・tool_use数・送付有無を含めて`append_stop_log`で常時ログ化する。
 
 Explore named background起動（`posttooluse.py`が記録した名前リストに`agent_name`が
@@ -72,6 +73,7 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "review_handoff",
     "pending_confirmations",
     "plan_gaps",
+    "applied_instructions",
 )
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
@@ -147,8 +149,10 @@ def _fail_open_check(agent_name: str) -> _NamedSubagentSendCheck:
 
 
 def _scan_transcript_tool_uses(transcript_path: str) -> tuple[int, bool] | None:
-    """transcriptを走査し`(tool_use総数, メイン宛SendMessage送付有無)`を返す。
+    """transcriptを走査し`(tool_use総数, 起動元宛SendMessage送付有無)`を返す。
 
+    宛先識別子は起動プロンプトで指定された任意の値を取り得るため、`to`が非空文字列であれば
+    送付済みと判定する（`main`固定判定は起動元が`main`以外の中間層である場合を検出できないため）。
     読み取り不能時は`None`を返す（fail-open判定は呼び出し元に委ねる）。
     `_inspect_named_subagent_send`・`_inspect_explore_named_background_send`が共用する。
     """
@@ -157,7 +161,7 @@ def _scan_transcript_tool_uses(transcript_path: str) -> tuple[int, bool] | None:
     except (OSError, ValueError):
         return None
     tool_use_count = 0
-    sent_to_main = False
+    sent_completion_report = False
     for line in raw.splitlines():
         try:
             entry = json.loads(line)
@@ -177,22 +181,23 @@ def _scan_transcript_tool_uses(transcript_path: str) -> tuple[int, bool] | None:
             tool_use_count += 1
             if block.get("name") == "SendMessage":
                 inp = block.get("input")
-                if isinstance(inp, dict) and inp.get("to") == "main":
-                    sent_to_main = True
-    return tool_use_count, sent_to_main
+                if isinstance(inp, dict) and isinstance(inp.get("to"), str) and inp.get("to"):
+                    sent_completion_report = True
+    return tool_use_count, sent_completion_report
 
 
 def _inspect_named_subagent_send(payload: dict) -> _NamedSubagentSendCheck:
-    """Named subagentのメイン宛SendMessage送付有無を判定内訳付きで返す。
+    """Named subagentの起動元宛SendMessage送付有無を判定内訳付きで返す。
 
     判定条件:
     - `agent_name`フィールドが非空文字列（named subagent起動）
     - `transcript_path`が読み取り可能
     - 当該subagentのtranscript内assistant `tool_use`ブロック総数が閾値以上
-    - `name == "SendMessage"`かつ`input.to == "main"`のtool_use呼び出しが1件も存在しない
+    - `name == "SendMessage"`かつ`input.to`が非空文字列のtool_use呼び出しが1件も存在しない
+      （宛先識別子は起動プロンプト依存のため値は問わない）
 
     `missing_main_send`は上記全てを満たす場合に真。foregroundの短命subagent等で
-    tool_use数が閾値未満の場合、または既にメイン宛SendMessage送付済みの場合は偽。
+    tool_use数が閾値未満の場合、または既に起動元宛SendMessage送付済みの場合は偽。
     `agent_name`未指定・transcript読み取り失敗時は`tool_use_count=-1`・`missing_main_send=False`
     で返す（fail-open）。
     """
@@ -448,12 +453,13 @@ def main() -> int:
     _log_send_check(payload.get("session_id"), named_subagent_check, label_stem="named_subagent")
     if named_subagent_check.missing_main_send:
         reason = _llm_notice(
-            "blocked: this named subagent finished without ever calling `SendMessage(to='main')`."
+            "blocked: this named subagent finished without ever calling `SendMessage` to the launcher."
             " Named subagents launched with `run_in_background=true` must actively deliver the completion"
-            " report to the main agent via `SendMessage(to='main', message=<full body>)`; waiting for the main"
-            " agent to poll is treated as incomplete."
-            " Send the completion report body to main now and then stop."
-            " If this subagent was launched in the foreground and the main agent already received the return"
+            " report to the launcher (the identifier specified in the launch prompt, or `main` if none was"
+            " specified) via `SendMessage(to=<launcher>, message=<full body>)`; waiting for the launcher"
+            " to poll is treated as incomplete."
+            " Send the completion report body to the launcher now and then stop."
+            " If this subagent was launched in the foreground and the launcher already received the return"
             " value directly, ignore this notice.",
             tag="block",
         )
@@ -466,11 +472,12 @@ def main() -> int:
         if explore_check.missing_main_send:
             reason = _llm_notice(
                 "blocked: this named background Explore subagent finished without ever calling"
-                " `SendMessage(to='main')`. Explore subagents launched with `name` and"
-                " `run_in_background=true` must actively deliver their findings to the main agent via"
-                " `SendMessage(to='main', message=<full body>)`; waiting for the main agent to poll is"
+                " `SendMessage` to the launcher. Explore subagents launched with `name` and"
+                " `run_in_background=true` must actively deliver their findings to the launcher (the"
+                " identifier specified in the launch prompt, or `main` if none was specified) via"
+                " `SendMessage(to=<launcher>, message=<full body>)`; waiting for the launcher to poll is"
                 " treated as incomplete."
-                " Send the findings to main now and then stop.",
+                " Send the findings to the launcher now and then stop.",
                 tag="block",
             )
             print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

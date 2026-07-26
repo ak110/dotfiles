@@ -19,9 +19,12 @@
 
 0. 報告本文の書式適合性を検査する。検査対象欄は`agent-toolkit/agents/plan-impl-executor.md`
    「出力」節が定義する主要欄（`status:`・`summary:`・`changed:`・`verification:`・`commit_sha:`・
-   `review_handoff:`・`pending_confirmations:`・`plan_gaps:`。`status: needs_escalation`の場合は
-   `blockers:`も必須）とする。いずれかを明示形式で含まない場合、`status: completed`表示があっても
-   未完遂扱いとして技術的に解消可能な実装不備の再委譲へ直行する（手順1の`needs_escalation`分岐は経ない）。
+   `review_handoff:`・`pending_confirmations:`・`plan_gaps:`・`applied_instructions:`。
+   `status: needs_escalation`の場合は`blockers:`も必須）とする。いずれかを明示形式で含まない場合、
+   `status: completed`表示があっても未完遂扱いとして技術的に解消可能な実装不備の再委譲へ直行する
+   （手順1の`needs_escalation`分岐は経ない）。
+   `plan-file-creator`の完了報告を受領する場合は`invoked_subagents:`欄を必須とし、
+   当該欄を含まない報告は未完遂として扱い縮減プロンプトで再起動する。
 1. `status: completed`を確認する。`needs_escalation`の場合は`blockers`欄の内容で分岐する。
    - ユーザー判断・破壊的操作の確認を要する内容: `AskUserQuestion`でユーザーへ確認する。
      確認結果に応じて、縮減した新規起動プロンプト（元計画ファイルパス・未完了項目・確認結果を明記）で再委譲する
@@ -40,13 +43,31 @@
      呼び出し元が定める切替条件下で別の`plan-impl-executor`起動へ引き継ぐ場合は例外とし、
      この引き継ぎ時の完了判定は完了報告本文の受領を必須とする（切替条件の詳細は
      `agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`「混在時の並行制御」節に従う）
+   是正指示を送った後に完了報告を受領した場合、`applied_instructions`欄で反映状況を確認する。
+   未反映の指示が残る場合は検収へ進まず反映を待つ。
 2. `changed`欄と計画ファイル`## 変更内容`を照合し、`git diff <計画着手前SHA>..<commit_sha>`の
    実差分で1対1確認する。完了報告の受領時点で作業ツリーはコミット済みでcleanなため、
-   作業ツリー差分ではなくコミット範囲差分を照合対象とする
-3. `pending_confirmations`欄が非空の場合、各項目について内部実装に閉じる乖離か公開インターフェースに
-   波及する乖離かを点検し、結果をユーザー可視の応答へ1件1行で報告してから次工程へ進む。
-   内部実装に閉じる場合は`AskUserQuestion`を省略し進捗ログ転記のみを実施する
-4. 手順3で公開インターフェース波及と判定した項目がある場合、当該項目を`AskUserQuestion`でユーザーへ提示する。
+   作業ツリー差分ではなくコミット範囲差分を照合対象とする。
+   照合の前に`commit_sha`欄の値を`git rev-parse HEAD`の実行結果と突き合わせる。
+   識別子（コミットSHA・タグ名・run ID・PR番号など後続コマンドの引数となる値）は
+   後続の外部コマンドへそのまま渡り、誤りが「見つからない」という無害な形で現れるため、
+   検出が遅れて長時間の空待機に直結する。行数・バイト数など報告内で完結する定量値と区別して扱う。
+   併せて`verification`欄が示す検証コマンドの終了コードが0であることを確認する
+3. `pending_confirmations`欄が非空の場合、次の順序で処理する。
+
+   (1) `atk mq list --type=tbd`で確認事項の登録状況を一覧で確認する。
+   (2) 各項目について内部実装に閉じる乖離か公開インターフェースに波及する乖離かを点検し、
+       結果をユーザー可視の応答へ1件1行で報告する。
+   (3) 内部実装に閉じる項目は、登録・回答の状態にかかわらず呼び出し元が判定して進捗ログ転記のみを
+       実施する（`AskUserQuestion`を発行せず、回答も待たない）。
+   (4) 公開インターフェースへ波及する項目は、(1)の登録状況で分岐する。
+       登録済みで回答済みの場合は呼び出し元が独自に判定せずユーザーの回答を反映する。
+       登録済みで未回答の場合、協調モードでは回答を待つ。
+       自律モード（`agent-toolkit:process-feedbacks`起動中）では暫定判断で続行し、
+       判定した結果を`atk mq edit`で当該の記録へ書き戻す
+       （`agent-toolkit/rules/01-agent.md`「協調と自律」節の自律モード規定に従う）。
+       未登録の場合は手順4の`AskUserQuestion`へ進む
+4. 手順3(4)で未登録と判定した公開インターフェース波及項目がある場合、当該項目を`AskUserQuestion`でユーザーへ提示する。
    回答に応じた追修正が必要な場合は縮減した起動プロンプトで新規`agent-toolkit:plan-impl-executor`を再起動する
 5. `review_handoff`欄が「実施完了」または「レビューは実施しない」の場合、
    `plan-impl-executor`側でレビュー工程が完結済みのため呼び出し元はレビューを起動せず次工程へ進む。
@@ -62,7 +83,9 @@
 `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節に従う。
 
 `plan-impl-executor`自身がAgentツールの`name`指定・`run_in_background=true`でnamed subagentとして
-起動される場合、作業完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+起動される場合、作業完了時に完了報告本文を起動元宛のSendMessageで能動送付する。
+送付先は起動プロンプトで指定された識別子とし、指定が無い場合は`main`とする。
+この能動送付を必須ゲートとする。
 `idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする。
 
 呼び出し元は本ファイルを参照し、固有差分（起動タイミング・追加の確認事項）のみを自スキル側へ記述する。

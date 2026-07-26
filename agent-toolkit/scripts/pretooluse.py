@@ -538,6 +538,11 @@ def main() -> int:
         # atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出
         if _check_bash_atk_mq_add_tbd_scope_escalation(command):
             return 2
+        # パターン一致によるプロセス終了（pkill/killall）をブロック
+        if _check_bash_process_kill_by_pattern(command):
+            return 2
+        # 検証コマンド出力のtail/head切り詰めを警告
+        _print_warning_if_present(_check_bash_output_truncation(command))
         # git commit未検証警告
         result = _check_bash_git_commit(command, session_id, cwd)
         if result is not None:
@@ -2933,6 +2938,58 @@ def _cwd_is_python_project(cwd: str) -> bool:
     except (OSError, ValueError):
         return False
     return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
+
+
+# --- Bash: パターン一致によるプロセス終了の検出 ---
+
+_PROCESS_KILL_BY_PATTERN_RE = re.compile(r"(?<![\w-])(pkill|killall)(?![\w-])")
+
+
+def _check_bash_process_kill_by_pattern(command: str) -> bool:
+    """`pkill`・`killall`等パターン指定によるプロセス終了をブロックする。
+
+    対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
+    自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
+    """
+    if not _PROCESS_KILL_BY_PATTERN_RE.search(command):
+        return False
+    print(
+        _llm_notice(
+            "blocked: pattern-based process termination (pkill/killall) is prohibited because"
+            " process ownership cannot be verified. Use `kill <PID>` for a process you started"
+            " and identified by PID instead.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+# --- Bash: 検証コマンド出力の切り詰め検出 ---
+
+_VERIFICATION_TOOL_RE = re.compile(r"\b(pyfltr|pytest|cargo\s+test|dotnet\s+test|npm\s+(run\s+)?test|vitest|make\s+test)\b")
+_OUTPUT_TRUNCATION_RE = re.compile(r"\|\s*(tail|head)\b")
+_TEE_RE = re.compile(r"\btee\b")
+
+
+def _check_bash_output_truncation(command: str) -> str | None:
+    """検証コマンドの出力を`tail`・`head`で切り詰める指定を検出し、全量保存を促す警告を返す。
+
+    実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形を促す。
+    `tee`で全量を先に保存してから`tail`・`head`で抽出する形は、切り詰めに該当しないため対象外とする。
+    """
+    if not _VERIFICATION_TOOL_RE.search(command):
+        return None
+    if not _OUTPUT_TRUNCATION_RE.search(command):
+        return None
+    if _TEE_RE.search(command):
+        return None
+    return _llm_notice(
+        "warn: verification command output is piped through `tail`/`head`, truncating it."
+        " Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved"
+        " file instead of truncating the live output.",
+        tag="warn",
+    )
 
 
 # --- Bash: git共通ヘルパー ---

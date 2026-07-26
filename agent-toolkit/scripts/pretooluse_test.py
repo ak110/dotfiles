@@ -2576,6 +2576,65 @@ class TestBashAtkTbAddScopeEscalation:
         assert result.returncode == 0
 
 
+class TestBashProcessKillByPattern:
+    """`Bash`経由のパターン一致プロセス終了（`pkill`・`killall`）検出（block）。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pkill -f "codex exec"',
+            "killall python",
+            "pkill node",
+        ],
+    )
+    def test_blocks(self, command: str):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
+
+    def test_kill_by_pid_allowed(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
+        assert result.returncode == 0
+
+    def test_unrelated_command_allowed(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo killall-report"}})
+        assert result.returncode == 0
+
+
+class TestBashOutputTruncationWarning:
+    """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（warning、非block）。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "uvx pyfltr run-for-agent | tail -20",
+            "pytest -q | head -5",
+        ],
+    )
+    def test_warns(self, command: str):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "warn" in result.stderr
+
+    def test_tee_saved_log_silent(self):
+        command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "warn" not in result.stderr
+
+    def test_tee_then_tail_extraction_silent(self):
+        """`tee`で全量を先に保存してから`tail`で抽出する形は切り詰めに該当しないため警告しない。"""
+        command = "pytest -q | tee /tmp/test.log | tail -5"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "warn" not in result.stderr
+
+    def test_non_verification_command_silent(self):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git log | head -5"}})
+        assert result.returncode == 0
+        assert "warn" not in result.stderr
+
+
 class TestAskUserQuestionScopeEscalationCheck:
     """AskUserQuestion向け縮退誘発フレーズ検出ブロック。
 

@@ -71,7 +71,7 @@ user-invocable: false
   - 「部分担当」は明示範囲の完遂で`completed`を返してよい
 - 正規表現の選択肢分岐を新規追加・拡張する実装では、追加した各分岐に対応する陽性入力テストを
   追加してから`completed`を返す。対応する規範文書側の代表フレーズ列・例示文書があれば同期更新する
-- ドキュメント編集を含む実装タスクでは、完了報告前に対象ファイルへ`uvx pyfltr run-for-agent --no-fix`を
+- ドキュメント編集を含む実装タスクでは、完了報告前に対象ファイルへ`uvx pyfltr run --no-fix`を
   実行し、textlintの`sentence-length`等の違反が無いことを確認する
 - pretooluse hookの応答区分ごとに次のとおり対応する
   - 警告（warn）系: 続行する（Bash実行を停止しないため再試行不要）
@@ -130,9 +130,11 @@ user-invocable: false
 （メイン判断で計画への採用可否をユーザーと決める）。
 
 named subagentとして`run_in_background=true`起動された場合、
-完了時に完了報告本文をSendMessage(to: 'main')で能動送付する義務を必須ゲートとする。
+完了時に完了報告本文を起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）で
+能動送付する義務を必須ゲートとする。
 `idle_notification(available)`のみを送出しメイン側の明示要求を待つ挙動は未完遂扱いとし、
-SubagentStopフックがSendMessage(to='main')不在時にブロックする。
+SubagentStopフックが起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）
+不在時にブロックする。
 
 ```markdown
 status: completed | blocked | needs_escalation

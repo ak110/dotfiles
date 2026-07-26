@@ -55,7 +55,9 @@ class TestMatchScopeEscalation:
             "複雑度に応じてモデルを選択する。",
             "plan-reviewerの指摘を反映した。",
             "review subagents finished successfully.",
-            "plan-reviewer" + "z" * 41 + "background",
+            # 対象エージェント名が`plan-[a-z-]+`へ一般化されたため、
+            # 間隔充填には英字以外（数字）を使い名前パターンへの巻き込みを避ける。
+            "plan-reviewer" + "0" * 41 + "background",
             "後続の実施記録を報告した。この文書は仕様対象外の項目を含まない。",
             "情報量が多いため整理して報告する。",
             "工数を見積もり、スケジュールを調整する。",
@@ -407,3 +409,30 @@ class TestAsyncWaitSelfLaunchedSharedConstant:
         """独立複製ではなく共有定数のオブジェクト参照であることを`is`identityで確認する。"""
         matched = [pattern for category, pattern in _SCOPE_ESCALATION_PHRASES if category == "async-wait"]
         assert any(pattern is _ASYNC_WAIT_SELF_LAUNCHED_RE for pattern in matched)
+
+
+class TestAsyncWaitSelfLaunchedGeneralization:
+    """対象エージェント名の一般化と日本語待機表明の待機述語共起要件（fb 165038-001）。"""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "careful-reviewの完了報告を待ちます",
+            "codex-impl-processloopの完了を待機します",
+            "plan-implementerの完了通知を未受領のため待機中",
+        ],
+    )
+    def test_generalized_agent_name_with_wait_predicate_matches(self, text: str):
+        """`plan-*`・`careful-review`・`codex-impl-*`いずれも待機述語との共起で一致する。"""
+        assert _ASYNC_WAIT_SELF_LAUNCHED_RE.search(text) is not None
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "careful-reviewをバックグラウンドで起動した",
+            "plan-implementerを並列で実行した",
+        ],
+    )
+    def test_launch_fact_without_wait_predicate_does_not_match(self, text: str):
+        """起動の事実のみを述べる文は待機述語が無ければ一致しない。"""
+        assert _ASYNC_WAIT_SELF_LAUNCHED_RE.search(text) is None

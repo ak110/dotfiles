@@ -21,6 +21,9 @@ Python・Rust・.NET・TypeScript/JSなどに対応する。
   - `uv run`系を使う場合は`--frozen`必須（prekは親環境の`UV_FROZEN`を引き継がないため）
 - pyfltr公式Dockerイメージ（`ghcr.io/ak110/pyfltr:latest`）のCIジョブではイメージ同梱の`pyfltr ci`を直接呼び出す
 - pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う
+- formatter・linter・tester・プロジェクト固有のカスタムチェックを含む対応ツール全般を個別に直接起動せず、
+  常にpyfltrのサブコマンド経由で実行する。設定で無効化しているツールも直接起動すれば動作するため、
+  設定による無効化は直接起動への防御にならない。特定ファイルのみを対象にする場合も同じ形でパスを渡す
 
 ### 新規プロジェクトへの導入
 
@@ -34,7 +37,7 @@ pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・prekフック
 
 用途に応じて以下のフローで選択する。
 
-- コーディングエージェントが呼び出す → `run-for-agent`
+- コーディングエージェントが呼び出す → `run`（エージェント検出時は`run-for-agent`と同等に振る舞う）
 - CI環境で実行する → `ci`
 - prekフックで実行する → `fast`
 - ローカル開発で手動実行する → `run`
@@ -48,10 +51,9 @@ pyfltr関連設定は下記の公式推奨例（`pyproject.toml`・prekフック
 
 サブコマンドを省略して`uvx pyfltr <path>`のように呼び出すと、
 `pyfltr: error: argument <subcommand>: invalid choice: ...`でexit 2の即時エラー終了となる。
-ファイル個別実行も`uvx pyfltr run <files>`または`uvx pyfltr run-for-agent <files>`の形で
-サブコマンドを必ず指定する。
+ファイル個別実行も`uvx pyfltr run <files>`の形でサブコマンドを必ず指定する。
 
-`run`／`fast`／`run-for-agent`は前段で自動fixステージを実行する。
+`run`／`fast`は前段で自動fixステージを実行する（`run-for-agent`はエージェント検出時の`run`と同等に振る舞う）。
 fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段）→ `ruff check`（linter段）
 の3段構成を一般化した仕組みである。
 抑止したい場合は`--no-fix`を付ける。`ci`はfixステージを含まないため、修正済みを前提とした検証に使う。
@@ -92,7 +94,8 @@ fixステージは`ruff check --fix`（fix段）→ `ruff format`（formatter段
 エージェント環境（`AI_AGENT` / `CODEX_CI` / `CLAUDECODE` / `CURSOR_AGENT`のいずれかが設定された環境）では、
 全サブコマンドが既定でJSONL出力になる。stdoutにJSONLのみを書き、テキストログは抑止される。
 text出力が必要な場合のみ`--output-format=text`を明示する（環境変数`PYFLTR_OUTPUT_FORMAT=text`でも同等）。
-エージェントからの呼び出しは可読性のため`run-for-agent`を推奨する。
+エージェント検出時は`run`が`run-for-agent`と同等に振る舞うため`run`を使う。
+`run-for-agent`は互換用途の別名として残る。
 
 > 注記: mypy / pyright / pylint / ty 併用時は同じ型エラーが複数の`diagnostic`行に別ツール名で重複し得るため、
 > 1件の問題への複数ツール報告として扱い修正計画を重複させない（単一ツールに限定するには`--commands=mypy`等を指定する）。
@@ -118,7 +121,7 @@ text出力が必要な場合のみ`--output-format=text`を明示する（環境
 | `none` | ツールが自動fixを提供しない（手動修正が必要） |
 | 省略 | ツールがfix情報を提供していない（手動修正が必要） |
 
-`safe`／`unsafe`／`suggested`が並ぶ違反は`run-for-agent`の自動fixステージで解消される場合が多い。
+`safe`／`unsafe`／`suggested`が並ぶ違反は`run`の自動fixステージで解消される場合が多い。
 `none`または省略の違反は内容に応じて手動修正する。
 
 ### 再実行・調査の手段
@@ -165,7 +168,7 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
 | `--no-cache` | ファイルhashキャッシュを無効化する |
 | `--human-readable` | ツールの構造化出力（JSON等）を無効化し元のテキスト出力を使う |
 | `--no-exclude` / `--no-gitignore` | ファイル除外設定を無効化 |
-| `--quiet` | 静音モード（`run-for-agent`は既定有効、他は既定無効）でJSONL出力のノイズを削減し、`--no-quiet`で従来挙動へ戻る |
+| `--quiet` | 静音モード（エージェント検出時と`run-for-agent`は既定有効、他は既定無効）でJSONL出力のノイズを削減し、`--no-quiet`で従来挙動へ戻る |
 
 `--commands`にはエイリアスも指定できる。
 
@@ -190,8 +193,8 @@ uvx pyfltr show-run RUN_ID --commands=mypy,ruff-check  # 複数ツールのdiagn
   - 回避策は`bin-runner`を`direct`に切り替えてシステムのバイナリを使うか、当該ツールを`{tool} = false`で無効化する
 - 特定ツールの解決状況（enable/runner/executable）は`uvx pyfltr command-info --check <tool>`で即座に確認できる
   - mise経由ツールでは `mise install` / `mise trust` の副作用が発生し得る点に注意する
-- 特定ディレクトリが`extend-exclude`等で除外されると`uvx pyfltr run-for-agent`の検査対象から外れる
-  - 除外を一時的に無視するには`--no-exclude`を使う（例: `uvx pyfltr run-for-agent --no-exclude path/to/file`）
+- 特定ディレクトリが`extend-exclude`等で除外されると`uvx pyfltr run`の検査対象から外れる
+  - 除外を一時的に無視するには`--no-exclude`を使う（例: `uvx pyfltr run --no-exclude path/to/file`）
 - コマンド実行のタイムアウトは`pyproject.toml`の`[tool.pyfltr]`配下で調整できる
   - `command-timeout`: グローバル既定値、秒単位。既定600秒、`0`で無効化
   - `{command}-timeout`: per-tool値、`-1`で未設定sentinel・グローバル値にフォールバック、`0`で当該per-toolを無効化

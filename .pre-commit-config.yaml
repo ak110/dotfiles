@@ -44,6 +44,12 @@ repos:
         always_run: true
         require_serial: true
         language: system
+      - id: check-script-imports
+        name: check-script-imports
+        entry: uv run --no-project --script scripts/check_script_imports.py
+        language: system
+        pass_filenames: false
+        always_run: true
       # pyfltr 3.14.1はCargoサブプロジェクトを指定してもリポジトリルートで実行し、
       # cargo metadataの失敗を成功扱いするため、Rust検査は作業ディレクトリを指定して直接実行する。
       - id: cargo-fmt
