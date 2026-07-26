@@ -451,6 +451,121 @@ class TestPrivateNotesAutoCreate:
         assert "有効です" in message
 
 
+_LEGACY_FEEDBACK = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+_LEGACY_TBD = "---\ntarget_repo: github.com/example/repo\nquestion_type: free-form\n---\n\n## 質問\n\nQ\n\n## 回答\n\n"
+
+
+def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
+    """旧2階層レイアウトのローカル限定リポジトリを`root`へ作成する。
+
+    remote未設定を示すマーカーを置き、移行処理のpull・pushをスキップさせる。
+    `entries`はrepo root相対パスと本文の対応とする。
+    """
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+    (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+    for relative, text in entries.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=root, check=True)
+
+
+def _git_stdout(root: pathlib.Path, *args: str) -> str:
+    """`root`でgitコマンドを実行し標準出力を返す。"""
+    result = subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True)
+    assert isinstance(result.stdout, str)
+    return result.stdout
+
+
+class TestMigrateLegacyLayout:
+    """旧2階層レイアウトから平坦レイアウトへの自動移行を検証する。
+
+    管理repoのパスはconftestの`_atk_private_notes_env`が`tmp_path/private-notes`へ差し替えるため、
+    `_ensure_environment`へ渡すhomeは解決結果に影響しない。
+    """
+
+    def test_migrates_entries_and_removes_legacy_dirs(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """種別ディレクトリ配下のエントリへtypeを補って状態ディレクトリ直下へ移し、旧ディレクトリを削除する。"""
+        root = tmp_path / "private-notes"
+        _init_legacy_repo(
+            root,
+            {
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
+                "feedback/adopted/20260101-000000-002.md": _LEGACY_FEEDBACK,
+                "tbd/inbox/20260102-000000-001.md": _LEGACY_TBD,
+            },
+        )
+
+        assert _common._ensure_environment(tmp_path) == root  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert not (root / "feedback").exists()
+        assert not (root / "tbd").exists()
+        assert (root / "inbox" / "20260101-000000-001.md").read_text(encoding="utf-8") == (
+            "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n"
+        )
+        assert (root / "adopted" / "20260101-000000-002.md").read_text(encoding="utf-8").splitlines()[2] == "type: feedback"
+        assert (root / "inbox" / "20260102-000000-001.md").read_text(encoding="utf-8").splitlines()[1:4] == [
+            "target_repo: github.com/example/repo",
+            "type: tbd",
+            "question_type: free-form",
+        ]
+        assert "3件を平坦レイアウトへ移行" in capsys.readouterr().err
+        assert not _git_stdout(root, "status", "--porcelain")
+
+    def test_is_noop_after_migration(self, tmp_path: pathlib.Path) -> None:
+        """移行後の再実行では追加のコミットを生成しない。"""
+        root = tmp_path / "private-notes"
+        _init_legacy_repo(root, {"feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK})
+        _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+        head = _git_stdout(root, "rev-parse", "HEAD")
+
+        _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert _git_stdout(root, "rev-parse", "HEAD") == head
+
+    def test_aborts_without_changes_when_entry_is_broken(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """frontmatterが不正なエントリがある場合、何も移さずexit 2で原因を案内する。"""
+        root = tmp_path / "private-notes"
+        _init_legacy_repo(
+            root,
+            {
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
+                "feedback/inbox/20260101-000000-002.md": "frontmatterのない本文\n",
+            },
+        )
+
+        with pytest.raises(SystemExit) as excinfo:
+            _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert excinfo.value.code == 2
+        assert "frontmatterが不正" in capsys.readouterr().err
+        assert (root / "feedback" / "inbox" / "20260101-000000-001.md").exists()
+        assert not (root / "inbox").exists()
+
+    def test_aborts_when_destination_conflicts(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """種別違いで同名のエントリがある場合は移行先衝突として中止する。"""
+        root = tmp_path / "private-notes"
+        _init_legacy_repo(
+            root,
+            {
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
+                "tbd/inbox/20260101-000000-001.md": _LEGACY_TBD,
+            },
+        )
+
+        with pytest.raises(SystemExit) as excinfo:
+            _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert excinfo.value.code == 2
+        assert "移行先が既に存在" in capsys.readouterr().err
+
+
 class TestHasRemote:
     """`_has_remote`のローカル限定マーカー判定を検証する。"""
 

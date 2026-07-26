@@ -31,7 +31,7 @@ from _atk_mq_formatters import (
     _truncate_target_repo,
 )
 
-# フィードバック管理repoの4状態フォルダ名（`feedback/<name>`直下）。
+# フィードバック管理repoの4状態フォルダ名（管理repo直下）。
 # - `inbox`: 未処理の投入直後
 # - `processing`: `start-processing`で処理中に移動された途中状態
 # - `adopted`: 採用として最終処理された状態
@@ -93,7 +93,7 @@ def warn_space_separated_option(argv: list[str]) -> None:
 
 
 def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
-    """feedback/配下の指定サブディレクトリパスを返す。必要時に作成する。"""
+    """管理repo直下の指定サブディレクトリパスを返す。必要時に作成する。"""
     path = private_notes / name
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -201,6 +201,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
     `AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定されたパスが不在の場合はexit 1で原因を案内する。
     未指定かつ既定パスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
+    旧2階層レイアウトが残るリポジトリは`_migrate_legacy_layout`が平坦レイアウトへ移行する。
     """
     root = _private_notes_path(home)
     if not root.exists():
@@ -208,24 +209,127 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
             print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
             sys.exit(1)
         _init_local_private_notes_repo(root)
-    _reject_legacy_layout(root)
+    _migrate_legacy_layout(root)
     return root
 
 
-_LEGACY_DIR_NAMES = ("feedback", "tbd")
+def _with_type_frontmatter(text: str, entry_type: str) -> str | None:
+    """先頭frontmatterへ`type`行を補った本文を返す。
+
+    frontmatterが無い場合と閉じ区切りを欠く場合はNoneを返す。`type`が既にある場合は
+    そちらを正とみなして原文をそのまま返す。挿入位置は`add_entries`の生成順へ合わせて
+    `target_repo`行の直後とし、`target_repo`が無い場合はfrontmatter末尾とする。
+    """
+    if not text.startswith("---\n"):
+        return None
+    try:
+        end = text.index("\n---\n", 4)
+    except ValueError:
+        return None
+    if _parse_type(text) is not None:
+        return text
+    lines = text[4:end].split("\n")
+    position = next((i + 1 for i, line in enumerate(lines) if line.startswith("target_repo:")), len(lines))
+    lines.insert(position, f"type: {entry_type}")
+    return "---\n" + "\n".join(lines) + text[end:]
 
 
-def _reject_legacy_layout(private_notes: pathlib.Path) -> None:
-    """旧2階層レイアウトが残る管理repoの操作を拒否する。"""
-    legacy = [name for name in _LEGACY_DIR_NAMES if (private_notes / name).is_dir()]
-    if not legacy:
-        return
-    print(
-        f"旧レイアウトのディレクトリが残っています: {', '.join(legacy)}（{private_notes}）。"
-        "管理repoで最新のリモート状態を取り込み、平坦レイアウトへの移行済みコミットへ更新してください。",
-        file=sys.stderr,
+def _plan_legacy_migration(
+    private_notes: pathlib.Path, legacy_dirs: list[pathlib.Path]
+) -> list[tuple[pathlib.Path, pathlib.Path, str]]:
+    """旧レイアウト配下の移行計画を`(移行元, 移行先, 移行後本文)`の一覧として返す。
+
+    移行を妨げる要素（未知のディレクトリ・エントリ以外のファイル・移行先の衝突・
+    frontmatterの破損）を検出した場合は、全件を列挙してからexit 2で終了する。
+    ファイルへ触れる前に全件を検証し、中断時に移行途中の状態を残さない。
+    """
+    planned: list[tuple[pathlib.Path, pathlib.Path, str]] = []
+    destinations: set[pathlib.Path] = set()
+    errors: list[str] = []
+    for legacy_dir in legacy_dirs:
+        entry_type = legacy_dir.name
+        for path in sorted(legacy_dir.rglob("*")):
+            relative = path.relative_to(legacy_dir)
+            if path.is_dir():
+                if len(relative.parts) != 1 or relative.parts[0] not in MQ_STATES:
+                    errors.append(f"未知のディレクトリ: {path}")
+                continue
+            if path.name == ".gitkeep":
+                continue
+            if len(relative.parts) != 2 or path.suffix != ".md":
+                errors.append(f"エントリとして解釈できないファイル: {path}")
+                continue
+            destination = private_notes / relative.parts[0] / path.name
+            if destination.exists() or destination in destinations:
+                errors.append(f"移行先が既に存在: {destination}")
+                continue
+            migrated = _with_type_frontmatter(path.read_text(encoding="utf-8"), entry_type)
+            if migrated is None:
+                errors.append(f"frontmatterが不正: {path}")
+                continue
+            destinations.add(destination)
+            planned.append((path, destination, migrated))
+    if errors:
+        print(f"旧レイアウトの移行を中止しました（{private_notes}）。以下を解消してから再実行してください。", file=sys.stderr)
+        for error in errors:
+            print(f"- {error}", file=sys.stderr)
+        sys.exit(2)
+    return planned
+
+
+def _tracked_names(private_notes: pathlib.Path, names: Iterable[str]) -> list[str]:
+    """指定名のうち、gitの追跡対象を含むものだけを返す。
+
+    追跡対象を1件も含まないパスを`git add`へ渡すとpathspec不一致で失敗するため、
+    削除済みディレクトリをcommit対象へ含める際の限定に用いる。
+    """
+    name_list = list(names)
+    result = subprocess.run(
+        ["git", "ls-files", "--", *name_list],
+        cwd=private_notes,
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    sys.exit(2)
+    assert isinstance(result.stdout, str)
+    tracked = {line.split("/", 1)[0] for line in result.stdout.splitlines()}
+    return [name for name in name_list if name in tracked]
+
+
+def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
+    """旧2階層レイアウトの管理repoを平坦レイアウトへ移行する。
+
+    旧レイアウトは種別ごとのディレクトリ（`<type>/<state>/`）でエントリ種別を表現していた。
+    平坦レイアウトは状態ディレクトリ（`<state>/`）のみをrepo直下へ置き、種別は
+    frontmatterの`type`で表現する。移行では各エントリへ`type`行を補ってから状態
+    ディレクトリへ移し、旧ディレクトリを削除してcommit・pushする。
+
+    旧ディレクトリが無い場合は無動作で戻る（通常運用でのロック取得・pullを避けるため）。
+    """
+    if not any((private_notes / name).is_dir() for name in MQ_TYPES):
+        return
+    with _repo_lock(private_notes):
+        _pull(private_notes)
+        # 他プロセス・他端末が先に移行済みの場合があるため、pull後の状態で再判定する。
+        legacy_dirs = [private_notes / name for name in MQ_TYPES if (private_notes / name).is_dir()]
+        if not legacy_dirs:
+            return
+        planned = _plan_legacy_migration(private_notes, legacy_dirs)
+        for source, destination, migrated in planned:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(migrated, encoding="utf-8")
+            source.unlink()
+        legacy_names = [legacy_dir.name for legacy_dir in legacy_dirs]
+        tracked_legacy_names = _tracked_names(private_notes, legacy_names)
+        for legacy_dir in legacy_dirs:
+            shutil.rmtree(legacy_dir)
+        count = len(planned)
+        _commit_and_push(
+            private_notes,
+            f"chore: migrate {count} {'entry' if count == 1 else 'entries'} to flat layout",
+            [*(name for name in MQ_STATES if (private_notes / name).is_dir()), *tracked_legacy_names],
+        )
+        print(f"旧レイアウトの{count}件を平坦レイアウトへ移行しました: {private_notes}", file=sys.stderr)
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
