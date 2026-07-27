@@ -29,7 +29,6 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
-    _setup_tbd_env,
     _write_feedback_file,
     _write_tbd_file,
 )
@@ -886,7 +885,7 @@ class TestTbdAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """`--target-repo`指定時、位置引数を省略した呼び出しではCLI値がtarget_repoとして記録される。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
@@ -909,7 +908,7 @@ class TestTbdAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """旧REPO_PATH位置引数形式が併用された場合、`--target-repo`より優先される。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))

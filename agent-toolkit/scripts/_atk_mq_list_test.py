@@ -25,7 +25,6 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_flag_and_notes,
-    _setup_tbd_env,
     _write_feedback_file,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
@@ -256,7 +255,7 @@ class TestListSourceFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, "tbd-001.md", source="session-review")
         _write_tbd_file(notes, "tbd-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -371,7 +370,7 @@ class TestListStatusFilter:
         excluded_suffix: str,
     ) -> None:
         """--answered=yes/noが回答状況と一致するTBDだけを出力する。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -391,7 +390,7 @@ class TestListStatusFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--status=all指定時に全TBDが出力される。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -492,7 +491,7 @@ class TestListCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--countと--statusを併用すると、statusフィルター適用後の件数が出力される。"""
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -618,7 +617,7 @@ class TestListNarrowTerminalTargetRepo:
             del args, kwargs
             return os.terminal_size((terminal_columns, 24))
 
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         _write_tbd_file(
             notes,
             f"{_FIXED_TIMESTAMP}-001.md",
