@@ -153,179 +153,86 @@ class TestShouldAllow:
 class TestShouldAllowBash:
     """`should_allow_bash` の判定動作。"""
 
-    def test_rm_in_plans(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"rm {home}/.claude/plans/x.md", str(home)) is True
-
-    def test_rm_with_options_in_plans(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"rm -rf {home}/.claude/plans/sub", str(home)) is True
-
-    def test_rm_in_repo_claude(self, home: pathlib.Path, repo: pathlib.Path) -> None:
-        del home
-        assert hook.should_allow_bash(f"rm {repo}/.claude/rules/x.md", str(repo)) is True
-
-    def test_mkdir_p_in_plans(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"mkdir -p {home}/.claude/plans/sub", str(home)) is True
-
-    def test_mv_within_plans(self, home: pathlib.Path) -> None:
-        cmd = f"mv {home}/.claude/plans/a.md {home}/.claude/plans/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_cp_within_plans(self, home: pathlib.Path) -> None:
-        cmd = f"cp -r {home}/.claude/plans/a {home}/.claude/plans/b"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_touch_in_plans(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"touch {home}/.claude/plans/x.md", str(home)) is True
-
-    def test_redirect_to_plans(self, home: pathlib.Path) -> None:
-        cmd = f"echo hello > {home}/.claude/plans/x.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_append_redirect_to_plans(self, home: pathlib.Path) -> None:
-        cmd = f"echo hello >> {home}/.claude/plans/log.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_redirect_with_arbitrary_command(self, home: pathlib.Path) -> None:
-        # コマンド本体は問わずリダイレクト先パスのみで判定
-        cmd = f"some-unknown-cmd arg1 arg2 > {home}/.claude/plans/x.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_relative_path_with_cwd(self, home: pathlib.Path) -> None:
-        cmd = "rm x.md"
-        assert hook.should_allow_bash(cmd, str(home / ".claude" / "plans")) is True
-
-    def test_quoted_path_with_space(self, home: pathlib.Path) -> None:
-        target = home / ".claude" / "plans" / "a b.md"
-        assert hook.should_allow_bash(f'rm "{target}"', str(home)) is True
-
-    def test_mv_with_dst_outside_rejected(self, home: pathlib.Path) -> None:
-        cmd = f"mv {home}/.claude/plans/a.md {home}/elsewhere.md"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_rm_outside_target_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"rm {home}/elsewhere.md", str(home)) is False
-
-    def test_unsafe_metachar_pipe_rejected(self, home: pathlib.Path) -> None:
-        cmd = f"rm {home}/.claude/plans/a.md | rm {home}/.claude/plans/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_semicolon_composed_rm_allowed(self, home: pathlib.Path) -> None:
-        cmd = f"rm {home}/.claude/plans/a.md; rm {home}/.claude/plans/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_unsafe_metachar_dollar_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash("rm $HOME/.claude/plans/a.md", str(home)) is False
-
-    def test_unsafe_metachar_backtick_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash("rm `echo a.md`", str(home)) is False
-
-    def test_unknown_command_rejected(self, home: pathlib.Path) -> None:
-        # find は対象外コマンド
-        cmd = f"find {home}/.claude/plans -delete"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_redirect_without_target_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash("echo foo >", str(home)) is False
-
-    def test_empty_command_rejected(self) -> None:
-        assert hook.should_allow_bash("", "") is False
+    @pytest.mark.parametrize(
+        ("command_template", "expected"),
+        [
+            (("rm {plans}/x.md", "{home}"), True),
+            (("rm -rf {plans}/sub", "{home}"), True),
+            (("rm {repo}/.claude/rules/x.md", "{repo}"), True),
+            (("mkdir -p {plans}/sub", "{home}"), True),
+            (("mv {plans}/a.md {plans}/b.md", "{home}"), True),
+            (("cp -r {plans}/a {plans}/b", "{home}"), True),
+            (("touch {plans}/x.md", "{home}"), True),
+            (("echo hello > {plans}/x.md", "{home}"), True),
+            (("echo hello >> {plans}/log.md", "{home}"), True),
+            (("some-unknown-cmd arg1 arg2 > {plans}/x.md", "{home}"), True),
+            (("rm x.md", "{plans}"), True),
+            (('rm "{plans}/a b.md"', "{home}"), True),
+            (("mv {plans}/a.md {home}/elsewhere.md", "{home}"), False),
+            (("rm {home}/elsewhere.md", "{home}"), False),
+            (("rm {plans}/a.md | rm {plans}/b.md", "{home}"), False),
+            (("rm {plans}/a.md; rm {plans}/b.md", "{home}"), True),
+            (("rm $HOME/.claude/plans/a.md", "{home}"), False),
+            (("rm `echo a.md`", "{home}"), False),
+            (("find {plans} -delete", "{home}"), False),
+            (("echo foo >", "{home}"), False),
+            (("", ""), False),
+            (("rm x.md", ""), False),
+            (('rm "unterminated', "{home}"), False),
+            (("some-unknown-cmd arg1 arg2>{plans}/x.md", "{home}"), True),
+            (("cp {plans}/a.md {plans}/b.md && wc -l {plans}/b.md", "{home}"), True),
+            (("cp {plans}/a.md {plans}/b.md&&wc -l {plans}/b.md", "{home}"), True),
+            (("rm {plans}/a.md || rm {plans}/b.md", "{home}"), True),
+            (("rm {plans}/a.md && rm {home}/elsewhere.md", "{home}"), False),
+            (("wc -l -w {plans}/a.md", "{home}"), True),
+            (("wc --lines {plans}/a.md", "{home}"), True),
+            (("wc --unknown=value {plans}/a.md", "{home}"), False),
+            (("wc --files0-from={plans}/list.txt", "{home}"), False),
+            (("wc {plans}/a.md", "{home}"), True),
+            (("wc -l {home}/elsewhere.md", "{home}"), False),
+            (("rm {plans}/a.md &", "{home}"), False),
+            (('echo "a && b" > {plans}/a.md', "{home}"), False),
+            (("rm {plans}/a.md && rm {plans}/b.md | cat", "{home}"), False),
+            (("rm {plans}/a.md && rm {plans}/b.md; echo done", "{home}"), True),
+            (("rm {plans}/a.md && rm {plans}/b.md; rm {home}/elsewhere.md", "{home}"), False),
+            (
+                ("mkdir -p {plans}\ncp /tmp/scratchpad/x.md {plans}/x.md\nwc -l {plans}/x.md", "{home}"),
+                True,
+            ),
+            (
+                ("mkdir -p {plans}; cp /tmp/scratchpad/x.md {plans}/x.md; wc -l {plans}/x.md", "{home}"),
+                True,
+            ),
+            (("cd {plans}", "{home}"), True),
+            (("cd /etc", "{home}"), False),
+            (("mkdir -p {plans}\nuv run x.py", "{home}"), False),
+            (("mkdir -p {plans}\n\n", "{home}"), True),
+            (("head -l {plans}/a.md", "{home}"), False),
+            (('rm "unterminated && wc -l {plans}/a.md', "{home}"), False),
+            (("rm {plans}/a.md |& malicious_tool", "{home}"), False),
+            (("echo hi 2>& {plans}/log.txt", "{home}"), False),
+            (("echo hi &> {plans}/out.txt", "{home}"), False),
+            # 対象配下と対象外パスへの操作が混在するコマンド列は全体を拒否する。
+            (("cp {repo}/AGENTS.md {home}/elsewhere.md && rm {repo}/.agents/new.md", "{repo}"), False),
+        ],
+    )
+    def test_bash_command_allowance(
+        self,
+        home: pathlib.Path,
+        repo: pathlib.Path,
+        command_template: tuple[str, str],
+        expected: bool,
+    ) -> None:
+        plans = home / ".claude" / "plans"
+        command_text_template, cwd_template = command_template
+        format_args = {"home": home, "repo": repo, "plans": plans}
+        cmd = command_text_template.format(**format_args)
+        cwd = cwd_template.format(**format_args)
+        assert hook.should_allow_bash(cmd, cwd) is expected
 
     @pytest.mark.parametrize("command", [";", "\n", ";\n"])
     def test_separator_only_command_rejected(self, command: str, home: pathlib.Path) -> None:
         assert hook.should_allow_bash(command, str(home)) is False
-
-    def test_relative_path_without_cwd_rejected(self) -> None:
-        assert hook.should_allow_bash("rm x.md", "") is False
-
-    def test_unmatched_quote_rejected(self, home: pathlib.Path) -> None:
-        # `_tokenize` 内の `shlex.shlex` が ValueError を送出する形
-        assert hook.should_allow_bash('rm "unterminated', str(home)) is False
-
-    def test_arbitrary_command_with_no_space_redirect_allowed(self, home: pathlib.Path) -> None:
-        # `shlex.shlex(punctuation_chars=True)` は空白なしリダイレクトも独立トークン化する。
-        # 対象配下パスへのリダイレクトなら任意コマンドも許容される。
-        cmd = f"some-unknown-cmd arg1 arg2>{home}/.claude/plans/x.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_and_composed_cp_and_wc_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"cp {plans}/a.md {plans}/b.md && wc -l {plans}/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_and_composed_without_spaces_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"cp {plans}/a.md {plans}/b.md&&wc -l {plans}/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_or_composed_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md || rm {plans}/b.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_and_composed_second_subcommand_outside_rejected(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md && rm {home}/elsewhere.md"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_wc_bool_options_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"wc -l -w {plans}/a.md", str(home)) is True
-
-    def test_wc_long_bool_option_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"wc --lines {plans}/a.md", str(home)) is True
-
-    def test_wc_long_bool_option_with_equals_rejected_when_unknown(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"wc --unknown=value {plans}/a.md", str(home)) is False
-
-    def test_wc_files0_from_option_rejected(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"wc --files0-from={plans}/list.txt", str(home)) is False
-
-    def test_wc_no_options_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"wc {plans}/a.md", str(home)) is True
-
-    def test_wc_outside_path_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"wc -l {home}/elsewhere.md", str(home)) is False
-
-    def test_background_ampersand_rejected(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"rm {plans}/a.md &", str(home)) is False
-
-    def test_quoted_ampersand_pair_not_split(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        # 引用符内の `&&` は `shlex.shlex(posix=True)` で外側の引用符が外れ、
-        # トークン列に `a && b` として現れる。単独 `&`・`|` を含む複合文字列は
-        # 「`&&` と `||` 以外で `&` または `|` を含むトークン」として拒否される。
-        cmd = f'echo "a && b" > {plans}/a.md'
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_unsafe_metachar_pipe_rejected_still(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md && rm {plans}/b.md | cat"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_mixed_and_semicolon_composed_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md && rm {plans}/b.md; echo done"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_mixed_and_semicolon_outside_path_rejected(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md && rm {plans}/b.md; rm {home}/elsewhere.md"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_newline_composed_mkdir_cp_wc_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"mkdir -p {plans}\ncp /tmp/scratchpad/x.md {plans}/x.md\nwc -l {plans}/x.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_semicolon_composed_mkdir_cp_wc_allowed(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"mkdir -p {plans}; cp /tmp/scratchpad/x.md {plans}/x.md; wc -l {plans}/x.md"
-        assert hook.should_allow_bash(cmd, str(home)) is True
 
     @pytest.mark.parametrize(
         "command",
@@ -337,54 +244,6 @@ class TestShouldAllowBash:
     )
     def test_echo_standalone_allowed(self, command: str, home: pathlib.Path) -> None:
         assert hook.should_allow_bash(command, str(home)) is True
-
-    def test_cd_plans_allowed(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(f"cd {home}/.claude/plans", str(home)) is True
-
-    def test_cd_outside_rejected(self, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash("cd /etc", str(home)) is False
-
-    def test_newline_composed_unknown_command_rejected(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"mkdir -p {plans}\nuv run x.py"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_trailing_newline_separator_ignored(self, home: pathlib.Path) -> None:
-        plans = home / ".claude" / "plans"
-        cmd = f"mkdir -p {plans}\n\n"
-        assert hook.should_allow_bash(cmd, str(home)) is True
-
-    def test_unknown_read_op_rejected(self, home: pathlib.Path) -> None:
-        # head は `_BASH_READ_OPS` 未収載のため、既存の対象外コマンド拒否と同様に拒否する
-        plans = home / ".claude" / "plans"
-        assert hook.should_allow_bash(f"head -l {plans}/a.md", str(home)) is False
-
-    def test_unmatched_quote_in_shlex_returns_false(self, home: pathlib.Path) -> None:
-        # punctuation_chars 対応の shlex でも不正クォートは ValueError を送出し False を返す
-        plans = home / ".claude" / "plans"
-        cmd = f'rm "unterminated && wc -l {plans}/a.md'
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_pipe_ampersand_operator_rejected(self, home: pathlib.Path) -> None:
-        # `|&`（stdout+stderrパイプ）は複合演算子として1トークンで扱われ、拒否対象。
-        plans = home / ".claude" / "plans"
-        cmd = f"rm {plans}/a.md |& malicious_tool"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_gt_ampersand_operator_rejected(self, home: pathlib.Path) -> None:
-        # `>&`は複合演算子として1トークンで扱われ、拒否対象。
-        # bash仕様上、対象がfd番号の場合はfd複製、パス等の非fd番号対象なら結合リダイレクトとして解釈される。
-        # ここでは`2>& path`の形で検証する。bash実行時は曖昧なリダイレクトエラーとなる形だが、
-        # 本テストはトークン化と拒否判定のみを対象とし実行成否は問わない。
-        plans = home / ".claude" / "plans"
-        cmd = f"echo hi 2>& {plans}/log.txt"
-        assert hook.should_allow_bash(cmd, str(home)) is False
-
-    def test_ampersand_gt_operator_rejected(self, home: pathlib.Path) -> None:
-        # `&>`はstdout+stderr結合リダイレクトの複合演算子として1トークンで扱われ、拒否対象。
-        plans = home / ".claude" / "plans"
-        cmd = f"echo hi &> {plans}/out.txt"
-        assert hook.should_allow_bash(cmd, str(home)) is False
 
     def test_rm_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # `/tmp/` 配下は一時ファイル領域として自動許可対象に含める
