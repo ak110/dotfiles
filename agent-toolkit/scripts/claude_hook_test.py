@@ -65,3 +65,25 @@ class TestEntrypointExceptionStages:
         assert not result.stdout
         assert result.stderr.startswith("Traceback (most recent call last):")
         assert "[stop_advisor] 想定外エラー" not in result.stderr
+
+    def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """approve対象外のサブコマンドは例外時もJSONなしでfail-openする。"""
+        entrypoint = self._copy_entrypoint(tmp_path)
+        (tmp_path / "pretooluse.py").write_text(
+            "def main() -> int:\n    raise RuntimeError('boom')\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "pretooluse"],
+            input="",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0
+        assert not result.stdout
+        assert result.stderr.startswith("[pretooluse] 想定外エラー: RuntimeError: boom")
+        assert "Traceback (most recent call last):" in result.stderr

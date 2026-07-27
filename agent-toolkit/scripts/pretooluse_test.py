@@ -459,65 +459,50 @@ class TestPlanModeSkillFirstCheck:
         )
         assert result.returncode == 0
 
-    def test_allows_non_plan_file_edit_without_skill(self, tmp_path: pathlib.Path):
-        """plan file 以外の編集はスキル未起動でも通過する。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        env = self._state_env(tmp_path, home)
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "x.md"), "content": "# t\n"},
-                "session_id": "plan-other-file",
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_allows_read_in_plan_mode(self, tmp_path: pathlib.Path):
-        """Read は plan-mode スキル未起動でも一切ブロック・警告しない。"""
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input", "allow_plan_mode_skill", "expected_returncode"),
+        [
+            pytest.param(
+                "Write",
+                {"file_path": "x.md", "content": "# t\n"},
+                False,
+                0,
+                id="non-plan-file-edit-without-skill",
+            ),
+            pytest.param("Read", {"file_path": "/etc/hostname"}, False, 0, id="read-without-skill"),
+            pytest.param("Bash", {"command": "ls"}, False, 0, id="bash-without-skill"),
+            pytest.param(
+                "Skill",
+                {"skill": "agent-toolkit:process-feedbacks"},
+                False,
+                0,
+                id="other-skill-without-plan-mode-skill",
+            ),
+        ],
+    )
+    def test_allows_non_plan_file_operations(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        tool_input: dict,
+        allow_plan_mode_skill: bool,
+        expected_returncode: int,
+    ) -> None:
+        """計画ファイル以外の操作はplan-modeスキルの起動状態にかかわらず通過する。"""
         env = self._state_env(tmp_path)
+        sid = f"plan-pass-{tool_name.lower()}"
+        if allow_plan_mode_skill:
+            _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
         result = _run(
             {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/etc/hostname"},
-                "session_id": "plan-read",
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "session_id": sid,
                 "permission_mode": "plan",
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_allows_bash_in_plan_mode(self, tmp_path: pathlib.Path):
-        env = self._state_env(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "session_id": "plan-bash",
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_allows_other_skill_in_plan_mode(self, tmp_path: pathlib.Path):
-        """`process-feedbacks`等のplan mode下での他Skill呼び出しはブロックしない。"""
-        env = self._state_env(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
-                "session_id": "plan-other-skill",
-                "permission_mode": "plan",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
+        assert result.returncode == expected_returncode
         assert result.stdout == ""
 
     def test_skipped_outside_plan_mode(self, tmp_path: pathlib.Path):
@@ -770,6 +755,81 @@ class TestResponseLanguageCheck:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestBlockCheckExecutionOrder:
+    """複数のblock系checkが同時に違反する場合の先行check契約を検証する。"""
+
+    def test_direct_edit_block_preempts_retroactive_scan_block(self, tmp_path: pathlib.Path) -> None:
+        plan = _write_tmp_file(tmp_path, "home/.claude/plans/current.md", "## 調査結果\n\nなし\n")
+        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/new-rule.md", "# 既存\n")
+        sid = "block-check-order"
+        _write_session_state(
+            tmp_path,
+            sid,
+            {
+                "plan_mode_skill_invoked": True,
+                "plan_file_written": False,
+                "direct_agent_toolkit_edit_count": 3,
+                "last_agent_toolkit_edit_path": str(tmp_path / "agent-toolkit/rules/other-rule.md"),
+                "current_plan_file_path": str(plan),
+            },
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "# 既存\n\n## 新規規範\n"},
+                "session_id": sid,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "consecutive Write/Edit/MultiEdit" in result.stderr
+        assert "new meta-norm pattern" not in result.stderr
+        assert "required items" not in result.stderr
+
+
+class TestWarnJsonAndLanguageWarningComposition:
+    """warn系checkのJSONへ言語警告が末尾合成される契約を検証する。"""
+
+    def test_language_warning_appended_to_warn_json(self, tmp_path: pathlib.Path) -> None:
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "m-language-composition",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "A" * 100}],
+                        "stop_reason": "end_turn",
+                    },
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        sid = "bash-language-warning-composition"
+        _write_session_state(tmp_path, sid, {"test_executed": False})
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git commit -m 'test'"},
+                "transcript_path": str(transcript),
+                "session_id": sid,
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        commit_warning = "committing without running tests"
+        language_warning = "英語主体"
+        assert commit_warning in context
+        assert language_warning in context
+        assert context.index(commit_warning) < context.index(language_warning)
+        assert "\n\n" in context[context.index(commit_warning) : context.index(language_warning)]
 
 
 class TestLanguageEscalation:
@@ -1063,16 +1123,14 @@ class TestBashGitCommitWarning:
         """staged状態のファイルを含むgitリポジトリを作成する。"""
         repo = tmp_path / "repo"
         repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "seed.txt").write_text("seed")
+        _init_git_repo(repo)
+        (repo / "seed.txt").write_text("seed", encoding="utf-8")
         subprocess.run(["git", "add", "seed.txt"], cwd=str(repo), capture_output=True, check=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
         for name, content in files.items():
             target = repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
+            target.write_text(content, encoding="utf-8")
             subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
         return repo
 
@@ -1086,74 +1144,99 @@ class TestBashGitCommitWarning:
         ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
         return keyword in ctx
 
-    def test_warns_when_test_not_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        sid = "commit-warn"
-        self._write_state(tmp_path, sid, {"test_executed": False})
-        result = self._invoke("git commit -m 'test'", sid, state_dir)
-        assert result.returncode == 0
-        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
-        assert self._has_additional_context(result, "Auto-generated hook notice")
+    @pytest.mark.parametrize(
+        ("command", "test_executed", "state_absent", "staged_files", "worktree_files", "expect_warn"),
+        [
+            pytest.param("git commit -m 't'", False, False, None, None, True, id="test-not-executed"),
+            pytest.param("git commit -m 't'", False, True, None, None, True, id="state-file-absent"),
+            pytest.param("git commit -m 't'", True, False, None, None, False, id="test-executed"),
+            pytest.param("git status", False, False, None, None, False, id="non-commit-command"),
+            pytest.param(
+                "grep -n 'git commit' agent-toolkit/scripts/pretooluse.py",
+                False,
+                False,
+                None,
+                None,
+                False,
+                id="grep-single-quoted-pattern",
+            ),
+            pytest.param(
+                'grep -rn "git commit" .',
+                False,
+                False,
+                None,
+                None,
+                False,
+                id="grep-double-quoted-pattern",
+            ),
+            pytest.param(
+                "git commit -m 'docs'",
+                False,
+                False,
+                {"docs/a.md": "# a", "README.md": "# r"},
+                None,
+                False,
+                id="staged-docs-only",
+            ),
+            pytest.param(
+                "git commit -m 'mix'",
+                False,
+                False,
+                {"a.md": "# a", "b.py": "print(1)"},
+                None,
+                True,
+                id="staged-mixed",
+            ),
+            pytest.param(
+                "git commit -am 'update'",
+                False,
+                False,
+                None,
+                {"doc.md": "# v2"},
+                False,
+                id="commit-all-docs-worktree",
+            ),
+        ],
+    )
+    def test_commit_warning_scenarios(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        command: str,
+        test_executed: bool,
+        state_absent: bool,
+        staged_files: dict[str, str] | None,
+        worktree_files: dict[str, str] | None,
+        expect_warn: bool,
+    ) -> None:
+        """commit前テスト警告の入力条件とメッセージ契約を行列で検証する。"""
+        sid = re.sub(r"[^a-z]+", "-", command.lower()).strip("-")
+        cwd = ""
+        if staged_files is not None:
+            cwd = str(self._make_repo_with_staged(tmp_path, staged_files))
+        elif worktree_files is not None:
+            repo = tmp_path / "repo-a"
+            repo.mkdir()
+            _init_git_repo(repo)
+            _git_commit_initial(repo, {name: "# v1" for name in worktree_files})
+            for name, content in worktree_files.items():
+                (repo / name).write_text(content, encoding="utf-8")
+            cwd = str(repo)
 
-    def test_warns_when_state_file_absent(self, state_dir: dict[str, str]):
-        """状態ファイル不在時もテスト未実行として警告する。"""
-        result = self._invoke("git commit -m 'test'", "no-state", state_dir)
-        assert result.returncode == 0
-        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse]")
+        if not state_absent:
+            state: dict[str, object] = {"test_executed": test_executed}
+            if worktree_files is not None:
+                state["session_edited_files"] = list(worktree_files)
+            self._write_state(tmp_path, sid, state)
 
-    def test_skips_when_test_executed(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        sid = "commit-ok"
-        self._write_state(tmp_path, sid, {"test_executed": True})
-        result = self._invoke("git commit -m 'test'", sid, state_dir)
+        result = self._invoke(command, sid, state_dir, cwd=cwd)
         assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_non_commit_command_unaffected(self, state_dir: dict[str, str]):
-        result = self._invoke("git status", "x", state_dir)
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_grep_search_pattern_does_not_trigger(self, state_dir: dict[str, str]):
-        """`grep`の検索パターン文字列に`git commit`が含まれても実際のコミットではないため無反応。"""
-        result = self._invoke("grep -n 'git commit' agent-toolkit/scripts/pretooluse.py", "grep-pattern", state_dir)
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_grep_search_pattern_double_quoted_does_not_trigger(self, state_dir: dict[str, str]):
-        result = self._invoke('grep -rn "git commit" .', "grep-pattern-dq", state_dir)
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_skips_when_staged_is_docs_only(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """staged ファイルが全て .md ならテスト未実行でも警告しない。"""
-        repo = self._make_repo_with_staged(tmp_path, {"docs/a.md": "# a", "README.md": "# r"})
-        result = self._invoke("git commit -m 'docs'", "docs-only", state_dir, cwd=str(repo))
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_warns_when_staged_mixes_non_md(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """staged に .md 以外が混ざる場合は従来どおり警告する。"""
-        repo = self._make_repo_with_staged(tmp_path, {"a.md": "# a", "b.py": "print(1)"})
-        result = self._invoke("git commit -m 'mix'", "mix", state_dir, cwd=str(repo))
-        assert result.returncode == 0
-        assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse]")
-
-    def test_docs_only_with_commit_all_uses_worktree(self, state_dir: dict[str, str], tmp_path: pathlib.Path):
-        """git commit -a の場合は作業ツリー側の変更も対象に含めて判定する。"""
-        repo = tmp_path / "repo-a"
-        repo.mkdir()
-        subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "t@t"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "t"], cwd=str(repo), capture_output=True, check=True)
-        (repo / "doc.md").write_text("# v1")
-        subprocess.run(["git", "add", "doc.md"], cwd=str(repo), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
-        # tracked .mdを作業ツリー上でのみ変更（indexには反映しない）
-        (repo / "doc.md").write_text("# v2")
-        # 一括ステージ警告が別途発火しないようsession_edited_filesに含める。
-        _write_session_state(tmp_path, "commit-all", {"session_edited_files": ["doc.md"]})
-        result = self._invoke("git commit -am 'update'", "commit-all", state_dir, cwd=str(repo))
-        assert result.returncode == 0
-        assert result.stdout == ""
+        if expect_warn:
+            assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
+            assert self._has_additional_context(result, "committing without running tests")
+            assert self._has_additional_context(result, "Auto-generated hook notice")
+        else:
+            assert result.stdout == ""
 
 
 class TestBashGitLogDecorate:
@@ -2964,6 +3047,103 @@ class TestAskUserQuestionScopeEscalationCheck:
         assert result.returncode == 0
 
 
+def _build_doc_edit_tool_input(
+    tool_name: str,
+    file_path: pathlib.Path,
+    new_content: str,
+    old_string_param: str | None = None,
+    prior_edits: tuple[dict[str, str], ...] = (),
+) -> dict:
+    """文書編集ツール別の入力形式を同一シナリオから組み立てる。"""
+    if tool_name == "Write":
+        return {"file_path": str(file_path), "content": new_content}
+    if tool_name == "Edit":
+        return {
+            "file_path": str(file_path),
+            "old_string": old_string_param or "",
+            "new_string": new_content,
+        }
+    if tool_name == "MultiEdit":
+        return {
+            "file_path": str(file_path),
+            "edits": [
+                *prior_edits,
+                {"old_string": old_string_param or "", "new_string": new_content},
+            ],
+        }
+    raise AssertionError(f"未対応の文書編集ツール: {tool_name}")
+
+
+def _prepare_doc_edit_scenario(
+    tmp_path: pathlib.Path,
+    tool_name: str,
+    scenario: str,
+    text: str,
+) -> tuple[dict, bool]:
+    """scope-escalation検出シナリオの既存内容とツール入力を準備する。"""
+    target = tmp_path / "agent-toolkit" / "skills" / "x" / "SKILL.md"
+    prior_edits: tuple[dict[str, str], ...] = ()
+    if scenario == "target-doc":
+        old_content = "a\nc\n"
+        old_string = "c"
+        new_content = f"c {text}"
+        if tool_name == "Write":
+            new_content = f"# header\n\n{text}\n"
+        elif tool_name == "MultiEdit":
+            prior_edits = ({"old_string": "a", "new_string": "b"},)
+        expect_warning = True
+    elif scenario == "unreadable-existing-file":
+        old_content = None
+        old_string = "" if tool_name == "MultiEdit" else "old"
+        new_content = text
+        expect_warning = True
+    elif scenario == "preserved-existing-phrase":
+        old_string = f"既存記述。{text}。末尾A"
+        old_content = f"{old_string}\n"
+        new_content = f"既存記述。{text}。末尾B"
+        expect_warning = tool_name == "Write"
+    elif scenario == "new-phrase-addition":
+        old_string = "既存記述のみ"
+        old_content = f"{old_string}\n"
+        new_content = f"{old_string}。{text}"
+        expect_warning = True
+    else:
+        raise AssertionError(f"未対応の文書編集シナリオ: {scenario}")
+
+    if old_content is not None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(old_content, encoding="utf-8")
+    return (
+        _build_doc_edit_tool_input(
+            tool_name,
+            target,
+            new_content,
+            old_string_param=old_string,
+            prior_edits=prior_edits,
+        ),
+        expect_warning,
+    )
+
+
+_DOC_EDIT_SCENARIOS = [
+    *(pytest.param("target-doc", text, category, id=f"target-doc-{category}") for text, category in _SCOPE_ESCALATION_INPUTS),
+    pytest.param(
+        "unreadable-existing-file",
+        _SCOPE_ESCALATION_INPUTS[0][0],
+        _SCOPE_ESCALATION_INPUTS[0][1],
+        id="unreadable-existing-file",
+    ),
+    *(
+        pytest.param("preserved-existing-phrase", text, category, id=f"preserved-{category}")
+        for text, category in _SCOPE_ESCALATION_INPUTS
+    ),
+    *(
+        pytest.param("new-phrase-addition", text, category, id=f"addition-{category}")
+        for text, category in _SCOPE_ESCALATION_INPUTS
+    ),
+]
+
+
 class TestScopeEscalationInDocEditCheck:
     """対象ドキュメント編集時のscope-escalationフレーズ転記検出警告（block降格済み）。
 
@@ -2974,59 +3154,23 @@ class TestScopeEscalationInDocEditCheck:
     ブロックへ集約する）。
     """
 
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_write_blocks_on_target_doc(self, text: str, category: str):
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {
-                    "file_path": "agent-toolkit/rules/01-agent.md",
-                    "content": f"# header\n\n{text}\n",
-                },
-            }
-        )
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
+    @pytest.mark.parametrize(("scenario", "text", "category"), _DOC_EDIT_SCENARIOS)
+    def test_doc_edit_scenarios(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        scenario: str,
+        text: str,
+        category: str,
+    ) -> None:
+        """4種の文書編集シナリオをWrite、Edit、MultiEditで共通検証する。"""
+        tool_input, expect_warning = _prepare_doc_edit_scenario(tmp_path, tool_name, scenario, text)
+        result = _run({"tool_name": tool_name, "tool_input": tool_input})
         assert result.returncode == 0
-        assert "scope-escalation" in result.stderr
-        assert category in result.stderr
-        # 検出契機の特定のため、hookブロックメッセージへマッチ文言を含める
-        # （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節の例外規定）
-        assert "matched:" in result.stderr
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/agent-standards/SKILL.md", "old\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "old",
-                    "new_string": f"old {text}",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-        assert "matched:" in result.stderr
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_blocks_on_target_doc(self, text: str, category: str, tmp_path: pathlib.Path):
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", "a\nc\n")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {"old_string": "a", "new_string": "b"},
-                        {"old_string": "c", "new_string": f"c {text}"},
-                    ],
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-        assert "matched:" in result.stderr
+        assert ("scope-escalation" in result.stderr) is expect_warning
+        assert (category in result.stderr) is expect_warning
+        assert ("matched:" in result.stderr) is expect_warning
 
     def test_multilevel_skill_target_blocks(self):
         """任意階層の`agent-toolkit/skills/**/SKILL.md`を対象に含む。"""
@@ -3065,56 +3209,6 @@ class TestScopeEscalationInDocEditCheck:
             }
         )
         assert result.returncode == 0
-
-    def test_edit_blocks_on_unreadable_existing_file_fallback(self, tmp_path: pathlib.Path):
-        """`file_path`の既存ファイル読込失敗時（OSError）、`empty_base_fallback`で`new_string`単独を検査する。
-
-        対象パスは存在しないため`pathlib.Path.read_text`がOSError（`FileNotFoundError`）を送出し、
-        `pre_content`は空文字列にフォールバックする。`empty_base_fallback=True`のため
-        `post_content`は`new_string`単独となり、フレーズ検出でblockされる。
-        """
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        category = _SCOPE_ESCALATION_INPUTS[0][1]
-        target = tmp_path / "agent-toolkit/skills/agent-standards/SKILL.md"
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "old",
-                    "new_string": text,
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-        assert "matched:" in result.stderr
-
-    def test_multiedit_blocks_on_unreadable_existing_file_fallback(self, tmp_path: pathlib.Path):
-        """MultiEditでも既存ファイル読込失敗時（OSError）は`current`を空文字列にフォールバックする。
-
-        対象パスは存在しないため`pathlib.Path.read_text`がOSError（`FileNotFoundError`）を送出し、
-        `current`は空文字列にフォールバックする。先頭editの`old_string`を空文字列にすることで
-        `_apply_single_edit`の通常置換経路（`empty_base_fallback=False`）でも
-        `new_string`が空の`current`へそのまま挿入され、フレーズ検出でblockされる。
-        """
-        text = _SCOPE_ESCALATION_INPUTS[0][0]
-        category = _SCOPE_ESCALATION_INPUTS[0][1]
-        target = tmp_path / "agent-toolkit/skills/x/SKILL.md"
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {"old_string": "", "new_string": text},
-                    ],
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-        assert "matched:" in result.stderr
 
     @pytest.mark.parametrize(
         "file_path",
@@ -3230,111 +3324,6 @@ class TestScopeEscalationInDocEditCheck:
         assert "agent-toolkit/rules/01-agent.md" in result.stderr
         assert "01-01-agent.md" not in result.stderr
         assert "完遂と先送り" in result.stderr
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_preserves_existing_phrase_in_unchanged_region(
-        self,
-        text: str,
-        category: str,
-        tmp_path: pathlib.Path,
-    ):
-        """Edit時、`old_string`と`new_string`双方に同一フレーズが既存文字列として保持される場合は通過する。
-
-        フレーズ出現回数の増加比較方式ではold=new同数のため検出されない。
-        旧仕様（new_string全文検査）では検出ブロックされる回帰ケース。
-        """
-        del category  # 未使用
-        old = f"既存記述。{text}。末尾A"
-        new = f"既存記述。{text}。末尾B"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", f"{old}\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": old,
-                    "new_string": new,
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_preserves_existing_phrase_in_unchanged_region(
-        self,
-        text: str,
-        category: str,
-        tmp_path: pathlib.Path,
-    ):
-        """MultiEditでも既存文字列の保持部分のフレーズは検査対象外として通過する。"""
-        del category  # 未使用
-        old = f"前文。{text}。末尾A"
-        new = f"前文。{text}。末尾B"
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", f"{old}\n")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {
-                            "old_string": old,
-                            "new_string": new,
-                        }
-                    ],
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_edit_detects_phrase_addition_in_new_string(self, text: str, category: str, tmp_path: pathlib.Path):
-        """Edit時に純粋追加された新規フレーズはブロックする。
-
-        既存に0件、追加で1件出現する純粋追加パターンの陽性テスト。
-        """
-        target = _write_tmp_file(tmp_path, "agent-toolkit/rules/01-agent.md", "既存記述のみ\n")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "既存記述のみ",
-                    "new_string": f"既存記述のみ。{text}",
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_multiedit_detects_phrase_addition_in_new_string(
-        self,
-        text: str,
-        category: str,
-        tmp_path: pathlib.Path,
-    ):
-        """MultiEdit時に純粋追加された新規フレーズはブロックする。
-
-        edits内のold_stringにフレーズなし・new_stringにフレーズありの陽性テスト。
-        """
-        target = _write_tmp_file(tmp_path, "agent-toolkit/skills/x/SKILL.md", "既存記述のみ\n")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {
-                            "old_string": "既存記述のみ",
-                            "new_string": f"既存記述のみ。{text}",
-                        }
-                    ],
-                },
-            }
-        )
-        assert result.returncode == 0
-        assert category in result.stderr
 
 
 class TestScopeEscalationPlanFileFenceExclusion:
@@ -3604,43 +3593,41 @@ def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
 class TestProcess7CompletionCheck:
     """ExitPlanMode / `plan-impl-executor`起動時のplan-file-creatorの整合性チェック完了未達ブロック。"""
 
-    def test_all_flags_set_passes(self, tmp_path: pathlib.Path):
-        """必須フラグが全て真の場合はExitPlanModeを通過する。"""
-        sid = "process7-all-set"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: True for flag in _PROCESS7_FLAGS})
+    @pytest.mark.parametrize(
+        ("missing_flags", "expect_block"),
+        [
+            pytest.param(frozenset(), False, id="all-required-flags-set"),
+            *(pytest.param(frozenset({flag}), True, id=f"missing-{flag}") for flag in _PROCESS7_FLAGS),
+            pytest.param(
+                frozenset({"plan_reviewer_invoked"}),
+                False,
+                id="non-required-plan-reviewer-flag-missing",
+            ),
+        ],
+    )
+    def test_flag_combination_matrix(
+        self,
+        tmp_path: pathlib.Path,
+        missing_flags: frozenset[str],
+        expect_block: bool,
+    ) -> None:
+        """必須フラグと対象外フラグの欠落判定を行列で検証する。"""
+        sid = "process7-flags-" + ("-".join(sorted(missing_flags)) or "all-set")
+        state = {
+            "plan_mode_skill_invoked": True,
+            "plan_reviewer_invoked": "plan_reviewer_invoked" not in missing_flags,
+        }
+        state.update({flag: flag not in missing_flags for flag in _PROCESS7_FLAGS})
         _write_session_state(tmp_path, sid, state)
         result = _run(
             {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
             env_overrides=_process7_env(tmp_path),
         )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize("missing_flag", _PROCESS7_FLAGS)
-    def test_missing_flag_blocks(self, tmp_path: pathlib.Path, missing_flag: str):
-        """必須フラグのいずれか1つでも偽の場合はExitPlanModeをブロックする。"""
-        sid = f"process7-missing-{missing_flag}"
-        state = {"plan_mode_skill_invoked": True}
-        state.update({flag: (flag != missing_flag) for flag in _PROCESS7_FLAGS})
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 2
-        assert missing_flag in result.stderr
-        assert "plan-file-creator.md" in result.stderr
-
-    def test_missing_plan_reviewer_flag_does_not_block(self, tmp_path: pathlib.Path):
-        """`plan_reviewer_invoked`は本ゲートの必須対象外のため、codex_review_invokedのみでも通過する。"""
-        sid = "process7-plan-reviewer-not-required"
-        state = {"plan_mode_skill_invoked": True, "codex_review_invoked": True, "plan_reviewer_invoked": False}
-        _write_session_state(tmp_path, sid, state)
-        result = _run(
-            {"tool_name": "ExitPlanMode", "tool_input": {}, "session_id": sid, "permission_mode": "plan"},
-            env_overrides=_process7_env(tmp_path),
-        )
-        assert result.returncode == 0
+        assert result.returncode == (2 if expect_block else 0)
+        if expect_block:
+            for missing_flag in missing_flags & frozenset(_PROCESS7_FLAGS):
+                assert missing_flag in result.stderr
+            assert "plan-file-creator.md" in result.stderr
 
     def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
         """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件を説明する。"""
@@ -5891,12 +5878,75 @@ class TestFrontmatterSyncNoteBodyExists:
         target.parent.mkdir(parents=True, exist_ok=True)
         return target
 
-    def test_existing_reference_does_not_warn(self, tmp_path: pathlib.Path):
-        """同期注記が実在するファイルパス・節名を指す場合はwarnしない。"""
-        target = self._target(tmp_path)
-        sibling = target.parent / "other-agent.md"
-        sibling.write_text("# other-agent\n\n## 実在節\n\n本文。\n", encoding="utf-8")
-        content = "---\nname: test-agent\n# other-agent.mdの「実在節」節と意図的に重複させている\n---\n\n# test-agent\n"
+    @classmethod
+    def _prepare_scenario(cls, tmp_path: pathlib.Path, setup: str) -> pathlib.Path:
+        target = cls._target(tmp_path)
+        if setup.startswith("git-"):
+            (tmp_path / ".git").mkdir()
+        related_files = {
+            "sibling": ("other-agent.md", "# other-agent\n\n## 実在節\n\n本文。\n"),
+            "missing-section": ("other-agent2.md", "# other-agent2\n\n本文のみ。\n"),
+            "multiline": ("other-multiline-agent.md", "# other-multiline-agent\n\n## 実在複数行節\n\n本文。\n"),
+            "git-sibling": ("sibling-agent.md", "# sibling-agent\n\n## 実在兄弟節\n\n本文。\n"),
+            "git-consecutive-ok": ("external-agent.md", "# external-agent\n\n## 外部節\n\n本文。\n"),
+            "git-consecutive-missing": ("external-agent2.md", "# external-agent2\n\n## 外部節2\n\n本文。\n"),
+        }
+        related = related_files.get(setup)
+        if related is not None:
+            name, body = related
+            (target.parent / name).write_text(body, encoding="utf-8")
+        if setup == "git-neighbor":
+            rules_dir = tmp_path / "agent-toolkit" / "rules"
+            rules_dir.mkdir(parents=True)
+            (rules_dir / "01-agent.md").write_text(
+                "# 01-agent\n\n## 品質最優先\n\n本文。\n",
+                encoding="utf-8",
+            )
+        return target
+
+    @pytest.mark.parametrize(
+        ("setup", "content"),
+        [
+            pytest.param(
+                "sibling",
+                "---\nname: test-agent\n# other-agent.mdの「実在節」節と意図的に重複させている\n---\n\n# test-agent\n",
+                id="same-directory-reference",
+            ),
+            pytest.param("none", "# test-agent\n\nfrontmatterなし本文。\n", id="no-frontmatter"),
+            pytest.param(
+                "multiline",
+                "---\nname: test-agent\n# 同期注記: 「実在複数行節」節の内容は\n"
+                "# other-multiline-agent.md\n# と意図的に重複する。\n---\n\n# test-agent\n",
+                id="multiline-reference",
+            ),
+            pytest.param(
+                "git-sibling",
+                "---\nname: test-agent\n# sibling-agent.mdの「実在兄弟節」節と意図的に重複させている\n---\n\n# test-agent\n",
+                id="git-ancestor-sibling",
+            ),
+            pytest.param(
+                "git-neighbor",
+                "---\nname: test-agent\n# 01-agent.mdの「品質最優先」節と意図的に重複させている\n---\n\n# test-agent\n",
+                id="git-ancestor-neighbor",
+            ),
+            pytest.param(
+                "git-consecutive-ok",
+                "---\nname: test-agent\n"
+                "# external-agent.mdの「外部節」節と意図的に重複させている\n"
+                "# 「## 自己節」節はこのファイル自身の内容と意図的に同期する\n"
+                "---\n\n# test-agent\n\n## 自己節\n\n本文。\n",
+                id="consecutive-notes-separated",
+            ),
+        ],
+    )
+    def test_existing_reference_scenarios_do_not_warn(
+        self,
+        tmp_path: pathlib.Path,
+        setup: str,
+        content: str,
+    ) -> None:
+        """実在参照と対象外形式ではfrontmatter同期注記警告を返さない。"""
+        target = self._prepare_scenario(tmp_path, setup)
         result = _run(
             {
                 "tool_name": "Write",
@@ -5908,10 +5958,67 @@ class TestFrontmatterSyncNoteBodyExists:
         assert result.returncode == 0
         assert "frontmatter sync note" not in result.stderr
 
-    def test_nonexistent_file_path_warns(self, tmp_path: pathlib.Path):
-        """同期注記が実在しないファイルパスを指す場合はwarnする。"""
-        target = self._target(tmp_path)
-        content = "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
+    @pytest.mark.parametrize(
+        ("setup", "content", "expected_message", "expected_identifier"),
+        [
+            pytest.param(
+                "none",
+                "---\nname: test-agent\n# nonexistent-agent.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n",
+                "referenced file path does not exist",
+                "nonexistent-agent.md",
+                id="missing-file",
+            ),
+            pytest.param(
+                "missing-section",
+                "---\nname: test-agent\n# other-agent2.mdの「存在しない節」節と意図的に重複させている\n---\n\n# test-agent\n",
+                "section name does not exist",
+                "存在しない節",
+                id="missing-section",
+            ),
+            pytest.param(
+                "none",
+                "---\nname: test-agent\n# 同期注記: nonexistent-prefix.mdの「何か」節\n---\n\n# test-agent\n",
+                "referenced file path does not exist",
+                "nonexistent-prefix.md",
+                id="prefix-form-missing",
+            ),
+            pytest.param(
+                "none",
+                "---\nname: test-agent\n# 同期注記: 「何か」節の内容は\n"
+                "# nonexistent-multiline.md\n# と意図的に重複する。\n---\n\n# test-agent\n",
+                "referenced file path does not exist",
+                "nonexistent-multiline.md",
+                id="multiline-missing",
+            ),
+            pytest.param(
+                "git-missing",
+                "---\nname: test-agent\n# never-exists.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n",
+                "referenced file path does not exist",
+                "never-exists.md",
+                id="git-ancestor-missing",
+            ),
+            pytest.param(
+                "git-consecutive-missing",
+                "---\nname: test-agent\n"
+                "# external-agent2.mdの「外部節2」節と意図的に重複させている\n"
+                "# 「## 存在しない自己節」節はこのファイル自身の内容と意図的に同期する\n"
+                "---\n\n# test-agent\n",
+                "section name does not exist",
+                "存在しない自己節",
+                id="consecutive-note-mismatch",
+            ),
+        ],
+    )
+    def test_missing_reference_scenarios_warn(
+        self,
+        tmp_path: pathlib.Path,
+        setup: str,
+        content: str,
+        expected_message: str,
+        expected_identifier: str,
+    ) -> None:
+        """不在パスまたは不在節を参照する同期注記では警告を返す。"""
+        target = self._prepare_scenario(tmp_path, setup)
         result = _run(
             {
                 "tool_name": "Write",
@@ -5921,217 +6028,8 @@ class TestFrontmatterSyncNoteBodyExists:
             },
         )
         assert result.returncode == 0
-        assert "referenced file path does not exist" in result.stderr
-        assert "nonexistent-agent.md" in result.stderr
-
-    def test_nonexistent_section_warns(self, tmp_path: pathlib.Path):
-        """同期注記が実在するファイルパスを指すが節名が本体に存在しない場合はwarnする。"""
-        target = self._target(tmp_path)
-        sibling = target.parent / "other-agent2.md"
-        sibling.write_text("# other-agent2\n\n本文のみ。\n", encoding="utf-8")
-        content = "---\nname: test-agent\n# other-agent2.mdの「存在しない節」節と意図的に重複させている\n---\n\n# test-agent\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-missing-section",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "section name does not exist" in result.stderr
-        assert "存在しない節" in result.stderr
-
-    def test_no_frontmatter_is_out_of_scope(self, tmp_path: pathlib.Path):
-        """frontmatter未使用ファイルは検査対象外。"""
-        target = self._target(tmp_path)
-        content = "# test-agent\n\nfrontmatterなし本文。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-no-frontmatter",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
-
-    def test_sync_note_prefix_form_is_detected(self, tmp_path: pathlib.Path):
-        """`# 同期注記:`形式のコメント行も検出対象に含まれる。"""
-        target = self._target(tmp_path)
-        content = "---\nname: test-agent\n# 同期注記: nonexistent-prefix.mdの「何か」節\n---\n\n# test-agent\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-prefix-form",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "referenced file path does not exist" in result.stderr
-        assert "nonexistent-prefix.md" in result.stderr
-
-    def test_multiline_note_with_existing_reference_does_not_warn(self, tmp_path: pathlib.Path):
-        """トリガー語・参照パス・節名が別々の行に分かれる複数行形式でも、実在参照ならwarnしない。"""
-        target = self._target(tmp_path)
-        sibling = target.parent / "other-multiline-agent.md"
-        sibling.write_text("# other-multiline-agent\n\n## 実在複数行節\n\n本文。\n", encoding="utf-8")
-        content = (
-            "---\nname: test-agent\n"
-            "# 同期注記: 「実在複数行節」節の内容は\n"
-            "# other-multiline-agent.md\n"
-            "# と意図的に重複する。\n"
-            "---\n\n# test-agent\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-multiline-ok",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
-
-    def test_multiline_note_with_nonexistent_reference_warns(self, tmp_path: pathlib.Path):
-        """参照パスがトリガー語と別行にある複数行形式で、パスが実在しない場合はwarnする。
-
-        トリガー行単体しか走査しない実装では参照パスが別行にあるため抽出漏れとなり、
-        警告が発火しない状態（陳腐化の素通り）が発生していた。本テストはその回帰を検出する。
-        """
-        target = self._target(tmp_path)
-        content = (
-            "---\nname: test-agent\n"
-            "# 同期注記: 「何か」節の内容は\n"
-            "# nonexistent-multiline.md\n"
-            "# と意図的に重複する。\n"
-            "---\n\n# test-agent\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-multiline-missing",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "referenced file path does not exist" in result.stderr
-        assert "nonexistent-multiline.md" in result.stderr
-
-    def test_git_ancestor_sibling_reference_resolves(self, tmp_path: pathlib.Path) -> None:
-        """`.git`祖先が存在しても同一ディレクトリの兄弟ファイル参照はwarnしない（指摘1回帰防止）。
-
-        修正前は`.git`祖先発見時点でリポジトリルート直下のみ実在確認し、
-        同一ディレクトリの裸ファイル名参照（`plan-impl-executor.md`実運用形式）が
-        不在判定されフォールバックしない不具合があった。
-        """
-        (tmp_path / ".git").mkdir()
-        target = self._target(tmp_path)
-        sibling = target.parent / "sibling-agent.md"
-        sibling.write_text("# sibling-agent\n\n## 実在兄弟節\n\n本文。\n", encoding="utf-8")
-        content = "---\nname: test-agent\n# sibling-agent.mdの「実在兄弟節」節と意図的に重複させている\n---\n\n# test-agent\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-git-sibling",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
-
-    def test_git_ancestor_neighbor_directory_reference_resolves(self, tmp_path: pathlib.Path) -> None:
-        """`.git`祖先が存在する場合、近隣ディレクトリ（agent-toolkit/rules等）配下の裸ファイル名参照も解決する。"""
-        (tmp_path / ".git").mkdir()
-        rules_dir = tmp_path / "agent-toolkit" / "rules"
-        rules_dir.mkdir(parents=True)
-        neighbor = rules_dir / "01-agent.md"
-        neighbor.write_text("# 01-agent\n\n## 品質最優先\n\n本文。\n", encoding="utf-8")
-        target = self._target(tmp_path)
-        content = "---\nname: test-agent\n# 01-agent.mdの「品質最優先」節と意図的に重複させている\n---\n\n# test-agent\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-git-neighbor",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
-
-    def test_git_ancestor_still_warns_when_reference_truly_missing(self, tmp_path: pathlib.Path) -> None:
-        """`.git`祖先が存在してもフォールバック探索で見つからない参照は依然としてwarnする。"""
-        (tmp_path / ".git").mkdir()
-        target = self._target(tmp_path)
-        content = "---\nname: test-agent\n# never-exists.mdの「何か」節と意図的に重複させている\n---\n\n# test-agent\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-git-missing",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "referenced file path does not exist" in result.stderr
-        assert "never-exists.md" in result.stderr
-
-    def test_consecutive_independent_sync_notes_do_not_cross_contaminate(self, tmp_path: pathlib.Path) -> None:
-        """空行を置かず連続する独立した同期注記宣言は別々の注記として分離される（指摘2回帰防止）。
-
-        実運用（`plan-impl-executor.md`）と同様、1つ目の注記が外部ファイルの節を参照し、
-        2つ目の注記が自ファイルの節を参照する形式でも、両方とも正しく解決されてwarnしない。
-        """
-        (tmp_path / ".git").mkdir()
-        target = self._target(tmp_path)
-        sibling = target.parent / "external-agent.md"
-        sibling.write_text("# external-agent\n\n## 外部節\n\n本文。\n", encoding="utf-8")
-        content = (
-            "---\nname: test-agent\n"
-            "# external-agent.mdの「外部節」節と意図的に重複させている\n"
-            "# 「## 自己節」節はこのファイル自身の内容と意図的に同期する\n"
-            "---\n\n# test-agent\n\n## 自己節\n\n本文。\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-no-cross-contaminate",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "frontmatter sync note" not in result.stderr
-
-    def test_consecutive_independent_sync_notes_still_detect_real_mismatch(self, tmp_path: pathlib.Path) -> None:
-        """独立した同期注記宣言が連続していても、個別の注記の節名不一致は正しく検出される。"""
-        (tmp_path / ".git").mkdir()
-        target = self._target(tmp_path)
-        sibling = target.parent / "external-agent2.md"
-        sibling.write_text("# external-agent2\n\n## 外部節2\n\n本文。\n", encoding="utf-8")
-        content = (
-            "---\nname: test-agent\n"
-            "# external-agent2.mdの「外部節2」節と意図的に重複させている\n"
-            "# 「## 存在しない自己節」節はこのファイル自身の内容と意図的に同期する\n"
-            "---\n\n# test-agent\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "fm-sync-cross-contaminate-detect",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "section name does not exist" in result.stderr
-        assert "存在しない自己節" in result.stderr
+        assert expected_message in result.stderr
+        assert expected_identifier in result.stderr
 
 
 class TestNamedSubagentSendMessageRegistered:
