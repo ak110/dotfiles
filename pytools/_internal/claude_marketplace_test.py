@@ -388,6 +388,65 @@ class TestRefreshMarketplace:
         assert _claude_marketplace.refresh_marketplace() is False
 
 
+# --- TestEnsureRepairRefreshFullCycle ---
+
+
+class TestEnsureRepairRefreshFullCycle:
+    """旧GitHub型エントリの修復から更新までの一連の処理を検証する。"""
+
+    def test_legacy_entry_repaired_then_refreshed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
+        dotfiles_root: pathlib.Path,
+    ):
+        """ensureで旧形式を修復した後にrefreshできることを確認する。"""
+        known, _settings = marketplace_paths
+        write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
+            calls.append(cmd)
+            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+                write_known_entry(
+                    known,
+                    {"source": {"source": "directory", "path": str(dotfiles_root)}},
+                )
+            return _FakeResult(returncode=0)
+
+        monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+
+        assert _claude_marketplace.ensure_marketplace() is True
+        assert [
+            "claude",
+            "plugin",
+            "marketplace",
+            "remove",
+            _claude_common.MARKETPLACE_NAME,
+        ] in calls
+        assert [
+            "claude",
+            "plugin",
+            "marketplace",
+            "add",
+            str(dotfiles_root),
+            "--scope=user",
+        ] in calls
+
+        calls.clear()
+
+        assert _claude_marketplace.refresh_marketplace() is True
+        assert calls == [
+            [
+                "claude",
+                "plugin",
+                "marketplace",
+                "update",
+                _claude_common.MARKETPLACE_NAME,
+            ]
+        ]
+
+
 # --- TestEnsureMarketplace ---
 
 
