@@ -19,6 +19,7 @@ def _make_subprocess_fake(
     """run_subprocess の stub を返す。
 
     calls に呼び出し履歴を記録し、responses のキーが cmd 文字列に部分一致するエントリの戻り値を返す。
+    `--property=ActiveState` を含む状態照会には常駐状態を返す。
     一致しない場合は returncode=0 の空 CompletedProcess を返す。
     timeouts を渡した場合は呼び出しごとの timeout 引数もそこへ記録する。
     """
@@ -35,6 +36,8 @@ def _make_subprocess_fake(
         if timeouts is not None:
             timeouts.append(timeout)
         cmd_key = " ".join(cmd)
+        if "--property=ActiveState" in cmd:
+            return _ok(stdout="ActiveState=active\nNRestarts=0\n")
         for pattern, result in responses.items():
             if pattern in cmd_key:
                 return result
@@ -45,6 +48,13 @@ def _make_subprocess_fake(
 
 def _ok(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
+
+
+@pytest.fixture(autouse=True)
+def _no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """常駐確認の待機時間を無効化する。"""
+    for name in ("_SETTLE_SECONDS", "_POLL_SECONDS", "_CONFIRM_SECONDS"):
+        monkeypatch.setattr(setup_plans_viewer_linux.systemd_user_unit, name, 0.0)
 
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

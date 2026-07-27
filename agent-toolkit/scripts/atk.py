@@ -388,12 +388,16 @@ def _build_parser() -> argparse.ArgumentParser:
     mq = top.add_parser("mq", help="メッセージキュー操作（フィードバック・TBD）")
     _build_mq_parser(mq)
     serve = top.add_parser("serve", help="フィードバック管理Web UIを起動する")
-    serve.add_argument("--host", default=None, help="待受ホスト（既定値は設定から解決する）")
+    serve.add_argument(
+        "--host",
+        default=None,
+        help="待受ホスト（環境変数 AGENT_TOOLKIT_SERVE_HOST、設定ファイルからも参照）",
+    )
     serve.add_argument(
         "--port",
         default=None,
         type=_port_type,
-        help="待受ポート（既定値は設定から解決する）",
+        help="待受ポート（環境変数 AGENT_TOOLKIT_SERVE_PORT、設定ファイルからも参照）",
     )
     config = top.add_parser("config", help="XDG関連パス・codexモデル判定設定を確認・変更する")
     _config_cmd.build_parser(config)

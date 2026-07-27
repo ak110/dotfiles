@@ -1,15 +1,19 @@
 """`atk serve`の設定を解決する。"""
 
 import dataclasses
+import logging
 import os
 import pathlib
 import sys
 import tomllib
-import warnings
 
 import platformdirs
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_HOST = "127.0.0.1"
+# IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、
+# Windowsローカル実行時に既定値が衝突する。Windowsのみ別値へずらして回避する。
 LINUX_DEFAULT_PORT = 28766
 WINDOWS_DEFAULT_PORT = 28876
 
@@ -28,7 +32,15 @@ def default_port(platform: str | None = None) -> int:
 
 
 def default_config_path() -> pathlib.Path:
-    """既定のTOML設定パスを返す。"""
+    r"""既定のTOML設定パスを返す。
+
+    Linuxでは`~/.config/agent-toolkit/serve.toml`、
+    Windowsでは`%LOCALAPPDATA%\agent-toolkit\serve.toml`になる。
+
+    `appauthor=False`を渡すのは、未指定時にWindowsで`appname`が
+    appauthorとしても付与され`%LOCALAPPDATA%\agent-toolkit\agent-toolkit\...`に
+    なる挙動を回避するため。
+    """
     return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False)) / "serve.toml"
 
 
@@ -50,7 +62,7 @@ def resolve_config(
         loaded = {}
     unknown = set(loaded) - {"host", "port"}
     if unknown:
-        warnings.warn(f"未知の設定キーを無視します: {', '.join(sorted(unknown))}", stacklevel=2)
+        logger.warning("設定ファイルの未知キーを無視します: %s (%s)", ", ".join(sorted(unknown)), config_path)
     values.update({key: loaded[key] for key in ("host", "port") if key in loaded})
     if "AGENT_TOOLKIT_SERVE_HOST" in env:
         values["host"] = env["AGENT_TOOLKIT_SERVE_HOST"]

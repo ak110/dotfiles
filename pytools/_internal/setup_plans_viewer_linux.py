@@ -50,6 +50,9 @@ def run() -> bool:
     Returns:
         セットアップまたは restart を 1 つでも実施した場合 True、ホスト不一致や非 Linux で
         何もしなかった場合 False。
+
+    Raises:
+        systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
     """
     if sys.platform != "linux":
         return False
@@ -63,17 +66,13 @@ def run() -> bool:
         logger.info(log_format.format_status("plans-viewer", f"実行ファイルが未配置: {exe}"))
         return False
 
-    try:
-        return systemd_user_unit.setup(
-            unit_path=_unit_path(),
-            executable_path=exe,
-            unit_content=_UNIT_CONTENT,
-            log_tag="plans-viewer",
-            service_name=_SERVICE_UNIT,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.info(log_format.format_status("plans-viewer", f"自動起動セットアップに失敗: {e}"))
-        return False
+    return systemd_user_unit.setup(
+        unit_path=_unit_path(),
+        executable_path=exe,
+        unit_content=_UNIT_CONTENT,
+        log_tag="plans-viewer",
+        service_name=_SERVICE_UNIT,
+    )
 
 
 def _unit_path() -> pathlib.Path:

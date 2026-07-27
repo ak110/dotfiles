@@ -3,10 +3,24 @@
 import getpass
 import logging
 import pathlib
+import time
 
 from pytools._internal import claude_common, log_format
 
 logger = logging.getLogger(__name__)
+
+# restart直後はActiveStateがactivatingのため、初回観測前に待機する。
+_SETTLE_SECONDS = 2.0
+_POLL_SECONDS = 1.0
+_ACTIVE_TIMEOUT_SECONDS = 30.0
+# unit本文のRestartSecより長い間隔を空けて2回目を観測する。
+# 起動直後に異常終了して再起動を繰り返すサービスは、1回目にactiveを観測できても
+# 2回目までにNRestartsが増えるため、2回の観測で常駐可否を判定できる。
+_CONFIRM_SECONDS = 6.0
+
+
+class SetupError(RuntimeError):
+    """サービスが常駐状態に至らなかったことを表す。"""
 
 
 def setup(
@@ -17,7 +31,15 @@ def setup(
     log_tag: str,
     service_name: str,
 ) -> bool:
-    """unitを配置し、サービスを有効化して再起動する。"""
+    """unitを配置し、サービスを有効化して再起動する。
+
+    Returns:
+        実行ファイル不在で何もしなかった場合False、unit配置とrestartを実施した場合True。
+
+    Raises:
+        SetupError: systemctl呼び出しが失敗した場合、
+            又はrestart後にサービスが常駐状態へ至らない場合に送出する。
+    """
     if not executable_path.is_file():
         logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
         return False
@@ -39,11 +61,14 @@ def setup(
             (["systemctl", "--user", "restart", service_name], 30.0, "restart"),
         ]
     )
+    # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
+    # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
     for command, timeout, label in commands:
         result = claude_common.run_subprocess(command, timeout=timeout, tag=log_tag)
         if result is None or result.returncode != 0:
             return_code = result.returncode if result is not None else "N/A"
-            logger.warning(log_format.format_status(log_tag, f"{label}: 失敗 (exit {return_code})"))
+            raise SetupError(f"{service_name}の{label}に失敗しました (exit {return_code})")
+    _wait_until_running(service_name=service_name, log_tag=log_tag)
     user = getpass.getuser()
     result = claude_common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
@@ -58,3 +83,48 @@ def setup(
             )
         )
     return True
+
+
+def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
+    """サービスのActiveStateとNRestartsを取得する。
+
+    Raises:
+        SetupError: systemctlを実行できない場合に送出する。
+    """
+    result = claude_common.run_subprocess(
+        ["systemctl", "--user", "show", service_name, "--property=ActiveState", "--property=NRestarts"],
+        timeout=15.0,
+        tag=log_tag,
+    )
+    if result is None or result.returncode != 0:
+        raise SetupError(f"{service_name}の状態を取得できません")
+    values: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key.strip()] = value.strip()
+    return values.get("ActiveState", ""), values.get("NRestarts", "")
+
+
+def _wait_until_running(*, service_name: str, log_tag: str) -> None:
+    """restart後にサービスが常駐することを確認する。
+
+    Raises:
+        SetupError: 制限時間内にactiveへ至らない場合、又は再起動を繰り返す場合に送出する。
+    """
+    time.sleep(_SETTLE_SECONDS)
+    deadline = time.monotonic() + _ACTIVE_TIMEOUT_SECONDS
+    while True:
+        state, restarts = _query_service(service_name, log_tag)
+        if state == "active":
+            break
+        if time.monotonic() >= deadline:
+            raise SetupError(f"{service_name}が起動しません: ActiveState={state}")
+        time.sleep(_POLL_SECONDS)
+    time.sleep(_CONFIRM_SECONDS)
+    confirmed_state, confirmed_restarts = _query_service(service_name, log_tag)
+    if confirmed_state != "active" or confirmed_restarts != restarts:
+        raise SetupError(
+            f"{service_name}が常駐しません: ActiveState={confirmed_state}, NRestarts={restarts} から {confirmed_restarts}"
+        )
+    logger.info(log_format.format_status(log_tag, f"稼働確認: {service_name}"))

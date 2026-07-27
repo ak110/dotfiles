@@ -192,6 +192,29 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 
 `atk mq disable`でfeedback-inboxを無効化すると`atk mq status`が非ゼロ終了し、通知は自動的にスキップされる。
 
+### 特定ホストでの常駐サービス自動起動
+
+`euryale`でのみ、`chezmoi apply`後処理が2つのsystemd user serviceを配置して有効化する。
+対象は`atk-serve.service`（フィードバック管理Web UI）と`claude-plans-viewer.service`（計画ビューアー）である。
+
+- 待受はいずれもローカルのみで、Web UIはポート28766、計画ビューアーはポート28765を使う
+  - 外部へ公開せず、ホスト上のブラウザーかSSHポート転送経由で参照する
+  - ホスト固有の待受設定はunitへ書かず`~/.config/agent-toolkit/serve.toml`・
+    `~/.config/pytools/claude-plans-viewer.toml`で与える
+- Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
+  - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
+  - ランチャーが最新バージョンの`scripts/atk.py`を実行時に解決する
+  - `uv`はサービス実行環境のPATHに無いため、導入時に解決した絶対パスをランチャーへ埋め込む
+    - 解決順序は`~/.local/bin/uv`（公式インストーラーの導入先）、次にPATH探索とし、
+      いずれも得られない場合は設定を見送る
+    - miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
+  - `~/.local/bin/atk`は`install-claude.sh`が生成する別系統のラッパーで、本経路とは無関係
+- 計画ビューアーは`uv tool install`が生成する`~/.local/bin/claude-plans-viewer`を直接起動する
+  - shebangが絶対パスのためPATHに依存しない
+- 導入処理はrestart後に常駐を確認し、起動しない場合は失敗として`update-dotfiles`の出力へ表示する
+- lingerが無効な場合はログアウトで停止する
+  - 常駐させるには`sudo loginctl enable-linger <user>`を手動実行する
+
 ### Windowsの電源設定の最適化（dotfiles-setup）
 
 `dotfiles-setup`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。

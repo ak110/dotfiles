@@ -289,8 +289,11 @@ def create_app(
     worker_limit: int = 4,
 ) -> quart.Quart:
     """Quartアプリを生成する。"""
-    del config
     app = quart.Quart(__name__)
+    # app.configへ格納してモジュールレベルの可変状態を避ける。
+    # ハンドラからは`quart.current_app.config`経由で参照する。
+    app.config["SERVE_CONFIG"] = config
+    app.config["SERVE_STATE"] = state
     ops = operations or Operations(private_notes)
     workers = BoundedWorkers(worker_limit)
 
@@ -459,6 +462,7 @@ def create_app(
 
     @app.get("/api/events")
     async def events() -> quart.Response:
-        return quart.Response(state.events(), content_type="text/event-stream")
+        current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
+        return quart.Response(current_state.events(), content_type="text/event-stream")
 
     return app

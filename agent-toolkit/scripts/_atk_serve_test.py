@@ -1,15 +1,21 @@
 """`atk serve`のテスト。"""
 
+# pylint: disable=protected-access
+
 import asyncio
 import contextlib
 import json
+import logging
 import pathlib
+import signal
 import subprocess
 import threading
+import types
 import typing
 
 import _atk_mq_common as common
 import _atk_mq_repo as feedback_repo
+import _atk_serve as serve
 import _atk_serve_app as serve_app
 import _atk_serve_assets as assets
 import _atk_serve_config as config
@@ -31,6 +37,20 @@ def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
     assert config.resolve_config(host="cli-host", port=5000, environ=env) == config.ServeConfig("cli-host", 5000)
     assert config.default_port("linux") == 28766
     assert config.default_port("win32") == 28876
+
+
+def test_unknown_config_key_logs_warning(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """未知の設定キーを警告ログで通知し、既知キーの解決は継続する。"""
+    path = tmp_path / "serve.toml"
+    path.write_text('host = "toml-host"\nunknown = 1\n', encoding="utf-8")
+    env = {"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}
+    with caplog.at_level("WARNING"):
+        resolved = config.resolve_config(environ=env, platform="linux")
+    assert resolved == config.ServeConfig("toml-host", 28766)
+    assert "unknown" in caplog.text
 
 
 @pytest.mark.parametrize("host", ["", "  ", 1])
@@ -747,3 +767,115 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
     assert f"target_repo: {expected_target}" in content
     assert "target_repo: \n" not in content
+
+
+def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
+    """解決済み設定と状態をapp.configへ保持する。"""
+    resolved = config.ServeConfig("127.0.0.1", 28766)
+    current_state = state.ServeState(tmp_path)
+    app = serve_app.create_app(tmp_path, resolved, current_state)
+    assert app.config["SERVE_CONFIG"] == resolved
+    assert app.config["SERVE_STATE"] is current_state
+
+
+def test_console_title_builds_command_and_port() -> None:
+    """ターミナルタイトルにコマンド名とポートを含める。"""
+    assert serve.build_console_title(28766) == "atk serve :28766"
+
+
+def _stub_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    stopped: list[str],
+) -> None:
+    """監視スレッドを起動しないServeStateへ差し替える。"""
+    current = state.ServeState(tmp_path)
+    monkeypatch.setattr(current, "start", lambda loop: None)
+    monkeypatch.setattr(current, "stop", lambda: stopped.append("stop"))
+    monkeypatch.setattr(serve, "_atk_serve_state", types.SimpleNamespace(ServeState=lambda root: current))
+
+
+@pytest.mark.asyncio
+async def test_serve_shuts_down_on_signal_and_stops_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """シグナル集約でshutdown_triggerが解除され、停止時にstateを止める。"""
+    stopped: list[str] = []
+    _stub_state(monkeypatch, tmp_path, stopped)
+    handlers: dict[int, typing.Callable[[], None]] = {}
+    loop = asyncio.get_running_loop()
+
+    def add_signal_handler(sig: int, callback: typing.Callable[[], None]) -> None:
+        handlers[sig] = callback
+
+    monkeypatch.setattr(loop, "add_signal_handler", add_signal_handler)
+    observed: dict[str, object] = {}
+
+    async def fake_serve(app: object, hypercorn_config: typing.Any, *, shutdown_trigger: typing.Any) -> None:
+        del app
+        observed["bind"] = hypercorn_config.bind[0]
+        observed["graceful_timeout"] = hypercorn_config.graceful_timeout
+        observed["accesslog"] = hypercorn_config.accesslog
+        # シグナル受信を模擬してshutdown_triggerを解除する。
+        handlers[signal.SIGTERM]()
+        await shutdown_trigger()
+
+    monkeypatch.setattr(serve.hypercorn.asyncio, "serve", fake_serve)
+    await serve._serve(tmp_path, config.ServeConfig("127.0.0.1", 28766))
+
+    assert observed["bind"] == "127.0.0.1:28766"
+    assert observed["graceful_timeout"] == 1.0
+    assert observed["accesslog"] is None
+    assert set(handlers) == {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+    assert stopped == ["stop"]
+
+
+@pytest.mark.asyncio
+async def test_serve_tolerates_absent_and_unsupported_signals(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """シグナル不在とadd_signal_handler未実装の双方を吸収して起動する。"""
+    stopped: list[str] = []
+    _stub_state(monkeypatch, tmp_path, stopped)
+    monkeypatch.delattr(serve.signal, "SIGHUP", raising=False)
+    attempted: list[int] = []
+
+    def add_signal_handler(sig: int, callback: typing.Callable[[], None]) -> None:
+        del callback
+        attempted.append(sig)
+        raise NotImplementedError
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "add_signal_handler", add_signal_handler)
+
+    async def fake_serve(app: object, hypercorn_config: object, *, shutdown_trigger: object) -> None:
+        del app, hypercorn_config, shutdown_trigger
+
+    monkeypatch.setattr(serve.hypercorn.asyncio, "serve", fake_serve)
+    await serve._serve(tmp_path, config.ServeConfig("127.0.0.1", 28766))
+
+    assert attempted == [signal.SIGINT, signal.SIGTERM]
+    assert stopped == ["stop"]
+
+
+def test_run_initializes_logging_and_logs_startup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """logging初期化と起動ログ出力を実施し、hypercorn.errorの伝搬を止める。"""
+    basic_config_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(serve.logging, "basicConfig", lambda **kwargs: basic_config_calls.append(kwargs))
+    monkeypatch.setattr(serve.common, "ensure_environment", lambda home: tmp_path)
+    monkeypatch.setattr(serve.asyncio, "run", lambda coro: coro.close())
+    logging.getLogger("hypercorn.error").propagate = True
+
+    with caplog.at_level("INFO", logger=serve.logger.name):
+        serve.run(host="127.0.0.1", port=28766, home=tmp_path)
+
+    assert basic_config_calls[0]["force"] is True
+    assert basic_config_calls[0]["level"] == logging.INFO
+    assert "http://127.0.0.1:28766/" in caplog.text
+    assert logging.getLogger("hypercorn.error").propagate is False
