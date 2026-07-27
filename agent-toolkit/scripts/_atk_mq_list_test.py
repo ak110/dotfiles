@@ -10,6 +10,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import unicodedata
 
 import pytest
 
@@ -202,45 +203,35 @@ class TestListTargetRepoFilter:
 class TestListSourceFilter:
     """listサブコマンド: --source指定でfrontmatterのsourceが一致するエントリのみ出力する。"""
 
-    def test_filter_matches_exact_source(
+    @pytest.mark.parametrize(
+        ("source_filter", "expected_filename", "excluded_filename"),
+        [
+            ("session-review", "fb-001.md", "fb-002.md"),
+            ("!session-review", "fb-002.md", "fb-001.md"),
+        ],
+    )
+    def test_source_filter(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        source_filter: str,
+        expected_filename: str,
+        excluded_filename: str,
     ) -> None:
-        """--source=NAME指定時、同一sourceのエントリのみ出力される。"""
+        """--sourceの一致指定と否定指定が該当エントリだけを出力する。"""
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", source="session-review")
         _write_feedback_file(notes, "fb-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--source=session-review"], home=tmp_path)
+            atk.main(["mq", "list", f"--source={source_filter}"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "fb-001.md" in captured.out
-        assert "fb-002.md" not in captured.out
-
-    def test_filter_negation_excludes_matching_source(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--source=!NAME指定時、同一sourceのエントリが除外され、無指定エントリは含まれる。"""
-        notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", source="session-review")
-        _write_feedback_file(notes, "fb-002.md", source=None)
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--source=!session-review"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "fb-001.md" not in captured.out
-        assert "fb-002.md" in captured.out
+        assert expected_filename in captured.out
+        assert excluded_filename not in captured.out
 
     @pytest.mark.parametrize("value", ["--source=", "--source=!"])
     def test_empty_source_value_rejected(
@@ -363,45 +354,35 @@ class TestListSkipPull:
 class TestListStatusFilter:
     """listサブコマンド: --answeredでtbd側のみ回答状況を限定する。"""
 
-    def test_status_answered_excludes_unanswered_tbd(
+    @pytest.mark.parametrize(
+        ("answered", "expected_suffix", "excluded_suffix"),
+        [
+            ("yes", "002.md", "001.md"),
+            ("no", "001.md", "002.md"),
+        ],
+    )
+    def test_answered_status_filter(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        answered: str,
+        expected_suffix: str,
+        excluded_suffix: str,
     ) -> None:
-        """--answered=yes指定時に未回答TBDが除外される。"""
+        """--answered=yes/noが回答状況と一致するTBDだけを出力する。"""
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
+            atk.main(["mq", "list", "--type=tbd", f"--answered={answered}"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
-
-    def test_status_unanswered_excludes_answered_tbd(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--answered=no指定時に回答済みTBDが除外される。"""
-        notes = _setup_tbd_env(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=tbd", "--answered=no"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
-        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
+        assert f"{_FIXED_TIMESTAMP}-{expected_suffix}" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-{excluded_suffix}" not in captured.out
 
     def test_status_all_outputs_every_tbd(
         self,
@@ -541,16 +522,61 @@ class TestListCount:
         assert captured.out == "0\n"
 
 
-class TestListNarrowTerminalTargetRepo:
-    """listサブコマンド: 狭幅端末で長い`target_repo`を扱う場合の動的省略幅の検証。
+class TestMultipleFiltersCombinedAsAnd:
+    """target-repo・source・type・statusの同時指定がAND条件で対象を限定する。"""
 
-    固定30幅では`path.name`・状態ラベルとの合算でprefix自体が端末幅を超過し得るため、
-    検証対象は`target_repo`表示部が`_target_repo_budget`の戻り値以下に収まること・
-    `_TARGET_REPO_MIN_WIDTH`を下回らないこと・出力が例外なく完了することとし、
-    prefix全体の端末幅内収納は要求しない。
-    """
+    def test_all_filters_combined_narrows_to_intersection(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """複数フィルターの全条件に一致するfeedbackだけを出力する。"""
+        matching_repo = "github.com/example/matching"
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-matching.md", target_repo=matching_repo, source="session-review")
+        _write_feedback_file(
+            notes,
+            "fb-other-repo.md",
+            target_repo="github.com/example/other",
+            source="session-review",
+        )
+        _write_feedback_file(notes, "fb-other-source.md", target_repo=matching_repo, source="user-issue")
+        _write_feedback_file(notes, "fb-source-none.md", target_repo=matching_repo, source=None)
+        _write_tbd_file(notes, "tbd-other-type.md", target_repo=matching_repo, source="session-review")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "list",
+                    f"--target-repo={matching_repo}",
+                    "--source=session-review",
+                    "--type=feedback",
+                    "--status=all",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-matching.md" in captured.out
+        assert "fb-other-repo.md" not in captured.out
+        assert "fb-other-source.md" not in captured.out
+        assert "fb-source-none.md" not in captured.out
+        assert "tbd-other-type.md" not in captured.out
+
+
+class TestListNarrowTerminalTargetRepo:
+    """listサブコマンド: 狭幅端末の出力行が端末表示幅以内に収まることを検証する。"""
 
     _LONG_REPO = "github.com/organization-name/very-long-repository-name-example"
+
+    @staticmethod
+    def _display_width(text: str) -> int:
+        """東アジア文字幅に基づく出力文字列の表示幅を返す。"""
+        return sum(2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1 for char in text)
 
     def test_feedback_narrow_terminal(
         self,
@@ -558,25 +584,26 @@ class TestListNarrowTerminalTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """feedback部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
-        import _atk_mq_formatters  # pylint: disable=import-outside-toplevel
-        import _atk_mq_list  # pylint: disable=import-outside-toplevel
+        """feedback部の各出力行が50桁以内に収まる。"""
+        terminal_columns = 50
+
+        def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
+            del args, kwargs
+            return os.terminal_size((terminal_columns, 24))
 
         notes = _setup_flag_and_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
+        monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        line = captured.out.splitlines()[1]
-        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
-        budget = _atk_mq_list._target_repo_budget("fb-001.md", "inbox")  # noqa: SLF001  # pylint: disable=protected-access
-        assert _atk_mq_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
-        assert budget >= _atk_mq_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
+        output_lines = captured.out.splitlines()
+        assert self._LONG_REPO not in captured.out
+        assert all(self._display_width(line) <= terminal_columns for line in output_lines)
 
     def test_tbd_narrow_terminal(
         self,
@@ -584,9 +611,12 @@ class TestListNarrowTerminalTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """tbd部: 狭幅端末(50桁)で長いtarget_repoが動的省略幅内へ収まること。"""
-        import _atk_mq_formatters  # pylint: disable=import-outside-toplevel
-        import _atk_mq_list  # pylint: disable=import-outside-toplevel
+        """tbd部の各出力行が70桁以内に収まる。"""
+        terminal_columns = 70
+
+        def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
+            del args, kwargs
+            return os.terminal_size((terminal_columns, 24))
 
         notes = _setup_tbd_env(tmp_path)
         _write_tbd_file(
@@ -597,15 +627,13 @@ class TestListNarrowTerminalTargetRepo:
             target_repo=self._LONG_REPO,
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
+        monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list", "--type=tbd", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        line = captured.out.splitlines()[1]
-        display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
-        budget = _atk_mq_list._target_repo_budget(f"{_FIXED_TIMESTAMP}-001.md", "unanswered")  # noqa: SLF001  # pylint: disable=protected-access
-        assert _atk_mq_formatters._display_width(display_repo) <= budget  # noqa: SLF001  # pylint: disable=protected-access
-        assert budget >= _atk_mq_formatters._TARGET_REPO_MIN_WIDTH  # noqa: SLF001  # pylint: disable=protected-access
+        output_lines = captured.out.splitlines()
+        assert self._LONG_REPO not in captured.out
+        assert all(self._display_width(line) <= terminal_columns for line in output_lines)
