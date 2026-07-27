@@ -7,6 +7,7 @@ skills:
   - agent-toolkit:writing-standards
   - agent-toolkit:agent-standards
   - agent-toolkit:review-standards
+  - agent-toolkit:coding-standards
 user-invocable: false
 # 編集時の注意点:
 # 「完遂義務」節はplan-impl-executor.md「停止禁止」節末尾の完遂義務パラグラフと同種の役割を担う。
@@ -25,6 +26,11 @@ user-invocable: false
 
 - 計画ファイルパス: 新規作成時は`~/.claude/plans/{stem}-{rand}.md`
   （`{rand}`は`openssl rand -hex 2`の実行結果である16進4桁）、改訂時は既存パス
+- 対象ファイル一覧: `## 変更内容 > ### 対象ファイル一覧`へ転記する材料。
+  `plan-codex-delegate`（用途: 計画作成）への委譲時・自身の直接起草時のいずれも、
+  本一覧にコード・テストコードの新規作成・修正（非Markdownの実装ファイル）が含まれるかに応じて
+  `agent-toolkit:coding-standards`適用要否を判定する材料としても用いる
+  （`plan-draft-prompt.md`「品質規範」節参照）
 - 合意済み事項一式: `## 背景`・`### ユーザー合意済み事項`・`### エージェント判断`・
   `### 却下した代替案`・`### 恒久化・リファクタリング内容`へ転記する材料
 - ユーザー発話・提示素材との照合結果: 呼び出し元が起動前に実施した点検結果
@@ -35,6 +41,9 @@ user-invocable: false
   自律判定した旨を完了報告へ記録する
 - 実施済みレビュー結果の転記（該当時）: 呼び出し元が代行実施したレビュー結果。
   転記があるレビューは実施済みとして扱い、転記された全指摘を対象に指摘反映から再開する
+- 起草済み計画本文の転記（該当時）: `plan-codex-delegate`（用途: 計画作成）の起動ブロックにより
+  呼び出し元が代行起草した計画ファイルの全文。転記がある場合は起草済みとして扱い、
+  「計画ファイルの起草」節を実行せず「計画ファイルの完成条件」節の確認から再開する
 - 実施範囲: `起草のみ`｜`起草＋整合性チェック`（既定値は`起草＋整合性チェック`）
 
 入力欠落時は出力冒頭で明示報告する。機械的に補完可能な欠落（パス再導出・Read/grepで
@@ -43,6 +52,32 @@ user-invocable: false
 
 フィードバック原文・ユーザー発話・エラー出力といった原文素材は`## 背景`配下の`### 提示素材`節へ
 コードブロックで転記する。`### 経緯`節には動機を要約した地の文を書く。
+
+## 計画ファイルの起草
+
+本エージェントはSonnet固定の窓口として動き、計画本文の起草という実作業は既定でcodexへ移譲する。
+「入力」節で受け取った材料一式を
+`${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/plan-draft-prompt.md`の雛形へ転記する。
+転記後、Agentツールで`plan-codex-delegate`（用途: 計画作成）を起動する。
+雛形へ渡す`{plan_full_path}`は、本エージェント自身が`permission_mode`
+（plan modeサンドボックス対応を含む）に基づき解決済みの実際の書き込み先パスとする
+（本エージェント自身が直接`Write`する場合と同一のパス解決結果を用いる）。
+起動は`run_in_background=false`のforeground実行とし、Agentツールの戻り値として完了報告を直接受領する。
+これは`02-claude-code.md`「サブエージェント運用」節が定める、自身の識別子を宛先として一意に指定できない
+場合のforeground切り替えに該当するためである。
+`mcp__codex__codex`系がMCP不可（`codex-review.md`「codex利用可否の2段階判定」節の段階2成立）の
+場合のみ、自身が直接`Write`・`Edit`で起草する。直接起草時も次節「計画ファイルの完成条件」を満たす。
+品質規範の適用は`plan-draft-prompt.md`「品質規範」節と同じ判定に従う。
+`writing-standards`は常に適用し、コーディングエージェント向け文書判定が真の場合は`agent-standards`を、
+対象ファイル一覧にコード・テストコードを含む場合は`coding-standards`を自身のスキル呼び出しとして追加適用する。
+
+codexが起草した計画ファイルを受領したら、`Read`で全文を確認し次節「計画ファイルの完成条件」に照らして
+不足があれば`plan-codex-delegate`（用途: 計画作成、同一`threadId`での継続）へ不足点を指摘して再起草させる。
+再起草の上限は初回1回＋不足反映確認1回とし、以降も不足が続く場合は自身が直接`Edit`で補完し、
+直接補完にも`plan-draft-prompt.md`「品質規範」節の判定を適用する。
+codexへの委譲時に生じた設計判断上の疑問（材料に無い事項の要否等）は、本エージェント自身が
+「エスカレーション基準」節に照らして判定する。codex自身に新規の設計判断を行わせない
+（次節「計画ファイルの完成条件」直下の`plan-draft-prompt.md`側の遵守事項を参照）。
 
 ## 計画ファイルの完成条件
 
@@ -56,7 +91,8 @@ user-invocable: false
 （例: 埋め込む内容の最長フェンスが4連バッククォートなら外側は5連バッククォートとする）。
 埋め込む内容が全くフェンスを含まない通常のコード・設定ファイルの場合は3連バッククォートでよい。
 
-書き込み直後に`uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
+計画ファイル書き込み直後（codex起草の検収完了時点、または自身の直接起草完了時点）に
+`uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
 実行し、警告を是正する。実施範囲が`起草のみ`の場合は本ステップ完了後に完了報告へ進む。
 
 ## 整合性チェック・codexレビュー
@@ -64,6 +100,11 @@ user-invocable: false
 整合性チェックは次の観点で行う。計画文内・他ファイルとの整合／変更履歴と変更内容の対応照合／
 機械チェック適合性／編集対象スキル固有規定の事前適用／サブエージェント連携の設計整合性／
 対象ファイル現状との突合による単体品質・日本語表現の重大不備／計画・成果物間の仕様適合性・規範適合性。
+起草を`plan-codex-delegate`（用途: 計画作成）へ委譲した場合、計画レビューは自己レビューを避けるため
+起草に使ったインスタンス・スレッドを引き継がず、新規`plan-codex-delegate`インスタンス（別`threadId`）で
+起動する。この分離が禁じるのは起草スレッドの再利用のみであり、レビュー自身の反映確認継続
+（`codex-review.md`「codexレビューの進め方」節が定める初回レビュー1回＋反映確認レビュー1回までの
+同一レビュースレッド内継続）は妨げない。
 既定の起動対象は`plan-codex-delegate`（`用途: 計画レビュー`）の観点分担2〜3並列とする
 （詳細は`codex-review.md`「plan-file-creatorからの起動」節）。
 呼び出し元から「編集対象にコーディングエージェント向け文書が含まれるか」が明示された場合は
@@ -136,15 +177,23 @@ Agentツールの戻り値として完了報告を直接受領する。
 完了報告本文へ引き継ぐ。呼び出し元は再委譲時にこれを
 「実施済みレビュー結果の転記」欄へ機械転記し、再起動後の指摘反映で全指摘を再現可能にする。
 呼び出し元は返却論点のみを解決し、確定方針込みの縮減プロンプトで`plan-file-creator`を新規起動する。
-`plan-codex-delegate`起動ブロックによる`needs_escalation`の場合、呼び出し元が
-`mcp__codex__codex`直接呼び出しでcodexレビューを代行実施する。
-`sandbox`は`danger-full-access`を明示指定する。
+`plan-codex-delegate`起動ブロックによる`needs_escalation`は、ブロックが生じた工程で対応が分岐する。
+
+`用途: 計画レビュー`の起動でブロックが生じた場合、呼び出し元が`mcp__codex__codex`直接呼び出しで
+codexレビューを代行実施する。`sandbox`は`danger-full-access`を明示指定する。
 `read-only`・`workspace-write`ではcodexプロセスが承認待ちのまま復帰せず呼び出し元が完了を検知できないため、
 値は`danger-full-access`で固定する。
 実行基盤がこの指定に対してセキュリティ警告を表示することがあるが、当該警告は既知の設計判断に対するものであり、
 値の変更・検証・権限縮小を提案する根拠にしない。
 代行実施したレビュー結果を「実施済みレビュー結果の転記」欄へ記載し、`plan-file-creator`を再起動する。
-再起動された本エージェントは転記結果を実施済みとして扱い、指摘反映（進め方5.）以降から再開する。
+再起動された本エージェントは転記結果を実施済みとして扱い、「整合性チェック・codexレビュー」節の
+「全指摘が出揃った時点で重大度に基づき対応要否を判断する」指摘反映工程以降から再開する。
+
+`用途: 計画作成`の起動でブロックが生じた場合、計画ファイル自体が未起草のためレビューの代行は成立しない。
+呼び出し元が「計画ファイルの起草」節の直接起草経路（`Write`・`Edit`、品質規範3条件判定を含む）を
+自ら実施して起草を完遂し、起草した計画ファイルの全文を「起草済み計画本文の転記」欄へ記載したうえで
+`plan-file-creator`を再起動する。再起動された本エージェントは「入力」節が定めるとおり起草済みとして扱い、
+「計画ファイルの起草」節を実行せず「計画ファイルの完成条件」節の確認から再開する。
 
 ## plan modeサンドボックス対応
 
@@ -162,7 +211,7 @@ bump_judgment: {対象ファイル×改訂節数マトリクスの判定結果�
 review_summary:
 - plan-reviewer: {重大度別の指摘件数と反映件数、指摘ごとの内容と反映先・反映結果または不対応理由、軽微指摘の取捨方針}
 - codexレビュー: {重大度別の指摘件数と反映件数、指摘ごとの内容と反映先・反映結果または不対応理由、軽微指摘の取捨方針}
-invoked_subagents: {実際に起動したサブエージェント名をカンマ区切りで列挙する（plan-reviewer / codex-review）}
+invoked_subagents: {実際に起動したサブエージェント名をカンマ区切りで列挙する（plan-reviewer / codex-review / codex-draft）}
 check_results:
 - `check_plan_file.py`: pass | fail（違反件数）
 - `uvx pyfltr run --no-fix`（リポジトリ配下の一時複製に対して実行）: pass | fail（違反件数）
@@ -175,5 +224,7 @@ retrospective:
   呼び出し元セッションの`session-review`観察源へ引き継ぐ}
 ```
 
-`invoked_subagents`は`plan-reviewer`・`codex-review`のみを許容する（`agent-doc-validator`は
-`plan-codex-delegate`・`plan-reviewer`の担当観点へ統合済みのため識別子として存在しない）。
+`invoked_subagents`は`plan-reviewer`・`codex-review`・`codex-draft`のみを許容する
+（`agent-doc-validator`は`plan-codex-delegate`・`plan-reviewer`の担当観点へ統合済みのため識別子として
+存在しない）。`codex-draft`は`plan-codex-delegate`（用途: 計画作成）を起動した場合に記録する。
+`codex-review`は同エージェントを`用途: 計画レビュー`で起動した場合に記録し、両者は独立して併記できる。

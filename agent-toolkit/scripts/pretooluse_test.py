@@ -12,6 +12,7 @@ import re
 import subprocess
 
 import _fork_runner
+import platformdirs
 import pretooluse
 import pytest
 import yaml
@@ -3737,6 +3738,315 @@ class TestProcess7CompletionCheck:
             env_overrides=_process7_env(tmp_path),
         )
         assert result.returncode == 2
+
+
+# `TestSubagentModelOverrideGate`・`TestPlanFileCreatorPromptCompletenessGate`共通の完全な起動プロンプト。
+# 必須見出し4点を満たすため、モデル検査を単独で検証する場合に見出し欠落ゲートの誤検出と混同しない。
+_COMPLETE_PLAN_FILE_CREATOR_PROMPT = (
+    "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n"
+    "## permission_mode\n非`plan`\n\n"
+    "## 合意済み事項\nユーザーはAを選択した。\n\n"
+    "## 照合結果\n発話原文と齟齬なし。\n"
+)
+
+
+class TestSubagentModelOverrideGate:
+    """`plan-file-creator`・`plan-impl-executor`への`model`引数指定の一律ブロック。"""
+
+    def test_plan_file_creator_with_opus_blocked(self):
+        """完全な起動プロンプトを使い、見出し欠落ゲートではなくモデル検査自体の発火を検証する。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-file-creator",
+                    "model": "opus",
+                    "prompt": _COMPLETE_PLAN_FILE_CREATOR_PROMPT,
+                },
+                "session_id": "model-override-plan-file-creator",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "explicit `model` argument" in result.stderr
+        assert "plan-file-creator" in result.stderr
+
+    def test_plan_impl_executor_with_model_blocked_short_form(self):
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-impl-executor", "model": "haiku", "prompt": "x"},
+                "session_id": "model-override-plan-impl-executor",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+
+    def test_plan_reviewer_with_model_passes(self):
+        """`plan-reviewer`は今回の対象範囲外（ユーザー確認によりplan-file-creator/plan-impl-executorへ限定）。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-reviewer", "model": "sonnet", "prompt": "x"},
+                "session_id": "model-override-plan-reviewer",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_plan_codex_delegate_with_model_passes(self):
+        """`plan-codex-delegate`は今回の対象範囲外（同上）。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-codex-delegate", "model": "haiku", "prompt": "x"},
+                "session_id": "model-override-plan-codex-delegate",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_plan_implementer_with_model_passes(self):
+        """`plan-implementer`は難易度別の明示指定が規定済みのため対象外とする。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-implementer", "model": "opus", "prompt": "x"},
+                "session_id": "model-override-plan-implementer",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_no_model_argument_passes(self):
+        """`plan-impl-executor`を使い、同時導入の`TestPlanFileCreatorPromptCompletenessGate`と非干渉にする。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "x"},
+                "session_id": "model-override-none",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+
+class TestPlanFileCreatorPromptCompletenessGate:
+    """`plan-file-creator`起動プロンプトの必須見出し4点の実在・非空検査。"""
+
+    _COMPLETE_PROMPT = _COMPLETE_PLAN_FILE_CREATOR_PROMPT
+
+    def test_complete_prompt_passes(self):
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": self._COMPLETE_PROMPT},
+                "session_id": "prompt-completeness-ok",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize("indent", [0, 1, 2, 3])
+    def test_heading_with_up_to_three_leading_spaces_still_counted(self, indent: int):
+        """CommonMarkのATX見出し仕様上、先頭スペース0〜3個までは見出しとして有効である境界値を検証する。
+
+        4個以上との区別（インデントコードブロック扱い）は`test_heading_inside_indented_code_block_not_counted`が
+        別途検証する。0〜3個をパラメーター化して個別に検証することで、1個・2個を拒否する実装への
+        後退を検出できるようにする（3個のみの検証では検出できない）。
+        """
+        pad = " " * indent
+        prompt = "\n".join(f"{pad}{line}" if line else "" for line in self._COMPLETE_PROMPT.splitlines())
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "session_id": f"prompt-completeness-{indent}-space-heading",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_missing_heading_blocked(self):
+        prompt = "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n## permission_mode\n非`plan`\n"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-file-creator", "prompt": prompt},
+                "session_id": "prompt-completeness-missing",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "合意済み事項" in result.stderr
+        assert "照合結果" in result.stderr
+
+    def test_empty_section_blocked(self):
+        prompt = self._COMPLETE_PROMPT.replace("ユーザーはAを選択した。", "")
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "session_id": "prompt-completeness-empty",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "合意済み事項" in result.stderr
+
+    def test_other_subagent_not_checked(self):
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "計画を実装して。"},
+                "session_id": "prompt-completeness-other",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_heading_inside_tilde_fence_not_counted(self):
+        """チルダフェンス（`~~~`）内の見出し例示も、バッククォートフェンスと同様に実見出しと誤認しない。"""
+        prompt = "~~~\n" + self._COMPLETE_PROMPT + "~~~\n本文のみで実見出しは無い。"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "session_id": "prompt-completeness-tilde-fence",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "計画ファイルパス" in result.stderr
+
+    def test_heading_inside_html_comment_not_counted(self):
+        """複数行HTMLコメント内の見出し例示も実見出しと誤認しない。"""
+        prompt = "<!--\n" + self._COMPLETE_PROMPT + "-->\n本文のみで実見出しは無い。"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "session_id": "prompt-completeness-html-comment",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "計画ファイルパス" in result.stderr
+
+    def test_heading_inside_indented_code_block_not_counted(self):
+        """4スペース以上インデントされた見出し例示（CommonMarkのインデントコードブロック）も
+        実見出しと誤認しない。"""
+        indented_prompt = "\n".join(f"    {line}" if line else "" for line in self._COMPLETE_PROMPT.splitlines())
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": indented_prompt},
+                "session_id": "prompt-completeness-indented-code-block",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "計画ファイルパス" in result.stderr
+
+    def test_missing_prompt_key_blocked(self):
+        """`prompt`キー自体が無い場合も安全側でブロックする（Agent/Taskスキーマ上は通常発生しない）。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator"},
+                "session_id": "prompt-completeness-no-prompt",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+
+
+def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
+    return {
+        "DOTFILES_AUTONOMOUS_EXIT_REQUIRED": "1",
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "LOCALAPPDATA": str(tmp_path / "state"),
+    }
+
+
+class TestSubagentStartLogOrdering:
+    """`subagent_start`記録は全ブロック検査を通過した場合のみ行われる。
+
+    ブロック時に記録が残ると、対応する`subagent_end`が生成されず
+    process-loopの所要時間分析の対応関係が崩れるため、ブロック経路ごとに未記録を確認する。
+    """
+
+    def _log_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
+        return pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-feedbacks.log"
+
+    def test_model_override_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        log_path = self._log_path(monkeypatch, tmp_path)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-file-creator",
+                    "model": "opus",
+                    "prompt": _COMPLETE_PLAN_FILE_CREATOR_PROMPT,
+                },
+                "session_id": "log-order-model-override",
+                "permission_mode": "default",
+            },
+            env_overrides=_process_loop_log_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+
+    def test_prompt_completeness_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        log_path = self._log_path(monkeypatch, tmp_path)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": "x"},
+                "session_id": "log-order-prompt-completeness",
+                "permission_mode": "default",
+            },
+            env_overrides=_process_loop_log_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+
+    def test_process7_block_does_not_log_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        log_path = self._log_path(monkeypatch, tmp_path)
+        sid = "log-order-process7"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        env = {**_process_loop_log_env(tmp_path), **_process7_env(tmp_path)}
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "計画を実装して。"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
+
+    def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+        """モデル指定なし・見出し検査対象外・process7対象外の`plan-codex-delegate`は全検査を通過し記録される。"""
+        log_path = self._log_path(monkeypatch, tmp_path)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-codex-delegate", "prompt": "実装して。"},
+                "session_id": "log-order-pass",
+                "permission_mode": "default",
+            },
+            env_overrides=_process_loop_log_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert log_path.exists()
+        assert "subagent_start" in log_path.read_text(encoding="utf-8")
 
 
 class TestPlanCodexDelegateInvokedPreToolUse:

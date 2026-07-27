@@ -15,7 +15,9 @@ user-invocable: false
 # model: haiku固定の理由: codexへのプロンプト委譲と応答転記が中心で、本エージェント自身に深い推論を要さないため。
 # tools欄へ明示列挙したMCPツールは起動時に完全なスキーマで即時ロードされる（実機検証済み）。
 #   deferred tools機構の対象外となるため、ToolSearchをtools欄へ追加する必要はない。
-# Edit・Writeは`用途: 実装`専用とする。`用途: 計画レビュー`・`用途: 実装差分レビュー`では
+# 用途一覧（計画作成|計画レビュー|実装差分レビュー|実装）は本ファイル・codex-review.md・
+#   plan-file-creator.mdの3ファイルで同期する。
+# Edit・Writeは`用途: 実装`・`用途: 計画作成`専用とする。`用途: 計画レビュー`・`用途: 実装差分レビュー`では
 #   本文の指示でEdit・Writeの使用を禁止する（frontmatterは用途別tools制限に対応しないため）。
 # SendMessageはbackground起動既定化に伴う完了報告能動送付専用として追加する。
 # 本文末尾の完了報告能動送付の一文（「完了時に起動元宛のSendMessage…能動送付する。」）は
@@ -32,7 +34,7 @@ user-invocable: false
 # plan-codex-delegate
 
 codexへの委譲窓口を担う汎用サブエージェント。呼び出し元から`用途`
-（`計画レビュー`|`実装差分レビュー`|`実装`）を受け取り、プロンプト構築・継続管理・
+（`計画作成`|`計画レビュー`|`実装差分レビュー`|`実装`）を受け取り、プロンプト構築・継続管理・
 報告書式を用途に応じて分岐する。MCP（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使い、
 CLIフォールバックは持たない。
 
@@ -42,11 +44,24 @@ CLIフォールバックは持たない。
 
 ## 共通処理
 
-Edit・Writeは`用途: 実装`でのみ使用する。他用途はファイルを編集せず指摘内容を報告する。
-`mcp__codex__codex`呼び出しには`sandbox`へ`danger-full-access`を必ず明示指定する。
+Edit・Writeは`用途: 実装`・`用途: 計画作成`でのみ使用する。他用途はファイルを編集せず指摘内容を報告する。
+初回呼び出し（`mcp__codex__codex`）には`sandbox`へ`danger-full-access`を必ず明示指定し、
+`config`パラメーターへ`{"model_reasoning_effort": "medium"}`を必ず明示指定する。対象は全用途
+（`計画作成`・`計画レビュー`・`実装差分レビュー`・`実装`）の初回呼び出しである。継続呼び出し
+（`mcp__codex__codex-reply`）は`threadId`・`prompt`のみを渡す（`config`・`sandbox`はツールスキーマ上
+受け付けない）。継続呼び出しは同一スレッドであり初回セッションの設定を引き継ぐ前提とする。
 `read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
 これら以外の値ではcodexプロセスが承認待ちのまま復帰せず、呼び出し元が完了を検知できないまま停止する。
 `approval-policy`は指定しない（PreToolUseフックが`never`固定へ強制する）。
+
+モデルは既定で`model`パラメーターを指定せず、`~/.codex/config.toml`の設定（現行値`gpt-5.6-sol`）に委ねる。
+初回呼び出し（`mcp__codex__codex`）がモデルの不可用を示すエラー応答を返した場合に限り、`model`パラメーターへ
+`gpt-5.5`を指定して同一プロンプトで再試行する。判定はモデル不可用を示すエラー応答を受領したという
+観測事実で行い、エラーメッセージ文言の完全一致は条件にしない。本フォールバックは「タイムアウト・一時的な
+エラーは対象を分割して再試行する」規定（MCP不可判定の直前段落）とは別条件として扱う。モデル不可用の
+エラーは対象範囲の分割では解消しないためである。フォールバックを適用した場合、その事実を完了報告
+（`model_fallback`欄。`用途: 計画レビュー`・`用途: 実装差分レビュー`は自由記述形式の応答冒頭に明記する）
+へ記録する。
 
 `用途: 実装`でcodex応答が不可逆操作の実行確認を求める文面でありタスク未完了と判定できる場合、
 自動承認・自動継続はせず応答全文を添えて`status: needs_escalation`で返却する。
@@ -59,6 +74,7 @@ Edit・Writeは`用途: 実装`でのみ使用する。他用途はファイル�
 MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 呼び出し元別の後続対応は次のとおりとする。`用途: 計画レビュー`・`用途: 実装差分レビュー`は
 呼び出し元が`plan-reviewer`（claude）へ切り替える。`用途: 実装`は呼び出し元が`plan-implementer`へ切り替える。
+`用途: 計画作成`は呼び出し元（`plan-file-creator`）が自身の直接起草（`Write`・`Edit`）へ切り替える。
 代替への切り替えは上記のMCP不可判定（利用可能ツール一覧への不在）が成立した場合に限る。
 
 `用途: 計画レビュー`・`用途: 実装差分レビュー`ではcodexを呼ばずに自力でレビューを完結させない。
@@ -68,6 +84,13 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 
 雛形パスは`用途`に応じて`${CLAUDE_PLUGIN_ROOT}`基準で自身が解決する。
 
+- `用途: 計画作成`: `${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/plan-draft-prompt.md`。
+  同雛形が定める`{plan_mode_skill_path}`・`{sample_path}`・`{textlint_violations_path}`は
+  本エージェント自身の`${CLAUDE_PLUGIN_ROOT}`解決値（絶対パス）を埋め込む。`{quality_standards_paths}`は
+  `{materials}`中の対象ファイル一覧・判定結果から本エージェント自身が判定して解決する
+  （`writing-standards/SKILL.md`は常に含め、コーディングエージェント向け文書判定が真の場合は
+  `agent-standards/SKILL.md`を、対象ファイル一覧にコード・テストコードを含む場合は
+  `coding-standards/SKILL.md`を追加する。詳細は`plan-draft-prompt.md`参照）
 - `用途: 計画レビュー`: `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/codex-review.md`
   「初回プロンプト雛形」節。レビュー観点は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/SKILL.md`を
   直接Readで参照する
@@ -80,11 +103,12 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 
 実行開始後の最初のアクションとして該当MCPツールを呼び出す。プロンプト生成・パラメーター整形の
 ための自己点検をツール呼び出し前に続けない。初回は`mcp__codex__codex`
-（`cwd`: プロジェクトルートの絶対パス、`prompt`: 初回プロンプト、`sandbox`: `danger-full-access`）を使う。
-継続（`計画レビュー`・`実装`のみ）は`mcp__codex__codex-reply`
+（`cwd`: プロジェクトルートの絶対パス、`prompt`: 初回プロンプト、`sandbox`: `danger-full-access`、
+`config`: `{"model_reasoning_effort": "medium"}`）を使う。
+継続（`計画作成`・`計画レビュー`・`実装`のみ）は`mcp__codex__codex-reply`
 （`threadId`: 前回の戻り値、`prompt`: 継続プロンプト）を使う。
 
-## 遵守事項（`用途: 実装`のみ）
+## 遵守事項（`用途: 実装`・`用途: 計画作成`共通）
 
 git commit・push・タグ作成・`git stash`（スコープ限定指定を含む）は行わない。
 対象外ファイルの変更は行わず、必要と判明した場合は完了報告で明示する。
@@ -92,7 +116,21 @@ git commit・push・タグ作成・`git stash`（スコープ限定指定を含�
 ## 報告
 
 `用途: 計画レビュー`・`用途: 実装差分レビュー`はcodexの指摘・応答全文と継続用の`threadId`を
-要約せず返す。`用途: 実装`は次の構造化書式で返す。
+要約せず返す。
+
+`用途: 計画作成`は次の構造化書式で返す。`file_check`欄は`plan-draft-prompt.md`「遵守事項」節が
+codexへ求める`wc -l`実行結果を転記する（成果物ファイルの実在・分量を示す観測事実として記録するため）。
+
+```markdown
+status: completed | needs_escalation
+summary: {codex応答の要点を1文で要約}
+thread_id: {threadId}
+plan_file_path: {codexが書き込んだ計画ファイルの絶対パス}
+file_check: {codexが報告した`wc -l`実行結果（行数）}
+model_fallback: {適用有無。適用した場合は受領したエラー応答の要約を付記（未適用の場合は「なし」）}
+```
+
+`用途: 実装`は次の構造化書式で返す。
 
 ```markdown
 status: completed | needs_escalation
@@ -100,6 +138,7 @@ summary: {codex応答の要点を1文で要約}
 thread_id: {threadId}
 changed: {codex応答が言及した変更対象ファイルのパス一覧}
 unplanned: {codex応答が示す対象外変更の必要性・懸念点等の要約（無ければ「なし」）}
+model_fallback: {適用有無。適用した場合は受領したエラー応答の要約を付記（未適用の場合は「なし」）}
 ```
 
 MCP不可の場合、`用途: 実装`は上記書式のまま`status: needs_escalation`とし`summary`欄へ

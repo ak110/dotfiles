@@ -26,6 +26,13 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 - 複数ディレクトリ・複数ファイルに跨る横断調査・横断置換はメインで逐次処理せず`Explore`または並列`Agent`へ委譲する
 - モデル選択: 確定的な検索・単純置換は`haiku`、要約・軽度の推論は`sonnet`、
   設計判断を伴う調査・実装・レビューは`opus`を選ぶ。事前に内容が確定していないコーディングに`sonnet`以下を使わない
+- `plan-file-creator`・`plan-impl-executor`はSonnet固定の窓口として動き、実作業（計画本文の起草・
+  実装）は既定でcodexへ移譲する設計（MCP不可時等は自身または`plan-implementer`が代替する）である。
+  この2種はAgent/Task起動時に`model`引数を指定しない
+  （PreToolUseフックが機械的にブロックする）。既定モデルの変更が必要な場合は呼び出し側でなく
+  エージェント定義自体のfrontmatterを改訂する。`plan-implementer`は対象外とし、
+  `agent-toolkit/references/plan-impl/execution-process.md`「実装委譲…」節が定める
+  難易度別の`model`明示指定に従う
 - サブエージェント起動は`run_in_background=true`のbackground起動を既定とし、`name`は指定しない
   - `SendMessage`の宛先は、完了時に呼び出し元へ渡されるエージェントIDでも指定できる。
     対話のためだけに識別名を指定しない

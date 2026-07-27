@@ -17,6 +17,11 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
 `read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
 これら以外の値ではcodexプロセスが承認待ちのまま復帰せず、呼び出し元が完了を検知できないまま停止する。
 
+`mcp__codex__codex`（初回呼び出し）を呼び出す際は`config`パラメーターへ
+`{"model_reasoning_effort": "medium"}`を必ず明示指定する。手動でのCodex軽量利用（既定`low`）の
+応答速度を維持したまま、委譲経路のみ推論深さを引き上げるための指定である。継続呼び出し
+（`mcp__codex__codex-reply`）は`config`パラメーターを受け付けないため対象外とする。
+
 ## codex利用可否の2段階判定
 
 - 段階1（MCP利用）: `mcp__codex__codex`系が呼び出し可能な環境。既定でこの経路を使う
@@ -75,12 +80,19 @@ Windows環境ではcodexのPowerShell経由ファイル読み書きがShift-JIS�
 
 ## plan-file-creatorからの起動
 
-`agent-toolkit:plan-file-creator`は`subagent_type: agent-toolkit:plan-codex-delegate`
-（`用途: 計画レビュー`）のみを使う。`mcp__codex__codex`直接呼び出しへ自律フォールバックしない。
-起動がauto mode下でブロックされた場合は`needs_escalation`で呼び出し元へ返却し、
-呼び出し元が`mcp__codex__codex`を直接呼び出して代行する。
+`agent-toolkit:plan-file-creator`は`subagent_type: agent-toolkit:plan-codex-delegate`を
+`用途: 計画作成`・`用途: 計画レビュー`で使う。`mcp__codex__codex`直接呼び出しへ自律フォールバックしない。
+起動がauto mode下でブロックされた場合は`needs_escalation`で呼び出し元へ返却する。
+呼び出し元の対応は用途で分岐し（`用途: 計画作成`は呼び出し元自身の直接起草、`用途: 計画レビュー`は
+`mcp__codex__codex`直接呼び出しによるレビュー代行）、詳細は`plan-file-creator.md`
+「エスカレーション基準」節（SSOT）に従う。
 
 計画ファイルレビューは観点分担で並列起動する。基本は「構造・整合性」「実現可能性・技術妥当性」の2並列とし、
 規範文書（`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下・`agent-toolkit/`配下）の改訂を含む場合は
 「規範整合」を加えた3並列とする。各インスタンスの`追加のレビュー観点`欄へ担当ラベルを渡す。
 `plan-reviewer`（claude）は段階2成立時のみ代替として起動する。
+
+`plan-codex-delegate`は`用途: 計画作成`（計画ファイル起草の委譲）も受け付ける。詳細は
+`agent-toolkit/agents/plan-file-creator.md`「計画ファイルの起草」節を参照する。起草と計画レビューの
+初回起動は別`threadId`のインスタンスで実施し、起草スレッドをレビューの初回起動へ継続利用しない
+（自己レビュー回避が目的であり、「codexレビューの進め方」節が定めるレビュー自身の反映確認継続は妨げない）。

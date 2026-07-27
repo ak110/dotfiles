@@ -80,6 +80,8 @@ Agent / Task:
   `plan-file-creator`の整合性チェック完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - `plan-codex-delegate`起動検知時の`plan_codex_delegate_invoked`即時記録 (side-effect)
+- 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
+- `plan-file-creator`起動プロンプトの必須見出し4点の実在・非空検査によるブロック (block)
 
 Write / Edit / MultiEdit:
 
@@ -594,8 +596,6 @@ def main() -> int:
     # plan-codex-delegate起動記録の前倒し
     if tool_name in ("Agent", "Task"):
         subagent_type = tool_input.get("subagent_type")
-        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-            _process_loop_log.append("subagent_start", type=subagent_type)
         if isinstance(subagent_type, str) and subagent_type in (
             "plan-codex-delegate",
             "agent-toolkit:plan-codex-delegate",
@@ -604,12 +604,21 @@ def main() -> int:
         if isinstance(subagent_type, str):
             agent_prompt = tool_input.get("prompt")
             _record_subagent_type_flag_invoked(session_id, subagent_type, agent_prompt if isinstance(agent_prompt, str) else "")
+        if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
+            return 2
+        if isinstance(subagent_type, str) and _check_plan_file_creator_prompt_completeness(subagent_type, tool_input):
+            return 2
         if (
             isinstance(subagent_type, str)
             and subagent_type in _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
             and _check_process7_completion_for_plan_impl_executor_agent(session_id, tool_input)
         ):
             return 2
+        # ブロック検査を全通過した場合のみ、実際に起動する種別として開始時刻を記録する。
+        # ブロック前に記録すると、起動しなかった種別の`subagent_start`だけが残り
+        # `subagent_end`と対応しなくなるため（process-loopの所要時間分析が崩れる）。
+        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
+            _process_loop_log.append("subagent_start", type=subagent_type)
         message = _check_agent_norm_reference(tool_input)
         if message is not None:
             print(message, file=sys.stderr)
@@ -2483,6 +2492,26 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
+# Agent/Taskツールの`subagent_type`引数として許容するplan-file-creator識別子。
+_PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-file-creator", "plan-file-creator"})
+
+# `model`引数指定を一律禁止する対象。`plan-file-creator`・`plan-impl-executor`はいずれもSonnet固定の
+# 窓口として動き実作業をcodexへ移譲する設計であり、呼び出し側が難易度等を理由に`model`引数で
+# 上書きする正当な運用が無い（ユーザー確認済み）。他のfrontmatter`model:`定義エージェント
+# （`plan-implementer`・`plan-reviewer`・`plan-codex-delegate`）は対象外とする。
+_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
+    _PLAN_FILE_CREATOR_SUBAGENT_TYPES | _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
+)
+
+# `agent-toolkit/skills/plan-mode/references/plan-file-creator-prompt-template.md`が定める必須見出し。
+# 改訂時は当該ファイルと同期する。
+_PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS: tuple[str, ...] = (
+    "計画ファイルパス",
+    "permission_mode",
+    "合意済み事項",
+    "照合結果",
+)
+
 # `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
@@ -2621,6 +2650,92 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
         ),
         file=sys.stderr,
     )
+
+
+def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
+    """`plan-file-creator`・`plan-impl-executor`への`model`引数指定を一律ブロックする。
+
+    両者はSonnet固定の窓口として動き実作業をcodexへ移譲する設計であり、`model`引数での
+    上書きを許容する運用が無い。`plan-implementer`は`execution-process.md`「実装委譲…」節が
+    難易度別の明示指定を規定するため対象外とし、`_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES`にも含めない。
+    """
+    if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
+        return False
+    if "model" not in tool_input:
+        return False
+    model = tool_input.get("model")
+    print(
+        _llm_notice(
+            f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
+            "Why this gate exists: this subagent is a Sonnet-fixed front end that delegates the"
+            " actual work to codex; no per-call model override is defined for it (unlike"
+            " `plan-implementer`, which has a documented difficulty-based override policy in"
+            " agent-toolkit/references/plan-impl/execution-process.md).\n"
+            "Normal fix: omit the `model` parameter and let the agent definition's default"
+            " (`sonnet`) apply.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+_ATX_H2_RE = re.compile(r"^ {0,3}## (.*)$")
+
+
+def _extract_prompt_h2_sections(prompt: str) -> dict[str, str]:
+    """起動プロンプト本文からH2見出しごとの直下本文（次のH2見出し直前まで）を返す。
+
+    フェンス付きコードブロック（バッククォート・チルダの両形式）・HTMLコメント内の見出し例示は
+    `_plan_format.iter_markdown_body_lines`（SSOT実装）が除外するため、実見出しとして誤認しない。
+    見出し判定はCommonMarkのATX見出し仕様（先頭スペース0〜3個までを許容し、4個以上は
+    インデントコードブロックと解釈して見出し扱いしない）に従う。
+    """
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for _, line in _plan_format.iter_markdown_body_lines(prompt):
+        heading_match = _ATX_H2_RE.match(line)
+        if heading_match is not None:
+            heading_name: str = (heading_match.group(1) or "").strip()
+            current = heading_name
+            sections.setdefault(heading_name, [])
+            continue
+        if current is not None:
+            sections[current].append(line)
+    return {heading: "\n".join(body) for heading, body in sections.items()}
+
+
+def _check_plan_file_creator_prompt_completeness(subagent_type: str, tool_input: dict) -> bool:
+    """`plan-file-creator`起動プロンプトが必須見出し4点を欠く、または見出し直下が空の場合ブロックする。
+
+    要件が固まっていない状態での起動（曖昧な起動プロンプト）を機械的に差し戻すゲートである。
+    見出しの実在と非空のみを検査し、内容の妥当性までは検査しない。`prompt`が欠落または非文字列の場合、
+    必須見出し全件が不在であるとみなしてブロックする（Agent/Taskツールのスキーマ上`prompt`は必須のため
+    通常は生じない状態だが、安全側の設計とする）。
+    """
+    if subagent_type not in _PLAN_FILE_CREATOR_SUBAGENT_TYPES:
+        return False
+    prompt = tool_input.get("prompt")
+    if isinstance(prompt, str):
+        sections = _extract_prompt_h2_sections(prompt)
+        missing = [heading for heading in _PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS if not sections.get(heading, "").strip()]
+    else:
+        missing = list(_PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS)
+    if not missing:
+        return False
+    print(
+        _llm_notice(
+            f"blocked: `plan-file-creator` launch prompt is missing required section(s): {missing}.\n"
+            "Required headings (verbatim, each with non-empty content):"
+            " `## 計画ファイルパス`, `## permission_mode`, `## 合意済み事項`, `## 照合結果`.\n"
+            "Why this gate exists: launching plan-file-creator before requirements are settled"
+            " produces a plan draft that has to be redone.\n"
+            "See agent-toolkit/skills/plan-mode/references/plan-file-creator-prompt-template.md.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dict | None = None) -> bool:

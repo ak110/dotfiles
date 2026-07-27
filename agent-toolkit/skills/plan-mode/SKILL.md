@@ -18,18 +18,27 @@ description: >
    コードベース・公式ドキュメント・実機実行で確定できる事項は、質問へ回す前にすべて確定させる
 2. 調査で確定できない論点（ユーザーの意図・選好・優先度）が残る場合に限り、
    `AskUserQuestion`でまとめて確認する。各論点には推奨案を併記し第1選択肢へ置く
-3. Agentツールで`plan-file-creator`を起動する。起動プロンプトには対象ファイル一覧と、
-   フィードバック原文・ユーザー発話・エラー出力といった原文素材を`### 提示素材`へ転記する旨を含める。
-   コーディングエージェント向け文書が含まれるかの判定は`plan-file-creator`が自律的に行う。
-   計画ファイルの作成はメイン側で直接起草しない
+3. Agentツールで`plan-file-creator`を起動する。起動プロンプトは
+   `references/plan-file-creator-prompt-template.md`が定める必須見出し4点
+   （`## 計画ファイルパス`・`## permission_mode`・`## 合意済み事項`・`## 照合結果`）を満たす形で構成し、
+   対象ファイル一覧と、フィードバック原文・ユーザー発話・エラー出力といった原文素材を
+   `### 提示素材`へ転記する旨を含める。コーディングエージェント向け文書が含まれるかの判定は
+   `plan-file-creator`が自律的に行う（同エージェント定義「入力」節が「未指定の場合は自身で
+   対象ファイル一覧から自律判定し、自律判定した旨を完了報告へ記録する」と規定済み）。
+   計画ファイルの起草は`plan-file-creator`配下の`plan-codex-delegate`（用途: 計画作成）へ
+   委譲する構成である。メイン側・`plan-file-creator`自身も直接起草しない既定経路のほか、
+   次の例外がある：MCP不可時は`plan-file-creator`自身の直接起草へフォールバックし、
+   auto modeでの起動ブロック時は`plan-file-creator.md`「エスカレーション基準」節（SSOT）に従い
+   呼び出し元が直接起草する
 4. 計画ファイルの完成後、`references/codex-review.md`に従いcodexレビューを実施する。
    `plan-file-creator`へ委譲した経路では同エージェントが内部で実施するため、完了報告を2点で検収する。
    `invoked_subagents`欄に`codex-review`が含まれること、`review_summary`欄がレビューごとの
    指摘件数と反映内容を示していることとする。`invoked_subagents`欄が欠ける場合はMCPが利用可能なら
    呼び出し元から実行し、`review_summary`欄が欠ける場合は実装工程へ進まず委譲先へ照会して受領する。
    委譲先が受領できない場合は呼び出し元が当該レビューの記録から指摘本文を取得する。
-   メインが直接起草した場合・小規模改訂で委譲を省いた場合・`plan-file-creator`が
-   `needs_escalation`で返した場合は、呼び出し元が本工程を実施する
+   `plan-file-creator`が`plan-codex-delegate`の起動ブロックを理由に`needs_escalation`で
+   返した場合の呼び出し元の対応（計画作成時は自身の直接起草、計画レビュー時はcodexレビュー代行）は
+   `plan-file-creator.md`「エスカレーション基準」節（SSOT）に従う
 5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）Agentツールで`plan-impl-executor`を起動する
 
 調査を経ずに質問を組み立てない。調査前の時点では論点の妥当性も選択肢の技術的成立性も判断できない。
