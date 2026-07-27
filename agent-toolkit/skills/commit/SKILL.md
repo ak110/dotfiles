@@ -68,6 +68,10 @@ Claude Code固有事項として、本体作業に着手する時点で
   `git status`・`git diff --stat`の変更集合にすべて含まれるか照合する。
   欠落があれば未反映の編集として補完してからコミットする
 - push前: `git remote -v`と`git branch --show-current`で対象リポジトリ・リモートURL・ブランチを確認する
+- 作業着手時とpush前に`git fetch`してから`git log --oneline <上流ブランチ>..HEAD`と
+  `git log --oneline HEAD..<上流ブランチ>`の双方を確認する。後者に出力がある場合は上流と分岐している。
+  分岐したまま作業を進めると、上流に既にある変更を未実装と誤認して同一内容を二重に実装しうるため、
+  着手前に上流最新へ追随させる。push直前に判明した場合は上流へrebaseしてから検証をやり直す
 - `git push`はリモート名・ブランチ名を明示せず`git push`単独で呼び出すことを標準とする
   - 明示指定が必要な場合は`git config --get branch.<branch>.remote`で当該branchの追跡remoteを確認する。
     確認したremoteと`push`引数のremoteが一致するか照合する。

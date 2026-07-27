@@ -68,6 +68,48 @@ class _ChangeHandler(watchdog.events.FileSystemEventHandler):
 # （`--no-update`未指定時の`os.execvp`再起動）を経ても同一worktreeを継続利用させる。
 _DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 _DOTFILES_WORKTREE_NAME = "process-loop"
+# `--worktree`が作成するworktreeの配置先（対象リポジトリのroot相対）。
+_WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
+
+
+def _git_output(args: list[str], cwd: pathlib.Path) -> str:
+    """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> None:
+    """既存worktreeのブランチを対象リポジトリの上流最新へ追随させる。
+
+    worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。
+    前回反復の成果がpush済みでも、その後に他の作業ツリーが上流へ進めた分は
+    worktreeのブランチへ入らない。追随を経ないまま次の反復が始まると、
+    上流に既にある変更を未実装と誤認して同一内容を二重に実装し、履歴が分岐する。
+
+    worktree未作成の反復（初回起動時）は`--worktree`が上流最新から生成するため無動作で戻る。
+    ローカル変更・未pushコミットが残る場合はrebaseが失敗しうるため、
+    失敗内容をstderrへ示したうえで起動を継続し、セッション側の判断へ委ねる。
+    """
+    worktree_path = local_path / _WORKTREE_PARENT_REL / worktree_name
+    if not worktree_path.is_dir():
+        return
+    upstream_branch = _git_output(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=local_path)
+    if not upstream_branch:
+        print(f"上流ブランチを解決できないためworktreeの追随を見送ります: {worktree_path}", file=sys.stderr)
+        return
+    fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
+    if fetch.returncode != 0:
+        print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
+        return
+    rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
+    if rebase.returncode == 0:
+        print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
+        return
+    subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
+    print(
+        f"worktreeの{upstream_branch}への追随に失敗しました（{rebase.stderr.strip()}）。起動後のセッションで解消してください。",
+        file=sys.stderr,
+    )
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
@@ -309,6 +351,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         # `--worktree`はclaude自身がcwd基準のリポジトリからworktreeを作成する機能で
                         # あり、`cwd=local_path`固定と競合しない。
                         claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
+                        # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
+                        _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
                     claude_argv.append(prompt)
                     result = subprocess.run(
                         claude_argv,
