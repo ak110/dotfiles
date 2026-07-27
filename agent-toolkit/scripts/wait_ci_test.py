@@ -347,29 +347,40 @@ class TestSignalHandling:
     """実プロセスへシグナルを送信し、`_install_signal_handlers`の実挙動を確認する。"""
 
     def test_sigterm_exits_with_interrupted_code(self):
+        """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
+
+        ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
+        既定動作で終了し`-SIGTERM`が返る。待機時間を延ばしながら最大3回試行し、
+        起動が遅い実行環境でも登録後の挙動を判定できるようにする。
+        """
         script_path = pathlib.Path(__file__).parent / "wait_ci.py"
-        with subprocess.Popen(
-            [
-                sys.executable,
-                str(script_path),
-                "--sha=0000000000000000000000000000000000000000",
-                "--poll-interval=5",
-                "--registration-grace=30",
-                "--timeout=60",
-                "--subprocess-timeout=2",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        ) as proc:
-            try:
-                time.sleep(0.5)
-                proc.send_signal(signal.SIGTERM)
-                returncode = proc.wait(timeout=15)
-            finally:
-                if proc.poll() is None:
-                    proc.kill()
-                    proc.wait(timeout=5)
+        returncode = None
+        for warmup_sec in (1.0, 3.0, 6.0):
+            with subprocess.Popen(
+                [
+                    sys.executable,
+                    str(script_path),
+                    "--sha=0000000000000000000000000000000000000000",
+                    "--poll-interval=5",
+                    "--registration-grace=30",
+                    "--timeout=60",
+                    "--subprocess-timeout=2",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            ) as proc:
+                try:
+                    time.sleep(warmup_sec)
+                    proc.send_signal(signal.SIGTERM)
+                    returncode = proc.wait(timeout=15)
+                finally:
+                    if proc.poll() is None:
+                        proc.kill()
+                        proc.wait(timeout=5)
+            if returncode == wait_ci.EXIT_INTERRUPTED:
+                break
+            assert returncode == -signal.SIGTERM, f"想定外の終了コード: {returncode}"
         assert returncode == wait_ci.EXIT_INTERRUPTED
 
 
