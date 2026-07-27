@@ -3,7 +3,15 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""リポジトリ内の自動生成ファイルを一括同期する。"""
+"""リポジトリ内の自動生成ファイルを一括同期する。
+
+起動は`uv run python scripts/sync_generated_files.py`とする。
+パスを直接渡す形（`uv run scripts/sync_generated_files.py`・
+`uv run --no-project --script scripts/sync_generated_files.py`）では
+本ファイルのPEP 723ヘッダーが検出され、依存なしの隔離環境で実行される。
+本スクリプトは`sys.executable`で各生成器を子プロセス起動するため、
+隔離環境では子が要求するプロジェクト依存を解決できず全件失敗する。
+"""
 
 from __future__ import annotations
 

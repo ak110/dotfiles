@@ -5,9 +5,12 @@
 # ///
 """push後のCI通過確認を待機する補助スクリプト。
 
-`gh run list --commit=<sha>`でGitHub Actions runを取得し、期待run集合が全completed
-かつconclusion=successになるまでポーリングする。境界条件（run未登録・コマンド失敗・
-登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
+GitHubでは`gh run list --commit=<sha>`、GitLabでは`glab ci list --sha=<sha>`で
+対象commitのCI実行を取得し、期待実行集合が全completedかつconclusion=successになるまでポーリングする。
+対象forgeは`git remote get-url origin`のホストから自動判別し、`--forge`で明示指定もできる。
+GitLabは私設ホストも対象とする（対象ホストは`glab`がカレントディレクトリの`git remote`・
+環境変数`GITLAB_HOST`・設定から決定するため、本スクリプト側の追加設定は不要）。
+境界条件（run未登録・コマンド失敗・登録遅延・cancelled後の後続run追跡・タイムアウト・シグナル）を明示的に扱う。
 `agent-toolkit:commit`スキル「push後のCI通過確認」節・
 `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節から参照される。
 """
@@ -15,8 +18,11 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import math
+import pathlib
+import re
 import signal
 import subprocess
 import sys
@@ -26,6 +32,8 @@ from typing import Any
 
 # 以下の終了コードはCLIの公開インターフェース（利用者が`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。
+# `EXIT_GH_ERROR`はGitHub専用実装だった当時の名称を公開契約として維持する。
+# 現在はforge CLI（`gh`・`glab`）呼び出し失敗と対象forge判別失敗の双方を表す。
 EXIT_SUCCESS = 0
 EXIT_CI_FAILED = 1
 EXIT_TIMEOUT = 2
@@ -33,7 +41,7 @@ EXIT_GH_ERROR = 3
 EXIT_NO_RUNS = 4
 EXIT_INTERRUPTED = 130
 
-_MAX_CONSECUTIVE_GH_FAILURES = 3
+_MAX_CONSECUTIVE_RUN_LIST_FAILURES = 3
 _GH_JSON_FIELDS = "name,status,conclusion,url,databaseId,headSha,createdAt"
 
 RunRecord = dict[str, Any]
@@ -42,12 +50,12 @@ AncestorCheckFn = Callable[[str], bool]
 FollowShasFn = Callable[[str], list[str]]
 
 
-class GhListError(RuntimeError):
-    """`gh run list`の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
+class RunListError(RuntimeError):
+    """CI実行一覧の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
 
 
 def _gh_run_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
-    """`gh run list --commit=<sha>`結果を返す。失敗時はGhListError送出。"""
+    """`gh run list --commit=<sha>`結果を返す。失敗時はRunListError送出。"""
     try:
         result = subprocess.run(
             ["gh", "run", "list", "--commit", sha, "--json", _GH_JSON_FIELDS],
@@ -57,18 +65,149 @@ def _gh_run_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
             timeout=subprocess_timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise GhListError(f"gh run list timed out after {subprocess_timeout:.0f}s") from exc
+        raise RunListError(f"gh run list timed out after {subprocess_timeout:.0f}s") from exc
     except FileNotFoundError as exc:
-        raise GhListError("gh command not found") from exc
+        raise RunListError("gh command not found") from exc
     if result.returncode != 0:
-        raise GhListError(f"gh run list failed (exit={result.returncode}): {result.stderr.strip()}")
+        raise RunListError(f"gh run list failed (exit={result.returncode}): {result.stderr.strip()}")
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise GhListError(f"gh run list returned invalid JSON: {exc}") from exc
+        raise RunListError(f"gh run list returned invalid JSON: {exc}") from exc
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
-        raise GhListError(f"gh run list returned unexpected JSON shape: {result.stdout[:200]!r}")
+        raise RunListError(f"gh run list returned unexpected JSON shape: {result.stdout[:200]!r}")
     return payload
+
+
+# GitLabパイプラインの未完了ステータス。`canceling`は取り消しの進行中のため未完了として待機を継続する。
+# 典拠: https://docs.gitlab.com/api/pipelines/ の「List project pipelines」応答仕様。
+_GITLAB_PENDING_STATUSES = frozenset(
+    {
+        "created",
+        "waiting_for_resource",
+        "preparing",
+        "waiting_for_callback",
+        "pending",
+        "running",
+        "canceling",
+        "scheduled",
+    }
+)
+
+# GitLabの単一`status`をGitHubの`conclusion`語彙へ写像する。
+# `canceled`（lが1つ）と`cancelled`（lが2つ）の綴り差を吸収しないと、
+# 本ファイルの全cancelled判定（`_all_cancelled`）が成立しない。
+# `manual`は手動ジョブ待ちで自動進行しないため、完了かつ非成功として扱う
+# （未完了とすると必ずタイムアウトへ至る。GitHubの`action_required`と意味が対応する）。
+_GITLAB_STATUS_TO_CONCLUSION = {
+    "success": "success",
+    "failed": "failure",
+    "canceled": "cancelled",
+    "skipped": "skipped",
+    "manual": "action_required",
+}
+
+
+def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
+    """GitLabパイプライン1件を`gh run list`と同一スキーマの`RunRecord`へ正規化する。
+
+    未知のステータスは完了かつ`conclusion`をステータス名のまま扱い、成功以外として判定させる
+    （`conclusion`は`success`のみ通過とする厳格判定のため、未知値の混入で誤って通過することはない）。
+    `name`は空の場合があるため、空のときはパイプライン識別子を含む代替表示へ置き換える。
+    """
+    status = str(pipeline.get("status", ""))
+    pipeline_id = pipeline.get("id")
+    completed = status not in _GITLAB_PENDING_STATUSES
+    return {
+        "name": pipeline.get("name") or f"pipeline #{pipeline_id}",
+        "status": "completed" if completed else "in_progress",
+        "conclusion": _GITLAB_STATUS_TO_CONCLUSION.get(status, status) if completed else None,
+        "url": pipeline.get("web_url", ""),
+        "databaseId": pipeline_id,
+        "headSha": pipeline.get("sha", ""),
+        "createdAt": pipeline.get("created_at", ""),
+    }
+
+
+def _glab_pipeline_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
+    """`glab ci list --sha=<sha> -F json`結果を正規化して返す。失敗時はRunListError送出。
+
+    `glab`はJSON出力でGitLab APIの応答オブジェクトを加工せず出力する。
+    SHA指定で対象を限定できるサブコマンドは`ci list`のみのため、`ci status`・`ci get`は使わない。
+    """
+    try:
+        result = subprocess.run(
+            ["glab", "ci", "list", "--sha", sha, "-F", "json", "-P", "100"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=subprocess_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RunListError(f"glab ci list timed out after {subprocess_timeout:.0f}s") from exc
+    except FileNotFoundError as exc:
+        raise RunListError("glab command not found") from exc
+    if result.returncode != 0:
+        raise RunListError(f"glab ci list failed (exit={result.returncode}): {result.stderr.strip()}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RunListError(f"glab ci list returned invalid JSON: {exc}") from exc
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise RunListError(f"glab ci list returned unexpected JSON shape: {result.stdout[:200]!r}")
+    return [_normalize_gitlab_pipeline(item) for item in payload]
+
+
+def _git_stdout(command: list[str], subprocess_timeout: float) -> str | None:
+    """gitコマンドの標準出力を前後空白除去して返す。失敗・空出力時は`None`を返す。"""
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=subprocess_timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.strip()
+
+
+def _resolve_forge(explicit: str, subprocess_timeout: float) -> str | None:
+    """対象forgeを`github`または`gitlab`へ解決する。判別できない場合は`None`を返す。
+
+    `explicit`が`auto`以外ならその値をそのまま返す。
+    `auto`では`git remote get-url origin`のホスト名で判別する。
+    ホスト名をドット区切りのラベルへ分割し、いずれかのラベルが`github`と完全一致すればGitHub、
+    `gitlab`と完全一致すればGitLabとする。`github.com`とGitHub Enterprise Serverの
+    標準的なホスト名（`github.<自社ドメイン>`）が前者に該当する。
+    部分一致で判定すると`notgithub.example.com`のような無関係なホストを誤分類するため、ラベル単位の完全一致とする。
+    いずれのラベルも一致しないホスト名はgit作業ツリールートの`.gitlab-ci.yml`の実在を副次的な根拠とし、
+    無ければ`None`を返して`--forge`の明示指定を促す。
+    ホスト名だけでは自社ドメインの私設ホストの種別を一意に確定できないためである。
+    `.gitlab-ci.yml`をホスト名より優先しないのは、GitHubリポジトリに同ファイルが同居する場合があるためである。
+    探索起点をカレントディレクトリではなく作業ツリールートとするのは、
+    リポジトリのサブディレクトリから起動された場合の見逃しを避けるためである。
+    """
+    if explicit != "auto":
+        return explicit
+    remote = _git_stdout(["git", "remote", "get-url", "origin"], subprocess_timeout)
+    if remote is None:
+        return None
+    m = re.match(r"(?:[a-z+]+://)?(?:[^@/]+@)?([^/:]+)", remote)
+    if m is None:
+        return None
+    labels = m.group(1).lower().split(".")
+    if "github" in labels:
+        return "github"
+    if "gitlab" in labels:
+        return "gitlab"
+    toplevel = _git_stdout(["git", "rev-parse", "--show-toplevel"], subprocess_timeout)
+    if toplevel is not None and (pathlib.Path(toplevel) / ".gitlab-ci.yml").exists():
+        return "gitlab"
+    return None
 
 
 def _print(elapsed: float, msg: str) -> None:
@@ -100,6 +239,7 @@ def wait_for_ci(
     follow_cancelled: bool,
     subprocess_timeout: float,
     *,
+    forge: str = "github",
     sleep_fn: Callable[[float], None] = time.sleep,
     now_fn: Callable[[], float] = time.monotonic,
     run_list_fn: RunListFn | None = None,
@@ -111,12 +251,16 @@ def wait_for_ci(
     - 登録猶予期間全体でrun集合を継続収集し、期間末で安定確定する
       （猶予末までに追加登録されるrunも期待集合に含む）
     - 期間末で0件ならEXIT_NO_RUNS
-    - 連続gh失敗が閾値到達でEXIT_GH_ERROR
+    - CI実行一覧の連続取得失敗が閾値到達でEXIT_GH_ERROR
     - 期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
     - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..HEAD`の後続SHA上のrunで補完判定
     - `--sha`が現在ブランチHEADの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
+    - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`へ切り替える
+      （`run_list_fn`を明示指定した場合は`forge`を参照しない）
     """
-    run_list_fn = run_list_fn or (lambda s: _gh_run_list(s, subprocess_timeout))
+    if run_list_fn is None:
+        fetcher = _glab_pipeline_list if forge == "gitlab" else _gh_run_list
+        run_list_fn = functools.partial(fetcher, subprocess_timeout=subprocess_timeout)
     ancestor_check_fn = ancestor_check_fn or (lambda ancestor: _is_ancestor_of_head(ancestor, subprocess_timeout))
     follow_shas_fn = follow_shas_fn or (lambda base: _follow_shas(base, subprocess_timeout))
     start = now_fn()
@@ -130,11 +274,11 @@ def wait_for_ci(
             runs = run_list_fn(sha)
             consecutive_failures = 0
             expected_ids |= {r["databaseId"] for r in runs if "databaseId" in r}
-        except GhListError as exc:
+        except RunListError as exc:
             consecutive_failures += 1
             last_call_failed = True
-            _print(now_fn() - start, f"gh error (attempt {consecutive_failures}): {exc}")
-            if consecutive_failures >= _MAX_CONSECUTIVE_GH_FAILURES:
+            _print(now_fn() - start, f"run list error (attempt {consecutive_failures}): {exc}")
+            if consecutive_failures >= _MAX_CONSECUTIVE_RUN_LIST_FAILURES:
                 return EXIT_GH_ERROR
         elapsed = now_fn() - start
         if elapsed >= registration_grace:
@@ -142,7 +286,7 @@ def wait_for_ci(
                 if last_call_failed:
                     # 直近呼び出しが失敗しており「run 0件」を確定できないため、
                     # 未確認のままNO_RUNSへ丸めずGH_ERRORとして報告する
-                    _print(elapsed, "gh呼び出し失敗により期待run集合を確定できないまま登録猶予が経過")
+                    _print(elapsed, "CI実行一覧の取得失敗により期待run集合を確定できないまま登録猶予が経過")
                     return EXIT_GH_ERROR
                 _print(elapsed, f"run未登録のまま登録猶予{registration_grace:.0f}秒超過")
                 return EXIT_NO_RUNS
@@ -157,10 +301,10 @@ def wait_for_ci(
         try:
             runs = run_list_fn(sha)
             consecutive_failures = 0
-        except GhListError as exc:
+        except RunListError as exc:
             consecutive_failures += 1
-            _print(now_fn() - start, f"gh error (attempt {consecutive_failures}): {exc}")
-            if consecutive_failures >= _MAX_CONSECUTIVE_GH_FAILURES:
+            _print(now_fn() - start, f"run list error (attempt {consecutive_failures}): {exc}")
+            if consecutive_failures >= _MAX_CONSECUTIVE_RUN_LIST_FAILURES:
                 return EXIT_GH_ERROR
             sleep_fn(poll_interval)
             continue
@@ -237,7 +381,7 @@ def _follow_cancelled(
             for follow_sha in follow_shas:
                 candidates = run_list_fn(follow_sha)
                 expected_ids |= {r["databaseId"] for r in candidates if r.get("headSha") == follow_sha and "databaseId" in r}
-        except GhListError as exc:
+        except RunListError as exc:
             elapsed = now_fn() - start
             _print(elapsed, f"後続run取得失敗: {exc}")
             return EXIT_GH_ERROR
@@ -264,7 +408,7 @@ def _follow_cancelled(
                 follow_runs.extend(
                     r for r in candidates if r.get("headSha") == follow_sha and r.get("databaseId") in expected_ids
                 )
-        except GhListError as exc:
+        except RunListError as exc:
             elapsed = now_fn() - start
             _print(elapsed, f"後続run取得失敗: {exc}")
             return EXIT_GH_ERROR
@@ -386,12 +530,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--subprocess-timeout", type=_positive_float, default=60.0, help="個別`gh`実行のタイムアウト秒数（既定60）"
     )
+    parser.add_argument(
+        "--forge",
+        choices=("auto", "github", "gitlab"),
+        default="auto",
+        help="対象ホスティング種別（既定auto。originのリモートURLのホストから自動判定）",
+    )
     parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時に同ブランチ後続run成功を追跡")
     args = parser.parse_args(argv)
     sha = _resolve_sha(args.sha, args.subprocess_timeout)
     if sha is None:
         target_desc = args.sha if args.sha is not None else "HEAD"
         print(f"[wait_ci] {target_desc}のsha解決に失敗（git rev-parse）", file=sys.stderr)
+        return EXIT_GH_ERROR
+    forge = _resolve_forge(args.forge, args.subprocess_timeout)
+    if forge is None:
+        print("[wait_ci] 対象forgeを判別できない（originのリモートURL未取得）。--forgeで明示指定する", file=sys.stderr)
         return EXIT_GH_ERROR
     return wait_for_ci(
         sha,
@@ -400,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
         args.registration_grace,
         args.follow_cancelled,
         args.subprocess_timeout,
+        forge=forge,
     )
 
 

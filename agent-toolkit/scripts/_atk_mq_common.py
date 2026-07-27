@@ -7,6 +7,8 @@
 `_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
 運用（`atk mq process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
 pullとファイル操作・commitの交錯によるfast-forward失敗を招く。
+`_repo_lock`はロックファイル名を対象パスから導出するため、フィードバック保存リポジトリ以外の
+git作業コピー（`atk mq process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
 """
 
 import argparse
@@ -375,14 +377,15 @@ def _assert_repo_lock_held(private_notes: pathlib.Path) -> None:
         )
 
 
-def _repo_lock_path(private_notes: pathlib.Path) -> pathlib.Path:
-    """`private_notes`に対応するロックファイルの絶対パスを返す。
+def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
+    """`repo_path`に対応するロックファイルの絶対パスを返す。
 
     配置先は`platformdirs.user_state_dir("agent-toolkit")`配下`locks/`ディレクトリとし、
-    ファイル名は`private_notes.resolve()`のSHA-1ハッシュ値とする（`.git/`配下を選択しない理由は
-    計画の`### 却下した代替案`参照）。取得時にロック用ディレクトリを自動作成する。
+    ファイル名は`repo_path.resolve()`のSHA-1ハッシュ値とする。
+    対象パスからロックファイル名を導出するため、フィードバック保存リポジトリに限らず
+    任意のgit作業コピーへ同一の仕組みを適用できる。取得時にロック用ディレクトリを自動作成する。
     """
-    resolved = str(private_notes.resolve())
+    resolved = str(repo_path.resolve())
     digest = hashlib.sha1(resolved.encode("utf-8"), usedforsecurity=False).hexdigest()
     lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit")) / "locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
@@ -392,9 +395,9 @@ def _repo_lock_path(private_notes: pathlib.Path) -> pathlib.Path:
 class _RepoLock(filelock.FileLock):
     """`_repo_lock`が返すロック。保持区間を`_LOCK_HELD_PATHS`へ登録・解除する。"""
 
-    def __init__(self, private_notes: pathlib.Path, *, timeout: float = -1) -> None:
-        self._target = private_notes.resolve()
-        super().__init__(str(_repo_lock_path(private_notes)), timeout=timeout)
+    def __init__(self, repo_path: pathlib.Path, *, timeout: float = -1) -> None:
+        self._target = repo_path.resolve()
+        super().__init__(str(_repo_lock_path(repo_path)), timeout=timeout)
 
     def acquire(
         self,
@@ -421,16 +424,18 @@ class _RepoLock(filelock.FileLock):
             _LOCK_HELD_PATHS.paths.pop(self._target, None)
 
 
-def _repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
-    """フィードバック保存リポジトリのgit操作・ファイル変更を排他するプロセス間ロックを返す。
+def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+    """指定したgit作業コピーへのgit操作・ファイル変更を排他するプロセス間ロックを返す。
 
+    フィードバック保存リポジトリ（`private_notes`）のほか、`atk mq process-loop`が
+    上流差分を確認するdotfiles作業コピーも対象とする。
     `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
-    本計画のロック区間分割設計では同一関数内のネスト`with`は発生しない。
+    現行のロック区間分割設計では同一関数内のネスト`with`は発生しない。
     CLIは既定値により取得できるまで無期限に待機する
     （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
     臨界区間はgit操作前後の短時間に限るため）。
     """
-    return _RepoLock(private_notes, timeout=timeout)
+    return _RepoLock(repo_path, timeout=timeout)
 
 
 def _copy_to_tempfile(content: bytes) -> pathlib.Path:

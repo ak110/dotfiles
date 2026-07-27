@@ -31,6 +31,12 @@
   - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録した定義だけを生成する
   - chezmoiの`symlink_`はWindowsで特権不足により失敗するため未使用で、
     Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクションを生成する
+- 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する
+  - `uv run scripts/sync_generated_files.py`のようにパスを直接渡すと、
+    当該スクリプトのPEP 723ヘッダーが検出され依存なしの隔離環境で実行される
+  - 同スクリプトは`sys.executable`で4つの生成器を子プロセス起動するため、
+    隔離環境では子が要求するプロジェクト依存（`pytilpack`等）を解決できず全件失敗する
+  - `python`を明示するとスクリプトモードにならずプロジェクト環境で実行される
 - chezmoi管理ソース（`.chezmoi-source/dot_claude/`配下）はパス上`dot_claude`命名だが、
   配布先`~/.claude/`配下のコーディングエージェント向け文書と同等として扱う
 - `.chezmoi-source/`配下のファイルを削除・改名した場合、chezmoiは配布先を自動削除しない

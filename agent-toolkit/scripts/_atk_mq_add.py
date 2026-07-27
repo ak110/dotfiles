@@ -97,6 +97,8 @@ def add_entries(
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
+    TBD種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
+    `_tbd.reject_reserved_tbd_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
@@ -105,8 +107,12 @@ def add_entries(
             _, body = _parse_leading_frontmatter(message)
             if _body_is_effectively_empty(body):
                 raise WebInputError("feedback本文が実質空です")
-    elif question_type not in {"choice", "yes-no", "free-form"}:
-        raise WebInputError("question_typeが不正です")
+    else:
+        if question_type not in {"choice", "yes-no", "free-form"}:
+            raise WebInputError("question_typeが不正です")
+        for message in messages:
+            _, body = _parse_leading_frontmatter(message)
+            _tbd.reject_reserved_tbd_markup(body)
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
@@ -138,8 +144,8 @@ def add_entries(
                 content = (
                     "---\n"
                     + "\n".join(lines)
-                    + f"\n---\n\n## 質問\n\n{body}\n\n## 回答\n\n"
-                    + "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+                    + f"\n---\n\n{_tbd.QUESTION_HEADING}\n\n{body}\n\n{_tbd.ANSWER_HEADING}\n\n"
+                    + f"{_tbd.ANSWER_MARKER}\n"
                 )
             (inbox_dir / filename).write_text(content, encoding="utf-8")
             if entry_type != MQ_TYPE_FEEDBACK:

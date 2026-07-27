@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_mq_tbd import _detect_self_containment_deficiency  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -1061,3 +1062,54 @@ class TestTbdRm:
         assert "重複が含まれます" in stderr
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 entry" in " ".join(commit_cmd)
+
+
+def test_answer_tbd_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """回答欄マーカーが重複するエントリでも最後のマーカー基準で分割し、見出しと質問本文を保全する。"""
+    notes = _setup_tbd_env(tmp_path)
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    path = notes / "inbox" / "20260101-000000-001.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        f"{tbd_module.QUESTION_HEADING}\n\n"
+        f"前半の質問本文。\n\n{tbd_module.ANSWER_MARKER}\n\n"
+        f"後半の質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
+        encoding="utf-8",
+    )
+    assert tbd_module.answer_tbd(notes, filename=path.name, answer="採用する") is True
+    content = path.read_text(encoding="utf-8")
+    assert tbd_module.ANSWER_HEADING in content
+    assert "前半の質問本文。" in content
+    assert "後半の質問本文。" in content
+    assert content.rstrip().endswith("採用する")
+
+
+def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """マーカーが1個の通常データでは従来と同じ結果になる。"""
+    notes = _setup_tbd_env(tmp_path)
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    path = notes / "inbox" / "20260101-000000-002.md"
+    path.write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
+        encoding="utf-8",
+    )
+    assert tbd_module.answer_tbd(notes, filename=path.name, answer="不採用とする") is True
+    content = path.read_text(encoding="utf-8")
+    assert content.count(tbd_module.ANSWER_MARKER) == 1
+    assert "質問本文。" in content
+    assert content.rstrip().endswith("不採用とする")
+
+
+def test_reject_reserved_tbd_markup_allows_plain_body() -> None:
+    """予約書式を含まない本文は拒否しない。"""
+    tbd_module.reject_reserved_tbd_markup("判定根拠を示したうえで、どちらの案を採用しますか？")
+
+
+def test_reject_reserved_tbd_markup_ignores_inline_heading_text() -> None:
+    """行頭以外に現れる見出し相当の文字列は拒否対象としない。"""
+    tbd_module.reject_reserved_tbd_markup(f"本文中で`{tbd_module.ANSWER_HEADING}`という語に言及するだけの記述は許容しますか？")

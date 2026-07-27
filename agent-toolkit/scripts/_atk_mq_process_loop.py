@@ -252,20 +252,32 @@ def _resolve_dotfiles_root() -> pathlib.Path | None:
 def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
     """`dotfiles_root`のgit upstreamとの間に未取込コミットがあるかを判定する。
 
+    同一の作業コピーを対象とする常駐インスタンスが複数並行するため、
+    `git fetch`と`rev-list`を`_repo_lock(dotfiles_root)`保持下で実行する。
+    ロックが無い状態ではgitの内部ロック競合により`fetch`がexit 128で失敗する。
     `git fetch`失敗・upstream未設定等でコマンドが失敗した場合は差分なし扱いとし、
     警告をstderrへ出力したうえで待機ループを継続させる（常駐を終了させない）。
+    警告本文にはgitの標準エラー出力を含める。終了コードのみでは原因を特定できないためである。
     """
     try:
-        subprocess.run(["git", "-C", str(dotfiles_root), "fetch", "--quiet"], check=True)
-        result = subprocess.run(
-            ["git", "-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        with _repo_lock(dotfiles_root):
+            subprocess.run(
+                ["git", "-C", str(dotfiles_root), "fetch", "--quiet"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            result = subprocess.run(
+                ["git", "-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
         return int(result.stdout.strip()) > 0
     except (subprocess.CalledProcessError, ValueError) as exc:
-        print(f"上流差分確認に失敗しました（待機ループを続行します）: {exc}", file=sys.stderr)
+        stderr = getattr(exc, "stderr", None)
+        detail = f": {stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
+        print(f"上流差分確認に失敗しました（待機ループを続行します）: {exc}{detail}", file=sys.stderr)
         return False
 
 

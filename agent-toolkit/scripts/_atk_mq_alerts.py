@@ -47,6 +47,38 @@ class AlertCollectError(RuntimeError):
     """CI・Dependabotアラート収集中に発生した回復不能な失敗（CLI不在・非ゼロ終了・JSON不正等）。"""
 
 
+_GH_DEPENDABOT_DISABLED_MESSAGE = "Dependabot alerts are disabled for this repository."
+"""Dependabotアラート機能が無効なリポジトリに対しGitHub APIが返すメッセージ本文。
+
+`gh api`は当該JSONを標準出力へ、要約1行を標準エラーへ出力する。実測で確認した文言をそのまま用いる。
+"""
+
+
+class AlertFeatureDisabledError(AlertCollectError):
+    """対象リポジトリで当該機能が無効であることを示す応答。
+
+    取得失敗ではなく設定上の正常状態のため、呼び出し側は警告を出力せず収集対象から除外する。
+    GitLabの脆弱性アラートを上位エディション限定機能としてあらかじめ対象外とする既存方針へ揃える。
+    """
+
+
+def _is_disabled_response(stdout: str, disabled_messages: tuple[str, ...]) -> bool:
+    """応答本文がHTTP 403かつ既知の機能無効メッセージと一致するかを判定する。
+
+    権限不足・トークン失効・組織の利用停止など別原因の403を機能無効と誤認しないよう、
+    メッセージは呼び出し側が渡した既知文言との完全一致でのみ判定する。
+    `disabled_messages`が空の呼び出し（CI状態取得など機能無効の概念が無い経路）は常に`False`となる。
+    JSON配列を返す正常応答および解析できない応答も`False`を返す。
+    """
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict) or str(payload.get("status")) != "403":
+        return False
+    return str(payload.get("message", "")) in disabled_messages
+
+
 @dataclasses.dataclass(frozen=True)
 class Alert:
     """収集した1件のアラート候補。`keys`は重複除外に使う安定識別子の集合。"""
@@ -94,8 +126,14 @@ def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _r
     return None
 
 
-def _run_json_command(command: list[str], *, timeout: float, operation: str) -> list[dict]:
-    """外部CLIを実行し、JSON配列応答を返す。"""
+def _run_json_command(
+    command: list[str], *, timeout: float, operation: str, disabled_messages: tuple[str, ...] = ()
+) -> list[dict]:
+    """外部CLIを実行し、JSON配列応答を返す。
+
+    `disabled_messages`を渡した呼び出しでは、HTTP 403かつ当該文言と一致する応答を
+    `AlertFeatureDisabledError`として区別する。既定は空で、従来どおり全失敗を`AlertCollectError`とする。
+    """
     try:
         result = subprocess.run(
             command,
@@ -109,6 +147,8 @@ def _run_json_command(command: list[str], *, timeout: float, operation: str) -> 
     except FileNotFoundError as exc:
         raise AlertCollectError(f"{command[0]}コマンドが見つかりません") from exc
     if result.returncode != 0:
+        if _is_disabled_response(result.stdout, disabled_messages):
+            raise AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")
         raise AlertCollectError(f"{operation}が失敗しました（exit={result.returncode}）: {result.stderr.strip()}")
     try:
         payload = json.loads(result.stdout)
@@ -168,11 +208,16 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
 
 
 def _run_gh_dependabot_alerts(repo: str) -> list[dict]:
-    """`gh api --paginate`で未解決Dependabotアラート全件を返す。"""
+    """`gh api --paginate`で未解決Dependabotアラート全件を返す。
+
+    リポジトリ側でDependabotアラート機能が無効な場合はHTTP 403が返るため、
+    当該応答のみ`AlertFeatureDisabledError`として取得失敗と区別する。
+    """
     return _run_json_command(
         ["gh", "api", "--paginate", f"/repos/{repo}/dependabot/alerts?state=open&per_page=100"],
         timeout=_GH_SUBPROCESS_TIMEOUT,
         operation=f"dependabot/alerts取得（{repo}）",
+        disabled_messages=(_GH_DEPENDABOT_DISABLED_MESSAGE,),
     )
 
 
@@ -255,7 +300,12 @@ def collect_new_alerts(
     dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
 ) -> list[Alert]:
-    """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。"""
+    """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
+
+    対象リポジトリで当該機能が無効な種別（`AlertFeatureDisabledError`）は
+    設定上の正常状態のため警告を出力せず除外する。
+    設定が変わらない限り同じ応答が返り続けるため、警告を出力すると監視間隔ごとに恒久的な雑音となる。
+    """
     host = repo_id.split("/", 1)[0]
     resolved_forge = forge if forge != "auto" else ("github" if host == "github.com" else "gitlab")
     repo_path = repo_id.split("/", 1)[1] if "/" in repo_id else repo_id
@@ -268,6 +318,8 @@ def collect_new_alerts(
                 print(f"警告: GitHub CI状態の取得に失敗しました: {exc}", file=sys.stderr)
         try:
             dependabot_alert = collect_github_dependabot_alerts(repo_path, alerts_fn=dependabot_fn)
+        except AlertFeatureDisabledError:
+            dependabot_alert = None
         except AlertCollectError as exc:
             print(f"警告: Dependabotアラートの取得に失敗しました: {exc}", file=sys.stderr)
             dependabot_alert = None

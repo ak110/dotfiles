@@ -30,6 +30,21 @@ from _atk_mq_common import (
 )
 from _atk_mq_repo import _resolve_repo_id
 
+ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
+"""TBDエントリの回答欄開始位置を示すHTMLコメント。
+
+`_atk_mq_add.add_entries`が投入時に付与し、`answer_tbd`・`_cmd_answer`が回答本文の切り出しに使う。
+本文字列を直接記述せず、常に本定数を参照する。
+"""
+
+QUESTION_HEADING = "## 質問"
+"""TBDエントリの質問見出し。`_atk_mq_add.add_entries`が投入時に付与する。"""
+
+ANSWER_HEADING = "## 回答"
+"""TBDエントリの回答見出し。`_atk_mq_add.add_entries`が投入時に付与する。"""
+
+_RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
+
 
 def _tbd_filename_completer(prefix: str, **_: object) -> list[str]:
     """argcomplete用のTBDファイル名補完候補生成。
@@ -123,8 +138,29 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     return None
 
 
+def reject_reserved_tbd_markup(body: str) -> None:
+    """TBD本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
+
+    検査対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
+    投入側が本文へ同じ要素を書くと`add_entries`が無検査で連結し二重生成となるため、
+    警告ではなく拒否とする（既存の非ブロッキング警告`warn_question_quality`は無視された実績がある）。
+    CLIとWeb UIの双方が`add_entries`を経由するため、本検査1箇所で両経路を覆う。
+    """
+    if ANSWER_MARKER in body:
+        raise WebInputError("TBD本文に回答欄マーカーが含まれています。本文には質問内容のみを書いてください")
+    for line in body.splitlines():
+        if line.strip() in _RESERVED_MARKUP_HEADINGS:
+            raise WebInputError(
+                f"TBD本文にツールが自動付与する見出し（{line.strip()}）が含まれています。本文には質問内容のみを書いてください"
+            )
+
+
 def warn_question_quality(filename: str, message: str, question_type: str | None) -> None:
-    """TBD投入時の質問本文の品質警告を標準エラーへ出力する。"""
+    """TBD投入時の質問本文の品質警告を標準エラーへ出力する。
+
+    書式上の予約要素（回答欄マーカー・自動付与の見出し）の混入は
+    `reject_reserved_tbd_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
+    """
     if question_type != "choice" and not _looks_like_question(message):
         print(
             f"警告: {filename}の質問本文に問い（疑問文）が含まれていません。"
@@ -176,14 +212,15 @@ def answer_tbd(
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         path = _resolve_active_entry(private_notes, filename)
-        marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
         text = path.read_text(encoding="utf-8")
         require_tbd_entry(path, text)
         if expected_content is not None and text != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        if marker not in text:
+        if ANSWER_MARKER not in text:
             raise WebInputError("回答欄マーカーがありません")
-        content = text.split(marker, maxsplit=1)[0] + marker + "\n" + answer.strip() + "\n"
+        # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。
+        # 最初のマーカーで分割すると回答見出しが消失し質問本文が途中で切断される。
+        content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"
         if text == content:
             return False
         path.write_text(content, encoding="utf-8")
@@ -242,9 +279,8 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if answered == snapshot:
             tmp_path.unlink(missing_ok=True)
             continue
-        marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
         edited_text = answered.decode("utf-8")
-        if marker not in edited_text:
+        if ANSWER_MARKER not in edited_text:
             print(f"回答欄マーカーがありません: {path.name}", file=sys.stderr)
             tmp_path.unlink(missing_ok=True)
             continue
@@ -252,7 +288,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             answer_tbd(
                 private_notes,
                 filename=path.name,
-                answer=edited_text.split(marker, maxsplit=1)[1],
+                answer=edited_text.rsplit(ANSWER_MARKER, maxsplit=1)[1],
                 expected_content=snapshot.decode("utf-8"),
             )
         except RuntimeError:

@@ -114,6 +114,9 @@ Claude Code固有事項として、本体作業に着手する時点で
   - 最終応答前に`git status`がcleanであることを確認してから完了を宣言する
   - `git push`実行時にPreToolUseフックがamend後の未コミット差分残置を検知すると自動的にpushをブロックする。
     `git status`で確認後、再amendまたはadd/commitで解消してから再度pushできる
+- 変更の競合を解決した後、コミット前に競合マーカーが本文へ残っていないことを横断検査する
+  - `git grep -nE '^(<{7}|={7}|>{7})( |$)' -- .`が出力を返さないことを確認する
+  - 統合作業では変更をまとめて登録する操作を使うため、解決したつもりのファイルの残存を個別確認では検知できない
 
 ## push後のCI通過確認
 
@@ -129,8 +132,11 @@ Claude Code固有事項として、本体作業に着手する時点で
   - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
     `--subprocess-timeout`・`--follow-cancelled`
   - exit code: 0=全run success、1=いずれか非success（failure・cancelled・timed_out・action_required等）、2=タイムアウト
-  - exit code（続き）: 3=gh呼び出し失敗（`--sha`で渡した値の完全形式への解決に失敗した場合を含む）、
+  - exit code（続き）: 3=forge CLI（`gh`・`glab`）呼び出し失敗または対象forgeの判別失敗
+    （`--sha`で渡した値の完全形式への解決に失敗した場合を含む）、
     4=登録猶予が経過してもrun未登録、130=シグナル終了
+  - 対象forgeは`git remote get-url origin`のホストから自動判別する。
+    明示指定する場合は`--forge=github`または`--forge=gitlab`を渡す
   - 登録遅延・タイムアウト未設定の手書きpollループは非推奨とする
 - `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
   （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
@@ -141,6 +147,8 @@ Claude Code固有事項として、本体作業に着手する時点で
 - 手動確認手順（プラグイン未導入環境などスクリプトを利用できない場合の代替）
   - `git rev-parse HEAD`でpush対象shaを取得し、
     `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
+    - 照会には完全な識別子（`git rev-parse HEAD`の出力そのもの）を渡す。
+      短縮された識別子では結果が空で返るため、空結果を検証未登録の根拠にしない
   - `--workflow`引数を追加指定する場合はworkflow名・数値IDのいずれも受理するが、
     ファイル名指定時は`workflowName`と一致しない場合があるため、
     `gh workflow list`で正確な`workflowName`を事前確認するか`--commit`のみで代替する
@@ -155,13 +163,15 @@ Claude Code固有事項として、本体作業に着手する時点で
 - CI失敗時は原因を特定し追加commitで是正する。作業完了として応答を返さない
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
 - GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
-- GitLab CI利用リポジトリ（`.gitlab-ci.yml`存在）は`gh`の代わりに`glab`を用いる。
-  自己署名のTLS証明書を使うGitLab私設ホストは`glab config set skip_tls_verify true --host <host>`と
-  環境変数`GITLAB_HOST=<host>`設定でTLS検証をスキップする。
-  `glab`が機能しない場合の代替として`curl -k https://<host>/api/v4/projects/<id>/pipelines?sha=<sha>`
-  でpipeline一覧を取得し、status=successまで待つ。
-  いずれも実行不可能な場合はユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）。
-  詳細は`agent-toolkit:gitlab-ci-usage`スキルを参照する
+- GitLab CI利用リポジトリでも推奨手順の`wait_ci.py`をそのまま使う。
+  内部で`glab ci list --sha=<sha>`へ切り替わり、gitlab.comと私設ホストの双方を対象とする
+  - 対象ホストはカレントディレクトリの`git remote`・環境変数`GITLAB_HOST`・`glab`設定から決定される
+  - 自己署名のTLS証明書を使う私設ホストは`glab config set skip_tls_verify true --host <host>`を先に実行する
+  - パイプラインが手動ジョブ待ち（`manual`）で停止した場合は非成功として終了コード1で返る。
+    手動ジョブを起動してから再実行する
+  - `glab`自体が利用できない場合は`agent-toolkit:gitlab-ci-usage`スキル
+    「私設ホスト（自己署名のTLS証明書）でのCI通過確認」節の代替手順に従う。
+    当該手順も実行できない場合に限り、ユーザーの明示判断でCI通過確認スキップを許容する（記録は必須）
 - `git push`実行結果に`remote: GitHub found N vulnerabilities`等のセキュリティ警告、
   または依存bump系のdependabot PR通知が出力された場合、
   `gh pr list --author dependabot --state open`でオープン中のPRを確認する

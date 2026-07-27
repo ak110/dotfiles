@@ -17,10 +17,12 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
+from _atk_mq_common import MQ_TYPE_TBD, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _FIXED_DT, _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -442,3 +444,64 @@ class TestAddEmptyBodyRejection:
             atk.main(["mq", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
+
+
+def _prepare_notes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """git操作を無効化したprivate-notesディレクトリを用意する。
+
+    既存テスト（`test_flat_add_operation_is_public`等）と同じ差し替え方針に揃える。
+    """
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    return notes
+
+
+def test_add_entries_rejects_answer_marker_in_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TBD本文が回答欄マーカーを含む場合に投入を拒否する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    with pytest.raises(WebInputError):
+        add_module.add_entries(
+            notes,
+            messages=[f"この方針を採用しますか？\n\n{tbd_module.ANSWER_MARKER}\n"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            entry_type=MQ_TYPE_TBD,
+            question_type="free-form",
+        )
+
+
+def test_add_entries_rejects_answer_heading_in_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TBD本文が回答見出しを行頭に含む場合に投入を拒否する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    with pytest.raises(WebInputError):
+        add_module.add_entries(
+            notes,
+            messages=[f"この方針を採用しますか？\n\n{tbd_module.ANSWER_HEADING}\n\n未記入\n"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            entry_type=MQ_TYPE_TBD,
+            question_type="free-form",
+        )
+
+
+def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """予約書式を含まないTBD本文は投入され、見出しと回答欄が1組だけ生成される。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    generated = add_module.add_entries(
+        notes,
+        messages=["どちらの案を採用しますか？判定根拠は次のとおり。"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        entry_type=MQ_TYPE_TBD,
+        question_type="free-form",
+    )
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert content.count(tbd_module.ANSWER_MARKER) == 1
+    assert content.count(f"\n{tbd_module.ANSWER_HEADING}\n") == 1
+    assert content.count(f"\n{tbd_module.QUESTION_HEADING}\n") == 1

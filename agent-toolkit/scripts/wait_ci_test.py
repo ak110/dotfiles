@@ -1,7 +1,11 @@
 """`wait_ci`モジュールのテスト。公開API（`main`・`wait_for_ci`）経由で境界条件を網羅する。
-private helper（`_gh_run_list`・`_resolve_sha`等）は直接テストせず、`main`経由の
+private helper（`_gh_run_list`・`_resolve_sha`等）は原則として直接テストせず、`main`経由の
 シナリオテストで挙動を確認する（`coding-standards/references/testing.md`
 「private関数の直接テスト禁止」に従う）。
+例外はforge判別・GitLab応答正規化（`_resolve_forge`・`_normalize_gitlab_pipeline`・
+`_glab_pipeline_list`）とし、入力形態ごとの網羅を`main`経由で行うと
+1形態あたり複数の外部コマンド応答を組み立てる必要があり、判定対象の入出力関係が読み取れなくなるため
+最小限の範囲で直接テストする。
 """
 
 from __future__ import annotations
@@ -16,6 +20,14 @@ from unittest import mock
 
 import pytest
 import wait_ci
+
+# 直接テスト対象のprivate helperはモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
+# 理由はモジュールdocstringの「例外」記述に従う。
+_resolve_forge = wait_ci._resolve_forge  # pylint: disable=protected-access
+_normalize_gitlab_pipeline = wait_ci._normalize_gitlab_pipeline  # pylint: disable=protected-access
+_glab_pipeline_list = wait_ci._glab_pipeline_list  # pylint: disable=protected-access
+_all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
+_all_success = wait_ci._all_success  # pylint: disable=protected-access
 
 
 def _run_wait(
@@ -117,7 +129,7 @@ class TestPollingCompletion:
 class TestGhErrorHandling:
     def test_consecutive_gh_failures_return_gh_error(self):
         def run_list_fn(_s):
-            raise wait_ci.GhListError("mock failure")
+            raise wait_ci.RunListError("mock failure")
 
         assert _run_wait(run_list_fn) == wait_ci.EXIT_GH_ERROR
 
@@ -127,7 +139,7 @@ class TestGhErrorHandling:
         def run_list_fn(_s):
             state["n"] += 1
             if state["n"] == 1:
-                raise wait_ci.GhListError("transient")
+                raise wait_ci.RunListError("transient")
             return [_run()]
 
         assert _run_wait(run_list_fn) == wait_ci.EXIT_SUCCESS
@@ -303,7 +315,7 @@ class TestFollowCancelled:
         def failing_run_list(sha):
             if sha == "sha1":
                 return cancelled
-            raise wait_ci.GhListError("mock follow failure")
+            raise wait_ci.RunListError("mock follow failure")
 
         assert (
             _run_wait(
@@ -371,7 +383,7 @@ class TestMainEntrypoint:
     def test_explicit_sha_success_path(self):
         payload = json.dumps([_run()])
         with mock.patch("subprocess.run", return_value=mock.Mock(stdout=payload, returncode=0, stderr="")):
-            assert wait_ci.main(["--sha", "abc123", "--registration-grace", "0"]) == wait_ci.EXIT_SUCCESS
+            assert wait_ci.main(["--sha", "abc123", "--registration-grace", "0", "--forge=github"]) == wait_ci.EXIT_SUCCESS
 
     def test_subprocess_timeout_surfaces_as_gh_error(self):
         """内部subprocess呼び出しのタイムアウトが`main`経由でGH_ERRORに現れる。"""
@@ -418,7 +430,7 @@ class TestResolveShaViaMain:
 
         monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
         monkeypatch.setattr(subprocess, "run", fake_run)
-        result = wait_ci.main(["--sha", "17561bd"])
+        result = wait_ci.main(["--sha", "17561bd", "--forge=github"])
         assert result == wait_ci.EXIT_SUCCESS
         assert captured["sha"] == "17561bd376c5fb8ace04153871b2a2d6993c380d"
 
@@ -457,3 +469,157 @@ class TestResolveShaViaMain:
         result = wait_ci.main(["--sha=--not-an-option"])
 
         assert result == wait_ci.EXIT_GH_ERROR
+
+
+def _patch_git(monkeypatch: pytest.MonkeyPatch, remote: str, toplevel: str | None = None) -> None:
+    """`git remote get-url origin`と`git rev-parse --show-toplevel`の応答を固定するヘルパー。"""
+
+    def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+        if cmd[1:] == ["rev-parse", "--show-toplevel"]:
+            if toplevel is None:
+                return subprocess.CompletedProcess(cmd, 128, stdout="", stderr="fatal: not a git repository")
+            return subprocess.CompletedProcess(cmd, 0, stdout=f"{toplevel}\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=remote, stderr="")
+
+    monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+
+
+class TestResolveForge:
+    """forge判別の分岐を検証する。"""
+
+    def test_explicit_value_is_returned_as_is(self) -> None:
+        """明示指定時はリモート照会をしない。"""
+        assert _resolve_forge("gitlab", 1.0) == "gitlab"
+        assert _resolve_forge("github", 1.0) == "github"
+
+    def test_auto_detects_github_from_remote_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ホスト名のラベルがgithubと一致する場合はgithubと判定する（SSH短縮形式）。"""
+        _patch_git(monkeypatch, "git@github.com:o/r.git\n")
+        assert _resolve_forge("auto", 1.0) == "github"
+
+    def test_auto_detects_github_enterprise_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GitHub Enterprise Serverの標準的なホスト名もgithubと判定する。"""
+        _patch_git(monkeypatch, "https://github.example.com/o/r.git\n")
+        assert _resolve_forge("auto", 1.0) == "github"
+
+    def test_auto_detects_gitlab_for_self_hosted_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ホスト名のラベルがgitlabと一致する私設ホストはgitlabと判定する（サブグループ付きHTTPS形式）。"""
+        _patch_git(monkeypatch, "https://gitlab.example.com/group/sub/repo.git\n")
+        assert _resolve_forge("auto", 1.0) == "gitlab"
+
+    def test_auto_detects_gitlab_from_ssh_uri(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ポート付きSSH URI形式からもホスト名を抽出する。"""
+        _patch_git(monkeypatch, "ssh://git@gitlab.example.com:2222/group/repo.git\n")
+        assert _resolve_forge("auto", 1.0) == "gitlab"
+
+    def test_auto_does_not_match_host_label_by_substring(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """ラベルの部分一致では判定せず、無関係なホストを誤分類しない。"""
+        _patch_git(monkeypatch, "https://notgithub.example.com/o/r.git\n", toplevel=str(tmp_path))
+        assert _resolve_forge("auto", 1.0) is None
+
+    def test_auto_returns_none_for_ambiguous_host_without_gitlab_ci(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """種別ラベルを持たないホスト名で`.gitlab-ci.yml`が無ければNoneを返す。"""
+        _patch_git(monkeypatch, "git@git.example.com:o/r.git\n", toplevel=str(tmp_path))
+        assert _resolve_forge("auto", 1.0) is None
+
+    def test_auto_finds_gitlab_ci_at_worktree_root_from_subdirectory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """サブディレクトリから起動しても作業ツリールートの`.gitlab-ci.yml`を検出する。"""
+        (tmp_path / ".gitlab-ci.yml").write_text("stages: []\n", encoding="utf-8")
+        subdir = tmp_path / "src" / "pkg"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+        _patch_git(monkeypatch, "git@git.example.com:o/r.git\n", toplevel=str(tmp_path))
+        assert _resolve_forge("auto", 1.0) == "gitlab"
+
+    def test_auto_returns_none_when_remote_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """リモートURLを取得できない場合はNoneを返す。"""
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 128, stdout="", stderr="fatal: no such remote"),
+        )
+        assert _resolve_forge("auto", 1.0) is None
+
+
+class TestNormalizeGitlabPipeline:
+    """GitLabパイプラインの正規化を検証する。"""
+
+    def test_success_maps_to_completed_success(self) -> None:
+        """successは完了かつconclusion=successへ写像される。"""
+        record = _normalize_gitlab_pipeline({"id": 7, "status": "success", "name": "build", "sha": "abc"})
+        assert record["status"] == "completed"
+        assert record["conclusion"] == "success"
+        assert record["databaseId"] == 7
+        assert record["headSha"] == "abc"
+
+    def test_canceled_spelling_is_converted(self) -> None:
+        """GitLabのcanceledをGitHub綴りのcancelledへ変換する。"""
+        record = _normalize_gitlab_pipeline({"id": 8, "status": "canceled"})
+        assert record["conclusion"] == "cancelled"
+        assert _all_cancelled([record]) is True
+
+    def test_manual_is_completed_and_not_success(self) -> None:
+        """manualは完了かつ非成功として扱う。"""
+        record = _normalize_gitlab_pipeline({"id": 9, "status": "manual"})
+        assert record["status"] == "completed"
+        assert _all_success([record]) is False
+
+    def test_pending_statuses_are_incomplete(self) -> None:
+        """進行中系ステータスは未完了として扱う。"""
+        for status in ("created", "pending", "running", "canceling", "preparing", "scheduled"):
+            record = _normalize_gitlab_pipeline({"id": 1, "status": status})
+            assert record["status"] != "completed", status
+
+    def test_empty_name_falls_back_to_identifier(self) -> None:
+        """nameが空の場合は識別子を含む代替表示にする。"""
+        record = _normalize_gitlab_pipeline({"id": 42, "status": "success", "name": ""})
+        assert "42" in str(record["name"])
+
+    def test_unknown_status_is_completed_and_not_success(self) -> None:
+        """未知のステータスは完了かつ非成功として扱う。"""
+        record = _normalize_gitlab_pipeline({"id": 5, "status": "unknown_future_state"})
+        assert record["status"] == "completed"
+        assert _all_success([record]) is False
+
+
+class TestGlabPipelineList:
+    """glab呼び出しと応答検証を確認する。"""
+
+    def test_command_uses_sha_and_json_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """glab ci listへSHAとJSON出力指定を渡す。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout='[{"id":1,"status":"success"}]', stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        records = _glab_pipeline_list("deadbeef", 1.0)
+        assert calls[0][:3] == ["glab", "ci", "list"]
+        assert "--sha" in calls[0] and "deadbeef" in calls[0]
+        assert calls[0][calls[0].index("-F") + 1] == "json"
+        assert records[0]["conclusion"] == "success"
+
+    def test_non_zero_exit_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """非ゼロ終了はRunListErrorとして扱う。"""
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _glab_pipeline_list("deadbeef", 1.0)
+
+    def test_unexpected_shape_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """配列以外の応答はRunListErrorとして扱う。"""
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _glab_pipeline_list("deadbeef", 1.0)

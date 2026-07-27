@@ -11,6 +11,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_alerts as alerts  # noqa: E402  # pylint: disable=wrong-import-position
 
+# 機能無効判定は`collect_new_alerts`経由では応答本文の分岐を網羅できないため直接検証する。
+# private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
+_GH_DEPENDABOT_DISABLED_MESSAGE = alerts._GH_DEPENDABOT_DISABLED_MESSAGE  # pylint: disable=protected-access
+_is_disabled_response = alerts._is_disabled_response  # pylint: disable=protected-access
+
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
     """ワークフローごとに直近の完了runのみを確認し、失敗中のみアラート化する。"""
@@ -182,3 +187,55 @@ def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.Mon
     )
     assert count == 0
     assert not calls
+
+
+def test_collect_new_alerts_skips_disabled_dependabot_without_warning(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dependabot機能が無効なリポジトリでは警告を出力せずアラート0件で返す。"""
+
+    def disabled_fn(_repo: str) -> list[dict]:
+        raise alerts.AlertFeatureDisabledError("dependabot/alerts取得: 対象リポジトリで当該機能が無効")
+
+    result = alerts.collect_new_alerts(
+        "github.com/o/r",
+        None,
+        tmp_path,
+        forge="github",
+        dependabot_fn=disabled_fn,
+    )
+    assert not result
+    assert capsys.readouterr().err == ""
+
+
+def test_collect_new_alerts_warns_on_generic_failure(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """機能無効以外の取得失敗は従来どおり警告を出力する。"""
+
+    def failing_fn(_repo: str) -> list[dict]:
+        raise alerts.AlertCollectError("dependabot/alerts取得が失敗しました（exit=1）")
+
+    result = alerts.collect_new_alerts(
+        "github.com/o/r",
+        None,
+        tmp_path,
+        forge="github",
+        dependabot_fn=failing_fn,
+    )
+    assert not result
+    assert "Dependabotアラートの取得に失敗しました" in capsys.readouterr().err
+
+
+def test_is_disabled_response_matches_only_known_message() -> None:
+    """403かつ既知の機能無効メッセージと完全一致する応答のみを機能無効と判定する。"""
+    known = (_GH_DEPENDABOT_DISABLED_MESSAGE,)
+    disabled = '{"message":"Dependabot alerts are disabled for this repository.","status":"403"}'
+    other_disabled = '{"message":"Your account has been disabled.","status":"403"}'
+    forbidden = '{"message":"Resource not accessible by personal access token","status":"403"}'
+    not_found = '{"message":"Not Found","status":"404"}'
+    assert _is_disabled_response(disabled, known) is True
+    assert _is_disabled_response(other_disabled, known) is False
+    assert _is_disabled_response(forbidden, known) is False
+    assert _is_disabled_response(not_found, known) is False
+    assert _is_disabled_response(disabled, ()) is False
+    assert _is_disabled_response("[]", known) is False
+    assert _is_disabled_response("not json", known) is False

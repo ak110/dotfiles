@@ -46,7 +46,11 @@ description: >
 `git rev-parse --show-toplevel`の現リポジトリを対象とする。
 
 `atk mq list --status=processing --target-repo=<repo>`でprocessing残存を確認し、
-残存時は前セッションの中断とみなし再実施対象へ最優先で組み込む。続いて
+残存時は前セッションの中断とみなし再実施対象へ最優先で組み込む。
+併せて`~/.claude/plans/`から対象リポジトリ向けの直近の計画ファイルを探し、
+その`## 進捗ログ`と作業ツリーの状態から到達済みの工程を判定してから着手する。
+計画が完成していて実装だけが残っている場合は計画作成工程を繰り返さず実装から再開する。
+続いて
 `atk mq show --all --status=active --target-repo=<repo>`でfeedback（inbox・processing）と
 回答済みTBDを一括取得する。取得した全件を本セッションの処理対象とし、
 `atk mq start-processing <filename...>`でfeedback分をprocessingへ遷移させてから着手する。

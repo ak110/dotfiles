@@ -5,6 +5,8 @@
 既存サブコマンドの残テストは`atk_test.py`にある。共通ヘルパーは両ファイルから再利用する。
 """
 
+import collections.abc
+import contextlib
 import os
 import pathlib
 import subprocess
@@ -19,6 +21,10 @@ import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wr
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_mq_process_loop_test import _fake_run_with_remote_url  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+
+# 上流差分確認は`_run_until_stop`が当該関数自体を差し替えるため公開CLI経由では検証できない。
+# private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
+_has_upstream_diff = _process_loop._has_upstream_diff  # pylint: disable=protected-access
 
 
 class TestWaitLoopAutoRestart:
@@ -205,3 +211,36 @@ class TestWaitLoopAutoRestart:
         )
         assert ["update-dotfiles"] not in subprocess_calls
         assert not execv_calls
+
+
+def test_has_upstream_diff_reports_stderr_on_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """fetch失敗時にgitの標準エラー出力を警告本文へ含め、差分なし扱いで復帰する。"""
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(128, cmd, output="", stderr="fatal: Unable to create index.lock: File exists")
+
+    monkeypatch.setattr(_process_loop.subprocess, "run", fake_run)
+    assert _has_upstream_diff(tmp_path) is False
+    captured = capsys.readouterr()
+    assert "index.lock" in captured.err
+
+
+def test_has_upstream_diff_acquires_repo_lock_for_target(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """上流差分確認が対象作業コピーのパスでプロセス間ロックを取得する。"""
+    acquired: list[pathlib.Path] = []
+
+    @contextlib.contextmanager
+    def fake_repo_lock(repo_path: pathlib.Path, **_kwargs: object) -> collections.abc.Iterator[None]:
+        acquired.append(repo_path)
+        yield
+
+    monkeypatch.setattr(_process_loop, "_repo_lock", fake_repo_lock)
+    monkeypatch.setattr(
+        _process_loop.subprocess,
+        "run",
+        lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout="0\n", stderr=""),
+    )
+    assert _has_upstream_diff(tmp_path) is False
+    assert acquired == [tmp_path]
