@@ -39,7 +39,8 @@ _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
 )
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂と先送り」節および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂と先送り」節、および
+# agent-standards/references/scope-escalation-phrases.md「縮退表明の定義」節で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 #
@@ -94,7 +95,8 @@ _ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
 _ASYNC_WAIT_COORDINATION_RE = re.compile(r"別セッション|並行(?:実行|作業|処理)?|競合(?:を)?避け")
 
 # scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂と先送り」節および「縮退表明は発行しない」項目で禁止される、
+# 01-agent.md「完遂と先送り」節、および
+# agent-standards/references/scope-escalation-phrases.md「縮退表明の定義」節で禁止される、
 # 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
 # および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
 _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -157,7 +159,12 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"|(?i:monitor(?:ing)? for[^,.\n]{0,80}(background|parallel|subagent|reviewer)"
             r"[^,.\n]{0,60}(complete|completion|completing|finish(?:ed|ing)?|response|notification"
             r"|report(?:s|ed)?|registration))"
-            r"|(?i:background agents[^,.\n]{0,40}(complete|finish|end)))"
+            r"|(?i:background agents[^,.\n]{0,40}(complete|finish|end))"
+            r"|(?i:(awaiting|pending)[^.\n]{0,40}"
+            r"(response|report|result|completion|feedback|review)s?"
+            r"[^.\n]{0,60}(before proceeding|before continuing|once received|once complete|then))"
+            r"|(?i:waiting for[^.\n]{0,40}(response|report|result|completion)s?"
+            r"[^.\n]{0,60}(before proceeding|before continuing|once received)))"
         ),
     ),
     (

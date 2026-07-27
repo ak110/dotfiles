@@ -78,10 +78,10 @@ def _identifier_definition_pattern(name: str) -> re.Pattern[str]:
 
 
 def _is_excluded_repo_path(rel_parts: tuple[str, ...]) -> bool:
-    """遡及走査から除外するパス（`.git`・`.claude/archive`配下）かを判定する。"""
+    """遡及走査から除外するパス（`.git`配下・計画ファイル検証の一時複製）かを判定する。"""
     if ".git" in rel_parts:
         return True
-    return ".claude" in rel_parts and "archive" in rel_parts
+    return bool(rel_parts) and rel_parts[-1].startswith(".plan-check-")
 
 
 def _extract_checkbox_paths(text: str) -> list[str]:
@@ -273,7 +273,7 @@ def _extract_deprecated_identifiers(text: str) -> list[str]:
 
 
 def _iter_repo_files(repo_root: pathlib.Path, plan_path: pathlib.Path) -> collections.abc.Iterator[pathlib.Path]:
-    """遡及走査対象のファイルを、`.git`・`.claude/archive`・計画ファイル自身を除外して列挙する。"""
+    """遡及走査対象のファイルを、`.git`・一時複製・計画ファイル自身を除外して列挙する。"""
     plan_resolved = plan_path.resolve()
     for path in repo_root.rglob("*"):
         if not path.is_file():

@@ -31,8 +31,11 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
 
-# 日本語文字（`\x00-\x7f`の範囲外の文字すべて。全角記号などを含む）。
-_JAPANESE_CHAR_PATTERN = re.compile(r"[^\x00-\x7f]")
+# 日本語文字。CJK記号（U+3000-U+303F）・ひらがな（U+3040-U+309F）・カタカナ（U+30A0-U+30FF）・
+# CJK統合漢字（U+4E00-U+9FFF）・全角英数記号（U+FF00-U+FF60）・半角カナ（U+FF61-U+FF9F）を対象とする。
+# 非ASCII全域を対象にすると、ハングル・キリルのみで構成された応答も日本語と判定する。
+# 半角ハングル（U+FFA0-U+FFDC）を含めないため、全角英数記号の上限をU+FF60、半角カナの上限をU+FF9Fとする。
+_JAPANESE_CHAR_PATTERN = re.compile("[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff\uff00-\uff60\uff61-\uff9f]")
 
 # 英単語（連続するASCII英字列）。連続1列を1語として数える。
 _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")

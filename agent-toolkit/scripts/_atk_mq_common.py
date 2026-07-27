@@ -31,7 +31,7 @@ from _atk_mq_formatters import (
     _truncate_target_repo,
 )
 
-# フィードバック管理repoの4状態フォルダ名（管理repo直下）。
+# フィードバック管理repoの4状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
 # - `processing`: `start-processing`で処理中に移動された途中状態
 # - `adopted`: 採用として最終処理された状態
@@ -866,3 +866,8 @@ def validate_filenames(filenames: list[str], base_dir: pathlib.Path) -> list[pat
     if not filenames:
         raise WebInputError("filenamesには1件以上を指定してください")
     return [validate_filename(filename, base_dir) for filename in filenames]
+
+
+def private_notes_path(home: pathlib.Path) -> pathlib.Path:
+    """フィードバック管理repoのrootパスを返す（公開ラッパー）。"""
+    return _private_notes_path(home)

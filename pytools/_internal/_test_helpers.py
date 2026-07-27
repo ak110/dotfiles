@@ -5,8 +5,10 @@ import pathlib
 import subprocess
 import typing
 from collections.abc import Callable
+from pathlib import Path
 
 from pytools._internal import claude_common as _claude_common
+from pytools._internal.update_claude_settings import update_claude_settings
 
 FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
 
@@ -167,3 +169,23 @@ def make_branching_fake(
         return create_result if "Save()" in script else read_result
 
     return fake
+
+
+def run_update_claude_settings(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
+    """update_claude_settings でマージしてターゲット結果を返す（テストヘルパー）。
+
+    削除対象引数を空タプルで明示し、実装定数からのテスト隔離を行う。
+    """
+    managed_path = tmp_path / "managed.json"
+    managed_path.write_text(json.dumps(managed, ensure_ascii=False), encoding="utf-8")
+    target_path = tmp_path / "target.json"
+    if existing is not None:
+        target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
+    update_claude_settings(
+        managed_path,
+        target_path,
+        removed_hook_substrings=(),
+        removed_env_keys=(),
+        removed_list_item_substrings=(),
+    )
+    return json.loads(target_path.read_text(encoding="utf-8"))

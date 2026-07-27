@@ -40,6 +40,15 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
     # 2026-06: agent-toolkitプラグイン側へ移動したため旧エントリを除去
     "claude_hook_permissionrequest.py",
+    # 2026-07: 共通エントリポイント (claude_hook.py <subcommand>) へ集約したため旧エントリを除去
+    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py",
+    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_posttooluse.py",
+    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py",
+    "uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_posttooluse.py",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py",
+    "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
 )
 
 # settings.json の env 配下から除去するキー。
@@ -164,6 +173,7 @@ def update_claude_settings(
     _strip_removed_env_keys(data, removed_env_keys)
     _strip_removed_list_items(data, removed_list_item_substrings)
     _merge(data, managed)
+    _warn_orphan_dotfiles_hook_commands(data, managed_path)
 
     short = log_format.home_short(settings_path)
     if data == original:
@@ -372,6 +382,82 @@ def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...])
         if not isinstance(array, list):
             continue
         target[keys[-1]] = [item for item in array if not (isinstance(item, str) and substring in item)]
+
+
+def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> None:
+    """配布原本のいずれにも存在しない`dotfiles/scripts/`参照のフックコマンドを警告する。
+
+    対象は`~/.claude/settings.json`のフックコマンドのうち`dotfiles/scripts/`を参照するものに限る。
+    利用者が手動で追加したフックやプラグイン由来のフックを誤検出しないためである。
+    `_platform_overrides`は`sys.platform`により片方の原本しか返さないため、
+    本検査では`.posix.json`・`.win32.json`の両方とbase JSONを明示的に読む。
+    """
+    # 配布原本から全フックコマンドを集約
+    managed_commands: set[str] = set()
+
+    # base JSON を読む
+    base_json = json.loads(managed_path.read_text(encoding="utf-8"))
+    _collect_hook_commands(base_json, managed_commands)
+
+    # .posix.json があれば読む
+    posix_path = managed_path.with_suffix(".posix.json")
+    if posix_path.exists():
+        posix_json = json.loads(posix_path.read_text(encoding="utf-8"))
+        _collect_hook_commands(posix_json, managed_commands)
+
+    # .win32.json があれば読む
+    win32_path = managed_path.with_suffix(".win32.json")
+    if win32_path.exists():
+        win32_json = json.loads(win32_path.read_text(encoding="utf-8"))
+        _collect_hook_commands(win32_json, managed_commands)
+
+    # settings.json のフックコマンドから dotfiles/scripts/ 参照を抽出
+    settings_hooks = settings.get("hooks")
+    if not isinstance(settings_hooks, dict):
+        return
+
+    for _event_name, matchers in settings_hooks.items():
+        if not isinstance(matchers, list):
+            continue
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                continue
+            inner_hooks = matcher.get("hooks")
+            if not isinstance(inner_hooks, list):
+                continue
+            for hook in inner_hooks:
+                if not isinstance(hook, dict):
+                    continue
+                command = hook.get("command")
+                if not isinstance(command, str):
+                    continue
+                if "dotfiles/scripts/" not in command:
+                    continue
+                # 配布原本に存在しないか確認
+                if command not in managed_commands:
+                    logger.warning(f"配布原本に存在しないfookコマンド（settings.json）: {command}")
+
+
+def _collect_hook_commands(data: dict, commands: set[str]) -> None:
+    """dictから全フックコマンドを再帰的に集約する。"""
+    hooks_root = data.get("hooks")
+    if not isinstance(hooks_root, dict):
+        return
+    for _event_name, matchers in hooks_root.items():
+        if not isinstance(matchers, list):
+            continue
+        for matcher in matchers:
+            if not isinstance(matcher, dict):
+                continue
+            inner_hooks = matcher.get("hooks")
+            if not isinstance(inner_hooks, list):
+                continue
+            for hook in inner_hooks:
+                if not isinstance(hook, dict):
+                    continue
+                command = hook.get("command")
+                if isinstance(command, str):
+                    commands.add(command)
 
 
 def _merge(data: dict, managed: dict) -> None:

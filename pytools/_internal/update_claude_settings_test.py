@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from pytools._internal import update_claude_settings as mod
+from pytools._internal._test_helpers import run_update_claude_settings
 from pytools._internal.update_claude_settings import update_claude_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,21 +42,8 @@ MANAGED = {
 
 
 def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
-    managed_path = tmp_path / "managed.json"
-    managed_path.write_text(json.dumps(managed, ensure_ascii=False), encoding="utf-8")
-    target_path = tmp_path / "target.json"
-    if existing is not None:
-        target_path.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf-8")
-    # テストを実装定数（_REMOVED_HOOK_COMMAND_SUBSTRINGS等）の変更から隔離するため、
-    # 削除対象引数を空タプルで明示する。デフォルト値検証は別途専用テストで担う。
-    update_claude_settings(
-        managed_path,
-        target_path,
-        removed_hook_substrings=(),
-        removed_env_keys=(),
-        removed_list_item_substrings=(),
-    )
-    return json.loads(target_path.read_text(encoding="utf-8"))
+    """update_claude_settings でマージしてターゲット結果を返す。"""
+    return run_update_claude_settings(tmp_path, managed, existing)
 
 
 class TestUpdateClaudeSettings:
@@ -625,19 +613,36 @@ class TestStripRemovedHooks:
                 'pwsh -c "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py"',
                 True,
             ),
-            # 新形式 (`uv run --no-project --script`): 保持
+            # 廃止済みの直接起動形式 (`uv run --no-project --script <旧スクリプト>`): 除去対象
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",
-                False,
+                True,
+            ),
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_posttooluse.py; exit 0'",
+                True,
             ),
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'",
+                True,
+            ),
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py; exit 0'",
+                True,
+            ),
+            # 共通エントリポイント形式 (`uv run --no-project --script <claude_hook.py> <subcommand>`): 保持
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; exit 0'",
+                False,
+            ),
+            (
+                "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py stop; exit 0'",
                 False,
             ),
         ],
     )
     def test_no_project_substrings_default(self, tmp_path: Path, command: str, should_be_removed: bool):
-        """既定の除去パターンが旧 `uv run --script` 形式を除去し新 `--no-project` 形式を保持する。"""
+        """既定の除去パターンが旧形式と廃止済みの直接起動形式を除去し、共通エントリポイント形式を保持する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -665,86 +670,6 @@ class TestStripRemovedHooks:
             assert "PreToolUse" not in result.get("hooks", {})
         else:
             assert result["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == command
-
-
-class TestNormalizeManagedHooks:
-    """管理対象フックを現在の構造へ正規化する回帰テスト。"""
-
-    @pytest.mark.parametrize(
-        "override_path",
-        [
-            _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json",
-            _REPO_ROOT / "share" / "claude_settings_json_managed.win32.json",
-        ],
-        ids=("posix", "windows"),
-    )
-    def test_production_old_split_and_current_combined_entries_are_normalized(
-        self,
-        tmp_path: Path,
-        override_path: Path,
-    ):
-        """実在するOS別配布元で旧個別要素を正規化し、再実行しても変更しない。"""
-        override = json.loads(override_path.read_text(encoding="utf-8"))
-        managed_entry = override["hooks"]["Stop"][0]
-        managed_hooks = managed_entry["hooks"]
-        existing_entries = [{"hooks": [hook]} for hook in managed_hooks] + [managed_entry]
-        target_path = tmp_path / "target.json"
-        target_path.write_text(
-            json.dumps({"hooks": {"Stop": existing_entries}}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
-        update_claude_settings(
-            _PROD_MANAGED_SETTINGS,
-            target_path,
-            overrides=[override_path],
-            removed_hook_substrings=(),
-            removed_env_keys=(),
-            removed_list_item_substrings=(),
-        )
-        first = json.loads(target_path.read_text(encoding="utf-8"))
-        changed_again = update_claude_settings(
-            _PROD_MANAGED_SETTINGS,
-            target_path,
-            overrides=[override_path],
-            removed_hook_substrings=(),
-            removed_env_keys=(),
-            removed_list_item_substrings=(),
-        )
-        second = json.loads(target_path.read_text(encoding="utf-8"))
-
-        assert first["hooks"]["Stop"] == [managed_entry]
-        assert second == first
-        assert not changed_again
-
-    def test_custom_command_in_same_entry_is_preserved(self, tmp_path: Path):
-        """管理対象コマンドと同居する利用者独自コマンドを保持する。"""
-        managed_command = "managed-stop"
-        custom_hook = {"type": "command", "command": "custom-stop"}
-        managed_entry = {"hooks": [{"type": "command", "command": managed_command}]}
-        existing_entry = {"hooks": [managed_entry["hooks"][0], custom_hook]}
-
-        result = _run(
-            tmp_path,
-            {"hooks": {"Stop": [managed_entry]}},
-            {"hooks": {"Stop": [existing_entry]}},
-        )
-
-        assert result["hooks"]["Stop"] == [{"hooks": [custom_hook]}, managed_entry]
-
-    def test_unmanaged_event_is_preserved(self, tmp_path: Path):
-        """同じコマンド文字列でも管理対象外イベントのフックは保持する。"""
-        managed_hook = {"type": "command", "command": "managed-command"}
-        unmanaged_entry = {"hooks": [managed_hook]}
-
-        result = _run(
-            tmp_path,
-            {"hooks": {"Stop": [{"hooks": [managed_hook]}]}},
-            {"hooks": {"PostToolUse": [unmanaged_entry]}},
-        )
-
-        assert result["hooks"]["PostToolUse"] == [unmanaged_entry]
-        assert result["hooks"]["Stop"] == [{"hooks": [managed_hook]}]
 
 
 class TestStripRemovedEnvKeys:

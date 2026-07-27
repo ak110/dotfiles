@@ -6,6 +6,14 @@ import pathlib
 import pytest
 from _response_language_check import CheckOutcome, check, detailed_check
 
+# テスト用の他言語文字検体（コードポイントのエスケープ表記）。
+# テストファイル内のdocstring・コメントが日本語であるため、
+# そのままの文字を埋め込むとテストファイルの編集が言語判定により遮断される。
+# 各テストはこれらの定数の繰り返しで検体を組み立てる。
+_HANGUL_SAMPLE = "\uac00"  # U+AC00: ハングル音節文字
+_CYRILLIC_SAMPLE = "\u0400"  # U+0400: キリル文字
+_HALFWIDTH_HANGUL_SAMPLE = "\uffa0"  # U+FFA0: 半角ハングル
+
 
 def _write_transcript(tmp_path: pathlib.Path, content_blocks: list[dict], *, is_sidechain: bool = False) -> str:
     """単一のassistantエントリをJSONLとして書き込みパスを返す。"""
@@ -159,6 +167,65 @@ class TestSpecialInputs:
     def test_nonexistent_path(self, tmp_path: pathlib.Path):
         """存在しないパスでもNoneを返す。"""
         assert check(str(tmp_path / "missing.jsonl")) is None
+
+
+class TestNonJapaneseCharacterTypes:
+    """日本語以外の非ASCII文字が日本語と判定されないことを検証する。"""
+
+    def test_hangul_returns_none_then_warn(self, tmp_path: pathlib.Path) -> None:
+        """ハングル40字＋英単語20語で比率が閾値をまたぐ。
+
+        是正前（U+0000-U+007Fの範囲外全て）：
+          日本語文字数=40（ハングル）、英単語数=20 → 比率40/60≈0.67 > 0.30 → PASS → None
+        是正後（日本語範囲のみ）：
+          日本語文字数=0（ハングル非検出）、英単語数=20 → 比率0/20=0 < 0.30 → WARN → 警告本文
+        """
+        # ハングル（U+AC00-U+D7AF）40字 + 英単語20語
+        text = _HANGUL_SAMPLE * 40 + " " + " ".join(["word"] * 20)
+        path = _write_transcript(tmp_path, [_text_block(text)])
+        # 是正後の実装でハングルが検出されないため警告を返す
+        assert check(path) is not None
+
+    def test_cyrillic_returns_none_then_warn(self, tmp_path: pathlib.Path) -> None:
+        """キリル40字＋英単語20語で比率が閾値をまたぐ。
+
+        是正前（U+0000-U+007Fの範囲外全て）：
+          日本語文字数=40（キリル）、英単語数=20 → 比率40/60≈0.67 > 0.30 → PASS → None
+        是正後（日本語範囲のみ）：
+          日本語文字数=0（キリル非検出）、英単語数=20 → 比率0/20=0 < 0.30 → WARN → 警告本文
+        """
+        # キリル（U+0400-U+04FF）40字 + 英単語20語
+        text = _CYRILLIC_SAMPLE * 40 + " " + " ".join(["word"] * 20)
+        path = _write_transcript(tmp_path, [_text_block(text)])
+        # 是正後の実装でキリルが検出されないため警告を返す
+        assert check(path) is not None
+
+    def test_halfwidth_hangul_returns_none_then_warn(self, tmp_path: pathlib.Path) -> None:
+        """半角ハングル40字＋英単語20語で比率が閾値をまたぐ。
+
+        是正前（U+0000-U+007Fの範囲外全て）：
+          日本語文字数=40（半角ハングル）、英単語数=20 → 比率40/60≈0.67 > 0.30 → PASS → None
+        是正後（日本語範囲U+3000-U+FF9Fのみ）：
+          日本語文字数=0（半角ハングル U+FFA0-U+FFDCは範囲外）、英単語数=20 → 比率0/20=0 < 0.30 → WARN
+        """
+        # 半角ハングル（U+FFA0-U+FFDC）40字 + 英単語20語
+        text = _HALFWIDTH_HANGUL_SAMPLE * 40 + " " + " ".join(["word"] * 20)
+        path = _write_transcript(tmp_path, [_text_block(text)])
+        # 是正後の実装で半角ハングルが検出されないため警告を返す
+        assert check(path) is not None
+
+    def test_japanese_characters_detected_correctly(self, tmp_path: pathlib.Path) -> None:
+        """ひらがな・カタカナ・漢字・全角記号・半角カナ40字＋英単語20語で日本語が優勢。
+
+        是正後の実装で各日本語文字が正しく検出され、比率が閾値以上（0.30以上）となる。
+        範囲を狭めすぎた場合の退行防止テスト。
+        """
+        # 日本語文字（U+3000-U+FF9Fの各範囲）40字 + 英単語20語
+        # あいうえお(5) + カキクケコ(5) + 漢字です(4) + 　、(2) + ｡｢(2) = 18字 * 2 + word*20
+        text = ("あいうえお" + "カキクケコ" + "漢字です" + "　、" + "｡｢") * 2 + " " + " ".join(["word"] * 20)
+        path = _write_transcript(tmp_path, [_text_block(text)])
+        # 日本語が優勢（ratio ≥ 0.30）なため警告なし（None）
+        assert check(path) is None
 
 
 class TestDetailedCheck:

@@ -6055,3 +6055,147 @@ class TestSubagentTypeFlagsInvokedPreToolUse:
         )
         assert result.returncode == 0
         assert _read_session_state(tmp_path, sid).get("plan_reviewer_invoked") is True
+
+
+# --- 日本語文中への他言語文字の混入検査 (block) ---
+
+_HANGUL_SAMPLE = "\uac00"  # ハングル音節1文字（エスケープ表記で構成する）
+_CYRILLIC_SAMPLE = "\u0430"  # キリル小文字1文字（同上）
+
+
+class TestForeignScriptMixin:
+    """日本語文中への他言語文字の混入検査。"""
+
+    def test_blocks_hangul_in_japanese(self):
+        """日本語を含む文字列へのハングル混入を遮断する。"""
+        content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 2
+        assert "non-Japanese script" in result.stderr
+
+    def test_blocks_cyrillic_in_japanese(self):
+        """日本語を含む文字列へのキリル混入を遮断する。"""
+        content = "テスト" + _CYRILLIC_SAMPLE + "名を確認する"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 2
+        assert "non-Japanese script" in result.stderr
+
+    def test_passes_japanese_only(self):
+        """日本語のみの文字列は通過する。"""
+        content = "テスト名を確認する"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 0
+
+    def test_passes_english_with_cyrillic(self):
+        """英語＋キリルは通過する（日本語を含まないため対象外）。"""
+        content = "test" + _CYRILLIC_SAMPLE + "name"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
+        assert result.returncode == 0
+
+
+# --- .md規範文書の本文中にある節参照の実在検証 (warn) ---
+
+
+class TestBodySectionReferenceExists:
+    """規範文書の本文中にある節参照の実在検査。"""
+
+    def test_passes_existing_section_reference(self, tmp_path):
+        """実在する節参照は通過する。"""
+        # 参照先ファイルを作成
+        ref_file = tmp_path / "referenced.md"
+        ref_file.write_text("# 存在する節\n\n本文です。", encoding="utf-8")
+
+        # 参照元ファイル
+        target_file = tmp_path / "test.md"
+        content = "本文\n\n`referenced.md`「存在する節」節を参照。"
+
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target_file), "content": content},
+            }
+        )
+        # 警告が出ないこと（returncode == 0）を確認
+        assert result.returncode == 0
+
+    def test_warns_missing_section_reference(self, tmp_path):
+        """不在の節参照に対して警告する。"""
+        # 参照先ファイルを作成
+        ref_file = tmp_path / "referenced.md"
+        ref_file.write_text("# 別の節\n\n本文です。", encoding="utf-8")
+
+        # 参照元ファイル
+        target_file = tmp_path / "agent-toolkit" / "rules" / "test.md"
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        content = "本文\n\n`referenced.md`「存在しない節」節を参照。"
+
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target_file), "content": content},
+            }
+        )
+        assert result.returncode == 0
+        # 警告が出ること
+        assert "section name does not exist" in result.stderr
+
+
+# --- codex sandbox指定（danger-full-access）を含む行の削除・変更の遮断 (block) ---
+
+
+class TestDangerFullAccessPreserved:
+    """codex sandbox指定を含む行の削除・変更の遮断。"""
+
+    def test_blocks_removal_of_sandbox_assignment(self):
+        """sandbox指定記述を削除する編集を遮断する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/scripts/pretooluse.py",
+                    "content": '"sandbox": "read-only"',
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "blocked" in result.stderr
+
+    def test_blocks_weakening_of_sandbox_value(self):
+        """sandbox値を弱める編集を遮断する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/agents/plan-file-creator.md",
+                    "content": "`sandbox`へ`workspace-write`と指定",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "blocked" in result.stderr
+
+    def test_passes_non_sandbox_change(self):
+        """sandbox指定記述を保ったまま説明文を変える編集は通過する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "agent-toolkit/scripts/pretooluse.py",
+                    "content": '"sandbox": "danger-full-access" # comment',
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_passes_non_protected_file(self):
+        """保護対象外ファイルでは通過する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "/tmp/unrelated.py",
+                    "content": 'sandbox = "read-only"',
+                },
+            }
+        )
+        assert result.returncode == 0

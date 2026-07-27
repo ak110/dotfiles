@@ -13,7 +13,8 @@ user-invocable: false
 # 本エージェントはplan-mode・plan-impl-executor等を呼び出さない独立コンテキストで動作するため、
 # それらの知識を前提とした記述をしない。
 # model既定はsonnetで、呼び出し元が`model`・`effort`引数で上書きする
-# （判断基準は`../references/plan-impl/execution-process.md`「実装委譲の判断指針」節）。
+# （判断基準は`../references/plan-impl/execution-process.md`
+#   「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節）。
 # tools制限を持たない理由: MCPツール（`mcp__*`）呼び出しを許容するため。
 #   サブエージェント再帰起動の禁止、codex MCP直接呼び出しの禁止は本文「判断基準」で担保する。
 ---
@@ -98,9 +99,10 @@ user-invocable: false
   同じ前提を適用する。単独起動（並列を伴わない起動）でメイン側が明示許可した場合のみ本制限の対象外とする
   - `git stash`は`-- <path>`・`--patch`等のスコープ限定指定を含めて全面禁止とする
     （単一ファイル指定でも並列実行中の他タスクへ影響し得るため）
-  - background起動時に権限プロンプト起因で停滞した場合はメイン側で巻き取る
-    （`agent-toolkit/rules/02-claude-code.md`「停滞検知時の対応」節）。foreground起動時は
-    メイン側のターンが直接権限プロンプトを受け取るため対象外とする
+  - background起動時に権限プロンプト起因で停滞した場合はメイン側で巻き取る。
+    巻き取り手順は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節に従う。
+    巻き取り範囲は`agent-toolkit/references/plan-impl/caller-reception.md`が定める完遂順序に従う。
+    foreground起動時はメイン側のターンが直接権限プロンプトを受け取るため対象外とする
 
 ## モデル別の昇格基準
 

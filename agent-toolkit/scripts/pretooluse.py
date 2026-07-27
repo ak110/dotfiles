@@ -95,10 +95,15 @@ Write / Edit / MultiEdit:
 - 口語的な日本語表現の混入 (warn)
 - 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
+- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
+- .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
+- codex sandbox指定（`danger-full-access`）を含む行の削除・変更 (block)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（`content` / `new_string`）を基本とする。
 `old_string`は既存内容の修正・削除を妨げないため単独では検査対象としない。
+例外は`_check_danger_full_access_preserved`とする。同checkは保護対象文字列の「削除」自体を検出対象とするため、
+`old_string`と`new_string`の出現数を比較する（`_check_style_negation`と同方式）。
 Edit/MultiEditのscope-escalation checkは既存ファイル本文を読み込み、
 各edit適用前後の全文をフェンス除外込みで比較しフレーズ出現回数の増加のみを検出する。
 既存保持時の誤検出を解消し、フェンス開始・終了行がold/new_string外にある場合の除外漏れも解消する。
@@ -145,6 +150,13 @@ from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
+
+# 日本語の文字（ひらがな・カタカナ・CJK統合漢字）。
+_JAPANESE_SCRIPT_RE = re.compile(r"[぀-ゟ゠-ヿ一-鿿]")
+# 日本語文中への混入を検出する他言語の文字。
+# ハングル字母（U+1100-U+11FF）・ハングル互換字母（U+3130-U+318F）・ハングル音節（U+AC00-U+D7A3）・
+# 半角ハングル（U+FFA0-U+FFDC）・キリル文字（U+0400-U+04FF）・キリル補助（U+0500-U+052F）を対象とする。
+_FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-\uffdc\u0400-\u04ff\u0500-\u052f]")
 
 # メインエージェントからの直接Readを禁じる隔離指定リファレンス。
 # `agent-toolkit:agent-standards`「コンテキスト汚染の回避」節が指定する隔離リファレンスと同一SSOTとする。
@@ -616,6 +628,8 @@ def main() -> int:
     # --- block系check（最初の違反でexit 2）---
     if _check_mojibake(tool_name, fields):
         return 2
+    if _check_foreign_script_mixin(tool_name, fields):
+        return 2
     # Edit/MultiEditは内部的にCRLFを透過的に維持するためチェック不要。
     # WriteのみLFで書き込むためEOLチェックを実行する。
     if tool_name == "Write" and _is_ps1(file_path) and _check_ps1_eol(tool_name, fields, file_path):
@@ -625,6 +639,8 @@ def main() -> int:
     if _check_secrets(tool_name, file_path):
         return 2
     if _check_named_subagent_sendmessage_registered(tool_name, tool_input, file_path):
+        return 2
+    if _check_danger_full_access_preserved(tool_name, tool_input, file_path):
         return 2
 
     # --- warn系check（stderrに警告のみ、exit codeは0のまま）---
@@ -636,6 +652,7 @@ def main() -> int:
     _check_colloquial(tool_name, fields, file_path)
     _check_style_negation(tool_name, tool_input, file_path)
     _check_frontmatter_sync_note_body_exists(tool_name, tool_input, file_path)
+    _check_body_section_reference_exists(tool_name, tool_input, file_path)
 
     flush_pending_language_warning()
     return 0
@@ -759,6 +776,34 @@ def _collect_new_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str
                 result.append((f"edits[{index}].new_string", new_string))
         return result
     return None
+
+
+def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -> bool:
+    """日本語を含む文字列へのハングル・キリル文字の混入を検出したらTrueを返す。
+
+    日本語（ひらがな・カタカナ・漢字）を含まない文字列は対象外とする。
+    多言語の文字列を意図的に扱う場面での誤検出を避けるためである。
+    文脈の提示には`ascii()`を用いる。`repr()`は非ASCII文字をそのまま出力するため、
+    メッセージ自体が検出対象文字を含むことになる。
+    """
+    for field, value in fields:
+        if _JAPANESE_SCRIPT_RE.search(value) is None:
+            continue
+        match = _FOREIGN_SCRIPT_RE.search(value)
+        if match is None:
+            continue
+        start = max(0, match.start() - 10)
+        end = min(len(value), match.end() + 10)
+        print(
+            _llm_notice(
+                f"blocked: non-Japanese script (Hangul/Cyrillic) mixed into Japanese text"
+                f" in {tool_name}.{field}. Context: {ascii(value[start:end])}."
+                f" Replace it with the intended Japanese characters."
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
 
 
 def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
@@ -1457,6 +1502,81 @@ def _check_frontmatter_sync_note_body_exists(tool_name: str, tool_input: dict, f
     return True
 
 
+# --- .md規範文書の本文中にある節参照の実在検証check (warn) ---
+
+_BODY_SECTION_REFERENCE_RE = re.compile(r"`([^`\n]+\.md)`「([^」\n]+)」[節項]")
+
+
+def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    """規範文書の本文中にある他ファイルの節参照の実在を検査して警告する（warn）。
+
+    `_check_frontmatter_sync_note_body_exists`はfrontmatterコメント区間の同期注記のみを走査するため、
+    本文中の参照は当該checkの対象外である。本checkは本文（frontmatter区間を除く）を走査する。
+    参照先ファイル名が複数のパスへ一致する場合は照合せず、一意に解決できない旨を警告する。
+    """
+    # 対象ファイル判定: `agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`配下の`.md`
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    is_target = any(
+        pattern.search(normalized)
+        for pattern in (
+            re.compile(r"(^|/)agent-toolkit/rules/[^/]+\.md$"),
+            re.compile(r"(^|/)agent-toolkit/skills/(?:(?!.*/references/).)+/[^/]+\.md$"),
+            re.compile(r"(^|/)agent-toolkit/agents/[^/]+\.md$"),
+        )
+    )
+    if not is_target:
+        return False
+
+    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
+    if content is None:
+        return False
+
+    # frontmatter区間を除いた本文のみを走査対象とする。
+    frontmatter_match = _FRONTMATTER_BLOCK_RE.match(content)
+    self_body = content[frontmatter_match.end() :] if frontmatter_match is not None else content
+
+    # 本文から節参照を抽出
+    references = _BODY_SECTION_REFERENCE_RE.findall(self_body)
+    if not references:
+        return False
+
+    reasons: list[str] = []
+    for file_name, section_name in references:
+        # ファイル参照の解決: 相対解決を第一とし、リポジトリ内で一意に定まる場合のみ照合
+        resolved = _resolve_referenced_path(file_path, file_name)
+        if resolved is None:
+            reasons.append(f"referenced file path does not exist: {file_name}")
+            continue
+
+        # 参照先ファイルを読み込み、節名を照合
+        try:
+            referenced_body = resolved.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            reasons.append(f"failed to read referenced file: {file_name}")
+            continue
+
+        # 見出し一致（`^#+\s*<節名>$`）または部分文字列一致で照合
+        search_corpus = referenced_body
+        heading_pattern = re.compile(rf"^#+\s*{re.escape(section_name)}\s*$", re.MULTILINE)
+        if heading_pattern.search(search_corpus) is None and section_name not in search_corpus:
+            reasons.append(f"section name does not exist: `{file_name}` '{section_name}'")
+
+    if not reasons:
+        return False
+    print(
+        _llm_notice(
+            "the section reference in the body of the normative document may not exist"
+            f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
+            " Verify that the reference matches the target file and section name.",
+            tag="warn",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
 # named background起動想定サブエージェント判定用のキーワード。
 # frontmatterから`tools:`欄値行を除外した残りと本文全体を結合した判定対象範囲に
 # これらのいずれかが出現するファイルを判定対象とし、
@@ -1568,6 +1688,136 @@ def _check_named_subagent_sendmessage_registered(tool_name: str, tool_input: dic
         file=sys.stderr,
     )
     return True
+
+
+# --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
+
+_DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
+    "agent-toolkit/agents/plan-file-creator.md",
+    "agent-toolkit/agents/plan-codex-delegate.md",
+    "agent-toolkit/skills/plan-mode/references/codex-review.md",
+    "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
+    "agent-toolkit/scripts/pretooluse.py",
+)
+_DANGER_FULL_ACCESS_VALUE = "danger-full-access"
+# sandbox指定記述（`sandbox`という語とその直後の値を1組で表す記述）を抽出する。
+# JSON形式・日本語地の文のバッククォート形式の双方を対象とする。
+_SANDBOX_ASSIGNMENT_RE = re.compile(r"[\"`]?sandbox[\"`]?\s*(?::|へ|は|に)\s*[\"`]([A-Za-z0-9_-]+)[\"`]")
+# 行コメント。抽出対象から除く。
+_COMMENT_LINE_RE = re.compile(r"^\s*(?:#|//|<!--)")
+
+
+def _extract_sandbox_assignments(text: str) -> list[str]:
+    """sandbox指定記述から値を抽出する。行コメント行は除外する。"""
+    values: list[str] = []
+    for line in text.split("\n"):
+        if _COMMENT_LINE_RE.match(line):
+            continue
+        for match in _SANDBOX_ASSIGNMENT_RE.finditer(line):
+            values.append(match.group(1))
+    return values
+
+
+def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_path: str) -> bool:
+    """`danger-full-access`を含む行の削除・変更を遮断する（block）。
+
+    対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下5つ:
+    - `agent-toolkit/agents/plan-file-creator.md`
+    - `agent-toolkit/agents/plan-codex-delegate.md`
+    - `agent-toolkit/skills/plan-mode/references/codex-review.md`
+    - `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
+    - `agent-toolkit/scripts/pretooluse.py`
+
+    判定は`danger-full-access`という文字列の出現数ではなく、`sandbox`へ値を結びつける記述
+    （以下「sandbox指定記述」）を抽出して比較する。sandbox指定記述とは、`sandbox`という語とその直後の値を
+    1組で表す記述であり、`"sandbox": "<値>"`・`` `sandbox`へ`<値>` ``・`` `sandbox`は`<値>` ``・
+    `` `sandbox`: `<値>` ``の各形式を対象とする。行コメント（`#`・`//`・`<!--`で始まる行）は抽出対象から除く。
+    次のいずれかに当たる場合に遮断する:
+    - sandbox指定記述の総数が減る（設定そのものの削除）
+    - 値が`danger-full-access`でないsandbox指定記述が1件でも新たに出現する（設定の弱体化）
+    """
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    is_target = any(
+        normalized.endswith(path) or normalized.endswith("/" + path) for path in _DANGER_FULL_ACCESS_PROTECTED_PATHS
+    )
+    if not is_target:
+        return False
+
+    # 新規記述と既存記述のsandbox指定記述値を比較
+    if tool_name == "Write":
+        new_content = tool_input.get("content")
+        if not isinstance(new_content, str):
+            return False
+        old_content = ""
+    elif tool_name == "Edit":
+        old_string = tool_input.get("old_string") or ""
+        new_string = tool_input.get("new_string")
+        if not isinstance(new_string, str):
+            return False
+        try:
+            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            old_content = ""
+        new_content = old_content.replace(old_string, new_string, 1)
+    elif tool_name == "MultiEdit":
+        edits = tool_input.get("edits") or []
+        if not isinstance(edits, list):
+            return False
+        try:
+            old_content = pathlib.Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            old_content = ""
+        new_content = old_content
+        for edit in edits:
+            if not isinstance(edit, dict):
+                continue
+            old_string = edit.get("old_string") or ""
+            new_string = edit.get("new_string")
+            if not isinstance(new_string, str):
+                continue
+            new_content = new_content.replace(old_string, new_string, 1)
+    else:
+        return False
+
+    old_values = _extract_sandbox_assignments(old_content)
+    new_values = _extract_sandbox_assignments(new_content)
+
+    # 総数が減少したか判定
+    if len(new_values) < len(old_values):
+        print(
+            _llm_notice(
+                f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
+                f" other than `danger-full-access`."
+                f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
+                f" so the caller cannot detect completion. This value is fixed by design."
+                f" Commit ad3d07f4 already reverted one attempt to weaken it."
+                f" A security warning about this setting is not a reason to change, verify, or narrow it."
+                f" To change it intentionally, disable this hook first and record the reason."
+            ),
+            file=sys.stderr,
+        )
+        return True
+
+    # 値が変わっていないか判定
+    for value in new_values:
+        if value != _DANGER_FULL_ACCESS_VALUE and value not in old_values:
+            print(
+                _llm_notice(
+                    f"blocked: a codex sandbox assignment in {file_path} would be removed or set to a value"
+                    f" other than `danger-full-access`."
+                    f" read-only and workspace-write leave the codex process waiting for approval and never returning,"
+                    f" so the caller cannot detect completion. This value is fixed by design."
+                    f" Commit ad3d07f4 already reverted one attempt to weaken it."
+                    f" A security warning about this setting is not a reason to change, verify, or narrow it."
+                    f" To change it intentionally, disable this hook first and record the reason."
+                ),
+                file=sys.stderr,
+            )
+            return True
+
+    return False
 
 
 # --- plan mode中のplan file編集をplan-modeスキル未起動の場合にブロック ---

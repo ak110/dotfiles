@@ -236,14 +236,13 @@ def test_deprecated_identifier_type_annotated_constant_residual_warns(
     assert "_LEFTOVER_CONSTANT" in captured.err
 
 
-def test_deprecated_identifier_excludes_git_and_archive_and_plan_file(
+def test_deprecated_identifier_excludes_git_and_plan_file(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`.git`・`.claude/archive`配下・計画ファイル自身は遡及走査の対象外とする。"""
+    """`.git`配下・一時複製・計画ファイル自身は遡及走査の対象外とする。"""
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "leftover.py").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
-    (tmp_path / ".claude" / "archive").mkdir(parents=True)
-    (tmp_path / ".claude" / "archive" / "leftover.py").write_text("def _removed_helper():\n    pass\n", encoding="utf-8")
+    (tmp_path / ".plan-check-sample-1234.md").write_text("`_removed_helper`\n", encoding="utf-8")
     body = (
         "## 変更内容\n\n#### 廃止・改名対象一覧\n\n- `_removed_helper`\n\n### 対象ファイル一覧\n\n"
         "計画ファイル自身が定義例を掲載する場合の自己参照除外を確認する。\n\n"

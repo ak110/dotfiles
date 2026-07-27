@@ -71,6 +71,8 @@ class TestMatchScopeEscalation:
             "Monitoring the deployment dashboard for anomalies is part of routine ops.",
             "The dashboard continues monitoring for background service anomalies as part of daily operations.",
             "この関数は品質ゲートの状態を定期的にmonitorする設計方針である。",
+            "Received the review reports and merged the findings.",
+            "Awaiting review is not required for this change.",
         ],
     )
     def test_non_matching_text_returns_none(self, text: str):
