@@ -107,7 +107,11 @@ target_repoが誤設定と判明した場合は`atk mq edit`で書き換え`atk 
 
 ## ステップ7: 採否確定の後始末
 
-コミット・push・CI通過確認の完遂後、対象ファイルを後始末する。
+コミット・pushの完遂後、対象ファイルを後始末する。
+push時点で採否は確定しており、CI失敗時も同一セッション内で追加commitにより是正するため採否は覆らない。
+CI通過確認を待って後始末を保留すると、セッションが中断した場合に処理中の状態が残留して
+次回セッションの再取得対象となる。後始末の完了後もCI通過確認は`agent-toolkit:commit`スキル
+「push後のCI通過確認」節に従って同一セッション内で完遂する。
 
 - feedback側の採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
 - feedback側の不採用ファイル: `atk mq reject <filename...> --note=<不採用理由> --commit=<sha>`
