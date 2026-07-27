@@ -38,6 +38,8 @@ class BroadcastState:
     subscribers: set[asyncio.Queue[str]] = dataclasses.field(default_factory=set)
     lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock)
     debounce_task: asyncio.Task[None] | None = None
+    # debounce窓（秒）。テストでは短縮値を注入し実時間待ちを避ける（本番は既定値を使う）。
+    debounce_sec: float = _BROADCAST_DEBOUNCE_SEC
     loop: asyncio.AbstractEventLoop | None = None
     # ホスト名 -> 最後に観測したFileEntry一覧。リモートwatchで更新される。
     remote_files: dict[str, list[FileEntry]] = dataclasses.field(default_factory=dict)
@@ -102,7 +104,7 @@ async def schedule_broadcast(state: BroadcastState) -> None:
 
 async def _debounced_deliver(state: BroadcastState) -> None:
     """debounce窓満了後に全購読者へ`refresh`を配信する。"""
-    await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC)
+    await asyncio.sleep(state.debounce_sec)
     await deliver_refresh(state)
 
 

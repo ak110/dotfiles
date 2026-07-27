@@ -7,6 +7,7 @@ Linuxのみ対象とする（Windowsはtmux利用想定外のためスキップ�
 """
 
 import logging
+import os
 import platform
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,22 @@ logger = logging.getLogger(__name__)
 
 _TMUX_PLUGINS_DIR = Path.home() / ".tmux" / "plugins"
 _TAG = "tmux plugins"
+_GIT_ORIGIN_BASE_ENV = "DOTFILES_TMUX_PLUGIN_ORIGIN_BASE"
+_GITHUB_PREFIX = "https://github.com/"
+
+
+def _effective_origin(plugin: "_Plugin") -> str:
+    """テスト時に`origin`をローカルミラーへ差し替えるためのフック。
+
+    環境変数`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`が設定されている場合、
+    `https://github.com/`プレフィックスを当該値へ置換した値を返す。
+    未設定時は`plugin.origin`をそのまま返す（本番動作）。
+    """
+    base_override = os.environ.get(_GIT_ORIGIN_BASE_ENV)
+    if not base_override:
+        return plugin.origin
+    suffix = plugin.origin.removeprefix(_GITHUB_PREFIX)
+    return f"{base_override.rstrip('/')}/{suffix}"
 
 
 @dataclass(frozen=True)
@@ -93,7 +110,7 @@ def _clone(plugin: _Plugin) -> bool:
             "1",
             "--branch",
             plugin.pin,
-            plugin.origin,
+            _effective_origin(plugin),
             str(plugin.dest),
         ],
         tag=_TAG,
@@ -112,7 +129,7 @@ def _origin_matches(plugin: _Plugin) -> bool:
     )
     if result is None or result.returncode != 0:
         return False
-    return result.stdout.strip() == plugin.origin
+    return result.stdout.strip() == _effective_origin(plugin)
 
 
 def _update(plugin: _Plugin) -> bool:

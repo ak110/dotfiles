@@ -116,23 +116,12 @@ def _run(
 class TestInstallClaude:
     """install-claude.sh / .ps1 の動作確認。"""
 
-    def test_basic_deployment(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
-        """配布先が配布元と完全一致する。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        stub_bin, stub_log = _make_claude_stub(tmp_path)
+    def test_deployment_cleanup_and_command_sequence(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
+        """配布・旧ディレクトリ削除・余分ファイル削除・claudeコマンド順序を1回の実行でまとめて検証する。
 
-        _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
-
-        rules_dir = home / ".claude" / "rules" / "agent-toolkit"
-        assert (rules_dir / "01-agent.md").exists()
-        # 配布元と同一内容であること
-        assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(
-            encoding="utf-8"
-        )
-
-    def test_agent_basics_is_removed(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
-        """旧 agent-basics ディレクトリが存在する場合は削除される。"""
+        `install-claude.sh`の配布先一括差し替え(mv)と旧agent-basics削除は独立したif分岐であり、
+        両方の事前条件を同時に用意しても相互作用が無いことを確認済み（計画「### エージェント判断」参照）。
+        """
         home = tmp_path / "home"
         home.mkdir()
         stub_bin, stub_log = _make_claude_stub(tmp_path)
@@ -141,17 +130,6 @@ class TestInstallClaude:
         legacy_dir.mkdir(parents=True)
         (legacy_dir / "01-agent.md").write_text("# 旧配布\n", encoding="utf-8")
 
-        _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
-
-        assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
-        assert (home / ".claude" / "rules" / "agent-toolkit" / "01-agent.md").exists()
-
-    def test_extra_files_are_removed(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
-        """配布先に余分なファイルがあってもステージング差し替えで消える。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        stub_bin, stub_log = _make_claude_stub(tmp_path)
-
         rules_dir = home / ".claude" / "rules" / "agent-toolkit"
         rules_dir.mkdir(parents=True)
         extra = rules_dir / "obsolete.md"
@@ -159,8 +137,31 @@ class TestInstallClaude:
 
         _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-        assert not extra.exists(), "配布元に存在しないファイルが残っている"
+        # 配布内容が配布元と完全一致する
         assert (rules_dir / "01-agent.md").exists()
+        assert (rules_dir / "01-agent.md").read_text(encoding="utf-8") == (RULES_SRC / "01-agent.md").read_text(
+            encoding="utf-8"
+        )
+        # 旧agent-basicsディレクトリが削除される
+        assert not legacy_dir.exists(), "旧 agent-basics ディレクトリが削除されていない"
+        # 配布元に存在しない余分ファイルが削除される
+        assert not extra.exists(), "配布元に存在しないファイルが残っている"
+
+        # agent-toolkit プラグイン関連の claude コマンドが想定順序で呼ばれる
+        lines = [ln for ln in stub_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        expected_substrings = [
+            "plugin marketplace add ak110/dotfiles --scope=user",
+            "plugin marketplace update ak110-dotfiles",
+            "plugin uninstall edit-guardrails@ak110-dotfiles",
+            "plugin install agent-toolkit@ak110-dotfiles --scope=user",
+            "plugin update agent-toolkit@ak110-dotfiles --scope=user",
+        ]
+        joined = "\n".join(lines)
+        last_idx = -1
+        for substr in expected_substrings:
+            idx = joined.find(substr, last_idx + 1)
+            assert idx > last_idx, f"未呼び出しまたは順序違反: {substr!r}\nlog={joined}"
+            last_idx = idx
 
     def test_stage_dir_cleaned_on_failure(self, kind: str, tmp_path: pathlib.Path):
         """ダウンロード失敗時に既存の agent-toolkit が保持され、ステージ領域が残らない。"""
@@ -185,30 +186,6 @@ class TestInstallClaude:
         if stage_root.exists():
             remaining = list(stage_root.iterdir())
             assert not remaining, f"ステージ領域が残っている: {remaining}"
-
-    def test_calls_expected_claude_commands(self, kind: str, tmp_path: pathlib.Path, rules_url: str):
-        """agent-toolkit プラグイン関連の claude コマンドが想定順序で呼ばれる。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        stub_bin, stub_log = _make_claude_stub(tmp_path)
-
-        _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
-
-        lines = [ln for ln in stub_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
-        # 少なくとも以下の呼び出しが含まれる（順序も維持されている）
-        expected_substrings = [
-            "plugin marketplace add ak110/dotfiles --scope=user",
-            "plugin marketplace update ak110-dotfiles",
-            "plugin uninstall edit-guardrails@ak110-dotfiles",
-            "plugin install agent-toolkit@ak110-dotfiles --scope=user",
-            "plugin update agent-toolkit@ak110-dotfiles --scope=user",
-        ]
-        joined = "\n".join(lines)
-        last_idx = -1
-        for substr in expected_substrings:
-            idx = joined.find(substr, last_idx + 1)
-            assert idx > last_idx, f"未呼び出しまたは順序違反: {substr!r}\nlog={joined}"
-            last_idx = idx
 
 
 @pytest.mark.parametrize("kind", _runners())

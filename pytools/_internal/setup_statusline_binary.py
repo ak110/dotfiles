@@ -6,6 +6,7 @@ Rustバイナリ直接起動へ置き換える。
 """
 
 import logging
+import os
 import pathlib
 import sys
 
@@ -30,6 +31,7 @@ _INSTALL_DIR = pathlib.Path.home() / ".local" / "bin"
 _INSTALL_PATH = _INSTALL_DIR / ("claude-statusline.exe" if sys.platform == "win32" else "claude-statusline")
 _ETAG_PATH = _INSTALL_DIR / ".claude-statusline.etag"
 _HTTP_TIMEOUT = 30.0
+_DOWNLOAD_URL_ENV = "DOTFILES_STATUSLINE_DOWNLOAD_URL"
 
 
 def main() -> None:
@@ -65,7 +67,8 @@ def run(client: httpx.Client | None = None) -> bool:
         prev_etag = _ETAG_PATH.read_text(encoding="utf-8").strip() if _ETAG_PATH.exists() else None
         if prev_etag and _INSTALL_PATH.exists():
             headers["If-None-Match"] = prev_etag
-        response = active_client.get(_DOWNLOAD_URL, headers=headers)
+        download_url = os.environ.get(_DOWNLOAD_URL_ENV) or _DOWNLOAD_URL
+        response = active_client.get(download_url, headers=headers)
         if response.status_code == 304:
             logger.info(log_format.format_status("statusline", f"最新版を利用中 ({_INSTALL_PATH})"))
             return False

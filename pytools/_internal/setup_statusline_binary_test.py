@@ -55,3 +55,22 @@ class TestRun:
             raise httpx.ConnectError("boom", request=request)
 
         assert mod.run(client=_client(handler)) is False
+
+
+class TestDownloadUrlOverride:
+    """`DOTFILES_STATUSLINE_DOWNLOAD_URL`によるダウンロードURLオーバーライドを検証する。"""
+
+    def test_override_url_is_used_when_set(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
+        install_dir = tmp_path / "bin"
+        monkeypatch.setattr(mod, "_INSTALL_DIR", install_dir)
+        monkeypatch.setattr(mod, "_INSTALL_PATH", install_dir / "claude-statusline")
+        monkeypatch.setattr(mod, "_ETAG_PATH", install_dir / ".claude-statusline.etag")
+        monkeypatch.setenv("DOTFILES_STATUSLINE_DOWNLOAD_URL", "http://127.0.0.1:9/override")
+        requested_urls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested_urls.append(str(request.url))
+            return httpx.Response(200, content=b"BINARY")
+
+        assert mod.run(client=_client(handler)) is True
+        assert requested_urls == ["http://127.0.0.1:9/override"]

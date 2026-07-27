@@ -14,9 +14,12 @@ from quart.testing.connections import TestHTTPConnection as _TestHTTPConnection
 
 from pytools.claude_plans_viewer import _app, _local, _state
 
-_BROADCAST_DEBOUNCE_SEC = 0.3
+# テスト用debounce短縮値。本番既定値(0.3秒)を検証する対象は
+# TestEventsEndpoint.test_sse_stream_contract（アプリ生成経由の統合テスト）のみで、
+# 本定数は`BroadcastState(debounce_sec=...)`による個別テストの短縮専用とする。
+_TEST_DEBOUNCE_SEC = 0.02
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
-_QUEUE_GET_TIMEOUT_SEC = _BROADCAST_DEBOUNCE_SEC + 0.7
+_QUEUE_GET_TIMEOUT_SEC = _TEST_DEBOUNCE_SEC + 0.3
 
 
 class TestSubscribers:
@@ -48,12 +51,13 @@ class TestSubscribers:
     @pytest.mark.asyncio
     async def test_schedule_broadcast_coalesces_via_debounce(self):
         """`schedule_broadcast`を連続で呼んでもdebounce窓内は1件にまとめられること。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         q = await _state.subscribe(state)
         try:
             await _state.schedule_broadcast(state)
             await _state.schedule_broadcast(state)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            assert state.debounce_task is not None
+            await state.debounce_task
             assert q.qsize() == 1
         finally:
             await _state.unsubscribe(state, q)
@@ -61,12 +65,13 @@ class TestSubscribers:
     @pytest.mark.asyncio
     async def test_schedule_broadcast_many_calls(self):
         """`schedule_broadcast`を短時間に10回呼んでも、debounce窓満了後にキューは1件であること。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         q = await _state.subscribe(state)
         try:
             for _ in range(10):
                 await _state.schedule_broadcast(state)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            assert state.debounce_task is not None
+            await state.debounce_task
             assert q.qsize() == 1
         finally:
             await _state.unsubscribe(state, q)
@@ -78,7 +83,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_md_event_broadcasts(self, tmp_path: Path):
         """.mdファイルの変更イベントで購読者へrefreshが届くこと（debounce経由で届く）。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -94,7 +99,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_file_opened_event_ignored(self, tmp_path: Path):
         """FileOpenedEventでは購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -102,8 +107,9 @@ class TestWatchdogHandler:
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileOpenedEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            # debounce窓より長く待ってもキューに入らないこと
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            # 除外イベントはschedule_broadcastへ到達せずdebounceタスクが生成されないため、
+            # 待機なしで即座に判定できる（`_local.py`のon_any_eventが早期returnすることを確認済み）。
+            assert state.debounce_task is None
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -111,7 +117,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_file_closed_nowrite_event_ignored(self, tmp_path: Path):
         """FileClosedNoWriteEventでは購読者へ通知しないこと（feedback loopの起点を遮断する回帰テスト）。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -119,7 +125,9 @@ class TestWatchdogHandler:
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileClosedNoWriteEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            # 除外イベントはschedule_broadcastへ到達せずdebounceタスクが生成されないため、
+            # 待機なしで即座に判定できる（`_local.py`のon_any_eventが早期returnすることを確認済み）。
+            assert state.debounce_task is None
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -127,7 +135,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_file_moved_event_to_md_broadcasts(self, tmp_path: Path):
         """FileMovedEvent(src=*.md.tmp, dest=*.md)で購読者へ通知されること（atomic-write保存の回帰テスト）。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -144,7 +152,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_file_moved_event_from_md_broadcasts(self, tmp_path: Path):
         """FileMovedEvent(src=*.md, dest=*.md)で購読者へ通知されること（rename・移動操作の検出）。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -161,7 +169,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_non_md_event_ignored(self, tmp_path: Path):
         """.md以外のファイルイベントでは購読者へ通知しないこと。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -169,7 +177,9 @@ class TestWatchdogHandler:
             txt_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(txt_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            # 除外イベントはschedule_broadcastへ到達せずdebounceタスクが生成されないため、
+            # 待機なしで即座に判定できる（`_local.py`のon_any_eventが早期returnすることを確認済み）。
+            assert state.debounce_task is None
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -177,7 +187,7 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_dotdir_event_ignored(self, tmp_path: Path):
         """root配下のdotdir配下のイベントでは購読者へ通知しないこと。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -187,7 +197,9 @@ class TestWatchdogHandler:
             md_file.write_text("x", encoding="utf-8")
             event = watchdog.events.FileModifiedEvent(str(md_file))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            # 除外イベントはschedule_broadcastへ到達せずdebounceタスクが生成されないため、
+            # 待機なしで即座に判定できる（`_local.py`のon_any_eventが早期returnすることを確認済み）。
+            assert state.debounce_task is None
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -195,13 +207,15 @@ class TestWatchdogHandler:
     @pytest.mark.asyncio
     async def test_directory_event_ignored(self, tmp_path: Path):
         """is_directory=Trueのイベントでは購読者へ通知しないこと。"""
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
             event = watchdog.events.DirModifiedEvent(str(tmp_path / "subdir"))
             _local.PlansEventHandler(tmp_path, state).on_any_event(event)
-            await asyncio.sleep(_BROADCAST_DEBOUNCE_SEC + 0.2)
+            # 除外イベントはschedule_broadcastへ到達せずdebounceタスクが生成されないため、
+            # 待機なしで即座に判定できる（`_local.py`のon_any_eventが早期returnすることを確認済み）。
+            assert state.debounce_task is None
             assert q.empty()
         finally:
             await _state.unsubscribe(state, q)
@@ -218,7 +232,7 @@ class TestWatchdogHandler:
         md_file = dot_root / "plan.md"
         md_file.write_text("x", encoding="utf-8")
 
-        state = _state.BroadcastState()
+        state = _state.BroadcastState(debounce_sec=_TEST_DEBOUNCE_SEC)
         state.loop = asyncio.get_running_loop()
         q = await _state.subscribe(state)
         try:
@@ -515,6 +529,7 @@ class TestBroadcastStateDataclass:
             "subscribers",
             "lock",
             "debounce_task",
+            "debounce_sec",
             "loop",
             "remote_files",
             "remote_tasks",
@@ -522,3 +537,4 @@ class TestBroadcastStateDataclass:
             "remote_watchers",
             "host_info",
         }
+        assert state.debounce_sec == _state._BROADCAST_DEBOUNCE_SEC  # pylint: disable=protected-access

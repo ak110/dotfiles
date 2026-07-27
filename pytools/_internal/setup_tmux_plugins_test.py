@@ -189,3 +189,36 @@ def test_returns_false_when_subprocess_fails(
 
     monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
     assert setup_tmux_plugins.run() is False
+
+
+def test_effective_origin_uses_override_when_set(
+    branch_env: tuple[Path, list[list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`設定時は`origin`がオーバーライド値へ差し替わる。"""
+    plugins_dir, calls = branch_env
+    monkeypatch.setenv("DOTFILES_TMUX_PLUGIN_ORIGIN_BASE", "file:///tmp/mirrors")
+    assert setup_tmux_plugins.run() is True
+    assert calls == [
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            "master",
+            "file:///tmp/mirrors/tmux-plugins/tpm.git",
+            str(plugins_dir / "tpm"),
+        ],
+    ]
+
+
+def test_effective_origin_uses_plugin_origin_when_unset(
+    branch_env: tuple[Path, list[list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DOTFILES_TMUX_PLUGIN_ORIGIN_BASE`未設定時は`plugin.origin`をそのまま使う（本番動作）。"""
+    monkeypatch.delenv("DOTFILES_TMUX_PLUGIN_ORIGIN_BASE", raising=False)
+    _, calls = branch_env
+    assert setup_tmux_plugins.run() is True
+    assert calls[0][-2] == "https://github.com/tmux-plugins/tpm.git"

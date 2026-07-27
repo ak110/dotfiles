@@ -10,9 +10,13 @@
   `$FAKE_HOME/.local/bin/`に配置して回避
 """
 
+import http.server
 import pathlib
 import shutil
+import socketserver
 import subprocess
+import threading
+import typing
 
 import pytest
 
@@ -40,28 +44,60 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     _write_fake_cli(local_bin / "codex")
     _write_fake_npm(local_bin / "npm")
 
-    # 3. install.sh を実行
-    env = {
-        "HOME": str(fake_home),
-        "PATH": f"{local_bin}:/usr/bin:/bin:/usr/local/bin",
-        "LANG": "C.UTF-8",
-    }
-    subprocess.run(
-        ["bash", str(INSTALL_SH)],
-        env=env,
-        check=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
+    # 戻り値のコミットSHAは末尾のアサーションで実際のclone結果と照合する。
+    mirror_base = tmp_path / "git-mirrors"
+    tpm_sha = _make_git_mirror(mirror_base, "tmux-plugins/tpm.git", tag=None)
+    catppuccin_sha = _make_git_mirror(mirror_base, "catppuccin/tmux.git", tag="v2.3.0")
+    tmux_cpu_sha = _make_git_mirror(mirror_base, "tmux-plugins/tmux-cpu.git", tag=None)
 
-    # 4. ルールファイルがデプロイされていること。
+    # 4. statuslineバイナリのダウンロード元をローカルHTTPサーバーへ差し替える（実HTTP依存を回避）。
+    class _Server(socketserver.TCPServer):
+        allow_reuse_address = True
+
+    with _Server(("127.0.0.1", 0), _QuietHandler) as httpd:
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            env = {
+                "HOME": str(fake_home),
+                "PATH": f"{local_bin}:/usr/bin:/bin:/usr/local/bin",
+                "LANG": "C.UTF-8",
+                "DOTFILES_TMUX_PLUGIN_ORIGIN_BASE": f"file://{mirror_base}",
+                "DOTFILES_STATUSLINE_DOWNLOAD_URL": f"http://127.0.0.1:{port}/binary",
+            }
+            subprocess.run(
+                ["bash", str(INSTALL_SH)],
+                env=env,
+                check=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        finally:
+            httpd.shutdown()
+            thread.join()
+
+    # 5. ルールファイルがデプロイされていること。
     # rules側の配布対象は01-agent.md・02-collaboration.md・03-claude-code.md・
     # 04-styles.md・05-terminology.mdの5ファイル。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
     # 代表として01-agent.mdの存在のみを検証する（5ファイル一致は install_script_ssot_test.py が担う）。
     rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
     assert (rules_dir / "01-agent.md").exists(), "01-agent.md が chezmoi でデプロイされていない"
+
+    # tmuxプラグイン3件（tpm・catppuccin/tmux・tmux-cpu）が正しくcloneされていることを検証する。
+    plugins_dir = fake_home / ".tmux" / "plugins"
+    assert (plugins_dir / "tpm").is_dir(), "tpmが導入されていない"
+    assert _rev_parse_head(plugins_dir / "tpm") == tpm_sha, "tpmのclone内容がミラーと一致しない"
+    assert (plugins_dir / "tmux").is_dir(), "catppuccin/tmuxが導入されていない"
+    assert _rev_parse_head(plugins_dir / "tmux") == catppuccin_sha, "catppuccin/tmuxのタグ指定clone内容がミラーと一致しない"
+    assert (plugins_dir / "tmux-cpu").is_dir(), "tmux-cpuが導入されていない"
+    assert _rev_parse_head(plugins_dir / "tmux-cpu") == tmux_cpu_sha, "tmux-cpuのclone内容がミラーと一致しない"
+    assert (fake_home / ".local" / "bin" / "claude-statusline").read_bytes() == b"FAKE_STATUSLINE_BINARY", (
+        "claude-statuslineバイナリが配置されていない"
+    )
 
 
 def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
@@ -89,3 +125,46 @@ def _write_fake_npm(path: pathlib.Path) -> None:
         encoding="utf-8",
     )
     path.chmod(0o755)
+
+
+def _make_git_mirror(base: pathlib.Path, rel_path: str, *, tag: str | None) -> str:
+    """`base/rel_path`へ最小構成のgitリポジトリを作成し、コミットSHAを返す。
+
+    戻り値は`setup_tmux_plugins`経由でcloneされた配置先が同一コミットを指すことを
+    検証するための照合値として使う（ディレクトリの存在確認だけでは
+    clone失敗を見逃すため、実際のコミット内容一致まで確認する）。
+    """
+    repo = base / rel_path
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "--initial-branch=master", str(repo)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "test"], check=True)
+    (repo / "README.md").write_text("stub\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "stub"], check=True, capture_output=True)
+    if tag:
+        subprocess.run(["git", "-C", str(repo), "tag", tag], check=True)
+    return subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _rev_parse_head(repo: pathlib.Path) -> str:
+    """`repo`のHEADコミットSHAを返す（clone先が期待コミットと一致するかの照合に使う）。"""
+    return subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+class _QuietHandler(http.server.BaseHTTPRequestHandler):
+    """statuslineバイナリ代替を返す最小HTTPハンドラ。ログは抑止する。"""
+
+    def do_GET(self) -> None:  # noqa: N802 -- http.server既定APIの命名規約
+        payload = b"FAKE_STATUSLINE_BINARY"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+        del args, kwargs
