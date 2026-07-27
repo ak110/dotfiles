@@ -522,7 +522,7 @@ class TestListCount:
 
 
 class TestMultipleFiltersCombinedAsAnd:
-    """target-repo・source・type・statusの同時指定がAND条件で対象を限定する。"""
+    """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。"""
 
     def test_all_filters_combined_narrows_to_intersection(
         self,
@@ -530,19 +530,39 @@ class TestMultipleFiltersCombinedAsAnd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """複数フィルターの全条件に一致するfeedbackだけを出力する。"""
+        """5条件（target-repo・source・type・status・answered）全てに一致するtbdだけを出力する。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_flag_and_notes(tmp_path)
-        _write_feedback_file(notes, "fb-matching.md", target_repo=matching_repo, source="session-review")
-        _write_feedback_file(
+        # 全5条件に一致する唯一のエントリ（tbd・inbox・未回答）。
+        _write_tbd_file(notes, "tbd-matching.md", target_repo=matching_repo, source="session-review", answer="")
+        # target-repoのみ不一致。
+        _write_tbd_file(
             notes,
-            "fb-other-repo.md",
+            "tbd-other-repo.md",
             target_repo="github.com/example/other",
             source="session-review",
+            answer="",
         )
-        _write_feedback_file(notes, "fb-other-source.md", target_repo=matching_repo, source="user-issue")
-        _write_feedback_file(notes, "fb-source-none.md", target_repo=matching_repo, source=None)
-        _write_tbd_file(notes, "tbd-other-type.md", target_repo=matching_repo, source="session-review")
+        # sourceのみ不一致。
+        _write_tbd_file(notes, "tbd-other-source.md", target_repo=matching_repo, source="user-issue", answer="")
+        # typeのみ不一致（feedbackは--type=tbdで除外される）。
+        _write_feedback_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
+        # statusのみ不一致（processing配下、--status=inboxで除外される）。
+        processing_dir = notes / "processing"
+        processing_dir.mkdir(parents=True, exist_ok=True)
+        (processing_dir / "tbd-other-status.md").write_text(
+            f"---\ntarget_repo: {matching_repo}\ntype: tbd\nquestion_type: free-form\n"
+            "source: session-review\n---\n\n## 質問\n\n本文\n\n## 回答\n\n",
+            encoding="utf-8",
+        )
+        # answeredのみ不一致（回答済み、--answered=noで除外される）。
+        _write_tbd_file(
+            notes,
+            "tbd-already-answered.md",
+            target_repo=matching_repo,
+            source="session-review",
+            answer="回答済み",
+        )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -552,19 +572,21 @@ class TestMultipleFiltersCombinedAsAnd:
                     "list",
                     f"--target-repo={matching_repo}",
                     "--source=session-review",
-                    "--type=feedback",
-                    "--status=all",
+                    "--type=tbd",
+                    "--status=inbox",
+                    "--answered=no",
                 ],
                 home=tmp_path,
             )
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "fb-matching.md" in captured.out
-        assert "fb-other-repo.md" not in captured.out
-        assert "fb-other-source.md" not in captured.out
-        assert "fb-source-none.md" not in captured.out
-        assert "tbd-other-type.md" not in captured.out
+        assert "tbd-matching.md" in captured.out
+        assert "tbd-other-repo.md" not in captured.out
+        assert "tbd-other-source.md" not in captured.out
+        assert "fb-other-type.md" not in captured.out
+        assert "tbd-other-status.md" not in captured.out
+        assert "tbd-already-answered.md" not in captured.out
 
 
 class TestListNarrowTerminalTargetRepo:
