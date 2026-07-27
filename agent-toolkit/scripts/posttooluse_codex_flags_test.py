@@ -2,7 +2,8 @@
 
 subagent_type別フラグ記録・codex-review起動検出（mcp__codex__codex / mcp__codex__codex-reply）・
 plan-codex-delegate経由検査用フラグ
-（plan_codex_delegate_invoked / plan_codex_delegate_blocked / recorded_codex_thread_id）を検証する。
+（plan_codex_delegate_invoked / plan_codex_delegate_blocked / recorded_codex_thread_id）と、
+plan-codex-delegate起動時の用途行記録（plan_codex_delegate_purpose_by_agent_id）を検証する。
 `posttooluse_test.py`のpylint too-many-lines回避のため独立ファイルへ配置する。
 """
 
@@ -301,76 +302,81 @@ class TestPlanFileCreatorFlagPropagation:
         assert state.get("codex_review_invoked") is not True
 
 
-class TestExploreNamedBackgroundRegistration:
-    """Explore named background起動（`name`非空・`run_in_background=true`）時の名前リスト記録。"""
+class TestPlanCodexDelegatePurposeRegistration:
+    """`plan-codex-delegate`起動時の用途行を`agentId`別に記録する辞書。"""
 
-    def test_registers_when_named_and_background(self, tmp_path: pathlib.Path):
-        sid = "fb-explore-register"
+    @pytest.mark.parametrize("subagent_type", ["plan-codex-delegate", "agent-toolkit:plan-codex-delegate"])
+    @pytest.mark.parametrize("purpose", ["用途: 計画レビュー", "用途: 実装差分レビュー", "用途: 実装"])
+    def test_registers_purpose_line(self, tmp_path: pathlib.Path, subagent_type: str, purpose: str):
+        """用途行を持つ起動は用途の種別によらず`agentId`をキーとして記録する。"""
+        sid = f"delegate-purpose-{subagent_type.replace(':', '-')}-{purpose[-4:]}"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "Explore", "name": "explore-1", "run_in_background": True},
+                "tool_input": {"subagent_type": subagent_type, "prompt": f"{purpose}\n\n計画ファイルを確認する。"},
+                "tool_response": {"agentId": "delegate-agent-1"},
             },
             state_dir=tmp_path,
         )
-        state = _read_state(tmp_path, sid)
-        active = state.get("explore_named_background_active_names")
-        assert isinstance(active, list)
-        assert "explore-1" in active
+        purposes = _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id")
+        assert isinstance(purposes, dict)
+        assert purposes.get("delegate-agent-1") == purpose
 
-    def test_does_not_register_when_not_background(self, tmp_path: pathlib.Path):
-        """`run_in_background`が真でない（foreground起動）場合は記録しない。"""
-        sid = "fb-explore-foreground"
+    def test_missing_purpose_line_does_not_register(self, tmp_path: pathlib.Path):
+        """用途行の無い起動は記録せず、読み取り側の判定を非ブロック側に保つ。"""
+        sid = "delegate-purpose-missing-line"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Task",
+                "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": "計画ファイルを確認する。"},
+                "tool_response": {"agentId": "delegate-agent-2"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
+
+    def test_missing_agent_id_does_not_register(self, tmp_path: pathlib.Path):
+        """`tool_response.agentId`が欠落する場合は記録しない。"""
+        sid = "delegate-purpose-missing-agent-id"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "Explore", "name": "explore-2", "run_in_background": False},
+                "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": "用途: 計画レビュー\n"},
+                "tool_response": {},
             },
             state_dir=tmp_path,
         )
-        state = _read_state(tmp_path, sid)
-        assert state.get("explore_named_background_active_names") in (None, [])
+        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
 
-    def test_does_not_register_when_name_missing(self, tmp_path: pathlib.Path):
-        """`name`未指定（匿名Explore）は記録しない。"""
-        sid = "fb-explore-unnamed"
+    def test_other_subagent_type_does_not_register(self, tmp_path: pathlib.Path):
+        """`plan-codex-delegate`以外の種別は用途行を持っていても記録しない。"""
+        sid = "delegate-purpose-other-type"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "Explore", "run_in_background": True},
+                "tool_input": {"subagent_type": "plan-implementer", "prompt": "用途: 実装差分レビュー\n"},
+                "tool_response": {"agentId": "delegate-agent-3"},
             },
             state_dir=tmp_path,
         )
-        state = _read_state(tmp_path, sid)
-        assert state.get("explore_named_background_active_names") in (None, [])
+        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
 
-    def test_does_not_register_for_non_explore_subagent(self, tmp_path: pathlib.Path):
-        """`Explore`以外のsubagent_typeは記録しない。"""
-        sid = "fb-explore-other-type"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "claude", "name": "worker-1", "run_in_background": True},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("explore_named_background_active_names") in (None, [])
-
-    def test_concurrent_same_name_registers_each_launch(self, tmp_path: pathlib.Path):
-        """同一`name`の並行起動（サブセッション複数）はそれぞれ個別のエントリとして追記される。"""
-        sid = "fb-explore-concurrent"
-        payload = {
-            "session_id": sid,
-            "tool_name": "Agent",
-            "tool_input": {"subagent_type": "Explore", "name": "explore-3", "run_in_background": True},
-        }
-        _run(payload, state_dir=tmp_path)
-        _run(payload, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        active = state.get("explore_named_background_active_names")
-        assert active == ["explore-3", "explore-3"]
+    def test_multiple_agents_registered_independently(self, tmp_path: pathlib.Path):
+        """並列起動した複数の`agentId`はそれぞれ独立のエントリとして保持される。"""
+        sid = "delegate-purpose-multiple"
+        for agent_id, purpose in (("delegate-a", "用途: 計画レビュー"), ("delegate-b", "用途: 実装差分レビュー")):
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": f"{purpose}\n"},
+                    "tool_response": {"agentId": agent_id},
+                },
+                state_dir=tmp_path,
+            )
+        purposes = _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id")
+        assert purposes == {"delegate-a": "用途: 計画レビュー", "delegate-b": "用途: 実装差分レビュー"}

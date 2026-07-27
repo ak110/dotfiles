@@ -51,11 +51,6 @@
   辞書から削除し、検出した場合（block時）はエントリを保持して再試行時の再検査に備える。
   抽出・突合に失敗した場合は検査を発火しない（安全側）
   （寿命: 当該サブエージェントの完了検知まで）
-- `explore_named_background_active_names`: PostToolUse(Agent/Task)がExplore named background起動時に記録する。
-  対象は`name`非空・`run_in_background=true`起動で、名前をリストへ追記する。
-  同名の並行起動も個別に追記する。
-  SubagentStop側の`_inspect_explore_named_background_send`が読み取り、一致した名前を1件消費（削除）する
-  （寿命: 各起動の完了検知まで。リスト要素ごとに個別消費する）
 - `plan_codex_delegate_invoked`: `plan-codex-delegate`サブエージェント起動検知時点で前倒しして真化する。
   PreToolUse(Agent/Task)が記録し、サイドチェーン内からも参照できる。
   `mcp__codex__codex`直接呼び出し前の経路遵守検査に使う
@@ -71,6 +66,15 @@
   （メインセッション直接の`mcp__codex__codex`エスカレーション呼び出しのみ本フラグを参照し、当該呼び出しは逐次的である）
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時の再読込と、`plan-impl-executor`系Agent起動時の起動プロンプト参照先パス一致判定に使う
+- `plan_impl_executor_verified_plan_path`: PreToolUseが`plan-impl-executor`系Agent/Task起動時に記録する。
+  参照パスが`current_plan_file_path`と異なりかつ実在する場合
+  （別の既存計画を参照した正当な起動と判定した場合）に当該パスを記録する。
+  `_check_plan_file_retroactive_scan_recorded`が遡及スキャン対象の計画ファイルを解決する際、
+  本フラグが設定されていれば`current_plan_file_path`より優先して参照する。
+  `current_plan_file_path`を直接更新しないのは、完遂ゲートの一致比較（`referenced == current`）が
+  別計画の切替検出のたびに書き換わる事態を避けるためである。
+  書き換わると、当該計画への再起動時に本来不要な完遂フラグ要求へ誤って該当してしまう
+  （寿命: `agent-toolkit:plan-mode`起動時に消去する）
 - 計画ファイル未作成時の直接編集検知フラグ群（`plan_file_written`・`direct_agent_toolkit_edit_count`・`last_agent_toolkit_edit_path`）はPreToolUseが更新する。agent-toolkit配下編集連続を検知し、2件目warn・3件目blockとする
 - 新規フラグ追加時は当該フラグの寿命（セッション終了まで維持・新計画着手時にリセット・
   特定イベントで消去等）を明示する。寿命が「新計画着手時にリセット」に該当する場合は

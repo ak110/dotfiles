@@ -6,13 +6,15 @@ process-loopサブコマンド（常駐ループ）、リモートURL正規化�
 `_atk_mq_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import contextlib
 import os
 import pathlib
 import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, NoReturn
 
 import pytest
 import watchdog.events
@@ -46,6 +48,10 @@ def _fake_run_with_remote_url(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     return fake_run
+
+
+def _raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvpの代替として無条件にSystemExit(0)を送出する。
+    raise SystemExit(0)
 
 
 class TestProcessLoopIncludesProcessingInCount:
@@ -509,6 +515,9 @@ class TestProcessLoopUpdateAndRestart:
         assert any(cmd[0] == "update-dotfiles" for cmd in subprocess_calls)
         captured = capsys.readouterr()
         assert "update-dotfilesを実行して" in captured.out
+        # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
+        assert "\033]2;" not in captured.out
+        assert "\033]2;" not in captured.err
 
     def test_no_update_skips_restart(
         self,
@@ -551,6 +560,54 @@ class TestProcessLoopUpdateAndRestart:
             )
         assert not execv_calls
         assert not any(cmd[0] == "update-dotfiles" for cmd in subprocess_calls)
+
+
+class TestConsoleTitleReset:
+    """常駐区間のコンソールタイトル制御を検証する（再起動先は`TestProcessLoopUpdateAndRestart`の既存argv検証が担う）。"""
+
+    def test_helper_functions_reset_title_after_each_run(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """`_sync_worktree_with_upstream`・`_check_and_restart_on_update`配下の各subprocess.run直後にタイトルを再設定すること。"""
+        local_path = tmp_path / "repo"
+        (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
+        calls: list[str] = []
+        monkeypatch.setattr(_process_loop._console_title, "set_console_title", calls.append)  # pylint: disable=protected-access  # noqa: SLF001
+
+        def fake_run(cmd: list[str], *_a: object, **_kw: object) -> subprocess.CompletedProcess[Any]:
+            if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+                return subprocess.CompletedProcess(cmd, 0, "origin/master\n", "")
+            stdout = "1\n" if "rev-list" in cmd else ""
+            return subprocess.CompletedProcess(cmd, 0, stdout, "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_code_hash", lambda _d: "same-hash")  # 再起動へ進ませない
+        _process_loop._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
+        _process_loop._check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert calls == ["atk mq process-loop"] * 6
+
+    def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        _setup_flag_and_notes(tmp_path)
+        entered: list[str] = []
+        title_calls: list[str] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+
+        @contextlib.contextmanager
+        def fake_console_title(title: str) -> Iterator[None]:
+            entered.append(title)
+            yield
+
+        monkeypatch.setattr(_process_loop._console_title, "console_title", fake_console_title)  # pylint: disable=protected-access  # noqa: SLF001
+        monkeypatch.setattr(_process_loop._console_title, "set_console_title", title_calls.append)  # pylint: disable=protected-access  # noqa: SLF001
+        monkeypatch.setattr(os, "execvp", _raise_system_exit_0)
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
+        assert entered == ["atk mq process-loop"]
+        # claude起動・update-dotfiles実行の2回のsubprocess.runそれぞれに1回ずつ続く。
+        assert title_calls == ["atk mq process-loop", "atk mq process-loop"]
+        # 非TTY下での制御文字抑止は`TestProcessLoopUpdateAndRestart.test_update_and_execv_called_by_default`が検証する。
 
 
 class TestProcessLoopWaitMessage:

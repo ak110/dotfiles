@@ -162,6 +162,8 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `codex exec`実行前に未決事項の確認を促す
 - `plan-codex-delegate`サブエージェントを経ない`mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
+- AgentまたはTaskツール起動時のnameパラメーター指定をブロック
+- plan-codex-delegateがレビュー用途で起動された場合の成果物編集をブロック
 - 未コミット変更がある場合のStop時に`git status`をユーザーへ表示
 - APIエラー停止後の入力待ち時にツール呼び出しの解析失敗をベルとデスクトップ通知で警告
 - APIエラーでのターン終了の発生種別をログへ記録

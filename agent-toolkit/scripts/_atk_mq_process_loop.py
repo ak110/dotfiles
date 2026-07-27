@@ -16,6 +16,7 @@ import time
 import typing
 
 import _atk_mq_alerts as _alerts
+import _console_title
 import _process_loop_log
 import watchdog.events
 import watchdog.observers
@@ -75,6 +76,7 @@ _WORKTREE_PARENT_REL = pathlib.PurePosixPath(".claude/worktrees")
 def _git_output(args: list[str], cwd: pathlib.Path) -> str:
     """gitコマンドの標準出力を返す。失敗時は空文字を返す。"""
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    _console_title.set_console_title("atk mq process-loop")
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
@@ -98,14 +100,17 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         print(f"上流ブランチを解決できないためworktreeの追随を見送ります: {worktree_path}", file=sys.stderr)
         return
     fetch = subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, capture_output=True, text=True, check=False)
+    _console_title.set_console_title("atk mq process-loop")
     if fetch.returncode != 0:
         print(f"worktreeのfetchに失敗しました: {fetch.stderr.strip()}", file=sys.stderr)
         return
     rebase = subprocess.run(["git", "rebase", upstream_branch], cwd=worktree_path, capture_output=True, text=True, check=False)
+    _console_title.set_console_title("atk mq process-loop")
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         return
     subprocess.run(["git", "rebase", "--abort"], cwd=worktree_path, capture_output=True, text=True, check=False)
+    _console_title.set_console_title("atk mq process-loop")
     print(
         f"worktreeの{upstream_branch}への追随に失敗しました（{rebase.stderr.strip()}）。起動後のセッションで解消してください。",
         file=sys.stderr,
@@ -267,12 +272,14 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
                 capture_output=True,
                 text=True,
             )
+            _console_title.set_console_title("atk mq process-loop")
             result = subprocess.run(
                 ["git", "-C", str(dotfiles_root), "rev-list", "HEAD..@{upstream}", "--count"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
+            _console_title.set_console_title("atk mq process-loop")
         return int(result.stdout.strip()) > 0
     except (subprocess.CalledProcessError, ValueError) as exc:
         stderr = getattr(exc, "stderr", None)
@@ -292,6 +299,7 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
     """
     if _has_upstream_diff(dotfiles_root):
         result = subprocess.run(["update-dotfiles"], check=False)
+        _console_title.set_console_title("atk mq process-loop")
         if result.returncode != 0:
             print(
                 f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
@@ -345,76 +353,79 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
     os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     env = os.environ.copy()
-    try:
+    with _console_title.console_title("atk mq process-loop"):
         try:
-            while True:
-                count = _count_pending_entries(private_notes, target_repo=target_repo_id)
-                _process_loop_log.append("loop_iter_start", count=count)
-                if count > 0:
-                    print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
-                    _process_loop_log.append("session_start")
-                    session_started_at = time.monotonic()
-                    # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
-                    # claude起動セッション内でcwd依存の子コマンドが発行された場合、
-                    # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
-                    claude_argv = ["claude", "--permission-mode=auto", "--model", args.model]
-                    if target_repo_id == _DOTFILES_REPO_ID:
-                        # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
-                        # `--worktree`はclaude自身がcwd基準のリポジトリからworktreeを作成する機能で
-                        # あり、`cwd=local_path`固定と競合しない。
-                        claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
-                        # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
-                        _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
-                    claude_argv.append(prompt)
-                    result = subprocess.run(
-                        claude_argv,
-                        check=False,
-                        env=env,
-                        cwd=local_path,
-                    )
-                    _process_loop_log.append(
-                        "session_end",
-                        elapsed_sec=round(time.monotonic() - session_started_at, 3),
-                        returncode=result.returncode,
-                    )
-                    if result.returncode not in _NORMAL_EXIT_CODES:
-                        print(
-                            f"claudeがexit code {result.returncode}で異常終了しました。",
-                            file=sys.stderr,
+            try:
+                while True:
+                    count = _count_pending_entries(private_notes, target_repo=target_repo_id)
+                    _process_loop_log.append("loop_iter_start", count=count)
+                    if count > 0:
+                        print(f"{count}件のfeedback/回答済みTBDを検知。claudeへ委譲します。")
+                        _process_loop_log.append("session_start")
+                        session_started_at = time.monotonic()
+                        # cwd固定はプロンプト本文の`--target-repo`指示と併用する二重対策である。
+                        # claude起動セッション内でcwd依存の子コマンドが発行された場合、
+                        # 解決先を`local_path`へ固定してデーモンプロセスのcwdに依存させない。
+                        claude_argv = ["claude", "--permission-mode=auto", "--model", args.model]
+                        if target_repo_id == _DOTFILES_REPO_ID:
+                            # dotfiles編集はホーム直下チェックアウトへの影響を避けるためworktreeで実施する。
+                            # `--worktree`はclaude自身がcwd基準のリポジトリからworktreeを作成する機能で
+                            # あり、`cwd=local_path`固定と競合しない。
+                            claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
+                            # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
+                            _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                        claude_argv.append(prompt)
+                        result = subprocess.run(
+                            claude_argv,
+                            check=False,
+                            env=env,
+                            cwd=local_path,
                         )
-                        sys.exit(result.returncode)
-                    if not args.no_update:
-                        print("update-dotfilesを実行してprocess-loopを再起動します。")
-                        subprocess.run(["update-dotfiles"], check=False)
-                        _restart_process_loop(sys.argv, dotfiles_root)
-                    continue
-                if not args.no_alerts:
-                    monotonic_now = time.monotonic()
-                    if last_alert_check is None or monotonic_now - last_alert_check >= args.alert_interval:
-                        last_alert_check = monotonic_now
-                        try:
-                            submitted = _alerts.check_and_submit_alerts(
-                                private_notes,
-                                target_repo_id,
-                                local_path,
-                                forge=args.alert_forge,
-                                now=datetime.datetime.now(),
+                        _console_title.set_console_title("atk mq process-loop")
+                        _process_loop_log.append(
+                            "session_end",
+                            elapsed_sec=round(time.monotonic() - session_started_at, 3),
+                            returncode=result.returncode,
+                        )
+                        if result.returncode not in _NORMAL_EXIT_CODES:
+                            print(
+                                f"claudeがexit code {result.returncode}で異常終了しました。",
+                                file=sys.stderr,
                             )
-                        except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
-                            print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
-                            submitted = 0
-                        _process_loop_log.append("alert_check", submitted=submitted)
-                        if submitted > 0:
-                            print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
-                            continue
-                print("0件のため変更検知を待機します。")
-                changed = _wait_for_changes(private_notes, target_repo_id)
-                if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
-                    _check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
-        except KeyboardInterrupt:
-            print("Ctrl+Cを検知しました。常駐モードを終了します。")
-    finally:
-        if previous_env_value is None:
-            os.environ.pop("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", None)
-        else:
-            os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = previous_env_value
+                            sys.exit(result.returncode)
+                        if not args.no_update:
+                            print("update-dotfilesを実行してprocess-loopを再起動します。")
+                            subprocess.run(["update-dotfiles"], check=False)
+                            _console_title.set_console_title("atk mq process-loop")
+                            _restart_process_loop(sys.argv, dotfiles_root)
+                        continue
+                    if not args.no_alerts:
+                        monotonic_now = time.monotonic()
+                        if last_alert_check is None or monotonic_now - last_alert_check >= args.alert_interval:
+                            last_alert_check = monotonic_now
+                            try:
+                                submitted = _alerts.check_and_submit_alerts(
+                                    private_notes,
+                                    target_repo_id,
+                                    local_path,
+                                    forge=args.alert_forge,
+                                    now=datetime.datetime.now(),
+                                )
+                            except (_alerts.AlertCollectError, subprocess.CalledProcessError) as exc:
+                                print(f"警告: アラート確認処理に失敗しました: {exc}", file=sys.stderr)
+                                submitted = 0
+                            _process_loop_log.append("alert_check", submitted=submitted)
+                            if submitted > 0:
+                                print(f"アラート監視により{submitted}件のfeedbackを投入しました。")
+                                continue
+                    print("0件のため変更検知を待機します。")
+                    changed = _wait_for_changes(private_notes, target_repo_id)
+                    if not changed and not args.no_update and dotfiles_root is not None and startup_hash is not None:
+                        _check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
+            except KeyboardInterrupt:
+                print("Ctrl+Cを検知しました。常駐モードを終了します。")
+        finally:
+            if previous_env_value is None:
+                os.environ.pop("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", None)
+            else:
+                os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = previous_env_value

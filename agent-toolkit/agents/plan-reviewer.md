@@ -13,7 +13,6 @@ tools:
   - Grep
   - Glob
   - Bash
-  - SendMessage
 user-invocable: false
 # 編集時の注意点:
 # 過去のコンテキスト（ユーザー発話・要件対話内容・grep等での参照確認）が必要な節はメイン側で実施するため、
@@ -21,8 +20,6 @@ user-invocable: false
 # 本エージェントはcodexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`careful-review`から
 # 起動されるフォールバック経路である（既定経路は`plan-codex-delegate`。詳細は`codex-review.md`
 # 「plan-file-creatorからの起動」節）。
-# 本文末尾の完了報告能動送付の一文は`agent-toolkit/agents/plan-codex-delegate.md`本文末尾の
-# 同一文と意図的な重複である。改訂時は2ファイルを同時更新する。
 ---
 
 # plan-reviewer
@@ -66,6 +63,9 @@ codexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`care
 ## 出力
 
 ```text
+{担当した観点ラベル}
+指摘件数: 致命的N件、重大N件、軽微N件
+
 ## 観点網羅
 
 - [ ] 計画文内・他ファイルとの整合: 点検実施: {未 | 済}
@@ -86,9 +86,5 @@ codexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`care
 ```
 
 各区分で指摘が無い場合は本文を`指摘なし`とする。同種違反が複数箇所に出現する場合は
-代表箇所へ集約し`（他N箇所）`を付す。本サブエージェントはbackground起動を既定とし、
-完了時に起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）で
-完了報告を能動送付する。
-`main`はトップレベルのメインセッションへ解決されるため、サブエージェント配下から起動された場合の起動元へは
-到達しない。起動プロンプトに識別子の指定が無い場合は、`main`宛の送付に加えて完了報告全文を
-最終応答本文としても返し、foreground起動の呼び出し元が戻り値として直接受領できる状態にする。
+代表箇所へ集約し`（他N箇所）`を付す。
+指摘全文は要約せず、完了報告全文をforeground呼び出しの戻り値として返す。

@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の8点に限定する。
+チェック対象は次の9点に限定する。
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
 - 各H3配下にコードブロック（フェンスで囲われた本文）が存在するか
 - H3見出しのパスのうち、`（新設）`・`（廃止・削除）`マーカーが無いものの実在確認
@@ -18,6 +18,9 @@ r"""計画ファイルの軽量機械チェック。
   削除を指示する語が現れているか
 - `#### 廃止・改名対象一覧`H4節が列挙する識別子（ファイルパス・関数名・クラス名・定数名）が
   リポジトリ内に定義として残存していないか
+- `## 変更内容`の各H3節`text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
+  汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
+  必須3語（対象パターン・検出件数・対応方針）が揃っているか
 
 いずれも警告のみで終了コードは常に0とする（次工程移行のブロックは`ExitPlanMode`と
 `plan-impl-executor`起動の2地点でメインエージェントが完成条件充足を判断して行う）。
@@ -32,7 +35,10 @@ import sys
 
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
 _H3_PATH_RE = re.compile(r"^### `([^`]+)`")
-_NEW_OR_DELETED_RE = re.compile(r"（(新設|廃止・削除)")
+# `（新設）`単独形と`（現行N行、廃止・削除）`のような前置き付き複合形（`plan-mode/SKILL.md`
+# 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
+# `）`直前の位置で担保する。
+_NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
 _FENCE_RE = re.compile(r"^(`{3,}|~{3,})\s*(.*)$")
 _H2_RE = re.compile(r"^## (.+)$")
 _HEADING_RE = re.compile(r"^#{2,4}\s")
@@ -51,6 +57,16 @@ _DELETION_INSTRUCTION_WORDS = ("削除する", "廃止する")
 
 _DEPRECATED_LIST_HEADING_RE = re.compile(r"^####\s+廃止・改名対象一覧\s*$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# 遡及スキャンの発動条件を判定する3パターン。`pretooluse.py`の
+# `_check_plan_file_retroactive_scan_recorded`と同一定義（対象範囲のみ計画ファイル自身へ変更）。
+_RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE = re.compile(
+    r"^\s*-\s+[^\n]{0,80}(しない|禁止する|発行しない|省略しない)(。|$)", re.MULTILINE
+)
+_RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE = re.compile(r"いかなる理由(?:（[^）]*）)?があっても[^\n]{0,80}しない")
+_RETROACTIVE_SCAN_NEW_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
+
+_RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
 
 
 def _looks_like_python_definition_identifier(name: str) -> bool:
@@ -312,6 +328,45 @@ def _check_deprecated_identifiers_removed(text: str, plan_path: pathlib.Path) ->
     return warnings
 
 
+def _added_lines_text(block: str) -> str:
+    """`text`コードブロックの追加分本文を返す（`+`行なしは全文置換としてブロック全体を返す）。
+
+    `-`始まりの行はMarkdownのバレット記号と区別できないため削除マーカーとして扱わない。
+    """
+    added = [line[1:] for line in block.splitlines() if line.startswith("+")]
+    return "\n".join(added) if added else block
+
+
+def _detect_meta_norm_addition(text: str) -> bool:
+    """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。"""
+    for path in _extract_h3_paths(text):
+        body = _h3_section_body(text, path)
+        for block in _extract_fenced_code_blocks(body, info_string="text"):
+            added = _added_lines_text(block)
+            if (
+                _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
+                or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
+                or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
+            ):
+                return True
+    return False
+
+
+def _check_retroactive_scan_recorded(text: str) -> list[str]:
+    """メタ規範パターンの追加を含む計画で、`## 調査結果`の遡及スキャン必須3語の不足を検出する。"""
+    if not _detect_meta_norm_addition(text):
+        return []
+    section_text = "\n".join(_iter_h2_sections(text, "調査結果"))
+    missing = [item for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS if item not in section_text]
+    if not missing:
+        return []
+    return [
+        "遡及スキャン記録の不足の疑い: `## 変更内容`にメタ規範パターン（全称禁止表現・"
+        "汎用禁止形バレット・`##`以上の見出し）の追加を検出したが、`## 調査結果`に"
+        f"必須語が揃っていない（不足: {'、'.join(missing)}）"
+    ]
+
+
 def main() -> int:
     """計画ファイル1件を対象に軽量機械チェックを実行し、警告をstderrへ出力する。"""
     if len(sys.argv) != 2:
@@ -353,6 +408,7 @@ def main() -> int:
     warnings.extend(_check_skill_names_exist(text))
     warnings.extend(_check_deletion_instruction_present(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
+    warnings.extend(_check_retroactive_scan_recorded(text))
 
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)

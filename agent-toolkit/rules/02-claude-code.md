@@ -50,22 +50,17 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   エージェント定義自体のfrontmatterを改訂する。`plan-implementer`は対象外とし、
   `agent-toolkit/references/plan-impl/execution-process.md`「実装委譲…」節が定める
   難易度別の`model`明示指定に従う
-- サブエージェント起動はforeground実行（`name`指定なし・`run_in_background`省略）を既定とする。
-  `name`指定を伴うbackground起動は、完了通知（`idle_notification`経路）が配送されず
-  長時間非稼働のまま停滞する事例が観測されているため、起動後に`SendMessage`で対話する
-  必要が真にある場合に限り使う
-  - `SendMessage`の宛先は、完了時に呼び出し元へ渡されるエージェントIDでも指定できる。
-    対話のためだけに識別名を指定しない
-  - 並列起動時は単一メッセージ内に複数の起動ブロックを並べ、各呼び出しの戻り値として結果を直接受領する
-  - foreground実行はユーザー操作・その他の理由で自動的にbackgroundへ転換されることがあるため、
-    「foreground実行だから戻り値で確実に受領できる」ことを前提とした設計をしない。
-    名前無しで起動していれば、background転換後もtask-notification経由の受領経路が保たれる
-  - `name`指定で起動する場合、`to: 'main'`はトップレベルのメインセッションへ解決され委譲階層の
-    直近の親へは向かわない。子エージェントを起動する側は起動プロンプトへ自身の識別子を明記し、
-    当該識別子を宛先に指定させる。宛先を明記しない起動は、起動元が待機解除の契機を持たない状態を生む
+- AgentまたはTask起動では`name`パラメーターを渡さず、`run_in_background`を省略したforeground実行とする。
+  `name`付きbackground起動で完了通知が配送されず停滞する事象は技術的な不成立に該当するため、
+  `name`パラメーターの禁止は厳守規定とする
+  - 独立した複数のforeground呼び出しは同一応答内へ並置し、各戻り値を直接受領する
+  - foreground起動プロンプトには、完了報告をツール戻り値で返し、
+    `SendMessage`による能動送付をしない旨を明記する
+  - foreground実行が自動的にbackgroundへ転換された場合は、task-notification経由で完了報告本文を受領する
 - サブエージェント配下でさらに子エージェントを起動する場合も既定のforeground実行を維持し、
   Agentツールの戻り値として完了報告を直接受領する。配下の完了報告を待つ状態でターンを終える前に、
   受領手段が成立していることを確認する
+- 起動階層を越えた完了報告を受領した主体は、内容を処理する前に本来の起動元へ全文を中継する
 - foreground実行で起動した子エージェントを再開する場合、`SendMessage`を用いず新規のforeground起動として扱う。
   `SendMessage`による再開はbackground実行となり、戻り値による受領経路が失われる。
   再開時に引き継ぐべき文脈（前回の指摘・完了済み工程・確定した方針）は新規起動のプロンプトへ本文で渡す
@@ -90,7 +85,14 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   完了済み工程・試行済みのアプローチ・観測できた失敗事象を抽出し、起動プロンプトへ引き継ぐ。
   白紙から同じ失敗を再分析させない
 - background並列起動中は`git log --oneline -10`・`git status --short`・`TaskList`・
-  成果物ファイルの`mtime`で停滞を検知する。間隔を空けた複数回の観測で前回との差分が無ければ
+  成果物ファイルの`mtime`で停滞を検知する。
+  `subagents/*.meta.json`の`agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`から、
+  同一種別かつ同一用途の累計起動回数も観測する。
+  並列起動した複数インスタンスは各1回として合算し、同一ラウンド内の並列数と通算ラウンド数を区別しない。
+  `agent-toolkit:careful-review`が定める初回1回と再レビュー4回の計5回と同じ数え方を用いる。
+  累計起動回数が5回を超えた場合は、
+  進捗の有無によらず収束を促す。
+  間隔を空けた複数回の観測で前回との差分が無ければ
   停滞と判定し`SendMessage`で継続を1回催促する。催促後も間隔を空けて再確認し応答が無ければ
   メイン側で
   `agent-toolkit/references/plan-impl/caller-reception.md`が定める完遂順序
@@ -132,7 +134,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
     サブエージェント内部のイベント（ツール呼び出し等）は深さ2限定では取りこぼす。
     適用条件を明示せず用いない
   - サブエージェントの起動を1件ずつ数える用途では`subagents/*.meta.json`の
-    `toolUseId`・`spawnDepth`を典拠とする
+    `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`を典拠とする
 - 委譲先・背景ジョブの完了を待つ間は、待機を1回のツール呼び出しへ閉じ込める。
   待機条件を満たした時点で終了するループ（`until <条件>; do sleep <間隔>; done`）を1回起動するか、
   完了通知が自動で届く委譲形態では通知の受領をもって待機解除とする。

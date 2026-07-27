@@ -16,9 +16,11 @@ import fnmatch
 import pathlib
 import sys
 
-# agent-toolkit-restructure計画の実装完了時点の実測値（7,238行）へ20%の増加余地を加えた値。
-# 実測手順は`total-size-limit.md`「上限値」節を参照する。
-LIMIT = 8685
+# feedback-norms-20260728計画の実装完了時点の実測値（8,778行）へ20%の増加余地を加えた値。
+# 前回基準（agent-toolkit-restructure計画、7,238行）から名前禁止・レビュー編集遮断・
+# 計画状態検査等の機械的対策が純増したため再算出した。実測手順は
+# `total-size-limit.md`「上限値」節を参照する。
+LIMIT = 10534
 
 _AGENT_TOOLKIT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TARGET_DIR_NAMES = ("rules", "skills", "agents", "references")

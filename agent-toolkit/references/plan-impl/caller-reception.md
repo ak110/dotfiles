@@ -1,10 +1,3 @@
----
-# 同期注記: 「plan-impl-executor自身がnamed background起動された場合」段落のnamed subagent能動送付規定は
-# `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節と意図的に重複させている。
-# 本ファイルは対象読者・自己完結の要否が異なる受信側手順書であるため、
-# 同節の「改訂時は同時更新する」宣言のカウント対象には含めない（改訂時は本ファイルも参照確認する）。
----
-
 # plan-impl-executor呼び出し元の起動前準備・完了報告の受領口
 
 `agent-toolkit/agents/plan-impl-executor.md`から参照されるSSOTとする。
@@ -14,6 +7,9 @@
 
 起動前の準備: 呼び出し元はAgentツールで`agent-toolkit:plan-impl-executor`を起動する直前に
 `git rev-parse HEAD`を実行し、結果を計画着手前SHAとして記録する（手順2の照合に使う）。
+起動は`name`と`run_in_background`を省略したforegroundとし、完了報告は戻り値として受領する。
+foreground起動が自動的にbackgroundへ転換された場合は、task-notificationの完了報告本文を受領する。
+起動階層を越えた報告を受領した場合は、本来の起動元へ全文を中継してから検収する。
 
 呼び出し元は`plan-impl-executor`の完了報告を受領した後、次の手順を実施する。
 
@@ -36,12 +32,8 @@
    - いずれの分岐でも同一プロンプトでの再委譲は禁止する
    - `needs_escalation`受領時は次工程へ進む前に完遂する。ブロック要因が担当範囲外への依存であれば
      当該依存を計画ファイル本文へ補完したうえで、再委譲または呼び出し元の直接実装で完遂する
-   - named background subagentの完了判定はSendMessageによる問い合わせに依存せず、
-     `git log`・`git status`・作業ツリー・commit SHAなどの観測可能事象で先に判定する。
-     `idle_notification`受信時も同様とし、SendMessageは観測事実で判定不能な場合に限定する。
-     CI通過確認等の外部プロセス完了待ちのポーリングは本項の対象外とする。
-     呼び出し元が定める切替条件下で別の`plan-impl-executor`起動へ引き継ぐ場合は例外とし、
-     この引き継ぎ時の完了判定は完了報告本文の受領を必須とする（切替条件の詳細は
+   - 呼び出し元が定める切替条件下で別の`plan-impl-executor`起動へ引き継ぐ場合、
+     完了判定は完了報告本文の受領を必須とする（切替条件の詳細は
      `agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`「混在時の並行制御」節に従う）
    是正指示を送った後に完了報告を受領した場合、`applied_instructions`欄で反映状況を確認する。
    未反映の指示が残る場合は検収へ進まず反映を待つ。
@@ -89,11 +81,5 @@
 （`agent-toolkit/scripts/_stop_gate.py`）が既に担っており、呼び出し元が受領する完了報告は
 当該判定を経たものである。呼び出し元は上記手順0〜6のいずれとも独立に、受領後の完了通知への
 受動的な委任・停滞確認の手順として`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節に従う。
-
-`plan-impl-executor`自身がAgentツールの`name`指定・`run_in_background=true`でnamed subagentとして
-起動される場合、作業完了時に完了報告本文を起動元宛のSendMessageで能動送付する。
-送付先は起動プロンプトで指定された識別子とし、指定が無い場合は`main`とする。
-この能動送付を必須ゲートとする。
-`idle_notification(available)`のみでメイン要求を待つ挙動は未完遂扱いとし、SubagentStopフックがブロックする。
 
 呼び出し元は本ファイルを参照し、固有差分（起動タイミング・追加の確認事項）のみを自スキル側へ記述する。

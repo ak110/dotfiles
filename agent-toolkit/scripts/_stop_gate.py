@@ -4,19 +4,14 @@
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
-background task起動の検出条件は次の4種を統合して扱う。
+background task起動の検出条件は次の3種を統合して扱う。
 - `toolUseResult.status == "async_launched"`（背景Agent初回起動）
-- `toolUseResult.status == "teammate_spawned"`（`name`付きteammate並列起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
 - `tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつtext本文に
   `_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
 
-SendMessage背景再開は前3者と異なり`toolUseResult`側に識別子を持たないため、
+SendMessage背景再開は前2者と異なり`toolUseResult`側に識別子を持たないため、
 テキストマーカー判定でSendMessage呼び出し由来のtool_resultに限定して識別する。
-
-`name`付きteammateの完了通知は`<task-notification>`要素ではなく
-`<teammate-message>`要素内のidle_notification(idleReason=available)として記録される。
-そのため完了検知でも当該経路を追加し、teammate_id→tool_use_id集合マップで解決する。
 
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式では、
 `<task-id>`要素とagentId→tool_use_id集合マップ（`_collect_task_id_tool_use_ids`）による
@@ -69,16 +64,6 @@ _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 # 同期SendMessage応答は本文言を含まないため、背景再開ケースのみ加算される。
 _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 
-# `<teammate-message teammate_id="X" ...>BODY</teammate-message>`要素を切り出す正規表現。
-# `name`付きで並列起動したサブエージェント（teammate）の完了通知はattachmentの
-# `task-notification`ではなくuserエントリのtext本文へ`<teammate-message>`要素として
-# 記録される。BODYはJSON文字列で、`{"type":"idle_notification", "idleReason":"available", ...}`
-# 形式のとき当該teammateが待機（呼び出し元による続行可能）状態へ移行したことを表す。
-_TEAMMATE_MESSAGE_RE = re.compile(
-    r'<teammate-message[^>]*teammate_id="([^"]+)"[^>]*>(.*?)</teammate-message>',
-    re.DOTALL,
-)
-
 # `AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数の真値集合。小文字一致で判定する。
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
@@ -89,26 +74,20 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
       `Monitor`、または`Bash`かつ`input.run_in_background == true`）
-    - 未完了のbackground task（Agent・Bash・SendMessage背景再開・named teammate）が存在する
+    - 未完了のbackground task（Agent・Bash・SendMessage背景再開）が存在する
 
     後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
     - `toolUseResult.status == "async_launched"`（背景Agent起動）
-    - `toolUseResult.status == "teammate_spawned"`（`name`付きteammate並列起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
 
-    完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出し、
-    さらに`<teammate-message>`要素内のidle_notification(available)から
-    teammate_id→tool_use_id集合マップで解決したidを追加する。
-    完了通知エントリは次の3形式が併存する。
+    完了集合は後続エントリの`<task-notification>`要素から`<tool-use-id>`を抽出する。
+    完了通知エントリは次の2形式が併存する。
     - 旧形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる`<task-notification>`要素
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
       `attachment.prompt`文字列に含まれる`<task-notification>`要素（Claude Code 2.1系以降）
-    - teammate形式: 非sidechainの`type=="user"`エントリのtext content内に含まれる
-      `<teammate-message>`要素body部（JSON）で`type=="idle_notification"`かつ
-      `idleReason=="available"`のもの
     `<task-notification>`要素に`<tool-use-id>`が含まれない場合は`<task-id>`要素と
     agentId→tool_use_id集合マップによるフォールバック解決を試み、それでも解決できない通知は
     `task_notification_unresolved`として常時ログへ明示出力する。
@@ -145,7 +124,7 @@ def has_pending_background_launches(transcript_path: str, session_id: str) -> bo
     `subagent_stop_advisor.py`側で完了報告本文の内容によらない無条件の早期承認判定に使う。
     起動集合・完了集合の抽出条件は`is_pending_async_work`docstringに定義済み
     （`toolUseResult.status`・`backgroundTaskId`・SendMessage背景再開マーカー・
-    `<task-notification>`・idle_notification(available)の各条件）。
+    `<task-notification>`の各条件）。
 
     transcript読み取り失敗時は偽を返す（fail-closed。ブロック維持側で動作する）。
     """
@@ -367,19 +346,15 @@ def _describe_pending_background_tasks(
 
     起動の記録: 次のいずれかを持つuserエントリ。
     - `toolUseResult.status == "async_launched"`（背景Agent起動）
-    - `toolUseResult.status == "teammate_spawned"`（`name`付きteammate並列起動）
     - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
     - `message.content`内の`tool_result`ブロックの`tool_use_id`がSendMessage呼び出し由来かつ
       text本文に`_SENDMESSAGE_BG_RESUME_MARKER`を含む（SendMessageによるサブエージェント背景再開）
 
-    完了の記録: 次の3形式から`tool_use_id`を抽出する。
+    完了の記録: 次の2形式から`tool_use_id`を抽出する。
     - 旧形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
       `<task-notification>`要素の`<tool-use-id>(toolu_[\\w]+)</tool-use-id>`
     - 新形式: `type=="attachment"`かつ`attachment.commandMode=="task-notification"`のエントリの
       `attachment.prompt`文字列（Claude Code 2.1系以降で観測される形式）
-    - teammate形式: 非sidechainのメイン側userエントリの`message.content`内テキストブロックの
-      `<teammate-message teammate_id="X">`要素body部（JSON）で`type=="idle_notification"`かつ
-      `idleReason=="available"`のもの。teammate_id `X`をname→tool_use_id集合マップで解決する
     旧形式・新形式とも`<tool-use-id>`要素が欠落する通知は`<task-id>`要素と
     `_collect_task_id_tool_use_ids`が構築するagentId→tool_use_id集合マップ
     （`task_id_map`）で解決するフォールバック経路を共有ヘルパー
@@ -389,18 +364,12 @@ def _describe_pending_background_tasks(
     起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知され共通の抽出処理を用いる。
-    `name`付きteammateだけteammate-message経路で完了通知が届くため、専用の抽出処理を追加する。
     transcript読み取り失敗時は空集合のペアを返す。
 
     走査は2段構成とする。
-    第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合と
-    宛先別の行位置、および`name`付きAgent tool_useのname→tool_use_id集合マップを構築する。
+    第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合を構築する。
     第2段ではtranscriptを時系列に走査し、`toolUseResult`条件に該当しないuserエントリに対して
     SendMessage集合を参照したテキストマーカー判定を追加し、背景再開のtool_resultを起動集合へ加算する。
-    `<teammate-message>`要素内のidle_notification(available)を検出した場合は、
-    name→tool_use_id集合マップで解決したtool_use_idを完了集合へ加算する。
-    その後に同じteammate宛のSendMessageがあれば、対応するtool_use_idを起動集合へ戻して
-    完了集合から除去する。再度idle_notification(available)を受信すれば完了集合へ戻す。
     """
     launched: set[str] = set()
     completed: set[str] = set()
@@ -409,16 +378,9 @@ def _describe_pending_background_tasks(
     except (OSError, ValueError):
         return launched, completed
     sendmessage_ids = _collect_sendmessage_tool_use_ids(lines)
-    sendmessage_to_map = _collect_sendmessage_to_map(lines)
-    sendmessage_names_by_position: dict[int, set[str]] = {}
-    for teammate_name, positions in sendmessage_to_map.items():
-        for position in positions:
-            sendmessage_names_by_position.setdefault(position, set()).add(teammate_name)
-    named_agent_ids = _collect_named_agent_tool_use_ids(lines)
     task_id_map = _collect_task_id_tool_use_ids(lines)
     monitor_task_ids = _collect_monitor_task_ids(lines)
-    idle_teammates: set[str] = set()
-    for position, line in enumerate(lines):
+    for line in lines:
         try:
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
@@ -432,9 +394,7 @@ def _describe_pending_background_tasks(
                 continue
             tool_use_result = entry.get("toolUseResult")
             if isinstance(tool_use_result, dict) and (
-                tool_use_result.get("status") == "async_launched"
-                or tool_use_result.get("status") == "teammate_spawned"
-                or isinstance(tool_use_result.get("backgroundTaskId"), str)
+                tool_use_result.get("status") == "async_launched" or isinstance(tool_use_result.get("backgroundTaskId"), str)
             ):
                 tool_use_id = _extract_tool_result_id(message)
                 if tool_use_id is not None:
@@ -451,17 +411,6 @@ def _describe_pending_background_tasks(
                     monitor_task_ids=monitor_task_ids,
                 )
             )
-            for teammate_name in _extract_teammate_completion_names(message):
-                completed.update(named_agent_ids.get(teammate_name, set()))
-                idle_teammates.add(teammate_name)
-        elif entry_type == "assistant":
-            for teammate_name in sendmessage_names_by_position.get(position, set()):
-                if teammate_name not in idle_teammates:
-                    continue
-                teammate_ids = named_agent_ids.get(teammate_name, set())
-                launched.update(teammate_ids)
-                completed.difference_update(teammate_ids)
-                idle_teammates.remove(teammate_name)
         elif entry_type == "attachment":
             # Claude Code 2.1系以降、background task完了通知はattachmentエントリ経由で記録される。
             # attachment.commandMode == "task-notification"のエントリのみが完了通知本文を持つ。
@@ -533,21 +482,6 @@ def _collect_sendmessage_tool_use_ids(lines: list[str]) -> set[str]:
         if isinstance(block_id, str):
             ids.add(block_id)
     return ids
-
-
-def _collect_sendmessage_to_map(lines: list[str]) -> dict[str, list[int]]:
-    """非sidechain SendMessageの宛先名から行位置のリストへのマップを返す。"""
-    result: dict[str, list[int]] = {}
-    for position, block in _iter_assistant_content_blocks(lines):
-        if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
-            continue
-        tool_input = block.get("input")
-        if not isinstance(tool_input, dict):
-            continue
-        teammate_name = tool_input.get("to")
-        if isinstance(teammate_name, str) and teammate_name:
-            result.setdefault(teammate_name, []).append(position)
-    return result
 
 
 def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
@@ -631,69 +565,6 @@ def _collect_monitor_task_ids(lines: list[str]) -> set[str]:
         else:
             non_monitor_task_ids.add(task_id)
     return monitor_task_ids - non_monitor_task_ids
-
-
-def _collect_named_agent_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
-    """transcript全行から非sidechain assistantの`name`付きAgent tool_use idをname別集合として返す。
-
-    `name`付きteammate起動は同一名で複数回発行され得るため（並列起動・逐次再起動）、
-    値は`set[str]`で保持する。teammate完了通知（idle_notification available）の
-    `teammate_id`をキーとしてtool_use_id集合を解決する用途に用いる。
-    """
-    result: dict[str, set[str]] = {}
-    for _position, block in _iter_assistant_content_blocks(lines):
-        if block.get("type") != "tool_use" or block.get("name") not in ("Agent", "Task"):
-            continue
-        tool_input = block.get("input")
-        if not isinstance(tool_input, dict):
-            continue
-        name = tool_input.get("name")
-        if not isinstance(name, str) or not name:
-            continue
-        block_id = block.get("id")
-        if isinstance(block_id, str):
-            result.setdefault(name, set()).add(block_id)
-    return result
-
-
-def _extract_teammate_completion_names(message: dict) -> set[str]:
-    """userメッセージ内の`<teammate-message>`要素からidle_notification(available)のteammate_idを抽出する。
-
-    body部分をJSONとしてパースし、`type == "idle_notification"`かつ
-    `idleReason == "available"`のときのみteammate_idを結果へ加算する。
-    JSONパース失敗・非該当のnotificationは無視する。
-    `content`が文字列（旧フォーマット）でも配列（実transcriptフォーマット）でも処理する。
-    """
-    result: set[str] = set()
-
-    def _scan_text(text: str) -> None:
-        for match in _TEAMMATE_MESSAGE_RE.finditer(text):
-            teammate_id = match.group(1)
-            body = match.group(2).strip()
-            try:
-                data = json.loads(body)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if not isinstance(data, dict):
-                continue
-            if data.get("type") == "idle_notification" and data.get("idleReason") == "available":
-                result.add(teammate_id)
-
-    content = message.get("content")
-    if isinstance(content, str):
-        _scan_text(content)
-        return result
-    if not isinstance(content, list):
-        return result
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") != "text":
-            continue
-        text = block.get("text", "")
-        if isinstance(text, str):
-            _scan_text(text)
-    return result
 
 
 def _extract_sendmessage_bg_resume_id(message: dict, sendmessage_ids: set[str]) -> str | None:

@@ -35,6 +35,9 @@ description: >
 投入は`cd <repo-path> && atk mq add "<message>"`で行う。本文は`$'...'`のANSI-Cクォートで囲み、
 ヒアドキュメント・パイプ・ファイルリダイレクトで渡さない（`$EDITOR`が対話的に起動し失敗する）。
 
+判断が必要な複数の確認事項を本文へ含める場合、各項目の書式は
+`references/hold-with-tbd-inject.md`「投入コマンド」節に従う（疑問文要件を本体へ複製しない）。
+
 投入対象が実装完了後に他リポジトリへの後続feedback投入を要する場合、feedback本文末尾へ
 `### 完了条件と連鎖feedback`ブロック（実装完了条件・後続feedback全文・関連feedback ID）を明示する。
 連鎖feedbackの検出・投入は「ステップ6: 連鎖feedbackの自律投入」で扱う。

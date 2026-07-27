@@ -46,6 +46,21 @@ def test_nonexistent_path_warns(
     assert "実在確認できないパス" in captured.err
 
 
+def test_nonexistent_path_with_prefixed_deletion_marker_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`（現行N行、廃止・削除）`のような前置き付き複合形のマーカーも実在確認を免除する。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `does/not/exist.md`（現行87行、廃止・削除）\n\n"
+        "### `does/not/exist.md`\n\n```text\n本ファイルを削除する。\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在確認できないパス" not in captured.err
+
+
 def test_fence_nesting_violation_warns(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -254,3 +269,49 @@ def test_deprecated_identifier_excludes_git_and_plan_file(
     assert main() == 0
     captured = capsys.readouterr()
     assert "廃止・改名対象一覧の識別子が残存している疑い" not in captured.err
+
+
+_META_NORM_PLAN_BODY = (
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
+    "### `foo.md`\n\n```text\n+- 起動時にnameを指定しない\n```\n"
+)
+_NO_TRIGGER_PLAN_BODY = (
+    "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n### `foo.md`\n\n```text\n+- 起動手順を追記する\n```\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("investigation_section", "expect_warning"),
+    [
+        pytest.param(
+            "## 調査結果\n\n- 対象パターン: 汎用禁止形バレット\n- 検出件数: 1件\n- 対応方針: 機械チェックと対で記載する\n\n"
+            + _META_NORM_PLAN_BODY,
+            False,
+            id="required_items_present",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 対象パターン: 汎用禁止形バレット\n- 対応方針: 機械チェックと対で記載する\n\n"
+            + _META_NORM_PLAN_BODY,
+            True,
+            id="required_item_missing",
+        ),
+        pytest.param(
+            "## 調査結果\n\n- 既存節へ手順を1件追記する\n\n" + _NO_TRIGGER_PLAN_BODY,
+            False,
+            id="not_triggered",
+        ),
+    ],
+)
+def test_retroactive_scan_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    investigation_section: str,
+    expect_warning: bool,
+) -> None:
+    """遡及スキャン必須3語の充足有無に応じて警告の有無が切り替わる。"""
+    plan = _write_plan(tmp_path, investigation_section)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert ("遡及スキャン記録の不足の疑い" in captured.err) is expect_warning

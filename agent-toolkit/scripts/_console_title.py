@@ -1,17 +1,18 @@
-"""起動ターミナルのウィンドウタイトル設定。
+"""起動ターミナルのウィンドウタイトル制御。
 
-`atk serve`はHTTPサーバーとして長時間稼働し、起動したターミナルを占有する。
-そのターミナルを一覧から識別しやすいよう、稼働中だけウィンドウタイトルへ
-コマンド名とポートを表示する。
+長時間稼働するコマンドが起動したターミナルを占有する場合、
+そのターミナルを一覧から識別しやすいよう、稼働中だけウィンドウタイトルを設定する。
 
 設計上の判断:
 
 - ターミナルへ接続されているときだけ設定する。パイプ・リダイレクト・非PTY起動では
   制御文字が出力先へそのまま記録・転送されて表示が乱れるため、`isatty`で接続を判定する。
 - Windowsはコンソールタイトル設定API、それ以外はOSC制御シーケンスで設定方式を分ける。
-- 終了時はタイトルを元へ戻す。Windowsは設定前のタイトルをAPIで取得して復元する。
+- `console_title`は終了時にタイトルを元へ戻す。Windowsは設定前のタイトルをAPIで取得して復元する。
   OSC方式の端末は現在のタイトルを問い合わせる確実な手段がないため空タイトルへ戻し、
   シェルが次のプロンプト描画で自身のタイトルを再設定するのに委ねる。
+- `set_console_title`は復元を行わない単発設定であり、配下プロセスが書き換えたタイトルを
+  呼び出し側の意図した値へ再設定する用途に使う。
 """
 
 import contextlib
@@ -48,6 +49,26 @@ def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.
             out.flush()
 
 
+def set_console_title(title: str, *, stream: typing.TextIO | None = None) -> None:
+    """ターミナルのウィンドウタイトルを`title`へ設定する（復元は行わない）。
+
+    配下プロセスが書き換えたタイトルを呼び出し側の意図した値へ再設定する用途に使う。
+    ターミナルへ接続されていないときは何もしない。
+
+    Args:
+        title: 設定するウィンドウタイトル。
+        stream: OSC制御文字の出力先兼ターミナル接続判定先。既定は標準エラー出力。
+    """
+    out = sys.stderr if stream is None else stream
+    if not _isatty(out):
+        return
+    if sys.platform == "win32":
+        _set_windows_console_title(title)
+    else:
+        out.write(_osc_set_title(title))
+        out.flush()
+
+
 def _isatty(stream: typing.TextIO) -> bool:
     """`stream`がターミナルへ接続されているかを判定する。"""
     try:
@@ -68,6 +89,21 @@ def _osc_set_title(title: str) -> str:
 _WINDOWS_TITLE_BUFFER_LEN = 1024
 
 
+def _windows_kernel32() -> typing.Any:
+    """`ctypes.windll.kernel32`を取得する。
+
+    `ctypes.windll`はWindows専用属性のため`getattr`経由で取得して型解析を回避する。
+    """
+    import ctypes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    return getattr(ctypes, "windll").kernel32  # noqa: B009
+
+
+def _set_windows_console_title(title: str) -> None:
+    """Windowsコンソールのタイトルを設定する（復元は行わない）。"""
+    _windows_kernel32().SetConsoleTitleW(title)
+
+
 @contextlib.contextmanager
 def _windows_console_title(title: str) -> typing.Iterator[None]:
     """Windowsコンソールのタイトルを設定し、終了時に設定前のタイトルへ戻す。
@@ -76,7 +112,7 @@ def _windows_console_title(title: str) -> typing.Iterator[None]:
     """
     import ctypes  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009
+    kernel32 = _windows_kernel32()
     buffer = ctypes.create_unicode_buffer(_WINDOWS_TITLE_BUFFER_LEN)
     kernel32.GetConsoleTitleW(buffer, len(buffer))
     original = buffer.value

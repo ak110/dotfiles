@@ -82,6 +82,7 @@ Agent / Task:
 - `plan-codex-delegate`起動検知時の`plan_codex_delegate_invoked`即時記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
 - `plan-file-creator`起動プロンプトの必須見出し4点の実在・非空検査によるブロック (block)
+- `name`引数指定のブロック (block)
 
 Write / Edit / MultiEdit:
 
@@ -89,7 +90,7 @@ Write / Edit / MultiEdit:
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
 - シークレット / 鍵ファイルの直接編集 (block)
-- named subagent定義への`SendMessage`ツール登録欠落 (block)
+- レビュー用途で起動された`plan-codex-delegate`による成果物編集 (block)
 - `agent-toolkit/rules/`配下・`agent-toolkit/skills/**/SKILL.md`・計画ファイルへの
   scope-escalationフレーズ転記検出 (warn)
 - manifestファイルの手編集 (warn)
@@ -145,6 +146,7 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+from _tracked_subagent_types import is_explicit_review_purpose as _is_explicit_review_purpose  # noqa: E402
 from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
@@ -597,6 +599,9 @@ def main() -> int:
     # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
     # plan-codex-delegate起動記録の前倒し
     if tool_name in ("Agent", "Task"):
+        # `name`指定は起動記録より前に遮断する（起動しない呼び出しの副作用を残さないため）。
+        if _check_agent_name_parameter(tool_name, tool_input):
+            return 2
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in (
             "plan-codex-delegate",
@@ -649,7 +654,7 @@ def main() -> int:
         return 2
     if _check_secrets(tool_name, file_path):
         return 2
-    if _check_named_subagent_sendmessage_registered(tool_name, tool_input, file_path):
+    if _check_plan_codex_delegate_review_edit(tool_name, session_id, payload):
         return 2
     if _check_danger_full_access_preserved(tool_name, tool_input, file_path):
         return 2
@@ -1588,113 +1593,58 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
     return True
 
 
-# named background起動想定サブエージェント判定用のキーワード。
-# frontmatterから`tools:`欄値行を除外した残りと本文全体を結合した判定対象範囲に
-# これらのいずれかが出現するファイルを判定対象とし、
-# frontmatter`tools:`欄への`SendMessage`登録有無を検査する。
-_NAMED_SUBAGENT_MARKER_RE = re.compile(r"SendMessage|能動送付")
+# --- `plan-codex-delegate`のレビュー用途起動下での成果物編集ブロック ---
 
-# `tools:`欄の値パースパターン（トークン境界: カンマ・空白・改行）。
-# 完全一致比較のため値文字列をトークン集合へ分解する。
-_TOOLS_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+# `plan-codex-delegate`起動時の用途行を`agentId`単位で記録する状態辞書のキー名。
+# `posttooluse.py`がAgent/Task成功時に`tool_response["agentId"]`をキーとして書き込み、
+# 本フックが子（サイドチェーン）側のEdit/Write/MultiEdit時に読み取る。
+_PLAN_CODEX_DELEGATE_PURPOSE_KEY = "plan_codex_delegate_purpose_by_agent_id"
 
-# frontmatter`tools:`欄の判定パターン。
-# `tools:`に続いて値（インライン形式・ブロック形式）が指定されている場合を判定する。
-_FRONTMATTER_TOOLS_LINE_RE = re.compile(r"^tools:[ \t]*(.*)$", re.MULTILINE)
+# `transcript_path`のファイル名（`agent-<agentId>.jsonl`）から`agentId`を抽出する。
+# `subagent_stop_advisor.py`の同名定数と同一パターンを保つ。
+_TRANSCRIPT_AGENT_ID_RE = re.compile(r"^agent-([^/\\]+)\.jsonl$")
 
 
-def _is_named_subagent_definition_target(file_path: str) -> bool:
-    """Named subagent SendMessage登録検査の対象ファイルかを判定する。
+def _extract_transcript_agent_id(transcript_path: object) -> str | None:
+    """`transcript_path`のファイル名から`agentId`（`agent-<id>.jsonl`のid部分）を抽出する。
 
-    対象は`agent-toolkit/agents/`配下の`.md`ファイル。
-    絶対パス・相対パス（`agent-toolkit/agents/<name>.md`形式）の双方で検出する。
+    ファイル名の先頭からの一致のみを許可し、`not-agent-alpha.jsonl`のような
+    文字列中の部分一致による誤抽出を防ぐ。抽出できない場合は`None`を返す。
     """
-    if not file_path:
-        return False
-    normalized = pathlib.PurePosixPath(file_path.replace("\\", "/")).as_posix()
-    if not normalized.endswith(".md"):
-        return False
-    return "/agent-toolkit/agents/" in normalized or normalized.startswith("agent-toolkit/agents/")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    match = _TRANSCRIPT_AGENT_ID_RE.match(pathlib.PurePath(transcript_path).name)
+    return match.group(1) if match else None
 
 
-def _extract_frontmatter_tools_field(content: str) -> tuple[bool, list[str], tuple[int, int] | None]:
-    """frontmatter区間から`tools:`欄の存在有無・値トークン一覧・値行の(開始, 終了)位置を抽出する。
+def _check_plan_codex_delegate_review_edit(tool_name: str, session_id: str, payload: dict) -> bool:
+    """レビュー用途で起動された`plan-codex-delegate`による成果物編集をblockする。
 
-    Returns:
-        (tools欄明示ありフラグ, 値トークン一覧, 値行のcontent内(開始, 終了)位置)。
-        次のいずれの場合も(False, [], None)を返す。
-        `tools:`行が存在しない場合、インライン値が空欄（例: `tools:`単独）の場合、
-        ブロック形式で`- <name>`項目が0件の場合。
-        値がインライン形式・ブロック形式のいずれの場合もトークン集合へ分解して返す。
-        値行位置はfrontmatter外の本文検査から`tools:`欄値行を除外する用途で使う。
+    自身の`transcript_path`から抽出した`agentId`が、`posttooluse.py`が親セッション状態へ
+    書き込む`plan_codex_delegate_purpose_by_agent_id`辞書のキーと一致し、
+    かつ記録された用途がレビュー2用途（計画レビュー・実装差分レビュー）の場合にblockする。
+
+    `agentId`を抽出できない場合・辞書に該当エントリが無い場合
+    （`plan-codex-delegate`以外の文脈での編集）・用途が計画作成や実装の場合は通過させる。
+    レビュー用途の判定材料を観測できない状況で正当な編集を止めないための安全側の設計とする。
     """
-    match = _FRONTMATTER_BLOCK_RE.match(content)
-    if match is None:
-        return False, [], None
-    frontmatter_body = match.group(1)
-    fb_offset = match.start(1)
-    tools_match = _FRONTMATTER_TOOLS_LINE_RE.search(frontmatter_body)
-    if tools_match is None:
-        return False, [], None
-    inline_value = tools_match.group(1).strip()
-    value_start = fb_offset + tools_match.start()
-    value_end = fb_offset + tools_match.end()
-    if inline_value:
-        tokens = _TOOLS_TOKEN_RE.findall(inline_value)
-        return (bool(tokens), tokens, (value_start, value_end))
-    block_tokens: list[str] = []
-    after_tools_offset = tools_match.end()
-    remaining = frontmatter_body[after_tools_offset:]
-    consumed = 0
-    for line in remaining.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if stripped.strip() == "":
-            consumed += len(line)
-            continue
-        if stripped.startswith("- "):
-            block_tokens.append(stripped[2:].strip())
-            consumed += len(line)
-            continue
-        break
-    if not block_tokens:
-        return False, [], None
-    value_end = fb_offset + after_tools_offset + consumed
-    return True, block_tokens, (value_start, value_end)
-
-
-def _check_named_subagent_sendmessage_registered(tool_name: str, tool_input: dict, file_path: str) -> bool:
-    """Named background起動想定のサブエージェント定義への`SendMessage`ツール登録欠落をblockする。
-
-    対象は`agent-toolkit/agents/`配下の`.md`。
-    frontmatterから`tools:`欄値行を除外した残りと本文全体を結合した判定対象範囲に
-    `SendMessage`または「能動送付」の言及があり、
-    かつfrontmatter`tools:`欄が明示的に指定されており（全ツール許容の暗黙状態ではない）、
-    かつ`SendMessage`がツール名として完全一致で登録されていない場合にblockする。
-
-    `tools:`欄自体が無いファイル（全ツール許容）と`tools:`欄が空欄・ブロック項目0件のファイルは、
-    能動送付手段が暗黙付与または無指定として扱われ、いずれも合格扱いとする。
-    """
-    if not _is_named_subagent_definition_target(file_path):
+    if tool_name not in ("Write", "Edit", "MultiEdit") or not session_id:
         return False
-    content = _materialize_post_edit_content(tool_name, tool_input, file_path)
-    if content is None:
+    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    if agent_id is None:
         return False
-    tools_explicit, tools_tokens, tools_value_range = _extract_frontmatter_tools_field(content)
-    if not tools_explicit:
+    purposes = read_state(session_id).get(_PLAN_CODEX_DELEGATE_PURPOSE_KEY)
+    if not isinstance(purposes, dict):
         return False
-    scan_target = (
-        content[: tools_value_range[0]] + content[tools_value_range[1] :] if tools_value_range is not None else content
-    )
-    if _NAMED_SUBAGENT_MARKER_RE.search(scan_target) is None:
-        return False
-    if "SendMessage" in tools_tokens:
+    if not _is_explicit_review_purpose(purposes.get(agent_id)):
         return False
     print(
         _llm_notice(
-            "blocked: named background subagent definition references SendMessage or 能動送付"
-            f" but frontmatter tools field does not include SendMessage ({tool_name}, target: {file_path})."
-            " Add SendMessage to the tools list so the subagent can actively send its completion report,"
-            " per agent-toolkit/rules/02-claude-code.md 'サブエージェント運用' section."
+            f"blocked: `plan-codex-delegate` launched for a review purpose must not edit deliverables ({tool_name})."
+            " Treat the review target as read-only and return findings and fix proposals in the response body only."
+            " The launcher applies the fixes through the regular implementation path."
+            " See agent-toolkit/agents/plan-codex-delegate.md '共通処理' section.",
+            tag="block",
         ),
         file=sys.stderr,
     )
@@ -2362,6 +2312,11 @@ def _check_plan_file_no_deferral_expression(
 
 # --- 規範対象ドキュメントへのメタ規範新設編集時の遡及スキャン記録チェック (FB4) ---
 
+# 遡及スキャン対象の計画ファイル解決時に`current_plan_file_path`より優先するセッション状態キー。
+# `_check_process7_completion_for_plan_impl_executor_agent`が、別の実在する計画ファイルを参照した
+# `plan-impl-executor`起動を許可した時点で当該パスを記録する。
+_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY = "plan_impl_executor_verified_plan_path"
+
 # 汎用禁止形: バレット行頭記号直後から句点・改行終端の禁止動詞までを検出する。
 _RETROACTIVE_SCAN_GENERIC_PROHIBITION_PATTERN = re.compile(
     r"^\s*-\s+[^\n]{0,80}(しない|禁止する|発行しない|省略しない)(。|$)", re.MULTILINE
@@ -2404,6 +2359,21 @@ def _plan_file_has_retroactive_scan_record(plan_file_path: str) -> bool:
     return all(item in section_text for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS)
 
 
+def _resolve_retroactive_scan_plan_file_path(state: dict) -> str | None:
+    """遡及スキャン記録の検査対象とする計画ファイルパスを解決する。
+
+    別の既存計画への切替時に記録される`plan_impl_executor_verified_plan_path`を優先し、
+    未記録の場合は`current_plan_file_path`を使う。
+    切替後は当該計画が実装対象であり、以前の計画の記録有無で判定すると検査対象を取り違えるためである。
+    いずれも未記録・非文字列・空文字列の場合は`None`を返す。
+    """
+    for key in (_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY, "current_plan_file_path"):
+        value = state.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 def _check_plan_file_retroactive_scan_recorded(
     tool_name: str,
     tool_input: dict,
@@ -2420,7 +2390,8 @@ def _check_plan_file_retroactive_scan_recorded(
       `_plan_format.AGENT_DOC_TARGET_BASENAMES`）に一致する規範対象ドキュメント（計画ファイル自身は対象外）
     - 新規/既存内容の比較で`_detect_new_meta_norm`が真
       （全称禁止形の新規出現、汎用禁止形バレットの増加、新規節見出しの増加のいずれか）
-    - `session_id`のセッション状態から取得した`current_plan_file_path`の
+    - `session_id`のセッション状態から解決した計画ファイル
+      （`plan_impl_executor_verified_plan_path`を優先し、未記録なら`current_plan_file_path`）の
       `## 調査結果`配下に必須3項目（対象パターン・検出件数・対応方針）が記述されていない
 
     計画ファイルパスが未記録の場合は判定不能として通過させる（安全側でブロックしない）。
@@ -2469,8 +2440,8 @@ def _check_plan_file_retroactive_scan_recorded(
     if not session_id:
         return None
     state = read_state(session_id)
-    plan_file_path = state.get("current_plan_file_path")
-    if not isinstance(plan_file_path, str) or not plan_file_path:
+    plan_file_path = _resolve_retroactive_scan_plan_file_path(state)
+    if plan_file_path is None:
         return None
     if _plan_file_has_retroactive_scan_record(plan_file_path):
         return None
@@ -2652,6 +2623,32 @@ def _check_plan_file_target_file_paths_relative(tool_name: str, tool_input: dict
         ),
         file=sys.stderr,
     )
+
+
+def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
+    """AgentまたはTask起動時の`name`引数指定を値によらずブロックする。
+
+    `name`付きbackground起動は完了通知が本来の起動元へ配送されず停滞するため、
+    `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が`name`の指定を厳守規定として禁じる。
+    キーの存在のみで判定し、空文字列・`None`を含め値の内容は問わない。
+    """
+    if "name" not in tool_input:
+        return False
+    print(
+        _llm_notice(
+            f"blocked: the `name` parameter is not allowed for {tool_name}"
+            f" (given: {tool_input.get('name')!r}).\n"
+            "Why this gate exists: a named background launch does not deliver its completion"
+            " notification to the actual launcher, which leaves the launcher waiting indefinitely.\n"
+            "Normal fix: omit both `name` and `run_in_background`, launch in the foreground, and"
+            " receive the completion report as the tool return value. Place independent launches"
+            " side by side in a single response to run them in parallel.\n"
+            "See agent-toolkit/rules/02-claude-code.md 'サブエージェント運用' section.",
+            tag="block",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
@@ -2858,8 +2855,27 @@ def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, too
     if referenced != current:
         if not referenced.is_file():
             return _check_process7_completion_before_exit_plan_mode(session_id, state)
+        _record_verified_plan_path(session_id, str(referenced))
         return False
     return _check_process7_completion_before_exit_plan_mode(session_id, state)
+
+
+def _record_verified_plan_path(session_id: str, plan_file_path: str) -> None:
+    """別の実在する計画ファイルを参照した`plan-impl-executor`起動の許可時、当該パスを記録する。
+
+    記録値は正規化済みの絶対パスとし、以降の計画ファイル読み取りで`~`の未展開による失敗を避ける。
+    `current_plan_file_path`は更新しない。完遂ゲートの一致比較（参照パスと現行パスの一致判定）の
+    入力が切替検出のたびに書き換わると、同一計画への再起動が一致側と判定され、
+    当該セッション自身の完遂フラグを要求する分岐が誤って適用されるためである。
+    """
+
+    def _set(state: dict) -> dict | None:
+        if state.get(_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY) == plan_file_path:
+            return None
+        state[_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY] = plan_file_path
+        return state
+
+    update_state(session_id, _set)
 
 
 def _reset_process7_completion_flags(session_id: str) -> None:
@@ -2867,7 +2883,8 @@ def _reset_process7_completion_flags(session_id: str) -> None:
 
     新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`・`plan_reviewer_invoked`・
     `plan_codex_delegate_invoked`・`plan_codex_delegate_blocked`を偽へ戻す。
-    前計画の`current_plan_file_path`・`recorded_codex_thread_id`も新計画へ誤流用しないよう消去し、
+    前計画の`current_plan_file_path`・`plan_impl_executor_verified_plan_path`・
+    `recorded_codex_thread_id`も新計画へ誤流用しないよう消去し、
     `plan_file_written`等の直接編集連続check状態も初期化する。
     """
     if not session_id:
@@ -2885,6 +2902,9 @@ def _reset_process7_completion_flags(session_id: str) -> None:
                 current[flag] = False
                 changed = True
         if current.pop("current_plan_file_path", None) is not None:
+            changed = True
+        # 別の既存計画への切替記録も新計画へ持ち越さない。
+        if current.pop(_PLAN_IMPL_EXECUTOR_VERIFIED_PLAN_PATH_KEY, None) is not None:
             changed = True
         # 前計画のcodex thread参照を新計画へ持ち越さない。
         if current.pop("recorded_codex_thread_id", None) is not None:

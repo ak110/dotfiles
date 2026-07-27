@@ -141,7 +141,4 @@ description: >
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
 - `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
   PowerShell系（gv / lc）が`check-suites` API方式
-- リリース時のバージョニング基準は以下のとおり（セマンティックバージョニングとは異なる）
-  - バグ修正・軽微な機能追加: パッチ（CI定義上は「PATCH」）
-  - 大きめの機能追加・軽微な破壊的変更: マイナー
-  - 大規模な機能追加などのみ: メジャー
+- リリース手段とバージョン区分は`myprojects.md`の「リリース運用」節を参照する

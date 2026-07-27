@@ -99,7 +99,7 @@ user-invocable: false
   同じ前提を適用する。単独起動（並列を伴わない起動）でメイン側が明示許可した場合のみ本制限の対象外とする
   - `git stash`は`-- <path>`・`--patch`等のスコープ限定指定を含めて全面禁止とする
     （単一ファイル指定でも並列実行中の他タスクへ影響し得るため）
-  - background起動時に権限プロンプト起因で停滞した場合はメイン側で巻き取る。
+  - foreground起動が自動的にbackgroundへ転換され、権限プロンプト起因で停滞した場合はメイン側で巻き取る。
     巻き取り手順は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節に従う。
     巻き取り範囲は`agent-toolkit/references/plan-impl/caller-reception.md`が定める完遂順序に従う。
     foreground起動時はメイン側のターンが直接権限プロンプトを受け取るため対象外とする
@@ -131,12 +131,7 @@ user-invocable: false
 別計画化候補・TODO候補のラベルは設けず、呼び出し元の計画で扱えない発見は`[即時相談候補]`としてメインへ報告する
 （メイン判断で計画への採用可否をユーザーと決める）。
 
-named subagentとして`run_in_background=true`起動された場合、
-完了時に完了報告本文を起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）で
-能動送付する義務を必須ゲートとする。
-`idle_notification(available)`のみを送出しメイン側の明示要求を待つ挙動は未完遂扱いとし、
-SubagentStopフックが起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）
-不在時にブロックする。
+完了報告全文はforeground呼び出しの戻り値として返し、`SendMessage`では能動送付しない。
 
 ```markdown
 status: completed | blocked | needs_escalation

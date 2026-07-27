@@ -4,25 +4,21 @@ description: 他エージェントから起動される。
 model: haiku
 effort: medium
 tools:
+  - ToolSearch
   - mcp__codex__codex
   - mcp__codex__codex-reply
   - Read
   - Edit
   - Write
-  - SendMessage
 user-invocable: false
 # 編集時の注意点:
 # model: haiku固定の理由: codexへのプロンプト委譲と応答転記が中心で、本エージェント自身に深い推論を要さないため。
 # tools欄へ明示列挙したMCPツールは起動時に完全なスキーマで即時ロードされる（実機検証済み）。
-#   deferred tools機構の対象外となるため、ToolSearchをtools欄へ追加する必要はない。
+#   通常はdeferred tools機構の対象外だが、一覧に見当たらない場合の名前解決用としてToolSearchも追加する。
 # 用途一覧（計画作成|計画レビュー|実装差分レビュー|実装）は本ファイル・codex-review.md・
 #   plan-file-creator.mdの3ファイルで同期する。
 # Edit・Writeは`用途: 実装`・`用途: 計画作成`専用とする。`用途: 計画レビュー`・`用途: 実装差分レビュー`では
 #   本文の指示でEdit・Writeの使用を禁止する（frontmatterは用途別tools制限に対応しないため）。
-# SendMessageはbackground起動既定化に伴う完了報告能動送付専用として追加する。
-# 本文末尾の完了報告能動送付の一文（「完了時に起動元宛のSendMessage…能動送付する。」）は
-# `agent-toolkit/agents/plan-reviewer.md`本文末尾の同一文と意図的な重複である。改訂時は2ファイルを同時更新する。
-# 当該一文を除く前後の文脈（background起動条件の記述）は両ファイルで異なるため同期対象に含めない。
 # 本ファイル「git stash」禁止バレットは`agent-toolkit/agents/plan-implementer.md`の
 #   `git stash`禁止バレットと意図的な重複を含む。改訂時は2ファイルを同時更新する。
 # コメント・変数名の`plan-codex-reviewer`・`plan-codex-implementer`参照のみを`plan-codex-delegate`へ改名する
@@ -80,7 +76,11 @@ Edit・Writeは`用途: 実装`・`用途: 計画作成`でのみ使用する。
 自動承認・自動継続はせず応答全文を添えて`status: needs_escalation`で返却する。
 並列実行時は編集対象ファイルが独立する複数タスクを同一メッセージ内で並列呼び出しする。
 
-`mcp__codex__codex`が利用可能ツールに存在しない場合をMCP不可と判定する。
+`mcp__codex__codex`が利用可能ツールの一覧に見当たらない場合も、
+`ToolSearch`へ`select:mcp__codex__codex`を渡してスキーマの取得を試みる。
+`ToolSearch`経由でもスキーマを解決できない場合に限りMCP不可と判定する。
+`mcp__codex__codex-reply`を解決できないことだけをMCP不可の根拠にしない。
+継続呼び出し用ツールの解決に失敗した場合は、初回呼び出しの形へ切り替えて再試行する。
 呼び出しのタイムアウト・一時的なエラーはMCP不可と判定せず再試行する。
 対象範囲が大きいほどタイムアウトしやすいため、再試行時は対象を分割して1回あたりの範囲を小さくする。
 分割してもタイムアウトする場合はさらに細かく分割する。試行回数・所要時間は再試行継続の判断材料にしない。
@@ -88,7 +88,7 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 呼び出し元別の後続対応は次のとおりとする。`用途: 計画レビュー`・`用途: 実装差分レビュー`は
 呼び出し元が`plan-reviewer`（claude）へ切り替える。`用途: 実装`は呼び出し元が`plan-implementer`へ切り替える。
 `用途: 計画作成`は呼び出し元（`plan-file-creator`）が自身の直接起草（`Write`・`Edit`）へ切り替える。
-代替への切り替えは上記のMCP不可判定（利用可能ツール一覧への不在）が成立した場合に限る。
+代替への切り替えは、`ToolSearch`を含む名前解決後にMCP不可判定が成立した場合に限る。
 
 `用途: 計画レビュー`・`用途: 実装差分レビュー`ではcodexを呼ばずに自力でレビューを完結させない。
 `tools`に`Read`を含むのは対象範囲の特定とプロンプト構築のためであり、レビュー判断の代替ではない。
@@ -132,6 +132,9 @@ git commit・push・タグ作成・`git stash`（スコープ限定指定を含�
 
 `用途: 計画レビュー`・`用途: 実装差分レビュー`はcodexの指摘・応答全文と継続用の`threadId`を
 要約せず返す。
+1行目は`用途: 計画レビュー`または`用途: 実装差分レビュー`とする。
+2行目は`指摘件数: 致命的N件、重大N件、軽微N件`とする。
+3行目以降に`model_fallback`の適用事実、指摘・応答全文、`threadId`の順で記載する。
 
 `用途: 計画作成`は次の構造化書式で返す。`file_check`欄は`plan-draft-prompt.md`「遵守事項」節が
 codexへ求める`wc -l`実行結果を転記する（成果物ファイルの実在・分量を示す観測事実として記録するため）。
@@ -157,9 +160,5 @@ model_fallback: {適用有無。適用した場合は受領したエラー応答
 ```
 
 MCP不可の場合、`用途: 実装`は上記書式のまま`status: needs_escalation`とし`summary`欄へ
-利用不能の事実を記す。本サブエージェントはbackground起動（`name`指定・`run_in_background=true`）を
-既定とし、完了時に起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）で
-完了報告を能動送付する。
-`main`はトップレベルのメインセッションへ解決されるため、サブエージェント配下から起動された場合の起動元へは
-到達しない。起動プロンプトに識別子の指定が無い場合は、`main`宛の送付に加えて完了報告全文を
-最終応答本文としても返し、foreground起動の呼び出し元が戻り値として直接受領できる状態にする。
+利用不能の事実を記す。
+全用途の完了報告はforeground呼び出しの戻り値として返し、`SendMessage`では能動送付しない。

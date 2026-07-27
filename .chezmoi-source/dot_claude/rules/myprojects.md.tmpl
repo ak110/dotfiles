@@ -70,6 +70,15 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 - `SKIP=<該当hook>`環境変数でpre-commit hookを部分的に無効化してコミットする
 - 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
+### リリース運用
+
+`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser`コマンドで起動する。
+バージョン区分は次のとおりとする。
+
+- バグ修正・軽微な機能追加: パッチ
+- ある程度大きい機能追加や変更: マイナー
+- 大規模な機能追加など: メジャー
+
 ### 足回りファイルの推奨設定維持
 
 各プロジェクトの`pyproject.toml`・`.textlintrc.yaml`・`.markdownlint-cli2.yaml`・

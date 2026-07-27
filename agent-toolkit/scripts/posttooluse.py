@@ -37,9 +37,9 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
 17. `plan-file-creator`完了報告本文の`invoked_subagents:`行のパースによる
     親セッション状態へのフラグ設定 (Agent/Task)
-18. Explore named background起動（subagent_type=Explore・name非空・run_in_background=true）の
-    親セッション状態への名前記録 (Agent/Task)。SubagentStop側の
-    `_inspect_explore_named_background_send`が完了報告能動送付検査の発火判定に読み取る
+18. `plan-codex-delegate`起動時の用途行の`agentId`別記録 (Agent/Task)。
+    PreToolUse側のレビュー用途編集ブロックが、子（サイドチェーン）側のEdit/Write/MultiEdit時に
+    自身の`transcript_path`から抽出した`agentId`で引く
 """
 
 import json
@@ -198,10 +198,19 @@ _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:p
 # SubagentStop側の`_inspect_plan_impl_executor_report_format`が完了報告書式検査の発火判定に読み取る。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
-# Explore named background起動時の`name`集合を親セッション状態へ記録する名前リストのキー名。
-# SubagentStop側の`_inspect_explore_named_background_send`（subagent_stop_advisor.py）が
-# 完了報告能動送付検査の発火判定に読み取る。`subagent_stop_advisor.py`の同名定数と同一値を保つ。
-_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY = "explore_named_background_active_names"
+# Agent/Taskツールの`subagent_type`引数として許容するplan-codex-delegate識別子。
+_PLAN_CODEX_DELEGATE_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-codex-delegate", "plan-codex-delegate"})
+
+# `plan-codex-delegate`起動時の用途行を`agentId`別に記録する辞書のキー名。
+# PreToolUse側の`_check_plan_codex_delegate_review_edit`（pretooluse.py）が
+# レビュー用途の成果物編集ブロックの発火判定に読み取る。`pretooluse.py`の
+# `_PLAN_CODEX_DELEGATE_PURPOSE_KEY`と同一値を保つ。
+_PLAN_CODEX_DELEGATE_PURPOSE_KEY = "plan_codex_delegate_purpose_by_agent_id"
+
+# 起動プロンプトの用途行（`用途: <値>`）を行単位で抽出する。
+# 記録先の判定関数（`_tracked_subagent_types.is_explicit_review_purpose`）が
+# 用途行形式と値単体の双方を受理するため、抽出した行をそのまま記録する。
+_DELEGATE_PURPOSE_LINE_RE = re.compile(r"^用途\s*[:：].*$", re.MULTILINE)
 
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
@@ -436,24 +445,32 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _register_plan_impl_executor_session)
-        # Explore named background起動（`name`非空・`run_in_background=true`）を検出し、
-        # SubagentStop側の`_inspect_explore_named_background_send`が能動送付検査の発火判定に読み取る
-        # 名前リストとして親セッション状態へ記録する。同名の並行起動を想定し、
-        # 既存登録の有無に関わらず常に追記する（各起動につき1エントリ、消費側は1件ずつ`list.remove`する）。
-        if subagent_type == "Explore":
-            teammate_name = tool_input.get("name")
-            teammate_background = tool_input.get("run_in_background")
-            if isinstance(teammate_name, str) and teammate_name and teammate_background is True:
+        # `plan-codex-delegate`起動時、tool_responseの`agentId`（サブセッションID）をキーとして
+        # 起動プロンプトの用途行を親セッション状態の辞書へ記録する。
+        # PreToolUse側のレビュー用途編集ブロックが発火判定に読み取る。
+        # 用途行を持たない起動は記録せず、読み取り側の判定を安全側（非ブロック）に保つ。
+        if isinstance(subagent_type, str) and subagent_type in _PLAN_CODEX_DELEGATE_SUBAGENT_TYPES:
+            tool_response = payload.get("tool_response", {})
+            delegate_agent_id = tool_response.get("agentId") if isinstance(tool_response, dict) else None
+            agent_prompt = tool_input.get("prompt")
+            purpose_match = (
+                _DELEGATE_PURPOSE_LINE_RE.search(agent_prompt) if isinstance(agent_prompt, str) and agent_prompt else None
+            )
+            if isinstance(delegate_agent_id, str) and delegate_agent_id and purpose_match is not None:
 
-                def _register_explore_named_background(state: dict, name: str = teammate_name) -> dict | None:
-                    active = state.get(_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY)
-                    if not isinstance(active, list):
-                        active = []
-                    active.append(name)
-                    state[_EXPLORE_NAMED_BACKGROUND_ACTIVE_KEY] = active
+                def _register_delegate_purpose(
+                    state: dict, aid: str = delegate_agent_id, purpose: str = purpose_match.group(0)
+                ) -> dict | None:
+                    purposes = state.get(_PLAN_CODEX_DELEGATE_PURPOSE_KEY)
+                    if not isinstance(purposes, dict):
+                        purposes = {}
+                    if purposes.get(aid) == purpose:
+                        return None
+                    purposes[aid] = purpose
+                    state[_PLAN_CODEX_DELEGATE_PURPOSE_KEY] = purposes
                     return state
 
-                update_state(session_id, _register_explore_named_background)
+                update_state(session_id, _register_delegate_purpose)
         if isinstance(subagent_type, str):
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
             # `plan-codex-delegate`は用途がレビューの起動に限って記録する。

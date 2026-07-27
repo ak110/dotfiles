@@ -90,9 +90,9 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
    該当時は自身での実装または`plan-implementer`へ切り替える
 5. 呼び出し元起動プロンプトで並列化が明示指定された場合に限り、
    委譲タスクのうち編集対象ファイルが独立する2件以上は並列起動する。
-   `plan-implementer`委譲は`run_in_background=true`で並列起動する。
-   並列化が明示指定されない場合も`plan-implementer`委譲は`name`指定・`run_in_background=true`の
-   background起動で単独実行する。codex委譲の並列実行手順・formatter/linterの実行タイミング・
+   `plan-implementer`委譲は`name`と`run_in_background`を省略したforegroundで起動する。
+   並列委譲は同一応答内へ複数のAgent呼び出しを並置し、各戻り値を直接受領する。
+   codex委譲の並列実行手順・formatter/linterの実行タイミング・
    検収方式は`agent-toolkit/agents/plan-codex-delegate.md`本文を正典とする
 6. codex委譲タスクの`threadId`はplan-codex-delegateサブエージェントの完了報告（`thread_id`欄）で返却される。
    記録先・継続呼び出し時の参照は`agent-toolkit/agents/plan-codex-delegate.md`「報告」節を正典とする
@@ -108,6 +108,7 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
 `agent-toolkit/agents/plan-implementer.md`）の`## 出力`節が定義する完了報告要件を機械転記して構築する。
 埋め込み欄は計画ファイルパス・文書種別・担当範囲区分・タスク記述・修正指摘（修正再実装時のみ）とする。
 サブエージェントは独立コンテキストで動作するため、相対参照（「上記」「前述」等）を含めず本文を完結させる。
+各起動プロンプトには、完了報告を戻り値として返し、`SendMessage`による能動送付をしない旨を含める。
 
 委譲先の妥当性（コード・コーディングエージェント向け文書の実装を汎用サブエージェントへ委譲していないか）を
 Agentツール起動時に機械検査する仕組みは持たないため、委譲先選定は本節の判断指針に基づく自己判断で確定する。
@@ -146,10 +147,11 @@ unplanned項目は`[CLAUDE.md追記候補]`・`[即時相談候補]`・`[該当�
 起動時は対象範囲（全コミット完了後の差分）・計画ファイルパス・不変参照点（工程1着手直前に自己記録した計画着手前SHA）・
 一時ファイル一覧を引き渡す。指摘統合・修正再実装・再レビューは`agent-toolkit:careful-review`スキル本文の手順に従う。
 対象は`plan-reviewer`・`plan-codex-delegate`（`用途: 実装差分レビュー`）とする。
-`name`指定・`run_in_background=true`によるbackground並列起動を既定とし、
-各レビュアーの完了報告は起動元宛のSendMessage（起動プロンプトで指定された識別子。指定が無い場合は`main`）
-経由で受領する。本エージェント自身のターンは
-全レビュアーの完了報告受領まで維持する。
+`name`と`run_in_background`を省略したforeground並列起動を既定とし、
+同一応答内へ複数のAgent呼び出しを並置する。
+各起動プロンプトには、完了報告を戻り値として返し、`SendMessage`による能動送付をしない旨を含める。
+各レビュアーの完了報告は戻り値として直接受領する。
+本エージェント自身のターンは全レビュアーの完了報告受領まで維持する。
 最終的な指摘の反映完了状態を完了報告の`review_handoff`欄へ
 「実施完了（採用指摘N件反映）」または「レビューは実施しない」の形式で記録する。
 

@@ -24,8 +24,12 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
 
 ## codex利用可否の2段階判定
 
-- 段階1（MCP利用）: `mcp__codex__codex`系が呼び出し可能な環境。既定でこの経路を使う
-- 段階2（claudeフォールバック）: 利用可能なツール一覧に`mcp__codex__codex`系が存在しない場合のみ。
+- 段階1（MCP利用）: `mcp__codex__codex`の名前解決成否で判定する。
+  ツール一覧に見当たらない場合も`ToolSearch`（`select:mcp__codex__codex`）で取得を試みる。
+  `ToolSearch`経由でも解決できない場合に限り段階2へ移る。
+  `mcp__codex__codex-reply`（継続呼び出し用ツール）の未解決だけでは段階2へ移らない
+  （継続呼び出しの解決失敗時は初回呼び出しの形へ切り替えて再試行する）
+- 段階2（claudeフォールバック）: 段階1の名前解決がいずれの経路でも成立しない場合のみ。
   この場合の代替は計画レビュー`plan-reviewer`とする。
   タイムアウト・一時的な呼び出し失敗は段階2に該当せず、`plan-codex-delegate`側で分割再試行する
 
@@ -47,6 +51,7 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
 
 ```text
 {plan_full_path} この計画ファイルをレビューして。
+レビュー対象ファイルを編集せず、指摘と修正案だけを応答する。
 
 レビュー観点:
 
@@ -89,7 +94,9 @@ Windows環境ではcodexのPowerShell経由ファイル読み書きがShift-JIS�
 
 計画ファイルレビューは観点分担で並列起動する。基本は「構造・整合性」「実現可能性・技術妥当性」の2並列とし、
 規範文書（`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下・`agent-toolkit/`配下）の改訂を含む場合は
-「規範整合」を加えた3並列とする。各インスタンスの`追加のレビュー観点`欄へ担当ラベルを渡す。
+「規範整合」を加えた3並列とする。起動は`name`を指定しないforeground並列とし、同一応答内へ
+複数のAgent呼び出しを並置して各戻り値を直接受領する。担当ラベルは各インスタンスの
+`追加のレビュー観点`欄へ埋め込む。
 `plan-reviewer`（claude）は段階2成立時のみ代替として起動する。
 
 `plan-codex-delegate`は`用途: 計画作成`（計画ファイル起草の委譲）も受け付ける。詳細は

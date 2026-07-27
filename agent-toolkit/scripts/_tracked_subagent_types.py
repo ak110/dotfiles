@@ -12,6 +12,11 @@
 同エージェントは計画作成・計画レビュー・実装差分レビュー・実装の4用途を持ち、
 用途が計画作成・実装の起動でレビュー実施済みフラグを記録すると、レビュー未実施のまま
 計画作成工程の完遂判定を通過できてしまうため、記録をレビュー2用途へ限定する目的で使う。
+
+`is_explicit_review_purpose`は用途がレビュー2用途と明示されている場合だけ真を返す。
+用途行が無い場合に真を返す`is_review_purpose`は記録側へ倒す判定であり、
+レビュー用途の編集遮断へ流用すると用途行を持たない正当な編集までブロックするため、
+遮断側の判定として本関数を分けて設ける。
 """
 
 from __future__ import annotations
@@ -42,6 +47,9 @@ SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 
 _PURPOSE_RE = re.compile(r"用途\s*[:：]\s*(\S+)")
 
+# 成果物編集の遮断対象とする用途。`plan-codex-delegate.md`が定める4用途のうちレビュー2用途に限る。
+EXPLICIT_REVIEW_PURPOSES: frozenset[str] = frozenset({"計画レビュー", "実装差分レビュー"})
+
 
 def is_review_purpose(prompt: str) -> bool:
     """起動プロンプトがレビュー用途を指定しているかを返す。
@@ -54,3 +62,18 @@ def is_review_purpose(prompt: str) -> bool:
     if match is None:
         return True
     return "レビュー" in match.group(1)
+
+
+def is_explicit_review_purpose(purpose: object) -> bool:
+    """用途がレビュー2用途（計画レビュー・実装差分レビュー）と明示されているかを返す。
+
+    `用途: <値>`形式の行と値単体の双方を受け付け、値が`EXPLICIT_REVIEW_PURPOSES`と
+    完全一致する場合のみ真を返す。用途の記述が無い場合、値が計画作成・実装の場合、
+    文字列以外を受け取った場合はいずれも偽を返す。
+    レビュー用途の編集遮断が判定材料を観測できない状況で正当な編集を止めないための安全側の契約とする。
+    """
+    if not isinstance(purpose, str) or not purpose:
+        return False
+    match = _PURPOSE_RE.search(purpose)
+    value = match.group(1) if match else purpose.strip()
+    return value in EXPLICIT_REVIEW_PURPOSES

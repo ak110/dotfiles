@@ -65,7 +65,10 @@ auto mode classifierは`kill -TERM $PPID`を「エージェントが作成して
 サブエージェント側で有効な指示に対するfalse positive判定である可能性が高い場合の対応フロー。
 
 1. 拒否理由をメッセージ本文で確認する。
-   拒否分類名（`claude auto-mode defaults`出力で確認可能な分類名）を必ず含める
+   拒否分類名（`claude auto-mode defaults`出力で確認可能な分類名）を取得できる場合は
+   分類名とメッセージ本文を記録する。
+   `claude auto-mode defaults`自体が拒否され分類名を取得できない場合は、
+   拒否メッセージ本文を根拠として次のステップ2の利用者確認へ進む
 2. false positive判定である可能性が高い場合、`AskUserQuestion`で次の選択肢を提示する
    - false positiveとして実行を承認する
    - 該当操作を撤回する
@@ -79,6 +82,14 @@ auto mode classifierは`kill -TERM $PPID`を「エージェントが作成して
    明示してユーザーへ再確認する。同一操作の反復試行はしない
 5. 該当パターンが確定次第、
    本ファイル冒頭の`## カスタムルール追加のワークフロー`に従い`autoMode.allow`へ追加し恒久対応する
+
+### リリースワークフロー起動の拒否
+
+- `releaser patch`等のリリースワークフロー起動は、外部公開を伴う不可逆操作という性質上、
+  auto mode classifierに拒否される傾向がある（本セッションで観測した実行環境で実際に拒否された）
+- `claude auto-mode defaults`も同様に拒否され分類名を取得できない場合は、
+  拒否メッセージ本文を根拠として利用者確認へ進む
+- 許可ルール追加ではなく、利用者自身による実行を第1選択肢とする
 
 ### 承認ゲート緩和コミットの`Self Modification`拒否
 

@@ -3813,6 +3813,133 @@ class TestProcess7CompletionCheck:
         )
         assert result.returncode == 2
 
+    def test_referenced_other_existing_plan_records_verified_path(self, tmp_path: pathlib.Path):
+        """別の実在計画への切替を許可した経路で`plan_impl_executor_verified_plan_path`へ当該パスを記録する。"""
+        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
+        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
+        other_path.parent.mkdir(parents=True, exist_ok=True)
+        other_path.write_text("別セッションで完遂済みの計画。", encoding="utf-8")
+        sid = "process7-verified-path-record"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        recorded = _read_session_state(tmp_path, sid)
+        assert recorded.get("plan_impl_executor_verified_plan_path") == str(other_path.resolve())
+        assert recorded.get("current_plan_file_path") == current_path
+
+    def test_referenced_same_plan_does_not_record_verified_path(self, tmp_path: pathlib.Path):
+        """現行計画と同一パスを参照した通過経路では`plan_impl_executor_verified_plan_path`を記録しない。"""
+        plan_path = tmp_path / ".claude" / "plans" / "current.md"
+        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        plan_path.write_text("本セッションで起草した計画。", encoding="utf-8")
+        sid = "process7-verified-path-same-plan"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": str(plan_path)}
+        state.update({flag: True for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {plan_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert _read_session_state(tmp_path, sid).get("plan_impl_executor_verified_plan_path") is None
+
+    def test_referenced_nonexistent_other_plan_does_not_record_verified_path(self, tmp_path: pathlib.Path):
+        """非実在パスを参照したブロック経路では`plan_impl_executor_verified_plan_path`を記録しない。"""
+        current_path = str(tmp_path / ".claude" / "plans" / "current.md")
+        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
+        sid = "process7-verified-path-nonexistent"
+        state = {"plan_mode_skill_invoked": True, "current_plan_file_path": current_path}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert _read_session_state(tmp_path, sid).get("plan_impl_executor_verified_plan_path") is None
+
+
+class TestAgentNameParameterGate:
+    """AgentとTask起動時の`name`引数指定の一律ブロック。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("name_value", ["impl-1", "", None])
+    def test_name_parameter_blocks(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
+        """`name`キーが存在する起動は値の内容によらずブロックする。"""
+        sid = f"agent-name-block-{tool_name.lower()}-{name_value!r}"
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": {"subagent_type": "claude", "name": name_value, "prompt": "調査してください。"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "`name` parameter is not allowed" in result.stderr
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    def test_foreground_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """`name`キーを持たないforeground起動は通過する。"""
+        sid = f"agent-name-allow-{tool_name.lower()}"
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": {"subagent_type": "claude", "prompt": "調査してください。"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "`name` parameter is not allowed" not in result.stderr
+
+    def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
+        """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
+        sid = "agent-name-block-no-flag"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-codex-delegate", "name": "codex-1"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_codex_delegate_invoked") is not True
+
 
 # `TestSubagentModelOverrideGate`・`TestPlanFileCreatorPromptCompletenessGate`共通の完全な起動プロンプト。
 # 必須見出し4点を満たすため、モデル検査を単独で検証する場合に見出し欠落ゲートの誤検出と混同しない。
@@ -4159,6 +4286,113 @@ class TestPlanCodexDelegateInvokedPreToolUse:
         )
         assert result.returncode == 0
         assert _read_session_state(tmp_path, sid).get("plan_codex_delegate_invoked") is True
+
+
+class TestPlanCodexDelegateReviewEdit:
+    """レビュー用途で起動された`plan-codex-delegate`による成果物編集のブロック。"""
+
+    _BLOCK_MESSAGE = "must not edit deliverables"
+
+    @staticmethod
+    def _prepare(tmp_path: pathlib.Path, sid: str, purposes: dict[str, str]) -> tuple[pathlib.Path, str]:
+        """用途辞書を書き込み、編集対象ファイルと`agent-<id>.jsonl`形式のtranscriptパスを返す。"""
+        _write_session_state(tmp_path, sid, {"plan_codex_delegate_purpose_by_agent_id": purposes})
+        target = tmp_path / "docs" / "target.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("レビュー対象の本文。\n", encoding="utf-8")
+        transcript = str(tmp_path / "subagents" / "agent-codex-1.jsonl")
+        return target, transcript
+
+    @pytest.mark.parametrize("purpose", ["用途: 計画レビュー", "用途: 実装差分レビュー"])
+    def test_explicit_review_purpose_write_blocks(self, tmp_path: pathlib.Path, purpose: str) -> None:
+        """記録された用途がレビュー2用途の場合、`Write`による編集をブロックする。"""
+        sid = f"codex-review-edit-block-{purpose[-6:]}"
+        target, transcript = self._prepare(tmp_path, sid, {"codex-1": purpose})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "レビュー担当が書き換えた本文。\n"},
+                "session_id": sid,
+                "transcript_path": transcript,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert self._BLOCK_MESSAGE in result.stderr
+
+    def test_explicit_review_purpose_edit_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`Edit`ツール経由の編集も同一の判定でブロックする。"""
+        sid = "codex-review-edit-block-edit-tool"
+        target, transcript = self._prepare(tmp_path, sid, {"codex-1": "用途: 実装差分レビュー"})
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "レビュー対象の本文。",
+                    "new_string": "レビュー担当が書き換えた本文。",
+                },
+                "session_id": sid,
+                "transcript_path": transcript,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert self._BLOCK_MESSAGE in result.stderr
+
+    @pytest.mark.parametrize("purpose", ["用途: 計画作成", "用途: 実装"])
+    def test_non_review_purpose_passes(self, tmp_path: pathlib.Path, purpose: str) -> None:
+        """用途が計画作成・実装の起動による編集は通過する。"""
+        sid = f"codex-review-edit-allow-{purpose[-4:]}"
+        target, transcript = self._prepare(tmp_path, sid, {"codex-1": purpose})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "実装担当が更新した本文。\n"},
+                "session_id": sid,
+                "transcript_path": transcript,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert self._BLOCK_MESSAGE not in result.stderr
+
+    def test_unrecorded_agent_id_passes(self, tmp_path: pathlib.Path) -> None:
+        """用途行を持たない起動（辞書に該当エントリなし）による編集は通過する。"""
+        sid = "codex-review-edit-allow-unrecorded"
+        target, transcript = self._prepare(tmp_path, sid, {"codex-other": "用途: 計画レビュー"})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "用途行なしの起動による更新。\n"},
+                "session_id": sid,
+                "transcript_path": transcript,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert self._BLOCK_MESSAGE not in result.stderr
+
+    def test_non_agent_transcript_path_passes(self, tmp_path: pathlib.Path) -> None:
+        """`agent-<id>.jsonl`形式でないtranscriptパス（メインセッション）の編集は通過する。"""
+        sid = "codex-review-edit-allow-main-session"
+        target, _ = self._prepare(tmp_path, sid, {"codex-1": "用途: 計画レビュー"})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target), "content": "メインセッションによる更新。\n"},
+                "session_id": sid,
+                "transcript_path": str(tmp_path / "session.jsonl"),
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert self._BLOCK_MESSAGE not in result.stderr
 
 
 class TestPlanModeFlagReset:
@@ -6030,277 +6264,6 @@ class TestFrontmatterSyncNoteBodyExists:
         assert result.returncode == 0
         assert expected_message in result.stderr
         assert expected_identifier in result.stderr
-
-
-class TestNamedSubagentSendMessageRegistered:
-    """named subagent定義への`SendMessage`ツール登録欠落検査（block）。"""
-
-    @staticmethod
-    def _target(tmp_path: pathlib.Path, name: str = "sample-agent.md") -> pathlib.Path:
-        target = tmp_path / "agent-toolkit" / "agents" / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        return target
-
-    def test_body_mentions_and_tools_missing_sendmessage_blocks(self, tmp_path: pathlib.Path) -> None:
-        """本文でSendMessage言及ありかつtools欄あり・SendMessage未登録ならblock。"""
-        target = self._target(tmp_path)
-        content = (
-            "---\n"
-            "name: sample-agent\n"
-            "tools: Read, Grep\n"
-            "---\n\n"
-            "# sample-agent\n\n"
-            "完了時はSendMessage(to: 'main')で能動送付する。\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-block-inline",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_body_mentions_and_tools_block_form_missing_sendmessage_blocks(self, tmp_path: pathlib.Path) -> None:
-        """`tools:`ブロック形式で`SendMessage`未登録もblock対象。"""
-        target = self._target(tmp_path)
-        content = "---\nname: sample-agent\ntools:\n  - Read\n  - Grep\n---\n\n# sample-agent\n\n能動送付を必ず実施する。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-block-list",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_body_mentions_and_tools_registered_passes(self, tmp_path: pathlib.Path) -> None:
-        """本文言及ありかつtools欄にSendMessage登録済みなら合格。"""
-        target = self._target(tmp_path)
-        content = (
-            "---\n"
-            "name: sample-agent\n"
-            "tools: Read, Grep, SendMessage\n"
-            "---\n\n"
-            "# sample-agent\n\n"
-            "完了時はSendMessage(to: 'main')で能動送付する。\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-ok-registered",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "blocked: named background subagent" not in result.stderr
-
-    def test_no_body_mention_passes(self, tmp_path: pathlib.Path) -> None:
-        """本文にSendMessage・能動送付の言及が無ければ合格（判定対象外）。"""
-        target = self._target(tmp_path)
-        content = "---\nname: sample-agent\ntools: Read, Grep\n---\n\n# sample-agent\n\n調査のみする。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-no-body",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "blocked: named background subagent" not in result.stderr
-
-    def test_no_tools_field_passes(self, tmp_path: pathlib.Path) -> None:
-        """frontmatter`tools:`欄が無いファイル（全ツール許容）は合格。"""
-        target = self._target(tmp_path)
-        content = (
-            "---\n"
-            "name: sample-agent\n"
-            "description: sample\n"
-            "---\n\n"
-            "# sample-agent\n\n"
-            "完了時はSendMessage(to: 'main')で能動送付する。\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-no-tools",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "blocked: named background subagent" not in result.stderr
-
-    def test_out_of_scope_path_passes(self, tmp_path: pathlib.Path) -> None:
-        """`agent-toolkit/agents/`配下以外のファイルは判定対象外。"""
-        target = tmp_path / "agent-toolkit" / "skills" / "sample" / "SKILL.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        content = "---\nname: sample\ntools: Read\n---\n\n# sample\n\nSendMessageで送信する。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-out-of-scope",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "blocked: named background subagent" not in result.stderr
-
-    def test_frontmatter_comment_mention_is_detected(self, tmp_path: pathlib.Path) -> None:
-        """frontmatterのコメント行内での`能動送付`言及も判定対象に含まれる。
-
-        `plan-reviewer.md`・`plan-codex-delegate.md`のように、
-        本文（frontmatter外）に「SendMessage」「能動送付」の直接言及を含まず、
-        frontmatterコメントで登録理由を書く運用パターンを再発防止対象へ含める。
-        """
-        target = self._target(tmp_path)
-        content = (
-            "---\n"
-            "name: sample-agent\n"
-            "# SendMessageはnamed background起動時の能動送付のために含める\n"
-            "tools: Read, Grep\n"
-            "---\n\n"
-            "# sample-agent\n\n"
-            "調査を実施する。\n"
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-frontmatter-comment",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_tools_value_line_is_excluded_from_scan(self, tmp_path: pathlib.Path) -> None:
-        """判定対象範囲は`tools:`欄値行を除外する（自己参照回避）。
-
-        `tools:`欄値行にのみ`SendMessage`が書かれ、他の場所（frontmatterコメント・本文）で
-        言及が無いファイルは判定対象にならず合格する。
-        """
-        target = self._target(tmp_path)
-        content = "---\nname: sample-agent\ntools: Read, Grep, SendMessage\n---\n\n# sample-agent\n\n調査のみする。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-tools-line-excluded",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 0
-        assert "blocked: named background subagent" not in result.stderr
-
-    def test_sendmessage_substring_in_tools_does_not_pass(self, tmp_path: pathlib.Path) -> None:
-        """`tools:`欄に`SendMessage`の部分文字列を含む別ツール名しかない場合はblock。
-
-        例えば`SendMessageFoo`のような架空ツール名が登録されていても、
-        `SendMessage`ツール自体は未登録のためblock対象。完全一致で判定する。
-        """
-        target = self._target(tmp_path)
-        content = "---\nname: sample-agent\ntools: Read, SendMessageFoo\n---\n\n# sample-agent\n\n完了時に能動送付する。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": content},
-                "session_id": "named-sm-substring-only",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_relative_path_is_detected(self, tmp_path: pathlib.Path) -> None:
-        """相対パス`agent-toolkit/agents/<name>.md`形式でも対象判定される（Write経路）。
-
-        `_materialize_post_edit_content`のWrite経路は`content`をそのまま返すため、
-        相対パスでも`_is_named_subagent_definition_target`のパス判定のみで検証できる。
-        """
-        del tmp_path
-        relative_path = "agent-toolkit/agents/sample-agent.md"
-        content = "---\nname: sample-agent\ntools: Read, Grep\n---\n\n# sample-agent\n\n完了時に能動送付する。\n"
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": relative_path, "content": content},
-                "session_id": "named-sm-relative-path",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_edit_tool_path_blocks(self, tmp_path: pathlib.Path) -> None:
-        """`Edit`ツール経由の編集でも判定される。"""
-        target = self._target(tmp_path)
-        initial = "---\nname: sample-agent\ntools: Read\n---\n\n# sample-agent\n\n調査する。\n"
-        target.write_text(initial, encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "調査する。",
-                    "new_string": "完了時にSendMessage(to: 'main')で能動送付する。",
-                },
-                "session_id": "named-sm-edit",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_multiedit_tool_path_blocks(self, tmp_path: pathlib.Path) -> None:
-        """`MultiEdit`ツール経由の編集でも判定される。"""
-        target = self._target(tmp_path)
-        initial = "---\nname: sample-agent\ntools: Read\n---\n\n# sample-agent\n\n調査する。\n処理する。\n"
-        target.write_text(initial, encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "MultiEdit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "edits": [
-                        {"old_string": "調査する。", "new_string": "SendMessageで送る。"},
-                        {"old_string": "処理する。", "new_string": "能動送付する。"},
-                    ],
-                },
-                "session_id": "named-sm-multiedit",
-                "permission_mode": "default",
-            },
-        )
-        assert result.returncode == 2
-        assert "SendMessage" in result.stderr
-
-    def test_current_agent_files_pass(self, tmp_path: pathlib.Path) -> None:
-        """現行の`agent-toolkit/agents/*.md`全件が新規checkでblockされないことを確認する。
-
-        本テストは`agent-toolkit/agents/`配下ファイルを実ファイルで検証する回帰防止テスト。
-        """
-        del tmp_path
-        agents_dir = pathlib.Path(__file__).resolve().parents[1] / "agents"
-        for agent_file in agents_dir.glob("*.md"):
-            content = agent_file.read_text(encoding="utf-8")
-            result = _run(
-                {
-                    "tool_name": "Write",
-                    "tool_input": {"file_path": str(agent_file), "content": content},
-                    "session_id": f"named-sm-regression-{agent_file.stem}",
-                    "permission_mode": "default",
-                },
-            )
-            assert result.returncode == 0, (
-                f"{agent_file.name} unexpectedly blocked by named-subagent SendMessage check: {result.stderr}"
-            )
 
 
 class TestSubagentTypeFlagsInvokedPreToolUse:

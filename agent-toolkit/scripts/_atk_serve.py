@@ -10,7 +10,7 @@ import _atk_mq_common as common
 import _atk_serve_app
 import _atk_serve_config
 import _atk_serve_state
-import _atk_serve_title
+import _console_title
 import hypercorn.asyncio
 import hypercorn.config
 
@@ -74,5 +74,5 @@ def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path 
     private_notes = common.ensure_environment(resolved_home)
     config = _atk_serve_config.resolve_config(host=host, port=port)
     logger.info("フィードバック管理Web UIを http://%s:%s/ で配信します", config.host, config.port)
-    with _atk_serve_title.console_title(build_console_title(config.port)):
+    with _console_title.console_title(build_console_title(config.port)):
         asyncio.run(_serve(private_notes, config))
