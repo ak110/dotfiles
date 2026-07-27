@@ -2791,7 +2791,7 @@ class TestAskUserQuestionScopeEscalationCheck:
         assert result.returncode == 0
         assert "scope-escalation phrase" not in result.stderr
 
-    @pytest.mark.parametrize("category", ["async-wait", "process-omission"])
+    @pytest.mark.parametrize("category", ["context-shortage", "process-omission"])
     def test_option_label_other_categories_still_blocked(self, category: str):
         """選択肢labelではpattern-conformance以外のカテゴリを引き続きブロックする。"""
         text = next(text for text, fixture_category in _SCOPE_ESCALATION_INPUTS if fixture_category == category)

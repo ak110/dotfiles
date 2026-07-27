@@ -877,9 +877,9 @@ class TestScopeEscalationDetection:
         3系統のスキル起動フラグ（plan_mode／process_feedbacks／plan_and_add_entries）は
         いずれも`_STOP_FOCUS_CATEGORIES_EXTENDED`への切替契機となる。
         """
-        phrase = _pick_scope_escalation_text("async-wait")
+        phrase = _pick_scope_escalation_text("overhead-tradeoff")
         if not phrase:
-            pytest.skip("scope-escalation fixture for async-wait not available")
+            pytest.skip("scope-escalation fixture for overhead-tradeoff not available")
         transcript = _write_transcript(
             tmp_path,
             [_user_entry(), _assistant_text_only(phrase)],

@@ -13,8 +13,6 @@ import typing
 
 import pytest
 from _scope_escalation import (
-    _ASYNC_WAIT_SELF_LAUNCHED_RE,
-    _SCOPE_ESCALATION_PHRASES,
     _STOP_FOCUS_CATEGORIES,
     _apply_category_exclusions,
     _match_scope_escalation,
@@ -186,145 +184,6 @@ class TestMatchScopeEscalation:
         text = "計画ファイル本文の「スコープ相談節」と`別のスコープ相談節`を確認してから実装する。"
         assert _match_scope_escalation(text) is None
 
-    def test_async_wait_separated_form_notification_matched(self):
-        """分離形「〜完了の通知を待つ」がasync-waitカテゴリで検出される（fb3反映）。"""
-        assert _category_of("実行完了の通知を待つ。") == "async-wait"
-
-    def test_async_wait_separated_form_bare_matched(self):
-        """分離形「〜完了を待つ」がasync-waitカテゴリで検出される（fb3反映）。"""
-        assert _category_of("処理完了を待つ。") == "async-wait"
-
-    def test_async_wait_separated_form_negation_not_matched(self):
-        """否定文「〜完了を待つ必要はない」は検出されない（fb3反映）。"""
-        assert _match_scope_escalation("処理完了を待つ必要はない。") is None
-        assert _match_scope_escalation("実行完了の通知を待つことはしない。") is None
-
-    def test_async_wait_separated_form_inside_zenkaku_kakko_not_matched(self):
-        """全角鍵括弧内へ引用転記された分離形は検出されない（fb3反映）。"""
-        text = "codex指摘「実行完了の通知を待つ」というフレーズを引用する。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_separated_form_inside_backtick_not_matched(self):
-        """バッククォート囲み内へ引用転記された分離形は検出されない（fb3反映）。"""
-        text = "指摘引用として`処理完了を待つ`を含める。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_phrase_inside_markdown_blockquote_not_matched(self):
-        """Markdown引用ブロック（`>`行）内へ引用転記された分離形は検出されない。"""
-        text = "調査結果を報告する。\n> 実行完了の通知を待つ\n上記は既存設計文書からの引用である。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_separated_form_completed_tense_not_matched(self):
-        """完了時制「〜完了を待って〜した」は検出されない（fb3反映）。"""
-        assert _match_scope_escalation("実行完了を待って処理を再開した。") is None
-        assert _match_scope_escalation("処理完了を待って次工程へ進んだ。") is None
-
-    def test_async_wait_parallel_launch_report_integration_matched(self):
-        """並列起動+完了報告受領+統合の複合パターンがasync-waitで検出される（fb1反映）。"""
-        text = "三つのサブエージェントを並列起動した。各完了報告の受領後に指摘を統合し、計画ファイルへ反映する。"
-        assert _category_of(text) == "async-wait"
-
-    def test_async_wait_parallel_launch_report_aggregation_matched(self):
-        """終端動詞「集約」分岐もasync-waitで検出される（fb1反映）。"""
-        text = "サブエージェント群を並列起動した。完了報告を受信後に集約する。"
-        assert _category_of(text) == "async-wait"
-
-    def test_async_wait_parallel_launch_report_reflection_matched(self):
-        """終端動詞「反映」分岐もasync-waitで検出される（fb1反映）。"""
-        text = "並列起動したレビュアーの完了報告を受領し、計画へ反映する。"
-        assert _category_of(text) == "async-wait"
-
-    def test_async_wait_parallel_launch_report_integration_completed_tense_not_matched(self):
-        """完了時制（統合済み・統合した・集約しました等）の並列起動文は検出されない（fb1反映）。"""
-        assert _match_scope_escalation("並列起動した各サブエージェントの完了報告の受領後、指摘はすでに統合済みである。") is None
-        assert _match_scope_escalation("並列起動して完了報告の受領後に指摘を統合した。") is None
-        assert _match_scope_escalation("並列起動後に完了報告を受信して指摘を集約しました。") is None
-
-    def test_async_wait_parallel_launch_multi_line_not_matched(self):
-        """複数文にまたがる（改行を含む）表現は本パターンでは検出されない（fb1反映、意図的非対象）。"""
-        text = "並列起動を実施した。\n完了報告の受領後に指摘を統合する。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_parallel_launch_unrelated_sentence_not_matched(self):
-        """「並列起動」〜「完了報告」間に無関係な別文が入る表現は検出されない（レビュー指摘反映）。"""
-        text = "並列起動の設計について議論した。別件の完了報告書は受領済みで、それとは無関係に統合作業を進める。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_parallel_launch_compound_predicate_completed_tense_not_matched(self):
-        """複合述語末尾の完了時制（「統合してレビューへ反映した」等）は検出されない（レビュー指摘反映）。"""
-        text = "並列起動した完了報告を受領し、指摘を統合してレビューへ反映した。"
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_parallel_launch_unrelated_clause_completed_word_matched(self):
-        """後続の読点区切り節内にある無関係な「した」は完了時制除外の対象外（再レビュー指摘反映）。"""
-        text = "並列起動した完了報告を受領し、指摘を統合する予定であり、詳細は後日相談したい。"
-        assert _category_of(text) == "async-wait"
-
-    def test_async_wait_parallel_review_launch_waiting_matched(self):
-        """短表明「並列レビューを起動して待機中」がasync-waitで検出される（fb 20260720-152203-001反映）。"""
-        assert _category_of("並列レビューを起動して待機中です。") == "async-wait"
-
-    def test_async_wait_subordinate_agent_launch_waiting_matched(self):
-        """語彙の別形（配下エージェント起動＋待機中）も検出される。"""
-        assert _category_of("配下エージェントを起動し待機中。") == "async-wait"
-
-    def test_async_wait_parallel_review_launch_waiting_completed_not_matched(self):
-        """完了時制の完遂報告は誤検出しない（完了時制除外パターン）。"""
-        assert _category_of("並列レビューを起動して待機中だったが、現在は集約済み。") is None
-
-    def test_async_wait_parallel_review_launch_waiting_reflected_not_matched(self):
-        """反映済み表明も誤検出しない。"""
-        assert _category_of("並列レビューを起動して待機中の間に集約を反映した。") is None
-
-    def test_async_wait_sentence_separated_notification_matched(self):
-        """文をまたぐ分離形（待機中宣言の直後に完了通知受領表現が続く）が
-        async-waitで検出される（fb 20260720-162742-001反映）。実発生文言全体を用いる。"""
-        text = "待機中。次のメッセージは各レビュアーからの完了通知を受け取った後に送る。"
-        assert _category_of(text) == "async-wait"
-
-    def test_async_wait_english_observed_phrase_matched(self):
-        """実発生した英語の観測文言全体が既存パターンで検出される（fb 20260720-162742-001反映）。"""
-        text = (
-            "All four review agents are launched in parallel. I'll wait for their completion notifications before proceeding."
-        )
-        assert _category_of(text) == "async-wait"
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "待機中、完了報告を受領済みである。",
-            "並列レビューを起動して待機中。しばらくして各エージェントからの完了報告を受領した。指摘を統合し計画へ反映済みである。",
-            "並列レビューを起動して待機中。しばらくして、各エージェントからの完了報告を受領した。",
-        ],
-    )
-    def test_async_wait_completion_tense_received_completed_not_matched(self, text: str):
-        """完了済みの受領報告は誤検出しない。
-
-        1件目は文をまたぐ分離形パターンの既存の完了時制除外（受領動詞直後の完了時制除外）、
-        2・3件目は配下並列レビュー起動パターンへ本コミットで追加した完了時制除外
-        （直後1文相当、句点直後の読点混在も許容）の回帰対象である。"""
-        assert _category_of(text) is None
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "別セッションが並行して同一ファイルを編集中のため、完了報告を待つ。",
-            "並行して実行される作業との競合を避けるため、完了通知を待って着手する。",
-            "他プロセスとの競合を避けるため処理完了を待つ。",
-        ],
-    )
-    def test_async_wait_coordination_context_not_matched(self, text: str):
-        """他プロセス・他セッションとの協調目的の待機は縮退表明として検出しない。
-
-        自身の作業先送りではなく、別セッション・並行処理との競合回避を理由とする
-        待機表明はasync-waitカテゴリの誤検出対象から除外する。
-        """
-        assert _match_scope_escalation(text) is None
-
-    def test_async_wait_self_defer_without_coordination_words_still_matched(self):
-        """協調目的の語彙を伴わない自身の待機表明は引き続きasync-waitで検出される。"""
-        assert _category_of("処理完了を待つ。") == "async-wait"
-
 
 class TestApplyCategoryExclusions:
     """`_apply_category_exclusions`のカテゴリ別除外動作を検証する。"""
@@ -337,7 +196,7 @@ class TestApplyCategoryExclusions:
         assert "計画ファイル本文の" in result
 
     def test_other_category_returns_text_unchanged(self):
-        """`priority-consult`・`async-wait`以外のカテゴリはtextをそのまま返す。"""
+        """`priority-consult`以外のカテゴリはtextをそのまま返す。"""
         text = "計画ファイル本文の「スコープ相談節」を確認する。"
         assert _apply_category_exclusions(text, "process-omission") == text
 
@@ -402,39 +261,3 @@ class TestIsEmptyCompletionReport:
         """Skill呼び出し後に完了本文が続く正常報告は`False`を返す。"""
         text = "Skill(skill='foo')\n点検実施済。指摘事項なし。"
         assert is_empty_completion_report(text) is False
-
-
-class TestAsyncWaitSelfLaunchedSharedConstant:
-    """`_ASYNC_WAIT_SELF_LAUNCHED_RE`が`_SCOPE_ESCALATION_PHRASES`内で同一オブジェクト参照されること。"""
-
-    def test_phrases_tuple_references_shared_constant(self):
-        """独立複製ではなく共有定数のオブジェクト参照であることを`is`identityで確認する。"""
-        matched = [pattern for category, pattern in _SCOPE_ESCALATION_PHRASES if category == "async-wait"]
-        assert any(pattern is _ASYNC_WAIT_SELF_LAUNCHED_RE for pattern in matched)
-
-
-class TestAsyncWaitSelfLaunchedGeneralization:
-    """対象エージェント名の一般化と日本語待機表明の待機述語共起要件（fb 165038-001）。"""
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "careful-reviewの完了報告を待ちます",
-            "codex-impl-processloopの完了を待機します",
-            "plan-implementerの完了通知を未受領のため待機中",
-        ],
-    )
-    def test_generalized_agent_name_with_wait_predicate_matches(self, text: str):
-        """`plan-*`・`careful-review`・`codex-impl-*`いずれも待機述語との共起で一致する。"""
-        assert _ASYNC_WAIT_SELF_LAUNCHED_RE.search(text) is not None
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "careful-reviewをバックグラウンドで起動した",
-            "plan-implementerを並列で実行した",
-        ],
-    )
-    def test_launch_fact_without_wait_predicate_does_not_match(self, text: str):
-        """起動の事実のみを述べる文は待機述語が無ければ一致しない。"""
-        assert _ASYNC_WAIT_SELF_LAUNCHED_RE.search(text) is None

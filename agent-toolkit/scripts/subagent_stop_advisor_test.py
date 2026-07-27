@@ -15,10 +15,8 @@ from pathlib import Path
 
 import _fork_runner
 import pytest
-from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 from _stop_gate_test import _user_async_launched_entry, _user_task_notification_entry, _write_transcript
-from subagent_stop_advisor import _SELF_LAUNCHED_SUBAGENT_WAIT_RE
 
 _SCRIPT = Path(__file__).parent / "claude_hook.py"
 
@@ -91,17 +89,6 @@ def test_single_session_blocks() -> None:
     assert body["decision"] == "block"
 
 
-def test_blocks_async_wait_new_phrases() -> None:
-    """`async-wait`カテゴリの新規追記フレーズもblockする。"""
-    text = _pick_scope_escalation_text("async-wait")
-    if not text:
-        pytest.skip("scope-escalation fixture for async-wait not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-    assert "async-wait" in body["reason"]
-
-
 def test_blocks_overhead_tradeoff_phrases() -> None:
     """`overhead-tradeoff`カテゴリのフレーズもblockする。"""
     text = _pick_scope_escalation_text("overhead-tradeoff")
@@ -113,67 +100,42 @@ def test_blocks_overhead_tradeoff_phrases() -> None:
     assert "overhead-tradeoff" in body["reason"]
 
 
-def test_approves_async_wait_when_background_tracked(tmp_path: Path) -> None:
-    """async-wait表明でも未消化の追跡中background起動が実在すれば通過する。
+def test_approves_when_background_tracked_regardless_of_message(tmp_path: Path) -> None:
+    """自身のtranscriptに未消化のbackground起動が実在する場合、完了報告本文の内容によらず承認する。
 
-    ピックされる文言は自身配下起動のレビュアー系サブエージェント名を含まない前提とする
-    （含む場合は`_is_self_launched_subagent_wait`によりbypassが無効化されblockへ倒れるため）。
+    本文には未消化background起動が無ければ通常経路でブロックされるはずの
+    `process-omission`フレーズを用いる。早期承認判定を外すとブロックされることを
+    別テスト（`test_blocks_process_omission_without_tracked_background`）で確認しており、
+    両者の対比で本テストが早期承認分岐自体を検証していることを担保する。
     """
-    text = _pick_scope_escalation_text("async-wait")
+    text = _pick_scope_escalation_text("process-omission")
     if not text:
-        pytest.skip("scope-escalation fixture for async-wait not available")
-    assert not any(name in text for name in ("plan-reviewer", "plan-codex-delegate")), (
-        "ピック文言が自身起動サブエージェント名を含むと本テストの前提が崩れる"
-    )
+        pytest.skip("scope-escalation fixture for process-omission not available")
     transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     assert result.stdout == ""
 
 
-def test_blocks_async_wait_without_tracked_background() -> None:
-    """async-wait表明かつ追跡中background起動が無い場合は現行どおりブロックする。"""
-    text = _pick_scope_escalation_text("async-wait")
+def test_blocks_process_omission_without_tracked_background() -> None:
+    """未消化のbackground起動が無い場合は現行どおり縮退表明フレーズの照合が働く。"""
+    text = _pick_scope_escalation_text("process-omission")
     if not text:
-        pytest.skip("scope-escalation fixture for async-wait not available")
+        pytest.skip("scope-escalation fixture for process-omission not available")
     result = _run({"last_assistant_message": text})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
 
 
-def test_blocks_async_wait_when_tracked_background_completed(tmp_path: Path) -> None:
-    """起動記録があっても完了通知で全消化済みなら現行どおりブロックする。"""
-    text = _pick_scope_escalation_text("async-wait")
+def test_blocks_when_tracked_background_completed(tmp_path: Path) -> None:
+    """起動記録があっても完了通知で全消化済みなら通常の縮退表明照合が働く。"""
+    text = _pick_scope_escalation_text("process-omission")
     if not text:
-        pytest.skip("scope-escalation fixture for async-wait not available")
+        pytest.skip("scope-escalation fixture for process-omission not available")
     entries = [_user_async_launched_entry("toolu_bg2"), _user_task_notification_entry("toolu_bg2")]
     transcript = str(_write_transcript(tmp_path, entries))
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     body = json.loads(result.stdout)
     assert body["decision"] == "block"
-
-
-def _pick_scope_escalation_text_containing(category: str, substring: str) -> str:
-    """指定カテゴリかつ指定部分文字列を含む最初のフィクスチャ入力を返す。"""
-    for text, cat in _SCOPE_ESCALATION_INPUTS:
-        if cat == category and substring in text:
-            return text
-    return ""
-
-
-def test_blocks_self_launched_subagent_wait_even_with_tracked_background(tmp_path: Path) -> None:
-    """自身配下起動のレビュアー系サブエージェントへの待機表明はbackground追跡有無に関わらずblockする。"""
-    text = _pick_scope_escalation_text_containing("async-wait", "plan-reviewerが")
-    if not text:
-        pytest.skip("scope-escalation fixture for self-launched subagent wait not available")
-    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg3")]))
-    result = _run({"last_assistant_message": text, "transcript_path": transcript})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-
-
-def test_self_launched_subagent_wait_alias_is_shared_constant() -> None:
-    """SSOT不一致の再発防止として`is`identityで共有定数のalias関係を検証する。"""
-    assert _SELF_LAUNCHED_SUBAGENT_WAIT_RE is _ASYNC_WAIT_SELF_LAUNCHED_RE
 
 
 def test_stop_hook_active_bypasses_check() -> None:

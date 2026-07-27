@@ -3,7 +3,7 @@
 `pretooluse.py`と`stop_advisor.py`の双方から参照する共有モジュール。
 エントリポイントスクリプト間で直接importする構造を避けるため、
 `_SCOPE_ESCALATION_PHRASES`・`_match_scope_escalation`・`_SCOPE_ESCALATION_ALTERNATIVES`・
-`_apply_category_exclusions`・`_ASYNC_WAIT_SELF_LAUNCHED_RE`を本モジュールへ集約する。
+`_apply_category_exclusions`を本モジュールへ集約する。
 
 カテゴリ定義および代表フレーズの詳細は
 `agent-toolkit/skills/agent-standards/references/scope-escalation-phrases.md`
@@ -31,68 +31,11 @@ _STOP_FOCUS_CATEGORIES: frozenset[str] = frozenset({"process-omission"})
 _STOP_FOCUS_CATEGORIES_EXTENDED: frozenset[str] = frozenset(
     {
         "process-omission",
-        "async-wait",
         "approach-confirm",
         "subagent-hesitation",
         "overhead-tradeoff",
     }
 )
-
-# scope-escalation縮退誘発フレーズ検出パターン。
-# 01-agent.md「完遂と先送り」節、および
-# agent-standards/references/scope-escalation-phrases.md「縮退表明の定義」節で禁止される、
-# 作業量・残コンテキスト・所要時間・修正コスト等を根拠としたユーザーへの打診、
-# および規範違反を明示認識せず工程を省略・割愛する宣言を機械検出する。
-#
-# 自身の配下でbackground起動したサブエージェント全般
-# （`plan-reviewer`・`plan-codex-delegate`・`careful-review`・`codex-impl-*`等）への
-# 待機表明を検出する共有定数。対象エージェント名は`plan-*`・`careful-review`・`codex-impl-*`の
-# パターンへ一般化する（個別列挙では新設・改名されたエージェントを取りこぼすため）。
-# `subagent_stop_advisor.py`の`_SELF_LAUNCHED_SUBAGENT_WAIT_RE`はbypass無効化判定に本定数のaliasを用いる
-# （`from _scope_escalation import _ASYNC_WAIT_SELF_LAUNCHED_RE`）。検出と判定predicateが独立複製構造だと
-# 同期漏れでSSOT不一致が発生するため、他モジュールから判定predicateとして参照される
-# 検出パターン全般は本方式（共有定数として抽出しaliasで参照する）に従う。
-#
-# 日本語の待機表明は、未完了・待機を示す述語（「待つ」「待機」「未着」「未受領」「待ち」）との
-# 共起を必須とする。本正規表現は完了報告のブロック判定にも使われるため、起動の事実のみを
-# 述べる文（「バックグラウンドで起動した」等、完了済み作業の報告にも現れる表現）を単独で
-# 一致させない。「完了次第」「受領後に」等の状態遷移表現も、単独では未完了を意味しないため
-# 上記の待機述語との共起がある場合のみ一致対象に含める。
-# 共起の相手はエージェント名だけでなく待機対象の名詞（「完了報告」「完了通知」等）も許容する。
-# 実運用の待機表明はエージェント名を伴わない形（「完了報告は未着」「完了通知を待つ」）が
-# 大半を占め、名前との共起のみを条件とすると検出できないため。
-# 英語分岐も同様に待機述語との共起を必須とする。かつては`background`・`running`・
-# `completion notification`が単独一致条件だったため、「エージェント名+background」の
-# 近接だけで完了済み作業の報告（「plan-reviewerの結果をbackgroundで受領し統合した」等）まで
-# 誤検出していた。`waiting`単独は待機述語として成立するため残し、
-# 現在進行形の継続宣言（`is/are running in the background`）に限定して一致対象へ含める。
-_SELF_LAUNCHED_AGENT_NAME_RE = r"(?:plan-[a-z-]+|careful-review|codex-impl-[a-z0-9-]+)"
-_WAIT_PREDICATE_JA_RE = r"(?:待つ|待ち|待って|待ちます|待機|未着|未受領)"
-# 待機対象を示す名詞。エージェント名を含まない待機表明
-# （「完了報告は未着」「完了通知を待つ」等）を検出するために用いる。
-_WAIT_TARGET_JA_RE = r"(?:完了報告|完了通知|レビュー結果|検証結果)"
-# 否定助動詞・完了時制の除外。肯定平叙形の待機表明のみを対象とするため、
-# 「待つ必要はない」「待って再開した」等を負の先読みで除外する。
-# 既存の分離形パターン（`async-wait`カテゴリ）と同一の設計に揃える。
-_WAIT_NEGATION_LOOKAHEAD_RE = r"(?![^、。\n]{0,15}(?:必要は?ない|ことは?しない|わけでは?ない|べきでは?ない))"
-_ASYNC_WAIT_SELF_LAUNCHED_RE = re.compile(
-    rf"(?i:{_SELF_LAUNCHED_AGENT_NAME_RE}[^,.\n]{{0,40}}"
-    r"(?:waiting|(?:is|are)\s+running\s+in\s+the\s+background)"
-    r"|review subagents? (?:are|is) running in the background"
-    r"|(?:wait|waiting) for[^,.\n]{0,30}background[^,.\n]{0,30}reviewers?"
-    rf"|(?:wait|waiting) for[^,.\n]{{0,30}}{_SELF_LAUNCHED_AGENT_NAME_RE})"
-    rf"|{_SELF_LAUNCHED_AGENT_NAME_RE}[^、。\n]{{0,40}}backgroundで起動中(?:である)?"
-    rf"|{_SELF_LAUNCHED_AGENT_NAME_RE}[^、。\n]{{0,40}}{_WAIT_PREDICATE_JA_RE}"
-    rf"|{_WAIT_PREDICATE_JA_RE}[^、。\n]{{0,40}}{_SELF_LAUNCHED_AGENT_NAME_RE}"
-    rf"|{_WAIT_TARGET_JA_RE}[^、。\n]{{0,20}}{_WAIT_PREDICATE_JA_RE}{_WAIT_NEGATION_LOOKAHEAD_RE}"
-    rf"|{_WAIT_PREDICATE_JA_RE}{_WAIT_NEGATION_LOOKAHEAD_RE}[^、。\n]{{0,20}}{_WAIT_TARGET_JA_RE}"
-)
-
-# async-waitカテゴリの誤検出除外: 自身の作業先送りではなく他プロセス・他セッションとの
-# 競合回避・順序調整を述べる文脈を対象から除外する。
-# 「別セッションの完了を待つ」「並行実行中のため完了を待つ」「競合を避けるため待機する」等、
-# 協調目的の待機表明は縮退表明（自身の作業を先送りする表明）に該当しないため除外する。
-_ASYNC_WAIT_COORDINATION_RE = re.compile(r"別セッション|並行(?:実行|作業|処理)?|競合(?:を)?避け")
 
 # scope-escalation縮退誘発フレーズ検出パターン。
 # 01-agent.md「完遂と先送り」節、および
@@ -147,145 +90,6 @@ _SCOPE_ESCALATION_PHRASES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(機械化[^、。\n]{0,5}除外|Write検査[^、。\n]{0,5}(過剰|除外)|軽減版[^、。\n]{0,5}(採用|扱い)"
             r"|過剰部分[^、。\n]{0,5}除外|縮退版[^、。\n]{0,5}(採用|扱い)"
             r"|(実効性|実装コスト)[^、。\n]{0,15}(コスト高|見合わ))"
-        ),
-    ),
-    (
-        "async-wait",
-        re.compile(
-            r"((完了通知|完了報告)[^、。\n]{0,10}(待つ|待機|待って)"
-            r"|サブエージェント[^、。\n]{0,10}(終了|完了|応答|通知)[^、。\n]{0,10}(待つ|待機|待って)"
-            r"|(?i:wait(?:ing)? for[^,.\n]{0,80}(background|parallel|subagent|reviewer"
-            r"|response|report|registration|completion|notification))"
-            r"|(?i:monitor(?:ing)? for[^,.\n]{0,80}(background|parallel|subagent|reviewer)"
-            r"[^,.\n]{0,60}(complete|completion|completing|finish(?:ed|ing)?|response|notification"
-            r"|report(?:s|ed)?|registration))"
-            r"|(?i:background agents[^,.\n]{0,40}(complete|finish|end))"
-            r"|(?i:(awaiting|pending)[^.\n]{0,40}"
-            r"(response|report|result|completion|feedback|review)s?"
-            r"[^.\n]{0,60}(before proceeding|before continuing|once received|once complete|then))"
-            r"|(?i:waiting for[^.\n]{0,40}(response|report|result|completion)s?"
-            r"[^.\n]{0,60}(before proceeding|before continuing|once received)))"
-        ),
-    ),
-    (
-        "async-wait",
-        re.compile(r"(?:バックグラウンド(?:実行|ジョブ|プロセス)?)[^、。\n]{0,15}(?:追跡中|継続中|実行中|進行中)"),
-    ),
-    (
-        "async-wait",
-        re.compile(r"(?:完了通知|完了報告)[^、。\n]{0,15}(?:受領|受信|到達|着信)[^、。\n]{0,15}(?:確定|続行|着手|進行|反映)"),
-    ),
-    (
-        "async-wait",
-        re.compile(r"(?:gh run watch|gh run view)[^、。\n]{0,20}(?:待機|追跡|バックグラウンド)"),
-    ),
-    (
-        "async-wait",
-        re.compile(
-            r"(?i:wait(?:ing)? for (?:the )?(?:automatic )?completion notification)"
-            r"|(?i:(?:rather than|instead of) (?:continue|continuing) polling)"
-            r"|(?i:still running[^\n]{0,40}(?:wait|notification))"
-        ),
-    ),
-    (
-        "async-wait",
-        re.compile(
-            r"(?:完了通知|完了報告)(?:は)?[^、。\n]{0,15}(?:まだ)?[^、。\n]{0,5}"
-            r"(?:届いていない|受領していない|到達していない|受け取っていない)"
-        ),
-    ),
-    (
-        "async-wait",
-        re.compile(r"待機(?:を)?(?:継続|続行|続け)(?:する|します)?|待機継続"),
-    ),
-    (
-        "async-wait",
-        re.compile(
-            r"(?:配下|下流|下位|子)(?:の)?(?:サブエージェント|エージェント|タスク|plan-implementer)"
-            r"[^、。\n]{0,20}(?:再委譲|委譲|起動)[^、。\n]{0,30}(?:継続|進行|実行|作業)中"
-            r"|(?:background|バックグラウンド)[^、。\n]{0,15}(?:再委譲|委譲|起動)[^、。\n]{0,20}"
-            r"(?:継続|進行|完了報告受領後)"
-        ),
-    ),
-    # 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明パターン（fb 20260720-035611-001）。
-    # `has_pending_background_launches`によるbypassは自身が配下起動したサブエージェントへの
-    # 待機表明も誤って通過させるため、本エントリで検出しbypass無効化判定へ用いる
-    # （モジュール冒頭で定義した共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`を参照する）。
-    (
-        "async-wait",
-        _ASYNC_WAIT_SELF_LAUNCHED_RE,
-    ),
-    # 分離形の待機表明パターン（fb3反映）。
-    # 「〜完了の通知を待つ」「〜完了を待つ」等、既存の「完了通知」「完了報告」連結形で捕捉できない
-    # 動作名詞+「完了」の分離形を対象とする。
-    # 肯定平叙形のみを検出するアンカー設計として次の除外を組み込む。
-    # 否定助動詞（必要はない・ことはしない等）は`待つ|待機`の直後で負の先読みにより除外する。
-    # 完了時制の除外として`待って`は継続待機を示す語尾（いる・ください・ほしい等）が続く場合のみ許容し、
-    # 過去時制の後続（〜した・再開）と組み合わさる文は`待って`単独では捕捉しない。
-    # 引用符（全角鍵括弧・バッククォート）内は`_apply_category_exclusions`で事前除去する。
-    (
-        "async-wait",
-        re.compile(
-            r"[^\n、。]{1,15}?完了(?:の通知)?を"
-            r"(?:"
-            r"(?:待つ|待機)"
-            r"(?![^、。\n]{0,15}(?:必要は?ない|ことは?しない|わけでは?ない|べきでは?ない))"
-            r"|待って(?=[^、。\n]{0,5}(?:いる|ください|欲しい|ほしい|から続行|から実施))"
-            r")"
-        ),
-    ),
-    # 文をまたぐ分離形の待機表明パターン（fb 20260720-162742-001反映）。
-    # 「待機中。」宣言の直後に文をまたいで「完了通知」「完了報告」の受領表現が続く表明を検出する。
-    # 直上の分離形パターンは同一文内の「完了を待つ」型のみを対象とし、
-    # 本パターンは句点・読点で分離された文をまたぐ変形を補完する。
-    # 完了時制除外は受領動詞の直後、「済み」「〜した」等の活用語尾が
-    # 通常収まる範囲に限定し、無関係な後続節への波及を防ぐ。
-    (
-        "async-wait",
-        re.compile(
-            r"待機中(?:。|、)\s*[^\n]{0,80}?(?:完了(?:通知|報告))(?:を)?(?:受(?:け取|け止|領|信)|届く|届いた?)"
-            r"(?![^、。\n]{0,10}(?:済|した))"
-        ),
-    ),
-    # 自身配下で並列起動した複数サブエージェントの完了報告受領後の統合作業を
-    # 待機表明として記述する複合パターン（fb1反映）。
-    # 「並列起動」と「完了報告」の共起、「受領」または「受信」を経由した
-    # 「統合」「集約」「反映」への近接を検出対象とする。
-    # 「並列起動」〜「完了報告」間は12文字に制限し、無関係な別文をまたいだ誤結合を防ぐ
-    # （句点をまたぐ「した。各」相当の短い接続のみを許容する）。
-    # 完了時制（統合済み・統合した等）は同一節（読点・句点の手前）までを対象に負の先読みで除外し、
-    # 「統合してレビューへ反映した」のような複合述語内の完了時制も誤検出しない。
-    # 読点をまたいだ走査にすると「統合する予定であり、詳細は後日相談したい」のような
-    # 無関係な後続節内の「した」を誤って完了時制と判定するため、読点で区切る。
-    # 「完了報告」の代わりに「通知」を用いる報告文（「各エージェントの通知を受領後に統合する」等）も
-    # 待機表明として扱う。
-    (
-        "async-wait",
-        re.compile(
-            r"並列起動[^\n]{0,12}?(?:完了(?:通知|報告)|通知)[^、。\n]{0,15}(?:受領|受信)[^。\n]{0,40}"
-            r"(?:統合|集約|反映)(?![^、。\n]*(?:済|した))"
-        ),
-    ),
-    # 配下並列レビュー起動を報告するのみで、以降の指摘集約・計画反映・needs_escalation判定を
-    # 実施しない短い待機表明を検出する（fb 20260720-152203-001反映）。
-    # 「並列レビューを起動して待機中」相当の短文が対象で、「並列起動」〜「完了報告」の
-    # 複合パターン（直上のエントリ）では捕捉できない即時完結型の表明を補完する。
-    # 完了時制除外は同一文（句点`。`到達まで）を範囲とし、読点をまたぐ後続節にある
-    # 完遂表現も除外対象へ含める（「待機中だったが、現在は集約済み。」のような
-    # 読点区切りの完遂表現の誤検出を防ぐため）。直上の複合パターンは要素直後の
-    # 完了時制のみを除外対象とするが、本パターンは「起動して待機中」の直後に
-    # 完遂節が続く広い範囲を扱うため範囲設計を独自化する。
-    # 直後の1文（句点1回のまたぎまで）で完了通知・完了報告を受領済みである場合も、
-    # 完了済みの報告として除外する。句点2回以上先の無関係な話題への言及まで
-    # 除外対象へ含めると本来検出すべき短表明を取りこぼすため、
-    # 句点のまたぎ回数を1回に制限し走査範囲を直後の1文相当へ限定する。
-    (
-        "async-wait",
-        re.compile(
-            r"(?:並列|配下|下位)[^、。\n]{0,15}(?:レビュー|サブエージェント|ジョブ|エージェント)"
-            r"[^、。\n]{0,10}(?:を)?起動(?:して|し)[^、。\n]{0,10}待機中"
-            r"(?![^。\n]{0,50}(?:済|した|反映した|集約した|完了した))"
-            r"(?![^。\n]{0,20}(?:。[^。\n]{0,25})?完了(?:通知|報告)[^、。\n]{0,15}(?:受領|受信)(?:済み?|した))"
         ),
     ),
     (
@@ -367,7 +171,6 @@ _SCOPE_ESCALATION_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "pattern-conformance": ("既存違反も同一計画内で是正対象として組み込む", "根本対応案を主提案として提示する"),
     "process-omission": ("各工程の実施義務を果たす", "各工程は実施対象として扱う"),
     "mitigation-in-adoption": ("原文どおり採用するか不採用とする二択", "反映内容の縮小は不採用根拠にならない"),
-    "async-wait": ("進捗中間報告・状態確認・別作業への切替で動作を継続する",),
     "quality-gate-count": (
         "品質ゲートのブロックを正常動作として扱い1件ずつ修正して再試行する方針を述べる",
         "ブロック回数・違反件数・修正量を遂行可能性の判断材料にしない方針を述べる",
@@ -403,11 +206,6 @@ _ZENKAKU_KAKKO_RE: re.Pattern[str] = re.compile(r"「[^」]*」")
 # バッククォート囲みは識別子・節名・コマンド名の引用に用いられ、priority-consult語彙と字面上重なりやすい。
 # 全角鍵括弧と同格の除外対象として扱う。改行を含まない同一行内の囲み区間を対象とする。
 _BACKTICK_RE: re.Pattern[str] = re.compile(r"`[^`\n]+`")
-
-# async-waitカテゴリの照合対象からMarkdown引用ブロック（`>`始まりの行）を除去するためのパターン。
-# 調査・報告委譲プロンプトの完了報告本文が既存設計文書の記述をMarkdown引用形式で転記する場合、
-# 全角鍵括弧・バッククォート囲みのいずれにも該当せず過検出を招く事象を予防する。
-_MARKDOWN_BLOCKQUOTE_RE: re.Pattern[str] = re.compile(r"^>.*$", re.MULTILINE)
 
 
 def has_inline_choice_offer(text: str) -> bool:
@@ -446,14 +244,10 @@ def _apply_category_exclusions(text: str, category: str) -> str:
 
     現状は該当カテゴリで引用文脈（全角鍵括弧・バッククォート囲みの各区間）を除外する。
     他ファイル節名・識別子・コマンド名の引用文脈を該当語彙の過検出から保護する。
-    async-waitカテゴリは分離形パターンでの引用文（「〜完了を待つ」等の指摘引用）過検出を保護する。
-    async-waitカテゴリはMarkdown引用ブロック（`>`行）内の引用も同様に保護する。
     他カテゴリは呼び出し元のtextをそのまま返す。
     `_match_scope_escalation`(本モジュール)と
     `_match_scope_escalation_increase`(`pretooluse.py`)の両経路から呼び出す。
     """
-    if category == "async-wait":
-        return _MARKDOWN_BLOCKQUOTE_RE.sub("", _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text)))
     if category == "priority-consult":
         return _BACKTICK_RE.sub("", _ZENKAKU_KAKKO_RE.sub("", text))
     return text
@@ -491,24 +285,8 @@ def _match_scope_escalation(
         m = pattern.search(target_text)
         if m is None:
             continue
-        if category == "async-wait" and _is_async_wait_coordination_context(target_text, m):
-            continue
         return (category, m.group(0))
     return None
-
-
-def _is_async_wait_coordination_context(text: str, match: re.Match[str]) -> bool:
-    """async-waitマッチが他プロセス・他セッションとの協調目的の待機かを判定する。
-
-    マッチを含む文（直前・直後の句点で区切られた範囲）に`_ASYNC_WAIT_COORDINATION_RE`が
-    共起する場合、自身の作業を先送りする縮退表明ではなく協調目的の待機と判定しTrueを返す。
-    """
-    sentence_start = text.rfind("。", 0, match.start()) + 1
-    sentence_end = text.find("。", match.end())
-    if sentence_end == -1:
-        sentence_end = len(text)
-    sentence = text[sentence_start:sentence_end]
-    return _ASYNC_WAIT_COORDINATION_RE.search(sentence) is not None
 
 
 def _cli_main(argv: list[str]) -> int:

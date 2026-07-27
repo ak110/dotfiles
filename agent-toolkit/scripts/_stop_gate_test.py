@@ -14,7 +14,13 @@ import time
 from typing import Literal
 
 import pytest
-from _stop_gate import append_stop_log, has_command_invocation, has_pending_background_launches, is_pending_async_work
+from _stop_gate import (
+    _describe_pending_background_tasks,
+    append_stop_log,
+    has_command_invocation,
+    has_pending_background_launches,
+    is_pending_async_work,
+)
 
 
 def _write_transcript(tmp_path: pathlib.Path, lines: list[dict]) -> pathlib.Path:
@@ -182,6 +188,48 @@ def _user_task_notification_entry(
         "message": {
             "role": "user",
             "content": [{"type": "text", "text": notification}],
+        },
+    }
+
+
+def _monitor_launch_entries(tool_use_id: str, task_id: str) -> list[dict]:
+    """Monitorツール起動と対応結果のエントリを生成する。"""
+    return [
+        {
+            "type": "assistant",
+            "isSidechain": False,
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": tool_use_id, "name": "Monitor", "input": {}}],
+            },
+        },
+        {
+            "type": "user",
+            "isSidechain": False,
+            "toolUseResult": {"taskId": task_id, "timeoutMs": 3600000, "persistent": False},
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "Monitor started"}],
+            },
+        },
+    ]
+
+
+def _user_non_monitor_task_id_entry(tool_use_id: str, task_id: str) -> dict:
+    """Monitor以外のツールが`taskId`キーを返すuserエントリを生成する（実transcript調査で確認した衝突ケース）。
+
+    `success`・`updatedFields`・`statusChange`キーを伴う形で観測された、
+    Monitor以外の`toolUseResult.taskId`使用例を再現する。対応するassistant tool_useを
+    `name == "Monitor"`以外にすることで、キーの存在だけに依存する誤判定が
+    再発した場合にテストが失敗するようにする。
+    """
+    return {
+        "type": "user",
+        "isSidechain": False,
+        "toolUseResult": {"success": True, "taskId": task_id, "updatedFields": [], "statusChange": None},
+        "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "updated"}],
         },
     }
 
@@ -814,6 +862,63 @@ class TestDebugOutput:
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Agent" in captured.err
+
+
+class TestMonitorTaskNotificationSuppression:
+    """Monitor由来の`task_notification_unresolved`過検出が抑止されることを検証する。"""
+
+    def test_monitor_notification_does_not_log_unresolved(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Monitorのtool_useと突合できる通知はtask_notification_unresolvedをログしない。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [
+            *_monitor_launch_entries("toolu_monitor1", "monitor-a"),
+            _user_task_notification_entry(None, task_id="monitor-a"),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        _describe_pending_background_tasks(str(t), "sess-monitor")
+        log_path = tmp_path / "claude-agent-toolkit-stop-sess-monitor.log"
+        if log_path.exists():
+            assert "task_notification_unresolved" not in log_path.read_text(encoding="utf-8")
+
+    def test_non_monitor_task_id_collision_still_logs_unresolved(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Monitor以外の`taskId`値では未解決通知をログする。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [
+            _user_non_monitor_task_id_entry("toolu_taskupdate1", "1"),
+            _user_task_notification_entry(None, task_id="1"),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        _describe_pending_background_tasks(str(t), "sess-collision")
+        log_path = tmp_path / "claude-agent-toolkit-stop-sess-collision.log"
+        assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
+
+    def test_same_value_shared_by_monitor_and_non_monitor_still_logs_unresolved(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Monitor由来か一意に決まらない`taskId`値では未解決通知をログする。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [
+            *_monitor_launch_entries("toolu_monitor1", "shared-id"),
+            _user_non_monitor_task_id_entry("toolu_taskupdate1", "shared-id"),
+            _user_task_notification_entry(None, task_id="shared-id"),
+        ]
+        t = _write_transcript(tmp_path, entries)
+        _describe_pending_background_tasks(str(t), "sess-shared-collision")
+        log_path = tmp_path / "claude-agent-toolkit-stop-sess-shared-collision.log"
+        assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
+
+    def test_unknown_notification_still_logs_unresolved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Monitor由来と識別できない未知の通知は引き続きtask_notification_unresolvedをログする。"""
+        monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
+        entries = [_user_task_notification_entry(None, task_id="unknown-task")]
+        t = _write_transcript(tmp_path, entries)
+        _describe_pending_background_tasks(str(t), "sess-unknown")
+        log_path = tmp_path / "claude-agent-toolkit-stop-sess-unknown.log"
+        assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
 
 class TestAppendStopLog:

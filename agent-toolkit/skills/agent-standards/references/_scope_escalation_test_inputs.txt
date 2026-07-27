@@ -56,31 +56,6 @@ mitigation-in-adoption	過剰部分を除外して採用する
 mitigation-in-adoption	縮退版として採用する
 mitigation-in-adoption	実効性の割にコスト高のため除外
 mitigation-in-adoption	実装コストが見合わないため除外
-async-wait	サブエージェントの完了通知を待つ
-async-wait	完了報告を待って続行する
-async-wait	サブエージェントの応答を待機する
-async-wait	Waiting for their responses before proceeding to aggregate findings
-async-wait	Awaiting the review reports before continuing.
-async-wait	Pending the codex results, then I will merge the findings.
-async-wait	Waiting for the plan-reviewer and plan-codex-delegate (code category) background agents to complete.
-async-wait	Waiting for the parallel subagents to finish.
-async-wait	background agents to complete before proceeding.
-async-wait	バックグラウンドジョブが追跡中である
-async-wait	完了通知の受領後に結果を確定する
-async-wait	gh run watchの結果を待機する
-async-wait	wait for the automatic completion notification
-async-wait	rather than continue polling
-async-wait	Still running while awaiting notification.
-async-wait	wait for the subagent to finish
-async-wait	waiting for a response
-async-wait	waiting for the report
-async-wait	waiting for registration
-async-wait	waiting for completion
-async-wait	waiting for a notification
-async-wait	Both review subagents are running in the background.
-async-wait	plan-codex-delegateがbackgroundで起動中である
-async-wait	plan-reviewerがbackgroundで起動中である
-async-wait	plan-reviewerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzwaiting
 context-shortage	コンテキスト容量を超えるため
 context-shortage	実装完遂リスクが実装利益を上回るため
 context-shortage	次回サイクルへ持ち越し
@@ -117,20 +92,3 @@ subagent-hesitation	メインで処理するかサブエージェント委譲す
 overhead-tradeoff	オーバーヘッドが上回るため
 overhead-tradeoff	複雑度が高くなり過ぎない範囲で対応
 overhead-tradeoff	実装コストが大きいため
-async-wait	完了通知はまだ届いていない
-async-wait	完了報告をまだ受領していない
-async-wait	待機を継続する
-async-wait	配下のplan-implementerへ再委譲し継続中である
-async-wait	下流のエージェントへ委譲し進行中である
-async-wait	backgroundで委譲し完了報告受領後に確定する
-async-wait	実行完了の通知を待つ
-async-wait	処理完了を待つ
-async-wait	並列起動後の完了報告受領を経て指摘を統合する
-async-wait	サブエージェント群を並列起動した。完了報告を受信後に集約する
-async-wait	並列起動したレビュアーの完了報告を受領し、計画へ反映する
-async-wait	待機中。完了通知を受け取った
-async-wait	wait for their completion notifications
-async-wait	3つのレビューエージェントを並列起動した。各エージェントの通知を受領後に指摘を統合する
-async-wait	Still monitoring for background completion notifications from the subagents.
-async-wait	monitor for parallel review completion
-async-wait	Continuing to monitor for subagent finish reports before merging.

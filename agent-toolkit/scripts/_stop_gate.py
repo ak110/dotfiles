@@ -20,8 +20,10 @@ SendMessage背景再開は前3者と異なり`toolUseResult`側に識別子を�
 
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式では、
 `<task-id>`要素とagentId→tool_use_id集合マップ（`_collect_task_id_tool_use_ids`）による
-フォールバック解決を行う。両者で解決できない通知は`task_notification_unresolved`として
-常時ログへ明示出力し、通知形式変動による幽霊pendingの発生を検出可能にする。
+フォールバック解決を行う。両者で解決できない通知のうち、対応するassistant側`tool_use`の
+`name`が`"Monitor"`と突合できたもの（`_collect_monitor_task_ids`）は追跡対象外の既知通知として
+黙って無視する。それ以外で解決できない通知は`task_notification_unresolved`として常時ログへ明示出力し、
+通知形式変動による幽霊pendingの発生を検出可能にする。
 
 常時ログ（`append_stop_log`）と詳細stderr出力（`_emit_debug`）は責務を分離する。
 常時ログはINFO相当（呼び出し側が渡す最終判定ラベルと主要フラグ）を
@@ -140,7 +142,7 @@ def has_pending_background_launches(transcript_path: str, session_id: str) -> bo
 
     `is_pending_async_work`と同じ`launched - completed`のremainder非空判定を用いる
     （起動記録の存在だけで判定すると完了消化後も真を返し続けるため、消化状態を必ず反映する）。
-    stop_advisor側でasync-waitカテゴリ検出時の除外判定に使う。
+    `subagent_stop_advisor.py`側で完了報告本文の内容によらない無条件の早期承認判定に使う。
     起動集合・完了集合の抽出条件は`is_pending_async_work`docstringに定義済み
     （`toolUseResult.status`・`backgroundTaskId`・SendMessage背景再開マーカー・
     `<task-notification>`・idle_notification(available)の各条件）。
@@ -414,6 +416,7 @@ def _describe_pending_background_tasks(
             sendmessage_names_by_position.setdefault(position, set()).add(teammate_name)
     named_agent_ids = _collect_named_agent_tool_use_ids(lines)
     task_id_map = _collect_task_id_tool_use_ids(lines)
+    monitor_task_ids = _collect_monitor_task_ids(lines)
     idle_teammates: set[str] = set()
     for position, line in enumerate(lines):
         try:
@@ -440,7 +443,14 @@ def _describe_pending_background_tasks(
                 resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
-            completed.update(_extract_task_notification_ids(message, task_id_map, session_id=session_id))
+            completed.update(
+                _extract_task_notification_ids(
+                    message,
+                    task_id_map,
+                    session_id=session_id,
+                    monitor_task_ids=monitor_task_ids,
+                )
+            )
             for teammate_name in _extract_teammate_completion_names(message):
                 completed.update(named_agent_ids.get(teammate_name, set()))
                 idle_teammates.add(teammate_name)
@@ -464,7 +474,14 @@ def _describe_pending_background_tasks(
             if not isinstance(prompt, str):
                 continue
             for notification in _TASK_NOTIFICATION_RE.findall(prompt):
-                completed.update(_resolve_task_notification_ids(notification, task_id_map, session_id))
+                completed.update(
+                    _resolve_task_notification_ids(
+                        notification,
+                        task_id_map,
+                        session_id,
+                        monitor_task_ids=monitor_task_ids,
+                    )
+                )
     return launched, completed
 
 
@@ -472,12 +489,15 @@ def _resolve_task_notification_ids(
     notification_text: str,
     task_id_map: dict[str, set[str]] | None,
     session_id: str | None,
+    monitor_task_ids: set[str] | None = None,
 ) -> set[str]:
     """`<task-notification>`要素本文から完了`tool_use_id`集合を解決する。
 
     `<tool-use-id>`要素を優先して解決し、含まれない場合は`<task-id>`要素と
     `task_id_map`によるフォールバック解決を試みる。両者で解決できない場合、
-    `session_id`が与えられていれば`append_stop_log`で明示ログ出力する。
+    `<task-id>`が`monitor_task_ids`に含まれる場合（Monitorツール由来と突合済みの既知通知）は
+    ログ出力せず黙って無視する。含まれない場合のみ、`session_id`が与えられていれば
+    `append_stop_log`で明示ログ出力する。
     旧形式（メインuserエントリの`<task-notification>`）・新形式
     （`type=="attachment"`の`<task-notification>`）の両解決経路が共有する。
     """
@@ -490,6 +510,10 @@ def _resolve_task_notification_ids(
             resolved.update(task_id_map.get(task_id, set()))
     if resolved:
         return resolved
+    if monitor_task_ids is not None:
+        notification_task_ids = set(_TASK_ID_RE.findall(notification_text))
+        if notification_task_ids and notification_task_ids <= monitor_task_ids:
+            return resolved
     if session_id is not None:
         append_stop_log(
             session_id,
@@ -555,6 +579,58 @@ def _collect_task_id_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
             continue
         result.setdefault(agent_id, set()).add(tool_use_id)
     return result
+
+
+def _collect_monitor_task_ids(lines: list[str]) -> set[str]:
+    """transcript全行から、Monitorツール起動に一意に対応する`taskId`の集合を返す。
+
+    `toolUseResult.taskId`キーはMonitor専用ではなく、他のツール
+    （`success`・`updatedFields`・`statusChange`キーを伴う形で観測）も同じキー名を使う
+    （実transcript調査で確認済み）。そのため`taskId`キーの存在だけでMonitor由来と判定せず、
+    対応する`tool_use_id`（`_extract_tool_result_id`で解決）がassistant側`tool_use`ブロックの
+    `name == "Monitor"`と一致する場合に限りMonitor由来として収集する。
+    `<task-notification>`の解決では値（文字列）でしか突合できず`tool_use_id`を参照できないため、
+    Monitor由来の値とMonitor以外由来の値が同一transcript内で衝突した場合、
+    その値だけでは発生源を一意に特定できない。衝突した値は戻り値の集合から除外し、
+    `_resolve_task_notification_ids`側がfail-closed（`task_notification_unresolved`をログする）で
+    扱えるようにする。
+    Monitorは`_describe_pending_background_tasks`の起動集合（`launched`）に加算されないため、
+    Monitorの完了通知は常に`<task-id>`要素のフォールバック解決に失敗し
+    `task_notification_unresolved`を誤って発生させる。本関数が返す集合は
+    `_resolve_task_notification_ids`が当該通知を異常系ログから除外する判定に使う。
+    """
+    monitor_tool_use_ids: set[str] = set()
+    for _position, block in _iter_assistant_content_blocks(lines):
+        if block.get("type") != "tool_use" or block.get("name") != "Monitor":
+            continue
+        block_id = block.get("id")
+        if isinstance(block_id, str):
+            monitor_tool_use_ids.add(block_id)
+
+    monitor_task_ids: set[str] = set()
+    non_monitor_task_ids: set[str] = set()
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("type") != "user" or entry.get("isSidechain"):
+            continue
+        tool_use_result = entry.get("toolUseResult")
+        if not isinstance(tool_use_result, dict):
+            continue
+        task_id = tool_use_result.get("taskId")
+        if not isinstance(task_id, str) or not task_id:
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        tool_use_id = _extract_tool_result_id(message)
+        if tool_use_id is not None and tool_use_id in monitor_tool_use_ids:
+            monitor_task_ids.add(task_id)
+        else:
+            non_monitor_task_ids.add(task_id)
+    return monitor_task_ids - non_monitor_task_ids
 
 
 def _collect_named_agent_tool_use_ids(lines: list[str]) -> dict[str, set[str]]:
@@ -672,19 +748,21 @@ def _extract_task_notification_ids(
     task_id_map: dict[str, set[str]] | None = None,
     *,
     session_id: str | None = None,
+    monitor_task_ids: set[str] | None = None,
 ) -> set[str]:
     """userメッセージの`content`内の`<task-notification>`要素から完了`tool_use_id`を抽出する。
 
     `content`が文字列（旧フォーマット）でも配列（実transcriptフォーマット）でも処理する。
     `task_id_map`はagentId（task-id要素の値）から`tool_use_id`集合へのマップで、
     `<tool-use-id>`要素で解決できない場合のフォールバック解決経路として用いる。
+    `monitor_task_ids`はMonitorツール由来と突合済みの`task-id`値を示す。
     両者で解決できない`<task-notification>`は`session_id`が与えられていれば
     `append_stop_log(..., "task_notification_unresolved", ...)`で明示ログ出力する。
     """
     result: set[str] = set()
 
     def _resolve_notification(notification_text: str) -> None:
-        result.update(_resolve_task_notification_ids(notification_text, task_id_map, session_id))
+        result.update(_resolve_task_notification_ids(notification_text, task_id_map, session_id, monitor_task_ids))
 
     content = message.get("content")
     if isinstance(content, str):

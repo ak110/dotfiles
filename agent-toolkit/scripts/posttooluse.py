@@ -60,7 +60,6 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
     extract_h3_headings_under_h2,
     is_agent_facing_md,
 )
-from _scope_escalation import _match_scope_escalation  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -69,9 +68,6 @@ from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_
 from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
-from subagent_stop_advisor import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _NAMED_SUBAGENT_MIN_TOOL_USES,
-)
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/posttooluse"
@@ -99,20 +95,6 @@ def _extract_agent_completion_text(tool_response: dict) -> str:
     if isinstance(result, str):
         return result
     return ""
-
-
-def _extract_agent_tool_use_count(tool_response: dict) -> int:
-    """Agent/Task tool_responseの`totalToolUseCount`からツール使用数を取得する。
-
-    本フックはAgentツール呼び出し元（親）の`transcript_path`のみ参照可能で、
-    起動されたサブエージェント自身のtool_use数は反映しない。
-    そのため`tool_response`がAgentツール自身から直接返す集計値`totalToolUseCount`を採用する
-    （`_inspect_named_subagent_send`のtranscript走査とは異なるアプローチ。
-    実データ採取で`tool_response.totalToolUseCount`の実在を確認済み）。
-    欠落・非int時は-1（判定不能・fail-open）を返す。
-    """
-    count = tool_response.get("totalToolUseCount")
-    return count if isinstance(count, int) else -1
 
 
 # --- Bashコマンド前処理 ---
@@ -425,31 +407,10 @@ def main() -> int:
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
-        # foreground完了報告本文のasync-wait検出 (FB-C)。
-        # `_inspect_named_subagent_send`（subagent_stop_advisor.py）と同水準の
-        # 最低ツール使用数条件を満たす場合のみ判定する。閾値未満・抽出不能時はfail-openで通過させる。
+        # plan-file-creator完了報告の`invoked_subagents:`行パース（517行目付近）が
+        # `completion_text`を参照するため、抽出自体は維持する。
         raw_tool_response = payload.get("tool_response", {})
         completion_text = _extract_agent_completion_text(raw_tool_response) if isinstance(raw_tool_response, dict) else ""
-        if completion_text:
-            tool_use_count = _extract_agent_tool_use_count(raw_tool_response)
-            if tool_use_count >= _NAMED_SUBAGENT_MIN_TOOL_USES:
-                match_result = _match_scope_escalation(completion_text, categories={"async-wait"})
-                if match_result is not None:
-                    print(
-                        json.dumps(
-                            {
-                                "decision": "block",
-                                "reason": _llm_notice(
-                                    "The subagent completion report contains an async-wait style"
-                                    " statement instead of an active completion. Re-delegate or"
-                                    " continue driving the work to actual completion.",
-                                    tag="block",
-                                ),
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
-                    return 0
 
         subagent_type = tool_input.get("subagent_type")
         if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:

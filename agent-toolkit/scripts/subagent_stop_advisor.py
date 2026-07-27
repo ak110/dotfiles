@@ -1,16 +1,11 @@
-"""SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明・待機表明辞書で検査する。
+"""SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明辞書で検査する。
 
 公式仕様の`last_assistant_message`を直参照し、
-`transcript_path`とisSidechain判定に依存しない。
-`is_empty_completion_report`で実質空またはSkill呼び出し単独の構造的欠落を検出し、
-続いて`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTで縮退表明フレーズを照合する。
-`async-wait`カテゴリ検出時は、ハーネスが追跡するbackground起動の未消化実在
-（`has_pending_background_launches`）を確認し、実在する場合はブロックせず通過させる
-（task-notificationで自動発火する経路の待機表明を誤ってブロックしないため）。
-ただし完了報告本文が自身の配下でbackground起動したレビュアー系サブエージェント
-（`plan-reviewer`・`plan-codex-delegate`等）への待機表明である場合
-（`_is_self_launched_subagent_wait`が真の場合）は、上記bypassを適用せず現行どおりブロックする。
-判定に用いる正規表現は`_scope_escalation.py`の共有定数`_ASYNC_WAIT_SELF_LAUNCHED_RE`をaliasで参照する。
+当該サブエージェント自身の`transcript_path`に未消化のbackground起動（`has_pending_background_launches`）が
+構造的に実在する場合は、完了報告本文の内容によらず無条件で承認する。まだ自身配下の作業が
+構造的に残っている以上、続行の是非を本文の言い回しで判定する必要が無いためである。
+未消化のbackground起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
+単独の構造的欠落を検出し、続いて`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTで縮退表明フレーズを照合する。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
 
@@ -42,7 +37,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _message_format import llm_notice as _llm_notice_base  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    _ASYNC_WAIT_SELF_LAUNCHED_RE,
     _STOP_FOCUS_CATEGORIES_EXTENDED,
     _match_scope_escalation,
     is_empty_completion_report,
@@ -378,27 +372,6 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
     return missing, violation
 
 
-# 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明を検出する補助パターン（fb 20260720-035611-001）。
-# `has_pending_background_launches`のbypassはSubagentStop経路が起動主体（自己起動か外部起動か）を
-# 区別せず追跡中background起動の実在のみで通過させる設計であり、自身が配下起動したサブエージェントへの
-# 待機表明も誤って通過させる。本ヘルパーの判定パターンは`_scope_escalation.py`側の共有定数
-# `_ASYNC_WAIT_SELF_LAUNCHED_RE`のaliasとして参照し、独立複製によるSSOT不一致を構造的に排除する。
-_SELF_LAUNCHED_SUBAGENT_WAIT_RE = _ASYNC_WAIT_SELF_LAUNCHED_RE
-
-
-def _is_self_launched_subagent_wait(text: str) -> bool:
-    """完了報告本文が自身配下起動のレビュアー系サブエージェントへの待機表明かを判定する。
-
-    `_scope_escalation.py`側の新規`async-wait`パターンと同一のフレーズ集合を照合し、
-    いずれかに一致する場合に真を返す。`main()`が`has_pending_background_launches`による
-    bypassを無効化しブロックへ倒す判定に用いる。
-    非文字列・空文字列は`False`を返す。
-    """
-    if not isinstance(text, str) or not text:
-        return False
-    return bool(_SELF_LAUNCHED_SUBAGENT_WAIT_RE.search(text))
-
-
 def main() -> int:
     """SubagentStop hookのエントリポイント。"""
     try:
@@ -414,6 +387,17 @@ def main() -> int:
         return 0
 
     text = payload.get("last_assistant_message")
+    transcript_path = payload.get("transcript_path")
+    session_id = payload.get("session_id")
+    if isinstance(transcript_path, str) and has_pending_background_launches(
+        transcript_path, session_id if isinstance(session_id, str) else ""
+    ):
+        # 当該サブエージェント自身の配下に未消化のbackground起動が構造的に実在する場合、
+        # 完了報告本文の内容（空判定・縮退表明照合を含む）によらず無条件で承認する。
+        # Main側`is_pending_async_work`はMain自身のtranscriptのみを走査するため、
+        # サブエージェントが自身の配下でさらに起動した孫エージェントの状態を観測できない。
+        # ここでの構造判定がその唯一の観測点である。
+        return 0
     if is_empty_completion_report(text):
         reason = _llm_notice(
             "blocked: the subagent completion report is effectively empty or consists only of a `Skill` invocation."
@@ -432,20 +416,6 @@ def main() -> int:
     match_result = _match_scope_escalation(text, categories=_STOP_FOCUS_CATEGORIES_EXTENDED)
     if match_result is not None:
         category, _matched = match_result
-        # async-waitカテゴリ検出時はハーネス追跡background起動の未消化実在で除外判定する。
-        # 完了未消化の起動記録が存在する場合、task-notificationで自動発火する経路に該当するため待機表明を許容する。
-        # ただし完了報告本文が自身配下起動のレビュアー系サブエージェントへの待機表明の場合はbypassを適用しない
-        # （`_is_self_launched_subagent_wait`。配下起動を自己申告しつつ完了扱いにする再発パターンのため）。
-        # 起動記録が無い場合・全消化済みの場合（判定不能・素の待機表明）は現行どおりブロックする（fail-closed）。
-        transcript_path = payload.get("transcript_path")
-        session_id = payload.get("session_id")
-        if (
-            category == "async-wait"
-            and isinstance(transcript_path, str)
-            and has_pending_background_launches(transcript_path, session_id if isinstance(session_id, str) else "")
-            and not _is_self_launched_subagent_wait(text)
-        ):
-            return 0
         reason = _llm_notice(
             f"blocked: subagent completion report matched scope-escalation category `{category}`."
             " Either revise the flagged text or continue the work as unfinished."
