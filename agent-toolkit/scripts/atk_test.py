@@ -159,33 +159,23 @@ class TestServeParser:
 class TestAddTargetRepoOptionParser:
     """`mq add`の`--target-repo`受理をargparseレベルで検証する。"""
 
-    def test_fb_add_accepts_target_repo(self) -> None:
-        """`mq add`が`--target-repo`を受理しargs.target_repoへ格納される。"""
+    @pytest.mark.parametrize("type_option", [[], ["--type=tbd"]])
+    def test_add_accepts_target_repo(self, type_option: list[str]) -> None:
+        """`mq add`が種別にかかわらず`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "add", "--target-repo", "github.com/foo/bar", "本文"])
-        assert args.target_repo == "github.com/foo/bar"
-
-    def test_tb_add_accepts_target_repo(self) -> None:
-        """`mq add --type=tbd`が`--target-repo`を受理しargs.target_repoへ格納される。"""
-        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "add", "--type=tbd", "--target-repo", "github.com/foo/bar", "本文"])
+        args = parser.parse_args(["mq", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
 
 
 class TestSubcommandSubparserDefault:
     """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
 
-    def test_fb_add(self) -> None:
-        """`mq add`解析後、`args.subparser.prog`が`atk mq add`になる。"""
-        args = atk._build_parser().parse_args(["mq", "add", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert args.subparser.prog == "atk mq add"
-
-    def test_tb_add(self) -> None:
-        """`mq add --type=tbd`解析後も`args.subparser.prog`は`atk mq add`のままになる。
-
-        サブパーサは`--type`の値で分岐しないため。
-        """
-        args = atk._build_parser().parse_args(["mq", "add", "--type=tbd", "本文"])  # pylint: disable=protected-access  # noqa: SLF001
+    @pytest.mark.parametrize("type_option", [[], ["--type=tbd"]])
+    def test_add(self, type_option: list[str]) -> None:
+        """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
+        args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
+            ["mq", "add", *type_option, "本文"]
+        )
         assert args.subparser.prog == "atk mq add"
 
 
@@ -214,7 +204,7 @@ class TestUnansweredTbdNotification:
     def test_notifies_unanswered_entries_after_non_tbd_command(
         self, count: int, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        notes = _setup_tbd_env(tmp_path)
+        notes = _setup_flag_and_notes(tmp_path)
         for index in range(count):
             _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -341,6 +331,65 @@ class TestAddSingleMessage:
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
         assert f"  atk mq edit {files[0].name}\n" in captured.out
+
+
+class TestMqLifecycleScenario:
+    """add→list→start-processing→adoptの一連運用フローを検証する。"""
+
+    def test_add_then_list_then_start_processing_then_adopt(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """登録したエントリが一覧表示を経て処理中・採用済みへ遷移する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        git_calls: list[_GitCall] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            git_calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
+            if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
+                stdout: Any = (
+                    "https://github.com/example/myrepo.git\n"
+                    if kwargs.get("text")
+                    else b"https://github.com/example/myrepo.git\n"
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr="" if kwargs.get("text") else b"")
+            empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        filename = f"{_FIXED_TIMESTAMP}-001.md"
+        message = "ライフサイクル確認"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
+        assert exc_info.value.code == 0
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert f"{filename}: github.com/example/myrepo [inbox] {message}" in capsys.readouterr().out
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "start-processing", filename], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert not (notes / "inbox" / filename).exists()
+        assert (notes / "processing" / filename).exists()
+
+        git_calls.clear()
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "adopt", filename], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert not (notes / "processing" / filename).exists()
+        assert (notes / "adopted" / filename).exists()
+        git_cmds = [call["cmd"] for call in git_calls]
+        assert any(cmd[:2] == ["git", "add"] for cmd in git_cmds)
+        assert any(cmd[:2] == ["git", "commit"] for cmd in git_cmds)
+        assert ["git", "push"] in git_cmds
 
 
 class TestAddCompletionShowsProcessingCount:
@@ -597,16 +646,6 @@ class TestAddFrontmatterOverride:
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/other/repo" in content
         assert "source: cli-source" in content
-
-
-def _setup_tbd_env(tmp_path: pathlib.Path) -> pathlib.Path:
-    """フラグファイルとprivate-notes・inboxディレクトリを準備する。"""
-    flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-    flag.parent.mkdir(parents=True, exist_ok=True)
-    flag.touch()
-    notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
-    return notes
 
 
 def _write_tbd_file(
