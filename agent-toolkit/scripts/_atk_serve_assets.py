@@ -4,7 +4,7 @@
 
 HTML = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>agent-toolkit feedback</title><link rel="stylesheet" href="/static/app.css"></head>
+<title>agent-toolkit feedback</title><link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css"></head>
 <body><header><h1>Feedback / TBD</h1><span id="enabled"></span><button id="toggle"></button><button id="refresh">再読込</button></header>
 <section aria-label="フィルター"><label>種別<select id="type"><option value="all">すべて</option><option value="feedback">Feedback</option><option value="tbd">TBD</option></select></label>
 <label>状態<select id="status"><option value="active">未処理</option><option value="all">すべて</option><option>inbox</option><option>processing</option><option>adopted</option><option>rejected</option></select></label>
@@ -19,7 +19,7 @@ HTML = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
 <label>対象リポジトリ<input name="target_repo" required></label><label>投入元<input name="source"></label><label id="scope-row">スコープ<input name="scope"></label>
 <label id="question-row">質問形式<select name="question_type"><option value="free-form">自由記述</option><option value="yes-no">はい／いいえ</option><option value="choice">選択式</option></select></label>
 <label id="choices-row">選択肢（1行1件）<textarea name="choices"></textarea></label><button type="submit">保存</button><button type="button" id="cancel-dialog">中止</button></form></dialog>
-<p id="message" role="status"></p><p id="error" role="alert"></p><script src="/static/app.js"></script></body></html>"""
+<p id="message" role="status"></p><p id="error" role="alert"></p><script src="__BASE_PATH_HTML__/static/app.js"></script></body></html>"""
 
 CSS = """body{font-family:system-ui,sans-serif;max-width:1200px;margin:auto;padding:1rem;color:#202124;background:#fafafa}
 header,nav,body>section,main{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}header{justify-content:space-between}
@@ -33,8 +33,8 @@ button:disabled{opacity:.45}#answer-panel[hidden],#editor[hidden],#save[hidden]{
 @media(max-width:700px){main{display:block}main>section,article{min-width:0}nav button{flex:1 1 9rem}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}"""
 
-JS = """const $=s=>document.querySelector(s);let entries=[],current=null,newKind='feedback';
-async function api(path,options={}){const o={...options,headers:{'Content-Type':'application/json',...(options.headers||{})}};const r=await fetch(path,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`${r.status}: ${j.error||r.statusText}`);return j}
+JS = """const BASE_PATH=__BASE_PATH_JS__;const $=s=>document.querySelector(s);let entries=[],current=null,newKind='feedback';
+async function api(path,options={}){const o={...options,headers:{'Content-Type':'application/json',...(options.headers||{})}};const r=await fetch(BASE_PATH+path,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`${r.status}: ${j.error||r.statusText}`);return j}
 function showError(error){$('#error').textContent=error instanceof Error?error.message:String(error);$('#message').textContent=''}
 function success(text){$('#message').textContent=text;$('#error').textContent=''}
 function selected(){return [...document.querySelectorAll('#entries input:checked')].map(input=>entries[Number(input.dataset.index)])}
@@ -59,4 +59,4 @@ function openDialog(kind){newKind=kind;$('#dialog-title').textContent=kind==='fe
 $('#new-feedback').onclick=()=>openDialog('feedback');$('#new-tbd').onclick=()=>openDialog('tbd');$('#cancel-dialog').onclick=()=>$('#new-entry').close();
 $('#new-entry form').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target),body={type:newKind,messages:[form.get('message')]},target=String(form.get('target_repo')||'').trim(),source=String(form.get('source')||'').trim();if(target)body.target_repo=target;if(source)body.source=source;if(newKind==='tbd'){body.scope=String(form.get('scope')||'').trim();body.question_type=form.get('question_type');if(body.question_type==='choice')body.choices=String(form.get('choices')||'').split('\\n').map(x=>x.trim()).filter(Boolean)}try{await api('/api/entries',{method:'POST',body:JSON.stringify(body)});event.target.reset();$('#new-entry').close();success('追加しました');await load()}catch(error){showError(error)}};
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'&&!$('#save').hidden){event.preventDefault();$('#save').click()}if(event.key==='Escape'&&$('#new-entry').open)$('#new-entry').close()});
-const events=new EventSource('/api/events');events.addEventListener('changed',load);events.onerror=()=>setTimeout(load,1000);load();"""
+const events=new EventSource(BASE_PATH+'/api/events');events.addEventListener('changed',load);events.onerror=()=>setTimeout(load,1000);load();"""

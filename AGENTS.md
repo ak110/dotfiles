@@ -204,7 +204,11 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 対象は`atk-serve.service`（フィードバック管理Web UI）と`claude-plans-viewer.service`（計画ビューアー）である。
 
 - 待受はいずれもローカルのみで、Web UIはポート28766、計画ビューアーはポート28765を使う
-  - 外部へ公開せず、ホスト上のブラウザーかSSHポート転送経由で参照する
+  - ホスト上のブラウザーかSSHポート転送経由に加え、Apacheリバースプロキシ
+    （`/etc/apache2/sites-enabled/mysettings-443.conf`、本リポジトリの管理対象外）を使用する。
+    Basic Auth付きで`https://tqzh.tk/atk/`・`https://tqzh.tk/cpv/`へ公開する
+  - サブパス公開時は`X-Forwarded-Prefix`ヘッダー付与かつプレフィクスを保持したまま
+    転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定はunitへ書かず`~/.config/agent-toolkit/serve.toml`・
     `~/.config/pytools/claude-plans-viewer.toml`で与える
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する

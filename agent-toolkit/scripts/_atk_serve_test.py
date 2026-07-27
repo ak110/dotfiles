@@ -123,7 +123,7 @@ def test_assets_render_api_entry_values_as_dom_text() -> None:
         )
     }
     entry["answered"] = False
-    render_source = assets.JS.partition("function render(){")[0]
+    render_source = assets.JS.replace("__BASE_PATH_JS__", '""').partition("function render(){")[0]
     script = f"""
 class Element {{
   constructor(tagName) {{
@@ -170,7 +170,7 @@ process.stdout.write(JSON.stringify({{
 
 def test_action_allowed_is_type_independent() -> None:
     """一括操作の可否判定が状態のみで決まり、feedbackとTBDで差を持たない。"""
-    function_source = assets.JS.partition("function updateActions(){")[0]
+    function_source = assets.JS.replace("__BASE_PATH_JS__", '""').partition("function updateActions(){")[0]
     script = f"""
 globalThis.document = {{
   createElement() {{ return {{ append() {{}}, setAttribute() {{}}, dataset: {{}} }}; }},
@@ -776,6 +776,81 @@ def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
     app = serve_app.create_app(tmp_path, resolved, current_state)
     assert app.config["SERVE_CONFIG"] == resolved
     assert app.config["SERVE_STATE"] is current_state
+
+
+@pytest.mark.asyncio
+async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> None:
+    """`X-Forwarded-Prefix`付与時、HTML属性とJSのBASE_PATH定数双方に反映される。"""
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    client = app.test_client()
+    headers = {"X-Forwarded-Prefix": "/atk", "X-Forwarded-Proto": "https"}
+
+    index_response = await client.get("/atk/", headers=headers)
+    assert index_response.status_code == 200
+    index_body = await index_response.get_data(as_text=True)
+    assert 'href="/atk/static/app.css"' in index_body
+    assert 'src="/atk/static/app.js"' in index_body
+
+    js_response = await client.get("/atk/static/app.js", headers=headers)
+    assert js_response.status_code == 200
+    js_body = await js_response.get_data(as_text=True)
+    assert 'const BASE_PATH="/atk";' in js_body
+
+
+@pytest.mark.asyncio
+async def test_index_and_js_without_prefix_use_empty_base(tmp_path: pathlib.Path) -> None:
+    """ヘッダー無しでは空文字列扱いとなり、直接アクセス時も従来どおり応答する。"""
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    client = app.test_client()
+
+    index_body = await (await client.get("/")).get_data(as_text=True)
+    assert 'href="/static/app.css"' in index_body
+    assert 'src="/static/app.js"' in index_body
+
+    js_body = await (await client.get("/static/app.js")).get_data(as_text=True)
+    assert 'const BASE_PATH="";' in js_body
+
+
+@pytest.mark.asyncio
+async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pathlib.Path) -> None:
+    """`ProxyFix`が受理する文字集合でも`_safe_base_path`固有の文字種制限に反する値は空文字列へ縮退する。
+
+    `pytilpack.web.validate_forwarded_prefix`は`:`・`@`等RFC3986のpchar相当を広く許可するのに対し、
+    `_safe_base_path`は英数字と`._~/-`のみへ限定しており両者の許容範囲は完全には一致しない。
+    `:`を含む値は`ProxyFix`層を通過するため、この値で`_safe_base_path`固有の拒否分岐が
+    実際に機能していることを検証する。
+    """
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    client = app.test_client()
+    headers = {"X-Forwarded-Prefix": "/atk:1"}
+
+    index_response = await client.get("/atk:1/", headers=headers)
+    assert index_response.status_code == 200
+    index_body = await index_response.get_data(as_text=True)
+    assert 'href="/static/app.css"' in index_body
+    assert "atk:1" not in index_body
+
+    js_body = await (await client.get("/atk:1/static/app.js", headers=headers)).get_data(as_text=True)
+    assert 'const BASE_PATH="";' in js_body
+
+
+@pytest.mark.asyncio
+async def test_protocol_relative_prefix_logs_rejection_via_proxy_fix(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """スキーム相対形式のプレフィクスは`pytilpack.quart.ProxyFix`層が拒否しWARNINGを記録する。
+
+    404単独では既存のルート未マッチ応答と区別できないため、`pytilpack.web.validate_forwarded_prefix`が
+    記録する`X-Forwarded-Prefixに不正な値が含まれています`という警告ログの有無でProxyFix層の
+    拒否経路が実際に実行されたことを検証する。
+    """
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    client = app.test_client()
+    with caplog.at_level("WARNING"):
+        response = await client.get("//evil.example/", headers={"X-Forwarded-Prefix": "//evil.example"})
+    assert response.status_code == 404
+    assert "X-Forwarded-Prefixに不正な値が含まれています" in caplog.text
 
 
 def test_console_title_builds_command_and_port() -> None:

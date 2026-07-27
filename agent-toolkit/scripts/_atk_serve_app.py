@@ -2,6 +2,8 @@
 
 import asyncio
 import datetime
+import html
+import json
 import pathlib
 import re
 import subprocess
@@ -16,6 +18,7 @@ import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_state as serve_state
 import filelock
+import pytilpack.quart
 import quart
 import werkzeug.exceptions
 
@@ -24,6 +27,31 @@ _ENTRY_STATES = set(common.MQ_STATES)
 _STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _WEB_LOCK_TIMEOUT = 2.0
+
+# pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
+
+# 安全なbase_pathの照合パターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
+# 連続スラッシュ（スキーム相対URL扱いになり外部オリジン誘導の口になる）は別途禁止する。
+# 配布物独立性の制約（agent-toolkit配下は他ディレクトリの実装を参照しない）により、
+# 同種の検証を行う実装は本ファイル内で完結させる。
+_BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
+
+
+def _safe_base_path(raw: str) -> str:
+    """`request.root_path`を信頼境界として正規化する。
+
+    不正値・空値は空文字列として返す。呼び出し元はそのままURL前置として扱える。
+    """
+    if not raw:
+        return ""
+    candidate = raw.rstrip("/")
+    if not candidate:
+        return ""
+    if "//" in candidate:
+        return ""
+    if not _BASE_PATH_ALLOWED_RE.fullmatch(candidate):
+        return ""
+    return candidate
 
 
 def _resolve_states(status: str) -> tuple[str, ...]:
@@ -318,7 +346,9 @@ def create_app(
 
     @app.get("/")
     async def index() -> quart.Response:
-        return quart.Response(assets.HTML, content_type="text/html; charset=utf-8")
+        base_path = _safe_base_path(quart.request.root_path)
+        body = assets.HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
+        return quart.Response(body, content_type="text/html; charset=utf-8")
 
     @app.get("/static/app.css")
     async def css() -> quart.Response:
@@ -326,7 +356,9 @@ def create_app(
 
     @app.get("/static/app.js")
     async def javascript() -> quart.Response:
-        return quart.Response(assets.JS, content_type="text/javascript; charset=utf-8")
+        base_path = _safe_base_path(quart.request.root_path)
+        body = assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path))
+        return quart.Response(body, content_type="text/javascript; charset=utf-8")
 
     @app.get("/api/status")
     async def status() -> quart.Response:
@@ -465,4 +497,13 @@ def create_app(
         current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
         return quart.Response(current_state.events(), content_type="text/event-stream")
 
+    # X-Forwarded-Prefix/ProtoをASGI scopeへ反映するミドルウェアを介在させる。
+    # `app.asgi_app`（バウンドメソッド）を入れ替えるQuartの公式パターンにより、
+    # `app.config`等のハンドラ参照は維持しつつASGIディスパッチだけを上流に通す。
+    # 前提: リバースプロキシ前段が`X-Forwarded-Prefix`を保持して転送する構成
+    # （`/etc/apache2/sites-enabled/mysettings-443.conf`の`/atk/`設定と同様、
+    # prefixを除去しない構成）であること。プレフィクスを除去する構成では
+    # Quartが`scope.root_path`をパス冒頭から除去する前提が崩れ404になる。
+    # method-assignとASGIプロトコル不一致は意図的なため型チェッカーは抑制する。
+    app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app
