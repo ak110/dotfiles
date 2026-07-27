@@ -522,30 +522,36 @@ class TestListCount:
 
 
 class TestMultipleFiltersCombinedAsAnd:
-    """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。"""
+    """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 
-    def test_all_filters_combined_narrows_to_intersection(
+    `--answered`はfeedbackを無条件除外する仕様（`_answered_matches`が`entry_type != MQ_TYPE_TBD`時に
+    `False`を返す）のため、`--answered=no`とtype不一致（feedback）を1回の呼び出しへ同居させると
+    type条件の除外効果がanswered条件の除外効果と区別できなくなる。
+    target-repo・source・type・statusの4条件は`--answered=all`（無効化）の下で検証し、
+    answered条件は同一の4条件（tbdのみ）を満たすエントリ同士の回答有無差分で別途検証する。
+    """
+
+    def test_target_repo_source_type_status_combined_narrows_to_intersection(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """5条件（target-repo・source・type・status・answered）全てに一致するtbdだけを出力する。"""
+        """target-repo・source・type・statusの4条件全てに一致するtbdだけを出力する（answeredは無効化）。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_flag_and_notes(tmp_path)
-        # 全5条件に一致する唯一のエントリ（tbd・inbox・未回答）。
-        _write_tbd_file(notes, "tbd-matching.md", target_repo=matching_repo, source="session-review", answer="")
+        # 4条件全てに一致する唯一のエントリ（tbd・inbox）。
+        _write_tbd_file(notes, "tbd-matching.md", target_repo=matching_repo, source="session-review")
         # target-repoのみ不一致。
         _write_tbd_file(
             notes,
             "tbd-other-repo.md",
             target_repo="github.com/example/other",
             source="session-review",
-            answer="",
         )
         # sourceのみ不一致。
-        _write_tbd_file(notes, "tbd-other-source.md", target_repo=matching_repo, source="user-issue", answer="")
-        # typeのみ不一致（feedbackは--type=tbdで除外される）。
+        _write_tbd_file(notes, "tbd-other-source.md", target_repo=matching_repo, source="user-issue")
+        # typeのみ不一致（--answered=allのためfeedbackも回答状況フィルターでは除外されない）。
         _write_feedback_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
         # statusのみ不一致（processing配下、--status=inboxで除外される）。
         processing_dir = notes / "processing"
@@ -555,10 +561,43 @@ class TestMultipleFiltersCombinedAsAnd:
             "source: session-review\n---\n\n## 質問\n\n本文\n\n## 回答\n\n",
             encoding="utf-8",
         )
-        # answeredのみ不一致（回答済み、--answered=noで除外される）。
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "list",
+                    f"--target-repo={matching_repo}",
+                    "--source=session-review",
+                    "--type=tbd",
+                    "--status=inbox",
+                    "--answered=all",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "tbd-matching.md" in captured.out
+        assert "tbd-other-repo.md" not in captured.out
+        assert "tbd-other-source.md" not in captured.out
+        assert "fb-other-type.md" not in captured.out
+        assert "tbd-other-status.md" not in captured.out
+
+    def test_answered_narrows_within_already_matching_four_conditions(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """target-repo・source・type・statusが一致する2エントリのうち、未回答のみが`--answered=no`で残る。"""
+        matching_repo = "github.com/example/matching"
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, "tbd-unanswered.md", target_repo=matching_repo, source="session-review", answer="")
         _write_tbd_file(
             notes,
-            "tbd-already-answered.md",
+            "tbd-answered.md",
             target_repo=matching_repo,
             source="session-review",
             answer="回答済み",
@@ -581,12 +620,8 @@ class TestMultipleFiltersCombinedAsAnd:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "tbd-matching.md" in captured.out
-        assert "tbd-other-repo.md" not in captured.out
-        assert "tbd-other-source.md" not in captured.out
-        assert "fb-other-type.md" not in captured.out
-        assert "tbd-other-status.md" not in captured.out
-        assert "tbd-already-answered.md" not in captured.out
+        assert "tbd-unanswered.md" in captured.out
+        assert "tbd-answered.md" not in captured.out
 
 
 class TestListNarrowTerminalTargetRepo:
