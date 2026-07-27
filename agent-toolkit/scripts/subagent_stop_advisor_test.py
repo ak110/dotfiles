@@ -40,15 +40,37 @@ def _run(payload: dict) -> subprocess.CompletedProcess[str]:
     return _fork_runner.run_script(_SCRIPT, argv=("subagent_stop_advisor",), input=json.dumps(payload))
 
 
-def test_no_message_passes() -> None:
-    result = _run({})
-    assert result.stdout == ""
-    assert result.returncode == 0
+@pytest.mark.parametrize(
+    ("category", "message_override", "expected_decision", "expected_returncode"),
+    [
+        pytest.param(None, None, None, 0, id="no-message"),
+        pytest.param(None, "工程4完了。次工程へ移行する。", None, None, id="normal-message"),
+        pytest.param("process-omission", None, "block", None, id="process-omission"),
+        pytest.param("scope-volume", None, "block", None, id="scope-volume"),
+        pytest.param("single-session", None, "block", None, id="single-session"),
+    ],
+)
+def test_message_gate_scenarios(
+    category: str | None,
+    message_override: str | None,
+    expected_decision: str | None,
+    expected_returncode: int | None,
+) -> None:
+    message = message_override
+    if category is not None:
+        message = _pick_scope_escalation_text(category)
+        if not message:
+            pytest.skip(f"scope-escalation fixture for {category} not available")
 
-
-def test_normal_message_passes() -> None:
-    result = _run({"last_assistant_message": "工程4完了。次工程へ移行する。"})
-    assert result.stdout == ""
+    payload = {} if message is None else {"last_assistant_message": message}
+    result = _run(payload)
+    if expected_decision is None:
+        assert result.stdout == ""
+    else:
+        body = json.loads(result.stdout)
+        assert body["decision"] == expected_decision
+    if expected_returncode is not None:
+        assert result.returncode == expected_returncode
 
 
 def _make_transcript(tmp_path: Path, tool_uses: list[dict]) -> str:
@@ -60,33 +82,6 @@ def _make_transcript(tmp_path: Path, tool_uses: list[dict]) -> str:
     }
     path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
     return str(path)
-
-
-def test_process_omission_blocks() -> None:
-    text = _pick_scope_escalation_text("process-omission")
-    if not text:
-        pytest.skip("scope-escalation fixture for process-omission not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-
-
-def test_scope_volume_blocks() -> None:
-    text = _pick_scope_escalation_text("scope-volume")
-    if not text:
-        pytest.skip("scope-escalation fixture for scope-volume not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
-
-
-def test_single_session_blocks() -> None:
-    text = _pick_scope_escalation_text("single-session")
-    if not text:
-        pytest.skip("scope-escalation fixture for single-session not available")
-    result = _run({"last_assistant_message": text})
-    body = json.loads(result.stdout)
-    assert body["decision"] == "block"
 
 
 def test_blocks_overhead_tradeoff_phrases() -> None:
