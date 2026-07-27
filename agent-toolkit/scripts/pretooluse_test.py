@@ -1906,7 +1906,7 @@ class TestCodexReviewNotRead:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "with-review",
             },
             env_overrides=state_dir,
@@ -1921,7 +1921,7 @@ class TestCodexReviewNotRead:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "sidechain-invoked",
                 "isSidechain": True,
             },
@@ -2001,7 +2001,12 @@ class TestCodexMcpExecution:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "approval-policy": "never"},
+                "tool_input": {
+                    "prompt": "hello",
+                    "sandbox": "danger-full-access",
+                    "approval-policy": "never",
+                    "cwd": "/tmp/workdir",
+                },
                 "session_id": "fix3",
             },
             env_overrides=state_dir,
@@ -2023,6 +2028,7 @@ class TestCodexMcpExecution:
                     "prompt": "hello",
                     "sandbox": "danger-full-access",
                     "approval-policy": "on-request",
+                    "cwd": "/tmp/workdir",
                 },
                 "session_id": "fix_ap",
             },
@@ -2054,6 +2060,87 @@ class TestCheckCodexMcpSandbox:
         blocked = pretooluse._check_codex_mcp_sandbox({"prompt": "test", "sandbox": "danger-full-access"})  # noqa: SLF001  # pylint: disable=protected-access
         assert blocked is False
         assert capsys.readouterr().err == ""
+
+
+class TestCheckCodexMcpCwd:
+    """`mcp__codex__codex`呼び出しの`cwd`絶対パス強制（CLI統合テスト、公開インターフェース経由）。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    _write_state = staticmethod(_write_session_state)
+
+    def test_blocks_missing_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cwd`未指定の場合はブロックする。"""
+        self._write_state(tmp_path, "cwd-missing", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "session_id": "cwd-missing",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "unspecified" in result.stderr
+
+    def test_blocks_empty_string_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cwd`が空文字列の場合はブロックする。"""
+        self._write_state(tmp_path, "cwd-empty", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": ""},
+                "session_id": "cwd-empty",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "unspecified" in result.stderr
+
+    def test_blocks_whitespace_only_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cwd`が空白のみの場合はブロックする。"""
+        self._write_state(tmp_path, "cwd-whitespace", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "   "},
+                "session_id": "cwd-whitespace",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "`   `" in result.stderr
+
+    def test_blocks_relative_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cwd`が相対パスの場合はブロックする。"""
+        self._write_state(tmp_path, "cwd-relative", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "relative/path"},
+                "session_id": "cwd-relative",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "relative/path" in result.stderr
+
+    def test_allows_absolute_path_cwd(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """`cwd`が絶対パスの場合は許可する。"""
+        self._write_state(tmp_path, "cwd-absolute", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/home/aki/dotfiles"},
+                "session_id": "cwd-absolute",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 0
+        out = json.loads(result.stdout)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
 class TestCheckCodexMcpExecution:
@@ -2133,7 +2220,7 @@ class TestCodexMcpPlanCodexDelegateGate:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "gate-invoked",
                 "isSidechain": False,
             },
@@ -2147,7 +2234,7 @@ class TestCodexMcpPlanCodexDelegateGate:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "gate-fallback",
                 "isSidechain": False,
             },
@@ -2218,7 +2305,7 @@ class TestCodexMcpLanguageWarningMerge:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "transcript_path": str(transcript),
                 "session_id": "codex-lang",
             },
@@ -2268,7 +2355,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe1",
                 "isSidechain": False,
             },
@@ -2294,7 +2381,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe2",
                 "isSidechain": False,
                 "transcript_path": "/tmp/transcript.jsonl",
@@ -2318,7 +2405,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe3",
             },
             env_overrides=env,
@@ -2334,7 +2421,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe4",
                 "isSidechain": "yes",
             },
@@ -2352,7 +2439,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-oserror",
                 "isSidechain": True,
             },
@@ -2371,7 +2458,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-rotate",
                 "isSidechain": False,
             },
@@ -2407,7 +2494,7 @@ class TestIssSidechainProbe:
         result = _run(
             {
                 "tool_name": "mcp__codex__codex",
-                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access"},
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
                 "session_id": "probe-sidechain-true",
                 "isSidechain": True,
             },

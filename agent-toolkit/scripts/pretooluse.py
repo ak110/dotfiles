@@ -504,6 +504,8 @@ def main() -> int:
                 return 2
         if _check_codex_mcp_sandbox(tool_input):
             return 2
+        if _check_codex_mcp_cwd(tool_input):
+            return 2
         emit_json(_check_codex_mcp_execution(tool_input))
         return 0
 
@@ -3706,6 +3708,34 @@ def _check_codex_mcp_sandbox(tool_input: dict) -> bool:
             f'blocked: mcp__codex__codex requires sandbox="danger-full-access" (got {actual}).'
             " Other sandbox modes leave the codex process waiting for approval and it never returns."
             ' Retry with sandbox="danger-full-access".'
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+def _check_codex_mcp_cwd(tool_input: dict) -> bool:
+    """`cwd`が非空の絶対パスでない呼び出しを検出してブロック要否を返す。
+
+    未指定・相対パスの場合、セッションの作業ディレクトリはMCPサーバープロセスの作業ディレクトリを
+    起点に解決される。worktree内から起動したセッションであっても本体リポジトリを指す場合があり、
+    委譲プロンプト本文で作業ディレクトリを伝えてもツール側の作業ディレクトリは変わらない。
+    値の実在確認（対象パスの存在・worktree一致）は呼び出し元の環境依存のため本関数の対象外とし、
+    絶対パス形式であることのみを検査する。相対パスは、たとえ非空でも本チェックの対象とする
+    （相対パスのままではMCPサーバープロセスの作業ディレクトリ基準で解決され、根本原因を解消しない）。
+    """
+    cwd = tool_input.get("cwd")
+    if isinstance(cwd, str) and cwd.strip() != "" and pathlib.PurePath(cwd).is_absolute():
+        return False
+    specified = tool_input.get("cwd")
+    actual = f"`{specified}`" if isinstance(specified, str) and specified != "" else "unspecified"
+    print(
+        _llm_notice(
+            f"blocked: mcp__codex__codex requires a non-empty absolute cwd parameter (got {actual})."
+            " Without it, the session's working directory resolves to the MCP server"
+            " process's working directory, which may point at the main repository"
+            " even when invoked from inside a worktree."
+            " Retry with cwd set to the absolute path of the target working directory."
         ),
         file=sys.stderr,
     )

@@ -437,6 +437,15 @@ def _write_flag_state(state_dir: Path, session_id: str, sub_session_id: str, sub
     )
 
 
+def _transcript_path_for(tmp_path: Path, agent_id: str) -> str:
+    """`agent_id`に対応するtranscriptパス文字列を生成する（実ファイルの存在は不要）。
+
+    `_inspect_plan_impl_executor_report_format`はファイル名の`agent-<id>.jsonl`部分のみを
+    参照しファイル内容を読み取らないため、実体作成は不要とする。
+    """
+    return str(tmp_path / "subagents" / f"agent-{agent_id}.jsonl")
+
+
 def _complete_report(**overrides: str) -> str:
     """`plan-impl-executor`「出力」節の主要欄を全て含む雛形報告を返す。"""
     fields = {
@@ -460,7 +469,11 @@ class TestPlanImplExecutorReportFormat:
     def test_flag_not_registered_passes_without_check(self, tmp_path: Path) -> None:
         """フラグ未登録時は書式検査を発火せず通過する。"""
         result = _run_with_state_dir(
-            {"session_id": "sid-format-no-flag", "last_assistant_message": "実装完了"},
+            {
+                "session_id": "sid-format-no-flag",
+                "last_assistant_message": "実装完了",
+                "transcript_path": _transcript_path_for(tmp_path, "sub-none"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
@@ -471,7 +484,11 @@ class TestPlanImplExecutorReportFormat:
         sid = "sid-format-complete"
         _write_flag_state(tmp_path, sid, "sub-a")
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": _complete_report()},
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(),
+                "transcript_path": _transcript_path_for(tmp_path, "sub-a"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
@@ -485,12 +502,34 @@ class TestPlanImplExecutorReportFormat:
         # `plan_gaps:`行を除去する
         report = "\n".join(line for line in report.splitlines() if not line.startswith("plan_gaps"))
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-b"),
+            },
             tmp_path,
         )
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
         assert "plan_gaps" in body["reason"]
+
+    def test_missing_label_blocks_and_preserves_entry_for_retry(self, tmp_path: Path) -> None:
+        """書式不備でblockした場合、状態辞書のエントリは削除されず再試行時も検査対象のままである。"""
+        sid = "sid-format-missing-retry"
+        _write_flag_state(tmp_path, sid, "sub-retry")
+        report = _complete_report()
+        report = "\n".join(line for line in report.splitlines() if not line.startswith("plan_gaps"))
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-retry"),
+            },
+            tmp_path,
+        )
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "sub-retry" in state.get("plan_impl_executor_active_subagent_sessions", {})
 
     def test_missing_applied_instructions_label_blocks(self, tmp_path: Path) -> None:
         """`applied_instructions`欄が欠落する報告はblockし理由文に当該ラベルを列挙する。"""
@@ -499,7 +538,11 @@ class TestPlanImplExecutorReportFormat:
         report = _complete_report()
         report = "\n".join(line for line in report.splitlines() if not line.startswith("applied_instructions"))
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-i"),
+            },
             tmp_path,
         )
         body = json.loads(result.stdout)
@@ -515,7 +558,11 @@ class TestPlanImplExecutorReportFormat:
             applied_instructions="- [ ] チェックボックス形式だが検査対象外の記述",
         )
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-j"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
@@ -527,7 +574,11 @@ class TestPlanImplExecutorReportFormat:
         _write_flag_state(tmp_path, sid, "sub-c")
         report = _complete_report(status="needs_escalation")
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-c"),
+            },
             tmp_path,
         )
         body = json.loads(result.stdout)
@@ -540,23 +591,39 @@ class TestPlanImplExecutorReportFormat:
         _write_flag_state(tmp_path, sid, "sub-d")
         report = _complete_report(status="needs_escalation") + "\nblockers:\n- 未解決事項"
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-d"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
         assert result.returncode == 0
 
     def test_flag_entry_removed_after_check(self, tmp_path: Path) -> None:
-        """SubagentStop発火時に該当エントリを状態辞書から削除する（E2Eサイクル）。"""
+        """SubagentStop発火時に該当agentIdのエントリのみを状態辞書から削除し、他の並行エントリは保持する。"""
         sid = "sid-format-cleanup"
         _write_flag_state(tmp_path, sid, "sub-e")
-        _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": _complete_report()},
-            tmp_path,
-        )
         state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        assert state.get("plan_impl_executor_active_subagent_sessions") == {}
+        state["plan_impl_executor_active_subagent_sessions"]["sub-other"] = {
+            "subagent_type": "plan-impl-executor",
+            "started_at": 0.0,
+        }
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(),
+                "transcript_path": _transcript_path_for(tmp_path, "sub-e"),
+            },
+            tmp_path,
+        )
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        active = state.get("plan_impl_executor_active_subagent_sessions")
+        assert "sub-e" not in active
+        assert "sub-other" in active
 
     def test_background_parallel_declaration_with_unchecked_item_blocks(self, tmp_path: Path) -> None:
         """FB[3]: background並列起動宣言と`changed`欄未消化項目が共起する完了報告をblockする。"""
@@ -564,7 +631,11 @@ class TestPlanImplExecutorReportFormat:
         _write_flag_state(tmp_path, sid, "sub-f")
         report = _complete_report(changed="- [ ] item — /path（run_in_background=trueで並列起動）")
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-f"),
+            },
             tmp_path,
         )
         body = json.loads(result.stdout)
@@ -576,7 +647,11 @@ class TestPlanImplExecutorReportFormat:
         _write_flag_state(tmp_path, sid, "sub-g")
         report = _complete_report(changed="- [x] item — /path（run_in_background=trueで並列起動）")
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-g"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
@@ -591,11 +666,85 @@ class TestPlanImplExecutorReportFormat:
             blockers="- [ ] 未解決の論点",
         )
         result = _run_with_state_dir(
-            {"session_id": sid, "last_assistant_message": report},
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-h"),
+            },
             tmp_path,
         )
         assert result.stdout == ""
         assert result.returncode == 0
+
+    def test_unregistered_agent_id_skips_check_and_preserves_other_entries(self, tmp_path: Path) -> None:
+        """未登録のagentIdからの完了報告は書式検査を発火せず、登録済み他エントリも保持する（FB[9]）。"""
+        sid = "sid-format-agent-id-mismatch"
+        _write_flag_state(tmp_path, sid, "sub-registered")
+        report = "status: completed\nsummary: 別種別サブエージェントの完了報告"
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, "sub-unregistered"),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "sub-registered" in state.get("plan_impl_executor_active_subagent_sessions", {})
+
+    def test_transcript_path_missing_skips_check(self, tmp_path: Path) -> None:
+        """`transcript_path`欠落時は書式検査を発火しない（安全側、FB[9]）。"""
+        sid = "sid-format-no-transcript"
+        _write_flag_state(tmp_path, sid, "sub-z")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": "status: completed"},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+
+    def test_filename_partial_match_does_not_extract_agent_id(self, tmp_path: Path) -> None:
+        """ファイル名途中に`agent-<id>.jsonl`を含むだけの文字列からは`agentId`を抽出しない。
+
+        `not-agent-sub-a.jsonl`は`sub-a`を含むが、先頭一致（`^agent-...`）を満たさないため
+        登録済み`sub-a`との突合は成立せず検査を発火しない。
+        """
+        sid = "sid-format-partial-match"
+        _write_flag_state(tmp_path, sid, "sub-a")
+        report = "status: completed\nsummary: 途中一致の誤抽出防止確認"
+        transcript = str(tmp_path / "subagents" / "not-agent-sub-a.jsonl")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report, "transcript_path": transcript},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "sub-a" in state.get("plan_impl_executor_active_subagent_sessions", {})
+
+    def test_directory_component_match_does_not_extract_agent_id(self, tmp_path: Path) -> None:
+        """パスのディレクトリ部分に`agent-<id>.jsonl`形式が現れてもbasenameのみで照合する。
+
+        `.../agent-sub-a.jsonl/unrelated.jsonl`はディレクトリ部分に有効形式を含むが、
+        basename（`unrelated.jsonl`）は`agent-<id>.jsonl`形式に一致しないため抽出しない。
+        """
+        sid = "sid-format-dir-component-match"
+        _write_flag_state(tmp_path, sid, "sub-a")
+        report = "status: completed\nsummary: ディレクトリ部分一致の誤抽出防止確認"
+        transcript = str(tmp_path / "subagents" / "agent-sub-a.jsonl" / "unrelated.jsonl")
+        result = _run_with_state_dir(
+            {"session_id": sid, "last_assistant_message": report, "transcript_path": transcript},
+            tmp_path,
+        )
+        assert result.stdout == ""
+        assert result.returncode == 0
+        state_path = tmp_path / f"claude-agent-toolkit-{sid}.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert "sub-a" in state.get("plan_impl_executor_active_subagent_sessions", {})
 
 
 def _write_explore_named_background_state(state_dir: Path, session_id: str, agent_name: str) -> None:

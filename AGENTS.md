@@ -22,6 +22,11 @@
 - `.claude`を含むディレクトリが3系統あり、配布元・デプロイ先・リポジトリ専用と役割が異なる
  （`.chezmoi-source/dot_claude/`/`~/.claude/`/`.claude/`）
   - 指示の対象を必ず確認する（詳細は「固有差分」の「ディレクトリ構造の注意」を参照）
+- 権限設定を変更する場合、対象が全利用者にとって意味を持つ内容か、特定ホストや本リポジトリでの
+  作業に限って意味を持つ内容かを先に判定する。前者の配布原本は
+  `share/claude_settings_json_managed*.json`（`pytools/_internal/update_claude_settings.py`が
+  `~/.claude/settings.json`へ反映する）であり、後者はリポジトリ直下の`.claude/settings.local.json`
+  （バージョン管理対象外）へ置く
 - `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
   - `.chezmoi-source/dot_codex/AGENTS.md`は`scripts/codex-agents-base.md`と
     `agent-toolkit/rules/*.md`から`scripts/sync_generated_files.py`が生成するため、手動編集しない

@@ -45,7 +45,11 @@
   対応するフラグを親自身のセッション状態へ設定する経路で行う
 - `plan_impl_executor_active_subagent_sessions`: PostToolUse(Agent/Task)が`plan-impl-executor`系起動時に記録する。
   サブセッションID（`agentId`）をキーとする辞書形式で保持する。
-  SubagentStop側の`_inspect_plan_impl_executor_report_format`が読み取り検査後、空辞書へリセットする
+  SubagentStop側の`_inspect_plan_impl_executor_report_format`は、`transcript_path`のファイル名
+  （`agent-<agentId>.jsonl`形式）から抽出した`agentId`が本辞書のキーと一致する場合に限り
+  書式検査を発火する。検査で欠落ラベル・矛盾のいずれも検出しなかった場合のみ一致したエントリを
+  辞書から削除し、検出した場合（block時）はエントリを保持して再試行時の再検査に備える。
+  抽出・突合に失敗した場合は検査を発火しない（安全側）
   （寿命: 当該サブエージェントの完了検知まで）
 - `explore_named_background_active_names`: PostToolUse(Agent/Task)がExplore named background起動時に記録する。
   対象は`name`非空・`run_in_background=true`起動で、名前をリストへ追記する。

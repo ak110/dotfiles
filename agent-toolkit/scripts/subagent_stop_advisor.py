@@ -24,8 +24,10 @@ Explore named background起動（`posttooluse.py`が記録した名前リスト�
 含まれる場合）は、`_NAMED_SUBAGENT_MIN_TOOL_USES`閾値を適用せず同一水準の能動送付検査を行う
 （`_inspect_explore_named_background_send`。Explore短命終了時の未発火事象を解消するため）。
 
-`plan-impl-executor`完了報告（`plan_impl_executor_active_subagent_sessions`登録時のみ発火）は、
+`plan-impl-executor`完了報告（`transcript_path`から抽出した`agentId`が
+`plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火）は、
 主要欄ラベルの欠落検査と、background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
+書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
 """
 
 from __future__ import annotations
@@ -55,6 +57,11 @@ _HOOK_ID = "agent-toolkit/subagent-stop"
 
 # `posttooluse.py`の同名定数と同一集合を保つ。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+# `transcript_path`のファイル名（`agent-<agentId>.jsonl`形式。Claude Codeがサブエージェント
+# セッションごとに採番する`agentId`を含む。`posttooluse.py`はこの`agentId`を
+# `plan_impl_executor_active_subagent_sessions`辞書のキーとして登録するのみで、
+# ファイル名自体は生成しない）からファイル名先頭一致で`agentId`を抽出する正規表現。
+_TRANSCRIPT_AGENT_ID_RE = re.compile(r"^agent-([^/\\]+)\.jsonl$")
 
 # Explore named background起動時の`name`集合を記録する状態辞書キー名。
 # `posttooluse.py`の同名定数と同一値を保つ。
@@ -302,32 +309,46 @@ def _inspect_explore_named_background_send(payload: dict) -> _ExploreNamedBackgr
     )
 
 
+def _extract_transcript_agent_id(transcript_path: object) -> str | None:
+    """`transcript_path`のファイル名から`agentId`（`agent-<id>.jsonl`のid部分）を抽出する。
+
+    ファイル名の先頭（`os.path.basename`相当）からの一致のみを許可し、
+    `not-agent-alpha.jsonl`のような文字列中の部分一致による誤抽出を防ぐ。
+    `posttooluse.py`が`plan_impl_executor_active_subagent_sessions`辞書へ登録する
+    `tool_response["agentId"]`と同一の値を、停止した当のサブエージェントの識別に用いる。
+    抽出できない場合は`None`を返す。
+    """
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    basename = pathlib.PurePath(transcript_path).name
+    match = _TRANSCRIPT_AGENT_ID_RE.match(basename)
+    return match.group(1) if match else None
+
+
 def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool]:
     """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査とbackground並列起動宣言矛盾検査を実施する。
 
-    `posttooluse.py`が親セッション状態へ書き込む`plan_impl_executor_active_subagent_sessions`辞書に
-    現在の`session_id`が登録されている場合のみ発火する。
+    `transcript_path`のファイル名から抽出した`agentId`が、`posttooluse.py`が親セッション状態へ
+    書き込む`plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火する。
+    抽出・突合に失敗した場合は対象外として`([], False)`を返す（安全側。他種別のサブエージェント
+    停止時の誤発火と、他インスタンスの登録の巻き添え消去を防ぐ）。
     戻り値は「欠落ラベルのリスト」と「background並列起動宣言と`changed`欄未消化項目の矛盾有無」の組とする。
     ラベル欠落とbackground並列起動宣言矛盾は原因が異なるため、呼び出し元で別々のblock理由文を組み立てる（FB[3]）。
     いずれも該当なしの場合または対象外の場合は`([], False)`を返す。
-    検査後は該当エントリを状態辞書から削除する（呼び出し元セッションの完了検知として消費）。
+    検査で欠落ラベル・矛盾のいずれも検出しなかった場合のみ、当該エントリを状態辞書から削除する
+    （当該サブエージェントの完了検知としての消費）。block判定時はエントリを保持し、
+    是正後の再試行でも同一エントリに対する検査が再度発火できるようにする。
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return [], False
+    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    if agent_id is None:
+        return [], False
     state = read_state(session_id)
     active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
-    if not isinstance(active, dict) or not active:
+    if not isinstance(active, dict) or agent_id not in active:
         return [], False
-
-    def _drop_entries(current_state: dict) -> dict | None:
-        current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
-        if not isinstance(current_active, dict) or not current_active:
-            return None
-        current_state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = {}
-        return current_state
-
-    update_state(session_id, _drop_entries)
 
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
@@ -340,7 +361,21 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
         pattern = re.compile(rf"^{re.escape(label)}:", re.MULTILINE)
         if not pattern.search(text):
             missing.append(label)
-    return missing, _detect_plan_impl_executor_background_parallel_violation(text)
+    violation = _detect_plan_impl_executor_background_parallel_violation(text)
+
+    if not missing and not violation:
+
+        def _drop_entry(current_state: dict, aid: str = agent_id) -> dict | None:
+            current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
+            if not isinstance(current_active, dict) or aid not in current_active:
+                return None
+            del current_active[aid]
+            current_state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = current_active
+            return current_state
+
+        update_state(session_id, _drop_entry)
+
+    return missing, violation
 
 
 # 自身の配下でbackground起動したレビュアー系サブエージェントへの待機表明を検出する補助パターン（fb 20260720-035611-001）。
