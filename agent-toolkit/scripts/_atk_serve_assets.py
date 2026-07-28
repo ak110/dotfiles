@@ -2,61 +2,1139 @@
 
 # ruff: noqa: E501
 
-HTML = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>agent-toolkit feedback</title><link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css"></head>
-<body><header><h1>Feedback / TBD</h1><span id="enabled"></span><button id="toggle"></button><button id="refresh">再読込</button></header>
-<section aria-label="フィルター"><label>種別<select id="type"><option value="all">すべて</option><option value="feedback">Feedback</option><option value="tbd">TBD</option></select></label>
-<label>状態<select id="status"><option value="active">未処理</option><option value="all">すべて</option><option>inbox</option><option>processing</option><option>adopted</option><option>rejected</option></select></label>
-<label>回答<select id="answered"><option value="all">すべて</option><option value="yes">回答済み</option><option value="no">未回答</option></select></label>
-<label>対象<input id="target_repo"></label><label>カテゴリ<input id="category"></label><label>投入元<input id="source"></label></section>
-<nav><button id="new-feedback">Feedback追加</button><button id="new-tbd">TBD追加</button><button data-action="start-processing">処理開始</button><button data-action="adopt">採用</button><button data-action="reject">不採用</button><button data-action="remove">削除</button><button id="commit">外部編集をcommit</button>
-<label>注記<input id="batch-note"></label><label>カテゴリ<input id="batch-category"></label><label>commit<input id="batch-commit"></label></nav>
-<main><section><label><input type="checkbox" id="select-all">すべて選択</label><ul id="entries"></ul></section>
-<article><dl id="metadata"></dl><pre id="detail"></pre><textarea id="editor" aria-label="本文"></textarea><button id="save">本文を保存</button>
-<section id="answer-panel"><textarea id="answer" aria-label="TBD回答"></textarea><button id="answer-save">回答を保存</button></section></article></main>
-<dialog id="new-entry"><form><h2 id="dialog-title"></h2><label>本文<textarea name="message" required></textarea></label>
-<label>対象リポジトリ<input name="target_repo" required></label><label>投入元<input name="source"></label><label id="scope-row">スコープ<input name="scope"></label>
-<label id="question-row">質問形式<select name="question_type"><option value="free-form">自由記述</option><option value="yes-no">はい／いいえ</option><option value="choice">選択式</option></select></label>
-<label id="choices-row">選択肢（1行1件）<textarea name="choices"></textarea></label><button type="submit">保存</button><button type="button" id="cancel-dialog">中止</button></form></dialog>
-<p id="message" role="status"></p><p id="error" role="alert"></p><script src="__BASE_PATH_HTML__/static/app.js"></script></body></html>"""
+HTML = """<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>フィードバック管理</title>
+  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>フィードバック管理</h1>
+      <span id="connection-status" class="connection-status" role="status">接続中</span>
+    </div>
+    <div class="header-actions">
+      <button id="refresh-button" class="button-secondary" type="button">再読込</button>
+      <button id="create-button" class="button-primary" type="button">新規追加</button>
+    </div>
+  </header>
 
-CSS = """body{font-family:system-ui,sans-serif;max-width:1200px;margin:auto;padding:1rem;color:#202124;background:#fafafa}
-header,nav,body>section,main{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}header{justify-content:space-between}
-main{margin-top:1rem;align-items:start}main>section{min-width:22rem;flex:1}article{flex:2;min-width:22rem}
-ul{padding:0;list-style:none}li{display:grid;grid-template-columns:auto 1fr;gap:.5rem;padding:.5rem;border-bottom:1px solid #ddd}
-li button{text-align:left}.summary{display:block;color:#555;font-size:.9rem}button,input,select,textarea{font:inherit;padding:.5rem}
-textarea{box-sizing:border-box;width:100%;min-height:10rem}dialog{max-width:36rem;width:90%}dialog label{display:block;margin:.5rem 0}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;padding:.75rem}#metadata{display:grid;grid-template-columns:max-content 1fr;gap:.25rem .75rem}
-#error{color:#b00020;white-space:pre-wrap}#message{color:#176922}:focus-visible{outline:3px solid #1769aa;outline-offset:2px}
-button:disabled{opacity:.45}#answer-panel[hidden],#editor[hidden],#save[hidden]{display:none}
-@media(max-width:700px){main{display:block}main>section,article{min-width:0}nav button{flex:1 1 9rem}}
-@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}"""
+  <div id="global-error" class="global-error" role="alert" hidden></div>
 
-JS = """const BASE_PATH=__BASE_PATH_JS__;const $=s=>document.querySelector(s);let entries=[],current=null,newKind='feedback';
-async function api(path,options={}){const o={...options,headers:{'Content-Type':'application/json',...(options.headers||{})}};const r=await fetch(BASE_PATH+path,o);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`${r.status}: ${j.error||r.statusText}`);return j}
-function showError(error){$('#error').textContent=error instanceof Error?error.message:String(error);$('#message').textContent=''}
-function success(text){$('#message').textContent=text;$('#error').textContent=''}
-function selected(){return [...document.querySelectorAll('#entries input:checked')].map(input=>entries[Number(input.dataset.index)])}
-function appendText(parent,label,value,className=''){const span=document.createElement('span');if(className)span.className=className;span.textContent=`${label}: ${value??'—'}`;parent.append(span)}
-function renderEntry(e,index){const li=document.createElement('li'),check=document.createElement('input'),button=document.createElement('button');check.type='checkbox';check.dataset.index=String(index);check.setAttribute('aria-label',`${e.filename}を選択`);for(const [label,value] of [['kind',e.kind],['filename',e.filename],['state',e.state],['target_repo',e.target_repo],['source',e.source],['category',e.category],['answered',e.answered],['summary',e.summary],['updated_at',e.updated_at]])appendText(button,label,value,label==='summary'?'summary':'');button.onclick=()=>detail(e);li.append(check,button);return li}
-function render(){const items=entries.map(renderEntry);$('#entries').replaceChildren(...items);updateActions()}
-function actionAllowed(action,e){const active=['inbox','processing'].includes(e.state);return action==='start-processing'?e.state==='inbox':active}
-function updateActions(){const chosen=selected();document.querySelectorAll('[data-action]').forEach(button=>{button.disabled=!chosen.length||!chosen.every(e=>actionAllowed(button.dataset.action,e))});$('#batch-category').disabled=!(chosen.length&&chosen.every(e=>e.kind==='feedback'))}
-async function status(){const s=await api('/api/status');$('#enabled').textContent=s.enabled?'有効':'無効';$('#toggle').textContent=s.enabled?'無効化':'有効化';$('#toggle').dataset.enabled=String(s.enabled)}
-async function load(){try{const q=new URLSearchParams();for(const k of ['type','status','answered','target_repo','category','source']){const v=$('#'+k).value;if(v)q.set(k,v)}entries=(await api('/api/entries?'+q)).entries;render();await status()}catch(error){showError(error)}}
-async function detail(e){try{const item=(await api(`/api/entries/${e.state}/${encodeURIComponent(e.filename)}`)).entry;current=item;$('#detail').textContent=item.content;$('#editor').value=item.content;$('#answer').value='';const editable=['inbox','processing'].includes(item.state);$('#editor').hidden=!editable;$('#save').hidden=!editable;$('#answer-panel').hidden=!(item.kind==='tbd'&&['inbox','processing'].includes(item.state)&&!item.answered);$('#metadata').replaceChildren(...['target_repo','source','category','summary','updated_at'].flatMap(k=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=item[k]||'—';return[dt,dd]}));$('#editor').focus()}catch(error){showError(error)}}
-async function mutate(path,body,message){try{await api(path,{method:'POST',body:JSON.stringify(body)});success(message);await load()}catch(error){showError(error);throw error}}
-$('#refresh').onclick=load;for(const k of ['type','status','answered','target_repo','category','source'])$('#'+k).onchange=load;
-$('#entries').onchange=updateActions;$('#select-all').onchange=e=>{document.querySelectorAll('#entries input').forEach(input=>{input.checked=e.target.checked});updateActions()};
-$('#toggle').onclick=()=>mutate($('#toggle').dataset.enabled==='true'?'/api/disable':'/api/enable',{},'設定を更新しました');
-$('#save').onclick=async()=>{if(!current)return;try{await api(`/api/entries/${current.state}/${encodeURIComponent(current.filename)}`,{method:'PUT',body:JSON.stringify({content:$('#editor').value})});success('本文を保存しました');await load()}catch(error){showError(error)}};
-$('#answer-save').onclick=async()=>{if(!current||!$('#answer').value.trim())return;try{await mutate('/api/entries/answer',{filename:current.filename,answer:$('#answer').value},'回答を保存しました');$('#answer').value=''}catch(error){}};
-function batchBody(action,items){const body={filenames:items.map(e=>e.filename)},note=$('#batch-note').value.trim(),category=$('#batch-category').value.trim(),commit=$('#batch-commit').value.trim();if(note&&['adopt','reject','remove'].includes(action))body.note=note;if(category&&action==='adopt'&&items.every(e=>e.kind==='feedback'))body.category=category;if(commit&&['adopt','reject'].includes(action))body.commit=commit;if(action==='remove'&&items.some(e=>e.state==='processing'))body.force=true;return body}
-document.querySelectorAll('[data-action]').forEach(button=>button.onclick=async()=>{const chosen=selected(),action=button.dataset.action,filenames=chosen.map(e=>e.filename);if(!filenames.length)return;const forcing=action==='remove'&&chosen.some(e=>e.state==='processing');const warning=forcing?'（処理中エントリを含むため強制削除します）\\n':'';if(!confirm(`${button.textContent}（${action}）を次の対象へ実行しますか:\\n${warning}${filenames.join('\\n')}`))return;try{await api(`/api/entries/${action}`,{method:'POST',body:JSON.stringify(batchBody(action,chosen))});for(const id of ['batch-note','batch-category','batch-commit'])$('#'+id).value='';success(`${button.textContent}を実行しました`);await load()}catch(error){showError(error)}});
-$('#commit').onclick=()=>confirm('外部編集をcommitしますか')&&mutate('/api/entries/commit',{},'commitしました');
-function openDialog(kind){newKind=kind;$('#dialog-title').textContent=kind==='feedback'?'Feedback追加':'TBD追加';for(const id of ['scope-row','question-row','choices-row'])$('#'+id).hidden=kind==='feedback';const targetInput=document.querySelector('#new-entry [name="target_repo"]');if(!targetInput.value)targetInput.value=$('#target_repo').value;$('#new-entry').showModal()}
-$('#new-feedback').onclick=()=>openDialog('feedback');$('#new-tbd').onclick=()=>openDialog('tbd');$('#cancel-dialog').onclick=()=>$('#new-entry').close();
-$('#new-entry form').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target),body={type:newKind,messages:[form.get('message')]},target=String(form.get('target_repo')||'').trim(),source=String(form.get('source')||'').trim();if(target)body.target_repo=target;if(source)body.source=source;if(newKind==='tbd'){body.scope=String(form.get('scope')||'').trim();body.question_type=form.get('question_type');if(body.question_type==='choice')body.choices=String(form.get('choices')||'').split('\\n').map(x=>x.trim()).filter(Boolean)}try{await api('/api/entries',{method:'POST',body:JSON.stringify(body)});event.target.reset();$('#new-entry').close();success('追加しました');await load()}catch(error){showError(error)}};
-document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key==='s'&&!$('#save').hidden){event.preventDefault();$('#save').click()}if(event.key==='Escape'&&$('#new-entry').open)$('#new-entry').close()});
-const events=new EventSource(BASE_PATH+'/api/events');events.addEventListener('changed',load);events.onerror=()=>setTimeout(load,1000);load();"""
+  <main class="app-layout">
+    <aside class="filters card" aria-label="フィルター条件">
+      <h2>フィルター</h2>
+      <label for="search-input">検索</label>
+      <input id="search-input" type="search" placeholder="本文やファイル名を検索">
+
+      <div class="filter-grid">
+        <label for="kind-filter">種別</label>
+        <select id="kind-filter">
+          <option value="all">すべて</option>
+          <option value="feedback">フィードバック</option>
+          <option value="tbd">確認事項</option>
+        </select>
+
+        <label for="state-filter">状態</label>
+        <select id="state-filter">
+          <option value="active">対応中</option>
+          <option value="all">すべて</option>
+          <option value="inbox">未処理</option>
+          <option value="processing">処理中</option>
+          <option value="adopted">採用済み</option>
+          <option value="rejected">不採用</option>
+        </select>
+
+        <label for="answer-filter">回答状況</label>
+        <select id="answer-filter">
+          <option value="all">すべて</option>
+          <option value="no">未回答</option>
+          <option value="yes">回答済み</option>
+        </select>
+      </div>
+
+      <details class="additional-filters">
+        <summary>追加条件</summary>
+        <div class="filter-grid">
+          <label for="target-filter">対象リポジトリ</label>
+          <input id="target-filter" type="text">
+          <label for="category-filter">カテゴリ</label>
+          <input id="category-filter" type="text">
+          <label for="source-filter">投入元</label>
+          <input id="source-filter" type="text">
+        </div>
+      </details>
+    </aside>
+
+    <section class="entry-pane card" aria-labelledby="entry-heading">
+      <div class="pane-heading">
+        <h2 id="entry-heading">一覧</h2>
+        <span id="entry-count" class="secondary-text">0件</span>
+      </div>
+      <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
+      <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
+      <div id="empty-state" class="empty-state" hidden>
+        <p>条件に一致する項目はありません。</p>
+        <button id="empty-create-button" class="button-primary" type="button">最初の項目を追加</button>
+      </div>
+    </section>
+
+    <article class="detail-pane card" aria-labelledby="detail-heading">
+      <h2 id="detail-heading">詳細</h2>
+      <div id="detail-placeholder" class="empty-state">
+        <p>一覧から項目を選択してください。</p>
+      </div>
+
+      <section id="detail-view" hidden>
+        <div class="detail-title-row">
+          <h3 id="detail-filename"></h3>
+          <span id="detail-state" class="state-badge"></span>
+        </div>
+        <dl id="detail-metadata" class="metadata"></dl>
+        <h3>本文</h3>
+        <pre id="detail-content" class="entry-content"></pre>
+        <p id="readonly-notice" class="readonly-notice" hidden>この項目は完了しているため、読取り専用です。</p>
+        <div id="detail-actions" class="detail-actions">
+          <button id="edit-button" class="button-primary" type="button">編集</button>
+          <button id="delete-button" class="button-danger" type="button">削除</button>
+        </div>
+      </section>
+
+      <section id="edit-panel" class="edit-panel" hidden>
+        <h3>編集</h3>
+        <label for="edit-content">本文</label>
+        <textarea id="edit-content" aria-describedby="edit-content-error" required></textarea>
+        <p id="edit-content-error" class="inline-error" hidden></p>
+        <div class="form-actions">
+          <button id="save-entry-button" class="button-primary" type="button">本文を保存</button>
+          <button id="cancel-edit-button" class="button-secondary" type="button">中止</button>
+        </div>
+
+        <div id="answer-panel" class="answer-panel" hidden>
+          <label for="answer-input">確認事項への回答</label>
+          <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
+          <p id="answer-input-error" class="inline-error" hidden></p>
+          <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
+        </div>
+      </section>
+    </article>
+  </main>
+
+  <dialog id="create-dialog">
+    <form id="create-form" method="dialog" novalidate>
+      <h2>新規追加</h2>
+      <label for="create-kind">種別</label>
+      <select id="create-kind" name="type">
+        <option value="feedback">フィードバック</option>
+        <option value="tbd">確認事項</option>
+      </select>
+
+      <label for="create-content">本文</label>
+      <textarea id="create-content" name="message" aria-describedby="create-content-error" required></textarea>
+      <p id="create-content-error" class="inline-error" hidden></p>
+
+      <label for="create-target">対象リポジトリ</label>
+      <input id="create-target" name="target_repo" aria-describedby="create-target-error" required>
+      <p id="create-target-error" class="inline-error" hidden></p>
+
+      <label for="create-source">投入元</label>
+      <input id="create-source" name="source">
+
+      <div id="tbd-fields" hidden>
+        <label for="create-scope">確認範囲</label>
+        <input id="create-scope" name="scope">
+        <label for="create-question-type">回答形式</label>
+        <select id="create-question-type" name="question_type">
+          <option value="free-form">自由記述</option>
+          <option value="yes-no">はい／いいえ</option>
+          <option value="choice">選択式</option>
+        </select>
+        <div id="choice-fields" hidden>
+          <label for="create-choices">選択肢（1行1件）</label>
+          <textarea id="create-choices" name="choices" aria-describedby="create-choices-error"></textarea>
+          <p id="create-choices-error" class="inline-error" hidden></p>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="button-primary" type="submit">追加</button>
+        <button id="cancel-create-button" class="button-secondary" type="button">中止</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog">
+    <form id="delete-form" method="dialog">
+      <h2>削除の確認</h2>
+      <p>対象: <strong id="delete-target"></strong></p>
+      <p>状態: <span id="delete-state" class="state-badge"></span></p>
+      <label id="force-delete-row" class="force-confirmation" hidden>
+        <input id="force-delete-confirmation" type="checkbox">
+        処理中の項目を強制的に削除する
+      </label>
+      <p id="delete-error" class="inline-error" hidden></p>
+      <div class="form-actions">
+        <button class="button-danger" type="submit">削除する</button>
+        <button id="cancel-delete-button" class="button-secondary" type="button">中止</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="__BASE_PATH_HTML__/static/app.js"></script>
+</body>
+</html>"""
+
+CSS = """:root {
+  --color-background: #f3f6fa;
+  --color-surface: #ffffff;
+  --color-text: #172033;
+  --color-secondary-text: #5d6678;
+  --color-border: #d9dfE8;
+  --color-primary: #3157d5;
+  --color-primary-hover: #2444ae;
+  --color-normal: #eef2f8;
+  --color-normal-hover: #e0e6ef;
+  --color-danger: #b42318;
+  --color-danger-hover: #8f1c13;
+  --color-success: #18794e;
+  --color-warning: #9a6700;
+  --color-focus: #2563eb;
+  --space-1: 0.375rem;
+  --space-2: 0.625rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+  --radius-small: 0.5rem;
+  --radius-medium: 0.875rem;
+  --shadow-card: 0 0.5rem 1.5rem rgb(30 45 75 / 0.09);
+  --font-size-body: 1rem;
+  --font-size-secondary: 0.875rem;
+  --font-size-heading: 1.25rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--color-text);
+  background: var(--color-background);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--font-size-body);
+  line-height: 1.55;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+textarea {
+  min-height: 11rem;
+  resize: vertical;
+}
+
+button {
+  padding: 0.65rem 1rem;
+  color: var(--color-text);
+  background: var(--color-normal);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--color-normal-hover);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.app-header {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) max(var(--space-3), calc((100vw - 1500px) / 2));
+  border-bottom: 1px solid var(--color-border);
+  background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
+}
+
+.app-header h1,
+.pane-heading h2,
+.filters h2,
+.detail-pane > h2 {
+  margin: 0;
+}
+
+.app-header h1 {
+  font-size: 1.375rem;
+}
+
+.connection-status,
+.secondary-text,
+.entry-meta,
+.readonly-notice {
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+}
+
+.header-actions,
+.form-actions,
+.detail-actions,
+.pane-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pane-heading {
+  justify-content: space-between;
+}
+
+.button-primary {
+  border-color: var(--color-primary);
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.button-primary:hover {
+  background: var(--color-primary-hover);
+}
+
+.button-secondary {
+  background: var(--color-normal);
+}
+
+.button-danger {
+  border-color: var(--color-danger);
+  color: #ffffff;
+  background: var(--color-danger);
+}
+
+.button-danger:hover {
+  background: var(--color-danger-hover);
+}
+
+.global-error {
+  max-width: 1500px;
+  margin: var(--space-3) auto 0;
+  padding: var(--space-3);
+  border: 1px solid #f2b8b5;
+  border-radius: var(--radius-small);
+  color: var(--color-danger);
+  background: #fff1f0;
+  white-space: pre-wrap;
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.7fr) minmax(20rem, 1.1fr) minmax(24rem, 1.5fr);
+  gap: var(--space-3);
+  width: min(1500px, 100%);
+  margin: 0 auto;
+  padding: var(--space-3);
+  align-items: start;
+}
+
+.card {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.filters {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.additional-filters {
+  margin-top: var(--space-2);
+}
+
+.additional-filters summary {
+  margin-bottom: var(--space-2);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.entry-pane,
+.detail-pane {
+  min-height: 34rem;
+}
+
+.entry-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-row {
+  margin: 0;
+}
+
+.entry-select {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--color-surface);
+}
+
+.entry-select:hover {
+  border-color: #aeb9cd;
+  background: #f7f9fd;
+}
+
+.entry-select[aria-current="true"] {
+  border-color: var(--color-primary);
+  background: #eef2ff;
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.entry-summary {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.entry-meta {
+  grid-column: 1 / -1;
+}
+
+.kind-label {
+  font-weight: 700;
+}
+
+.state-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: #344054;
+  background: #e9edf4;
+  font-size: var(--font-size-secondary);
+  font-weight: 700;
+}
+
+.state-badge[data-state="inbox"] {
+  color: #175cd3;
+  background: #eff8ff;
+}
+
+.state-badge[data-state="processing"] {
+  color: var(--color-warning);
+  background: #fffaeb;
+}
+
+.state-badge[data-state="adopted"] {
+  color: var(--color-success);
+  background: #ecfdf3;
+}
+
+.state-badge[data-state="rejected"] {
+  color: var(--color-danger);
+  background: #fff1f0;
+}
+
+.loading-state,
+.empty-state {
+  margin-top: var(--space-4);
+  padding: var(--space-5) var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-secondary-text);
+  text-align: center;
+}
+
+.loading-state::before {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: var(--space-2);
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  content: "";
+}
+
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.detail-title-row h3 {
+  overflow-wrap: anywhere;
+}
+
+.metadata {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+
+.metadata dt {
+  font-weight: 700;
+}
+
+.metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.entry-content {
+  max-height: 32rem;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: #f8fafc;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  justify-content: space-between;
+  margin-top: var(--space-4);
+}
+
+.edit-panel,
+.answer-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.answer-panel {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.inline-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-secondary);
+}
+
+dialog {
+  width: min(38rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-medium);
+  box-shadow: 0 1.5rem 4rem rgb(20 30 50 / 0.25);
+}
+
+dialog::backdrop {
+  background: rgb(15 23 42 / 0.55);
+}
+
+dialog form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.force-confirmation {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-small);
+  background: #fff7ed;
+}
+
+.force-confirmation input {
+  width: auto;
+}
+
+.toast {
+  position: fixed;
+  z-index: 20;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  max-width: min(28rem, calc(100% - 2rem));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-small);
+  color: #ffffff;
+  background: #1f2937;
+  box-shadow: var(--shadow-card);
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@media (max-width: 700px) {
+  .app-header,
+  .header-actions,
+  .form-actions,
+  .detail-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-layout {
+    grid-template-columns: 1fr;
+    padding: var(--space-2);
+  }
+
+  .entry-pane,
+  .detail-pane {
+    min-height: 0;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}"""
+
+JS = """const BASE_PATH=__BASE_PATH_JS__;
+const KIND_LABELS = {feedback: 'フィードバック', tbd: '確認事項'};
+const STATE_LABELS = {inbox: '未処理', processing: '処理中', adopted: '採用済み', rejected: '不採用'};
+const ANSWER_LABELS = {true: '回答済み', false: '未回答', null: '対象外'};
+const ACTIVE_STATES = new Set(['inbox', 'processing']);
+const METADATA_FIELDS = [
+  ['kind', '種別'],
+  ['state', '状態'],
+  ['answered', '回答状況'],
+  ['target_repo', '対象リポジトリ'],
+  ['category', 'カテゴリ'],
+  ['source', '投入元'],
+  ['updated_at', '更新日時']
+];
+
+let entries = [];
+let visibleEntries = [];
+let currentEntry = null;
+let editing = false;
+let loading = false;
+let editBaseline = '';
+let answerBaseline = '';
+let toastTimer = null;
+
+const byId = id => document.getElementById(id);
+
+async function api(path, options = {}) {
+  showError('');
+  const request = {
+    ...options,
+    headers: {'Content-Type': 'application/json', ...(options.headers || {})}
+  };
+  const response = await fetch(BASE_PATH + path, request);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function setLoading(value) {
+  loading = value;
+  byId('loading-indicator').hidden = !value;
+  byId('refresh-button').disabled = value;
+  byId('entry-list').setAttribute('aria-busy', String(value));
+}
+
+function showToast(message) {
+  const toast = byId('toast');
+  toast.textContent = message;
+  toast.hidden = false;
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 4000);
+}
+
+function showError(message) {
+  const area = byId('global-error');
+  area.textContent = message instanceof Error ? message.message : String(message || '');
+  area.hidden = !area.textContent;
+}
+
+function setFieldError(inputId, message) {
+  const error = byId(`${inputId}-error`);
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = !message;
+  byId(inputId).setAttribute('aria-invalid', String(Boolean(message)));
+}
+
+function requireValue(inputId, label) {
+  const value = byId(inputId).value.trim();
+  setFieldError(inputId, value ? '' : `${label}を入力してください。`);
+  return value;
+}
+
+function clearFieldError(event) {
+  setFieldError(event.currentTarget.id, '');
+}
+
+function entryKey(entry) {
+  return entry ? `${entry.state}/${entry.filename}` : '';
+}
+
+function labelFor(field, value) {
+  if (field === 'kind') return KIND_LABELS[value] || value || 'なし';
+  if (field === 'state') return STATE_LABELS[value] || value || 'なし';
+  if (field === 'answered') return ANSWER_LABELS[String(value)] || '対象外';
+  return value || 'なし';
+}
+
+function formatUpdatedAt(value) {
+  if (!value) return '更新日時なし';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ja-JP');
+}
+
+function applyClientFilters() {
+  const query = byId('search-input').value.trim().toLocaleLowerCase('ja-JP');
+  const searchableFields = ['filename', 'summary', 'target_repo', 'category', 'source'];
+  visibleEntries = entries
+    .filter(entry => !query || searchableFields.some(field => String(entry[field] || '').toLocaleLowerCase('ja-JP').includes(query)))
+    .sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')));
+  renderList();
+}
+
+function renderEntry(entry) {
+  const item = document.createElement('li');
+  item.className = 'entry-row';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'entry-select';
+  button.dataset.key = entryKey(entry);
+  button.setAttribute('aria-current', String(entryKey(entry) === entryKey(currentEntry)));
+  button.setAttribute('aria-label', `${entry.filename}の詳細を表示`);
+
+  const kind = document.createElement('span');
+  kind.className = 'kind-label';
+  kind.textContent = KIND_LABELS[entry.kind] || entry.kind;
+  const state = document.createElement('span');
+  state.className = 'state-badge';
+  state.dataset.state = entry.state;
+  state.textContent = STATE_LABELS[entry.state] || entry.state;
+  const summary = document.createElement('span');
+  summary.className = 'entry-summary';
+  summary.textContent = entry.summary || entry.filename;
+  const updated = document.createElement('time');
+  updated.className = 'entry-meta';
+  updated.dateTime = entry.updated_at || '';
+  updated.textContent = formatUpdatedAt(entry.updated_at);
+
+  button.append(kind, state, summary, updated);
+  button.addEventListener('click', () => selectEntry(entry));
+  item.append(button);
+  return item;
+}
+
+function renderList() {
+  byId('entry-count').textContent = `${visibleEntries.length}件`;
+  byId('empty-state').hidden = loading || visibleEntries.length > 0;
+  byId('entry-list').replaceChildren(...visibleEntries.map(renderEntry));
+}
+
+function renderMetadata(entry) {
+  const nodes = [];
+  for (const [field, label] of METADATA_FIELDS) {
+    const term = document.createElement('dt');
+    const description = document.createElement('dd');
+    term.textContent = label;
+    description.textContent = labelFor(field, entry[field]);
+    nodes.push(term, description);
+  }
+  byId('detail-metadata').replaceChildren(...nodes);
+}
+
+function displayEntry(entry, preserveForm = false) {
+  currentEntry = entry;
+  byId('detail-placeholder').hidden = true;
+  byId('detail-view').hidden = editing;
+  byId('edit-panel').hidden = !editing;
+  byId('detail-filename').textContent = entry.filename;
+  byId('detail-state').textContent = STATE_LABELS[entry.state] || entry.state;
+  byId('detail-state').dataset.state = entry.state;
+  byId('detail-content').textContent = entry.content;
+  renderMetadata(entry);
+
+  const active = ACTIVE_STATES.has(entry.state);
+  byId('detail-actions').hidden = !active;
+  byId('readonly-notice').hidden = active;
+  byId('edit-button').hidden = !active;
+  byId('delete-button').hidden = !active;
+  byId('answer-panel').hidden = !(active && entry.kind === 'tbd' && entry.answered === false && editing);
+  if (!preserveForm) {
+    byId('edit-content').value = entry.content;
+    byId('answer-input').value = '';
+    editBaseline = entry.content;
+    answerBaseline = entry.content;
+  }
+  applyClientFilters();
+}
+
+async function renderDetail(entry, options = {}) {
+  if (!entry) return;
+  try {
+    const payload = await api(`/api/entries/${entry.state}/${encodeURIComponent(entry.filename)}`);
+    displayEntry(payload.entry, Boolean(options.preserveForm));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function selectEntry(entry) {
+  if (editing && entryKey(entry) !== entryKey(currentEntry)) cancelEdit();
+  await renderDetail(entry);
+}
+
+function enterEdit() {
+  if (!currentEntry || !ACTIVE_STATES.has(currentEntry.state)) return;
+  editing = true;
+  editBaseline = currentEntry.content;
+  answerBaseline = currentEntry.content;
+  byId('edit-content').value = currentEntry.content;
+  byId('answer-input').value = '';
+  byId('detail-view').hidden = true;
+  byId('edit-panel').hidden = false;
+  byId('answer-panel').hidden = !(currentEntry.kind === 'tbd' && currentEntry.answered === false);
+  byId('edit-content').focus();
+}
+
+function cancelEdit() {
+  editing = false;
+  setFieldError('edit-content', '');
+  setFieldError('answer-input', '');
+  byId('edit-panel').hidden = true;
+  byId('detail-view').hidden = !currentEntry;
+  if (currentEntry) {
+    byId('edit-content').value = currentEntry.content;
+    byId('answer-input').value = '';
+  }
+}
+
+function conflictMessage(error) {
+  if (error && error.payload && error.payload.code === 'edit_conflict') {
+    showError('外部で項目が更新されました。入力内容を保持しています。詳細を再読込してから保存してください。');
+    return true;
+  }
+  return false;
+}
+
+async function saveEntry() {
+  if (!currentEntry || !editing) return;
+  const content = requireValue('edit-content', '本文');
+  if (!content) return;
+  try {
+    await api(`/api/entries/${currentEntry.state}/${encodeURIComponent(currentEntry.filename)}`, {
+      method: 'PUT',
+      body: JSON.stringify({content, expected_content: editBaseline})
+    });
+    editing = false;
+    showToast('本文を保存しました。');
+    await loadEntries();
+  } catch (error) {
+    if (!conflictMessage(error)) showError(error);
+  }
+}
+
+async function saveAnswer() {
+  if (!currentEntry || !editing) return;
+  const answer = requireValue('answer-input', '回答');
+  if (!answer) return;
+  try {
+    await api('/api/entries/answer', {
+      method: 'POST',
+      body: JSON.stringify({filename: currentEntry.filename, answer, expected_content: answerBaseline})
+    });
+    editing = false;
+    showToast('回答を保存しました。');
+    await loadEntries();
+  } catch (error) {
+    if (!conflictMessage(error)) showError(error);
+  }
+}
+
+function updateCreateFields() {
+  const isTbd = byId('create-kind').value === 'tbd';
+  byId('tbd-fields').hidden = !isTbd;
+  byId('choice-fields').hidden = !(isTbd && byId('create-question-type').value === 'choice');
+}
+
+function openCreateDialog() {
+  const target = byId('target-filter').value.trim();
+  if (target && !byId('create-target').value) byId('create-target').value = target;
+  updateCreateFields();
+  byId('create-dialog').showModal();
+  byId('create-content').focus();
+}
+
+function closeCreateDialog() {
+  byId('create-dialog').close();
+}
+
+async function createEntry(event) {
+  event.preventDefault();
+  const message = requireValue('create-content', '本文');
+  const targetRepo = requireValue('create-target', '対象リポジトリ');
+  const kind = byId('create-kind').value;
+  if (!message || !targetRepo) return;
+
+  const body = {type: kind, messages: [message], target_repo: targetRepo};
+  const source = byId('create-source').value.trim();
+  if (source) body.source = source;
+  if (kind === 'tbd') {
+    body.scope = byId('create-scope').value.trim();
+    body.question_type = byId('create-question-type').value;
+    if (body.question_type === 'choice') {
+      const choices = byId('create-choices').value.split('\\n').map(choice => choice.trim()).filter(Boolean);
+      if (choices.length < 2) {
+        setFieldError('create-choices', '選択肢を2件以上入力してください。');
+        return;
+      }
+      body.choices = choices;
+    }
+  }
+
+  try {
+    await api('/api/entries', {method: 'POST', body: JSON.stringify(body)});
+    byId('create-form').reset();
+    updateCreateFields();
+    closeCreateDialog();
+    showToast('項目を追加しました。');
+    await loadEntries();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function openDeleteDialog() {
+  if (!currentEntry || !ACTIVE_STATES.has(currentEntry.state)) return;
+  byId('delete-target').textContent = currentEntry.filename;
+  byId('delete-state').textContent = STATE_LABELS[currentEntry.state] || currentEntry.state;
+  byId('delete-state').dataset.state = currentEntry.state;
+  byId('force-delete-row').hidden = currentEntry.state !== 'processing';
+  byId('force-delete-confirmation').checked = false;
+  byId('delete-error').hidden = true;
+  byId('delete-dialog').showModal();
+}
+
+async function removeEntry(event) {
+  event.preventDefault();
+  if (!currentEntry) return;
+  const body = {filenames: [currentEntry.filename]};
+  if (currentEntry.state === 'processing') {
+    if (!byId('force-delete-confirmation').checked) {
+      byId('delete-error').textContent = '強制削除の確認が必要です。';
+      byId('delete-error').hidden = false;
+      return;
+    }
+    body.force = true;
+  }
+  try {
+    await api('/api/entries/remove', {method: 'POST', body: JSON.stringify(body)});
+    byId('delete-dialog').close();
+    currentEntry = null;
+    editing = false;
+    byId('detail-view').hidden = true;
+    byId('edit-panel').hidden = true;
+    byId('detail-placeholder').hidden = false;
+    showToast('項目を削除しました。');
+    await loadEntries();
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function listQuery() {
+  const query = new URLSearchParams();
+  const fields = [
+    ['type', 'kind-filter'],
+    ['status', 'state-filter'],
+    ['answered', 'answer-filter'],
+    ['target_repo', 'target-filter'],
+    ['category', 'category-filter'],
+    ['source', 'source-filter']
+  ];
+  for (const [name, id] of fields) {
+    const value = byId(id).value.trim();
+    if (value) query.set(name, value);
+  }
+  return query.toString();
+}
+
+async function loadEntries(options = {}) {
+  const selectedKey = entryKey(currentEntry);
+  setLoading(true);
+  try {
+    const payload = await api(`/api/entries?${listQuery()}`);
+    entries = payload.entries;
+    applyClientFilters();
+    const selected = entries.find(entry => entryKey(entry) === selectedKey);
+    if (!selected) {
+      if (!editing) {
+        currentEntry = null;
+        byId('detail-view').hidden = true;
+        byId('detail-placeholder').hidden = false;
+      }
+      return;
+    }
+    if (editing) {
+      if (options.fromSse) {
+        showError('外部で項目が更新されました。編集中の入力を保持しています。保存前に詳細を再読込してください。');
+      }
+      applyClientFilters();
+      return;
+    }
+    await renderDetail(selected);
+  } catch (error) {
+    showError(error);
+  } finally {
+    setLoading(false);
+    renderList();
+  }
+}
+
+function closeTopmostDialog() {
+  for (const dialog of [byId('delete-dialog'), byId('create-dialog')]) {
+    if (dialog.open) {
+      dialog.close();
+      return true;
+    }
+  }
+  return false;
+}
+
+function bindEvents() {
+  byId('refresh-button').addEventListener('click', () => loadEntries());
+  byId('create-button').addEventListener('click', openCreateDialog);
+  byId('empty-create-button').addEventListener('click', openCreateDialog);
+  byId('cancel-create-button').addEventListener('click', closeCreateDialog);
+  byId('create-form').addEventListener('submit', createEntry);
+  byId('create-kind').addEventListener('change', updateCreateFields);
+  byId('create-question-type').addEventListener('change', updateCreateFields);
+  byId('edit-button').addEventListener('click', enterEdit);
+  byId('cancel-edit-button').addEventListener('click', cancelEdit);
+  byId('save-entry-button').addEventListener('click', saveEntry);
+  byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('delete-button').addEventListener('click', openDeleteDialog);
+  byId('delete-form').addEventListener('submit', removeEntry);
+  byId('cancel-delete-button').addEventListener('click', () => byId('delete-dialog').close());
+
+  byId('search-input').addEventListener('input', applyClientFilters);
+  for (const id of ['kind-filter', 'state-filter', 'answer-filter', 'target-filter', 'category-filter', 'source-filter']) {
+    byId(id).addEventListener('change', () => loadEntries());
+  }
+  for (const id of ['create-content', 'create-target', 'create-choices', 'edit-content', 'answer-input']) {
+    byId(id).addEventListener('input', clearFieldError);
+  }
+
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's' && editing) {
+      event.preventDefault();
+      saveEntry();
+    } else if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const tagName = document.activeElement ? document.activeElement.tagName : '';
+      if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)) {
+        event.preventDefault();
+        byId('search-input').focus();
+      }
+    } else if (event.key === 'Escape') {
+      if (!closeTopmostDialog() && editing) cancelEdit();
+    }
+  });
+}
+
+bindEvents();
+const events = new EventSource(BASE_PATH + '/api/events');
+events.addEventListener('open', () => {
+  byId('connection-status').textContent = '接続済み';
+});
+events.addEventListener('changed', () => loadEntries({fromSse: true}));
+events.onerror = () => {
+  byId('connection-status').textContent = '再接続中';
+};
+loadEntries();"""

@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import pathlib
+import re
 import signal
 import subprocess
 import threading
@@ -68,46 +69,107 @@ def test_invalid_port(port: object) -> None:
 
 
 def test_assets_are_self_contained() -> None:
-    """UI資産が外部URLへ依存しないことを検証する。"""
+    """UI資産の自己完結性とサブパス置換点を検証する。"""
     combined = assets.HTML + assets.CSS + assets.JS
     assert "https://" not in combined
+    assert "http://" not in combined
+    assert "innerHTML" not in combined
+    assert "insertAdjacentHTML" not in combined
     assert "/api/entries" in combined
     assert "/api/events" in combined
-    for operation in (
-        "start-processing",
-        "adopt",
-        "reject",
-        "remove",
-        "commit",
-        "/api/enable",
-        "/api/disable",
-        "/answer",
-    ):
-        assert operation in combined
-    assert "confirm(" in assets.JS
-    assert "innerHTML" not in assets.JS
+    assert "__BASE_PATH_HTML__" in assets.HTML
+    assert "__BASE_PATH_JS__" in assets.JS
     assert "textContent" in assets.JS
-    for field in (
-        "kind",
-        "filename",
-        "state",
-        "target_repo",
-        "source",
-        "category",
-        "answered",
-        "summary",
-        "updated_at",
-    ):
-        assert f"'{field}'" in assets.JS
-    for batch_input in ("batch-note", "batch-category", "batch-commit"):
-        assert batch_input in assets.HTML
-    assert "filenames.join" in assets.JS
-    assert "['inbox','processing'].includes(e.state)" in assets.JS
-    assert "$('#answer').value=''" in assets.JS
+    assert ".value" in assets.JS
+
+
+def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
+    """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
+    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').partition("bindEvents();")[0]
+    executable = (
+        source
+        + "\n(async () => {\n"
+        + scenario
+        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });"
+    )
+    script = f"""
+class Element {{
+  constructor(id = '', tagName = 'DIV') {{
+    this.id = id;
+    this.tagName = tagName;
+    this.children = [];
+    this.dataset = {{}};
+    this.attributes = {{}};
+    this.listeners = {{}};
+    this.textContent = '';
+    this.value = '';
+    this.hidden = false;
+    this.disabled = false;
+    this.checked = false;
+    this.open = false;
+    this.dateTime = '';
+  }}
+  append(...children) {{ this.children.push(...children); }}
+  replaceChildren(...children) {{ this.children = children; }}
+  setAttribute(name, value) {{ this.attributes[name] = value; }}
+  addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+  showModal() {{ this.open = true; }}
+  close() {{ this.open = false; }}
+  focus() {{ globalThis.focused = this.id; }}
+  reset() {{ globalThis.formReset = true; }}
+}}
+const ids = [
+  'connection-status', 'refresh-button', 'create-button', 'global-error',
+  'search-input', 'kind-filter', 'state-filter', 'answer-filter', 'target-filter',
+  'category-filter', 'source-filter', 'entry-count', 'loading-indicator',
+  'entry-list', 'empty-state', 'empty-create-button', 'detail-placeholder',
+  'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
+  'detail-content', 'readonly-notice', 'detail-actions', 'edit-button',
+  'delete-button', 'edit-panel', 'edit-content', 'edit-content-error',
+  'cancel-edit-button', 'save-entry-button', 'answer-panel', 'answer-input',
+  'answer-input-error', 'save-answer-button', 'create-dialog', 'create-form',
+  'create-kind', 'create-content', 'create-content-error', 'create-target',
+  'create-target-error', 'create-source', 'tbd-fields', 'create-scope',
+  'create-question-type', 'choice-fields', 'create-choices',
+  'create-choices-error', 'cancel-create-button', 'delete-dialog', 'delete-form',
+  'delete-target', 'delete-state', 'force-delete-row',
+  'force-delete-confirmation', 'delete-error', 'cancel-delete-button', 'toast'
+];
+const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
+elements['kind-filter'].value = 'all';
+elements['state-filter'].value = 'active';
+elements['answer-filter'].value = 'all';
+elements['create-kind'].value = 'feedback';
+elements['create-question-type'].value = 'free-form';
+const documentListeners = {{}};
+globalThis.document = {{
+  activeElement: null,
+  getElementById(id) {{ return elements[id] || null; }},
+  createElement(tagName) {{ return new Element('', tagName.toUpperCase()); }},
+  addEventListener(name, handler) {{ documentListeners[name] = handler; }}
+}};
+globalThis.setTimeout = () => 1;
+globalThis.clearTimeout = () => undefined;
+const fetchCalls = [];
+let fetchHandler = async () => ({{ok: true, status: 200, statusText: 'OK', json: async () => ({{entries: []}})}});
+globalThis.fetch = async (url, options = {{}}) => {{
+  fetchCalls.push({{url, options}});
+  return fetchHandler(url, options);
+}};
+eval({json.dumps(executable)});
+"""
+    completed = subprocess.run(
+        ["node", "--input-type=commonjs"],
+        input=script,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
 
 
 def test_assets_render_api_entry_values_as_dom_text() -> None:
-    """API由来のHTML様データを一覧描画してもDOM要素へ解釈しない。"""
+    """API由来の値を全表示経路のテキストとフォーム値へ安全に反映する。"""
     dangerous = '<img src=x onerror="alert(1)"><script>alert(2)</script>'
     entry: dict[str, object] = {
         field: dangerous
@@ -123,112 +185,500 @@ def test_assets_render_api_entry_values_as_dom_text() -> None:
         )
     }
     entry["answered"] = False
-    render_source = assets.JS.replace("__BASE_PATH_JS__", '""').partition("function render(){")[0]
-    script = f"""
-class Element {{
-  constructor(tagName) {{
-    this.tagName = tagName;
-    this.children = [];
-    this.dataset = {{}};
-    this.attributes = {{}};
-    this.textContent = '';
-  }}
-  append(...children) {{ this.children.push(...children); }}
-  setAttribute(name, value) {{ this.attributes[name] = value; }}
+    entry["content"] = dangerous
+    rendered = _run_node_ui(
+        f"""
+const entry = {json.dumps(entry)};
+const row = renderEntry(entry);
+displayEntry(entry);
+const texts = [];
+const visit = node => {{
+  if (node.textContent) texts.push(node.textContent);
+  node.children.forEach(visit);
+}};
+visit(row);
+visit(elements['detail-metadata']);
+currentEntry = {{...entry, state: 'inbox'}};
+openDeleteDialog();
+showToast({json.dumps(dangerous)});
+fetchHandler = async () => ({{
+  ok: false,
+  status: 400,
+  statusText: 'Bad Request',
+  json: async () => ({{error: {json.dumps(dangerous)}}})
+}});
+try {{
+  await api('/api/failure');
+}} catch (error) {{
+  showError(error);
 }}
-globalThis.document = {{
-  createElement(tagName) {{ return new Element(tagName); }},
-  querySelector() {{ throw new Error('unexpected querySelector'); }},
-  querySelectorAll() {{ throw new Error('unexpected querySelectorAll'); }}
-}};
-eval({json.dumps(render_source)});
-const root = renderEntry({json.dumps(entry)}, 0);
-const descendants = [];
-const visit = element => {{
-  descendants.push(element);
-  element.children.forEach(visit);
-}};
-visit(root);
+setFieldError('edit-content', {json.dumps(dangerous)});
 process.stdout.write(JSON.stringify({{
-  tags: descendants.map(element => element.tagName),
-  texts: descendants.map(element => element.textContent).filter(Boolean)
+  tags: row.children.map(child => child.tagName),
+  texts,
+  detail: elements['detail-content'].textContent,
+  detailState: elements['detail-state'].textContent,
+  editValue: elements['edit-content'].value,
+  deleteTarget: elements['delete-target'].textContent,
+  deleteState: elements['delete-state'].textContent,
+  toast: elements['toast'].textContent,
+  globalError: elements['global-error'].textContent,
+  inlineError: elements['edit-content-error'].textContent,
+  childCounts: [
+    elements['delete-target'],
+    elements['delete-state'],
+    elements['toast'],
+    elements['global-error'],
+    elements['edit-content-error']
+  ].map(element => element.children.length)
 }}));
 """
-    completed = subprocess.run(
-        ["node", "--input-type=commonjs"],
-        input=script,
-        text=True,
-        capture_output=True,
-        check=True,
     )
-    rendered = json.loads(completed.stdout)
-    assert rendered["tags"] == ["li", "input", "button", *(["span"] * 9)]
-    assert len(rendered["texts"]) == 9
-    assert sum(dangerous in text for text in rendered["texts"]) == 8
-    assert "answered: false" in rendered["texts"]
+    assert rendered["tags"] == ["BUTTON"]
+    assert dangerous in rendered["texts"]
+    assert rendered["detail"] == dangerous
+    assert rendered["detailState"] == dangerous
+    assert rendered["editValue"] == dangerous
+    assert rendered["deleteTarget"] == dangerous
+    assert rendered["deleteState"] == "未処理"
+    assert rendered["toast"] == dangerous
+    assert rendered["globalError"] == dangerous
+    assert rendered["inlineError"] == dangerous
+    assert rendered["childCounts"] == [0, 0, 0, 0, 0]
 
 
-def test_action_allowed_is_type_independent() -> None:
-    """一括操作の可否判定が状態のみで決まり、feedbackとTBDで差を持たない。"""
-    function_source = assets.JS.replace("__BASE_PATH_JS__", '""').partition("function updateActions(){")[0]
-    script = f"""
-globalThis.document = {{
-  createElement() {{ return {{ append() {{}}, setAttribute() {{}}, dataset: {{}} }}; }},
-  querySelector() {{ return null; }},
-  querySelectorAll() {{ return []; }}
-}};
-eval({json.dumps(function_source)});
-const states = ['inbox', 'processing', 'adopted', 'rejected'];
-const actions = ['start-processing', 'adopt', 'reject', 'remove'];
-const result = {{}};
-for (const action of actions) {{
-  for (const kind of ['feedback', 'tbd']) {{
-    result[`${{action}}/${{kind}}`] = states.map(state => actionAllowed(action, {{kind, state}}));
-  }}
-}}
+def test_assets_focus_on_user_entry_workflows() -> None:
+    """追加、一覧、詳細、編集、回答、削除の利用者操作を検証する。"""
+    forbidden = (
+        "start-processing",
+        "data-action",
+        "batch-note",
+        "batch-category",
+        "batch-commit",
+        'id="commit"',
+        'id="toggle"',
+        'id="select-all"',
+        "/api/enable",
+        "/api/disable",
+        "/api/entries/adopt",
+        "/api/entries/commit",
+        "/api/entries/reject",
+    )
+    combined = assets.HTML + assets.JS
+    assert all(value not in combined for value in forbidden)
+    result = _run_node_ui(
+        """
+let detail = {
+  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
+  target_repo: 'example/repo', source: 'web', category: null,
+  summary: '確認', updated_at: '2026-01-01T00:00:00+00:00', content: '取得時本文'
+};
+let removed = false;
+fetchHandler = async (url, options) => {
+  let body = {};
+  if (url.endsWith('/api/entries/inbox/entry.md') && (!options.method || options.method === 'GET')) {
+    body = {entry: detail};
+  } else if (!options.method || options.method === 'GET') {
+    body = {entries: removed ? [] : [detail]};
+  } else if (options.method === 'POST' && url.endsWith('/api/entries')) {
+    body = {filenames: ['created.md']};
+  } else if (options.method === 'PUT') {
+    detail = {...detail, content: JSON.parse(options.body).content};
+    body = {changed: true};
+  } else if (url.endsWith('/api/entries/answer')) {
+    const answer = JSON.parse(options.body).answer;
+    detail = {...detail, answered: true, content: `${detail.content}\\n${answer}`};
+    body = {changed: true};
+  } else if (url.endsWith('/api/entries/remove')) {
+    removed = true;
+    body = {filenames: ['entry.md']};
+  } else {
+    body = {changed: true, filenames: ['entry.md']};
+  }
+  return {ok: true, status: 200, statusText: 'OK', json: async () => body};
+};
+elements['create-content'].value = '新規本文';
+elements['create-target'].value = 'example/repo';
+await createEntry({preventDefault() {}});
+const createResult = {
+  count: elements['entry-count'].textContent,
+  first: elements['entry-list'].children[0].children[0].dataset.key,
+  toast: elements['toast'].textContent
+};
+await renderDetail(detail);
+enterEdit();
+elements['edit-content'].value = '編集本文';
+await saveEntry();
+const editResult = {
+  detail: elements['detail-content'].textContent,
+  toast: elements['toast'].textContent
+};
+enterEdit();
+elements['answer-input'].value = '回答本文';
+await saveAnswer();
+const answerResult = {
+  detail: elements['detail-content'].textContent,
+  answered: currentEntry.answered,
+  toast: elements['toast'].textContent
+};
+openDeleteDialog();
+await removeEntry({preventDefault() {}});
+process.stdout.write(JSON.stringify({
+  calls: fetchCalls.map(call => ({
+    url: call.url,
+    method: call.options.method || 'GET',
+    body: call.options.body ? JSON.parse(call.options.body) : null
+  })),
+  createResult,
+  editResult,
+  answerResult,
+  deleteResult: {
+    count: elements['entry-count'].textContent,
+    listLength: elements['entry-list'].children.length,
+    placeholder: !elements['detail-placeholder'].hidden,
+    detailHidden: elements['detail-view'].hidden,
+    toast: elements['toast'].textContent
+  }
+}));
+"""
+    )
+    calls = result["calls"]
+    assert any(call["url"] == "/atk/api/entries" and call["method"] == "POST" for call in calls)
+    assert any(call["url"].startswith("/atk/api/entries?") and call["method"] == "GET" for call in calls)
+    assert any(call["url"] == "/atk/api/entries/inbox/entry.md" and call["method"] == "GET" for call in calls)
+    edit_call = next(call for call in calls if call["method"] == "PUT")
+    assert edit_call["body"] == {"content": "編集本文", "expected_content": "取得時本文"}
+    answer_call = next(call for call in calls if call["url"] == "/atk/api/entries/answer")
+    assert answer_call["body"] == {
+        "filename": "entry.md",
+        "answer": "回答本文",
+        "expected_content": "編集本文",
+    }
+    remove_call = next(call for call in calls if call["url"] == "/atk/api/entries/remove")
+    assert remove_call["body"] == {"filenames": ["entry.md"]}
+    assert result["createResult"] == {
+        "count": "1件",
+        "first": "inbox/entry.md",
+        "toast": "項目を追加しました。",
+    }
+    assert result["editResult"] == {"detail": "編集本文", "toast": "本文を保存しました。"}
+    assert result["answerResult"] == {
+        "detail": "編集本文\n回答本文",
+        "answered": True,
+        "toast": "回答を保存しました。",
+    }
+    assert result["deleteResult"] == {
+        "count": "0件",
+        "listLength": 0,
+        "placeholder": True,
+        "detailHidden": True,
+        "toast": "項目を削除しました。",
+    }
+
+
+def test_assets_present_search_filters_count_and_empty_state() -> None:
+    """検索、フィルター、並び順、件数、読込中、空状態を検証する。"""
+    result = _run_node_ui(
+        """
+entries = [
+  {kind: 'feedback', state: 'inbox', filename: 'old.md', summary: '対象外',
+   target_repo: 'other/repo', category: 'x', source: 'cli', updated_at: '2025-01-01'},
+  {kind: 'tbd', state: 'processing', filename: 'new.md', summary: '探す文字',
+   target_repo: 'example/repo', category: 'ui', source: 'web', updated_at: '2026-01-01'}
+];
+applyClientFilters();
+const sortedKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
+elements['search-input'].value = '探す';
+elements['target-filter'].value = 'example/repo';
+elements['category-filter'].value = 'ui';
+elements['source-filter'].value = 'web';
+applyClientFilters();
+const populated = {
+  count: elements['entry-count'].textContent,
+  first: elements['entry-list'].children[0].children[0].dataset.key,
+  emptyHidden: elements['empty-state'].hidden,
+  query: listQuery()
+};
+setLoading(true);
+const loadingState = {
+  visible: !elements['loading-indicator'].hidden,
+  busy: elements['entry-list'].attributes['aria-busy']
+};
+elements['search-input'].value = '一致しない';
+setLoading(false);
+applyClientFilters();
+process.stdout.write(JSON.stringify({
+  sortedKeys,
+  populated,
+  loadingState,
+  emptyVisible: !elements['empty-state'].hidden,
+  emptyCount: elements['entry-count'].textContent
+}));
+"""
+    )
+    assert result["sortedKeys"] == ["processing/new.md", "inbox/old.md"]
+    assert result["populated"]["count"] == "1件"
+    assert result["populated"]["first"] == "processing/new.md"
+    assert result["populated"]["emptyHidden"] is True
+    assert "target_repo=example%2Frepo" in result["populated"]["query"]
+    assert "category=ui" in result["populated"]["query"]
+    assert "source=web" in result["populated"]["query"]
+    assert result["loadingState"] == {"visible": True, "busy": "true"}
+    assert result["emptyVisible"] is True
+    assert result["emptyCount"] == "0件"
+
+
+def test_assets_use_consistent_readable_typography() -> None:
+    """本文と補助文字の最小文字サイズを検証する。"""
+    assert "--font-size-body: 1rem" in assets.CSS
+    assert "--font-size-secondary: 0.875rem" in assets.CSS
+    sizes = re.findall(r"font-size:\s*([0-9.]+)rem", assets.CSS)
+    assert sizes
+    assert all(float(size) >= 0.875 for size in sizes)
+
+
+def test_assets_use_japanese_labels_for_entry_states() -> None:
+    """種別、状態、回答状況を日本語ラベルへ変換する。"""
+    result = _run_node_ui(
+        """
+process.stdout.write(JSON.stringify({
+  kinds: [labelFor('kind', 'feedback'), labelFor('kind', 'tbd')],
+  states: ['inbox', 'processing', 'adopted', 'rejected'].map(value => labelFor('state', value)),
+  answers: [true, false, null].map(value => labelFor('answered', value))
+}));
+"""
+    )
+    assert result == {
+        "kinds": ["フィードバック", "確認事項"],
+        "states": ["未処理", "処理中", "採用済み", "不採用"],
+        "answers": ["回答済み", "未回答", "対象外"],
+    }
+
+
+def test_processing_removal_requires_explicit_force_confirmation() -> None:
+    """processing削除だけに明示確認とforce送信を要求する。"""
+    result = _run_node_ui(
+        """
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [], filenames: ['entry.md']})
+});
+const processing = {kind: 'feedback', state: 'processing', filename: 'entry.md', content: '本文'};
+currentEntry = processing;
+openDeleteDialog();
+await removeEntry({preventDefault() {}});
+const beforeConfirmation = fetchCalls.length;
+elements['force-delete-confirmation'].checked = true;
+await removeEntry({preventDefault() {}});
+const forcedBody = JSON.parse(fetchCalls.find(call => call.options.method === 'POST').options.body);
+currentEntry = {kind: 'feedback', state: 'inbox', filename: 'inbox.md', content: '本文'};
+openDeleteDialog();
+await removeEntry({preventDefault() {}});
+const postCalls = fetchCalls.filter(call => call.options.method === 'POST');
+process.stdout.write(JSON.stringify({
+  forceVisible: !elements['force-delete-row'].hidden,
+  beforeConfirmation,
+  forcedBody,
+  inboxBody: JSON.parse(postCalls[1].options.body)
+}));
+"""
+    )
+    assert result["beforeConfirmation"] == 0
+    assert result["forcedBody"] == {"filenames": ["entry.md"], "force": True}
+    assert result["inboxBody"] == {"filenames": ["inbox.md"]}
+
+
+def test_finished_entries_are_read_only() -> None:
+    """終了状態では編集、回答、削除を隠し、対応中状態で表示する。"""
+    result = _run_node_ui(
+        """
+const result = {};
+for (const state of ['inbox', 'processing', 'adopted', 'rejected']) {
+  editing = true;
+  displayEntry({
+    kind: 'tbd', state, filename: `${state}.md`, answered: false,
+    content: '本文', updated_at: '2026-01-01'
+  });
+  result[state] = {
+    actions: !elements['detail-actions'].hidden,
+    edit: !elements['edit-button'].hidden,
+    remove: !elements['delete-button'].hidden,
+    readonly: !elements['readonly-notice'].hidden,
+    answer: !elements['answer-panel'].hidden
+  };
+}
 process.stdout.write(JSON.stringify(result));
 """
-    completed = subprocess.run(
-        ["node", "--input-type=commonjs"],
-        input=script,
-        text=True,
-        capture_output=True,
-        check=True,
     )
-    rendered = json.loads(completed.stdout)
-    # start-processingはinboxのみ、他の操作はinbox・processingの2状態で許可する。
-    for kind in ("feedback", "tbd"):
-        assert rendered[f"start-processing/{kind}"] == [True, False, False, False]
-        for action in ("adopt", "reject", "remove"):
-            assert rendered[f"{action}/{kind}"] == [True, True, False, False]
-    # 種別による差が無いことを明示的に確認する。
-    for action in ("start-processing", "adopt", "reject", "remove"):
-        assert rendered[f"{action}/feedback"] == rendered[f"{action}/tbd"]
+    for active_state in ("inbox", "processing"):
+        assert result[active_state] == {
+            "actions": True,
+            "edit": True,
+            "remove": True,
+            "readonly": False,
+            "answer": True,
+        }
+    for finished_state in ("adopted", "rejected"):
+        assert result[finished_state] == {
+            "actions": False,
+            "edit": False,
+            "remove": False,
+            "readonly": True,
+            "answer": False,
+        }
 
 
-def test_batch_payloads_follow_action_contract() -> None:
-    """一括操作の入力を対応するAPI操作だけへ送る。"""
-    assert "if(note&&['adopt','reject','remove'].includes(action))" in assets.JS
-    assert "if(category&&action==='adopt'&&items.every(e=>e.kind==='feedback'))" in assets.JS
-    assert "['adopt','reject'].includes(action)" in assets.JS
-    # 種別混在の禁止は統合により不要となったため、判定と警告表示を持たない。
-    assert "batchKind" not in assets.JS
-    assert "FeedbackとTBDを同時に一括操作できません" not in assets.JS
-    assert "await api(`/api/entries/${action}`" in assets.JS
-    assert "Object.groupBy" not in assets.JS
-    assert "for(const id of ['batch-note','batch-category','batch-commit'])" in assets.JS
+def test_assets_keep_selection_and_reload_from_sse() -> None:
+    """SSE更新時に選択と編集中の入力値・競合基準を保持する。"""
+    assert "events.addEventListener('changed', () => loadEntries({fromSse: true}))" in assets.JS
+    result = _run_node_ui(
+        """
+const listed = {
+  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
+  summary: '更新後一覧', updated_at: '2026-02-01'
+};
+fetchHandler = async (url, options) => {
+  if (!options.method || options.method === 'GET') {
+    const body = url.includes('/api/entries/inbox/')
+      ? {entry: {...listed, content: 'SSE再描画本文'}}
+      : {entries: [listed]};
+    return {ok: true, status: 200, statusText: 'OK', json: async () => body};
+  }
+  return {
+    ok: false, status: 409, statusText: 'Conflict',
+    json: async () => ({
+      error: '編集中に他プロセスが対象を変更しました',
+      code: 'edit_conflict'
+    })
+  };
+};
+currentEntry = {...listed, content: '更新前本文'};
+editing = false;
+await loadEntries({fromSse: true});
+const redrawnDetail = elements['detail-content'].textContent;
+const detailRequests = fetchCalls.filter(call => call.url.includes('/api/entries/inbox/')).length;
+currentEntry = {...listed, content: '取得時本文'};
+editing = true;
+editBaseline = '取得時本文';
+answerBaseline = '取得時本文';
+elements['edit-content'].value = '利用者の本文';
+elements['answer-input'].value = '利用者の回答';
+await loadEntries({fromSse: true});
+await saveEntry();
+process.stdout.write(JSON.stringify({
+  firstUrl: fetchCalls[0].url,
+  redrawnDetail,
+  detailRequests,
+  selected: currentEntry.filename,
+  content: elements['edit-content'].value,
+  answer: elements['answer-input'].value,
+  editBaseline,
+  answerBaseline,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result["firstUrl"].startswith("/atk/api/entries?")
+    assert result["redrawnDetail"] == "SSE再描画本文"
+    assert result["detailRequests"] == 1
+    assert result["selected"] == "entry.md"
+    assert result["content"] == "利用者の本文"
+    assert result["answer"] == "利用者の回答"
+    assert result["editBaseline"] == result["answerBaseline"] == "取得時本文"
+    assert "入力内容を保持" in result["error"]
 
 
-def test_batch_category_is_feedback_only() -> None:
-    """カテゴリはFeedback単独選択時のみAPIへ送信し、TBD混在時は入力を無効化する。"""
-    assert "items.every(e=>e.kind==='feedback')" in assets.JS
-    assert "$('#batch-category').disabled=!(chosen.length&&chosen.every(e=>e.kind==='feedback'))" in assets.JS
+def test_edit_and_answer_conflicts_keep_user_input() -> None:
+    """編集競合だけを外部更新として案内し、ロック競合は通常エラーにする。"""
+    result = _run_node_ui(
+        """
+let conflictCode = 'edit_conflict';
+fetchHandler = async () => ({
+  ok: false, status: 409, statusText: 'Conflict',
+  json: async () => ({
+    error: conflictCode === 'edit_conflict'
+      ? '編集中に他プロセスが対象を変更しました'
+      : '別の操作が進行中です',
+    code: conflictCode
+  })
+});
+currentEntry = {
+  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
+  content: '取得時本文'
+};
+editing = true;
+editBaseline = '取得時本文';
+answerBaseline = '取得時本文';
+elements['edit-content'].value = '保存したい本文';
+elements['answer-input'].value = '保存したい回答';
+await saveEntry();
+const editError = elements['global-error'].textContent;
+await saveAnswer();
+const answerError = elements['global-error'].textContent;
+conflictCode = 'lock_conflict';
+await saveEntry();
+process.stdout.write(JSON.stringify({
+  content: elements['edit-content'].value,
+  answer: elements['answer-input'].value,
+  editError,
+  answerError,
+  lockError: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result["content"] == "保存したい本文"
+    assert result["answer"] == "保存したい回答"
+    assert "再読込" in result["editError"]
+    assert "再読込" in result["answerError"]
+    assert result["lockError"] == "別の操作が進行中です"
+    assert "外部" not in result["lockError"]
 
 
-def test_batch_remove_forces_processing_deletion() -> None:
-    """processing状態を含む削除は確認付きでforceを送信する。"""
-    assert "if(action==='remove'&&items.some(e=>e.state==='processing'))body.force=true" in assets.JS
-    assert "action==='remove'&&chosen.some(e=>e.state==='processing')" in assets.JS
+def test_assets_keep_keyboard_and_narrow_viewport_support() -> None:
+    """保存、検索、Escapeのキー操作と狭幅表示を検証する。"""
+    assert "@media (max-width: 700px)" in assets.CSS
+    assert "@media (prefers-reduced-motion: reduce)" in assets.CSS
+    result = _run_node_ui(
+        """
+bindEvents();
+let saved = 0;
+saveEntry = async () => { saved += 1; };
+editing = true;
+const preventions = [];
+documentListeners.keydown({
+  key: 's', ctrlKey: true, metaKey: false, altKey: false,
+  preventDefault() { preventions.push('save'); }
+});
+documentListeners.keydown({
+  key: 's', ctrlKey: false, metaKey: true, altKey: false,
+  preventDefault() { preventions.push('command-save'); }
+});
+editing = false;
+document.activeElement = null;
+documentListeners.keydown({
+  key: '/', ctrlKey: false, metaKey: false, altKey: false,
+  preventDefault() { preventions.push('search'); }
+});
+elements['create-dialog'].open = true;
+documentListeners.keydown({key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}});
+editing = true;
+documentListeners.keydown({key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}});
+process.stdout.write(JSON.stringify({
+  saved,
+  preventions,
+  focused: globalThis.focused,
+  dialogOpen: elements['create-dialog'].open,
+  editing
+}));
+"""
+    )
+    assert result == {
+        "saved": 2,
+        "preventions": ["save", "command-save", "search"],
+        "focused": "search-input",
+        "dialogOpen": False,
+        "editing": False,
+    }
 
 
 def test_state_keeps_latest_event(tmp_path: pathlib.Path) -> None:
@@ -479,6 +929,203 @@ async def test_answer_api_rejects_feedback_entry(tmp_path: pathlib.Path, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_edit_and_answer_apis_detect_external_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """取得後の外部更新を409で保護し、最新値と従来形式の更新を許可する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, feedback_repo, serve_app.feedback_mutations, serve_app.tbd_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+    monkeypatch.setattr(common, "repo_lock", lock)
+    monkeypatch.setattr(common, "pull", lambda _path: None)
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    feedback_path = inbox / "feedback.md"
+    initial_feedback = "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n取得時本文\n"
+    feedback_path.write_text(initial_feedback, encoding="utf-8")
+    tbd_path = inbox / "question.md"
+    initial_tbd = (
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n"
+    )
+    tbd_path.write_text(initial_tbd, encoding="utf-8")
+
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    feedback_detail = await (await client.get("/api/entries/inbox/feedback.md")).get_json()
+    external_feedback = initial_feedback.replace("取得時本文", "外部更新後の本文")
+    feedback_path.write_text(external_feedback, encoding="utf-8")
+    conflict = await client.put(
+        "/api/entries/inbox/feedback.md",
+        json={"content": "利用者の本文", "expected_content": feedback_detail["entry"]["content"]},
+    )
+    assert conflict.status_code == 409
+    assert (await conflict.get_json())["code"] == "edit_conflict"
+    assert feedback_path.read_text(encoding="utf-8") == external_feedback
+
+    latest_content = external_feedback.replace("外部更新後の本文", "最新基準で更新")
+    latest = await client.put(
+        "/api/entries/inbox/feedback.md",
+        json={"content": latest_content, "expected_content": external_feedback},
+    )
+    assert latest.status_code == 200
+    assert feedback_path.read_text(encoding="utf-8") == latest_content
+    legacy_content = latest_content.replace("最新基準で更新", "従来形式で更新")
+    legacy = await client.put(
+        "/api/entries/inbox/feedback.md",
+        json={"content": legacy_content},
+    )
+    assert legacy.status_code == 200
+    assert feedback_path.read_text(encoding="utf-8") == legacy_content
+
+    tbd_detail = await (await client.get("/api/entries/inbox/question.md")).get_json()
+    external_tbd = initial_tbd.replace("質問？", "外部更新後の質問？")
+    tbd_path.write_text(external_tbd, encoding="utf-8")
+    answer_conflict = await client.post(
+        "/api/entries/answer",
+        json={
+            "filename": "question.md",
+            "answer": "古い基準からの回答",
+            "expected_content": tbd_detail["entry"]["content"],
+        },
+    )
+    assert answer_conflict.status_code == 409
+    assert (await answer_conflict.get_json())["code"] == "edit_conflict"
+    assert tbd_path.read_text(encoding="utf-8") == external_tbd
+
+    latest_answer = await client.post(
+        "/api/entries/answer",
+        json={
+            "filename": "question.md",
+            "answer": "最新基準からの回答",
+            "expected_content": external_tbd,
+        },
+    )
+    assert latest_answer.status_code == 200
+    assert tbd_path.read_text(encoding="utf-8").endswith("最新基準からの回答\n")
+    legacy_answer = await client.post(
+        "/api/entries/answer",
+        json={"filename": "question.md", "answer": "従来形式からの回答"},
+    )
+    assert legacy_answer.status_code == 200
+    assert tbd_path.read_text(encoding="utf-8").endswith("従来形式からの回答\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload", "filename", "initial_content"),
+    [
+        (
+            "put",
+            "/api/entries/inbox/feedback.md",
+            {"content": "更新本文", "expected_content": None},
+            "feedback.md",
+            "変更前の本文\n",
+        ),
+        (
+            "put",
+            "/api/entries/inbox/feedback.md",
+            {"content": "更新本文", "expected_content": ""},
+            "feedback.md",
+            "変更前の本文\n",
+        ),
+        (
+            "put",
+            "/api/entries/inbox/feedback.md",
+            {"content": "更新本文", "expected_content": "  "},
+            "feedback.md",
+            "変更前の本文\n",
+        ),
+        (
+            "post",
+            "/api/entries/answer",
+            {"filename": "question.md", "answer": "回答", "expected_content": None},
+            "question.md",
+            "## 質問\n\n質問？\n\n## 回答\n\n",
+        ),
+        (
+            "post",
+            "/api/entries/answer",
+            {"filename": "question.md", "answer": "回答", "expected_content": ""},
+            "question.md",
+            "## 質問\n\n質問？\n\n## 回答\n\n",
+        ),
+        (
+            "post",
+            "/api/entries/answer",
+            {"filename": "question.md", "answer": "回答", "expected_content": "\t"},
+            "question.md",
+            "## 質問\n\n質問？\n\n## 回答\n\n",
+        ),
+    ],
+)
+async def test_edit_and_answer_apis_reject_invalid_specified_expected_content(
+    tmp_path: pathlib.Path,
+    method: str,
+    path: str,
+    payload: dict[str, object],
+    filename: str,
+    initial_content: str,
+) -> None:
+    """明示した`expected_content`のnull・空値を400で拒否し、対象を変更しない。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    entry = inbox / filename
+    entry.write_text(initial_content, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    response = await getattr(app.test_client(), method)(path, json=payload)
+    assert response.status_code == 400
+    assert entry.read_text(encoding="utf-8") == initial_content
+
+
+@pytest.mark.asyncio
+async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """競合以外のRuntimeErrorを409へ誤分類しない。"""
+    operations = serve_app.Operations(tmp_path)
+
+    def fail(
+        _state: str,
+        _filename: str,
+        _content: str,
+        _expected_content: str | None = None,
+    ) -> bool:
+        raise RuntimeError("別の実行時エラー")
+
+    monkeypatch.setattr(operations, "edit", fail)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+    response = await app.test_client().put(
+        "/api/entries/inbox/entry.md",
+        json={"content": "本文"},
+    )
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
 async def test_adopt_api_rejects_category_for_tbd(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """TBDエントリへのカテゴリ付き採用は拒否する。"""
 
@@ -696,7 +1343,10 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
     )
     response = await app.test_client().get("/api/entries")
     assert response.status_code == 409
-    assert await response.get_json() == {"error": "別の操作が進行中です"}
+    assert await response.get_json() == {
+        "error": "別の操作が進行中です",
+        "code": "lock_conflict",
+    }
 
 
 @pytest.mark.asyncio

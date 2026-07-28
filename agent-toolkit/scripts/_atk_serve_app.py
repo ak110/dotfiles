@@ -27,6 +27,7 @@ _ENTRY_STATES = set(common.MQ_STATES)
 _STATUS_FILTERS = {"all", "active", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _WEB_LOCK_TIMEOUT = 2.0
+_EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
 
@@ -98,6 +99,15 @@ def _optional_string(data: JsonObject, name: str) -> str | None:
     value = data.get(name)
     if value is None:
         return None
+    if not isinstance(value, str) or not value.strip():
+        raise common.WebInputError(f"{name}は空でない文字列で指定してください")
+    return value
+
+
+def _specified_string(data: JsonObject, name: str) -> str | None:
+    if name not in data:
+        return None
+    value = data[name]
     if not isinstance(value, str) or not value.strip():
         raise common.WebInputError(f"{name}は空でない文字列で指定してください")
     return value
@@ -210,7 +220,13 @@ class Operations:
             kind = common.entry_type_of(path, text)
             return {**_entry(path, kind, state, text), "content": text}
 
-    def edit(self, state: str, filename: str, content: str) -> bool:
+    def edit(
+        self,
+        state: str,
+        filename: str,
+        content: str,
+        expected_content: str | None = None,
+    ) -> bool:
         try:
             return feedback_mutations.edit_entry_content(
                 self.private_notes,
@@ -218,6 +234,7 @@ class Operations:
                 filename=filename,
                 content=content,
                 lock_timeout=_WEB_LOCK_TIMEOUT,
+                expected_content=expected_content,
             )
         except SystemExit as error:
             raise common.WebInputError("指定したエントリを操作できません") from error
@@ -262,13 +279,19 @@ class Operations:
             lock_timeout=_WEB_LOCK_TIMEOUT,
         )
 
-    def answer_tbd(self, filename: str, answer: str) -> bool:
+    def answer_tbd(
+        self,
+        filename: str,
+        answer: str,
+        expected_content: str | None = None,
+    ) -> bool:
         """TBD回答欄を置換する。"""
         return tbd_mutations.answer_tbd(
             self.private_notes,
             filename=filename,
             answer=answer,
             lock_timeout=_WEB_LOCK_TIMEOUT,
+            expected_content=expected_content,
         )
 
     def transition(
@@ -336,7 +359,13 @@ def create_app(
     @app.errorhandler(filelock.Timeout)
     async def lock_conflict(error: filelock.Timeout) -> tuple[quart.Response, int]:
         del error
-        return quart.jsonify(error="別の操作が進行中です"), 409
+        return quart.jsonify(error="別の操作が進行中です", code="lock_conflict"), 409
+
+    @app.errorhandler(RuntimeError)
+    async def edit_conflict(error: RuntimeError) -> tuple[quart.Response, int]:
+        if str(error) != _EDIT_CONFLICT_MESSAGE:
+            raise error
+        return quart.jsonify(error=str(error), code="edit_conflict"), 409
 
     @app.errorhandler(subprocess.CalledProcessError)
     async def git_error(error: subprocess.CalledProcessError) -> tuple[quart.Response, int]:
@@ -388,10 +417,23 @@ def create_app(
 
     @app.put("/api/entries/<state_name>/<filename>")
     async def edit_entry(state_name: str, filename: str) -> quart.Response:
-        data = _json_object(await _request_json(), allowed={"content"}, required={"content"})
+        data = _json_object(
+            await _request_json(),
+            allowed={"content", "expected_content"},
+            required={"content"},
+        )
         if not isinstance(data["content"], str) or not data["content"].strip():
             raise common.WebInputError("contentは空でない文字列で指定してください")
-        return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"]))
+        expected_content = _specified_string(data, "expected_content")
+        return quart.jsonify(
+            changed=await workers.run(
+                ops.edit,
+                state_name,
+                filename,
+                data["content"],
+                expected_content,
+            )
+        )
 
     @app.post("/api/entries")
     async def add_entry() -> tuple[quart.Response, int]:
@@ -425,12 +467,24 @@ def create_app(
 
     @app.post("/api/entries/answer")
     async def answer_tbd() -> quart.Response:
-        data = _json_object(await _request_json(), allowed={"filename", "answer"}, required={"filename", "answer"})
+        data = _json_object(
+            await _request_json(),
+            allowed={"filename", "answer", "expected_content"},
+            required={"filename", "answer"},
+        )
         if not isinstance(data["answer"], str) or not data["answer"].strip():
             raise common.WebInputError("answerは空でない文字列で指定してください")
         if not isinstance(data["filename"], str):
             raise common.WebInputError("filenameは文字列で指定してください")
-        return quart.jsonify(changed=await workers.run(ops.answer_tbd, data["filename"], data["answer"]))
+        expected_content = _specified_string(data, "expected_content")
+        return quart.jsonify(
+            changed=await workers.run(
+                ops.answer_tbd,
+                data["filename"],
+                data["answer"],
+                expected_content,
+            )
+        )
 
     async def transition(action: str, allowed: set[str]) -> quart.Response:
         # target_repoは`_verify_frontmatter_target_repo`の任意検証にのみ使われ、常駐プロセスの
