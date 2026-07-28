@@ -98,14 +98,18 @@ def _gh_job_list(run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
         f"repos/{{owner}}/{{repo}}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
         "--paginate",
         "--slurp",
-        "--jq",
-        "[.[].jobs[]]",
     ]
     payload = _run_json_command(command, subprocess_timeout, "gh api jobs")
-    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+    if not isinstance(payload, list) or not all(isinstance(page, dict) for page in payload):
         raise RunListError(f"gh api jobs returned unexpected JSON shape: {payload!r}")
+    job_pages = [page.get("jobs") for page in payload]
+    if not all(isinstance(page_jobs, list) for page_jobs in job_pages):
+        raise RunListError(f"gh api jobs returned unexpected jobs shape: {payload!r}")
+    job_payload = [item for page_jobs in job_pages for item in page_jobs]
+    if not all(isinstance(item, dict) for item in job_payload):
+        raise RunListError(f"gh api jobs returned unexpected job shape: {payload!r}")
     jobs: list[JobRecord] = []
-    for item in payload:
+    for item in job_payload:
         if not isinstance(item.get("id"), int) or isinstance(item.get("id"), bool) or not isinstance(item.get("name"), str):
             raise RunListError(f"gh api jobs returned unexpected job shape: {item!r}")
         status = item.get("status")

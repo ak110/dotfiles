@@ -1015,8 +1015,8 @@ class TestGhJobList:
     def test_fetches_latest_jobs_from_all_pages(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
         payload = [
-            {"id": 11, "name": "build", "status": "completed", "conclusion": "success", "html_url": "u1"},
-            {"id": 12, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "u2"},
+            {"jobs": [{"id": 11, "name": "build", "status": "completed", "conclusion": "success", "html_url": "u1"}]},
+            {"jobs": [{"id": 12, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "u2"}]},
         ]
 
         def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
@@ -1029,10 +1029,13 @@ class TestGhJobList:
         assert "filter=latest&per_page=100" in command[4]
         assert "--paginate" in command
         assert "--slurp" in command
-        assert command[command.index("--jq") + 1] == "[.[].jobs[]]"
+        assert "--jq" not in command
         assert [job["databaseId"] for job in jobs] == [11, 12]
 
-    @pytest.mark.parametrize("payload", ["{}", '{"jobs":[]}', "not-json"])
+    @pytest.mark.parametrize(
+        "payload",
+        ["{}", '[{"jobs":{}}]', '[{"other":[]}]', '[{"jobs":[1]}]', "not-json"],
+    )
     def test_invalid_response_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch, payload: str) -> None:
         monkeypatch.setattr(
             wait_ci.subprocess,
