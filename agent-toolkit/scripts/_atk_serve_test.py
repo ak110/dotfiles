@@ -1189,7 +1189,9 @@ async def test_read_routes_remain_available_during_entry_move(
         def entry_type_of(entry_path: pathlib.Path, text: str) -> str:
             started.set()
             release.wait()
-            return original_entry_type_of(entry_path, text)
+            result = original_entry_type_of(entry_path, text)
+            assert result is not None
+            return result
 
         monkeypatch.setattr(common, "entry_type_of", entry_type_of)
         request = asyncio.create_task(app.test_client().get(path))
@@ -1251,6 +1253,34 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     content = detail["content"]
     assert isinstance(content, str)
     assert content.endswith("要約本文\n")
+
+
+@pytest.mark.parametrize(
+    ("frontmatter_source", "expected_repo", "expected_source"),
+    [
+        (
+            "type: feedback\ntarget_repo: example/repo\nsource: test\nqueue_schedule:\n  type: normal\n  carry_count: 0\n",
+            "example/repo",
+            "test",
+        ),
+        ("type: feedback\ntarget_repo: [broken\n", None, None),
+    ],
+)
+def test_operations_frontmatter_parser_handles_nested_schedule_and_broken_yaml(
+    tmp_path: pathlib.Path,
+    frontmatter_source: str,
+    expected_repo: str | None,
+    expected_source: str | None,
+) -> None:
+    """一覧表示は入れ子メタデータを読み、YAML破損時も一覧全体を継続する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(f"---\n{frontmatter_source}---\n\n要約本文\n", encoding="utf-8")
+
+    result = serve_app.Operations(tmp_path).entries({})
+
+    assert result[0]["target_repo"] == expected_repo
+    assert result[0]["source"] == expected_source
 
 
 def test_operations_answered_filter_returns_only_answered_tbds(
@@ -1608,10 +1638,14 @@ def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkey
         lambda _handler, path, recursive=False: scheduled.append(path),
     )
     monkeypatch.setattr(current.observer, "start", lambda: None)
-    current.start(asyncio.new_event_loop())
-    assert sorted(pathlib.Path(p).name for p in scheduled) == ["adopted", "inbox", "processing", "rejected"]
-    assert not (tmp_path / "feedback").exists()
-    assert not (tmp_path / "tbd").exists()
+    loop = asyncio.new_event_loop()
+    try:
+        current.start(loop)
+        assert sorted(pathlib.Path(p).name for p in scheduled) == ["adopted", "inbox", "processing", "rejected"]
+        assert not (tmp_path / "feedback").exists()
+        assert not (tmp_path / "tbd").exists()
+    finally:
+        loop.close()
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ import tempfile
 import threading
 from collections.abc import Callable, Iterable, Iterator
 
+import _atk_mq_schedule as _schedule
 import filelock
 import platformdirs
 from _atk_mq_formatters import (
@@ -32,6 +33,7 @@ from _atk_mq_formatters import (
     _tbd_body_summary,
     _truncate_target_repo,
 )
+from _atk_mq_frontmatter import parse_frontmatter, serialize_frontmatter
 
 # フィードバック管理repoの4状態フォルダー名（管理repoのroot直下）。
 # - `inbox`: 未処理の投入直後
@@ -216,24 +218,17 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 
 def _with_type_frontmatter(text: str, entry_type: str) -> str | None:
-    """先頭frontmatterへ`type`行を補った本文を返す。
-
-    frontmatterが無い場合と閉じ区切りを欠く場合はNoneを返す。`type`が既にある場合は
-    そちらを正とみなして原文をそのまま返す。挿入位置は`add_entries`の生成順へ合わせて
-    `target_repo`行の直後とし、`target_repo`が無い場合はfrontmatter末尾とする。
-    """
-    if not text.startswith("---\n"):
+    """先頭frontmatterへ`type`キーを補った本文を返す。"""
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return None
-    try:
-        end = text.index("\n---\n", 4)
-    except ValueError:
-        return None
-    if _parse_type(text) is not None:
+    data, body = parsed
+    if data.get("type") is not None:
         return text
-    lines = text[4:end].split("\n")
-    position = next((i + 1 for i, line in enumerate(lines) if line.startswith("target_repo:")), len(lines))
-    lines.insert(position, f"type: {entry_type}")
-    return "---\n" + "\n".join(lines) + text[end:]
+    ordered = {"target_repo": data["target_repo"]} if "target_repo" in data else {}
+    ordered["type"] = entry_type
+    ordered.update((key, value) for key, value in data.items() if key not in ordered)
+    return serialize_frontmatter(ordered, body)
 
 
 def _plan_legacy_migration(
@@ -611,20 +606,17 @@ def _iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None)
 
 def _parse_type(text: str) -> str | None:
     """本文先頭のfrontmatterから`type`を抽出する。"""
-    if not text.startswith("---\n"):
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return None
-    try:
-        end = text.index("\n---\n", 4)
-    except ValueError:
-        return None
-    for line in text[4:end].splitlines():
-        if line.startswith("type:"):
-            return line.split(":", 1)[1].strip() or None
-    return None
+    value = parsed[0].get("type")
+    return value if isinstance(value, str) and value else None
 
 
-def _require_type(path: pathlib.Path, text: str) -> str:
+def _require_type(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
+    if parse_frontmatter(text) is None:
+        return None
     entry_type = _parse_type(text)
     if entry_type not in MQ_TYPES:
         print(
@@ -640,12 +632,14 @@ def _iter_entries(
     states: Iterable[str],
     filter_repo: str | None,
     entry_type: str = "all",
-) -> Iterator[tuple[pathlib.Path, str, str, str, str]]:
+) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
     for state in states:
         state_dir = private_notes / state
-        for path, target_repo, text in _iter_inbox_entries(state_dir, filter_repo):
+        for path, target_repo, text in _iter_inbox_entries(state_dir):
             actual_type = _require_type(path, text)
+            if filter_repo is not None and actual_type is not None and target_repo != filter_repo:
+                continue
             if entry_type not in ("all", actual_type):
                 continue
             yield path, target_repo, text, state, actual_type
@@ -694,20 +688,67 @@ def _count_pending_entries(
     private_notes: pathlib.Path,
     target_repo: str | None = None,
 ) -> int:
-    """`process-loop`常駐ループ専用: feedback件数とTBD回答済み件数の合計を返す。
-
-    `--type`・`--status`フィルタは持たず、常駐ループの反復判定に必要な合計のみを返す
-    （`_list.py`の`_cmd_list`が持つフィルタ分岐との共通化は行わない）。
-    """
-    # inbox・processingの両状態を未処理として合算する（`start-processing`で移動済みの
-    # 途中状態は`adopt`・`reject`未完了のため次反復での再処理対象に含める）。
-    feedback_count = sum(1 for _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_FEEDBACK))
-    tbd_count = sum(
-        1
-        for _, _, text, _, _ in _iter_entries(private_notes, MQ_ACTIVE_STATES, target_repo, MQ_TYPE_TBD)
-        if _is_tbd_answered(text)
+    """当該対象リポジトリでこのセッションが着手可能な項目数を返す。"""
+    active_entries = _load_schedule_entries(private_notes, target_repo, MQ_ACTIVE_STATES)
+    terminal_entries = _load_schedule_entries(
+        private_notes,
+        target_repo,
+        (MQ_STATE_ADOPTED, MQ_STATE_REJECTED),
     )
-    return feedback_count + tbd_count
+    plan_target_files = {
+        entry.metadata.plan_file: _schedule.parse_plan_target_files(
+            pathlib.Path(entry.metadata.plan_file).read_text(encoding="utf-8")
+        )
+        for entry in active_entries
+        if entry.metadata is not None
+        and entry.metadata.plan_file is not None
+        and pathlib.Path(entry.metadata.plan_file).is_file()
+    }
+    existing_repairs = frozenset(
+        entry.repair_target_filename
+        for entry in _load_schedule_entries(private_notes, None, MQ_ACTIVE_STATES)
+        if entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False and entry.repair_target_filename is not None
+    )
+    result = _schedule.calculate_schedule(active_entries, terminal_entries, plan_target_files, existing_repairs)
+    return (
+        len(result.classification_required)
+        + len(result.plan_items)
+        + len(result.parallel_normal_items)
+        + len(result.post_plan_normal_items)
+        + len(result.missing_dependency_tbds)
+        + len(result.frontmatter_broken_needs_tbd_filenames)
+    )
+
+
+def _load_schedule_entries(
+    private_notes: pathlib.Path,
+    target_repo: str | None,
+    states: tuple[str, ...],
+) -> tuple[_schedule.QueueEntry, ...]:
+    """指定状態のfeedback・TBDをスケジューリング用表現へ変換する。"""
+    entries: list[_schedule.QueueEntry] = []
+    for path, _, text, _, entry_type in _iter_entries(private_notes, states, target_repo, "all"):
+        parsed = parse_frontmatter(text)
+        frontmatter_broken = parsed is None
+        if entry_type == MQ_TYPE_FEEDBACK:
+            kind: _schedule.FeedbackEntryKind = "feedback"
+        elif entry_type == MQ_TYPE_TBD:
+            kind = "tbd"
+        else:
+            kind = "unknown"
+        repair_target = parsed[0].get("repair_target") if parsed is not None and kind == MQ_TYPE_TBD else None
+        entries.append(
+            _schedule.QueueEntry(
+                filename=path.name,
+                text=text,
+                kind=kind,
+                tbd_answered=_is_tbd_answered(text) if kind == MQ_TYPE_TBD else None,
+                frontmatter_broken=frontmatter_broken,
+                metadata=None if frontmatter_broken else _schedule.parse_schedule_metadata(text),
+                repair_target_filename=repair_target if isinstance(repair_target, str) else None,
+            )
+        )
+    return tuple(entries)
 
 
 def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) -> int:
@@ -851,8 +892,16 @@ def is_tbd_answered(text: str) -> bool:
     return _is_tbd_answered(text)
 
 
-def entry_type_of(path: pathlib.Path, text: str) -> str:
-    """エントリの種別を返す。欠落・未知値はexit 2で終了する。"""
+def count_pending_entries(
+    private_notes: pathlib.Path,
+    target_repo: str | None = None,
+) -> int:
+    """当該対象リポジトリでこのセッションが着手可能な項目数を返す。"""
+    return _count_pending_entries(private_notes, target_repo)
+
+
+def entry_type_of(path: pathlib.Path, text: str) -> str | None:
+    """エントリの種別を返す。frontmatter全体が破損している場合はNone。"""
     return _require_type(path, text)
 
 
@@ -861,7 +910,7 @@ def iter_entries(
     states: Iterable[str],
     filter_repo: str | None,
     entry_type: str = "all",
-) -> Iterator[tuple[pathlib.Path, str, str, str, str]]:
+) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。"""
     return _iter_entries(private_notes, states, filter_repo, entry_type)
 

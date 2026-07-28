@@ -11,8 +11,10 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import typing
 
 import _atk_mq_add as _add
+import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
@@ -38,6 +40,49 @@ from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
+_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = ("queue_schedule", "repair_target")
+
+
+def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
+    """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
+
+    利用者が$EDITORまたはWeb APIで任意のfrontmatterを書き込むことで、
+    修復TBDの自動投入抑止や`queue_schedule`偽装が可能になることを防ぐ。
+    ただし、正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
+    システム側が行う変更）を誤って拒否しないよう、新旧frontmatterを比較して
+    不正な差分のみを検出する。
+    """
+    original_parsed = _frontmatter.parse_frontmatter(original)
+    updated_parsed = _frontmatter.parse_frontmatter(updated)
+
+    if original_parsed is None and updated_parsed is None:
+        return
+    if original_parsed is None or updated_parsed is None:
+        raise WebInputError("frontmatterの解析に失敗しました")
+
+    original_data, _ = original_parsed
+    updated_data, _ = updated_parsed
+    target_repo_changed = original_data.get("target_repo") != updated_data.get("target_repo")
+
+    for key in _RESERVED_FRONTMATTER_KEYS_FOR_EDITING:
+        original_has_key = key in original_data
+        updated_has_key = key in updated_data
+
+        # 予約キーの追加を検出（キー不在 → キー有無を区別）
+        if not original_has_key and updated_has_key:
+            raise WebInputError(f"予約キー`{key}`の追加は許可されていません")
+
+        # 対象リポジトリ変更時の分類失効はシステムが行う正当な削除である。
+        if key == "queue_schedule" and original_has_key and not updated_has_key and target_repo_changed:
+            continue
+
+        # 予約キーの削除を検出
+        if original_has_key and not updated_has_key:
+            raise WebInputError(f"予約キー`{key}`の削除は許可されていません")
+
+        # 予約キーの変更を検出
+        if original_has_key and updated_has_key and original_data[key] != updated_data[key]:
+            raise WebInputError(f"予約キー`{key}`の変更は許可されていません")
 
 
 def transition_entries(
@@ -163,9 +208,15 @@ def edit_entry_content(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でfeedback本文を更新する。"""
+    """平引数でfeedback本文を更新する。
+
+    保存前に新旧frontmatterを比較し、予約キー`queue_schedule`・`repair_target`の
+    追加・変更・削除を禁止する。正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
+    システム側が行う変更）を誤って拒否しないよう、検証範囲を慎重に設定する。
+    """
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}:
         raise WebInputError("編集可能状態はinbox又はprocessingです")
+
     directory = private_notes / state
     return _edit_entry(
         private_notes,
@@ -176,19 +227,20 @@ def edit_entry_content(
         lock_timeout=lock_timeout,
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
+        content_validator=_validate_no_reserved_frontmatter_modification,
     )
 
 
 def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
     """MESSAGEを既存メタデータへ重ね、種別別の保存内容を返す。"""
+    parsed = _frontmatter.parse_frontmatter(original)
+    if parsed is None:
+        raise WebInputError(f"frontmatterが破損しているため編集できません: {path.name}")
+    stored_data, stored_body = parsed
     entry_type = _require_type(path, original)
-    try:
-        frontmatter_end = original.index("\n---\n", 4)
-    except ValueError as error:
-        raise WebInputError(f"frontmatterの終端がありません: {path.name}") from error
-    stored_frontmatter = original[4:frontmatter_end]
-    stored_body = original[frontmatter_end + len("\n---\n") :]
+    assert entry_type is not None
     message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=entry_type)
+    normalized_message_body = message_body.strip("\n")
 
     requested_type = message_frontmatter.get("type")
     if requested_type is not None and requested_type != entry_type:
@@ -204,20 +256,35 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
     updates = dict(message_frontmatter)
     if "target_repo" in updates:
-        updates["target_repo"] = _resolve_repo_id(updates["target_repo"])
-    updated_frontmatter = _update_frontmatter_lines(stored_frontmatter, updates)
-    prefix = f"---\n{updated_frontmatter}\n---\n"
+        raw_target_repo = updates["target_repo"]
+        if not isinstance(raw_target_repo, str):
+            raise WebInputError("target_repoは文字列で指定してください")
+        updates["target_repo"] = _resolve_repo_id(raw_target_repo)
+    if "queue_schedule" in updates:
+        raise WebInputError("queue_scheduleは予約キーのため atk mq edit では指定できません")
+    if "repair_target" in updates:
+        raise WebInputError("repair_targetは予約キーのため atk mq edit では指定できません")
+    updated_data = {**stored_data, **updates}
+    schedule_mapping = updated_data.get("queue_schedule")
+    typed_schedule_mapping = (
+        typing.cast(dict[str, typing.Any], schedule_mapping) if isinstance(schedule_mapping, dict) else None
+    )
+    if (
+        "target_repo" in updates
+        and typed_schedule_mapping is not None
+        and typed_schedule_mapping.get("normalized_target_repo") != updates["target_repo"]
+    ):
+        del updated_data["queue_schedule"]
 
     if entry_type != MQ_TYPE_TBD:
-        return prefix + "\n" + message_body.rstrip() + "\n"
+        return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
 
-    if not message_body.strip():
+    if not normalized_message_body.strip():
         raise WebInputError("TBDの質問本文は空にできません")
-    effective_frontmatter = _frontmatter_values(updated_frontmatter)
-    question_type = effective_frontmatter.get("question_type")
+    question_type = updated_data.get("question_type")
     if question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
-    if question_type == "choice" and not effective_frontmatter.get("choices"):
+    if question_type == "choice" and not updated_data.get("choices"):
         raise WebInputError("choice形式にはchoicesが必要です")
 
     marker_index = stored_body.rfind(_tbd.ANSWER_MARKER)
@@ -229,39 +296,13 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         raise WebInputError("TBDの質問見出しまたは回答見出しがありません")
     question_heading_end = question_heading_index + len(_tbd.QUESTION_HEADING)
     updated_body = (
-        stored_body[:question_heading_end] + "\n\n" + message_body.rstrip() + "\n\n" + stored_body[answer_heading_index:]
+        stored_body[:question_heading_end]
+        + "\n\n"
+        + normalized_message_body.rstrip()
+        + "\n\n"
+        + stored_body[answer_heading_index:]
     )
-    return prefix + updated_body
-
-
-def _update_frontmatter_lines(frontmatter: str, updates: dict[str, str]) -> str:
-    """既存frontmatterの明示キーだけを更新し、未指定行を保持する。"""
-    if not updates:
-        return frontmatter
-    remaining = dict(updates)
-    lines: list[str] = []
-    for line in frontmatter.split("\n"):
-        stripped = line.lstrip()
-        key = stripped.partition(":")[0] if ":" in stripped and not stripped.startswith("#") else None
-        if key in updates:
-            lines.append(f"{key}: {updates[key]}")
-            remaining.pop(key, None)
-        else:
-            lines.append(line)
-    lines.extend(f"{key}: {value}" for key, value in remaining.items())
-    return "\n".join(lines)
-
-
-def _frontmatter_values(frontmatter: str) -> dict[str, str]:
-    """保存済みfrontmatterのキー値を後勝ちで返す。"""
-    values: dict[str, str] = {}
-    for line in frontmatter.splitlines():
-        stripped = line.lstrip()
-        if ":" not in stripped or stripped.startswith("#"):
-            continue
-        key, _, value = stripped.partition(":")
-        values[key.strip()] = value.strip()
-    return values
+    return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:

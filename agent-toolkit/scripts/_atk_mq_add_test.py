@@ -17,6 +17,8 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
@@ -46,6 +48,29 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
     assert "source: test" in content
 
 
+def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """frontmatter由来target_repoが正規化されて保存される。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    # frontmatterに大文字小文字混在のURLを指定
+    message = "---\ntarget_repo: GitHub.com/Example/Repo\nsource: test\n---\n\n本文\n"
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    # 保存されたcontentは正規化後の値を含むべき
+    assert "target_repo: github.com/example/repo" in content
+    # 正規化前の値は含まれていない
+    assert "GitHub.com/Example/Repo" not in content
+
+
 def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -55,7 +80,8 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    message = "---\ntarget_repo: github.com/example/repo\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
+    # 既に正規化済みのURLとサフィックス付きURLの両方をテスト
+    message = "---\ntarget_repo: github.com/example/repo.git\nsource: alert-monitor\nalert_keys: github-run:1\n---\n\n本文\n"
     generated = add_module.add_entries(
         notes,
         messages=[message],
@@ -64,8 +90,149 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
         now=_FIXED_DT,
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    # alert_keysが引き継がれている
     assert "alert_keys: github-run:1" in content
+    # target_repoが正規化されている（`.git`サフィックスが除去されている）
+    assert "target_repo: github.com/example/repo" in content
+    assert "github.com/example/repo.git" not in content
     assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
+
+
+def test_flat_add_operation_drops_input_queue_schedule(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """利用者入力のqueue_scheduleを保存内容へ引き継がない。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    message = (
+        "---\ntarget_repo: github.com/example/repo\nqueue_schedule:\n  type: normal\nalert_keys: github-run:1\n---\n\n本文\n"
+    )
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "queue_schedule" not in parsed[0]
+    assert parsed[0]["alert_keys"] == "github-run:1"
+
+
+def test_flat_add_operation_drops_input_repair_target(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """利用者入力のrepair_targetを保存内容へ引き継がない。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    message = "---\ntarget_repo: github.com/example/repo\nrepair_target: broken.md\nalert_keys: github-run:1\n---\n\n本文\n"
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[message],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "repair_target" not in parsed[0]
+    assert parsed[0]["alert_keys"] == "github-run:1"
+
+
+def test_add_operation_mechanically_classifies_plan_impl_reference(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """実在する計画ファイルへの言及を投入時点で計画実装型へ分類する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    plan = tmp_path / "plan.md"
+    plan.write_text("### 対象ファイル一覧\n\n- [ ] `README.md`\n", encoding="utf-8")
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[f"対象計画ファイル: `{plan}`"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    metadata = schedule.parse_schedule_metadata((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert metadata is not None
+    assert metadata.feedback_type == "plan-impl"
+    assert metadata.plan_file == str(plan)
+    assert metadata.dependency == schedule.Dependency("none")
+
+
+def test_add_operation_leaves_unclassified_when_plan_file_does_not_exist(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """未実在の計画ファイルへの言及は未分類のまま保存する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    missing_plan = tmp_path / "missing-plan.md"
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[f"対象計画ファイル: `{missing_plan}`"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+    )
+
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert schedule.parse_schedule_metadata(content) is None
+    parsed = frontmatter.parse_frontmatter(content)
+    assert parsed is not None
+    assert "queue_schedule" not in parsed[0]
+
+
+def test_add_operation_does_not_classify_tbd_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TBDは計画ファイルへ言及しても投入時分類しない。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=[f"対象計画ファイル: `{plan}`"],
+        target_repo="github.com/example/repo",
+        source=None,
+        now=_FIXED_DT,
+        entry_type=MQ_TYPE_TBD,
+        question_type="free-form",
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "queue_schedule" not in parsed[0]
 
 
 class TestAddOrderEditorFirst:

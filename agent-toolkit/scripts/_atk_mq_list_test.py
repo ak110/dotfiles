@@ -70,18 +70,18 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
 
 
 class TestListMalformedFrontmatter:
     """listサブコマンド: 異常frontmatterは`(unknown)`グループへ振り分けられる。"""
 
     @pytest.mark.parametrize(
-        ("content", "label"),
+        ("content", "label", "expected_exit"),
         [
-            ("本文のみ\n", "frontmatterなし"),
-            ("---\ncreated: 2024\n本文\n", "閉じ区切りなし"),
-            ("---\ncreated: 2024\n---\n\n本文\n", "target_repo欠落"),
+            ("本文のみ\n", "frontmatterなし", 0),
+            ("---\ncreated: 2024\n本文\n", "閉じ区切りなし", 0),
+            ("---\ncreated: 2024\n---\n\n本文\n", "target_repo欠落", 2),
         ],
     )
     def test_malformed_frontmatter_falls_back_to_unknown(
@@ -91,6 +91,7 @@ class TestListMalformedFrontmatter:
         capsys: pytest.CaptureFixture[str],
         content: str,
         label: str,
+        expected_exit: int,
     ) -> None:
         """typeを確定できない異常frontmatter形式は拒否される。"""
         del label  # parametrize idのみ
@@ -101,10 +102,14 @@ class TestListMalformedFrontmatter:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list"], home=tmp_path)
 
-        assert exc_info.value.code == 2
+        assert exc_info.value.code == expected_exit
         captured = capsys.readouterr()
-        assert not captured.out
-        assert "frontmatterのtypeが不正または欠落" in captured.err
+        if expected_exit == 0:
+            assert "[inbox/frontmatter-broken/carry=0]" in captured.out
+            assert not captured.err
+        else:
+            assert not captured.out
+            assert "frontmatterのtypeが不正または欠落" in captured.err
 
 
 class TestListMultipleRepos:
@@ -129,8 +134,8 @@ class TestListMultipleRepos:
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
             "# feedback",
-            "fb-001.md: github.com/example/foo [inbox] テスト本文",
-            "fb-002.md: github.com/example/bar [inbox] テスト本文",
+            "fb-001.md: github.com/example/foo [inbox/unclassified/carry=0] テスト本文",
+            "fb-002.md: github.com/example/bar [inbox/unclassified/carry=0] テスト本文",
         ]
 
 
@@ -178,7 +183,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox] テスト本文\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/unclassified/carry=0] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -289,7 +294,7 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox] 本文1\n"
+        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,

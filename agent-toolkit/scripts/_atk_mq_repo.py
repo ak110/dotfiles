@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import typing
 
 from _atk_mq_common import (
     _commit_and_push,
@@ -201,6 +202,7 @@ def edit_entry(
     lock_timeout: float,
     expected_content: str | None,
     commit_message: str,
+    content_validator: typing.Callable[[str, str], None] | None = None,
 ) -> bool:
     """feedback・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
@@ -218,6 +220,8 @@ def edit_entry(
         previous = path.read_text(encoding="utf-8")
         if expected_content is not None and previous != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        if content_validator is not None:
+            content_validator(previous, content)
         if previous == content:
             return False
         previous_type = _require_type(path, previous)

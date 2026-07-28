@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _write_tbd(
@@ -31,6 +32,229 @@ def _write_tbd(
         f"---\ntarget_repo: {target_repo}\ntype: tbd\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )
+
+
+def _write_feedback(
+    private_notes: pathlib.Path,
+    filename: str,
+    *,
+    dependency: schedule.Dependency | None = None,
+    state: str = "inbox",
+) -> pathlib.Path:
+    """分類メタデータ付きのテスト用feedbackを書き込む。"""
+    directory = private_notes / state
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / filename
+    text = "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n"
+    metadata = schedule.ScheduleMetadata(
+        schedule.body_sha256(text),
+        "github.com/example/repo",
+        "normal",
+        dependency or schedule.Dependency("none"),
+        None,
+        ("README.md",),
+        0,
+        (),
+    )
+    path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+    return path
+
+
+def _classify_tbd(path: pathlib.Path, dependency: schedule.Dependency | None = None) -> None:
+    """既存のテスト用TBDへ分類メタデータを付与する。"""
+    text = path.read_text(encoding="utf-8")
+    metadata = schedule.ScheduleMetadata(
+        schedule.body_sha256(text),
+        "github.com/example/repo",
+        "normal",
+        dependency or schedule.Dependency("none"),
+        None,
+        ("README.md",),
+        0,
+        (),
+    )
+    path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+
+
+class TestScheduleEntryLoading:
+    """frontmatter全体破損とtypeキー不正を区別する。"""
+
+    def test_iter_entries_yields_frontmatter_broken_entry_without_exiting(self, tmp_path: pathlib.Path) -> None:
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        path = inbox / "broken.md"
+        path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
+
+        all_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "all"))
+
+        assert all_entries[0][0] == path
+        assert all_entries[0][4] is None
+
+    def test_iter_entries_excludes_frontmatter_broken_entry_when_filtered_by_specific_type(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
+
+        feedback_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "feedback"))
+        tbd_entries = tuple(_common.iter_entries(tmp_path, ("inbox",), None, "tbd"))
+
+        assert not feedback_entries
+        assert not tbd_entries
+
+    @pytest.mark.parametrize("type_line", ["", "type: invalid\n"])
+    def test_require_type_still_exits_when_type_key_itself_is_missing_or_invalid(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        type_line: str,
+    ) -> None:
+        path = tmp_path / "entry.md"
+        text = f"---\ntarget_repo: github.com/example/repo\n{type_line}---\n本文\n"
+
+        with pytest.raises(SystemExit) as exc_info:
+            _common.entry_type_of(path, text)
+
+        assert exc_info.value.code == 2
+        assert "typeが不正または欠落" in capsys.readouterr().err
+
+    def test_count_pending_entries_excludes_normal_entry_blocked_on_unanswered_external_dependency(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_tbd(tmp_path, "answer.md")
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            dependency=schedule.Dependency(
+                "external-user",
+                condition="回答後",
+                tbd_filename="answer.md",
+            ),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    def test_count_pending_entries_excludes_normal_entry_blocked_on_chained_dependency_to_unanswered_external(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_tbd(tmp_path, "answer.md")
+        _write_feedback(
+            tmp_path,
+            "dependency.md",
+            dependency=schedule.Dependency(
+                "external-user",
+                condition="回答後",
+                tbd_filename="answer.md",
+            ),
+        )
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            dependency=schedule.Dependency("entries", filenames=("dependency.md",)),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    def test_count_pending_entries_includes_normal_entry_with_answered_external_dependency(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_tbd(tmp_path, "answer.md", answer="回答済み")
+        answer = tmp_path / "inbox" / "answer.md"
+        adopted = tmp_path / "adopted"
+        adopted.mkdir()
+        answer.rename(adopted / answer.name)
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            dependency=schedule.Dependency(
+                "external-user",
+                condition="回答後",
+                tbd_filename="answer.md",
+            ),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+    def test_count_pending_entries_includes_unclassified_entry(self, tmp_path: pathlib.Path) -> None:
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "feedback.md").write_text(
+            "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+    def test_count_pending_entries_includes_entry_with_missing_dependency_tbd_request(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_feedback(
+            tmp_path,
+            "feedback.md",
+            dependency=schedule.Dependency("entries", filenames=("missing.md",)),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+    def test_count_pending_entries_excludes_unanswered_tbd_and_does_not_double_count_answered_tbd(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_tbd(tmp_path, "answer.md")
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+        answer_path = tmp_path / "inbox" / "answer.md"
+        answer_path.write_text(answer_path.read_text(encoding="utf-8") + "\n回答済み\n", encoding="utf-8")
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+    def test_count_pending_entries_returns_zero_when_only_answered_tbd_remains_with_no_actionable_work(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        _write_tbd(tmp_path, "dependency.md")
+        _write_tbd(tmp_path, "answer.md", answer="回答済み")
+        answer_path = tmp_path / "inbox" / "answer.md"
+        _classify_tbd(
+            answer_path,
+            schedule.Dependency(
+                "external-user",
+                condition="依存先の回答後",
+                tbd_filename="dependency.md",
+            ),
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    def test_count_pending_entries_counts_frontmatter_broken_item_only_until_repair_tbd_is_filed(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+        (inbox / "repair.md").write_text(
+            "---\n"
+            "target_repo: github.com/example/repo\n"
+            "type: tbd\n"
+            "question_type: free-form\n"
+            "repair_target: broken.md\n"
+            "---\n\n"
+            "## 質問\n\n修復する\n\n"
+            "## 回答\n\n",
+            encoding="utf-8",
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
 
 
 class TestWarnSpaceSeparatedOption:

@@ -328,14 +328,17 @@ class TestProcessLoopPromptAndEnv:
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
 
-    def test_prompt_emphasizes_completion_over_exit_session(self) -> None:
-        """プロンプトが取得した全件の完遂を主目標として明示し、作業量・所要時間を判断材料化しない旨を含むこと。"""
+    def test_prompt_delegates_batch_selection_to_schedule_command(self) -> None:
+        """選抜対象の完遂と理由付き繰越を明示し、作業量・所要時間を判断材料化しないこと。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
         )
         assert "主目標" in prompt
         assert "完遂" in prompt
+        assert "`atk mq schedule`が選抜した" in prompt
+        assert "理由と繰越回数を記録" in prompt
+        assert "取得した全件" not in prompt
         assert "時間がかかるのは正常" in prompt
         assert "作業量" in prompt
         # 追加文言: 工程列挙が実施順序の定義である旨と、後続工程の到達要求を先行工程の縮退の根拠に解釈しない旨を明示する。

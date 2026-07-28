@@ -8,6 +8,8 @@ import pathlib
 import shutil
 import unicodedata
 
+from _atk_mq_frontmatter import parse_frontmatter
+
 _SUMMARY_MAX_LEN = 40
 """`available_width`が不明な呼び出し元向けのフォールバック表示幅上限。"""
 
@@ -86,31 +88,20 @@ def _truncate_target_repo(target_repo: str, max_width: int = _TARGET_REPO_MAX_WI
 
 def _parse_target_repo(text: str) -> str:
     """フィードバックファイル本文先頭のfrontmatterからtarget_repoを抽出する。"""
-    if not text.startswith("---\n"):
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return "(unknown)"
-    try:
-        end = text.index("\n---\n", 4)
-    except ValueError:
-        return "(unknown)"
-    for line in text[4:end].splitlines():
-        if line.startswith("target_repo:"):
-            return line.split(":", 1)[1].strip()
-    return "(unknown)"
+    value = parsed[0].get("target_repo")
+    return value if isinstance(value, str) and value else "(unknown)"
 
 
 def _parse_source(text: str) -> str | None:
     """フィードバック/TBDファイル本文先頭のfrontmatterからsourceを抽出する。未指定時はNoneを返す。"""
-    if not text.startswith("---\n"):
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return None
-    try:
-        end = text.index("\n---\n", 4)
-    except ValueError:
-        return None
-    for line in text[4:end].splitlines():
-        if line.startswith("source:"):
-            value = line.split(":", 1)[1].strip()
-            return value or None
-    return None
+    value = parsed[0].get("source")
+    return value if isinstance(value, str) and value else None
 
 
 def _parse_alert_keys(text: str) -> list[str]:
@@ -118,17 +109,11 @@ def _parse_alert_keys(text: str) -> list[str]:
 
     未指定・空文字列時は空リストを返す。各要素の前後空白は除去する。
     """
-    if not text.startswith("---\n"):
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return []
-    try:
-        end = text.index("\n---\n", 4)
-    except ValueError:
-        return []
-    for line in text[4:end].splitlines():
-        if line.startswith("alert_keys:"):
-            value = line.split(":", 1)[1].strip()
-            return [key.strip() for key in value.split(",") if key.strip()] if value else []
-    return []
+    value = parsed[0].get("alert_keys")
+    return [key.strip() for key in value.split(",") if key.strip()] if isinstance(value, str) else []
 
 
 def _source_matches(entry_source: str | None, filter_value: str) -> bool:

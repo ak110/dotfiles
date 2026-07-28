@@ -120,7 +120,8 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
     """claude起動プロンプトを構築する。
 
-    主目標は取得した全件の完遂であり、exit-sessionは完遂後の後処理として位置付ける。
+    主目標は機械選抜された当該セッション分の完遂であり、
+    exit-sessionは完遂後の後処理として位置付ける。
     対象リポジトリはcwdではなくtarget_repo_idで一意に固定する
     （プロンプト本文へ対象範囲を限定する指示を明記し、他リポジトリのfeedback処理を防ぐ）。
     `target_repo_id`が`github.com/ak110/dotfiles`の場合、git worktreeで起動される旨と
@@ -133,9 +134,12 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
         "他リポジトリのフィードバックを対象に含めないでください。\n"
         "処理対象のフィードバックはフィードバック管理リポジトリに保存された指示であり、"
         "投入元（ユーザー投入か`source: session-review`等の自己生成起点か）は各フィードバックのfrontmatterで確認できます。\n"
-        "主目標は取得した全件のフィードバックの実装完遂と、"
+        "主目標は`atk mq schedule`が選抜した当該セッション分の実装完遂と、"
         "agent-toolkit:process-feedbacks が定める後続工程（採否確定の後始末・振り返り・"
         "セッション終了）の完遂です。\n"
+        "上限超過、依存未成立、競合により当該セッションで完了しない項目は、"
+        "理由と繰越回数を記録してinboxへ残してください。\n"
+        "選抜外の項目は後続のprocess-loopセッションが機械スケジューリングで再評価します。\n"
         "作業量・残工程の多さ・所要時間は完遂可否の判断材料になりません。時間がかかるのは正常であり、"
         "コンテキストは自動コンパクションで継続されます。\n"
         "工程列挙は実施順序の定義であり作業量の見積りの根拠ではありません。\n"
@@ -315,6 +319,9 @@ def _check_and_restart_on_update(dotfiles_root: pathlib.Path, startup_hash: str,
 def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """process-loopサブコマンド: claudeの単発起動と待機ループを常駐で繰り返す。
 
+    件数はClaude Codeセッションの起動要否だけに使う。
+    分類結果の保存、依存判定、セッション上限、実行順は
+    `atk mq schedule`を使うprocess-feedbacksが担う。
     1反復ごとに`claude --permission-mode=auto --model {args.model}`で`/process-feedbacks`と
     `/agent-toolkit:exit-session`を直接起動する。`--model`の既定値は`opus`で、
     オーケストレーション品質を維持する目的で設定する。

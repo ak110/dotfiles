@@ -52,23 +52,52 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 `### 完了条件と連鎖feedback`ブロック（実装完了条件・後続feedback全文・関連feedback ID）を明示する。
 連鎖feedbackの検出・投入は「ステップ6: 連鎖feedbackの自律投入」で扱う。
 
-## ステップ1: 入力の確定
+## ステップ1: 入力の確定と初期スケジューリング
 
 `/process-feedbacks <repo-path>`形式の引数が実在ディレクトリなら対象リポジトリとし、
 実在ディレクトリでなければフィードバック本文の直接入力として扱う。引数省略時は
 `git rev-parse --show-toplevel`の現リポジトリを対象とする。
 
-`atk mq list --status=processing --target-repo=<repo-path>`でprocessing残存を確認し、
-残存時は前セッションの中断とみなし再実施対象へ最優先で組み込む。
-併せて`~/.claude/plans/`から対象リポジトリ向けの直近の計画ファイルを探し、
-その`## 進捗ログ`と作業ツリーの状態から到達済みの工程を判定してから着手する。
-計画が完成していて実装だけが残っている場合は計画作成工程を繰り返さず実装から再開する。
-続いて
-`atk mq show --all --status=active --target-repo=<repo-path>`でfeedback（inbox・processing）と
-回答済みTBDを一括取得する。取得した全件を本セッションの処理対象とし、
-`atk mq start-processing <filename...>`でfeedback・回答済みTBDの双方をprocessingへ遷移させてから着手する。
-`atk mq list --status=processing`はprocessing配下のTBDも表示するため、
-遷移させても後続の照会漏れは生じない。
+`atk mq list --status=active --target-repo=<repo-path>`で1行一覧だけを取得し、
+本文全文は取得しない。
+
+計画実装型の大半は`atk mq add`投入時点で機械分類済みのため、ここでLLM分類が必要になるのは
+主に通常型と、計画ファイルがまだ存在しない段階で投入された計画実装型候補である。
+一覧で`unclassified`と表示された項目（`frontmatter-broken`は含まない）がある場合は、
+Agentツールで`Explore`を`model: sonnet`のforegroundとして1回起動する。
+`frontmatter-broken`な項目は選抜・分類の対象から除外され、修復TBD投入は
+`atk mq schedule`が機械的に行うため、LLM分類委譲へは含めない。
+委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、
+未分類または本文変更済みの項目だけを読む。
+計画実装型の判定は`references/plan-impl-feedback-flow.md`のSSOTを適用する。
+通常型は依存条件と推定対象ファイルを分類し、計画実装型は計画ファイルの絶対パスを返す。
+
+外部・ユーザー依存を検出した場合、委譲先は条件文を引用したTBDを
+`atk mq add --type=tbd --scope=hold`で投入し、分類結果へ生成されたTBD filenameを含める。
+
+委譲先は分類結果を所有者だけが読み書きできる一時JSONへ保存する。
+続いて`atk mq schedule --classifications=<path> --target-repo=<repo-path>`を実行する。
+メインへは処理対象、実行群、除外理由、TBD作成要求だけを返し、本文全文を返さない。
+一覧に未分類項目が無い場合は`atk mq schedule --target-repo=<repo-path>`を実行する。
+
+依存先消失・自己依存・依存循環のTBD作成要求がある場合は、該当filenameと破損内容を示すTBDを投入する。
+該当項目の型と対象ファイルを維持した補正JSONへTBD filenameを設定し、
+`atk mq schedule --classifications=<path> --target-repo=<repo-path>`で外部・ユーザー依存へ
+機械更新して同じ選抜工程内で再計算する。恒常的な未成立を返した計算では繰越回数を更新しない。
+
+`atk mq schedule`の応答に含まれる`frontmatter_broken_filenames`は、
+修復TBDの投入有無を問わずfrontmatter破損項目を通知する診断出力である。
+TBDの投入自体は`atk mq schedule`のCLIハンドラーが同一ロック内で機械的に行うため、
+process-feedbacks側で追加操作しない。修復は`atk mq edit`ではなく対象ファイルを直接編集する
+（`atk mq edit`はfrontmatter解析失敗時に処理を拒否するため）。
+TBDの回答は、直接編集による修復が完了したことの確認として扱う。
+
+選抜結果をinbox項目とprocessing残存項目へ分ける。
+inbox状態の選抜対象だけを`atk mq start-processing <filename...>`でprocessingへ遷移させる
+（`start-processing`はinboxだけを移動元として探索するため、processing状態のfilenameを渡さない）。
+processing状態の選抜対象は遷移させず、中断前の処理をそのまま再開する。
+選抜外の項目は理由付き繰越を記録し、processing残存分は
+`atk mq return-to-inbox <filename...>`でinboxへ戻す。
 
 target_repoが誤設定と判明した場合は、現在の本文を保持したまま
 `atk mq edit <FILENAME> $'---\ntarget_repo: <正しいリポジトリ>\n---\n\n<現在の論理本文>'`で更新する。
@@ -86,8 +115,9 @@ editがcommit・pushまで完結するため`atk mq commit`は続けて実行し
 `references/review-checklists.md`「網羅調査チェックリスト」節）。複数件の場合は
 `Explore`サブエージェントへ個別並列委譲する。
 
-前提条件付きフィードバックは実機検証で充足確認し、未充足なら保留理由・確認手段・再評価契機を`references/hold-with-tbd-inject.md`「保留判定時のTBD投入」節に従って記録したうえで「保留」として次回へ持ち越す（`atk mq reject`しない）。「他の処理が全て終わったら」等の順序依存フィードバックも
-本ステップの保留判定で扱い、無条件でprocessing化しない。
+初期スケジューリング後に本文から新たな依存条件が判明した場合だけ分類結果を修正する。
+未成立なら`atk mq schedule --record-deferral dependency-unmet:<filename> --target-repo=<repo-path>`で
+理由と繰越回数を記録してinboxへ戻す。全項目の前提条件を本ステップで再調査しない。
 
 保留と判定した時点で既にprocessing状態へ遷移済みの対象は、`atk mq return-to-inbox <filename...>`で
 未処理状態へ戻したうえで次回セッションへ持ち越す。

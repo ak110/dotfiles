@@ -1088,6 +1088,142 @@ class TestHookEntryPointsPep723Dependencies:
         )
 
 
+class TestBashSleepPollPattern:
+    """sleep直後の読み取り専用な状態確認連結を初回warn・再検出blockで扱う。"""
+
+    @pytest.mark.parametrize(
+        ("command", "session_id"),
+        [
+            ("sleep 10; git status --short", "sleep-poll-first-1"),
+            ("sleep 5 && gh run view 123", "sleep-poll-first-2"),
+            ("sleep 1; systemctl status example.service", "sleep-poll-first-3"),
+            ("echo start; sleep 2; atk mq list", "sleep-poll-first-4"),
+            ("sleep 3; curl https://example.com/status", "sleep-poll-first-5"),
+            ("sleep 3 && curl -D - https://example.com/status", "sleep-poll-first-6"),
+            ("sleep 3; curl -XGET https://example.com/status", "sleep-poll-first-7"),
+            ("sleep 3 && curl -X GET https://example.com/status", "sleep-poll-first-8"),
+            ("sleep 3; curl --request=HEAD https://example.com/status", "sleep-poll-first-9"),
+            ("sleep 3 && curl --request HEAD https://example.com/status", "sleep-poll-first-10"),
+            ("sleep 3; curl -XPOST -XGET https://example.com/status", "sleep-poll-first-11"),
+            ("sleep 3 && curl --request PUT --request HEAD https://example.com/status", "sleep-poll-first-12"),
+            (
+                "sleep 3; curl -XGET https://example.com/a --next -XHEAD https://example.com/b",
+                "sleep-poll-first-13",
+            ),
+            (
+                r"echo foo\ #literal; sleep 1; git status --short",
+                "sleep-poll-first-14",
+            ),
+            (
+                "echo $(printf x)#literal; sleep 1; git status --short",
+                "sleep-poll-first-15",
+            ),
+            (
+                "sleep 1 \\\n; git status --short",
+                "sleep-poll-first-16",
+            ),
+        ],
+    )
+    def test_first_detection_warns_and_allows(
+        self,
+        command: str,
+        session_id: str,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id},
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "may cause repeated polling" in result.stderr
+
+    def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
+        session_id = "sleep-poll-repeat-test"
+        env = _plan_file_state_env(tmp_path)
+        first = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "sleep 10; git status --short"}, "session_id": session_id},
+            env,
+        )
+        assert first.returncode == 0
+        second = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "sleep 5; gh run view 123"}, "session_id": session_id},
+            env,
+        )
+        assert second.returncode == 2
+        assert "until <condition>" in second.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+
+    @pytest.mark.parametrize(
+        ("command", "session_id"),
+        [
+            ("sleep 1", "sleep-poll-allow-1"),
+            ("sleep 1; echo done", "sleep-poll-allow-2"),
+            ("until ps -p 123 >/dev/null; do sleep 5; done", "sleep-poll-allow-3"),
+            ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
+            ("sleep 1 || git status --short", "sleep-poll-allow-5"),
+            ("sleep 1 | cat", "sleep-poll-allow-6"),
+            ("sleep 5; gh run cancel 123", "sleep-poll-allow-7"),
+            ("sleep 5 && curl -X POST https://example.com/hook", "sleep-poll-allow-8"),
+            ("sleep 5; curl --data 'x=1' https://example.com/hook", "sleep-poll-allow-9"),
+            ("sleep 5 && curl -F file=@x.txt https://example.com/hook", "sleep-poll-allow-10"),
+            ("sleep 5; curl -XPOST https://example.com/hook", "sleep-poll-allow-11"),
+            ("sleep 5 && curl -dfoo=bar https://example.com/hook", "sleep-poll-allow-12"),
+            ("sleep 5; curl -Tfile.txt https://example.com/hook", "sleep-poll-allow-13"),
+            ("sleep 5 && curl --request PUT https://example.com/hook", "sleep-poll-allow-14"),
+            ("sleep 5; curl --data=x=1 https://example.com/hook", "sleep-poll-allow-15"),
+            ("sleep 5 && curl -XGET -XPOST https://example.com/hook", "sleep-poll-allow-16"),
+            ("sleep 5; curl --request HEAD --request PUT https://example.com/hook", "sleep-poll-allow-17"),
+            ("sleep 5 && curl --data-ascii 'x=1' https://example.com/hook", "sleep-poll-allow-18"),
+            ("sleep 5; curl --form-string 'x=1' https://example.com/hook", "sleep-poll-allow-19"),
+            ("sleep 5 && curl --json '{\"x\":1}' https://example.com/hook", "sleep-poll-allow-20"),
+            (
+                "sleep 5; curl -XPOST https://example.com/a --next -XGET https://example.com/b",
+                "sleep-poll-allow-21",
+            ),
+            (
+                "sleep 5 && curl -XGET https://example.com/a --next -XPOST https://example.com/b",
+                "sleep-poll-allow-22",
+            ),
+            ("sleep 0&#comment; git status --short", "sleep-poll-allow-23"),
+            (
+                "sleep 0 \\\n#comment; git status --short",
+                "sleep-poll-allow-24",
+            ),
+        ],
+    )
+    def test_allows_non_polling_and_write_forms(
+        self,
+        command: str,
+        session_id: str,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        env = _plan_file_state_env(tmp_path)
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id}, env)
+        assert result.returncode == 0
+        assert "may cause repeated polling" not in result.stderr
+        follow_up = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 1; git status --short"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert follow_up.returncode == 0
+        assert "may cause repeated polling" in follow_up.stderr
+
+    def test_background_execution_is_not_evaluated(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 10; git status --short", "run_in_background": True},
+                "session_id": "sleep-poll-background",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+
 class TestBashGitCommitWarning:
     """git commit未検証警告。
 

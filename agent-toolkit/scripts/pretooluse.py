@@ -55,6 +55,7 @@ mcp__codex__codex-reply:
 
 Bash:
 
+- `sleep`直後に読み取り専用の状態確認コマンドを連結するforeground待機の検出 (warn/block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
 - 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
@@ -119,7 +120,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -543,6 +544,12 @@ def main() -> int:
             return 0
         cwd_raw = payload.get("cwd", "")
         cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+        # sleep直後の状態確認連結を検出（初回warn、セッション内再検出でblock）
+        run_in_background = bool(tool_input.get("run_in_background"))
+        sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, run_in_background)
+        if sleep_poll_result == "block":
+            return 2
+        _print_warning_if_present(sleep_poll_result)
         # git amend / rebaseは直前にgit logを確認していなければブロック
         if _check_bash_amend_rebase_without_log(command, session_id, cwd):
             return 2
@@ -3360,6 +3367,250 @@ def _cwd_is_python_project(cwd: str) -> bool:
     except (OSError, ValueError):
         return False
     return _PYPROJECT_PROJECT_SECTION_PATTERN.search(text) is not None
+
+
+# --- Bash: sleep直後の読み取り専用状態確認連結の検出 ---
+
+_SLEEP_COMMAND = "sleep"
+_POLL_COMMAND_PREFIXES = (
+    ("ls",),
+    ("cat",),
+    ("git", "status"),
+    ("gh", "run", "view"),
+    ("gh", "run", "watch"),
+    ("ps",),
+    ("atk", "mq", "list"),
+    ("atk", "mq", "show"),
+    ("systemctl", "status"),
+    ("systemctl", "is-active"),
+)
+_CURL_COMMAND = ("curl",)
+_CURL_DATA_SHORT_OPTIONS = ("-d", "-F", "-T")
+_CURL_DATA_LONG_OPTIONS = (
+    "--data",
+    "--data-raw",
+    "--data-binary",
+    "--data-ascii",
+    "--data-urlencode",
+    "--form",
+    "--form-string",
+    "--upload-file",
+    "--json",
+)
+_CURL_METHOD_SHORT_OPTION = "-X"
+_CURL_METHOD_LONG_OPTION = "--request"
+_CURL_READ_ONLY_METHODS = frozenset({"GET", "HEAD"})
+_CURL_NEXT_OPTIONS = ("--next", "-:")
+
+
+def _split_curl_operations(args: Sequence[str]) -> list[list[str]]:
+    """`--next`・独立トークンの`-:`で区切られた操作単位へトークン列を分割する。
+
+    簡略化: `-:`が他の短縮オプションと結合した形は区切りとして検出しない,
+    既知の限界: curlの短縮オプションクラスタを完全には解析しない,
+    見直し契機: 結合形を使う書込みcurlの見逃しを実測した場合
+    """
+    operations: list[list[str]] = [[]]
+    for arg in args:
+        if arg in _CURL_NEXT_OPTIONS:
+            operations.append([])
+            continue
+        operations[-1].append(arg)
+    return operations
+
+
+def _curl_args_have_write_indicator(args: Sequence[str]) -> bool:
+    """curlの引数列に書込みを示す操作が1件以上含まれるかを判定する。"""
+    return any(_curl_operation_has_write_indicator(operation) for operation in _split_curl_operations(args))
+
+
+def _curl_operation_has_write_indicator(args: Sequence[str]) -> bool:
+    """`--next`で区切った1操作にデータ送信または書込みHTTPメソッドがあるかを判定する。"""
+    for arg in args:
+        if any(arg == option or arg.startswith(option) for option in _CURL_DATA_SHORT_OPTIONS):
+            return True
+        if any(arg == option or arg.startswith(f"{option}=") for option in _CURL_DATA_LONG_OPTIONS):
+            return True
+
+    last_method: str | None = None
+    for index, arg in enumerate(args):
+        method = _extract_curl_method_value(args, index, arg)
+        if method is not None:
+            last_method = method
+    return last_method is not None and last_method.upper() not in _CURL_READ_ONLY_METHODS
+
+
+def _extract_curl_method_value(args: Sequence[str], index: int, arg: str) -> str | None:
+    """`-X`・`--request`のHTTPメソッド値を連結形・分離形・`=`結合形から抽出する。"""
+    if arg in (_CURL_METHOD_SHORT_OPTION, _CURL_METHOD_LONG_OPTION):
+        return args[index + 1] if index + 1 < len(args) else ""
+    if arg.startswith(_CURL_METHOD_SHORT_OPTION) and len(arg) > len(_CURL_METHOD_SHORT_OPTION):
+        return arg[len(_CURL_METHOD_SHORT_OPTION) :]
+    if arg.startswith(f"{_CURL_METHOD_LONG_OPTION}="):
+        return arg[len(_CURL_METHOD_LONG_OPTION) + 1 :]
+    return None
+
+
+_WORD_BOUNDARY_CONTROL_CHARS = ("&", "|")
+"""単体で単語境界となるBash制御演算子。このうち`;`・`&&`は別途区切りとして処理する。
+
+`&`・`|`単体は本関数の分割対象ではないが、直後に空白無しで`#`が続く場合はコメント開始として
+認識する必要がある（例: `sleep 0&#comment`は`&`直後がコメント開始）。
+`(`・`)`は含めない。コマンド置換`$(...)`・算術展開`$((...))`・プロセス置換
+`<(...)`・`>(...)`等の閉じ括弧は制御演算子ではなく式構文の一部であり、
+直後の文字は同一単語の続きとなる（単語境界にならない）。サブシェルを開閉する
+制御演算子としての単体`(`・`)`と展開構文中の`(`・`)`を区別する構文解析は本関数の
+対象外とし、閉じ括弧を無条件に単語境界とすることによる誤検出を避けるため対象から除く。
+"""
+
+
+def _split_serial_shell_commands(command: str) -> list[str]:
+    """クォート外の`;`と`&&`だけでBash入力を直列コマンドへ分割し、コメント外の区切りのみを認識する。
+
+    クォート外の`#`（Bashコメント開始）から行末までをスキップし、
+    コメント内の`;`・`&&`を区切りとして誤検出しない。
+    """
+    segments: list[str] = []
+    buffer: list[str] = []
+    quote: str | None = None
+    escaped = False
+    # 現在位置が新しい単語を開始し得る位置か（行頭・エスケープなし空白直後・制御演算子直後）。
+    # エスケープされた空白は単語を区切らないため、直前文字の生の空白判定だけでは
+    # `foo\ #literal`のような字面をコメント開始と誤認する。
+    word_boundary = True
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if escaped:
+            buffer.append(char)
+            escaped = False
+            word_boundary = False
+            index += 1
+            continue
+        if char == "\\" and quote != "'" and command.startswith("\\\n", index):
+            # 行継続（バックスラッシュ改行）はBash仕様上、入力から完全に除去され前後を
+            # 単純連結する。バッファへは何も追加せず、単語境界の状態も変化させない
+            # （行継続前の空白直後であれば、継続後も引き続き単語境界のままとなる）
+            index += 2
+            continue
+        if char == "\\" and quote != "'":
+            buffer.append(char)
+            escaped = True
+            word_boundary = False
+            index += 1
+            continue
+        if quote is not None:
+            buffer.append(char)
+            if char == quote:
+                quote = None
+            word_boundary = False
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            buffer.append(char)
+            word_boundary = False
+            index += 1
+            continue
+        # クォート外の`#`を検出した場合、単語先頭位置に限り行末までをスキップする
+        # （Bash仕様では`#`は単語の先頭にある場合だけコメント開始）
+        if char == "#" and word_boundary:
+            newline_index = command.find("\n", index)
+            if newline_index < 0:
+                # 改行が無い場合はそのまま終了
+                break
+            # 改行のみを次の処理へ渡す
+            index = newline_index
+            word_boundary = True
+            continue
+        if char == "\n":
+            buffer.append(char)
+            word_boundary = True
+            index += 1
+            continue
+        if char in (" ", "\t"):
+            buffer.append(char)
+            word_boundary = True
+            index += 1
+            continue
+        separator_length = 2 if command.startswith("&&", index) else 1 if char == ";" else 0
+        if separator_length:
+            segments.append("".join(buffer).strip())
+            buffer = []
+            word_boundary = True
+            index += separator_length
+            continue
+        if char in _WORD_BOUNDARY_CONTROL_CHARS:
+            buffer.append(char)
+            word_boundary = True
+            index += 1
+            continue
+        buffer.append(char)
+        word_boundary = False
+        index += 1
+    segments.append("".join(buffer).strip())
+    return [segment for segment in segments if segment]
+
+
+def _is_sleep_poll_pair(left: str, right: str) -> bool:
+    """隣接する2コマンドがsleepと読み取り専用状態確認の組であるかを判定する。"""
+    try:
+        left_args = shlex.split(left, posix=True)
+        right_args = shlex.split(right, posix=True)
+    except ValueError:
+        return False
+    if not left_args or left_args[0] != _SLEEP_COMMAND or not right_args:
+        return False
+    if any(tuple(right_args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
+        return True
+    return tuple(right_args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(right_args[1:])
+
+
+def _check_bash_sleep_poll_pattern(
+    command: str,
+    session_id: str,
+    run_in_background: bool,
+) -> str | None:
+    """sleep直後の読み取り専用状態確認を初回warn、同一セッション内再検出でblockする。
+
+    簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
+    既知の限界: サブシェルで包んだ状態確認は検出しない,
+    見直し契機: サブシェル包みの反復ポーリングを実測した場合
+    """
+    if run_in_background or re.match(r"^\s*until\b", command):
+        return None
+    segments = _split_serial_shell_commands(command)
+    if not any(_is_sleep_poll_pair(left, right) for left, right in zip(segments, segments[1:], strict=False)):
+        return None
+
+    already_detected = False
+
+    def _record_detection(state: dict) -> dict | None:
+        nonlocal already_detected
+        already_detected = bool(state.get("sleep_poll_detected"))
+        if already_detected:
+            return None
+        state["sleep_poll_detected"] = True
+        return state
+
+    update_state(session_id, _record_detection)
+    guidance = (
+        "Use one `until <condition>; do sleep <interval>; done` call, or start the job in\n"
+        "the background and wait once for its completion marker."
+    )
+    if already_detected:
+        print(
+            _llm_notice(
+                f"block: foreground sleep followed by a status check was detected again in this session.\n{guidance}",
+                tag="block",
+            ),
+            file=sys.stderr,
+        )
+        return "block"
+    return _llm_notice(
+        f"warn: foreground sleep followed by a status check may cause repeated polling.\n{guidance}",
+        tag="warn",
+    )
 
 
 # --- Bash: パターン一致によるプロセス終了の検出 ---

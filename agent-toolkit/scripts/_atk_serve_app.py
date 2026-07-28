@@ -11,6 +11,7 @@ import typing
 
 import _atk_mq_add as feedback_add
 import _atk_mq_common as common
+import _atk_mq_frontmatter as frontmatter
 import _atk_mq_mutations as feedback_mutations
 import _atk_mq_repo as feedback_repo
 import _atk_mq_tbd as tbd_mutations
@@ -113,20 +114,6 @@ def _specified_string(data: JsonObject, name: str) -> str | None:
     return value
 
 
-def _frontmatter(text: str) -> dict[str, str]:
-    if not text.startswith("---\n"):
-        return {}
-    closing = text.find("\n---\n", 4)
-    if closing < 0:
-        return {}
-    result: dict[str, str] = {}
-    for line in text[4:closing].splitlines():
-        key, separator, value = line.partition(":")
-        if separator:
-            result[key.strip()] = value.strip()
-    return result
-
-
 def _summary(text: str, kind: str) -> str:
     body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
@@ -136,7 +123,8 @@ def _summary(text: str, kind: str) -> str:
 
 
 def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
-    metadata = _frontmatter(text)
+    parsed = frontmatter.parse_frontmatter(text)
+    metadata = parsed[0] if parsed is not None else {}
     category_match = re.search(r"^- カテゴリ:\s*(.+)$", text, re.MULTILINE)
     answered = common.is_tbd_answered(text) if kind == "tbd" else None
     return {
@@ -208,7 +196,7 @@ class Operations:
                     kind = common.entry_type_of(path, text)
                     if kind_filter not in ("all", kind):
                         continue
-                    item = _entry(path, kind, state, text)
+                    item = _entry(path, kind or "unknown", state, text)
                 except FileNotFoundError:
                     continue
                 if answered_filter == "yes" and item["answered"] is not True:
@@ -227,7 +215,7 @@ class Operations:
         try:
             text = path.read_text(encoding="utf-8")
             kind = common.entry_type_of(path, text)
-            return {**_entry(path, kind, state, text), "content": text}
+            return {**_entry(path, kind or "unknown", state, text), "content": text}
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
 

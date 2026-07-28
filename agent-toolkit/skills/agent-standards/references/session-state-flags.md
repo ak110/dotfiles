@@ -7,6 +7,9 @@
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録。commit/rebase/push/編集時リセット、amend/rebase前確認に使う
 - `amend_pending_status_check`: cwd別辞書。PostToolUse(Bash)がamend/fixup成功時に記録し、実送出push成功時にリセットする。
   PreToolUse(Bash)側もpush前dirty検査clean通過時にリセットする（`--dry-run`・`-n`除く）
+- `sleep_poll_detected`: PreToolUse(Bash)が`sleep`直後の読み取り専用状態確認連結を検出した際に記録する。
+  cwdに依存しないセッション単位の真偽値。初回検出時に真化し、既に真の状態での再検出をblockの判定条件に使う。
+  寿命はセッション終了までとし、明示的なリセット経路は持たない
 - `plan_mode_skill_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で`agent-toolkit:plan-mode`呼び出しを記録する。plan file検査と最初ツール警告抑制に使う
 - `session_review_invoked`: PostToolUse(Skill)／UserPromptSubmit（スラッシュ）で振り返りスキルを記録。対象は配布物`agent-toolkit:session-review`・個人フック`session-review-dotfiles`。Stop hook重複抑止・辞書リセットに使う
 - `agent_toolkit_edit_skill_invoked`: dotfiles個人フックが`agent-toolkit-edit`呼び出しを記録する。未起動時のPreToolUse警告抑制と配布物`pretooluse.py`のRead隔離ブロックの例外判定に使う

@@ -10,6 +10,8 @@ import pathlib
 import subprocess
 import sys
 
+import _atk_mq_frontmatter as _frontmatter
+import _atk_mq_schedule as _schedule
 import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_INBOX,
@@ -31,31 +33,12 @@ from _atk_mq_formatters import _shorten_home
 from _atk_mq_repo import _resolve_repo_id
 
 
-def _parse_leading_frontmatter(message: str) -> tuple[dict[str, str], str]:
-    """メッセージ先頭のYAML frontmatterを解析してキー値と残り本文を返す。
-
-    先頭が3ハイフンで始まらない場合は空dictと元メッセージを返す。
-    frontmatter範囲は先頭区切りから次の区切りまで。
-    範囲内に「キー: 値」形式でない行が含まれる場合は本文中の水平線との衝突と判定し、
-    frontmatterと解釈せず空dictと元メッセージを返す（サイレントな本文欠落を予防する）。
-    """
-    lines = message.split("\n")
-    if not lines or lines[0].strip() != "---":
+def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
+    """共有frontmatterパーサーへの薄いラッパー。"""
+    parsed = _frontmatter.parse_frontmatter(message)
+    if parsed is None:
         return {}, message
-    body_start = None
-    parsed: dict[str, str] = {}
-    for i, line in enumerate(lines[1:], start=1):
-        if line.strip() == "---":
-            body_start = i + 1
-            break
-        if ":" not in line:
-            return {}, message
-        key, _, value = line.partition(":")
-        parsed[key.strip()] = value.strip()
-    if body_start is None:
-        return {}, message
-    body = "\n".join(lines[body_start:]).lstrip("\n")
-    return parsed, body
+    return parsed
 
 
 def _body_is_effectively_empty(body: str) -> bool:
@@ -75,7 +58,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 _EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
 
 
-def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, str], str]:
+def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
     if entry_type == MQ_TYPE_FEEDBACK and _body_is_effectively_empty(body):
@@ -102,15 +85,97 @@ def reject_message_file_path(message: str) -> None:
         return
 
 
-_RESERVED_FRONTMATTER_KEYS = ("target_repo", "type", "source", "scope", "question_type", "choices")
+_RESERVED_FRONTMATTER_KEYS = (
+    "target_repo",
+    "type",
+    "source",
+    "scope",
+    "question_type",
+    "choices",
+    "queue_schedule",
+    "repair_target",
+)
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
 出力frontmatterはここに列挙したキーを必ず単一の値へ確定させ、入力メッセージのfrontmatterへ
-同名キーが含まれていても`lines.extend`由来の入力値との重複キー生成を避ける。
-このうち`target_repo`・`source`は明示された入力側の値をCLIオプションより優先して採用し、
-`type`・`scope`・`question_type`・`choices`はCLIオプション（`--type`・`--scope`・
-`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
+同名キーが含まれていても`frontmatter_data.update()`による辞書更新で
+入力値を除外する。このうち`target_repo`・`source`は明示された入力側の値を
+CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
+保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
+（`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
+`queue_schedule`・`repair_target`は利用者による直接指定を禁止し、システムが自動生成する
+メタデータと修復TBDとして予約する。
 """
+
+
+def _add_entries_locked(
+    private_notes: pathlib.Path,
+    *,
+    parsed_messages: list[tuple[dict[str, object], str]],
+    target_repo: str,
+    source: str | None,
+    now: datetime.datetime,
+    entry_type: str,
+    scope: str | None,
+    question_type: str | None,
+    choices: str | None,
+    repair_targets: list[str | None] | None = None,
+) -> list[str]:
+    """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。"""
+    effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
+    if len(effective_repair_targets) != len(parsed_messages):
+        raise ValueError("repair_targetsの件数がメッセージ件数と一致しません")
+    timestamp = now.strftime("%Y%m%d-%H%M%S")
+    inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
+    counter = _max_existing_seq(private_notes, timestamp) + 1
+    generated: list[str] = []
+    for (frontmatter, body), repair_target in zip(parsed_messages, effective_repair_targets, strict=True):
+        raw_target_repo = frontmatter.get("target_repo", target_repo)
+        raw_source = frontmatter.get("source", source)
+        try:
+            item_target_repo = _resolve_repo_id(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
+        except SystemExit as error:
+            raise WebInputError(f"target_repoを解決できません: {raw_target_repo}") from error
+        item_source = raw_source if isinstance(raw_source, str) else source
+        filename = f"{timestamp}-{counter:03d}.md"
+        while any((private_notes / state / filename).exists() for state in MQ_STATES):
+            counter += 1
+            filename = f"{timestamp}-{counter:03d}.md"
+        frontmatter_data: dict[str, object] = {"target_repo": item_target_repo, "type": entry_type}
+        if item_source:
+            frontmatter_data["source"] = item_source
+        frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
+        if entry_type != MQ_TYPE_FEEDBACK:
+            if scope:
+                frontmatter_data["scope"] = scope
+            frontmatter_data["question_type"] = question_type
+            if choices:
+                frontmatter_data["choices"] = choices
+            if repair_target is not None:
+                frontmatter_data["repair_target"] = repair_target
+            logical_body = f"\n{_tbd.QUESTION_HEADING}\n\n{body}\n\n{_tbd.ANSWER_HEADING}\n\n{_tbd.ANSWER_MARKER}\n"
+        else:
+            logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
+            plan_file = _schedule.detect_plan_impl_reference(body)
+            if plan_file is not None:
+                metadata = _schedule.ScheduleMetadata(
+                    body_sha256=_schedule.body_sha256(logical_body),
+                    normalized_target_repo=item_target_repo,
+                    feedback_type="plan-impl",
+                    dependency=_schedule.Dependency(kind="none"),
+                    plan_file=plan_file,
+                    target_files=(),
+                    carry_count=0,
+                    carry_reasons=(),
+                )
+                frontmatter_data["queue_schedule"] = _schedule.metadata_to_mapping(metadata)
+        content = _frontmatter.serialize_frontmatter(frontmatter_data, logical_body)
+        (inbox_dir / filename).write_text(content, encoding="utf-8")
+        if entry_type != MQ_TYPE_FEEDBACK:
+            _tbd.warn_question_quality(filename, body, question_type)
+        generated.append(filename)
+        counter += 1
+    return generated
 
 
 def add_entries(
@@ -141,40 +206,17 @@ def add_entries(
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        timestamp = now.strftime("%Y%m%d-%H%M%S")
-        inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
-        counter = _max_existing_seq(private_notes, timestamp) + 1
-        generated: list[str] = []
-        for frontmatter, body in parsed_messages:
-            item_target_repo = frontmatter.get("target_repo", target_repo)
-            item_source = frontmatter.get("source", source)
-            filename = f"{timestamp}-{counter:03d}.md"
-            while any((private_notes / state / filename).exists() for state in MQ_STATES):
-                counter += 1
-                filename = f"{timestamp}-{counter:03d}.md"
-            lines = [f"target_repo: {item_target_repo}", f"type: {entry_type}"]
-            if item_source:
-                lines.append(f"source: {item_source}")
-            lines.extend(f"{key}: {value}" for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
-            if entry_type == MQ_TYPE_FEEDBACK:
-                content = "---\n" + "\n".join(lines) + f"\n---\n\n{body}\n"
-            else:
-                if scope:
-                    lines.append(f"scope: {scope}")
-                lines.append(f"question_type: {question_type}")
-                if choices:
-                    lines.append(f"choices: {choices}")
-                content = (
-                    "---\n"
-                    + "\n".join(lines)
-                    + f"\n---\n\n{_tbd.QUESTION_HEADING}\n\n{body}\n\n{_tbd.ANSWER_HEADING}\n\n"
-                    + f"{_tbd.ANSWER_MARKER}\n"
-                )
-            (inbox_dir / filename).write_text(content, encoding="utf-8")
-            if entry_type != MQ_TYPE_FEEDBACK:
-                _tbd.warn_question_quality(filename, body, question_type)
-            generated.append(filename)
-            counter += 1
+        generated = _add_entries_locked(
+            private_notes,
+            parsed_messages=parsed_messages,
+            target_repo=target_repo,
+            source=source,
+            now=now,
+            entry_type=entry_type,
+            scope=scope,
+            question_type=question_type,
+            choices=choices,
+        )
         count = len(generated)
         _commit_and_push(
             private_notes,

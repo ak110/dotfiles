@@ -16,7 +16,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -765,7 +767,7 @@ class TestNoninteractiveEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示したtarget_repoだけを正規化し、コメント・空行・重複キーを保持する。"""
+        """明示したtarget_repoを正規化し、他の意味的なキーを保持する。"""
         notes = _setup_flag_and_notes(tmp_path)
         path = notes / "inbox" / "fb-001.md"
         path.write_text(
@@ -780,10 +782,14 @@ class TestNoninteractiveEdit:
             atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert path.read_text(encoding="utf-8") == (
-            "---\n# 保持するコメント\ntarget_repo: github.com/example/repo\n\n"
-            "target_repo: github.com/example/repo\ntype: feedback\nsource: manual\n---\n\n編集後\n"
-        )
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0] == {
+            "target_repo": "github.com/example/repo",
+            "type": "feedback",
+            "source": "manual",
+        }
+        assert parsed[1] == "\n編集後\n"
 
     @pytest.mark.parametrize(
         ("message", "exit_code", "error_fragment"),
@@ -1035,6 +1041,201 @@ class TestNoninteractiveEdit:
         assert exc_info.value.code == 0
         assert "差分なし。" in capsys.readouterr().out
         assert not [call for call in git_calls if "commit" in call["cmd"]]
+
+    def test_edit_rejects_explicit_queue_schedule(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """edit経路からqueue_scheduleを注入できない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\nqueue_schedule:\n  type: normal\n---\n\n編集後"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "予約キー" in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_edit_content_validator_rejects_queue_schedule_via_direct_call(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """共通保存境界のcontent_validatorがqueue_scheduleの追加を拒否する（edit_entry_content直接呼び出し）。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original_content = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        # 元のfrontmatterにqueue_scheduleが無いことを確認
+        original_parsed = frontmatter_parser.parse_frontmatter(original_content)
+        assert original_parsed is not None
+        original_data, _ = original_parsed
+        assert "queue_schedule" not in original_data
+
+        # queue_scheduleを追加した新しいcontentを作成
+        new_content = (
+            "---\ntarget_repo: github.com/example/repo\ntype: feedback\nqueue_schedule:\n  type: normal\n---\n\n編集後の本文\n"
+        )
+
+        # edit_entry_contentへ直接呼び出し。共通保存境界のvalidatorがqueue_schedule追加を拒否する
+        with pytest.raises(mutations.WebInputError) as exc_info:
+            mutations.edit_entry_content(
+                notes,
+                state="inbox",
+                filename="fb-001.md",
+                content=new_content,
+                lock_timeout=2.0,
+            )
+
+        assert "予約キー" in str(exc_info.value)
+        # ファイルは変更されていない
+        assert path.read_text(encoding="utf-8") == original_content
+
+    def test_edit_rejects_explicit_repair_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """edit経路からrepair_targetを注入できない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\nrepair_target: broken.md\n---\n\n編集後"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "予約キー" in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_edit_invalidates_queue_schedule_on_target_repo_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """target_repo変更時は旧リポジトリ向け分類メタデータを削除する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/foo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "edit",
+                    "fb-001.md",
+                    "---\ntarget_repo: github.com/example/new\n---\n\n編集後",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert "queue_schedule" not in parsed[0]
+
+    def test_edit_preserves_queue_schedule_when_other_keys_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """target_repo以外のfrontmatter更新ではqueue_scheduleを保持する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/foo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "---\nsource: manual\n---\n\n本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["source"] == "manual"
+        assert "queue_schedule" in parsed[0]
+
+    def test_edit_preserves_nested_queue_schedule_mapping_when_unrelated_key_changes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """無関係なキーの更新前後でqueue_scheduleの入れ子構造を保持する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        text = path.read_text(encoding="utf-8")
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/foo",
+            "normal",
+            schedule.Dependency("entries", ("dependency.md",)),
+            None,
+            ("README.md", "src/example.py"),
+            1,
+            ("dependency-unmet",),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        before = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert before is not None
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "---\nsource: manual\n---\n\n本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        after = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert after is not None
+        assert after[0]["queue_schedule"] == before[0]["queue_schedule"]
+
+    def test_edit_raises_web_input_error_when_frontmatter_is_corrupt(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """frontmatter全体が破損している場合は編集を拒否する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = notes / "inbox" / "fb-001.md"
+        path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "frontmatterが破損" in capsys.readouterr().err
 
 
 class TestEditNoArg:

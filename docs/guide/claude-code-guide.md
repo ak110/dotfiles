@@ -160,6 +160,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `agent-toolkit/`配下のファイルを含む`git commit`で`plugin.json`のversion未変更を警告
 - `git log`実行時に`--decorate`オプションを自動挿入する
 - `codex exec`実行前に未決事項の確認を促す
+- `sleep`直後に状態確認を連結するBash入力をブロックし、1回の待機ループへ誘導する
 - `plan-codex-delegate`サブエージェントを経ない`mcp__codex__codex`・`mcp__codex__codex-reply`の呼び出しをブロック
 - codex呼び出しのサンドボックス指定を削除・弱体化する編集をブロック
 - AgentまたはTaskツール起動時のnameパラメーター指定をブロック
@@ -191,12 +192,14 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/plan-mode`: plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
 - `/careful-review`: レビューワークフロー
 - `/review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
-- `/process-feedbacks`: 対象リポジトリのフィードバックの取得・検討・適用、およびフィードバック本文の投入
+- `/process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
+  保存済みメタデータから依存、上限、競合を機械計算して処理順を決める
 - `/plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `/pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `/pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `/gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `/shell-exec`: 複数のシェルコマンド実行を要する定型作業をhaikuのサブエージェントへ委譲する
+- `/shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
+  メインへ終了状態と要約だけを返す
 - `/exit-session`: ユーザー指示時または自律実行スキル完遂時にClaude Codeのセッション自体を終了する
 
 ### 明示呼び出し専用のスキル

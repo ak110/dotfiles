@@ -2,7 +2,7 @@
 # PYTHON_ARGCOMPLETE_OK
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30", "pytilpack[quart]>=1.47.0"]
+# dependencies = ["argcomplete", "watchdog>=6.0.0", "platformdirs>=4.0", "filelock>=3.30", "pytilpack[quart]>=1.47.0", "pyyaml"]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
@@ -14,13 +14,14 @@
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
+- mq schedule: 分類メタデータの適用と処理順算出
 - mq enable/disable/status: メッセージキュー有効化フラグの操作・判定
 - mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
-`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
+`_atk_mq_schedule_cli`・`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
 """
 
@@ -42,6 +43,7 @@ import _atk_mq_grep as _grep  # noqa: E402
 import _atk_mq_list as _list  # noqa: E402
 import _atk_mq_mutations as _mutations  # noqa: E402
 import _atk_mq_process_loop as _process_loop  # noqa: E402
+import _atk_mq_schedule_cli as _schedule_cli  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_serve as _serve  # noqa: E402
@@ -117,12 +119,18 @@ def _add_source_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_target_repo_arg(parser: argparse.ArgumentParser, *, help_extra: str = "") -> None:
+def _add_target_repo_arg(
+    parser: argparse.ArgumentParser,
+    *,
+    help_extra: str = "",
+    required: bool = False,
+) -> None:
     """`--target-repo`オプションを共通形式で登録する。"""
     parser.add_argument(
         "--target-repo",
         metavar="REPO",
         default=None,
+        required=required,
         help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + help_extra,
     )
 
@@ -202,6 +210,25 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         action="store_true",
         help="git pull --ff-onlyをスキップする（ログイン時など軽量参照用）。",
     )
+
+    schedule = sub.add_parser(
+        "schedule",
+        help="分類メタデータを検証し、依存・上限・競合からセッションの処理順を算出する",
+    )
+    schedule.add_argument(
+        "--classifications",
+        metavar="PATH",
+        default=None,
+        help="未分類項目へ適用する分類結果JSONファイル",
+    )
+    schedule.add_argument(
+        "--record-deferral",
+        metavar="REASON:FILENAME",
+        nargs="+",
+        default=None,
+        help="初期選抜後に次回へ送る項目と理由",
+    )
+    _add_target_repo_arg(schedule, required=True)
 
     show = sub.add_parser("show", help="指定エントリまたは全件（--all）の本文を表示する")
     show.add_argument(
@@ -570,6 +597,7 @@ def main(
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _tbd._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
+        "schedule": lambda: _schedule_cli.cmd_schedule(args, private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
     exit_code = dispatch[sub]() or 0
