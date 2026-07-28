@@ -124,19 +124,27 @@ Claude Code固有事項として、本体作業に着手する時点で
 `git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
 
 - 推奨手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --sha=<sha>`を
-  Bashツールで`run_in_background=true`起動して全run完了まで待機する。
+  Bashツールで`run_in_background=true`起動し、明確な失敗ジョブを1件検出するか、
+  期待run・pipeline集合がすべて完了するまで待機する。
   既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
   background起動が前提となる
-  - 組み込み機能: タイムアウト・登録遅延リトライ・進捗ログ・
-    シグナル受信時の即時exit（`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
+  - 組み込み機能: タイムアウト・登録遅延リトライ・進捗ログ・ジョブ単位の早期失敗検出・
+    Jobs APIの全ページ取得・シグナル受信時の即時exit
+    （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
   - 調整可能な引数: `--timeout`・`--poll-interval`・`--registration-grace`・
     `--subprocess-timeout`・`--follow-cancelled`
-  - exit code: 0=全run success、1=いずれか非success（failure・cancelled・timed_out・action_required等）、2=タイムアウト
+  - exit code: 0=全run success、1=早期検出した失敗ジョブまたは全run完了後の非success、2=タイムアウト
   - exit code（続き）: 3=forge CLI（`gh`・`glab`）呼び出し失敗または対象forgeの判別失敗
     （`--sha`で渡した値の完全形式への解決に失敗した場合を含む）、
     4=登録猶予が経過してもrun未登録、130=シグナル終了
   - 対象forgeは`git remote get-url origin`のホストから自動判別する。
     明示指定する場合は`--forge=github`または`--forge=gitlab`を渡す
+  - GitHubは最新試行jobの`failure`・`timed_out`・`action_required`と、
+    完了runの`failure`・`timed_out`・`action_required`・`startup_failure`・`stale`を早期失敗とする
+  - GitLabは`allow_failure`ではない`failed` jobを早期失敗とする
+  - `cancelled`・`canceled`は`--follow-cancelled`またはrun・pipelineの最終結論へ委ねる。
+    `manual`・`skipped`・`neutral`・`allow_failure`もforgeの最終結論へ委ねる
+  - 取得済みジョブがすべて成功していても、run・pipelineが完了するまでは全体成功としない
   - 登録遅延・タイムアウト未設定の手書きpollループは非推奨とする
 - `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
   （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する
@@ -183,8 +191,9 @@ Claude Code固有事項として、本体作業に着手する時点で
 - `process-feedbacks`等の自律ループ経由のpushにも本規範を適用する
 - GitHub Actionsが動作しないリポジトリ（フィードバック管理側の非公開リポジトリ等）は本節の対象外とする
 - GitLab CI利用リポジトリでも推奨手順の`wait_ci.py`をそのまま使う。
-  内部で`glab ci list --sha=<sha>`へ切り替わり、gitlab.comと私設ホストの双方を対象とする
-  - 対象ホストはカレントディレクトリの`git remote`・環境変数`GITLAB_HOST`・`glab`設定から決定される
+  内部で`glab ci list --sha=<sha>`と`glab api`へ切り替わり、gitlab.comと私設ホストの双方を対象とする
+  - pipeline一覧とジョブ一覧の対象ホストは、カレントディレクトリの`git remote`・
+    環境変数`GITLAB_HOST`／`GL_HOST`・`glab`設定から同じ方法で決定される
   - 自己署名のTLS証明書を使う私設ホストは`glab config set skip_tls_verify true --host <host>`を先に実行する
   - パイプラインが手動ジョブ待ち（`manual`）で停止した場合は非成功として終了コード1で返る。
     手動ジョブを起動してから再実行する

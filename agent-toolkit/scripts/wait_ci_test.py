@@ -2,8 +2,7 @@
 private helper（`_gh_run_list`・`_resolve_sha`等）は原則として直接テストせず、`main`経由の
 シナリオテストで挙動を確認する（`coding-standards/references/testing.md`
 「private関数の直接テスト禁止」に従う）。
-例外はforge判別・GitLab応答正規化（`_resolve_forge`・`_normalize_gitlab_pipeline`・
-`_glab_pipeline_list`）とし、入力形態ごとの網羅を`main`経由で行うと
+例外はforge判別・forge応答正規化と外部コマンド境界とし、入力形態ごとの網羅を`main`経由で行うと
 1形態あたり複数の外部コマンド応答を組み立てる必要があり、判定対象の入出力関係が読み取れなくなるため
 最小限の範囲で直接テストする。
 """
@@ -26,6 +25,8 @@ import wait_ci
 _resolve_forge = wait_ci._resolve_forge  # pylint: disable=protected-access
 _normalize_gitlab_pipeline = wait_ci._normalize_gitlab_pipeline  # pylint: disable=protected-access
 _glab_pipeline_list = wait_ci._glab_pipeline_list  # pylint: disable=protected-access
+_gh_job_list = wait_ci._gh_job_list  # pylint: disable=protected-access
+_glab_job_list = wait_ci._glab_job_list  # pylint: disable=protected-access
 _all_cancelled = wait_ci._all_cancelled  # pylint: disable=protected-access
 _all_success = wait_ci._all_success  # pylint: disable=protected-access
 
@@ -37,6 +38,8 @@ def _run_wait(
     poll_interval=20.0,
     registration_grace=60.0,
     follow_cancelled=False,
+    forge="github",
+    job_list_fn=None,
     ancestor_check_fn=None,
     follow_shas_fn=None,
 ):
@@ -49,9 +52,11 @@ def _run_wait(
         registration_grace,
         follow_cancelled,
         10.0,
+        forge=forge,
         sleep_fn=lambda _s: None,
         now_fn=lambda: next(times),
         run_list_fn=run_list_fn,
+        job_list_fn=job_list_fn or (lambda _r: []),
         ancestor_check_fn=ancestor_check_fn or (lambda _a: True),
         follow_shas_fn=follow_shas_fn or (lambda _b: ["sha2"]),
     )
@@ -76,6 +81,24 @@ def _run(
     }
 
 
+def _job(
+    name="job",
+    status="completed",
+    conclusion: str | None = "success",
+    db_id=10,
+    *,
+    allow_failure=False,
+):
+    return {
+        "name": name,
+        "status": status,
+        "conclusion": conclusion,
+        "url": "job-url",
+        "databaseId": db_id,
+        "allowFailure": allow_failure,
+    }
+
+
 class TestSuccessAndFailurePaths:
     def test_all_success_returns_exit_success(self):
         assert _run_wait(lambda _s: [_run()]) == wait_ci.EXIT_SUCCESS
@@ -89,6 +112,81 @@ class TestSuccessAndFailurePaths:
     def test_mixed_success_and_failure_returns_ci_failed(self):
         runs = [_run(name="a", db_id=1), _run(name="b", conclusion="failure", db_id=2)]
         assert _run_wait(lambda _s: runs) == wait_ci.EXIT_CI_FAILED
+
+    @pytest.mark.parametrize("conclusion", ["failure", "timed_out", "action_required"])
+    def test_github_failed_job_returns_early(self, conclusion):
+        run = _run(status="in_progress", conclusion=None)
+        assert (
+            _run_wait(
+                lambda _s: [run],
+                registration_grace=100.0,
+                job_list_fn=lambda _r: [_job(conclusion=conclusion)],
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
+    @pytest.mark.parametrize(
+        ("status", "conclusion"),
+        [
+            ("completed", "cancelled"),
+            ("completed", "neutral"),
+            ("completed", "skipped"),
+            ("in_progress", None),
+            ("completed", "unknown"),
+        ],
+    )
+    def test_github_non_failure_job_waits_for_run_conclusion(self, status, conclusion):
+        assert (
+            _run_wait(
+                lambda _s: [_run()],
+                registration_grace=0.0,
+                job_list_fn=lambda _r: [_job(status=status, conclusion=conclusion)],
+            )
+            == wait_ci.EXIT_SUCCESS
+        )
+
+    @pytest.mark.parametrize("conclusion", ["startup_failure", "stale"])
+    def test_github_failed_completed_run_returns_before_other_run(self, conclusion):
+        runs = [
+            _run(name="failed", conclusion=conclusion, db_id=1),
+            _run(name="pending", status="in_progress", conclusion=None, db_id=2),
+        ]
+        assert _run_wait(lambda _s: runs, registration_grace=100.0) == wait_ci.EXIT_CI_FAILED
+
+    def test_gitlab_non_allowed_failure_returns_early(self):
+        run = _run(status="in_progress", conclusion=None)
+        job = _job(status="failed", conclusion="failure", allow_failure=False)
+        assert (
+            _run_wait(
+                lambda _s: [run],
+                forge="gitlab",
+                registration_grace=100.0,
+                job_list_fn=lambda _r: [job],
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
+    @pytest.mark.parametrize(
+        ("status", "allow_failure"),
+        [
+            ("failed", True),
+            ("cancelled", False),
+            ("manual", False),
+            ("skipped", False),
+            ("running", False),
+            ("unknown", False),
+        ],
+    )
+    def test_gitlab_non_early_failure_waits_for_pipeline_conclusion(self, status, allow_failure):
+        assert (
+            _run_wait(
+                lambda _s: [_run()],
+                forge="gitlab",
+                registration_grace=0.0,
+                job_list_fn=lambda _r: [_job(status=status, conclusion=status, allow_failure=allow_failure)],
+            )
+            == wait_ci.EXIT_SUCCESS
+        )
 
 
 class TestRegistrationGrace:
@@ -108,6 +206,16 @@ class TestRegistrationGrace:
     def test_timeout_before_grace_elapses(self):
         assert _run_wait(lambda _s: [], registration_grace=100.0, timeout=1.0) == wait_ci.EXIT_TIMEOUT
 
+    def test_failed_job_ends_registration_grace_immediately(self):
+        assert (
+            _run_wait(
+                lambda _s: [_run(status="in_progress", conclusion=None)],
+                registration_grace=100.0,
+                job_list_fn=lambda _r: [_job(conclusion="failure")],
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
 
 class TestPollingCompletion:
     def test_polls_until_all_completed(self):
@@ -124,6 +232,48 @@ class TestPollingCompletion:
     def test_timeout_while_polling_incomplete(self):
         runs = [_run(status="in_progress", conclusion=None)]
         assert _run_wait(lambda _s: runs, timeout=1.0, registration_grace=0.0) == wait_ci.EXIT_TIMEOUT
+
+    def test_failed_job_ends_completion_wait(self):
+        run = _run(status="in_progress", conclusion=None)
+        assert (
+            _run_wait(
+                lambda _s: [run],
+                registration_grace=0.0,
+                job_list_fn=lambda _r: [_job(conclusion="failure")],
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
+    def test_successful_generated_jobs_do_not_finish_in_progress_dag(self):
+        calls = {"n": 0}
+
+        def run_list_fn(_s):
+            calls["n"] += 1
+            if calls["n"] < 4:
+                return [_run(status="in_progress", conclusion=None)]
+            return [_run()]
+
+        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=lambda _r: [_job()]) == wait_ci.EXIT_SUCCESS
+        assert calls["n"] >= 4
+
+    def test_job_failure_from_run_registered_after_grace_is_not_in_expected_set(self):
+        calls = {"n": 0}
+        fetched_job_run_ids: list[int] = []
+
+        def run_list_fn(_s):
+            calls["n"] += 1
+            expected = _run(name="expected", db_id=1)
+            late = _run(name="late", status="in_progress", conclusion=None, db_id=2)
+            return [expected] if calls["n"] == 1 else [expected, late]
+
+        def job_list_fn(run):
+            fetched_job_run_ids.append(run["databaseId"])
+            if run["databaseId"] == 2:
+                return [_job(conclusion="failure")]
+            return []
+
+        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_SUCCESS
+        assert fetched_job_run_ids == [1, 1]
 
 
 class TestGhErrorHandling:
@@ -144,6 +294,105 @@ class TestGhErrorHandling:
 
         assert _run_wait(run_list_fn) == wait_ci.EXIT_SUCCESS
 
+    def test_intermittent_job_failure_recovers(self):
+        calls = {"n": 0}
+
+        def job_list_fn(_r):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise wait_ci.RunListError("transient jobs failure")
+            return []
+
+        assert _run_wait(lambda _s: [_run()], job_list_fn=job_list_fn) == wait_ci.EXIT_SUCCESS
+
+    def test_three_consecutive_job_failures_return_gh_error(self):
+        def job_list_fn(_r):
+            raise wait_ci.RunListError("jobs failure")
+
+        assert _run_wait(lambda _s: [_run()], job_list_fn=job_list_fn) == wait_ci.EXIT_GH_ERROR
+
+    def test_partial_multi_run_snapshot_does_not_reset_failure_counter(self):
+        runs = [_run(db_id=1), _run(db_id=2)]
+        calls = {1: 0, 2: 0}
+
+        def job_list_fn(run):
+            run_id = run["databaseId"]
+            calls[run_id] += 1
+            if run_id == 2:
+                raise wait_ci.RunListError("second run jobs failure")
+            return []
+
+        assert _run_wait(lambda _s: runs, job_list_fn=job_list_fn) == wait_ci.EXIT_GH_ERROR
+        assert calls == {1: 3, 2: 3}
+
+    def test_registration_grace_ending_on_job_failure_returns_gh_error(self):
+        def job_list_fn(_r):
+            raise wait_ci.RunListError("jobs failure")
+
+        assert (
+            _run_wait(
+                lambda _s: [_run()],
+                registration_grace=0.0,
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
+
+    def test_polling_timeout_with_non_consecutive_job_failures(self):
+        calls = {"n": 0}
+
+        def job_list_fn(_r):
+            calls["n"] += 1
+            if calls["n"] % 2:
+                raise wait_ci.RunListError("intermittent")
+            return []
+
+        assert (
+            _run_wait(
+                lambda _s: [_run(status="in_progress", conclusion=None)],
+                registration_grace=3.0,
+                timeout=8.0,
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_TIMEOUT
+        )
+
+    def test_completion_job_failure_recovers(self):
+        run_calls = {"n": 0}
+        job_calls = {"n": 0}
+
+        def run_list_fn(_s):
+            run_calls["n"] += 1
+            if run_calls["n"] == 1:
+                return [_run(status="in_progress", conclusion=None)]
+            return [_run()]
+
+        def job_list_fn(_r):
+            job_calls["n"] += 1
+            if job_calls["n"] == 2:
+                raise wait_ci.RunListError("transient completion jobs failure")
+            return []
+
+        assert _run_wait(run_list_fn, registration_grace=0.0, job_list_fn=job_list_fn) == wait_ci.EXIT_SUCCESS
+
+    def test_three_completion_job_failures_return_gh_error(self):
+        calls = {"n": 0}
+
+        def job_list_fn(_r):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise wait_ci.RunListError("completion jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                lambda _s: [_run(status="in_progress", conclusion=None)],
+                registration_grace=0.0,
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
+
 
 class TestFollowCancelled:
     def _run_list_dispatch(self, cancelled_runs, follow_map):
@@ -155,6 +404,118 @@ class TestFollowCancelled:
             return follow_map.get(sha, [])
 
         return _fn
+
+    def test_failed_job_ends_follow_registration_grace(self):
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(status="in_progress", conclusion=None, db_id=2, head_sha="sha2")]
+
+        def job_list_fn(run):
+            if run["databaseId"] == 2:
+                return [_job(conclusion="failure")]
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=100.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
+    def test_failed_job_ends_follow_completion_wait(self):
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(status="in_progress", conclusion=None, db_id=2, head_sha="sha2")]
+        calls = {"n": 0}
+
+        def job_list_fn(run):
+            if run["databaseId"] != 2:
+                return []
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return []
+            return [_job(conclusion="failure")]
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_CI_FAILED
+        )
+
+    def test_follow_job_failures_retry_three_times(self):
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(db_id=2, head_sha="sha2")]
+
+        def job_list_fn(run):
+            if run["databaseId"] == 2:
+                raise wait_ci.RunListError("follow jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=100.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
+
+    def test_follow_completion_job_failure_recovers(self):
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(db_id=2, head_sha="sha2")]
+        calls = {"n": 0}
+
+        def job_list_fn(run):
+            if run["databaseId"] != 2:
+                return []
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise wait_ci.RunListError("transient follow completion jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_SUCCESS
+        )
+
+    def test_three_follow_completion_job_failures_return_gh_error(self):
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(status="in_progress", conclusion=None, db_id=2, head_sha="sha2")]
+        calls = {"n": 0}
+
+        def job_list_fn(run):
+            if run["databaseId"] != 2:
+                return []
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise wait_ci.RunListError("follow completion jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
 
     def test_follow_cancelled_returns_success_when_follow_succeeds(self):
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
@@ -398,8 +759,16 @@ class TestMainEntrypoint:
             assert wait_ci.main(["--timeout", "1"]) == wait_ci.EXIT_GH_ERROR
 
     def test_explicit_sha_success_path(self):
-        payload = json.dumps([_run()])
-        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=payload, returncode=0, stderr="")):
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["git", "rev-parse", "--verify"]:
+                return mock.Mock(stdout="a" * 40, returncode=0, stderr="")
+            if cmd[:3] == ["gh", "run", "list"]:
+                return mock.Mock(stdout=json.dumps([_run()]), returncode=0, stderr="")
+            if cmd[:2] == ["gh", "api"]:
+                return mock.Mock(stdout="[]", returncode=0, stderr="")
+            raise AssertionError(cmd)
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
             assert wait_ci.main(["--sha", "abc123", "--registration-grace", "0", "--forge=github"]) == wait_ci.EXIT_SUCCESS
 
     def test_subprocess_timeout_surfaces_as_gh_error(self):
@@ -640,3 +1009,123 @@ class TestGlabPipelineList:
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_pipeline_list("deadbeef", 1.0)
+
+
+class TestGhJobList:
+    def test_fetches_latest_jobs_from_all_pages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+        payload = [
+            {"id": 11, "name": "build", "status": "completed", "conclusion": "success", "html_url": "u1"},
+            {"id": 12, "name": "test", "status": "completed", "conclusion": "failure", "html_url": "u2"},
+        ]
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        jobs = _gh_job_list(_run(db_id=7), 1.0)
+        command = calls[0]
+        assert "filter=latest&per_page=100" in command[4]
+        assert "--paginate" in command
+        assert "--slurp" in command
+        assert command[command.index("--jq") + 1] == "[.[].jobs[]]"
+        assert [job["databaseId"] for job in jobs] == [11, 12]
+
+    @pytest.mark.parametrize("payload", ["{}", '{"jobs":[]}', "not-json"])
+    def test_invalid_response_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch, payload: str) -> None:
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=""),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _gh_job_list(_run(), 1.0)
+
+    def test_invalid_run_id_raises_run_list_error(self) -> None:
+        with pytest.raises(wait_ci.RunListError):
+            _gh_job_list({"databaseId": None}, 1.0)
+
+    @pytest.mark.parametrize(
+        "side_effect",
+        [subprocess.TimeoutExpired("gh", 1.0), FileNotFoundError("gh")],
+    )
+    def test_command_exception_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch, side_effect: Exception) -> None:
+        monkeypatch.setattr(wait_ci.subprocess, "run", mock.Mock(side_effect=side_effect))
+        with pytest.raises(wait_ci.RunListError):
+            _gh_job_list(_run(), 1.0)
+
+    def test_non_zero_exit_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom"),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _gh_job_list(_run(), 1.0)
+
+
+class TestGlabJobList:
+    def test_fetches_all_non_retried_jobs_without_fixed_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[list[str]] = []
+        payload = [
+            {
+                "id": 21,
+                "name": "build",
+                "status": "failed",
+                "allow_failure": False,
+                "web_url": "u1",
+            },
+            {
+                "id": 22,
+                "name": "lint",
+                "status": "canceled",
+                "allow_failure": True,
+                "web_url": "u2",
+            },
+        ]
+
+        def fake_run(cmd: list[str], **_kw: object) -> subprocess.CompletedProcess:
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
+        monkeypatch.setattr(wait_ci.subprocess, "run", fake_run)
+        jobs = _glab_job_list(_run(db_id=8), 1.0)
+        command = calls[0]
+        assert command[:2] == ["glab", "api"]
+        assert "projects/:id/pipelines/8/jobs?include_retried=false&per_page=100" in command
+        assert "--paginate" in command
+        assert not any(item.startswith("--hostname") for item in command)
+        assert jobs[0]["conclusion"] == "failure"
+        assert jobs[1]["status"] == "cancelled"
+
+    @pytest.mark.parametrize("allow_failure", [None, 0, "false"])
+    def test_missing_or_non_bool_allow_failure_raises(self, monkeypatch: pytest.MonkeyPatch, allow_failure: object) -> None:
+        item: dict[str, object] = {"id": 21, "name": "build", "status": "failed"}
+        if allow_failure is not None:
+            item["allow_failure"] = allow_failure
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout=json.dumps([item]), stderr=""),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _glab_job_list(_run(), 1.0)
+
+    def test_invalid_json_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout="not-json", stderr=""),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _glab_job_list(_run(), 1.0)
+
+    def test_unexpected_shape_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            wait_ci.subprocess,
+            "run",
+            lambda cmd, **_kw: subprocess.CompletedProcess(cmd, 0, stdout='{"message":"x"}', stderr=""),
+        )
+        with pytest.raises(wait_ci.RunListError):
+            _glab_job_list(_run(), 1.0)
