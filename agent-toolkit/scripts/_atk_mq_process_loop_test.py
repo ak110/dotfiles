@@ -241,8 +241,10 @@ class TestWaitForChanges:
         """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで畳み込まれること。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
-        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 2.0)
-        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.3)
+        # 並列実行時のCPU競合でタイマー発火が遅延してもデバウンス窓内へ収まるよう、
+        # 窓幅（1.5秒）を2本のタイマーの発火間隔（0.4秒）より十分大きく取る。
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 10.0)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 1.5)
         monkeypatch.setattr(
             _process_loop,
             "_pull",
@@ -258,8 +260,8 @@ class TestWaitForChanges:
 
         monkeypatch.setattr(threading.Event, "wait", counting_wait)
 
-        timer1 = threading.Timer(0.05, lambda: (inbox / "entry1.md").write_text("x", encoding="utf-8"))
-        timer2 = threading.Timer(0.2, lambda: (inbox / "entry2.md").write_text("y", encoding="utf-8"))
+        timer1 = threading.Timer(0.1, lambda: (inbox / "entry1.md").write_text("x", encoding="utf-8"))
+        timer2 = threading.Timer(0.5, lambda: (inbox / "entry2.md").write_text("y", encoding="utf-8"))
         timer1.start()
         timer2.start()
         try:
@@ -268,7 +270,7 @@ class TestWaitForChanges:
             timer1.cancel()
             timer2.cancel()
 
-        debounce_waits = [t for t in wait_calls if t == 0.3]
+        debounce_waits = [t for t in wait_calls if t == 1.5]
         assert len(debounce_waits) >= 2
 
 
