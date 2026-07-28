@@ -570,8 +570,8 @@ def _dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[s
 
     正規化後の同一性で重複判定するため、`_normalize_md_filename`で正規化した値をキーに
     順序保存する（例: `name`と`name.md`は同一項目として1件へ集約）。
-    呼び出し元は`_atk_mq_mutations.py`の`_cmd_start_processing`・`_cmd_adopt`・
-    `_cmd_reject`・`_cmd_rm`の4サブコマンドとする。
+    呼び出し元は`_atk_mq_mutations.py`の`_cmd_start_processing`・`_cmd_return_to_inbox`・
+    `_cmd_adopt`・`_cmd_reject`・`_cmd_rm`の5サブコマンドとする。
     戻り値は正規化前の原文字列のうち初出のものを保持する（正規化は判定にのみ用いる）。
     """
     seen: dict[str, str] = {}

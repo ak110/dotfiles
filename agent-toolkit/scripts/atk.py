@@ -10,7 +10,7 @@
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示
-- mq start-processing/adopt/reject/rm/edit/commit: エントリの状態遷移・編集・コミット
+- mq start-processing/return-to-inbox/adopt/reject/rm/edit/commit: エントリの状態遷移・編集・コミット
 - mq answer: TBDへの回答
 - mq enable/disable/status: メッセージキュー有効化フラグの操作・判定
 - mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
@@ -253,6 +253,18 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="処理開始するinboxファイル名（1個以上）。",
     )
     _add_target_repo_arg(start_processing, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+
+    return_to_inbox = sub.add_parser(
+        "return-to-inbox",
+        help="feedbackをprocessing/からinboxへ戻し未処理状態に遷移させコミット・push",
+    )
+    return_to_inbox.add_argument(
+        "filenames",
+        metavar="FILENAME",
+        nargs="+",
+        help="差し戻すprocessingファイル名（1個以上）。",
+    )
+    _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
     adopt = sub.add_parser("adopt", help="採用としてinboxまたはprocessingからadopted/へ移動しコミット・push")
     adopt.add_argument(
@@ -510,6 +522,7 @@ def main(
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes),
+        "return-to-inbox": lambda: _mutations._cmd_return_to_inbox(args, private_notes),
         "adopt": lambda: _mutations._cmd_adopt(args, private_notes, now),
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),

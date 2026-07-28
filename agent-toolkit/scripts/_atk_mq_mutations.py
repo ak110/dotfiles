@@ -57,19 +57,27 @@ def transition_entries(
     対象に含まれるとexit 2で拒否する（`atk mq rm`の既定保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """
-    if action not in {"start-processing", "adopt", "reject", "remove"}:
+    if action not in {"start-processing", "return-to-inbox", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        search_dirs = [inbox_dir] if action == "start-processing" else [inbox_dir, processing_dir]
+        search_dirs = (
+            [inbox_dir]
+            if action == "start-processing"
+            else [processing_dir]
+            if action == "return-to-inbox"
+            else [inbox_dir, processing_dir]
+        )
         for filename in filenames:
             _verify_frontmatter_target_repo(filename, search_dirs, target_repo)
         paths = (
             _resolve_feedback_targets(filenames, inbox_dir)
             if action == "start-processing"
+            else _resolve_feedback_targets(filenames, processing_dir)
+            if action == "return-to-inbox"
             else _resolve_processable_targets(filenames, inbox_dir, processing_dir)
         )
         if category is not None:
@@ -87,6 +95,7 @@ def transition_entries(
                 sys.exit(2)
         destination_name = {
             "start-processing": MQ_STATE_PROCESSING,
+            "return-to-inbox": MQ_STATE_INBOX,
             "adopt": MQ_STATE_ADOPTED,
             "reject": MQ_STATE_REJECTED,
         }.get(action)
@@ -118,6 +127,7 @@ def transition_entries(
         note_suffix = f" (理由: {note})" if action == "remove" and note else ""
         message = {
             "start-processing": f"chore: start processing {count} {item_word}",
+            "return-to-inbox": f"chore: return {count} {item_word} to inbox",
             "adopt": f"chore: process {count} {item_word} (adopted)",
             "reject": f"chore: process {count} {item_word} (rejected)",
             "remove": f"chore: remove {count} {item_word}{note_suffix}",
@@ -187,12 +197,16 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
 
 
 def _resolve_feedback_targets(filenames: list[str], feedback_dir: pathlib.Path) -> list[pathlib.Path]:
-    """inbox配下のファイル名群を検証・解決し、未存在があればexit 2する。"""
+    """`feedback_dir`配下のファイル名群を検証・解決し、未存在があればexit 2する。
+
+    `feedback_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
+    エラーメッセージは`feedback_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
+    """
     paths = [_validate_filename(f, feedback_dir) for f in filenames]
     missing = [p for p in paths if not p.exists()]
     if missing:
         for p in missing:
-            print(f"inboxに存在しません: {p.name}", file=sys.stderr)
+            print(f"{feedback_dir.name}に存在しません: {p.name}", file=sys.stderr)
         sys.exit(2)
     return paths
 
@@ -284,6 +298,24 @@ def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path)
         target_repo=args.target_repo,
     )
     print(f"{len(filenames)}件処理開始: {', '.join(filenames)}")
+
+
+def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
+
+    保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
+    （`agent-toolkit:process-feedbacks`スキルのステップ2.5・ステップ7参照）。
+    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
+    """
+    args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")
+    filenames = transition_entries(
+        private_notes,
+        action="return-to-inbox",
+        filenames=args.filenames,
+        now=datetime.datetime.now(),
+        target_repo=args.target_repo,
+    )
+    print(f"{len(filenames)}件inboxへ差し戻し: {', '.join(filenames)}")
 
 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:

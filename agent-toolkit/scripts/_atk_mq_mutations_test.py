@@ -44,6 +44,42 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
     assert (notes / "processing/entry.md").is_file()
 
 
+def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """return-to-inboxがprocessingからinboxへ戻す。"""
+    notes = _setup_flag_and_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
+    mutations.transition_entries(notes, action="start-processing", filenames=["entry.md"], now=_FIXED_DT)
+    filenames = mutations.transition_entries(
+        notes,
+        action="return-to-inbox",
+        filenames=["entry.md"],
+        now=_FIXED_DT,
+    )
+    assert filenames == ["entry.md"]
+    assert (notes / "inbox/entry.md").is_file()
+    assert not (notes / "processing/entry.md").exists()
+
+
+def test_return_to_inbox_missing_file_reports_processing_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """return-to-inboxで未存在ファイルを指定するとprocessing側の状態名で案内する。"""
+    _setup_flag_and_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "return-to-inbox", "nonexistent.md"], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "processingに存在しません" in captured.err
+
+
 class TestAdoptSingle:
     """adoptサブコマンド: 1件指定でinboxからadopted/へ移動しコミットを行う。"""
 

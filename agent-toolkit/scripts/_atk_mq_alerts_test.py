@@ -39,14 +39,34 @@ def test_collect_github_ci_failures_skips_in_progress_latest() -> None:
 
 
 def test_collect_github_dependabot_alerts_combines_all_open() -> None:
-    """未解決Dependabotアラート全件を1件へまとめる。"""
+    """未解決Dependabotアラート全件を1件へまとめ、脆弱バージョン範囲・修正版を含む。"""
     payload = [
-        {"number": 21, "security_advisory": {"severity": "high"}, "dependency": {"package": {"name": "p21"}}},
+        {
+            "number": 21,
+            "security_advisory": {"severity": "high"},
+            "dependency": {"package": {"name": "p21"}},
+            "security_vulnerability": {
+                "vulnerable_version_range": "< 1.2.0",
+                "first_patched_version": {"identifier": "1.3.0"},
+            },
+        },
         {"number": 22, "security_advisory": {"severity": "low"}, "dependency": {"package": {"name": "p22"}}},
+        {
+            "number": 23,
+            "security_advisory": {"severity": "critical"},
+            "dependency": {"package": {"name": "p23"}},
+            "security_vulnerability": {"vulnerable_version_range": "< 2.0.0", "first_patched_version": None},
+        },
     ]
     result = alerts.collect_github_dependabot_alerts("owner/repo", alerts_fn=lambda _r: payload)
     assert result is not None
-    assert result.keys == ("github-dependabot:21", "github-dependabot:22")
+    assert result.keys == ("github-dependabot:21", "github-dependabot:22", "github-dependabot:23")
+    # 脆弱バージョン範囲・修正版に異なる値を用い、列を取り違えていないことを行全体の一致で検証する。
+    assert "| 21 | high | p21 | ? | < 1.2.0 | 1.3.0 |" in result.body
+    assert "| 22 | low | p22 | ? | ? | ? |" in result.body
+    # 修正版が存在しない脆弱性はGitHub REST APIが`first_patched_version`にnullを返すため、
+    # `?`へ正規化されクラッシュしないことを確認する。
+    assert "| 23 | critical | p23 | ? | < 2.0.0 | ? |" in result.body
     assert alerts.collect_github_dependabot_alerts("owner/repo", alerts_fn=lambda _r: []) is None
 
 

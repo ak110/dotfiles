@@ -21,8 +21,12 @@ jobs:
         with:
           path: dotfiles
       - name: ~/dotfiles に配置
-        run: mv dotfiles ~/dotfiles
+        run: |
+          mv dotfiles ~/dotfiles
+          echo "DOTFILES_DIR=$HOME/dotfiles" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          working-directory: ${{ env.DOTFILES_DIR }}
       - name: PowerShell + PSScriptAnalyzer インストール
         run: make -C "$HOME/dotfiles" setup-pwsh
       - name: chezmoi インストール
@@ -72,8 +76,11 @@ jobs:
           $rc = $LASTEXITCODE
           if ($rc -ge 8) { exit $rc }
           Remove-Item -Recurse -Force $src
+          "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          working-directory: ${{ env.DOTFILES_DIR }}
       - name: chezmoi インストール
         shell: bash
         run: |

@@ -83,6 +83,9 @@ target_repoが誤設定と判明した場合は`atk mq edit`で書き換え`atk 
 （`atk mq reject`しない）。「他の処理が全て終わったら」等の順序依存フィードバックも
 本ステップの保留判定で扱い、無条件でprocessing化しない。
 
+保留と判定した時点で既にprocessing状態へ遷移済みの対象は、`atk mq return-to-inbox <filename...>`で
+未処理状態へ戻したうえで次回セッションへ持ち越す。
+
 ## ステップ3: 批判的検討
 
 判定観点は`references/review-checklists.md`「批判的検討チェックリスト」節に従う。
@@ -126,10 +129,16 @@ CI通過確認を待って後始末を保留すると、セッションが中断
 次回セッションの再取得対象となる。後始末の完了後もCI通過確認は`agent-toolkit:commit`スキル
 「push後のCI通過確認」節に従って同一セッション内で完遂する。
 
+後始末の実施前に、自律実行中に自ら投入した確認事項がある場合、
+`atk mq list --type=tbd --answered=yes --target-repo=<repo-path>`で対象リポジトリ限定の
+回答済み確認事項一覧を再照会する。回答が記入されていた場合は暫定判断を破棄し、
+回答内容に沿って実装をやり直したうえで後始末へ進む。
+
 - feedback側の採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
 - feedback側の不採用ファイル: `atk mq reject <filename...> --note=<不採用理由> --commit=<sha>`
 - TBD側の回答済み採用ファイル: `atk mq adopt <filename...> --note=<概要> --commit=<sha>`
-- 保留ファイルは後始末コマンドを実行しない
+- 保留ファイルは後始末コマンドを実行しない。保留判定時点で未処理状態へ戻していない場合は
+  `atk mq return-to-inbox <filename...>`で戻したうえで次回セッションへ持ち越す
 - `--note`・`--commit`の詳細は`references/decision-format.md`「後始末コマンドの引数」節に従う
 
 ## ステップ8: 振り返りとセッション終了

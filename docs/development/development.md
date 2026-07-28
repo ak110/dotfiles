@@ -42,11 +42,18 @@ uv sync --reinstall  # .venvを再構築する場合
 
 ## サプライチェーン攻撃対策
 
-ロックファイル尊重・公開待機・ピン留め運用の3点を貫徹する。
+ロックファイル尊重・公開待機・ピン留め運用・脆弱性検知の4点を貫徹する。
 
 - ロックファイル尊重: `uv.lock`を再resolveせず使用する（`UV_FROZEN=1`を環境変数で常時適用）
 - 公開待機: `exclude-newer`および`mise`の`minimum_release_age`で公開から一定の期間を経たパッケージのみ採用する
 - ピン留め運用: GitHub Actionsはコミットハッシュで固定し、pinactで更新を管理する
+- 脆弱性検知: dotfilesは実行可能なコマンドラインツール群を配布するため、依存が利用者の実行環境へ
+  波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
+  無効化する方針を採用する。定期監査ワークフローで未解決アラートを`atk mq process-loop`経由で
+  feedback投入する構成とする。
+  実測（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）でDependabot alertsは有効である。
+  自動修正PRの作成（`gh api repos/ak110/dotfiles/automated-security-fixes`）は本節作成時点で
+  `enabled`のままであり、無効化未実施である。無効化の要否・実施はTBDで確認中とする
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
 設定ファイルで、ファイル名自体は変更しない）を参照する。

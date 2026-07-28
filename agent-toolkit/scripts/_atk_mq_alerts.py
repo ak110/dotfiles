@@ -227,19 +227,35 @@ def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlerts
     if not payload:
         return None
     keys = tuple(f"github-dependabot:{item['number']}" for item in payload)
+
+    def _first_patched_version(item: dict) -> str:
+        # GitHub REST APIは修正版が存在しない脆弱性で`first_patched_version`にnullを返す
+        # （`security_vulnerability`オブジェクト自体がnullの場合も同様）。
+        # `.get(key, {})`は既存キーの値がNoneの場合はNoneをそのまま返すため、
+        # `or {}`でNone・キー欠落の双方を空dictへ正規化してから後続の`.get`を呼ぶ。
+        vulnerability = item.get("security_vulnerability") or {}
+        patched = vulnerability.get("first_patched_version") or {}
+        return patched.get("identifier", "?")
+
     rows = "\n".join(
         f"| {item['number']} | {item.get('security_advisory', {}).get('severity', '?')} | "
         f"{item.get('dependency', {}).get('package', {}).get('name', '?')} | "
-        f"{item.get('security_advisory', {}).get('summary', '?')} |"
+        f"{item.get('security_advisory', {}).get('summary', '?')} | "
+        f"{(item.get('security_vulnerability') or {}).get('vulnerable_version_range', '?')} | "
+        f"{_first_patched_version(item)} |"
         for item in payload
     )
     body = (
         f"Dependabotが未解決の脆弱性アラートを{len(payload)}件報告している。\n\n"
-        "| 番号 | 深刻度 | パッケージ | 概要 |\n"
-        "| --- | --- | --- | --- |\n"
+        "| 番号 | 深刻度 | パッケージ | 概要 | 脆弱バージョン範囲 | 修正版 |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
         f"{rows}\n\n"
-        f"対象依存を更新して解消する。詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。\n"
-        "更新できない・誤検知と判断した場合は理由を記録して不採用とする。"
+        "(1) 対象パッケージのロック済みバージョンと表の修正版を突き合わせ、既に修正版以上であれば依存更新は不要である。\n"
+        "(2) 修正版以上の場合はアラートが実態より遅れて未クローズになっている状態であるため、"
+        f"`gh api --method PATCH /repos/{repo}/dependabot/alerts/<番号> -f state=dismissed "
+        "-f dismissed_reason=inaccurate`に突合結果を記したコメントを添えてdismissし、フィードバックは採用として処理する。\n"
+        "(3) 修正版未満の場合のみ依存を更新して解消する。更新できない場合は理由を記録して不採用とする。\n"
+        f"詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。"
     )
     return Alert(keys=keys, title=f"Dependabot未解決アラート{len(payload)}件", body=body)
 
