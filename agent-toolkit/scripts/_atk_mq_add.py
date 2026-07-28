@@ -105,9 +105,11 @@ def reject_message_file_path(message: str) -> None:
 _RESERVED_FRONTMATTER_KEYS = ("target_repo", "type", "source", "scope", "question_type", "choices")
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
-入力メッセージのfrontmatterへ同名キーが含まれていても、ここに列挙したキーは
-入力側の値を採用せず出力側で必ず単一の値へ確定させる。除外を怠ると
-`lines.extend`由来の入力値と、種別別ブロックが追記する値との重複キーを生成してしまう。
+出力frontmatterはここに列挙したキーを必ず単一の値へ確定させ、入力メッセージのfrontmatterへ
+同名キーが含まれていても`lines.extend`由来の入力値との重複キー生成を避ける。
+このうち`target_repo`・`source`は明示された入力側の値をCLIオプションより優先して採用し、
+`type`・`scope`・`question_type`・`choices`はCLIオプション（`--type`・`--scope`・
+`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 """
 
 

@@ -66,7 +66,9 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     if candidate_index >= len(argv):
         return argv, None
     candidate = argv[candidate_index]
-    if candidate.startswith("-"):
+    if candidate.startswith("-") or not candidate:
+        # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
+        # 本文としての空メッセージ（TBDの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return argv, None
     candidate_path = pathlib.Path(candidate).expanduser()
     if not _common.is_existing_dir(candidate_path):

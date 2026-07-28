@@ -39,8 +39,11 @@ description: >
 
 投入は`cd <repo-path> && atk mq add $'<message>'`で行う。
 `atk mq add`と`atk mq edit`の本文は、`$'...'`のANSI-Cクォートで囲む。
-MESSAGEは論理本文として扱われ、先頭frontmatterで明示したメタデータだけを更新する。
 ヒアドキュメント・パイプ・ファイルリダイレクトは入力経路に使わない。
+addは種別・TBDメタデータ（`type`・`scope`・`question_type`・`choices`）をCLIオプションで指定し、
+MESSAGEの先頭frontmatterでは`target_repo`・`source`と追加メタデータだけを指定できる。
+editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示したメタデータだけを既存値へ上書きし、
+未指定メタデータは保持する。
 
 判断が必要な複数の確認事項を本文へ含める場合、各項目の書式は
 `references/hold-with-tbd-inject.md`「投入コマンド」節に従う（疑問文要件を本体へ複製しない）。

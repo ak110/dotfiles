@@ -16,7 +16,6 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_mq_add as add  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -846,23 +845,28 @@ class TestNoninteractiveEdit:
     ) -> None:
         """空のTBD質問はaddで許容し、既存質問を削除するeditでは拒否する。"""
         notes = _setup_flag_and_notes(tmp_path)
-        monkeypatch.setattr(add, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-        monkeypatch.setattr(add, "_pull", lambda _path: None)
-        monkeypatch.setattr(add, "_commit_and_push", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        filenames = add.add_entries(
-            notes,
-            messages=[""],
-            target_repo="github.com/example/foo",
-            source=None,
-            now=_FIXED_DT,
-            entry_type="tbd",
-            question_type="free-form",
-        )
+        with pytest.raises(SystemExit) as add_exit:
+            atk.main(
+                [
+                    "mq",
+                    "add",
+                    "--target-repo",
+                    "github.com/example/foo",
+                    "--type=tbd",
+                    "--question-type=free-form",
+                    "",
+                ],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
+        assert add_exit.value.code == 0
+        filename = f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
+        assert (notes / "inbox" / filename).is_file()
 
         with pytest.raises(SystemExit) as edit_exit:
-            atk.main(["mq", "edit", filenames[0], ""], home=tmp_path)
+            atk.main(["mq", "edit", filename, ""], home=tmp_path)
 
         assert edit_exit.value.code == 1
         captured = capsys.readouterr()

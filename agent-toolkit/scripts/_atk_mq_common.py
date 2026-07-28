@@ -762,7 +762,9 @@ def _resolve_repo_path_override(
     messages = list(args_messages)
     if pre_parse_override is not None:
         return messages, pre_parse_override
-    if not messages:
+    if not messages or not messages[0]:
+        # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
+        # 本文としての空メッセージ（TBDの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return messages, None
     candidate = pathlib.Path(messages[0]).expanduser()
     if not is_existing_dir(candidate):
