@@ -57,7 +57,7 @@ FollowShasFn = Callable[[str], list[str]]
 
 
 class RunListError(RuntimeError):
-    """CI実行一覧の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
+    """CI実行一覧・ジョブ一覧の取得または応答検証の失敗。呼び出し側でretry判定に使う。"""
 
 
 def _gh_run_list(sha: str, subprocess_timeout: float) -> list[RunRecord]:
@@ -341,7 +341,16 @@ _GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS = _GITHUB_EARLY_FAILURE_CONCLUSIONS | froz
 
 
 def _find_early_failure(runs: list[RunRecord], jobs: list[JobRecord], forge: str) -> tuple[RunRecord | JobRecord, str] | None:
-    """forgeの確定的な失敗状態を1件返す。最終結論へ委ねる状態は返さない。"""
+    """forgeの確定的な失敗状態を1件返す。最終結論へ委ねる状態は返さない。
+
+    - `gitlab`: statusが`failed`かつ`allowFailure is False`のjobを早期失敗とする
+      （`allow_failure=true`・`manual`・`skipped`・`canceled`・進行中・未知状態は対象外）
+    - それ以外（`github`）: 完了runのconclusionが`_GITHUB_EARLY_FAILURE_RUN_CONCLUSIONS`
+      （`failure`・`timed_out`・`action_required`・`startup_failure`・`stale`）であれば先に返し、
+      無ければ完了jobのconclusionが`_GITHUB_EARLY_FAILURE_CONCLUSIONS`
+      （`failure`・`timed_out`・`action_required`）であるものを返す
+      （`cancelled`・`neutral`・`skipped`・進行中・未知状態は対象外）
+    """
     if forge == "gitlab":
         for job in jobs:
             if job.get("status") == "failed" and job.get("allowFailure") is False:
@@ -411,17 +420,26 @@ def wait_for_ci(
     ancestor_check_fn: AncestorCheckFn | None = None,
     follow_shas_fn: FollowShasFn | None = None,
 ) -> int:
-    """対象shaの期待run集合完了を待ちexit codeを返す。
+    """対象shaの明確な失敗run・ジョブ1件検出または期待run集合完了の早い方を待ちexit codeを返す。
 
+    - 毎pollでrun一覧と対象runすべてのジョブ一覧を、通常経路は`_fetch_snapshot`、
+      後続SHA追跡時は`_fetch_follow_snapshot`で不可分なスナップショットとして取得し、
+      `_find_early_failure`が確定的な失敗（forgeごとの判定は同関数docstring参照）を1件検出した時点で
+      run/pipeline完了を待たずEXIT_CI_FAILEDを返す
     - 登録猶予期間全体でrun集合を継続収集し、期間末で安定確定する
       （猶予末までに追加登録されるrunも期待集合に含む）
     - 期間末で0件ならEXIT_NO_RUNS
-    - CI実行一覧の連続取得失敗が閾値到達でEXIT_GH_ERROR
-    - 期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
+    - run一覧・ジョブ一覧いずれかの取得失敗を含むスナップショット取得の連続失敗が閾値到達でEXIT_GH_ERROR
+      （1回でも全取得成功したスナップショットで連続失敗カウンターをリセットする。
+      登録猶予末・後続SHA登録猶予末は、猶予末に到達した回の取得失敗のみでも
+      3回連続を待たず即時EXIT_GH_ERRORとする）
+    - 早期失敗が無く期待run集合全runが`conclusion==success`のときのみEXIT_SUCCESS
     - `follow_cancelled=True`かつ全run cancelled時は`git log <sha>..HEAD`の後続SHA上のrunで補完判定
     - `--sha`が現在ブランチHEADの祖先でない場合は`--follow-cancelled`を許容しない（`EXIT_GH_ERROR`）
-    - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`へ切り替える
-      （`run_list_fn`を明示指定した場合は`forge`を参照しない）
+    - `forge`が`gitlab`のとき既定の取得手段を`glab ci list --sha`・`glab api`へ切り替える
+      （`run_list_fn`・`job_list_fn`を明示指定した場合、取得関数の既定選択には`forge`を参照しない）
+    - `forge`は早期失敗の分類（`_find_early_failure`のforgeごとの判定）には
+      `run_list_fn`・`job_list_fn`の明示指定有無によらず常に使う
     """
     if run_list_fn is None:
         fetcher = _glab_pipeline_list if forge == "gitlab" else _gh_run_list

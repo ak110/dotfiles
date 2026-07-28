@@ -144,7 +144,7 @@ Claude Code固有事項として、本体作業に着手する時点で
   - GitLabは`allow_failure`ではない`failed` jobを早期失敗とする
   - `cancelled`・`canceled`は`--follow-cancelled`またはrun・pipelineの最終結論へ委ねる。
     `manual`・`skipped`・`neutral`・`allow_failure`もforgeの最終結論へ委ねる
-  - 取得済みジョブがすべて成功していても、run・pipelineが完了するまでは全体成功としない
+  - 全体成功は、取得済みジョブの成功状況にかかわらずrun・pipelineの完了を条件として判定する
   - 登録遅延・タイムアウト未設定の手書きpollループは非推奨とする
 - `concurrency.cancel-in-progress`で自コミットrunがcancelledになる運用
   （後続pushによる打ち切りなど）では`--follow-cancelled`を付与する

@@ -469,6 +469,105 @@ class TestFollowCancelled:
             == wait_ci.EXIT_GH_ERROR
         )
 
+    def test_follow_registration_grace_ending_on_job_failure_returns_gh_error(self):
+        """後続SHA登録猶予末の直近ジョブ取得失敗は、3回連続失敗ではなく1回の呼び出しのみで即時GH_ERRORとする。"""
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(db_id=2, head_sha="sha2")]
+        calls = {"n": 0}
+
+        def job_list_fn(run):
+            if run["databaseId"] != 2:
+                return []
+            calls["n"] += 1
+            raise wait_ci.RunListError("follow jobs failure")
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
+        assert calls["n"] == 1
+
+    def test_follow_completion_polling_timeout_with_non_consecutive_job_failures(self):
+        """後続run完了待ちで断続的なジョブ取得失敗（連続3回未満）が発生してもタイムアウトへ至る。
+
+        `registration_grace=0.0`でも登録猶予フェーズは1回のスナップショット取得を経由するため、
+        `calls["n"] == 1`（猶予フェーズの初回取得）は成功させ、以降の完了待ちフェーズでのみ断続的に失敗させる。
+        """
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [_run(status="in_progress", conclusion=None, db_id=2, head_sha="sha2")]
+        calls = {"n": 0}
+
+        def job_list_fn(run):
+            if run["databaseId"] != 2:
+                return []
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return []
+            if calls["n"] % 2 == 0:
+                raise wait_ci.RunListError("intermittent follow jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                timeout=8.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_TIMEOUT
+        )
+
+    def test_follow_completion_partial_multi_run_snapshot_does_not_reset_failure_counter(self):
+        """後続run完了待ちで、複数runのうち1runのジョブ取得だけが3poll連続失敗しても、
+        別runの取得成功でカウンターがリセットされない。
+
+        両runを同一後続SHA上に配置し、`run_list_fn`が返すリスト順（wf2が先）で
+        `job_list_fn`の呼び出し順を決定的にする。登録猶予フェーズの1回のスナップショット
+        取得でwf2・wf3の双方が呼ばれるため、最初の2呼び出しは猶予フェーズとして成功させ、
+        完了待ちフェーズに入ってからwf3のみ失敗させる。
+        """
+        cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
+        follow = [
+            _run(name="wf2", db_id=2, head_sha="sha2"),
+            _run(name="wf3", db_id=3, head_sha="sha2"),
+        ]
+        total_calls = {"n": 0}
+        job_calls = {2: 0, 3: 0}
+
+        def job_list_fn(run):
+            run_id = run["databaseId"]
+            if run_id not in (2, 3):
+                # 元shaのcancelled run（db_id=1）に対する呼び出しはカウント対象外とする
+                return []
+            total_calls["n"] += 1
+            if total_calls["n"] <= 2:
+                return []
+            job_calls[run_id] += 1
+            if run_id == 3:
+                raise wait_ci.RunListError("wf3 jobs failure")
+            return []
+
+        assert (
+            _run_wait(
+                self._run_list_dispatch(cancelled, {"sha2": follow}),
+                follow_cancelled=True,
+                registration_grace=0.0,
+                follow_shas_fn=lambda _b: ["sha2"],
+                job_list_fn=job_list_fn,
+            )
+            == wait_ci.EXIT_GH_ERROR
+        )
+        assert job_calls[3] == 3
+        assert job_calls[2] >= 1
+
     def test_follow_completion_job_failure_recovers(self):
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow = [_run(db_id=2, head_sha="sha2")]
