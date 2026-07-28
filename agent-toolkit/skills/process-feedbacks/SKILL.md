@@ -34,10 +34,13 @@ description: >
 投入前に`atk mq list --status=active --target-repo=<repo-path>`（パスまたは正規化リモートURLで
 指定する）で対象リポジトリ宛の既存フィードバック一覧を照会し、主題が重複するものの有無を確認する。
 重複を検出した場合は新規投入せず、
-`atk mq edit`で既存フィードバックへ差分情報（実測値・再現手順・出典）を追記して統合する。
+既存本文を`atk mq show <FILENAME>`で取得して差分情報（実測値・再現手順・出典）を統合し、
+`atk mq edit <FILENAME> $'<統合後の本文>'`で更新する。
 
-投入は`cd <repo-path> && atk mq add "<message>"`で行う。本文は`$'...'`のANSI-Cクォートで囲み、
-ヒアドキュメント・パイプ・ファイルリダイレクトで渡さない（`$EDITOR`が対話的に起動し失敗する）。
+投入は`cd <repo-path> && atk mq add $'<message>'`で行う。
+`atk mq add`と`atk mq edit`の本文は、`$'...'`のANSI-Cクォートで囲む。
+MESSAGEは論理本文として扱われ、先頭frontmatterで明示したメタデータだけを更新する。
+ヒアドキュメント・パイプ・ファイルリダイレクトは入力経路に使わない。
 
 判断が必要な複数の確認事項を本文へ含める場合、各項目の書式は
 `references/hold-with-tbd-inject.md`「投入コマンド」節に従う（疑問文要件を本体へ複製しない）。
@@ -64,7 +67,9 @@ description: >
 `atk mq list --status=processing`はprocessing配下のTBDも表示するため、
 遷移させても後続の照会漏れは生じない。
 
-target_repoが誤設定と判明した場合は`atk mq edit`で書き換え`atk mq commit`で確定し、
+target_repoが誤設定と判明した場合は、現在の本文を保持したまま
+`atk mq edit <FILENAME> $'---\ntarget_repo: <正しいリポジトリ>\n---\n\n<現在の論理本文>'`で更新する。
+editがcommit・pushまで完結するため`atk mq commit`は続けて実行しない。
 当該分は本セッションの処理対象から外す。
 
 ## ステップ2: 内容の調整

@@ -94,16 +94,28 @@ class TestMutationTargetRepoParserOption:
             ("mq", "rm", ["20260714-000001-001.md"]),
             ("mq", "edit", ["20260714-000001-001.md"]),
             ("mq", "start-processing", ["20260714-000001-001.md"]),
-            ("mq", "edit", ["20260714-000001-001.md"]),
-            ("mq", "adopt", ["20260714-000001-001.md"]),
-            ("mq", "rm", ["20260714-000001-001.md"]),
+            ("mq", "return-to-inbox", ["20260714-000001-001.md"]),
         ],
     )
     def test_accepts_target_repo(self, top_command: str, subcommand: str, argv_tail: list[str]) -> None:
-        """8種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
+        """6種のmutation系サブコマンドすべてが`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
         assert args.target_repo == "github.com/foo/bar"
+
+    def test_edit_accepts_message(self) -> None:
+        """`edit FILENAME MESSAGE`を解析して両方の位置引数を保持する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["mq", "edit", "20260714-000001-001.md", "更新本文"])
+        assert args.filename == "20260714-000001-001.md"
+        assert args.message == "更新本文"
+
+    def test_edit_without_message_remains_interactive(self) -> None:
+        """従来の`edit FILENAME`ではMESSAGEを未指定として扱う。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["mq", "edit", "20260714-000001-001.md"])
+        assert args.filename == "20260714-000001-001.md"
+        assert args.message is None
 
     def test_commit_has_no_target_repo_option(self) -> None:
         """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""

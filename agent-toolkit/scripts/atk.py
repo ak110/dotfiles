@@ -10,7 +10,8 @@
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示
-- mq start-processing/return-to-inbox/adopt/reject/rm/edit/commit: エントリの状態遷移・編集・コミット
+- mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
+- mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq enable/disable/status: メッセージキュー有効化フラグの操作・判定
 - mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
@@ -319,13 +320,27 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     rm.add_argument("--note", metavar="TEXT", default=None)
     _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
-    edit = sub.add_parser("edit", help="$EDITORで対象ファイルを編集しコミット・push")
+    edit = sub.add_parser("edit", help="対象エントリをMESSAGE又は$EDITORで編集しコミット・push")
     edit.add_argument(
         "filename",
         metavar="FILENAME",
         nargs="?",
         default=None,
-        help="編集対象のファイル名（inbox・processingいずれも対象）。省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を対象とする。",
+        help=(
+            "編集対象のファイル名（inbox・processingいずれも対象）。"
+            "MESSAGEとともに指定すると非対話で編集する。"
+            "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
+        ),
+    )
+    edit.add_argument(
+        "message",
+        metavar="MESSAGE",
+        nargs="?",
+        default=None,
+        help=(
+            "置換する論理本文。省略時は$EDITORで保存ファイル全体を編集する。"
+            "先頭frontmatterで明示したメタデータだけを更新し、未指定メタデータを保持する。"
+        ),
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 

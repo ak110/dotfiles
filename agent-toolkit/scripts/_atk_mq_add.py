@@ -72,6 +72,36 @@ def _body_is_effectively_empty(body: str) -> bool:
     return all(line in ("-", "*", "+") for line in non_empty_lines)
 
 
+_EMPTY_FEEDBACK_ERROR = "feedback本文が実質空です"
+
+
+def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, str], str]:
+    """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
+    frontmatter, body = _parse_leading_frontmatter(message)
+    if entry_type == MQ_TYPE_FEEDBACK and _body_is_effectively_empty(body):
+        raise WebInputError(_EMPTY_FEEDBACK_ERROR)
+    if entry_type != MQ_TYPE_FEEDBACK:
+        _tbd.reject_reserved_tbd_markup(body)
+    return frontmatter, body
+
+
+def reject_message_file_path(message: str) -> None:
+    """本文文字列が実在通常ファイルのパスだけの場合に`WebInputError`を送出する。"""
+    value = message.strip()
+    if not value:
+        return
+    try:
+        if pathlib.Path(value).is_file():
+            raise WebInputError(
+                f"MESSAGEがファイルパス '{value}' として解釈できます。"
+                "MESSAGEは本文文字列を受け取ります。"
+                f'ファイル内容を渡す場合は "$(cat {value})" のようにシェルで展開してください。'
+            )
+    except OSError:
+        # パス長制限などで検査できない文字列は本文として扱う。
+        return
+
+
 _RESERVED_FRONTMATTER_KEYS = ("target_repo", "type", "source", "scope", "question_type", "choices")
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
@@ -102,17 +132,9 @@ def add_entries(
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
-    if entry_type == MQ_TYPE_FEEDBACK:
-        for message in messages:
-            _, body = _parse_leading_frontmatter(message)
-            if _body_is_effectively_empty(body):
-                raise WebInputError("feedback本文が実質空です")
-    else:
-        if question_type not in {"choice", "yes-no", "free-form"}:
-            raise WebInputError("question_typeが不正です")
-        for message in messages:
-            _, body = _parse_leading_frontmatter(message)
-            _tbd.reject_reserved_tbd_markup(body)
+    if entry_type != MQ_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
+        raise WebInputError("question_typeが不正です")
+    parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     if entry_type != MQ_TYPE_FEEDBACK and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
@@ -121,8 +143,7 @@ def add_entries(
         inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
         counter = _max_existing_seq(private_notes, timestamp) + 1
         generated: list[str] = []
-        for message in messages:
-            frontmatter, body = _parse_leading_frontmatter(message)
+        for frontmatter, body in parsed_messages:
             item_target_repo = frontmatter.get("target_repo", target_repo)
             item_source = frontmatter.get("source", source)
             filename = f"{timestamp}-{counter:03d}.md"
@@ -197,28 +218,20 @@ def _cmd_add(
             sys.exit(1)
         messages = [message]
     for message in messages:
-        candidate = pathlib.Path(message.strip())
         try:
-            if message.strip() and candidate.is_file():
+            reject_message_file_path(message)
+            parse_entry_message(message, entry_type=args.type)
+        except WebInputError as error:
+            if str(error) == _EMPTY_FEEDBACK_ERROR:
+                preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
                 print(
-                    f"投入を拒否しました: 位置引数がファイルパス '{message.strip()}' として解釈できます。"
-                    "atk mq addは本文文字列を位置引数として受け取ります。"
-                    f'ファイル内容を投入する場合は "$(cat {message.strip()})" のように展開してください。',
+                    "投入を拒否しました: 本文が実質空です"
+                    "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
+                    f"該当メッセージの先頭: {preview}",
                     file=sys.stderr,
                 )
-                sys.exit(1)
-        except OSError:
-            # パス長制限などで検査できない文字列は本文として扱う。
-            pass
-        _, body = _parse_leading_frontmatter(message)
-        if args.type == MQ_TYPE_FEEDBACK and _body_is_effectively_empty(body):
-            preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
-            print(
-                "投入を拒否しました: 本文が実質空です"
-                "（空文字・空白のみ・箇条書きマーカー単独文字のいずれか）。"
-                f"該当メッセージの先頭: {preview}",
-                file=sys.stderr,
-            )
+            else:
+                print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
     try:
         generated = add_entries(
@@ -232,6 +245,9 @@ def _cmd_add(
             question_type=args.question_type,
             choices=args.choices,
         )
+    except WebInputError as error:
+        print(f"投入を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError:
         print("git pullに失敗しました。確定済みの本文が消失しないよう以下に再表示します。", file=sys.stderr)
         for message in messages:

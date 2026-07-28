@@ -16,7 +16,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_add as add  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
@@ -25,6 +27,43 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _setup_flag_and_notes,
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+def _write_tbd_entry(
+    notes: pathlib.Path,
+    filename: str,
+    *,
+    question: str = "変更前の質問",
+    answer: str = "既存回答",
+    frontmatter: str = "target_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form",
+) -> pathlib.Path:
+    """非対話edit用のTBDエントリを書き込む。"""
+    path = notes / "inbox" / filename
+    path.write_text(
+        f"---\n{frontmatter}\n---\n\n"
+        f"{tbd.QUESTION_HEADING}\n\n{question}\n\n"
+        f"{tbd.ANSWER_HEADING}\n\n{tbd.ANSWER_MARKER}\n{answer}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_add_empty_feedback_keeps_detailed_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実質空feedbackのCLI拒否案内に判定条件と対象先頭を含める。"""
+    _setup_flag_and_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "add", "--target-repo", "github.com/example/foo", "-"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "空文字・空白のみ・箇条書きマーカー単独文字" in captured.err
+    assert "該当メッセージの先頭: -" in captured.err
 
 
 def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -675,6 +714,323 @@ class TestEditNoChanges:
         assert commit_cmds == []
         captured = capsys.readouterr()
         assert "差分なし" in captured.out
+
+
+class TestNoninteractiveEdit:
+    """editサブコマンドのMESSAGE指定による非対話編集を検証する。"""
+
+    def test_feedback_body_updates_without_editor_and_preserves_metadata(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """EDITOR未設定でも本文を更新し、未指定メタデータを保持する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="編集前", source="session-review")
+        monkeypatch.delenv("EDITOR", raising=False)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8") == (
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\nsource: session-review\n---\n\n編集後\n"
+        )
+
+    def test_message_does_not_start_editor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """MESSAGE指定時はEDITORが設定済みでもエディターを起動しない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="編集前")
+        monkeypatch.setenv("EDITOR", "must-not-run")
+        git_calls: list[_GitCall] = []
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[0] == "must-not-run":
+                pytest.fail("MESSAGE指定時にEDITORが起動された")
+            return _make_subprocess_fake(git_calls)(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+
+    def test_target_repo_is_normalized_and_existing_frontmatter_lines_are_preserved(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """明示したtarget_repoだけを正規化し、コメント・空行・重複キーを保持する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = notes / "inbox" / "fb-001.md"
+        path.write_text(
+            "---\n# 保持するコメント\ntarget_repo: old.example/a/b\n\n"
+            "target_repo: old.example/a/b\ntype: feedback\nsource: manual\n---\n\n編集前\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\ntarget_repo: https://github.com/Example/Repo.git\n---\n\n編集後"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8") == (
+            "---\n# 保持するコメント\ntarget_repo: github.com/example/repo\n\n"
+            "target_repo: github.com/example/repo\ntype: feedback\nsource: manual\n---\n\n編集後\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("message", "exit_code", "error_fragment"),
+        [
+            ("---\ntype: tbd\n---\n\n本文", 2, "typeを変更"),
+            ("---\nscope: item\n---\n\n本文", 1, "feedbackでは指定できない"),
+            (" \n-\n ", 1, "実質空"),
+        ],
+    )
+    def test_feedback_rejects_invalid_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        message: str,
+        exit_code: int,
+        error_fragment: str,
+    ) -> None:
+        """種別変更・TBD専用キー・実質空本文を拒否する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="編集前")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == exit_code
+        assert error_fragment in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_existing_file_path_is_rejected_without_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """実在ファイルパスだけのMESSAGEをtracebackなしで拒否する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="編集前")
+        message_file = tmp_path / "message.txt"
+        message_file.write_text("編集後", encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", str(message_file)], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "ファイルパス" in captured.err
+        assert "Traceback" not in captured.err
+        assert path.read_text(encoding="utf-8").endswith("\n編集前\n")
+
+    def test_empty_tbd_add_is_allowed_but_empty_edit_is_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """空のTBD質問はaddで許容し、既存質問を削除するeditでは拒否する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        monkeypatch.setattr(add, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+        monkeypatch.setattr(add, "_pull", lambda _path: None)
+        monkeypatch.setattr(add, "_commit_and_push", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        filenames = add.add_entries(
+            notes,
+            messages=[""],
+            target_repo="github.com/example/foo",
+            source=None,
+            now=_FIXED_DT,
+            entry_type="tbd",
+            question_type="free-form",
+        )
+
+        with pytest.raises(SystemExit) as edit_exit:
+            atk.main(["mq", "edit", filenames[0], ""], home=tmp_path)
+
+        assert edit_exit.value.code == 1
+        captured = capsys.readouterr()
+        assert "質問本文は空にできません" in captured.err
+        assert "Traceback" not in captured.err
+
+    def test_processing_feedback_can_be_edited(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """processing配下のfeedbackも非対話で編集する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing = notes / "processing"
+        processing.mkdir()
+        path = processing / "fb-001.md"
+        path.write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n編集前\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
+
+    def test_tbd_question_and_scope_update_preserves_answer(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """TBDの質問とscopeだけを更新し、回答領域を保持する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_tbd_entry(
+            notes,
+            "tbd-001.md",
+            frontmatter=("target_repo: github.com/example/foo\ntype: tbd\nscope: old\nquestion_type: choice\nchoices: A,B"),
+        )
+        original_answer = path.read_text(encoding="utf-8").split(tbd.ANSWER_HEADING, maxsplit=1)[1]
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\nscope: new\n---\n\n変更後の質問"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "tbd-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        content = path.read_text(encoding="utf-8")
+        assert "scope: new" in content
+        assert "変更後の質問" in content
+        assert content.split(tbd.ANSWER_HEADING, maxsplit=1)[1] == original_answer
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            f"変更後\n\n{tbd.ANSWER_HEADING}\n",
+            f"変更後\n\n{tbd.ANSWER_MARKER}\n",
+            "---\nquestion_type: invalid\n---\n\n変更後",
+            "---\nquestion_type: choice\nchoices:\n---\n\n変更後",
+        ],
+    )
+    def test_tbd_rejects_invalid_question_message(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        message: str,
+    ) -> None:
+        """予約要素と不正な質問メタデータを拒否する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_tbd_entry(notes, "tbd-001.md")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "tbd-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Traceback" not in captured.err
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_tbd_uses_last_answer_marker_and_preserves_answer_region(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """回答マーカー重複時も終端側を基準に質問だけを更新する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_tbd_entry(
+            notes,
+            "tbd-001.md",
+            question=f"前半\n\n{tbd.ANSWER_MARKER}\n\n後半",
+            answer="保持する回答",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "tbd-001.md", "変更後の質問"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        content = path.read_text(encoding="utf-8")
+        assert content.count(tbd.ANSWER_MARKER) == 1
+        assert content.endswith(f"{tbd.ANSWER_MARKER}\n保持する回答\n")
+
+    def test_expected_content_conflict_keeps_message_unapplied(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """競合時は上書きせず、FILENAMEと未反映を案内する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md", body="編集前")
+        original_edit = mutations.edit_entry_content
+
+        def conflict(
+            private_notes: pathlib.Path,
+            *,
+            state: str,
+            filename: str,
+            content: str,
+            target_repo: str | None = None,
+            lock_timeout: float = -1,
+            expected_content: str | None = None,
+        ) -> bool:
+            path.write_text(path.read_text(encoding="utf-8").replace("編集前", "競合側の変更"), encoding="utf-8")
+            return original_edit(
+                private_notes,
+                state=state,
+                filename=filename,
+                content=content,
+                target_repo=target_repo,
+                lock_timeout=lock_timeout,
+                expected_content=expected_content,
+            )
+
+        monkeypatch.setattr(mutations, "edit_entry_content", conflict)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "fb-001.md" in captured.err
+        assert "反映されていません" in captured.err
+        assert path.read_text(encoding="utf-8").endswith("\n競合側の変更\n")
+
+    def test_logically_identical_feedback_reports_no_changes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """論理本文が同一ならコミットせず差分なしを出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="本文")
+        git_calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "差分なし。" in capsys.readouterr().out
+        assert not [call for call in git_calls if "commit" in call["cmd"]]
 
 
 class TestEditNoArg:

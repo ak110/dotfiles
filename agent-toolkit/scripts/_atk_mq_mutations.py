@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 
+import _atk_mq_add as _add
+import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
     MQ_STATE_INBOX,
@@ -32,7 +34,7 @@ from _atk_mq_common import (
     _validate_filenames_only,
 )
 from _atk_mq_list import _has_category
-from _atk_mq_repo import _verify_frontmatter_target_repo
+from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
@@ -175,6 +177,91 @@ def edit_entry_content(
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
     )
+
+
+def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
+    """MESSAGEを既存メタデータへ重ね、種別別の保存内容を返す。"""
+    entry_type = _require_type(path, original)
+    try:
+        frontmatter_end = original.index("\n---\n", 4)
+    except ValueError as error:
+        raise WebInputError(f"frontmatterの終端がありません: {path.name}") from error
+    stored_frontmatter = original[4:frontmatter_end]
+    stored_body = original[frontmatter_end + len("\n---\n") :]
+    message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=entry_type)
+
+    requested_type = message_frontmatter.get("type")
+    if requested_type is not None and requested_type != entry_type:
+        print(
+            f"typeを変更することはできません（現在値: {entry_type}）: {path.name}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if entry_type != MQ_TYPE_TBD:
+        tbd_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
+        if tbd_only_keys:
+            raise WebInputError(f"feedbackでは指定できないメタデータです: {', '.join(tbd_only_keys)}")
+
+    updates = dict(message_frontmatter)
+    if "target_repo" in updates:
+        updates["target_repo"] = _resolve_repo_id(updates["target_repo"])
+    updated_frontmatter = _update_frontmatter_lines(stored_frontmatter, updates)
+    prefix = f"---\n{updated_frontmatter}\n---\n"
+
+    if entry_type != MQ_TYPE_TBD:
+        return prefix + "\n" + message_body.rstrip() + "\n"
+
+    if not message_body.strip():
+        raise WebInputError("TBDの質問本文は空にできません")
+    effective_frontmatter = _frontmatter_values(updated_frontmatter)
+    question_type = effective_frontmatter.get("question_type")
+    if question_type not in {"choice", "yes-no", "free-form"}:
+        raise WebInputError("question_typeが不正です")
+    if question_type == "choice" and not effective_frontmatter.get("choices"):
+        raise WebInputError("choice形式にはchoicesが必要です")
+
+    marker_index = stored_body.rfind(_tbd.ANSWER_MARKER)
+    if marker_index < 0:
+        raise WebInputError("回答欄マーカーがありません")
+    answer_heading_index = stored_body.rfind(_tbd.ANSWER_HEADING, 0, marker_index)
+    question_heading_index = stored_body.rfind(_tbd.QUESTION_HEADING, 0, answer_heading_index)
+    if answer_heading_index < 0 or question_heading_index < 0:
+        raise WebInputError("TBDの質問見出しまたは回答見出しがありません")
+    question_heading_end = question_heading_index + len(_tbd.QUESTION_HEADING)
+    updated_body = (
+        stored_body[:question_heading_end] + "\n\n" + message_body.rstrip() + "\n\n" + stored_body[answer_heading_index:]
+    )
+    return prefix + updated_body
+
+
+def _update_frontmatter_lines(frontmatter: str, updates: dict[str, str]) -> str:
+    """既存frontmatterの明示キーだけを更新し、未指定行を保持する。"""
+    if not updates:
+        return frontmatter
+    remaining = dict(updates)
+    lines: list[str] = []
+    for line in frontmatter.split("\n"):
+        stripped = line.lstrip()
+        key = stripped.partition(":")[0] if ":" in stripped and not stripped.startswith("#") else None
+        if key in updates:
+            lines.append(f"{key}: {updates[key]}")
+            remaining.pop(key, None)
+        else:
+            lines.append(line)
+    lines.extend(f"{key}: {value}" for key, value in remaining.items())
+    return "\n".join(lines)
+
+
+def _frontmatter_values(frontmatter: str) -> dict[str, str]:
+    """保存済みfrontmatterのキー値を後勝ちで返す。"""
+    values: dict[str, str] = {}
+    for line in frontmatter.splitlines():
+        stripped = line.lstrip()
+        if ":" not in stripped or stripped.startswith("#"):
+            continue
+        key, _, value = stripped.partition(":")
+        values[key.strip()] = value.strip()
+    return values
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
@@ -339,14 +426,25 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """editサブコマンド: $EDITORで対象ファイルを編集しcommit・push（差分なしなら無動作）。
+    """editサブコマンド: MESSAGE又は$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
-    editor = os.environ.get("EDITOR")
-    if not editor:
-        print("$EDITORが未設定のため編集できません。", file=sys.stderr)
-        sys.exit(1)
+    message = args.message
+    if message is not None and args.filename is None:
+        args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
+    if message is not None:
+        try:
+            _add.reject_message_file_path(message)
+        except WebInputError as error:
+            print(f"編集を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+    editor = None
+    if message is None:
+        editor = os.environ.get("EDITOR")
+        if not editor:
+            print("$EDITORが未設定のため編集できません。", file=sys.stderr)
+            sys.exit(1)
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     with _repo_lock(private_notes):
@@ -367,12 +465,22 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = paths[0]
         _verify_frontmatter_target_repo(path.name, [inbox_dir, processing_dir], args.target_repo)
         snapshot = path.read_bytes()
-    tmp_path = _copy_to_tempfile(snapshot)
-    subprocess.run([editor, str(tmp_path)], check=True)
-    edited = tmp_path.read_text(encoding="utf-8")
     original = snapshot.decode("utf-8")
+    tmp_path: pathlib.Path | None = None
+    if message is None:
+        assert editor is not None
+        tmp_path = _copy_to_tempfile(snapshot)
+        subprocess.run([editor, str(tmp_path)], check=True)
+        edited = tmp_path.read_text(encoding="utf-8")
+    else:
+        try:
+            edited = _build_noninteractive_edit_content(path, original, message)
+        except WebInputError as error:
+            print(f"編集を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
     if edited == original:
-        tmp_path.unlink(missing_ok=True)
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         print("差分なし。")
         return
     try:
@@ -385,13 +493,21 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             expected_content=original,
         )
     except RuntimeError:
-        print(
-            f"編集中に他プロセスが対象を変更しました: {path.name}。"
-            f"編集内容は{tmp_path}に残しています。再度atk mq editを実行してください。",
-            file=sys.stderr,
-        )
+        if tmp_path is None:
+            print(
+                f"編集中に他プロセスが対象を変更しました: {path.name}。"
+                "指定したMESSAGEは反映されていません。同じFILENAMEとMESSAGEで再実行してください。",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"編集中に他プロセスが対象を変更しました: {path.name}。"
+                f"編集内容は{tmp_path}に残しています。再度atk mq editを実行してください。",
+                file=sys.stderr,
+            )
         sys.exit(1)
-    tmp_path.unlink(missing_ok=True)
+    if tmp_path is not None:
+        tmp_path.unlink(missing_ok=True)
     print(f"編集反映: {path.name}")
 
 
