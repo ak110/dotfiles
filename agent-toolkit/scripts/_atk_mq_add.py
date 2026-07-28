@@ -245,6 +245,10 @@ def _cmd_add(
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
     print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
+    print(
+        f"  うち{target_repo}: {_count_feedback(inbox_dir, target_repo)}件"
+        f"（processing: {_count_feedback(processing_dir, target_repo)}件）"
+    )
     print("編集する場合:")
     for filename in generated:
         print(f"  atk mq edit {filename}")

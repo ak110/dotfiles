@@ -439,6 +439,60 @@ class TestAddCompletionShowsProcessingCount:
         assert "inbox: 計1件（processing: 0件）" in captured.out
 
 
+class TestAddCompletionShowsTargetRepoBreakdown:
+    """addサブコマンド: 完了表示へ全体件数に加えて対象リポジトリ分の内訳を併記する。"""
+
+    def test_breakdown_excludes_other_repo_processing_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """別リポジトリ宛のprocessingエントリは対象リポジトリ分の内訳へ数えない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        processing_dir = notes / "processing"
+        processing_dir.mkdir(parents=True)
+        (processing_dir / "existing-001.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの処理中\n", encoding="utf-8"
+        )
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inbox: 計1件（processing: 1件）" in captured.out
+        assert "  うちgithub.com/example/myrepo: 1件（processing: 0件）" in captured.out
+
+    def test_breakdown_excludes_other_repo_inbox_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """別リポジトリ宛のinboxエントリは対象リポジトリ分の内訳へ数えない。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        inbox_dir = notes / "inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        (inbox_dir / "existing-001.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの未処理\n", encoding="utf-8"
+        )
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "inbox: 計2件（processing: 0件）" in captured.out
+        assert "  うちgithub.com/example/myrepo: 1件（processing: 0件）" in captured.out
+
+
 class TestAddMultipleMessages:
     """addサブコマンド: 2件以上のメッセージで連番と件数コミットメッセージを検証する。"""
 

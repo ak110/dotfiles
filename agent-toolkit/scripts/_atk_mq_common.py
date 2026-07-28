@@ -710,11 +710,17 @@ def _count_pending_entries(
     return feedback_count + tbd_count
 
 
-def _count_feedback(feedback_dir: pathlib.Path) -> int:
-    """指定ディレクトリ配下の`*.md`ファイル件数を返す。"""
+def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) -> int:
+    """指定ディレクトリ配下の`*.md`ファイル件数を返す。
+
+    `target_repo`指定時はfrontmatterの`target_repo`が一致するエントリのみ数える。
+    未指定時は全リポジトリ分を数える。
+    """
     if not feedback_dir.exists():
         return 0
-    return sum(1 for p in feedback_dir.iterdir() if p.suffix == ".md")
+    if target_repo is None:
+        return sum(1 for p in feedback_dir.iterdir() if p.suffix == ".md")
+    return sum(1 for _ in _iter_inbox_entries(feedback_dir, target_repo))
 
 
 def _max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
