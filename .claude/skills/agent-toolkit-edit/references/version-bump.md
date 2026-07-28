@@ -27,6 +27,26 @@
   複数ファイルへそれぞれ単一節分の追記をする変更は、各ファイル単位でPATCH判定の対象とする
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がない限り行わない
 
+## 競合解決
+
+rebase・merge時に`version`フィールドが競合した場合、次の手順で解決する。
+
+1. 競合した各候補の`version`値を`(major, minor, patch)`の数値タプルとして比較する
+2. タプルが大きい方を採用する
+   （MINOR更新は`minor`を増分し`patch`を0へ戻すため、同一の基準版から派生した候補である限り、
+   数値タプル比較だけで更新区分が上位の候補が自動的に選ばれる。個別に更新区分を判定し
+   基準版を特定する手順は不要である）。採用した候補が既にリモートへpush済みの公開版であり、
+   かつ自分側の未公開コミットが利用者振る舞い変更を含む場合、採用値をそのまま使うと当該変更が
+   version未変更のまま配信対象から漏れる。この場合は「未プッシュ範囲での統合」節の
+   「`git push`実行後の追加commitは新たな未プッシュ範囲の開始として扱う」規定に従い、
+   採用値からさらに「判定基準」節に基づく追加のbumpを実施する
+3. 採用した値（前項の追加bumpを実施した場合はbump後の値）を、Claude Code向け正本2ファイル
+   （`agent-toolkit/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`）へ反映する
+4. 正本2ファイルの反映後、`scripts/sync_codex_plugin_manifests.py`で
+   Codex向け派生manifest（`agent-toolkit/.codex-plugin/plugin.json`）を同期する
+5. 同期後、対象3ファイル（正本2ファイルとCodex向け派生manifest）の`version`値が
+   一致することを`grep -n version`等で確認する
+
 ## 未プッシュ範囲での統合
 
 未プッシュコミットが既に1回以上bumpを含む場合、後続編集ごとに追加でbumpしない。

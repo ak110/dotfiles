@@ -35,6 +35,8 @@ SSOTファイルの絶対パス解決・受け渡しは行わない（`plan-code
 - 作業ツリー全体の状態を変更するgit操作（`git stash`・`git checkout`・`git reset`・`git clean`等）は行わない。
 - 対象外ファイルの変更は行わない。
 - {formatter_linter_instruction}
+- 完了報告の作成前に対象ファイルへ`git status --short`と`git diff --stat`を実行し、
+  両方の出力を報告本文へ引用する。いずれの出力も空の場合はその旨を明示する。
 
 ## 品質規範
 

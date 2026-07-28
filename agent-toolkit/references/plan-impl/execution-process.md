@@ -85,8 +85,8 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
    `plan-implementer`へ委譲する場合の`model`引数は`sonnet`を既定とし、
    難易度に応じて`haiku`または`opus`を明示指定する
 4. 委譲したタスクが`needs_escalation`を返したら本エージェント自身で引き上げて実装する。
-   `plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`unplanned`の構造化書式で
-   完了報告を返すため、`unplanned`欄で対象外変更の必要性などを検知し、
+   `plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`verification`/`unplanned`の
+   構造化書式で完了報告を返すため、`unplanned`欄で対象外変更の必要性などを検知し、
    該当時は自身での実装または`plan-implementer`へ切り替える
 5. 呼び出し元起動プロンプトで並列化が明示指定された場合に限り、
    委譲タスクのうち編集対象ファイルが独立する2件以上は並列起動する。
@@ -110,6 +110,10 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
 サブエージェントは独立コンテキストで動作するため、相対参照（「上記」「前述」等）を含めず本文を完結させる。
 各起動プロンプトには、完了報告を戻り値として返し、`SendMessage`による能動送付をしない旨を含める。
 
+各起動プロンプトには、`git commit`・`git push`・タグ作成などの不可逆操作を
+委譲先が実行しない旨を毎回明示する。
+本規定は`plan-codex-delegate`経由と`plan-implementer`経由の双方へ適用する。
+
 既存実装の挙動保存が要件となる場合、`plan-impl-executor`は対象リポジトリの実ファイルから
 当該実装の本体を取得し、引用形式でタスク記述へ含める。
 対象には既存処理の移設と既存APIの呼び出しを含む。
@@ -130,6 +134,10 @@ unplanned項目は`[CLAUDE.md追記候補]`・`[即時相談候補]`・`[該当�
 
 - 完了報告のchanged一覧が計画ファイル`## 変更内容`当該節の独立変更項目を網羅するかを`git diff`実体で照合する。
   `changed`欄が概念レベルで集約され項目抽出が困難な場合は、計画ファイル指示と実装差分を直接照合する
+- `plan-codex-delegate`（`用途: 実装`）の完了報告は`verification`欄が示す
+  `git status --short`・`git diff --stat`の実測結果を確認し、`changed`欄との整合を照合する。
+  `verification`欄が変更なしを示すにもかかわらず`changed`欄が変更ありを主張する場合は
+  虚偽の完了報告の疑いとして扱い、`git diff`実体で再照合する
 - unplanned項目が含まれる場合は計画方針および判断指針へ照らして即時採否判定する。
   採否を保留すべき事項は暫定不採用（計画に明記のない変更は適用しない）で完了報告の`pending_confirmations`欄へ記録する
 - 修正再実装の検収では、修正差分が新規問題の混入を生じていないかも事後点検する

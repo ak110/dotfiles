@@ -165,6 +165,7 @@ status: completed | needs_escalation
 summary: {codex応答の要点を1文で要約}
 thread_id: {threadId}
 changed: {codex応答が言及した変更対象ファイルのパス一覧}
+verification: {codexが報告した`git status --short`・`git diff --stat`の出力、または変更なしの明示}
 unplanned: {codex応答が示す対象外変更の必要性・懸念点等の要約（無ければ「なし」）}
 model_fallback: {適用有無。適用した場合は受領したエラー応答の要約を付記（未適用の場合は「なし」）}
 ```
