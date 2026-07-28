@@ -51,9 +51,9 @@ uv sync --reinstall  # .venvを再構築する場合
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
   無効化する方針を採用する。定期監査ワークフローで未解決アラートを`atk mq process-loop`経由で
   feedback投入する構成とする。
-  実測（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）でDependabot alertsは有効である。
-  自動修正PRの作成（`gh api repos/ak110/dotfiles/automated-security-fixes`）は本節作成時点で
-  `enabled`のままであり、無効化未実施である。無効化の要否・実施はTBDで確認中とする
+  実測でDependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
+  自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が
+  `enabled: false`）。いずれも方針どおりの状態にある
 
 設定値の詳細は`Makefile`・`.github/workflows/*.yaml`・`.pre-commit-config.yaml`（prekが読む
 設定ファイルで、ファイル名自体は変更しない）を参照する。
