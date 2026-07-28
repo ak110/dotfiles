@@ -66,6 +66,9 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
 from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
+from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_transcript_agent_id as _extract_transcript_agent_id,
+)
 
 # pylint: enable=wrong-import-position,import-error
 
@@ -207,6 +210,10 @@ _PLAN_CODEX_DELEGATE_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:
 # `_PLAN_CODEX_DELEGATE_PURPOSE_KEY`と同一値を保つ。
 _PLAN_CODEX_DELEGATE_PURPOSE_KEY = "plan_codex_delegate_purpose_by_agent_id"
 
+# codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
+# `pretooluse.py`が同一キーで書き込み、本スクリプトが読み取り・削除する共有SSOT。
+_CODEX_REMOTE_SNAPSHOT_KEY = "codex_remote_snapshot_by_key"
+
 # 起動プロンプトの用途行（`用途: <値>`）を行単位で抽出する。
 # 記録先の判定関数（`_tracked_subagent_types.is_explicit_review_purpose`）が
 # 用途行形式と値単体の双方を受理するため、抽出した行をそのまま記録する。
@@ -333,6 +340,90 @@ def _check_plan_format(file_path: str) -> list[str]:
             violations.append(f"the first H3 under '## 変更内容' must be '対象ファイル一覧', but found: '{actual}'.")
 
     return violations
+
+
+def _diff_remote_snapshots(
+    before: dict[str, dict[str, str] | None],
+    after: dict[str, dict[str, str] | None],
+) -> set[str]:
+    """2つのリモートスナップショット間で参照が変化したリモート名の集合を返す。
+
+    値`None`は当該リモートの`git ls-remote`取得に失敗したことを示すマーカーであり、
+    リモート名自体は既知として保持されている（`snapshot_remote_refs`参照）。
+    比較対象のいずれかが`None`の場合（取得失敗）は対象から除外する
+    （取得失敗を「参照が消えた」または「新規追加された」という差分と誤認しないため）。
+    キー自体が存在しない（`before`辞書にキーが無い）リモートのみを「新規追加」と判定し、
+    参照を1件以上持つ場合に対象へ含める。
+    """
+    changed: set[str] = set()
+    for remote, before_refs in before.items():
+        if remote not in after:
+            continue
+        after_refs = after[remote]
+        if before_refs is None or after_refs is None:
+            continue
+        if before_refs != after_refs:
+            changed.add(remote)
+    for remote, after_refs in after.items():
+        if remote not in before and after_refs:
+            changed.add(remote)
+    return changed
+
+
+def _warn_codex_remote_change(session_id: str, payload: dict) -> None:
+    """codex呼び出し前後でリモート参照が変化した場合に警告する（ブロックしない）。
+
+    PreToolUse側が記録をスキップした場合（`cwd`未取得等）は比較せず終了する。
+    比較後は記録済みスナップショットを削除し、次回呼び出しでの記録漏れによる
+    古いスナップショットとの誤比較を防ぐ。警告はコーディングエージェントへ確実に届ける
+    ため`hookSpecificOutput.additionalContext`経由で出力する
+    （`agent-toolkit/skills/agent-standards/references/claude-hooks.md`
+    「出力フィールドの使い分け」節: PostToolUseで行動を促す場合の第一経路）。
+    """
+    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    key = agent_id if agent_id is not None else f"session:{session_id}"
+    state = read_state(session_id)
+    entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+    recorded = entries.get(key) if isinstance(entries, dict) else None
+
+    def _clear(state: dict) -> dict | None:
+        entries = state.get(_CODEX_REMOTE_SNAPSHOT_KEY)
+        if isinstance(entries, dict) and key in entries:
+            del entries[key]
+            return state
+        return None
+
+    update_state(session_id, _clear)
+    if recorded is None:
+        return
+    cwd = recorded.get("cwd")
+    before = recorded.get("snapshot")
+    if not isinstance(cwd, str) or not isinstance(before, dict):
+        return
+    after = _git_status.snapshot_remote_refs(cwd)
+    changed_remotes = sorted(_diff_remote_snapshots(before, after))
+    if not changed_remotes:
+        return
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PostToolUse",
+                    "additionalContext": _llm_notice(
+                        "warn: remote refs changed during a codex call "
+                        f"(remotes: {', '.join(changed_remotes)})."
+                        " This may reflect an unintended `git push`/tag creation performed inside the"
+                        " codex process (which bypasses PreToolUse), or a legitimate push by another"
+                        " concurrent session that cannot be distinguished from here. Verify the remote"
+                        " state and, if the change was unintended, restore it per caller-reception.md"
+                        " remote-state reconciliation.",
+                        tag="warn",
+                    ),
+                }
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def main() -> int:
@@ -543,6 +634,7 @@ def main() -> int:
                         return state
 
                     update_state(session_id, _set_recorded_thread_id)
+        _warn_codex_remote_change(session_id, payload)
         return 0
 
     # Read: 規範ファイル読み込みのセッション状態フラグ化

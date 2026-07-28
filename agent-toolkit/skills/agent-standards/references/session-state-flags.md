@@ -64,6 +64,19 @@
   スキップされ`_check_codex_mcp_via_plan_codex_delegate`の起動履歴検査のみが適用される。
   並列時に本フラグの単一値設計が競合する事象は生じない
   （メインセッション直接の`mcp__codex__codex`エスカレーション呼び出しのみ本フラグを参照し、当該呼び出しは逐次的である）
+- `codex_remote_snapshot_by_key`: `mcp__codex__codex`/`mcp__codex__codex-reply`呼び出し直前に
+  PreToolUseが記録するリモート参照スナップショット（キー別辞書）。
+  値は`{"cwd": <str>, "snapshot": <dict>}`とする。
+  キーは`transcript_path`から抽出した`agentId`を優先し、抽出できない場合は`session:{session_id}`とする。
+  codex呼び出し完了後にPostToolUseが読み取って現在値と比較し、差分があれば警告する。
+  記録・比較の詳細は`pretooluse.py`の`_record_codex_remote_snapshot`・
+  `posttooluse.py`の`_warn_codex_remote_change`を参照する。
+  比較後は当該キーのエントリを削除する（寿命: 対応するcodex呼び出し1回分）
+- `codex_remote_cwd_by_key`: `codex_remote_snapshot_by_key`と同一キー体系で、直近の
+  `mcp__codex__codex`呼び出しが対象とした`tool_input["cwd"]`を永続的に記録する辞書。
+  `mcp__codex__codex-reply`は`tool_input`に`cwd`を持たないため、PreToolUseが同一キーの
+  本フラグから引き継いで`codex_remote_snapshot_by_key`の記録対象を決定する。
+  `codex_remote_snapshot_by_key`と異なり比較後も削除しない（寿命: セッション終了まで維持）
 - `current_plan_file_path`: PostToolUse(Write/Edit/MultiEdit)が計画ファイル編集時のパスを記録。
   ExitPlanMode時の再読込と、`plan-impl-executor`系Agent起動時の起動プロンプト参照先パス一致判定に使う
 - `plan_impl_executor_verified_plan_path`: PreToolUseが`plan-impl-executor`系Agent/Task起動時に記録する。

@@ -1,0 +1,213 @@
+"""atk (agent-toolkit `atk mq`) のgrepサブコマンドのテスト。
+
+本文全体（frontmatter含む）の正規表現検索・大文字小文字無視・各種フィルター
+（target-repo・type・status・answered）・該当0件時のexit 1・不正な正規表現時のexit 2の
+単体テストを集約する。共通ヘルパーは`atk_test.py`から再利用する。
+"""
+
+import pathlib
+import subprocess
+import sys
+
+import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
+
+# pylint: disable-next=wrong-import-position,import-error
+from atk_test import (  # pylint: disable=wrong-import-position
+    _FIXED_TIMESTAMP,
+    _make_subprocess_fake,
+    _setup_flag_and_notes,
+    _write_feedback_file,
+    _write_tbd_file,
+)  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+class TestGrepBasic:
+    """grepサブコマンド: 複数エントリ・複数行にまたがるマッチを検索する。"""
+
+    def test_grep_finds_match_in_single_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """単一エントリ内の複数行マッチを`<ファイル名>:<行番号>:<該当行>`形式で出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="line1\nline2\nline3")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "line2", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-001.md:7:line2" in captured.out
+
+    def test_grep_finds_no_match_exits_1(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """該当0件時にexit 1で終了し標準出力が空であること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="line1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "nonexistent", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+
+class TestGrepIgnoreCase:
+    """grepサブコマンド: --ignore-caseで大文字小文字を無視する。"""
+
+    def test_ignore_case_matches_different_case(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--ignore-case指定時に大文字小文字を無視して一致すること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="Uppercase")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "uppercase", "-i", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-001.md" in captured.out
+
+    def test_case_sensitive_differs_by_case(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--ignore-case未指定時は大文字小文字を区別すること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="Uppercase")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "uppercase", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+
+class TestGrepFilters:
+    """grepサブコマンド: 各フィルターが`list`と同じ意味で作用すること。"""
+
+    def test_type_filter_limits_to_feedback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--type=feedbackでfeedback種別のみを対象とする。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="searchword")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword", "--type=feedback", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
+
+    def test_type_filter_limits_to_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--type=tbdでtbd種別のみを対象とする。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="searchword")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword", "--type=tbd", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-001.md" not in captured.out
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+
+    def test_answered_filter_limits_to_unanswered(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--answered=noで未回答TBDのみを対象とする。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword", answer="")
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="other", answer="回答あり\n")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
+        assert f"{_FIXED_TIMESTAMP}-002.md" not in captured.out
+
+
+class TestGrepFrontmatter:
+    """grepサブコマンド: frontmatter部分（target_repo:等の行）も検索対象に含まれること。"""
+
+    def test_grep_finds_match_in_frontmatter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """frontmatter内のtarget_repoフィールドも検索対象に含まれること。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/searchword", body="body")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-001.md" in captured.out
+
+
+class TestGrepInvalidRegex:
+    """grepサブコマンド: 不正な正規表現指定時にexit 2で終了する。"""
+
+    def test_invalid_regex_exits_2(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """不正な正規表現指定時にexit 2で終了しエラーメッセージを標準エラーへ出力する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md", body="text")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "[invalid(regex", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "正規表現が不正です" in captured.err

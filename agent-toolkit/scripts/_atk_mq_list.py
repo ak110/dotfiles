@@ -69,6 +69,27 @@ def _answered_matches(entry_type: str, text: str, answered_filter: str) -> bool:
     return answered if answered_filter == "yes" else not answered
 
 
+def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
+    """`list`コマンドの出力が通知対象の未回答TBDを全て含むか判定する。
+
+    次の全条件を満たす場合に`True`を返す:
+    - `args.count`が`False`（整数のみ出力時は本文表示がないため対象外）
+    - `args.type`が`"all"`または`"tbd"`
+    - `args.status`が`"all"`または`"active"`
+    - `args.answered`が`"all"`または`"no"`
+    - `args.category`が`None`（category指定時は出力が部分集合になり得るため対象外）
+    - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
+    """
+    return (
+        not args.count
+        and args.type in ("all", "tbd")
+        and args.status in ("all", "active")
+        and args.answered in ("all", "no")
+        and args.category is None
+        and args.source is None
+    )
+
+
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """listサブコマンド: feedback/tbdを1件1行（filename・target_repo・状態・要約）で出力する。
 

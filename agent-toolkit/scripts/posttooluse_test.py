@@ -18,25 +18,26 @@ import _fork_runner
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 
 
 @functools.cache
 def _load_posttooluse_module() -> types.ModuleType:
     """`scripts/posttooluse.py`を`importlib`で動的にインポートする。
 
-    `TestPlanFormatSsot`で本体スクリプトの定数（`_PLAN_REQUIRED_H2`等）と
-    外部ドキュメントの整合性を検査するために使う。
-    引数注入では到達不能なモジュール内部状態の検査のため、importlibによる直接参照を例外的に許容する。
+    `TestDiffRemoteSnapshots`で`_diff_remote_snapshots`等の内部関数を直接呼ぶために使う。
+    引数注入では到達不能なモジュール内部関数の単体検査のため、importlibによる直接参照を例外的に許容する。
+    `_SCRIPT`（`claude_hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
     """
-    spec = importlib.util.spec_from_file_location("posttooluse", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("posttooluse", _POSTTOOLUSE_MODULE_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-# モジュールレベルでキャッシュ済みモジュールを参照し、_build_valid_plan で使う必須セクション順を取得する。
-# 引数注入では到達不能なモジュール内部状態の参照のため直接アクセスする。
+# モジュールレベルでキャッシュ済みモジュールを参照し、内部関数（`_diff_remote_snapshots`等）を直接呼ぶ。
+# 引数注入では到達不能なモジュール内部関数の参照のため直接アクセスする。
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
@@ -985,3 +986,189 @@ class TestAmendPendingStatusCheck:
             state_dir=tmp_path,
         )
         assert self._flag(_read_state(tmp_path, sid), "/repo/a") is True
+
+
+class TestWarnCodexRemoteChange:
+    """`mcp__codex__codex`/`mcp__codex__codex-reply`呼び出し前後のリモート参照比較による警告。
+
+    codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
+    行う事象への機械チェック（事後検知）のうち、比較・警告・後始末側（PostToolUse）を検証する。
+    """
+
+    @staticmethod
+    def _init_repo_with_remote(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+        remote = base / "remote.git"
+        remote.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q", "--bare"], cwd=remote, check=True)
+        repo = base / "repo"
+        repo.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "a@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "a"], cwd=repo, check=True)
+        (repo / "a.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+        subprocess.run(["git", "branch", "-M", "main"], cwd=repo, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+        return repo, remote
+
+    @staticmethod
+    def _write_snapshot_state(tmp_path: pathlib.Path, sid: str, entries: dict) -> None:
+        (tmp_path / f"claude-agent-toolkit-{sid}.json").write_text(
+            json.dumps({"codex_remote_snapshot_by_key": entries}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def test_no_warning_when_no_change(self, tmp_path: pathlib.Path):
+        """記録済みスナップショットと現在値が一致する場合は警告しない。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "warn-nochange"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" not in result.stdout
+        assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
+
+    def test_warns_and_clears_state_when_remote_changed(self, tmp_path: pathlib.Path):
+        """codex呼び出し中にリモートへpushされた変化を検知して警告し、記録済みスナップショットを削除する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "warn-changed"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        assert "origin" in result.stdout
+        assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
+
+    def test_uses_agent_id_key_when_transcript_path_present(self, tmp_path: pathlib.Path):
+        """`transcript_path`からagentIdを抽出できる場合はagentIdをキーとして比較する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "warn-agent"
+        self._write_snapshot_state(tmp_path, sid, {"abc123": {"cwd": str(repo), "snapshot": {}}})
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {},
+                "transcript_path": "/x/agent-abc123.jsonl",
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+        assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
+
+    def test_no_warning_when_no_recorded_entry(self, tmp_path: pathlib.Path):
+        """記録済みスナップショットが存在しない場合は比較せず警告しない。"""
+        sid = "warn-none"
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" not in result.stdout
+
+    def test_no_warning_when_recorded_cwd_invalid(self, tmp_path: pathlib.Path):
+        """記録済みエントリの`cwd`が不正な場合は比較せず警告しない。"""
+        sid = "warn-badcwd"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": None, "snapshot": {}}})
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" not in result.stdout
+
+    def test_codex_reply_also_warns(self, tmp_path: pathlib.Path):
+        """`mcp__codex__codex-reply`呼び出し後も同様に比較・警告する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "warn-reply"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert "remote refs changed" in result.stdout
+
+    def test_warning_delivered_via_additional_context(self, tmp_path: pathlib.Path):
+        """警告は`hookSpecificOutput.additionalContext`経由で出力され、stderrへは出力しない。
+
+        PostToolUseで行動を促す通知はコーディングエージェントへ確実に届く`additionalContext`を
+        第一経路とする（`claude-hooks.md`「出力フィールドの使い分け」節）。stderr出力（exit 0時）は
+        コーディングエージェントへ届く経路として保証されないため使わない。
+        """
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        sid = "warn-context"
+        self._write_snapshot_state(tmp_path, sid, {f"session:{sid}": {"cwd": str(repo), "snapshot": {}}})
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        result = _run(
+            {"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert result.stderr == ""
+        payload = json.loads(result.stdout)
+        assert payload["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
+        assert "remote refs changed" in payload["hookSpecificOutput"]["additionalContext"]
+
+
+class TestDiffRemoteSnapshots:
+    """`_diff_remote_snapshots`: 取得失敗（`None`）と新規追加リモートの区別。
+
+    `snapshot_remote_refs`は取得失敗したリモートを`None`でマーキングしつつキー自体は
+    保持する。既存リモートが一時的な取得失敗（`None`）を経て次回成功した場合、
+    「新規追加されたリモート」と誤認して警告してはならない。
+    """
+
+    _diff = staticmethod(_POSTTOOLUSE_MODULE._diff_remote_snapshots)  # pylint: disable=protected-access
+
+    def test_no_diff_when_unchanged(self):
+        before = {"origin": {"refs/heads/main": "aaa"}}
+        after = {"origin": {"refs/heads/main": "aaa"}}
+        assert self._diff(before, after) == set()
+
+    def test_diff_when_ref_updated(self):
+        before = {"origin": {"refs/heads/main": "aaa"}}
+        after = {"origin": {"refs/heads/main": "bbb"}}
+        assert self._diff(before, after) == {"origin"}
+
+    def test_diff_when_new_remote_added_with_refs(self):
+        before: dict[str, dict[str, str] | None] = {}
+        after = {"origin": {"refs/heads/main": "aaa"}}
+        assert self._diff(before, after) == {"origin"}
+
+    def test_no_diff_when_new_remote_added_without_refs(self):
+        before: dict[str, dict[str, str] | None] = {}
+        after: dict[str, dict[str, str] | None] = {"origin": {}}
+        assert self._diff(before, after) == set()
+
+    def test_no_false_positive_when_existing_remote_recovers_from_failure(self):
+        """既存リモートが`before`側で取得失敗（`None`）し`after`側で成功した場合、
+        新規追加と誤認せず対象から除外する。"""
+        before: dict[str, dict[str, str] | None] = {"origin": None}
+        after: dict[str, dict[str, str] | None] = {"origin": {"refs/heads/main": "aaa"}}
+        assert self._diff(before, after) == set()
+
+    def test_no_false_positive_when_existing_remote_fails_after_success(self):
+        """既存リモートが`before`側で成功し`after`側で取得失敗（`None`）した場合も、
+        取得失敗を「参照が消えた」という差分と誤認せず対象から除外する。"""
+        before: dict[str, dict[str, str] | None] = {"origin": {"refs/heads/main": "aaa"}}
+        after: dict[str, dict[str, str] | None] = {"origin": None}
+        assert self._diff(before, after) == set()
+
+    def test_no_diff_when_remote_removed_from_after(self):
+        """`after`側にリモート自体が存在しない（削除された）場合は比較対象が無いため除外する。"""
+        before = {"origin": {"refs/heads/main": "aaa"}}
+        after: dict[str, dict[str, str] | None] = {}
+        assert self._diff(before, after) == set()

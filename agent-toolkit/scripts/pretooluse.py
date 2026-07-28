@@ -147,6 +147,9 @@ from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS 
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
 from _tracked_subagent_types import is_explicit_review_purpose as _is_explicit_review_purpose  # noqa: E402
 from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
+from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_transcript_agent_id as _extract_transcript_agent_id,
+)
 
 # pylint: enable=wrong-import-position,import-error
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
@@ -508,6 +511,7 @@ def main() -> int:
         if _check_codex_mcp_cwd(tool_input):
             return 2
         emit_json(_check_codex_mcp_execution(tool_input))
+        _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
         return 0
 
     # mcp__codex__codex-reply: 強制承認（threadId不一致時はplan-codex-delegate経由検査へ回す）
@@ -528,6 +532,7 @@ def main() -> int:
                 },
             }
         )
+        _record_codex_remote_snapshot(session_id, tool_name, payload, tool_input)
         return 0
 
     # Bashは専用ハンドラ
@@ -1599,21 +1604,51 @@ def _check_body_section_reference_exists(tool_name: str, tool_input: dict, file_
 # 本フックが子（サイドチェーン）側のEdit/Write/MultiEdit時に読み取る。
 _PLAN_CODEX_DELEGATE_PURPOSE_KEY = "plan_codex_delegate_purpose_by_agent_id"
 
-# `transcript_path`のファイル名（`agent-<agentId>.jsonl`）から`agentId`を抽出する。
-# `subagent_stop_advisor.py`の同名定数と同一パターンを保つ。
-_TRANSCRIPT_AGENT_ID_RE = re.compile(r"^agent-([^/\\]+)\.jsonl$")
+# codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
+# `posttooluse.py`が同一キーで読み取り、比較後に削除する共有SSOT。
+_CODEX_REMOTE_SNAPSHOT_KEY = "codex_remote_snapshot_by_key"
+
+# キーごとの直近codex呼び出し対象cwdを保持する状態辞書のキー（永続、比較後も削除しない）。
+# `mcp__codex__codex-reply`は`tool_input`へ`cwd`を持たないため、同一スレッド（同一key）の
+# 直近`mcp__codex__codex`呼び出しで記録したcwdを引き継いで使う。
+_CODEX_REMOTE_CWD_KEY = "codex_remote_cwd_by_key"
 
 
-def _extract_transcript_agent_id(transcript_path: object) -> str | None:
-    """`transcript_path`のファイル名から`agentId`（`agent-<id>.jsonl`のid部分）を抽出する。
+def _record_codex_remote_snapshot(session_id: str, tool_name: str, payload: dict, tool_input: dict) -> None:
+    """codex呼び出し直前のリモート参照スナップショットを記録する。
 
-    ファイル名の先頭からの一致のみを許可し、`not-agent-alpha.jsonl`のような
-    文字列中の部分一致による誤抽出を防ぐ。抽出できない場合は`None`を返す。
+    キーは`transcript_path`から抽出した`agentId`（サブエージェント経由の呼び出し時）を優先し、
+    抽出できない場合（主セッション自身の直接呼び出し時）は`session_id`とする。
+
+    比較対象のcwdはcodexが実際に実行される作業ディレクトリでなければならない。
+    `mcp__codex__codex`は`tool_input["cwd"]`（`_check_codex_mcp_cwd`が絶対パス検証済み）を用いる。
+    `payload["cwd"]`（呼び出し元セッション自身の作業ディレクトリ）は使わない。worktree内から
+    起動したセッションでも本体リポジトリを指す場合があり、実行対象と異なり得るためである
+    （`_check_codex_mcp_cwd`のdocstring参照）。
+    `mcp__codex__codex-reply`は`tool_input`に`cwd`を持たないため、同一キーの直近
+    `mcp__codex__codex`呼び出しで記録済みのcwdを`_CODEX_REMOTE_CWD_KEY`から引き継ぐ。
+    cwdを取得できない場合は比較対象が無いため記録をスキップする。
     """
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return None
-    match = _TRANSCRIPT_AGENT_ID_RE.match(pathlib.PurePath(transcript_path).name)
-    return match.group(1) if match else None
+    agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
+    key = agent_id if agent_id is not None else f"session:{session_id}"
+    if tool_name == "mcp__codex__codex":
+        cwd_raw = tool_input.get("cwd")
+    else:
+        state = read_state(session_id)
+        cwd_map = state.get(_CODEX_REMOTE_CWD_KEY)
+        cwd_raw = cwd_map.get(key) if isinstance(cwd_map, dict) else None
+    if not isinstance(cwd_raw, str) or not cwd_raw:
+        return
+    snapshot = _git_status.snapshot_remote_refs(cwd_raw)
+
+    def _mutator(state: dict) -> dict | None:
+        entries = state.setdefault(_CODEX_REMOTE_SNAPSHOT_KEY, {})
+        entries[key] = {"cwd": cwd_raw, "snapshot": snapshot}
+        cwd_map = state.setdefault(_CODEX_REMOTE_CWD_KEY, {})
+        cwd_map[key] = cwd_raw
+        return state
+
+    update_state(session_id, _mutator)
 
 
 def _check_plan_codex_delegate_review_edit(tool_name: str, session_id: str, payload: dict) -> bool:
@@ -3379,20 +3414,6 @@ def _check_bash_output_truncation(command: str) -> str | None:
     )
 
 
-# --- Bash: git共通ヘルパー ---
-
-
-def _run_git_lines(args: list[str], cwd: str) -> list[str] | None:
-    """git出力を行リストで返す。失敗時はNone。"""
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    return [line for line in result.stdout.splitlines() if line.strip()]
-
-
 # --- Bash: atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出 ---
 
 
@@ -3454,7 +3475,7 @@ def _is_docs_only_commit(event: GitEvent, cwd: str) -> bool:
         return False
     include_working_tree = _commit_event_includes_worktree(event)
     args = ["git", "diff", "--name-only", "HEAD"] if include_working_tree else ["git", "diff", "--cached", "--name-only"]
-    files = _run_git_lines(args, cwd)
+    files = _git_status.run_git_lines(args, cwd)
     if not files:
         return False
     return all(path.lower().endswith(".md") for path in files)
@@ -3521,7 +3542,7 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
     if not cwd:
         return None
 
-    staged = _run_git_lines(["git", "diff", "--cached", "--name-only"], cwd)
+    staged = _git_status.run_git_lines(["git", "diff", "--cached", "--name-only"], cwd)
     if staged is None or not staged:
         return None
     agent_toolkit_files = [p for p in staged if p.startswith(_AGENT_TOOLKIT_PREFIX)]
@@ -3537,7 +3558,7 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
     if _AGENT_TOOLKIT_PLUGIN_MANIFEST in staged:
         return None
 
-    unpushed = _run_git_lines(
+    unpushed = _git_status.run_git_lines(
         ["git", "rev-list", "@{u}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
         cwd,
     )

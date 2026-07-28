@@ -10,6 +10,7 @@
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示
+- mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
@@ -37,6 +38,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _atk_config as _config_cmd  # noqa: E402
 import _atk_mq_add as _add  # noqa: E402
 import _atk_mq_common as _common  # noqa: E402
+import _atk_mq_grep as _grep  # noqa: E402
 import _atk_mq_list as _list  # noqa: E402
 import _atk_mq_mutations as _mutations  # noqa: E402
 import _atk_mq_process_loop as _process_loop  # noqa: E402
@@ -347,6 +349,26 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
+    grep = sub.add_parser("grep", help="本文全体を正規表現で検索し該当行を列挙する（該当0件はexit 1）")
+    grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
+    grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
+    grep.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    grep.add_argument(
+        "--status",
+        choices=("all", "active", "inbox", "processing", "adopted", "rejected"),
+        default="active",
+        help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",
+    )
+    grep.add_argument(
+        "--answered",
+        choices=("all", "yes", "no"),
+        default="all",
+        help="TBDの回答状況で限定する（既定: all）。yes・no指定時はfeedbackを除外する。",
+    )
+    _add_target_repo_arg(grep)
+    grep.add_argument("--skip-pull", action="store_true", help="git pull --ff-onlyをスキップする。")
+    grep.set_defaults(subparser=grep)
+
     answer = sub.add_parser("answer", help="未回答TBDを1件ずつ画面表示し$EDITORで回答する")
     _add_target_repo_arg(answer)
 
@@ -545,13 +567,18 @@ def main(
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
+        "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _tbd._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
     }
-    dispatch[sub]()
-    _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
-    sys.exit(0)
+    exit_code = dispatch[sub]() or 0
+    suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
+        sub == "show" and _show._covers_unanswered_tbds(args)
+    )
+    if not suppress_notify:
+        _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

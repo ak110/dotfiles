@@ -32,16 +32,14 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _stop_gate import has_pending_background_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_transcript_agent_id as _extract_transcript_agent_id,
+)
 
 _HOOK_ID = "agent-toolkit/subagent-stop"
 
 # `posttooluse.py`の同名定数と同一集合を保つ。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
-# `transcript_path`のファイル名（`agent-<agentId>.jsonl`形式。Claude Codeがサブエージェント
-# セッションごとに採番する`agentId`を含む。`posttooluse.py`はこの`agentId`を
-# `plan_impl_executor_active_subagent_sessions`辞書のキーとして登録するのみで、
-# ファイル名自体は生成しない）からファイル名先頭一致で`agentId`を抽出する正規表現。
-_TRANSCRIPT_AGENT_ID_RE = re.compile(r"^agent-([^/\\]+)\.jsonl$")
 
 # `plan-impl-executor`完了報告本文の主要欄ラベル集合。
 # SSOTは`agent-toolkit/references/plan-impl/caller-reception.md`手順0および
@@ -108,22 +106,6 @@ def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:
 def _llm_notice(body: str, *, tag: str = "") -> str:
     """LLM宛て通知メッセージを標準プレフィックス付きで整形する。"""
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
-
-
-def _extract_transcript_agent_id(transcript_path: object) -> str | None:
-    """`transcript_path`のファイル名から`agentId`（`agent-<id>.jsonl`のid部分）を抽出する。
-
-    ファイル名の先頭（`os.path.basename`相当）からの一致のみを許可し、
-    `not-agent-alpha.jsonl`のような文字列中の部分一致による誤抽出を防ぐ。
-    `posttooluse.py`が`plan_impl_executor_active_subagent_sessions`辞書へ登録する
-    `tool_response["agentId"]`と同一の値を、停止した当のサブエージェントの識別に用いる。
-    抽出できない場合は`None`を返す。
-    """
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return None
-    basename = pathlib.PurePath(transcript_path).name
-    match = _TRANSCRIPT_AGENT_ID_RE.match(basename)
-    return match.group(1) if match else None
 
 
 def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool]:

@@ -210,7 +210,8 @@ class TestSpaceSeparatedOptionWarning:
 
 
 class TestUnansweredTbdNotification:
-    """非TBDサブコマンド完了後の未回答TBD通知を検証する。"""
+    """`list`・`show`が通知対象の未回答TBDを全て含む場合は通知を抑止し、
+    そうでない場合は通知が表示されることを検証する。"""
 
     @pytest.mark.parametrize("count", [0, 1, 3])
     def test_notifies_unanswered_entries_after_non_tbd_command(
@@ -226,6 +227,99 @@ class TestUnansweredTbdNotification:
         stderr = capsys.readouterr().err
         assert stderr.count("[inbox/unanswered]") == count
         assert stderr.startswith("# tbd\n") if count else not stderr
+
+    def test_suppresses_notify_when_list_covers_all_unanswered(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """list --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out.count("# tbd") == 1
+        assert "# tbd" not in captured.err
+
+    def test_suppresses_notify_when_list_covers_all_unanswered_with_defaults(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """list --type=all --status=active --answered=all実行時、通知が抑止されることを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out.count("# tbd") == 1
+        assert "# tbd" not in captured.err
+
+    def test_does_not_suppress_notify_when_list_has_source_filter(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """list --source指定時、通知が抑止されないことを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# tbd" in captured.err
+
+    def test_does_not_suppress_notify_when_list_has_category_filter(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """list --category指定時、通知が抑止されないことを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--category=test", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# tbd" in captured.err
+
+    def test_does_not_suppress_notify_when_list_has_status_inbox(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """list --status=inbox単独では通知が抑止されないことを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# tbd" in captured.err
+
+    def test_suppresses_notify_when_show_all_covers_unanswered(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """show --all --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "show", "--all", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# tbd" not in captured.err
+
+    def test_does_not_suppress_notify_when_show_with_filename(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """show <FILENAME>（単一ファイル指定）実行時、通知が抑止されないことを検証する。"""
+        notes = _setup_flag_and_notes(tmp_path)
+        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "# tbd" in captured.err
 
 
 class TestInboxAlwaysEnabled:

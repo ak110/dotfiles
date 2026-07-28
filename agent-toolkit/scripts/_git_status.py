@@ -60,3 +60,52 @@ def has_tracked_dirty(cwd: str) -> bool | None:
     if output is None:
         return None
     return any(is_tracked_change(line) for line in output.splitlines())
+
+
+def run_git_lines(args: list[str], cwd: str) -> list[str] | None:
+    """gitコマンドを実行し、出力を行リストで返す。失敗時はNoneを返す。
+
+    `pretooluse.py`・`posttooluse.py`が共有するgit実行ヘルパー。
+    `pretooluse.py`内に同名で存在していたプライベート関数`_run_git_lines`を
+    本モジュールへ移設し、公開名（アンダースコア無し）とした。
+    """
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, check=False, cwd=cwd, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def list_remotes(cwd: str) -> list[str]:
+    """構成済みリモート名の一覧を取得する。取得失敗時・リモート未構成時は空リストを返す。"""
+    lines = run_git_lines(["git", "remote"], cwd)
+    return lines if lines is not None else []
+
+
+def snapshot_remote_refs(cwd: str) -> dict[str, dict[str, str] | None]:
+    """全リモートのref名とOIDのスナップショットを取得する。
+
+    戻り値は`{<remote>: {<ref名>: <OID>} | None}`の辞書。キーは`git remote`で取得した
+    構成済みリモート名全件を含む。`git ls-remote`が失敗したリモートは値を`None`とする
+    （取得失敗のマーカーであり、リモート名自体は保持する）。値を単純に欠落させず`None`で
+    残すのは、比較時に「取得失敗（既知のリモートだが値が無い）」と「新規追加されたリモート
+    （その時点で未知だったリモート）」を区別できるようにするためである（「[16]機械チェックの
+    実装設計」の誤検知抑止条件を参照。取得失敗を「参照が消えた」という差分と誤認しない）。
+    """
+    snapshot: dict[str, dict[str, str] | None] = {}
+    for remote in list_remotes(cwd):
+        lines = run_git_lines(["git", "ls-remote", "--heads", "--tags", remote], cwd)
+        if lines is None:
+            snapshot[remote] = None
+            continue
+        refs: dict[str, str] = {}
+        for line in lines:
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            oid, ref = parts
+            refs[ref] = oid
+        snapshot[remote] = refs
+    return snapshot

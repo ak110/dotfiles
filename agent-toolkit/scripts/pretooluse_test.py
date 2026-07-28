@@ -6499,3 +6499,157 @@ class TestDangerFullAccessPreserved:
             }
         )
         assert result.returncode == 0
+
+
+class TestCodexRemoteSnapshotRecording:
+    """`mcp__codex__codex`/`mcp__codex__codex-reply`呼び出し時のリモート参照スナップショット記録。
+
+    codexプロセス内部の実行がPreToolUse/PostToolUseフックを通らずに不可逆操作（`git push`等）を
+    行う事象への機械チェック（事後検知）のうち、記録側（PreToolUse）を検証する。
+    """
+
+    _write_state = staticmethod(_write_session_state)
+    _read_state = staticmethod(_read_session_state)
+
+    @staticmethod
+    def _init_repo(path: pathlib.Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+        subprocess.run(["git", "config", "user.email", "a@example.com"], cwd=path, check=True)
+        subprocess.run(["git", "config", "user.name", "a"], cwd=path, check=True)
+
+    def test_records_snapshot_with_agent_id_key(self, tmp_path: pathlib.Path):
+        """`transcript_path`からagentIdを抽出できる場合、agentIdをキーとして記録する。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, "snap-agent", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
+                "session_id": "snap-agent",
+                "cwd": str(repo),
+                "transcript_path": "/x/agent-abc123.jsonl",
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, "snap-agent")
+        entries = state.get("codex_remote_snapshot_by_key")
+        assert entries is not None
+        recorded = entries.get("abc123")
+        assert recorded is not None
+        assert recorded["cwd"] == str(repo)
+        assert recorded["snapshot"] == {}
+
+    def test_records_snapshot_with_session_id_fallback_key(self, tmp_path: pathlib.Path):
+        """agentIdを抽出できない場合（メインセッション自身の直接呼び出し）は`session_id`をキーとする。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, "snap-session", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
+                "session_id": "snap-session",
+                "cwd": str(repo),
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, "snap-session")
+        entries = state.get("codex_remote_snapshot_by_key")
+        assert entries is not None
+        recorded = entries.get("session:snap-session")
+        assert recorded is not None
+        assert recorded["cwd"] == str(repo)
+
+    def test_records_snapshot_from_tool_input_cwd_not_payload_cwd(self, tmp_path: pathlib.Path):
+        """比較対象は`tool_input["cwd"]`（codexの実行対象）であり、`payload["cwd"]`
+        （呼び出し元セッション自身の作業ディレクトリ）ではないことを検証する。両者が異なる場合、
+        `tool_input["cwd"]`側が記録されなければcodexの実行対象と異なるリポジトリを比較してしまう。
+        """
+        codex_repo = tmp_path / "codex-repo"
+        session_repo = tmp_path / "session-repo"
+        self._init_repo(codex_repo)
+        self._init_repo(session_repo)
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, "snap-cwd-src", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(codex_repo)},
+                "session_id": "snap-cwd-src",
+                "cwd": str(session_repo),
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, "snap-cwd-src")
+        entries = state.get("codex_remote_snapshot_by_key")
+        assert entries is not None
+        recorded = entries.get("session:snap-cwd-src")
+        assert recorded is not None
+        assert recorded["cwd"] == str(codex_repo)
+
+    def test_reply_skips_recording_when_no_prior_cwd(self, tmp_path: pathlib.Path):
+        """直前の`mcp__codex__codex`呼び出しによるcwd記録が無い場合、`-reply`は記録をスキップする。
+
+        `mcp__codex__codex-reply`の`tool_input`には`cwd`が含まれないため、
+        同一キーの直近`mcp__codex__codex`呼び出しで永続化したcwdが無ければ比較対象が無い。
+        """
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, "snap-reply-nocwd", {"recorded_codex_thread_id": "th_abc123"})
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "th_abc123", "prompt": "続行"},
+                "session_id": "snap-reply-nocwd",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, "snap-reply-nocwd")
+        assert state.get("codex_remote_snapshot_by_key") is None
+
+    def test_reply_reuses_cwd_recorded_by_prior_codex_call(self, tmp_path: pathlib.Path):
+        """`mcp__codex__codex-reply`は同一キーの直近`mcp__codex__codex`呼び出しのcwdを引き継いで記録する。"""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        env = _plan_file_state_env(tmp_path)
+        self._write_state(tmp_path, "snap-reply", {"codex_review_read": True, "plan_codex_delegate_invoked": True})
+        first = _run(
+            {
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": str(repo)},
+                "session_id": "snap-reply",
+                "isSidechain": True,
+            },
+            env_overrides=env,
+        )
+        assert first.returncode == 0
+        self._write_state(
+            tmp_path,
+            "snap-reply",
+            self._read_state(tmp_path, "snap-reply") | {"recorded_codex_thread_id": "th_abc123"},
+        )
+        result = _run(
+            {
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": "th_abc123", "prompt": "続行"},
+                "session_id": "snap-reply",
+                "isSidechain": False,
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        state = self._read_state(tmp_path, "snap-reply")
+        entries = state.get("codex_remote_snapshot_by_key")
+        assert entries is not None
+        assert entries.get("session:snap-reply", {}).get("cwd") == str(repo)

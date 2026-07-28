@@ -23,6 +23,26 @@ from _atk_mq_formatters import _parse_source, _parse_target_repo, _source_matche
 from _atk_mq_repo import _resolve_repo_id
 
 
+def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
+    """`show --all`コマンドの出力が通知対象の未回答TBDを全て含むか判定する。
+
+    次の全条件を満たす場合に`True`を返す:
+    - `args.filename`が`None`かつ`args.all`が`True`（単一ファイル指定は全集合対象外）
+    - `args.type`が`"all"`または`"tbd"`
+    - `args.status`が`"all"`または`"active"`
+    - `args.answered`が`"all"`または`"no"`
+    - `args.source`が`None`
+    """
+    return (
+        args.filename is None
+        and args.all
+        and args.type in ("all", "tbd")
+        and args.status in ("all", "active")
+        and args.answered in ("all", "no")
+        and args.source is None
+    )
+
+
 def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME`指定時は当該1件、`--all`指定時は全件の本文を表示する。
 
