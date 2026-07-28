@@ -343,6 +343,7 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         ),
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    edit.set_defaults(subparser=edit)
 
     answer = sub.add_parser("answer", help="未回答TBDを1件ずつ画面表示し$EDITORで回答する")
     _add_target_repo_arg(answer)
