@@ -21,6 +21,7 @@ import argparse
 import functools
 import json
 import math
+import os
 import pathlib
 import re
 import signal
@@ -40,6 +41,9 @@ EXIT_TIMEOUT = 2
 EXIT_GH_ERROR = 3
 EXIT_NO_RUNS = 4
 EXIT_INTERRUPTED = 130
+
+_STDERR_FD = 2
+"""標準エラー出力のファイルディスクリプタ。シグナルハンドラーからの再入しない書き込みに使う。"""
 
 _MAX_CONSECUTIVE_RUN_LIST_FAILURES = 3
 _GH_JSON_FIELDS = "name,status,conclusion,url,databaseId,headSha,createdAt"
@@ -493,10 +497,15 @@ def _install_signal_handlers() -> None:
     ハンドラは即座に`sys.exit`する。実行中の子`gh`プロセスは明示的に終了させず、
     `subprocess.run`側の`timeout`（`--subprocess-timeout`）到達による自然終了に委ねる。
     厳密なプロセスグループ制御は複雑化を避けるため実装しない（詳細は`### 却下した代替案`節参照）。
+
+    終了メッセージは`print`ではなく`os.write`で書く。`print`は`sys.stderr`の
+    `BufferedWriter`を経由するため、メインフローが同じバッファへ書き込んでいる最中に
+    シグナルが到達すると再入となり`RuntimeError: reentrant call inside <_io.BufferedWriter>`で
+    異常終了する。`os.write`はバッファを介さないため再入が成立しない。
     """
 
     def _handler(signum, _frame):
-        print(f"[wait_ci] シグナル{signum}受信で終了", file=sys.stderr, flush=True)
+        os.write(_STDERR_FD, f"[wait_ci] シグナル{signum}受信で終了\n".encode())
         sys.exit(EXIT_INTERRUPTED)
 
     signal.signal(signal.SIGINT, _handler)

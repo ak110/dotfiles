@@ -352,6 +352,9 @@ class TestSignalHandling:
         ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
         既定動作で終了し`-SIGTERM`が返る。待機時間を延ばしながら最大3回試行し、
         起動が遅い実行環境でも登録後の挙動を判定できるようにする。
+
+        併せてstderrへ`reentrant call`が出ないことを確認する。ハンドラが`print`で
+        書くと`sys.stderr`の`BufferedWriter`へ再入し得るため、その回帰を検出する。
         """
         script_path = pathlib.Path(__file__).parent / "wait_ci.py"
         returncode = None
@@ -370,14 +373,17 @@ class TestSignalHandling:
                 stderr=subprocess.PIPE,
                 text=True,
             ) as proc:
+                stderr_text = ""
                 try:
                     time.sleep(warmup_sec)
                     proc.send_signal(signal.SIGTERM)
-                    returncode = proc.wait(timeout=15)
+                    _, stderr_text = proc.communicate(timeout=15)
+                    returncode = proc.returncode
                 finally:
                     if proc.poll() is None:
                         proc.kill()
                         proc.wait(timeout=5)
+            assert "reentrant call" not in stderr_text, f"シグナルハンドラが再入した: {stderr_text}"
             if returncode == wait_ci.EXIT_INTERRUPTED:
                 break
             assert returncode == -signal.SIGTERM, f"想定外の終了コード: {returncode}"
