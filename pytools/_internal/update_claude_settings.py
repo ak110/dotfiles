@@ -8,6 +8,7 @@ OS別の差分（主にhookコマンドのshell/PowerShellラッパー）は
 import copy
 import json
 import logging
+import re
 import sys
 import typing
 from pathlib import Path
@@ -83,6 +84,17 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。
+# `_strip_stale_labeled_list_items`が使う。ラベルは先頭文字がアルファベット、
+# 以降がアルファベット・数字・空白・ハイフンのみで構成される
+# （日本語で始まる利用者独自エントリを誤検出しないため）。
+_LABELED_LIST_ITEM_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9 -]*): ")
+
+# `_strip_stale_labeled_list_items`の対象パス一覧（ドット区切り）。
+# managed側が当該配列を管理していない設定ファイルでの誤削除を防ぐため、
+# `_SETTINGS_PATH`向けの呼び出しでのみ明示指定する（`_REMOVED_LIST_ITEM_SUBSTRINGS`と同じ設計）。
+_STALE_LABELED_LIST_PATHS: tuple[str, ...] = ("autoMode.allow",)
+
 _MAX_VALUE_LEN = 60
 _MAX_INLINE_DIFF = 3
 
@@ -118,6 +130,7 @@ def run() -> bool:
         _SETTINGS_PATH,
         overrides=overrides,
         removed_list_item_substrings=_REMOVED_LIST_ITEM_SUBSTRINGS,
+        stale_labeled_list_paths=_STALE_LABELED_LIST_PATHS,
     )
     changed_config = update_claude_settings(_MANAGED_CONFIG_PATH, _CONFIG_PATH)
     return changed_settings or changed_config
@@ -141,6 +154,7 @@ def update_claude_settings(
     removed_hook_substrings: tuple[str, ...] = _REMOVED_HOOK_COMMAND_SUBSTRINGS,
     removed_env_keys: tuple[str, ...] = _REMOVED_ENV_KEYS,
     removed_list_item_substrings: tuple[tuple[str, str], ...] = (),
+    stale_labeled_list_paths: tuple[str, ...] = (),
 ) -> bool:
     """`managed_path` の設定を `settings_path` にマージして書き込む。
 
@@ -154,6 +168,13 @@ def update_claude_settings(
     `removed_list_item_substrings` の既定値は空タプル。settings.json 専用の配列項目を
     対象とする場合は呼び出し元で明示指定する（managed JSON が当該配列を管理していない
     .claude.json などで誤削除が起きるのを防ぐため）。
+
+    `stale_labeled_list_paths` は `managed_path` 側の対象配列からラベル
+    （`_LABELED_LIST_ITEM_PATTERN`が捕捉する`ラベル: `形式の接頭辞）を抽出し、
+    `settings_path` 側の同一配列からラベルが一致する要素をマージ前に全件除去する。
+    配布元でラベル本文を改訂した場合に、通常のunionマージ（文字列完全一致判定）では
+    残り続ける旧文面をラベル単位で自動除去するために使う。既定値は空タプルで、
+    `removed_list_item_substrings`と同じ理由で呼び出し元が明示指定する。
 
     Returns:
         実際にファイルを書き換えた場合は `True`。
@@ -172,6 +193,7 @@ def update_claude_settings(
     _strip_managed_hooks(data, managed)
     _strip_removed_env_keys(data, removed_env_keys)
     _strip_removed_list_items(data, removed_list_item_substrings)
+    _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
     _merge(data, managed)
     _warn_orphan_dotfiles_hook_commands(data, managed_path)
 
@@ -361,6 +383,23 @@ def _strip_removed_env_keys(data: dict, keys: tuple[str, ...]) -> None:
         del data["env"]
 
 
+def _resolve_dict_container(value: dict, keys: list[str]) -> tuple[dict, str] | None:
+    """ドット区切りパスのキー列を辿り、末端キーを含む親dictと末端キー名を返す。
+
+    途中のキーが存在しないか対象がdictでなくなった時点で`None`を返す。
+    `_strip_removed_list_items`・`_strip_stale_labeled_list_items`・`_get_list_at_path`が
+    共通で使う経路解決処理であり、重複する手書きループを避けるために切り出す。
+    """
+    target: object = value
+    for key in keys[:-1]:
+        if not isinstance(target, dict):
+            return None
+        target = target.get(key)
+    if not isinstance(target, dict):
+        return None
+    return target, keys[-1]
+
+
 def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...]) -> None:
     """ドット区切りパスで辿った配列から部分文字列マッチで要素を除去する。
 
@@ -370,18 +409,66 @@ def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...])
     if not mappings:
         return
     for path, substring in mappings:
-        keys = path.split(".")
-        target = data
-        for key in keys[:-1]:
-            if not isinstance(target, dict):
-                break
-            target = target.get(key)
-        if not isinstance(target, dict):
+        resolved = _resolve_dict_container(data, path.split("."))
+        if resolved is None:
             continue
-        array = target.get(keys[-1])
+        target, last_key = resolved
+        array = target.get(last_key)
         if not isinstance(array, list):
             continue
-        target[keys[-1]] = [item for item in array if not (isinstance(item, str) and substring in item)]
+        target[last_key] = [item for item in array if not (isinstance(item, str) and substring in item)]
+
+
+def _get_list_at_path(value: dict, keys: list[str]) -> list:
+    """ドット区切りパスのキー列で辿った位置のlistを返す。無ければ空listを返す。"""
+    resolved = _resolve_dict_container(value, keys)
+    if resolved is None:
+        return []
+    container, last_key = resolved
+    array = container.get(last_key)
+    return array if isinstance(array, list) else []
+
+
+def _strip_stale_labeled_list_items(data: dict, managed: dict, paths: tuple[str, ...]) -> None:
+    """ラベル付き配列要素を、配布原本の現行ラベル集合に基づき配布先から一括除去する。
+
+    `_strip_managed_hooks` と同じ考え方をラベル付き配列要素へ適用する。`paths` で指定した
+    ドット区切りパスごとに、配布原本（`managed`）側の配列要素から先頭ラベルを
+    `_LABELED_LIST_ITEM_PATTERN` で抽出し、配布先（`data`）側の同一配列からラベルが一致する
+    要素をマージ前に全件除去する。通常のunionマージ（`_union_list`）は文字列完全一致でしか
+    重複判定しないため、配布原本側でラベル本文を改訂すると旧文面が残り続ける。本関数は
+    改訂のたびに `_REMOVED_LIST_ITEM_SUBSTRINGS` へ旧文面を手動追記する運用に頼らず、
+    ラベル単位で旧文面を自動除去する。ラベルを持たない要素（利用者独自エントリ）は
+    除去対象にならず保護される。
+
+    `paths` の既定値は空タプル。settings.json 専用の配列項目を対象とする場合は呼び出し元で
+    明示指定する（managed JSON が当該配列を管理していない .claude.json などで誤削除が
+    起きるのを防ぐため。`removed_list_item_substrings` と同じ設計とする）。
+    """
+    if not paths:
+        return
+    for path in paths:
+        keys = path.split(".")
+        managed_array = _get_list_at_path(managed, keys)
+        labels = {
+            match.group(1)
+            for item in managed_array
+            if isinstance(item, str) and (match := _LABELED_LIST_ITEM_PATTERN.match(item))
+        }
+        if not labels:
+            continue
+        resolved = _resolve_dict_container(data, keys)
+        if resolved is None:
+            continue
+        target, last_key = resolved
+        array = target.get(last_key)
+        if not isinstance(array, list):
+            continue
+        target[last_key] = [
+            item
+            for item in array
+            if not (isinstance(item, str) and (match := _LABELED_LIST_ITEM_PATTERN.match(item)) and match.group(1) in labels)
+        ]
 
 
 def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> None:

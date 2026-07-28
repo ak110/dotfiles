@@ -901,3 +901,196 @@ class TestStripRemovedListItems:
         # config 側は削除されない（仮に同名構造があっても保持される）
         config_result = json.loads(config_path.read_text(encoding="utf-8"))
         assert config_result["autoMode"]["allow"] == [f"{old_rule_marker} を含む config 側項目"]
+
+
+class TestStripStaleLabeledListItems:
+    """ラベル単位の旧文面自動削除テスト（配布原本のラベル改訂時の重複蓄積を防ぐ）。"""
+
+    def test_stale_label_variant_is_removed_on_managed_text_revision(self, tmp_path: Path):
+        """配布原本側でラベル本文を改訂すると、配布先の旧文面がラベル一致で除去される（再発防止テスト）。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": ["Feedback-Originated Gate Revision: atk mq process-loop を使う新文面"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "autoMode": {
+                        "allow": [
+                            "ak110の個人リポジトリでの利用者独自エントリ",
+                            "Feedback-Originated Gate Revision: atk fb process-loop を使う旧文面",
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, stale_labeled_list_paths=("autoMode.allow",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == [
+            "ak110の個人リポジトリでの利用者独自エントリ",
+            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+        ]
+
+    def test_unlabeled_user_entry_is_preserved(self, tmp_path: Path):
+        """ラベルを持たない利用者独自エントリは除去対象にならない（再発防止テスト）。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"autoMode": {"allow": ["Some Label: 現行文面"]}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"autoMode": {"allow": ["ラベルを持たない利用者独自ルール"]}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path, stale_labeled_list_paths=("autoMode.allow",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == [
+            "ラベルを持たない利用者独自ルール",
+            "Some Label: 現行文面",
+        ]
+
+    def test_empty_paths_is_noop(self, tmp_path: Path):
+        """`stale_labeled_list_paths`が空タプルの場合は何もしない（既定値の安全性、再発防止テスト）。"""
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"autoMode": {"allow": ["Label: 現行文面"]}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps({"autoMode": {"allow": ["Label: 旧文面"]}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(managed_path, target_path)
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == ["Label: 旧文面", "Label: 現行文面"]
+
+    def test_missing_managed_path_is_noop(self, tmp_path: Path):
+        """配布原本（managed）側に対象パスが存在しない場合は例外を送出せず処理が継続する（再発防止テスト）。
+
+        `_strip_stale_labeled_list_items`はmanaged側からラベル集合を抽出できず`labels`が
+        空集合になるため、早期returnでtarget側の経路解決には到達しない分岐を検証する。
+        """
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+        target_path = tmp_path / "target.json"
+        target_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+
+        update_claude_settings(managed_path, target_path, stale_labeled_list_paths=("autoMode.allow",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result == {"language": "japanese"}
+
+    def test_missing_target_path_is_noop(self, tmp_path: Path):
+        """配布先（target）側に対象パスが存在しない場合は例外を送出せず通常マージが進む（再発防止テスト）。
+
+        managed側にはラベル付き項目が存在するため`labels`は非空になり、target側の
+        経路解決（`_resolve_dict_container`）がdictでない/存在しないキーで`None`を返す
+        分岐を検証する。初回導入など`settings.json`に`autoMode`キー自体が無いケースに相当する。
+        """
+        managed_path = tmp_path / "managed.json"
+        managed_path.write_text(
+            json.dumps({"autoMode": {"allow": ["Label: 現行文面"]}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        target_path = tmp_path / "target.json"
+        target_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
+
+        update_claude_settings(managed_path, target_path, stale_labeled_list_paths=("autoMode.allow",))
+
+        result = json.loads(target_path.read_text(encoding="utf-8"))
+        assert result == {"language": "japanese", "autoMode": {"allow": ["Label: 現行文面"]}}
+
+    def test_run_reproduces_and_fixes_prod_duplicate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """`run()`経由で実際の重複事象（旧文面atk fbと新文面atk mqの共存）が解消される（再現テスト）。"""
+        managed_settings_path = tmp_path / "managed_settings.json"
+        managed_settings_path.write_text(
+            json.dumps(
+                {"autoMode": {"allow": ["Feedback-Originated Gate Revision: atk mq process-loop を使う新文面"]}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        managed_config_path = tmp_path / "managed_config.json"
+        managed_config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+        settings_path = tmp_path / "settings.json"
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "autoMode": {
+                        "allow": [
+                            "ak110の個人リポジトリでの利用者独自エントリ",
+                            "Feedback-Originated Gate Revision: atk fb process-loop を使う旧文面",
+                            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        config_path = tmp_path / "claude.json"
+        config_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
+
+        monkeypatch.setattr(mod, "_MANAGED_SETTINGS_PATH", managed_settings_path)
+        monkeypatch.setattr(mod, "_SETTINGS_PATH", settings_path)
+        monkeypatch.setattr(mod, "_MANAGED_CONFIG_PATH", managed_config_path)
+        monkeypatch.setattr(mod, "_CONFIG_PATH", config_path)
+
+        mod.run()
+
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert result["autoMode"]["allow"] == [
+            "ak110の個人リポジトリでの利用者独自エントリ",
+            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+        ]
+
+
+class TestManagedAutoModeAllowLabelFormat:
+    """配布原本`autoMode.allow`の全要素がラベル形式であることを検査する自動チェック。
+
+    `_strip_stale_labeled_list_items`によるラベル単位の旧文面除去は、配布原本側の要素が
+    ラベル形式（`^([A-Za-z][A-Za-z0-9 -]*): `）に一致することを前提とする。ラベルを持たない
+    要素を将来追加すると保護対象になり除去できなくなるため、機械的に検出する。
+    """
+
+    def test_all_entries_match_labeled_format(self) -> None:
+        """配布原本`share/claude_settings_json_managed.json`の`autoMode.allow`は全要素がラベル形式。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        allow = managed["autoMode"]["allow"]
+        unlabeled = [
+            item
+            for item in allow
+            if not mod._LABELED_LIST_ITEM_PATTERN.match(item)  # pylint: disable=protected-access
+        ]
+        assert unlabeled == []
+
+    def test_labels_are_unique(self) -> None:
+        """配布原本`autoMode.allow`のラベルは重複しない。
+
+        `_strip_stale_labeled_list_items`はラベル単位で配布先の旧文面を除去するため、
+        配布原本側に同一ラベルの項目が複数あると正規化の基準が曖昧になる。
+        コピー&ペーストの誤りによる重複を機械的に検出する。
+        """
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        allow = managed["autoMode"]["allow"]
+        labels = [
+            match.group(1)
+            for item in allow
+            if (match := mod._LABELED_LIST_ITEM_PATTERN.match(item))  # pylint: disable=protected-access
+        ]
+        assert len(labels) == len(set(labels))
