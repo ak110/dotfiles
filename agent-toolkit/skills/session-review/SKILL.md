@@ -111,10 +111,10 @@ Stopフック誘導かつ言い切り判定を満たす場合は、他工程
   `agent-toolkit/skills/plan-mode/references/bugfix.md`「再発防止策」節に従う）。
   詳細な候補順位は
   [references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
-- 判断軸の順序・既存対処済みの確認・候補技術主張の実機検証・ユーザー過去方針の一次資料確認・方針固定化は
+- 判断軸の順序・既存対処済みの確認・候補技術主張の実機検証・処理済みフィードバックの参照・方針固定化は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`の該当節を参照する（肥大化抑止の
   判定基準は`agent-toolkit:agent-standards`「既知情報・冗長記述の排除」節に従う）
-- 既採用フィードバックとの意向照合・既存条文の制定経緯確認・肯定形優先チェック・推測表現の投入抑止・
+- 既存条文の制定経緯確認・肯定形優先チェック・推測表現の投入抑止・
   緩和側の検出は[references/generation-criteria-detail.md](references/generation-criteria-detail.md)の該当節を参照する
 - 反映先の優先順位: 反映先はコードに近い順（docstring/インラインコメント → CLAUDE.md/.claude/rules → .claude/skills）で最適なものを選び、「書きやすい場所」に倒さない
 - 規範改善案の併記: 詳細は`agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「規範改善案の併記」節を参照する

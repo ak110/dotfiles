@@ -111,7 +111,7 @@
   採否判定前に`AskUserQuestion`でユーザー方針確認を発行してよい。
   ユーザーの過去方針・選好の一次資料確認は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`
-  「ユーザー過去方針の一次資料確認」節に従う
+  「ユーザー過去方針の一次資料」節に従う
 - 汎用観点の判定: `agent-toolkit/rules/01-agent.md`「判断の妥当性を評価する観点」節
  （既存記述との重複・矛盾、コンテキストコスト対効果、適用範囲との整合、論理整合性）に従い判定する
 - 振り返り由来フィードバックの再帰検討:
@@ -136,6 +136,9 @@
   部分採用と判定した場合は採用する要求と除外する要求を明示し、ステップ4の提示書式の採用範囲・除外範囲欄に転記する
   - 除外する要求は`atk mq add --type=tbd`で個別投入してユーザーが未対応要求を認識できる状態にする。
     投入手順は`references/hold-with-tbd-inject.md`「準用範囲」節に従う
+- 不採用済み主題との照合: 詳細は
+  `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`
+  「不採用済み主題との照合」節を参照する
 - 不採用根拠の限定: 詳細は
   `agent-toolkit/skills/agent-standards/references/feedback-review-common.md`「不採用根拠の限定」節を参照する。
   実測結果はステップ4の提示書式「理由」欄へ具体数値・観測事実として転記し、
