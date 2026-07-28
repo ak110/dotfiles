@@ -19,7 +19,8 @@ HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="__THEME_COLOR__">
   <title>フィードバック管理</title>
-  <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest">
+  <!-- Basic Auth配下でもmanifestへ認証情報を送る。 -->
+  <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body>
@@ -88,6 +89,7 @@ HTML = """<!doctype html>
       </div>
       <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
       <div class="entry-columns" aria-hidden="true">
+        <span>ファイル名</span>
         <span>対象リポジトリ</span>
         <span>種別</span>
         <span>状態</span>
@@ -96,7 +98,6 @@ HTML = """<!doctype html>
         <span>投入元</span>
         <span>更新日時</span>
         <span>要約</span>
-        <span>ファイル名</span>
       </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <div id="empty-state" class="empty-state" hidden>
@@ -114,15 +115,19 @@ HTML = """<!doctype html>
         <button id="detail-close-button" class="button-secondary" type="button">閉じる</button>
       </div>
 
-      <section id="detail-view" hidden>
-        <div class="detail-title-row">
-          <h3 id="detail-filename"></h3>
-          <span id="detail-state" class="state-badge"></span>
+      <section id="detail-view" class="detail-view" hidden>
+        <div class="detail-summary">
+          <div class="detail-title-row">
+            <h3 id="detail-filename"></h3>
+            <span id="detail-state" class="state-badge"></span>
+          </div>
+          <dl id="detail-metadata" class="metadata"></dl>
+          <p id="readonly-notice" class="readonly-notice" hidden>この項目は完了しているため、読取り専用です。</p>
         </div>
-        <dl id="detail-metadata" class="metadata"></dl>
-        <h3>本文</h3>
-        <pre id="detail-content" class="entry-content"></pre>
-        <p id="readonly-notice" class="readonly-notice" hidden>この項目は完了しているため、読取り専用です。</p>
+        <div class="detail-body">
+          <h3>本文</h3>
+          <pre id="detail-content" class="entry-content"></pre>
+        </div>
         <div id="detail-actions" class="detail-actions">
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="delete-button" class="button-danger" type="button">削除</button>
@@ -440,6 +445,7 @@ button:disabled {
 .entry-select {
   display: grid;
   grid-template-columns:
+    minmax(10rem, 1fr)
     minmax(10rem, 1.2fr)
     minmax(6rem, 0.7fr)
     minmax(5rem, 0.6fr)
@@ -447,8 +453,7 @@ button:disabled {
     minmax(6rem, 0.7fr)
     minmax(6rem, 0.7fr)
     minmax(9rem, 0.9fr)
-    minmax(12rem, 1.6fr)
-    minmax(10rem, 1fr);
+    minmax(12rem, 1.6fr);
   gap: var(--space-2);
   align-items: center;
 }
@@ -566,6 +571,30 @@ button:disabled {
 
 .detail-title-row h3 {
   overflow-wrap: anywhere;
+}
+
+.detail-view {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.35fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.detail-view[hidden] {
+  display: none;
+}
+
+.detail-summary,
+.detail-body {
+  min-width: 0;
+}
+
+.detail-body > h3 {
+  margin-top: 0;
+}
+
+.detail-actions {
+  grid-column: 1 / -1;
 }
 
 .metadata {
@@ -737,6 +766,15 @@ dialog form {
     flex-direction: column;
   }
 
+  .detail-view {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .detail-actions {
+    grid-column: auto;
+  }
+
   .filter-grid {
     grid-template-columns: 1fr;
   }
@@ -850,7 +888,7 @@ function clearFieldError(event) {
 }
 
 function entryKey(entry) {
-  return entry ? `${entry.state}/${entry.filename}` : '';
+  return entry ? entry.filename : '';
 }
 
 function labelFor(field, value) {
@@ -891,6 +929,7 @@ function renderEntry(entry) {
     node.textContent = value || 'なし';
     return node;
   };
+  const filename = cell('ファイル名', entry.filename);
   const targetRepo = cell('対象リポジトリ', entry.target_repo);
   const kind = cell('種別', KIND_LABELS[entry.kind] || entry.kind, 'entry-kind');
   const state = cell('状態', STATE_LABELS[entry.state] || entry.state, 'state-badge');
@@ -900,9 +939,8 @@ function renderEntry(entry) {
   const source = cell('投入元', entry.source);
   const updated = cell('更新日時', formatUpdatedAt(entry.updated_at));
   const summary = cell('要約', entry.summary);
-  const filename = cell('ファイル名', entry.filename);
 
-  const cells = [targetRepo, kind, state, answered, category, source, updated, summary, filename];
+  const cells = [filename, targetRepo, kind, state, answered, category, source, updated, summary];
   button.setAttribute(
     'aria-label',
     cells.map(node => `${node.dataset.label}: ${node.textContent}`).join('、')
@@ -1181,13 +1219,13 @@ function listQuery() {
 }
 
 async function loadEntries(options = {}) {
-  const selectedKey = entryKey(currentEntry);
+  const selectedFilename = currentEntry ? currentEntry.filename : '';
   setLoading(true);
   try {
     const payload = await api(`/api/entries?${listQuery()}`);
     entries = payload.entries;
     applyClientFilters();
-    const selected = entries.find(entry => entryKey(entry) === selectedKey);
+    const selected = entries.find(entry => entry.filename === selectedFilename);
     if (!selected) {
       if (byId('detail-dialog').open) closeDetailDialog(true);
       return;

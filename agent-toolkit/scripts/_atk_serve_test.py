@@ -26,6 +26,7 @@ import _atk_serve_config as config
 import _atk_serve_state as state
 import filelock
 import pytest
+import watchdog.events
 
 
 def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
@@ -85,7 +86,23 @@ def test_assets_are_self_contained() -> None:
     assert "textContent" in assets.JS
     assert ".value" in assets.JS
     assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
-    assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest"' in assets.HTML
+    assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
+
+
+def test_detail_view_uses_responsive_two_column_layout() -> None:
+    """詳細閲覧を横長画面では2列、狭い画面では1列に配置する。"""
+    assert '<section id="detail-view" class="detail-view" hidden>' in assets.HTML
+    assert '<div class="detail-summary">' in assets.HTML
+    assert '<div class="detail-body">' in assets.HTML
+    assert ".detail-view {" in assets.CSS
+    assert "grid-template-columns: minmax(18rem, 0.35fr) minmax(0, 1fr);" in assets.CSS
+    assert ".detail-view[hidden] {" in assets.CSS
+    assert ".detail-summary,\n.detail-body {\n  min-width: 0;\n}" in assets.CSS
+    assert ".detail-body > h3 {\n  margin-top: 0;\n}" in assets.CSS
+    assert ".detail-actions {\n  grid-column: 1 / -1;\n}" in assets.CSS
+    mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
+    assert ".detail-view {\n    grid-template-columns: 1fr;\n    gap: var(--space-3);\n  }" in mobile
+    assert ".detail-actions {\n    grid-column: auto;\n  }" in mobile
 
 
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
@@ -258,6 +275,19 @@ process.stdout.write(JSON.stringify({{
 
 def test_render_entry_displays_all_comparison_columns() -> None:
     """一覧行へ比較対象の9項目を列順どおり表示する。"""
+    columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
+    assert columns is not None
+    assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
+        "ファイル名",
+        "対象リポジトリ",
+        "種別",
+        "状態",
+        "回答状況",
+        "カテゴリ",
+        "投入元",
+        "更新日時",
+        "要約",
+    ]
     rendered = _run_node_ui(
         """
 const row = renderEntry({
@@ -280,8 +310,9 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert rendered == {
-        "labels": ["対象リポジトリ", "種別", "状態", "回答状況", "カテゴリ", "投入元", "更新日時", "要約", "ファイル名"],
+        "labels": ["ファイル名", "対象リポジトリ", "種別", "状態", "回答状況", "カテゴリ", "投入元", "更新日時", "要約"],
         "values": [
+            "entry.md",
             "example/repo",
             "確認事項",
             "処理中",
@@ -290,12 +321,11 @@ process.stdout.write(JSON.stringify({
             "session-review",
             "更新日時文字列",
             "要約本文",
-            "entry.md",
         ],
         "accessibleName": (
-            "対象リポジトリ: example/repo、種別: 確認事項、状態: 処理中、"
+            "ファイル名: entry.md、対象リポジトリ: example/repo、種別: 確認事項、状態: 処理中、"
             "回答状況: 未回答、カテゴリ: ui、投入元: session-review、"
-            "更新日時: 更新日時文字列、要約: 要約本文、ファイル名: entry.md"
+            "更新日時: 更新日時文字列、要約: 要約本文"
         ),
     }
 
@@ -414,7 +444,7 @@ process.stdout.write(JSON.stringify({
     assert remove_call["body"] == {"filenames": ["entry.md"]}
     assert result["createResult"] == {
         "count": "1件",
-        "first": "inbox/entry.md",
+        "first": "entry.md",
         "toast": "項目を追加しました。",
     }
     assert result["editResult"] == {"detail": "編集本文", "toast": "本文を保存しました。"}
@@ -472,9 +502,9 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result["sortedKeys"] == ["processing/new.md", "inbox/old.md"]
+    assert result["sortedKeys"] == ["new.md", "old.md"]
     assert result["populated"]["count"] == "1件"
-    assert result["populated"]["first"] == "processing/new.md"
+    assert result["populated"]["first"] == "new.md"
     assert result["populated"]["emptyHidden"] is True
     assert "target_repo=example%2Frepo" in result["populated"]["query"]
     assert "category=ui" in result["populated"]["query"]
@@ -670,6 +700,61 @@ process.stdout.write(JSON.stringify({
     assert "/api/sync" not in result["firstUrl"]
 
 
+def test_list_reload_tracks_selection_across_state_transition() -> None:
+    """状態移動後も同じファイル名の選択を維持し、最新状態の詳細を取得する。"""
+    result = _run_node_ui(
+        """
+const inbox = {
+  kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: true,
+  summary: '移動前一覧', updated_at: '2026-02-01', content: '移動前本文'
+};
+const processing = {
+  ...inbox, state: 'processing', summary: '移動後一覧',
+  updated_at: '2026-02-02', content: '移動後本文'
+};
+let listEntries = [processing];
+fetchHandler = async url => {
+  const body = url.includes('/api/entries/processing/')
+    ? {entry: processing}
+    : {entries: listEntries};
+  return {ok: true, status: 200, statusText: 'OK', json: async () => body};
+};
+currentEntry = inbox;
+detailOriginKey = entryKey(inbox);
+elements['detail-dialog'].open = true;
+await loadEntries({fromSse: true});
+const afterTransition = {
+  dialogOpen: elements['detail-dialog'].open,
+  selectedFilename: currentEntry.filename,
+  selectedState: currentEntry.state,
+  detailState: elements['detail-state'].textContent,
+  detailContent: elements['detail-content'].textContent,
+  detailUrls: fetchCalls
+    .map(call => call.url)
+    .filter(url => !url.includes('/api/entries?'))
+};
+listEntries = [];
+await loadEntries({fromSse: true});
+process.stdout.write(JSON.stringify({
+  afterTransition,
+  afterDisappearance: {
+    dialogOpen: elements['detail-dialog'].open,
+    selected: currentEntry
+  }
+}));
+"""
+    )
+    assert result["afterTransition"] == {
+        "dialogOpen": True,
+        "selectedFilename": "entry.md",
+        "selectedState": "processing",
+        "detailState": "処理中",
+        "detailContent": "移動後本文",
+        "detailUrls": ["/atk/api/entries/processing/entry.md"],
+    }
+    assert result["afterDisappearance"]["dialogOpen"] is False
+
+
 def test_detail_discards_out_of_order_response_for_previous_selection() -> None:
     """選択項目を変更した後に完了した古い詳細応答を画面へ反映しない。"""
     result = _run_node_ui(
@@ -699,7 +784,7 @@ process.stdout.write(JSON.stringify({
 }));
 """
     )
-    assert result == {"selected": "b.md", "content": "B本文", "key": "inbox/b.md"}
+    assert result == {"selected": "b.md", "content": "B本文", "key": "b.md"}
 
 
 def test_stale_list_reload_does_not_invalidate_current_detail_request() -> None:
@@ -922,8 +1007,8 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "opened": True,
-        "closeFocus": "inbox/entry.md",
-        "escapeFocus": "inbox/entry.md",
+        "closeFocus": "entry.md",
+        "escapeFocus": "entry.md",
         "editPrevented": True,
         "editingOpen": True,
     }
@@ -1012,6 +1097,56 @@ def test_state_keeps_latest_event(tmp_path: pathlib.Path) -> None:
     """状態管理を構築できることを検証する。"""
     current = state.ServeState(tmp_path)
     assert current.root == tmp_path
+
+
+@pytest.mark.asyncio
+async def test_state_publishes_only_markdown_change_events(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Markdownの変更イベントだけを購読者へ通知する。"""
+    events = [
+        ("on_opened", watchdog.events.FileOpenedEvent(str(tmp_path / "entry.md")), False),
+        ("on_closed_no_write", watchdog.events.FileClosedNoWriteEvent(str(tmp_path / "entry.md")), False),
+        ("on_created", watchdog.events.FileCreatedEvent(str(tmp_path / "entry.md")), True),
+        ("on_modified", watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md")), True),
+        ("on_deleted", watchdog.events.FileDeletedEvent(str(tmp_path / "entry.md")), True),
+        ("on_created", watchdog.events.FileCreatedEvent(str(tmp_path / "entry.lock")), False),
+        ("on_modified", watchdog.events.FileModifiedEvent(str(tmp_path / "entry.lock")), False),
+        ("on_deleted", watchdog.events.FileDeletedEvent(str(tmp_path / "entry.lock")), False),
+        (
+            "on_moved",
+            watchdog.events.FileMovedEvent(
+                str(tmp_path / "entry.tmp"),
+                str(tmp_path / "entry.md"),
+            ),
+            True,
+        ),
+        (
+            "on_moved",
+            watchdog.events.FileMovedEvent(
+                str(tmp_path / "entry.md"),
+                str(tmp_path / "entry.tmp"),
+            ),
+            True,
+        ),
+        (
+            "on_moved",
+            watchdog.events.FileMovedEvent(
+                str(tmp_path / "entry.lock"),
+                str(tmp_path / "entry.lock.bak"),
+            ),
+            False,
+        ),
+    ]
+    for handler_name, event, expected in events:
+        current = state.ServeState(tmp_path, debounce_seconds=0)
+        current._loop = asyncio.get_running_loop()
+        published = threading.Event()
+        monkeypatch.setattr(current, "publish", published.set)
+        getattr(current, handler_name)(event)
+        await asyncio.sleep(0)
+        assert published.is_set() is expected
 
 
 def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
@@ -1984,7 +2119,7 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     index_body = await index_response.get_data(as_text=True)
     assert 'href="/atk/static/app.css"' in index_body
     assert 'src="/atk/static/app.js"' in index_body
-    assert 'href="/atk/manifest.webmanifest"' in index_body
+    assert 'href="/atk/manifest.webmanifest" crossorigin="use-credentials"' in index_body
     assert "/atk/atk/" not in index_body
 
     js_response = await client.get("/atk/static/app.js", headers=headers)

@@ -37,9 +37,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.observer.stop()
         self.observer.join()
 
-    def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdown変更を購読者へ通知する。"""
-        if event.is_directory or not str(event.src_path).endswith(".md"):
+    def _publish_markdown_change(self, event: watchdog.events.FileSystemEvent) -> None:
+        """Markdownの内容又は配置の変更を購読者へ通知する。"""
+        paths = (event.src_path, getattr(event, "dest_path", ""))
+        if event.is_directory or not any(str(path).endswith(".md") for path in paths):
             return
         now = time.monotonic()
         with self._lock:
@@ -48,6 +49,22 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             self._last_event = now
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self.publish)
+
+    def on_created(self, event: watchdog.events.FileSystemEvent) -> None:
+        """Markdown作成を購読者へ通知する。"""
+        self._publish_markdown_change(event)
+
+    def on_modified(self, event: watchdog.events.FileSystemEvent) -> None:
+        """Markdown変更を購読者へ通知する。"""
+        self._publish_markdown_change(event)
+
+    def on_deleted(self, event: watchdog.events.FileSystemEvent) -> None:
+        """Markdown削除を購読者へ通知する。"""
+        self._publish_markdown_change(event)
+
+    def on_moved(self, event: watchdog.events.FileSystemEvent) -> None:
+        """Markdown移動を購読者へ通知する。"""
+        self._publish_markdown_change(event)
 
     def publish(self) -> None:
         """最新変更通知を全購読者へ配信する。"""
