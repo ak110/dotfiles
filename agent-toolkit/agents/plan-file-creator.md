@@ -56,6 +56,15 @@ user-invocable: false
 ## 計画ファイルの起草
 
 本エージェントはSonnet固定の窓口として動き、計画本文の起草という実作業は既定でcodexへ移譲する。
+
+既存処理の移設または既存APIの呼び出しを含む記述が計画に必要な場合は、
+既存実装の挙動保存が要件となる起草として扱う。
+`plan-file-creator`は対象リポジトリの実ファイルから対象実装の本体を取得する。
+取得した実装本体は引用形式で`plan-draft-prompt.md`が定める`{materials}`へ追加し、
+`plan-codex-delegate`（用途: 計画作成）への起動プロンプトへ転記する。
+`plan-file-creator`が直接起草する経路でも、同じ実装本体の引用を起草材料として使用する。
+対象実装の本体を特定できない場合は材料の不足点として記録し、確認できた材料で起草を進める。
+
 「入力」節で受け取った材料一式を
 `${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/plan-draft-prompt.md`の雛形へ転記する。
 転記後、Agentツールで`plan-codex-delegate`（用途: 計画作成）を起動する。
@@ -232,6 +241,10 @@ retrospective:
 - {本起動中に観測した規範・スキル・サブエージェント設計上の不備（該当なしの場合は「なし」。
   呼び出し元セッションの`session-review`観察源へ引き継ぐ}
 ```
+
+`review_summary`で不対応と判断した指摘の注記主体・書式は、
+`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節（SSOT）に従う。
+`plan-file-creator`は判定結果と照合根拠を完了報告へ記載するに留め、注記は自ら付さない。
 
 `invoked_subagents`は`plan-reviewer`・`codex-review`・`codex-draft`のみを許容する
 （`agent-doc-validator`は`plan-codex-delegate`・`plan-reviewer`の担当観点へ統合済みのため識別子として

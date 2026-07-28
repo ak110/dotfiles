@@ -112,7 +112,13 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
   「初回プロンプト雛形」節。レビュー観点は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/SKILL.md`を
   直接Readで参照する
 - `用途: 実装差分レビュー`: `${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/impl-diff-prompt.md`。
-  `review-standards/SKILL.md`を直接参照する
+  `review-standards/SKILL.md`を直接参照する。
+  起動プロンプトから変更の意図と意図的に受け入れた挙動変化を受け取り、
+  `変更の意図`欄と`意図的に受け入れた挙動変化`欄へ転記する。
+  変更の意図は呼び出し元から指定された値を使用する。
+  未指定で計画ファイルがある場合は、計画ファイルの`### 経緯`から作成した要約を使用する。
+  計画ファイルがなく、呼び出し元からも指定されていない場合は`なし`とする。
+  挙動変化が未指定の場合は`なし`を転記する
 - `用途: 実装`: `${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/impl-prompt.md`。
   対象種別に応じて`coding-standards/SKILL.md`・`writing-standards/SKILL.md`の絶対パスを埋め込む
 
