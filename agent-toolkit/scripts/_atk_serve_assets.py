@@ -1,13 +1,25 @@
 """`atk serve`の自己完結型フロントエンド資産。"""
 
+import base64
+
 # ruff: noqa: E501
+
+THEME_COLOR = "#3157d5"
+ICON_192_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAABiUlEQVR42u3TMQ0AAAjAMCyhBuXoARN89KiBJYusHvgqRMAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwAAYQAQOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAACJgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAuLQQp097LuitXAAAAAElFTkSuQmCC"
+)
+ICON_512_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAG40lEQVR42u3WMQEAAAQAQZWkkVweStjccAV++sjqAQB+CREAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAAAYABEAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAAAYABEAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAAAYABEAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAAAYABEAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAAAYABEAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAwAAGAAAAADAAAYAADAAAAABgAAMAAAgAEAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAABgAAMAAAAAGAAAwAACAAQAADAAAYAAAAAMAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAAwAAAAAYAAAyAEABgAAAAAwAAGAAAwAAAAAYAADAAAIABAAAMAABgAAAAAwAAGAAA4M4Co2GNkXMVNYcAAAAASUVORK5CYII="
+)
 
 HTML = """<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="__THEME_COLOR__">
   <title>フィードバック管理</title>
+  <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body>
@@ -75,6 +87,17 @@ HTML = """<!doctype html>
         <span id="entry-count" class="secondary-text">0件</span>
       </div>
       <div id="loading-indicator" class="loading-state" role="status" hidden>読み込んでいます</div>
+      <div class="entry-columns" aria-hidden="true">
+        <span>対象リポジトリ</span>
+        <span>種別</span>
+        <span>状態</span>
+        <span>回答状況</span>
+        <span>カテゴリ</span>
+        <span>投入元</span>
+        <span>更新日時</span>
+        <span>要約</span>
+        <span>ファイル名</span>
+      </div>
       <ul id="entry-list" class="entry-list" aria-label="エントリ一覧"></ul>
       <div id="empty-state" class="empty-state" hidden>
         <p>条件に一致する項目はありません。</p>
@@ -82,10 +105,13 @@ HTML = """<!doctype html>
       </div>
     </section>
 
-    <article class="detail-pane card" aria-labelledby="detail-heading">
-      <h2 id="detail-heading">詳細</h2>
-      <div id="detail-placeholder" class="empty-state">
-        <p>一覧から項目を選択してください。</p>
+  </main>
+
+  <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-heading">
+    <article class="detail-pane">
+      <div class="detail-dialog-heading">
+        <h2 id="detail-heading">詳細</h2>
+        <button id="detail-close-button" class="button-secondary" type="button">閉じる</button>
       </div>
 
       <section id="detail-view" hidden>
@@ -121,7 +147,7 @@ HTML = """<!doctype html>
         </div>
       </section>
     </article>
-  </main>
+  </dialog>
 
   <dialog id="create-dialog">
     <form id="create-form" method="dialog" novalidate>
@@ -186,7 +212,7 @@ HTML = """<!doctype html>
   <div id="toast" class="toast" role="status" hidden></div>
   <script src="__BASE_PATH_HTML__/static/app.js"></script>
 </body>
-</html>"""
+</html>""".replace("__THEME_COLOR__", THEME_COLOR)
 
 CSS = """:root {
   --color-background: #f3f6fa;
@@ -299,7 +325,7 @@ button:disabled {
 .app-header h1,
 .pane-heading h2,
 .filters h2,
-.detail-pane > h2 {
+.detail-dialog-heading h2 {
   margin: 0;
 }
 
@@ -318,13 +344,15 @@ button:disabled {
 .header-actions,
 .form-actions,
 .detail-actions,
-.pane-heading {
+.pane-heading,
+.detail-dialog-heading {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.pane-heading {
+.pane-heading,
+.detail-dialog-heading {
   justify-content: space-between;
 }
 
@@ -365,9 +393,9 @@ button:disabled {
 
 .app-layout {
   display: grid;
-  grid-template-columns: minmax(15rem, 0.7fr) minmax(20rem, 1.1fr) minmax(24rem, 1.5fr);
+  grid-template-columns: minmax(15rem, 0.25fr) minmax(0, 1fr);
   gap: var(--space-3);
-  width: min(1500px, 100%);
+  width: min(1800px, 100%);
   margin: 0 auto;
   padding: var(--space-3);
   align-items: start;
@@ -404,15 +432,39 @@ button:disabled {
   font-weight: 600;
 }
 
-.entry-pane,
-.detail-pane {
+.entry-pane {
   min-height: 34rem;
+}
+
+.entry-columns,
+.entry-select {
+  display: grid;
+  grid-template-columns:
+    minmax(10rem, 1.2fr)
+    minmax(6rem, 0.7fr)
+    minmax(5rem, 0.6fr)
+    minmax(5rem, 0.65fr)
+    minmax(6rem, 0.7fr)
+    minmax(6rem, 0.7fr)
+    minmax(9rem, 0.9fr)
+    minmax(12rem, 1.6fr)
+    minmax(10rem, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.entry-columns {
+  margin-top: var(--space-3);
+  padding: 0 var(--space-2);
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+  font-weight: 700;
 }
 
 .entry-list {
   display: grid;
   gap: var(--space-2);
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -422,11 +474,8 @@ button:disabled {
 }
 
 .entry-select {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: var(--space-2);
   width: 100%;
-  padding: var(--space-3);
+  padding: var(--space-2);
   text-align: left;
   background: var(--color-surface);
 }
@@ -442,16 +491,16 @@ button:disabled {
   box-shadow: 0 0 0 1px var(--color-primary);
 }
 
-.entry-summary {
-  grid-column: 1 / -1;
+.entry-cell {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.entry-meta {
-  grid-column: 1 / -1;
+.entry-cell::before {
+  display: none;
 }
 
-.kind-label {
+.entry-kind {
   font-weight: 700;
 }
 
@@ -578,6 +627,14 @@ dialog {
   box-shadow: 0 1.5rem 4rem rgb(20 30 50 / 0.25);
 }
 
+.detail-dialog {
+  width: min(80rem, calc(100% - 2rem));
+}
+
+.detail-pane {
+  min-width: 0;
+}
+
 dialog::backdrop {
   background: rgb(15 23 42 / 0.55);
 }
@@ -641,9 +698,43 @@ dialog form {
     padding: var(--space-2);
   }
 
-  .entry-pane,
-  .detail-pane {
+  .entry-pane {
     min-height: 0;
+  }
+
+  .entry-columns {
+    display: none;
+  }
+
+  .entry-select {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+
+  .entry-cell {
+    display: grid;
+    grid-template-columns: minmax(7rem, 40%) 1fr;
+    gap: var(--space-2);
+  }
+
+  .entry-cell::before {
+    display: inline;
+    color: var(--color-secondary-text);
+    content: attr(data-label);
+    font-size: var(--font-size-secondary);
+    font-weight: 700;
+  }
+
+  .detail-dialog {
+    width: calc(100% - 1rem);
+    max-height: calc(100vh - 1rem);
+    padding: var(--space-3);
+  }
+
+  .detail-dialog-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .filter-grid {
@@ -693,6 +784,9 @@ let editing = false;
 let loading = false;
 let editBaseline = '';
 let answerBaseline = '';
+let detailOrigin = null;
+let detailOriginKey = '';
+let detailRequestGeneration = 0;
 let toastTimer = null;
 
 const byId = id => document.getElementById(id);
@@ -788,26 +882,33 @@ function renderEntry(entry) {
   button.type = 'button';
   button.className = 'entry-select';
   button.dataset.key = entryKey(entry);
+  if (button.dataset.key === detailOriginKey) detailOrigin = button;
   button.setAttribute('aria-current', String(entryKey(entry) === entryKey(currentEntry)));
-  button.setAttribute('aria-label', `${entry.filename}の詳細を表示`);
-
-  const kind = document.createElement('span');
-  kind.className = 'kind-label';
-  kind.textContent = KIND_LABELS[entry.kind] || entry.kind;
-  const state = document.createElement('span');
-  state.className = 'state-badge';
+  const cell = (label, value, className = '') => {
+    const node = document.createElement('span');
+    node.className = `entry-cell ${className}`.trim();
+    node.dataset.label = label;
+    node.textContent = value || 'なし';
+    return node;
+  };
+  const targetRepo = cell('対象リポジトリ', entry.target_repo);
+  const kind = cell('種別', KIND_LABELS[entry.kind] || entry.kind, 'entry-kind');
+  const state = cell('状態', STATE_LABELS[entry.state] || entry.state, 'state-badge');
   state.dataset.state = entry.state;
-  state.textContent = STATE_LABELS[entry.state] || entry.state;
-  const summary = document.createElement('span');
-  summary.className = 'entry-summary';
-  summary.textContent = entry.summary || entry.filename;
-  const updated = document.createElement('time');
-  updated.className = 'entry-meta';
-  updated.dateTime = entry.updated_at || '';
-  updated.textContent = formatUpdatedAt(entry.updated_at);
+  const answered = cell('回答状況', labelFor('answered', entry.answered));
+  const category = cell('カテゴリ', entry.category);
+  const source = cell('投入元', entry.source);
+  const updated = cell('更新日時', formatUpdatedAt(entry.updated_at));
+  const summary = cell('要約', entry.summary);
+  const filename = cell('ファイル名', entry.filename);
 
-  button.append(kind, state, summary, updated);
-  button.addEventListener('click', () => selectEntry(entry));
+  const cells = [targetRepo, kind, state, answered, category, source, updated, summary, filename];
+  button.setAttribute(
+    'aria-label',
+    cells.map(node => `${node.dataset.label}: ${node.textContent}`).join('、')
+  );
+  button.append(...cells);
+  button.addEventListener('click', () => selectEntry(entry, button));
   item.append(button);
   return item;
 }
@@ -832,7 +933,6 @@ function renderMetadata(entry) {
 
 function displayEntry(entry, preserveForm = false) {
   currentEntry = entry;
-  byId('detail-placeholder').hidden = true;
   byId('detail-view').hidden = editing;
   byId('edit-panel').hidden = !editing;
   byId('detail-filename').textContent = entry.filename;
@@ -858,17 +958,52 @@ function displayEntry(entry, preserveForm = false) {
 
 async function renderDetail(entry, options = {}) {
   if (!entry) return;
+  const requestKey = entryKey(entry);
+  if (requestKey !== detailOriginKey) return;
+  const requestGeneration = ++detailRequestGeneration;
   try {
     const payload = await api(`/api/entries/${entry.state}/${encodeURIComponent(entry.filename)}`);
+    if (requestGeneration !== detailRequestGeneration || requestKey !== detailOriginKey) return;
+    if (editing) {
+      showError('外部で項目が更新されました。編集中の入力を保持しています。保存前に詳細を再読込してください。');
+      return;
+    }
     displayEntry(payload.entry, Boolean(options.preserveForm));
+    if (options.open && !byId('detail-dialog').open) byId('detail-dialog').showModal();
   } catch (error) {
+    if (requestGeneration !== detailRequestGeneration || requestKey !== detailOriginKey) return;
+    if (error.status === 404 && options.closeWhenMissing) {
+      closeDetailDialog();
+      return;
+    }
     showError(error);
   }
 }
 
-async function selectEntry(entry) {
+async function selectEntry(entry, origin) {
   if (editing && entryKey(entry) !== entryKey(currentEntry)) cancelEdit();
-  await renderDetail(entry);
+  detailOrigin = origin;
+  detailOriginKey = entryKey(entry);
+  await renderDetail(entry, {open: true});
+}
+
+function closeDetailDialog(force = false) {
+  if (editing && !force) return false;
+  if (force) editing = false;
+  if (byId('detail-dialog').open) byId('detail-dialog').close();
+  return true;
+}
+
+function resetDetailSelection() {
+  currentEntry = null;
+  editing = false;
+  detailOrigin = null;
+  renderList();
+  if (detailOrigin) {
+    detailOrigin.focus();
+    detailOrigin = null;
+  }
+  detailOriginKey = '';
 }
 
 function enterEdit() {
@@ -916,6 +1051,7 @@ async function saveEntry() {
     editing = false;
     showToast('本文を保存しました。');
     await loadEntries();
+    closeDetailDialog();
   } catch (error) {
     if (!conflictMessage(error)) showError(error);
   }
@@ -933,6 +1069,7 @@ async function saveAnswer() {
     editing = false;
     showToast('回答を保存しました。');
     await loadEntries();
+    closeDetailDialog();
   } catch (error) {
     if (!conflictMessage(error)) showError(error);
   }
@@ -1017,11 +1154,8 @@ async function removeEntry(event) {
   try {
     await api('/api/entries/remove', {method: 'POST', body: JSON.stringify(body)});
     byId('delete-dialog').close();
-    currentEntry = null;
     editing = false;
-    byId('detail-view').hidden = true;
-    byId('edit-panel').hidden = true;
-    byId('detail-placeholder').hidden = false;
+    closeDetailDialog();
     showToast('項目を削除しました。');
     await loadEntries();
   } catch (error) {
@@ -1055,11 +1189,7 @@ async function loadEntries(options = {}) {
     applyClientFilters();
     const selected = entries.find(entry => entryKey(entry) === selectedKey);
     if (!selected) {
-      if (!editing) {
-        currentEntry = null;
-        byId('detail-view').hidden = true;
-        byId('detail-placeholder').hidden = false;
-      }
+      if (byId('detail-dialog').open) closeDetailDialog(true);
       return;
     }
     if (editing) {
@@ -1069,13 +1199,25 @@ async function loadEntries(options = {}) {
       applyClientFilters();
       return;
     }
-    await renderDetail(selected);
+    if (byId('detail-dialog').open) await renderDetail(selected, {closeWhenMissing: true});
   } catch (error) {
     showError(error);
   } finally {
     setLoading(false);
     renderList();
   }
+}
+
+async function synchronizeAndLoad() {
+  let syncError = null;
+  setLoading(true);
+  try {
+    await api('/api/sync', {method: 'POST'});
+  } catch (error) {
+    syncError = error;
+  }
+  await loadEntries();
+  if (syncError) showError(syncError);
 }
 
 function closeTopmostDialog() {
@@ -1089,7 +1231,7 @@ function closeTopmostDialog() {
 }
 
 function bindEvents() {
-  byId('refresh-button').addEventListener('click', () => loadEntries());
+  byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('create-button').addEventListener('click', openCreateDialog);
   byId('empty-create-button').addEventListener('click', openCreateDialog);
   byId('cancel-create-button').addEventListener('click', closeCreateDialog);
@@ -1103,6 +1245,11 @@ function bindEvents() {
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('delete-form').addEventListener('submit', removeEntry);
   byId('cancel-delete-button').addEventListener('click', () => byId('delete-dialog').close());
+  byId('detail-close-button').addEventListener('click', () => closeDetailDialog());
+  byId('detail-dialog').addEventListener('cancel', event => {
+    if (editing) event.preventDefault();
+  });
+  byId('detail-dialog').addEventListener('close', resetDetailSelection);
 
   byId('search-input').addEventListener('input', applyClientFilters);
   for (const id of ['kind-filter', 'state-filter', 'answer-filter', 'target-filter', 'category-filter', 'source-filter']) {
@@ -1123,7 +1270,7 @@ function bindEvents() {
         byId('search-input').focus();
       }
     } else if (event.key === 'Escape') {
-      if (!closeTopmostDialog() && editing) cancelEdit();
+      if (!closeTopmostDialog() && editing && byId('detail-dialog').open) event.preventDefault();
     }
   });
 }
@@ -1137,4 +1284,4 @@ events.addEventListener('changed', () => loadEntries({fromSse: true}));
 events.onerror = () => {
   byId('connection-status').textContent = '再接続中';
 };
-loadEntries();"""
+synchronizeAndLoad();"""

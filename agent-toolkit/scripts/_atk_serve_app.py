@@ -191,14 +191,26 @@ class Operations:
 
     def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
-        with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            common.pull(self.private_notes)
-            kind_filter = filters.get("type", "all")
-            status_filter = filters.get("status", "all")
-            answered_filter = filters.get("answered", "all")
-            states = _resolve_states(status_filter)
-            for path, _repo, text, state, kind in common.iter_entries(self.private_notes, states, None, kind_filter):
-                item = _entry(path, kind, state, text)
+        kind_filter = filters.get("type", "all")
+        status_filter = filters.get("status", "all")
+        answered_filter = filters.get("answered", "all")
+        states = _resolve_states(status_filter)
+        for state in states:
+            try:
+                paths = sorted((self.private_notes / state).iterdir())
+            except FileNotFoundError:
+                continue
+            for path in paths:
+                if path.suffix != ".md":
+                    continue
+                try:
+                    text = path.read_text(encoding="utf-8")
+                    kind = common.entry_type_of(path, text)
+                    if kind_filter not in ("all", kind):
+                        continue
+                    item = _entry(path, kind, state, text)
+                except FileNotFoundError:
+                    continue
                 if answered_filter == "yes" and item["answered"] is not True:
                     continue
                 if answered_filter == "no" and item["answered"] is not False:
@@ -211,14 +223,19 @@ class Operations:
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:
             raise common.WebInputError("stateが不正です")
-        with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            common.pull(self.private_notes)
-            path = common.validate_filename(filename, self.private_notes / state)
-            if not path.is_file():
-                raise FileNotFoundError(filename)
+        path = common.validate_filename(filename, self.private_notes / state)
+        try:
             text = path.read_text(encoding="utf-8")
             kind = common.entry_type_of(path, text)
             return {**_entry(path, kind, state, text), "content": text}
+        except FileNotFoundError as error:
+            raise FileNotFoundError(filename) from error
+
+    def sync(self) -> bool:
+        """リポジトリを明示的に同期する。"""
+        with common.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
+            common.pull(self.private_notes)
+        return True
 
     def edit(
         self,
@@ -347,6 +364,19 @@ def create_app(
     app.config["SERVE_STATE"] = state
     ops = operations or Operations(private_notes)
     workers = BoundedWorkers(worker_limit)
+    sync_task: asyncio.Task[bool] | None = None
+
+    async def synchronize() -> bool:
+        """同時に届いた同期要求へ同じ実行結果を返す。"""
+        nonlocal sync_task
+        if sync_task is None or sync_task.done():
+            sync_task = asyncio.create_task(workers.run(ops.sync))
+        current = sync_task
+        try:
+            return await asyncio.shield(current)
+        finally:
+            if current.done() and sync_task is current:
+                sync_task = None
 
     @app.errorhandler(common.WebInputError)
     async def input_error(error: common.WebInputError) -> tuple[quart.Response, int]:
@@ -389,9 +419,57 @@ def create_app(
         body = assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path))
         return quart.Response(body, content_type="text/javascript; charset=utf-8")
 
+    @app.get("/manifest.webmanifest")
+    async def manifest() -> quart.Response:
+        base_path = _safe_base_path(quart.request.root_path)
+        root_url = f"{base_path}/"
+        body = {
+            "name": "フィードバック管理",
+            "short_name": "atk serve",
+            "start_url": root_url,
+            "scope": root_url,
+            "display": "standalone",
+            "theme_color": assets.THEME_COLOR,
+            "background_color": assets.THEME_COLOR,
+            "icons": [
+                {
+                    "src": f"{base_path}/static/icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png",
+                },
+                {
+                    "src": f"{base_path}/static/icon-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                },
+            ],
+        }
+        response = quart.Response(
+            json.dumps(body, ensure_ascii=False),
+            content_type="application/manifest+json",
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.get("/static/icon-192.png")
+    async def icon_192() -> quart.Response:
+        response = quart.Response(assets.ICON_192_PNG, content_type="image/png")
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+    @app.get("/static/icon-512.png")
+    async def icon_512() -> quart.Response:
+        response = quart.Response(assets.ICON_512_PNG, content_type="image/png")
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
     @app.get("/api/status")
     async def status() -> quart.Response:
         return quart.jsonify(enabled=await workers.run(ops.status))
+
+    @app.post("/api/sync")
+    async def sync() -> quart.Response:
+        return quart.jsonify(synced=await synchronize())
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:

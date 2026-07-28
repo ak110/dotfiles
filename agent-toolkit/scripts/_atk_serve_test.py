@@ -3,16 +3,19 @@
 # pylint: disable=protected-access
 
 import asyncio
+import binascii
 import contextlib
 import json
 import logging
 import pathlib
 import re
 import signal
+import struct
 import subprocess
 import threading
 import types
 import typing
+import zlib
 
 import _atk_mq_common as common
 import _atk_mq_repo as feedback_repo
@@ -81,6 +84,8 @@ def test_assets_are_self_contained() -> None:
     assert "__BASE_PATH_JS__" in assets.JS
     assert "textContent" in assets.JS
     assert ".value" in assets.JS
+    assert f'<meta name="theme-color" content="{assets.THEME_COLOR}">' in assets.HTML
+    assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest"' in assets.HTML
 
 
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
@@ -114,15 +119,19 @@ class Element {{
   setAttribute(name, value) {{ this.attributes[name] = value; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
   showModal() {{ this.open = true; }}
-  close() {{ this.open = false; }}
-  focus() {{ globalThis.focused = this.id; }}
+  close() {{
+    this.open = false;
+    if (this.listeners.close) this.listeners.close({{currentTarget: this}});
+  }}
+  focus() {{ globalThis.focused = this.dataset.key || this.id; }}
   reset() {{ globalThis.formReset = true; }}
 }}
 const ids = [
   'connection-status', 'refresh-button', 'create-button', 'global-error',
   'search-input', 'kind-filter', 'state-filter', 'answer-filter', 'target-filter',
   'category-filter', 'source-filter', 'entry-count', 'loading-indicator',
-  'entry-list', 'empty-state', 'empty-create-button', 'detail-placeholder',
+  'entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
+  'detail-close-button',
   'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'detail-actions', 'edit-button',
   'delete-button', 'edit-panel', 'edit-content', 'edit-content-error',
@@ -247,6 +256,50 @@ process.stdout.write(JSON.stringify({{
     assert rendered["childCounts"] == [0, 0, 0, 0, 0]
 
 
+def test_render_entry_displays_all_comparison_columns() -> None:
+    """一覧行へ比較対象の9項目を列順どおり表示する。"""
+    rendered = _run_node_ui(
+        """
+const row = renderEntry({
+  target_repo: 'example/repo',
+  kind: 'tbd',
+  state: 'processing',
+  answered: false,
+  category: 'ui',
+  source: 'session-review',
+  updated_at: '更新日時文字列',
+  summary: '要約本文',
+  filename: 'entry.md'
+});
+const cells = row.children[0].children;
+process.stdout.write(JSON.stringify({
+  labels: cells.map(cell => cell.dataset.label),
+  values: cells.map(cell => cell.textContent),
+  accessibleName: row.children[0].attributes['aria-label']
+}));
+"""
+    )
+    assert rendered == {
+        "labels": ["対象リポジトリ", "種別", "状態", "回答状況", "カテゴリ", "投入元", "更新日時", "要約", "ファイル名"],
+        "values": [
+            "example/repo",
+            "確認事項",
+            "処理中",
+            "未回答",
+            "ui",
+            "session-review",
+            "更新日時文字列",
+            "要約本文",
+            "entry.md",
+        ],
+        "accessibleName": (
+            "対象リポジトリ: example/repo、種別: 確認事項、状態: 処理中、"
+            "回答状況: 未回答、カテゴリ: ui、投入元: session-review、"
+            "更新日時: 更新日時文字列、要約: 要約本文、ファイル名: entry.md"
+        ),
+    }
+
+
 def test_assets_focus_on_user_entry_workflows() -> None:
     """追加、一覧、詳細、編集、回答、削除の利用者操作を検証する。"""
     forbidden = (
@@ -268,6 +321,7 @@ def test_assets_focus_on_user_entry_workflows() -> None:
     assert all(value not in combined for value in forbidden)
     result = _run_node_ui(
         """
+bindEvents();
 let detail = {
   kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
   target_repo: 'example/repo', source: 'web', category: null,
@@ -305,7 +359,7 @@ const createResult = {
   first: elements['entry-list'].children[0].children[0].dataset.key,
   toast: elements['toast'].textContent
 };
-await renderDetail(detail);
+await selectEntry(detail, elements['entry-list'].children[0].children[0]);
 enterEdit();
 elements['edit-content'].value = '編集本文';
 await saveEntry();
@@ -313,14 +367,16 @@ const editResult = {
   detail: elements['detail-content'].textContent,
   toast: elements['toast'].textContent
 };
+await selectEntry(detail, elements['entry-list'].children[0].children[0]);
 enterEdit();
 elements['answer-input'].value = '回答本文';
 await saveAnswer();
 const answerResult = {
   detail: elements['detail-content'].textContent,
-  answered: currentEntry.answered,
+  answered: detail.answered,
   toast: elements['toast'].textContent
 };
+await selectEntry(detail, elements['entry-list'].children[0].children[0]);
 openDeleteDialog();
 await removeEntry({preventDefault() {}});
 process.stdout.write(JSON.stringify({
@@ -335,8 +391,8 @@ process.stdout.write(JSON.stringify({
   deleteResult: {
     count: elements['entry-count'].textContent,
     listLength: elements['entry-list'].children.length,
-    placeholder: !elements['detail-placeholder'].hidden,
-    detailHidden: elements['detail-view'].hidden,
+    dialogOpen: elements['detail-dialog'].open,
+    selected: currentEntry,
     toast: elements['toast'].textContent
   }
 }));
@@ -370,8 +426,8 @@ process.stdout.write(JSON.stringify({
     assert result["deleteResult"] == {
         "count": "0件",
         "listLength": 0,
-        "placeholder": True,
-        "detailHidden": True,
+        "dialogOpen": False,
+        "selected": None,
         "toast": "項目を削除しました。",
     }
 
@@ -529,7 +585,7 @@ process.stdout.write(JSON.stringify(result));
 
 
 def test_assets_keep_selection_and_reload_from_sse() -> None:
-    """SSE更新時に選択と編集中の入力値・競合基準を保持する。"""
+    """SSE更新と遅延した詳細応答から編集中の表示・入力値・競合基準を保護する。"""
     assert "events.addEventListener('changed', () => loadEntries({fromSse: true}))" in assets.JS
     result = _run_node_ui(
         """
@@ -537,8 +593,13 @@ const listed = {
   kind: 'tbd', state: 'inbox', filename: 'entry.md', answered: false,
   summary: '更新後一覧', updated_at: '2026-02-01'
 };
+let resolveDetail;
+let deferDetail = false;
 fetchHandler = async (url, options) => {
   if (!options.method || options.method === 'GET') {
+    if (deferDetail && url.includes('/api/entries/inbox/')) {
+      return new Promise(resolve => { resolveDetail = resolve; });
+    }
     const body = url.includes('/api/entries/inbox/')
       ? {entry: {...listed, content: 'SSE再描画本文'}}
       : {entries: [listed]};
@@ -553,16 +614,30 @@ fetchHandler = async (url, options) => {
   };
 };
 currentEntry = {...listed, content: '更新前本文'};
+detailOriginKey = entryKey(currentEntry);
 editing = false;
+elements['detail-dialog'].open = true;
 await loadEntries({fromSse: true});
 const redrawnDetail = elements['detail-content'].textContent;
 const detailRequests = fetchCalls.filter(call => call.url.includes('/api/entries/inbox/')).length;
 currentEntry = {...listed, content: '取得時本文'};
-editing = true;
-editBaseline = '取得時本文';
-answerBaseline = '取得時本文';
+displayEntry(currentEntry);
+deferDetail = true;
+const pendingDetail = renderDetail(listed);
+enterEdit();
 elements['edit-content'].value = '利用者の本文';
 elements['answer-input'].value = '利用者の回答';
+resolveDetail({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entry: {...listed, content: '遅延した詳細本文'}})
+});
+await pendingDetail;
+const delayedResponse = {
+  currentContent: currentEntry.content,
+  displayedContent: elements['detail-content'].textContent,
+  error: elements['global-error'].textContent
+};
+deferDetail = false;
 await loadEntries({fromSse: true});
 await saveEntry();
 process.stdout.write(JSON.stringify({
@@ -574,6 +649,7 @@ process.stdout.write(JSON.stringify({
   answer: elements['answer-input'].value,
   editBaseline,
   answerBaseline,
+  delayedResponse,
   error: elements['global-error'].textContent
 }));
 """
@@ -585,7 +661,177 @@ process.stdout.write(JSON.stringify({
     assert result["content"] == "利用者の本文"
     assert result["answer"] == "利用者の回答"
     assert result["editBaseline"] == result["answerBaseline"] == "取得時本文"
+    assert result["delayedResponse"] == {
+        "currentContent": "取得時本文",
+        "displayedContent": "取得時本文",
+        "error": "外部で項目が更新されました。編集中の入力を保持しています。保存前に詳細を再読込してください。",
+    }
     assert "入力内容を保持" in result["error"]
+    assert "/api/sync" not in result["firstUrl"]
+
+
+def test_detail_discards_out_of_order_response_for_previous_selection() -> None:
+    """選択項目を変更した後に完了した古い詳細応答を画面へ反映しない。"""
+    result = _run_node_ui(
+        """
+const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文'};
+const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文'};
+const resolvers = {};
+fetchHandler = async url => new Promise(resolve => {
+  resolvers[url.endsWith('/a.md') ? 'a' : 'b'] = resolve;
+});
+const firstRequest = selectEntry(first, new Element('a-origin'));
+const secondRequest = selectEntry(second, new Element('b-origin'));
+resolvers.b({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entry: second})
+});
+await secondRequest;
+resolvers.a({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entry: first})
+});
+await firstRequest;
+process.stdout.write(JSON.stringify({
+  selected: currentEntry.filename,
+  content: elements['detail-content'].textContent,
+  key: detailOriginKey
+}));
+"""
+    )
+    assert result == {"selected": "b.md", "content": "B本文", "key": "inbox/b.md"}
+
+
+def test_stale_list_reload_does_not_invalidate_current_detail_request() -> None:
+    """一覧再読込中の選択変更後は、古い選択の詳細要求を開始しない。"""
+    result = _run_node_ui(
+        """
+const first = {kind: 'feedback', state: 'inbox', filename: 'a.md', content: 'A本文'};
+const second = {kind: 'feedback', state: 'inbox', filename: 'b.md', content: 'B本文'};
+currentEntry = first;
+elements['detail-dialog'].open = true;
+let resolveList;
+let resolveSecond;
+fetchHandler = async url => {
+  if (url.includes('/api/entries?')) return new Promise(resolve => { resolveList = resolve; });
+  return new Promise(resolve => { resolveSecond = resolve; });
+};
+const staleReload = loadEntries();
+const secondRequest = selectEntry(second, new Element('b-origin'));
+resolveList({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entries: [first, second]})
+});
+await staleReload;
+resolveSecond({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entry: second})
+});
+await secondRequest;
+process.stdout.write(JSON.stringify({
+  selected: currentEntry.filename,
+  content: elements['detail-content'].textContent,
+  generation: detailRequestGeneration
+}));
+"""
+    )
+    assert result == {"selected": "b.md", "content": "B本文", "generation": 1}
+
+
+def test_detail_discards_older_error_for_same_selection() -> None:
+    """同じ選択項目の古い404応答は最新の詳細表示を閉じず、エラーも表示しない。"""
+    result = _run_node_ui(
+        """
+const entry = {kind: 'feedback', state: 'inbox', filename: 'entry.md', content: '一覧本文'};
+detailOriginKey = entryKey(entry);
+elements['detail-dialog'].open = true;
+const resolvers = [];
+fetchHandler = async () => new Promise(resolve => { resolvers.push(resolve); });
+const older = renderDetail(entry, {closeWhenMissing: true});
+const newer = renderDetail(entry, {closeWhenMissing: true});
+resolvers[1]({
+  ok: true, status: 200, statusText: 'OK',
+  json: async () => ({entry: {...entry, content: '最新本文'}})
+});
+await newer;
+resolvers[0]({
+  ok: false, status: 404, statusText: 'Not Found',
+  json: async () => ({error: '見つかりません'})
+});
+await older;
+process.stdout.write(JSON.stringify({
+  selected: currentEntry.filename,
+  content: elements['detail-content'].textContent,
+  open: elements['detail-dialog'].open,
+  error: elements['global-error'].textContent
+}));
+"""
+    )
+    assert result == {
+        "selected": "entry.md",
+        "content": "最新本文",
+        "open": True,
+        "error": "",
+    }
+
+
+def test_initial_and_manual_sync_always_fall_back_to_local_entries() -> None:
+    """同期の成功、409、Git失敗の各結果後にローカル一覧を取得して利用可能状態へ戻す。"""
+    assert "byId('refresh-button').addEventListener('click', synchronizeAndLoad)" in assets.JS
+    assert assets.JS.rstrip().endswith("synchronizeAndLoad();")
+    result = _run_node_ui(
+        """
+let syncResult = 'success';
+fetchHandler = async (url, options) => {
+  if (url.endsWith('/api/sync')) {
+    if (syncResult === 'success') {
+      return {ok: true, status: 200, statusText: 'OK', json: async () => ({synced: true})};
+    }
+    const conflict = syncResult === 'conflict';
+    return {
+      ok: false,
+      status: conflict ? 409 : 500,
+      statusText: conflict ? 'Conflict' : 'Internal Server Error',
+      json: async () => ({
+        error: conflict ? '別の操作が進行中です' : 'Git同期に失敗しました',
+        code: conflict ? 'lock_conflict' : undefined
+      })
+    };
+  }
+  return {
+    ok: true, status: 200, statusText: 'OK',
+    json: async () => ({entries: [{
+      kind: 'feedback', state: 'inbox', filename: 'local.md',
+      summary: 'ローカル一覧', updated_at: '2026-01-01'
+    }]})
+  };
+};
+await Promise.all([synchronizeAndLoad(), synchronizeAndLoad()]);
+const parallelAvailable = !loading && elements['entry-count'].textContent === '1件';
+syncResult = 'conflict';
+await synchronizeAndLoad();
+const conflictError = elements['global-error'].textContent;
+syncResult = 'git';
+await synchronizeAndLoad();
+const gitError = elements['global-error'].textContent;
+process.stdout.write(JSON.stringify({
+  parallelAvailable,
+  conflictError,
+  gitError,
+  syncCalls: fetchCalls.filter(call => call.url.endsWith('/api/sync')).length,
+  entryCalls: fetchCalls.filter(call => call.url.includes('/api/entries?')).length,
+  available: !loading && elements['entry-list'].children.length === 1
+}));
+"""
+    )
+    assert result == {
+        "parallelAvailable": True,
+        "conflictError": "別の操作が進行中です",
+        "gitError": "Git同期に失敗しました",
+        "syncCalls": 4,
+        "entryCalls": 4,
+        "available": True,
+    }
 
 
 def test_edit_and_answer_conflicts_keep_user_input() -> None:
@@ -634,10 +880,87 @@ process.stdout.write(JSON.stringify({
     assert "外部" not in result["lockError"]
 
 
+def test_detail_dialog_opens_and_restores_row_focus_after_close_and_escape() -> None:
+    """詳細ダイアログを選択時に開き、閉じる操作とEscape後に起点行へフォーカスを戻す。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+const entry = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md', answered: null,
+  target_repo: 'example/repo', source: 'web', category: 'ui',
+  summary: '要約', updated_at: '2026-01-01', content: '本文'
+};
+entries = [entry];
+applyClientFilters();
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entry})
+});
+await selectEntry(entry, elements['entry-list'].children[0].children[0]);
+const opened = elements['detail-dialog'].open;
+elements['detail-close-button'].listeners.click();
+const closeFocus = globalThis.focused;
+
+await selectEntry(entry, elements['entry-list'].children[0].children[0]);
+let prevented = false;
+elements['detail-dialog'].listeners.cancel({preventDefault() { prevented = true; }});
+if (!prevented) elements['detail-dialog'].close();
+const escapeFocus = globalThis.focused;
+
+await selectEntry(entry, elements['entry-list'].children[0].children[0]);
+enterEdit();
+let editPrevented = false;
+elements['detail-dialog'].listeners.cancel({preventDefault() { editPrevented = true; }});
+if (!editPrevented) elements['detail-dialog'].close();
+process.stdout.write(JSON.stringify({
+  opened,
+  closeFocus,
+  escapeFocus,
+  editPrevented,
+  editingOpen: elements['detail-dialog'].open
+}));
+"""
+    )
+    assert result == {
+        "opened": True,
+        "closeFocus": "inbox/entry.md",
+        "escapeFocus": "inbox/entry.md",
+        "editPrevented": True,
+        "editingOpen": True,
+    }
+
+
+def test_detail_close_click_does_not_force_close_while_editing() -> None:
+    """閉じるクリックのMouseEventを強制終了引数として扱わず、編集中の入力を保持する。"""
+    result = _run_node_ui(
+        """
+bindEvents();
+currentEntry = {
+  kind: 'feedback', state: 'inbox', filename: 'entry.md',
+  answered: null, content: '取得時本文'
+};
+elements['detail-dialog'].open = true;
+enterEdit();
+elements['edit-content'].value = '未保存本文';
+elements['detail-close-button'].listeners.click({type: 'click'});
+process.stdout.write(JSON.stringify({
+  open: elements['detail-dialog'].open,
+  editing,
+  content: elements['edit-content'].value
+}));
+"""
+    )
+    assert result == {"open": True, "editing": True, "content": "未保存本文"}
+
+
 def test_assets_keep_keyboard_and_narrow_viewport_support() -> None:
     """保存、検索、Escapeのキー操作と狭幅表示を検証する。"""
     assert "@media (max-width: 700px)" in assets.CSS
     assert "@media (prefers-reduced-motion: reduce)" in assets.CSS
+    assert ".entry-cell::before" in assets.CSS
+    assert "content: attr(data-label)" in assets.CSS
+    assert "width: calc(100% - 1rem)" in assets.CSS
+    assert 'id="detail-dialog"' in assets.HTML
+    assert 'aria-labelledby="detail-heading"' in assets.HTML
     result = _run_node_ui(
         """
 bindEvents();
@@ -662,7 +985,11 @@ documentListeners.keydown({
 elements['create-dialog'].open = true;
 documentListeners.keydown({key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}});
 editing = true;
-documentListeners.keydown({key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}});
+elements['detail-dialog'].open = true;
+documentListeners.keydown({
+  key: 'Escape', ctrlKey: false, metaKey: false, altKey: false,
+  preventDefault() { preventions.push('detail-escape'); }
+});
 process.stdout.write(JSON.stringify({
   saved,
   preventions,
@@ -674,10 +1001,10 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "saved": 2,
-        "preventions": ["save", "command-save", "search"],
+        "preventions": ["save", "command-save", "search", "detail-escape"],
         "focused": "search-input",
         "dialogOpen": False,
-        "editing": False,
+        "editing": True,
     }
 
 
@@ -693,6 +1020,10 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), current_state)
     rules = {rule.rule for rule in app.url_map.iter_rules()}
     expected = {
+        "/manifest.webmanifest",
+        "/static/icon-192.png",
+        "/static/icon-512.png",
+        "/api/sync",
         "/api/status",
         "/api/entries",
         "/api/entries/<state_name>/<filename>",
@@ -761,11 +1092,133 @@ async def test_cancelled_request_keeps_worker_slot_until_completion() -> None:
     assert second_started.is_set()
 
 
-def test_entries_hold_lock_through_snapshot(
+@pytest.mark.asyncio
+async def test_concurrent_sync_requests_share_one_pull(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧取得はpullからファイル読取りまで同一ロックを保持する。"""
+    """同時同期要求は1回のpull結果を共有する。"""
+    operations = serve_app.Operations(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    def pull(_path: pathlib.Path) -> None:
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait()
+
+    monkeypatch.setattr(common, "repo_lock", lock)
+    monkeypatch.setattr(common, "pull", pull)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+    tasks = [asyncio.create_task(app.test_client().post("/api/sync")) for _ in range(4)]
+    await asyncio.to_thread(started.wait)
+    await asyncio.sleep(0)
+    release.set()
+    responses = await asyncio.gather(*tasks)
+    assert calls == 1
+    assert [await response.get_json() for response in responses] == [{"synced": True}] * 4
+
+
+@pytest.mark.asyncio
+async def test_cancelled_sync_request_does_not_cancel_shared_sync(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """開始要求のキャンセル後も共有同期が継続し、別要求へ同じ結果を返す。"""
+    operations = serve_app.Operations(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def sync() -> bool:
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait()
+        return True
+
+    monkeypatch.setattr(operations, "sync", sync)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+    first = asyncio.create_task(app.test_client().post("/api/sync"))
+    await asyncio.to_thread(started.wait)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    second = asyncio.create_task(app.test_client().post("/api/sync"))
+    await asyncio.sleep(0)
+    release.set()
+    response = await second
+    assert calls == 1
+    assert await response.get_json() == {"synced": True}
+
+
+@pytest.mark.asyncio
+async def test_read_routes_remain_available_during_entry_move(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態移動と競合した一覧はスナップショット、詳細は404を返し409にしない。"""
+    inbox = tmp_path / "inbox"
+    adopted = tmp_path / "adopted"
+    inbox.mkdir()
+    adopted.mkdir()
+    entry = inbox / "entry.md"
+    entry.write_text("---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
+    original_entry_type_of = common.entry_type_of
+
+    async def race_request(path: str) -> typing.Any:
+        started = threading.Event()
+        release = threading.Event()
+
+        def entry_type_of(entry_path: pathlib.Path, text: str) -> str:
+            started.set()
+            release.wait()
+            return original_entry_type_of(entry_path, text)
+
+        monkeypatch.setattr(common, "entry_type_of", entry_type_of)
+        request = asyncio.create_task(app.test_client().get(path))
+        await asyncio.to_thread(started.wait)
+        entry.rename(adopted / entry.name)
+        release.set()
+        return await request
+
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    entries_response = await race_request("/api/entries?status=inbox")
+    assert entries_response.status_code == 200
+    assert await entries_response.get_json() == {"entries": []}
+
+    entry = adopted / "entry.md"
+    entry.rename(inbox / entry.name)
+    entry = inbox / "entry.md"
+    detail_response = await race_request("/api/entries/inbox/entry.md")
+    assert detail_response.status_code == 404
+
+
+def test_operations_reads_local_entries_and_detail_without_pull(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一覧と詳細はGit同期を開始せずローカル内容を返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     entry = inbox / "entry.md"
@@ -773,28 +1226,14 @@ def test_entries_hold_lock_through_snapshot(
         "---\ntype: feedback\ntarget_repo: example/repo\nsource: test\n---\n\n要約本文\n",
         encoding="utf-8",
     )
-    calls: list[str] = []
-    locked = False
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
-        nonlocal locked
-        calls.append("lock")
-        locked = True
-        try:
-            yield
-        finally:
-            locked = False
-            calls.append("unlock")
+    def unexpected(*_args: object, **_kwargs: object) -> typing.NoReturn:
+        raise AssertionError("読取り処理がGit同期を開始しました")
 
-    def pull(_path: pathlib.Path) -> None:
-        assert locked
-        calls.append("pull")
-
-    monkeypatch.setattr(common, "repo_lock", lock)
-    monkeypatch.setattr(common, "pull", pull)
-    result = serve_app.Operations(tmp_path).entries({})
-    assert calls == ["lock", "pull", "unlock"]
+    monkeypatch.setattr(common, "repo_lock", unexpected)
+    monkeypatch.setattr(common, "pull", unexpected)
+    operations = serve_app.Operations(tmp_path)
+    result = operations.entries({})
     assert result[0] | {
         "updated_at": result[0]["updated_at"],
     } == {
@@ -808,6 +1247,10 @@ def test_entries_hold_lock_through_snapshot(
         "summary": "要約本文",
         "updated_at": result[0]["updated_at"],
     }
+    detail = operations.detail("inbox", "entry.md")
+    content = detail["content"]
+    assert isinstance(content, str)
+    assert content.endswith("要約本文\n")
 
 
 def test_operations_answered_filter_returns_only_answered_tbds(
@@ -1328,20 +1771,28 @@ async def test_invalid_json_returns_json_error(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Web操作の有限待機ロック競合をJSON 409応答へ変換する。"""
+    """mutationの有限待機ロック競合をJSON 409応答へ変換する。"""
 
-    def entries(_filters: dict[str, str]) -> list[dict[str, object]]:
+    def edit(
+        _state: str,
+        _filename: str,
+        _content: str,
+        _expected_content: str | None = None,
+    ) -> bool:
         raise filelock.Timeout("locked")
 
     operations = serve_app.Operations(tmp_path)
-    monkeypatch.setattr(operations, "entries", entries)
+    monkeypatch.setattr(operations, "edit", edit)
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
         state.ServeState(tmp_path),
         operations=operations,
     )
-    response = await app.test_client().get("/api/entries")
+    response = await app.test_client().put(
+        "/api/entries/inbox/entry.md",
+        json={"content": "本文"},
+    )
     assert response.status_code == 409
     assert await response.get_json() == {
         "error": "別の操作が進行中です",
@@ -1429,8 +1880,67 @@ def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_manifest_and_icons_are_installable_pwa_assets(tmp_path: pathlib.Path) -> None:
+    """manifestと宣言寸法どおりの不透明PNGアイコンを配信する。"""
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    client = app.test_client()
+    manifest_response = await client.get("/manifest.webmanifest")
+    assert manifest_response.content_type == "application/manifest+json"
+    assert manifest_response.headers["Cache-Control"] == "no-cache"
+    manifest = await manifest_response.get_json()
+    assert manifest == {
+        "name": "フィードバック管理",
+        "short_name": "atk serve",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "theme_color": assets.THEME_COLOR,
+        "background_color": assets.THEME_COLOR,
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }
+
+    for size in (192, 512):
+        response = await client.get(f"/static/icon-{size}.png")
+        body = await response.get_data()
+        assert isinstance(body, bytes)
+        assert response.content_type == "image/png"
+        assert body.startswith(b"\x89PNG\r\n\x1a\n")
+        assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+
+        offset = 8
+        chunks: list[tuple[bytes, bytes]] = []
+        while offset < len(body):
+            length = struct.unpack_from(">I", body, offset)[0]
+            chunk_type = body[offset + 4 : offset + 8]
+            chunk_data = body[offset + 8 : offset + 8 + length]
+            stored_crc = struct.unpack_from(">I", body, offset + 8 + length)[0]
+            assert binascii.crc32(chunk_type + chunk_data) & 0xFFFFFFFF == stored_crc
+            chunks.append((chunk_type, chunk_data))
+            offset += 12 + length
+        assert offset == len(body)
+        assert [chunk_type for chunk_type, _ in chunks] == [b"IHDR", b"IDAT", b"IEND"]
+
+        width, height, bit_depth, color_type, compression, filtering, interlace = struct.unpack(
+            ">IIBBBBB",
+            chunks[0][1],
+        )
+        assert (width, height) == (size, size)
+        assert (bit_depth, color_type, compression, filtering, interlace) == (8, 6, 0, 0, 0)
+        raw = zlib.decompress(b"".join(data for chunk_type, data in chunks if chunk_type == b"IDAT"))
+        row_size = 1 + size * 4
+        assert len(raw) == size * row_size
+        expected_pixel = bytes.fromhex(assets.THEME_COLOR.removeprefix("#")) + b"\xff"
+        for row_start in range(0, len(raw), row_size):
+            assert raw[row_start] == 0
+            assert raw[row_start + 1 : row_start + row_size] == expected_pixel * size
+
+
+@pytest.mark.asyncio
 async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> None:
-    """`X-Forwarded-Prefix`付与時、HTML属性とJSのBASE_PATH定数双方に反映される。"""
+    """`X-Forwarded-Prefix`をHTML、JS、manifestの各URLへ1回だけ反映する。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     headers = {"X-Forwarded-Prefix": "/atk", "X-Forwarded-Proto": "https"}
@@ -1440,11 +1950,23 @@ async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> 
     index_body = await index_response.get_data(as_text=True)
     assert 'href="/atk/static/app.css"' in index_body
     assert 'src="/atk/static/app.js"' in index_body
+    assert 'href="/atk/manifest.webmanifest"' in index_body
+    assert "/atk/atk/" not in index_body
 
     js_response = await client.get("/atk/static/app.js", headers=headers)
     assert js_response.status_code == 200
     js_body = await js_response.get_data(as_text=True)
     assert 'const BASE_PATH="/atk";' in js_body
+
+    manifest_response = await client.get("/atk/manifest.webmanifest", headers=headers)
+    manifest = await manifest_response.get_json()
+    assert manifest["start_url"] == "/atk/"
+    assert manifest["scope"] == "/atk/"
+    assert [icon["src"] for icon in manifest["icons"]] == [
+        "/atk/static/icon-192.png",
+        "/atk/static/icon-512.png",
+    ]
+    assert all("/atk/atk/" not in icon["src"] for icon in manifest["icons"])
 
 
 @pytest.mark.asyncio
