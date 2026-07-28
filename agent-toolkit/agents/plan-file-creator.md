@@ -225,6 +225,7 @@ worktree運用下で誤った本体リポジトリへの書き込みという技
 status: completed | needs_escalation
 summary: {1文の結果}
 plan_file_path: {実際に書き込んだ絶対パス（サンドボックスパスの場合はその旨を付記）}
+file_check: {成果物の実在と分量を示すコマンド（`ls -l`・`wc -l`等）の実行結果}
 bump_judgment: {対象ファイル×改訂節数マトリクスの判定結果（該当なしの場合は「対象外」）}
 review_summary:
 - plan-reviewer: {重大度別の指摘件数と反映件数、指摘ごとの内容と反映先・反映結果または不対応理由、軽微指摘の取捨方針}

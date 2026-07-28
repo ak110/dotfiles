@@ -3784,7 +3784,10 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
     3. ステージ済み差分に`agent-toolkit/.claude-plugin/plugin.json`を
        含む場合は警告しない
     4. 未プッシュ範囲（`@{u}..HEAD`）に`agent-toolkit/.claude-plugin/plugin.json`
-       を変更したコミットがある場合は警告しない（upstream未設定時はスキップ）
+       を変更したコミットがある場合は警告しない。`@{u}`が解決できない場合
+       （上流未設定・追跡先削除済みの`gone`状態）は、構成済みリモートの既定ブランチ
+       （`refs/remotes/<remote>/HEAD`）との比較へフォールバックする。フォールバックも
+       解決できない場合は警告側へ倒す
     5. 上記いずれにも該当しない場合、warn JSONを返す
     """
     match = _GIT_COMMIT_PATTERN.search(command)
@@ -3813,6 +3816,13 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> dict | Non
         ["git", "rev-list", "@{u}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
         cwd,
     )
+    if unpushed is None:
+        default_branch = _git_status.resolve_default_branch(cwd)
+        if default_branch is not None:
+            unpushed = _git_status.run_git_lines(
+                ["git", "rev-list", f"{default_branch}..HEAD", "--", _AGENT_TOOLKIT_PLUGIN_MANIFEST],
+                cwd,
+            )
     if unpushed:
         return None
 

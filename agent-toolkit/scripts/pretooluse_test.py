@@ -2783,6 +2783,52 @@ class TestBashAgentToolkitVersionBump:
             subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
         return repo
 
+    @classmethod
+    def _make_repo_with_gone_upstream(
+        cls,
+        tmp_path: pathlib.Path,
+        default_branch_files: dict[str, str],
+        staged: dict[str, str],
+    ) -> pathlib.Path:
+        """`@{u}`解決対象の追跡先refが存在しない（`gone`相当）状態を構築する。
+
+        既定ブランチ（`origin/master`）の`refs/remotes/origin/HEAD`は正常に解決できる状態を保ちつつ、
+        現在の作業ブランチの`branch.master.merge`だけ存在しないリモートブランチへ向けることで、
+        `@{u}`のみが解決失敗する状態を実gitリポジトリ上に再現する。
+        """
+        upstream = tmp_path / "upstream.git"
+        subprocess.run(["git", "init", "--bare", str(upstream)], capture_output=True, check=True)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        cls._init_repo(repo)
+        (repo / "seed.txt").write_text("seed")
+        subprocess.run(["git", "add", "seed.txt"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "branch", "-M", "master"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(upstream)], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "push", "origin", "HEAD:refs/heads/master"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "fetch", "origin"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "remote", "set-head", "origin", "master"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "config", "branch.master.remote", "origin"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "branch.master.merge", "refs/heads/deleted-branch"],
+            cwd=str(repo),
+            capture_output=True,
+            check=True,
+        )
+        for name, content in default_branch_files.items():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "commit", "-m", "unpushed-on-default-branch"], cwd=str(repo), capture_output=True, check=True)
+        for name, content in staged.items():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+            subprocess.run(["git", "add", name], cwd=str(repo), capture_output=True, check=True)
+        return repo
+
     @staticmethod
     def _invoke(command: str, cwd: str) -> subprocess.CompletedProcess[str]:
         return _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd, "session_id": "vb-test"})
@@ -2844,6 +2890,25 @@ class TestBashAgentToolkitVersionBump:
         )
         result = self._invoke("git commit -m 'followup'", str(repo))
         assert not self._has_version_bump_warning(result)
+
+    def test_gone_upstream_with_default_branch_bump_no_warn(self, tmp_path: pathlib.Path):
+        repo = self._make_repo_with_gone_upstream(
+            tmp_path,
+            default_branch_files={"agent-toolkit/.claude-plugin/plugin.json": '{"version": "1.0.1"}\n'},
+            staged={"agent-toolkit/skills/x/SKILL.md": "# x\n"},
+        )
+        result = self._invoke("git commit -m 'followup'", str(repo))
+        assert not self._has_version_bump_warning(result)
+
+    def test_gone_upstream_without_default_branch_bump_warns(self, tmp_path: pathlib.Path):
+        repo = self._make_repo_with_gone_upstream(
+            tmp_path,
+            default_branch_files={"README.md": "# r\n"},
+            staged={"agent-toolkit/skills/x/SKILL.md": "# x\n"},
+        )
+        result = self._invoke("git commit -m 'skill'", str(repo))
+        assert result.returncode == 0
+        assert self._has_version_bump_warning(result)
 
 
 _SCOPE_ESCALATION_INPUTS = _load_scope_escalation_inputs()

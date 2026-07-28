@@ -92,6 +92,9 @@ description: >
 `skill-creator:skill-creator`・`plugin-dev`各スキルを参照する。
 referencesに記載のない仕様は`https://code.claude.com/docs/ja/`配下を`WebFetch`で取得する
 （`memory.md`・`skills.md`・`sub-agents.md`・`hooks.md`・`plugins.md`・`plugins-reference.md`）。
+列挙にないページを参照する場合は、ドキュメントインデックス（`https://code.claude.com/docs/llms.txt`）を
+取得して対象ページのURLを特定してから本文を取得する。インデックスが列挙するURLは英語版
+（`https://code.claude.com/docs/en/<page>.md`）のため、日本語版を読む場合は言語部分を`ja`へ置換して用いる。
 
 ## タスク固有で読み込む補足情報
 

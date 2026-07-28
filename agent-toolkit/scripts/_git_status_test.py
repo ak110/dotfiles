@@ -224,3 +224,49 @@ class TestSnapshotRemoteRefs:
         assert result["broken"] is None
         assert isinstance(result["origin"], dict)
         assert "refs/heads/main" in result["origin"]
+
+
+class TestResolveDefaultBranch:
+    """`resolve_default_branch`: 構成済みリモートのHEAD参照から既定ブランチ名を解決する。"""
+
+    def test_no_remotes_returns_none(self, tmp_path: pathlib.Path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "content"})
+        assert _git_status.resolve_default_branch(str(repo)) is None
+
+    def test_single_remote_with_head_returns_branch(self, tmp_path: pathlib.Path):
+        bare = tmp_path / "remote.git"
+        bare.mkdir()
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "content"})
+        subprocess.run(["git", "-C", str(repo), "branch", "-M", "main"], check=True)
+        subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(bare)], check=True)
+        subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin"], check=True)
+        subprocess.run(["git", "-C", str(repo), "remote", "set-head", "origin", "main"], check=True)
+        assert _git_status.resolve_default_branch(str(repo)) == "origin/main"
+
+    def test_first_remote_unresolvable_falls_through_to_second(self, tmp_path: pathlib.Path):
+        """先頭リモートのHEAD解決に失敗しても、後続リモートの解決を試みる。"""
+        bare = tmp_path / "remote.git"
+        bare.mkdir()
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        _git_commit_initial(repo, {"a.txt": "content"})
+        subprocess.run(["git", "-C", str(repo), "branch", "-M", "main"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "remote", "add", "aaa", str(tmp_path / "no-such-remote-path")],
+            check=True,
+        )
+        subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(bare)], check=True)
+        subprocess.run(["git", "-C", str(repo), "push", "-q", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", str(repo), "fetch", "-q", "origin"], check=True)
+        subprocess.run(["git", "-C", str(repo), "remote", "set-head", "origin", "main"], check=True)
+        assert _git_status.resolve_default_branch(str(repo)) == "origin/main"

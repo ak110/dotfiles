@@ -9,6 +9,9 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   ただしシステムプロンプトの環境情報で稼働モデルがFableと確認できる場合、
   ツール呼び出しが後続するターンの地の文が表示されない事象が観測されているため、
   判断材料を`AskUserQuestion`の`question`本文または`options`の`preview`欄へ自己完結で含める
+- 選択肢の判断材料へ、利用者が呼び出す対象となる外部ツール・組み込み機能・スラッシュコマンドの
+  識別子を判定の根拠として挙げる場合、当該識別子が何を行うかを1文で添える。既に会話中で
+  説明済みの識別子は対象外とする
 - ユーザーへの質問・承認待ちでターンを終える場合は必ず`AskUserQuestion`を使う（地の文の問いかけのみで終えない）
 - 複数工程・複数完遂条件を伴う起動プロンプトの場合は`TaskCreate`で各工程を独立タスク化し、
   全タスクが`completed`になるまで完了報告を発行しない
@@ -75,6 +78,8 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   - 独立した複数のforeground呼び出しは同一応答内へ並置し、各戻り値を直接受領する
   - foreground起動プロンプトには、完了報告をツール戻り値で返し、
     `SendMessage`による能動送付をしない旨を明記する
+  - 汎用エージェント（`claude`）への委譲を含め、foreground起動プロンプトには待機表明のみの
+    完了報告を発行せず、待機対象の結果を含む完了報告を1回の戻り値として返す旨も明記する
   - foreground実行が自動的にbackgroundへ転換された場合は、task-notification経由で完了報告本文を受領する
 - 委譲先が自身で明示的に背景実行したジョブを待つ場合、待機条件を満たした時点で終了する
   単一のforeground実行を自身のターン内で完了させる。
@@ -215,3 +220,6 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 スキル新規作成・hook実装では公式マーケットプレイス（`anthropics/claude-plugins-official`）の
 `skill-creator:skill-creator`・`plugin-dev`各スキルを参照する。認識相違時は
 `https://code.claude.com/docs/ja/`配下（`skills.md`・`sub-agents.md`・`hooks.md`等）を`WebFetch`で取得する。
+列挙にないページを参照する場合は、ドキュメントインデックス（`https://code.claude.com/docs/llms.txt`）を
+取得して対象ページのURLを特定してから本文を取得する。インデックスが列挙するURLは英語版
+（`https://code.claude.com/docs/en/<page>.md`）のため、日本語版を読む場合は言語部分を`ja`へ置換して用いる。

@@ -84,6 +84,21 @@ def list_remotes(cwd: str) -> list[str]:
     return lines if lines is not None else []
 
 
+def resolve_default_branch(cwd: str) -> str | None:
+    """構成済みリモートのHEAD参照から既定ブランチ名を解決する。
+
+    各リモートについて`git symbolic-ref --short refs/remotes/<remote>/HEAD`を実行し、
+    最初に成功した値（例: `origin/master`）を返す。全リモートで解決に失敗した場合はNoneを返す。
+    上流ブランチの追跡先が`gone`（削除済み・未設定）の環境で`@{u}`が解決できない場合の
+    フォールバック比較先として`pretooluse.py`の版数bump検知フックが使用する。
+    """
+    for remote in list_remotes(cwd):
+        lines = run_git_lines(["git", "symbolic-ref", "--short", f"refs/remotes/{remote}/HEAD"], cwd)
+        if lines:
+            return lines[0]
+    return None
+
+
 def snapshot_remote_refs(cwd: str) -> dict[str, dict[str, str] | None]:
     """全リモートのref名とOIDのスナップショットを取得する。
 

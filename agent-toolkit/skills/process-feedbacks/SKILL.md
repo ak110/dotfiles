@@ -52,6 +52,13 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 `### 完了条件と連鎖feedback`ブロック（実装完了条件・後続feedback全文・関連feedback ID）を明示する。
 連鎖feedbackの検出・投入は「ステップ6: 連鎖feedbackの自律投入」で扱う。
 
+投入する本文へ既存計画ファイルの絶対パスを書くと、機械分類（`_atk_mq_schedule.py`の
+`detect_plan_impl_reference`）により計画実装型（`type: plan-impl`）として分類される。
+結果として次回処理セッションが新規の計画作成を経ず、当該計画ファイルを再実装する対象として扱う。
+実装要求ではなく経緯の参照として既存計画へ言及する場合は絶対パスを書かず、日付や作業内容で
+特定する（`agent-toolkit:plan-and-add-feedback`経由で意図的に計画実装型として投入する場合は
+この限りでない）。
+
 ## ステップ1: 入力の確定と初期スケジューリング
 
 `/process-feedbacks <repo-path>`形式の引数が実在ディレクトリなら対象リポジトリとし、
