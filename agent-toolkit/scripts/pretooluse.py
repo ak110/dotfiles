@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines  # ハンドラ網羅のためチェック実装が多く、分割するとモジュール間の依存関係が複雑化するため許容する
 r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 
 任意ツールの実行前に以下のチェックを順に実行する。

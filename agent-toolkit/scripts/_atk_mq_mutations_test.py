@@ -7,8 +7,6 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-# pylint: disable=too-many-lines
-
 import contextlib
 import pathlib
 import subprocess

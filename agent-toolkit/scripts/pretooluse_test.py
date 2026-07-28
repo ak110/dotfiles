@@ -3,8 +3,6 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-# pylint: disable=too-many-lines  # ハンドラ網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
-
 import json
 import os
 import pathlib

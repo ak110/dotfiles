@@ -5,8 +5,6 @@ TBD種別の投入・一覧・編集・回答・採用・削除の単体テス�
 `_atk_mq_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-# pylint: disable=too-many-lines
-
 import contextlib
 import pathlib
 import subprocess

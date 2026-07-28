@@ -6,8 +6,6 @@ mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
 exit code / stderr / stdout (JSON) を検証する。
 """
 
-# pylint: disable=too-many-lines  # ハンドラ網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
-
 import json
 import os
 import pathlib
