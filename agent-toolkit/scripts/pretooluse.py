@@ -1262,7 +1262,7 @@ _STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def _is_style_negation_target_doc(file_path: str) -> bool:
-    """対象ドキュメント（文書サイズ上限対象と同一の判定基準）への編集かを判定する。"""
+    """対象ドキュメント（コーディングエージェント向け文書判定対象と同一の判定基準）への編集かを判定する。"""
     return _plan_format.is_agent_doc_target_file(file_path)
 
 
@@ -2386,8 +2386,9 @@ def _check_plan_file_retroactive_scan_recorded(
     判定条件:
 
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が文書サイズ上限対象パターン（`_plan_format.AGENT_DOC_TARGET_PATTERNS` /
-      `_plan_format.AGENT_DOC_TARGET_BASENAMES`）に一致する規範対象ドキュメント（計画ファイル自身は対象外）
+    - 対象の`file_path`がコーディングエージェント向け文書判定対象パターン
+      （`_plan_format.AGENT_DOC_TARGET_PATTERNS` / `_plan_format.AGENT_DOC_TARGET_BASENAMES`）に
+      一致する規範対象ドキュメント（計画ファイル自身は対象外）
     - 新規/既存内容の比較で`_detect_new_meta_norm`が真
       （全称禁止形の新規出現、汎用禁止形バレットの増加、新規節見出しの増加のいずれか）
     - `session_id`のセッション状態から解決した計画ファイル
@@ -2831,8 +2832,10 @@ def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, too
     `current_plan_file_path`と一致する場合のみ`_check_process7_completion_before_exit_plan_mode`を適用する。
     別セッションでplan-modeにより完遂済みの計画（例:`plan-and-add-feedback`投入の計画実装型フィードバック）を
     指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの`plan-file-creator`の整合性チェック未達を理由にブロックしない。
-    `prompt`が文字列でない場合、パスが一意に抽出できない場合、
-    `current_plan_file_path`が未記録・非文字列の場合、正規化に失敗した場合、
+    `current_plan_file_path`が未記録・非文字列・空文字列の場合は「現行パスと不一致」として扱い、
+    参照先の実在確認のみでバイパスの成立可否を判定する
+    （`plan-file-creator`を起動していないセッションから、実在する別計画への起動を妨げないため）。
+    `prompt`が文字列でない場合、パスが一意に抽出できない場合、参照パスの正規化に失敗した場合、
     または不一致の参照パスが実在しない場合は安全側として従来どおり判定する
     （実在確認が無いと、任意の非実在パスを記述するだけで`plan-file-creator`の整合性チェック未達を回避できてしまうため）。
     """
@@ -2845,14 +2848,12 @@ def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, too
     if referenced_path is None:
         return _check_process7_completion_before_exit_plan_mode(session_id)
     state = read_state(session_id)
-    current_path = state.get("current_plan_file_path")
-    if not isinstance(current_path, str) or not current_path:
-        return _check_process7_completion_before_exit_plan_mode(session_id, state)
     referenced = _normalize_plan_file_path(referenced_path)
-    current = _normalize_plan_file_path(current_path)
-    if referenced is None or current is None:
+    if referenced is None:
         return _check_process7_completion_before_exit_plan_mode(session_id, state)
-    if referenced != current:
+    current_path = state.get("current_plan_file_path")
+    current = _normalize_plan_file_path(current_path) if isinstance(current_path, str) and current_path else None
+    if current is None or referenced != current:
         if not referenced.is_file():
             return _check_process7_completion_before_exit_plan_mode(session_id, state)
         _record_verified_plan_path(session_id, str(referenced))

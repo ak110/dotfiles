@@ -20,7 +20,6 @@ def test_custom_linter_paths_and_filename_contracts() -> None:
         "require-ps1-bom": True,
         "powershell-analyzer": True,
         "claude-plugin-validate": True,
-        "check-agent-toolkit-total-size": False,
     }
     for name, pass_filenames in expected.items():
         definition = commands[name]

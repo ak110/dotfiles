@@ -107,6 +107,12 @@
     両テンプレートの変数定義節にある`$expectedShims`・`expected_shims`定数を同一値に更新する
 - `process-feedbacks`スキル完了後はコミット作成に加えて`git push`まで実施する（dotfilesリポジトリ運用ルール）
   - フィードバック投入元（feedback-inbox）の整合性を保つため、ローカルに留めず即時公開する
+- 作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
+  実行中のhook・検査には当該セッションでは反映されない。
+  配布先（`~/.claude/plugins/data/agent-toolkit-ak110-dotfiles`等、`ls -d ~/.claude/plugins/*/agent-toolkit*`で
+  確認できる）へ導入済みの版を参照するためである。
+  hookに新規にブロックされた場合は、まず作業ツリーと配布先の版差を疑い、
+  当該hookが参照する配布先のファイルを`diff`等で比較してから対応する
 
 ## 固有差分
 

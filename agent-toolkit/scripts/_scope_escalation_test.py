@@ -9,10 +9,12 @@
 （`agent-toolkit:agent-standards`「コンテキスト汚染の回避」節）。
 """
 
+import pathlib
 import typing
 
 import pytest
 from _scope_escalation import (
+    _SCOPE_ESCALATION_PHRASES,
     _STOP_FOCUS_CATEGORIES,
     _apply_category_exclusions,
     _match_scope_escalation,
@@ -22,6 +24,22 @@ from _scope_escalation import (
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
 
 _INPUTS = load_scope_escalation_inputs()
+
+_SCOPE_ESCALATION_PHRASES_DOC_PATH = (
+    pathlib.Path(__file__).resolve().parents[1] / "skills" / "agent-standards" / "references" / "scope-escalation-phrases.md"
+)
+
+
+def _doc_categories() -> set[str]:
+    """`scope-escalation-phrases.md`「対象カテゴリと代表フレーズ」節の表からカテゴリ識別子集合を抽出する。"""
+    content = _SCOPE_ESCALATION_PHRASES_DOC_PATH.read_text(encoding="utf-8")
+    categories: set[str] = set()
+    for line in content.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cell = line.split("|")[1].strip()
+        categories.add(cell.strip("`"))
+    return categories
 
 
 def _category_of(text: str, **kwargs: typing.Any) -> str | None:
@@ -261,3 +279,18 @@ class TestIsEmptyCompletionReport:
         """Skill呼び出し後に完了本文が続く正常報告は`False`を返す。"""
         text = "Skill(skill='foo')\n点検実施済。指摘事項なし。"
         assert is_empty_completion_report(text) is False
+
+
+class TestCategoryConsistency:
+    """実装・フィクスチャ・文書の3者が保持するカテゴリ識別子集合の一致を検証する。
+
+    コミット67a92a77で実装からカテゴリを削除した際、文書・フィクスチャへの反映が漏れ、
+    三者不一致が長期間検出されずに残存した（TBD 20260728-004113-001で発覚）。
+    本テストはこの構造的原因（三者一致を検証する仕組みの不在）への再発防止である。
+    """
+
+    def test_implementation_fixture_document_categories_match(self) -> None:
+        impl_categories = {category for category, _ in _SCOPE_ESCALATION_PHRASES}
+        fixture_categories = {category for _, category in _INPUTS}
+        doc_categories = _doc_categories()
+        assert impl_categories == fixture_categories == doc_categories

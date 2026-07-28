@@ -92,3 +92,4 @@ subagent-hesitation	メインで処理するかサブエージェント委譲す
 overhead-tradeoff	オーバーヘッドが上回るため
 overhead-tradeoff	複雑度が高くなり過ぎない範囲で対応
 overhead-tradeoff	実装コストが大きいため
+plan-deferral-onset	実装時に確定する。

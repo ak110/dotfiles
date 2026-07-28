@@ -87,6 +87,10 @@ description: >
 - `--dist=loadfile`（pytest、dotfilesのみ）: テストのファイル単位のセットアップ/ティアダウンに依存するため
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから
   ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
+- Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:
+  pytilpackはライブラリである。
+  ロックファイルが開発専用のため、利用者の実行環境への脆弱性の影響が限定的である
+  （pyfltrは実測では無効だが方針未確定のため本行では扱わない。方針確定時に追記する）
 
 ## pnpmに関する既知の注意点
 

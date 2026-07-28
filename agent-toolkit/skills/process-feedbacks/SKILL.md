@@ -20,6 +20,9 @@ description: >
 フィードバックを処理する際は、言及された対象だけでなく、使い勝手・整合性の観点で
 関連する改善点にも能動的に気付いて提案する（例: 新設した表示欄の隣接欄も併せて整備する）。
 気付いた改善は`atk mq add --type=tbd`で記録しつつ本計画へ実装まで含める。
+確認事項の回答が現状維持（設定・コードの変更を伴わない判断）を結論とする場合、
+判断根拠と適用範囲を対象リポジトリの開発者向け文書へ記述してから採用処理する。
+専用の記述先が無い場合は関連する既存節へ追記する。
 
 ## フィードバック投入
 
@@ -28,8 +31,9 @@ description: >
 判別困難な場合は`AskUserQuestion`で確認する。各メッセージは単体で読んで意味が完結する形に整え、
 出典URL・関連提案との関係・対象を一意に特定する前置きを含める。
 
-投入前に`atk mq list --status=active --target-repo=<repo>`で対象リポジトリ宛の既存フィードバック
-一覧を照会し、主題が重複するものの有無を確認する。重複を検出した場合は新規投入せず、
+投入前に`atk mq list --status=active --target-repo=<repo-path>`（パスまたは正規化リモートURLで
+指定する）で対象リポジトリ宛の既存フィードバック一覧を照会し、主題が重複するものの有無を確認する。
+重複を検出した場合は新規投入せず、
 `atk mq edit`で既存フィードバックへ差分情報（実測値・再現手順・出典）を追記して統合する。
 
 投入は`cd <repo-path> && atk mq add "<message>"`で行う。本文は`$'...'`のANSI-Cクォートで囲み、
@@ -48,15 +52,17 @@ description: >
 実在ディレクトリでなければフィードバック本文の直接入力として扱う。引数省略時は
 `git rev-parse --show-toplevel`の現リポジトリを対象とする。
 
-`atk mq list --status=processing --target-repo=<repo>`でprocessing残存を確認し、
+`atk mq list --status=processing --target-repo=<repo-path>`でprocessing残存を確認し、
 残存時は前セッションの中断とみなし再実施対象へ最優先で組み込む。
 併せて`~/.claude/plans/`から対象リポジトリ向けの直近の計画ファイルを探し、
 その`## 進捗ログ`と作業ツリーの状態から到達済みの工程を判定してから着手する。
 計画が完成していて実装だけが残っている場合は計画作成工程を繰り返さず実装から再開する。
 続いて
-`atk mq show --all --status=active --target-repo=<repo>`でfeedback（inbox・processing）と
+`atk mq show --all --status=active --target-repo=<repo-path>`でfeedback（inbox・processing）と
 回答済みTBDを一括取得する。取得した全件を本セッションの処理対象とし、
-`atk mq start-processing <filename...>`でfeedback分をprocessingへ遷移させてから着手する。
+`atk mq start-processing <filename...>`でfeedback・回答済みTBDの双方をprocessingへ遷移させてから着手する。
+`atk mq list --status=processing`はprocessing配下のTBDも表示するため、
+遷移させても後続の照会漏れは生じない。
 
 target_repoが誤設定と判明した場合は`atk mq edit`で書き換え`atk mq commit`で確定し、
 当該分は本セッションの処理対象から外す。

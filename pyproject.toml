@@ -194,19 +194,6 @@ targets = [
     "**/.claude-plugin/marketplace.json",
 ]
 
-[tool.pyfltr.custom-commands.check-agent-toolkit-total-size]
-type = "linter"
-path = "agent-toolkit/scripts/check_total_size.py"
-targets = [
-    "agent-toolkit/rules/**/*.md",
-    "agent-toolkit/skills/**/*.md",
-    "agent-toolkit/skills/**/*.py",
-    "agent-toolkit/agents/**/*.md",
-    "agent-toolkit/references/**/*.md",
-]
-fast = true
-pass-filenames = false
-
 [tool.pylint."messages control"]
 disable = [
     "broad-exception-caught",

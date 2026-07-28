@@ -46,8 +46,8 @@ def _run(payload: dict) -> subprocess.CompletedProcess[str]:
         pytest.param(None, None, None, 0, id="no-message"),
         pytest.param(None, "工程4完了。次工程へ移行する。", None, None, id="normal-message"),
         pytest.param("process-omission", None, "block", None, id="process-omission"),
-        pytest.param("scope-volume", None, "block", None, id="scope-volume"),
-        pytest.param("single-session", None, "block", None, id="single-session"),
+        pytest.param("approach-confirm", None, "block", None, id="approach-confirm"),
+        pytest.param("subagent-hesitation", None, "block", None, id="subagent-hesitation"),
     ],
 )
 def test_message_gate_scenarios(
@@ -128,9 +128,9 @@ def test_stop_hook_active_bypasses_check() -> None:
     通常なら縮退表明としてblockされる本文であっても、再呼び出し時は
     連続ブロック上限による強制終了を避けるため無条件approveを返す。
     """
-    text = _pick_scope_escalation_text("single-session")
+    text = _pick_scope_escalation_text("approach-confirm")
     if not text:
-        pytest.skip("scope-escalation fixture for single-session not available")
+        pytest.skip("scope-escalation fixture for approach-confirm not available")
     result = _run({"last_assistant_message": text, "stop_hook_active": True})
     body = json.loads(result.stdout)
     assert body.get("decision") == "approve"

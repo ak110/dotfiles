@@ -60,7 +60,7 @@ statuslineの値はhook間で共有されず、hook経由でメインエージ�
 次に挙げる各事象はいずれも、規模や指摘を脅威として扱う防御的な姿勢への転換という同一のモード逸脱の症状である。
 
 - 規模・記述量・工数への不安
-- 調停語彙（`scope-escalation-phrases.md`の`quality-tradeoff`・`process-omission`カテゴリが対象とする、物量・省略を釣り合わせる語彙）の想起
+- 調停語彙（`scope-escalation-phrases.md`の`process-omission`・`pattern-conformance`カテゴリが対象とする、物量・省略を釣り合わせる語彙）の想起
 - 指摘への謝意・称賛の相づちの膨張（迎合表現）
 
 これらのいずれかが思考・発話に現れた場合、判断材料として扱わず、モード逸脱の検知シグナルとして扱う。

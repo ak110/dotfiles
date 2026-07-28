@@ -3887,6 +3887,50 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 2
         assert _read_session_state(tmp_path, sid).get("plan_impl_executor_verified_plan_path") is None
 
+    def test_unset_current_plan_path_with_existing_referenced_plan_passes(self, tmp_path: pathlib.Path) -> None:
+        """`current_plan_file_path`が未記録でも、参照先が実在する計画ならブロックしない。"""
+        other_path = tmp_path / ".claude" / "plans" / "other-reviewed.md"
+        other_path.parent.mkdir(parents=True, exist_ok=True)
+        other_path.write_text("別セッションで完遂済みの計画。", encoding="utf-8")
+        sid = "process7-unset-current-existing-referenced"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_unset_current_plan_path_with_nonexistent_referenced_plan_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`current_plan_file_path`が未記録で、参照先が非実在の場合は従来どおりブロックする。"""
+        other_path = str(tmp_path / ".claude" / "plans" / "other-nonexistent.md")
+        sid = "process7-unset-current-nonexistent-referenced"
+        state = {"plan_mode_skill_invoked": True}
+        state.update({flag: False for flag in _PROCESS7_FLAGS})
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "prompt": f"計画ファイル: {other_path} を実装してください。",
+                },
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+
 
 class TestAgentNameParameterGate:
     """AgentとTask起動時の`name`引数指定の一律ブロック。"""
@@ -5012,7 +5056,7 @@ class TestPlanFileRetroactiveScanRecorded:
         assert result.returncode == 0
 
     def test_non_target_path_allows(self, tmp_path: pathlib.Path):
-        """文書サイズ上限対象外パスは検査対象外。"""
+        """コーディングエージェント向け文書判定対象外パスは検査対象外。"""
         target = tmp_path / "misc" / "notes.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("既存の記述のみ\n", encoding="utf-8")

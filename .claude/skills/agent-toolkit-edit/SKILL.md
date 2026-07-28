@@ -94,6 +94,9 @@ Codex向けmanifestはこの2ファイルを正本として`scripts/sync_codex_p
 - 配布物スキル本体の外部インターフェース（判定区分・出力フォーマット・後始末コマンド分岐・サマリー表現など）へ
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
+- `agent-toolkit/rules/*.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
+  計画の対象ファイル一覧と実行方法（`uv run python scripts/sync_generated_files.py`）へ同ファイルを含める。
+  漏れは`scripts/claude_hook_pretooluse.py`のwarnチェックが検出する
 
 ## セッション状態フラグ
 

@@ -119,7 +119,7 @@ adopted配下のユーザー起草フィードバック（frontmatterに`source:
 
 `agent-toolkit:session-review`ステップ2「Draft Additions」の生成基準バレットと、
 本ファイル「総量規制の努力目標」節は、ユーザー明示方針（2026-07-21確定）である。
-`agent-toolkit:agent-standards`「文書サイズ上限」節の文書サイズ2段構造方針も同様にユーザー明示方針
+`agent-toolkit:agent-standards`「文書記述量の管理」節の削減判定基準も同様にユーザー明示方針
 （出典はadopted配下の採用済みユーザー起草フィードバック）として扱う。
 緩和・撤回・例外新設はsession-review由来フィードバック・process-feedbacks自動処理では実施せず、
 ユーザーの明示指示に限る。

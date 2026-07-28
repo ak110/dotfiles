@@ -38,18 +38,17 @@ description: >
   決定論的強制・自動lintはhook、重い調査・冗長出力の隔離はサブエージェント
 - サブエージェント設計・改訂時の観点は`references/subagent-collaboration.md`に従う
 
-## 文書サイズ上限
+## 文書記述量の管理
 
 対象は`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`・
 `agent-toolkit/references/`配下のMarkdownとする。
 `agent-toolkit/skills/*/scripts/`配下の機械チェック実装コードも対象に含む。
-これらの合計行数へ単一の総量上限を設ける。
-上限値・現在値の算出コマンドは`references/total-size-limit.md`に集約し、
-`agent-toolkit/scripts/check_total_size.py`が実装後の総量を実測する。個別ファイルの行数上限は設けない
-（過去の200行／220行規定は根拠不成立につき撤廃した。経緯は`agent-toolkit-restructure.md`計画を参照）。
+これらを新規作成・改訂する際は安易に記述量を増やさない。
+既存記述との重複統合（除去・統合・`references/`分離のいずれか）を常に検討する。
+本規定は努力目標とし、合計行数への機械的な上限は設けない
+（撤廃の経緯は`agent-toolkit-restructure.md`計画を参照）。
 
-計画時に既存の総量へ抵触する見込みがある場合、削減対象（除去・統合・`references/`分離のいずれか）を
-同一計画へ含める。削減判定は次のいずれかの根拠を満たすことを条件とする。
+統合を検討する場合、削減判定は次のいずれかの根拠を満たすことを条件とする。
 
 - SSOT違反: 他ファイルに正規の記述がありここは転記に過ぎない
 - 自明導出: 上位指針・学習データから自明に導出できる

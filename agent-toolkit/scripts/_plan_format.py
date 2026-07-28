@@ -310,18 +310,19 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md$"),
 )
-# basenameで照合するコーディングエージェント向け文書サイズ上限対象ファイル名。
+# basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
 # ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
 AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
 
 def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
-    """パス文字列がコーディングエージェント向け文書サイズ上限対象かを判定する。
+    """パス文字列がコーディングエージェント向け文書判定対象かを判定する。
 
     `agent-toolkit/scripts/pretooluse.py`が参照する対象パス判定のSSOTとする。
     `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
     basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
-    `is_agent_facing_md`とは判定対象範囲が異なる（本関数は文書サイズ上限チェック専用）。
+    `is_agent_facing_md`とは判定対象範囲が異なる
+    （本関数はstyle negation警告・メタ規範新設時の遡及スキャン記録検査専用）。
     """
     normalized = str(file_path).replace("\\", "/")
     if not normalized:

@@ -6,6 +6,8 @@ mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
 exit code / stderr / stdout (JSON) を検証する。
 """
 
+# pylint: disable=too-many-lines  # ハンドラ網羅のためテストケースが多く、分割するとフィクスチャ重複が増えるため許容する
+
 import json
 import os
 import pathlib
@@ -928,6 +930,72 @@ class TestPlanFileBumpDeclarationWarning:
         result = self._write(self._PLAN_PATH, content)
         assert result.returncode == 0
         assert "agent_toolkit_bump.py" in _get_additional_context(result)
+
+
+class TestPlanFileAgentsMdSyncWarning:
+    """計画ファイル Write 時の `agent-toolkit/rules/` 編集に対するAGENTS.md同期漏れ警告。"""
+
+    _PLAN_PATH = str(_HOME / ".claude" / "plans" / "sample-plan.md")
+    _RULES_ONLY = "# 計画\n\n## 変更内容\n\nagent-toolkit/rules/01-agent.md を更新\n"
+    _RULES_WITH_AGENTS_MD = (
+        "# 計画\n\n## 変更内容\n\nagent-toolkit/rules/01-agent.md を更新\n.chezmoi-source/dot_codex/AGENTS.md を再生成\n"
+    )
+
+    @staticmethod
+    def _write(file_path: str, content: str) -> subprocess.CompletedProcess[str]:
+        return _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": content}})
+
+    def test_rules_without_agents_md_warns(self):
+        """`agent-toolkit/rules/` を含み`.chezmoi-source/dot_codex/AGENTS.md`を含まない計画はwarn。"""
+        result = self._write(self._PLAN_PATH, self._RULES_ONLY)
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "AGENTS.md" in msg
+        assert "warn" in msg.lower()
+
+    def test_rules_with_agents_md_no_warning(self):
+        """両方を含む計画はwarnされない。"""
+        result = self._write(self._PLAN_PATH, self._RULES_WITH_AGENTS_MD)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_no_rules_reference_no_warning(self):
+        """`agent-toolkit/rules/` を含まない計画はwarnされない。"""
+        content = "# 計画\n\n## 変更内容\n\nagent-toolkit/skills/foo を更新\n"
+        result = self._write(self._PLAN_PATH, content)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_edit_tool_skipped(self):
+        """Edit は計画ファイル本文全域を取得できないため対象外。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": self._PLAN_PATH, "old_string": "x", "new_string": self._RULES_ONLY},
+            }
+        )
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_multiedit_tool_skipped(self):
+        """MultiEdit も同様に対象外。"""
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": self._PLAN_PATH,
+                    "edits": [{"old_string": "x", "new_string": self._RULES_ONLY}],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
+
+    def test_non_plan_path_skipped(self):
+        """計画ファイル判定対象外のパスは検査スキップ。"""
+        result = self._write(str(_HOME / ".claude" / "CLAUDE.md"), self._RULES_ONLY)
+        assert result.returncode == 0
+        assert "sync_generated_files.py" not in _get_additional_context(result)
 
 
 class TestGeneralBehavior:
