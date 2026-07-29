@@ -118,9 +118,12 @@
   - フィードバック投入元（feedback-inbox）の整合性を保つため、ローカルに留めず即時公開する
 - 作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
   実行中のhook・検査には当該セッションでは反映されない。
-  配布先（`~/.claude/plugins/data/agent-toolkit-ak110-dotfiles`等、`ls -d ~/.claude/plugins/*/agent-toolkit*`で
-  確認できる）へ導入済みの版を参照するためである。
-  hookに新規にブロックされた場合は、まず作業ツリーと配布先の版差を疑い、
+  導入済みのプラグイン本体は
+  `~/.claude/plugins/cache/<マーケットプレイス名>/<プラグイン名>/<バージョン>/`配下へ展開される。
+  `~/.claude/plugins/data/`配下はプラグイン本体の展開先ではない。
+  稼働中の版は`~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
+  対象ファイルの実在パスは`find ~/.claude/plugins -name '<ファイル名>'`でも確認できる。
+  hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
   当該hookが参照する配布先のファイルを`diff`等で比較してから対応する
 
 ## 固有差分
