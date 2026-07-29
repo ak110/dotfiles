@@ -3790,7 +3790,7 @@ def _process7_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 class TestProcess7CompletionCheck:
-    """ExitPlanMode / `plan-impl-executor`起動時のplan-file-creatorの整合性チェック完了未達ブロック。"""
+    """ExitPlanMode / `plan-impl-executor`起動時のplan-file-finalizerの整合性チェック完了未達ブロック。"""
 
     @pytest.mark.parametrize(
         ("missing_flags", "usage_limit_observed", "expect_block"),
@@ -3841,7 +3841,7 @@ class TestProcess7CompletionCheck:
         if expect_block:
             for missing_flag in missing_flags & frozenset(_PROCESS7_FLAGS):
                 assert missing_flag in result.stderr
-            assert "plan-file-creator.md" in result.stderr
+            assert "plan-file-finalizer.md" in result.stderr
 
     def test_missing_flag_message_explains_gate_and_bypass(self, tmp_path: pathlib.Path):
         """ブロックメッセージが理由・plan-impl feedback処理時の対処・pre-existing planバイパス条件を説明する。"""
@@ -3869,7 +3869,7 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 0
 
     def test_plan_impl_executor_agent_also_checked(self, tmp_path: pathlib.Path):
-        """`plan-impl-executor`のAgent起動も同様にplan-file-creatorの整合性チェック完了未達をブロックする。"""
+        """`plan-impl-executor`のAgent起動も同様にplan-file-finalizerの整合性チェック完了未達をブロックする。"""
         sid = "process7-plan-impl-executor-agent"
         state = {"plan_mode_skill_invoked": True}
         state.update({flag: False for flag in _PROCESS7_FLAGS})
@@ -3886,7 +3886,7 @@ class TestProcess7CompletionCheck:
         assert result.returncode == 2
 
     def test_agent_referenced_matching_current_plan_blocks(self, tmp_path: pathlib.Path):
-        """起動プロンプトが現行計画パスと一致する場合はplan-file-creatorの整合性チェック完了未達をブロックする。"""
+        """起動プロンプトが現行計画パスと一致する場合はplan-file-finalizerの整合性チェック完了未達をブロックする。"""
         plan_path = str(tmp_path / ".claude" / "plans" / "current.md")
         sid = "process7-agent-path-match"
         state = {"plan_mode_skill_invoked": True, "current_plan_file_path": plan_path}
@@ -3933,7 +3933,7 @@ class TestProcess7CompletionCheck:
     def test_agent_referenced_nonexistent_other_plan_blocks(self, tmp_path: pathlib.Path):
         """起動プロンプトが現行計画と異なる非実在パスを指す場合は従来どおりブロックする。
 
-        実在確認が無ければ、任意の非実在パスを記述するだけでplan-file-creatorの整合性チェック未達を回避できてしまうため、
+        実在確認が無ければ、任意の非実在パスを記述するだけでplan-file-finalizerの整合性チェック未達を回避できてしまうため、
         実在しないパスへの参照はブロック（returncode 2）を維持することを確認する。
         """
         current_path = str(tmp_path / ".claude" / "plans" / "current.md")
@@ -4199,36 +4199,39 @@ class TestAgentNameParameterGate:
         assert not state_path.exists() or _read_session_state(tmp_path, sid).get("plan_codex_delegate_invoked") is not True
 
 
-# `TestSubagentModelOverrideGate`・`TestPlanFileCreatorPromptCompletenessGate`共通の完全な起動プロンプト。
-# 必須見出し4点を満たすため、モデル検査を単独で検証する場合に見出し欠落ゲートの誤検出と混同しない。
-_COMPLETE_PLAN_FILE_CREATOR_PROMPT = (
-    "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n"
-    "## permission_mode\n非`plan`\n\n"
-    "## 合意済み事項\nユーザーはAを選択した。\n\n"
-    "## 照合結果\n発話原文と齟齬なし。\n"
+# `TestSubagentModelOverrideGate`用の完全な起動プロンプト。モデル検査は見出し検査より先に
+# 評価されるため、参照パスが実在しなくても見出し欠落ゲートの誤検出と混同しない
+# （モデル検査が真の場合は`_check_plan_file_finalizer_prompt_completeness`へ到達する前にreturnする）。
+_COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE = (
+    "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
 )
 
 
-class TestSubagentModelOverrideGate:
-    """`plan-file-creator`・`plan-impl-executor`への`model`引数指定の一律ブロック。"""
+def _complete_plan_file_finalizer_prompt(plan_path: pathlib.Path) -> str:
+    """`TestPlanFileFinalizerPromptCompletenessGate`用の、実在する計画ファイルを参照する完全な起動プロンプト。"""
+    return f"## 計画ファイルパス\n`{plan_path}`\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
 
-    def test_plan_file_creator_with_opus_blocked(self):
+
+class TestSubagentModelOverrideGate:
+    """`plan-file-finalizer`・`plan-impl-executor`への`model`引数指定の一律ブロック。"""
+
+    def test_plan_file_finalizer_with_opus_blocked(self):
         """完全な起動プロンプトを使い、見出し欠落ゲートではなくモデル検査自体の発火を検証する。"""
         result = _run(
             {
                 "tool_name": "Agent",
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-creator",
+                    "subagent_type": "agent-toolkit:plan-file-finalizer",
                     "model": "opus",
-                    "prompt": _COMPLETE_PLAN_FILE_CREATOR_PROMPT,
+                    "prompt": _COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE,
                 },
-                "session_id": "model-override-plan-file-creator",
+                "session_id": "model-override-plan-file-finalizer",
                 "permission_mode": "default",
             }
         )
         assert result.returncode == 2
         assert "explicit `model` argument" in result.stderr
-        assert "plan-file-creator" in result.stderr
+        assert "plan-file-finalizer" in result.stderr
 
     def test_plan_impl_executor_with_model_blocked_short_form(self):
         result = _run(
@@ -4242,7 +4245,7 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 2
 
     def test_plan_reviewer_with_model_passes(self):
-        """`plan-reviewer`は今回の対象範囲外（ユーザー確認によりplan-file-creator/plan-impl-executorへ限定）。"""
+        """`plan-reviewer`は今回の対象範囲外（ユーザー確認によりplan-file-finalizer/plan-impl-executorへ限定）。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4278,7 +4281,7 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 0
 
     def test_no_model_argument_passes(self):
-        """`plan-impl-executor`を使い、同時導入の`TestPlanFileCreatorPromptCompletenessGate`と非干渉にする。"""
+        """`plan-impl-executor`を使い、同時導入の`TestPlanFileFinalizerPromptCompletenessGate`と非干渉にする。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -4290,68 +4293,198 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 0
 
 
-class TestPlanFileCreatorPromptCompletenessGate:
-    """`plan-file-creator`起動プロンプトの必須見出し4点の実在・非空検査。"""
+class TestPlanFileFinalizerPromptCompletenessGate:
+    """`plan-file-finalizer`起動プロンプトの必須見出し3点の実在・非空検査と計画ファイル実在検査。"""
 
-    _COMPLETE_PROMPT = _COMPLETE_PLAN_FILE_CREATOR_PROMPT
-
-    def test_complete_prompt_passes(self):
+    def test_complete_prompt_passes(self, tmp_path: pathlib.Path):
+        """観点(a): 必須見出し3点（作業ディレクトリを含む）のプロンプトが通過する。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": self._COMPLETE_PROMPT},
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-file-finalizer",
+                    "prompt": _complete_plan_file_finalizer_prompt(plan_path),
+                },
                 "session_id": "prompt-completeness-ok",
                 "permission_mode": "default",
             }
         )
         assert result.returncode == 0
 
+    def test_omitting_legacy_headings_still_passes(self, tmp_path: pathlib.Path):
+        """観点(b): 旧必須見出しだった`## 合意済み事項`・`## 照合結果`が無くてもブロックされない。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        prompt = _complete_plan_file_finalizer_prompt(plan_path)
+        assert "合意済み事項" not in prompt
+        assert "照合結果" not in prompt
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": "prompt-completeness-no-legacy-headings",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_nonexistent_plan_file_path_blocked(self, tmp_path: pathlib.Path):
+        """観点(c): `## 計画ファイルパス`が指す計画ファイルが実在しない場合にブロックされる。"""
+        missing_path = tmp_path / "does-not-exist.md"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {
+                    "subagent_type": "agent-toolkit:plan-file-finalizer",
+                    "prompt": _complete_plan_file_finalizer_prompt(missing_path),
+                },
+                "session_id": "prompt-completeness-missing-plan-file",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "does not resolve to an existing file" in result.stderr
+
+    def test_ambiguous_plan_file_path_not_blocked_by_existence_check(self, tmp_path: pathlib.Path):
+        """観点(d): パスを一意に抽出できない場合、実在検査ではブロックされない。"""
+        prompt = (
+            f"## 計画ファイルパス\n`{tmp_path / 'a.md'}`と`{tmp_path / 'b.md'}`のいずれか\n\n"
+            "## permission_mode\n非`plan`\n\n"
+            "## 作業ディレクトリ\n`/repo`\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": "prompt-completeness-ambiguous-path",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_normalization_failure_blocked(self):
+        """観点(c'): `~`展開に失敗するパス（未解決ユーザー表記）は正規化失敗として厳格にブロックされる。"""
+        prompt = (
+            "## 計画ファイルパス\n`~nonexistentuser12345/plan.md`\n\n"
+            "## permission_mode\n非`plan`\n\n"
+            "## 作業ディレクトリ\n`/repo`\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": "prompt-completeness-normalization-failure",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 2
+        assert "does not resolve to an existing file" in result.stderr
+
+    def test_backtick_less_existing_path_passes(self, tmp_path: pathlib.Path):
+        """観点(a'): バッククォート無しの裸パス表記でも実在パスなら通過する。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        prompt = f"## 計画ファイルパス\n{plan_path}\n\n## permission_mode\n非`plan`\n\n## 作業ディレクトリ\n`/repo`\n"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": "prompt-completeness-bare-path",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
+    def test_backtick_path_takes_priority_over_coexisting_bare_path(self, tmp_path: pathlib.Path):
+        """観点(a''): バッククォート表記と裸パスが併存する場合、バッククォート表記が優先され一意に抽出される。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        bare_missing_path = tmp_path / "does-not-exist-bare.md"
+        prompt = (
+            f"## 計画ファイルパス\n`{plan_path}`（参考: {bare_missing_path} は無関係な裸パス表記）\n\n"
+            "## permission_mode\n非`plan`\n\n"
+            "## 作業ディレクトリ\n`/repo`\n"
+        )
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": "prompt-completeness-backtick-priority",
+                "permission_mode": "default",
+            }
+        )
+        assert result.returncode == 0
+
     @pytest.mark.parametrize("indent", [0, 1, 2, 3])
-    def test_heading_with_up_to_three_leading_spaces_still_counted(self, indent: int):
+    def test_heading_with_up_to_three_leading_spaces_still_counted(self, tmp_path: pathlib.Path, indent: int):
         """CommonMarkのATX見出し仕様上、先頭スペース0〜3個までは見出しとして有効である境界値を検証する。
 
         4個以上との区別（インデントコードブロック扱い）は`test_heading_inside_indented_code_block_not_counted`が
         別途検証する。0〜3個をパラメーター化して個別に検証することで、1個・2個を拒否する実装への
         後退を検出できるようにする（3個のみの検証では検出できない）。
         """
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
         pad = " " * indent
-        prompt = "\n".join(f"{pad}{line}" if line else "" for line in self._COMPLETE_PROMPT.splitlines())
+        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
+        prompt = "\n".join(f"{pad}{line}" if line else "" for line in complete_prompt.splitlines())
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
                 "session_id": f"prompt-completeness-{indent}-space-heading",
                 "permission_mode": "default",
             }
         )
         assert result.returncode == 0
 
-    def test_missing_heading_blocked(self):
-        prompt = "## 計画ファイルパス\n`~/.claude/plans/example.md`\n\n## permission_mode\n非`plan`\n"
+    @pytest.mark.parametrize("omit_heading", ["計画ファイルパス", "permission_mode", "作業ディレクトリ"])
+    def test_missing_heading_blocked(self, tmp_path: pathlib.Path, omit_heading: str):
+        """新必須見出し3点を1件ずつ欠落させ、各欠落単独でブロックされることを検証する。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        headings = {
+            "計画ファイルパス": f"## 計画ファイルパス\n`{plan_path}`",
+            "permission_mode": "## permission_mode\n非`plan`",
+            "作業ディレクトリ": "## 作業ディレクトリ\n`/repo`",
+        }
+        del headings[omit_heading]
+        prompt = "\n\n".join(headings.values()) + "\n"
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator", "prompt": prompt},
-                "session_id": "prompt-completeness-missing",
+                "tool_input": {"subagent_type": "plan-file-finalizer", "prompt": prompt},
+                "session_id": f"prompt-completeness-missing-{omit_heading}",
                 "permission_mode": "default",
             }
         )
         assert result.returncode == 2
-        assert "合意済み事項" in result.stderr
-        assert "照合結果" in result.stderr
+        assert omit_heading in result.stderr
 
-    def test_empty_section_blocked(self):
-        prompt = self._COMPLETE_PROMPT.replace("ユーザーはAを選択した。", "")
+    @pytest.mark.parametrize("empty_heading", ["計画ファイルパス", "permission_mode", "作業ディレクトリ"])
+    def test_empty_section_blocked(self, tmp_path: pathlib.Path, empty_heading: str):
+        """新必須見出し3点を1件ずつ空にし、各空欄単独でブロックされることを検証する。"""
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        headings = {
+            "計画ファイルパス": f"## 計画ファイルパス\n`{plan_path}`",
+            "permission_mode": "## permission_mode\n非`plan`",
+            "作業ディレクトリ": "## 作業ディレクトリ\n`/repo`",
+        }
+        headings[empty_heading] = f"## {empty_heading}\n"
+        prompt = "\n\n".join(headings.values()) + "\n"
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
-                "session_id": "prompt-completeness-empty",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
+                "session_id": f"prompt-completeness-empty-{empty_heading}",
                 "permission_mode": "default",
             }
         )
         assert result.returncode == 2
-        assert "合意済み事項" in result.stderr
+        assert empty_heading in result.stderr
 
     def test_other_subagent_not_checked(self):
         result = _run(
@@ -4364,13 +4497,16 @@ class TestPlanFileCreatorPromptCompletenessGate:
         )
         assert result.returncode == 0
 
-    def test_heading_inside_tilde_fence_not_counted(self):
+    def test_heading_inside_tilde_fence_not_counted(self, tmp_path: pathlib.Path):
         """チルダフェンス（`~~~`）内の見出し例示も、バッククォートフェンスと同様に実見出しと誤認しない。"""
-        prompt = "~~~\n" + self._COMPLETE_PROMPT + "~~~\n本文のみで実見出しは無い。"
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
+        prompt = "~~~\n" + complete_prompt + "~~~\n本文のみで実見出しは無い。"
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
                 "session_id": "prompt-completeness-tilde-fence",
                 "permission_mode": "default",
             }
@@ -4378,13 +4514,16 @@ class TestPlanFileCreatorPromptCompletenessGate:
         assert result.returncode == 2
         assert "計画ファイルパス" in result.stderr
 
-    def test_heading_inside_html_comment_not_counted(self):
+    def test_heading_inside_html_comment_not_counted(self, tmp_path: pathlib.Path):
         """複数行HTMLコメント内の見出し例示も実見出しと誤認しない。"""
-        prompt = "<!--\n" + self._COMPLETE_PROMPT + "-->\n本文のみで実見出しは無い。"
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
+        prompt = "<!--\n" + complete_prompt + "-->\n本文のみで実見出しは無い。"
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": prompt},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": prompt},
                 "session_id": "prompt-completeness-html-comment",
                 "permission_mode": "default",
             }
@@ -4392,14 +4531,17 @@ class TestPlanFileCreatorPromptCompletenessGate:
         assert result.returncode == 2
         assert "計画ファイルパス" in result.stderr
 
-    def test_heading_inside_indented_code_block_not_counted(self):
+    def test_heading_inside_indented_code_block_not_counted(self, tmp_path: pathlib.Path):
         """4スペース以上インデントされた見出し例示（CommonMarkのインデントコードブロック）も
         実見出しと誤認しない。"""
-        indented_prompt = "\n".join(f"    {line}" if line else "" for line in self._COMPLETE_PROMPT.splitlines())
+        plan_path = tmp_path / "example.md"
+        plan_path.write_text("# 例\n", encoding="utf-8")
+        complete_prompt = _complete_plan_file_finalizer_prompt(plan_path)
+        indented_prompt = "\n".join(f"    {line}" if line else "" for line in complete_prompt.splitlines())
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": indented_prompt},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": indented_prompt},
                 "session_id": "prompt-completeness-indented-code-block",
                 "permission_mode": "default",
             }
@@ -4412,7 +4554,7 @@ class TestPlanFileCreatorPromptCompletenessGate:
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
                 "session_id": "prompt-completeness-no-prompt",
                 "permission_mode": "default",
             }
@@ -4446,9 +4588,9 @@ class TestSubagentStartLogOrdering:
             {
                 "tool_name": "Agent",
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-file-creator",
+                    "subagent_type": "agent-toolkit:plan-file-finalizer",
                     "model": "opus",
-                    "prompt": _COMPLETE_PLAN_FILE_CREATOR_PROMPT,
+                    "prompt": _COMPLETE_PLAN_FILE_FINALIZER_PROMPT_FOR_MODEL_GATE,
                 },
                 "session_id": "log-order-model-override",
                 "permission_mode": "default",
@@ -4463,7 +4605,7 @@ class TestSubagentStartLogOrdering:
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator", "prompt": "x"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer", "prompt": "x"},
                 "session_id": "log-order-prompt-completeness",
                 "permission_mode": "default",
             },
@@ -4600,9 +4742,9 @@ class TestPlanCodexDelegateReviewEdit:
         assert result.returncode == 2
         assert self._BLOCK_MESSAGE in result.stderr
 
-    @pytest.mark.parametrize("purpose", ["用途: 計画作成", "用途: 実装"])
+    @pytest.mark.parametrize("purpose", ["用途: 実装", "用途: 未知の値"])
     def test_non_review_purpose_passes(self, tmp_path: pathlib.Path, purpose: str) -> None:
-        """用途が計画作成・実装の起動による編集は通過する。"""
+        """用途が実装・未知の値の起動による編集は通過する。"""
         sid = f"codex-review-edit-allow-{purpose[-4:]}"
         target, transcript = self._prepare(tmp_path, sid, {"codex-1": purpose})
         result = _run(
@@ -4654,10 +4796,10 @@ class TestPlanCodexDelegateReviewEdit:
 
 
 class TestPlanModeFlagReset:
-    """`agent-toolkit:plan-mode`スキル起動時のplan-file-creatorの整合性チェック完了フラグリセット。"""
+    """`agent-toolkit:plan-mode`スキル起動時のplan-file-finalizerの整合性チェック完了フラグリセット。"""
 
     def test_flags_reset_on_plan_mode_skill_invoke(self, tmp_path: pathlib.Path):
-        """新計画着手時にplan-file-creatorの整合性チェック完了フラグが偽へリセットされ、
+        """新計画着手時にplan-file-finalizerの整合性チェック完了フラグが偽へリセットされ、
         `current_plan_file_path`が消去される。
         """
         sid = "process7-reset"
@@ -6703,7 +6845,7 @@ class TestDangerFullAccessPreserved:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/agents/plan-file-creator.md",
+                    "file_path": "agent-toolkit/agents/plan-file-finalizer.md",
                     "content": "`sandbox`へ`workspace-write`と指定",
                 },
             }

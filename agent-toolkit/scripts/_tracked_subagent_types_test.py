@@ -62,14 +62,12 @@ def test_explicit_review_purpose_detected(purpose: str) -> None:
 @pytest.mark.parametrize(
     "purpose",
     [
-        "用途: 計画作成",
         "用途: 実装",
-        "計画作成",
         "実装",
     ],
 )
 def test_explicit_review_purpose_rejects_non_review(purpose: str) -> None:
-    """計画作成・実装の用途を偽と判定する。"""
+    """実装の用途を偽と判定する。"""
     assert is_explicit_review_purpose(purpose) is False
 
 

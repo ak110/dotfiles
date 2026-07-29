@@ -26,7 +26,7 @@
   寿命は`agent-toolkit:process-feedbacks`起動検知（plan-and-add-feedbackの終端工程が参照呼び出しする先）でリセット
 - サブエージェント起動を検知する判定は`tool_name in ("Agent", "Task")`をSSOTとする
   （pretooluse・posttooluseとも同一。コード追加・改訂時は`grep -rn`で確認して同一集合を使う）
-- plan-file-creatorの整合性チェック完遂判定フラグ群は、PreToolUse(Agent/Task)がサブエージェントの
+- plan-file-finalizerの整合性チェック完遂判定フラグ群は、PreToolUse(Agent/Task)がサブエージェントの
   起動要求検知時点で前倒しして記録し、PostToolUse(Agent/Task)も完了時点で記録する:
   `plan_reviewer_invoked`・`codex_review_invoked`
   （PreToolUseゲートの必須対象は`codex_review_invoked`のみ。`plan_reviewer_invoked`は`codex-review.md`
@@ -36,23 +36,23 @@
   `codex_review_invoked`は`plan-codex-delegate`を用途`計画レビュー`・`実装差分レビュー`で起動した時、
   または`isSidechain`が偽の`mcp__codex__codex`完了時に記録する。
   用途`実装`での起動は記録対象から除く。実装用途の起動を記録するとレビュー未実施のまま
-  計画作成工程の完遂判定を通過できるためである。
+  計画ファイルの整合性チェック完遂判定を通過できるためである。
   用途は起動プロンプト本文の`用途: <値>`行から判定し、記述が無い場合は記録側へ倒す
   （レビュー起動を実装起動と誤判定すると正当な進行がブロックされるため）。
   `_reset_process7_completion_flags`のリセット対象タプルは`_PROCESS7_COMPLETION_FLAGS`と別に
   `plan_reviewer_invoked`を明示追加し、新計画着手時に前計画のフォールバック起動記録を持ち越さない
   （`_PROCESS7_COMPLETION_FLAGS`縮小に伴うリセット対象脱落の是正、plan-reviewer指摘反映）。
-  `agent-toolkit:plan-file-creator`配下から起動された場合、各フラグはplan-file-creator自身のセッション状態に
+  `agent-toolkit:plan-file-finalizer`配下から起動された場合、各フラグはplan-file-finalizer自身のセッション状態に
   記録され起動元（親）へは反映されない。
-  親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
+  親への反映は、plan-file-finalizer完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
   対応するフラグを親自身のセッション状態へ設定する経路で行う。
-  plan-file-creatorの完了報告にある`invoked_subagents:`行を親セッションへ伝播するときは、
+  plan-file-finalizerの完了報告にある`invoked_subagents:`行を親セッションへ伝播するときは、
   完了報告末尾の連続した記録行ブロック内だけを検出対象とする（厳守規定。
   検出位置を限定しないと状態フラグの誤検出により完遂ゲート判定が機能不全に陥る）。
   検出パターンは`invoked_subagents`・`codex_unavailable`の既知キーへ限定する
 - codex_usage_limit_observed:
   記録元: `posttooluse.py`のAgent/Task完了ハンドラが、
-  `plan-codex-delegate`系・`plan-file-creator`系の完了報告本文の最終行のみを対象に
+  `plan-codex-delegate`系・`plan-file-finalizer`系の完了報告本文の最終行のみを対象に
   `^codex_unavailable:\s*(.*)$`（`re.MULTILINE`なし、`match`）で抽出し、
   値が`"usage-limit"`と一致する場合に真化する。
 
@@ -81,7 +81,7 @@
 - `recorded_codex_thread_id`: `mcp__codex__codex`成功時のPostToolUseが`tool_response.threadId`を記録する。
   `mcp__codex__codex-reply`のPreToolUseがthreadId一致検査で参照する（`plan_codex_delegate_invoked`・
   `plan_codex_delegate_blocked`・`recorded_codex_thread_id`の3件は新計画着手時に
-  plan-file-creatorの整合性チェック完了フラグと共にリセットされる）
+  plan-file-finalizerの整合性チェック完了フラグと共にリセットされる）
   並列`plan-codex-delegate`インスタンスはいずれも`isSidechain`真のため、本フラグのthreadId厳密一致検査は
   スキップされ`_check_codex_mcp_via_plan_codex_delegate`の起動履歴検査のみが適用される。
   並列時に本フラグの単一値設計が競合する事象は生じない
@@ -116,4 +116,4 @@
   既存のリセット関数（`pretooluse.py`の`_reset_process7_completion_flags`等）へ追加する
 - Agent tool経由のサブエージェントで記録されるフラグは呼び出し元セッションに閉じる。
   親側での判定は完了報告本文の機械パース経路を要する。
-  詳細は本バレット上部のplan-file-creator関連フラグ項を参照する
+  詳細は本バレット上部のplan-file-finalizer関連フラグ項を参照する

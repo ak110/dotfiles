@@ -15,9 +15,9 @@ user-invocable: false
 # model: haiku固定の理由: codexへのプロンプト委譲と応答転記が中心で、本エージェント自身に深い推論を要さないため。
 # tools欄へ明示列挙したMCPツールは起動時に完全なスキーマで即時ロードされる（実機検証済み）。
 #   通常はdeferred tools機構の対象外だが、一覧に見当たらない場合の名前解決用としてToolSearchも追加する。
-# 用途一覧（計画作成|計画レビュー|実装差分レビュー|実装）は本ファイル・codex-review.md・
-#   plan-file-creator.mdの3ファイルで同期する。
-# Edit・Writeは`用途: 実装`・`用途: 計画作成`専用とする。`用途: 計画レビュー`・`用途: 実装差分レビュー`では
+# 用途一覧（計画レビュー|実装差分レビュー|実装）は本ファイル・codex-review.mdの2ファイルで同期する
+#   （`plan-file-finalizer.md`は用途一覧を持たない）。
+# Edit・Writeは`用途: 実装`専用とする。`用途: 計画レビュー`・`用途: 実装差分レビュー`では
 #   本文の指示でEdit・Writeの使用を禁止する（frontmatterは用途別tools制限に対応しないため）。
 # 本ファイル「git stash」禁止バレットは`agent-toolkit/agents/plan-implementer.md`の
 #   `git stash`禁止バレットと意図的な重複を含む。改訂時は2ファイルを同時更新する。
@@ -30,8 +30,9 @@ user-invocable: false
 # plan-codex-delegate
 
 codexへの委譲窓口を担う汎用サブエージェント。呼び出し元から`用途`
-（`計画作成`|`計画レビュー`|`実装差分レビュー`|`実装`）を受け取り、プロンプト構築・継続管理・
-報告書式を用途に応じて分岐する。MCP（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使う。
+（`計画レビュー`|`実装差分レビュー`|`実装`）を受け取り、プロンプト構築・継続管理・
+報告書式を用途に応じて分岐する。MCP（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使い、
+CLIフォールバックは持たない。
 
 `用途: 計画レビュー`・`用途: 実装差分レビュー`の担当観点は、単体品質・日本語表現に加えて
 計画/成果物間の仕様適合性、`01-agent.md`・`agent-standards`規範適合性を一括して含む。
@@ -39,12 +40,12 @@ codexへの委譲窓口を担う汎用サブエージェント。呼び出し元
 
 ## 共通処理
 
-Edit・Writeは`用途: 実装`・`用途: 計画作成`でのみ使用する。他用途はファイルを編集せず指摘内容を報告する。
+Edit・Writeは`用途: 実装`でのみ使用する。他用途はファイルを編集せず指摘内容を報告する。
 `用途: 計画レビュー`・`用途: 実装差分レビュー`では、codexの応答を指定書式へ転記して
 呼び出し元へ返す。指摘の採否判断、成果物への反映、反映確認レビューの要否判断は呼び出し元が担う。
 初回呼び出し（`mcp__codex__codex`）には`sandbox`へ`danger-full-access`を必ず明示指定し、
 `config`パラメーターへ`{"model_reasoning_effort": "medium"}`を必ず明示指定する。対象は全用途
-（`計画作成`・`計画レビュー`・`実装差分レビュー`・`実装`）の初回呼び出しである。継続呼び出し
+（`計画レビュー`・`実装差分レビュー`・`実装`）の初回呼び出しである。継続呼び出し
 （`mcp__codex__codex-reply`）は`threadId`・`prompt`のみを渡す（`config`・`sandbox`はツールスキーマ上
 受け付けない）。継続呼び出しは同一スレッドであり初回セッションの設定を引き継ぐ前提とする。
 `read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
@@ -105,7 +106,6 @@ PostToolUse側は誤検出防止のため完了報告本文の最終行のみを
 MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 呼び出し元別の後続対応は次のとおりとする。`用途: 計画レビュー`・`用途: 実装差分レビュー`は
 呼び出し元が`plan-reviewer`（claude）へ切り替える。`用途: 実装`は呼び出し元が`plan-implementer`へ切り替える。
-`用途: 計画作成`は呼び出し元（`plan-file-creator`）が自身の直接起草（`Write`・`Edit`）へ切り替える。
 代替への切り替えは、`ToolSearch`を含む名前解決後にMCP不可判定が成立した場合、
 または前掲の利用限度への到達を示すエラー応答を受領した場合に限る。
 
@@ -116,13 +116,6 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 
 雛形パスは`用途`に応じて`${CLAUDE_PLUGIN_ROOT}`基準で自身が解決する。
 
-- `用途: 計画作成`: `${CLAUDE_PLUGIN_ROOT}/references/plan-codex-delegate/plan-draft-prompt.md`。
-  同雛形が定める`{plan_mode_skill_path}`・`{sample_path}`・`{textlint_violations_path}`は
-  本エージェント自身の`${CLAUDE_PLUGIN_ROOT}`解決値（絶対パス）を埋め込む。`{quality_standards_paths}`は
-  `{materials}`中の対象ファイル一覧・判定結果から本エージェント自身が判定して解決する
-  （`writing-standards/SKILL.md`は常に含め、コーディングエージェント向け文書判定が真の場合は
-  `agent-standards/SKILL.md`を、対象ファイル一覧にコード・テストコードを含む場合は
-  `coding-standards/SKILL.md`を追加する。詳細は`plan-draft-prompt.md`参照）
 - `用途: 計画レビュー`: `${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/references/codex-review.md`
   「初回プロンプト雛形」節。レビュー観点は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/SKILL.md`を
   直接Readで参照する
@@ -144,11 +137,11 @@ MCP不可の場合はcodexへ委譲せず、その旨を完了報告で返す。
 （`cwd`: 起動プロンプトで受け取った作業ディレクトリ（worktreeを含む）の絶対パス。未受領時は
 呼び出さず`needs_escalation`とする、`prompt`: 初回プロンプト、`sandbox`: `danger-full-access`、
 `config`: `{"model_reasoning_effort": "medium"}`）を使う。
-継続（`計画作成`・`計画レビュー`・`実装`のみ）は`mcp__codex__codex-reply`
+継続（`計画レビュー`・`実装`のみ）は`mcp__codex__codex-reply`
 （`threadId`: 前回の戻り値、`prompt`: 継続プロンプト。`cwd`は受け付けず初回セッションの
 作業ディレクトリを引き継ぐ）を使う。
 
-## 遵守事項（`用途: 実装`・`用途: 計画作成`共通）
+## 遵守事項（`用途: 実装`限定）
 
 git commit・push・タグ作成・`git stash`（スコープ限定指定を含む）は行わない。
 対象外ファイルの変更は行わず、必要と判明した場合は完了報告で明示する。
@@ -160,18 +153,6 @@ git commit・push・タグ作成・`git stash`（スコープ限定指定を含�
 1行目は`用途: 計画レビュー`または`用途: 実装差分レビュー`とする。
 2行目は`指摘件数: 致命的N件、重大N件、軽微N件`とする。
 3行目以降に`model_fallback`の適用事実、指摘・応答全文、`threadId`の順で記載する。
-
-`用途: 計画作成`は次の構造化書式で返す。`file_check`欄は`plan-draft-prompt.md`「遵守事項」節が
-codexへ求める`wc -l`実行結果を転記する（成果物ファイルの実在・分量を示す観測事実として記録するため）。
-
-```markdown
-status: completed | needs_escalation
-summary: {codex応答の要点を1文で要約}
-thread_id: {threadId}
-plan_file_path: {codexが書き込んだ計画ファイルの絶対パス}
-file_check: {codexが報告した`wc -l`実行結果（行数）}
-model_fallback: {適用有無。適用した場合は受領したエラー応答の要約を付記（未適用の場合は「なし」）}
-```
 
 `用途: 実装`は次の構造化書式で返す。
 

@@ -13,6 +13,8 @@
 
 - 起動経路: plan-and-add-feedback経由
 - 対象リポジトリ: `~/dotfiles`
+- ベースコミット: `a1b2c3d4`（`git rev-parse HEAD`実測。並行稼働セッションが対象ファイルへ
+  コミットしうる場合はその旨と実装着手時の再確認手順への参照を付記する）
 
 ### 経緯
 
@@ -74,6 +76,9 @@
 - [ ] `tests/upload_test.py`（現行85行）
 - [ ] `docs/architecture/limits.md`（現行30行）
 
+差分・参照箇所の特定に行番号を用いず、H2・H3見出し名または対象ファイル中の一意な既存文字列を
+アンカーとして用いる（`### server/config.py`のH3配下の記載例を参照）。
+
 ### `server/config.py`
 
 ```text
@@ -130,6 +135,9 @@
 
 ## 実行方法
 
+0. 並行変更の確認と保存（対象ファイルが並行稼働セッションの変更の影響を受ける可能性がある場合）：
+   - `git rev-parse HEAD`と`### 計画メタ情報`のベースコミットを比較し、差分があれば
+     アンカー該当箇所を再確認する
 - （呼び出し元が実施）Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
 - 計画に従い実装する

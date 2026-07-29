@@ -17,15 +17,15 @@ user-invocable: false
 # 編集時の注意点:
 # 過去のコンテキスト（ユーザー発話・要件対話内容・grep等での参照確認）が必要な節はメイン側で実施するため、
 # 本エージェントの担当節へ含めない。
-# 本エージェントはcodexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`careful-review`から
+# 本エージェントはcodexのMCPが利用不可と判明した場合のみ`plan-file-finalizer`・`careful-review`から
 # 起動されるフォールバック経路である（既定経路は`plan-codex-delegate`。詳細は`codex-review.md`
-# 「plan-file-creatorからの起動」節）。
+# 「plan-file-finalizerからの起動」節）。
 ---
 
 # plan-reviewer
 
 呼び出し元から渡された計画ファイル本文の総合レビューを、独立コンテキストで実行するエージェント。
-codexのMCPが利用不可と判明した場合のみ`plan-file-creator`・`careful-review`から
+codexのMCPが利用不可と判明した場合のみ`plan-file-finalizer`・`careful-review`から
 起動されるフォールバック経路である。ファイル書き込み、コード変更、外部通信は行わない。
 
 ## 担当節

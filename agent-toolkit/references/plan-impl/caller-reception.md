@@ -21,7 +21,7 @@ foreground起動が自動的にbackgroundへ転換された場合は、task-noti
    `status: needs_escalation`の場合は`blockers:`も必須）とする。いずれかを明示形式で含まない場合、
    `status: completed`表示があっても未完遂扱いとして技術的に解消可能な実装不備の再委譲へ直行する
    （手順1の`needs_escalation`分岐は経ない）。
-   `plan-file-creator`の完了報告を受領する場合は`invoked_subagents:`欄を必須とし、
+   `plan-file-finalizer`の完了報告を受領する場合は`invoked_subagents:`欄を必須とし、
    当該欄を含まない報告は未完遂として扱い縮減プロンプトで再起動する。
    完了報告の検収対象欄に含まれない記述（確認事項として登録した本文・振り返りの記述など）から
    具体値や実施事実を成果物へ転記する場合、当該記述は未検収であることを前提に、

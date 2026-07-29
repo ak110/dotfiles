@@ -9,9 +9,9 @@
 両方が参照する。
 
 `is_review_purpose`は`plan-codex-delegate`の起動プロンプトが指定する用途を判定する。
-同エージェントは計画作成・計画レビュー・実装差分レビュー・実装の4用途を持ち、
-用途が計画作成・実装の起動でレビュー実施済みフラグを記録すると、レビュー未実施のまま
-計画作成工程の完遂判定を通過できてしまうため、記録をレビュー2用途へ限定する目的で使う。
+同エージェントは計画レビュー・実装差分レビュー・実装の3用途を持ち、
+用途が実装の起動でレビュー実施済みフラグを記録すると、レビュー未実施のまま
+計画ファイルの整合性チェック完遂判定を通過できてしまうため、記録をレビュー2用途へ限定する目的で使う。
 
 `is_explicit_review_purpose`は用途がレビュー2用途と明示されている場合だけ真を返す。
 用途行が無い場合に真を返す`is_review_purpose`は記録側へ倒す判定であり、
@@ -33,8 +33,8 @@ TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
         "agent-toolkit:plan-codex-delegate",
         "plan-reviewer",
         "agent-toolkit:plan-reviewer",
-        "plan-file-creator",
-        "agent-toolkit:plan-file-creator",
+        "plan-file-finalizer",
+        "agent-toolkit:plan-file-finalizer",
     }
 )
 
@@ -47,7 +47,7 @@ SUBAGENT_TYPE_FLAGS: dict[str, str] = {
 
 _PURPOSE_RE = re.compile(r"用途\s*[:：]\s*(\S+)")
 
-# 成果物編集の遮断対象とする用途。`plan-codex-delegate.md`が定める4用途のうちレビュー2用途に限る。
+# 成果物編集の遮断対象とする用途。`plan-codex-delegate.md`が定める3用途のうちレビュー2用途に限る。
 EXPLICIT_REVIEW_PURPOSES: frozenset[str] = frozenset({"計画レビュー", "実装差分レビュー"})
 
 
@@ -68,7 +68,7 @@ def is_explicit_review_purpose(purpose: object) -> bool:
     """用途がレビュー2用途（計画レビュー・実装差分レビュー）と明示されているかを返す。
 
     `用途: <値>`形式の行と値単体の双方を受け付け、値が`EXPLICIT_REVIEW_PURPOSES`と
-    完全一致する場合のみ真を返す。用途の記述が無い場合、値が計画作成・実装の場合、
+    完全一致する場合のみ真を返す。用途の記述が無い場合、値が実装の場合、
     文字列以外を受け取った場合はいずれも偽を返す。
     レビュー用途の編集遮断が判定材料を観測できない状況で正当な編集を止めないための安全側の契約とする。
     """

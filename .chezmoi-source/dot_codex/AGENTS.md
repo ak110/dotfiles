@@ -400,8 +400,10 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
 - 同一セッションで取得済みのファイルは、変更を観測するまで保持済み内容を再利用する。
   編集後の検収、外部更新後、正確な現行文面が必要な差分適用前に再取得する
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
-- `plan-file-creator`・`plan-impl-executor`はSonnet固定の窓口として動き、実作業（計画本文の起草・
-  実装）は既定でcodexへ移譲する設計（MCP不可時等は自身または`plan-implementer`が代替する）である。
+- `plan-file-finalizer`・`plan-impl-executor`はSonnet固定の窓口として動く。`plan-file-finalizer`は
+  計画ファイル初版の完成条件確認・機械チェック・codexレビュー起動・指摘反映を担い、初版の起草自体は
+  呼び出し元（メイン）が行う。`plan-impl-executor`は実装という実作業を既定でcodexへ移譲する設計
+  （MCP不可時等は`plan-implementer`が代替する）である。
   この2種はAgent/Task起動時に`model`引数を指定しない
   （PreToolUseフックが機械的にブロックする）。既定モデルの変更が必要な場合は呼び出し側でなく
   エージェント定義自体のfrontmatterを改訂する。`plan-implementer`は対象外とし、

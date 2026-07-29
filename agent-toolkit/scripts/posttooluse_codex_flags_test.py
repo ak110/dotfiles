@@ -233,15 +233,15 @@ class TestPlanImplExecutorActiveSessions:
         assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})
 
 
-class TestPlanFileCreatorFlagPropagation:
-    """plan-file-creator完了報告本文の`invoked_subagents:`行から親セッション状態へフラグを設定する。"""
+class TestPlanFileFinalizerFlagPropagation:
+    """plan-file-finalizer完了報告本文の`invoked_subagents:`行から親セッション状態へフラグを設定する。"""
 
     _ALL_FLAGS = ("plan_reviewer_invoked", "codex_review_invoked")
 
-    @pytest.mark.parametrize("subagent_type", ["plan-file-creator", "agent-toolkit:plan-file-creator"])
+    @pytest.mark.parametrize("subagent_type", ["plan-file-finalizer", "agent-toolkit:plan-file-finalizer"])
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_both_identifiers_set_all_flags(self, tmp_path: pathlib.Path, subagent_type: str, tool_name: str):
-        sid = f"pfc-all-{subagent_type.replace(':', '-')}-{tool_name.lower()}"
+        sid = f"pff-all-{subagent_type.replace(':', '-')}-{tool_name.lower()}"
         _run(
             {
                 "session_id": sid,
@@ -263,12 +263,12 @@ class TestPlanFileCreatorFlagPropagation:
             assert state.get(flag) is True
 
     def test_missing_invoked_subagents_line_sets_no_flags(self, tmp_path: pathlib.Path):
-        sid = "pfc-missing-line"
+        sid = "pff-missing-line"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
                 "tool_response": {"content": [{"type": "text", "text": "status: completed\n"}]},
             },
             state_dir=tmp_path,
@@ -279,12 +279,12 @@ class TestPlanFileCreatorFlagPropagation:
 
     def test_result_string_field_is_parsed(self, tmp_path: pathlib.Path):
         """`result`欄（文字列）経由の完了報告本文からも`invoked_subagents:`行を抽出する。"""
-        sid = "pfc-result-field"
+        sid = "pff-result-field"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
                 "tool_response": {"result": "invoked_subagents: plan-reviewer\n"},
             },
             state_dir=tmp_path,
@@ -295,12 +295,12 @@ class TestPlanFileCreatorFlagPropagation:
 
     def test_unknown_identifier_is_ignored(self, tmp_path: pathlib.Path):
         """未知の識別子は無視し、既知の識別子のみ処理する。"""
-        sid = "pfc-unknown-identifier"
+        sid = "pff-unknown-identifier"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
                 "tool_response": {"content": [{"type": "text", "text": "invoked_subagents: plan-reviewer, unknown-agent\n"}]},
             },
             state_dir=tmp_path,
@@ -310,12 +310,12 @@ class TestPlanFileCreatorFlagPropagation:
         assert state.get("codex_review_invoked") is not True
 
     def test_quoted_line_before_prose_sets_no_flags(self, tmp_path: pathlib.Path):
-        sid = "pfc-quoted-line"
+        sid = "pff-quoted-line"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
                 "tool_response": {
                     "content": [
                         {
@@ -334,12 +334,12 @@ class TestPlanFileCreatorFlagPropagation:
             assert state.get(flag) is not True
 
     def test_line_inside_trailing_record_block_sets_flags(self, tmp_path: pathlib.Path):
-        sid = "pfc-trailing-record-block"
+        sid = "pff-trailing-record-block"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
                 "tool_response": {
                     "content": [
                         {
@@ -509,21 +509,21 @@ class TestPlanCodexDelegatePurposeRegistration:
         state = _read_state(tmp_path, sid)
         assert state.get("codex_usage_limit_observed") is not True
 
-    def test_codex_unavailable_via_plan_file_creator_propagates(self, tmp_path: pathlib.Path):
-        """plan-file-creatorが配下のplan-codex-delegateから転記したcodex_unavailable行も検出する。
+    def test_codex_unavailable_via_plan_file_finalizer_propagates(self, tmp_path: pathlib.Path):
+        """plan-file-finalizerが配下のplan-codex-delegateから転記したcodex_unavailable行も検出する。
 
         利用限度到達によるフォールバック契約では、未完遂の`codex-review`は記録せず
-        `plan-reviewer`のみを記録する（`plan-file-creator.md`「invoked_subagentsは...」節）。
+        `plan-reviewer`のみを記録する（`plan-file-finalizer.md`「invoked_subagentsは...」節）。
         本テストはこの契約に沿った入力で、段階2フォールバック完遂時にゲートが要求する
         両フラグ（`codex_usage_limit_observed`・`plan_reviewer_invoked`）が
         揃って真化することを検証する。
         """
-        sid = "codex-unavail-via-plan-file-creator"
+        sid = "codex-unavail-via-plan-file-finalizer"
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Task",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
                 "tool_response": {
                     "content": [
                         {

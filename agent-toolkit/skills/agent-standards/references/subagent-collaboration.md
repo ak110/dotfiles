@@ -121,7 +121,7 @@ Agentツール起動は常に独立コンテキストで開始される確定事
   `用途: 計画レビュー`／`用途: 実装差分レビュー`で担当観点を分岐する。
   単体品質・日本語表現に加え、計画/成果物間の仕様適合性・`01-agent.md`・`agent-standards`規範適合性を
   一括して担う（従来別エージェントだった`plan-spec-reviewer`・`agent-doc-validator`の担当観点を吸収済み）。
-  計画レビューの分担は`codex-review.md`「plan-file-creatorからの起動」節を正典とする。
+  計画レビューの分担は`codex-review.md`「plan-file-finalizerからの起動」節を正典とする。
   実装レビューの分担は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`を正典とする
 - `plan-reviewer`: 計画レビュー・実装レビューいずれもフォールバック（MCP利用不可時のみ起動）。
   `plan-codex-delegate`が吸収した担当観点を含めて単独で担う

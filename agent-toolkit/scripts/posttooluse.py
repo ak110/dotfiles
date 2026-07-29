@@ -35,7 +35,7 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-delegate起動失敗時のplan_codex_delegate_blocked記録
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. `plan-file-creator`完了報告本文の`invoked_subagents:`行のパースによる
+17. `plan-file-finalizer`完了報告本文の`invoked_subagents:`行のパースによる
     親セッション状態へのフラグ設定 (Agent/Task)
 18. `plan-codex-delegate`起動時の用途行の`agentId`別記録 (Agent/Task)。
     PreToolUse側のレビュー用途編集ブロックが、子（サイドチェーン）側のEdit/Write/MultiEdit時に
@@ -222,16 +222,16 @@ _DELEGATE_PURPOSE_LINE_RE = re.compile(r"^用途\s*[:：].*$", re.MULTILINE)
 # AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
 # フルネームと短縮名の両方を許容する。
 # 本辞書は呼び出し元（Agent/Taskツールを実行した側）の`session_id`が指すセッション状態へ記録する。
-# `agent-toolkit:plan-file-creator`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
-# `plan-codex-delegate`を起動する場合、記録先はplan-file-creator自身の
+# `agent-toolkit:plan-file-finalizer`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
+# `plan-codex-delegate`を起動する場合、記録先はplan-file-finalizer自身の
 # セッション状態であり、起動元（親）のセッション状態には反映されない。
-# 親への反映は、plan-file-creator自身の完了報告本文の`invoked_subagents:`行を
+# 親への反映は、plan-file-finalizer自身の完了報告本文の`invoked_subagents:`行を
 # main()関数内のAgent/Task完了ハンドラがパースして設定する。
-_PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-creator", "agent-toolkit:plan-file-creator"})
+_PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-finalizer", "agent-toolkit:plan-file-finalizer"})
 
-# plan-file-creator完了報告本文の`invoked_subagents:`行に列挙される識別子から
+# plan-file-finalizer完了報告本文の`invoked_subagents:`行に列挙される識別子から
 # 対応するセッション状態フラグへのマップ。
-_PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
+_PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
     "plan-reviewer": "plan_reviewer_invoked",
     "codex-review": "codex_review_invoked",
 }
@@ -529,7 +529,7 @@ def main() -> int:
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
-        # plan-file-creator完了報告の`invoked_subagents:`行パース（517行目付近）が
+        # plan-file-finalizer完了報告の`invoked_subagents:`行パース（517行目付近）が
         # `completion_text`を参照するため、抽出自体は維持する。
         raw_tool_response = payload.get("tool_response", {})
         completion_text = _extract_agent_completion_text(raw_tool_response) if isinstance(raw_tool_response, dict) else ""
@@ -587,7 +587,7 @@ def main() -> int:
         if isinstance(subagent_type, str):
             flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
             # `plan-codex-delegate`は用途がレビューの起動に限って記録する。
-            # 用途が実装の起動を記録すると、レビュー未実施のまま計画作成工程の完遂判定を通過できてしまう。
+            # 用途が実装の起動を記録すると、レビュー未実施のまま計画ファイルの整合性チェック完遂判定を通過できてしまう。
             if flag_key == "codex_review_invoked":
                 agent_prompt = tool_input.get("prompt")
                 if not _is_review_purpose(agent_prompt if isinstance(agent_prompt, str) else ""):
@@ -601,22 +601,24 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _set_agent_flag)
-        # plan-file-creator完了時、完了報告本文の`invoked_subagents:`行をパースし、
-        # このイベント自身のセッション（plan-file-creatorの呼び出し元）へ対応フラグを設定する。
+        # plan-file-finalizer完了時、完了報告本文の`invoked_subagents:`行をパースし、
+        # このイベント自身のセッション（plan-file-finalizerの呼び出し元）へ対応フラグを設定する。
         # `invoked_subagents:`行が無い、または既知識別子を含まない場合は無処理（fail-safe）。
-        if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_CREATOR_SUBAGENT_TYPES:
+        if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
             trailing_record_block = _extract_trailing_record_block(completion_text)
             invoked_match = _INVOKED_SUBAGENTS_LINE_RE.search(trailing_record_block)
             if invoked_match:
                 identifiers = {token.strip() for token in invoked_match.group(1).split(",") if token.strip()}
                 invoked_flags = frozenset(
-                    _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS[name]
+                    _PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS[name]
                     for name in identifiers
-                    if name in _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS
+                    if name in _PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS
                 )
                 if invoked_flags:
 
-                    def _set_plan_file_creator_invoked_flags(state: dict, flags: frozenset[str] = invoked_flags) -> dict | None:
+                    def _set_plan_file_finalizer_invoked_flags(
+                        state: dict, flags: frozenset[str] = invoked_flags
+                    ) -> dict | None:
                         changed = False
                         for flag_name in flags:
                             if not state.get(flag_name, False):
@@ -624,12 +626,12 @@ def main() -> int:
                                 changed = True
                         return state if changed else None
 
-                    update_state(session_id, _set_plan_file_creator_invoked_flags)
-        # plan-codex-delegate・plan-file-creator両系の完了報告から
+                    update_state(session_id, _set_plan_file_finalizer_invoked_flags)
+        # plan-codex-delegate・plan-file-finalizer両系の完了報告から
         # codex_unavailable: usage-limitを検出し、codex_usage_limit_observedを真化する。
         if isinstance(subagent_type, str) and subagent_type in (
             *_PLAN_CODEX_DELEGATE_SUBAGENT_TYPES,
-            *_PLAN_FILE_CREATOR_SUBAGENT_TYPES,
+            *_PLAN_FILE_FINALIZER_SUBAGENT_TYPES,
         ):
             # completion_textの最終行のみを対象に一致を試みる（誤検出防止のためmatch、非search）。
             last_line = completion_text.rstrip("\n").rsplit("\n", maxsplit=1)[-1]

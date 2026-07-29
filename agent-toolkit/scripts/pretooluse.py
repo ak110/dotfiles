@@ -35,7 +35,7 @@ EnterPlanMode:
 
 ExitPlanMode:
 
-- `plan-file-creator`の整合性チェック（codexレビュー、codex利用不可時はplan-reviewerで代替）
+- `plan-file-finalizer`の整合性チェック（codexレビュー、codex利用不可時はplan-reviewerで代替）
   完了未達のブロック (block)
 
 mcp__codex__codex:
@@ -71,17 +71,17 @@ AskUserQuestion:
 
 Skill:
 
-- `agent-toolkit:plan-mode`起動時の`plan-file-creator`の整合性チェック完了フラグリセット（新計画着手の合図） (auto-fix)
+- `agent-toolkit:plan-mode`起動時の`plan-file-finalizer`の整合性チェック完了フラグリセット（新計画着手の合図） (auto-fix)
 
 Agent / Task:
 
 - 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 (warn)
 - `plan-impl-executor`起動時、起動プロンプトが現行計画パスを指す場合の
-  `plan-file-creator`の整合性チェック完了未達のブロック (block)
+  `plan-file-finalizer`の整合性チェック完了未達のブロック (block)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - `plan-codex-delegate`起動検知時の`plan_codex_delegate_invoked`即時記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
-- `plan-file-creator`起動プロンプトの必須見出し4点の実在・非空検査によるブロック (block)
+- `plan-file-finalizer`起動プロンプトの必須見出し3点の実在・非空検査と計画ファイル実在検査によるブロック (block)
 - `name`引数指定のブロック (block)
 
 Write / Edit / MultiEdit:
@@ -456,14 +456,14 @@ def main() -> int:
     if _check_plan_prep_skills_block_enter_plan_mode(tool_name, session_id):
         return 2
 
-    # ExitPlanMode: `plan-file-creator`の整合性チェック（2サブエージェント/codexレビュー）の完了未達をブロック
+    # ExitPlanMode: `plan-file-finalizer`の整合性チェック（2サブエージェント/codexレビュー）の完了未達をブロック
     if tool_name == "ExitPlanMode":
         if _check_process7_completion_before_exit_plan_mode(session_id):
             return 2
         flush_pending_language_warning()
         return 0
 
-    # Skill: plan-mode起動時は`plan-file-creator`の整合性チェック完了フラグをリセット
+    # Skill: plan-mode起動時は`plan-file-finalizer`の整合性チェック完了フラグをリセット
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
@@ -605,7 +605,7 @@ def main() -> int:
         flush_pending_language_warning()
         return 0
 
-    # Agent/Task: plan-impl-executor起動時の`plan-file-creator`の整合性チェック完了未達ブロック +
+    # Agent/Task: plan-impl-executor起動時の`plan-file-finalizer`の整合性チェック完了未達ブロック +
     # 規範非読込型サブエージェント起動時の、規範の明示引用漏れ警告 +
     # process-loop観測用のサブエージェント起動時刻記録 (fb-1) +
     # plan-codex-delegate起動記録の前倒し
@@ -624,7 +624,7 @@ def main() -> int:
             _record_subagent_type_flag_invoked(session_id, subagent_type, agent_prompt if isinstance(agent_prompt, str) else "")
         if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
             return 2
-        if isinstance(subagent_type, str) and _check_plan_file_creator_prompt_completeness(subagent_type, tool_input):
+        if isinstance(subagent_type, str) and _check_plan_file_finalizer_prompt_completeness(subagent_type, tool_input):
             return 2
         if (
             isinstance(subagent_type, str)
@@ -1666,7 +1666,7 @@ def _check_plan_codex_delegate_review_edit(tool_name: str, session_id: str, payl
     かつ記録された用途がレビュー2用途（計画レビュー・実装差分レビュー）の場合にblockする。
 
     `agentId`を抽出できない場合・辞書に該当エントリが無い場合
-    （`plan-codex-delegate`以外の文脈での編集）・用途が計画作成や実装の場合は通過させる。
+    （`plan-codex-delegate`以外の文脈での編集）・用途が実装の場合は通過させる。
     レビュー用途の判定材料を観測できない状況で正当な編集を止めないための安全側の設計とする。
     """
     if tool_name not in ("Write", "Edit", "MultiEdit") or not session_id:
@@ -1695,7 +1695,7 @@ def _check_plan_codex_delegate_review_edit(tool_name: str, session_id: str, payl
 # --- codex sandbox指定（danger-full-access）の保護 (block, FB13) ---
 
 _DANGER_FULL_ACCESS_PROTECTED_PATHS: tuple[str, ...] = (
-    "agent-toolkit/agents/plan-file-creator.md",
+    "agent-toolkit/agents/plan-file-finalizer.md",
     "agent-toolkit/agents/plan-codex-delegate.md",
     "agent-toolkit/skills/plan-mode/references/codex-review.md",
     "agent-toolkit/skills/agent-standards/references/claude-hooks.md",
@@ -1724,7 +1724,7 @@ def _check_danger_full_access_preserved(tool_name: str, tool_input: dict, file_p
     """`danger-full-access`を含む行の削除・変更を遮断する（block）。
 
     対象ファイルは`_DANGER_FULL_ACCESS_PROTECTED_PATHS`に列挙された以下5つ:
-    - `agent-toolkit/agents/plan-file-creator.md`
+    - `agent-toolkit/agents/plan-file-finalizer.md`
     - `agent-toolkit/agents/plan-codex-delegate.md`
     - `agent-toolkit/skills/plan-mode/references/codex-review.md`
     - `agent-toolkit/skills/agent-standards/references/claude-hooks.md`
@@ -2498,7 +2498,7 @@ def _check_plan_file_retroactive_scan_recorded(
     )
 
 
-# --- `plan-file-creator`の整合性チェック（2サブエージェント/codexレビュー）完了チェック ---
+# --- `plan-file-finalizer`の整合性チェック（2サブエージェント/codexレビュー）完了チェック ---
 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
@@ -2507,27 +2507,26 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
 
-# Agent/Taskツールの`subagent_type`引数として許容するplan-file-creator識別子。
-_PLAN_FILE_CREATOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-file-creator", "plan-file-creator"})
+# Agent/Taskツールの`subagent_type`引数として許容するplan-file-finalizer識別子。
+_PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-file-finalizer", "plan-file-finalizer"})
 
-# `model`引数指定を一律禁止する対象。`plan-file-creator`・`plan-impl-executor`はいずれもSonnet固定の
+# `model`引数指定を一律禁止する対象。`plan-file-finalizer`・`plan-impl-executor`はいずれもSonnet固定の
 # 窓口として動き実作業をcodexへ移譲する設計であり、呼び出し側が難易度等を理由に`model`引数で
 # 上書きする正当な運用が無い（ユーザー確認済み）。他のfrontmatter`model:`定義エージェント
 # （`plan-implementer`・`plan-reviewer`・`plan-codex-delegate`）は対象外とする。
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
-    _PLAN_FILE_CREATOR_SUBAGENT_TYPES | _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
+    _PLAN_FILE_FINALIZER_SUBAGENT_TYPES | _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES
 )
 
-# `agent-toolkit/skills/plan-mode/references/plan-file-creator-prompt-template.md`が定める必須見出し。
+# `agent-toolkit/skills/plan-mode/references/plan-file-finalizer-prompt-template.md`が定める必須見出し。
 # 改訂時は当該ファイルと同期する。
-_PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS: tuple[str, ...] = (
+_PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS: tuple[str, ...] = (
     "計画ファイルパス",
     "permission_mode",
-    "合意済み事項",
-    "照合結果",
+    "作業ディレクトリ",
 )
 
-# `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
+# `plan-file-finalizer`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
 # ゲート判定は以下の条件で通過する:
@@ -2697,7 +2696,7 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
 
 
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
-    """`plan-file-creator`・`plan-impl-executor`への`model`引数指定を一律ブロックする。
+    """`plan-file-finalizer`・`plan-impl-executor`への`model`引数指定を一律ブロックする。
 
     両者はSonnet固定の窓口として動き実作業をcodexへ移譲する設計であり、`model`引数での
     上書きを許容する運用が無い。`plan-implementer`は`execution-process.md`「実装委譲…」節が
@@ -2749,32 +2748,75 @@ def _extract_prompt_h2_sections(prompt: str) -> dict[str, str]:
     return {heading: "\n".join(body) for heading, body in sections.items()}
 
 
-def _check_plan_file_creator_prompt_completeness(subagent_type: str, tool_input: dict) -> bool:
-    """`plan-file-creator`起動プロンプトが必須見出し4点を欠く、または見出し直下が空の場合ブロックする。
+_ABS_MD_PATH_IN_BACKTICK_RE = re.compile(r"`([^`\n]+\.md)`")
+_ABS_MD_PATH_IN_TEXT_RE = re.compile(r"[^\s`]+\.md")
 
-    要件が固まっていない状態での起動（曖昧な起動プロンプト）を機械的に差し戻すゲートである。
-    見出しの実在と非空のみを検査し、内容の妥当性までは検査しない。`prompt`が欠落または非文字列の場合、
-    必須見出し全件が不在であるとみなしてブロックする（Agent/Taskツールのスキーマ上`prompt`は必須のため
-    通常は生じない状態だが、安全側の設計とする）。
+
+def _extract_plan_file_path_from_section(section_text: str) -> str | None:
+    """`plan-file-finalizer`の`## 計画ファイルパス`直下本文からMarkdownパスを抽出する。
+
+    `_extract_referenced_plan_file_path`と異なり`.claude/plans/`配下への制約を持たない
+    （plan modeサンドボックスパス・テストの一時パスも対象に含めるため）。
+    バッククォート囲み表記を優先し、一意に定まらない場合（0件または2件以上）は`None`を返す。
     """
-    if subagent_type not in _PLAN_FILE_CREATOR_SUBAGENT_TYPES:
+    matches = {m.group(1) for m in _ABS_MD_PATH_IN_BACKTICK_RE.finditer(section_text)}
+    if not matches:
+        matches = {m.group(0) for m in _ABS_MD_PATH_IN_TEXT_RE.finditer(section_text)}
+    if len(matches) != 1:
+        return None
+    return next(iter(matches))
+
+
+def _check_plan_file_finalizer_prompt_completeness(subagent_type: str, tool_input: dict) -> bool:
+    """`plan-file-finalizer`起動プロンプトの必須見出し3点の欠落・空欄・計画ファイル不在をブロックする。
+
+    要件が固まっていない状態での起動（曖昧な起動プロンプト、または初版が存在しない状態での
+    委譲）を機械的に差し戻すゲートである。見出しの実在・非空検査に加え、`## 計画ファイルパス`が
+    指すパスの実在検査を行う。パスを一意に抽出できない場合は当該検査をブロックしない
+    （安全側の設計。必須見出しの非空検査で担保される範囲に留める）。パスを抽出できた場合は
+    正規化失敗を含め非実在として扱い、厳格にブロックする。`prompt`が欠落または
+    非文字列の場合、必須見出し全件が不在であるとみなしてブロックする。
+    """
+    if subagent_type not in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
         return False
     prompt = tool_input.get("prompt")
     if isinstance(prompt, str):
         sections = _extract_prompt_h2_sections(prompt)
-        missing = [heading for heading in _PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS if not sections.get(heading, "").strip()]
+        missing = [
+            heading for heading in _PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS if not sections.get(heading, "").strip()
+        ]
     else:
-        missing = list(_PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS)
-    if not missing:
+        sections = {}
+        missing = list(_PLAN_FILE_FINALIZER_REQUIRED_PROMPT_HEADINGS)
+    if missing:
+        print(
+            _llm_notice(
+                f"blocked: `plan-file-finalizer` launch prompt is missing required section(s): {missing}.\n"
+                "Required headings (verbatim, each with non-empty content):"
+                " `## 計画ファイルパス`, `## permission_mode`, `## 作業ディレクトリ`.\n"
+                "Why this gate exists: launching plan-file-finalizer before the plan draft is"
+                " settled produces rework.\n"
+                "See agent-toolkit/skills/plan-mode/references/plan-file-finalizer-prompt-template.md.",
+                tag="block",
+            ),
+            file=sys.stderr,
+        )
+        return True
+    referenced_path = _extract_plan_file_path_from_section(sections.get("計画ファイルパス", ""))
+    if referenced_path is None:
+        return False
+    normalized = _normalize_plan_file_path(referenced_path)
+    if normalized is not None and normalized.is_file():
         return False
     print(
         _llm_notice(
-            f"blocked: `plan-file-creator` launch prompt is missing required section(s): {missing}.\n"
-            "Required headings (verbatim, each with non-empty content):"
-            " `## 計画ファイルパス`, `## permission_mode`, `## 合意済み事項`, `## 照合結果`.\n"
-            "Why this gate exists: launching plan-file-creator before requirements are settled"
-            " produces a plan draft that has to be redone.\n"
-            "See agent-toolkit/skills/plan-mode/references/plan-file-creator-prompt-template.md.",
+            f"blocked: `plan-file-finalizer` launch prompt's `## 計画ファイルパス` section references"
+            f" `{referenced_path}`, but it does not resolve to an existing file"
+            f" (resolved: `{normalized}`).\n"
+            "Why this gate exists: plan-file-finalizer no longer drafts the plan; the caller must"
+            " write the initial draft before delegating.\n"
+            "Normal fix: write the plan draft to the referenced path (or fix a typo in the path)"
+            " before invoking plan-file-finalizer.",
             tag="block",
         ),
         file=sys.stderr,
@@ -2783,7 +2825,7 @@ def _check_plan_file_creator_prompt_completeness(subagent_type: str, tool_input:
 
 
 def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dict | None = None) -> bool:
-    """ExitPlanModeまたは`plan-impl-executor`起動時、`plan-file-creator`の整合性チェック完了未達をブロックする。
+    """ExitPlanModeまたは`plan-impl-executor`起動時、`plan-file-finalizer`の整合性チェック完了未達をブロックする。
 
     `plan-impl-executor`起動時は`_check_process7_completion_for_plan_impl_executor_agent`
     経由で呼ばれる。
@@ -2792,7 +2834,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
 
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が真
-      （plan-modeスキルを使わない文脈では`plan-file-creator`の整合性チェックの完遂義務が生じないため対象外）
+      （plan-modeスキルを使わない文脈では`plan-file-finalizer`の整合性チェックの完遂義務が生じないため対象外）
     - `_PROCESS7_COMPLETION_FLAGS`のいずれかが偽
 
     未起動フラグは1回のブロックメッセージへ全件列挙する。
@@ -2814,15 +2856,15 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
     print(
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
-            " before completing the plan-file-creator integrity check"
+            " before completing the plan-file-finalizer integrity check"
             " (codex review, or plan-reviewer fallback when codex is unavailable)."
             f" Missing flags: {missing}.\n"
             "Stage 2 bypass: if Codex usage-limit was reached, this gate also passes"
             " when `codex_usage_limit_observed` and `plan_reviewer_invoked` are both true.\n"
-            "Why this gate exists: it forces `plan-file-creator` to actually run"
+            "Why this gate exists: it forces `plan-file-finalizer` to actually run"
             " the codex review (or plan-reviewer fallback when codex is unavailable)"
             " before implementation starts.\n"
-            "Normal fix: invoke `agent-toolkit:plan-file-creator` for the current"
+            "Normal fix: invoke `agent-toolkit:plan-file-finalizer` for the current"
             " plan; its review steps set the missing flags as a side effect.\n"
             "plan-impl feedback processing: follow"
             " agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md"
@@ -2833,7 +2875,7 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
             " different, already-existing plan file path than the session's"
             " `current_plan_file_path` is not blocked; only a launch referencing"
             " the current plan path is.\n"
-            "See agent-toolkit/agents/plan-file-creator.md"
+            "See agent-toolkit/agents/plan-file-finalizer.md"
             " '整合性チェック・codexレビュー' section.",
             tag="block",
         ),
@@ -2876,18 +2918,18 @@ def _normalize_plan_file_path(path_text: str) -> pathlib.Path | None:
 
 
 def _check_process7_completion_for_plan_impl_executor_agent(session_id: str, tool_input: dict) -> bool:
-    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ`plan-file-creator`の整合性チェック完了未達をブロックする。
+    """`plan-impl-executor`系Agent/Task起動時、現行計画パスへの起動時のみ`plan-file-finalizer`の整合性チェック完了未達をブロックする。
 
     起動プロンプトの`prompt`欄から計画ファイルパスを抽出し、正規化のうえセッション状態の
     `current_plan_file_path`と一致する場合のみ`_check_process7_completion_before_exit_plan_mode`を適用する。
     別セッションでplan-modeにより完遂済みの計画（例:`plan-and-add-feedback`投入の計画実装型フィードバック）を
-    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの`plan-file-creator`の整合性チェック未達を理由にブロックしない。
+    指す起動は、当該計画ファイルが実在する場合に限り、当該セッションの`plan-file-finalizer`の整合性チェック未達を理由にブロックしない。
     `current_plan_file_path`が未記録・非文字列・空文字列の場合は「現行パスと不一致」として扱い、
     参照先の実在確認のみでバイパスの成立可否を判定する
-    （`plan-file-creator`を起動していないセッションから、実在する別計画への起動を妨げないため）。
+    （`plan-file-finalizer`を起動していないセッションから、実在する別計画への起動を妨げないため）。
     `prompt`が文字列でない場合、パスが一意に抽出できない場合、参照パスの正規化に失敗した場合、
     または不一致の参照パスが実在しない場合は安全側として従来どおり判定する
-    （実在確認が無いと、任意の非実在パスを記述するだけで`plan-file-creator`の整合性チェック未達を回避できてしまうため）。
+    （実在確認が無いと、任意の非実在パスを記述するだけで`plan-file-finalizer`の整合性チェック未達を回避できてしまうため）。
     """
     if not session_id:
         return False
@@ -2930,7 +2972,7 @@ def _record_verified_plan_path(session_id: str, plan_file_path: str) -> None:
 
 
 def _reset_process7_completion_flags(session_id: str) -> None:
-    """`agent-toolkit:plan-mode`スキル起動を検出した際に`plan-file-creator`の整合性チェック完了フラグをリセットする。
+    """`agent-toolkit:plan-mode`スキル起動を検出した際に`plan-file-finalizer`の整合性チェック完了フラグをリセットする。
 
     新計画への着手の合図として`_PROCESS7_COMPLETION_FLAGS`・`plan_reviewer_invoked`・
     `plan_codex_delegate_invoked`・`plan_codex_delegate_blocked`を偽へ戻す。
