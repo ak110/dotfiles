@@ -380,3 +380,104 @@ class TestPlanCodexDelegatePurposeRegistration:
             )
         purposes = _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id")
         assert purposes == {"delegate-a": "用途: 計画レビュー", "delegate-b": "用途: 実装差分レビュー"}
+
+    def test_codex_unavailable_line_sets_flag(self, tmp_path: pathlib.Path):
+        """完了報告最終行がcodex_unavailable: usage-limitの場合、codex_usage_limit_observedを真化する。"""
+        sid = "codex-unavail-usage-limit"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-codex-delegate"},
+                "tool_response": {"content": [{"type": "text", "text": "status: completed\ncodex_unavailable: usage-limit"}]},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_usage_limit_observed") is True
+
+    def test_codex_unavailable_unknown_value_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """最終行の値が未知の場合はcodex_usage_limit_observedを真化しない（fail-safe）。"""
+        sid = "codex-unavail-unknown-value"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-codex-delegate"},
+                "tool_response": {"content": [{"type": "text", "text": "status: completed\ncodex_unavailable: unknown-error"}]},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_usage_limit_observed") is not True
+
+    def test_codex_unavailable_line_missing_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """codex_unavailable行が無い場合はcodex_usage_limit_observedを真化しない。"""
+        sid = "codex-unavail-line-missing"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-codex-delegate"},
+                "tool_response": {"content": [{"type": "text", "text": "status: completed\nthread_id: xyz"}]},
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_usage_limit_observed") is not True
+
+    def test_codex_unavailable_non_final_line_does_not_set_flag(self, tmp_path: pathlib.Path):
+        """codex_unavailable: usage-limitが最終行でない（指摘引用等の途中出現）場合は真化しない。
+
+        `用途: 計画レビュー`の指摘本文が当該文字列を引用しても誤検出しないことを検証する。
+        """
+        sid = "codex-unavail-non-final-line"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-codex-delegate"},
+                "tool_response": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "codex_unavailable: usage-limitという行を検出したら真化する設計です。\nstatus: completed",
+                        }
+                    ]
+                },
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_usage_limit_observed") is not True
+
+    def test_codex_unavailable_via_plan_file_creator_propagates(self, tmp_path: pathlib.Path):
+        """plan-file-creatorが配下のplan-codex-delegateから転記したcodex_unavailable行も検出する。
+
+        利用限度到達によるフォールバック契約では、未完遂の`codex-review`は記録せず
+        `plan-reviewer`のみを記録する（`plan-file-creator.md`「invoked_subagentsは...」節）。
+        本テストはこの契約に沿った入力で、段階2フォールバック完遂時にゲートが要求する
+        両フラグ（`codex_usage_limit_observed`・`plan_reviewer_invoked`）が
+        揃って真化することを検証する。
+        """
+        sid = "codex-unavail-via-plan-file-creator"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Task",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-creator"},
+                "tool_response": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "status: completed\ninvoked_subagents: plan-reviewer\ncodex_unavailable: usage-limit",
+                        }
+                    ]
+                },
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("codex_usage_limit_observed") is True
+        assert state.get("plan_reviewer_invoked") is True
+        assert state.get("codex_review_invoked") is not True

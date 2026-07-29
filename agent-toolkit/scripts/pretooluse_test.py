@@ -3793,14 +3793,27 @@ class TestProcess7CompletionCheck:
     """ExitPlanMode / `plan-impl-executor`起動時のplan-file-creatorの整合性チェック完了未達ブロック。"""
 
     @pytest.mark.parametrize(
-        ("missing_flags", "expect_block"),
+        ("missing_flags", "usage_limit_observed", "expect_block"),
         [
-            pytest.param(frozenset(), False, id="all-required-flags-set"),
-            *(pytest.param(frozenset({flag}), True, id=f"missing-{flag}") for flag in _PROCESS7_FLAGS),
+            pytest.param(frozenset(), False, False, id="all-required-flags-set"),
+            *(pytest.param(frozenset({flag}), False, True, id=f"missing-{flag}") for flag in _PROCESS7_FLAGS),
             pytest.param(
                 frozenset({"plan_reviewer_invoked"}),
                 False,
+                False,
                 id="non-required-plan-reviewer-flag-missing",
+            ),
+            pytest.param(
+                frozenset({"codex_review_invoked"}),
+                True,
+                False,
+                id="usage-limit-observed-with-reviewer-passes",
+            ),
+            pytest.param(
+                frozenset({"codex_review_invoked", "plan_reviewer_invoked"}),
+                True,
+                True,
+                id="usage-limit-observed-without-reviewer-blocks",
             ),
         ],
     )
@@ -3808,13 +3821,15 @@ class TestProcess7CompletionCheck:
         self,
         tmp_path: pathlib.Path,
         missing_flags: frozenset[str],
+        usage_limit_observed: bool,
         expect_block: bool,
     ) -> None:
-        """必須フラグと対象外フラグの欠落判定を行列で検証する。"""
-        sid = "process7-flags-" + ("-".join(sorted(missing_flags)) or "all-set")
+        """必須フラグ・段階2成立フラグ・対象外フラグの組み合わせを行列で検証する。"""
+        sid = "process7-flags-" + ("-".join(sorted(missing_flags)) or "all-set") + f"-ulo={usage_limit_observed}"
         state = {
             "plan_mode_skill_invoked": True,
             "plan_reviewer_invoked": "plan_reviewer_invoked" not in missing_flags,
+            "codex_usage_limit_observed": usage_limit_observed,
         }
         state.update({flag: flag not in missing_flags for flag in _PROCESS7_FLAGS})
         _write_session_state(tmp_path, sid, state)
@@ -4693,6 +4708,27 @@ class TestPlanModeFlagReset:
         assert state.get("plan_codex_delegate_invoked", False) is False
         assert state.get("plan_codex_delegate_blocked", False) is False
         assert "recorded_codex_thread_id" not in state
+
+    def test_codex_usage_limit_observed_not_reset(self, tmp_path: pathlib.Path) -> None:
+        """新計画着手時もcodex_usage_limit_observedはリセット対象に含まれず真のまま残る。"""
+        sid = "test-codex-usage-limit-not-reset"
+        state = {
+            "plan_mode_skill_invoked": True,
+            "codex_usage_limit_observed": True,
+        }
+        _write_session_state(tmp_path, sid, state)
+        result = _run(
+            {
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:plan-mode"},
+                "session_id": sid,
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 0
+        state_after = _read_session_state(tmp_path, sid)
+        assert state_after.get("codex_usage_limit_observed") is True
 
 
 class TestCheckPlanFileH2SectionOrder:

@@ -2530,9 +2530,12 @@ _PLAN_FILE_CREATOR_REQUIRED_PROMPT_HEADINGS: tuple[str, ...] = (
 # `plan-file-creator`の整合性チェックの完遂を示すセッション状態フラグ。
 # 各フラグはposttooluse.pyが対応するAgent/Skill起動を観測して記録する
 # （`agent-toolkit:agent-standards`スキル「セッション状態フラグ」節が全フラグ一覧のSSOT）。
-# `plan_reviewer_invoked`はcodex利用不可時の代替起動記録用に残るが、本ゲートのタプルには含めない
-# （hookは「MCP・CLI双方利用不可」という意味論的状態を機械判定できないため、
-# フォールバック要否の判断は`plan-file-creator`・`codex-review.md`側の自己統治に委ねる）。
+# ゲート判定は以下の条件で通過する:
+# - `codex_review_invoked`が真
+# - または、`codex_review_invoked`が偽でも、`codex_usage_limit_observed`と
+#   `plan_reviewer_invoked`がともに真（段階2成立を機械判定できる唯一の記録）
+# 上記以外はブロック。`_PROCESS7_COMPLETION_FLAGS`タプル自体は
+# `("codex_review_invoked",)`のまま変更しない（条件分岐は判定関数側に実装）。
 _PROCESS7_COMPLETION_FLAGS: tuple[str, ...] = ("codex_review_invoked",)
 
 
@@ -2804,12 +2807,18 @@ def _check_process7_completion_before_exit_plan_mode(session_id: str, state: dic
     missing = [flag for flag in _PROCESS7_COMPLETION_FLAGS if not state.get(flag, False)]
     if not missing:
         return False
+    # 段階2成立（Codex利用限度の到達を観測し、plan-reviewerフォールバックが完遂）を
+    # 機械判定できる記録が存在し、かつplan_reviewer_invokedが真である場合も通過させる。
+    if state.get("codex_usage_limit_observed", False) and state.get("plan_reviewer_invoked", False):
+        return False
     print(
         _llm_notice(
             "blocked: attempting to exit plan mode or invoke `plan-impl-executor`"
             " before completing the plan-file-creator integrity check"
             " (codex review, or plan-reviewer fallback when codex is unavailable)."
             f" Missing flags: {missing}.\n"
+            "Stage 2 bypass: if Codex usage-limit was reached, this gate also passes"
+            " when `codex_usage_limit_observed` and `plan_reviewer_invoked` are both true.\n"
             "Why this gate exists: it forces `plan-file-creator` to actually run"
             " the codex review (or plan-reviewer fallback when codex is unavailable)"
             " before implementation starts.\n"
@@ -2934,6 +2943,10 @@ def _reset_process7_completion_flags(session_id: str) -> None:
 
     def _reset(current: dict) -> dict | None:
         changed = False
+        # codex_usage_limit_observedはリセット対象に含めない。
+        # 外部サービスの利用上限は復旧まで日単位で継続するため、
+        # 新計画着手のたびにリセットすると失敗すると分かっている委譲が再起動され、
+        # 本フィードバックの主旨（代替フォールバックへ自動移行）が達成されない。
         for flag in (
             *_PROCESS7_COMPLETION_FLAGS,
             "plan_reviewer_invoked",

@@ -28,11 +28,16 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
   ツール一覧に見当たらない場合も`ToolSearch`（`select:mcp__codex__codex`）で取得を試みる。
   `ToolSearch`経由でも解決できない場合に限り段階2へ移る。
   `mcp__codex__codex-reply`（継続呼び出し用ツール）の未解決だけでは段階2へ移らない
-  （継続呼び出しの解決失敗時は初回呼び出しの形へ切り替えて再試行する）
+  （継続呼び出しの解決失敗時は初回呼び出しの形へ切り替えて再試行する）。
 - 段階2（claudeフォールバック）: 段階1の名前解決がいずれの経路でも成立しない場合、または
   クレジット上限・利用限度への到達を示すエラー応答を受領した場合。
   この場合の代替は計画レビュー`plan-reviewer`とする。
-  タイムアウト・一時的な呼び出し失敗は段階2に該当せず、`plan-codex-delegate`側で分割再試行する
+  タイムアウト・一時的な呼び出し失敗は段階2に該当せず、`plan-codex-delegate`側で分割再試行する。
+
+  利用限度到達の観測は`plan-codex-delegate`の完了報告へ`codex_unavailable: usage-limit`行として
+  記録される。親セッションのPostToolUseがセッション状態フラグ`codex_usage_limit_observed`へ真化する。
+  `codex_usage_limit_observed`と`plan_reviewer_invoked`がともに真の場合、`pretooluse.py`のゲートが
+  実装工程（ExitPlanMode・`plan-impl-executor`）への進行を許可する。
 
 `plan-codex-delegate`起動がauto mode下でブロックされた場合（段階1は技術的に利用可能）は
 段階2に該当せず、「plan-file-creatorからの起動」節の`needs_escalation`経路に従う。

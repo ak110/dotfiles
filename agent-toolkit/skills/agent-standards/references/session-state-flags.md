@@ -46,6 +46,21 @@
   記録され起動元（親）へは反映されない。
   親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
   対応するフラグを親自身のセッション状態へ設定する経路で行う
+- codex_usage_limit_observed:
+  記録元: `posttooluse.py`のAgent/Task完了ハンドラが、
+  `plan-codex-delegate`系・`plan-file-creator`系の完了報告本文の最終行のみを対象に
+  `^codex_unavailable:\s*(.*)$`（`re.MULTILINE`なし、`match`）で抽出し、
+  値が`"usage-limit"`と一致する場合に真化する。
+
+  寿命: セッション終了まで。`pretooluse.py`の`_reset_process7_completion_flags`が
+  新計画着手時（`agent-toolkit:plan-mode`起動時）に行うリセット対象へ含めない。
+  理由は外部サービスの利用上限が復旧まで日単位で継続するため、
+  新計画着手のたびにリセットすると失敗すると分かっている委譲が再起動され、
+  本フラグの主旨（自動フォールバック判定）が達成されないため。
+
+  用途: `pretooluse.py`の`_check_process7_completion_before_exit_plan_mode`が、
+  段階2成立時の通過条件判定に用いる。`codex_review_invoked`が偽でも、
+  本フラグと`plan_reviewer_invoked`がともに真なら通過を許可する
 - `plan_impl_executor_active_subagent_sessions`: PostToolUse(Agent/Task)が`plan-impl-executor`系起動時に記録する。
   サブセッションID（`agentId`）をキーとする辞書形式で保持する。
   SubagentStop側の`_inspect_plan_impl_executor_report_format`は、`transcript_path`のファイル名

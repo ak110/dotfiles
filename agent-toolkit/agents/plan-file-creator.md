@@ -251,3 +251,33 @@ retrospective:
 （`agent-doc-validator`は`plan-codex-delegate`・`plan-reviewer`の担当観点へ統合済みのため識別子として
 存在しない）。`codex-draft`は`plan-codex-delegate`（用途: 計画作成）を起動した場合に記録する。
 `codex-review`は同エージェントを`用途: 計画レビュー`で起動した場合に記録し、両者は独立して併記できる。
+利用限度到達により後述のフォールバックが発生した場合、当該`plan-codex-delegate`
+（用途: 計画レビュー）の起動は完遂していないため`codex-review`として記録しない
+（`plan-reviewer`のみを記録する）。`codex-review`は起動したcodexレビューが完遂した場合に限る
+（親セッションの`codex_review_invoked`が真化すると、段階2フォールバックを経ずに
+ゲートを通過できてしまうため）。
+
+配下で起動した`plan-codex-delegate`（用途: 計画作成・計画レビューいずれも対象）の完了報告の
+最終行が`codex_unavailable: usage-limit`と一致する場合を扱う（完了報告本文中の他行・引用箇所への
+出現は対象としない）。この場合、自身が`plan-reviewer`へ
+フォールバックする（`invoked_subagents: plan-reviewer`として記録する）。その場でレビューを完遂したうえで、
+自身の完了報告の最終行として同じ行を転記する。この転記は親セッションのPostToolUseが
+段階2成立のうち利用限度到達のケースを機械判定するために必須である。
+`codex_unavailable:`行は完了報告本文の最終行に置く
+（末尾以外に出現する記述はPostToolUse側が誤検出防止のため無視する設計のため）。
+
+完了報告フォーマット内での記載位置例（本行を最終行とする）:
+
+```text
+status: completed
+plan_file_path: ...
+file_check: ...
+invoked_subagents: plan-reviewer
+review_summary: ...
+codex_unavailable: usage-limit
+```
+
+この転記により、親セッションのPostToolUseが`codex_usage_limit_observed`を真化し、
+`pretooluse.py`のゲート判定が`codex_usage_limit_observed`と`plan_reviewer_invoked`の
+両方の真化をもって通過条件を満たす。`plan-file-creator`自身は`plan-impl-executor`の
+起動可否を判定しない（起動可否は呼び出し元セッションの`pretooluse.py`が判定する）。

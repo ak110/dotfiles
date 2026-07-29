@@ -70,8 +70,9 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 
 計画実装型の大半は`atk mq add`投入時点で機械分類済みのため、ここでLLM分類が必要になるのは
 主に通常型と、計画ファイルがまだ存在しない段階で投入された計画実装型候補である。
-一覧で`unclassified`と表示された項目（`frontmatter-broken`は含まない）がある場合は、
-Agentツールで`Explore`を`model: sonnet`のforegroundとして1回起動する。
+一覧に未分類項目がある場合は、Agentツールで書き込み可能な汎用エージェント`claude`を
+`model`指定なしのforegroundとして1回起動する。分類結果JSONの形式は
+references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照する。
 `frontmatter-broken`な項目は選抜・分類の対象から除外され、修復TBD投入は
 `atk mq schedule`が機械的に行うため、LLM分類委譲へは含めない。
 委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、

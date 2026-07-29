@@ -239,6 +239,13 @@ _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
 # `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
 _INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
 
+# `codex_unavailable:`行を完了報告本文の最終行としてのみ抽出する正規表現。
+# `re.MULTILINE`を付けないため`$`は文字列末尾（`\Z`相当）にのみ一致する。
+# `用途: 計画レビュー`の指摘本文が同一文字列を引用しても、最終行と完全一致しない限り
+# 誤検出しない。値が"usage-limit"の場合に限りセッション状態フラグ
+# codex_usage_limit_observedを真化する。
+_CODEX_UNAVAILABLE_LINE_RE = re.compile(r"^codex_unavailable:\s*(.*)$")
+
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
 # 「Xした状態でYしない」形式は「Xでなければ`Y`してよい」と誤読され得るため、
 # 全称否定形（「いかなる理由があっても`Y`しない」）または肯定的完遂義務への
@@ -602,6 +609,26 @@ def main() -> int:
                         return state if changed else None
 
                     update_state(session_id, _set_plan_file_creator_invoked_flags)
+        # plan-codex-delegate・plan-file-creator両系の完了報告から
+        # codex_unavailable: usage-limitを検出し、codex_usage_limit_observedを真化する。
+        if isinstance(subagent_type, str) and subagent_type in (
+            *_PLAN_CODEX_DELEGATE_SUBAGENT_TYPES,
+            *_PLAN_FILE_CREATOR_SUBAGENT_TYPES,
+        ):
+            # completion_textの最終行のみを対象に一致を試みる（誤検出防止のためmatch、非search）。
+            last_line = completion_text.rstrip("\n").rsplit("\n", maxsplit=1)[-1]
+            codex_unavail_match = _CODEX_UNAVAILABLE_LINE_RE.match(last_line)
+            if codex_unavail_match:
+                value = codex_unavail_match.group(1).strip()
+                if value == "usage-limit":
+
+                    def _set_codex_usage_limit_observed(state: dict) -> dict | None:
+                        if state.get("codex_usage_limit_observed", False):
+                            return None
+                        state["codex_usage_limit_observed"] = True
+                        return state
+
+                    update_state(session_id, _set_codex_usage_limit_observed)
         return 0
 
     # mcp__codex__codex / mcp__codex__codex-reply: codex-review起動検出
