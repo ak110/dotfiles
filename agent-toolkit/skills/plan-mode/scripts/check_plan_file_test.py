@@ -147,6 +147,139 @@ def test_unknown_skill_name_without_prefix_mismatch_candidate(
     assert "接頭辞違いの候補も無し" in captured.err
 
 
+def test_agent_tool_subagent_name_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Agentツールで`構文のサブエージェント名は実在すれば警告しない。"""
+    body = "## 実行方法\n\n- Agentツールで`agent-toolkit:plan-impl-executor`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "の疑い" not in captured.err
+
+
+def test_agent_tool_unknown_subagent_name_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Agentツールで`構文で実在しない名前はサブエージェント名として警告する。"""
+    body = "## 実行方法\n\n- Agentツールで`agent-toolkit:no-such-agent`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないサブエージェント名の疑い" in captured.err
+    assert "no-such-agent" in captured.err
+
+
+def test_agent_tool_with_skill_name_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Agentツールで`構文にスキル名を書いた取り違えは警告する。"""
+    body = "## 実行方法\n\n- Agentツールで`agent-toolkit:coding-standards`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないサブエージェント名の疑い" in captured.err
+    assert "coding-standards" in captured.err
+
+
+def test_local_subagent_name_silent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`.claude/agents/*.md`のローカル定義はサブエージェント候補として受理する。"""
+    local_agents = tmp_path / ".claude" / "agents"
+    local_agents.mkdir(parents=True)
+    (local_agents / "local-reviewer.md").write_text("# local-reviewer\n", encoding="utf-8")
+    body = "## 実行方法\n\n- Agentツールで`local-reviewer`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないサブエージェント名の疑い" not in captured.err
+
+
+def test_skill_tool_with_subagent_name_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Skillツールで`構文にサブエージェント名を書いた取り違えは警告する。"""
+    body = "## 実行方法\n\n- Skillツールで`agent-toolkit:plan-impl-executor`を呼び出す\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないスキル名の疑い" in captured.err
+
+
+def test_slash_prefix_with_subagent_name_warns(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/`接頭辞にサブエージェント名を書いた取り違えはスキル名として警告する。"""
+    body = "## 実行方法\n\n- `/agent-toolkit:plan-reviewer`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないスキル名の疑い" in captured.err
+    assert "plan-reviewer" in captured.err
+
+
+def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同名を正しい構文と誤った構文の双方で使った場合、誤った側だけを独立して警告する。
+
+    名前だけをキーにする実装では一方の種別が失われ、この取り違えを検出できない。
+    """
+    body = (
+        "## 実行方法\n\n"
+        "- Skillツールで`agent-toolkit:plan-reviewer`を呼び出す\n"
+        "- Agentツールで`agent-toolkit:plan-reviewer`を起動する\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    # `agent-toolkit:plan-reviewer`はサブエージェント定義であり、スキル定義ではない。
+    # `Agentツールで`側は正しい呼び出しであり警告しない。`Skillツールで`側は
+    # 取り違えであり、スキル名として実在しないことを警告する。
+    assert "実在しないスキル名の疑い: `agent-toolkit:plan-reviewer`" in captured.err
+    assert "実在しないサブエージェント名の疑い" not in captured.err
+
+
+def test_bare_agent_toolkit_reference_accepts_subagent(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """構文を伴わない`agent-toolkit:`参照はスキル・サブエージェントいずれかに実在すれば警告しない。"""
+    body = "## 実行方法\n\n- レビューは`agent-toolkit:plan-reviewer`の担当とする\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "の疑い" not in captured.err
+
+
+def test_sample_plan_has_no_invocation_name_warning(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """配布している計画ファイルの記述例が呼び出し名の実在確認で警告しない。
+
+    記述例は架空プロジェクトを題材とするため「実在確認できないパス」等の
+    他の警告は発生しうる。本テストの検証対象は呼び出し名の実在確認に限定する。
+    """
+    sample = pathlib.Path(__file__).resolve().parents[1] / "references" / "sample.md"
+    assert sample.is_file()
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(sample)])
+    assert main() == 0
+    captured = capsys.readouterr()
+    assert "実在しないスキル名の疑い" not in captured.err
+    assert "実在しないサブエージェント名の疑い" not in captured.err
+    assert "実在しないスキル・サブエージェント名の疑い" not in captured.err
+
+
 def test_deletion_marker_without_deletion_word_warns(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

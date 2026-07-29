@@ -13,7 +13,9 @@ r"""計画ファイルの軽量機械チェック。
   内側に現れていないか、閉じフェンスの検出位置が意図した位置と一致しない疑いが無いか）
 - `## 実行方法`節に振り返り・セッション終了などのセッション運用工程が記載されていないか
   （計画ファイルのスコープは当該計画の実装・検証・コミット・レビューに限定する）
-- `## 実行方法`節がスキル呼び出し構文で参照するスキル名が実在するか
+- `## 実行方法`節が呼び出し構文で参照する名前が実在するか
+  （`Skillツールで`・`/`接頭辞はスキル定義、`Agentツールで`はサブエージェント定義、
+  接頭辞`agent-toolkit:`の裸参照は双方のいずれかと照合する）
 - `### 対象ファイル一覧`で`（廃止・削除）`と注記された項目の対応するH3節`text`コードブロック内に、
   削除を指示する語が現れているか
 - `#### 廃止・改名対象一覧`H4節が列挙する識別子（ファイルパス・関数名・クラス名・定数名）が
@@ -44,13 +46,26 @@ _H2_RE = re.compile(r"^## (.+)$")
 _HEADING_RE = re.compile(r"^#{2,4}\s")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
 
-# スキル呼び出しを示す構文に限定してスキル名を抽出する3パターン。
+# 呼び出し構文に限定して名前を抽出する4パターン。
 # コマンド名・パス・関数名等の無関係なバッククォート識別子を誤検出しないため、
 # 接頭辞なしの任意識別子をスキル名と推定する方式は採らない。
+# 構文ごとに照合先（スキル定義／サブエージェント定義）が異なるため、抽出時に種別を保持する。
 _SKILL_TOOL_CALL_RE = re.compile(r"Skillツールで\s*`([^`]+)`")
-_AGENT_TOOLKIT_SKILL_REF_RE = re.compile(r"`(agent-toolkit:[^`]+)`")
+_AGENT_TOOL_CALL_RE = re.compile(r"Agentツールで\s*`([^`]+)`")
+_AGENT_TOOLKIT_REF_RE = re.compile(r"`(agent-toolkit:[^`]+)`")
 # 先頭が`/`かつ2文字目以降に`/`を含まない（絶対パスと区別するため）バッククォート識別子。
 _SLASH_COMMAND_RE = re.compile(r"`(/[^`/]+)`")
+
+# 照合先の種別。`any`は構文から種別を確定できない裸参照に対応する。
+_KIND_SKILL = "skill"
+_KIND_SUBAGENT = "subagent"
+_KIND_ANY = "any"
+
+_KIND_LABELS = {
+    _KIND_SKILL: "スキル名",
+    _KIND_SUBAGENT: "サブエージェント名",
+    _KIND_ANY: "スキル・サブエージェント名",
+}
 
 _DELETED_TARGET_MARKER = "廃止・削除"
 _DELETION_INSTRUCTION_WORDS = ("削除する", "廃止する")
@@ -213,13 +228,28 @@ def _check_execution_method_scope(text: str) -> list[str]:
     return warnings
 
 
-def _extract_skill_references(body: str) -> list[str]:
-    """本文からスキル呼び出しを示す構文に限定してスキル名を抽出する。"""
-    names: list[str] = []
-    names.extend(_SKILL_TOOL_CALL_RE.findall(body))
-    names.extend(_AGENT_TOOLKIT_SKILL_REF_RE.findall(body))
-    names.extend(raw[1:] for raw in _SLASH_COMMAND_RE.findall(body))
-    return names
+def _extract_invocation_references(body: str) -> list[tuple[str, str]]:
+    """本文から呼び出し構文に限定して名前と照合先種別の組を抽出する。
+
+    同一の名前が複数の構文で現れる場合、構文ごとに種別を独立して保持し検査する
+    （例: 正しい`Skillツールで`呼び出しと誤った`Agentツールで`呼び出しが同名で
+    併存する取り違えを見落とさないため。名前だけをキーにすると後着の種別で
+    上書き、または`setdefault`で先着以外が失われ、一方の誤りを検出できない）。
+    種別が確定する構文（`Skillツールで`・`Agentツールで`・`/`接頭辞）の抽出結果がある名前は、
+    種別未確定の裸参照（`agent-toolkit:`単独参照）側を除外する。
+    """
+    typed: set[tuple[str, str]] = set()
+    for name in _SKILL_TOOL_CALL_RE.findall(body):
+        typed.add((name, _KIND_SKILL))
+    for name in _AGENT_TOOL_CALL_RE.findall(body):
+        typed.add((name, _KIND_SUBAGENT))
+    for raw in _SLASH_COMMAND_RE.findall(body):
+        typed.add((raw[1:], _KIND_SKILL))
+    typed_names = {name for name, _ in typed}
+    for name in _AGENT_TOOLKIT_REF_RE.findall(body):
+        if name not in typed_names:
+            typed.add((name, _KIND_ANY))
+    return sorted(typed)
 
 
 def _available_skill_names() -> set[str]:
@@ -235,17 +265,41 @@ def _available_skill_names() -> set[str]:
     return names
 
 
-def _check_skill_names_exist(text: str) -> list[str]:
-    """`## 実行方法`節が参照するスキル名が利用可能なスキル一覧に実在するか検出する。"""
+def _available_subagent_names() -> set[str]:
+    """`agent-toolkit/agents/*.md`と`.claude/agents/*.md`から利用可能なサブエージェント名一覧を取得する。
+
+    スキル側の候補が配布物とリポジトリ固有の2系統を参照するのと対称に、
+    サブエージェント側もリポジトリ固有定義を候補へ含める。
+    """
+    names: set[str] = set()
+    agent_toolkit_root = pathlib.Path(__file__).resolve().parents[3]
+    for agent_md in agent_toolkit_root.glob("agents/*.md"):
+        names.add(f"agent-toolkit:{agent_md.stem}")
+    local_agents_root = pathlib.Path.cwd() / ".claude" / "agents"
+    if local_agents_root.is_dir():
+        for agent_md in local_agents_root.glob("*.md"):
+            names.add(agent_md.stem)
+    return names
+
+
+def _check_invocation_names_exist(text: str) -> list[str]:
+    """`## 実行方法`節が参照する名前が、呼び出し構文に対応する定義一覧に実在するか検出する。"""
     warnings: list[str] = []
-    available = _available_skill_names()
+    skills = _available_skill_names()
+    subagents = _available_subagent_names()
+    candidates_by_kind = {
+        _KIND_SKILL: skills,
+        _KIND_SUBAGENT: subagents,
+        _KIND_ANY: skills | subagents,
+    }
     for body in _iter_h2_sections(text, "実行方法"):
-        for name in dict.fromkeys(_extract_skill_references(body)):
+        for name, kind in _extract_invocation_references(body):
+            available = candidates_by_kind[kind]
             if name in available:
                 continue
             candidate = name.removeprefix("agent-toolkit:") if name.startswith("agent-toolkit:") else f"agent-toolkit:{name}"
             hint = f"（接頭辞違いの候補: `{candidate}`）" if candidate in available else "（接頭辞違いの候補も無し）"
-            warnings.append(f"実在しないスキル名の疑い: `{name}`{hint}")
+            warnings.append(f"実在しない{_KIND_LABELS[kind]}の疑い: `{name}`{hint}")
     return warnings
 
 
@@ -405,7 +459,7 @@ def main() -> int:
 
     warnings.extend(_check_fence_nesting(text))
     warnings.extend(_check_execution_method_scope(text))
-    warnings.extend(_check_skill_names_exist(text))
+    warnings.extend(_check_invocation_names_exist(text))
     warnings.extend(_check_deletion_instruction_present(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
     warnings.extend(_check_retroactive_scan_recorded(text))
