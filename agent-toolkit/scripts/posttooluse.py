@@ -239,6 +239,22 @@ _PLAN_FILE_CREATOR_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
 # `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
 _INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
 
+# 完了報告末尾の機械可読な記録行を判定する正規表現。
+# 汎用パターンにすると、引用された記録行の直後に別の`キー:`形式の散文が続く場合に
+# 誤って記録行ブロックへ含めてしまうため、既知のキーへ限定する。
+_RECORD_LINE_RE = re.compile(r"^(?:invoked_subagents|codex_unavailable):")
+
+
+def _extract_trailing_record_block(completion_text: str) -> str:
+    """完了報告末尾の連続した既知キーの記録行を返す。"""
+    record_lines: list[str] = []
+    for line in reversed(completion_text.rstrip("\n").split("\n")):
+        if not _RECORD_LINE_RE.match(line):
+            break
+        record_lines.append(line)
+    return "\n".join(reversed(record_lines))
+
+
 # `codex_unavailable:`行を完了報告本文の最終行としてのみ抽出する正規表現。
 # `re.MULTILINE`を付けないため`$`は文字列末尾（`\Z`相当）にのみ一致する。
 # `用途: 計画レビュー`の指摘本文が同一文字列を引用しても、最終行と完全一致しない限り
@@ -329,7 +345,6 @@ def _check_plan_format(file_path: str) -> list[str]:
 
     読み取り失敗時は空リストを返す。
     H2節順違反（必須H2欠落・順序違反・予期せぬH2）はPreToolUseのWriteブロックへ移管済み。
-    絶対行番号の直書き検査もPreToolUseへ移管済み。
     """
     try:
         content = pathlib.Path(file_path).read_text(encoding="utf-8")
@@ -590,7 +605,8 @@ def main() -> int:
         # このイベント自身のセッション（plan-file-creatorの呼び出し元）へ対応フラグを設定する。
         # `invoked_subagents:`行が無い、または既知識別子を含まない場合は無処理（fail-safe）。
         if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_CREATOR_SUBAGENT_TYPES:
-            invoked_match = _INVOKED_SUBAGENTS_LINE_RE.search(completion_text)
+            trailing_record_block = _extract_trailing_record_block(completion_text)
+            invoked_match = _INVOKED_SUBAGENTS_LINE_RE.search(trailing_record_block)
             if invoked_match:
                 identifiers = {token.strip() for token in invoked_match.group(1).split(",") if token.strip()}
                 invoked_flags = frozenset(

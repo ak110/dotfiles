@@ -4903,13 +4903,13 @@ class TestCheckPlanFileH2SectionOrder:
         assert result.stdout == ""
 
 
-def _absnum_state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path) -> dict[str, str]:
-    """絶対行番号検査テスト用の環境変数。事前lint検査はバイパスする。"""
+def _deferral_state_env(tmp_path: pathlib.Path, home_dir: pathlib.Path) -> dict[str, str]:
+    """先送り表現検査テスト用の環境変数。事前lint検査はバイパスする。"""
     return _plan_file_state_env(tmp_path, home_dir)
 
 
-def _absnum_prior_flags(state_dir: pathlib.Path, sid: str) -> None:
-    """絶対行番号検査の前提となるセッション状態フラグを書き込む。"""
+def _deferral_prior_flags(state_dir: pathlib.Path, sid: str) -> None:
+    """先送り表現検査の前提となるセッション状態フラグを書き込む。"""
     _write_session_state(
         state_dir,
         sid,
@@ -4920,8 +4920,8 @@ def _absnum_prior_flags(state_dir: pathlib.Path, sid: str) -> None:
     )
 
 
-# 絶対行番号検査用の正規計画テンプレート。`## 変更内容`配下に違反トークンを置けるよう余白を確保する。
-_ABSNUM_BASE_PLAN = (
+# 先送り表現検査用の正規計画テンプレート。`## 変更内容`配下に違反トークンを置けるよう余白を確保する。
+_DEFERRAL_BASE_PLAN = (
     "# タイトル\n\n"
     "## 変更履歴\n\nx\n\n"
     "## 背景\n\nx\n\n"
@@ -4966,9 +4966,9 @@ class TestCheckPlanFileNoDeferralExpression:
     `text`コードブロック内・HTMLコメント内・フロントマターは`iter_markdown_body_lines`が除外する。
     """
 
-    _state_env = staticmethod(_absnum_state_env)
+    _state_env = staticmethod(_deferral_state_env)
     _make_plan = staticmethod(_make_plan_file)
-    _prior_flags = staticmethod(_absnum_prior_flags)
+    _prior_flags = staticmethod(_deferral_prior_flags)
 
     @pytest.mark.parametrize(
         "phrase",
@@ -4987,7 +4987,7 @@ class TestCheckPlanFileNoDeferralExpression:
         env = self._state_env(tmp_path, home)
         sid = f"deferral-{hash(phrase) & 0xFFFF:x}"
         self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body=f"- {phrase}")
+        content = _DEFERRAL_BASE_PLAN.format(body=f"- {phrase}")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5009,7 +5009,7 @@ class TestCheckPlanFileNoDeferralExpression:
         sid = "deferral-textblock"
         self._prior_flags(tmp_path, sid)
         body = "```text\n実装時に精査して確定する\n```\n"
-        content = _ABSNUM_BASE_PLAN.format(body=body)
+        content = _DEFERRAL_BASE_PLAN.format(body=body)
         result = _run(
             {
                 "tool_name": "Write",
@@ -5030,7 +5030,7 @@ class TestCheckPlanFileNoDeferralExpression:
         sid = "deferral-htmlcomment"
         self._prior_flags(tmp_path, sid)
         body = "<!--\n実装時に精査して確定する\n-->\n"
-        content = _ABSNUM_BASE_PLAN.format(body=body)
+        content = _DEFERRAL_BASE_PLAN.format(body=body)
         result = _run(
             {
                 "tool_name": "Write",
@@ -5051,7 +5051,7 @@ class TestCheckPlanFileNoDeferralExpression:
         sid = "deferral-background"
         self._prior_flags(tmp_path, sid)
         # `## 背景`配下（`## 変更内容`・`### エージェント判断`のいずれでもない）へ挿入する。
-        content = _ABSNUM_BASE_PLAN.replace("## 背景\n\nx\n", "## 背景\n\n実装時に精査して確定する\n").format(body="x")
+        content = _DEFERRAL_BASE_PLAN.replace("## 背景\n\nx\n", "## 背景\n\n実装時に精査して確定する\n").format(body="x")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5071,7 +5071,7 @@ class TestCheckPlanFileNoDeferralExpression:
         env = self._state_env(tmp_path, home)
         sid = "deferral-currentform"
         self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に`agent-toolkit-edit`スキルを呼び出す")
+        content = _DEFERRAL_BASE_PLAN.format(body="- 実装時に`agent-toolkit-edit`スキルを呼び出す")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5091,7 +5091,7 @@ class TestCheckPlanFileNoDeferralExpression:
         env = self._state_env(tmp_path, home)
         sid = "deferral-cond-a-unsat"
         self._prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body="- 実装時にレビュー内容を確認して最終的に反映する")
+        content = _DEFERRAL_BASE_PLAN.format(body="- 実装時にレビュー内容を確認して最終的に反映する")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5124,7 +5124,7 @@ class TestPlanFileWarningChecksCoexist:
         sid = "integrated-req-and-deferral"
         # 意図的にrequired-readsフラグを設定せず、両違反が同時発生する条件を用意する。
         _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
-        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に精査して確定する")
+        content = _DEFERRAL_BASE_PLAN.format(body="- 実装時に精査して確定する")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5150,7 +5150,7 @@ class TestPlanFileWarningChecksCoexist:
         env = self._state_env(tmp_path, home)
         sid = "integrated-req-only"
         _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
-        content = _ABSNUM_BASE_PLAN.format(body="- 正常な記述")
+        content = _DEFERRAL_BASE_PLAN.format(body="- 正常な記述")
         result = _run(
             {
                 "tool_name": "Write",
@@ -5171,8 +5171,8 @@ class TestPlanFileWarningChecksCoexist:
         env = self._state_env(tmp_path, home)
         sid = "integrated-deferral-only"
         # required-readsフラグを全て真化し、no-deferralのみを違反させる。
-        _absnum_prior_flags(tmp_path, sid)
-        content = _ABSNUM_BASE_PLAN.format(body="- 実装時に精査して確定する")
+        _deferral_prior_flags(tmp_path, sid)
+        content = _DEFERRAL_BASE_PLAN.format(body="- 実装時に精査して確定する")
         result = _run(
             {
                 "tool_name": "Write",

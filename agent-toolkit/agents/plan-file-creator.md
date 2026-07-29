@@ -178,7 +178,8 @@ task-notification経由の受領・通知が届かない場合の停滞確認手
 - レビュー・codex指摘の対応方針についてユーザー確認が必要と判断した場合
   （`codex-review.md`「codexレビューの進め方」節の確認要件に該当する場合を含む）
 - `plan-codex-delegate`起動がauto mode下でブロックされ、`mcp__codex__codex`直接フォールバックを
-  自身で行わない方針により継続不能な場合。方針の典拠は本ファイルのfrontmatterコメントを参照する
+  自身で行わない方針により継続不能な場合。方針の典拠は
+  `agent-toolkit/skills/plan-mode/references/codex-review.md`「plan-file-creatorからの起動」節を参照する
 - foreground並列起動が自動的にbackgroundへ転換され、サブエージェントの応答が得られない場合
   （催促・状態照会後も応答不能・タイムアウト等により正規経路での完遂が阻害される場合）
 - 呼び出し元が確定した採否判定を変更しない。調査・レビューの結果として採否の変更が必要と判断した場合は、
@@ -230,7 +231,6 @@ bump_judgment: {対象ファイル×改訂節数マトリクスの判定結果�
 review_summary:
 - plan-reviewer: {重大度別の指摘件数と反映件数、指摘ごとの内容と反映先・反映結果または不対応理由、軽微指摘の取捨方針}
 - codexレビュー: {重大度別の指摘件数と反映件数、指摘ごとの内容と反映先・反映結果または不対応理由、軽微指摘の取捨方針}
-invoked_subagents: {実際に起動したサブエージェント名をカンマ区切りで列挙する（plan-reviewer / codex-review / codex-draft）}
 check_results:
 - `check_plan_file.py`: pass | fail（違反件数）
 - `uvx pyfltr run --no-fix`（リポジトリ配下の一時複製に対して実行）: pass | fail（違反件数）
@@ -241,7 +241,12 @@ pending_confirmations:
 retrospective:
 - {本起動中に観測した規範・スキル・サブエージェント設計上の不備（該当なしの場合は「なし」。
   呼び出し元セッションの`session-review`観察源へ引き継ぐ}
+invoked_subagents: {実際に起動したサブエージェント名をカンマ区切りで列挙する（plan-reviewer / codex-review / codex-draft）}
 ```
+
+`invoked_subagents:`は完了報告末尾の連続した記録行ブロック内へ置く（厳守規定。
+検出位置を外れると親セッション側の状態フラグ伝播が機能不全に陥る）。
+通常時は同じ行を最終行とし、利用限度到達時だけ後続の`codex_unavailable:`を最終行とする。
 
 `review_summary`で不対応と判断した指摘の注記主体・書式は、
 `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節（SSOT）に従う。
@@ -266,14 +271,14 @@ retrospective:
 `codex_unavailable:`行は完了報告本文の最終行に置く
 （末尾以外に出現する記述はPostToolUse側が誤検出防止のため無視する設計のため）。
 
-完了報告フォーマット内での記載位置例（本行を最終行とする）:
+完了報告フォーマット内での記載位置例（`codex_unavailable:`を最終行とする）:
 
 ```text
 status: completed
 plan_file_path: ...
 file_check: ...
-invoked_subagents: plan-reviewer
 review_summary: ...
+invoked_subagents: plan-reviewer
 codex_unavailable: usage-limit
 ```
 

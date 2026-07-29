@@ -19,16 +19,24 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """posttooluse hookを実行し、正常終了（returncode 0）を前提として結果を返す。
+
+    hookが異常終了した場合、状態ファイルが書き込まれず`_read_state`が空辞書を返すため、
+    フラグ未設定を期待するテストが異常終了を検出できないまま通過しうる。
+    そのため呼び出し元での個別検証を待たず、ここで正常終了を検証する。
+    """
     env = os.environ.copy()
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
     env["TMP"] = str(state_dir)
-    return _fork_runner.run_script(
+    result = _fork_runner.run_script(
         _SCRIPT,
         argv=("posttooluse",),
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
+    assert result.returncode == 0, f"posttooluse hookが異常終了した（returncode={result.returncode}）: {result.stderr}"
+    return result
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
@@ -300,6 +308,56 @@ class TestPlanFileCreatorFlagPropagation:
         state = _read_state(tmp_path, sid)
         assert state.get("plan_reviewer_invoked") is True
         assert state.get("codex_review_invoked") is not True
+
+    def test_quoted_line_before_prose_sets_no_flags(self, tmp_path: pathlib.Path):
+        sid = "pfc-quoted-line"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_response": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "invoked_subagents: plan-reviewer, codex-review\nsummary: 上記の記録行は説明用の引用である\n"
+                            ),
+                        }
+                    ],
+                },
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        for flag in self._ALL_FLAGS:
+            assert state.get(flag) is not True
+
+    def test_line_inside_trailing_record_block_sets_flags(self, tmp_path: pathlib.Path):
+        sid = "pfc-trailing-record-block"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-file-creator"},
+                "tool_response": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "status report\n"
+                                "invoked_subagents: plan-reviewer, codex-review\n"
+                                "codex_unavailable: usage-limit\n"
+                            ),
+                        }
+                    ],
+                },
+            },
+            state_dir=tmp_path,
+        )
+        state = _read_state(tmp_path, sid)
+        for flag in self._ALL_FLAGS:
+            assert state.get(flag) is True
 
 
 class TestPlanCodexDelegatePurposeRegistration:

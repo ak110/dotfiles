@@ -45,7 +45,11 @@
   `agent-toolkit:plan-file-creator`配下から起動された場合、各フラグはplan-file-creator自身のセッション状態に
   記録され起動元（親）へは反映されない。
   親への反映は、plan-file-creator完了報告本文の`invoked_subagents:`行をAgent/Task完了ハンドラがパースし、
-  対応するフラグを親自身のセッション状態へ設定する経路で行う
+  対応するフラグを親自身のセッション状態へ設定する経路で行う。
+  plan-file-creatorの完了報告にある`invoked_subagents:`行を親セッションへ伝播するときは、
+  完了報告末尾の連続した記録行ブロック内だけを検出対象とする（厳守規定。
+  検出位置を限定しないと状態フラグの誤検出により完遂ゲート判定が機能不全に陥る）。
+  検出パターンは`invoked_subagents`・`codex_unavailable`の既知キーへ限定する
 - codex_usage_limit_observed:
   記録元: `posttooluse.py`のAgent/Task完了ハンドラが、
   `plan-codex-delegate`系・`plan-file-creator`系の完了報告本文の最終行のみを対象に
