@@ -140,11 +140,20 @@
      アンカー該当箇所を再確認する
 - （呼び出し元が実施）Agentツールで`agent-toolkit:plan-impl-executor`を起動する
   - `agent-toolkit:coding-standards`を呼び出す
-- 計画に従い実装する
-- 検証: `uvx pyfltr run <対象テストファイル>`（対象はupload_testモジュール）
 - `agent-toolkit:commit`スキルを呼び出す
-- コミットする
-  - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
+- 想定コミット単位ごとに実装、近接検証、差分確認、コミットを反復する
+  - アップロード上限の実装とテスト
+    - 対象: `server/config.py`・`client/limits.ts`・`infra/nginx.conf`・`tests/upload_test.py`
+    - 近接検証: `uvx pyfltr run tests/upload_test.py`・`tsc --noEmit client/limits.ts`・
+      `nginx -t -c infra/nginx.conf`
+    - 件名案: `feat(upload): ファイルサイズ上限を50MBへ引き上げる`
+  - 設定値管理の文書
+    - 対象: `docs/architecture/limits.md`
+    - 近接検証: `uvx pyfltr run docs/architecture/limits.md`
+    - 件名案: `docs(upload): アップロード上限の設定値管理を文書化する`
+- 実装差分に応じてコミット境界を変更した場合は、計画本文と`## 進捗ログ`を同期する
+- 全コミット完了後の最終検証: `uvx pyfltr run tests/upload_test.py docs/architecture/limits.md`・
+  `tsc --noEmit client/limits.ts`・`nginx -t -c infra/nginx.conf`
 - `agent-toolkit:careful-review`スキルを呼び出す
 
 ## 進捗ログ

@@ -42,8 +42,15 @@ foreground起動が自動的にbackgroundへ転換された場合は、task-noti
      `agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`「混在時の並行制御」節に従う）
    是正指示を送った後に完了報告を受領した場合、`applied_instructions`欄で反映状況を確認する。
    未反映の指示が残る場合は検収へ進まず反映を待つ。
-2. `changed`欄と計画ファイル`## 変更内容`を照合し、`git diff <計画着手前SHA>..<commit_sha>`の
-   実差分で1対1確認する。完了報告の受領時点で作業ツリーはコミット済みでcleanなため、
+2. `commit_sha`欄は、計画内で最後に作成したコミットである`HEAD`を示す。
+   `changed`欄と計画ファイル`## 変更内容`を照合し、
+   `git diff <計画着手前SHA>..<commit_sha>`で計画全体の総差分を1対1確認する。
+   `git log --reverse --format=%H <計画着手前SHA>..<commit_sha>`でコミット列を確定し、
+   各コミットを`git show --stat --oneline <sha>`で確認して計画の想定コミット単位と境界を照合する。
+   同一ファイルが複数コミットへハンク単位で分かれている場合、`--stat`はファイル名と増減行数しか
+   示さないため、当該ファイルに限り`git show --patch <sha> -- <path>`で各コミットの実差分内容も確認する。
+   各中間`HEAD`に対応する近接検証が`verification`欄へ記録されていることも確認する。
+   完了報告の受領時点で作業ツリーはコミット済みでcleanなため、
    作業ツリー差分ではなくコミット範囲差分を照合対象とする。
    照合の前に`commit_sha`欄の値を`git rev-parse HEAD`の実行結果と突き合わせる。
    識別子（コミットSHA・タグ名・run ID・PR番号など後続コマンドの引数となる値）は
