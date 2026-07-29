@@ -132,6 +132,76 @@ class TestCalculateSchedule:
         assert "999.md" in result.parallel_normal_items
         assert any(item.filename == "020.md" and item.reason == "limit-exceeded" for item in result.deferred)
 
+    def test_plan_limit_selects_first_three_and_defers_fourth(self, tmp_path: pathlib.Path) -> None:
+        plan_entries = tuple(
+            _entry(
+                f"{index}.md",
+                metadata=_metadata(
+                    f"{index}.md",
+                    feedback_type="plan-impl",
+                    plan_file=str(tmp_path / f"{index}.md"),
+                ),
+            )
+            for index in range(1, 5)
+        )
+
+        result = _calculate(plan_entries)
+
+        assert result.plan_items == ("1.md", "2.md", "3.md")
+        assert result.deferred == (schedule.DeferredItem("4.md", "limit-exceeded"),)
+
+    def test_multiple_plans_use_target_file_union(self, tmp_path: pathlib.Path) -> None:
+        first_plan = tmp_path / "first.md"
+        second_plan = tmp_path / "second.md"
+        plans = (
+            _entry(
+                "1-plan.md",
+                metadata=_metadata("1-plan.md", feedback_type="plan-impl", plan_file=str(first_plan)),
+            ),
+            _entry(
+                "2-plan.md",
+                metadata=_metadata("2-plan.md", feedback_type="plan-impl", plan_file=str(second_plan)),
+            ),
+        )
+        parallel = _entry("parallel.md", metadata=_metadata("parallel.md", target_files=("other.py",)))
+        second_conflict = _entry(
+            "second-conflict.md",
+            metadata=_metadata("second-conflict.md", target_files=("second.py",)),
+        )
+
+        result = _calculate(
+            (*plans, parallel, second_conflict),
+            plans={str(first_plan): ("first.py",), str(second_plan): ("second.py",)},
+        )
+
+        assert result.parallel_normal_items == ("parallel.md",)
+        assert result.post_plan_normal_items == ("second-conflict.md",)
+
+    def test_missing_or_empty_plan_targets_defer_normals(self, tmp_path: pathlib.Path) -> None:
+        known_plan = tmp_path / "known.md"
+        unknown_plan = tmp_path / "unknown.md"
+        plans = (
+            _entry(
+                "1-plan.md",
+                metadata=_metadata("1-plan.md", feedback_type="plan-impl", plan_file=str(known_plan)),
+            ),
+            _entry(
+                "2-plan.md",
+                metadata=_metadata("2-plan.md", feedback_type="plan-impl", plan_file=str(unknown_plan)),
+            ),
+        )
+        normal = _entry("normal.md", metadata=_metadata("normal.md", target_files=("other.py",)))
+        plan_mappings: tuple[dict[str, tuple[str, ...]], ...] = (
+            {str(known_plan): ("known.py",)},
+            {str(known_plan): ("known.py",), str(unknown_plan): ()},
+        )
+
+        for plan_mapping in plan_mappings:
+            result = _calculate((*plans, normal), plans=plan_mapping)
+
+            assert not result.parallel_normal_items
+            assert result.post_plan_normal_items == ("normal.md",)
+
     def test_answered_tbd_resolves_external_dependency(self) -> None:
         tbd = _entry("tbd.md", kind="tbd", answered=True, metadata=_metadata("tbd.md"))
         feedback = _entry(

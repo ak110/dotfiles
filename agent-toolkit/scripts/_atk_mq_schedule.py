@@ -12,7 +12,7 @@ import _atk_mq_frontmatter as _frontmatter
 
 SCHEDULE_KEY = "queue_schedule"
 STARVATION_THRESHOLD = 3
-PLAN_LIMIT = 1
+PLAN_LIMIT = 3
 NORMAL_LIMIT = 20
 
 type DependencyKind = Literal["none", "entries", "inbox-empty", "external-user"]
@@ -423,16 +423,22 @@ def calculate_schedule(
     deferred.extend(DeferredItem(entry.filename, "limit-exceeded") for entry in (*overflow_plans, *overflow_normals))
 
     plan_files: set[str] = set()
+    plan_targets_complete = True
     for entry in selected_plans:
         assert entry.metadata is not None
-        if entry.metadata.plan_file is not None:
-            plan_files.update(plan_target_files.get(entry.metadata.plan_file, ()))
+        if entry.metadata.plan_file is None:
+            plan_targets_complete = False
+            continue
+        target_files = plan_target_files.get(entry.metadata.plan_file, ())
+        if not target_files:
+            plan_targets_complete = False
+        plan_files.update(target_files)
     parallel: list[str] = []
     post_plan: list[str] = []
     for entry in selected_normals:
         assert entry.metadata is not None
         targets = set(entry.metadata.target_files)
-        if not selected_plans or plan_files and targets and targets.isdisjoint(plan_files):
+        if not selected_plans or (plan_targets_complete and targets and targets.isdisjoint(plan_files)):
             parallel.append(entry.filename)
         else:
             post_plan.append(entry.filename)
