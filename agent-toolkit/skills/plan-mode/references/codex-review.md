@@ -13,14 +13,8 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
   - サブエージェント経由の起動がauto mode下でブロックされた場合、
     メインが`mcp__codex__codex`（初回）・`mcp__codex__codex-reply`（継続）を直接呼び出して継続する
 
-`mcp__codex__codex`を呼び出す際は`sandbox`へ`danger-full-access`を必ず明示指定する。
-`read-only`・`workspace-write`・未指定はいかなる理由があっても用いない。
-これら以外の値ではcodexプロセスが承認待ちのまま復帰せず、呼び出し元が完了を検知できないまま停止する。
-
-`mcp__codex__codex`（初回呼び出し）を呼び出す際は`config`パラメーターへ
-`{"model_reasoning_effort": "medium"}`を必ず明示指定する。手動でのCodex軽量利用（既定`low`）の
-応答速度を維持したまま、委譲経路のみ推論深さを引き上げるための指定である。継続呼び出し
-（`mcp__codex__codex-reply`）は`config`パラメーターを受け付けないため対象外とする。
+`mcp__codex__codex`呼び出し時の`sandbox`・`config`（`model_reasoning_effort`）指定は
+`agent-toolkit/agents/plan-codex-delegate.md`「## 共通処理」節をSSOTとする。
 
 ## codex利用可否の2段階判定
 
@@ -40,9 +34,6 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
   実装工程（ExitPlanMode・`plan-impl-executor`）への進行を許可する。
   当該フラグは新計画着手時にリセットされるため、利用限度到達を観測した後も
   次の計画では段階1から改めて判定する。codexの利用を試みずにフォールバックへ移らない。
-
-`plan-codex-delegate`起動がauto mode下でブロックされた場合（段階1は技術的に利用可能）は
-段階2に該当せず、「plan-file-creatorからの起動」節の`needs_escalation`経路に従う。
 
 ## codexレビューの進め方
 
@@ -100,11 +91,9 @@ Windows環境ではcodexのPowerShell経由ファイル読み書きがShift-JIS�
 ## plan-file-creatorからの起動
 
 `agent-toolkit:plan-file-creator`は`subagent_type: agent-toolkit:plan-codex-delegate`を
-`用途: 計画作成`・`用途: 計画レビュー`で使う。`mcp__codex__codex`直接呼び出しへ自律フォールバックしない。
-起動がauto mode下でブロックされた場合は`needs_escalation`で呼び出し元へ返却する。
-呼び出し元の対応は用途で分岐し（`用途: 計画作成`は呼び出し元自身の直接起草、`用途: 計画レビュー`は
-`mcp__codex__codex`直接呼び出しによるレビュー代行）、詳細は`plan-file-creator.md`
-「エスカレーション基準」節（SSOT）に従う。
+`用途: 計画作成`・`用途: 計画レビュー`で使う。
+auto modeでブロックされた場合の用途別対応は、
+`plan-file-creator.md`「エスカレーション基準」節をSSOTとする。
 
 計画ファイルレビューは観点分担で並列起動する。基本は「構造・整合性」「実現可能性・技術妥当性」の2並列とし、
 規範文書（`AGENTS.md`・`CLAUDE.md`・`.claude/rules/`配下・`agent-toolkit/`配下）の改訂を含む場合は

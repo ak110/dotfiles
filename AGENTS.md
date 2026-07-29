@@ -27,6 +27,15 @@
   `share/claude_settings_json_managed*.json`（`pytools/_internal/update_claude_settings.py`が
   `~/.claude/settings.json`へ反映する）であり、後者はリポジトリ直下の`.claude/settings.local.json`
   （バージョン管理対象外）へ置く
+  - 読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
+    個別パターンは定義上重複する
+  - 本リポジトリで観測した拒否13件は、機密ファイル保護12件と`dontAsk`モード1件であり、
+    `permissions.allow`への追加対象外である。
+    詳細は`agent-toolkit/skills/agent-standards/references/auto-mode.md`「ルール区分」節
+    （`soft_deny`・`hard_deny`の定義）を参照する
+  - `soft_deny`区分の拒否であり、かつユーザーが許容する運用の場合に限り
+    `autoMode.allow`の自然言語ルールで対応する。
+    `hard_deny`区分の拒否は`autoMode.allow`で上書きできないため、当該制約を前提に運用を見直す
 - `.chezmoi-source/dot_codex/`はCodex用の配布元で`~/.codex/`へデプロイされる
   - `.chezmoi-source/dot_codex/AGENTS.md`は`scripts/codex-agents-base.md`と
     `agent-toolkit/rules/*.md`から`scripts/sync_generated_files.py`が生成するため、手動編集しない

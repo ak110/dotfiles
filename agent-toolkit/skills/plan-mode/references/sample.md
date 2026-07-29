@@ -55,6 +55,7 @@
 - `client/limits.ts`: 現行18行
 - `infra/nginx.conf`: 現行62行
 - `tests/upload_test.py`: 現行85行
+- `docs/architecture/limits.md`: 現行30行
 
 ### 事実確認済み事項
 
@@ -111,12 +112,20 @@
 
 「設定値管理」節に3層整合ルールを追記する。
 
+変更前:
+
 ```text
-+## 設定値管理
-+
-+- サーバー`server/config.py`の`MAX_UPLOAD_BYTES`をSSOTとする
-+- クライアント`client/limits.ts`は設定API経由でサーバー値を取得する
-+- プロキシ`infra/nginx.conf`の`client_max_body_size`をサーバー値と一致させる
+該当節なし
+```
+
+変更後:
+
+```text
+## 設定値管理
+
+- サーバー`server/config.py`の`MAX_UPLOAD_BYTES`をSSOTとする
+- クライアント`client/limits.ts`は設定API経由でサーバー値を取得する
+- プロキシ`infra/nginx.conf`の`client_max_body_size`をサーバー値と一致させる
 ```
 
 ## 実行方法
@@ -134,5 +143,5 @@
 
 ## 計画ファイル（本ファイル）のパス
 
-`~/.claude/plans/upload-limit-increase-concurrent-hickey.md`
+`~/.claude/plans/upload-limit-increase-a1b2.md`
 ````
