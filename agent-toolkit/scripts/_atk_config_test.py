@@ -17,9 +17,9 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 @pytest.fixture(autouse=True)
 def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`platformdirs`の解決先を実環境から隔離する。"""
-    monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name: str(tmp_path / "config"))
-    monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name: str(tmp_path / "state"))
-    monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name: str(tmp_path / "data"))
+    monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
+    monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
+    monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
 
 
 class TestConfigShow:

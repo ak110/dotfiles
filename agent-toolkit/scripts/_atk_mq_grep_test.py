@@ -19,7 +19,7 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
@@ -35,7 +35,7 @@ class TestGrepBasic:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """単一エントリ内の複数行マッチを`<ファイル名>:<行番号>:<該当行>`形式で出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="line1\nline2\nline3")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -53,7 +53,7 @@ class TestGrepBasic:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """該当0件時にexit 1で終了し標準出力が空であること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="line1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -75,7 +75,7 @@ class TestGrepIgnoreCase:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--ignore-case指定時に大文字小文字を無視して一致すること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -93,7 +93,7 @@ class TestGrepIgnoreCase:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--ignore-case未指定時は大文字小文字を区別すること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -115,7 +115,7 @@ class TestGrepFilters:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=feedbackでfeedback種別のみを対象とする。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="searchword")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -135,7 +135,7 @@ class TestGrepFilters:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=tbdでtbd種別のみを対象とする。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="searchword")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -155,7 +155,7 @@ class TestGrepFilters:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--answered=noで未回答TBDのみを対象とする。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="other", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -179,7 +179,7 @@ class TestGrepFrontmatter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """frontmatter内のtarget_repoフィールドも検索対象に含まれること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/searchword", body="body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -201,7 +201,7 @@ class TestGrepInvalidRegex:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """不正な正規表現指定時にexit 2で終了しエラーメッセージを標準エラーへ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="text")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 

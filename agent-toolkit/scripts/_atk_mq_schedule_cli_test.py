@@ -15,7 +15,7 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
 )
 
@@ -28,7 +28,7 @@ class TestScheduleCli:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "schedule"], home=tmp_path)
@@ -42,7 +42,7 @@ class TestScheduleCli:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
         calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
@@ -61,7 +61,7 @@ class TestScheduleCli:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
         text = path.read_text(encoding="utf-8")
         classification_path = tmp_path / "classifications.json"
@@ -108,7 +108,7 @@ class TestScheduleCli:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
         text = path.read_text(encoding="utf-8")
         metadata = schedule.ScheduleMetadata(

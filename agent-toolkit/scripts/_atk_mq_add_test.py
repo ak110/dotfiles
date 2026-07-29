@@ -25,7 +25,7 @@ from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
 from _atk_mq_common import MQ_TYPE_TBD, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
-from atk_test import _FIXED_DT, _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -244,7 +244,7 @@ class TestAddOrderEditorFirst:
         tmp_path: pathlib.Path,
     ) -> None:
         """messages省略時、エディターは`_pull`より前に起動される（対象リポジトリはcwdから解決）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -279,7 +279,7 @@ class TestAddOrderEditorFirst:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`_pull`失敗時、エディターで確定済みの本文がstderrへ再表示されたうえで終了コード1になる。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -311,7 +311,7 @@ class TestAddOrderEditorFirst:
         tmp_path: pathlib.Path,
     ) -> None:
         """引数指定経路でもpull→書き込み→commitの順序で動作すること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         git_cmds: list[list[str]] = []
@@ -347,7 +347,7 @@ class TestAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """REPO_PATH省略時、対象リポジトリはカレントディレクトリのgit worktreeから解決される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
 
@@ -375,7 +375,7 @@ class TestAddRepoPathOverrideCli:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -396,7 +396,7 @@ class TestAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """MESSAGE先頭が実在ディレクトリで残り本文がある場合、旧REPO_PATH形式として互換動作する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -423,7 +423,7 @@ class TestAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """REPO_PATHとMESSAGEの間にオプションを配置する旧形式でも互換動作する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -455,7 +455,7 @@ class TestAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """OS上限を超える長さのMESSAGEでもREPO_PATH誤検出による`OSError`を送出せずcwd解決される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
         oversized_message = "本文" * 5000
@@ -490,7 +490,7 @@ class TestAddEmptyBodyRejection:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """本文が空文字のみのとき非ゼロ終了し、エラー出力に検出理由が含まれる。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -516,7 +516,7 @@ class TestAddEmptyBodyRejection:
         tmp_path: pathlib.Path,
     ) -> None:
         """本文が単一の`-`のみのとき非ゼロ終了する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -540,7 +540,7 @@ class TestAddEmptyBodyRejection:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数行の箇条書きマーカーのみ（`-\\n-\\n`等）のとき非ゼロ終了する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -565,7 +565,7 @@ class TestAddEmptyBodyRejection:
         tmp_path: pathlib.Path,
     ) -> None:
         """内容ありの箇条書き（`- 理由: ...`）は従来通り投入が成立する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -590,7 +590,7 @@ class TestAddEmptyBodyRejection:
         tmp_path: pathlib.Path,
     ) -> None:
         """エディター経由で空本文が確定した場合も非ゼロ終了する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()

@@ -24,7 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _fake_run_with_remote_url(
@@ -66,7 +66,7 @@ class TestProcessLoopIncludesProcessingInCount:
         """inbox・processing双方に`.md`を配置した状態でprocess-loopを起動し、
         検知メッセージ`{count}件のfeedback/回答済みTBDを検知`の件数が合算値になること。
         """
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         private_notes = tmp_path / "private-notes"
         inbox_dir = private_notes / "inbox"
         processing_dir = private_notes / "processing"
@@ -288,7 +288,7 @@ class TestProcessLoopPromptAndEnv:
         件数0到達後は`_wait_for_changes`が呼ばれ、待機解除後に件数再チェックへ戻ること。
         2回目の`_wait_for_changes`呼び出しで`KeyboardInterrupt`を送出し常駐ループを正常終了する。
         """
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
@@ -386,7 +386,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--model`引数の値がclaude起動コマンドへ反映される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
@@ -428,7 +428,7 @@ class TestProcessLoopClaudeReturncode:
         """`returncode`が`0`・`-15`・`15`・`143`のいずれかなら反復継続し、
         次の待機で`KeyboardInterrupt`が送出されると正常終了すること。
         """
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
@@ -455,7 +455,7 @@ class TestProcessLoopClaudeReturncode:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`returncode`が正常集合外なら、CLI自体が同じexit codeで終了すること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
@@ -488,7 +488,7 @@ class TestProcessLoopUpdateAndRestart:
         """`--no-update`未指定でclaude正常終了時にupdate-dotfilesと`os.execv`が呼ばれること。"""
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         subprocess_calls: list[list[str]] = []
         base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
 
@@ -532,7 +532,7 @@ class TestProcessLoopUpdateAndRestart:
         """`--no-update`指定時にupdate-dotfilesと`os.execv`のいずれも呼ばれないこと。"""
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         counts = iter([1, 0])
         subprocess_calls: list[list[str]] = []
         base_fake_run = _fake_run_with_remote_url(myrepo, [], 0)
@@ -593,7 +593,7 @@ class TestConsoleTitleReset:
         """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         entered: list[str] = []
         title_calls: list[str] = []
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
@@ -627,7 +627,7 @@ class TestProcessLoopWaitMessage:
         """0件検知時に`_wait_for_changes`呼び出し直前で待機メッセージが出力されること。"""
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
         monkeypatch.setattr(
             _process_loop,
@@ -805,7 +805,7 @@ class TestAlertMonitoring:
 
     def test_alert_check_invoked_when_pending_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """件数0の反復でアラート確認が呼ばれ、投入0件なら待機へ進む。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
@@ -832,7 +832,7 @@ class TestAlertMonitoring:
 
     def test_no_alerts_flag_skips_check(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """--no-alerts指定時はアラート確認を呼ばない。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
@@ -861,7 +861,7 @@ class TestAlertMonitoring:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """投入件数が正なら待機せず次反復のclaude起動へ進む。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         counts = iter([0, 1])
@@ -884,7 +884,7 @@ class TestAlertMonitoring:
 
     def test_alert_interval_suppresses_repeated_checks(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """指定間隔未経過の反復ではアラート確認を呼ばない。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, [], 0))
@@ -937,7 +937,7 @@ class TestProcessLoopUrlInput:
         _resolve_local_worktreeは実在しないパスをURL/不正パスとして判別し、
         ローカルパスが必要な旨をstderrへ出力してexit 2する。
         """
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
 
         monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: subprocess.CompletedProcess([], 0, "", ""))
 
@@ -975,7 +975,7 @@ class TestProcessLoopUrlInput:
         expects_worktree: bool,
     ) -> None:
         """対象リポジトリに応じてclaude起動引数へworktree指定を付与すること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []

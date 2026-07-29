@@ -25,7 +25,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -55,7 +55,7 @@ def test_add_empty_feedback_keeps_detailed_rejection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """実質空feedbackのCLI拒否案内に判定条件と対象先頭を含める。"""
-    _setup_flag_and_notes(tmp_path)
+    _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as exc_info:
@@ -69,7 +69,7 @@ def test_add_empty_feedback_keeps_detailed_rejection(
 
 def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
-    notes = _setup_flag_and_notes(tmp_path)
+    notes = _setup_notes(tmp_path)
     _write_feedback_file(notes, "entry.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
@@ -86,7 +86,7 @@ def test_flat_feedback_operations_are_public(tmp_path: pathlib.Path, monkeypatch
 
 def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """return-to-inboxがprocessingからinboxへ戻す。"""
-    notes = _setup_flag_and_notes(tmp_path)
+    notes = _setup_notes(tmp_path)
     _write_feedback_file(notes, "entry.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
@@ -109,7 +109,7 @@ def test_return_to_inbox_missing_file_reports_processing_state(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """return-to-inboxで未存在ファイルを指定するとprocessing側の状態名で案内する。"""
-    _setup_flag_and_notes(tmp_path)
+    _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as exc_info:
@@ -129,7 +129,7 @@ class TestAdoptSingle:
         tmp_path: pathlib.Path,
     ) -> None:
         """1件のadopt実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -150,7 +150,7 @@ class TestAdoptSingle:
         tmp_path: pathlib.Path,
     ) -> None:
         """拡張子.md省略入力がinbox側の実体を解決してadoptedへ移動する（fb 20260721-164301-001反映）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "20260721-160220-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -173,7 +173,7 @@ class TestAdoptMultiple:
         tmp_path: pathlib.Path,
     ) -> None:
         """3件のadoptで全件がadopted/へ移動し単一コミットが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         _write_feedback_file(notes, "fb-003.md")
@@ -207,7 +207,7 @@ class TestAdoptZeroArgs:
         tmp_path: pathlib.Path,
     ) -> None:
         """ファイル名引数なしでargparseがexit 2を返すこと。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -226,7 +226,7 @@ class TestAdoptMissing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -246,7 +246,7 @@ class TestAdoptStampWithNoteAndCommit:
         tmp_path: pathlib.Path,
     ) -> None:
         """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="元本文")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -275,7 +275,7 @@ class TestAdoptStampWithCategory:
         tmp_path: pathlib.Path,
     ) -> None:
         """--category指定時、adopted/配下のファイル末尾にカテゴリ行が追記される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -298,7 +298,7 @@ class TestAdoptCategoryGate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一カテゴリの採用件数が閾値未満の場合は標準エラー出力へ警告しない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -317,7 +317,7 @@ class TestAdoptCategoryGate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一カテゴリの採用件数が閾値へ到達した場合は標準エラー出力へ警告する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         adopted = notes / "adopted"
         adopted.mkdir(parents=True, exist_ok=True)
         for index in range(1, 3):
@@ -350,7 +350,7 @@ class TestAdoptStampWithoutOptional:
         tmp_path: pathlib.Path,
     ) -> None:
         """引数省略時、`## 処理結果`節に採否・処理日時のみ追記され、対応commit・メモ行は含まれない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -377,7 +377,7 @@ class TestRejectDeletes:
         tmp_path: pathlib.Path,
     ) -> None:
         """rejectでファイルがinboxから移動されrejected/に置かれコミット件名が正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -401,7 +401,7 @@ class TestRejectStampWithNote:
         tmp_path: pathlib.Path,
     ) -> None:
         """--note指定時、rejected/配下のファイル末尾に採否・処理日時・メモが追記される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -425,7 +425,7 @@ class TestRejectMultiple:
         tmp_path: pathlib.Path,
     ) -> None:
         """2件のrejectで両方がrejected/へ移動し単一コミットが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
@@ -455,7 +455,7 @@ class TestRejectZeroArgs:
         tmp_path: pathlib.Path,
     ) -> None:
         """ファイル名引数なしでargparseがexit 2を返すこと。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -473,7 +473,7 @@ class TestRmSingle:
         tmp_path: pathlib.Path,
     ) -> None:
         """rmで対象ファイルが削除されコミット件名が正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -492,7 +492,7 @@ class TestRmSingle:
         tmp_path: pathlib.Path,
     ) -> None:
         """start-processing後（processing配下）のファイルは`--force`指定時のみrm対象として解決される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
@@ -515,7 +515,7 @@ class TestRmSingle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--force`未指定時、processing配下のファイルは削除を拒否されexit 2する（フィードバック20260723-153526-001反映）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
@@ -540,7 +540,7 @@ class TestRmSingle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -560,7 +560,7 @@ class TestRmMultiple:
         tmp_path: pathlib.Path,
     ) -> None:
         """2件のrmで両方削除と単一コミットが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
@@ -585,7 +585,7 @@ class TestEditNoEditor:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """$EDITORが未設定の場合はexit 1と案内が出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         monkeypatch.delenv("EDITOR", raising=False)
 
@@ -606,7 +606,7 @@ class TestEditWithChanges:
         tmp_path: pathlib.Path,
     ) -> None:
         """編集後にファイル差分があればコミット・pushが実行される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
 
@@ -637,7 +637,7 @@ class TestEditWithChanges:
         tmp_path: pathlib.Path,
     ) -> None:
         """start-processing後（processing配下）のファイルも編集対象として解決される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
@@ -671,7 +671,7 @@ class TestEditWithChanges:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -693,7 +693,7 @@ class TestEditNoChanges:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """編集後にファイル差分がなければコミットされず案内のみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文")
         monkeypatch.setenv("EDITOR", "fake-editor")
 
@@ -726,7 +726,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """EDITOR未設定でも本文を更新し、未指定メタデータを保持する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md", body="編集前", source="session-review")
         monkeypatch.delenv("EDITOR", raising=False)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -745,7 +745,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """MESSAGE指定時はEDITORが設定済みでもエディターを起動しない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "must-not-run")
         git_calls: list[_GitCall] = []
@@ -768,7 +768,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """明示したtarget_repoを正規化し、他の意味的なキーを保持する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = notes / "inbox" / "fb-001.md"
         path.write_text(
             "---\n# 保持するコメント\ntarget_repo: old.example/a/b\n\n"
@@ -809,7 +809,7 @@ class TestNoninteractiveEdit:
         error_fragment: str,
     ) -> None:
         """種別変更・TBD専用キー・実質空本文を拒否する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md", body="編集前")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -828,7 +828,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """実在ファイルパスだけのMESSAGEをtracebackなしで拒否する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md", body="編集前")
         message_file = tmp_path / "message.txt"
         message_file.write_text("編集後", encoding="utf-8")
@@ -850,7 +850,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """空のTBD質問はaddで許容し、既存質問を削除するeditでは拒否する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as add_exit:
@@ -885,7 +885,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """processing配下のfeedbackも非対話で編集する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing = notes / "processing"
         processing.mkdir()
         path = processing / "fb-001.md"
@@ -907,7 +907,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """TBDの質問とscopeだけを更新し、回答領域を保持する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_tbd_entry(
             notes,
             "tbd-001.md",
@@ -943,7 +943,7 @@ class TestNoninteractiveEdit:
         message: str,
     ) -> None:
         """予約要素と不正な質問メタデータを拒否する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_tbd_entry(notes, "tbd-001.md")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -962,7 +962,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """回答マーカー重複時も終端側を基準に質問だけを更新する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_tbd_entry(
             notes,
             "tbd-001.md",
@@ -986,7 +986,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """競合時は上書きせず、FILENAMEと未反映を案内する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md", body="編集前")
         original_edit = mutations.edit_entry_content
 
@@ -1030,7 +1030,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """論理本文が同一ならコミットせず差分なしを出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -1049,7 +1049,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """edit経路からqueue_scheduleを注入できない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1068,7 +1068,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """共通保存境界のcontent_validatorがqueue_scheduleの追加を拒否する（edit_entry_content直接呼び出し）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original_content = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1105,7 +1105,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """edit経路からrepair_targetを注入できない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1124,7 +1124,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """target_repo変更時は旧リポジトリ向け分類メタデータを削除する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         text = path.read_text(encoding="utf-8")
         metadata = schedule.ScheduleMetadata(
@@ -1162,7 +1162,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """target_repo以外のfrontmatter更新ではqueue_scheduleを保持する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         text = path.read_text(encoding="utf-8")
         metadata = schedule.ScheduleMetadata(
@@ -1193,7 +1193,7 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """無関係なキーの更新前後でqueue_scheduleの入れ子構造を保持する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         text = path.read_text(encoding="utf-8")
         metadata = schedule.ScheduleMetadata(
@@ -1226,7 +1226,7 @@ class TestNoninteractiveEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """frontmatter全体が破損している場合は編集を拒否する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         path = notes / "inbox" / "fb-001.md"
         path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1247,7 +1247,7 @@ class TestEditNoArg:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数ファイル存在時はファイル名順の最大値（最終追加分）が編集対象になる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "20240101-100000-001.md", body="旧")
         latest = _write_feedback_file(notes, "20240201-100000-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -1284,7 +1284,7 @@ class TestEditNoArg:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox空の場合はexit 2でstderr案内を出力する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1305,7 +1305,7 @@ class TestStartProcessingSingle:
         tmp_path: pathlib.Path,
     ) -> None:
         """1件のstart-processing実行でinboxから移動されprocessing/に置かれコミット件名が正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -1329,7 +1329,7 @@ class TestStartProcessingMultiple:
         tmp_path: pathlib.Path,
     ) -> None:
         """2件のstart-processingで両方がprocessing/へ移動し単一コミットが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         git_calls: list[_GitCall] = []
@@ -1357,7 +1357,7 @@ class TestStartProcessingMissing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1377,7 +1377,7 @@ class TestAdoptFromProcessing:
         tmp_path: pathlib.Path,
     ) -> None:
         """processing/配下のファイルがadopt対象に含まれadopted/へ移動する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
@@ -1404,7 +1404,7 @@ class TestRejectFromProcessing:
         tmp_path: pathlib.Path,
     ) -> None:
         """processing/配下のファイルがreject対象に含まれrejected/へ移動する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
@@ -1431,7 +1431,7 @@ class TestProcessingPrecedence:
         tmp_path: pathlib.Path,
     ) -> None:
         """同名ファイルがinbox・processing双方に存在する場合、processing側が移動元として選ばれる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-dup.md")
         inbox_path = notes / "inbox" / "fb-dup.md"
         inbox_path.write_text(
@@ -1474,7 +1474,7 @@ class TestTargetRepoVerification:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1493,7 +1493,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1509,7 +1509,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """reject: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1525,7 +1525,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1541,7 +1541,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """start-processing: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1560,7 +1560,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
         editor_calls: list[list[str]] = []
@@ -1584,7 +1584,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """`--target-repo`未指定時は検証されず既存挙動のまま処理が進む。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1600,7 +1600,7 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """adopt: 拡張子.md省略入力でも`--target-repo`不一致時に検証が回避されない（回帰確認）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -1632,7 +1632,7 @@ class TestPathTraversalRejection:
         bad: str,
     ) -> None:
         """不正なファイル名引数はexit 2でstderr案内を出力する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:

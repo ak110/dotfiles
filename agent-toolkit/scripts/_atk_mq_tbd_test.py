@@ -25,7 +25,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -131,7 +131,7 @@ class TestCmdTbdAddSelfContainmentWarning:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """短い本文投入時に自己完結性警告が出力され、疑問文警告と併存し得ること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -156,7 +156,7 @@ class TestTbdAdd:
         tmp_path: pathlib.Path,
     ) -> None:
         """単一メッセージで1ファイルが生成され、frontmatter・本文構造が正しい。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -186,7 +186,7 @@ class TestTbdAdd:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """question-type=choice時に--choices未指定でusage表示付きのexit 2になる。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -217,7 +217,7 @@ class TestTbdAdd:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """問いを含まない本文投入時に警告が標準エラーへ出力され、投入自体は成功する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -240,7 +240,7 @@ class TestTbdAdd:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """疑問文を含む本文投入時は警告が出力されない。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -268,7 +268,7 @@ class TestTbdAdd:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """question-type=choice時は疑問文を含まない本文でも警告が出力されない。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -310,7 +310,7 @@ class TestTbdAddEditorBeforePull:
         tmp_path: pathlib.Path,
     ) -> None:
         """messages省略時、エディターは起動された後にpullが失敗して例外が送出される（対象リポジトリはcwdから解決）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -349,7 +349,7 @@ class TestTbdAddEditorBeforePull:
         tmp_path: pathlib.Path,
     ) -> None:
         """--question-type=choiceで--choices未指定の場合、pullを呼ばずexit 2で失敗する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         git_cmds: list[list[str]] = []
@@ -387,7 +387,7 @@ class TestTbdAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """REPO_PATH省略時、対象リポジトリはカレントディレクトリのgit worktreeから解決される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
 
@@ -420,7 +420,7 @@ class TestTbdAddRepoPathOverrideCli:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """本文が続かないディレクトリのみの呼び出しは、usage表示付きの平易なエラーでexit 2になる。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -441,7 +441,7 @@ class TestTbdAddRepoPathOverrideCli:
         tmp_path: pathlib.Path,
     ) -> None:
         """MESSAGE先頭が実在ディレクトリで残り本文がある場合、旧REPO_PATH形式として互換動作する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -464,7 +464,7 @@ class TestTbdAddSourceOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """--source=session-hold指定時、frontmatterにsource: session-holdが含まれる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -487,7 +487,7 @@ class TestTbdAddSourceOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """--source未指定時、frontmatterにsource行が含まれない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
@@ -513,7 +513,7 @@ class TestTbdMutationTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """mq edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "fake-editor")
         editor_calls: list[list[str]] = []
@@ -540,7 +540,7 @@ class TestTbdMutationTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """mq adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -560,7 +560,7 @@ class TestTbdMutationTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """mq adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -579,7 +579,7 @@ class TestTbdMutationTargetRepoVerification:
         tmp_path: pathlib.Path,
     ) -> None:
         """mq rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -603,7 +603,7 @@ class TestTbdList:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--answered=noで未回答のみが1件1行（filename・target_repo・summary）形式で出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -624,7 +624,7 @@ class TestTbdListSkipPull:
         tmp_path: pathlib.Path,
     ) -> None:
         """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -645,7 +645,7 @@ class TestTbdEdit:
         tmp_path: pathlib.Path,
     ) -> None:
         """パストラバーサル系のファイル名でexit 2。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "vi")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -660,7 +660,7 @@ class TestTbdEdit:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """編集差分なしの場合はcommit・pushしない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
@@ -685,7 +685,7 @@ class TestTbdAnswer:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未回答ゼロ時は案内のみでcommitしない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
@@ -710,7 +710,7 @@ class TestTbdAnswerEditorFailure:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """エディターが非ゼロ終了コードで終了した場合、中断してexit 1を返しcommitしない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer="")
         monkeypatch.setenv("EDITOR", "fake-editor")
         git_calls: list[_GitCall] = []
@@ -743,7 +743,7 @@ class TestTbdAdopt:
         tmp_path: pathlib.Path,
     ) -> None:
         """1件のtb adopt実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -764,7 +764,7 @@ class TestTbdAdopt:
         tmp_path: pathlib.Path,
     ) -> None:
         """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -797,7 +797,7 @@ class TestTbdAdopt:
         tmp_path: pathlib.Path,
     ) -> None:
         """3件のtb adoptで全件がadopted/へ移動し単一コミットが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-003.md", question="q3", answer="a3")
@@ -831,7 +831,7 @@ class TestTbdAdopt:
         tmp_path: pathlib.Path,
     ) -> None:
         """TBD採用の実行後にgit pushが行われること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -849,7 +849,7 @@ class TestTbdAdopt:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """パストラバーサル系のファイル名でexit 2。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -866,7 +866,7 @@ class TestTbdAdopt:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -882,7 +882,7 @@ class TestTbdAdopt:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数ファイル指定時、一部が未存在ならどのファイルも移動されない（部分移動防止）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -907,7 +907,7 @@ class TestTbdAdopt:
         重複除去前は`src.rename(dst)`が1回目の成功後に2回目で対象不在となり
         `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
         """
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -937,7 +937,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """1件のtb rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -954,7 +954,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """`--note`指定時にcommit messageへ`(理由: <note>)`形式で追記されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -973,7 +973,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数ファイル指定時に1コミットへまとめて削除されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md")
         git_calls: list[_GitCall] = []
@@ -993,7 +993,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """パストラバーサル文字列は削除前検証で拒否されること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         with pytest.raises(SystemExit):
             atk.main(["mq", "rm", "../evil.md"], home=tmp_path)
 
@@ -1003,7 +1003,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """指定ファイルがinbox配下に存在しないときexit 2で終了すること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit):
             atk.main(
@@ -1017,7 +1017,7 @@ class TestTbdRm:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数指定で一部欠損時に既存ファイルも削除されずcommitも発生しないこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         existing = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -1045,7 +1045,7 @@ class TestTbdRm:
         重複除去前は`p.unlink()`が1回目の成功後に2回目で対象不在となり
         `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
         """
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -1064,7 +1064,7 @@ class TestTbdRm:
 
 def test_answer_tbd_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """回答欄マーカーが重複するエントリでも最後のマーカー基準で分割し、見出しと質問本文を保全する。"""
-    notes = _setup_flag_and_notes(tmp_path)
+    notes = _setup_notes(tmp_path)
     monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
     monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
@@ -1086,7 +1086,7 @@ def test_answer_tbd_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: p
 
 def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """マーカーが1個の通常データでは従来と同じ結果になる。"""
-    notes = _setup_flag_and_notes(tmp_path)
+    notes = _setup_notes(tmp_path)
     monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
     monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)

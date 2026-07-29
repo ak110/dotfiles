@@ -24,7 +24,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
@@ -40,7 +40,7 @@ class TestListEmpty:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox空時は標準出力が空であること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -61,7 +61,7 @@ class TestListSingle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """1件のフィードバックがfilename・target_repo・本文冒頭要約のtab区切り1行で出力されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -95,7 +95,7 @@ class TestListMalformedFrontmatter:
     ) -> None:
         """typeを確定できない異常frontmatter形式は拒否される。"""
         del label  # parametrize idのみ
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         (notes / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -122,7 +122,7 @@ class TestListMultipleRepos:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """target_repoが異なる複数のフィードバックがそれぞれ1行で出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -149,7 +149,7 @@ class TestListTargetRepoFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """複数target_repo混在でも--target-repo指定値と一致するエントリのみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -169,7 +169,7 @@ class TestListTargetRepoFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """~プレフィックスのローカルパスがgit remote get-urlで正規化され、対応するエントリが出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/myrepo")
         monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -192,7 +192,7 @@ class TestListTargetRepoFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """一致するエントリが存在しない場合、標準出力は空になる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -224,7 +224,7 @@ class TestListSourceFilter:
         excluded_filename: str,
     ) -> None:
         """--sourceの一致指定と否定指定が該当エントリだけを出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", source="session-review")
         _write_feedback_file(notes, "fb-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -245,7 +245,7 @@ class TestListSourceFilter:
         value: str,
     ) -> None:
         """--source=・--source=!（空文字列）はargparseエラーでexit 2する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -260,7 +260,7 @@ class TestListSourceFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, "tbd-001.md", source="session-review")
         _write_tbd_file(notes, "tbd-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -284,7 +284,7 @@ class TestListTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=feedback指定時はfeedback部のみ出力されtbdヘッダは出力されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -303,7 +303,7 @@ class TestListTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=tbd指定時はtbd部のみ出力され回答状況ラベルが付与される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -321,7 +321,7 @@ class TestListTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=all（既定）でtbd側が0件の場合はtbd種別ヘッダを省略する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -343,7 +343,7 @@ class TestListSkipPull:
         tmp_path: pathlib.Path,
     ) -> None:
         """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -375,7 +375,7 @@ class TestListStatusFilter:
         excluded_suffix: str,
     ) -> None:
         """--answered=yes/noが回答状況と一致するTBDだけを出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -395,7 +395,7 @@ class TestListStatusFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--status=all指定時に全TBDが出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -415,7 +415,7 @@ class TestListStatusFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--answered=yes指定時に回答概念を持たないfeedbackは除外される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -458,7 +458,7 @@ class TestListCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--count指定時にfeedback件数とTBD件数の合計が整数1行で出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         _write_feedback_file(notes, "fb-002.md")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
@@ -478,7 +478,7 @@ class TestListCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--count指定時は種別ヘッダ・エントリ行を出力しない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -496,7 +496,7 @@ class TestListCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--countと--statusを併用すると、statusフィルター適用後の件数が出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -515,7 +515,7 @@ class TestListCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox空時は0を出力する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -544,7 +544,7 @@ class TestMultipleFiltersCombinedAsAnd:
     ) -> None:
         """target-repo・source・type・statusの4条件全てに一致するtbdだけを出力する（answeredは無効化）。"""
         matching_repo = "github.com/example/matching"
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         # 4条件全てに一致する唯一のエントリ（tbd・inbox）。
         _write_tbd_file(notes, "tbd-matching.md", target_repo=matching_repo, source="session-review")
         # target-repoのみ不一致。
@@ -598,7 +598,7 @@ class TestMultipleFiltersCombinedAsAnd:
     ) -> None:
         """target-repo・source・type・statusが一致する2エントリのうち、未回答のみが`--answered=no`で残る。"""
         matching_repo = "github.com/example/matching"
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, "tbd-unanswered.md", target_repo=matching_repo, source="session-review", answer="")
         _write_tbd_file(
             notes,
@@ -652,7 +652,7 @@ class TestListNarrowTerminalTargetRepo:
             del args, kwargs
             return os.terminal_size((terminal_columns, 24))
 
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
@@ -679,7 +679,7 @@ class TestListNarrowTerminalTargetRepo:
             del args, kwargs
             return os.terminal_size((terminal_columns, 24))
 
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(
             notes,
             f"{_FIXED_TIMESTAMP}-001.md",

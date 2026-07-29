@@ -16,7 +16,7 @@ def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     実運用の`~/private-notes/`ハードコードを避け、`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で
     テストごとに`tmp_path/private-notes`を指す。実ディレクトリの作成は各テストヘルパー
-    （`_setup_flag_and_notes`等）が担う。
+    （`_setup_notes`等）が担う。
     """
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
 

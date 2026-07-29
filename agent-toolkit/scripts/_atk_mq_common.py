@@ -103,17 +103,6 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
     return path
 
 
-def _flag_path() -> pathlib.Path:
-    """feedback-inboxの有効化フラグファイルの絶対パスを返す。
-
-    `atk mq enable`/`disable`の後方互換操作対象として残すが、inbox常時有効化に伴い
-    `_check_environment`の判定には用いない。設定ディレクトリ解決はロック・状態
-    ディレクトリ（`_repo_lock_path`参照）と同じくplatformdirsへ統一し、
-    `XDG_CONFIG_HOME`等の環境変数を尊重する。
-    """
-    return pathlib.Path(platformdirs.user_config_dir("agent-toolkit")) / "feedback-inbox.enabled"
-
-
 def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     """フィードバック保存ディレクトリのroot絶対パスを返す。
 
@@ -121,6 +110,7 @@ def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     未設定時は`~/private-notes/`へフォールバックし、当該パスが不在の場合は
     `platformdirs.user_data_dir("agent-toolkit")`配下のローカル管理用パスへさらにフォールバックする
     （`_ensure_environment`が当該パスへ実体のgitリポジトリを自動生成する）。
+    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     override = os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES")
     if override:
@@ -128,7 +118,7 @@ def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     default = home / "private-notes"
     if default.exists():
         return default
-    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit")) / "private-notes"
+    return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
 
 
 _LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
@@ -185,19 +175,6 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
         cwd=root,
         check=True,
     )
-
-
-def _check_environment(home: pathlib.Path) -> tuple[int, str]:
-    """feedback-inboxの有効状態を判定し、(exit_code, message)を返す。
-
-    inbox常時有効化に伴いフラグファイルの存在は判定に用いない。既定パス不在時は
-    `_ensure_environment`が自動生成するため無効とみなさず、`AGENT_TOOLKIT_PRIVATE_NOTES`で
-    明示指定されたパスが不在の場合のみ(1, 原因案内)を返す。
-    """
-    root = _private_notes_path(home)
-    if not root.exists() and os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
-        return 1, f"フィードバック保存ディレクトリが見つかりません: {root}"
-    return 0, "feedback-inboxは有効です。"
 
 
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
@@ -379,10 +356,11 @@ def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     ファイル名は`repo_path.resolve()`のSHA-1ハッシュ値とする。
     対象パスからロックファイル名を導出するため、フィードバック保存リポジトリに限らず
     任意のgit作業コピーへ同一の仕組みを適用できる。取得時にロック用ディレクトリを自動作成する。
+    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     resolved = str(repo_path.resolve())
     digest = hashlib.sha1(resolved.encode("utf-8"), usedforsecurity=False).hexdigest()
-    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit")) / "locks"
+    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir / f"{digest}.lock"
 
@@ -860,11 +838,6 @@ def _collect_message_via_editor() -> str | None:
 
 class WebInputError(ValueError):
     """Web APIへ安全に公開できる入力エラー。"""
-
-
-def flag_path() -> pathlib.Path:
-    """feedback-inbox有効化フラグのパスを返す。"""
-    return _flag_path()
 
 
 def ensure_environment(home: pathlib.Path) -> pathlib.Path:

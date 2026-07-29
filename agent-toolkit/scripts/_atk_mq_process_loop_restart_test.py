@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_mq_process_loop_test import _fake_run_with_remote_url  # noqa: E402  # pylint: disable=wrong-import-position
-from atk_test import _setup_flag_and_notes  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 # 上流差分確認は`_run_until_stop`が当該関数自体を差し替えるため公開CLI経由では検証できない。
 # private参照はモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
@@ -53,7 +53,7 @@ class TestWaitLoopAutoRestart:
         """
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         fake_dotfiles_root = tmp_path / "dotfiles_root"
         fake_scripts_dir = fake_dotfiles_root / "agent-toolkit" / "scripts"
         fake_scripts_dir.mkdir(parents=True)

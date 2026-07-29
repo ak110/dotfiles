@@ -341,8 +341,6 @@ def test_assets_focus_on_user_entry_workflows() -> None:
         'id="commit"',
         'id="toggle"',
         'id="select-all"',
-        "/api/enable",
-        "/api/disable",
         "/api/entries/adopt",
         "/api/entries/commit",
         "/api/entries/reject",
@@ -1159,7 +1157,6 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/static/icon-192.png",
         "/static/icon-512.png",
         "/api/sync",
-        "/api/status",
         "/api/entries",
         "/api/entries/<state_name>/<filename>",
         "/api/entries/start-processing",
@@ -1168,11 +1165,11 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/entries/remove",
         "/api/entries/commit",
         "/api/entries/answer",
-        "/api/enable",
-        "/api/disable",
         "/api/events",
     }
+    removed = {"/api/status", "/api/enable", "/api/disable"}
     assert expected <= rules
+    assert not removed & rules
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,6 @@ from pytools._internal import (
     setup_codex_cli,
     setup_codex_links,
     setup_codex_logs_linux,
-    setup_feedback_inbox,
     setup_media_remote,
     setup_mise,
     setup_msys_env,
@@ -223,7 +222,6 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),
     ("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
-    ("フィードバック蓄積セットアップ (特定ホスト)", setup_feedback_inbox.run),
     ("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
     ("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),

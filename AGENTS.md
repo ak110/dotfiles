@@ -1,4 +1,4 @@
-# CLAUDE.md: dotfiles
+# AGENTS.md: dotfiles
 
 本リポジトリはchezmoi管理のdotfilesリポジトリであり、`.chezmoi-source/`配下を`~/.*`にデプロイする。
 多数の小規模なコマンドラインツールや、Claude Code用の共有設定（ルール・プラグイン）も持つ。
@@ -205,9 +205,6 @@ tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終�
 
 - 対話シェル
 - `atk`コマンド存在（`command -v atk`）
-- feedback-inbox有効（`atk mq status`が終了コード0）
-
-`atk mq disable`でfeedback-inboxを無効化すると`atk mq status`が非ゼロ終了し、通知は自動的にスキップされる。
 
 ### 特定ホストでの常駐サービス自動起動
 

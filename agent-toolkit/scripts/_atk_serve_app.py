@@ -165,18 +165,6 @@ class Operations:
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
 
-    def status(self) -> bool:
-        return common.flag_path().exists()
-
-    def set_enabled(self, enabled: bool) -> bool:
-        path = common.flag_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if enabled:
-            path.touch()
-        else:
-            path.unlink(missing_ok=True)
-        return enabled
-
     def entries(self, filters: dict[str, str]) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
         kind_filter = filters.get("type", "all")
@@ -451,10 +439,6 @@ def create_app(
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
-    @app.get("/api/status")
-    async def status() -> quart.Response:
-        return quart.jsonify(enabled=await workers.run(ops.status))
-
     @app.post("/api/sync")
     async def sync() -> quart.Response:
         return quart.jsonify(synced=await synchronize())
@@ -601,16 +585,6 @@ def create_app(
     async def commit_entries() -> quart.Response:
         _json_object(await _request_json(), allowed=set())
         return quart.jsonify(changed=await workers.run(ops.commit))
-
-    @app.post("/api/enable")
-    async def enable() -> quart.Response:
-        _json_object(await _request_json(), allowed=set())
-        return quart.jsonify(enabled=await workers.run(ops.set_enabled, True))
-
-    @app.post("/api/disable")
-    async def disable() -> quart.Response:
-        _json_object(await _request_json(), allowed=set())
-        return quart.jsonify(enabled=await workers.run(ops.set_enabled, False))
 
     @app.get("/api/events")
     async def events() -> quart.Response:

@@ -53,11 +53,8 @@ def _make_subprocess_fake(
     return fake
 
 
-def _setup_flag_and_notes(tmp_path: pathlib.Path) -> pathlib.Path:
-    """フラグファイルとprivate-notesディレクトリを準備する。"""
-    flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-    flag.parent.mkdir(parents=True, exist_ok=True)
-    flag.touch()
+def _setup_notes(tmp_path: pathlib.Path) -> pathlib.Path:
+    """private-notesディレクトリを準備する。"""
     notes = tmp_path / "private-notes"
     notes.mkdir()
     (notes / "inbox").mkdir(parents=True)
@@ -217,7 +214,7 @@ class TestUnansweredTbdNotification:
     def test_notifies_unanswered_entries_after_non_tbd_command(
         self, count: int, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         for index in range(count):
             _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -232,7 +229,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """list --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -246,7 +243,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """list --type=all --status=active --answered=all実行時、通知が抑止されることを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -260,7 +257,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """list --source指定時、通知が抑止されないことを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -273,7 +270,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """list --category指定時、通知が抑止されないことを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -286,7 +283,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """list --status=inbox単独では通知が抑止されないことを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -299,7 +296,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """show --all --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -312,7 +309,7 @@ class TestUnansweredTbdNotification:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """show <FILENAME>（単一ファイル指定）実行時、通知が抑止されないことを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
@@ -324,6 +321,14 @@ class TestUnansweredTbdNotification:
 
 class TestInboxAlwaysEnabled:
     """inbox常時有効化: フラグファイル不在でもprivate-notesさえ揃えば通常どおり動作すること。"""
+
+    @pytest.mark.parametrize("subcommand", ["enable", "disable", "status"])
+    def test_removed_control_subcommands_exit_with_usage_error(self, subcommand: str) -> None:
+        """削除済みのinbox制御サブコマンドはexit 2で拒否される。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", subcommand])
+
+        assert exc_info.value.code == 2
 
     def test_add_succeeds_without_flag_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -381,7 +386,7 @@ class TestAddSingleMessage:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """単一メッセージで1ファイルが生成され、frontmatterとgit操作順序が正しいこと。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
 
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -449,7 +454,7 @@ class TestMqLifecycleScenario:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """登録したエントリが一覧表示を経て処理中・採用済みへ遷移する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         git_calls: list[_GitCall] = []
@@ -508,7 +513,7 @@ class TestAddCompletionShowsProcessingCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """processing配下に既存ファイルがある状態で`mq add`すると、その件数が併記される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "existing-001.md").write_text(
@@ -532,7 +537,7 @@ class TestAddCompletionShowsProcessingCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """processing配下が空の状態でも0件と明示される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
@@ -555,7 +560,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """別リポジトリ宛のprocessingエントリは対象リポジトリ分の内訳へ数えない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "existing-001.md").write_text(
@@ -580,7 +585,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """別リポジトリ宛のinboxエントリは対象リポジトリ分の内訳へ数えない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         inbox_dir = notes / "inbox"
         inbox_dir.mkdir(parents=True, exist_ok=True)
         (inbox_dir / "existing-001.md").write_text(
@@ -609,7 +614,7 @@ class TestAddMultipleMessages:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """2件のメッセージで連番001・002の付与とコミットメッセージを検証する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
 
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -664,7 +669,7 @@ class TestAddRepoPathExpansion:
         tmp_path: pathlib.Path,
     ) -> None:
         """~展開後にgit remote get-urlでリモートURLが取得され、target_repoへ書き込まれる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("HOME", str(tmp_path))
 
         myrepo = tmp_path / "myrepo"
@@ -732,7 +737,7 @@ class TestAddFrontmatterOverride:
         tmp_path: pathlib.Path,
     ) -> None:
         """メッセージ先頭frontmatterの`target_repo`がCLIオプションより優先される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -759,7 +764,7 @@ class TestAddFrontmatterOverride:
         tmp_path: pathlib.Path,
     ) -> None:
         """複数メッセージ混在時（一部のみfrontmatter付き）に各メッセージが独立判定される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -788,7 +793,7 @@ class TestAddFrontmatterOverride:
         tmp_path: pathlib.Path,
     ) -> None:
         """frontmatterに`target_repo`のみで`source`未指定の場合、CLIオプション値を採用する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 

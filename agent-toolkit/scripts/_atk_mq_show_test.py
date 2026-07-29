@@ -19,7 +19,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
@@ -35,7 +35,7 @@ class TestShowSingleFile:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME指定時は当該1件のtarget_repoグループ・ファイル名・本文が出力され他件は出力されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -58,7 +58,7 @@ class TestShowSingleFile:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -75,7 +75,7 @@ class TestShowSingleFile:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME指定と--target-repo不一致時は次のkindへ進み、全kind該当なしでexit 2となる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -101,7 +101,7 @@ class TestShowAll:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all指定時は複数target_repoの全件がグループ化されて出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -129,7 +129,7 @@ class TestShowStatusAll:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
         adopted_dir = notes / "adopted"
         adopted_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +165,7 @@ class TestShowRequiresFilenameOrAll:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME・--allともに未指定の場合はexit 2で案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -190,7 +190,7 @@ class TestShowTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=tbd指定時はinboxのみを探索しstatusラベル付きで出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -208,7 +208,7 @@ class TestShowTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=feedback指定時はtbdエントリを種別不一致として除外し該当なしでexit 2になる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -226,7 +226,7 @@ class TestShowTypeFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--type=all（既定）は種別を問わず探索し該当エントリを表示する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -248,7 +248,7 @@ class TestShowSourceFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all --source=NAME指定時、同一sourceのエントリのみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1", source="session-review")
         _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -267,7 +267,7 @@ class TestShowSourceFilter:
         tmp_path: pathlib.Path,
     ) -> None:
         """FILENAME指定＋--source=!NAME指定時、一致するsourceのファイルは未検出扱いになる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", source="session-review")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -283,7 +283,7 @@ class TestShowSourceFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all --source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, "tbd-001.md", question="質問1", source="session-review")
         _write_tbd_file(notes, "tbd-002.md", question="質問2", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -307,7 +307,7 @@ class TestShowStatusFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all --answered=yesは回答済みTBDだけを表示する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり")
@@ -329,7 +329,7 @@ class TestShowStatusFilter:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME指定時は--answeredを迂回し、未回答tbdでも--answered=yesと無関係に表示される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -382,7 +382,7 @@ class TestShowProcessing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、当該本文が表示される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -401,7 +401,7 @@ class TestShowProcessing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """FILENAME指定時、inbox→processingの順で探索しinbox側が優先される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-dup.md", body="inbox側本文")
         _write_feedback_processing_file(notes, "fb-dup.md", body="processing側本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -421,7 +421,7 @@ class TestShowProcessing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all指定時にinboxとprocessingの双方の本文がグループ化されて出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -447,7 +447,7 @@ class TestShowProcessedStates:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """adopted配下のFILENAMEを参照できる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -466,7 +466,7 @@ class TestShowProcessedStates:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """rejected配下のFILENAMEを参照できる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -490,7 +490,7 @@ class TestShowProcessedStates:
         でadopted・rejected状態のエントリを一切参照できなくなるため、単発指定は`--status`を
         迂回する契約になっている（指摘2の修正と対で成立する）。
         """
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -509,7 +509,7 @@ class TestShowProcessedStates:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """--all --status=allは全状態を表示する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
@@ -534,7 +534,7 @@ class TestShowSkipPull:
         tmp_path: pathlib.Path,
     ) -> None:
         """--skip-pull指定時はgit pull --ff-onlyが実行されない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))

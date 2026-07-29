@@ -21,8 +21,11 @@ _MUTABLE_KEYS = frozenset(("codex_model",))
 
 
 def _config_dir() -> pathlib.Path:
-    """設定ファイル配置ディレクトリを返す（`_flag_path`と同一の解決規約）。"""
-    return pathlib.Path(platformdirs.user_config_dir("agent-toolkit"))
+    """platformdirsの設定ディレクトリ解決規約に従い、設定ファイル配置ディレクトリを返す。
+
+    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
+    """
+    return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False))
 
 
 def _config_file_path() -> pathlib.Path:
@@ -54,10 +57,11 @@ def _save_config(config: dict[str, str]) -> None:
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
     config = _load_config()
+    # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
         "config_dir": str(_config_dir()),
-        "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit"))),
-        "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit"))),
+        "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
+        "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes_path(home)),
         "codex_model": config.get("codex_model", "(未設定)"),
     }

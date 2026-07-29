@@ -389,7 +389,7 @@ class TestRepoLock:
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
-        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name: str(tmp_path / "state"))
+        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
     def test_second_acquire_times_out_while_held(self, tmp_path: pathlib.Path) -> None:
         """1つ目のロック保持中は、別インスタンスからの2つ目の取得がタイムアウトする。"""
@@ -479,7 +479,7 @@ class TestCommitAndPushRetry:
     @pytest.fixture(autouse=True)
     def _isolate_lock_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
-        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name: str(tmp_path / "state"))
+        monkeypatch.setattr(_common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
     def test_retries_once_after_pull_rebase_on_push_failure(
         self,
@@ -620,7 +620,7 @@ class TestPrivateNotesAutoCreate:
     def _isolate_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """自動生成先を実環境の`user_data_dir`から隔離し、既定の環境変数上書きを解除する。"""
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
-        monkeypatch.setattr(_common.platformdirs, "user_data_dir", lambda _name: str(tmp_path / "data"))
+        monkeypatch.setattr(_common.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
 
     def test_private_notes_path_falls_back_to_platformdirs_when_default_missing(self, tmp_path: pathlib.Path) -> None:
         """既定パス`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
@@ -665,14 +665,6 @@ class TestPrivateNotesAutoCreate:
         second = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
         assert second == first
         assert marker.read_text(encoding="utf-8") == "kept"
-
-    def test_check_environment_reports_enabled_when_default_missing(self, tmp_path: pathlib.Path) -> None:
-        """既定パス不在（未生成）でも`_check_environment`は無効と判定しない（自動生成対象のため）。"""
-        home = tmp_path / "home"
-        home.mkdir()
-        code, message = _common._check_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
-        assert code == 0
-        assert "有効です" in message
 
 
 _LEGACY_FEEDBACK = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
@@ -836,13 +828,3 @@ class TestPullAndCommitPushSkipWithoutRemote:
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls == [["add", "feedback"], ["commit", "-m", "chore: test"]]
-
-
-class TestFlagPathUsesPlatformdirs:
-    """`_flag_path`の設定ディレクトリ解決がplatformdirsへ統一されていることを検証する。"""
-
-    def test_uses_user_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`platformdirs.user_config_dir("agent-toolkit")`配下を返す。"""
-        config_dir = tmp_path / ".config" / "agent-toolkit"
-        monkeypatch.setattr(_common.platformdirs, "user_config_dir", lambda _name: str(config_dir))
-        assert _common._flag_path() == tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"  # pylint: disable=protected-access  # noqa: SLF001

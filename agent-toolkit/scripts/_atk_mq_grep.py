@@ -19,8 +19,8 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     行番号はファイル先頭から1始まり。`--type`・`--status`・`--answered`・`--target-repo`は
     `list`サブコマンドと同一の選択肢・既定値を踏襲する。パターンはPythonの正規表現（`re`モジュール）
     として解釈し、`--ignore-case`指定時は大文字小文字を無視する。
-    該当0件の場合は1、該当1件以上で0を返す（`atk mq status`が無効時に1、有効時に0を返す既存の
-    負値=1慣行とgit grepの慣行の双方に整合するため、該当0件を1とした）。
+    該当0件の場合は1、該当1件以上で0を返す。
+    非エラーの真偽判定を終了コードで表現し、検索処理自体の失敗とは区別する。
     戻り値をそのまま`sys.exit`せず整数で返す設計は、`main`関数末尾の共通後処理
     （`_covers_unanswered_tbds`による通知抑止判定・`notify_unanswered_tbds_if_any`呼び出し）が
     `dispatch[sub]()`の直後で必ず実行される必要があるためである。ここで`sys.exit`すると

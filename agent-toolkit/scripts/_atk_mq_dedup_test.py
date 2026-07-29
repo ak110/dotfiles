@@ -18,7 +18,7 @@ import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -37,7 +37,7 @@ class TestAdoptDuplicate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -65,7 +65,7 @@ class TestRejectDuplicate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -93,7 +93,7 @@ class TestRmDuplicate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ削除されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -120,7 +120,7 @@ class TestStartProcessingDuplicate:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))

@@ -15,21 +15,19 @@
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: TBDへの回答
 - mq schedule: 分類メタデータの適用と処理順算出
-- mq enable/disable/status: メッセージキュー有効化フラグの操作・判定
 - mq process-loop: `claude /process-feedbacks`と`/agent-toolkit:exit-session`直接起動で常駐実行する。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しfeedback投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・codexモデル判定設定の確認・変更
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
 `_atk_mq_schedule_cli`・`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
-本モジュールはargparse定義・dispatch・エントリポイントと`enable`・`disable`・`status`の軽量ハンドラを保持する。
+本モジュールはargparse定義・dispatch・エントリポイントを保持する。
 """
 
 import argparse
 import datetime
 import pathlib
 import sys
-import typing
 
 # 兄弟モジュール（_atk_mq_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
 # sys.path挿入前の相対解決を避けるため、モジュール内importはこの下に配置する。
@@ -404,19 +402,6 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="外部編集後にinbox・processing配下の未コミット変更をコミット・push（差分なしなら無動作）",
     )
 
-    sub.add_parser(
-        "enable",
-        help="feedback-inboxフラグファイルを作成する",
-    )
-    sub.add_parser(
-        "disable",
-        help="feedback-inboxフラグファイルを削除する",
-    )
-    sub.add_parser(
-        "status",
-        help="feedback-inboxの有効状態を判定する（正常時exit 0、無効時exit 1で原因を標準エラー出力へ書く）",
-    )
-
     loop = sub.add_parser(
         "process-loop",
         help="対象リポジトリのfeedback消化をclaudeの常駐起動で反復実行する",
@@ -483,41 +468,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _cmd_enable() -> None:
-    """enableサブコマンド: feedback-inboxフラグファイルを作成する。
-
-    inbox常時有効化に伴い有効性判定には作用しない後方互換操作である。
-    """
-    path = _common._flag_path()
-    if path.exists():
-        print(f"既に有効です: {path}")
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"")
-    print(f"有効化しました: {path}")
-
-
-def _cmd_disable() -> None:
-    """disableサブコマンド: feedback-inboxフラグファイルを削除する。
-
-    inbox常時有効化に伴い有効性判定には作用しない後方互換操作である。
-    """
-    path = _common._flag_path()
-    if not path.exists():
-        print(f"既に無効です: {path}")
-        return
-    path.unlink()
-    print(f"無効化しました: {path}")
-
-
-def _cmd_status(home: pathlib.Path) -> typing.NoReturn:
-    """statusサブコマンド: feedback-inboxの有効状態を判定し終了コードで通知する。"""
-    code, message = _common._check_environment(home)
-    stream = sys.stdout if code == 0 else sys.stderr
-    print(message, file=stream)
-    sys.exit(code)
-
-
 def main(
     argv: list[str] | None = None,
     *,
@@ -575,14 +525,6 @@ def main(
     if args.command != "mq":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     sub = args.mq_subcommand
-    if sub == "enable":
-        _cmd_enable()
-        sys.exit(0)
-    if sub == "disable":
-        _cmd_disable()
-        sys.exit(0)
-    if sub == "status":
-        _cmd_status(home)
     private_notes = _common._ensure_environment(home)
     dispatch = {
         "add": lambda: _add._cmd_add(args, private_notes, now, home),

@@ -1,7 +1,7 @@
 """atk (agent-toolkit `atk mq`) の拡張サブコマンド・オプションのテスト。
 
-`add --source`・`list`/`show`のpull実行・`commit`・`enable`・`disable`・`status`・
-`add`のファイルパス誤投入拒否・`mq add`の`--target-repo`の単体テストを集約する。
+`add --source`・`list`/`show`のpull実行・`commit`・`list`の状態とカテゴリに基づく抽出・
+エディター経由の`add`・ファイルパス誤投入拒否・`mq add`の`--target-repo`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
 共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
 """
@@ -28,7 +28,7 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_TIMESTAMP,
     _GitCall,
     _make_subprocess_fake,
-    _setup_flag_and_notes,
+    _setup_notes,
     _write_feedback_file,
     _write_tbd_file,
 )
@@ -43,7 +43,7 @@ class TestAddSourceOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """--source=session-review指定時、frontmatterにsource: session-reviewが含まれる。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -66,7 +66,7 @@ class TestAddSourceOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """--source未指定時、frontmatterにsource行が含まれない。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
@@ -89,7 +89,7 @@ class TestListPullsBeforeRead:
         tmp_path: pathlib.Path,
     ) -> None:
         """list実行時に最初のgit呼び出しがpullであること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
@@ -110,7 +110,7 @@ class TestShowAllPullsBeforeRead:
         tmp_path: pathlib.Path,
     ) -> None:
         """show --all実行時に最初のgit呼び出しがpullであること。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
 
@@ -132,7 +132,7 @@ class TestCommitSubcommand:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未コミット差分ありの場合、pull→add→commit→pushの順で呼び出される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -165,7 +165,7 @@ class TestCommitSubcommand:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未コミット差分なしの場合、commit・pushを呼ばず「差分なし」を出力する。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         calls: list[_GitCall] = []
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -233,7 +233,7 @@ class TestListFeedbackStatusDefaultAll:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status`省略時、feedback側はinbox配下とprocessing配下の両方を出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -257,7 +257,7 @@ class TestListFeedbackStatusProcessing:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=processing`指定時、feedback側はprocessing配下のみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -281,7 +281,7 @@ class TestListFeedbackStatusAdopted:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=adopted`指定時、feedback側はadopted配下のみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted-body")
@@ -307,7 +307,7 @@ class TestListFeedbackCategory:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--category`指定時、同カテゴリが付与されたfeedbackのみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_adopted_file(notes, "fb-scope.md", category="scope-escalation", body="scope-body")
         _write_adopted_file(notes, "fb-other.md", category="other", body="other-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -334,7 +334,7 @@ class TestListFeedbackStatusAll:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=all`指定時、feedback側はinbox・processing両方を出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -358,7 +358,7 @@ class TestListFeedbackStatusActive:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=active`指定時、feedback側はadopted・rejected配下を除外しinbox・processingのみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted-body")
@@ -387,7 +387,7 @@ class TestListFeedbackStatusActive:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status`省略時、feedback側はadopted配下を除外し、tbd側は未回答を除外する（`--status=active`と同じ結果）。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
         _write_adopted_file(notes, "fb-adopted.md", category="scope-escalation", body="adopted本文")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -421,7 +421,7 @@ class TestListFeedbackStatusRejected:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=rejected`指定時、feedback側はrejected配下のみ出力する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
@@ -446,7 +446,7 @@ class TestListFeedbackStatusRejected:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`--status=rejected`指定時、tbd側は状態フォルダを持たないため全件出力される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         (notes / "inbox").mkdir(parents=True, exist_ok=True)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -457,122 +457,6 @@ class TestListFeedbackStatusRejected:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"{_FIXED_TIMESTAMP}-001.md" in captured.err
-
-
-class TestEnableSubcommand:
-    """enableサブコマンド: フラグファイル不在時に作成、存在時は冪等（inbox常時有効化に伴う後方互換操作）。"""
-
-    @pytest.fixture(autouse=True)
-    def _isolate_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """フラグファイル配置先を実環境の`user_config_dir`から隔離する。"""
-        config_dir = tmp_path / ".config" / "agent-toolkit"
-        # pylint: disable-next=protected-access
-        monkeypatch.setattr(atk._common.platformdirs, "user_config_dir", lambda _name: str(config_dir))  # noqa: SLF001
-
-    def test_enable_creates_flag(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグファイルが無い状態でも実行でき、生成される。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        assert not flag.exists()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "enable"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert flag.exists()
-        captured = capsys.readouterr()
-        assert "有効化しました" in captured.out
-
-    def test_enable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """既にフラグファイルが存在する場合は無動作で完了する。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "enable"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "既に有効です" in captured.out
-
-
-class TestDisableSubcommand:
-    """disableサブコマンド: フラグファイル存在時に削除、不在時は冪等（inbox常時有効化に伴う後方互換操作）。"""
-
-    @pytest.fixture(autouse=True)
-    def _isolate_config_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """フラグファイル配置先を実環境の`user_config_dir`から隔離する。"""
-        config_dir = tmp_path / ".config" / "agent-toolkit"
-        # pylint: disable-next=protected-access
-        monkeypatch.setattr(atk._common.platformdirs, "user_config_dir", lambda _name: str(config_dir))  # noqa: SLF001
-
-    def test_disable_removes_flag(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグファイルが存在する場合は削除される。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "disable"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not flag.exists()
-        captured = capsys.readouterr()
-        assert "無効化しました" in captured.out
-
-    def test_disable_idempotent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグファイルが存在しない場合は無動作で完了する。"""
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "disable"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "既に無効です" in captured.out
-
-
-class TestStatusSubcommand:
-    """statusサブコマンド: 有効状態をexit codeと出力先で通知する。"""
-
-    def test_status_enabled_even_when_flag_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """inbox常時有効化により、フラグファイル不在でもprivate-notesさえ存在すればexit 0で有効案内を出力する。"""
-        (tmp_path / "private-notes").mkdir()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "status"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "feedback-inboxは有効" in captured.out
-        assert captured.err == ""
-
-    def test_status_disabled_when_notes_missing(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグありかつ管理repo root不在時はexit 1で標準エラー出力にディレクトリ不在案内を出力する。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "status"], home=tmp_path)
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "フィードバック保存ディレクトリが見つかりません" in captured.err
-        assert captured.out == ""
-
-    def test_status_enabled_when_both_present(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """フラグとprivate-notesが両方揃っている場合はexit 0で標準出力に有効案内を出力する。"""
-        flag = tmp_path / ".config" / "agent-toolkit" / "feedback-inbox.enabled"
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-        (tmp_path / "private-notes").mkdir()
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "status"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "feedback-inboxは有効" in captured.out
-        assert captured.err == ""
 
 
 def _editor_fake_run(
@@ -619,7 +503,7 @@ class TestAddViaEditor:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """messages省略時にエディターが呼ばれ書き込み内容がfeedbackへ保存される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -650,7 +534,7 @@ class TestAddViaEditor:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """エディター保存内容がstrip後に空の場合はexit 1で投入中止する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -676,7 +560,7 @@ class TestAddViaEditor:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """$EDITOR未設定時はexit 1で案内が出力される。"""
-        _setup_flag_and_notes(tmp_path)
+        _setup_notes(tmp_path)
         monkeypatch.delenv("EDITOR", raising=False)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -704,7 +588,7 @@ class TestAddViaEditor:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """エディターが非ゼロ終了したらexit 1で案内する。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -730,7 +614,7 @@ class TestAddFilePathArgumentRejected:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """既存の`.md`ファイルパスを単独の位置引数として渡すと拒否される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         body_file = tmp_path / "body.md"
@@ -759,7 +643,7 @@ class TestAddFilePathArgumentRejected:
         tmp_path: pathlib.Path,
     ) -> None:
         """`.md`で終わるが実在しないパス文字列は本文として通常投入される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.chdir(tmp_path)
@@ -787,7 +671,7 @@ class TestAddFilePathArgumentRejected:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """`mktemp`生成の拡張子なし一時ファイルパスを単独の位置引数として渡すと拒否される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         body_file = tmp_path / "tmp.abc123"
@@ -820,7 +704,7 @@ class TestAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """`--target-repo`指定時、frontmatter未指定の本文はCLI値がtarget_repoとして記録される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
 
@@ -850,7 +734,7 @@ class TestAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """frontmatterでtarget_repoが明示された本文は`--target-repo`より優先される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
 
@@ -885,7 +769,7 @@ class TestTbdAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """`--target-repo`指定時、位置引数を省略した呼び出しではCLI値がtarget_repoとして記録される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
@@ -908,7 +792,7 @@ class TestTbdAddTargetRepoOption:
         tmp_path: pathlib.Path,
     ) -> None:
         """旧REPO_PATH位置引数形式が併用された場合、`--target-repo`より優先される。"""
-        notes = _setup_flag_and_notes(tmp_path)
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
