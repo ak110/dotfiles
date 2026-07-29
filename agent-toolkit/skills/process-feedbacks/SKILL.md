@@ -32,6 +32,11 @@ description: >
 判別困難な場合は`AskUserQuestion`で確認する。各メッセージは単体で読んで意味が完結する形に整え、
 出典URL・関連提案との関係・対象を一意に特定する前置きを含める。
 
+投入前に`git -C <repo-path> remote get-url origin`を実行し、対象パスのリモートURLが
+意図したリポジトリと一致することを確認する。同名ディレクトリを持つ別クローンが
+同じ環境に存在し得るため、ディレクトリ名だけで投入先を判定しない。
+確認したリモートURLをMESSAGE先頭frontmatterの`target_repo`へ明示する。
+
 投入前に`atk mq list --status=active --target-repo=<repo-path>`（パスまたは正規化リモートURLで
 指定する）で対象リポジトリ宛の既存フィードバック一覧を照会し、主題が重複するものの有無を確認する。
 重複を検出した場合は新規投入せず、
