@@ -60,7 +60,11 @@ description: >
    新規起動する。`plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
    `plan-file-finalizer`の反映後の全文を`Read`で検収し、`~/.claude/plans/`配下の正規パスへ
    `Write`で反映する（サンドボックスパスの削除・移動は委譲先の担当外とする既定に従う）
-5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）Agentツールで`plan-impl-executor`を起動する
+5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）
+   Agentツールで`plan-impl-executor`を起動する。起動プロンプトは
+   `agent-toolkit/agents/plan-impl-executor.md`「入力」節が定める必須引数
+   （計画ファイルの絶対パス、プロジェクトルート（作業ディレクトリ）の絶対パス）を満たす形で構成する。
+   作業ディレクトリの絶対パスは複製内外を問わず常に明記する
 
 バグ・障害・エラー・デグレードへの対応は`references/bugfix.md`に従う。判定がつかない場合はバグ対応として扱う。
 

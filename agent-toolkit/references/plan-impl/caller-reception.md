@@ -2,8 +2,10 @@
 
 `agent-toolkit/agents/plan-impl-executor.md`から参照されるSSOTとする。
 本ファイルは`plan-impl-executor`起動前の準備と完了報告の受領後の手順を定める。
-呼び出し時に渡す引数は`plan-impl-executor.md`のdescriptionに従う
-（計画ファイルの絶対パス、プロジェクトルートの絶対パス、追加指示（任意））。
+呼び出し時に渡す引数は`plan-impl-executor.md`「入力」節に従う
+（計画ファイルの絶対パス、プロジェクトルート（作業ディレクトリ）の絶対パス、追加指示（任意））。
+作業ディレクトリの絶対パスは複製内外を問わず常に起動プロンプトへ明記する
+（`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節参照）。
 
 起動前の準備: 呼び出し元はAgentツールで`agent-toolkit:plan-impl-executor`を起動する直前に
 `git rev-parse HEAD`を実行し、結果を計画着手前SHAとして記録する（手順2の照合に使う）。
@@ -107,3 +109,11 @@ foreground起動が自動的にbackgroundへ転換された場合は、task-noti
 受動的な委任・停滞確認の手順として`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節に従う。
 
 呼び出し元は本ファイルを参照し、固有差分（起動タイミング・追加の確認事項）のみを自スキル側へ記述する。
+
+## push後のCI通過確認
+
+`git push`とpush後のCI通過確認は呼び出し元が実施し、委譲先の完了条件に含めない。
+委譲先の完了条件は実装・検証・コミット・レビューまでとし、公開対象は完了報告の
+`commit_sha`欄で受領する。
+CI通過確認の待機は背景実行へ転換されると当該ターンが終わるため、
+完了通知を受領できる主体（呼び出し元）だけが背景起動を選べる。

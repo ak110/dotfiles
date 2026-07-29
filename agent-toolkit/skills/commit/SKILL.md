@@ -141,11 +141,19 @@ staged差分とunstaged差分が想定した境界に一致することを確認
 `git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
 `git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
 
+本節は`git push`を実行した主体が実施する工程であり、サブエージェントの完了条件に含めない
+（担当分離の理由は`agent-toolkit/references/plan-impl/caller-reception.md`
+「push後のCI通過確認」節、SSOTを参照する）。
+`git push`はサブエージェントの担当外（「## コミット運用」節）であるため、
+本節の実施主体はメインエージェントまたは委譲元となる。
+CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:shell-exec`への委譲を選んでよい。
+
 - 推奨手順: `${CLAUDE_PLUGIN_ROOT}/scripts/wait_ci.py --sha=<sha>`を
   Bashツールで`run_in_background=true`起動し、明確な失敗ジョブを1件検出するか、
   期待run・pipeline集合がすべて完了するまで待機する。
   既定`--timeout=900`秒はBashツール既定タイムアウト2分・上限10分を超えるため、
-  background起動が前提となる
+  background起動が前提となる。
+  background起動は完了通知を受領できる主体（メインエージェント・委譲元）が選ぶ
   - 組み込み機能: タイムアウト・登録遅延リトライ・進捗ログ・ジョブ単位の早期失敗検出・
     Jobs APIの全ページ取得・シグナル受信時の即時exit
     （`--subprocess-timeout`で子プロセス終了）・conclusion厳格判定（`success`のみ通過）
