@@ -2943,15 +2943,16 @@ def _reset_process7_completion_flags(session_id: str) -> None:
 
     def _reset(current: dict) -> dict | None:
         changed = False
-        # codex_usage_limit_observedはリセット対象に含めない。
-        # 外部サービスの利用上限は復旧まで日単位で継続するため、
-        # 新計画着手のたびにリセットすると失敗すると分かっている委譲が再起動され、
-        # 本フィードバックの主旨（代替フォールバックへ自動移行）が達成されない。
+        # codex_usage_limit_observedもリセット対象に含める。
+        # 利用限度の到達を一度観測しても、次の計画では再びcodexの利用を試みる。
+        # 観測時点の到達状態が以降も続く保証は無く、保持し続けると
+        # 復旧後もcodexを使わないままフォールバックし続けるため。
         for flag in (
             *_PROCESS7_COMPLETION_FLAGS,
             "plan_reviewer_invoked",
             "plan_codex_delegate_invoked",
             "plan_codex_delegate_blocked",
+            "codex_usage_limit_observed",
         ):
             if current.get(flag, False):
                 current[flag] = False

@@ -4709,9 +4709,9 @@ class TestPlanModeFlagReset:
         assert state.get("plan_codex_delegate_blocked", False) is False
         assert "recorded_codex_thread_id" not in state
 
-    def test_codex_usage_limit_observed_not_reset(self, tmp_path: pathlib.Path) -> None:
-        """新計画着手時もcodex_usage_limit_observedはリセット対象に含まれず真のまま残る。"""
-        sid = "test-codex-usage-limit-not-reset"
+    def test_codex_usage_limit_observed_reset(self, tmp_path: pathlib.Path) -> None:
+        """新計画着手時にcodex_usage_limit_observedをリセットし、次の計画でcodexを再試行できる状態へ戻す。"""
+        sid = "test-codex-usage-limit-reset"
         state = {
             "plan_mode_skill_invoked": True,
             "codex_usage_limit_observed": True,
@@ -4728,7 +4728,7 @@ class TestPlanModeFlagReset:
         )
         assert result.returncode == 0
         state_after = _read_session_state(tmp_path, sid)
-        assert state_after.get("codex_usage_limit_observed") is True
+        assert state_after.get("codex_usage_limit_observed", False) is False
 
 
 class TestCheckPlanFileH2SectionOrder:

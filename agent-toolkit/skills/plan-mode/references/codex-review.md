@@ -38,6 +38,8 @@ codexはMCP版（`mcp__codex__codex`・`mcp__codex__codex-reply`）のみを使�
   記録される。親セッションのPostToolUseがセッション状態フラグ`codex_usage_limit_observed`へ真化する。
   `codex_usage_limit_observed`と`plan_reviewer_invoked`がともに真の場合、`pretooluse.py`のゲートが
   実装工程（ExitPlanMode・`plan-impl-executor`）への進行を許可する。
+  当該フラグは新計画着手時にリセットされるため、利用限度到達を観測した後も
+  次の計画では段階1から改めて判定する。codexの利用を試みずにフォールバックへ移らない。
 
 `plan-codex-delegate`起動がauto mode下でブロックされた場合（段階1は技術的に利用可能）は
 段階2に該当せず、「plan-file-creatorからの起動」節の`needs_escalation`経路に従う。

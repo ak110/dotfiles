@@ -56,11 +56,11 @@
   `^codex_unavailable:\s*(.*)$`（`re.MULTILINE`なし、`match`）で抽出し、
   値が`"usage-limit"`と一致する場合に真化する。
 
-  寿命: セッション終了まで。`pretooluse.py`の`_reset_process7_completion_flags`が
-  新計画着手時（`agent-toolkit:plan-mode`起動時）に行うリセット対象へ含めない。
-  理由は外部サービスの利用上限が復旧まで日単位で継続するため、
-  新計画着手のたびにリセットすると失敗すると分かっている委譲が再起動され、
-  本フラグの主旨（自動フォールバック判定）が達成されないため。
+  寿命: 当該計画の処理中まで。`pretooluse.py`の`_reset_process7_completion_flags`が
+  新計画着手時（`agent-toolkit:plan-mode`起動時）に行うリセット対象へ含める。
+  理由は、利用限度の到達を一度観測しても観測時点の状態が以降も続く保証が無く、
+  保持し続けると復旧後もcodexを使わないままフォールバックし続けるため。
+  計画ごとに再試行し、到達が続いていれば当該計画内で改めてフォールバックする。
 
   用途: `pretooluse.py`の`_check_process7_completion_before_exit_plan_mode`が、
   段階2成立時の通過条件判定に用いる。`codex_review_invoked`が偽でも、
