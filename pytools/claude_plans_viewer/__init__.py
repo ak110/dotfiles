@@ -2,7 +2,8 @@
 r"""Claude Codeの`~/.claude/plans/*.md`をブラウザで一覧・閲覧するローカルHTTPビューア。
 
 SSHポートフォワード越しにWindows側のブラウザから参照することを想定し、
-外部CDNに依存せずサーバー側でMarkdownをHTMLへ変換する。
+外部CDNに依存せずサーバー側でMarkdownを安全なHTMLへ変換し、
+同梱したMermaidと画像コンテキストのSVGをブラウザー側で図として表示する。
 `--remote-host`を複数指定すると、SSH経由で各ホストの`~/.claude/plans/`も
 watchdogで監視して左ペインへ統合表示する。
 

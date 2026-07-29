@@ -2,12 +2,16 @@
 
 import asyncio
 import collections
+import collections.abc
 import html as html_lib
 import os
 import pathlib
 import typing
 
 import markdown_it
+import markdown_it.renderer
+import markdown_it.token
+import markdown_it.utils
 import pygments
 import watchdog.events
 from pygments.formatters.html import HtmlFormatter
@@ -38,6 +42,38 @@ def _highlight_code(code: str, name: str, _attrs: str) -> str:
     escaped_lang = html_lib.escape(name, quote=True)
     body = pygments.highlight(code, lexer, _PYGMENTS_FORMATTER).rstrip("\n")
     return f'<pre><code class="{_PYGMENTS_CSS_CLASS} language-{escaped_lang}">{body}\n</code></pre>\n'
+
+
+def _render_fence(
+    renderer: markdown_it.renderer.RendererHTML,
+    tokens: typing.Sequence[markdown_it.token.Token],
+    idx: int,
+    options: markdown_it.utils.OptionsDict,
+    env: collections.abc.MutableMapping[str, typing.Any],
+) -> str:
+    """MermaidとSVGのフェンスを専用HTML構造へ変換する。"""
+    token = tokens[idx]
+    info = token.info.strip() if token.info else ""
+    name = info.split(maxsplit=1)[0].lower() if info else ""
+    if name not in {"mermaid", "svg"}:
+        return renderer.fence(tokens, idx, options, env)
+
+    source = html_lib.escape(token.content)
+    if name == "mermaid":
+        return (
+            '<figure class="diagram diagram-mermaid">\n'
+            f'  <div class="diagram-output mermaid-output">{source}</div>\n'
+            '  <details class="diagram-source"><summary>Mermaid原文</summary>'
+            f"<pre>{source}</pre></details>\n"
+            "</figure>\n"
+        )
+    return (
+        '<figure class="diagram diagram-svg">\n'
+        '  <img class="diagram-output svg-output" alt="SVG図">\n'
+        '  <details class="diagram-source"><summary>SVG原文</summary>'
+        f"<pre>{source}</pre></details>\n"
+        "</figure>\n"
+    )
 
 
 # Markdownレンダリング結果LRUキャッシュの上限。
@@ -106,7 +142,9 @@ def make_md_renderer() -> markdown_it.MarkdownIt:
     # 明示的に`False`へ上書きしてXSS経路を塞ぐ。表拡張は別途`enable("table")`で有効化する。
     # `highlight`コールバックの戻り値はそのままHTMLとして埋め込まれるため、Pygmentsのエスケープ済み
     # 出力のみを返す（生のユーザー入力を経由させない）。
-    return markdown_it.MarkdownIt("commonmark", {"html": False, "highlight": _highlight_code}).enable("table")
+    renderer = markdown_it.MarkdownIt("commonmark", {"html": False, "highlight": _highlight_code}).enable("table")
+    renderer.add_render_rule("fence", _render_fence)
+    return renderer
 
 
 def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
@@ -260,6 +298,12 @@ async def read_css() -> str:
         # read_textはブロッキングI/Oのためスレッドプールで実行する。
         return await asyncio.to_thread(path.read_text, encoding="utf-8")
     return _assets.FALLBACK_CSS
+
+
+def read_mermaid_bundle() -> str:
+    """同梱したMermaidの単一ファイルbundleを読み込む。"""
+    path = pathlib.Path(__file__).resolve().parent / "vendor" / "mermaid.min.js"
+    return path.read_text(encoding="utf-8")
 
 
 def read_pygments_css() -> str:

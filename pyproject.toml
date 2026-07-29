@@ -23,6 +23,7 @@ dependencies = [
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
     "qrcode>=8.0",
+    "semantic-version>=2.10.0",
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
@@ -80,6 +81,7 @@ exclude = ["pytools/**/*_test.py", "pytools/**/*_test_helpers.py"]
 [dependency-groups]
 dev = [
     "filelock>=3.30",
+    "playwright>=1.61.0",
     "pyfltr[python]>=3.14.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
@@ -275,6 +277,7 @@ thm = "thm"
 # --dist=loadfileは最大テストファイルへ実行時間が固定され律速となるため、
 # module scopeのfixtureが1件のみで順序依存が無いことを確認したうえでworksteal方式へ変更した
 addopts = "--showlocals -p no:cacheprovider --maxfail=5 --durations=30 --durations-min=0.5 --timeout=60 -n 4 --dist=worksteal"
+markers = ["browser: Chromiumを使うclaude-plans-viewer実ブラウザー統合テスト"]
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"

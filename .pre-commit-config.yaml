@@ -4,12 +4,12 @@ repos:
     hooks:
       # テキストフォーマット。
       - id: trailing-whitespace
-        exclude: '\.cmd$'
+        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/'
       - id: end-of-file-fixer
-        exclude: '\.cmd$'
+        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/'
       - id: mixed-line-ending
         args: [--fix=lf]
-        exclude: '\.(cmd|ps1)(\.tmpl)?$'
+        exclude: '\.(cmd|ps1)(\.tmpl)?$|(^|/)pytools/claude_plans_viewer/vendor/'
       - id: fix-byte-order-marker
         # Windows PowerShell 5.1 は BOM のない .ps1 を ANSI（日本語環境では Shift-JIS）
         # として読んでしまい日本語文字列でパースエラーになる。そのため .ps1 / .ps1.tmpl の
@@ -27,6 +27,7 @@ repos:
       - id: detect-private-key
       # ファイル検証。
       - id: check-added-large-files
+        exclude: '(^|/)pytools/claude_plans_viewer/vendor/'
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: '\.tmpl$'

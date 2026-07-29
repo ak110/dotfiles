@@ -328,6 +328,25 @@ class TestApiEndpoints:
         assert "<h1>title</h1>" in body
 
     @pytest.mark.asyncio
+    async def test_api_file_renders_diagrams_without_raw_html(self, tmp_path: Path):
+        """/api/fileがMermaid・SVG専用構造を返し、Raw HTMLを無効化する。"""
+        (tmp_path / "a.md").write_text(
+            "```mermaid\ngraph TD\n  A --> B\n```\n\n"
+            '```svg\n<svg><rect width="10" height="10"/></svg>\n```\n\n'
+            "<script>alert(1)</script>\n",
+            encoding="utf-8",
+        )
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/api/file?path=a.md")
+
+        assert response.status_code == 200
+        rendered = await response.get_data(as_text=True)
+        assert "diagram-mermaid" in rendered
+        assert "diagram-svg" in rendered
+        assert "<script" not in rendered.lower()
+
+    @pytest.mark.asyncio
     async def test_api_file_missing_path_returns_400(self, tmp_path: Path):
         """/api/fileでpathパラメーターがなければ400を返す。"""
         app = _app.create_app(tmp_path, hostname="test")
@@ -385,6 +404,18 @@ class TestApiEndpoints:
 
         assert response.status_code == 200
         assert response.content_type.startswith("text/css")
+
+    @pytest.mark.asyncio
+    async def test_static_mermaid_bundle_served(self, tmp_path: Path):
+        """/static/mermaid.min.jsが単一bundleを安全なJavaScript応答として返す。"""
+        app = _app.create_app(tmp_path, hostname="test")
+        client = app.test_client()
+        response = await client.get("/static/mermaid.min.js")
+
+        assert response.status_code == 200
+        assert response.content_type == "text/javascript; charset=utf-8"
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert await response.get_data()
 
     @pytest.mark.asyncio
     async def test_favicon_served(self, tmp_path: Path):

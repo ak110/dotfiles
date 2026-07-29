@@ -171,8 +171,13 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends poppler-utils libarchive13
 
+      - name: Playwright Chromiumの導入
+        if: matrix.python-version == '3.12'
+        run: uv run playwright install --with-deps chromium
+
       - name: Test with pyfltr
         env:
+          CLAUDE_PLANS_VIEWER_BROWSER_TESTS: ${{ matrix.python-version == '3.12' && '1' || '0' }}
           # chezmoi-apply はローカルコミット時専用の pre-commit hook であるため CI ではスキップする
           # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
           # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）

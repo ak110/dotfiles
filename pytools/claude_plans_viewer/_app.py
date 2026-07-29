@@ -160,6 +160,15 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/static/mermaid.min.js")
+    async def mermaid_script() -> quart.Response:
+        bundle = await asyncio.to_thread(_local.read_mermaid_bundle)
+        return quart.Response(
+            bundle,
+            content_type="text/javascript; charset=utf-8",
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
     @app.get("/favicon.svg")
     async def favicon() -> quart.Response:
         return quart.Response(

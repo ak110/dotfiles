@@ -143,6 +143,31 @@ class TestMarkdownToHtml:
         # エスケープされた形で残ること
         assert "&lt;script&gt;" in html
 
+    def test_renders_mermaid_fence_as_escaped_diagram(self):
+        """Mermaidフェンスはエスケープ済み原文を持つ専用コンテナーになる。"""
+        src = "```mermaid\ngraph TD\n  A[<script>alert(1)</script>] --> B\n```\n"
+
+        html = _local.markdown_to_html(src)
+
+        assert '<figure class="diagram diagram-mermaid">' in html
+        assert '<div class="diagram-output mermaid-output">' in html
+        assert "<summary>Mermaid原文</summary>" in html
+        assert html.count("&lt;script&gt;alert(1)&lt;/script&gt;") == 2
+        assert "<script" not in html.lower()
+
+    def test_renders_svg_fence_as_source_only_image(self):
+        """SVGフェンスは`src`なしの画像とエスケープ済み原文になる。"""
+        src = '```svg\n<svg onload="alert(1)"><script>alert(2)</script></svg>\n```\n'
+
+        html = _local.markdown_to_html(src)
+
+        assert '<figure class="diagram diagram-svg">' in html
+        assert '<img class="diagram-output svg-output" alt="SVG図">' in html
+        assert "<summary>SVG原文</summary>" in html
+        assert "&lt;svg onload=&quot;alert(1)&quot;&gt;" in html
+        assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html
+        assert "<script" not in html.lower()
+
     def test_highlights_fenced_code_with_language(self):
         """言語指定ありフェンスはPygmentsの`<span class>`が出力される。"""
         src = '```python\nprint("hi")\n```\n'
@@ -631,6 +656,14 @@ class TestConsoleTitle:
 
 class TestIndexHtml:
     """`/`応答HTMLとSPAクライアントJSの契約を検証する。"""
+
+    def test_index_html_does_not_restrict_same_origin_images(self):
+        """同一オリジンのfaviconとMarkdown画像を遮断するCSPを埋め込まない。"""
+        assert "Content-Security-Policy" not in _assets.INDEX_HTML
+
+    def test_index_html_explicitly_configures_mermaid_strict_security(self):
+        """Mermaidの既定値に依存せず`strict`を明示する。"""
+        assert 'securityLevel: "strict"' in _assets.INDEX_HTML
 
     def test_index_html_handles_pagehide_and_pageshow(self):
         """クライアントJSがpagehideでEventSource.close()を呼び、pageshowのbfcache復帰時に再接続する。

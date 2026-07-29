@@ -159,6 +159,24 @@ _INDEX_CSS = """\
   #meta-mobile { display: none; }
   #drawer-backdrop { display: none; }
   main article { max-width: 860px; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
+  .diagram {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #ffffff;
+  }
+  .diagram-output { max-width: 100%; }
+  .mermaid-output { overflow-x: auto; text-align: center; }
+  .svg-output { display: block; height: auto; margin: 0 auto; }
+  .diagram-source { margin-top: 0.75rem; }
+  .diagram-source summary { color: #4b5563; cursor: pointer; font-size: 13px; }
+  .diagram-source pre { margin-bottom: 0; text-align: left; }
+  .diagram-error {
+    margin: 0.75rem 0 0;
+    color: #b91c1c;
+    font-weight: 600;
+  }
   /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
   @media (max-width: 768px) {
     #app { grid-template-columns: 1fr; }
@@ -236,6 +254,9 @@ let hostStatus = {};
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。
 // DOM化対象は先頭から`visibleLimit`件のみで、超過分は番兵IntersectionObserverで段階拡張する。
 let visibleFiles = [];
+let mermaidLoadPromise = null;
+let previewGeneration = 0;
+let previewObjectUrls = new Set();
 
 // 一覧描画件数の初期上限と拡張ステップ。
 // `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の比例コストが顕在化するため、
@@ -494,17 +515,120 @@ async function refreshHostInfo() {
   }
 }
 
+async function applyPreviewHtml(html, scrollTop, generation) {
+  if (generation !== previewGeneration) return;
+  revokePreviewObjectUrls();
+  const preview = document.getElementById("preview");
+  preview.innerHTML = html;
+  await renderDiagrams(preview, generation);
+  if (generation !== previewGeneration) return;
+  const main = document.querySelector("main");
+  if (main) main.scrollTop = scrollTop;
+}
+
+async function renderDiagrams(preview, generation) {
+  renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"), generation);
+  await renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation);
+}
+
+function loadMermaid() {
+  if (mermaidLoadPromise) return mermaidLoadPromise;
+  mermaidLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = BASE_PATH + "/static/mermaid.min.js";
+    script.onload = () => {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+      });
+      resolve(window.mermaid);
+    };
+    script.onerror = () => reject(new Error("Mermaidの読み込みに失敗しました"));
+    document.head.appendChild(script);
+  });
+  return mermaidLoadPromise;
+}
+
+async function renderMermaidDiagrams(nodes, generation) {
+  if (nodes.length === 0) return;
+  let api;
+  try {
+    api = await loadMermaid();
+  } catch (error) {
+    for (const node of nodes) showDiagramError(node.closest("figure"), error.message);
+    return;
+  }
+  if (generation !== previewGeneration) return;
+  for (const node of nodes) {
+    const source = node.textContent;
+    try {
+      await api.run({nodes: [node]});
+      disableMermaidNavigation(node);
+      if (generation !== previewGeneration) return;
+    } catch (_) {
+      node.textContent = source;
+      showDiagramError(node.closest("figure"), "Mermaid図を描画できませんでした");
+    }
+  }
+}
+
+function disableMermaidNavigation(node) {
+  for (const anchor of node.querySelectorAll("a")) {
+    anchor.removeAttribute("href");
+    anchor.removeAttribute("xlink:href");
+    anchor.removeAttribute("target");
+  }
+}
+
+function renderSvgDiagrams(figures, generation) {
+  for (const figure of figures) {
+    const source = figure.querySelector(".diagram-source pre").textContent;
+    const image = figure.querySelector(".svg-output");
+    const url = URL.createObjectURL(new Blob([source], {type: "image/svg+xml"}));
+    previewObjectUrls.add(url);
+    image.onload = () => {
+      if (generation !== previewGeneration) URL.revokeObjectURL(url);
+    };
+    image.onerror = () => {
+      if (generation === previewGeneration) {
+        showDiagramError(figure, "SVG図を描画できませんでした");
+      }
+    };
+    image.src = url;
+  }
+}
+
+function revokePreviewObjectUrls() {
+  for (const url of previewObjectUrls) URL.revokeObjectURL(url);
+  previewObjectUrls.clear();
+}
+
+function showDiagramError(figure, message) {
+  let error = figure.querySelector(".diagram-error");
+  if (!error) {
+    error = document.createElement("p");
+    error.className = "diagram-error";
+    figure.appendChild(error);
+  }
+  error.textContent = message;
+  error.hidden = false;
+}
+
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("main");
   const scrollTop = main ? main.scrollTop : 0;
+  const generation = ++previewGeneration;
   const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(selectedHost, selectedPath));
+  if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     return;
   }
-  document.getElementById("preview").innerHTML = await res.text();
-  if (main) main.scrollTop = scrollTop;
+  const html = await res.text();
+  if (generation !== previewGeneration) return;
+  await applyPreviewHtml(html, scrollTop, generation);
+  if (generation !== previewGeneration) return;
 }
 
 async function openFile(host, path) {
@@ -512,26 +636,27 @@ async function openFile(host, path) {
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
   selectedPath = path;
-  renderFiles();
-  // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
-  if (isMobileViewport()) setDrawerOpen(false);
-  const main = document.querySelector("main");
-  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path));
-  if (!res.ok) {
-    document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
-    if (main) main.scrollTop = 0;
-    return;
-  }
-  document.getElementById("preview").innerHTML = await res.text();
-  if (main) main.scrollTop = 0;
   document.title = host + ": " + path;
   const selected = files.find(f => f.host === host && f.path === path);
   selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
   // 選択ホストの`host_info`未取得（リモート接続確立前）はdisabled維持する。
   document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS);
-  updateNavButtons();
-  updateMetaMobile();
+  renderFiles();
+  // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
+  if (isMobileViewport()) setDrawerOpen(false);
+  const main = document.querySelector("main");
+  const generation = ++previewGeneration;
+  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path));
+  if (generation !== previewGeneration) return;
+  if (!res.ok) {
+    document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+    if (main) main.scrollTop = 0;
+    return;
+  }
+  const html = await res.text();
+  if (generation !== previewGeneration) return;
+  await applyPreviewHtml(html, 0, generation);
 }
 
 async function resyncFromServer() {
