@@ -80,8 +80,7 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
 3. Agentツールで`plan-codex-delegate`サブエージェント（`用途: 実装`）を起動する。
    対象ファイルが呼び出し元プロジェクト定義の編集用スキル起動義務（`agent-toolkit-edit`等）の
    対象範囲に該当する場合は、起動プロンプトの`## 遵守事項`節へ当該スキル呼び出し義務を明記する。
-   `plan-codex-delegate`はMCP不可時にCLIへフォールバックせずその旨を完了報告で返すため、
-   `plan-implementer`への委譲は当該完了報告でMCP利用不可が判明した場合のみとする。
+   `plan-implementer`への委譲は、`plan-codex-delegate`の完了報告でMCP利用不可が判明した場合のみとする。
    `plan-implementer`へ委譲する場合の`model`引数は`sonnet`を既定とし、
    難易度に応じて`haiku`または`opus`を明示指定する
 4. 委譲したタスクが`needs_escalation`を返したら本エージェント自身で引き上げて実装する。

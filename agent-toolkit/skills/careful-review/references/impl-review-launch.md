@@ -37,12 +37,11 @@
 
 ## 継続呼び出し
 
-`用途: 実装差分レビュー`の再レビューは`threadId`（MCP）・`SESSION_ID`（CLI）いずれの継続方式も使わない。
+`用途: 実装差分レビュー`の再レビューは`threadId`を使わない。
 段階2成立時の`plan-reviewer`も同様の扱いとする。
 `agent-toolkit/skills/careful-review/SKILL.md`「再レビュー」節の新規`Agent`起動方式に従い、毎回独立に評価する。
 理由は`agent-toolkit/skills/review-standards/SKILL.md`「完成条件」節が定める、
 確認済みの確実な誤りのみを報告する原則を毎回独立に適用するためである。
-CLIフォールバック時の出力先は`$(mktemp --suffix=.review.md)`とする。
 `plan_full_path`（計画ファイル種別専用の変数）には依存しない
 （`careful-review`単独実行時は計画ファイルが存在しないため）。
 
