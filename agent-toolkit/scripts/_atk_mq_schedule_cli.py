@@ -133,7 +133,41 @@ def _apply_requested_classifications(
     unknown = sorted(classification.filename for classification in classifications if classification.filename not in known)
     if unknown:
         raise ValueError(f"分類対象外filenameです: {', '.join(unknown)}")
+    _warn_body_sha256_mismatches(entries, classifications)
     return _schedule.apply_classifications(entries, terminal_entries, classifications, plan_target_files)
+
+
+def _warn_body_sha256_mismatches(
+    entries: tuple[_schedule.QueueEntry, ...],
+    classifications: tuple[_schedule.Classification, ...],
+) -> None:
+    """`source_body_sha256`が実ファイルと一致しない分類を標準エラー出力へ報告する。
+
+    不一致の分類は`apply_classifications`が例外を送出せず警告も出力しないまま除外する。
+    未分類だった項目は結果として`classification_required`へ現れるが、既に有効な分類を
+    持つ項目は既存分類が維持され同一覧へは現れない。したがって遷移先を一律には断定できず、
+    「適用されない」事実のみを報告する。原因の特定を助けるため、期待値と受理値を突き合わせて示す。
+    """
+    by_name = {entry.filename: entry for entry in entries}
+    mismatches = [
+        (
+            classification.filename,
+            _schedule.body_sha256(by_name[classification.filename].text),
+            classification.source_body_sha256,
+        )
+        for classification in classifications
+        if classification.filename in by_name
+        and _schedule.body_sha256(by_name[classification.filename].text) != classification.source_body_sha256
+    ]
+    if not mismatches:
+        return
+    print(
+        f"source_body_sha256が実ファイルと一致しない分類が{len(mismatches)}件あります"
+        "（当該分類は適用されません。既存の有効な分類が無い項目はclassification_requiredへ計上されます）",
+        file=sys.stderr,
+    )
+    for filename, expected, received in mismatches:
+        print(f"  {filename}: 期待={expected[:16]} 受理={received[:16]}", file=sys.stderr)
 
 
 def _persist_metadata_changes(

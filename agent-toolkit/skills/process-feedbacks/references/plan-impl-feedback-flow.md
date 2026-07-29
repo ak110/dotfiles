@@ -31,7 +31,18 @@
 - 各配列要素の必須キー:
   - `filename`（文字列。ファイル名の一意性を保つ）
   - `source_body_sha256`（文字列。frontmatterを除いた本文全体のUTF-8バイト列のSHA-256十六進表記。
-    改行コード変換・末尾空白除去などの正規化は行わない）
+    universal newlines変換後の文字列を対象とし、それ以降の追加の正規化
+    （改行コードの再変換・末尾空白除去等）は行わない）
+    - 「本文」は`pathlib.Path.read_text(encoding="utf-8")`で読み込んだ文字列
+      のうち、frontmatterの閉じ区切り行の直後から末尾までとする。
+      Pythonのuniversal newlinesにより、CRLF・CRはLFへ変換済みであり、
+      ファイルの生バイト列そのものではない。この変換より後段では改行の除去・追加を一切行わない
+      （閉じ区切り直後の改行を除去せず、末尾の改行を追加も除去もしない）。
+      frontmatterを持たないファイルはテキスト全文を本文として扱う
+    - 依拠実装は`agent-toolkit/scripts/_atk_mq_frontmatter.py`の`parse_frontmatter`が返す`body`とする
+      （`parse_frontmatter`自体は受け取った文字列に対して追加の改行変換を行わない）
+    - 算出元はキューの実ファイルとする。`atk mq show`の出力は見出し行を前置し末尾へ改行を加えるため、
+      当該出力から本文を復元しない
   - `type`（文字列。値は`"normal"`または`"plan-impl"`の2値のみ）
   - `dependency`（オブジェクト。フィードバック外部依存の構造化表現）
 - `type: "normal"`（通常型）のみに適用:
@@ -70,6 +81,21 @@
     }
   ]
 }
+```
+
+算出例（キューの実ファイル1件からハッシュを求める）:
+
+```python
+import hashlib
+import pathlib
+
+text = pathlib.Path("<キューの実ファイルパス>").read_text(encoding="utf-8")
+if text.startswith("---\n"):
+    end = text.index("\n---\n", 3)
+    body = text[end + len("\n---\n") :]
+else:
+    body = text
+source_body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
 ```
 
 ## 混在時の並行制御

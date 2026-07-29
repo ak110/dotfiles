@@ -96,8 +96,10 @@ class TestScheduleCli:
             )
 
         assert exc_info.value.code == 0
-        payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out.splitlines()[0])
         assert payload["parallel_normal_items"] == ["fb.md"]
+        assert captured.err == ""
         parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         assert isinstance(parsed[0].get("queue_schedule"), dict)
@@ -141,3 +143,110 @@ class TestScheduleCli:
         assert updated is not None
         assert updated.carry_count == 1
         assert updated.carry_reasons == ("conflict",)
+
+    def test_body_sha256_mismatch_is_reported_for_unclassified_item(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        expected = schedule.body_sha256(text)
+        received = "0" * 64
+        classification_path = tmp_path / "classifications.json"
+        classification_path.write_text(
+            json.dumps(
+                {
+                    "classifications": [
+                        {
+                            "filename": "fb.md",
+                            "source_body_sha256": received,
+                            "type": "normal",
+                            "dependency": {"kind": "none"},
+                            "target_files": ["README.md"],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    f"--classifications={classification_path}",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out.splitlines()[0])
+        assert payload["classification_required"] == ["fb.md"]
+        assert "source_body_sha256が実ファイルと一致しない分類が1件あります" in captured.err
+        assert f"fb.md: 期待={expected[:16]} 受理={received[:16]}" in captured.err
+
+    def test_body_sha256_mismatch_is_reported_for_classified_item(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb.md", target_repo="github.com/example/repo")
+        text = path.read_text(encoding="utf-8")
+        expected = schedule.body_sha256(text)
+        metadata = schedule.ScheduleMetadata(
+            expected,
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("README.md",),
+            0,
+            (),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata), encoding="utf-8")
+        received = "0" * 64
+        classification_path = tmp_path / "classifications.json"
+        classification_path.write_text(
+            json.dumps(
+                {
+                    "classifications": [
+                        {
+                            "filename": "fb.md",
+                            "source_body_sha256": received,
+                            "type": "normal",
+                            "dependency": {"kind": "none"},
+                            "target_files": ["README.md"],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "mq",
+                    "schedule",
+                    "--target-repo=github.com/example/repo",
+                    f"--classifications={classification_path}",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out.splitlines()[0])
+        assert "fb.md" not in payload["classification_required"]
+        assert payload["parallel_normal_items"] == ["fb.md"]
+        assert "source_body_sha256が実ファイルと一致しない分類が1件あります" in captured.err
