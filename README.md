@@ -20,6 +20,9 @@
 - [Git](https://git-scm.com/install/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - [Node.jsとnpm](https://nodejs.org/ja/download)
+- [PowerShell 7](https://learn.microsoft.com/ja-jp/powershell/scripting/install/installing-powershell-on-windows)（WindowsでのCodex CLI導入に推奨）
+
+Windows PowerShellでは、環境によって公式インストーラーが使用する`Get-FileHash`を解決できず、Codex CLIの導入に失敗する。
 
 ### 例（Linux）
 

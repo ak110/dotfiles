@@ -81,6 +81,7 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
     公式インストーラーは未導入なら新規導入、導入済みなら更新として同じ処理経路を使うため、
     導入済み判定による分岐を設けない。
     """
+    executable = _find_powershell() if sys.platform == "win32" else "sh"
     owns_client = client is None
     active_client = client or httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
     suffix = ".ps1" if sys.platform == "win32" else ".sh"
@@ -92,9 +93,9 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
             temp_path = Path(temp.name)
             temp.write(response.content)
         command = (
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            [executable, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
             if sys.platform == "win32"
-            else ["sh", str(temp_path)]
+            else [executable, str(temp_path)]
         )
         # 公式マニュアルはスクリプト化した導入と更新に`CODEX_NON_INTERACTIVE=1`を使うと定める。
         return claude_common.run_subprocess(
@@ -109,6 +110,15 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
                 temp_path.unlink()
         if owns_client:
             active_client.close()
+
+
+def _find_powershell() -> str:
+    """PowerShell 7を優先し、利用可能なPowerShell実行ファイルを返す。"""
+    for name in ("pwsh", "powershell"):
+        executable = shutil.which(name)
+        if executable is not None:
+            return executable
+    raise RuntimeError("Codexの公式インストーラーを実行できるPowerShellが見つからない")
 
 
 def _get_installer(client: httpx.Client, url: str) -> httpx.Response:

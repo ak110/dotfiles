@@ -11,6 +11,9 @@ dotfiles配布利用者では、`chezmoi apply`後の処理がCodexの公式イ�
 `CODEX_HOME`を設定した場合、パッケージは`$CODEX_HOME/packages/standalone`へ配置される。
 `CODEX_HOME`に指定するディレクトリは、インストーラーの実行前に作成する必要がある。
 `CODEX_INSTALL_DIR`を設定した場合、可視コマンドはそのディレクトリへ配置される。
+WindowsではPowerShell 7の利用を推奨する。
+導入処理は`pwsh`を優先し、見つからない場合は`powershell`へフォールバックする。
+Windows PowerShellでは、環境によって公式インストーラーが使用する`Get-FileHash`を解決できず、導入に失敗する。
 
 スタンドアローン版の起動を確認した後、mise npmバックエンドの全版を除去する。
 PATHから解決される非正規npm版も、package帰属を確認したうえで除去する。

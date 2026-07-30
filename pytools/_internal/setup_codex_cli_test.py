@@ -1,5 +1,6 @@
 """pytools._internal.setup_codex_cliのテスト。"""
 
+import contextlib
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -24,7 +25,15 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.delenv("CODEX_INSTALL_DIR", raising=False)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
-    monkeypatch.setattr(setup_codex_cli.shutil, "which", lambda name: "/usr/bin/mise" if name == "mise" else None)
+
+    def fake_which(name: str) -> str | None:
+        return {
+            "mise": "/usr/bin/mise",
+            "pwsh": "/usr/bin/pwsh",
+            "powershell": "/usr/bin/powershell",
+        }.get(name)
+
+    monkeypatch.setattr(setup_codex_cli.shutil, "which", fake_which)
 
 
 def _make_client(requests: list[httpx.Request] | None = None) -> httpx.Client:
@@ -53,7 +62,7 @@ def _make_fake_run(
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((command, kwargs))
-        if command[0] in {"sh", "powershell"}:
+        if Path(command[0]).stem in {"sh", "pwsh", "powershell"}:
             if launcher is not None:
                 launcher.parent.mkdir(parents=True, exist_ok=True)
                 launcher.write_text("", encoding="utf-8")
@@ -118,7 +127,7 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
     assert events == [f"path:{tmp_path / '.local' / 'bin'}", "migrate"]
 
 
-def test_run_installs_with_powershell_on_windows(monkeypatch, tmp_path: Path) -> None:
+def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path: Path) -> None:
     _isolate(monkeypatch, tmp_path, "win32")
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex.exe"
     calls: list[_Call] = []
@@ -133,9 +142,66 @@ def test_run_installs_with_powershell_on_windows(monkeypatch, tmp_path: Path) ->
     finally:
         client.close()
 
-    assert calls[0][0][:5] == ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+    assert calls[0][0][:5] == ["/usr/bin/pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert calls[1][0] == [str(launcher), "--version"]
     assert prepended == [tmp_path / "localappdata" / "Programs" / "OpenAI" / "Codex" / "bin"]
+
+
+@pytest.mark.parametrize(
+    ("executables", "expectation", "expected_command", "expected_requests"),
+    [
+        (
+            {"pwsh": "/tools/pwsh", "powershell": "/tools/powershell"},
+            contextlib.nullcontext(),
+            ["/tools/pwsh"],
+            1,
+        ),
+        (
+            {"powershell": "/tools/powershell"},
+            contextlib.nullcontext(),
+            ["/tools/powershell"],
+            1,
+        ),
+        (
+            {},
+            pytest.raises(RuntimeError, match="PowerShellが見つからない"),
+            [],
+            0,
+        ),
+    ],
+)
+def test_run_selects_available_powershell(
+    monkeypatch,
+    tmp_path: Path,
+    executables: dict[str, str],
+    expectation,
+    expected_command: list[str],
+    expected_requests: int,
+) -> None:
+    _isolate(monkeypatch, tmp_path, "win32")
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex.exe"
+    requests: list[httpx.Request] = []
+    calls: list[_Call] = []
+
+    def fake_which(name: str) -> str | None:
+        if name == "mise":
+            return "/usr/bin/mise"
+        return executables.get(name)
+
+    monkeypatch.setattr(setup_codex_cli.shutil, "which", fake_which)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
+
+    client = _make_client(requests)
+    try:
+        with expectation:
+            setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert [command[0] for command, _ in calls[:1]] == expected_command
+    assert len(requests) == expected_requests
 
 
 @pytest.mark.parametrize(
@@ -145,7 +211,7 @@ def test_run_installs_with_powershell_on_windows(monkeypatch, tmp_path: Path) ->
         (
             "win32",
             "https://chatgpt.com/codex/install.ps1",
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+            ["/usr/bin/pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
             ".ps1",
             "codex.exe",
         ),
