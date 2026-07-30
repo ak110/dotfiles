@@ -57,9 +57,11 @@ description: >
    実測確認し、`02-claude-code.md`「サブエージェント運用」節が定める書式
    （`（メイン判断: 不対応 — <理由>）`等）で不対応注記を確定してから実装工程へ進む。
    `route: unavailable`に起因する`status: needs_escalation`を受領した場合は、
-   呼び出し元がAgentツールでClaude代替を起動する。起動プロンプトには
-   `plan-codex-review.md`・`plan-codex-review-task.md`・計画・品質規範・
-   作業ディレクトリの絶対パス、対象、完了条件だけを含める。
+   呼び出し元がAgentツールでClaude代替を起動する。機械チェック・修正には
+   `plan-codex-review.md`と`plan-codex-review-fix-task.md`、総合レビューには
+   `plan-codex-review.md`と`plan-codex-review-task.md`を使う。
+   起動プロンプトには用途別のreference、計画、品質規範、作業ディレクトリの絶対パス、
+   対象、完了条件だけを含める。
    代替応答全文を任意入力としてfinalizerへ再入力し、finalizer自身に検収を継続させる。
    その他の`status: needs_escalation`は返却論点のみを解決し、確定方針込みの縮減プロンプトで
    新規起動する。`plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
@@ -228,7 +230,7 @@ H2・H3見出し名、または対象ファイル中の一意な既存文字列�
 実装差分に応じて単位を変更でき、変更時は通常の計画同期規定に従う。
 全コミットの完了後に実行する計画全体の最終検証を、各単位の近接検証と区別して記載する。
 レビューは`agent-toolkit:careful-review`を既定とする。
-ユーザーが不要と指示した場合のみ「レビューは実施しない」と書く。
+ユーザーが不要と指示した場合のみ`レビューは実施しない（ユーザー指示）`と書く。
 
 ### `## 進捗ログ`
 

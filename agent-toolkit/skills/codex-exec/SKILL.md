@@ -32,6 +32,7 @@ referenceを読み込んだと扱わない。呼び出し元と委譲先の双�
 
 | 用途 | 実行手順reference | task reference |
 | --- | --- | --- |
+| 計画機械チェック・修正 | `plan-codex-review.md` | `plan-codex-review-fix-task.md` |
 | 計画レビュー | `plan-codex-review.md` | `plan-codex-review-task.md` |
 | 計画実装・修正 | `plan-codex-implementation.md` | `plan-codex-implementation-task.md` |
 | 実装差分レビュー | `plan-codex-implementation-review.md` | `plan-codex-implementation-review-task.md` |
