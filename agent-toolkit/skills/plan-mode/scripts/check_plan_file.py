@@ -24,8 +24,36 @@ r"""計画ファイルの軽量機械チェック。
   汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
 
-いずれも警告のみで終了コードは常に0とする（次工程移行のブロックは`ExitPlanMode`と
-`plan-impl-executor`起動の2地点でメインエージェントが完成条件充足を判断して行う）。
+`agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
+節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
+標準エラー出力へ出力し、1件以上あれば終了コード1を返す。warning区分は`[warn] `接頭辞付きで
+標準エラー出力へ出力し、終了コードへ算入しない。引数誤用・対象ファイル読み込み不能は
+終了コード2を返し、検査違反と区別する。
+
+error区分（計画が成立しない致命的な問題）とその判定根拠。
+
+- 対象ファイル一覧・H3見出しそれぞれの重複: 同一パスが複数出現すると1対1対応の判定自体が
+  不正確になり、一覧との不整合を見落とす
+- 対象ファイル一覧とH3見出しの1対1対応: 一般則が挙げる「対象ファイル一覧との不整合」に当たる
+- 各H3配下のコードブロック存在: 変更後文面が無いと計画本文だけで変更を再現できない
+- H3パスの実在確認（絶対パス・相対パスの双方へ`exists()`を適用する）:
+  一般則が挙げる「パスの実在確認失敗」に当たる
+- Markdownフェンスの入れ子整合: フェンスが破れると`## 変更内容`の構造自体を解釈できなくなる
+- `## 実行方法`節の呼び出し名の実在確認: 一般則が挙げる「スキル名の実在確認失敗」に当たる
+- `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
+- メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
+  `_check_plan_file_retroactive_scan_recorded`が既にブロック側へ入っており、error区分が整合する
+
+warning区分（終了コードへ算入しない）とその判定根拠。
+
+- `## 実行方法`節のセッション運用工程混入: スコープ逸脱は計画の技術的成立を妨げない
+- `#### 廃止・改名対象一覧`の識別子残存: 検査結果の正否が実行フェーズで反転する。
+  計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である
+
+計画の構造（チェックボックス項目・H3見出しのパス・H2節の範囲・H4節が列挙する識別子）を
+抽出する処理は、共通ヘルパー`_unfenced_line_mask`でフェンス外と判定した行のみを対象とする。
+計画の記述例をコードブロックへ埋め込んだ文書（`agent-toolkit/skills/plan-mode/references/sample.md`等）
+から埋め込み内の見出し・チェックボックス項目を計画本体の構造として誤抽出しない。
 """
 
 from __future__ import annotations
@@ -115,26 +143,83 @@ def _is_excluded_repo_path(rel_parts: tuple[str, ...]) -> bool:
     return bool(rel_parts) and rel_parts[-1].startswith(".plan-check-")
 
 
+def _unfenced_line_mask(text: str) -> list[bool]:
+    """各行がMarkdownフェンスの外側かを判定するブールのリストを返す。
+
+    開閉判定は`_check_fence_nesting`と同一規則（同一のフェンス文字かつ同長以上で
+    情報文字列なしの行が閉じフェンスとなる）を用いる。フェンス開始行・終了行自身も
+    内側（`False`）として扱う。開始行・終了行は`- [ ]`・`### `等の抽出対象パターンと
+    一致しないため、内外いずれに含めても抽出結果へ影響しない。
+    """
+    lines = text.splitlines()
+    mask = [True] * len(lines)
+    fence_char: str | None = None
+    fence_len = 0
+    for i, line in enumerate(lines):
+        m = _FENCE_RE.match(line)
+        if fence_char is None:
+            if m:
+                fence_char, fence_len = m.group(1)[0], len(m.group(1))
+                mask[i] = False
+            continue
+        mask[i] = False
+        if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len and m.group(2).strip() == "":
+            fence_char = None
+    return mask
+
+
+def _unfenced_body(body: str) -> str:
+    """節本文からフェンス内の行を除去し、フェンス外の行のみを結合して返す。"""
+    lines = body.splitlines()
+    mask = _unfenced_line_mask(body)
+    return "\n".join(line for line, keep in zip(lines, mask, strict=False) if keep)
+
+
 def _extract_checkbox_paths(text: str) -> list[str]:
-    return [m.group(1) for line in text.splitlines() if (m := _CHECKBOX_RE.match(line))]
+    mask = _unfenced_line_mask(text)
+    return [m.group(1) for line, keep in zip(text.splitlines(), mask, strict=False) if keep and (m := _CHECKBOX_RE.match(line))]
 
 
 def _extract_h3_paths(text: str) -> list[str]:
-    return [m.group(1) for line in text.splitlines() if (m := _H3_PATH_RE.match(line))]
+    mask = _unfenced_line_mask(text)
+    return [m.group(1) for line, keep in zip(text.splitlines(), mask, strict=False) if keep and (m := _H3_PATH_RE.match(line))]
+
+
+def _first_unfenced_h3_line_index(text: str, path: str) -> int | None:
+    r"""`path`に一致する最初のフェンス外`### \\`<path>\\``見出し行のインデックス（0始まり）を返す。
+
+    フェンス内に埋め込まれた同名H3見出しは対象としない。
+    """
+    mask = _unfenced_line_mask(text)
+    for i, line in enumerate(text.splitlines()):
+        if mask[i] and (m := _H3_PATH_RE.match(line)) and m.group(1) == path:
+            return i
+    return None
 
 
 def _h3_section_body(text: str, path: str) -> str:
-    r"""`### \\`<path>\\``見出し配下の本文（次のH3見出し直前まで）を返す。見出しが無ければ空文字を返す。"""
-    marker = f"### `{path}`"
-    idx = text.find(marker)
-    if idx < 0:
+    r"""`### \\`<path>\\``見出し（フェンス外）配下の本文を返す。見出しが無ければ空文字を返す。
+
+    次のフェンス外H3見出し直前までを本文範囲とする。フェンス内に埋め込まれた同名H3見出しは
+    対象としない。
+    """
+    lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
+    start = _first_unfenced_h3_line_index(text, path)
+    if start is None:
         return ""
-    next_h3 = text.find("\n### `", idx + len(marker))
-    return text[idx + len(marker) : next_h3 if next_h3 > 0 else len(text)]
+    start += 1
+    end = len(lines)
+    for j in range(start, len(lines)):
+        if mask[j] and _H3_PATH_RE.match(lines[j]):
+            end = j
+            break
+    return "\n".join(lines[start:end])
 
 
 def _has_code_block_after(text: str, path: str) -> bool:
-    return "```" in _h3_section_body(text, path)
+    body = _h3_section_body(text, path)
+    return any(_FENCE_RE.match(line) for line in body.splitlines())
 
 
 def _extract_fenced_code_blocks(body: str, *, info_string: str) -> list[str]:
@@ -162,17 +247,17 @@ def _extract_fenced_code_blocks(body: str, *, info_string: str) -> list[str]:
 def _iter_h2_sections(text: str, heading: str) -> list[str]:
     """`## <heading>`見出し配下の本文（次のH2直前まで）を全出現分列挙する。
 
-    計画ファイルが完全なサンプル計画（`plan-mode/references/sample.md`等）を
-    地の文へ埋め込む場合、同名H2見出しが複数出現し得る。どれが計画本体の
-    見出しかを判定する高精度な手段は持たないため、全出現を対象に含めて
-    検出漏れを避ける（非ブロックの軽量チェックのため、埋め込み例示への
-    誤検出よりも本体の見落としを避けることを優先する）。
+    見出し行の判定はフェンス外の行に限る。計画本文へ他計画・記述例をコードブロックとして
+    埋め込んだ場合、埋め込み内の同名見出しを計画本体の節境界として誤認しない
+    （区分の判定根拠はモジュールdocstringを参照する）。節本文自体はフェンス内の行を
+    含めたまま返す。
     """
     lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
     sections: list[str] = []
     start = None
     for i, line in enumerate(lines):
-        m = _H2_RE.match(line)
+        m = _H2_RE.match(line) if mask[i] else None
         if m and m.group(1).strip() == heading:
             start = i + 1
             continue
@@ -214,11 +299,15 @@ def _check_fence_nesting(text: str) -> list[str]:
 
 
 def _check_execution_method_scope(text: str) -> list[str]:
-    """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。"""
+    """`## 実行方法`節に振り返り・セッション終了などのセッション運用工程が無いか検出する。
+
+    節内にフェンスで埋め込まれた記述例の行は対象としない。
+    """
     warnings: list[str] = []
     for section_no, body in enumerate(_iter_h2_sections(text, "実行方法"), start=1):
-        for line_no, line in enumerate(body.splitlines(), start=1):
-            if _SESSION_OPS_RE.search(line):
+        mask = _unfenced_line_mask(body)
+        for line_no, (line, keep) in enumerate(zip(body.splitlines(), mask, strict=False), start=1):
+            if keep and _SESSION_OPS_RE.search(line):
                 warnings.append(
                     f"実行方法節（{section_no}件目の出現）内({line_no}行目相当): "
                     "振り返り・セッション終了などのセッション運用工程が記載されている疑いがある。"
@@ -283,7 +372,10 @@ def _available_subagent_names() -> set[str]:
 
 
 def _check_invocation_names_exist(text: str) -> list[str]:
-    """`## 実行方法`節が参照する名前が、呼び出し構文に対応する定義一覧に実在するか検出する。"""
+    """`## 実行方法`節が参照する名前が、呼び出し構文に対応する定義一覧に実在するか検出する。
+
+    節内にフェンスで埋め込まれた記述例の呼び出し名は対象としない。
+    """
     warnings: list[str] = []
     skills = _available_skill_names()
     subagents = _available_subagent_names()
@@ -293,7 +385,7 @@ def _check_invocation_names_exist(text: str) -> list[str]:
         _KIND_ANY: skills | subagents,
     }
     for body in _iter_h2_sections(text, "実行方法"):
-        for name, kind in _extract_invocation_references(body):
+        for name, kind in _extract_invocation_references(_unfenced_body(body)):
             available = candidates_by_kind[kind]
             if name in available:
                 continue
@@ -304,10 +396,16 @@ def _check_invocation_names_exist(text: str) -> list[str]:
 
 
 def _check_deletion_instruction_present(text: str) -> list[str]:
-    """`（廃止・削除）`と注記された項目のH3節`text`コードブロック内に削除指示語が現れるか検出する。"""
+    """`（廃止・削除）`と注記された項目のH3節`text`コードブロック内に削除指示語が現れるか検出する。
+
+    対象項目の抽出はフェンス外の行に限る。
+    """
     warnings: list[str] = []
+    mask = _unfenced_line_mask(text)
     deleted_paths = [
-        m.group(1) for line in text.splitlines() if _DELETED_TARGET_MARKER in line and (m := _CHECKBOX_RE.match(line))
+        m.group(1)
+        for line, keep in zip(text.splitlines(), mask, strict=False)
+        if keep and _DELETED_TARGET_MARKER in line and (m := _CHECKBOX_RE.match(line))
     ]
     for path in deleted_paths:
         body = _h3_section_body(text, path)
@@ -326,18 +424,23 @@ def _check_deletion_instruction_present(text: str) -> list[str]:
 
 
 def _extract_deprecated_identifiers(text: str) -> list[str]:
-    """`#### 廃止・改名対象一覧`H4節が列挙するバッククォート囲み識別子を全出現分抽出する。"""
+    """`#### 廃止・改名対象一覧`H4節が列挙するバッククォート囲み識別子を全出現分抽出する。
+
+    見出し・節終端の判定はフェンス外の行に限る。埋め込み例示内の同名H4見出しを
+    節境界として誤認しない。
+    """
     identifiers: list[str] = []
     lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
     in_section = False
-    for line in lines:
-        if _DEPRECATED_LIST_HEADING_RE.match(line):
+    for i, line in enumerate(lines):
+        if mask[i] and _DEPRECATED_LIST_HEADING_RE.match(line):
             in_section = True
             continue
-        if in_section and _HEADING_RE.match(line):
+        if in_section and mask[i] and _HEADING_RE.match(line):
             in_section = False
             continue
-        if in_section:
+        if in_section and mask[i]:
             identifiers.extend(re.findall(r"`([^`]+)`", line))
     return identifiers
 
@@ -410,7 +513,7 @@ def _check_retroactive_scan_recorded(text: str) -> list[str]:
     """メタ規範パターンの追加を含む計画で、`## 調査結果`の遡及スキャン必須3語の不足を検出する。"""
     if not _detect_meta_norm_addition(text):
         return []
-    section_text = "\n".join(_iter_h2_sections(text, "調査結果"))
+    section_text = "\n".join(_unfenced_body(body) for body in _iter_h2_sections(text, "調査結果"))
     missing = [item for item in _RETROACTIVE_SCAN_REQUIRED_ITEMS if item not in section_text]
     if not missing:
         return []
@@ -422,52 +525,81 @@ def _check_retroactive_scan_recorded(text: str) -> list[str]:
 
 
 def main() -> int:
-    """計画ファイル1件を対象に軽量機械チェックを実行し、警告をstderrへ出力する。"""
+    """計画ファイル1件を対象に軽量機械チェックを実行し、error・warningをstderrへ出力する。
+
+    error区分が1件以上あれば1を返す。warning区分のみの場合と違反なしの場合は0を返す。
+    引数誤用・対象ファイル読み込み不能はいずれも2を返す。
+    """
     if len(sys.argv) != 2:
         print("usage: check_plan_file.py <plan-file-path>", file=sys.stderr)
-        return 0
+        return 2
     plan_path = pathlib.Path(sys.argv[1])
-    text = plan_path.read_text(encoding="utf-8")
+    try:
+        text = plan_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"計画ファイルを読み込めない: {plan_path} ({exc})", file=sys.stderr)
+        return 2
+    errors: list[str] = []
     warnings: list[str] = []
 
     checkbox_paths = _extract_checkbox_paths(text)
     h3_paths = _extract_h3_paths(text)
+    duplicate_checkbox = sorted({p for p in checkbox_paths if checkbox_paths.count(p) > 1})
+    duplicate_h3 = sorted({p for p in h3_paths if h3_paths.count(p) > 1})
+    if duplicate_checkbox:
+        errors.append(f"対象ファイル一覧に重複したパス: {duplicate_checkbox}")
+    if duplicate_h3:
+        errors.append(f"重複したH3見出し: {duplicate_h3}")
     missing_h3 = [p for p in checkbox_paths if p not in h3_paths]
     missing_checkbox = [p for p in h3_paths if p not in checkbox_paths]
     if missing_h3:
-        warnings.append(f"H3見出しが無い対象ファイル: {missing_h3}")
+        errors.append(f"H3見出しが無い対象ファイル: {missing_h3}")
     if missing_checkbox:
-        warnings.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
+        errors.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
 
     for path in checkbox_paths:
         if not _has_code_block_after(text, path):
-            warnings.append(f"コードブロックが無いH3: {path}")
+            errors.append(f"コードブロックが無いH3: {path}")
 
+    lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
     for path in h3_paths:
-        if _NEW_OR_DELETED_RE.search(text.split(f"### `{path}`", 1)[0][-40:]):
+        # フェンス内に埋め込まれた同名H3見出しではなく、フェンス外の実際の見出し行を基準に
+        # 新設・削除マーカーの有無を判定する（`_first_unfenced_h3_line_index`は変更8で新設）。
+        h3_index = _first_unfenced_h3_line_index(text, path)
+        preceding = "\n".join(lines[:h3_index]) if h3_index is not None else ""
+        if _NEW_OR_DELETED_RE.search(preceding[-40:]):
             continue
         checkbox_line = next(
-            (line for line in text.splitlines() if f"`{path}`" in line and line.startswith("- [ ]")),
+            (
+                line
+                for line, keep in zip(lines, mask, strict=False)
+                if keep and f"`{path}`" in line and line.startswith("- [ ]")
+            ),
             "",
         )
         if _NEW_OR_DELETED_RE.search(checkbox_line):
             continue
-        if not (pathlib.Path(path).is_absolute() or (plan_path.parents[-1] / path).exists()):
-            resolved = pathlib.Path.cwd() / path
-            if not resolved.exists():
-                warnings.append(f"実在確認できないパス: {path}")
+        # 絶対パスは`path`自身へ、相対パスは従来どおり計画ファイルのルート起点へ`exists()`を適用する。
+        # 従来実装は絶対パスの場合に実在確認自体を省略しており、存在しない絶対パスをerror化できない
+        # 欠陥があったため、両経路とも実在確認を必須にする。
+        candidate = pathlib.Path(path) if pathlib.Path(path).is_absolute() else plan_path.parents[-1] / path
+        if not candidate.exists() and not (pathlib.Path.cwd() / path).exists():
+            errors.append(f"実在確認できないパス: {path}")
 
-    warnings.extend(_check_fence_nesting(text))
+    errors.extend(_check_fence_nesting(text))
+    errors.extend(_check_invocation_names_exist(text))
+    errors.extend(_check_deletion_instruction_present(text))
+    errors.extend(_check_retroactive_scan_recorded(text))
     warnings.extend(_check_execution_method_scope(text))
-    warnings.extend(_check_invocation_names_exist(text))
-    warnings.extend(_check_deletion_instruction_present(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
-    warnings.extend(_check_retroactive_scan_recorded(text))
 
+    for error in errors:
+        print(error, file=sys.stderr)
     for warning in warnings:
-        print(f"warning: {warning}", file=sys.stderr)
+        print(f"[warn] {warning}", file=sys.stderr)
 
-    return 0
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
