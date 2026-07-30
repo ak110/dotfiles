@@ -192,6 +192,11 @@ CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:
     `gh run list --commit <sha> --json databaseId,workflowName,status`で対象sha由来のrunを取得する
     - 照会には完全な識別子（`git rev-parse HEAD`の出力そのもの）を渡す。
       短縮された識別子では結果が空で返るため、空結果を検証未登録の根拠にしない
+    - 完全な識別子を渡しても空の結果が返る場合がある。空の結果を得たときは
+      `gh run list --limit <件数> --json databaseId,workflowName,status,conclusion,headSha`で
+      実行状況を一覧取得し、`headSha`を対象コミットの識別子で突合する
+    - 待機処理の条件へ用いる照会は、起動前に当該コミットで結果が得られることを単発実行で確認する
+      （`agent-toolkit/rules/02-claude-code.md`の待機ループ規定に従う）
   - `--workflow`引数を追加指定する場合はworkflow名・数値IDのいずれも受理するが、
     ファイル名指定時は`workflowName`と一致しない場合があるため、
     `gh workflow list`で正確な`workflowName`を事前確認するか`--commit`のみで代替する
