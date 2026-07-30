@@ -79,7 +79,7 @@ Codexで利用する場合は次の対応表に従って読み替える。
 | Claude Code | Codex相当 |
 | --- | --- |
 | `TaskCreate`・`TaskUpdate`・`TaskList`・`TaskGet` | `update_plan`で計画状態を管理する |
-| `Task`ツール（サブエージェント起動） | `spawn_agent`で別エージェントへ委譲する |
+| `Agent`ツール（サブエージェント起動。旧称`Task`） | `spawn_agent`で別エージェントへ委譲する |
 | `AskUserQuestion` | ネイティブ機能を利用（ユーザーへ直接質問する） |
 | `Skill`（スキル呼び出し） | ネイティブ機能を利用（参照すべきガイドはユーザー指示またはスラッシュコマンドで呼び出す） |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
