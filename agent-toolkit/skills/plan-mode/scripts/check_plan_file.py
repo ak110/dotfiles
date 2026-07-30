@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の11点に限定する。
+チェック対象は次の12点に限定する。
 - 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
   Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
@@ -27,6 +27,7 @@ r"""計画ファイルの軽量機械チェック。
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
 - `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
   記載されているか
+- 版更新正本を対象ファイル一覧へ含む計画に、具体的なバージョン数値が記載されていないか
 
 `agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
 節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
@@ -57,6 +58,8 @@ warning区分（終了コードへ算入しない）とその判定根拠。
 - `## 実行方法`節のセッション運用工程混入: スコープ逸脱は計画の技術的成立を妨げない
 - `#### 廃止・改名対象一覧`の識別子残存: 検査結果の正否が実行フェーズで反転する。
   計画作成時点では対象識別子が残存しているのが正常であり、実装完了後は残存が異常である
+- 版更新正本を含む計画の具体的なバージョン数値: 現行値の引用など正当な記載もあり得る一方、
+  更新後の数値を事前に固定すると版更新スクリプトの実行結果と矛盾する可能性がある
 
 計画の構造（チェックボックス項目・H3見出しのパス・H2節の範囲・H4節が列挙する識別子）を
 抽出する処理は、共通ヘルパー`_unfenced_line_mask`でフェンス外と判定した行のみを対象とする。
@@ -121,6 +124,9 @@ _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE = re.compile(r"いかなる理由(?:�
 _RETROACTIVE_SCAN_NEW_HEADING_RE = re.compile(r"^##[#]* .+$", re.MULTILINE)
 
 _RETROACTIVE_SCAN_REQUIRED_ITEMS: tuple[str, ...] = ("対象パターン", "検出件数", "対応方針")
+
+_BUMP_MANIFEST_PATHS = frozenset({"agent-toolkit/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json"})
+_VERSION_NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])")
 
 
 def _looks_like_python_definition_identifier(name: str) -> bool:
@@ -590,6 +596,27 @@ def _check_retroactive_scan_recorded(text: str) -> list[str]:
     ]
 
 
+def _check_version_number_absent(text: str, checkbox_paths: list[str]) -> list[str]:
+    """版更新正本を対象へ含む計画で、具体的なバージョン数値の記載を検出する。
+
+    版更新の種別（PATCH・MINOR・MAJOR）だけを記載し、数値は
+    `scripts/agent_toolkit_bump.py`の実行結果へ委ねる規定に対応する。
+    フェンス内の記述例は対象としない。
+    """
+    if not _BUMP_MANIFEST_PATHS & set(checkbox_paths):
+        return []
+    warnings = []
+    mask = _unfenced_line_mask(text)
+    for line_no, (line, keep) in enumerate(zip(text.splitlines(), mask, strict=False), start=1):
+        if keep and _VERSION_NUMBER_RE.search(line):
+            warnings.append(
+                f"バージョン数値の記載の疑い({line_no}行目): 版更新正本を対象ファイル一覧へ含む計画では"
+                "具体的なバージョン数値を書かず、更新種別（PATCH・MINOR・MAJOR）のみを記載する"
+                "（現行値の引用など正当な記載であれば対応不要）"
+            )
+    return warnings
+
+
 def main() -> int:
     """計画ファイル1件を対象に軽量機械チェックを実行し、error・warningをstderrへ出力する。
 
@@ -656,6 +683,7 @@ def main() -> int:
     errors.extend(_check_base_commit_recorded(text))
     warnings.extend(_check_execution_method_scope(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
+    warnings.extend(_check_version_number_absent(text, checkbox_paths))
 
     for error in errors:
         print(error, file=sys.stderr)

@@ -698,6 +698,57 @@ def test_warning_only_returns_zero_with_warn_prefix(
     assert "セッション運用工程" in stderr
 
 
+@pytest.mark.parametrize(
+    ("target_path", "description", "expect_warning"),
+    [
+        pytest.param(
+            "agent-toolkit/.claude-plugin/plugin.json",
+            "更新後の版は1.2.3とする。\n",
+            True,
+            id="manifest_with_version_number",
+        ),
+        pytest.param(
+            ".claude-plugin/marketplace.json",
+            "更新種別はPATCH・MINOR・MAJORから選ぶ。\n",
+            False,
+            id="manifest_with_update_types_only",
+        ),
+        pytest.param(
+            "foo.md",
+            "更新後の版は1.2.3とする。\n",
+            False,
+            id="non_manifest_with_version_number",
+        ),
+        pytest.param(
+            ".claude-plugin/marketplace.json",
+            "```text\n更新後の版は1.2.3とする。\n```\n",
+            False,
+            id="manifest_with_fenced_version_number",
+        ),
+    ],
+)
+def test_version_number_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    target_path: str,
+    description: str,
+    expect_warning: bool,
+) -> None:
+    """版更新正本の有無と数値の記載位置に応じてwarningを切り替える。"""
+    body = (
+        f"## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `{target_path}`（新設）\n\n"
+        f"{description}\n### `{target_path}`\n\n```text\ncontent\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    stderr = capsys.readouterr().err
+    assert ("バージョン数値の記載の疑い" in stderr) is expect_warning
+    if expect_warning:
+        assert stderr.startswith("[warn] ")
+
+
 def test_error_returns_one_without_warn_prefix(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
