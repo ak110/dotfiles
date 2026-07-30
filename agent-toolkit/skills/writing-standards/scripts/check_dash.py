@@ -47,7 +47,7 @@ _EXCLUDED_DIRS = frozenset(
 _DASH_PATTERN = re.compile(r"—|―|──")
 
 # URL内の文字を検査対象から除外するためのパターン。
-_URL_RE = re.compile(r"https?://[^\s)\]>]+")
+_URL_RE = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")
 
 # 違反種別の表示名。
 _KIND_MAP = {
@@ -56,8 +56,9 @@ _KIND_MAP = {
     "──": "double-dash(U+2500x2)",
 }
 
-# フェンス開始の最小バッククォート/チルダ数。
-_FENCE_RE = re.compile(r"^( {0,3})(```+|~~~+)")
+# フェンス開始の最小バッククォート/チルダ数。閉じ判定では`group(3)`（マーカー後の残り）が
+# 空であることも要求するため、末尾の任意文字列を第3グループとして捕捉する。
+_FENCE_RE = re.compile(r"^( {0,3})(```+|~~~+)(.*)$")
 
 
 def main() -> int:
@@ -139,7 +140,7 @@ def _check_file(path: pathlib.Path) -> list[str]:
                 in_fence = True
                 # 開始フェンスの全長を保持し、閉じ判定に使う。
                 fence_marker = marker
-            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker):
+            elif marker[0] == fence_marker[0] and len(marker) >= len(fence_marker) and m.group(3).strip() == "":
                 in_fence = False
                 fence_marker = ""
             continue
@@ -193,7 +194,10 @@ def _strip_inline_code(line: str) -> str:
 
 
 def _strip_urls(line: str) -> str:
-    """行中のURLをダッシュ検査対象から除外するため、同じ長さの空白に置換する。"""
+    """行中のURLをダッシュ検査対象から除外するため、同じ長さの空白に置換する。
+
+    スキームまたは`www.`を持たない相対リンクはURLとして除外しない。
+    """
     return _URL_RE.sub(lambda m: " " * len(m.group(0)), line)
 
 

@@ -415,7 +415,7 @@ def _check_deletion_instruction_present(text: str) -> list[str]:
         # `text`以外の情報文字列（`python`等）のコードブロックのみが存在する場合、
         # 「コードブロックが無いH3」検査（`_has_code_block_after`、任意の情報文字列を許容）は
         # 通過するが本検査は不成立のままとなる。両検査の対象コードブロック種別を揃えるため、
-        # `text`ブロックが1件も無い場合も食い違いとして警告し、他検査への委譲で見逃さない。
+        # `text`ブロックが1件も無い場合も食い違いとしてerrorにし、他検査への委譲で見逃さない。
         combined = "\n".join(text_blocks)
         if not any(word in combined for word in _DELETION_INSTRUCTION_WORDS):
             warnings.append(
@@ -498,16 +498,17 @@ def _added_lines_text(block: str) -> str:
 
 def _detect_meta_norm_addition(text: str) -> bool:
     """`## 変更内容`の各H3節`text`コードブロックの追加分にメタ規範パターンが現れるか判定する。"""
-    for path in _extract_h3_paths(text):
-        body = _h3_section_body(text, path)
-        for block in _extract_fenced_code_blocks(body, info_string="text"):
-            added = _added_lines_text(block)
-            if (
-                _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
-                or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
-                or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
-            ):
-                return True
+    for change_body in _iter_h2_sections(text, "変更内容"):
+        for path in _extract_h3_paths(change_body):
+            body = _h3_section_body(change_body, path)
+            for block in _extract_fenced_code_blocks(body, info_string="text"):
+                added = _added_lines_text(block)
+                if (
+                    _RETROACTIVE_SCAN_UNIVERSAL_PROHIBITION_RE.search(added)
+                    or _RETROACTIVE_SCAN_GENERIC_PROHIBITION_RE.search(added)
+                    or _RETROACTIVE_SCAN_NEW_HEADING_RE.search(added)
+                ):
+                    return True
     return False
 
 
@@ -547,8 +548,9 @@ def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
 
-    checkbox_paths = _extract_checkbox_paths(text)
-    h3_paths = _extract_h3_paths(text)
+    change_text = "\n## 変更内容\n".join(_iter_h2_sections(text, "変更内容"))
+    checkbox_paths = _extract_checkbox_paths(change_text)
+    h3_paths = _extract_h3_paths(change_text)
     duplicate_checkbox = sorted({p for p in checkbox_paths if checkbox_paths.count(p) > 1})
     duplicate_h3 = sorted({p for p in h3_paths if h3_paths.count(p) > 1})
     if duplicate_checkbox:
@@ -563,17 +565,12 @@ def main() -> int:
         errors.append(f"対象ファイル一覧に無いH3見出し: {missing_checkbox}")
 
     for path in checkbox_paths:
-        if not _has_code_block_after(text, path):
+        if not _has_code_block_after(change_text, path):
             errors.append(f"コードブロックが無いH3: {path}")
 
-    lines = text.splitlines()
-    mask = _unfenced_line_mask(text)
+    lines = change_text.splitlines()
+    mask = _unfenced_line_mask(change_text)
     for path in h3_paths:
-        # 埋め込み例を避けてフェンス外の見出しを基準とし、絶対・相対パスの双方を実在確認する。
-        h3_index = _first_unfenced_h3_line_index(text, path)
-        preceding = "\n".join(lines[:h3_index]) if h3_index is not None else ""
-        if _NEW_OR_DELETED_RE.search(preceding[-40:]):
-            continue
         checkbox_line = next(
             (
                 line
@@ -590,7 +587,7 @@ def main() -> int:
 
     errors.extend(_check_fence_nesting(text))
     errors.extend(_check_invocation_names_exist(text))
-    errors.extend(_check_deletion_instruction_present(text))
+    errors.extend(_check_deletion_instruction_present(change_text))
     errors.extend(_check_retroactive_scan_recorded(text))
     warnings.extend(_check_execution_method_scope(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))

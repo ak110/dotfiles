@@ -5,6 +5,7 @@
 """
 
 import pathlib
+import runpy
 import subprocess
 import sys
 
@@ -170,6 +171,21 @@ class TestCheckDash:
         assert f"{path}:3:" not in result.stderr
         assert f"{path}:6:" in result.stderr
 
+    def test_fence_close_candidate_with_info_string_is_not_closing(self, tmp_path: pathlib.Path) -> None:
+        """閉じ候補行が情報文字列を伴う場合は閉じフェンスと認識せず、フェンス内側のまま扱う。
+
+        開始フェンスと同種・同長以上のマーカーでも、末尾に情報文字列（`text`等）が
+        付いている行はMarkdown仕様上の閉じフェンスではない。閉じ判定を誤ると、
+        本来フェンス内側にある禁止文字を誤って地の文として検出してしまう。
+        """
+        path = _write(
+            tmp_path / "doc.md",
+            f"```\n```text\n{_EM_DASH}\n```\n```\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 0
+        assert result.stderr == ""
+
     def test_different_fence_kind_inside_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """開始3個のバッククォートフェンス内部に`~~~`（別種フェンス）が出現しても無視される。"""
         path = _write(
@@ -195,20 +211,68 @@ class TestCheckDash:
         assert result.returncode == 1
         assert "em-dash(U+2014)" in result.stderr
 
-    def test_url_is_excluded(self, tmp_path: pathlib.Path) -> None:
-        """URL内のダッシュ系禁止文字は検査対象から除外する。"""
+    def test_non_ascii_dashes_end_url_and_are_detected(self, tmp_path: pathlib.Path) -> None:
+        """URL風文字列内でもASCII外のダッシュ系禁止文字は検出する。"""
         path = _write(
             tmp_path / "doc.md",
             f"https://example.com/{_EM_DASH}/{_HORIZ_BAR}/{_BOX_DOUBLE}\n",
         )
         result = _run(str(path))
-        assert result.returncode == 0
-        assert result.stderr == ""
+        assert result.returncode == 1
+        assert "em-dash(U+2014)" in result.stderr
+        assert "horizontal-bar(U+2015)" in result.stderr
+        assert "double-dash(U+2500x2)" in result.stderr
 
-    @pytest.mark.parametrize("delimiter", [")", "]", ">", " "])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "ftp://example.com/path",
+            "custom+scheme://example.com/path",
+            "www.example.com/path",
+            "http://[::1]:8080/path",
+        ],
+    )
+    def test_url_pattern_recognizes_supported_forms(self, url: str) -> None:
+        """URLパターンが非HTTPスキーム・`www.`記法・IPv6を認識する。"""
+        url_pattern = runpy.run_path(str(_SCRIPT))["_URL_RE"]
+        assert url_pattern.fullmatch(url)
+
+    @pytest.mark.parametrize(
+        "url_prefix",
+        [
+            "ftp://example.com/path",
+            "custom+scheme://example.com/path",
+            "www.example.com/path",
+            "http://[::1]:8080/path",
+        ],
+    )
+    def test_non_http_and_ipv6_url_boundaries(self, tmp_path: pathlib.Path, url_prefix: str) -> None:
+        """非HTTPスキーム・`www.`記法・IPv6でも日本語をURL境界として扱う。"""
+        prefix = f"{url_prefix}を参照する"
+        path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+
+    def test_url_exclusion_stops_at_japanese_text(self, tmp_path: pathlib.Path) -> None:
+        """URL直後の日本語をURLに含めず、その後の禁止文字を検出する。"""
+        prefix = "https://example.com/aを参照する"
+        path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+
+    def test_relative_link_is_not_excluded(self, tmp_path: pathlib.Path) -> None:
+        """スキームと`www.`を持たない相対リンク内は禁止文字を検出する。"""
+        path = _write(tmp_path / "doc.md", f"docs/{_EM_DASH}/guide.md\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert "em-dash(U+2014)" in result.stderr
+
+    @pytest.mark.parametrize("delimiter", [">", " "])
     def test_url_exclusion_ends_at_delimiter(self, tmp_path: pathlib.Path, delimiter: str) -> None:
         """URL終端記号より後のダッシュは元の列番号で検出する。"""
-        prefix = f"https://example.com/{_EM_DASH}{delimiter}"
+        prefix = f"https://example.com/path{delimiter}"
         path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
         result = _run(str(path))
         assert result.returncode == 1

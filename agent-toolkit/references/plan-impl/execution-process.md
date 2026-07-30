@@ -91,9 +91,10 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
 4. 委譲したタスクが`needs_escalation`を返した場合の対応は
    `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の分岐（解法探索に留まる失敗は
    別`threadId`で再委譲し、計画方針自体の見直しを要する失敗は呼び出し元へ`needs_escalation`で
-   返す）に従う。`plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`verification`/`unplanned`の
+   返す）に従う。
+   `plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`verification`/`unplanned`の
    構造化書式で完了報告を返すため、`unplanned`欄で対象外変更の必要性などを検知し、
-   解法探索に留まる場合は自身での実装または`plan-implementer`へ切り替える
+   該当時は手順3の判断指針に従って対応を決める
 5. 呼び出し元起動プロンプトで並列化が明示指定された場合に限り、
    委譲タスクのうち編集対象ファイルが独立する2件以上は並列起動する。
    `plan-implementer`委譲は`name`と`run_in_background`を省略したforegroundで起動する。

@@ -32,6 +32,36 @@ def test_code_block_presence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyP
     assert main() == 0
 
 
+def test_change_structure_outside_change_section_is_ignored(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`## 変更内容`節外のチェックボックスとH3見出しを変更対象として検出しない。"""
+    body = (
+        "## 調査結果\n\n### 対象ファイル一覧\n\n- [ ] `does/not/exist.md`\n\n"
+        "### `does/not/exist.md`\n\n変更内容ではない説明。\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_all_repeated_change_sections_are_checked(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数の`## 変更内容`節がある場合は全出現の対象ファイル一覧を検査する。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `first.md`（新設）\n\n"
+        "### `first.md`\n\n```text\ncontent\n```\n\n"
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `second.md`（新設）\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "H3見出しが無い対象ファイル: ['second.md']" in capsys.readouterr().err
+
+
 def test_nonexistent_path_errors(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -44,6 +74,35 @@ def test_nonexistent_path_errors(
     assert main() == 1
     captured = capsys.readouterr()
     assert "実在確認できないパス" in captured.err
+
+
+def test_unrelated_new_marker_before_h3_does_not_skip_existence_check(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象H3直前の無関係な`（新設）`では実在確認を免除しない。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `does/not/exist.md`\n\n"
+        "別項目の説明（新設）\n"
+        "### `does/not/exist.md`\n\n```text\ncontent\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "実在確認できないパス: does/not/exist.md" in capsys.readouterr().err
+
+
+def test_new_marker_on_checkbox_skips_existence_check(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象パスのチェックボックスにある`（新設）`は実在確認を免除する。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `does/not/exist.md`（新設）\n\n"
+        "### `does/not/exist.md`\n\n```text\ncontent\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_nonexistent_path_with_prefixed_deletion_marker_silent(
@@ -150,7 +209,7 @@ def test_unknown_skill_name_without_prefix_mismatch_candidate(
 def test_agent_tool_subagent_name_silent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`Agentツールで`構文のサブエージェント名は実在すれば警告しない。"""
+    """`Agentツールで`構文のサブエージェント名は実在すればerrorとして検出しない。"""
     body = "## 実行方法\n\n- Agentツールで`agent-toolkit:plan-impl-executor`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
@@ -244,8 +303,8 @@ def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
     assert main() == 1
     captured = capsys.readouterr()
     # `agent-toolkit:plan-reviewer`はサブエージェント定義であり、スキル定義ではない。
-    # `Agentツールで`側は正しい呼び出しであり警告しない。`Skillツールで`側は
-    # 取り違えであり、スキル名として実在しないことを警告する。
+    # `Agentツールで`側は正しい呼び出しでありerrorとして検出しない。`Skillツールで`側は
+    # 取り違えであり、スキル名として実在しないことをerrorとして報告する。
     assert "実在しないスキル名の疑い: `agent-toolkit:plan-reviewer`" in captured.err
     assert "実在しないサブエージェント名の疑い" not in captured.err
 
@@ -253,7 +312,7 @@ def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
 def test_bare_agent_toolkit_reference_accepts_subagent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """構文を伴わない`agent-toolkit:`参照はスキル・サブエージェントいずれかに実在すれば警告しない。"""
+    """構文を伴わない参照はスキル・サブエージェントいずれかに実在すればerrorとして検出しない。"""
     body = "## 実行方法\n\n- レビューは`agent-toolkit:plan-reviewer`の担当とする\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
