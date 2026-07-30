@@ -66,9 +66,11 @@ user-invocable: false
 
 受領直後に
 `uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
-実行し、警告を是正する。`writing-standards`スキル「emダッシュ・horizontal bar・2倍ダッシュチェック」節が
-必須とする`check_dash.py`は`check_plan_file.py`・`pyfltr`のいずれにも内包されないため、
-計画ファイル全体へ明示的に実行し警告を是正する。
+実行する。error区分違反は全件是正しexit 0へ到達させる。`[warn]`接頭辞付きのwarning区分出力は
+終了コードへ算入されないため、内容を確認して是正の要否を判断する。`writing-standards`スキル
+「emダッシュ・horizontal bar・2倍ダッシュチェック」節が必須とする`check_dash.py`は
+`check_plan_file.py`・`pyfltr`のいずれにも内包されないため、計画ファイル全体へ明示的に実行し
+警告を是正する。
 
 ## 整合性チェック・codexレビュー
 
@@ -79,12 +81,16 @@ user-invocable: false
 工程順は次のとおりとする（並列化により`pyfltr`の所要時間をcodexレビューの待ち時間へ吸収し、
 直列実行より短時間で完了条件へ到達するため）。
 
-1. `check_plan_file.py`を実行し警告を是正する（前節で実施済みの場合は本工程を省略する）
+1. `check_plan_file.py`を実行する（前節で実施済みの場合は本工程を省略する）。
+   error区分違反は全件是正しexit 0へ到達させる。`[warn]`接頭辞付きのwarning区分出力は
+   終了コードへ算入されないため、内容を確認して是正の要否を判断する
 2. codexレビュー起動と、計画ファイルを対象リポジトリ配下の一時パスへ複製して
    `uvx pyfltr run --no-fix <一時パス>`を実行するBash呼び出しを、同一応答内で並列実行する
 3. codex指摘とpyfltr違反が出揃った時点で重大度に基づき対応要否を判断し、計画ファイルへ一括反映する
-4. 反映後に`check_plan_file.py`・`pyfltr`・`check_dash.py`を再実行し、いずれもexit 0となることを確認する
-   （指摘反映で新たな表記違反が生じうるため必須とする。対象は差分部分のみで短時間である）
+4. 反映後に`check_plan_file.py`・`pyfltr`・`check_dash.py`を再実行し、いずれもexit 0となることを確認する。
+   `check_plan_file.py`のerror区分違反は全件是正してexit 0へ到達させる。
+   `[warn]`接頭辞付きのwarning区分出力は終了コードへ算入されないため、
+   内容を確認して是正の要否を判断し、是正しない場合は判断根拠を完了報告へ記載する
 
 codexレビューのラウンド数は`codex-review.md`「codexレビューの進め方」節が定める合計5ラウンドを
 絶対上限とする。同節が定める「並列起動した複数インスタンスはまとめて1ラウンドとして数える」
@@ -217,7 +223,7 @@ completed_reviews: {呼び出し元が代行実施し「実施済みレビュー
   レビューを、実施主体・実施日時が分かる形で記載する（該当なしの場合は「なし」）}
 file_check: {成果物の実在と分量を示すコマンド（`ls -l`・`wc -l`等）の実行結果}
 check_results:
-- `check_plan_file.py`: pass | fail（違反件数。初回・再実行の双方）
+- `check_plan_file.py`: pass | fail（error件数とwarning件数。初回・再実行の双方）
 - `uvx pyfltr run --no-fix`（リポジトリ配下の一時複製に対して実行）: pass | fail（違反件数。初回・再実行の双方）
 escalation_points:
 - {発生工程・関連箇所・背景・暫定判断・回答が必要な論点を1件1行で（該当なしの場合は「なし」）}
