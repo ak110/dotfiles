@@ -19,7 +19,7 @@
 
 - [Git](https://git-scm.com/install/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- [Node.jsとnpm](https://nodejs.org/ja/download)（Codex CLIの導入に使用）
+- [Node.jsとnpm](https://nodejs.org/ja/download)
 
 ### 例（Linux）
 
@@ -35,8 +35,8 @@ winget install --id=Git.Git -e --source=winget
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Claude CodeとCodex CLIは`chezmoi apply`後の処理が導入と更新を管理する。
-Codexの導入には、現在有効なNode環境のnpmを使用する。
+Claude CodeとCodex CLIは`chezmoi apply`後の処理が公式インストーラーから導入し、更新する。
+Codex CLIは公式スタンドアローン版を使用する。
 詳細は[Claude Code利用ガイド](docs/guide/claude-code-guide.md)と
 [Codex利用ガイド](docs/guide/codex-guide.md)を参照する。
 

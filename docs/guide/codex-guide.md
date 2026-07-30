@@ -4,14 +4,22 @@ dotfiles利用者は`update-dotfiles`/`chezmoi apply`により、Codex向け設�
 
 ## Codex CLI本体
 
-dotfiles配布利用者では、`chezmoi apply`後の処理が現在有効なNode環境へCodexを導入する。
-導入には`npm install --global @openai/codex@latest`を使用する。
+dotfiles配布利用者では、`chezmoi apply`後の処理がCodexの公式インストーラーを非対話で実行する。
+未導入時はスタンドアローン版を導入し、導入済みの場合は最新版へ更新する。
+管理対象パッケージは`~/.codex/packages/standalone/`へ配置される。
+可視コマンドの既定配置先はLinuxとmacOSで`~/.local/bin`、Windowsで`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`である。
+`CODEX_HOME`と`CODEX_INSTALL_DIR`を設定した環境では、その値を配置先として使う。
 
-選択したnpmのglobal prefix上でCodexの起動を確認した後、mise npmバックエンドの全版を除去する。
+スタンドアローン版の起動を確認した後、mise npmバックエンドの全版を除去する。
 PATHから解決される非正規npm版も、package帰属を確認したうえで除去する。
 PATH外の非アクティブNode環境は自動削除しない。
 認証情報、設定、セッションは除去しない。
 WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版の整理を次回へ延期する。
+
+旧版の整理を`chezmoi apply`後の処理が担うのは、公式インストーラーが非対話実行時に競合するnpm版を残すためである。
+公式インストーラーは競合版を検出したうえで削除の可否を対話で確認し、非対話実行では否定を既定値とする。
+競合版を検出した実行では、シェルの起動ファイルへPATH設定が追記される場合がある。
+起動ファイルはchezmoiの配布対象であるため、追記された内容は次回の`chezmoi apply`で配布内容へ戻る。
 
 ## 推奨構成
 
