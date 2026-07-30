@@ -28,7 +28,8 @@ description: >
 ## 起動
 
 1. `agent-toolkit:codex-exec`を起動する
-2. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review.md`をReadする
+2. `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review.md`と
+   `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-implementation-review-task.md`をReadする
 3. 対象ファイルの内容を退避し、内容ハッシュと`git diff`を記録する
 4. 対象差分全体を1つのレビュー系へ委譲する
 5. レビュー応答の受領後に内容ハッシュと差分を比較する
@@ -63,14 +64,16 @@ Claude代替では前回応答全文を渡して毎回新規起動する。
 
 初回1回と再レビュー4回の合計5ラウンドを上限とする。
 致命的・重大の指摘が解消し、採用した軽微指摘の反映を確認した時点で完了とする。
+5ラウンド目にも致命的・重大指摘が残る場合は完了とせず、指摘全文、重大度、対象箇所、
+区分、根拠、必要な修正を`findings`へ記載して`needs_escalation`で返す。
 
 ## 出力
 
 ```text
 status: completed | needs_escalation
 summary: <結果>
-implementation_route: codex | claude
-review_route: codex | claude
+implementation_route: codex | claude | unavailable | not_started
+review_route: codex | claude | unavailable | not_started
 implementation_thread_id: <threadIdまたは「なし」>
 review_thread_id: <threadIdまたは「なし」>
 review_rounds: <回数>

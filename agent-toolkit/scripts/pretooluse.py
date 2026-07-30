@@ -108,6 +108,7 @@ Edit/MultiEditのscope-escalation checkは既存ファイル本文を読み込�
 import datetime
 import hashlib
 import json
+import ntpath
 import pathlib
 import re
 import shlex
@@ -169,14 +170,23 @@ _ISOLATED_READ_TARGETS: tuple[str, ...] = ("agent-toolkit/skills/agent-standards
 _NORM_SKIPPING_SUBAGENT_TYPES: frozenset[str] = frozenset({"claude", "Explore"})
 
 # 起動プロンプトが規範を明示引用していると判定するキーワード。
-# 上記の規範非読込型サブエージェントを起動する場合、プロンプト本文に少なくとも1つを含めること。
-_NORM_REFERENCE_KEYWORDS: tuple[str, ...] = (
+_NORM_INLINE_REFERENCE_KEYWORDS: tuple[str, ...] = (
     "agent-toolkit:agent-standards",
     "agent-toolkit:coding-standards",
     "agent-toolkit:writing-standards",
-    "01-agent.md",
-    "02-claude-code.md",
 )
+_NORM_PLUGIN_RELATIVE_PATHS = frozenset(
+    {
+        "skills/agent-standards/SKILL.md",
+        "skills/coding-standards/SKILL.md",
+        "skills/writing-standards/SKILL.md",
+        "rules/01-agent.md",
+        "rules/02-claude-code.md",
+    }
+)
+_NORM_DISTRIBUTED_RULE_RELATIVE_PATHS = frozenset({"01-agent.md", "02-claude-code.md"})
+_PROMPT_PATH_TOKEN_RE = re.compile(r"`([^`\n]+)`|([^\s`]+)")
+_PROMPT_PATH_STRIP_CHARS = "\"'()[]{}<>,.;:、。"
 
 
 # このスクリプトの hook 識別子。
@@ -273,11 +283,79 @@ def _check_read_isolated_reference(tool_input: dict, session_id: str, is_sidecha
     )
 
 
+def _extract_prompt_path_candidates(prompt: str) -> list[str]:
+    """起動プロンプトから空白またはバッククォートで区切られたMarkdownパス候補を抽出する。"""
+    candidates: list[str] = []
+    for match in _PROMPT_PATH_TOKEN_RE.finditer(prompt):
+        token = (match.group(1) or match.group(2)).strip(_PROMPT_PATH_STRIP_CHARS)
+        if token.lower().endswith(".md"):
+            candidates.append(token)
+    return candidates
+
+
+def _norm_reference_trusted_roots() -> tuple[str, str]:
+    """実行中のagent-toolkitルートと配布済みルールディレクトリの実在パスを返す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    distributed_root = pathlib.Path.home() / ".claude" / "rules" / "agent-toolkit"
+    return str(plugin_root), str(distributed_root)
+
+
+def _normalize_norm_reference_path(path_text: str) -> tuple[str, pathlib.PurePath] | None:
+    """POSIX・Windows形式の絶対パスを形式識別子付きで正規化する。"""
+    windows_path = pathlib.PureWindowsPath(path_text)
+    if windows_path.is_absolute():
+        if ".." in windows_path.parts:
+            return None
+        return "windows", pathlib.PureWindowsPath(ntpath.normpath(path_text))
+    posix_path = pathlib.PurePosixPath(path_text)
+    if not posix_path.is_absolute() or ".." in posix_path.parts:
+        return None
+    try:
+        return "posix", pathlib.Path(path_text).resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _is_absolute_norm_reference_path(
+    candidate: str,
+    trusted_roots: tuple[str, str] | None = None,
+) -> bool:
+    """候補が信頼済みルート配下の認可規範ファイルを指す絶対パスか判定する。"""
+    normalized_candidate = _normalize_norm_reference_path(candidate)
+    if normalized_candidate is None:
+        return False
+    candidate_kind, candidate_path = normalized_candidate
+    roots = trusted_roots if trusted_roots is not None else _norm_reference_trusted_roots()
+    allowed_sets = (_NORM_PLUGIN_RELATIVE_PATHS, _NORM_DISTRIBUTED_RULE_RELATIVE_PATHS)
+    for root_text, allowed in zip(roots, allowed_sets, strict=True):
+        normalized_root = _normalize_norm_reference_path(root_text)
+        if normalized_root is None or normalized_root[0] != candidate_kind:
+            continue
+        try:
+            relative = candidate_path.relative_to(normalized_root[1])
+        except ValueError:
+            continue
+        if relative.as_posix() in allowed:
+            return True
+    return False
+
+
+def _has_explicit_norm_reference(prompt: str) -> bool:
+    """規範キーワード引用またはRead指示付きの信頼済み絶対パスがあるか判定する。"""
+    if any(keyword in prompt for keyword in _NORM_INLINE_REFERENCE_KEYWORDS):
+        return True
+    has_read_instruction = any(keyword in prompt for keyword in ("Read", "読む", "読ませる", "読み込む"))
+    if not has_read_instruction:
+        return False
+    return any(_is_absolute_norm_reference_path(candidate) for candidate in _extract_prompt_path_candidates(prompt))
+
+
 def _check_agent_norm_reference(tool_input: dict) -> str | None:
     """規範非読込型サブエージェント起動時に規範の明示引用が無い場合の警告文言を返す。
 
     `subagent_type`が`_NORM_SKIPPING_SUBAGENT_TYPES`のいずれかで、
-    かつ`prompt`本文に`_NORM_REFERENCE_KEYWORDS`のいずれも含まれない場合に警告文言を返す。
+    かつ`prompt`本文に規範キーワード引用またはRead指示付きの信頼済み絶対パスが無い場合に
+    警告文言を返す。
     それ以外は`None`を返す。
     """
     subagent_type = tool_input.get("subagent_type")
@@ -286,11 +364,11 @@ def _check_agent_norm_reference(tool_input: dict) -> str | None:
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str):
         return None
-    if any(kw in prompt for kw in _NORM_REFERENCE_KEYWORDS):
+    if _has_explicit_norm_reference(prompt):
         return None
     return _llm_notice(
         f"warning: subagent_type={subagent_type!r} does not load norms. "
-        "Include explicit reference to agent-toolkit:agent-standards or 01-agent.md in prompt.",
+        "Include a norm keyword or an explicit Read instruction with an authorized absolute norm path in prompt.",
         tag="warn",
     )
 
@@ -2565,9 +2643,10 @@ def _check_agent_name_parameter(tool_name: str, tool_input: dict) -> bool:
             f" (given: {tool_input.get('name')!r}).\n"
             "Why this gate exists: a named background launch does not deliver its completion"
             " notification to the actual launcher, which leaves the launcher waiting indefinitely.\n"
-            "Normal fix: omit both `name` and `run_in_background`, launch in the foreground, and"
-            " receive the completion report as the tool return value. Place independent launches"
-            " side by side in a single response to run them in parallel.\n"
+            "Normal fix: omit both `name` and `run_in_background`."
+            " Omitting them does not fix the launch mode; determine the actual completion-report"
+            " delivery route from the execution result. Place independent launches side by side"
+            " in a single response to run them in parallel.\n"
             "See agent-toolkit/rules/02-claude-code.md 'サブエージェント運用' section.",
             tag="block",
         ),

@@ -9,10 +9,14 @@
 構成済みリモートを列挙し、各リモートに対する`git ls-remote --heads --tags <remote>`の
 ref名とOIDを委譲前スナップショットとして保存する。
 
-`plan-file-finalizer`から受領した両系統の経路、`threadId`、Claude代替時の履歴を
-`plan-impl-executor`の起動プロンプトへ含める。
+計画作成の`threadId`を`plan-impl-executor`へ引き継がない。
+実装担当が実装・修正系とレビュー系の`threadId`を自身で新規に開始する。
+起動プロンプトは必須引数（計画ファイルの絶対パス・作業ディレクトリの絶対パス・完遂範囲・
+完了報告の必須欄）へ限定する。`plan-impl-executor`はHaiku固定のため、
+規範本文の引用転記・経路説明・背景説明を載せない。
 作業ディレクトリの絶対パスは自己解決せず、受領した値をそのまま渡す。
-起動は`name`と`run_in_background`を省略したforegroundとする。
+起動は`name`と`run_in_background`を省略する。
+背景実行へ転換された場合も「完了報告の検収」節の手順で検収する。
 
 ## 完了報告の検収
 
@@ -44,11 +48,22 @@ ref名とOIDを委譲前スナップショットとして保存する。
 - 同じ検証失敗を3回連続で解消できない場合は、呼び出し元が原因調査を引き継ぐ
 - 同一プロンプトを再送せず、未完了項目と新しい判断材料へ縮減する
 
+`plan-impl-executor`が`route: unavailable`を理由に`needs_escalation`を返した場合は、
+呼び出し元がAgentツールでClaude代替を起動する。
+計画実装・修正では`plan-codex-implementation.md`と
+`plan-codex-implementation-task.md`を用いる。
+実装差分レビューでは`plan-codex-implementation-review.md`と
+`plan-codex-implementation-review-task.md`を用いる。
+起動プロンプトには用途に対応する統括reference、task reference、計画、品質規範を含める。
+そのほかは作業ディレクトリの絶対パス、対象、完了条件だけを含める。
+代替応答全文をexecutorへ再入力し、executor自身に実体照合と後続工程を継続させる。
+
 是正指示後は`applied_instructions`で反映状況を確認する。
 未反映の指示が残る間は後続工程へ進まない。
 
-両経路、両`threadId`、レビューラウンド数を`plan-file-finalizer`から受領した値と照合する。
-Claude代替経路では`threadId`が`なし`であり、各回の履歴が完了報告に含まれることを確認する。
+両経路とレビューラウンド数を確認する。codex経路では両`threadId`が記録され、
+Claude代替経路では`なし`であり各回の履歴が完了報告へ含まれることを確認する。
+`plan-file-finalizer`の値との照合は行わない（計画作成と実装は別コンテキストのため）。
 
 ## 実体照合
 

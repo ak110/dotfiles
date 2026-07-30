@@ -56,7 +56,12 @@ description: >
    不対応注記は自ら付さない設計である。呼び出し元は検収時に`review_summary`欄の各指摘見解を
    実測確認し、`02-claude-code.md`「サブエージェント運用」節が定める書式
    （`（メイン判断: 不対応 — <理由>）`等）で不対応注記を確定してから実装工程へ進む。
-   `status: needs_escalation`で返却された場合は返却論点のみを解決し、確定方針込みの縮減プロンプトで
+   `route: unavailable`に起因する`status: needs_escalation`を受領した場合は、
+   呼び出し元がAgentツールでClaude代替を起動する。起動プロンプトには
+   `plan-codex-review.md`・`plan-codex-review-task.md`・計画・品質規範・
+   作業ディレクトリの絶対パス、対象、完了条件だけを含める。
+   代替応答全文を任意入力としてfinalizerへ再入力し、finalizer自身に検収を継続させる。
+   その他の`status: needs_escalation`は返却論点のみを解決し、確定方針込みの縮減プロンプトで
    新規起動する。`plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
    `plan-file-finalizer`の反映後の全文を`Read`で検収し、`~/.claude/plans/`配下の正規パスへ
    `Write`で反映する（サンドボックスパスの削除・移動は委譲先の担当外とする既定に従う）
@@ -64,7 +69,9 @@ description: >
    Agentツールで`plan-impl-executor`を起動する。起動プロンプトは
    `agent-toolkit/agents/plan-impl-executor.md`「入力」節が定める必須引数
    （計画ファイルの絶対パス、プロジェクトルート（作業ディレクトリ）の絶対パス）を満たす形で構成する。
-   finalizer完了報告から両系統の経路、`threadId`、Claude代替時の履歴を転記する。
+   計画作成の`threadId`は引き継がない。実装担当が実装・修正系とレビュー系の`threadId`を
+   自身で新規に開始する（計画作成と実装は別コンテキストで行うため）。
+   起動プロンプトは必須引数と完了条件へ限定し、規範本文の引用転記・経路説明を載せない。
    作業ディレクトリの絶対パスは複製内外を問わず常に明記する。
    完了報告の受領後は`references/plan-impl-caller-reception.md`に従う
 

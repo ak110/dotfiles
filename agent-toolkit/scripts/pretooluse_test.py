@@ -4015,8 +4015,8 @@ class TestAgentNameParameterGate:
         assert "`name` parameter is not allowed" in result.stderr
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_foreground_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """`name`キーを持たないforeground起動は通過する。"""
+    def test_launch_without_name_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """`name`キーを持たない起動は通過する。"""
         sid = f"agent-name-allow-{tool_name.lower()}"
         result = _run(
             {
@@ -4029,6 +4029,22 @@ class TestAgentNameParameterGate:
         )
         assert result.returncode == 0
         assert "`name` parameter is not allowed" not in result.stderr
+
+    def test_name_block_explains_execution_result_delivery_route(self, tmp_path: pathlib.Path) -> None:
+        """ブロック理由は起動形態を断定せず、実行結果から受領経路を判定するよう案内する。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "name": "named", "prompt": "調査してください。"},
+                "session_id": "agent-name-block-route",
+                "permission_mode": "default",
+            },
+            env_overrides=_process7_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "execution result" in result.stderr
+        assert "launch in the foreground" not in result.stderr
+        assert "tool return value" not in result.stderr
 
     def test_name_block_precedes_subagent_type_flag_record(self, tmp_path: pathlib.Path) -> None:
         """ブロックされた起動では`subagent_type`別フラグを記録しない（起動しない呼び出しの副作用を残さない）。"""
@@ -5690,6 +5706,162 @@ class TestAgentNormReferenceCheck:
         )
         assert result.returncode == 0
         assert "does not load norms" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        [
+            "skills/agent-standards/SKILL.md",
+            "skills/coding-standards/SKILL.md",
+            "skills/writing-standards/SKILL.md",
+            "rules/01-agent.md",
+            "rules/02-claude-code.md",
+        ],
+    )
+    def test_authorized_absolute_path_with_read_instruction_passes(self, tmp_path: pathlib.Path, relative_path: str) -> None:
+        """認可規範の絶対パスとRead指示を含む起動は警告しない。"""
+        plugin_root = pathlib.Path(pretooluse.__file__).resolve().parents[1]
+        prompt = f"`{plugin_root / relative_path}`を着手時にReadで読む。"
+        result = _run(
+            {"tool_name": "Agent", "tool_input": {"subagent_type": "claude", "prompt": prompt}},
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        [
+            "skills/agent-standards/SKILL.md",
+            "skills/coding-standards/SKILL.md",
+            "skills/writing-standards/SKILL.md",
+            "rules/01-agent.md",
+            "rules/02-claude-code.md",
+        ],
+    )
+    def test_authorized_relative_path_with_read_instruction_warns(self, tmp_path: pathlib.Path, relative_path: str) -> None:
+        """認可対象と同じ接尾辞でも相対パスなら警告する。"""
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": f"`{relative_path}`をReadで読む。"},
+            },
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        [
+            "skills/agent-standards/SKILL.md",
+            "skills/coding-standards/SKILL.md",
+            "skills/writing-standards/SKILL.md",
+            "rules/01-agent.md",
+            "rules/02-claude-code.md",
+        ],
+    )
+    def test_authorized_absolute_path_without_read_instruction_warns(self, tmp_path: pathlib.Path, relative_path: str) -> None:
+        """認可規範の絶対パスだけを列挙してもRead指示が無ければ警告する。"""
+        plugin_root = pathlib.Path(pretooluse.__file__).resolve().parents[1]
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": f"参照先: `{plugin_root / relative_path}`"},
+            },
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    def test_unapproved_markdown_absolute_path_warns(self, tmp_path: pathlib.Path) -> None:
+        """認可対象外のMarkdown絶対パスでは警告する。"""
+        other = tmp_path / "other.md"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": f"`{other}`をReadで読む。"},
+            },
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    def test_authorized_suffix_outside_trusted_root_warns(self, tmp_path: pathlib.Path) -> None:
+        """認可接尾辞を持つ信頼済みルート外の偽パスでは警告する。"""
+        fake = tmp_path / "fake" / "skills" / "agent-standards" / "SKILL.md"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": f"`{fake}`をReadで読む。"},
+            },
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    def test_parent_directory_component_warns(self, tmp_path: pathlib.Path) -> None:
+        """信頼済みルート配下に見せかける`..`入りパスでは警告する。"""
+        plugin_root = pathlib.Path(pretooluse.__file__).resolve().parents[1]
+        candidate = f"{plugin_root}/other/../skills/agent-standards/SKILL.md"
+        result = _run(
+            {
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "claude", "prompt": f"`{candidate}`をReadで読む。"},
+            },
+            env_overrides={"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "does not load norms" in result.stderr
+
+    @pytest.mark.parametrize(
+        ("candidate", "roots", "expected"),
+        [
+            pytest.param(
+                "/plugin/skills/agent-standards/SKILL.md",
+                ("/plugin", "/distributed"),
+                True,
+                id="posix",
+            ),
+            pytest.param(
+                r"C:\plugin\skills\agent-standards\SKILL.md",
+                (r"C:\plugin", r"C:\distributed"),
+                True,
+                id="windows-drive",
+            ),
+            pytest.param(
+                r"\\server\share\plugin\skills\agent-standards\SKILL.md",
+                (r"\\server\share\plugin", r"\\server\share\distributed"),
+                True,
+                id="windows-unc",
+            ),
+            pytest.param(
+                "skills/agent-standards/SKILL.md",
+                ("/plugin", "/distributed"),
+                False,
+                id="relative",
+            ),
+        ],
+    )
+    def test_absolute_path_formats(self, candidate: str, roots: tuple[str, str], expected: bool) -> None:
+        """POSIX・Windowsドライブ・UNC絶対パスを受理し、相対パスを除外する。"""
+        assert (
+            pretooluse._is_absolute_norm_reference_path(  # pylint: disable=protected-access  # noqa: SLF001
+                candidate, roots
+            )
+            is expected
+        )
+
+    def test_symlink_to_untrusted_file_is_rejected(self, tmp_path: pathlib.Path) -> None:
+        """信頼済みルート内から外部の偽規範へ向けたシンボリックリンクを受理しない。"""
+        plugin_root = tmp_path / "plugin"
+        link = plugin_root / "skills" / "agent-standards" / "SKILL.md"
+        link.parent.mkdir(parents=True)
+        outside = tmp_path / "outside.md"
+        outside.write_text("fake\n", encoding="utf-8")
+        link.symlink_to(outside)
+        assert not pretooluse._is_absolute_norm_reference_path(  # pylint: disable=protected-access  # noqa: SLF001
+            str(link), (str(plugin_root), str(tmp_path / "distributed"))
+        )
 
     def test_task_tool_treated_same_as_agent(self, tmp_path: pathlib.Path):
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
