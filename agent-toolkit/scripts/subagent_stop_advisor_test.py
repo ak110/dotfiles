@@ -16,7 +16,12 @@ from pathlib import Path
 import _fork_runner
 import pytest
 from _scope_escalation_test_helpers import load_scope_escalation_inputs
-from _stop_gate_test import _user_async_launched_entry, _user_task_notification_entry, _write_transcript
+from _stop_gate_test import (
+    _user_async_launched_entry,
+    _user_background_bash_entry,
+    _user_task_notification_entry,
+    _write_transcript,
+)
 
 _SCRIPT = Path(__file__).parent / "claude_hook.py"
 
@@ -98,6 +103,47 @@ def test_approves_when_background_tracked_regardless_of_message(tmp_path: Path) 
     transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_bg1")]))
     result = _run({"last_assistant_message": text, "transcript_path": transcript})
     assert result.stdout == ""
+
+
+def test_approves_empty_report_when_descendant_agent_is_pending(tmp_path: Path) -> None:
+    """孫エージェントの起動が未消化の場合は実質空の完了報告でも承認する。"""
+    transcript = str(_write_transcript(tmp_path, [_user_async_launched_entry("toolu_descendant_pending")]))
+    result = _run({"last_assistant_message": "", "transcript_path": transcript})
+    assert result.stdout == ""
+    assert result.returncode == 0
+
+
+def test_blocks_empty_report_when_only_background_bash_is_pending(tmp_path: Path) -> None:
+    """background Bashジョブのみが未消化の場合は実質空の完了報告をブロックする。"""
+    transcript = str(_write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")]))
+    result = _run({"last_assistant_message": "", "transcript_path": transcript})
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "empty" in body["reason"]
+
+
+def test_blocks_incomplete_plan_report_when_only_background_bash_is_pending(tmp_path: Path) -> None:
+    """background Bashジョブのみが未消化の場合は必須ラベルを欠く完了報告をブロックする。"""
+    session_id = "sid-bash-format"
+    agent_id = "sub-bash-format"
+    _write_flag_state(tmp_path, session_id, agent_id)
+    transcript_path = Path(_transcript_path_for(tmp_path, agent_id))
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    transcript_path.write_text(
+        json.dumps(_user_background_bash_entry("toolu_bash_format"), ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    result = _run_with_state_dir(
+        {
+            "session_id": session_id,
+            "last_assistant_message": "status: completed\nsummary: 待機中",
+            "transcript_path": str(transcript_path),
+        },
+        tmp_path,
+    )
+    body = json.loads(result.stdout)
+    assert body["decision"] == "block"
+    assert "missing required labels" in body["reason"]
 
 
 def test_blocks_process_omission_without_tracked_background() -> None:

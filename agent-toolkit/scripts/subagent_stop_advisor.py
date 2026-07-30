@@ -1,10 +1,10 @@
 """SubagentStop hook: 完了報告の本文を空/Skill単独報告と縮退表明辞書で検査する。
 
 公式仕様の`last_assistant_message`を直参照し、
-当該サブエージェント自身の`transcript_path`に未消化のbackground起動（`has_pending_background_launches`）が
-構造的に実在する場合は、完了報告本文の内容によらず無条件で承認する。まだ自身配下の作業が
-構造的に残っている以上、続行の是非を本文の言い回しで判定する必要が無いためである。
-未消化のbackground起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
+当該サブエージェント自身の`transcript_path`に未消化の孫エージェント起動
+（`has_pending_agent_launches`）が構造的に実在する場合は、完了報告本文の内容によらず無条件で承認する。
+まだ自身配下の作業が構造的に残っている以上、続行の是非を本文の言い回しで判定する必要が無いためである。
+未消化の孫エージェント起動が無い場合に限り、`is_empty_completion_report`で実質空またはSkill呼び出し
 単独の構造的欠落を検出し、続いて`_STOP_FOCUS_CATEGORIES_EXTENDED`と同一SSOTで縮退表明フレーズを照合する。
 `stop_hook_active`真の再呼び出し時は判定処理をせず無条件approveを返し、
 連続ブロック上限による強制終了を回避する。
@@ -31,7 +31,7 @@ from _scope_escalation import (  # noqa: E402  # pylint: disable=wrong-import-po
     is_empty_completion_report,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _stop_gate import has_pending_background_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _stop_gate import has_pending_agent_launches  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_transcript_agent_id as _extract_transcript_agent_id,
 )
@@ -185,14 +185,14 @@ def main() -> int:
     text = payload.get("last_assistant_message")
     transcript_path = payload.get("transcript_path")
     session_id = payload.get("session_id")
-    if isinstance(transcript_path, str) and has_pending_background_launches(
+    if isinstance(transcript_path, str) and has_pending_agent_launches(
         transcript_path, session_id if isinstance(session_id, str) else ""
     ):
-        # 当該サブエージェント自身の配下に未消化のbackground起動が構造的に実在する場合、
-        # 完了報告本文の内容（空判定・縮退表明照合を含む）によらず無条件で承認する。
+        # 配下で起動した孫エージェントが未消化の場合のみ、完了報告本文の検査によらず承認する。
         # Main側`is_pending_async_work`はMain自身のtranscriptのみを走査するため、
-        # サブエージェントが自身の配下でさらに起動した孫エージェントの状態を観測できない。
-        # ここでの構造判定がその唯一の観測点である。
+        # 孫エージェントの状態を観測できる唯一の観測点である。
+        # 委譲先自身が起動したbackground Bashジョブは本経路の対象外とし、
+        # 完了報告本文の検査を経る（待機表明のみの報告でターンを終える事象を検出するため）。
         return 0
     if is_empty_completion_report(text):
         reason = _llm_notice(

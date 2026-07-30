@@ -132,6 +132,20 @@ def has_pending_background_launches(transcript_path: str, session_id: str) -> bo
     return bool(launched - completed)
 
 
+def has_pending_agent_launches(transcript_path: str, session_id: str) -> bool:
+    """配下で起動した孫エージェントのうち、完了未消化のものが1件以上あれば真を返す。
+
+    `has_pending_background_launches`から背景Bash起動を除いた部分集合を対象とする。
+    背景Bashジョブの未消化は完了報告本文の検査を免除する根拠にしないため区別する。
+    """
+    launched, completed = _describe_pending_background_tasks(
+        transcript_path,
+        session_id,
+        kinds=("agent", "sendmessage"),
+    )
+    return bool(launched - completed)
+
+
 def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:
     """transcript内のユーザーターンに`pattern`一致のスラッシュコマンド起動痕跡があるか確認する。
 
@@ -338,6 +352,8 @@ def _describe_last_tool_use(transcript_path: str) -> str:
 def _describe_pending_background_tasks(
     transcript_path: str,
     session_id: str | None = None,
+    *,
+    kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage"),
 ) -> tuple[set[str], set[str]]:
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
@@ -364,6 +380,8 @@ def _describe_pending_background_tasks(
     起動集合から完了集合を差し引いて1件以上残れば未完了背景タスクありと判定する。
     `<status>`の値（`completed`・`failed`・`cancelled`等）は問わず終了扱いとする。
     Agent・Bash・SendMessage背景再開とも同一の完了通知機構で通知され共通の抽出処理を用いる。
+    `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`から指定する。
+    既定値は全種別であり、既存の呼び出し元の挙動を維持する。
     transcript読み取り失敗時は空集合のペアを返す。
 
     走査は2段構成とする。
@@ -393,13 +411,17 @@ def _describe_pending_background_tasks(
             if not isinstance(message, dict):
                 continue
             tool_use_result = entry.get("toolUseResult")
-            if isinstance(tool_use_result, dict) and (
-                tool_use_result.get("status") == "async_launched" or isinstance(tool_use_result.get("backgroundTaskId"), str)
+            if (
+                isinstance(tool_use_result, dict) and tool_use_result.get("status") == "async_launched" and "agent" in kinds
+            ) or (
+                isinstance(tool_use_result, dict)
+                and isinstance(tool_use_result.get("backgroundTaskId"), str)
+                and "bash" in kinds
             ):
                 tool_use_id = _extract_tool_result_id(message)
                 if tool_use_id is not None:
                     launched.add(tool_use_id)
-            else:
+            elif "sendmessage" in kinds:
                 resumed_id = _extract_sendmessage_bg_resume_id(message, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)

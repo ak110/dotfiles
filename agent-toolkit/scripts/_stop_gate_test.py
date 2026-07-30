@@ -18,6 +18,7 @@ from _stop_gate import (
     _describe_pending_background_tasks,
     append_stop_log,
     has_command_invocation,
+    has_pending_agent_launches,
     has_pending_background_launches,
     is_pending_async_work,
 )
@@ -743,6 +744,47 @@ class TestHasPendingBackgroundLaunches:
     def test_fail_closed_on_bad_path(self) -> None:
         """transcript読み取り失敗時は偽(ブロック維持側)を返すことを確認する。"""
         assert has_pending_background_launches("/nonexistent/path", "sess-3") is False
+
+
+class TestHasPendingAgentLaunches:
+    """`has_pending_agent_launches`の抽出種別を検証する。"""
+
+    def test_returns_true_for_pending_agent(self, tmp_path: pathlib.Path) -> None:
+        """背景Agent起動のみが未消化の場合に真を返す。"""
+        t = _write_transcript(tmp_path, [_user_async_launched_entry("toolu_agent_pending")])
+        assert has_pending_agent_launches(str(t), "sess-agent") is True
+
+    def test_returns_false_for_pending_bash(self, tmp_path: pathlib.Path) -> None:
+        """背景Bash起動のみが未消化の場合に偽を返す。"""
+        t = _write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")])
+        assert has_pending_agent_launches(str(t), "sess-bash-agent-filter") is False
+
+    def test_background_launches_still_returns_true_for_pending_bash(self, tmp_path: pathlib.Path) -> None:
+        """既存関数は背景Bash起動のみが未消化の場合も真を返す。"""
+        t = _write_transcript(tmp_path, [_user_background_bash_entry("toolu_bash_pending")])
+        assert has_pending_background_launches(str(t), "sess-bash-all-filter") is True
+
+    def test_returns_false_for_completed_agent(self, tmp_path: pathlib.Path) -> None:
+        """背景Agent起動が完了消化済みの場合に偽を返す。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _user_async_launched_entry("toolu_agent_completed"),
+                _user_task_notification_entry("toolu_agent_completed"),
+            ],
+        )
+        assert has_pending_agent_launches(str(t), "sess-agent-completed") is False
+
+    def test_returns_true_for_sendmessage_resume(self, tmp_path: pathlib.Path) -> None:
+        """SendMessageによる背景再開が未消化の場合に真を返す。"""
+        t = _write_transcript(
+            tmp_path,
+            [
+                _assistant_sendmessage_entry("toolu_sendmessage_pending"),
+                _user_sendmessage_bg_resume_entry("toolu_sendmessage_pending"),
+            ],
+        )
+        assert has_pending_agent_launches(str(t), "sess-sendmessage") is True
 
 
 class TestDebugOutput:
