@@ -350,9 +350,9 @@ def _all_bump_matrix_judgments_are_none_required(content: str) -> bool:
     マトリクス自体が存在しない場合、または表本体行が1件も抽出できない場合は`False`を返す
     （抑止を発動させないための安全側判定）。
     「判定」列に`bump不要`以外のラベル（`PATCH`・`MINOR`・`MAJOR`等）が1行でも含まれる場合も`False`を返す。
-    `agent-toolkit/scripts/_plan_format.py`のSSOT実装で、
-    `has_bump_step_when_required`・`has_manifest_files_when_bump_step_present`・
-    `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`の`_check_version_bump_matrix`が共有する。
+    本モジュール内の`has_bump_step_when_required`と
+    `has_manifest_files_when_bump_step_present`が共有する。
+    `agent-toolkit/scripts/pretooluse.py`は両関数へ判定を委譲する。
     """
     if not _BUMP_MATRIX_HEADER_RE.search(content):
         return False

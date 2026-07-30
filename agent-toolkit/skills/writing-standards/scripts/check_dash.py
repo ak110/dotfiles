@@ -9,12 +9,6 @@ writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシ�
 日本語の地の文・見出しで使わない」規定を機械化する。
 検出対象はU+2014（EM DASH）・U+2015（HORIZONTAL BAR）・U+2500の2連続（2倍ダッシュ）。
 フェンス付きコードブロック内（バッククォート形式・チルダ形式）およびインラインコード内は除外する。
-
-本ファイルは兄弟スクリプト
-`agent-toolkit/skills/plan-mode/scripts/check_line_ref.py`と共通のヘルパー
-（`_expand_paths`・`_add`・`_strip_inline_code`・`_FENCE_RE`等）を意図的に複製している。
-PEP 723単独実行スクリプト制約下で外部モジュールへ切り出せないため。
-共通処理へ修正・バグ修正を加える場合は兄弟スクリプトも同一計画内で同時修正する。
 """
 
 from __future__ import annotations
@@ -31,8 +25,6 @@ _EXCERPT_LIMIT = 80
 _DEFAULT_EXTENSIONS = frozenset({".md", ".md.tmpl"})
 
 # ディレクトリ展開時にスキップするディレクトリ名。VCS管理外・自動生成・依存物を除外する。
-# `check_line_ref.py`の`_EXCLUDED_DIRS`と同一集合。
-# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 _EXCLUDED_DIRS = frozenset(
     {
         ".git",
@@ -50,7 +42,6 @@ _EXCLUDED_DIRS = frozenset(
         ".vscode",
     }
 )
-# pylint: enable=duplicate-code
 
 # 検出対象の文字パターン。U+2500は2連続のみを対象とする。
 _DASH_PATTERN = re.compile(r"—|―|──")
@@ -89,7 +80,6 @@ def main() -> int:
     return 1 if all_violations else 0
 
 
-# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """ファイル/ディレクトリ混在の入力を検査対象ファイルの一覧へ展開する。
 
@@ -124,9 +114,6 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
         return
     seen.add(resolved)
     out.append(path)
-
-
-# pylint: enable=duplicate-code
 
 
 def _check_file(path: pathlib.Path) -> list[str]:
@@ -170,7 +157,6 @@ def _check_file(path: pathlib.Path) -> list[str]:
     return violations
 
 
-# pylint: disable=duplicate-code  # 意図的複製（モジュール冒頭docstring参照）
 def _strip_inline_code(line: str) -> str:
     """行中のバッククォートで囲まれたインラインコードを空白で置換する。
 
@@ -200,9 +186,6 @@ def _strip_inline_code(line: str) -> str:
         else:
             i += 1
     return "".join(result)
-
-
-# pylint: enable=duplicate-code
 
 
 if __name__ == "__main__":
