@@ -65,10 +65,8 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
 
-# `plan-impl-executor`が自身の判断でbackground並列起動した宣言と、
+# `plan-impl-executor`が`run_in_background=true`を明示して自己起動した宣言と、
 # `changed`欄の未消化項目（`- [ ]`）が共起するかの判定パターン（FB[3]）。
-# `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める
-# foreground起動規定からの逸脱を検出する。
 _PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE = re.compile(r"run_in_background\s*=\s*true|バックグラウンドで?並列起動")
 _PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE = re.compile(r"^-\s*\[\s\]", re.MULTILINE)
 _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(r"^status:\s*completed\b", re.MULTILINE)
@@ -188,11 +186,12 @@ def main() -> int:
     if isinstance(transcript_path, str) and has_pending_agent_launches(
         transcript_path, session_id if isinstance(session_id, str) else ""
     ):
-        # 配下で起動した孫エージェントが未消化の場合のみ、完了報告本文の検査によらず承認する。
-        # Main側`is_pending_async_work`はMain自身のtranscriptのみを走査するため、
-        # 孫エージェントの状態を観測できる唯一の観測点である。
-        # 委譲先自身が起動したbackground Bashジョブは本経路の対象外とし、
-        # 完了報告本文の検査を経る（待機表明のみの報告でターンを終える事象を検出するため）。
+        # Agent系の背景起動またはSendMessage再開が未消化の場合だけ、
+        # 完了報告本文の検査によらず承認する。
+        # `has_pending_agent_launches`は`_describe_pending_background_tasks`の`kinds`を
+        # Agent系（`async_launched`）とSendMessage再開へ限定し、委譲先自身が起動した
+        # background Bashジョブを除外する。除外分は完了報告本文の検査を経る
+        # （待機表明のみの報告でターンを終える事象を検出するため）。
         return 0
     if is_empty_completion_report(text):
         reason = _llm_notice(
@@ -243,8 +242,10 @@ def main() -> int:
             "blocked: `plan-impl-executor` completion report declares a self-initiated background parallel"
             " subagent launch (`run_in_background=true`) while the `changed` section still has unchecked"
             " (`- [ ]`) items. This violates `agent-toolkit/rules/02-claude-code.md`"
-            " 'サブエージェント運用' section, which requires foreground launches with"
-            " `run_in_background` omitted. Complete the unfinished work before reporting completion.",
+            " 'サブエージェント運用' section."
+            " `plan-impl-executor`は`run_in_background`を省略して起動し、"
+            "実際の受領経路を実行結果から判定する必要があります。"
+            "未完了項目がある状態で`run_in_background=true`を指定した自己起動は行わないでください。",
             tag="block",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

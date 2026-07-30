@@ -462,6 +462,9 @@ class TestPlanImplExecutorReportFormat:
         assert body["decision"] == "block"
         assert "agent-toolkit/rules/02-claude-code.md" in body["reason"]
         assert "サブエージェント運用" in body["reason"]
+        assert "run_in_background" in body["reason"]
+        assert "実行結果" in body["reason"]
+        assert "foreground" not in body["reason"]
 
     def test_background_parallel_declaration_with_all_checked_passes(self, tmp_path: Path) -> None:
         """全項目チェック済みならbackground並列起動宣言があっても通過する。"""
