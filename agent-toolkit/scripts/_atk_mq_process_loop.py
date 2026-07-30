@@ -215,7 +215,9 @@ def _build_restart_argv(argv: list[str], dotfiles_root: pathlib.Path | None = No
         canonical = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
         if canonical.exists():
             script = canonical
-    return ["uv", "run", "--no-project", "--script", str(script), *argv[1:]]
+    # 再起動後は新規セッションとして起動するため、初回限定の`--resume`を引き継がない。
+    rest = [arg for arg in argv[1:] if arg != "--resume"]
+    return ["uv", "run", "--no-project", "--script", str(script), *rest]
 
 
 def _restart_process_loop(argv: list[str], dotfiles_root: pathlib.Path | None = None) -> typing.NoReturn:
@@ -360,6 +362,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     previous_env_value = os.environ.get("DOTFILES_AUTONOMOUS_EXIT_REQUIRED")
     os.environ["DOTFILES_AUTONOMOUS_EXIT_REQUIRED"] = "1"
     env = os.environ.copy()
+    resume_pending = bool(args.resume)
     with _console_title.console_title("atk mq process-loop"):
         try:
             try:
@@ -381,6 +384,11 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             claude_argv.append(f"--worktree={_DOTFILES_WORKTREE_NAME}")
                             # 前回反復のworktreeが再利用されるため、起動前に上流最新へ追随させる。
                             _sync_worktree_with_upstream(local_path, _DOTFILES_WORKTREE_NAME)
+                        if resume_pending:
+                            # 中断したセッションの再開は初回起動に限る。
+                            # 2回目以降は新規セッションとして起動する。
+                            claude_argv.append("--continue")
+                            resume_pending = False
                         claude_argv.append(prompt)
                         result = subprocess.run(
                             claude_argv,

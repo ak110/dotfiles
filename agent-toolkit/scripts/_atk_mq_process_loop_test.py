@@ -414,6 +414,66 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         assert claude_calls[0]["cmd"][:4] == ["claude", "--permission-mode=auto", "--model", "sonnet"]
 
+    def test_resume_applied_to_first_session_only(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--resume`指定時は初回のClaudeセッションだけを継続する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter([1, 1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--resume"],
+                home=tmp_path,
+            )
+
+        assert len(claude_calls) == 2
+        first_command = claude_calls[0]["cmd"]
+        second_command = claude_calls[1]["cmd"]
+        assert "--continue" in first_command
+        assert first_command.index("--continue") < len(first_command) - 1
+        assert "--continue" not in second_command
+
+    def test_resume_absent_without_option(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--resume`未指定時はClaudeセッションを継続しない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter([1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["mq", "process-loop", f"--target-repo={myrepo}", "--no-update"],
+                home=tmp_path,
+            )
+
+        assert len(claude_calls) == 1
+        assert "--continue" not in claude_calls[0]["cmd"]
+
 
 class TestProcessLoopClaudeReturncode:
     """process-loopサブコマンド: claudeのreturncode判定（正常/異常）を検証する。"""

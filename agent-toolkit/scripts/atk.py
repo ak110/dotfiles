@@ -449,6 +449,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         default="auto",
         help="アラート検出対象のホスティング種別（既定auto。repo_idのhostから自動判定）。",
     )
+    loop.add_argument(
+        "--resume",
+        action="store_true",
+        help="初回のセッション起動にclaudeの--continueを付与して直前の会話を継続する（2回目以降は付与しない）。",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:

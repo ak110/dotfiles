@@ -97,6 +97,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch.setattr(os, "execvp", fake_execvp)
 
         argv = ["mq", "process-loop", "--target-repo", str(myrepo), *(extra_argv or [])]
+        monkeypatch.setattr(sys, "argv", [str(pathlib.Path(atk.__file__)), *argv])
         with pytest.raises((SystemExit, KeyboardInterrupt)):
             atk.main(argv, home=tmp_path)
         return subprocess_calls, execv_calls
@@ -211,6 +212,26 @@ class TestWaitLoopAutoRestart:
         )
         assert ["update-dotfiles"] not in subprocess_calls
         assert not execv_calls
+
+    def test_restart_drops_resume_option(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """再起動時のargvから初回限定の`--resume`を除去する。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=False,
+            changed_file_name="a.py",
+            extra_argv=["--resume"],
+        )
+
+        assert execv_calls
+        _, restart_argv = execv_calls[0]
+        assert "--resume" not in restart_argv
+        assert "--target-repo" in restart_argv
 
 
 def test_has_upstream_diff_reports_stderr_on_failure(
