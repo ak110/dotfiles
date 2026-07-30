@@ -11,7 +11,6 @@ Stop hook直近アシスタント発話／SubagentStop hookサブエージェン
 機械チェック用辞書の検出語そのものは本ファイルへ隔離する。
 メインエージェントは本ファイルを読み込まず、`Explore`サブエージェント経由で確認し、
 修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
-（`plan-implementer`は実装委譲先専用のため本用途では指名しない）。
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
 引用ブロック回避規範は`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節を参照する。
 
@@ -26,8 +25,8 @@ pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`ext
   当該表明はscope-escalation辞書による言語検出の対象カテゴリではなく、
   SubagentStop hook（`subagent_stop_advisor.py`）が当該サブエージェント自身の
   `transcript_path`を対象に行う構造判定（`has_pending_background_launches`）と、
-  `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の「待機表明のみの完了報告は
-  発行しない」規定が担う
+  `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節のforeground起動と、
+  待機表明のみの完了報告を発行せず、待機対象の結果を含む完了報告を1回の戻り値として返す規定が担う
 - 規範違反または工程の省略・割愛を、是正せずに宣言・記録して続行する表明
 - 完遂の可否・対応範囲・優先順位の判断をユーザーへ委ねる打診
 

@@ -1,6 +1,6 @@
 """agent-toolkit/scripts/posttooluse.py のplan file形式検査関連テスト。
 
-`posttooluse_test.py`本体から計画ファイル形式検査・codex-review.md読み込み検出を分割した。
+`posttooluse_test.py`本体から計画ファイル形式検査を分割した。
 共通ヘルパー（`_run`・`_read_state`）は分割先で複製する。
 ハンドラ網羅と機械チェック上限のバランス確保が分割の動機。
 H2節順検査（必須H2欠落・順序違反・予期せぬH2）はPreToolUseへ移管済み（`_plan_format.py`・`pretooluse.py`参照）。
@@ -317,55 +317,42 @@ class TestPlanFormatCheck:
         assert "'対象ファイル一覧'" not in found_section
 
 
-class TestCodexReviewReadTracking:
-    """codex-review.md読み込み追跡。"""
+class TestPlanReviewCompletedTracking:
+    """finalizer完了報告の計画レビュー完了追跡。"""
 
-    def test_read_codex_review_sets_flag(self, tmp_path: pathlib.Path):
-        """codex-review.mdをReadすると状態フラグが設定される。"""
-        sid = "codex-review-read"
+    def test_structured_completion_sets_flag(self, tmp_path: pathlib.Path) -> None:
+        """末尾の正規完了報告だけがフラグを真化する。"""
+        sid = "plan-review-completed"
         result = _run(
             {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/fake/skills/plan-mode/references/codex-review.md"},
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
+                "tool_response": {"result": "status: completed\nreview_completed: true"},
                 "session_id": sid,
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         state = json.loads((tmp_path / f"claude-agent-toolkit-{sid}.json").read_text(encoding="utf-8"))
-        assert state["codex_review_read"] is True
+        assert state["plan_review_completed"] is True
 
-    def test_read_other_file_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """codex-review.md以外のファイルでは状態フラグが設定されない。"""
-        sid = "other-read"
+    def test_incomplete_structured_completion_does_not_set_flag(self, tmp_path: pathlib.Path) -> None:
+        """未完了の構造化報告ではフラグを真化しない。"""
+        sid = "plan-review-incomplete"
         result = _run(
             {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/fake/rules/01-agent.md"},
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "plan-file-finalizer"},
+                "tool_response": {"result": "status: needs_escalation\nreview_completed: false"},
                 "session_id": sid,
             },
             state_dir=tmp_path,
         )
         assert result.returncode == 0
         state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        if state_file.exists():
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-            assert not state.get("codex_review_read", False)
-
-    def test_read_flag_idempotent(self, tmp_path: pathlib.Path):
-        """フラグが既に設定されている場合は冗長な書き込みをしない。"""
-        sid = "codex-review-idem"
-        state_file = tmp_path / f"claude-agent-toolkit-{sid}.json"
-        state_file.write_text(json.dumps({"codex_review_read": True}), encoding="utf-8")
-        result = _run(
-            {
-                "tool_name": "Read",
-                "tool_input": {"file_path": "/path/to/codex-review.md"},
-                "session_id": sid,
-            },
-            state_dir=tmp_path,
+        assert not state_file.exists() or not json.loads(state_file.read_text(encoding="utf-8")).get(
+            "plan_review_completed", False
         )
-        assert result.returncode == 0
 
 
 class TestTextlintViolationsReadTracking:

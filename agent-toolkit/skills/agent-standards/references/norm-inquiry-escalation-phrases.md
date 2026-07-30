@@ -10,7 +10,6 @@
 コーディングエージェントのメインコンテキストへ読み込ませない。
 本ファイル（説明文）は同節内の除外規定に該当し、メイン・Exploreサブエージェント双方のRead参照を許容する。
 修正が必要な場合はAgentツールで`subagent_type: claude`を起動して行う
-（`plan-implementer`は実装委譲の専用先であるため本用途では指名しない）。
 pyfltr機械チェックの対象からも除外する（`pyproject.toml`の`extend-exclude`へ登録する）。
 
 実装用の正規表現定義（`_NORM_INQUIRY_PHRASES`）は

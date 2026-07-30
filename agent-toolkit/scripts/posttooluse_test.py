@@ -69,6 +69,18 @@ def _run(
     return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
 
 
+def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """同じ一時状態ディレクトリでPreToolUse hookを実行する。"""
+    env = os.environ.copy()
+    env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("pretooluse",),
+        input=json.dumps(payload, ensure_ascii=False),
+        env=env,
+    )
+
+
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     if not path.exists():
@@ -269,12 +281,41 @@ class TestSessionReviewSkillInvocation:
         assert path.stat().st_mtime_ns == mtime_before
 
 
+class TestCodexExecTracking:
+    """codex-exec起動とfinalizer完了報告の状態記録。"""
+
+    def test_skill_invocation_sets_flag(self, tmp_path: pathlib.Path) -> None:
+        sid = "codex-exec-skill"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Skill",
+                "tool_input": {"skill": "agent-toolkit:codex-exec"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("codex_exec_skill_invoked") is True
+
+    def test_finalizer_completion_sets_review_flag(self, tmp_path: pathlib.Path) -> None:
+        sid = "finalizer-completed"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
+                "tool_response": {"result": "status: completed\nreview_completed: true"},
+            },
+            state_dir=tmp_path,
+        )
+        assert _read_state(tmp_path, sid).get("plan_review_completed") is True
+
+
 class TestSubagentEndProcessLoopLog:
     """`_TRACKED_SUBAGENT_TYPES`対象種別終了時の`_process_loop_log`記録（fb-1、`enable_env`偽は空文字列で継承無効化）。"""
 
     @pytest.mark.parametrize(
         ("subagent_type", "enable_env", "expect_logged"),
-        [("plan-implementer", True, True), ("plan-implementer", False, False), ("claude", True, False)],
+        [("plan-impl-executor", True, True), ("plan-impl-executor", False, False), ("claude", True, False)],
     )
     def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
         xdg_state_home = tmp_path / "xdg-state"
@@ -546,7 +587,7 @@ class TestGitLogChecked:
 
 
 class TestReadHandler:
-    """Read系判定（codex-review.md / textlint-violations.md）。
+    """textlint-violations.mdのRead判定。
 
     POSIX区切り・Windows区切り双方のfile_pathに対して同等にセッション状態フラグを立てることを検証する。
     Windows環境ではClaude Codeがバックスラッシュ区切りのパスをfile_path引数に渡すため、
@@ -554,31 +595,19 @@ class TestReadHandler:
     """
 
     @pytest.mark.parametrize(
-        ("file_path", "expected_flag"),
+        "file_path",
         [
-            ("/home/user/dotfiles/agent-toolkit/skills/plan-mode/references/codex-review.md", "codex_review_read"),
-            (
-                r"C:\Users\user\dotfiles\agent-toolkit\skills\plan-mode\references\codex-review.md",
-                "codex_review_read",
-            ),
-            (
-                "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-                "textlint_violations_read",
-            ),
-            (
-                r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
-                "textlint_violations_read",
-            ),
+            "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
+            r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
         ],
     )
     def test_read_sets_flag_for_both_posix_and_windows_paths(
         self,
         tmp_path: pathlib.Path,
         file_path: str,
-        expected_flag: str,
     ) -> None:
         """POSIX区切り・Windows区切りいずれの`file_path`でも対応するフラグが立つ。"""
-        sid = f"read-{expected_flag}-{len(file_path)}"
+        sid = f"read-textlint-{len(file_path)}"
         _run(
             {
                 "session_id": sid,
@@ -587,7 +616,7 @@ class TestReadHandler:
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get(expected_flag) is True
+        assert _read_state(tmp_path, sid).get("textlint_violations_read") is True
 
     def test_read_unrelated_path_does_not_set_flags(self, tmp_path: pathlib.Path) -> None:
         """無関係ファイルのReadではどのフラグも立たない。"""
@@ -601,7 +630,6 @@ class TestReadHandler:
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_read") is not True
         assert state.get("textlint_violations_read") is not True
 
 
@@ -1031,6 +1059,63 @@ class TestWarnCodexRemoteChange:
         assert result.returncode == 0
         assert "remote refs changed" not in result.stdout
         assert _read_state(tmp_path, sid).get("codex_remote_snapshot_by_key") == {}
+
+    def test_remote_check_survives_cross_session_thread_handoff(self, tmp_path: pathlib.Path):
+        """異なるsession_idとagentIdへ`threadId`を引き継いでもリモート変更を検知する。"""
+        repo, _ = self._init_repo_with_remote(tmp_path)
+        finalizer_session = "finalizer-session"
+        executor_session = "executor-session"
+        thread_id = "th_shared"
+
+        initial_pre = _run_pretooluse(
+            {
+                "session_id": finalizer_session,
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {"prompt": "実装", "sandbox": "danger-full-access", "cwd": str(repo)},
+                "transcript_path": "/x/agent-finalizer.jsonl",
+                "isSidechain": True,
+            },
+            tmp_path,
+        )
+        assert initial_pre.returncode == 0
+        initial_post = _run(
+            {
+                "session_id": finalizer_session,
+                "tool_name": "mcp__codex__codex",
+                "tool_input": {},
+                "tool_response": {"threadId": thread_id},
+                "transcript_path": "/x/agent-finalizer.jsonl",
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert initial_post.returncode == 0
+
+        reply_pre = _run_pretooluse(
+            {
+                "session_id": executor_session,
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": thread_id, "prompt": "続行"},
+                "transcript_path": "/x/agent-executor.jsonl",
+                "isSidechain": True,
+            },
+            tmp_path,
+        )
+        assert reply_pre.returncode == 0
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=repo, check=True)
+        reply_post = _run(
+            {
+                "session_id": executor_session,
+                "tool_name": "mcp__codex__codex-reply",
+                "tool_input": {"threadId": thread_id},
+                "tool_response": {"threadId": thread_id},
+                "transcript_path": "/x/agent-executor.jsonl",
+                "isSidechain": True,
+            },
+            state_dir=tmp_path,
+        )
+        assert reply_post.returncode == 0
+        assert "remote refs changed" in reply_post.stdout
 
     def test_warns_and_clears_state_when_remote_changed(self, tmp_path: pathlib.Path):
         """codex呼び出し中にリモートへpushされた変化を検知して警告し、記録済みスナップショットを削除する。"""

@@ -66,22 +66,24 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   Skillツールで`agent-toolkit:shell-exec`を起動して委譲する。
   メインへは終了状態、警告、要求した値、後続判断に必要な要約だけを返させる
   - push後のCI通過確認の待機は委譲対象から除く。担当分離の理由は
-    `agent-toolkit/references/plan-impl/caller-reception.md`「push後のCI通過確認」節
+    `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`「実体照合と後続工程」節
     （SSOT）を参照する。当該待機は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従い、
     `git push`を実行した主体が自身で実施する
   - CI失敗後のログ取得・要約は長出力を伴うため引き続き委譲対象とする
 - 同一セッションで取得済みのファイルは、変更を観測するまで保持済み内容を再利用する。
   編集後の検収、外部更新後、正確な現行文面が必要な差分適用前に再取得する
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
-- `plan-file-finalizer`・`plan-impl-executor`はSonnet固定の窓口として動く。`plan-file-finalizer`は
-  計画ファイル初版の完成条件確認・機械チェック・codexレビュー起動・指摘反映を担い、初版の起草自体は
-  呼び出し元（メイン）が行う。`plan-impl-executor`は実装という実作業を既定でcodexへ移譲する設計
-  （MCP不可時等は`plan-implementer`が代替する）である。
+- `plan-file-finalizer`・`plan-impl-executor`はHaiku固定の委譲窓口として動く。
+  両者はfrontmatterから`agent-toolkit:codex-exec`を読み込む。
+  レビュー系と実装・修正系を分け、codex経路では各`threadId`を継続する。
+  Claude代替では汎用エージェント`claude`を毎回新規起動し、内容に応じてSonnetまたはOpusを使う。
+  `plan-file-finalizer`は計画ファイル初版の機械チェック・総合レビュー・指摘反映を委譲する。
+  初版の起草は呼び出し元が行う。
+  `plan-impl-executor`は実装・検証・コミット・実装差分レビュー・指摘反映を委譲する。
   この2種はAgent/Task起動時に`model`引数を指定しない
   （PreToolUseフックが機械的にブロックする）。既定モデルの変更が必要な場合は呼び出し側でなく
-  エージェント定義自体のfrontmatterを改訂する。`plan-implementer`は対象外とし、
-  `agent-toolkit/references/plan-impl/execution-process.md`「実装委譲…」節が定める
-  難易度別の`model`明示指定に従う
+  エージェント定義自体のfrontmatterを改訂する。
+  詳細は`agent-toolkit/skills/codex-exec/`配下のスキルとreferenceに従う
 - AgentまたはTask起動では`name`パラメーターを渡さず、`run_in_background`を省略したforeground実行とする。
   `name`付きbackground起動で完了通知が配送されず停滞する事象は技術的な不成立に該当するため、
   `name`パラメーターの禁止は厳守規定とする
@@ -150,7 +152,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   間隔を空けた複数回の観測で前回との差分が無ければ停滞と判定し、判定した時点で同一ターン内に
   `SendMessage`による継続の催促（1回）まで完遂してからターンを終える。催促後も間隔を空けて
   再確認し応答が無ければメイン側で
-  `agent-toolkit/references/plan-impl/caller-reception.md`が定める完遂順序
+  `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`が定める完遂順序
   （実装→検証→コミット→レビュー→push→CI通過確認）のうち未完了の工程を巻き取るか、
   縮減した新規サブエージェントを起動する。観測した結果はユーザーへ短く提示する
 - 停滞検知の仕組みは`ScheduleWakeup`・`CronCreate`・Bash background loopのいずれかで実装し、

@@ -8,6 +8,7 @@ import pathlib
 import re
 
 import _plan_format
+import pytest
 
 _PLAN_FILE_REF = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "SKILL.md"
 
@@ -318,8 +319,19 @@ class TestBumpMatrixRowNamedGroups:
 class TestIsAgentDocTargetFile:
     """is_agent_doc_target_file の対象パス判定を検査する。"""
 
-    def test_matches_agent_references_md(self) -> None:
-        assert _plan_format.is_agent_doc_target_file("agent-toolkit/references/plan-impl/execution-process.md")
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "agent-toolkit/skills/codex-exec/references/plan-codex-review.md",
+            "agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md",
+        ],
+    )
+    def test_matches_skill_references_md(self, path: str) -> None:
+        assert _plan_format.is_agent_doc_target_file(path)
+
+    def test_rejects_removed_top_level_references_layout(self) -> None:
+        removed_path = "/".join(("agent-toolkit", "references", "removed.md"))
+        assert not _plan_format.is_agent_doc_target_file(removed_path)
 
     def test_matches_chezmoi_dot_claude_skills(self) -> None:
         assert _plan_format.is_agent_doc_target_file(".chezmoi-source/dot_claude/skills/refine-prompt/SKILL.md")

@@ -81,50 +81,24 @@ Agentツール起動は常に独立コンテキストで開始される確定事
 受信側の処理規定を伴わない起動プロンプト欄追加は無効情報の埋め込みとなり、
 計画レビューで重大指摘対象とする。
 
-## 実装委譲（plan-codex-delegate / plan-implementer）の関係
+## 計画処理の委譲関係
 
-`plan-impl-executor`・`plan-codex-delegate`・`plan-implementer`の相互関係を本節でSSOT化する。
-各定義の本文改訂時は要約と本節への参照のみを置き、詳細記述を重複させない。
+`plan-file-finalizer`と`plan-impl-executor`はHaiku固定の委譲窓口とする。
+両者は成果物を直接編集せず、`agent-toolkit:codex-exec`を接続経路として作業を委譲する。
 
-- `plan-impl-executor`: `plan-mode`が確定した計画ファイル1件の実行全体（タスク分解・実装・検証・
-  コミット・レビュー実施）を担う起動主体。実装委譲先の選定と`careful-review`起動を担当する
-- `plan-codex-delegate`: 実装委譲先の第一候補（用途: 実装）
-  - コード・テストコード・一般ドキュメント・コーディングエージェント向け文書の実装タスクを
-    codex MCPへ委譲するサブエージェントである
-  - `mcp__codex__codex`が利用可能な場合に常に優先する
-- `plan-implementer`: 実装委譲先のフォールバック
-  - `mcp__codex__codex`が利用不可と判明した場合に限り、`plan-impl-executor`が実装タスクを委譲する
-    サブエージェントである
-  - 実装委譲以外の用途（レビュー指摘の一律差し戻し先・隔離リファレンスの確認・修正窓口等）へ指名しない
-- 判定基準の詳細（委譲手順・並列実行・`threadId`管理）は
-  `agent-toolkit/references/plan-impl/execution-process.md`
-  「実装委譲（plan-codex-delegate / plan-implementer）の判断指針」節を正典とする
-- 設計指針: 同一役割層（実装委譲先）に属するコンポーネントは委譲形態を揃える。
-  `plan-codex-delegate`・`plan-implementer`はいずれもサブエージェント定義とし、
-  一方のみをスキル定義にする非対称構成を新設しない
-- ガードレール: `agent-toolkit/agents/`配下のエージェント定義frontmatterの`tools:`へ
-  `mcp__codex__codex`・`mcp__codex__codex-reply`を宣言してよいのは`plan-codex-delegate`の
-  1定義に限る。他のエージェント定義へ追加する場合も本節の制約に従う
-  （機械検証は`agent-toolkit/scripts/pretooluse_test.py`の該当テストを参照）
+- `plan-file-finalizer`: 計画の機械チェック・総合レビュー・指摘反映を統括する
+- `plan-impl-executor`: 計画の実装・検証・コミット・実装差分レビュー・指摘反映を統括する
+- `codex-exec`: codex MCPの初回接続・継続と、利用不能時の汎用エージェント代替を担う
+- codexまたは`subagent_type: claude`: 成果物の作成・修正またはレビューを実施する
 
-## レビュー委譲の関係
+レビュー系と実装・修正系は独立した2系統とする。
+codex経路は系統別の`threadId`を継続する。
+Claude代替は毎回新規起動し、確定的な実装・機械的修正ではSonnet、
+設計判断や重大指摘の採否を含む作業ではOpusを使う。
 
-計画レビュー・実装レビューで、codexレビュー（`plan-codex-delegate`）とclaude側レビュアーの関係を本節でSSOT化する。
-各定義の本文改訂時は要約と「レビュー委譲の関係」節への参照のみを置き、詳細記述を重複させない。
-トークン配分方針として、レビュー系工程はcodex優先とし、claudeは統括・計画適合性・規範適合性の
-観点に限定する。この構造は「実装委譲（plan-codex-delegate / plan-implementer）の関係」節と対称とする。
-
-計画レビュー・実装レビューとも、codexのMCP（`mcp__codex__codex`・`mcp__codex__codex-reply`）利用可否で
-経路が分岐する2段階判定を用いる。判定手順の詳細は`codex-review.md`「codex利用可否の2段階判定」節を正典とする。
-
-- `plan-codex-delegate`: 計画レビュー・実装レビューいずれも第一候補（MCP利用可能時）。
-  `用途: 計画レビュー`／`用途: 実装差分レビュー`で担当観点を分岐する。
-  単体品質・日本語表現に加え、計画/成果物間の仕様適合性・`01-agent.md`・`agent-standards`規範適合性を
-  一括して担う（従来別エージェントだった`plan-spec-reviewer`・`agent-doc-validator`の担当観点を吸収済み）。
-  計画レビューの分担は`codex-review.md`「plan-file-finalizerからの起動」節を正典とする。
-  実装レビューの分担は`agent-toolkit/skills/careful-review/references/impl-review-launch.md`を正典とする
-- `plan-reviewer`: 計画レビュー・実装レビューいずれもフォールバック（MCP利用不可時のみ起動）。
-  `plan-codex-delegate`が吸収した担当観点を含めて単独で担う
+スキル経路と汎用Agent経路は接続方法が異なるが、作業主体として同じ役割層に属する。
+同一役割層を同じ定義種別へ揃えることは要件としない。
+用途固有の詳細は`agent-toolkit/skills/codex-exec/references/`配下を正典とする。
 
 ## 出力節への追加要素導入
 

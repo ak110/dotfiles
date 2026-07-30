@@ -53,7 +53,7 @@ staged差分とunstaged差分が想定した境界に一致することを確認
   - Agentツール呼び出しのプロンプトへ「`git push`は行わないこと」を常に明示する（例外なし）
   - 既定では`git commit`も行わせず、git操作は`git diff`・`git status`など読み取り系に限定する。
     ファイル編集の可否は委譲タスクの内容に従う（読み取り専用化の対象はgit操作のみで、
-    `plan-implementer`等のファイル編集を伴う委譲を妨げない）
+    ファイル編集を伴う委譲を妨げない）
   - 例外1: ユーザーから明示的にサブエージェントでのコミットを指示された場合、
     上記のコミット禁止を解除してコミットを許可する（`git push`禁止は維持する）
   - 例外2: `agent-toolkit:plan-impl-executor`など、計画ファイル`## 実行方法`のコミットステップを
@@ -141,9 +141,9 @@ staged差分とunstaged差分が想定した境界に一致することを確認
 `git push`後は必ずCIが通過することまで確認して初めて作業完了とする。
 `git push`はリモート名・ブランチ名を明示せず単独で呼び出すことを標準とする（詳細は「## コミット運用」節参照）。
 
-本節は`git push`を実行した主体が実施する工程であり、サブエージェントの完了条件に含めない
-（担当分離の理由は`agent-toolkit/references/plan-impl/caller-reception.md`
-「push後のCI通過確認」節、SSOTを参照する）。
+本節は`git push`を実行した主体が実施する工程であり、サブエージェントの完了条件に含めない。
+担当分離の理由は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+「実体照合と後続工程」節をSSOTとして参照する。
 `git push`はサブエージェントの担当外（「## コミット運用」節）であるため、
 本節の実施主体はメインエージェントまたは委譲元となる。
 CI失敗後のログ取得・要約は長出力を伴うため、`agent-toolkit:shell-exec`への委譲を選んでよい。

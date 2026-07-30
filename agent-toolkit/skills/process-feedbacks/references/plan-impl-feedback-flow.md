@@ -114,9 +114,9 @@ source_body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
 協調モードは統合可否をユーザーへ確認する。
 自律モードはTBDへ記録し、計画実装型の完了後に通常型として処理する。
 
-各起動の直前には`agent-toolkit/references/plan-impl/caller-reception.md`の
+各起動の直前には`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`の
 起動前の準備（`git rev-parse HEAD`による計画着手前SHAの記録）を都度実施する。
-完了通知の受領のたびに`agent-toolkit/references/plan-impl/caller-reception.md`の
+完了通知の受領のたびに`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`の
 受領手順で検収する。検収後は当該コミットの`git push`と本スキル
 「ステップ7: 採否確定の後始末」の該当分後始末（`atk mq adopt`）まで完了してから、
 次の計画実装型を1件ずつ起動する。
@@ -127,7 +127,8 @@ source_body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
 通常型の計画実装（`plan-impl-executor`起動）は、先行する全ての計画実装型`plan-impl-executor`のうち
 最後に起動した1件について、完了報告本文の受領・検収を終えていることを開始条件とする。
 これに加え、当該コミットの`git push`と該当分後始末（`atk mq adopt`）まで完了していることも条件とする。
-完了報告本文の必須欄は`agent-toolkit/references/plan-impl/caller-reception.md`手順0のSSOTに従い、
+完了報告本文の必須欄は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+「完了報告の検収」節のSSOTに従い、
 `review_handoff`欄を含む形式とする。
 作業ツリー全体へ影響する検証・コミットの競合を避けるため直列とする。
 commit SHAの進捗観測を単独の判定根拠にしない。
@@ -162,8 +163,9 @@ commit SHAの進捗観測を単独の判定根拠にしない。
 `run_in_background`起動は権限プロンプトへ応答できない制約
 （`agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節）を持つ。
 委譲先が権限プロンプト起因で停滞した場合、同節の停滞検知手順に従い
-メイン側で`agent-toolkit/references/plan-impl/caller-reception.md`が定める完遂順序
-（実装→検証→コミット→レビュー→push→CI通過確認）のうち未完了の工程を巻き取る。
+メイン側で未完了の工程を巻き取る。
+完遂順序は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`が定める
+実装→検証→コミット→レビュー→push→CI通過確認の順とする。
 ただし`git push`とpush後のCI通過確認は本スキル「ステップ7: 採否確定の後始末」以降で実施するため、
 本フローでの巻き取り範囲は実装・検証・コミット・レビューまでとする。
 本フローは自律実行モード・協調モードを問わず適用する。

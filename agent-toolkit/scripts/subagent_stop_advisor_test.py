@@ -226,6 +226,11 @@ def _complete_report(**overrides: str) -> str:
         "pending_confirmations": "なし",
         "plan_gaps": "なし",
         "applied_instructions": "なし",
+        "implementation_thread_id": "th_impl",
+        "review_thread_id": "th_review",
+        "implementation_route": "codex",
+        "review_route": "codex",
+        "review_rounds": "1",
     }
     fields.update(overrides)
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
@@ -280,6 +285,7 @@ class TestPlanImplExecutorReportFormat:
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
         assert "plan_gaps" in body["reason"]
+        assert "plan-impl-caller-reception.md" in body["reason"]
 
     def test_missing_label_blocks_and_preserves_entry_for_retry(self, tmp_path: Path) -> None:
         """書式不備でblockした場合、状態辞書のエントリは削除されず再試行時も検査対象のままである。"""
@@ -408,6 +414,8 @@ class TestPlanImplExecutorReportFormat:
         )
         body = json.loads(result.stdout)
         assert body["decision"] == "block"
+        assert "agent-toolkit/rules/02-claude-code.md" in body["reason"]
+        assert "サブエージェント運用" in body["reason"]
 
     def test_background_parallel_declaration_with_all_checked_passes(self, tmp_path: Path) -> None:
         """全項目チェック済みならbackground並列起動宣言があっても通過する。"""

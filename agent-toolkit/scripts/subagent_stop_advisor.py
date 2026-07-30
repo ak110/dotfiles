@@ -42,7 +42,8 @@ _HOOK_ID = "agent-toolkit/subagent-stop"
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
 # `plan-impl-executor`完了報告本文の主要欄ラベル集合。
-# SSOTは`agent-toolkit/references/plan-impl/caller-reception.md`手順0および
+# SSOTは`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
+# 「完了報告の検収」節および
 # `agent-toolkit/agents/plan-impl-executor.md`「出力」節。
 # ラベル定義変更時は本定数と両ファイルを同時に更新する。
 _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
@@ -55,13 +56,19 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "pending_confirmations",
     "plan_gaps",
     "applied_instructions",
+    "implementation_thread_id",
+    "review_thread_id",
+    "implementation_route",
+    "review_route",
+    "review_rounds",
 )
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
 
 # `plan-impl-executor`が自身の判断でbackground並列起動した宣言と、
 # `changed`欄の未消化項目（`- [ ]`）が共起するかの判定パターン（FB[3]）。
-# `plan-impl-executor.md`「停止禁止」節が禁止するbackground並列起動の再発検出用。
+# `agent-toolkit/rules/02-claude-code.md`「サブエージェント運用」節が定める
+# foreground起動規定からの逸脱を検出する。
 _PLAN_IMPL_EXECUTOR_BACKGROUND_LAUNCH_RE = re.compile(r"run_in_background\s*=\s*true|バックグラウンドで?並列起動")
 _PLAN_IMPL_EXECUTOR_UNCHECKED_CHANGED_ITEM_RE = re.compile(r"^-\s*\[\s\]", re.MULTILINE)
 _PLAN_IMPL_EXECUTOR_STATUS_COMPLETED_RE = re.compile(r"^status:\s*completed\b", re.MULTILINE)
@@ -223,7 +230,8 @@ def main() -> int:
         reason = _llm_notice(
             "blocked: `plan-impl-executor` completion report is missing required labels:"
             f" {', '.join(missing_labels)}."
-            " See `agent-toolkit/agents/plan-impl-executor.md` '出力' section for the required format."
+            " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
+            " '完了報告の検収' section for the required format."
             " When resubmitting, restate the entire original completion report with the missing labels added"
             " (the main agent does not retain the body across this hook's block).",
             tag="block",
@@ -234,10 +242,9 @@ def main() -> int:
         reason = _llm_notice(
             "blocked: `plan-impl-executor` completion report declares a self-initiated background parallel"
             " subagent launch (`run_in_background=true`) while the `changed` section still has unchecked"
-            " (`- [ ]`) items. This violates `agent-toolkit/agents/plan-impl-executor.md` '停止禁止' section,"
-            " which prohibits self-judged background parallel launches. Complete the unfinished work"
-            " (directly or via a single non-parallel background delegation) before reporting completion, unless the"
-            " caller's launch prompt explicitly authorized the parallel launch.",
+            " (`- [ ]`) items. This violates `agent-toolkit/rules/02-claude-code.md`"
+            " 'サブエージェント運用' section, which requires foreground launches with"
+            " `run_in_background` omitted. Complete the unfinished work before reporting completion.",
             tag="block",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))

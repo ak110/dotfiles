@@ -13,14 +13,10 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 振り返りスキル呼び出し検出 (Skill)
    （`session_review_invoked`辞書へ記録）
-6. codex-review.md読み込み検出 (Read)
+6. textlint-violations.md読み込み検出 (Read)
 7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
-8. AgentとTask両呼び出し時のsubagent_type別セッション状態フラグ記録
-   （plan-reviewer / plan-codex-delegate）
-   および`_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. codex-review起動検出（Agent/Task: subagent_typeがplan-codex-delegate /
-   mcp__codex__codex・mcp__codex__codex-replyツール。
-   両ツール成功時はrecorded_codex_thread_idも記録する）
+8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
+9. codex MCP呼び出し後のリモートref変化確認
 10. exit-session起動検知による`process_feedbacks_skill_invoked`フラグのリセット (Skill)。
     `plan-and-add-feedback`起動検知による`plan_and_add_entries_skill_invoked`フラグの設定と、
     `process-feedbacks`起動検知による同フラグのリセットも同経路で扱う (Skill)
@@ -32,16 +28,14 @@ PreToolUseやStopフックが参照して警告・提案の判定に使う。
 13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-15. PostToolUseFailure・PermissionDenied（Agent/Task限定）: plan-codex-delegate起動失敗時のplan_codex_delegate_blocked記録
+15. PostToolUseFailure・PermissionDenied: 状態を変更せず終了
 16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. `plan-file-finalizer`完了報告本文の`invoked_subagents:`行のパースによる
-    親セッション状態へのフラグ設定 (Agent/Task)
-18. `plan-codex-delegate`起動時の用途行の`agentId`別記録 (Agent/Task)。
-    PreToolUse側のレビュー用途編集ブロックが、子（サイドチェーン）側のEdit/Write/MultiEdit時に
-    自身の`transcript_path`から抽出した`agentId`で引く
+17. `plan-file-finalizer`完了報告末尾の`status`と`review_completed`の解析 (Agent/Task)
+18. `agent-toolkit:codex-exec`起動の記録 (Skill)
 """
 
+import hashlib
 import json
 import pathlib
 import re
@@ -63,9 +57,7 @@ from _plan_format import (  # noqa: E402  # pylint: disable=wrong-import-positio
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import SUBAGENT_TYPE_FLAGS as _SUBAGENT_TYPE_FLAGS  # noqa: E402
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-from _tracked_subagent_types import is_review_purpose as _is_review_purpose  # noqa: E402
 from _transcript_agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_transcript_agent_id as _extract_transcript_agent_id,
 )
@@ -192,6 +184,7 @@ _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 
 _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
+_CODEX_EXEC_SKILL_NAMES = frozenset({"agent-toolkit:codex-exec", "codex-exec"})
 
 # Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
 # フルネームと短縮名の両方を許容する。`pretooluse.py`側の同名定数と同一集合を保つ。
@@ -201,48 +194,23 @@ _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:p
 # SubagentStop側の`_inspect_plan_impl_executor_report_format`が完了報告書式検査の発火判定に読み取る。
 _PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
 
-# Agent/Taskツールの`subagent_type`引数として許容するplan-codex-delegate識別子。
-_PLAN_CODEX_DELEGATE_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-codex-delegate", "plan-codex-delegate"})
-
-# `plan-codex-delegate`起動時の用途行を`agentId`別に記録する辞書のキー名。
-# PreToolUse側の`_check_plan_codex_delegate_review_edit`（pretooluse.py）が
-# レビュー用途の成果物編集ブロックの発火判定に読み取る。`pretooluse.py`の
-# `_PLAN_CODEX_DELEGATE_PURPOSE_KEY`と同一値を保つ。
-_PLAN_CODEX_DELEGATE_PURPOSE_KEY = "plan_codex_delegate_purpose_by_agent_id"
-
 # codex呼び出し前後のリモート参照スナップショットを記録する状態辞書のキー。
 # `pretooluse.py`が同一キーで書き込み、本スクリプトが読み取り・削除する共有SSOT。
 _CODEX_REMOTE_SNAPSHOT_KEY = "codex_remote_snapshot_by_key"
 
-# 起動プロンプトの用途行（`用途: <値>`）を行単位で抽出する。
-# 記録先の判定関数（`_tracked_subagent_types.is_explicit_review_purpose`）が
-# 用途行形式と値単体の双方を受理するため、抽出した行をそのまま記録する。
-_DELEGATE_PURPOSE_LINE_RE = re.compile(r"^用途\s*[:：].*$", re.MULTILINE)
 
-# AgentツールとTaskツールのsubagent_type別セッション状態フラグ記録。
-# フルネームと短縮名の両方を許容する。
-# 本辞書は呼び出し元（Agent/Taskツールを実行した側）の`session_id`が指すセッション状態へ記録する。
-# `agent-toolkit:plan-file-finalizer`が自身の内部でAgent/Taskツールにより`plan-reviewer`・
-# `plan-codex-delegate`を起動する場合、記録先はplan-file-finalizer自身の
-# セッション状態であり、起動元（親）のセッション状態には反映されない。
-# 親への反映は、plan-file-finalizer自身の完了報告本文の`invoked_subagents:`行を
-# main()関数内のAgent/Task完了ハンドラがパースして設定する。
+def _codex_thread_cwd_state_id(thread_id: str) -> str:
+    """`threadId`単位の共有cwd状態ファイルに使う疑似セッションIDを返す。"""
+    digest = hashlib.sha256(thread_id.encode()).hexdigest()
+    return f"codex-thread-cwd-{digest}"
+
+
 _PLAN_FILE_FINALIZER_SUBAGENT_TYPES: frozenset[str] = frozenset({"plan-file-finalizer", "agent-toolkit:plan-file-finalizer"})
 
-# plan-file-finalizer完了報告本文の`invoked_subagents:`行に列挙される識別子から
-# 対応するセッション状態フラグへのマップ。
-_PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS: dict[str, str] = {
-    "plan-reviewer": "plan_reviewer_invoked",
-    "codex-review": "codex_review_invoked",
-}
-
-# `invoked_subagents:`行（行頭からコロン直後の値まで）を抽出する正規表現。
-_INVOKED_SUBAGENTS_LINE_RE = re.compile(r"^invoked_subagents:\s*(.*)$", re.MULTILINE)
-
 # 完了報告末尾の機械可読な記録行を判定する正規表現。
-# 汎用パターンにすると、引用された記録行の直後に別の`キー:`形式の散文が続く場合に
-# 誤って記録行ブロックへ含めてしまうため、既知のキーへ限定する。
-_RECORD_LINE_RE = re.compile(r"^(?:invoked_subagents|codex_unavailable):")
+_RECORD_LINE_RE = re.compile(r"^(?:status|review_completed):")
+_STATUS_LINE_RE = re.compile(r"^status:\s*(completed|needs_escalation)$", re.MULTILINE)
+_REVIEW_COMPLETED_LINE_RE = re.compile(r"^review_completed:\s*(true|false)$", re.MULTILINE)
 
 
 def _extract_trailing_record_block(completion_text: str) -> str:
@@ -254,13 +222,6 @@ def _extract_trailing_record_block(completion_text: str) -> str:
         record_lines.append(line)
     return "\n".join(reversed(record_lines))
 
-
-# `codex_unavailable:`行を完了報告本文の最終行としてのみ抽出する正規表現。
-# `re.MULTILINE`を付けないため`$`は文字列末尾（`\Z`相当）にのみ一致する。
-# `用途: 計画レビュー`の指摘本文が同一文字列を引用しても、最終行と完全一致しない限り
-# 誤検出しない。値が"usage-limit"の場合に限りセッション状態フラグ
-# codex_usage_limit_observedを真化する。
-_CODEX_UNAVAILABLE_LINE_RE = re.compile(r"^codex_unavailable:\s*(.*)$")
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
 # 「Xした状態でYしない」形式は「Xでなければ`Y`してよい」と誤読され得るため、
@@ -415,10 +376,22 @@ def _warn_codex_remote_change(session_id: str, payload: dict) -> None:
             return state
         return None
 
+    tool_response = payload.get("tool_response", {})
+    thread_id = tool_response.get("threadId") or tool_response.get("thread_id") if isinstance(tool_response, dict) else None
+    cwd = recorded.get("cwd") if isinstance(recorded, dict) else None
+    if isinstance(thread_id, str) and thread_id and isinstance(cwd, str) and cwd:
+
+        def _record_thread_cwd(state: dict) -> dict | None:
+            if state.get("cwd") == cwd:
+                return None
+            state["cwd"] = cwd
+            return state
+
+        update_state(_codex_thread_cwd_state_id(thread_id), _record_thread_cwd)
+
     update_state(session_id, _clear)
     if recorded is None:
         return
-    cwd = recorded.get("cwd")
     before = recorded.get("snapshot")
     if not isinstance(cwd, str) or not isinstance(before, dict):
         return
@@ -464,21 +437,8 @@ def main() -> int:
     if not isinstance(tool_input, dict):
         return 0
 
-    # 通番4: PostToolUseFailure（実行時失敗）・PermissionDenied（権限拒否）はAgent/Task限定で
-    # plan_codex_delegate_blockedのみ検知し、通常のPostToolUse成功分岐（flag_key記録等）は実行しない。
     hook_event_name = payload.get("hook_event_name", "")
     if hook_event_name in ("PostToolUseFailure", "PermissionDenied"):
-        if tool_name in ("Agent", "Task"):
-            subagent_type = tool_input.get("subagent_type")
-            if subagent_type in ("plan-codex-delegate", "agent-toolkit:plan-codex-delegate"):
-
-                def _set_blocked(state: dict) -> dict | None:
-                    if state.get("plan_codex_delegate_blocked", False):
-                        return None
-                    state["plan_codex_delegate_blocked"] = True
-                    return state
-
-                update_state(session_id, _set_blocked)
         return 0
 
     # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
@@ -525,12 +485,19 @@ def main() -> int:
             update_state(session_id, _reset_process_feedbacks_invoked)
         if isinstance(skill_name, str) and skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
             update_state(session_id, _set_plan_and_add_entries_invoked)
+        if isinstance(skill_name, str) and skill_name in _CODEX_EXEC_SKILL_NAMES:
+
+            def _set_codex_exec_invoked(state: dict) -> dict | None:
+                if state.get("codex_exec_skill_invoked", False):
+                    return None
+                state["codex_exec_skill_invoked"] = True
+                return state
+
+            update_state(session_id, _set_codex_exec_invoked)
         return 0
 
     # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
     if tool_name in ("Agent", "Task"):
-        # plan-file-finalizer完了報告の`invoked_subagents:`行パース（517行目付近）が
-        # `completion_text`を参照するため、抽出自体は維持する。
         raw_tool_response = payload.get("tool_response", {})
         completion_text = _extract_agent_completion_text(raw_tool_response) if isinstance(raw_tool_response, dict) else ""
 
@@ -558,127 +525,28 @@ def main() -> int:
                     return state
 
                 update_state(session_id, _register_plan_impl_executor_session)
-        # `plan-codex-delegate`起動時、tool_responseの`agentId`（サブセッションID）をキーとして
-        # 起動プロンプトの用途行を親セッション状態の辞書へ記録する。
-        # PreToolUse側のレビュー用途編集ブロックが発火判定に読み取る。
-        # 用途行を持たない起動は記録せず、読み取り側の判定を安全側（非ブロック）に保つ。
-        if isinstance(subagent_type, str) and subagent_type in _PLAN_CODEX_DELEGATE_SUBAGENT_TYPES:
-            tool_response = payload.get("tool_response", {})
-            delegate_agent_id = tool_response.get("agentId") if isinstance(tool_response, dict) else None
-            agent_prompt = tool_input.get("prompt")
-            purpose_match = (
-                _DELEGATE_PURPOSE_LINE_RE.search(agent_prompt) if isinstance(agent_prompt, str) and agent_prompt else None
-            )
-            if isinstance(delegate_agent_id, str) and delegate_agent_id and purpose_match is not None:
-
-                def _register_delegate_purpose(
-                    state: dict, aid: str = delegate_agent_id, purpose: str = purpose_match.group(0)
-                ) -> dict | None:
-                    purposes = state.get(_PLAN_CODEX_DELEGATE_PURPOSE_KEY)
-                    if not isinstance(purposes, dict):
-                        purposes = {}
-                    if purposes.get(aid) == purpose:
-                        return None
-                    purposes[aid] = purpose
-                    state[_PLAN_CODEX_DELEGATE_PURPOSE_KEY] = purposes
-                    return state
-
-                update_state(session_id, _register_delegate_purpose)
-        if isinstance(subagent_type, str):
-            flag_key = _SUBAGENT_TYPE_FLAGS.get(subagent_type)
-            # `plan-codex-delegate`は用途がレビューの起動に限って記録する。
-            # 用途が実装の起動を記録すると、レビュー未実施のまま計画ファイルの整合性チェック完遂判定を通過できてしまう。
-            if flag_key == "codex_review_invoked":
-                agent_prompt = tool_input.get("prompt")
-                if not _is_review_purpose(agent_prompt if isinstance(agent_prompt, str) else ""):
-                    flag_key = None
-            if flag_key is not None:
-
-                def _set_agent_flag(state: dict, flag_key: str = flag_key) -> dict | None:
-                    if state.get(flag_key, False):
-                        return None
-                    state[flag_key] = True
-                    return state
-
-                update_state(session_id, _set_agent_flag)
-        # plan-file-finalizer完了時、完了報告本文の`invoked_subagents:`行をパースし、
-        # このイベント自身のセッション（plan-file-finalizerの呼び出し元）へ対応フラグを設定する。
-        # `invoked_subagents:`行が無い、または既知識別子を含まない場合は無処理（fail-safe）。
         if isinstance(subagent_type, str) and subagent_type in _PLAN_FILE_FINALIZER_SUBAGENT_TYPES:
             trailing_record_block = _extract_trailing_record_block(completion_text)
-            invoked_match = _INVOKED_SUBAGENTS_LINE_RE.search(trailing_record_block)
-            if invoked_match:
-                identifiers = {token.strip() for token in invoked_match.group(1).split(",") if token.strip()}
-                invoked_flags = frozenset(
-                    _PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS[name]
-                    for name in identifiers
-                    if name in _PLAN_FILE_FINALIZER_INVOKED_SUBAGENT_FLAGS
-                )
-                if invoked_flags:
+            status_match = _STATUS_LINE_RE.search(trailing_record_block)
+            review_match = _REVIEW_COMPLETED_LINE_RE.search(trailing_record_block)
+            if (
+                status_match is not None
+                and status_match.group(1) == "completed"
+                and review_match is not None
+                and review_match.group(1) == "true"
+            ):
 
-                    def _set_plan_file_finalizer_invoked_flags(
-                        state: dict, flags: frozenset[str] = invoked_flags
-                    ) -> dict | None:
-                        changed = False
-                        for flag_name in flags:
-                            if not state.get(flag_name, False):
-                                state[flag_name] = True
-                                changed = True
-                        return state if changed else None
+                def _set_plan_review_completed(state: dict) -> dict | None:
+                    if state.get("plan_review_completed", False):
+                        return None
+                    state["plan_review_completed"] = True
+                    return state
 
-                    update_state(session_id, _set_plan_file_finalizer_invoked_flags)
-        # plan-codex-delegate・plan-file-finalizer両系の完了報告から
-        # codex_unavailable: usage-limitを検出し、codex_usage_limit_observedを真化する。
-        if isinstance(subagent_type, str) and subagent_type in (
-            *_PLAN_CODEX_DELEGATE_SUBAGENT_TYPES,
-            *_PLAN_FILE_FINALIZER_SUBAGENT_TYPES,
-        ):
-            # completion_textの最終行のみを対象に一致を試みる（誤検出防止のためmatch、非search）。
-            last_line = completion_text.rstrip("\n").rsplit("\n", maxsplit=1)[-1]
-            codex_unavail_match = _CODEX_UNAVAILABLE_LINE_RE.match(last_line)
-            if codex_unavail_match:
-                value = codex_unavail_match.group(1).strip()
-                if value == "usage-limit":
-
-                    def _set_codex_usage_limit_observed(state: dict) -> dict | None:
-                        if state.get("codex_usage_limit_observed", False):
-                            return None
-                        state["codex_usage_limit_observed"] = True
-                        return state
-
-                    update_state(session_id, _set_codex_usage_limit_observed)
+                update_state(session_id, _set_plan_review_completed)
         return 0
 
-    # mcp__codex__codex / mcp__codex__codex-reply: codex-review起動検出
-    # `isSidechain`が真（`plan-codex-delegate`内部の実装用途呼び出し）の場合は
-    # レビュー起動の誤記録を避けて`codex_review_invoked`を記録しない。
-    # `codex-reply`（継続呼び出し）も同一分岐で扱い、継続レビューでも`recorded_codex_thread_id`が
-    # 更新され続ける経路を確立する。
+    # codex呼び出し後はリモートrefの変化だけを確認する。
     if tool_name in ("mcp__codex__codex", "mcp__codex__codex-reply"):
-        if payload.get("isSidechain") is not True:
-
-            def _set_codex_review_invoked_via_mcp(state: dict) -> dict | None:
-                if state.get("codex_review_invoked", False):
-                    return None
-                state["codex_review_invoked"] = True
-                return state
-
-            update_state(session_id, _set_codex_review_invoked_via_mcp)
-
-            # FB[4]: `mcp__codex__codex`・`mcp__codex__codex-reply`両ツール成功時の
-            # threadIdをrecorded_codex_thread_idとして記録する。
-            tool_response = payload.get("tool_response", {})
-            if isinstance(tool_response, dict):
-                thread_id_response = tool_response.get("threadId") or tool_response.get("thread_id")
-                if isinstance(thread_id_response, str) and thread_id_response:
-
-                    def _set_recorded_thread_id(state: dict) -> dict | None:
-                        if state.get("recorded_codex_thread_id") == thread_id_response:
-                            return None
-                        state["recorded_codex_thread_id"] = thread_id_response
-                        return state
-
-                    update_state(session_id, _set_recorded_thread_id)
         _warn_codex_remote_change(session_id, payload)
         return 0
 
@@ -688,15 +556,6 @@ def main() -> int:
         if isinstance(file_path_raw, str):
             # Windowsからのバックスラッシュ区切りを正規化してから判定する
             file_path_normalized = file_path_raw.replace("\\", "/")
-            if file_path_normalized.endswith("codex-review.md"):
-
-                def _set_codex_review_read(state: dict) -> dict | None:
-                    if state.get("codex_review_read", False):
-                        return None
-                    state["codex_review_read"] = True
-                    return state
-
-                update_state(session_id, _set_codex_review_read)
             if file_path_normalized.endswith("writing-standards/references/textlint-violations.md"):
 
                 def _set_textlint_violations_read(state: dict) -> dict | None:
@@ -721,7 +580,7 @@ def main() -> int:
         if is_plan_file(file_path):
             # 現在の計画ファイルパスを記録する。
             # pretooluse.py側の`_check_process7_completion_before_exit_plan_mode`
-            # （`codex_review_invoked`の必須化判定）が計画ファイルを再読み込みする用途に使う。
+            # 計画ファイルの完遂ゲートが再読み込みする用途に使う。
 
             def _set_current_plan_file_path(current_state: dict, file_path: str = file_path) -> dict | None:
                 if current_state.get("current_plan_file_path") == file_path:

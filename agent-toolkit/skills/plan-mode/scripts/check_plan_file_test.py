@@ -276,13 +276,13 @@ def test_slash_prefix_with_subagent_name_errors(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`/`接頭辞にサブエージェント名を書いた取り違えはスキル名としてerrorにする。"""
-    body = "## 実行方法\n\n- `/agent-toolkit:plan-reviewer`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n- `/agent-toolkit:plan-impl-executor`を起動する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 1
     captured = capsys.readouterr()
     assert "実在しないスキル名の疑い" in captured.err
-    assert "plan-reviewer" in captured.err
+    assert "plan-impl-executor" in captured.err
 
 
 def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
@@ -294,18 +294,18 @@ def test_same_name_used_correctly_and_incorrectly_in_different_syntax(
     """
     body = (
         "## 実行方法\n\n"
-        "- Skillツールで`agent-toolkit:plan-reviewer`を呼び出す\n"
-        "- Agentツールで`agent-toolkit:plan-reviewer`を起動する\n\n"
+        "- Skillツールで`agent-toolkit:plan-impl-executor`を呼び出す\n"
+        "- Agentツールで`agent-toolkit:plan-impl-executor`を起動する\n\n"
         "## 変更内容\n\n### 対象ファイル一覧\n"
     )
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 1
     captured = capsys.readouterr()
-    # `agent-toolkit:plan-reviewer`はサブエージェント定義であり、スキル定義ではない。
+    # `agent-toolkit:plan-impl-executor`はサブエージェント定義であり、スキル定義ではない。
     # `Agentツールで`側は正しい呼び出しでありerrorとして検出しない。`Skillツールで`側は
     # 取り違えであり、スキル名として実在しないことをerrorとして報告する。
-    assert "実在しないスキル名の疑い: `agent-toolkit:plan-reviewer`" in captured.err
+    assert "実在しないスキル名の疑い: `agent-toolkit:plan-impl-executor`" in captured.err
     assert "実在しないサブエージェント名の疑い" not in captured.err
 
 
@@ -313,7 +313,7 @@ def test_bare_agent_toolkit_reference_accepts_subagent(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """構文を伴わない参照はスキル・サブエージェントいずれかに実在すればerrorとして検出しない。"""
-    body = "## 実行方法\n\n- レビューは`agent-toolkit:plan-reviewer`の担当とする\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    body = "## 実行方法\n\n- 実装は`agent-toolkit:plan-impl-executor`の担当とする\n\n## 変更内容\n\n### 対象ファイル一覧\n"
     plan = _write_plan(tmp_path, body)
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0

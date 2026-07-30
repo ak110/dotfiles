@@ -160,18 +160,16 @@ class TestReadState:
         assert read_state("array") == {}
 
 
-def test_session_state_persists_new_codex_flags() -> None:
-    """FB[4]: 新規追加フラグ(plan_codex_delegate_invoked/blocked, recorded_codex_thread_id)が永続化されることを確認する。"""
-    session_id = "test-fb4-session"
+def test_session_state_persists_codex_exec_flags() -> None:
+    """codex委譲経路と計画レビュー完了のフラグが永続化されることを確認する。"""
+    session_id = "test-codex-exec-session"
 
     def _set(state: dict) -> dict | None:
-        state["plan_codex_delegate_invoked"] = True
-        state["plan_codex_delegate_blocked"] = False
-        state["recorded_codex_thread_id"] = "th_test123"
+        state["codex_exec_skill_invoked"] = True
+        state["plan_review_completed"] = True
         return state
 
     assert update_state(session_id, _set) is True
     state = read_state(session_id)
-    assert state["plan_codex_delegate_invoked"] is True
-    assert state["plan_codex_delegate_blocked"] is False
-    assert state["recorded_codex_thread_id"] == "th_test123"
+    assert state["codex_exec_skill_invoked"] is True
+    assert state["plan_review_completed"] is True

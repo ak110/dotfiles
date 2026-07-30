@@ -44,8 +44,7 @@ description: >
 
 ## 文書記述量の管理
 
-対象は`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`・
-`agent-toolkit/references/`配下のMarkdownとする。
+対象は`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`配下のMarkdownとする。
 `agent-toolkit/skills/*/scripts/`配下の機械チェック実装コードも対象に含む。
 これらを新規作成・改訂する際は安易に記述量を増やさない。
 既存記述との重複統合（除去・統合・`references/`分離のいずれか）を常に検討する。

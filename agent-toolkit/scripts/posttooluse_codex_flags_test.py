@@ -1,11 +1,4 @@
-"""agent-toolkit/scripts/posttooluse.pyのAgent/Task起動セッション状態フラグ記録のテスト。
-
-subagent_type別フラグ記録・codex-review起動検出（mcp__codex__codex / mcp__codex__codex-reply）・
-plan-codex-delegate経由検査用フラグ
-（plan_codex_delegate_invoked / plan_codex_delegate_blocked / recorded_codex_thread_id）と、
-plan-codex-delegate起動時の用途行記録（plan_codex_delegate_purpose_by_agent_id）を検証する。
-`posttooluse_test.py`のpylint too-many-lines回避のため独立ファイルへ配置する。
-"""
+"""codex-exec経路と計画レビュー完了状態のPostToolUseテスト。"""
 
 import json
 import os
@@ -19,12 +12,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """posttooluse hookを実行し、正常終了（returncode 0）を前提として結果を返す。
-
-    hookが異常終了した場合、状態ファイルが書き込まれず`_read_state`が空辞書を返すため、
-    フラグ未設定を期待するテストが異常終了を検出できないまま通過しうる。
-    そのため呼び出し元での個別検証を待たず、ここで正常終了を検証する。
-    """
+    """PostToolUse hookを実行して結果を返す。"""
     env = os.environ.copy()
     env["TMPDIR"] = str(state_dir)
     env["TEMP"] = str(state_dir)
@@ -35,507 +23,100 @@ def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProce
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
-    assert result.returncode == 0, f"posttooluse hookが異常終了した（returncode={result.returncode}）: {result.stderr}"
+    assert result.returncode == 0, result.stderr
     return result
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
+    """テスト用のセッション状態を読み込む。"""
     path = state_dir / f"claude-agent-toolkit-{session_id}.json"
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-class TestAgentInvocationFlags:
-    """AgentとTask起動のsubagent_type別セッション状態フラグ記録と、codex-review起動検出。"""
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize(
-        ("subagent_type", "flag_key"),
-        [
-            ("plan-reviewer", "plan_reviewer_invoked"),
-            ("agent-toolkit:plan-reviewer", "plan_reviewer_invoked"),
-            ("plan-codex-delegate", "codex_review_invoked"),
-            ("agent-toolkit:plan-codex-delegate", "codex_review_invoked"),
-        ],
+@pytest.mark.parametrize("skill_name", ["codex-exec", "agent-toolkit:codex-exec"])
+def test_codex_exec_skill_invocation_is_recorded(tmp_path: pathlib.Path, skill_name: str) -> None:
+    """codex-execの短縮名と完全修飾名を同じフラグへ記録する。"""
+    sid = skill_name.replace(":", "-")
+    _run(
+        {"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill_name}},
+        state_dir=tmp_path,
     )
-    def test_subagent_type_flag(self, tmp_path: pathlib.Path, tool_name: str, subagent_type: str, flag_key: str):
-        sid = f"{tool_name.lower()}-{subagent_type.replace(':', '-')}"
-        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get(flag_key) is True
-
-    def test_codex_review_flag_via_mcp(self, tmp_path: pathlib.Path):
-        sid = "codex-review-via-mcp"
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
-
-    def test_codex_review_not_recorded_via_mcp_when_sidechain(self, tmp_path: pathlib.Path):
-        """`isSidechain`が真（`plan-codex-delegate`内部呼び出し）の場合、`codex_review_invoked`を記録しない。
-
-        `isSidechain`が偽の場合に記録される挙動（従来どおり）は`test_codex_review_flag_via_mcp`で検証済み。
-        """
-        sid = "codex-sidechain-mcp-no-review-flag"
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex", "tool_input": {}, "isSidechain": True}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
-
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_other_subagent_type_no_flag(self, tmp_path: pathlib.Path, tool_name: str):
-        sid = f"{tool_name.lower()}-other-subagent"
-        _run({"session_id": sid, "tool_name": tool_name, "tool_input": {"subagent_type": "claude"}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is not True
-        assert state.get("codex_review_invoked") is not True
-
-    def test_plan_codex_delegate_subagent_sets_codex_review_invoked_only(self, tmp_path: pathlib.Path):
-        """plan-codex-delegate起動時はcodex_review_invokedのみ真化する（FB[2]反映後、`plan_codex_delegate_invoked`はPreToolUse側の責務）。"""
-        sid = "fb2-post-codex-review-only"
-        _run(
-            {"session_id": sid, "tool_name": "Task", "tool_input": {"subagent_type": "agent-toolkit:plan-codex-delegate"}},
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
-        assert state.get("plan_codex_delegate_invoked") is not True
-
-    def test_mcp_codex_direct_call_sets_only_codex_review_invoked(self, tmp_path: pathlib.Path):
-        """mcp__codex__codex直接呼び出しはcodex_review_invokedのみ真化し、threadIdを記録する。"""
-        sid = "fb4-direct-call"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__codex__codex",
-                "tool_input": {},
-                "isSidechain": False,
-                "tool_response": {"threadId": "th_direct"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
-        assert state.get("plan_codex_delegate_invoked") is not True
-        assert state.get("recorded_codex_thread_id") == "th_direct"
-
-    def test_mcp_codex_reply_sets_codex_review_invoked(self, tmp_path: pathlib.Path):
-        """mcp__codex__codex-reply（継続呼び出し）成功時にcodex_review_invokedが真化する。"""
-        sid = "fb-000318-001-codex-reply"
-        _run({"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}}, state_dir=tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_review_invoked") is True
-
-    def test_mcp_codex_reply_records_recorded_thread_id(self, tmp_path: pathlib.Path):
-        """mcp__codex__codex-reply成功時のtool_response.threadIdがrecorded_codex_thread_idへ記録される。"""
-        sid = "fb-000318-001-codex-reply-thread"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__codex__codex-reply",
-                "tool_input": {},
-                "isSidechain": False,
-                "tool_response": {"threadId": "th_reply"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("recorded_codex_thread_id") == "th_reply"
-
-    def test_mcp_codex_reply_not_recorded_when_sidechain(self, tmp_path: pathlib.Path):
-        """`isSidechain`が真のmcp__codex__codex-reply呼び出しではcodex_review_invokedを記録しない。"""
-        sid = "fb-000318-001-codex-reply-sidechain"
-        _run(
-            {"session_id": sid, "tool_name": "mcp__codex__codex-reply", "tool_input": {}, "isSidechain": True},
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("codex_review_invoked") is not True
-
-    def test_plan_codex_delegate_post_tool_use_failure_sets_blocked_flag(self, tmp_path: pathlib.Path):
-        """PostToolUseFailure（実行時失敗）でplan_codex_delegate_blockedを真化する。"""
-        sid = "fb4-post-failure"
-        _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PostToolUseFailure",
-                "tool_name": "Task",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-codex-delegate"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_codex_delegate_blocked") is True
-
-    def test_plan_codex_delegate_permission_denied_sets_blocked_flag(self, tmp_path: pathlib.Path):
-        """PermissionDenied（auto mode下の権限拒否）でplan_codex_delegate_blockedを真化する。"""
-        sid = "fb4-perm-denied"
-        _run(
-            {
-                "session_id": sid,
-                "hook_event_name": "PermissionDenied",
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_codex_delegate_blocked") is True
+    assert _read_state(tmp_path, sid)["codex_exec_skill_invoked"] is True
 
 
-class TestPlanImplExecutorActiveSessions:
-    """`plan-impl-executor`系Agent/Task起動時のサブセッションID辞書記録。"""
-
-    @pytest.mark.parametrize("subagent_type", ["plan-impl-executor", "agent-toolkit:plan-impl-executor"])
-    def test_plan_impl_executor_registers_active_session(self, tmp_path: pathlib.Path, subagent_type: str):
-        sid = f"fb6-active-{subagent_type.replace(':', '-')}"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": subagent_type},
-                "tool_response": {"agentId": "sub-session-123"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        active = state.get("plan_impl_executor_active_subagent_sessions")
-        assert isinstance(active, dict)
-        assert "sub-session-123" in active
-        assert active["sub-session-123"]["subagent_type"] == subagent_type
-        assert isinstance(active["sub-session-123"].get("started_at"), (int, float))
-
-    def test_non_plan_impl_executor_does_not_register(self, tmp_path: pathlib.Path):
-        """`claude`等の他エージェント起動時はフラグへ書き込まない。"""
-        sid = "fb6-non-plan-impl-executor"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "claude"},
-                "tool_response": {"agentId": "sub-session-999"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})
-
-    def test_missing_agent_id_does_not_register(self, tmp_path: pathlib.Path):
-        """`tool_response.agentId`が欠落する場合は書き込みをスキップする。"""
-        sid = "fb6-missing-agent-id"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-impl-executor"},
-                "tool_response": {},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_impl_executor_active_subagent_sessions") in (None, {})
+@pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+def test_plan_review_completed_from_strict_trailing_block(tmp_path: pathlib.Path, tool_name: str) -> None:
+    """finalizerの末尾構造化欄が両条件を満たす場合だけ完了を記録する。"""
+    sid = tool_name.lower()
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": tool_name,
+            "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
+            "tool_response": {"result": "summary\nstatus: completed\nreview_completed: true"},
+        },
+        state_dir=tmp_path,
+    )
+    assert _read_state(tmp_path, sid)["plan_review_completed"] is True
 
 
-class TestPlanFileFinalizerFlagPropagation:
-    """plan-file-finalizer完了報告本文の`invoked_subagents:`行から親セッション状態へフラグを設定する。"""
-
-    _ALL_FLAGS = ("plan_reviewer_invoked", "codex_review_invoked")
-
-    @pytest.mark.parametrize("subagent_type", ["plan-file-finalizer", "agent-toolkit:plan-file-finalizer"])
-    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_both_identifiers_set_all_flags(self, tmp_path: pathlib.Path, subagent_type: str, tool_name: str):
-        sid = f"pff-all-{subagent_type.replace(':', '-')}-{tool_name.lower()}"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": tool_name,
-                "tool_input": {"subagent_type": subagent_type},
-                "tool_response": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "status: completed\ninvoked_subagents: plan-reviewer, codex-review\n",
-                        }
-                    ],
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        for flag in self._ALL_FLAGS:
-            assert state.get(flag) is True
-
-    def test_missing_invoked_subagents_line_sets_no_flags(self, tmp_path: pathlib.Path):
-        sid = "pff-missing-line"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {"content": [{"type": "text", "text": "status: completed\n"}]},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        for flag in self._ALL_FLAGS:
-            assert state.get(flag) is not True
-
-    def test_result_string_field_is_parsed(self, tmp_path: pathlib.Path):
-        """`result`欄（文字列）経由の完了報告本文からも`invoked_subagents:`行を抽出する。"""
-        sid = "pff-result-field"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {"result": "invoked_subagents: plan-reviewer\n"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is True
-        assert state.get("codex_review_invoked") is not True
-
-    def test_unknown_identifier_is_ignored(self, tmp_path: pathlib.Path):
-        """未知の識別子は無視し、既知の識別子のみ処理する。"""
-        sid = "pff-unknown-identifier"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {"content": [{"type": "text", "text": "invoked_subagents: plan-reviewer, unknown-agent\n"}]},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("plan_reviewer_invoked") is True
-        assert state.get("codex_review_invoked") is not True
-
-    def test_quoted_line_before_prose_sets_no_flags(self, tmp_path: pathlib.Path):
-        sid = "pff-quoted-line"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "invoked_subagents: plan-reviewer, codex-review\nsummary: 上記の記録行は説明用の引用である\n"
-                            ),
-                        }
-                    ],
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        for flag in self._ALL_FLAGS:
-            assert state.get(flag) is not True
-
-    def test_line_inside_trailing_record_block_sets_flags(self, tmp_path: pathlib.Path):
-        sid = "pff-trailing-record-block"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-file-finalizer"},
-                "tool_response": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "status report\n"
-                                "invoked_subagents: plan-reviewer, codex-review\n"
-                                "codex_unavailable: usage-limit\n"
-                            ),
-                        }
-                    ],
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        for flag in self._ALL_FLAGS:
-            assert state.get(flag) is True
+@pytest.mark.parametrize(
+    "completion",
+    [
+        "status: needs_escalation\nreview_completed: true",
+        "status: completed\nreview_completed: false",
+        "status: completed\nreview_completed: true\nquoted: value",
+        "本文にstatus: completedとreview_completed: trueを引用した。",
+    ],
+)
+def test_plan_review_completed_rejects_invalid_or_non_trailing_text(tmp_path: pathlib.Path, completion: str) -> None:
+    """未完了値、引用、末尾以外の記述による偽陽性を防ぐ。"""
+    sid = "negative"
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "plan-file-finalizer"},
+            "tool_response": {"result": completion},
+        },
+        state_dir=tmp_path,
+    )
+    assert _read_state(tmp_path, sid).get("plan_review_completed") is not True
 
 
-class TestPlanCodexDelegatePurposeRegistration:
-    """`plan-codex-delegate`起動時の用途行を`agentId`別に記録する辞書。"""
+def test_removed_agent_does_not_change_state(tmp_path: pathlib.Path) -> None:
+    """廃止したエージェント名を受け取っても旧状態を作成しない。"""
+    sid = "removed"
+    removed_agent = "-".join(("plan", "reviewer"))
+    removed_flag = "_".join(("plan", "reviewer", "invoked"))
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": removed_agent},
+            "tool_response": {"result": "status: completed\nreview_completed: true"},
+        },
+        state_dir=tmp_path,
+    )
+    state = _read_state(tmp_path, sid)
+    assert "plan_review_completed" not in state
+    assert removed_flag not in state
 
-    @pytest.mark.parametrize("subagent_type", ["plan-codex-delegate", "agent-toolkit:plan-codex-delegate"])
-    @pytest.mark.parametrize("purpose", ["用途: 計画レビュー", "用途: 実装差分レビュー", "用途: 実装"])
-    def test_registers_purpose_line(self, tmp_path: pathlib.Path, subagent_type: str, purpose: str):
-        """用途行を持つ起動は用途の種別によらず`agentId`をキーとして記録する。"""
-        sid = f"delegate-purpose-{subagent_type.replace(':', '-')}-{purpose[-4:]}"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": subagent_type, "prompt": f"{purpose}\n\n計画ファイルを確認する。"},
-                "tool_response": {"agentId": "delegate-agent-1"},
-            },
-            state_dir=tmp_path,
-        )
-        purposes = _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id")
-        assert isinstance(purposes, dict)
-        assert purposes.get("delegate-agent-1") == purpose
 
-    def test_missing_purpose_line_does_not_register(self, tmp_path: pathlib.Path):
-        """用途行の無い起動は記録せず、読み取り側の判定を非ブロック側に保つ。"""
-        sid = "delegate-purpose-missing-line"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Task",
-                "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": "計画ファイルを確認する。"},
-                "tool_response": {"agentId": "delegate-agent-2"},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
-
-    def test_missing_agent_id_does_not_register(self, tmp_path: pathlib.Path):
-        """`tool_response.agentId`が欠落する場合は記録しない。"""
-        sid = "delegate-purpose-missing-agent-id"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": "用途: 計画レビュー\n"},
-                "tool_response": {},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
-
-    def test_other_subagent_type_does_not_register(self, tmp_path: pathlib.Path):
-        """`plan-codex-delegate`以外の種別は用途行を持っていても記録しない。"""
-        sid = "delegate-purpose-other-type"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-implementer", "prompt": "用途: 実装差分レビュー\n"},
-                "tool_response": {"agentId": "delegate-agent-3"},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id") in (None, {})
-
-    def test_multiple_agents_registered_independently(self, tmp_path: pathlib.Path):
-        """並列起動した複数の`agentId`はそれぞれ独立のエントリとして保持される。"""
-        sid = "delegate-purpose-multiple"
-        for agent_id, purpose in (("delegate-a", "用途: 計画レビュー"), ("delegate-b", "用途: 実装差分レビュー")):
-            _run(
-                {
-                    "session_id": sid,
-                    "tool_name": "Agent",
-                    "tool_input": {"subagent_type": "plan-codex-delegate", "prompt": f"{purpose}\n"},
-                    "tool_response": {"agentId": agent_id},
-                },
-                state_dir=tmp_path,
-            )
-        purposes = _read_state(tmp_path, sid).get("plan_codex_delegate_purpose_by_agent_id")
-        assert purposes == {"delegate-a": "用途: 計画レビュー", "delegate-b": "用途: 実装差分レビュー"}
-
-    def test_codex_unavailable_line_sets_flag(self, tmp_path: pathlib.Path):
-        """完了報告最終行がcodex_unavailable: usage-limitの場合、codex_usage_limit_observedを真化する。"""
-        sid = "codex-unavail-usage-limit"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate"},
-                "tool_response": {"content": [{"type": "text", "text": "status: completed\ncodex_unavailable: usage-limit"}]},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_usage_limit_observed") is True
-
-    def test_codex_unavailable_unknown_value_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """最終行の値が未知の場合はcodex_usage_limit_observedを真化しない（fail-safe）。"""
-        sid = "codex-unavail-unknown-value"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate"},
-                "tool_response": {"content": [{"type": "text", "text": "status: completed\ncodex_unavailable: unknown-error"}]},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_usage_limit_observed") is not True
-
-    def test_codex_unavailable_line_missing_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """codex_unavailable行が無い場合はcodex_usage_limit_observedを真化しない。"""
-        sid = "codex-unavail-line-missing"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate"},
-                "tool_response": {"content": [{"type": "text", "text": "status: completed\nthread_id: xyz"}]},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_usage_limit_observed") is not True
-
-    def test_codex_unavailable_non_final_line_does_not_set_flag(self, tmp_path: pathlib.Path):
-        """codex_unavailable: usage-limitが最終行でない（指摘引用等の途中出現）場合は真化しない。
-
-        `用途: 計画レビュー`の指摘本文が当該文字列を引用しても誤検出しないことを検証する。
-        """
-        sid = "codex-unavail-non-final-line"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-codex-delegate"},
-                "tool_response": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "codex_unavailable: usage-limitという行を検出したら真化する設計です。\nstatus: completed",
-                        }
-                    ]
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_usage_limit_observed") is not True
-
-    def test_codex_unavailable_via_plan_file_finalizer_propagates(self, tmp_path: pathlib.Path):
-        """plan-file-finalizerが配下のplan-codex-delegateから転記したcodex_unavailable行も検出する。
-
-        利用限度到達によるフォールバック契約では、未完遂の`codex-review`は記録せず
-        `plan-reviewer`のみを記録する（`plan-file-finalizer.md`「invoked_subagentsは...」節）。
-        本テストはこの契約に沿った入力で、段階2フォールバック完遂時にゲートが要求する
-        両フラグ（`codex_usage_limit_observed`・`plan_reviewer_invoked`）が
-        揃って真化することを検証する。
-        """
-        sid = "codex-unavail-via-plan-file-finalizer"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Task",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-file-finalizer"},
-                "tool_response": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "status: completed\ninvoked_subagents: plan-reviewer\ncodex_unavailable: usage-limit",
-                        }
-                    ]
-                },
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("codex_usage_limit_observed") is True
-        assert state.get("plan_reviewer_invoked") is True
-        assert state.get("codex_review_invoked") is not True
+@pytest.mark.parametrize("subagent_type", ["plan-impl-executor", "agent-toolkit:plan-impl-executor"])
+def test_plan_impl_executor_registers_active_session(tmp_path: pathlib.Path, subagent_type: str) -> None:
+    """executorのサブセッションIDを完了報告検査用に記録する。"""
+    sid = subagent_type.replace(":", "-")
+    _run(
+        {
+            "session_id": sid,
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": subagent_type},
+            "tool_response": {"agentId": "sub-session-123"},
+        },
+        state_dir=tmp_path,
+    )
+    active = _read_state(tmp_path, sid)["plan_impl_executor_active_subagent_sessions"]
+    assert active["sub-session-123"]["subagent_type"] == subagent_type

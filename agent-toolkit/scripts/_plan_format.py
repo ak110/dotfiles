@@ -306,7 +306,6 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/references/.+\.md$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md$"),
     re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md$"),
 )

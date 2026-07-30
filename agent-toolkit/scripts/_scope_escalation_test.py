@@ -69,11 +69,11 @@ class TestMatchScopeEscalation:
             "完了報告を提出してから確認する。",
             "gh run listで一覧を確認する。",
             "複雑度に応じてモデルを選択する。",
-            "plan-reviewerの指摘を反映した。",
+            "plan-file-finalizerの指摘を反映した。",
             "review subagents finished successfully.",
             # 対象エージェント名が`plan-[a-z-]+`へ一般化されたため、
             # 間隔充填には英字以外（数字）を使い名前パターンへの巻き込みを避ける。
-            "plan-reviewer" + "0" * 41 + "background",
+            "plan-file-finalizer" + "0" * 41 + "background",
             "後続の実施記録を報告した。この文書は仕様対象外の項目を含まない。",
             "情報量が多いため整理して報告する。",
             "工数を見積もり、スケジュールを調整する。",

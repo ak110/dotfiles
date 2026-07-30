@@ -46,12 +46,12 @@ description: >
 4. Agentツールで`plan-file-finalizer`を起動する。起動プロンプトは
    `references/plan-file-finalizer-prompt-template.md`が定める必須見出し3点
    （`## 計画ファイルパス`・`## permission_mode`・`## 作業ディレクトリ`）を満たす形で構成する。
-   `## 作業ディレクトリ`には`### 計画メタ情報`の対象リポジトリ絶対パスを転記する。同エージェントが
-   完成条件の確認・機械チェック・codexレビュー・指摘反映を担う。完了報告は`invoked_subagents`欄に
-   `codex-review`が含まれるか`completed_reviews`欄に代行実施済みレビューが記載されていること、
-   `review_summary`欄がレビューごとの指摘件数と反映内容を示していることの2点で検収する。
-   いずれも欠ける場合はMCPが利用可能なら呼び出し元から実行し、
-   `review_summary`欄が欠ける場合は実装工程へ進まず委譲先へ照会して受領する。
+   `## 作業ディレクトリ`には`### 計画メタ情報`の対象リポジトリ絶対パスを転記する。
+   同エージェントは`agent-toolkit:codex-exec`を使い、機械チェック・総合レビュー・指摘反映を
+   実装・修正系とレビュー系へ委譲する。
+   計画レビューの詳細は`../codex-exec/references/plan-codex-review.md`を参照する。
+   完了報告の`review_completed: true`、両系統の経路と`threadId`、`review_summary`を検収する。
+   いずれかが欠ける場合は実装工程へ進まず委譲先へ照会する。
    `plan-file-finalizer`は不対応と判断した指摘の見解を`review_summary`欄へ記載するに留め、
    不対応注記は自ら付さない設計である。呼び出し元は検収時に`review_summary`欄の各指摘見解を
    実測確認し、`02-claude-code.md`「サブエージェント運用」節が定める書式
@@ -64,7 +64,9 @@ description: >
    Agentツールで`plan-impl-executor`を起動する。起動プロンプトは
    `agent-toolkit/agents/plan-impl-executor.md`「入力」節が定める必須引数
    （計画ファイルの絶対パス、プロジェクトルート（作業ディレクトリ）の絶対パス）を満たす形で構成する。
-   作業ディレクトリの絶対パスは複製内外を問わず常に明記する
+   finalizer完了報告から両系統の経路、`threadId`、Claude代替時の履歴を転記する。
+   作業ディレクトリの絶対パスは複製内外を問わず常に明記する。
+   完了報告の受領後は`references/plan-impl-caller-reception.md`に従う
 
 バグ・障害・エラー・デグレードへの対応は`references/bugfix.md`に従う。判定がつかない場合はバグ対応として扱う。
 
@@ -156,7 +158,7 @@ H2・H3見出し名、または対象ファイル中の一意な既存文字列�
 判定対象は次のとおり。
 
 - `agent-toolkit/rules/`・`agent-toolkit/skills/*/SKILL.md`・
-  `agent-toolkit/skills/*/references/`・`agent-toolkit/agents/`・`agent-toolkit/references/`配下
+  `agent-toolkit/skills/*/references/`・`agent-toolkit/agents/`配下
 - `.chezmoi-source/dot_claude/rules/`・`.chezmoi-source/dot_claude/skills/`配下
 - ファイル名が`AGENTS.md`・`CLAUDE.md`のもの
 
@@ -184,7 +186,7 @@ H2・H3見出し名、または対象ファイル中の一意な既存文字列�
 `git rev-parse HEAD`と`### 計画メタ情報`のベースコミットとの比較、差分がある場合の
 アンカー該当箇所の再確認手順を置く。
 `git push`とCI通過確認はセッション運用工程（呼び出し側の完遂順序、
-`agent-toolkit/references/plan-impl/caller-reception.md`が定める）であり計画へ記載しない。
+`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`が定める）であり計画へ記載しない。
 本節は当該計画の実装・検証・コミット・レビューに限定し、セッション運用工程は記載しない
 （`check_plan_file.py`が機械検出する。warning区分のため終了コードへ算入されないが、
 検出時は内容を確認して是正の要否を判断する）。
