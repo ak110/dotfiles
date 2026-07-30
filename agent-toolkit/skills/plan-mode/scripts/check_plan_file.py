@@ -5,7 +5,7 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の9点に限定する。
+チェック対象は次の10点に限定する。
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
 - 各H3配下にコードブロック（フェンスで囲われた本文）が存在するか
 - H3見出しのパスのうち、`（新設）`・`（廃止・削除）`マーカーが無いものの実在確認
@@ -23,6 +23,8 @@ r"""計画ファイルの軽量機械チェック。
 - `## 変更内容`の各H3節`text`コードブロックの追加分がメタ規範パターン（全称禁止表現・
   汎用禁止形バレット・`##`以上の見出し）に該当する場合、`## 調査結果`へ遡及スキャンの
   必須3語（対象パターン・検出件数・対応方針）が揃っているか
+- `### 計画メタ情報`が存在する場合、ベースコミットのラベルと完全長のコミットハッシュが
+  記載されているか
 
 `agent-toolkit/skills/agent-standards/references/check-script-design.md`「検査項目のerror・warning区分」
 節に従い、検査項目をerror区分とwarning区分へ分ける。error区分は接頭辞なしで該当箇所と要点を
@@ -43,6 +45,8 @@ error区分（計画が成立しない致命的な問題）とその判定根拠
 - `（廃止・削除）`注記と削除指示語の食い違い: 注記と本文指示の不整合に当たる
 - メタ規範パターン追加時の遡及スキャン必須3語: 同一判定を行う`agent-toolkit/scripts/pretooluse.py`の
   `_check_plan_file_retroactive_scan_recorded`が既にブロック側へ入っており、error区分が整合する
+- 計画メタ情報のベースコミット記載: 実装着手時の差分判定に必要な基点が無いと、
+  計画作成後に対象が変化した場合の再確認要否を判定できない
 
 warning区分（終了コードへ算入しない）とその判定根拠。
 
@@ -215,6 +219,38 @@ def _h3_section_body(text: str, path: str) -> str:
             end = j
             break
     return "\n".join(lines[start:end])
+
+
+def _h3_named_section_body(text: str, heading: str) -> str | None:
+    """`### <heading>`見出し（フェンス外）配下の本文を返す。見出しが無ければNoneを返す。"""
+    lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
+    start = next(
+        (index for index, line in enumerate(lines) if mask[index] and line.strip() == f"### {heading}"),
+        None,
+    )
+    if start is None:
+        return None
+    start += 1
+    end = len(lines)
+    for index in range(start, len(lines)):
+        if mask[index] and _HEADING_RE.match(lines[index]):
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def _check_base_commit_recorded(text: str) -> list[str]:
+    """`### 計画メタ情報`節のベースコミット記載が欠落または不正な場合にerrorを返す。"""
+    section = _h3_named_section_body(text, "計画メタ情報")
+    if section is None:
+        return []
+    match = re.search(r"(?:ベースコミット|基準コミット)[^\n]*?`([0-9a-fA-F]{40}|[0-9a-fA-F]{64})`", section)
+    if match is not None:
+        return []
+    if re.search(r"ベースコミット|基準コミット", section):
+        return ["`### 計画メタ情報`のベースコミットにコミットハッシュの記載が無い"]
+    return ["`### 計画メタ情報`にベースコミットの記載が無い"]
 
 
 def _has_code_block_after(text: str, path: str) -> bool:
@@ -589,6 +625,7 @@ def main() -> int:
     errors.extend(_check_invocation_names_exist(text))
     errors.extend(_check_deletion_instruction_present(change_text))
     errors.extend(_check_retroactive_scan_recorded(text))
+    errors.extend(_check_base_commit_recorded(text))
     warnings.extend(_check_execution_method_scope(text))
     warnings.extend(_check_deprecated_identifiers_removed(text, plan_path))
 

@@ -321,24 +321,73 @@ def test_bare_agent_toolkit_reference_accepts_subagent(
     assert "の疑い" not in captured.err
 
 
-def test_sample_plan_has_no_invocation_name_error(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """配布している計画ファイルの記述例が呼び出し名の実在確認でerrorを報告しない。
+def test_sample_plan_reports_no_diagnostics(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """配布している計画ファイルの記述例が診断を報告しない。
 
     記述例は先頭行を除く全体が````markdown`フェンス内にあり、構造抽出処理が
     フェンス外の行に限定されるため、埋め込み内の架空パス・呼び出し名を含め
     計画構造が1件も抽出されずerror・warningいずれも生じない。
-    本テストの検証対象は呼び出し名の実在確認に限定するため、当該error文言
-    （`実在しないスキル名の疑い`・`実在しないサブエージェント名の疑い`）が
-    標準エラー出力に含まれないことを直接検証する。
     """
     sample = pathlib.Path(__file__).resolve().parents[1] / "references" / "sample.md"
     assert sample.is_file()
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(sample)])
     assert main() == 0
     captured = capsys.readouterr()
-    assert "実在しないスキル名の疑い" not in captured.err
-    assert "実在しないサブエージェント名の疑い" not in captured.err
-    assert "実在しないスキル・サブエージェント名の疑い" not in captured.err
+    assert captured.err == ""
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected_error"),
+    [
+        (
+            "### 計画メタ情報\n\n- ベースコミット: `0123456789abcdef0123456789abcdef01234567`\n",
+            None,
+        ),
+        ("### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n", "ベースコミットの記載が無い"),
+        ("### 計画メタ情報\n\n- ベースコミット: `01234567`\n", "コミットハッシュの記載が無い"),
+        ("### 経緯\n\n変更理由\n", None),
+        ("````markdown\n### 計画メタ情報\n\n- 対象リポジトリ: `/tmp/repo`\n````\n", None),
+    ],
+)
+def test_base_commit_recording(
+    metadata: str,
+    expected_error: str | None,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """計画メタ情報の有無と記載値に応じてベースコミットの診断を切り替える。"""
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n## 変更内容\n\n### 対象ファイル一覧\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == (1 if expected_error else 0)
+    captured = capsys.readouterr()
+    if expected_error is None:
+        assert captured.err == ""
+    else:
+        assert expected_error in captured.err
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        "### 計画メタ情報\n",
+        "### 計画メタ情報\n### 経緯\n\n変更理由\n",
+    ],
+)
+def test_empty_base_commit_metadata_section_errors(
+    metadata: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """空の計画メタ情報節と直後が次節となる境界値は、ベースコミット未記載として終了コード1を返す。"""
+    plan = _write_plan(tmp_path, f"## 背景\n\n{metadata}\n## 変更内容\n\n### 対象ファイル一覧\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+
+    assert main() == 1
+    assert "ベースコミットの記載が無い" in capsys.readouterr().err
 
 
 def test_deletion_marker_without_deletion_word_errors(
