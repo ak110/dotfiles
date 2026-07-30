@@ -66,7 +66,9 @@ user-invocable: false
 
 受領直後に
 `uv run --script ${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/check_plan_file.py <計画ファイル>`を
-実行する。error区分違反は全件是正しexit 0へ到達させる。`[warn]`接頭辞付きのwarning区分出力は
+実行する。終了コード2（引数誤用・対象ファイル読み込み不能）が発生した場合は、計画ファイルパス・
+読み取り権限・文字エンコーディングを確認して再実行する。解消できない場合は完了報告の`escalation_points`欄へ
+状況を記載し`needs_escalation`へ進む。error区分違反は全件是正しexit 0へ到達させる。`[warn]`接頭辞付きのwarning区分出力は
 終了コードへ算入されないため、内容を確認して是正の要否を判断する。`writing-standards`スキル
 「emダッシュ・horizontal bar・2倍ダッシュチェック」節が必須とする`check_dash.py`は
 `check_plan_file.py`・`pyfltr`のいずれにも内包されないため、計画ファイル全体へ明示的に実行し
@@ -223,7 +225,7 @@ completed_reviews: {呼び出し元が代行実施し「実施済みレビュー
   レビューを、実施主体・実施日時が分かる形で記載する（該当なしの場合は「なし」）}
 file_check: {成果物の実在と分量を示すコマンド（`ls -l`・`wc -l`等）の実行結果}
 check_results:
-- `check_plan_file.py`: pass | fail（error件数とwarning件数。初回・再実行の双方）
+- `check_plan_file.py`: pass | fail（error件数とwarning件数。初回・再実行の双方。終了コード2発生時はfailとし、原因を注記する）
 - `uvx pyfltr run --no-fix`（リポジトリ配下の一時複製に対して実行）: pass | fail（違反件数。初回・再実行の双方）
 escalation_points:
 - {発生工程・関連箇所・背景・暫定判断・回答が必要な論点を1件1行で（該当なしの場合は「なし」）}

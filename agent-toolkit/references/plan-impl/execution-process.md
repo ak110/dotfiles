@@ -15,8 +15,8 @@
 
 `ExitPlanMode`によるユーザー承認は計画ファイル全文の精読を保証しない。
 実装段階で計画ファイル本文が判断指針（`agent-toolkit/rules/01-agent.md`「品質最優先」節・
-「協調と自律」節）と文面上矛盾する場合、実装を止める。
-計画ファイル本文優先の暫定判断で続行し、同節の記録手順（`atk mq add --type=tbd`）に従って確認事項を記録する
+「協調と自律」節）と文面上矛盾する場合、計画ファイル本文優先で続行する。
+同節の記録手順（`atk mq add --type=tbd`）に従って確認事項を記録する
 （自己の不安・疑念・主観的な違和感・自己推定上の制約は衝突に該当しない）。
 確認事項は完了報告の`pending_confirmations`欄へ集約し、呼び出し元メインが検収後にユーザーへ確認する。
 
@@ -88,10 +88,12 @@ codex委譲は能力的にOpus相当扱いとし、コード・テストコー�
    `plan-implementer`への委譲は、`plan-codex-delegate`の完了報告でMCP利用不可が判明した場合のみとする。
    `plan-implementer`へ委譲する場合の`model`引数は`sonnet`を既定とし、
    難易度に応じて`haiku`または`opus`を明示指定する
-4. 委譲したタスクが`needs_escalation`を返したら本エージェント自身で引き上げて実装する。
-   `plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`verification`/`unplanned`の
+4. 委譲したタスクが`needs_escalation`を返した場合の対応は
+   `agent-toolkit/agents/plan-impl-executor.md`「停止禁止」節の分岐（解法探索に留まる失敗は
+   別`threadId`で再委譲し、計画方針自体の見直しを要する失敗は呼び出し元へ`needs_escalation`で
+   返す）に従う。`plan-codex-delegate`は`status`/`summary`/`thread_id`/`changed`/`verification`/`unplanned`の
    構造化書式で完了報告を返すため、`unplanned`欄で対象外変更の必要性などを検知し、
-   該当時は自身での実装または`plan-implementer`へ切り替える
+   解法探索に留まる場合は自身での実装または`plan-implementer`へ切り替える
 5. 呼び出し元起動プロンプトで並列化が明示指定された場合に限り、
    委譲タスクのうち編集対象ファイルが独立する2件以上は並列起動する。
    `plan-implementer`委譲は`name`と`run_in_background`を省略したforegroundで起動する。
@@ -164,6 +166,9 @@ unplanned項目は`[CLAUDE.md追記候補]`・`[即時相談候補]`・`[該当�
 全コミット完了後は計画ファイルの`## 実行方法`に記載された計画全体の最終検証へ進む。
 最終検証には`uv run --script agent-toolkit/skills/plan-mode/scripts/check_plan_file.py <計画ファイルパス>`を含める。
 終了コード1はerror区分違反の検出を意味し、検証失敗として扱って是正する。
+終了コード2は引数誤用・対象ファイル読み込み不能を意味する。
+実行条件（計画ファイルパス・読み取り可否・エンコーディング）を是正して再実行し、
+解消できない場合は原因を`blockers`欄へ記載して`needs_escalation`へ進む。
 `[warn]`接頭辞付きのwarning区分出力は終了コードへ算入されないため、内容を確認して是正の要否を判断する。
 
 ## 4. コミット
