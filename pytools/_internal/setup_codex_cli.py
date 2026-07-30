@@ -1,16 +1,24 @@
-"""Codex CLIを現在有効なNode環境のnpm global導入へ統一する。"""
+"""Codex CLI公式スタンドアローン版を導入または更新する。"""
 
+import contextlib
+import json
 import logging
+import os
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import httpx
 
 from pytools._internal import claude_common, log_format, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
 _PACKAGE = "@openai/codex"
-_TIMEOUT = 300.0
+_HTTP_TIMEOUT = 30.0
+_COMMAND_TIMEOUT = 300.0
 
 
 def main() -> None:
@@ -22,28 +30,21 @@ def main() -> None:
     sys.exit(0)
 
 
-def run() -> bool:
-    """正規Codexを導入し、確認後に旧npm版とmise版を移行する。"""
+def run(client: httpx.Client | None = None) -> bool:
+    """公式スタンドアローン版を導入または更新し、確認後に旧npm版とmise版を移行する。"""
     if setup_cli_common.is_windows_cli_running("codex", _PACKAGE):
         logger.info(log_format.format_status("codex", "実行中のため導入と移行を次回へ延期"))
         return False
-    npm_name = shutil.which("npm")
-    if npm_name is None:
-        message = "npmが見つからないためCodexを導入できない"
+    result = _run_installer(client)
+    if result is None or result.returncode != 0:
+        message = f"導入または更新に失敗: {claude_common.format_cli_error(result)}"
         logger.warning(log_format.format_status("codex", message))
         raise RuntimeError(message)
-    npm = Path(npm_name).absolute()
-    prefix = _npm_prefix(npm)
-    if prefix is None:
-        raise RuntimeError("npm prefixの取得に失敗")
-    install = claude_common.run_subprocess(
-        [str(npm), "install", "--global", f"{_PACKAGE}@latest"], timeout=_TIMEOUT, tag="codex"
-    )
-    if install is None or install.returncode != 0:
-        message = f"npm導入に失敗: {claude_common.format_cli_error(install)}"
+    launcher = _find_standalone_launcher()
+    if launcher is None:
+        message = f"管理対象のCodexが見つからないため旧版を保持: {_standalone_root() / 'current'}"
         logger.warning(log_format.format_status("codex", message))
-        raise RuntimeError(message)
-    launcher = prefix / ("codex.cmd" if sys.platform == "win32" else "bin/codex")
+        raise RuntimeError("管理対象Codexの確認に失敗")
     verification = claude_common.run_subprocess([str(launcher), "--version"], timeout=30, tag="codex")
     if verification is None or verification.returncode != 0:
         logger.warning(
@@ -52,28 +53,16 @@ def run() -> bool:
             )
         )
         raise RuntimeError("正規Codexの確認に失敗")
-    setup_cli_common.prepend_path(launcher.parent)
-    failures: list[str] = []
-    mise_name = shutil.which("mise")
-    if mise_name is not None:
-        removal = claude_common.run_subprocess(
-            [str(Path(mise_name).absolute()), "uninstall", "--all", "--yes", "npm:@openai/codex"],
-            timeout=_TIMEOUT,
-            tag="mise",
-        )
-        if removal is None or removal.returncode != 0:
-            failures.append(f"mise版の削除に失敗: {claude_common.format_cli_error(removal)}")
-        try:
-            setup_cli_common.migrate_npm_launchers("codex", _PACKAGE, launcher, prefix)
-        except RuntimeError as error:
-            failures.append(str(error))
-        reshim = claude_common.run_subprocess(
-            [str(Path(mise_name).absolute()), "reshim"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise"
-        )
-        if reshim is None or reshim.returncode != 0:
-            failures.append(f"mise reshimに失敗: {claude_common.format_cli_error(reshim)}")
-    else:
-        setup_cli_common.migrate_npm_launchers("codex", _PACKAGE, launcher, prefix)
+    setup_cli_common.prepend_path(_visible_bin_dir())
+    failures, removed = _remove_mise_versions()
+    migrated = False
+    try:
+        migrated = setup_cli_common.migrate_npm_launchers("codex", _PACKAGE, launcher, _standalone_root())
+    except RuntimeError as error:
+        failures.append(str(error))
+    # 旧版の除去でmise shimが実体を失うため、除去を伴った場合だけ最後にshimを再生成する。
+    if removed or migrated:
+        failures.extend(_reshim_mise())
     if failures:
         message = " / ".join(failures)
         logger.warning(log_format.format_status("codex", message))
@@ -81,13 +70,120 @@ def run() -> bool:
     return True
 
 
-def _npm_prefix(npm: Path) -> Path | None:
-    result = claude_common.run_subprocess([str(npm), "prefix", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag="npm")
-    value = (result.stdout or "").strip() if result is not None and result.returncode == 0 else ""
-    if not value:
-        logger.warning(log_format.format_status("codex", f"npm prefixの取得に失敗: {claude_common.format_cli_error(result)}"))
-        return None
-    return Path(value)
+def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[str] | None:
+    """公式インストーラーを取得して非対話で実行する。
+
+    公式インストーラーは未導入なら新規導入、導入済みなら更新として同じ処理経路を使うため、
+    導入済み判定による分岐を設けない。
+    """
+    owns_client = client is None
+    active_client = client or httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
+    suffix = ".ps1" if sys.platform == "win32" else ".sh"
+    url = "https://chatgpt.com/codex/install.ps1" if sys.platform == "win32" else "https://chatgpt.com/codex/install.sh"
+    temp_path: Path | None = None
+    try:
+        response = active_client.get(url)
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as temp:
+            temp.write(response.content)
+            temp_path = Path(temp.name)
+        command = (
+            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            if sys.platform == "win32"
+            else ["sh", str(temp_path)]
+        )
+        # 公式マニュアルはスクリプト化した導入と更新に`CODEX_NON_INTERACTIVE=1`を使うと定める。
+        return claude_common.run_subprocess(
+            command, timeout=_COMMAND_TIMEOUT, tag="codex", env_overrides={"CODEX_NON_INTERACTIVE": "1"}
+        )
+    except (httpx.HTTPError, OSError) as error:
+        logger.warning(log_format.format_status("codex", f"公式インストーラーの取得に失敗: {error}"))
+        raise RuntimeError("公式インストーラーの取得に失敗") from error
+    finally:
+        if temp_path is not None:
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
+        if owns_client:
+            active_client.close()
+
+
+def _codex_home() -> Path:
+    """公式インストーラーが使うCodexのホームディレクトリを返す。"""
+    value = os.environ.get("CODEX_HOME")
+    return Path(value) if value else Path.home() / ".codex"
+
+
+def _standalone_root() -> Path:
+    """スタンドアローン版のパッケージキャッシュのルートを返す。"""
+    return _codex_home() / "packages" / "standalone"
+
+
+def _find_standalone_launcher() -> Path | None:
+    """管理対象のスタンドアローン版ランチャーを返す。
+
+    公式インストーラーが導入済み版の判定に使う`current/bin/codex`と`current/codex`を同じ順で確認する。
+    """
+    current = _standalone_root() / "current"
+    name = "codex.exe" if sys.platform == "win32" else "codex"
+    return next((candidate for candidate in (current / "bin" / name, current / name) if candidate.is_file()), None)
+
+
+def _visible_bin_dir() -> Path:
+    """公式インストーラーが可視コマンドを置くディレクトリを返す。"""
+    value = os.environ.get("CODEX_INSTALL_DIR")
+    if value:
+        return Path(value)
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / "Programs" / "OpenAI" / "Codex" / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def _find_mise() -> Path | None:
+    """PATH上のmiseの絶対パスを返す。"""
+    mise_name = shutil.which("mise")
+    return Path(mise_name).absolute() if mise_name is not None else None
+
+
+def _remove_mise_versions() -> tuple[list[str], bool]:
+    """mise管理版が実在する場合だけ全版を除去し、失敗の説明と除去有無を返す。"""
+    mise = _find_mise()
+    if mise is None:
+        return [], False
+    target = f"npm:{_PACKAGE}"
+    listing = claude_common.run_subprocess(
+        [str(mise), "ls", "--json", target], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise"
+    )
+    if listing is None or listing.returncode != 0:
+        return [f"mise版の一覧取得に失敗: {claude_common.format_cli_error(listing)}"], False
+    try:
+        listed = json.loads(listing.stdout or "")
+    except json.JSONDecodeError as error:
+        return [f"mise版の一覧解析に失敗: {error}"], False
+    if not isinstance(listed, list):
+        return ["mise版の一覧が配列ではない"], False
+    # `mise ls`はmise.toml定義済みで未導入の版も列挙する。
+    # 未導入時に`uninstall`を呼ぶと警告が出るため、導入済みの要素だけを数える。
+    if not any(isinstance(entry, dict) and entry.get("installed") for entry in listed):
+        return [], False
+    removal = claude_common.run_subprocess(
+        [str(mise), "uninstall", "--all", "--yes", target], timeout=_COMMAND_TIMEOUT, tag="mise"
+    )
+    if removal is None or removal.returncode != 0:
+        return [f"mise版の削除に失敗: {claude_common.format_cli_error(removal)}"], False
+    return [], True
+
+
+def _reshim_mise() -> list[str]:
+    """mise管理のshimを再生成し、失敗の説明を返す。"""
+    mise = _find_mise()
+    if mise is None:
+        return []
+    reshim = claude_common.run_subprocess([str(mise), "reshim"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
+    if reshim is None or reshim.returncode != 0:
+        return [f"mise reshimに失敗: {claude_common.format_cli_error(reshim)}"]
+    return []
 
 
 if __name__ == "__main__":
