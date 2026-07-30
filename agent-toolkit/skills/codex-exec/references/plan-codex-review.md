@@ -4,12 +4,19 @@
 別系統で実施するための手順を定める。
 実装・修正担当は専用の書き込み契約に従い、レビュー担当は対象を変更せず指摘と根拠だけを返す。
 
-## 初回委譲
+## 用途別task reference
 
-委譲先へ次の絶対パスを渡し、着手時に全文をReadさせる。
+委譲の用途ごとに次のtask referenceを1件だけ選ぶ。
+
+- 機械チェック・修正: `plan-codex-review-fix-task.md`
+- 総合レビュー: `plan-codex-review-task.md`
+
+## 総合レビューの初回委譲
+
+総合レビュー系の委譲先へ次の絶対パスを渡し、着手時に全文をReadさせる。
 
 - 本ファイル
-- `plan-codex-review-task.md`
+- 「用途別task reference」節で選んだ総合レビュー用task reference
 - 対象計画ファイル
 - 適用する`agent-toolkit:review-standards`・`agent-toolkit:writing-standards`・
   `agent-toolkit:agent-standards`と対象固有スキル
@@ -20,8 +27,8 @@
 
 ## 機械チェック委譲
 
-実装・修正系へは、本ファイルと`plan-codex-review-fix-task.md`を渡す。
-読み取り専用の`plan-codex-review-task.md`は渡さない。
+実装・修正系へは、本ファイルと「用途別task reference」節で選んだ
+機械チェック・修正用task referenceを渡す。
 `plan-file-finalizer`が実装・修正系へ渡すタスク本文には、次の検査・違反修正・再検査を全て含める。
 
 1. 計画ファイル本体へ次のコマンドを実行する

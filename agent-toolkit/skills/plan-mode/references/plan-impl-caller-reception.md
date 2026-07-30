@@ -48,14 +48,16 @@ ref名とOIDを委譲前スナップショットとして保存する。
 - 同じ検証失敗を3回連続で解消できない場合は、呼び出し元が原因調査を引き継ぐ
 - 同一プロンプトを再送せず、未完了項目と新しい判断材料へ縮減する
 
-`plan-impl-executor`が`route: unavailable`を理由に`needs_escalation`を返した場合は、
-呼び出し元がAgentツールでClaude代替を起動する。
+`plan-impl-executor`が`implementation_route: unavailable`または
+`review_route: unavailable`を理由に`needs_escalation`を返した場合は、
+呼び出し元が不能となった系統ごとにAgentツールでClaude代替を起動する。
 計画実装・修正では`plan-codex-implementation.md`と
 `plan-codex-implementation-task.md`を用いる。
 実装差分レビューでは`plan-codex-implementation-review.md`と
 `plan-codex-implementation-review-task.md`を用いる。
-起動プロンプトには用途に対応する統括reference、task reference、計画、品質規範を含める。
-そのほかは作業ディレクトリの絶対パス、対象、完了条件だけを含める。
+起動プロンプトには用途に対応する実行手順reference、task reference、計画ファイル、
+品質規範、プロジェクト規範の絶対パスと、作業ディレクトリの絶対パス、
+対象、完了条件だけを含める。
 代替応答全文をexecutorへ再入力し、executor自身に実体照合と後続工程を継続させる。
 
 是正指示後は`applied_instructions`で反映状況を確認する。

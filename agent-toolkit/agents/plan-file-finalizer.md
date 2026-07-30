@@ -53,8 +53,7 @@ user-invocable: false
 委譲プロンプトには、実行手順referenceと用途別のtask reference、計画、品質規範、
 プロジェクト規範の絶対パスを渡す。タスク本文は作業ディレクトリ、対象、完了条件だけに限定し、
 規範本文を転記しない。CodexとClaude代替の双方に同じreferenceを読ませる。
-機械チェック・修正には`plan-codex-review-fix-task.md`、総合レビューには
-`plan-codex-review-task.md`を割り当て、両契約を同じ委譲先へ渡さない。
+task referenceは`plan-codex-review.md`「用途別task reference」節に従って選ぶ。
 
 Codex経路では系統別の`threadId`を保持する。Claude代替では各回を新規起動し、
 同じ系統の前回応答全文を引き継ぐ。Codex MCPが未解決または利用上限応答を返した場合に限り、

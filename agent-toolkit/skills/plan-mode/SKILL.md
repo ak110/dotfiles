@@ -56,11 +56,12 @@ description: >
    不対応注記は自ら付さない設計である。呼び出し元は検収時に`review_summary`欄の各指摘見解を
    実測確認し、`02-claude-code.md`「サブエージェント運用」節が定める書式
    （`（メイン判断: 不対応 — <理由>）`等）で不対応注記を確定してから実装工程へ進む。
-   `route: unavailable`に起因する`status: needs_escalation`を受領した場合は、
-   呼び出し元がAgentツールでClaude代替を起動する。機械チェック・修正には
-   `plan-codex-review.md`と`plan-codex-review-fix-task.md`、総合レビューには
-   `plan-codex-review.md`と`plan-codex-review-task.md`を使う。
-   起動プロンプトには用途別のreference、計画、品質規範、作業ディレクトリの絶対パス、
+   `implementation_route: unavailable`または`review_route: unavailable`に起因する
+   `status: needs_escalation`を受領した場合は、呼び出し元が不能となった系統ごとに
+   AgentツールでClaude代替を起動する。task referenceは
+   `plan-codex-review.md`「用途別task reference」節に従って選ぶ。
+   起動プロンプトには用途別の実行手順reference、task reference、計画ファイル、
+   品質規範、プロジェクト規範の絶対パスと、作業ディレクトリの絶対パス、
    対象、完了条件だけを含める。
    代替応答全文を任意入力としてfinalizerへ再入力し、finalizer自身に検収を継続させる。
    その他の`status: needs_escalation`は返却論点のみを解決し、確定方針込みの縮減プロンプトで
