@@ -500,9 +500,6 @@ def main() -> int:
         # uv run python <path>形式の起動は非Pythonプロジェクトでブロック
         if _check_bash_uv_run_python(command, cwd):
             return 2
-        # atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出
-        if _check_bash_atk_mq_add_tbd_scope_escalation(command):
-            return 2
         # パターン一致によるプロセス終了（pkill/killall）をブロック
         if _check_bash_process_kill_by_pattern(command):
             return 2
@@ -3572,31 +3569,6 @@ def _check_bash_output_truncation(command: str) -> str | None:
         " file instead of truncating the live output.",
         tag="warn",
     )
-
-
-# --- Bash: atk mq add --type=tbd コマンド文字列への縮退フレーズ混入検出 ---
-
-
-def _check_bash_atk_mq_add_tbd_scope_escalation(command: str) -> bool:
-    """`atk mq add --type=tbd`実行時にコマンド文字列へ縮退フレーズが含まれる場合にブロックする。
-
-    TBD登録文へ縮退フレーズを混入させたまま投入する事象を防ぐ。
-    検査対象はコマンド文字列全体とする。
-    """
-    if "atk" not in command or "mq add" not in command or "--type=tbd" not in command:
-        return False
-    match_result = _match_scope_escalation(command)
-    if match_result is None:
-        return False
-    category, _matched = match_result
-    print(
-        _llm_notice(
-            f"blocked: `atk mq add --type=tbd` includes a scope-escalation phrase (category: {category})."
-            " See agent-toolkit/rules/01-agent.md session-split prohibition section."
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 # --- Bash: git commit未検証警告 ---

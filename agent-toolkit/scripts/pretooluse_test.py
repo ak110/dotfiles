@@ -2806,33 +2806,15 @@ _ASKUSERQUESTION_SCOPE_ESCALATION_INPUTS = [
 ]
 
 
-class TestBashAtkTbAddScopeEscalation:
-    """`Bash`経由の`atk mq add --type=tbd`コマンド文字列への縮退フレーズ混入検出（block）。
-
-    旧`scripts/claude_hook_pretooluse_bash_test.py`が対象としていたが、当該検査は
-    `agent-toolkit/scripts/pretooluse.py`側（全ツール共通matcher）へ統合済みのため、
-    テストも本ファイルへ移設する。
-    """
-
-    @pytest.mark.parametrize(("text", "category"), _SCOPE_ESCALATION_INPUTS)
-    def test_blocks(self, text: str, category: str):
-        command = f"atk mq add --type=tbd glatasks {text}"
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 2
-        assert category in result.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
-
-    def test_unrelated_command_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk mq list --type=tbd"}})
-        assert result.returncode == 0
-
-    def test_non_atk_command_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo tbd-add"}})
-        assert result.returncode == 0
-
-    def test_tbd_add_without_scope_escalation_allowed(self):
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk mq add --type=tbd glatasks 確認事項です"}})
-        assert result.returncode == 0
+def test_bash_atk_mq_add_tbd_with_scope_escalation_vocabulary_allowed() -> None:
+    """判定語彙を選択肢として含む確認事項の投入コマンドは拒否しない。"""
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk mq add --type=tbd glatasks '対応案は現状維持または実装変更のどちらかを確認する'"},
+        }
+    )
+    assert result.returncode == 0
 
 
 class TestBashProcessKillByPattern:
