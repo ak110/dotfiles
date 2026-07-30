@@ -5,7 +5,9 @@
 # ///
 r"""計画ファイルの軽量機械チェック。
 
-チェック対象は次の10点に限定する。
+チェック対象は次の11点に限定する。
+- 先頭行に先頭空白のないATX形式`# <主題>`のH1見出しがあり、フェンス外に追加のATX形式・
+  Setext形式H1見出し候補が存在しないか
 - `## 変更内容`「対象ファイル一覧」の`- [ ]`項目と`### \\`<パス>\\``見出しの1対1対応
 - 各H3配下にコードブロック（フェンスで囲われた本文）が存在するか
 - H3見出しのパスのうち、`（新設）`・`（廃止・削除）`マーカーが無いものの実在確認
@@ -34,6 +36,8 @@ r"""計画ファイルの軽量機械チェック。
 
 error区分（計画が成立しない致命的な問題）とその判定根拠。
 
+- 先頭行の正規H1とフェンス外H1の一意性: タイトルを一意に確定できない計画は、
+  人間向けに主題を提示する完成条件を満たさない
 - 対象ファイル一覧・H3見出しそれぞれの重複: 同一パスが複数出現すると1対1対応の判定自体が
   不正確になり、一覧との不整合を見落とす
 - 対象ファイル一覧とH3見出しの1対1対応: 一般則が挙げる「対象ファイル一覧との不整合」に当たる
@@ -69,6 +73,9 @@ import sys
 
 _CHECKBOX_RE = re.compile(r"^- \[ \] `([^`]+)`")
 _H3_PATH_RE = re.compile(r"^### `([^`]+)`")
+_CANONICAL_H1_RE = re.compile(r"^# (?!#+[ \t]*$)\S.*$")
+_ATX_H1_RE = re.compile(r"^ {0,3}#(?:[ \t]+.*)?$")
+_SETEXT_H1_UNDERLINE_RE = re.compile(r"^ {0,3}=+[ \t]*$")
 # `（新設）`単独形と`（現行N行、廃止・削除）`のような前置き付き複合形（`plan-mode/SKILL.md`
 # 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
 # `）`直前の位置で担保する。
@@ -177,6 +184,26 @@ def _unfenced_body(body: str) -> str:
     lines = body.splitlines()
     mask = _unfenced_line_mask(body)
     return "\n".join(line for line, keep in zip(lines, mask, strict=False) if keep)
+
+
+def _check_h1(text: str) -> list[str]:
+    """先頭行の正規H1と、フェンス外にある追加H1候補の不在を検査する。"""
+    lines = text.splitlines()
+    mask = _unfenced_line_mask(text)
+    errors: list[str] = []
+    if not lines or not _CANONICAL_H1_RE.fullmatch(lines[0]):
+        errors.append("先頭行がATX形式`# <主題>`のH1見出しではない")
+    additional_h1_lines: list[int] = []
+    for index, (line, keep) in enumerate(zip(lines, mask, strict=False)):
+        if index == 0 or not keep:
+            continue
+        is_atx_h1 = bool(_ATX_H1_RE.fullmatch(line))
+        is_setext_h1 = bool(_SETEXT_H1_UNDERLINE_RE.fullmatch(line)) and mask[index - 1] and bool(lines[index - 1].strip())
+        if is_atx_h1 or is_setext_h1:
+            additional_h1_lines.append(index + 1)
+    if additional_h1_lines:
+        errors.append(f"フェンス外に追加のH1見出し候補がある: {additional_h1_lines}")
+    return errors
 
 
 def _extract_checkbox_paths(text: str) -> list[str]:
@@ -583,6 +610,7 @@ def main() -> int:
         return 2
     errors: list[str] = []
     warnings: list[str] = []
+    errors.extend(_check_h1(text))
 
     change_text = "\n## 変更内容\n".join(_iter_h2_sections(text, "変更内容"))
     checkbox_paths = _extract_checkbox_paths(change_text)

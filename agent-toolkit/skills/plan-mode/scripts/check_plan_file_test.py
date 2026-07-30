@@ -8,10 +8,126 @@ import pytest
 from check_plan_file import main
 
 
-def _write_plan(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
+def _write_plan(tmp_path: pathlib.Path, body: str, *, include_h1: bool = True) -> pathlib.Path:
     plan = tmp_path / "sample.md"
-    plan.write_text(body, encoding="utf-8")
+    content = body
+    if include_h1 and not body.startswith("# "):
+        content = f"# テスト計画\n\n{body}"
+    plan.write_text(content, encoding="utf-8")
     return plan
+
+
+def test_single_h1_returns_zero_without_h1_error(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "## 変更内容\n\n### 対象ファイル一覧\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_missing_h1_errors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = _write_plan(tmp_path, "## 変更内容\n\n### 対象ファイル一覧\n", include_h1=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "先頭行がATX形式`# <主題>`のH1見出しではない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("title", ["# #", "# ###   "])
+def test_h1_with_only_closing_sequence_errors(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    title: str,
+) -> None:
+    plan = _write_plan(tmp_path, f"{title}\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "先頭行がATX形式`# <主題>`のH1見出しではない" in capsys.readouterr().err
+
+
+def test_h1_only_after_first_line_errors(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "説明\n\n# 文書途中の見出し\n", include_h1=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    stderr = capsys.readouterr().err
+    assert "先頭行がATX形式`# <主題>`のH1見出しではない" in stderr
+    assert "フェンス外に追加のH1見出し候補がある" in stderr
+
+
+def test_duplicate_atx_h1_errors(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "# テスト計画\n\n# 追加見出し\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "フェンス外に追加のH1見出し候補がある" in capsys.readouterr().err
+
+
+def test_h1_in_fence_is_ignored(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "````markdown\n# 埋め込み見出し\n````\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("indent", [" ", "  ", "   "])
+def test_indented_atx_h1_only_errors(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    indent: str,
+) -> None:
+    plan = _write_plan(tmp_path, f"{indent}# インデント見出し\n", include_h1=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    stderr = capsys.readouterr().err
+    assert "先頭行がATX形式`# <主題>`のH1見出しではない" in stderr
+
+
+@pytest.mark.parametrize("indent", [" ", "  ", "   "])
+def test_indented_atx_h1_after_canonical_h1_errors(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    indent: str,
+) -> None:
+    plan = _write_plan(tmp_path, f"{indent}# インデント見出し\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "フェンス外に追加のH1見出し候補がある" in capsys.readouterr().err
+
+
+def test_setext_h1_only_errors(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "Setext見出し\n===\n", include_h1=False)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    stderr = capsys.readouterr().err
+    assert "先頭行がATX形式`# <主題>`のH1見出しではない" in stderr
+
+
+def test_setext_h1_after_canonical_h1_errors(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "Setext見出し\n===\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "フェンス外に追加のH1見出し候補がある" in capsys.readouterr().err
+
+
+def test_equals_after_blank_line_is_not_setext_h1(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = _write_plan(tmp_path, "\n=\n")
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
 
 
 def test_missing_h3_errors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:

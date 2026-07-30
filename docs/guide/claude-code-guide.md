@@ -192,6 +192,7 @@ agent-toolkitプラグインは以下のフックを常時有効化する。
 - `/agent-standards`: コーディングエージェント向け文書固有の品質基準
 - `/commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `/plan-mode`: plan mode開始時・複雑な指示受領時・バグ調査時の計画ファイル作成とcodexレビュー運用
+  - 計画確定時は、文書タイトルが先頭行のATX形式H1として1件だけ存在することを含めて構造を検査する
 - `/careful-review`: レビューワークフロー
 - `/review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュアー側心得）
 - `/process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
