@@ -8,7 +8,9 @@ dotfiles配布利用者では、`chezmoi apply`後の処理がCodexの公式イ�
 未導入時はスタンドアローン版を導入し、導入済みの場合は最新版へ更新する。
 管理対象パッケージは`~/.codex/packages/standalone/`へ配置される。
 可視コマンドの既定配置先はLinuxとmacOSで`~/.local/bin`、Windowsで`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`である。
-`CODEX_HOME`と`CODEX_INSTALL_DIR`を設定した環境では、その値を配置先として使う。
+`CODEX_HOME`を設定した場合、パッケージは`$CODEX_HOME/packages/standalone`へ配置される。
+`CODEX_HOME`に指定するディレクトリは、インストーラーの実行前に作成する必要がある。
+`CODEX_INSTALL_DIR`を設定した場合、可視コマンドはそのディレクトリへ配置される。
 
 スタンドアローン版の起動を確認した後、mise npmバックエンドの全版を除去する。
 PATHから解決される非正規npm版も、package帰属を確認したうえで除去する。

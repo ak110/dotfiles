@@ -27,9 +27,15 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.setattr(setup_codex_cli.shutil, "which", lambda name: "/usr/bin/mise" if name == "mise" else None)
 
 
-def _make_client() -> httpx.Client:
+def _make_client(requests: list[httpx.Request] | None = None) -> httpx.Client:
     """公式インストーラーの取得に成功するHTTPクライアントを返す。"""
-    return httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        return httpx.Response(200, content=b"installer")
+
+    return httpx.Client(transport=httpx.MockTransport(handle_request))
 
 
 def _make_fake_run(
@@ -47,7 +53,7 @@ def _make_fake_run(
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append((command, kwargs))
-        if command[0] in {"sh", "pwsh"}:
+        if command[0] in {"sh", "powershell"}:
             if launcher is not None:
                 launcher.parent.mkdir(parents=True, exist_ok=True)
                 launcher.write_text("", encoding="utf-8")
@@ -127,9 +133,54 @@ def test_run_installs_with_powershell_on_windows(monkeypatch, tmp_path: Path) ->
     finally:
         client.close()
 
-    assert calls[0][0][:5] == ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+    assert calls[0][0][:5] == ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert calls[1][0] == [str(launcher), "--version"]
     assert prepended == [tmp_path / "localappdata" / "Programs" / "OpenAI" / "Codex" / "bin"]
+
+
+@pytest.mark.parametrize(
+    ("platform", "url", "command_prefix", "suffix", "launcher_name"),
+    [
+        ("linux", "https://chatgpt.com/codex/install.sh", ["sh"], ".sh", "codex"),
+        (
+            "win32",
+            "https://chatgpt.com/codex/install.ps1",
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
+            ".ps1",
+            "codex.exe",
+        ),
+    ],
+)
+def test_run_obeys_official_installer_contract(
+    monkeypatch,
+    tmp_path: Path,
+    platform: str,
+    url: str,
+    command_prefix: list[str],
+    suffix: str,
+    launcher_name: str,
+) -> None:
+    _isolate(monkeypatch, tmp_path, platform)
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / launcher_name
+    requests: list[httpx.Request] = []
+    calls: list[_Call] = []
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
+
+    client = _make_client(requests)
+    try:
+        assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    installer_command, installer_kwargs = calls[0]
+    installer_path = Path(installer_command[-1])
+    assert [str(request.url) for request in requests] == [url]
+    assert installer_command[:-1] == command_prefix
+    assert installer_path.suffix == suffix
+    assert not installer_path.exists()
+    assert installer_kwargs["env_overrides"] == {"CODEX_NON_INTERACTIVE": "1"}
 
 
 def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path: Path) -> None:
@@ -213,15 +264,156 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
         client.close()
 
 
-def test_run_reports_http_failure(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("status_code", [429, 500, 599])
+def test_run_retries_transient_http_status(monkeypatch, tmp_path: Path, status_code: int) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
+    requests: list[httpx.Request] = []
+    calls: list[_Call] = []
+    responses = [httpx.Response(status_code), httpx.Response(200, content=b"installer")]
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return responses.pop(0)
+
+    monkeypatch.setattr(setup_codex_cli.time, "sleep", lambda delay: None)
+    monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
+    client = httpx.Client(transport=httpx.MockTransport(handle_request))
+    try:
+        assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_run_retries_transient_transport_error(monkeypatch, tmp_path: Path, error_type: type[httpx.TransportError]) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
+    requests: list[httpx.Request] = []
+    calls: list[_Call] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            raise error_type("一時的な通信障害", request=request)
+        return httpx.Response(200, content=b"installer")
+
+    monkeypatch.setattr(setup_codex_cli.time, "sleep", lambda delay: None)
+    monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
+    client = httpx.Client(transport=httpx.MockTransport(handle_request))
+    try:
+        assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert len(requests) == 2
+
+
+def test_run_does_not_retry_permanent_http_status(monkeypatch, tmp_path: Path) -> None:
     _isolate(monkeypatch, tmp_path, "linux")
     _forbid_migration(monkeypatch)
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request)))
+    requests: list[httpx.Request] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(400)
+
+    client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
         with pytest.raises(RuntimeError):
             setup_codex_cli.run(client)
     finally:
         client.close()
+
+    assert len(requests) == 1
+
+
+def test_run_stops_retrying_after_finite_attempts(monkeypatch, tmp_path: Path) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    _forbid_migration(monkeypatch)
+    requests: list[httpx.Request] = []
+    delays: list[float] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    monkeypatch.setattr(setup_codex_cli.time, "sleep", delays.append)
+    monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
+    client = httpx.Client(transport=httpx.MockTransport(handle_request))
+    try:
+        with pytest.raises(RuntimeError):
+            setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert len(requests) == 3
+    assert delays == [0.25, 0.5]
+
+
+def test_run_adds_jitter_to_retry_delays(monkeypatch, tmp_path: Path) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    _forbid_migration(monkeypatch)
+    delays: list[float] = []
+    jitter_ranges: list[tuple[float, float]] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(500)
+
+    def fixed_jitter(start: float, end: float) -> float:
+        jitter_ranges.append((start, end))
+        return 0.125
+
+    monkeypatch.setattr(setup_codex_cli.time, "sleep", delays.append)
+    monkeypatch.setattr(setup_codex_cli.random, "uniform", fixed_jitter)
+    client = httpx.Client(transport=httpx.MockTransport(handle_request))
+    try:
+        with pytest.raises(RuntimeError):
+            setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert jitter_ranges == [(0, 0.25), (0, 0.25)]
+    assert delays == [0.375, 0.625]
+
+
+def test_run_removes_temporary_file_when_write_fails(monkeypatch, tmp_path: Path) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    _forbid_migration(monkeypatch)
+    temp_path = tmp_path / "installer.sh"
+
+    class FailingTemporaryFile:
+        name = str(temp_path)
+
+        def __enter__(self):
+            temp_path.touch()
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def write(self, content: bytes) -> None:
+            del content
+            raise OSError("書き込み失敗")
+
+    monkeypatch.setattr(setup_codex_cli.tempfile, "NamedTemporaryFile", lambda **kwargs: FailingTemporaryFile())
+    client = _make_client()
+    try:
+        with pytest.raises(RuntimeError):
+            setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert not temp_path.exists()
 
 
 def test_run_keeps_old_versions_when_installer_fails(monkeypatch, tmp_path: Path) -> None:
@@ -331,25 +523,6 @@ def test_run_reshims_after_npm_migration_without_mise_versions(monkeypatch, tmp_
 
     assert not any(command[1] == "uninstall" for command, _ in calls[2:])
     assert calls[-1][0][1:] == ["reshim"]
-
-
-def test_run_uses_home_default_when_localappdata_is_unset_on_windows(monkeypatch, tmp_path: Path) -> None:
-    _isolate(monkeypatch, tmp_path, "win32")
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex.exe"
-    calls: list[_Call] = []
-    prepended: list[Path] = []
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
-    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
-
-    client = _make_client()
-    try:
-        assert setup_codex_cli.run(client)
-    finally:
-        client.close()
-
-    assert prepended == [tmp_path / "AppData" / "Local" / "Programs" / "OpenAI" / "Codex" / "bin"]
 
 
 @pytest.mark.parametrize("failing", ["mise_list", "mise_json", "mise_uninstall", "reshim"])

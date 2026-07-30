@@ -4,10 +4,12 @@ import contextlib
 import json
 import logging
 import os
+import random
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -18,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 _PACKAGE = "@openai/codex"
 _HTTP_TIMEOUT = 30.0
+_HTTP_RETRY_ATTEMPTS = 3
+_HTTP_RETRY_BASE_DELAY = 0.25
+_HTTP_RETRY_JITTER = 0.25
 _COMMAND_TIMEOUT = 300.0
 
 
@@ -82,13 +87,12 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
     url = "https://chatgpt.com/codex/install.ps1" if sys.platform == "win32" else "https://chatgpt.com/codex/install.sh"
     temp_path: Path | None = None
     try:
-        response = active_client.get(url)
-        response.raise_for_status()
+        response = _get_installer(active_client, url)
         with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as temp:
-            temp.write(response.content)
             temp_path = Path(temp.name)
+            temp.write(response.content)
         command = (
-            ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
             if sys.platform == "win32"
             else ["sh", str(temp_path)]
         )
@@ -105,6 +109,28 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
                 temp_path.unlink()
         if owns_client:
             active_client.close()
+
+
+def _get_installer(client: httpx.Client, url: str) -> httpx.Response:
+    """一時的なHTTPエラーを有限回再試行して公式インストーラーを取得する。"""
+    for attempt in range(_HTTP_RETRY_ATTEMPTS):
+        retry_error: httpx.HTTPError
+        try:
+            response = client.get(url)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as error:
+            status_code = error.response.status_code
+            if status_code != 429 and status_code < 500:
+                raise
+            retry_error = error
+        except (httpx.NetworkError, httpx.TimeoutException) as error:
+            retry_error = error
+        if attempt == _HTTP_RETRY_ATTEMPTS - 1:
+            raise retry_error
+        delay = _HTTP_RETRY_BASE_DELAY * (2**attempt) + random.uniform(0, _HTTP_RETRY_JITTER)
+        time.sleep(delay)
+    raise AssertionError("到達不能")
 
 
 def _codex_home() -> Path:
@@ -134,9 +160,7 @@ def _visible_bin_dir() -> Path:
     if value:
         return Path(value)
     if sys.platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
-        return base / "Programs" / "OpenAI" / "Codex" / "bin"
+        return Path(os.environ["LOCALAPPDATA"]) / "Programs" / "OpenAI" / "Codex" / "bin"
     return Path.home() / ".local" / "bin"
 
 
