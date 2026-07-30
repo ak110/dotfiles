@@ -25,7 +25,7 @@ HTML = """<!doctype html>
 </head>
 <body>
   <header class="app-header">
-    <div>
+    <div class="header-title">
       <h1>フィードバック管理</h1>
       <span id="connection-status" class="connection-status" role="status">接続中</span>
     </div>
@@ -69,8 +69,8 @@ HTML = """<!doctype html>
         </select>
       </div>
 
-      <details class="additional-filters">
-        <summary>追加条件</summary>
+      <section class="additional-filters" aria-labelledby="additional-filters-heading">
+        <h3 id="additional-filters-heading">追加条件</h3>
         <div class="filter-grid">
           <label for="target-filter">対象リポジトリ</label>
           <input id="target-filter" type="text">
@@ -78,8 +78,12 @@ HTML = """<!doctype html>
           <input id="category-filter" type="text">
           <label for="source-filter">投入元</label>
           <input id="source-filter" type="text">
+          <label class="checkbox-field" for="source-empty-filter">
+            <input id="source-empty-filter" type="checkbox">
+            投入元が空
+          </label>
         </div>
-      </details>
+      </section>
     </aside>
 
     <section class="entry-pane card" aria-labelledby="entry-heading">
@@ -91,11 +95,7 @@ HTML = """<!doctype html>
       <div class="entry-columns" aria-hidden="true">
         <span>ファイル名</span>
         <span>対象リポジトリ</span>
-        <span>種別</span>
-        <span>状態</span>
-        <span>回答状況</span>
-        <span>カテゴリ</span>
-        <span>投入元</span>
+        <span>種別・状態・回答状況</span>
         <span>更新日時</span>
         <span>要約</span>
       </div>
@@ -320,11 +320,17 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) max(var(--space-3), calc((100vw - 1500px) / 2));
+  gap: var(--space-2);
+  padding: var(--space-2) max(var(--space-3), calc((100vw - 1500px) / 2));
   border-bottom: 1px solid var(--color-border);
   background: rgb(255 255 255 / 0.96);
   box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .app-header h1,
@@ -354,6 +360,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.header-actions button {
+  padding: var(--space-1) var(--space-2);
 }
 
 .pane-heading,
@@ -431,10 +441,23 @@ button:disabled {
   margin-top: var(--space-2);
 }
 
-.additional-filters summary {
-  margin-bottom: var(--space-2);
-  cursor: pointer;
+.additional-filters h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: inherit;
   font-weight: 600;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 2;
+  font-size: inherit;
+  font-weight: normal;
+}
+
+.checkbox-field input {
+  width: auto;
 }
 
 .entry-pane {
@@ -445,15 +468,11 @@ button:disabled {
 .entry-select {
   display: grid;
   grid-template-columns:
+    minmax(12rem, 1.6fr)
     minmax(10rem, 1fr)
-    minmax(10rem, 1.2fr)
-    minmax(6rem, 0.7fr)
-    minmax(5rem, 0.6fr)
-    minmax(5rem, 0.65fr)
-    minmax(6rem, 0.7fr)
-    minmax(6rem, 0.7fr)
-    minmax(9rem, 0.9fr)
-    minmax(12rem, 1.6fr);
+    minmax(11rem, 1.2fr)
+    minmax(7rem, 0.7fr)
+    minmax(16rem, 2fr);
   gap: var(--space-2);
   align-items: center;
 }
@@ -503,6 +522,30 @@ button:disabled {
 
 .entry-cell::before {
   display: none;
+}
+
+.entry-cell.filename-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-cell.status-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.entry-cell.time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: var(--font-size-secondary);
+}
+
+.entry-cell.time-cell time {
+  line-height: 1.2;
 }
 
 .entry-kind {
@@ -779,6 +822,10 @@ dialog form {
     grid-template-columns: 1fr;
   }
 
+  .checkbox-field {
+    grid-column: auto;
+  }
+
   button,
   input,
   select,
@@ -929,22 +976,76 @@ function renderEntry(entry) {
     node.textContent = value || 'なし';
     return node;
   };
-  const filename = cell('ファイル名', entry.filename);
+
+  const filename = cell('ファイル名', entry.filename, 'filename-cell');
   const targetRepo = cell('対象リポジトリ', entry.target_repo);
-  const kind = cell('種別', KIND_LABELS[entry.kind] || entry.kind, 'entry-kind');
-  const state = cell('状態', STATE_LABELS[entry.state] || entry.state, 'state-badge');
-  state.dataset.state = entry.state;
-  const answered = cell('回答状況', labelFor('answered', entry.answered));
-  const category = cell('カテゴリ', entry.category);
-  const source = cell('投入元', entry.source);
-  const updated = cell('更新日時', formatUpdatedAt(entry.updated_at));
+
+  const statusCell = document.createElement('span');
+  statusCell.className = 'entry-cell status-cell';
+  statusCell.dataset.label = '種別・状態・回答状況';
+
+  const kindBadge = document.createElement('span');
+  kindBadge.className = 'state-badge';
+  kindBadge.textContent = KIND_LABELS[entry.kind] || entry.kind;
+
+  const stateBadge = document.createElement('span');
+  stateBadge.className = 'state-badge';
+  stateBadge.dataset.state = entry.state;
+  stateBadge.textContent = STATE_LABELS[entry.state] || entry.state;
+
+  const answeredLabel = labelFor('answered', entry.answered);
+  if (entry.kind === 'tbd' && entry.answered !== null) {
+    const answeredBadge = document.createElement('span');
+    answeredBadge.className = 'state-badge';
+    answeredBadge.textContent = answeredLabel;
+    statusCell.append(kindBadge, stateBadge, answeredBadge);
+  } else {
+    statusCell.append(kindBadge, stateBadge);
+  }
+
+  const timeCell = document.createElement('span');
+  timeCell.className = 'entry-cell time-cell';
+  timeCell.dataset.label = '更新日時';
+
+  const fullDateTimeStr = formatUpdatedAt(entry.updated_at);
+  let dateStr = fullDateTimeStr;
+  let timeStr = '';
+
+  if (entry.updated_at) {
+    const date = new Date(entry.updated_at);
+    if (!Number.isNaN(date.getTime())) {
+      dateStr = date.toLocaleDateString('ja-JP');
+      timeStr = date.toLocaleTimeString('ja-JP');
+    } else {
+      dateStr = String(entry.updated_at);
+    }
+  }
+
+  const timeEl = document.createElement('time');
+  timeEl.dateTime = entry.updated_at || '';
+  timeEl.setAttribute('aria-label', fullDateTimeStr);
+
+  const dateLine = document.createElement('div');
+  dateLine.textContent = dateStr;
+
+  const timeLine = document.createElement('div');
+  timeLine.textContent = timeStr;
+
+  timeEl.append(dateLine, timeLine);
+  timeCell.append(timeEl);
+
   const summary = cell('要約', entry.summary);
 
-  const cells = [filename, targetRepo, kind, state, answered, category, source, updated, summary];
-  button.setAttribute(
-    'aria-label',
-    cells.map(node => `${node.dataset.label}: ${node.textContent}`).join('、')
-  );
+  const cells = [filename, targetRepo, statusCell, timeCell, summary];
+
+  const ariaLabels = [
+    `ファイル名: ${entry.filename || 'なし'}`,
+    `対象リポジトリ: ${entry.target_repo || 'なし'}`,
+    `種別・状態・回答状況: ${[KIND_LABELS[entry.kind] || entry.kind, STATE_LABELS[entry.state] || entry.state, (entry.kind === 'tbd' && entry.answered !== null ? labelFor('answered', entry.answered) : '')].filter(Boolean).join('、')}`,
+    `更新日時: ${fullDateTimeStr}`,
+    `要約: ${entry.summary || 'なし'}`
+  ];
+  button.setAttribute('aria-label', ariaLabels.join('、'));
   button.append(...cells);
   button.addEventListener('click', () => selectEntry(entry, button));
   item.append(button);
@@ -1215,6 +1316,9 @@ function listQuery() {
     const value = byId(id).value.trim();
     if (value) query.set(name, value);
   }
+  if (byId('source-empty-filter').checked) {
+    query.set('source_empty', 'true');
+  }
   return query.toString();
 }
 
@@ -1293,6 +1397,16 @@ function bindEvents() {
   for (const id of ['kind-filter', 'state-filter', 'answer-filter', 'target-filter', 'category-filter', 'source-filter']) {
     byId(id).addEventListener('change', () => loadEntries());
   }
+  byId('source-empty-filter').addEventListener('change', (event) => {
+    const sourceFilter = byId('source-filter');
+    if (event.currentTarget.checked) {
+      sourceFilter.value = '';
+      sourceFilter.disabled = true;
+    } else {
+      sourceFilter.disabled = false;
+    }
+    loadEntries();
+  });
   for (const id of ['create-content', 'create-target', 'create-choices', 'edit-content', 'answer-input']) {
     byId(id).addEventListener('input', clearFieldError);
   }

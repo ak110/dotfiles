@@ -89,6 +89,55 @@ def test_assets_are_self_contained() -> None:
     assert 'rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials"' in assets.HTML
 
 
+def test_header_layout_and_additional_filters_structure() -> None:
+    """ヘッダーを横並び、追加条件をセクション、投入元が空フィルターを検証する。"""
+    header = re.search(r'<header class="app-header">(.*?)</header>', assets.HTML, re.DOTALL)
+    assert header is not None
+    assert re.search(
+        r'<div class="header-title">\s*<h1>フィードバック管理</h1>\s*'
+        r'<span id="connection-status"[^>]*>接続中</span>\s*</div>\s*'
+        r'<div class="header-actions">',
+        header.group(1),
+    )
+    assert '<section class="additional-filters" aria-labelledby="additional-filters-heading">' in assets.HTML
+    assert '<h3 id="additional-filters-heading">追加条件</h3>' in assets.HTML
+    assert '<label class="checkbox-field" for="source-empty-filter">' in assets.HTML
+    assert '<input id="source-empty-filter" type="checkbox">' in assets.HTML
+    assert "投入元が空" in assets.HTML
+    assert 'details class="additional-filters"' not in assets.HTML
+
+    header_title_rule = re.search(r"\.header-title\s*\{([^}]*)\}", assets.CSS)
+    assert header_title_rule is not None
+    assert "display: flex;" in header_title_rule.group(1)
+    assert "align-items: center;" in header_title_rule.group(1)
+
+    assert ".header-actions button {" in assets.CSS
+    assert "padding: var(--space-1) var(--space-2);" in assets.CSS
+    assert ".checkbox-field {" in assets.CSS
+    assert "grid-column: 2;" in assets.CSS
+
+    grid_rule = re.search(r"\.entry-columns,\s*\.entry-select\s*\{([^}]*)\}", assets.CSS)
+    assert grid_rule is not None
+    assert "display: grid;" in grid_rule.group(1)
+    assert "grid-template-columns:" in grid_rule.group(1)
+    assert re.findall(r"minmax\([^)]+\)", grid_rule.group(1)) == [
+        "minmax(12rem, 1.6fr)",
+        "minmax(10rem, 1fr)",
+        "minmax(11rem, 1.2fr)",
+        "minmax(7rem, 0.7fr)",
+        "minmax(16rem, 2fr)",
+    ]
+
+    filename_rule = re.search(r"\.entry-cell\.filename-cell\s*\{([^}]*)\}", assets.CSS)
+    assert filename_rule is not None
+    assert "white-space: nowrap;" in filename_rule.group(1)
+    assert "overflow: hidden;" in filename_rule.group(1)
+    assert "text-overflow: ellipsis;" in filename_rule.group(1)
+
+    mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
+    assert ".checkbox-field {\n    grid-column: auto;\n  }" in mobile
+
+
 def test_detail_view_uses_responsive_two_column_layout() -> None:
     """詳細閲覧を横長画面では2列、狭い画面では1列に配置する。"""
     assert '<section id="detail-view" class="detail-view" hidden>' in assets.HTML
@@ -146,7 +195,7 @@ class Element {{
 const ids = [
   'connection-status', 'refresh-button', 'create-button', 'global-error',
   'search-input', 'kind-filter', 'state-filter', 'answer-filter', 'target-filter',
-  'category-filter', 'source-filter', 'entry-count', 'loading-indicator',
+  'category-filter', 'source-filter', 'source-empty-filter', 'entry-count', 'loading-indicator',
   'entry-list', 'empty-state', 'empty-create-button', 'detail-dialog',
   'detail-close-button',
   'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
@@ -274,60 +323,80 @@ process.stdout.write(JSON.stringify({{
 
 
 def test_render_entry_displays_all_comparison_columns() -> None:
-    """一覧行へ比較対象の9項目を列順どおり表示する。"""
+    """一覧行へ5列（ファイル名・対象リポジトリ・状態集約・更新日時・要約）を表示し、詳細にはカテゴリと投入元を含める。"""
     columns = re.search(r'<div class="entry-columns"[^>]*>(.*?)</div>', assets.HTML, re.DOTALL)
     assert columns is not None
     assert re.findall(r"<span>(.*?)</span>", columns.group(1)) == [
         "ファイル名",
         "対象リポジトリ",
-        "種別",
-        "状態",
-        "回答状況",
-        "カテゴリ",
-        "投入元",
+        "種別・状態・回答状況",
         "更新日時",
         "要約",
     ]
     rendered = _run_node_ui(
         """
-const row = renderEntry({
+const entry = {
   target_repo: 'example/repo',
   kind: 'tbd',
   state: 'processing',
   answered: false,
   category: 'ui',
   source: 'session-review',
-  updated_at: '更新日時文字列',
+  updated_at: '2025-07-30T12:34:56Z',
   summary: '要約本文',
   filename: 'entry.md'
-});
+};
+const row = renderEntry(entry);
 const cells = row.children[0].children;
+const timeCell = cells[3];
+const timeElements = timeCell.children[0] ? timeCell.children[0].children : [];
+displayEntry(entry);
+const metadata = elements['detail-metadata'].children;
+const timeFallbacks = [null, 'not-a-date'].map(updatedAt => {
+  const fallbackRow = renderEntry({...entry, updated_at: updatedAt});
+  const time = fallbackRow.children[0].children[3].children[0];
+  return {
+    dateTime: time.dateTime,
+    accessibleName: time.attributes['aria-label'],
+    lines: time.children.map(child => child.textContent)
+  };
+});
 process.stdout.write(JSON.stringify({
   labels: cells.map(cell => cell.dataset.label),
-  values: cells.map(cell => cell.textContent),
-  accessibleName: row.children[0].attributes['aria-label']
+  displayedValues: cells.map(cell => cell.textContent.trim().split(/\\s+/).slice(0, 3).join(' ')),
+  accessibleName: row.children[0].attributes['aria-label'],
+  hasTimeElement: timeCell.children[0] ? timeCell.children[0].tagName : null,
+  timeDateTimeAttr: timeCell.children[0] ? timeCell.children[0].dateTime : null,
+  timeHasDateAndTime: timeElements.length === 2,
+  metadataLabels: metadata.filter((_, index) => index % 2 === 0).map(node => node.textContent),
+  metadataValues: metadata.filter((_, index) => index % 2 === 1).map(node => node.textContent),
+  timeFallbacks
 }));
 """
     )
-    assert rendered == {
-        "labels": ["ファイル名", "対象リポジトリ", "種別", "状態", "回答状況", "カテゴリ", "投入元", "更新日時", "要約"],
-        "values": [
-            "entry.md",
-            "example/repo",
-            "確認事項",
-            "処理中",
-            "未回答",
-            "ui",
-            "session-review",
-            "更新日時文字列",
-            "要約本文",
-        ],
-        "accessibleName": (
-            "ファイル名: entry.md、対象リポジトリ: example/repo、種別: 確認事項、状態: 処理中、"
-            "回答状況: 未回答、カテゴリ: ui、投入元: session-review、"
-            "更新日時: 更新日時文字列、要約: 要約本文"
-        ),
-    }
+    assert rendered["labels"] == ["ファイル名", "対象リポジトリ", "種別・状態・回答状況", "更新日時", "要約"]
+    assert rendered["displayedValues"][0] == "entry.md"
+    assert rendered["displayedValues"][1] == "example/repo"
+    # 状態集約セルは複数のバッジを含む
+    assert "確認事項" in rendered["accessibleName"]
+    assert "処理中" in rendered["accessibleName"]
+    assert "未回答" in rendered["accessibleName"]
+    # カテゴリと投入元は行に表示されず、詳細メタデータに含まれる
+    assert "カテゴリ" not in rendered["labels"]
+    assert "投入元" not in rendered["labels"]
+    assert "example/repo" in rendered["accessibleName"]
+    assert "要約本文" in rendered["accessibleName"]
+    assert rendered["hasTimeElement"] == "TIME"
+    assert rendered["timeDateTimeAttr"] == "2025-07-30T12:34:56Z"
+    assert rendered["timeHasDateAndTime"] is True
+    category_index = rendered["metadataLabels"].index("カテゴリ")
+    source_index = rendered["metadataLabels"].index("投入元")
+    assert rendered["metadataValues"][category_index] == "ui"
+    assert rendered["metadataValues"][source_index] == "session-review"
+    assert rendered["timeFallbacks"] == [
+        {"dateTime": "", "accessibleName": "更新日時なし", "lines": ["更新日時なし", ""]},
+        {"dateTime": "not-a-date", "accessibleName": "not-a-date", "lines": ["not-a-date", ""]},
+    ]
 
 
 def test_assets_focus_on_user_entry_workflows() -> None:
@@ -464,18 +533,21 @@ def test_assets_present_search_filters_count_and_empty_state() -> None:
     """検索、フィルター、並び順、件数、読込中、空状態を検証する。"""
     result = _run_node_ui(
         """
+bindEvents();
 entries = [
   {kind: 'feedback', state: 'inbox', filename: 'old.md', summary: '対象外',
    target_repo: 'other/repo', category: 'x', source: 'cli', updated_at: '2025-01-01'},
   {kind: 'tbd', state: 'processing', filename: 'new.md', summary: '探す文字',
-   target_repo: 'example/repo', category: 'ui', source: 'web', updated_at: '2026-01-01'}
+   target_repo: 'example/repo', category: 'category-token', source: 'source-token', updated_at: '2026-01-01'},
+  {kind: 'feedback', state: 'inbox', filename: 'empty-source.md', summary: '投入元なし',
+   target_repo: 'example/repo', category: null, source: null, updated_at: '2025-06-01'}
 ];
 applyClientFilters();
 const sortedKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
 elements['search-input'].value = '探す';
 elements['target-filter'].value = 'example/repo';
-elements['category-filter'].value = 'ui';
-elements['source-filter'].value = 'web';
+elements['category-filter'].value = 'category-token';
+elements['source-filter'].value = 'source-token';
 applyClientFilters();
 const populated = {
   count: elements['entry-count'].textContent,
@@ -483,6 +555,15 @@ const populated = {
   emptyHidden: elements['empty-state'].hidden,
   query: listQuery()
 };
+elements['target-filter'].value = '';
+elements['category-filter'].value = '';
+elements['source-filter'].value = '';
+elements['search-input'].value = 'category-token';
+applyClientFilters();
+const categorySearchKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
+elements['search-input'].value = 'source-token';
+applyClientFilters();
+const sourceSearchKeys = elements['entry-list'].children.map(item => item.children[0].dataset.key);
 setLoading(true);
 const loadingState = {
   visible: !elements['loading-indicator'].hidden,
@@ -491,25 +572,48 @@ const loadingState = {
 elements['search-input'].value = '一致しない';
 setLoading(false);
 applyClientFilters();
+elements['source-filter'].value = 'web';
+elements['source-empty-filter'].checked = true;
+elements['source-empty-filter'].listeners.change({currentTarget: elements['source-empty-filter']});
+const emptySourceQuery = listQuery();
+const sourceFilterDisabledAfterCheck = elements['source-filter'].disabled;
+elements['source-empty-filter'].checked = false;
+elements['source-empty-filter'].listeners.change({currentTarget: elements['source-empty-filter']});
+const emptySourceState = {
+  sourceFilterValue: elements['source-filter'].value,
+  sourceFilterDisabledAfterCheck,
+  sourceFilterEnabledAfterUncheck: !elements['source-filter'].disabled,
+  query: emptySourceQuery
+};
 process.stdout.write(JSON.stringify({
   sortedKeys,
   populated,
   loadingState,
+  categorySearchKeys,
+  sourceSearchKeys,
   emptyVisible: !elements['empty-state'].hidden,
-  emptyCount: elements['entry-count'].textContent
+  emptyCount: elements['entry-count'].textContent,
+  emptySourceState
 }));
 """
     )
-    assert result["sortedKeys"] == ["new.md", "old.md"]
+    assert result["sortedKeys"] == ["new.md", "empty-source.md", "old.md"]
     assert result["populated"]["count"] == "1件"
     assert result["populated"]["first"] == "new.md"
     assert result["populated"]["emptyHidden"] is True
     assert "target_repo=example%2Frepo" in result["populated"]["query"]
-    assert "category=ui" in result["populated"]["query"]
-    assert "source=web" in result["populated"]["query"]
+    assert "category=category-token" in result["populated"]["query"]
+    assert "source=source-token" in result["populated"]["query"]
+    assert result["categorySearchKeys"] == ["new.md"]
+    assert result["sourceSearchKeys"] == ["new.md"]
     assert result["loadingState"] == {"visible": True, "busy": "true"}
     assert result["emptyVisible"] is True
     assert result["emptyCount"] == "0件"
+    assert result["emptySourceState"]["sourceFilterValue"] == ""
+    assert result["emptySourceState"]["sourceFilterDisabledAfterCheck"] is True
+    assert result["emptySourceState"]["sourceFilterEnabledAfterUncheck"] is True
+    assert "source_empty=true" in result["emptySourceState"]["query"]
+    assert "source=" not in result["emptySourceState"]["query"]
 
 
 def test_assets_use_consistent_readable_typography() -> None:
@@ -1441,6 +1545,41 @@ def test_operations_answered_filter_returns_only_answered_tbds(
     assert [item["filename"] for item in result] == ["answered.md"]
 
 
+def test_operations_source_empty_filter_returns_items_with_missing_or_empty_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`source_empty=true`は空の投入元だけを返し、値あり・非文字列の項目を除外する。"""
+    monkeypatch.setattr(common, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
+    monkeypatch.setattr(common, "pull", lambda _path: None)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "no-source.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n投入元なし\n",
+        encoding="utf-8",
+    )
+    (inbox / "empty-source.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: \n---\n\n空投入元\n",
+        encoding="utf-8",
+    )
+    (inbox / "whitespace-source.md").write_text(
+        '---\ntype: feedback\ntarget_repo: example/repo\nsource: "   "\n---\n\n空白投入元\n',
+        encoding="utf-8",
+    )
+    (inbox / "with-source.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: web\n---\n\n投入元あり\n",
+        encoding="utf-8",
+    )
+    (inbox / "list-source.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\nsource: []\n---\n\nリスト形式の投入元\n",
+        encoding="utf-8",
+    )
+    result = serve_app.Operations(tmp_path).entries({"source_empty": "true"})
+    filenames = [typing.cast(str, item["filename"]) for item in result]
+    filenames.sort()
+    assert filenames == ["empty-source.md", "no-source.md", "whitespace-source.md"]
+
+
 @pytest.mark.asyncio
 async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
     """`type`欠落は必須キー不足として400を返す。"""
@@ -1786,6 +1925,8 @@ def test_serve_state_watches_only_new_four_states(tmp_path: pathlib.Path, monkey
     [
         ("get", "/api/entries?status=unknown", None),
         ("get", "/api/entries?target_repo=", None),
+        ("get", "/api/entries?source_empty=false", None),
+        ("get", "/api/entries?source=web&source_empty=true", None),
         (
             "post",
             "/api/entries",
@@ -1813,7 +1954,7 @@ async def test_api_rejects_invalid_inputs(
     path: str,
     payload: dict[str, object] | None,
 ) -> None:
-    """Web入力境界が列挙・型・空文字・basename違反を400で拒否する。"""
+    """Web入力境界が列挙・型・空文字・basename違反・競合パラメーターを400で拒否する。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
