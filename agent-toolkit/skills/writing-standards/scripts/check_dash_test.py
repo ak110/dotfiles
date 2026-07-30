@@ -8,8 +8,10 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_dash.py"
 
@@ -192,6 +194,36 @@ class TestCheckDash:
         result = _run(str(path))
         assert result.returncode == 1
         assert "em-dash(U+2014)" in result.stderr
+
+    def test_url_is_excluded(self, tmp_path: pathlib.Path) -> None:
+        """URL内のダッシュ系禁止文字は検査対象から除外する。"""
+        path = _write(
+            tmp_path / "doc.md",
+            f"https://example.com/{_EM_DASH}/{_HORIZ_BAR}/{_BOX_DOUBLE}\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 0
+        assert result.stderr == ""
+
+    @pytest.mark.parametrize("delimiter", [")", "]", ">", " "])
+    def test_url_exclusion_ends_at_delimiter(self, tmp_path: pathlib.Path, delimiter: str) -> None:
+        """URL終端記号より後のダッシュは元の列番号で検出する。"""
+        prefix = f"https://example.com/{_EM_DASH}{delimiter}"
+        path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+        assert result.stderr.count("em-dash(U+2014)") == 1
+
+    def test_four_space_indented_fence_is_not_excluded(self, tmp_path: pathlib.Path) -> None:
+        """4文字インデントしたフェンス風の行はフェンスとして扱わない。"""
+        path = _write(
+            tmp_path / "doc.md",
+            f"    ```text\n地の文{_EM_DASH}続き\n    ```\n",
+        )
+        result = _run(str(path))
+        assert result.returncode == 1
+        assert f"{path}:2:" in result.stderr
 
     def test_missing_file_silently_skipped(self, tmp_path: pathlib.Path) -> None:
         """存在しないファイルを渡してもexit 0（読み込み失敗は無視）。"""

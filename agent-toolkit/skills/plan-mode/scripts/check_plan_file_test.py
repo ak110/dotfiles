@@ -489,7 +489,7 @@ def test_error_returns_one_without_warn_prefix(
 def test_no_argument_returns_two_with_usage(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["check_plan_file.py"])
     assert main() == 2
-    assert "usage: check_plan_file.py <plan-file-path>" in capsys.readouterr().err
+    assert capsys.readouterr().err == "usage: check_plan_file.py <plan-file-path>（使用法: 計画ファイルのパスを1つ指定する）\n"
 
 
 def test_nonexistent_plan_file_returns_two(
@@ -569,6 +569,56 @@ def test_tilde_code_block_returns_zero(
     monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
     assert main() == 0
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("indent", [" ", "  ", "   "])
+def test_indented_fenced_code_block_returns_zero(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    indent: str,
+) -> None:
+    """1〜3文字インデントしたフェンスをH3配下のコードブロックとして認識する。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（廃止・削除）\n\n"
+        f"### `foo.md`\n\n{indent}```text\n本ファイルを削除する。\n{indent}```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("following_heading", ["## 実行方法", "### 補足", "#### 詳細"])
+def test_h3_body_ends_at_any_supported_heading(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    following_heading: str,
+) -> None:
+    """対象H3より後のH2〜H4配下にあるフェンスを対象H3のコードブロックとみなさない。"""
+    body = (
+        "## 変更内容\n\n### 対象ファイル一覧\n\n- [ ] `foo.md`（新設）\n\n"
+        f"### `foo.md`\n\n変更後の説明のみ。\n\n{following_heading}\n\n```text\n無関係なコードブロック\n```\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "コードブロックが無いH3: foo.md" in capsys.readouterr().err
+
+
+def test_repeated_execution_method_sections_are_all_checked(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同名H2が再出現しても、先行する節の呼び出し名検査を保持する。"""
+    body = (
+        "## 実行方法\n\n- Skillツールで`agent-toolkit:no-such-skill`を呼び出す\n\n"
+        "## 実行方法\n\n- 実装する\n\n## 変更内容\n\n### 対象ファイル一覧\n"
+    )
+    plan = _write_plan(tmp_path, body)
+    monkeypatch.setattr("sys.argv", ["check_plan_file.py", str(plan)])
+    assert main() == 1
+    assert "実在しないスキル名の疑い" in capsys.readouterr().err
 
 
 def test_embedded_and_actual_same_h3_uses_actual_section(

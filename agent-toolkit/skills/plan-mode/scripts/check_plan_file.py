@@ -69,7 +69,7 @@ _H3_PATH_RE = re.compile(r"^### `([^`]+)`")
 # 「対象ファイル一覧」節が定める記法）の両方を検出する。マーカーが括弧内の末尾要素であることを
 # `）`直前の位置で担保する。
 _NEW_OR_DELETED_RE = re.compile(r"（(?:[^（）]*、)?(新設|廃止・削除)）")
-_FENCE_RE = re.compile(r"^(`{3,}|~{3,})\s*(.*)$")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})\s*(.*)$")
 _H2_RE = re.compile(r"^## (.+)$")
 _HEADING_RE = re.compile(r"^#{2,4}\s")
 _SESSION_OPS_RE = re.compile(r"session-review|exit-session|振り返り|セッション終了|session-review-dotfiles")
@@ -200,7 +200,7 @@ def _first_unfenced_h3_line_index(text: str, path: str) -> int | None:
 def _h3_section_body(text: str, path: str) -> str:
     r"""`### \\`<path>\\``見出し（フェンス外）配下の本文を返す。見出しが無ければ空文字を返す。
 
-    次のフェンス外H3見出し直前までを本文範囲とする。フェンス内に埋め込まれた同名H3見出しは
+    次のフェンス外H2・H3・H4見出し直前までを本文範囲とする。フェンス内に埋め込まれた同名H3見出しは
     対象としない。
     """
     lines = text.splitlines()
@@ -211,7 +211,7 @@ def _h3_section_body(text: str, path: str) -> str:
     start += 1
     end = len(lines)
     for j in range(start, len(lines)):
-        if mask[j] and _H3_PATH_RE.match(lines[j]):
+        if mask[j] and _HEADING_RE.match(lines[j]):
             end = j
             break
     return "\n".join(lines[start:end])
@@ -231,7 +231,7 @@ def _extract_fenced_code_blocks(body: str, *, info_string: str) -> list[str]:
         m = _FENCE_RE.match(lines[i])
         if m and m.group(2).strip() == info_string:
             fence_char, fence_len = m.group(1)[0], len(m.group(1))
-            close_re = re.compile(rf"^{re.escape(fence_char)}{{{fence_len},}}\s*$")
+            close_re = re.compile(rf"^ {{0,3}}{re.escape(fence_char)}{{{fence_len},}}\s*$")
             j = i + 1
             content_lines: list[str] = []
             while j < len(lines) and not close_re.match(lines[j]):
@@ -259,6 +259,8 @@ def _iter_h2_sections(text: str, heading: str) -> list[str]:
     for i, line in enumerate(lines):
         m = _H2_RE.match(line) if mask[i] else None
         if m and m.group(1).strip() == heading:
+            if start is not None:
+                sections.append("\n".join(lines[start:i]))
             start = i + 1
             continue
         if start is not None and m:
@@ -270,7 +272,7 @@ def _iter_h2_sections(text: str, heading: str) -> list[str]:
 
 
 def _check_fence_nesting(text: str) -> list[str]:
-    """開いたフェンスより長い情報文字列付きフェンスが内側に現れる箇所を検出する。"""
+    """情報文字列付き内側フェンスと、ファイル終端まで閉じていないフェンスを検出する。"""
     warnings: list[str] = []
     stack: list[tuple[int, str, int]] = []  # (line_no, char, length)
     lines = text.splitlines()
@@ -531,7 +533,10 @@ def main() -> int:
     引数誤用・対象ファイル読み込み不能はいずれも2を返す。
     """
     if len(sys.argv) != 2:
-        print("usage: check_plan_file.py <plan-file-path>", file=sys.stderr)
+        print(
+            "usage: check_plan_file.py <plan-file-path>（使用法: 計画ファイルのパスを1つ指定する）",
+            file=sys.stderr,
+        )
         return 2
     plan_path = pathlib.Path(sys.argv[1])
     try:
@@ -564,8 +569,7 @@ def main() -> int:
     lines = text.splitlines()
     mask = _unfenced_line_mask(text)
     for path in h3_paths:
-        # フェンス内に埋め込まれた同名H3見出しではなく、フェンス外の実際の見出し行を基準に
-        # 新設・削除マーカーの有無を判定する（`_first_unfenced_h3_line_index`は変更8で新設）。
+        # 埋め込み例を避けてフェンス外の見出しを基準とし、絶対・相対パスの双方を実在確認する。
         h3_index = _first_unfenced_h3_line_index(text, path)
         preceding = "\n".join(lines[:h3_index]) if h3_index is not None else ""
         if _NEW_OR_DELETED_RE.search(preceding[-40:]):
@@ -580,9 +584,6 @@ def main() -> int:
         )
         if _NEW_OR_DELETED_RE.search(checkbox_line):
             continue
-        # 絶対パスは`path`自身へ、相対パスは従来どおり計画ファイルのルート起点へ`exists()`を適用する。
-        # 従来実装は絶対パスの場合に実在確認自体を省略しており、存在しない絶対パスをerror化できない
-        # 欠陥があったため、両経路とも実在確認を必須にする。
         candidate = pathlib.Path(path) if pathlib.Path(path).is_absolute() else plan_path.parents[-1] / path
         if not candidate.exists() and not (pathlib.Path.cwd() / path).exists():
             errors.append(f"実在確認できないパス: {path}")

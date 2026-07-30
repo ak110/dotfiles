@@ -8,7 +8,7 @@
 writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシュは
 日本語の地の文・見出しで使わない」規定を機械化する。
 検出対象はU+2014（EM DASH）・U+2015（HORIZONTAL BAR）・U+2500の2連続（2倍ダッシュ）。
-フェンス付きコードブロック内（バッククォート形式・チルダ形式）およびインラインコード内は除外する。
+フェンス付きコードブロック内（バッククォート形式・チルダ形式）・インラインコード内・URL内は除外する。
 """
 
 from __future__ import annotations
@@ -46,6 +46,9 @@ _EXCLUDED_DIRS = frozenset(
 # 検出対象の文字パターン。U+2500は2連続のみを対象とする。
 _DASH_PATTERN = re.compile(r"—|―|──")
 
+# URL内の文字を検査対象から除外するためのパターン。
+_URL_RE = re.compile(r"https?://[^\s)\]>]+")
+
 # 違反種別の表示名。
 _KIND_MAP = {
     "—": "em-dash(U+2014)",
@@ -54,7 +57,7 @@ _KIND_MAP = {
 }
 
 # フェンス開始の最小バッククォート/チルダ数。
-_FENCE_RE = re.compile(r"^( *)(```+|~~~+)")
+_FENCE_RE = re.compile(r"^( {0,3})(```+|~~~+)")
 
 
 def main() -> int:
@@ -144,8 +147,9 @@ def _check_file(path: pathlib.Path) -> list[str]:
         if in_fence:
             continue
 
-        # インラインコードを除去してからダッシュを検索する。
+        # インラインコードとURLを除去してからダッシュを検索する。
         searchable = _strip_inline_code(raw)
+        searchable = _strip_urls(searchable)
         for match in _DASH_PATTERN.finditer(searchable):
             matched = match.group(0)
             kind = _KIND_MAP[matched]
@@ -186,6 +190,11 @@ def _strip_inline_code(line: str) -> str:
         else:
             i += 1
     return "".join(result)
+
+
+def _strip_urls(line: str) -> str:
+    """行中のURLをダッシュ検査対象から除外するため、同じ長さの空白に置換する。"""
+    return _URL_RE.sub(lambda m: " " * len(m.group(0)), line)
 
 
 if __name__ == "__main__":
