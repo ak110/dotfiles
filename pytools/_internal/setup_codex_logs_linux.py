@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 _DATABASE_NAMES = ("logs_2.sqlite", "logs_2.sqlite-wal", "logs_2.sqlite-shm")
 _SHM_ROOT = pathlib.Path("/dev/shm")
+# 診断ログDBは実測で121MBまで育つため、総容量と空き容量の双方へ余裕を持たせる。
+_REQUIRED_BYTES = 256 * 1024 * 1024
 
 
 def run(
@@ -23,7 +25,10 @@ def run(
     home_dir: pathlib.Path | None = None,
     shm_root: pathlib.Path = _SHM_ROOT,
 ) -> bool:
-    """Codex診断ログDBを共有メモリーへ移し、元の場所へシンボリックリンクを作成する。"""
+    """Codex診断ログDBを共有メモリーへ移し、元の場所へシンボリックリンクを作成する。
+
+    共有メモリーの容量が不足する環境では新規リンクを作成しない。
+    """
     if sys.platform != "linux":
         return False
 
@@ -31,6 +36,21 @@ def run(
         raise FileNotFoundError(f"共有メモリーディレクトリが見つからない: {shm_root}")
 
     codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
+    usage = shutil.disk_usage(shm_root)
+    if usage.total < _REQUIRED_BYTES or usage.free < _REQUIRED_BYTES:
+        existing_links = [
+            codex_dir / database_name for database_name in _DATABASE_NAMES if (codex_dir / database_name).is_symlink()
+        ]
+        logger.warning(
+            log_format.format_status(
+                "codex-logs",
+                f"共有メモリーの容量が不足するため新規リンクを作成しない: {shm_root} "
+                f"(総容量{usage.total}バイト・空き{usage.free}バイト・必要{_REQUIRED_BYTES}バイト・"
+                f"既存リンク{len(existing_links)}件)",
+            )
+        )
+        return False
+
     codex_dir.mkdir(parents=True, exist_ok=True)
     changed = False
     for database_name in _DATABASE_NAMES:

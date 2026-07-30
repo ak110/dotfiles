@@ -1,10 +1,28 @@
 """pytools._internal.setup_codex_logs_linuxのテスト。"""
 
 import pathlib
+import types
 
 import pytest
 
 from pytools._internal import setup_codex_logs_linux
+
+_TEST_REQUIRED_BYTES = 256 * 1024 * 1024
+
+
+def _set_disk_usage(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    total: int = _TEST_REQUIRED_BYTES * 2,
+    free: int = _TEST_REQUIRED_BYTES * 2,
+) -> None:
+    """共有メモリー容量のテスト値を設定する。"""
+    monkeypatch.setattr(setup_codex_logs_linux, "_REQUIRED_BYTES", _TEST_REQUIRED_BYTES)
+
+    def fake_disk_usage(_path: pathlib.Path) -> types.SimpleNamespace:
+        return types.SimpleNamespace(total=total, used=total - free, free=free)
+
+    monkeypatch.setattr(setup_codex_logs_linux.shutil, "disk_usage", fake_disk_usage)
 
 
 def test_non_linux_has_no_side_effect(
@@ -33,6 +51,7 @@ def test_moves_existing_database_and_creates_symlink(
     database.parent.mkdir(parents=True)
     database.write_bytes(b"existing diagnostic logs")
     shm_root.mkdir()
+    _set_disk_usage(monkeypatch)
 
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
 
@@ -55,6 +74,7 @@ def test_missing_database_creates_dangling_symlink_idempotently(
     home_dir = tmp_path / "home"
     shm_root = tmp_path / "shm"
     shm_root.mkdir()
+    _set_disk_usage(monkeypatch)
 
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is False
@@ -80,6 +100,7 @@ def test_replaces_wrong_symlink(
     database.parent.mkdir(parents=True)
     database.symlink_to(tmp_path / "old.sqlite")
     shm_root.mkdir()
+    _set_disk_usage(monkeypatch)
 
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
 
@@ -101,6 +122,7 @@ def test_existing_shm_file_takes_precedence_over_stale_home_file(
     shm_root.mkdir()
     target = shm_root / f"codex-{setup_codex_logs_linux.os.getuid()}-logs_2.sqlite-wal"
     target.write_bytes(b"active")
+    _set_disk_usage(monkeypatch)
 
     assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is True
 
@@ -125,3 +147,69 @@ def test_missing_shm_root_fails_without_replacing_database(
 
     assert database.read_bytes() == b"keep me"
     assert not database.is_symlink()
+
+
+def test_skips_symlink_when_shm_total_is_insufficient(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """共有メモリーの総容量不足時はリンクを作成しない。"""
+    monkeypatch.setattr(setup_codex_logs_linux.sys, "platform", "linux")
+    home_dir = tmp_path / "home"
+    shm_root = tmp_path / "shm"
+    shm_root.mkdir()
+    _set_disk_usage(
+        monkeypatch,
+        total=_TEST_REQUIRED_BYTES - 1,
+        free=_TEST_REQUIRED_BYTES - 1,
+    )
+
+    assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is False
+    assert not home_dir.exists()
+
+
+def test_skips_symlink_when_shm_free_is_insufficient(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """共有メモリーの空き容量不足時はリンクを作成しない。"""
+    monkeypatch.setattr(setup_codex_logs_linux.sys, "platform", "linux")
+    home_dir = tmp_path / "home"
+    shm_root = tmp_path / "shm"
+    shm_root.mkdir()
+    _set_disk_usage(
+        monkeypatch,
+        free=_TEST_REQUIRED_BYTES - 1,
+    )
+
+    assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is False
+    assert not home_dir.exists()
+
+
+def test_warns_and_preserves_existing_symlink_when_capacity_is_insufficient(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """容量不足時は既存リンクを維持し、リンク件数を警告する。"""
+    monkeypatch.setattr(setup_codex_logs_linux.sys, "platform", "linux")
+    home_dir = tmp_path / "home"
+    shm_root = tmp_path / "shm"
+    shm_root.mkdir()
+    target = shm_root / "existing.sqlite"
+    target.write_bytes(b"active")
+    link = home_dir / ".codex" / "logs_2.sqlite"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+    _set_disk_usage(
+        monkeypatch,
+        free=_TEST_REQUIRED_BYTES - 1,
+    )
+
+    with caplog.at_level("WARNING", logger=setup_codex_logs_linux.__name__):
+        assert setup_codex_logs_linux.run(home_dir=home_dir, shm_root=shm_root) is False
+
+    assert link.is_symlink()
+    assert link.readlink() == target
+    assert target.read_bytes() == b"active"
+    assert "既存リンク1件" in caplog.text
