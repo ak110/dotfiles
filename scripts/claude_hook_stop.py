@@ -81,12 +81,14 @@ _AGENT_TOOLKIT_PATTERN = re.compile(r"\bagent-toolkit:")
 
 # transcript内のユーザーターンでスラッシュコマンド起動痕跡を検出する正規表現。
 _SESSION_REVIEW_DOTFILES_COMMAND_RE = re.compile(r"<command-name>/session-review-dotfiles</command-name>")
+_SESSION_REVIEW_COMMAND_RE = re.compile(r"<command-name>/agent-toolkit:session-review</command-name>")
 
 # このスクリプトの hook 識別子。
 _HOOK_ID = "dotfiles/claude_hook_stop"
 
 # 拡張章スキル名。本hookと同期対象のSKILL.md側でも参照される。
 _EXTENSION_SKILL = "session-review-dotfiles"
+_TARGET_SESSION_REVIEW = "agent-toolkit:session-review"
 
 
 def _llm_notice(body: str) -> str:
@@ -170,7 +172,26 @@ def main() -> int:
         _approve()
         return 0
 
-    if not _has_pyfltr_usage(transcript_path) and not _has_agent_toolkit_usage(transcript_path):
+    # 振り返りスキル起動済みフラグはセッション状態ファイル経由で確認する。
+    # 観測は個人フックPostToolUseが`session_review_invoked`辞書へ記録するほか、
+    # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
+    state = read_state(session_id)
+    invoked = state.get("session_review_invoked")
+    state_invoked = isinstance(invoked, dict) and invoked.get(_EXTENSION_SKILL) is True
+    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_DOTFILES_COMMAND_RE)
+    target_state_invoked = isinstance(invoked, dict) and invoked.get(_TARGET_SESSION_REVIEW) is True
+    target_command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_COMMAND_RE)
+
+    if not any(
+        (
+            _has_pyfltr_usage(transcript_path),
+            _has_agent_toolkit_usage(transcript_path),
+            state_invoked,
+            command_invoked,
+            target_state_invoked,
+            target_command_invoked,
+        )
+    ):
         append_stop_log(session_id, "approve_no_pyfltr", {})
         _approve()
         return 0
@@ -180,13 +201,6 @@ def main() -> int:
         _approve()
         return 0
 
-    # 振り返りスキル起動済みフラグはセッション状態ファイル経由で確認する。
-    # 観測は個人フックPostToolUseが`session_review_invoked`辞書へ記録するほか、
-    # スラッシュコマンド起動痕跡（transcript走査）でも代替検出する。
-    state = read_state(session_id)
-    invoked = state.get("session_review_invoked")
-    state_invoked = isinstance(invoked, dict) and invoked.get(_EXTENSION_SKILL) is True
-    command_invoked = has_command_invocation(transcript_path, _SESSION_REVIEW_DOTFILES_COMMAND_RE)
     if state_invoked or command_invoked:
         append_stop_log(
             session_id,
@@ -196,15 +210,23 @@ def main() -> int:
         _approve()
         return 0
 
-    # 振り返り手順全体は `session-review-dotfiles` スキルおよび併用する
-    # `agent-toolkit:session-review` スキルが保持する。本 hook は両スキルの併用呼び出しの前段に
-    # SESSION_REVIEW_PRECHECK を付与し、満たさない場合はスキル起動自体を抑止する。
+    # 振り返り手順全体は`session-review-dotfiles`スキルおよび併用する
+    # `agent-toolkit:session-review`スキルが保持する。本hookは起動済み状態に応じた呼び出しの前段に
+    # SESSION_REVIEW_PRECHECKを付与し、満たさない場合はスキル起動自体を抑止する。
     # precheckを満たした場合も各スキル本体の起動方針節に従う。
-    body = (
-        f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_EXTENSION_SKILL}` via the Skill tool together with"
-        " `agent-toolkit:session-review` in the same turn as one combined review,"
-        " per each skill's activation policy section."
-    )
+    target_invoked = target_state_invoked or target_command_invoked
+    if target_invoked:
+        body = (
+            f"{SESSION_REVIEW_PRECHECK} If so, `{_TARGET_SESSION_REVIEW}` has already been invoked in this"
+            f" session but `{_EXTENSION_SKILL}` has not. Invoke `{_EXTENSION_SKILL}` via the Skill tool now"
+            " and merge both reports into one, per each skill's activation policy section."
+        )
+    else:
+        body = (
+            f"{SESSION_REVIEW_PRECHECK} If so, invoke `{_EXTENSION_SKILL}` via the Skill tool together with"
+            f" `{_TARGET_SESSION_REVIEW}` in the same turn as one combined review,"
+            " per each skill's activation policy section."
+        )
     append_stop_log(session_id, "block_session_review", {})
     _emit_block(_llm_notice(body))
     return 0

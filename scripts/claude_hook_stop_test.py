@@ -18,7 +18,7 @@ sys.path.insert(
     0,
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position
+import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _message_format import SESSION_REVIEW_PRECHECK  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
@@ -376,7 +376,8 @@ class TestRepeatContext:
 class TestContextContents:
     """context発火時の`reason`本文に必要な要素が含まれることを確認する。"""
 
-    def test_context_invokes_both_skills(self, tmp_path: pathlib.Path):
+    def test_context_invokes_both_skills_when_basic_skill_not_invoked(self, tmp_path: pathlib.Path):
+        """基本スキルが未起動の場合は従来の併用要求文面を返す。"""
         transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
         result = _run(
             {"session_id": "context", "transcript_path": str(transcript)},
@@ -388,6 +389,74 @@ class TestContextContents:
         assert _TARGET_SESSION_REVIEW in body
         assert "Skill" in body
         assert "activation policy" in body
+        assert SESSION_REVIEW_PRECHECK in body
+
+    def test_context_invokes_extension_when_basic_skill_already_invoked(self, tmp_path: pathlib.Path):
+        """基本スキルが起動済みの場合は拡張スキルの追加起動を要求する。"""
+        session_id = "context-basic-invoked"
+        transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
+        _write_state(tmp_path, session_id, {"session_review_invoked": {_TARGET_SESSION_REVIEW: True}})
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        body = _block_reason(_parse_decision(result))
+        assert f"`{_TARGET_SESSION_REVIEW}` has already been invoked" in body
+        assert f"`{_EXTENSION_SKILL}` has not" in body
+        assert "Skill tool now" in body
+
+    def test_basic_skill_state_without_other_usage_reaches_extension_context(self, tmp_path: pathlib.Path) -> None:
+        """基本スキルの状態ファイルだけでも利用検出ゲートを通過し、拡張スキルを要求する。"""
+        session_id = "context-basic-state-only"
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, session_id, {"session_review_invoked": {_TARGET_SESSION_REVIEW: True}})
+
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+
+        body = _block_reason(_parse_decision(result))
+        assert f"`{_TARGET_SESSION_REVIEW}` has already been invoked" in body
+        assert f"`{_EXTENSION_SKILL}` has not" in body
+
+    def test_basic_skill_command_without_other_usage_reaches_extension_context(self, tmp_path: pathlib.Path) -> None:
+        """基本スキルのスラッシュコマンド痕跡だけでも利用検出ゲートを通過し、拡張スキルを要求する。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("<command-name>/agent-toolkit:session-review</command-name>"),
+                _assistant_text_only(),
+            ],
+        )
+
+        result = _run(
+            {"session_id": "context-basic-command-only", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+
+        body = _block_reason(_parse_decision(result))
+        assert f"`{_TARGET_SESSION_REVIEW}` has already been invoked" in body
+        assert f"`{_EXTENSION_SKILL}` has not" in body
+
+    @pytest.mark.parametrize("basic_invoked", [False, True])
+    def test_context_variants_include_both_skill_names_and_precheck(
+        self,
+        tmp_path: pathlib.Path,
+        basic_invoked: bool,
+    ) -> None:
+        """基本スキルの起動状態によらず両スキル名と事前チェック文言を含む。"""
+        session_id = f"context-common-{basic_invoked}"
+        transcript = _transcript_agent_toolkit_skill_then_text(tmp_path)
+        if basic_invoked:
+            _write_state(tmp_path, session_id, {"session_review_invoked": {_TARGET_SESSION_REVIEW: True}})
+        result = _run(
+            {"session_id": session_id, "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+        )
+        body = _block_reason(_parse_decision(result))
+        assert _TARGET_SESSION_REVIEW in body
+        assert _EXTENSION_SKILL in body
         assert SESSION_REVIEW_PRECHECK in body
 
 
