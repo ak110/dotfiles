@@ -3,6 +3,8 @@
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
@@ -38,20 +40,33 @@ def _entry(
     kind: schedule.FeedbackEntryKind = "feedback",
     answered: bool | None = None,
     broken: bool = False,
+    plan_file: str | None = None,
+    repair_target: str | None = None,
+    repair_kind: schedule.RepairKind | None = None,
 ) -> schedule.QueueEntry:
     body = f"\n本文 {filename}\n"
     text = frontmatter.serialize_frontmatter(
         {"target_repo": "github.com/example/repo", "type": kind if kind != "unknown" else "feedback"},
         body,
     )
-    return schedule.QueueEntry(filename, text, kind, answered, broken, metadata, None)
+    return schedule.QueueEntry(
+        filename=filename,
+        text=text,
+        kind=kind,
+        tbd_answered=answered,
+        frontmatter_broken=broken,
+        metadata=metadata,
+        repair_target_filename=repair_target,
+        plan_file=plan_file,
+        repair_kind=repair_kind,
+    )
 
 
 def _calculate(
     active: tuple[schedule.QueueEntry, ...],
     terminal: tuple[schedule.QueueEntry, ...] = (),
     plans: dict[str, tuple[str, ...]] | None = None,
-    repairs: frozenset[str] = frozenset(),
+    repairs: frozenset[schedule.RepairKey] = frozenset(),
 ) -> schedule.ScheduleResult:
     return schedule.calculate_schedule(active, terminal, plans or {}, repairs)
 
@@ -100,6 +115,73 @@ class TestCalculateSchedule:
         assert result.classification_required == ("a.md",)
         assert not result.plan_items
 
+    def test_plan_file_regenerates_missing_metadata(self, tmp_path: pathlib.Path) -> None:
+        """独立キーがある項目は分類欠落時も計画実装型として選抜する。"""
+        plan = tmp_path / "plan.md"
+        entry = _entry("plan.md", plan_file=str(plan))
+
+        result = _calculate((entry,), plans={str(plan): ("README.md",)})
+
+        assert not result.classification_required
+        assert result.plan_items == ("plan.md",)
+
+    def test_plan_file_regenerates_stale_metadata_without_classification(self, tmp_path: pathlib.Path) -> None:
+        """本文変更で分類が失効しても独立キーがあれば再分類を要求しない。"""
+        plan = tmp_path / "plan.md"
+        stale = _metadata("different.md", feedback_type="plan-impl", plan_file=str(plan))
+        entry = _entry("plan.md", metadata=stale, plan_file=str(plan))
+
+        result = _calculate((entry,), plans={str(plan): ("README.md",)})
+
+        assert not result.classification_required
+        assert result.plan_items == ("plan.md",)
+
+    def test_missing_plan_file_is_diagnostic_only_and_repair_is_deduplicated(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """独立キーの計画ファイルが消失した項目は選抜せず、修復TBD要求を重複抑止する。"""
+        plan = tmp_path / "missing-plan.md"
+        entry = _entry("plan.md", plan_file=str(plan))
+
+        result = _calculate((entry,))
+
+        assert result.missing_plan_file_filenames == ("plan.md",)
+        assert result.missing_plan_file_needs_tbd_filenames == ("plan.md",)
+        assert not result.classification_required
+        assert not result.plan_items
+
+        deduplicated = _calculate((entry,), repairs=frozenset({("plan.md", "missing-plan-file")}))
+
+        assert deduplicated.missing_plan_file_filenames == ("plan.md",)
+        assert not deduplicated.missing_plan_file_needs_tbd_filenames
+        assert not deduplicated.plan_items
+
+    def test_frontmatter_repair_does_not_suppress_missing_plan_repair(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """同じfilenameのfrontmatter修復TBDは計画ファイル修復TBDの要求を抑止しない。"""
+        plan = tmp_path / "missing-plan.md"
+        entry = _entry("plan.md", plan_file=str(plan))
+
+        result = _calculate((entry,), repairs=frozenset({("plan.md", "frontmatter")}))
+
+        assert result.missing_plan_file_needs_tbd_filenames == ("plan.md",)
+
+    def test_same_filename_can_request_both_repair_kinds(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """同じfilenameで両理由が成立する入力は両方の修復TBDを要求する。"""
+        broken = _entry("item.md", broken=True, kind="unknown")
+        missing_plan = _entry("item.md", plan_file=str(tmp_path / "missing-plan.md"))
+
+        result = _calculate((broken, missing_plan))
+
+        assert result.frontmatter_broken_needs_tbd_filenames == ("item.md",)
+        assert result.missing_plan_file_needs_tbd_filenames == ("item.md",)
+
     def test_missing_self_and_cycle_dependencies_request_tbd(self) -> None:
         a = _entry("a.md", metadata=_metadata("a.md", dependency=schedule.Dependency("entries", ("b.md",))))
         b = _entry("b.md", metadata=_metadata("b.md", dependency=schedule.Dependency("entries", ("a.md",))))
@@ -145,7 +227,9 @@ class TestCalculateSchedule:
             for index in range(1, 5)
         )
 
-        result = _calculate(plan_entries)
+        plan_targets: dict[str, tuple[str, ...]] = {str(tmp_path / f"{index}.md"): (f"{index}.py",) for index in range(1, 5)}
+
+        result = _calculate(plan_entries, plans=plan_targets)
 
         assert result.plan_items == ("1.md", "2.md", "3.md")
         assert result.deferred == (schedule.DeferredItem("4.md", "limit-exceeded"),)
@@ -177,7 +261,8 @@ class TestCalculateSchedule:
         assert result.parallel_normal_items == ("parallel.md",)
         assert result.post_plan_normal_items == ("second-conflict.md",)
 
-    def test_missing_or_empty_plan_targets_defer_normals(self, tmp_path: pathlib.Path) -> None:
+    def test_missing_or_empty_plan_targets_are_distinguished(self, tmp_path: pathlib.Path) -> None:
+        """計画ファイル消失は当該計画だけを保留し、実在する空一覧は通常型との並行を抑止する。"""
         known_plan = tmp_path / "known.md"
         unknown_plan = tmp_path / "unknown.md"
         plans = (
@@ -191,16 +276,25 @@ class TestCalculateSchedule:
             ),
         )
         normal = _entry("normal.md", metadata=_metadata("normal.md", target_files=("other.py",)))
-        plan_mappings: tuple[dict[str, tuple[str, ...]], ...] = (
-            {str(known_plan): ("known.py",)},
-            {str(known_plan): ("known.py",), str(unknown_plan): ()},
+        missing_result = _calculate(
+            (*plans, normal),
+            plans={str(known_plan): ("known.py",)},
         )
 
-        for plan_mapping in plan_mappings:
-            result = _calculate((*plans, normal), plans=plan_mapping)
+        assert missing_result.plan_items == ("1-plan.md",)
+        assert missing_result.missing_plan_file_filenames == ("2-plan.md",)
+        assert missing_result.parallel_normal_items == ("normal.md",)
+        assert not missing_result.post_plan_normal_items
 
-            assert not result.parallel_normal_items
-            assert result.post_plan_normal_items == ("normal.md",)
+        empty_result = _calculate(
+            (*plans, normal),
+            plans={str(known_plan): ("known.py",), str(unknown_plan): ()},
+        )
+
+        assert empty_result.plan_items == ("1-plan.md", "2-plan.md")
+        assert not empty_result.missing_plan_file_filenames
+        assert not empty_result.parallel_normal_items
+        assert empty_result.post_plan_normal_items == ("normal.md",)
 
     def test_answered_tbd_resolves_external_dependency(self) -> None:
         tbd = _entry("tbd.md", kind="tbd", answered=True, metadata=_metadata("tbd.md"))
@@ -239,7 +333,7 @@ class TestCalculateSchedule:
     def test_broken_frontmatter_is_diagnostic_only_and_repair_is_deduplicated(self) -> None:
         broken = _entry("broken.md", broken=True, kind="unknown")
 
-        result = _calculate((broken,), repairs=frozenset({"broken.md"}))
+        result = _calculate((broken,), repairs=frozenset({("broken.md", "frontmatter")}))
 
         assert result.frontmatter_broken_filenames == ("broken.md",)
         assert not result.frontmatter_broken_needs_tbd_filenames
@@ -257,14 +351,6 @@ def test_parse_plan_target_files_rejects_external_paths() -> None:
 ### 次
 """
     assert schedule.parse_plan_target_files(text) == ("README.md",)
-
-
-def test_detect_plan_impl_reference_requires_existing_absolute_file(tmp_path: pathlib.Path) -> None:
-    """実在する絶対パスだけを計画実装型として検出する。"""
-    plan = tmp_path / "example.md"
-    plan.write_text("# plan\n", encoding="utf-8")
-    assert schedule.detect_plan_impl_reference(f"対象計画: `{plan}`") == str(plan)
-    assert schedule.detect_plan_impl_reference(f"対象計画: `{tmp_path / 'missing.md'}`") is None
 
 
 def _classification(
@@ -289,6 +375,19 @@ def _classification(
 class TestApplyClassifications:
     """`apply_classifications`が受理する補正の範囲を検証する。"""
 
+    def test_rejects_plan_impl_classification(self, tmp_path: pathlib.Path) -> None:
+        """分類結果からの計画実装型指定を拒否する。"""
+        entry = _entry("a.md")
+        classification = _classification(
+            "a.md",
+            source_body_sha256=schedule.body_sha256(entry.text),
+            feedback_type="plan-impl",
+            plan_file=str(tmp_path / "plan.md"),
+        )
+
+        with pytest.raises(ValueError, match="計画実装型"):
+            schedule.apply_classifications((entry,), (), (classification,))
+
     def test_corrects_missing_dependency_target_to_external_user(self) -> None:
         """依存先消失と診断される`entries`依存項目だけ、外部・ユーザー依存への補正を受理する。"""
         entry = _entry(
@@ -301,7 +400,7 @@ class TestApplyClassifications:
             dependency=schedule.Dependency("external-user", condition="回答後に着手する", tbd_filename="tbd.md"),
         )
 
-        updated = schedule.apply_classifications((entry,), (), (classification,), {})
+        updated = schedule.apply_classifications((entry,), (), (classification,))
 
         assert updated[0].metadata is not None
         assert updated[0].metadata.dependency.kind == "external-user"
@@ -319,7 +418,7 @@ class TestApplyClassifications:
             dependency=schedule.Dependency("external-user", condition="回答後に着手する", tbd_filename="tbd.md"),
         )
 
-        updated = schedule.apply_classifications((entry, target), (), (classification,), {})
+        updated = schedule.apply_classifications((entry, target), (), (classification,))
 
         by_filename = {item.filename: item for item in updated}
         assert by_filename["a.md"].metadata is not None
@@ -338,7 +437,7 @@ class TestApplyClassifications:
             target_files=("other.py",),
         )
 
-        updated = schedule.apply_classifications((entry,), (), (classification,), {})
+        updated = schedule.apply_classifications((entry,), (), (classification,))
 
         assert updated[0].metadata is not None
         assert updated[0].metadata.dependency.kind == "entries"
@@ -356,7 +455,7 @@ class TestApplyClassifications:
             dependency=schedule.Dependency("none"),
         )
 
-        updated = schedule.apply_classifications((entry,), (), (classification,), {})
+        updated = schedule.apply_classifications((entry,), (), (classification,))
 
         assert updated[0].metadata is not None
         assert updated[0].metadata.dependency.kind == "entries"
@@ -382,7 +481,7 @@ class TestApplyClassifications:
         assert any(item.filename == "a.md" and item.reason == "missing" for item in result.missing_dependency_tbds)
 
         # apply_classificationsも同じ診断のもとで補正を受理する
-        updated = schedule.apply_classifications((entry, broken_target), (), (classification,), {})
+        updated = schedule.apply_classifications((entry, broken_target), (), (classification,))
         by_filename = {item.filename: item for item in updated}
         assert by_filename["a.md"].metadata is not None
         assert by_filename["a.md"].metadata.dependency.kind == "external-user"

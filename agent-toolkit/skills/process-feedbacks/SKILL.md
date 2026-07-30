@@ -58,12 +58,11 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 `### 完了条件と連鎖feedback`ブロック（実装完了条件・後続feedback全文・関連feedback ID）を明示する。
 連鎖feedbackの検出・投入は「ステップ6: 連鎖feedbackの自律投入」で扱う。
 
-投入する本文へ既存計画ファイルの絶対パスを書くと、機械分類（`_atk_mq_schedule.py`の
-`detect_plan_impl_reference`）により計画実装型（`type: plan-impl`）として分類される。
-結果として次回処理セッションが新規の計画作成を経ず、当該計画ファイルを再実装する対象として扱う。
-実装要求ではなく経緯の参照として既存計画へ言及する場合は絶対パスを書かず、日付や作業内容で
-特定する（`agent-toolkit:plan-and-add-feedback`経由で意図的に計画実装型として投入する場合は
-この限りでない）。
+計画実装型として投入する場合は`atk mq add --plan-file=<計画ファイルの絶対パス>`を指定する。
+当該オプションは指定された計画ファイルの実在を検証し、frontmatterへ計画実装型の分類を確定記録する。
+指定がない投入は通常型として扱う。
+本文が計画ファイルの絶対パスへ言及していても分類へ影響しない。
+実装要求ではなく経緯の参照として既存計画へ言及する場合も、当該オプションを指定しなければよい。
 
 ## ステップ1: 入力の確定と初期スケジューリング
 
@@ -74,8 +73,10 @@ editのMESSAGEは論理本文として扱われ、先頭frontmatterで明示し�
 `atk mq list --status=active --target-repo=<repo-path>`で1行一覧だけを取得し、
 本文全文は取得しない。
 
-計画実装型の大半は`atk mq add`投入時点で機械分類済みのため、ここでLLM分類が必要になるのは
-主に通常型と、計画ファイルがまだ存在しない段階で投入された計画実装型候補である。
+計画実装型は`atk mq add`の明示指定により、全件が投入時点で確定する。
+ここでLLM分類が必要になるのは通常型だけである。
+一覧はトップレベルの`plan_file`を判定の基準とし、`queue_schedule`の欠落・
+本文変更による失効時も計画実装型と表示する。
 一覧に未分類項目がある場合は、Agentツールで書き込み可能な汎用エージェント`claude`を
 `model`指定なしのforegroundとして1回起動する。分類結果JSONの形式は
 references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照する。
@@ -83,8 +84,10 @@ references/plan-impl-feedback-flow.md「分類結果JSONの形式」節を参照
 `atk mq schedule`が機械的に行うため、LLM分類委譲へは含めない。
 委譲先は対象filenameごとに`atk mq show <filename> --target-repo=<repo-path>`を実行し、
 未分類または本文変更済みの項目だけを読む。
-計画実装型の判定は`references/plan-impl-feedback-flow.md`のSSOTを適用する。
-通常型は依存条件と推定対象ファイルを分類し、計画実装型は計画ファイルの絶対パスを返す。
+分類対象は通常型のみとする。
+計画実装型は投入時の明示指定でfrontmatterへ確定記録済みであり、分類委譲の対象に含まれない
+（判定基準は`references/plan-impl-feedback-flow.md`のSSOTを参照する）。
+委譲先は通常型の依存条件と推定対象ファイルだけを返す。
 
 外部・ユーザー依存を検出した場合、委譲先は条件文を引用したTBDを
 `atk mq add --type=tbd --scope=hold`で投入し、分類結果へ生成されたTBD filenameを含める。
@@ -105,6 +108,12 @@ TBDの投入自体は`atk mq schedule`のCLIハンドラーが同一ロック内
 process-feedbacks側で追加操作しない。修復は`atk mq edit`ではなく対象ファイルを直接編集する
 （`atk mq edit`はfrontmatter解析失敗時に処理を拒否するため）。
 TBDの回答は、直接編集による修復が完了したことの確認として扱う。
+
+`missing_plan_file_filenames`は、トップレベルの`plan_file`が指す計画ファイルの
+消失を通知する診断出力である。当該項目は計画実装型のまま`plan_items`から除外する。
+`missing_plan_file_needs_tbd_filenames`に含まれる項目には、`atk mq schedule`が
+計画ファイルの復元または`plan_file`の修復を求めるTBDを同一ロック内で機械的に投入する。
+未回答の修復TBDが存在する間は再投入せず、修復完了まで選抜しない。
 
 選抜結果をinbox項目とprocessing残存項目へ分ける。
 inbox状態の選抜対象だけを`atk mq start-processing <filename...>`でprocessingへ遷移させる

@@ -126,17 +126,25 @@ def test_flat_add_operation_drops_input_queue_schedule(
     assert parsed[0]["alert_keys"] == "github-run:1"
 
 
-def test_flat_add_operation_drops_input_repair_target(
+@pytest.mark.parametrize(
+    ("reserved_key", "reserved_value"),
+    [("repair_target", "broken.md"), ("repair_kind", "frontmatter")],
+)
+def test_flat_add_operation_drops_input_repair_metadata(
+    reserved_key: str,
+    reserved_value: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """利用者入力のrepair_targetを保存内容へ引き継がない。"""
+    """利用者入力の修復TBD予約キーを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-    message = "---\ntarget_repo: github.com/example/repo\nrepair_target: broken.md\nalert_keys: github-run:1\n---\n\n本文\n"
+    message = (
+        f"---\ntarget_repo: github.com/example/repo\n{reserved_key}: {reserved_value}\nalert_keys: github-run:1\n---\n\n本文\n"
+    )
 
     generated = add_module.add_entries(
         notes,
@@ -148,15 +156,15 @@ def test_flat_add_operation_drops_input_repair_target(
 
     parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
-    assert "repair_target" not in parsed[0]
+    assert reserved_key not in parsed[0]
     assert parsed[0]["alert_keys"] == "github-run:1"
 
 
-def test_add_operation_mechanically_classifies_plan_impl_reference(
+def test_add_operation_classifies_explicit_plan_file(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """実在する計画ファイルへの言及を投入時点で計画実装型へ分類する。"""
+    """plan_file指定時に計画実装型の独立キーと分類を記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -171,47 +179,25 @@ def test_add_operation_mechanically_classifies_plan_impl_reference(
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
+        plan_file=str(plan),
     )
 
-    metadata = schedule.parse_schedule_metadata((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    metadata = schedule.parse_schedule_metadata(content)
     assert metadata is not None
     assert metadata.feedback_type == "plan-impl"
     assert metadata.plan_file == str(plan)
     assert metadata.dependency == schedule.Dependency("none")
-
-
-def test_add_operation_leaves_unclassified_when_plan_file_does_not_exist(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """未実在の計画ファイルへの言及は未分類のまま保存する。"""
-    notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
-    missing_plan = tmp_path / "missing-plan.md"
-    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
-
-    generated = add_module.add_entries(
-        notes,
-        messages=[f"対象計画ファイル: `{missing_plan}`"],
-        target_repo="github.com/example/repo",
-        source=None,
-        now=_FIXED_DT,
-    )
-
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    assert schedule.parse_schedule_metadata(content) is None
     parsed = frontmatter.parse_frontmatter(content)
     assert parsed is not None
-    assert "queue_schedule" not in parsed[0]
+    assert parsed[0]["plan_file"] == str(plan)
 
 
-def test_add_operation_does_not_classify_tbd_entries(
+def test_add_operation_does_not_infer_plan_file_from_body(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TBDは計画ファイルへ言及しても投入時分類しない。"""
+    """本文が実在する計画ファイルへ言及しても未指定時は分類しない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -226,13 +212,64 @@ def test_add_operation_does_not_classify_tbd_entries(
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
-        entry_type=MQ_TYPE_TBD,
-        question_type="free-form",
     )
 
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert schedule.parse_schedule_metadata(content) is None
+    parsed = frontmatter.parse_frontmatter(content)
     assert parsed is not None
     assert "queue_schedule" not in parsed[0]
+    assert "plan_file" not in parsed[0]
+
+
+@pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])
+def test_add_operation_rejects_invalid_plan_file(
+    plan_file: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """plan_fileが相対パスまたは未実在の場合は投入を拒否する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(WebInputError):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            plan_file=plan_file,
+        )
+
+
+def test_add_operation_rejects_plan_file_for_tbd(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TBD種別とplan_fileの併用を拒否する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(WebInputError):
+        add_module.add_entries(
+            notes,
+            messages=[f"対象計画ファイル: `{plan}`"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            entry_type=MQ_TYPE_TBD,
+            question_type="free-form",
+            plan_file=str(plan),
+        )
 
 
 class TestAddOrderEditorFirst:

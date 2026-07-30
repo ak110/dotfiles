@@ -79,6 +79,75 @@ def _classify_tbd(path: pathlib.Path, dependency: schedule.Dependency | None = N
 class TestScheduleEntryLoading:
     """frontmatter全体破損とtypeキー不正を区別する。"""
 
+    @pytest.mark.parametrize(
+        ("frontmatter_line", "expected"),
+        [
+            ("plan_file: /tmp/plan.md", "/tmp/plan.md"),
+            ("source: manual", None),
+            ("plan_file: [invalid]", None),
+        ],
+    )
+    def test_load_schedule_entries_reads_string_plan_file(
+        self,
+        frontmatter_line: str,
+        expected: str | None,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """独立キーは文字列だけをQueueEntryへ読み込む。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "feedback.md").write_text(
+            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\n{frontmatter_line}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            None,
+            ("inbox",),
+        )
+
+        assert entries[0].plan_file == expected
+
+    @pytest.mark.parametrize(
+        ("repair_kind_line", "expected"),
+        [
+            ("", "frontmatter"),
+            ("repair_kind: frontmatter\n", "frontmatter"),
+            ("repair_kind: missing-plan-file\n", "missing-plan-file"),
+            ("repair_kind: invalid\n", None),
+        ],
+    )
+    def test_load_schedule_entries_reads_repair_kind_with_legacy_default(
+        self,
+        repair_kind_line: str,
+        expected: schedule.RepairKind | None,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """理由区分のない既存修復TBDをfrontmatter修復として読み込む。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        (inbox / "repair.md").write_text(
+            "---\n"
+            "target_repo: github.com/example/repo\n"
+            "type: tbd\n"
+            "repair_target: item.md\n"
+            f"{repair_kind_line}"
+            "question_type: free-form\n"
+            "---\n\n"
+            "## 質問\n\n修復する\n\n"
+            "## 回答\n\n",
+            encoding="utf-8",
+        )
+
+        entries = _common._load_schedule_entries(  # pylint: disable=protected-access  # noqa: SLF001
+            tmp_path,
+            None,
+            ("inbox",),
+        )
+
+        assert entries[0].repair_kind == expected
+
     def test_iter_entries_yields_frontmatter_broken_entry_without_exiting(self, tmp_path: pathlib.Path) -> None:
         inbox = tmp_path / "inbox"
         inbox.mkdir()
@@ -255,6 +324,49 @@ class TestScheduleEntryLoading:
         )
 
         assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    def test_count_pending_entries_counts_missing_plan_only_until_repair_tbd_is_filed(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """消失した計画ファイルの修復TBD要求を1件と数え、投入後は待機状態とする。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        missing_plan = tmp_path / "missing-plan.md"
+        (inbox / "plan.md").write_text(
+            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\nplan_file: {missing_plan}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
+
+        (inbox / "repair.md").write_text(
+            "---\n"
+            "target_repo: github.com/example/repo\n"
+            "type: tbd\n"
+            "question_type: free-form\n"
+            "repair_target: plan.md\n"
+            "repair_kind: missing-plan-file\n"
+            "---\n\n"
+            "## 質問\n\n修復する\n\n"
+            "## 回答\n\n",
+            encoding="utf-8",
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 0
+
+    def test_count_pending_entries_uses_existing_independent_plan_file(self, tmp_path: pathlib.Path) -> None:
+        """分類メタデータ欠落時も独立キーの実在計画ファイルを読み込み、実行対象へ数える。"""
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+        plan = tmp_path / "plan.md"
+        plan.write_text("### 対象ファイル一覧\n\n- [ ] `README.md`\n", encoding="utf-8")
+        (inbox / "plan.md").write_text(
+            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\nplan_file: {plan}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        assert _common.count_pending_entries(tmp_path, "github.com/example/repo") == 1
 
 
 class TestWarnSpaceSeparatedOption:

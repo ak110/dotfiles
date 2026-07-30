@@ -105,6 +105,196 @@ class TestScheduleCli:
         assert isinstance(parsed[0].get("queue_schedule"), dict)
         assert any("commit" in call["cmd"] for call in calls)
 
+    def test_plan_file_regeneration_is_persisted_and_used_for_conflicts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """独立キーから再生成した分類を保存し、通常型との競合判定へ反映する。"""
+        notes = _setup_notes(tmp_path)
+        plan = tmp_path / "plan.md"
+        plan.write_text("### 対象ファイル一覧\n\n- [ ] `shared.py`\n", encoding="utf-8")
+        plan_entry = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo")
+        plan_entry.write_text(
+            plan_entry.read_text(encoding="utf-8").replace(
+                "type: feedback\n",
+                f"type: feedback\nplan_file: {plan}\n",
+            ),
+            encoding="utf-8",
+        )
+        normal_entry = _write_feedback_file(notes, "normal.md", target_repo="github.com/example/repo")
+        normal_text = normal_entry.read_text(encoding="utf-8")
+        normal_metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(normal_text),
+            "github.com/example/repo",
+            "normal",
+            schedule.Dependency("none"),
+            None,
+            ("shared.py",),
+            0,
+            (),
+        )
+        normal_entry.write_text(
+            schedule.serialize_schedule_metadata(normal_text, normal_metadata),
+            encoding="utf-8",
+        )
+        calls: list[_GitCall] = []
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert payload["plan_items"] == ["plan.md"]
+        assert payload["post_plan_normal_items"] == ["normal.md"]
+        regenerated = schedule.parse_schedule_metadata(plan_entry.read_text(encoding="utf-8"))
+        assert regenerated is not None
+        assert regenerated.feedback_type == "plan-impl"
+        assert regenerated.plan_file == str(plan)
+        assert any("commit" in call["cmd"] for call in calls)
+
+    def test_missing_plan_file_is_held_with_deduplicated_repair_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """消失した計画ファイルを実行対象から除外し、修復TBDを1回だけ自動投入する。"""
+        notes = _setup_notes(tmp_path)
+        missing_plan = tmp_path / "missing-plan.md"
+        plan_entry = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo")
+        plan_entry.write_text(
+            plan_entry.read_text(encoding="utf-8").replace(
+                "type: feedback\n",
+                f"type: feedback\nplan_file: {missing_plan}\n",
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        first_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert first_payload["missing_plan_file_filenames"] == ["plan.md"]
+        assert first_payload["missing_plan_file_needs_tbd_filenames"] == ["plan.md"]
+        assert not first_payload["plan_items"]
+        repair_paths = [path for path in (notes / "inbox").glob("*.md") if path.name != "plan.md"]
+        assert len(repair_paths) == 1
+        repair_text = repair_paths[0].read_text(encoding="utf-8")
+        parsed = frontmatter.parse_frontmatter(repair_text)
+        assert parsed is not None
+        assert parsed[0]["repair_target"] == "plan.md"
+        assert parsed[0]["repair_kind"] == "missing-plan-file"
+        assert "計画ファイルを復元するか" in repair_text
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        second_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert second_payload["missing_plan_file_filenames"] == ["plan.md"]
+        assert not second_payload["missing_plan_file_needs_tbd_filenames"]
+        assert len([path for path in (notes / "inbox").glob("*.md") if path.name != "plan.md"]) == 1
+
+    def test_frontmatter_repair_tbd_records_kind_and_is_deduplicated(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """frontmatter修復TBDへ理由区分を保存し、同一理由の再実行では重複投入しない。"""
+        notes = _setup_notes(tmp_path)
+        (notes / "inbox" / "broken.md").write_text(
+            "---\ntarget_repo: [broken\n---\n本文\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        first_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert first_payload["frontmatter_broken_needs_tbd_filenames"] == ["broken.md"]
+        repair_paths = [path for path in (notes / "inbox").glob("*.md") if path.name != "broken.md"]
+        assert len(repair_paths) == 1
+        parsed = frontmatter.parse_frontmatter(repair_paths[0].read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["repair_target"] == "broken.md"
+        assert parsed[0]["repair_kind"] == "frontmatter"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        second_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert not second_payload["frontmatter_broken_needs_tbd_filenames"]
+        assert len([path for path in (notes / "inbox").glob("*.md") if path.name != "broken.md"]) == 1
+
+    def test_legacy_frontmatter_repair_does_not_suppress_later_missing_plan_repair(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """理由区分のない既存TBDはfrontmatter修復として扱い、後発の別理由TBDを投入する。"""
+        notes = _setup_notes(tmp_path)
+        target = notes / "inbox" / "item.md"
+        target.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
+        legacy_repair = notes / "inbox" / "legacy-repair.md"
+        legacy_repair.write_text(
+            "---\n"
+            "target_repo: github.com/example/repo\n"
+            "type: tbd\n"
+            "question_type: free-form\n"
+            "repair_target: item.md\n"
+            "---\n\n"
+            "## 質問\n\nfrontmatterを修復する\n\n"
+            "## 回答\n\n"
+            "<!-- 回答を記入してください -->\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        initial_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert not initial_payload["frontmatter_broken_needs_tbd_filenames"]
+        assert len(list((notes / "inbox").glob("*.md"))) == 2
+
+        missing_plan = tmp_path / "missing-plan.md"
+        target.write_text(
+            f"---\ntarget_repo: github.com/example/repo\ntype: feedback\nplan_file: {missing_plan}\n---\n\n本文\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        repaired_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert repaired_payload["missing_plan_file_needs_tbd_filenames"] == ["item.md"]
+        repair_paths = [path for path in (notes / "inbox").glob("*.md") if path.name not in {"item.md", "legacy-repair.md"}]
+        assert len(repair_paths) == 1
+        parsed = frontmatter.parse_frontmatter(repair_paths[0].read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["repair_target"] == "item.md"
+        assert parsed[0]["repair_kind"] == "missing-plan-file"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "schedule", "--target-repo=github.com/example/repo"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        rerun_payload = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert not rerun_payload["missing_plan_file_needs_tbd_filenames"]
+        assert len([path for path in (notes / "inbox").glob("*.md") if path.name not in {"item.md", "legacy-repair.md"}]) == 1
+
     def test_record_deferral_appends_reason_once(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -40,7 +40,7 @@ from _atk_mq_repo import _resolve_repo_id, _verify_frontmatter_target_repo
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _CATEGORY_GATE_THRESHOLD = 3
-_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = ("queue_schedule", "repair_target")
+_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = ("queue_schedule", "repair_target", "repair_kind", "plan_file")
 
 
 def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
@@ -210,7 +210,7 @@ def edit_entry_content(
 ) -> bool:
     """平引数でfeedback本文を更新する。
 
-    保存前に新旧frontmatterを比較し、予約キー`queue_schedule`・`repair_target`の
+    保存前に新旧frontmatterを比較し、予約キー`queue_schedule`・`repair_target`・`repair_kind`・`plan_file`の
     追加・変更・削除を禁止する。正当な差分（`target_repo`変更に伴う`queue_schedule`失効等、
     システム側が行う変更）を誤って拒否しないよう、検証範囲を慎重に設定する。
     """
@@ -264,6 +264,10 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         raise WebInputError("queue_scheduleは予約キーのため atk mq edit では指定できません")
     if "repair_target" in updates:
         raise WebInputError("repair_targetは予約キーのため atk mq edit では指定できません")
+    if "repair_kind" in updates:
+        raise WebInputError("repair_kindは予約キーのため atk mq edit では指定できません")
+    if "plan_file" in updates:
+        raise WebInputError("plan_fileは予約キーのため atk mq edit では指定できません")
     updated_data = {**stored_data, **updates}
     schedule_mapping = updated_data.get("queue_schedule")
     typed_schedule_mapping = (

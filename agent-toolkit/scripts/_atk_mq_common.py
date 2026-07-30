@@ -673,19 +673,23 @@ def _count_pending_entries(
         target_repo,
         (MQ_STATE_ADOPTED, MQ_STATE_REJECTED),
     )
-    plan_target_files = {
-        entry.metadata.plan_file: _schedule.parse_plan_target_files(
-            pathlib.Path(entry.metadata.plan_file).read_text(encoding="utf-8")
-        )
+    plan_files = {
+        plan_file
         for entry in active_entries
-        if entry.metadata is not None
-        and entry.metadata.plan_file is not None
-        and pathlib.Path(entry.metadata.plan_file).is_file()
+        if (plan_file := entry.plan_file or (entry.metadata.plan_file if entry.metadata is not None else None)) is not None
     }
-    existing_repairs = frozenset(
-        entry.repair_target_filename
+    plan_target_files = {
+        plan_file: _schedule.parse_plan_target_files(pathlib.Path(plan_file).read_text(encoding="utf-8"))
+        for plan_file in plan_files
+        if pathlib.Path(plan_file).is_file()
+    }
+    existing_repairs: frozenset[_schedule.RepairKey] = frozenset(
+        (entry.repair_target_filename, entry.repair_kind)
         for entry in _load_schedule_entries(private_notes, None, MQ_ACTIVE_STATES)
-        if entry.kind == MQ_TYPE_TBD and entry.tbd_answered is False and entry.repair_target_filename is not None
+        if entry.kind == MQ_TYPE_TBD
+        and entry.tbd_answered is False
+        and entry.repair_target_filename is not None
+        and entry.repair_kind is not None
     )
     result = _schedule.calculate_schedule(active_entries, terminal_entries, plan_target_files, existing_repairs)
     return (
@@ -695,6 +699,7 @@ def _count_pending_entries(
         + len(result.post_plan_normal_items)
         + len(result.missing_dependency_tbds)
         + len(result.frontmatter_broken_needs_tbd_filenames)
+        + len(result.missing_plan_file_needs_tbd_filenames)
     )
 
 
@@ -715,6 +720,17 @@ def _load_schedule_entries(
         else:
             kind = "unknown"
         repair_target = parsed[0].get("repair_target") if parsed is not None and kind == MQ_TYPE_TBD else None
+        raw_repair_kind = parsed[0].get("repair_kind") if parsed is not None and kind == MQ_TYPE_TBD else None
+        repair_kind: _schedule.RepairKind | None
+        if not isinstance(repair_target, str):
+            repair_kind = None
+        elif raw_repair_kind is None or raw_repair_kind == "frontmatter":
+            repair_kind = "frontmatter"
+        elif raw_repair_kind == "missing-plan-file":
+            repair_kind = "missing-plan-file"
+        else:
+            repair_kind = None
+        plan_file = parsed[0].get("plan_file") if parsed is not None else None
         entries.append(
             _schedule.QueueEntry(
                 filename=path.name,
@@ -723,7 +739,9 @@ def _load_schedule_entries(
                 tbd_answered=_is_tbd_answered(text) if kind == MQ_TYPE_TBD else None,
                 frontmatter_broken=frontmatter_broken,
                 metadata=None if frontmatter_broken else _schedule.parse_schedule_metadata(text),
+                plan_file=plan_file if isinstance(plan_file, str) else None,
                 repair_target_filename=repair_target if isinstance(repair_target, str) else None,
+                repair_kind=repair_kind,
             )
         )
     return tuple(entries)

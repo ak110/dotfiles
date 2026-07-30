@@ -16,6 +16,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import _atk_mq_schedule as schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -71,6 +72,69 @@ class TestListSingle:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/unclassified/carry=0] 本文1\n"
+
+
+class TestListPlanImplementationClassification:
+    """独立キーを持つ計画実装型を未分類として分類委譲へ混入させない。"""
+
+    def test_missing_schedule_metadata_is_labeled_plan_implementation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """queue_schedule欠落時もトップレベルplan_fileを優先して計画実装型と表示する。"""
+        notes = _setup_notes(tmp_path)
+        plan = tmp_path / "plan.md"
+        path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: feedback\n", f"type: feedback\nplan_file: {plan}\n"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "[inbox/plan-impl/carry=0]" in output
+        assert "unclassified" not in output
+
+    def test_stale_schedule_metadata_is_labeled_plan_implementation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """本文ハッシュ不一致時もトップレベルplan_fileを優先して計画実装型と表示する。"""
+        notes = _setup_notes(tmp_path)
+        plan = tmp_path / "plan.md"
+        path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
+        text = path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            f"type: feedback\nplan_file: {plan}\n",
+        )
+        metadata = schedule.ScheduleMetadata(
+            schedule.body_sha256(text),
+            "github.com/example/repo",
+            "plan-impl",
+            schedule.Dependency("none"),
+            str(plan),
+            (),
+            2,
+            ("dependency-unmet", "conflict"),
+        )
+        path.write_text(schedule.serialize_schedule_metadata(text, metadata) + "\n本文変更\n", encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "[inbox/plan-impl/carry=0]" in output
+        assert "unclassified" not in output
 
 
 class TestListMalformedFrontmatter:

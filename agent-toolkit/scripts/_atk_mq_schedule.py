@@ -19,6 +19,8 @@ type DependencyKind = Literal["none", "entries", "inbox-empty", "external-user"]
 type FeedbackKind = Literal["plan-impl", "normal"]
 type FeedbackEntryKind = Literal["feedback", "tbd", "unknown"]
 type DeferralReason = Literal["dependency-unmet", "limit-exceeded", "conflict"]
+type RepairKind = Literal["frontmatter", "missing-plan-file"]
+type RepairKey = tuple[str, RepairKind]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -56,6 +58,8 @@ class QueueEntry:
     frontmatter_broken: bool
     metadata: ScheduleMetadata | None
     repair_target_filename: str | None
+    plan_file: str | None = None
+    repair_kind: RepairKind | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -99,6 +103,8 @@ class ScheduleResult:
     missing_dependency_tbds: tuple[MissingDependencyTbd, ...] = ()
     frontmatter_broken_filenames: tuple[str, ...] = ()
     frontmatter_broken_needs_tbd_filenames: tuple[str, ...] = ()
+    missing_plan_file_filenames: tuple[str, ...] = ()
+    missing_plan_file_needs_tbd_filenames: tuple[str, ...] = ()
 
 
 def body_sha256(text: str) -> str:
@@ -220,7 +226,7 @@ def classification_from_mapping(mapping: typing.Any) -> Classification | None:
     if (
         not isinstance(filename, str)
         or not isinstance(source_hash, str)
-        or feedback_type not in ("plan-impl", "normal")
+        or feedback_type != "normal"
         or not isinstance(dependency_mapping, dict)
     ):
         return None
@@ -230,32 +236,18 @@ def classification_from_mapping(mapping: typing.Any) -> Classification | None:
     plan_file = mapping.get("plan_file")
     raw_target_files = mapping.get("target_files")
 
-    if feedback_type == "plan-impl":
-        # 計画実装型: plan_file必須、target_files禁止
-        if not isinstance(plan_file, str) or not pathlib.PurePath(plan_file).is_absolute():
-            return None
-        if "target_files" in mapping:
-            return None
-        target_files: tuple[str, ...] = ()
-    else:
-        # 通常型: plan_file禁止、target_files必須
-        if plan_file is not None:
-            return None
-        if raw_target_files is None:
-            return None
-        if not isinstance(raw_target_files, list):
-            return None
-        normalized = _normalize_target_files(raw_target_files)
-        if normalized is None:
-            return None
-        target_files = normalized
+    if plan_file is not None or raw_target_files is None or not isinstance(raw_target_files, list):
+        return None
+    normalized = _normalize_target_files(raw_target_files)
+    if normalized is None:
+        return None
     return Classification(
         filename,
         source_hash,
-        typing.cast(FeedbackKind, feedback_type),
+        "normal",
         dependency,
-        plan_file if feedback_type == "plan-impl" else None,
-        target_files,
+        None,
+        normalized,
     )
 
 
@@ -263,7 +255,6 @@ def apply_classifications(
     entries: tuple[QueueEntry, ...],
     terminal_entries: tuple[QueueEntry, ...],
     classifications: tuple[Classification, ...],
-    plan_target_files: Mapping[str, tuple[str, ...]],
 ) -> tuple[QueueEntry, ...]:
     """分類結果を本文が一致する未分類エントリへ適用する。
 
@@ -276,6 +267,8 @@ def apply_classifications(
     診断対象filenameへ限定し、`feedback_type`・`plan_file`・`target_files`は既存値から
     変更しないことも要求する。
     """
+    if any(classification.feedback_type == "plan-impl" for classification in classifications):
+        raise ValueError("分類結果JSONでは計画実装型を指定できません")
     # `calculate_schedule`と同一の抽出条件（frontmatter破損除外、未回答TBD除外、
     # metadata欠損除外）で`candidates`・`typed`を導出する。抽出条件がずれると、
     # 本体の`calculate_schedule`が実際に下す診断と本関数の診断が食い違い、
@@ -291,9 +284,6 @@ def apply_classifications(
     for entry in entries:
         classification = by_filename.get(entry.filename)
         if classification is None or classification.source_body_sha256 != body_sha256(entry.text):
-            updated.append(entry)
-            continue
-        if classification.feedback_type == "plan-impl" and classification.plan_file not in plan_target_files:
             updated.append(entry)
             continue
         current = entry.metadata
@@ -343,16 +333,26 @@ def parse_plan_target_files(plan_text: str) -> tuple[str, ...]:
     return tuple(found)
 
 
-def detect_plan_impl_reference(body: str) -> str | None:
-    """本文が言及する実在計画ファイルの絶対パスを返す。"""
-    for candidate in re.findall(r"(?<![\w./-])(/[^\s`\"'<>]+\.md)(?![\w.-])", body):
-        path = pathlib.Path(candidate)
-        try:
-            if path.is_file():
-                return str(path)
-        except OSError:
+def regenerate_plan_metadata(entries: tuple[QueueEntry, ...]) -> tuple[QueueEntry, ...]:
+    """独立キー`plan_file`から計画実装型の分類メタデータを再生成する。"""
+    regenerated: list[QueueEntry] = []
+    for entry in entries:
+        if entry.plan_file is None:
+            regenerated.append(entry)
             continue
-    return None
+        current = entry.metadata
+        metadata = ScheduleMetadata(
+            body_sha256=body_sha256(entry.text),
+            normalized_target_repo=_target_repo(entry.text),
+            feedback_type="plan-impl",
+            dependency=Dependency(kind="none"),
+            plan_file=entry.plan_file,
+            target_files=(),
+            carry_count=current.carry_count if current is not None else 0,
+            carry_reasons=current.carry_reasons if current is not None else (),
+        )
+        regenerated.append(dataclasses.replace(entry, metadata=metadata))
+    return tuple(regenerated)
 
 
 def _candidates_and_typed(active_entries: tuple[QueueEntry, ...]) -> tuple[tuple[QueueEntry, ...], tuple[QueueEntry, ...]]:
@@ -373,20 +373,40 @@ def calculate_schedule(
     active_entries: tuple[QueueEntry, ...],
     terminal_entries: tuple[QueueEntry, ...],
     plan_target_files: Mapping[str, tuple[str, ...]],
-    existing_unanswered_repair_target_filenames: frozenset[str],
+    existing_unanswered_repair_keys: frozenset[RepairKey],
 ) -> ScheduleResult:
     """依存成立、優先度、上限、競合順、繰越理由を副作用なしで算出する。"""
+    active_entries = regenerate_plan_metadata(active_entries)
     broken = tuple(sorted(entry.filename for entry in active_entries if entry.frontmatter_broken))
-    broken_needs_tbd = tuple(filename for filename in broken if filename not in existing_unanswered_repair_target_filenames)
+    broken_needs_tbd = tuple(
+        filename for filename in broken if (filename, "frontmatter") not in existing_unanswered_repair_keys
+    )
     candidates, typed = _candidates_and_typed(active_entries)
+    missing_plan_files = tuple(
+        sorted(
+            entry.filename
+            for entry in typed
+            if entry.metadata is not None
+            and entry.metadata.feedback_type == "plan-impl"
+            and entry.metadata.plan_file not in plan_target_files
+        )
+    )
+    missing_plan_file_names = set(missing_plan_files)
+    missing_plan_files_need_tbd = tuple(
+        filename for filename in missing_plan_files if (filename, "missing-plan-file") not in existing_unanswered_repair_keys
+    )
+    typed = tuple(entry for entry in typed if entry.filename not in missing_plan_file_names)
     schedulable = tuple(entry for entry in candidates if entry.kind != "tbd" or entry.tbd_answered is True)
     classification_required = tuple(
         sorted(
             entry.filename
             for entry in schedulable
-            if entry.metadata is None
-            or entry.metadata.body_sha256 != body_sha256(entry.text)
-            or entry.metadata.normalized_target_repo != _target_repo(entry.text)
+            if entry.plan_file is None
+            and (
+                entry.metadata is None
+                or entry.metadata.body_sha256 != body_sha256(entry.text)
+                or entry.metadata.normalized_target_repo != _target_repo(entry.text)
+            )
         )
     )
     if classification_required:
@@ -394,6 +414,8 @@ def calculate_schedule(
             classification_required=classification_required,
             frontmatter_broken_filenames=broken,
             frontmatter_broken_needs_tbd_filenames=broken_needs_tbd,
+            missing_plan_file_filenames=missing_plan_files,
+            missing_plan_file_needs_tbd_filenames=missing_plan_files_need_tbd,
         )
 
     # 依存先の存在確認には未回答TBDを含む全active項目を使う
@@ -403,6 +425,8 @@ def calculate_schedule(
             missing_dependency_tbds=missing,
             frontmatter_broken_filenames=broken,
             frontmatter_broken_needs_tbd_filenames=broken_needs_tbd,
+            missing_plan_file_filenames=missing_plan_files,
+            missing_plan_file_needs_tbd_filenames=missing_plan_files_need_tbd,
         )
 
     all_entries = {entry.filename: entry for entry in (*active_entries, *terminal_entries)}
@@ -450,6 +474,8 @@ def calculate_schedule(
         deferred=tuple(deferred),
         frontmatter_broken_filenames=broken,
         frontmatter_broken_needs_tbd_filenames=broken_needs_tbd,
+        missing_plan_file_filenames=missing_plan_files,
+        missing_plan_file_needs_tbd_filenames=missing_plan_files_need_tbd,
     )
 
 
@@ -464,9 +490,14 @@ def with_deferral(metadata: ScheduleMetadata, reason: DeferralReason) -> Schedul
 
 def format_schedule_label(text: str) -> str:
     """一覧表示用の分類型と繰越回数を返す。"""
-    if _frontmatter.parse_frontmatter(text) is None:
+    parsed = _frontmatter.parse_frontmatter(text)
+    if parsed is None:
         return "frontmatter-broken/carry=0"
     metadata = parse_schedule_metadata(text)
+    plan_file = parsed[0].get("plan_file")
+    if isinstance(plan_file, str) and pathlib.PurePath(plan_file).is_absolute():
+        carry_count = metadata.carry_count if metadata is not None else 0
+        return f"plan-impl/carry={carry_count}"
     if metadata is None:
         return "unclassified/carry=0"
     return f"{metadata.feedback_type}/carry={metadata.carry_count}"

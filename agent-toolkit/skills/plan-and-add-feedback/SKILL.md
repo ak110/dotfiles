@@ -31,7 +31,9 @@ description: >
 2. `plan-impl-executor`起動工程を実施しない。代わりに`agent-toolkit:process-feedbacks`「フィードバック投入」節の手順を実行する。
    「`<計画ファイルの絶対パス>` を実装する」という本文を対象リポジトリへ投入する
    （対象リポジトリの判別は同節の規定に従う）。
-   投入したフィードバックは`agent-toolkit:process-feedbacks`「ステップ1: 入力の確定」の分類で
+   投入時は`--plan-file=<計画ファイルの絶対パス>`と`--source=plan`を指定する。
+   前者が当該フィードバックを計画実装型として確定し、後者が投入元を計画作成経由として記録する。
+   投入したフィードバックは`agent-toolkit:process-feedbacks`「ステップ1: 入力の確定」で
    計画実装型として扱われ、計画作成を経ずに実装される
 3. フィードバック投入結果をユーザーへ提示して終了する。`agent-toolkit:exit-session`は
    呼ばずセッションを継続する

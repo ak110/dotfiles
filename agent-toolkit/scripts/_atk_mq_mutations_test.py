@@ -1062,6 +1062,79 @@ class TestNoninteractiveEdit:
         assert "予約キー" in capsys.readouterr().err
         assert path.read_text(encoding="utf-8") == original
 
+    def test_edit_rejects_explicit_plan_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """edit経路からplan_fileを注入できない。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        message = "---\nplan_file: /tmp/plan.md\n---\n\n編集後"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert "予約キー" in capsys.readouterr().err
+        assert path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize("updated_plan_file", ["/tmp/other.md", None])
+    def test_edit_content_validator_rejects_plan_file_change_or_removal(
+        self,
+        updated_plan_file: str | None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """共通保存境界が既存plan_fileの変更と削除を拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nplan_file: /tmp/plan.md\n",
+        )
+        path.write_text(original, encoding="utf-8")
+        replacement = "" if updated_plan_file is None else f"plan_file: {updated_plan_file}\n"
+        updated = original.replace("plan_file: /tmp/plan.md\n", replacement)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(mutations.WebInputError):
+            mutations.edit_entry_content(
+                notes,
+                state="inbox",
+                filename="fb-001.md",
+                content=updated,
+                lock_timeout=2.0,
+            )
+
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_edit_preserves_plan_file_when_only_body_changes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """plan_fileを持つ項目も本文だけの編集を許容する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_feedback_file(notes, "fb-001.md")
+        original = path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nplan_file: /tmp/plan.md\n",
+        )
+        path.write_text(original, encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[0]["plan_file"] == "/tmp/plan.md"
+
     def test_edit_content_validator_rejects_queue_schedule_via_direct_call(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1098,18 +1171,24 @@ class TestNoninteractiveEdit:
         # ファイルは変更されていない
         assert path.read_text(encoding="utf-8") == original_content
 
-    def test_edit_rejects_explicit_repair_target(
+    @pytest.mark.parametrize(
+        ("reserved_key", "reserved_value"),
+        [("repair_target", "broken.md"), ("repair_kind", "frontmatter")],
+    )
+    def test_edit_rejects_explicit_repair_metadata(
         self,
+        reserved_key: str,
+        reserved_value: str,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """edit経路からrepair_targetを注入できない。"""
+        """edit経路から修復TBDの予約キーを注入できない。"""
         notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = "---\nrepair_target: broken.md\n---\n\n編集後"
+        message = f"---\n{reserved_key}: {reserved_value}\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "edit", "fb-001.md", message], home=tmp_path)

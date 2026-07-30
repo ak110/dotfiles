@@ -92,8 +92,10 @@ _RESERVED_FRONTMATTER_KEYS = (
     "scope",
     "question_type",
     "choices",
+    "plan_file",
     "queue_schedule",
     "repair_target",
+    "repair_kind",
 )
 """frontmatter生成で単一箇所（`add_entries`）が専有するキー。
 
@@ -103,8 +105,8 @@ _RESERVED_FRONTMATTER_KEYS = (
 CLIオプションより優先して採用するが、`target_repo`は`_resolve_repo_id`で正規化してから
 保存する。`type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
-`queue_schedule`・`repair_target`は利用者による直接指定を禁止し、システムが自動生成する
-メタデータと修復TBDとして予約する。
+`plan_file`・`queue_schedule`・`repair_target`・`repair_kind`は利用者による直接指定を禁止し、
+システムが自動生成する計画実装型の識別情報・分類メタデータ・修復TBDの対象と理由区分として予約する。
 """
 
 
@@ -119,17 +121,34 @@ def _add_entries_locked(
     scope: str | None,
     question_type: str | None,
     choices: str | None,
+    plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
+    repair_kinds: list[_schedule.RepairKind | None] | None = None,
 ) -> list[str]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。"""
     effective_repair_targets: list[str | None] = [None for _ in parsed_messages] if repair_targets is None else repair_targets
+    effective_repair_kinds: list[_schedule.RepairKind | None] = (
+        [None for _ in parsed_messages] if repair_kinds is None else repair_kinds
+    )
     if len(effective_repair_targets) != len(parsed_messages):
         raise ValueError("repair_targetsの件数がメッセージ件数と一致しません")
+    if len(effective_repair_kinds) != len(parsed_messages):
+        raise ValueError("repair_kindsの件数がメッセージ件数と一致しません")
+    if any(
+        (repair_target is None) != (repair_kind is None)
+        for repair_target, repair_kind in zip(effective_repair_targets, effective_repair_kinds, strict=True)
+    ):
+        raise ValueError("repair_targetとrepair_kindは同時に指定してください")
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
     counter = _max_existing_seq(private_notes, timestamp) + 1
     generated: list[str] = []
-    for (frontmatter, body), repair_target in zip(parsed_messages, effective_repair_targets, strict=True):
+    for (frontmatter, body), repair_target, repair_kind in zip(
+        parsed_messages,
+        effective_repair_targets,
+        effective_repair_kinds,
+        strict=True,
+    ):
         raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
         try:
@@ -153,11 +172,12 @@ def _add_entries_locked(
                 frontmatter_data["choices"] = choices
             if repair_target is not None:
                 frontmatter_data["repair_target"] = repair_target
+                frontmatter_data["repair_kind"] = repair_kind
             logical_body = f"\n{_tbd.QUESTION_HEADING}\n\n{body}\n\n{_tbd.ANSWER_HEADING}\n\n{_tbd.ANSWER_MARKER}\n"
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
-            plan_file = _schedule.detect_plan_impl_reference(body)
             if plan_file is not None:
+                frontmatter_data["plan_file"] = plan_file
                 metadata = _schedule.ScheduleMetadata(
                     body_sha256=_schedule.body_sha256(logical_body),
                     normalized_target_repo=item_target_repo,
@@ -189,6 +209,7 @@ def add_entries(
     scope: str | None = None,
     question_type: str | None = None,
     choices: str | None = None,
+    plan_file: str | None = None,
     lock_timeout: float = -1,
 ) -> list[str]:
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
@@ -199,6 +220,17 @@ def add_entries(
     """
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
+    if plan_file is not None:
+        if entry_type != MQ_TYPE_FEEDBACK:
+            raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
+        plan_path = pathlib.Path(plan_file)
+        if not plan_path.is_absolute():
+            raise WebInputError("plan_fileは絶対パスで指定してください")
+        try:
+            if not plan_path.is_file():
+                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+        except OSError as error:
+            raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
     if entry_type != MQ_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
@@ -216,6 +248,7 @@ def add_entries(
             scope=scope,
             question_type=question_type,
             choices=choices,
+            plan_file=plan_file,
         )
         count = len(generated)
         _commit_and_push(
@@ -244,6 +277,7 @@ def _cmd_add(
     エディター起動前のブロッキング待ち（他端末の投入分を反映するgit pull）を無くしてUXを改善する。
     `_pull`失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
+    計画実装型の分類は`--plan-file`の指定だけで確定する。
     本文文字列（位置引数またはエディター確定内容）が実在する通常ファイルのパスと解釈できる場合は、
     本文文字列でなくファイル内容の渡し忘れによる誤操作とみなし`_repo_lock`取得前に拒否する
     （拡張子は問わない。`mktemp`が生成する拡張子なしの一時ファイルパスの誤投入も検出対象に含めるためである）。
@@ -288,6 +322,7 @@ def _cmd_add(
             scope=args.scope,
             question_type=args.question_type,
             choices=args.choices,
+            plan_file=args.plan_file,
         )
     except WebInputError as error:
         print(f"投入を拒否しました: {error}", file=sys.stderr)

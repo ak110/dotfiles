@@ -16,12 +16,15 @@ from _atk_mq_repo import _resolve_repo_id
 # pylint: disable=protected-access
 
 
-def _load_unanswered_repair_target_filenames(private_notes: pathlib.Path) -> frozenset[str]:
-    """全リポジトリの未回答修復TBDが参照する対象filenameを返す。"""
+def _load_unanswered_repair_keys(private_notes: pathlib.Path) -> frozenset[_schedule.RepairKey]:
+    """全リポジトリの未回答修復TBDが参照する対象filenameと理由区分を返す。"""
     return frozenset(
-        entry.repair_target_filename
+        (entry.repair_target_filename, entry.repair_kind)
         for entry in _common._load_schedule_entries(private_notes, None, _common.MQ_ACTIVE_STATES)
-        if entry.kind == _common.MQ_TYPE_TBD and entry.tbd_answered is False and entry.repair_target_filename is not None
+        if entry.kind == _common.MQ_TYPE_TBD
+        and entry.tbd_answered is False
+        and entry.repair_target_filename is not None
+        and entry.repair_kind is not None
     )
 
 
@@ -50,21 +53,32 @@ def cmd_schedule(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
 
             classifications = _load_classifications(args.classifications)
             plan_target_files = _load_plan_target_files((*active, *terminal), classifications)
-            updated = _apply_requested_classifications(active, terminal, classifications, plan_target_files)
+            regenerated = _schedule.regenerate_plan_metadata(active)
+            updated = _apply_requested_classifications(regenerated, terminal, classifications)
             changed = _persist_metadata_changes(private_notes, active, updated)
             active = updated
 
-            existing_repairs = _load_unanswered_repair_target_filenames(private_notes)
+            existing_repairs = _load_unanswered_repair_keys(private_notes)
             result = _schedule.calculate_schedule(active, terminal, plan_target_files, existing_repairs)
             deferred_active = _apply_calculated_deferrals(active, result.deferred)
             changed = _persist_metadata_changes(private_notes, active, deferred_active) or changed
 
-            filed_repairs = _file_repair_tbds(
+            filed_frontmatter_repairs = _file_repair_tbds(
                 private_notes,
                 target_repo,
                 result.frontmatter_broken_needs_tbd_filenames,
+                "{filename}のYAML frontmatterが破損しています。対象ファイルを直接編集して修復してください。",
+                repair_kind="frontmatter",
             )
-            if changed or filed_repairs:
+            filed_plan_repairs = _file_repair_tbds(
+                private_notes,
+                target_repo,
+                result.missing_plan_file_needs_tbd_filenames,
+                "{filename}が参照する計画ファイルが実在しません。"
+                "計画ファイルを復元するか、対象ファイルのplan_fileを修復してください。",
+                repair_kind="missing-plan-file",
+            )
+            if changed or filed_frontmatter_repairs or filed_plan_repairs:
                 _common._commit_and_push(
                     private_notes,
                     "chore: update feedback queue schedule",
@@ -106,11 +120,7 @@ def _load_plan_target_files(
     plan_files = {
         item
         for item in (
-            *(
-                entry.metadata.plan_file
-                for entry in entries
-                if entry.metadata is not None and entry.metadata.plan_file is not None
-            ),
+            *(entry.plan_file for entry in entries if entry.plan_file is not None),
             *(classification.plan_file for classification in classifications if classification.plan_file is not None),
         )
         if item is not None
@@ -127,14 +137,13 @@ def _apply_requested_classifications(
     entries: tuple[_schedule.QueueEntry, ...],
     terminal_entries: tuple[_schedule.QueueEntry, ...],
     classifications: tuple[_schedule.Classification, ...],
-    plan_target_files: dict[str, tuple[str, ...]],
 ) -> tuple[_schedule.QueueEntry, ...]:
     known = {entry.filename for entry in entries if not entry.frontmatter_broken}
     unknown = sorted(classification.filename for classification in classifications if classification.filename not in known)
     if unknown:
         raise ValueError(f"分類対象外filenameです: {', '.join(unknown)}")
     _warn_body_sha256_mismatches(entries, classifications)
-    return _schedule.apply_classifications(entries, terminal_entries, classifications, plan_target_files)
+    return _schedule.apply_classifications(entries, terminal_entries, classifications)
 
 
 def _warn_body_sha256_mismatches(
@@ -231,13 +240,16 @@ def _file_repair_tbds(
     private_notes: pathlib.Path,
     target_repo: str,
     filenames: tuple[str, ...],
+    question_template: str,
+    *,
+    repair_kind: _schedule.RepairKind,
 ) -> bool:
     if not filenames:
         return False
     messages: list[tuple[dict[str, object], str]] = [
         (
             {},
-            f"{filename}のYAML frontmatterが破損しています。対象ファイルを直接編集して修復してください。",
+            question_template.format(filename=filename),
         )
         for filename in filenames
     ]
@@ -252,6 +264,7 @@ def _file_repair_tbds(
         question_type="free-form",
         choices=None,
         repair_targets=list(filenames),
+        repair_kinds=[repair_kind for _ in filenames],
     )
     return True
 
@@ -274,5 +287,7 @@ def _print_result(result: _schedule.ScheduleResult) -> None:
         "missing_dependency_tbds": [dataclasses.asdict(item) for item in result.missing_dependency_tbds],
         "frontmatter_broken_filenames": list(result.frontmatter_broken_filenames),
         "frontmatter_broken_needs_tbd_filenames": list(result.frontmatter_broken_needs_tbd_filenames),
+        "missing_plan_file_filenames": list(result.missing_plan_file_filenames),
+        "missing_plan_file_needs_tbd_filenames": list(result.missing_plan_file_needs_tbd_filenames),
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=False))
