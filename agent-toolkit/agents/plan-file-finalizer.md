@@ -28,9 +28,13 @@ user-invocable: false
 - 自身の中断作業を継続する場合だけ、両系統の経路、`threadId`、Claude代替時の履歴
 - 実施済みレビュー結果と確定済みの採否
 - 呼び出し元がClaude代替した場合は、その応答全文
+- 初回レビュー開始後に同じfinalizerで継続する場合、または新しいfinalizerへ再起動する場合は、
+  初回に保存した`scope_baseline`と全ラウンドの累積`scope_changes`の全文
 
 作業ディレクトリを自己解決しない。必須入力が欠ける場合は、欠けた項目を
 `escalation_points`へ記載し、`status: needs_escalation`、`review_completed: false`で返す。
+継続または再起動時に`scope_baseline`と`scope_changes`のいずれかが欠ける場合も、
+必須入力不足として返す。再起動後の計画ファイルから`scope_baseline`を再計算しない。
 
 ## 委譲と検収
 
@@ -38,17 +42,24 @@ user-invocable: false
    `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-fix-task.md`、
    `${CLAUDE_PLUGIN_ROOT}/skills/codex-exec/references/plan-codex-review-task.md`をReadする
 2. 同reference「機械チェック委譲」節の全工程を実装・修正系へ委譲する
-3. レビュー前の計画ファイルを退避し、内容ハッシュを記録する
-4. レビュー系へ計画ファイル全体の総合レビューを1回委譲する
-5. レビュー前後のハッシュと差分を比較する
-6. レビュー中の変更を検知した場合、同referenceに従って明示確認を得てから
+3. 初回は`### 実施内容`、`### ユーザー合意済み事項`、
+   `## 変更内容`の原文と内容ハッシュを`scope_baseline`として保存する。
+   継続または再起動時は入力された同じ値を用いる
+4. レビュー前の計画ファイルを退避し、内容ハッシュを記録する
+5. レビュー系へ計画ファイル全体の総合レビューを1回委譲する
+6. レビュー前後のハッシュと差分を比較する
+7. レビュー中の変更を検知した場合、同referenceに従って明示確認を得てから
    実装・修正系へ復元を委譲し、ハッシュ一致を確認する
-7. 指摘を重大度別に統合し、実測結果と自身の見解を`review_summary`へ記載する
-8. `agent-toolkit:plan-mode`の呼び出し元による判断を要する指摘は、
-   観測事実と選択肢を`needs_escalation`で返す
-9. 呼び出し元から確定済みの採否を受領し、採用指摘の全文を実装・修正系へ渡す
-10. 修正後は同じレビュー系を継続して再レビューする
-11. 機械チェックの終了状態、計画ファイル実体、両系統の履歴を検収する
+8. 指摘を重大度と、初版内補正・スコープ拡大・独立問題の区分で統合する
+9. 初版原文との累積差分を区分し、`scope_changes`を更新する
+10. スコープ拡大は計画へ反映する前に、根拠と選択肢を`needs_escalation`で返す
+11. 独立問題は計画を停止させず、`out_of_scope_findings`へ記載する
+12. 初版内補正は実測結果と自身の見解を`review_summary`へ記載する
+13. 呼び出し元から確定済みの採否を受領し、同じ`scope_changes`項目の承認状態だけを更新する
+14. 採用指摘の全文を実装・修正系へ渡す
+15. 修正後は同referenceが定める限定範囲で同じレビュー系を継続する
+16. 機械チェックの終了状態、計画ファイル実体、両系統の履歴、
+    `scope_baseline`との差分と承認状態を検収する
 
 委譲プロンプトには、実行手順referenceと用途別のtask reference、計画、品質規範、
 プロジェクト規範の絶対パスを渡す。タスク本文は作業ディレクトリ、対象、完了条件だけに限定し、
@@ -70,14 +81,14 @@ Agentツールが深さ上限または権限制約で利用できない場合だ
 レビュー中の変更を明示確認なしで復元できない場合、計画ファイル実体が見つからない場合、
 CodexとClaude代替の両経路が利用できない場合も`needs_escalation`で返す。
 
-レビューは初回1回と再レビュー4回の合計5ラウンドを上限とする。
-5ラウンド目にも致命的・重大指摘が残る場合は、指摘全文と重大度を記録する。
-対象箇所、再現手順、修正案も`review_summary`と`escalation_points`へ記載し、
-`needs_escalation`で返す。
+レビューの反復上限、再レビュー対象、スコープ変更時の返却条件は
+`plan-codex-review.md`「指摘反映と再レビュー」節に従う。
+未解決事項は同節が定める根拠と選択肢を`review_summary`と`escalation_points`へ記載する。
 
 - 呼び出し元が全指摘の採否を確定したことを確認する
 - 3つの機械チェックが成功したことを確認する
 - 致命的・重大指摘が解消したことを確認する
+- 未承認のスコープ変更がないことを確認する
 - 計画ファイルの実体と検収対象の絶対パスが一致することを確認する
 - 呼び出し元によるClaude代替応答も同じ基準で検収し、不一致は同じ系統へ差し戻す
 - 未開始または利用不能な系統は`thread_id: なし`、履歴`なし`、レビュー回数`0`とする
@@ -100,6 +111,15 @@ check_results:
 - check_plan_file.py: <初回と再実行の終了コード、error件数、warning件数>
 - pyfltr: <初回と再実行の終了コード、違反件数、警告>
 - check_dash.py: <初回と再実行の終了コード、検出件数>
+scope_baseline:
+- implementation_summary: <初版の実施内容>
+- user_agreements: <初版のユーザー合意済み事項>
+- change_content: <初版の## 変更内容の原文>
+- change_content_hash: <初版の## 変更内容の内容ハッシュ>
+scope_changes:
+- <各ラウンドの累積差分、区分、根拠、呼び出し元の承認状態。差分が無ければ「なし」>
+out_of_scope_findings:
+- <独立問題の観測事実と根拠。無ければ「なし」>
 review_summary:
 - <重大度、指摘、実測結果、plan-file-finalizerの見解、呼び出し元が確定済みの採否、反映結果>
 escalation_points:
@@ -111,6 +131,7 @@ review_completed: true | false
 `status: completed`は`agent-toolkit:plan-mode`の呼び出し元による採否確定、
 `review_completed: true`、機械チェック成功、致命的・重大指摘の解消、
 計画ファイル実体の確認が全て成立した場合だけ返す。
+`scope_changes`が「なし」または呼び出し元承認済みであることも完了条件とする。
 
 `implementation_thread_id`・`review_thread_id`は本エージェント内の系統継続の記録であり、
 呼び出し元が実装担当へ引き継ぐ値ではない。

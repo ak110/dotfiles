@@ -63,8 +63,23 @@ description: >
    品質規範、プロジェクト規範の絶対パスと、作業ディレクトリの絶対パス、
    対象、完了条件だけを含める。
    代替応答全文を任意入力としてfinalizerへ再入力し、finalizer自身に検収を継続させる。
-   その他の`status: needs_escalation`は返却論点のみを解決し、確定方針込みの縮減プロンプトで
-   新規起動する。`plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
+   `scope_changes`を伴う`status: needs_escalation`はfinalizerから呼び出し元への
+   内部の判断移管であり、ユーザー確認を直接意味しない。
+   呼び出し元は初版との差分と根拠を実測し、`01-agent.md`「協調と自律」に従って
+   セッション状態フラグ`process_feedbacks_skill_invoked`からモードを判定する。
+   元の成果を技術的に成立させる内部追随で、成立案が一意の場合は
+   `### エージェント判断`へ根拠を記録して承認できる。
+   その他も方針から判断できる事項は確認せず自律処理する。
+   協調モードでは同節「協調モードでの確認」の条件に該当する場合だけ
+   `AskUserQuestion`で確認する。自律モードでは同節の例外を除き、
+   `atk mq add --type=tbd`で記録して暫定判断で続行する。
+   `out_of_scope_findings`は現在の計画を停止させず、`01-agent.md`
+   「完遂と先送り」に従って同一作業内の対応またはキュー登録を確定する。
+   `scope_changes`を伴わないその他の`status: needs_escalation`は返却論点を解決する。
+   確定後は承認した差分に加え、初回の`scope_baseline`と全ラウンドの
+   累積`scope_changes`を全文転記した縮減プロンプトでfinalizerを新規起動する。
+   finalizerへ再起動後の計画から`scope_baseline`を再計算させない。
+   `plan_file_path`欄がサンドボックスパスを付記している場合、呼び出し元が
    `plan-file-finalizer`の反映後の全文を`Read`で検収し、`~/.claude/plans/`配下の正規パスへ
    `Write`で反映する（サンドボックスパスの削除・移動は委譲先の担当外とする既定に従う）
 5. plan mode下では`ExitPlanMode`で承認を得る。承認後（またはplan mode外では直ちに）
