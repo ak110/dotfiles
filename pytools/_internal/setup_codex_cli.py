@@ -98,8 +98,14 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
             else [executable, str(temp_path)]
         )
         # 公式マニュアルはスクリプト化した導入と更新に`CODEX_NON_INTERACTIVE=1`を使うと定める。
+        env_overrides = {"CODEX_NON_INTERACTIVE": "1"}
+        if sys.platform != "win32":
+            env_overrides["PATH"] = _installer_path()
         return claude_common.run_subprocess(
-            command, timeout=_COMMAND_TIMEOUT, tag="codex", env_overrides={"CODEX_NON_INTERACTIVE": "1"}
+            command,
+            timeout=_COMMAND_TIMEOUT,
+            tag="codex",
+            env_overrides=env_overrides,
         )
     except (httpx.HTTPError, OSError) as error:
         logger.warning(log_format.format_status("codex", f"公式インストーラーの取得に失敗: {error}"))
@@ -110,6 +116,17 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
                 temp_path.unlink()
         if owns_client:
             active_client.close()
+
+
+def _installer_path() -> str:
+    """公式インストーラーへ渡すPATHを返す。"""
+    visible_bin = str(_visible_bin_dir())
+    inherited_entries = os.environ.get("PATH", "").split(os.pathsep)
+    # 旧版を競合として検出すると、可視binがPATHにあってもシェル設定を追記するため除外する。
+    retained_entries = [
+        entry for entry in inherited_entries if entry and entry != visible_bin and shutil.which("codex", path=entry) is None
+    ]
+    return os.pathsep.join([visible_bin, *retained_entries])
 
 
 def _find_powershell() -> str:

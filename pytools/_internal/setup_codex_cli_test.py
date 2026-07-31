@@ -1,7 +1,9 @@
 """pytools._internal.setup_codex_cliのテスト。"""
 
 import contextlib
+import os
 import subprocess
+import typing
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +19,7 @@ _UNINSTALLED_LISTING = '[{"version": "0.1.0", "installed": false, "active": fals
 
 def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     """ホーム・PATH・Codex用環境変数をtmp_path配下へ隔離する。"""
+    original_which = setup_codex_cli.shutil.which
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_codex_cli.sys, "platform", platform)
     monkeypatch.setenv("PATH", str(tmp_path / "path"))
@@ -26,7 +29,9 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.delenv("CODEX_INSTALL_DIR", raising=False)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
 
-    def fake_which(name: str) -> str | None:
+    def fake_which(name: str, *, path: str | None = None) -> str | None:
+        if name == "codex":
+            return original_which(name, path=path)
         return {
             "mise": "/usr/bin/mise",
             "pwsh": "/usr/bin/pwsh",
@@ -118,13 +123,66 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
 
     installer_command, installer_kwargs = calls[0]
     assert installer_command[0] == "sh"
-    assert installer_kwargs["env_overrides"] == {"CODEX_NON_INTERACTIVE": "1"}
+    assert installer_kwargs["env_overrides"] == {
+        "CODEX_NON_INTERACTIVE": "1",
+        "PATH": os.pathsep.join([str(tmp_path / ".local" / "bin"), str(tmp_path / "path")]),
+    }
     assert not Path(installer_command[1]).exists()
     assert calls[1][0] == [str(launcher), "--version"]
     assert calls[2][0][1:] == ["ls", "--json", "npm:@openai/codex"]
     assert calls[3][0][1:] == ["uninstall", "--all", "--yes", "npm:@openai/codex"]
     assert calls[4][0][1:] == ["reshim"]
     assert events == [f"path:{tmp_path / '.local' / 'bin'}", "migrate"]
+
+
+def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, tmp_path: Path) -> None:
+    _isolate(monkeypatch, tmp_path, "linux")
+    visible_bin = tmp_path / ".local" / "bin"
+    legacy_bin = tmp_path / "legacy-bin"
+    other_bin = tmp_path / "other-bin"
+    legacy_codex = legacy_bin / "codex"
+    legacy_bin.mkdir()
+    other_bin.mkdir()
+    legacy_codex.write_text("#!/bin/sh\n", encoding="utf-8")
+    legacy_codex.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(legacy_bin), str(other_bin)]))
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
+    profile = tmp_path / ".bashrc"
+    calls: list[_Call] = []
+    migrated: list[tuple[object, ...]] = []
+    base_fake_run = _make_fake_run(calls, launcher=launcher)
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] == "sh":
+            env_overrides = typing.cast(dict[str, str], kwargs["env_overrides"])
+            installer_path = env_overrides["PATH"]
+            entries = installer_path.split(os.pathsep)
+            conflicting_codex = any(
+                (Path(entry) / "codex").is_file() and os.access(Path(entry) / "codex", os.X_OK) for entry in entries
+            )
+            if str(visible_bin) not in entries or conflicting_codex:
+                profile.write_text("# >>> Codex installer >>>\n", encoding="utf-8")
+        return base_fake_run(command, **kwargs)
+
+    def fake_migrate(*args: object) -> bool:
+        migrated.append(args)
+        return True
+
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", fake_run)
+
+    client = _make_client()
+    try:
+        assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    env_overrides = typing.cast(dict[str, str], calls[0][1]["env_overrides"])
+    installer_path = env_overrides["PATH"]
+    assert installer_path == os.pathsep.join([str(visible_bin), str(other_bin)])
+    assert not profile.exists()
+    assert migrated == [("codex", "@openai/codex", launcher, tmp_path / ".codex" / "packages" / "standalone")]
 
 
 def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path: Path) -> None:
@@ -205,15 +263,26 @@ def test_run_selects_available_powershell(
 
 
 @pytest.mark.parametrize(
-    ("platform", "url", "command_prefix", "suffix", "launcher_name"),
+    ("platform", "url", "command_prefix", "suffix", "launcher_name", "expected_env_template"),
     [
-        ("linux", "https://chatgpt.com/codex/install.sh", ["sh"], ".sh", "codex"),
+        (
+            "linux",
+            "https://chatgpt.com/codex/install.sh",
+            ["sh"],
+            ".sh",
+            "codex",
+            {
+                "CODEX_NON_INTERACTIVE": "1",
+                "PATH": "{home}/.local/bin{pathsep}{home}/path",
+            },
+        ),
         (
             "win32",
             "https://chatgpt.com/codex/install.ps1",
             ["/usr/bin/pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"],
             ".ps1",
             "codex.exe",
+            {"CODEX_NON_INTERACTIVE": "1"},
         ),
     ],
 )
@@ -225,6 +294,7 @@ def test_run_obeys_official_installer_contract(
     command_prefix: list[str],
     suffix: str,
     launcher_name: str,
+    expected_env_template: dict[str, str],
 ) -> None:
     _isolate(monkeypatch, tmp_path, platform)
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / launcher_name
@@ -246,7 +316,8 @@ def test_run_obeys_official_installer_contract(
     assert installer_command[:-1] == command_prefix
     assert installer_path.suffix == suffix
     assert not installer_path.exists()
-    assert installer_kwargs["env_overrides"] == {"CODEX_NON_INTERACTIVE": "1"}
+    expected_env = {key: value.format(home=tmp_path, pathsep=os.pathsep) for key, value in expected_env_template.items()}
+    assert installer_kwargs["env_overrides"] == expected_env
 
 
 def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path: Path) -> None:
@@ -307,6 +378,11 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     finally:
         client.close()
 
+    installer_kwargs = calls[0][1]
+    assert installer_kwargs["env_overrides"] == {
+        "CODEX_NON_INTERACTIVE": "1",
+        "PATH": os.pathsep.join([str(install_dir), str(tmp_path / "path")]),
+    }
     assert calls[1][0] == [str(launcher), "--version"]
     assert prepended == [install_dir]
     assert migrated == [("codex", "@openai/codex", launcher, codex_home / "packages" / "standalone")]
@@ -634,7 +710,7 @@ def test_run_propagates_npm_migration_failure(monkeypatch, tmp_path: Path) -> No
 
 def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path) -> None:
     _isolate(monkeypatch, tmp_path, "linux")
-    monkeypatch.setattr(setup_codex_cli.shutil, "which", lambda name: None)
+    monkeypatch.setattr(setup_codex_cli.shutil, "which", lambda name, **kwargs: None)
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
