@@ -457,7 +457,7 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   Claude代替では汎用エージェント`claude`を毎回新規起動し、内容に応じてSonnetまたはOpusを使う。
   `plan-file-finalizer`は計画ファイル初版の機械チェック・総合レビュー・指摘反映を委譲する。
   初版の起草は呼び出し元が行う。
-  `plan-impl-executor`は実装・検証・コミット・実装差分レビュー・指摘反映を委譲する。
+  `plan-impl-executor`は実装・検証・コミット・二系統の実装差分レビュー・指摘反映を委譲する。
   この2種はAgent/Task起動時に`model`引数を指定しない
   （PreToolUseフックが機械的にブロックする）。既定モデルの変更が必要な場合は呼び出し側でなく
   エージェント定義自体のfrontmatterを改訂する。
@@ -535,15 +535,17 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
   成果物ファイルの`mtime`で停滞を検知する。
   `subagents/*.meta.json`の`agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`から、
   同一種別かつ同一用途の累計起動回数も観測する。
-  並列起動した複数インスタンスは各1回として合算し、同一ラウンド内の並列数と通算ラウンド数を区別しない。
-  `agent-toolkit:careful-review`が定める初回1回と再レビュー4回の計5回と同じ数え方を用いる。
+  並列起動した複数インスタンスは各1回として合算する。
+  実装差分レビューの上限は一般の起動回数と区別し、
+  `agent-toolkit/skills/codex-exec/references/plan-codex-implementation-review.md`が定める
+  二系統一組の最大5ラウンドで数える。
   累計起動回数が5回を超えた場合は、
   進捗の有無によらず収束を促す。
   間隔を空けた複数回の観測で前回との差分が無ければ停滞と判定し、判定した時点で同一ターン内に
   `SendMessage`による継続の催促（1回）まで完遂してからターンを終える。催促後も間隔を空けて
   再確認し応答が無ければメイン側で
   `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`が定める完遂順序
-  （実装→検証→コミット→レビュー→push→CI通過確認）のうち未完了の工程を巻き取るか、
+  （実装→検証→コミット→二系統レビュー→push→CI通過確認）のうち未完了の工程を巻き取るか、
   縮減した新規サブエージェントを起動する。観測した結果はユーザーへ短く提示する
 - 停滞検知の仕組みは`ScheduleWakeup`・`CronCreate`・Bash background loopのいずれかで実装し、
   全background起動の完了後またはセッション終了時に停止・登録解除する
@@ -554,7 +556,8 @@ Claude Code固有の実装挙動・制約・サブエージェント運用を扱
     `cp`によるバックアップまたは起動前状態へ適用可能なパッチとして保存する。
     内容ハッシュは変更検知用として別途記録し、完了報告の受領後に再計算する。
     変更検知後の復旧と実装担当への引き継ぎは、
-    `agent-toolkit:careful-review`「指摘の統合と修正依頼」節の手順に従う
+    `agent-toolkit/skills/codex-exec/references/plan-codex-implementation-review.md`
+    「変更検知と復元」節の手順に従う
   - 委譲先が受領手段を確保したAgent/Task経路またはMCP経路へ再委譲する場合も、
     同じ取り決めを引き継がせる
 - 作業用の複製（git worktree等）内で起動したセッションが書き込みを伴う委譲をする場合、

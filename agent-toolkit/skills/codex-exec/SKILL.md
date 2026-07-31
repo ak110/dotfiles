@@ -1,7 +1,7 @@
 ---
 name: codex-exec
 description: >
-  plan-file-finalizer・plan-impl-executor・careful-reviewから明示的に呼ばれ、
+  plan-file-finalizer・plan-impl-executorから明示的に呼ばれ、
   codex MCPまたは汎用エージェントへ作業を委譲するときに起動する。
 user-invocable: false
 # 編集時の注意点:
@@ -23,7 +23,8 @@ codex MCPを優先し、利用できない場合だけ汎用エージェント�
 - 実行手順referenceとtask referenceの絶対パス
 - 計画、品質規範、プロジェクト規範などtask referenceが要求する資料の絶対パス
 - 作業ディレクトリ、対象、完了条件だけで構成したタスク本文
-- `レビュー系`または`実装・修正系`の系統
+- `計画レビュー系`、`計画準拠実装レビュー系`、`独立実装レビュー系`、
+  `実装・修正系`のいずれか
 - codex経路を継続する場合の`threadId`
 - Claude代替を継続する場合の前回応答全文
 
@@ -34,7 +35,8 @@ referenceを読み込んだと扱わない。呼び出し元と委譲先の双�
 | --- | --- | --- |
 | 計画機械チェック・修正／計画レビュー | `plan-codex-review.md` | 同reference「用途別task reference」で選択 |
 | 計画実装・修正 | `plan-codex-implementation.md` | `plan-codex-implementation-task.md` |
-| 実装差分レビュー | `plan-codex-implementation-review.md` | `plan-codex-implementation-review-task.md` |
+| 計画準拠の実装差分レビュー | `plan-codex-implementation-review.md` | `plan-codex-implementation-plan-review-task.md` |
+| 独立した実装差分レビュー | `plan-codex-implementation-review.md` | `plan-codex-implementation-independent-review-task.md` |
 
 task referenceは委譲先自身が守る作業契約だけを記載する。
 実行手順referenceは経路選択、継続、検収、再委譲を記載する。
@@ -54,7 +56,8 @@ Codexへ渡すプロンプトは、referenceと資料の絶対パス、および
 構成する。Codexが利用しないClaude Code固有の経路管理、通知、受領手順を含めない。
 
 初回応答の`threadId`は呼び出し元へ返し、同じ系統の後続処理へ再利用させる。
-レビュー系と実装・修正系の`threadId`は混同しない。
+計画レビュー系、計画準拠実装レビュー系、独立実装レビュー系、
+実装・修正系の`threadId`は混同しない。
 
 ## Claude代替経路
 
@@ -67,7 +70,7 @@ ToolSearchでcodex MCPを解決できない場合だけ、
 - 方針と期待結果が確定した実装・機械的修正は`model: sonnet`を使う
 - 設計判断、重大指摘の採否、計画方針の再構成を含む作業は`model: opus`を使う
 - `name`と`run_in_background`を省略し、実行結果から受領経路を判定する
-- 毎回新規起動し、同じ系統の前回応答全文と未完了事項をプロンプトへ含める
+- 毎回新規起動し、同じ系統の前回応答全文と未完了事項だけをプロンプトへ含める
 - Codex経路と同じ実行手順reference、task reference、資料を絶対パスでReadさせる
 - タスク本文は作業ディレクトリ、対象、完了条件だけに限定する
 - 待機表明だけで終了せず、待機対象の結果を含む完了報告を1回で返す指示を含める

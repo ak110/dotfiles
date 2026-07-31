@@ -93,8 +93,8 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
 
 採用判定後にレビュー指摘で反映先の変更が必要と判明した場合の扱いは次のとおりとする。
 
-- 対象レビューは`agent-toolkit:plan-mode`工程5以降のcodexレビュー・
-  `codex-exec`経由の計画レビュー・実装差分レビューと`agent-toolkit:careful-review`が該当する
+- 対象レビューは`agent-toolkit:plan-mode`工程5以降のcodexレビュー、
+  `codex-exec`経由の計画レビュー、`plan-impl-executor`の二系統実装差分レビューが該当する
 - 不採用転換ではなく反映先変更として扱い、変更後の反映先・反映内容を計画ファイルの`## 変更履歴`へ記録する
 - ユーザーへの追加採否確認は不要とし、フィードバック原文の主旨が同等に達成されている限り採用扱いの後始末を継続してよい
 
@@ -116,8 +116,8 @@ plan-mode側の定義は`agent-toolkit:plan-mode`スキル本体にある。
   受領できない場合は当該工程を打ち切った旨と打ち切りの判断根拠を計画ファイル`## 進捗ログ`へ記録してから
   後始末へ進む
 - 標準順序は実装→検証→`agent-toolkit:commit`→コミット→
-  `agent-toolkit:careful-review`まで`plan-impl-executor`側で完遂し、
-  以降の後続工程（`git push`から振り返り・`exit-session`まで）は
+  二系統レビューまで`plan-impl-executor`側で完遂する。
+  以降の後続工程（`git push`から振り返り・`exit-session`まで）は、
   本スキル「ステップ7: 採否確定の後始末」以降の工程順序へ引き継ぐ
   - push後CI通過確認は`agent-toolkit:commit`スキル「push後のCI通過確認」節に従う
 

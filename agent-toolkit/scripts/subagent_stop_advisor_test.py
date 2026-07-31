@@ -268,15 +268,21 @@ def _complete_report(**overrides: str) -> str:
         "changed": "- [x] item — /path",
         "verification": "- `pytest` — pass",
         "commit_sha": "abc123",
-        "review_handoff": "実施完了（採用指摘0件反映）",
+        "review_status": "実施完了（計画準拠系採用0件・独立系採用0件）",
         "pending_confirmations": "なし",
         "plan_gaps": "なし",
         "applied_instructions": "なし",
         "implementation_thread_id": "th_impl",
-        "review_thread_id": "th_review",
+        "plan_review_thread_id": "th_plan_review",
+        "independent_review_thread_id": "th_independent_review",
         "implementation_route": "codex",
-        "review_route": "codex",
+        "plan_review_route": "codex",
+        "independent_review_route": "codex",
         "review_rounds": "1",
+        "implementation_history": "実装完了",
+        "plan_review_history": "指摘なし",
+        "independent_review_history": "指摘なし",
+        "review_resolution": "指摘なし",
     }
     fields.update(overrides)
     return "\n".join(f"{k}: {v}" if not v.startswith("-") else f"{k}:\n{v}" for k, v in fields.items())
@@ -369,6 +375,281 @@ class TestPlanImplExecutorReportFormat:
         assert body["decision"] == "block"
         assert "applied_instructions" in body["reason"]
 
+    @pytest.mark.parametrize(
+        "missing_label",
+        ["plan_review_thread_id", "independent_review_thread_id", "plan_review_history", "independent_review_history"],
+    )
+    def test_missing_review_track_label_blocks(self, tmp_path: Path, missing_label: str) -> None:
+        """いずれかのレビュー系必須欄が欠落する報告をblockする。"""
+        sid = f"sid-format-missing-{missing_label}"
+        agent_id = f"sub-{missing_label}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        report = "\n".join(line for line in _complete_report().splitlines() if not line.startswith(f"{missing_label}:"))
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert missing_label in body["reason"]
+
+    @pytest.mark.parametrize(
+        ("overrides", "expected_fragment"),
+        [
+            (
+                {"plan_review_route": "not_started"},
+                "plan_review_route must be codex or claude",
+            ),
+            (
+                {"plan_review_thread_id": "なし"},
+                "plan_review_thread_id must not be なし",
+            ),
+            (
+                {"plan_review_route": "claude", "plan_review_thread_id": "th_invalid"},
+                "plan_review_thread_id must be なし",
+            ),
+            (
+                {"review_rounds": "0"},
+                "review_rounds must be between 1 and 5",
+            ),
+            (
+                {"review_rounds": "6"},
+                "review_rounds must be between 1 and 5",
+            ),
+            (
+                {"independent_review_history": "なし"},
+                "independent_review_history must not be なし",
+            ),
+            (
+                {"review_resolution": "なし"},
+                "review_resolution must not be なし",
+            ),
+        ],
+    )
+    def test_completed_review_value_mismatch_blocks(
+        self,
+        tmp_path: Path,
+        overrides: dict[str, str],
+        expected_fragment: str,
+    ) -> None:
+        """実施完了時のroute・thread・round・履歴の矛盾をblockする。"""
+        sid = f"sid-format-review-mismatch-{len(expected_fragment)}-{len(overrides)}"
+        agent_id = f"sub-review-mismatch-{len(expected_fragment)}-{len(overrides)}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(**overrides),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert expected_fragment in body["reason"]
+
+    @pytest.mark.parametrize(
+        ("overrides", "expected_fragment"),
+        [
+            ({"plan_review_thread_id": ""}, "plan_review_thread_id must not be なし"),
+            ({"plan_review_history": ""}, "plan_review_history must not be なし"),
+            ({"status": ""}, "status must be completed or needs_escalation"),
+            ({"plan_review_route": ""}, "plan_review_route must be codex or claude"),
+        ],
+    )
+    def test_empty_scalar_value_does_not_consume_next_label(
+        self,
+        tmp_path: Path,
+        overrides: dict[str, str],
+        expected_fragment: str,
+    ) -> None:
+        """空欄を次ラベルの値として扱わず、各欄の値矛盾をblockする。"""
+        label = next(iter(overrides))
+        sid = f"sid-format-empty-{label}"
+        agent_id = f"sub-empty-{label}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(**overrides),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert expected_fragment in body["reason"]
+
+    @pytest.mark.parametrize(
+        ("status", "extra_fields"),
+        [
+            ("completed", {}),
+            (
+                "needs_escalation",
+                {
+                    "review_status": "レビュー未完了",
+                    "plan_review_route": "unavailable",
+                    "plan_review_thread_id": "なし",
+                    "blockers": "- 未解決事項",
+                },
+            ),
+        ],
+    )
+    def test_allowed_status_values_pass(
+        self,
+        tmp_path: Path,
+        status: str,
+        extra_fields: dict[str, str],
+    ) -> None:
+        """許可された2つのstatus値は整合する報告で通過する。"""
+        sid = f"sid-format-allowed-status-{status}"
+        agent_id = f"sub-allowed-status-{status}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        report = _complete_report(status=status, **extra_fields)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("invalid_status", ["done", ""])
+    def test_invalid_or_empty_status_blocks(self, tmp_path: Path, invalid_status: str) -> None:
+        """許可集合外または空のstatusをblockする。"""
+        suffix = invalid_status or "empty"
+        sid = f"sid-format-invalid-status-{suffix}"
+        agent_id = f"sub-invalid-status-{suffix}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(status=invalid_status),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert "status must be completed or needs_escalation" in body["reason"]
+
+    @pytest.mark.parametrize(
+        ("overrides", "expected_fragment"),
+        [
+            ({"review_rounds": "1"}, "review_rounds must be 0"),
+            ({"plan_review_route": "codex"}, "plan_review_route must be not_started"),
+            ({"independent_review_thread_id": "th_invalid"}, "independent_review_thread_id must be なし"),
+            ({"plan_review_history": "指摘なし"}, "plan_review_history must be なし"),
+            ({"review_resolution": "指摘なし"}, "review_resolution must be なし"),
+        ],
+    )
+    def test_skipped_review_value_mismatch_blocks(
+        self,
+        tmp_path: Path,
+        overrides: dict[str, str],
+        expected_fragment: str,
+    ) -> None:
+        """レビュー省略時の値矛盾をblockする。"""
+        sid = f"sid-format-skip-mismatch-{len(expected_fragment)}-{len(overrides)}"
+        agent_id = f"sub-skip-mismatch-{len(expected_fragment)}-{len(overrides)}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        skipped = {
+            "review_status": "レビューは実施しない（ユーザー指示）",
+            "plan_review_thread_id": "なし",
+            "independent_review_thread_id": "なし",
+            "plan_review_route": "not_started",
+            "independent_review_route": "not_started",
+            "review_rounds": "0",
+            "plan_review_history": "なし",
+            "independent_review_history": "なし",
+            "review_resolution": "なし",
+        }
+        skipped.update(overrides)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(**skipped),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert expected_fragment in body["reason"]
+
+    def test_skipped_review_consistent_values_pass(self, tmp_path: Path) -> None:
+        """レビュー省略時の整合した値は通過する。"""
+        sid = "sid-format-skip-ok"
+        agent_id = "sub-skip-ok"
+        _write_flag_state(tmp_path, sid, agent_id)
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": _complete_report(
+                    review_status="レビューは実施しない（ユーザー指示）",
+                    plan_review_thread_id="なし",
+                    independent_review_thread_id="なし",
+                    plan_review_route="not_started",
+                    independent_review_route="not_started",
+                    review_rounds="0",
+                    plan_review_history="なし",
+                    independent_review_history="なし",
+                    review_resolution="なし",
+                ),
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize(
+        ("overrides", "expected_fragment"),
+        [
+            ({"review_status": "実施完了（計画準拠系採用0件・独立系採用0件）"}, "レビュー未完了"),
+            (
+                {"plan_review_route": "unavailable", "plan_review_thread_id": "th_invalid"},
+                "plan_review_thread_id must be なし",
+            ),
+        ],
+    )
+    def test_escalation_review_value_mismatch_blocks(
+        self,
+        tmp_path: Path,
+        overrides: dict[str, str],
+        expected_fragment: str,
+    ) -> None:
+        """エスカレーション時のreview statusと利用不能threadの矛盾をblockする。"""
+        sid = f"sid-format-escalation-mismatch-{len(expected_fragment)}"
+        agent_id = f"sub-escalation-mismatch-{len(expected_fragment)}"
+        _write_flag_state(tmp_path, sid, agent_id)
+        escalation = {
+            "status": "needs_escalation",
+            "review_status": "レビュー未完了",
+            "plan_review_route": "unavailable",
+            "plan_review_thread_id": "なし",
+            "independent_review_route": "not_started",
+            "independent_review_thread_id": "なし",
+        }
+        escalation.update(overrides)
+        report = _complete_report(**escalation) + "\nblockers:\n- 未解決事項"
+        result = _run_with_state_dir(
+            {
+                "session_id": sid,
+                "last_assistant_message": report,
+                "transcript_path": _transcript_path_for(tmp_path, agent_id),
+            },
+            tmp_path,
+        )
+        body = json.loads(result.stdout)
+        assert body["decision"] == "block"
+        assert expected_fragment in body["reason"]
+
     def test_unchecked_item_inside_applied_instructions_does_not_block(self, tmp_path: Path) -> None:
         """`changed`欄の境界検査は`applied_instructions`欄の追加後も正しく`changed`欄末尾で止まる。"""
         sid = "sid-format-applied-instructions-boundary"
@@ -409,7 +690,15 @@ class TestPlanImplExecutorReportFormat:
         """`status: needs_escalation`かつ`blockers`欄あり報告は通過する。"""
         sid = "sid-format-escalation-ok"
         _write_flag_state(tmp_path, sid, "sub-d")
-        report = _complete_report(status="needs_escalation") + "\nblockers:\n- 未解決事項"
+        report = (
+            _complete_report(
+                status="needs_escalation",
+                review_status="レビュー未完了",
+                plan_review_route="unavailable",
+                plan_review_thread_id="なし",
+            )
+            + "\nblockers:\n- 未解決事項"
+        )
         result = _run_with_state_dir(
             {
                 "session_id": sid,

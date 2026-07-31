@@ -129,14 +129,15 @@ source_body_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
 次の計画実装型を1件ずつ起動する。
 作業ツリー・コミットの競合を避けるため、計画実装型どうしの実装は直列に限定し並列起動しない。
 バックグラウンド実装は当該の計画実装型フィードバックについて作業ツリーを触る唯一の主体とし、
-検証・コミット・`agent-toolkit:careful-review`実施まで`plan-impl-executor`へ委譲する。`git push`は委譲せず
+検証・コミット・二系統レビュー実施まで`plan-impl-executor`へ委譲する。`git push`は委譲せず
 本スキル「ステップ7: 採否確定の後始末」の工程で実施する。
 通常型の計画実装（`plan-impl-executor`起動）は、先行する全ての計画実装型`plan-impl-executor`のうち
 最後に起動した1件について、完了報告本文の受領・検収を終えていることを開始条件とする。
 これに加え、当該コミットの`git push`と該当分後始末（`atk mq adopt`）まで完了していることも条件とする。
-完了報告本文の必須欄は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`
-「完了報告の検収」節のSSOTに従い、
-`review_handoff`欄を含む形式とする。
+完了報告本文の必須欄は
+`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`をSSOTとする。
+同ファイルの「完了報告の検収」節に従い、
+`review_status`、二系統のroute・thread・history、`review_resolution`欄を含む形式とする。
 作業ツリー全体へ影響する検証・コミットの競合を避けるため直列とする。
 commit SHAの進捗観測を単独の判定根拠にしない。
 

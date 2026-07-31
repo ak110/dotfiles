@@ -161,7 +161,7 @@
 - 実装差分に応じてコミット境界を変更した場合は、計画本文と`## 進捗ログ`を同期する
 - 全コミット完了後の最終検証: `uvx pyfltr run tests/upload_test.py docs/architecture/limits.md`・
   `tsc --noEmit client/limits.ts`・`nginx -t -c infra/nginx.conf`
-- `agent-toolkit:careful-review`スキルを呼び出す
+- `plan-impl-executor`が計画準拠系と独立系の実装差分レビューを並列実行する
 
 ## 進捗ログ
 

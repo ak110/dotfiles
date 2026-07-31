@@ -11,7 +11,8 @@
 
 `plan-impl-executor`完了報告（`transcript_path`から抽出した`agentId`が
 `plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火）は、
-主要欄ラベルの欠落検査と、background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
+主要欄ラベルの欠落検査、二系統レビュー値の整合検査、
+background並列起動宣言・`changed`欄未消化項目の矛盾検査（FB[3]）を行う。
 書式不備・矛盾を検出しblockした場合はエントリを保持し、是正後の再試行でも検査を再発火させる。
 """
 
@@ -52,15 +53,21 @@ _PLAN_IMPL_EXECUTOR_REQUIRED_LABELS: tuple[str, ...] = (
     "changed",
     "verification",
     "commit_sha",
-    "review_handoff",
+    "review_status",
     "pending_confirmations",
     "plan_gaps",
     "applied_instructions",
     "implementation_thread_id",
-    "review_thread_id",
+    "plan_review_thread_id",
+    "independent_review_thread_id",
     "implementation_route",
-    "review_route",
+    "plan_review_route",
+    "independent_review_route",
     "review_rounds",
+    "implementation_history",
+    "plan_review_history",
+    "independent_review_history",
+    "review_resolution",
 )
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL = "blockers"
 _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE = re.compile(r"^status:\s*needs_escalation\b", re.MULTILINE)
@@ -92,6 +99,87 @@ def _extract_changed_section_body(text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _extract_report_field(text: str, label: str) -> str:
+    """完了報告の欄本文を次の主要ラベル直前まで抽出する。"""
+    labels = "|".join(re.escape(item) for item in _PLAN_IMPL_EXECUTOR_ALL_LABELS)
+    pattern = re.compile(
+        rf"^{re.escape(label)}:[ \t]*(.*(?:\n(?!(?:{labels}):).*)*)",
+        re.MULTILINE,
+    )
+    match = pattern.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_report_first_line(text: str, label: str) -> str:
+    """完了報告の欄本文から先頭行を返す。空欄では空文字列を返す。"""
+    lines = _extract_report_field(text, label).splitlines()
+    return lines[0] if lines else ""
+
+
+def _is_none_value(value: str) -> bool:
+    """欄が空または「なし」だけであるかを返す。"""
+    return not value or value == "なし"
+
+
+def _inspect_plan_impl_executor_review_values(text: str) -> list[str]:
+    """完了報告のstatusと二系統レビュー欄の値整合違反を返す。"""
+    status = _extract_report_first_line(text, "status")
+    violations: list[str] = []
+    if status not in {"completed", "needs_escalation"}:
+        violations.append("status must be completed or needs_escalation")
+        return violations
+
+    review_status = _extract_report_first_line(text, "review_status")
+    rounds_text = _extract_report_first_line(text, "review_rounds")
+    try:
+        rounds = int(rounds_text)
+    except ValueError:
+        rounds = -1
+
+    tracks = ("plan_review", "independent_review")
+    routes = {track: _extract_report_first_line(text, f"{track}_route") for track in tracks}
+    threads = {track: _extract_report_field(text, f"{track}_thread_id") for track in tracks}
+    histories = {track: _extract_report_field(text, f"{track}_history") for track in tracks}
+    resolution = _extract_report_field(text, "review_resolution")
+
+    if status == "completed" and review_status.startswith("実施完了"):
+        if rounds not in range(1, 6):
+            violations.append("review_rounds must be between 1 and 5 for completed review")
+        if _is_none_value(resolution):
+            violations.append("review_resolution must not be なし for completed review")
+        for track in tracks:
+            route = routes[track]
+            if route not in {"codex", "claude"}:
+                violations.append(f"{track}_route must be codex or claude for completed review")
+            if _is_none_value(histories[track]):
+                violations.append(f"{track}_history must not be なし for completed review")
+            if route == "codex" and _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must not be なし for codex route")
+            if route == "claude" and not _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must be なし for claude route")
+    elif status == "completed" and review_status == "レビューは実施しない（ユーザー指示）":
+        if rounds != 0:
+            violations.append("review_rounds must be 0 when review is skipped")
+        if not _is_none_value(resolution):
+            violations.append("review_resolution must be なし when review is skipped")
+        for track in tracks:
+            if routes[track] != "not_started":
+                violations.append(f"{track}_route must be not_started when review is skipped")
+            if not _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must be なし when review is skipped")
+            if not _is_none_value(histories[track]):
+                violations.append(f"{track}_history must be なし when review is skipped")
+    elif status == "completed":
+        violations.append("review_status must show completed review or user-directed skip")
+    elif status == "needs_escalation":
+        if review_status != "レビュー未完了":
+            violations.append("review_status must be レビュー未完了 for needs_escalation")
+        for track in tracks:
+            if routes[track] in {"not_started", "unavailable"} and not _is_none_value(threads[track]):
+                violations.append(f"{track}_thread_id must be なし for {routes[track]} route")
+    return violations
+
+
 def _detect_plan_impl_executor_background_parallel_violation(text: str) -> bool:
     """`plan-impl-executor`完了報告のbackground並列起動宣言と`changed`欄未消化項目の共起を検出する（FB[3]）。
 
@@ -113,34 +201,33 @@ def _llm_notice(body: str, *, tag: str = "") -> str:
     return _llm_notice_base(body, _HOOK_ID, tag=tag)
 
 
-def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool]:
-    """`plan-impl-executor`完了報告本文の主要欄ラベル存在検査とbackground並列起動宣言矛盾検査を実施する。
+def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str], bool, list[str]]:
+    """完了報告のラベル、background起動宣言、レビュー値を検査する。
 
     `transcript_path`のファイル名から抽出した`agentId`が、`posttooluse.py`が親セッション状態へ
     書き込む`plan_impl_executor_active_subagent_sessions`辞書のキーと一致する場合のみ発火する。
-    抽出・突合に失敗した場合は対象外として`([], False)`を返す（安全側。他種別のサブエージェント
+    抽出・突合に失敗した場合は対象外として`([], False, [])`を返す（安全側。他種別のサブエージェント
     停止時の誤発火と、他インスタンスの登録の巻き添え消去を防ぐ）。
-    戻り値は「欠落ラベルのリスト」と「background並列起動宣言と`changed`欄未消化項目の矛盾有無」の組とする。
-    ラベル欠落とbackground並列起動宣言矛盾は原因が異なるため、呼び出し元で別々のblock理由文を組み立てる（FB[3]）。
-    いずれも該当なしの場合または対象外の場合は`([], False)`を返す。
-    検査で欠落ラベル・矛盾のいずれも検出しなかった場合のみ、当該エントリを状態辞書から削除する
+    戻り値は欠落ラベル、background並列起動宣言矛盾、レビュー値矛盾の組とする。
+    いずれも該当なしの場合または対象外の場合は`([], False, [])`を返す。
+    全検査を通過した場合だけ、当該エントリを状態辞書から削除する
     （当該サブエージェントの完了検知としての消費）。block判定時はエントリを保持し、
     是正後の再試行でも同一エントリに対する検査が再度発火できるようにする。
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return [], False
+        return [], False, []
     agent_id = _extract_transcript_agent_id(payload.get("transcript_path"))
     if agent_id is None:
-        return [], False
+        return [], False, []
     state = read_state(session_id)
     active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
     if not isinstance(active, dict) or agent_id not in active:
-        return [], False
+        return [], False, []
 
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
-        return [], False
+        return [], False, []
     required = list(_PLAN_IMPL_EXECUTOR_REQUIRED_LABELS)
     if _PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_RE.search(text):
         required.append(_PLAN_IMPL_EXECUTOR_NEEDS_ESCALATION_LABEL)
@@ -150,8 +237,9 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
         if not pattern.search(text):
             missing.append(label)
     violation = _detect_plan_impl_executor_background_parallel_violation(text)
+    review_value_violations = [] if missing else _inspect_plan_impl_executor_review_values(text)
 
-    if not missing and not violation:
+    if not missing and not violation and not review_value_violations:
 
         def _drop_entry(current_state: dict, aid: str = agent_id) -> dict | None:
             current_active = current_state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
@@ -163,7 +251,7 @@ def _inspect_plan_impl_executor_report_format(payload: dict) -> tuple[list[str],
 
         update_state(session_id, _drop_entry)
 
-    return missing, violation
+    return missing, violation, review_value_violations
 
 
 def main() -> int:
@@ -224,7 +312,9 @@ def main() -> int:
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0
 
-    missing_labels, has_background_parallel_violation = _inspect_plan_impl_executor_report_format(payload)
+    missing_labels, has_background_parallel_violation, review_value_violations = _inspect_plan_impl_executor_report_format(
+        payload
+    )
     if missing_labels:
         reason = _llm_notice(
             "blocked: `plan-impl-executor` completion report is missing required labels:"
@@ -232,6 +322,18 @@ def main() -> int:
             " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
             " '完了報告の検収' section for the required format."
             " When resubmitting, restate the entire original completion report with the missing labels added"
+            " (the main agent does not retain the body across this hook's block).",
+            tag="block",
+        )
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return 0
+    if review_value_violations:
+        reason = _llm_notice(
+            "blocked: `plan-impl-executor` completion report has inconsistent review values:"
+            f" {'; '.join(review_value_violations)}."
+            " See `agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`"
+            " '完了報告の検収' section for the required value combinations."
+            " When resubmitting, restate the entire original completion report with consistent values"
             " (the main agent does not retain the body across this hook's block).",
             tag="block",
         )
