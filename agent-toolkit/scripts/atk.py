@@ -346,9 +346,25 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
     )
     _add_target_repo_arg(reject, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
 
-    rm = sub.add_parser("rm", help="inbox・processingいずれかから単純削除しコミット・push")
+    rm = sub.add_parser(
+        "rm",
+        help="指定項目、または対象リポジトリの未処理・処理中項目を削除しコミット・push",
+    )
     rm.add_argument(
-        "filenames", metavar="FILENAME", nargs="+", help="削除するファイル名（1個以上。inbox・processingいずれも対象）。"
+        "filenames",
+        metavar="FILENAME",
+        nargs="*",
+        help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
+    )
+    rm.add_argument(
+        "--all",
+        action="store_true",
+        help="--target-repoと完全一致するinbox・processingの全項目を一覧表示後に削除する。",
+    )
+    rm.add_argument(
+        "--yes",
+        action="store_true",
+        help="--allによる一括削除の確認入力を省略する。一覧表示とprocessing保護は維持する。",
     )
     rm.add_argument(
         "--force",
@@ -356,7 +372,11 @@ def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
         help="processing状態のファイルも削除する（既定では処理中のファイルを保護し拒否する）。",
     )
     rm.add_argument("--note", metavar="TEXT", default=None)
-    _add_target_repo_arg(rm, help_extra="指定時は対象filenameのfrontmatterと一致するか検証する。")
+    _add_target_repo_arg(
+        rm,
+        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は削除対象を限定する。",
+    )
+    rm.set_defaults(subparser=rm)
 
     edit = sub.add_parser("edit", help="対象エントリをMESSAGE又は$EDITORで編集しコミット・push")
     edit.add_argument(
@@ -482,6 +502,22 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _validate_rm_args(args: argparse.Namespace) -> None:
+    """`mq rm`の個別指定と一括指定が排他的であることを検証する。"""
+    if args.command != "mq" or args.mq_subcommand != "rm":
+        return
+    if args.all:
+        if args.filenames:
+            args.subparser.error("FILENAMEと--allは同時に指定できません。")
+        if args.target_repo is None:
+            args.subparser.error("--allには--target-repoが必要です。")
+        return
+    if not args.filenames:
+        args.subparser.error("削除するFILENAME、または--allを指定してください。")
+    if args.yes:
+        args.subparser.error("--yesは--allとともに指定してください。")
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -504,6 +540,7 @@ def main(
     _common.warn_space_separated_option(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     args = parser.parse_args(raw_argv)
+    _validate_rm_args(args)
     args.repo_path_override = repo_path_override
     if args.command == "mq" and args.mq_subcommand == "add" and args.type != "tbd":
         tbd_only = [

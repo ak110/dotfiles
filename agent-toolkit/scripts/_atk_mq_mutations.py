@@ -15,6 +15,7 @@ import typing
 
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
+import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
 from _atk_mq_common import (
     MQ_STATE_ADOPTED,
@@ -451,12 +452,19 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path) 
 
 
 def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """rmサブコマンド: inbox・processingいずれかから単純削除しcommit・push。
+    """rmサブコマンド: 個別指定または対象リポジトリ単位でactive項目を削除する。"""
+    if args.all:
+        filenames = _remove_all.remove_all_entries(
+            private_notes,
+            target_repo=args.target_repo,
+            assume_yes=args.yes,
+            force=args.force,
+            note=args.note,
+        )
+        if filenames:
+            print(f"{len(filenames)}件削除: {', '.join(filenames)}")
+        return
 
-    processing優先で解決する（`_resolve_processable_targets`と同じ規約）。
-    processing状態のファイルは既定で削除を保護し、`--force`指定時のみ削除を許可する。
-    位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
-    """
     args.filenames = _dedup_positional_filenames(args.filenames, "rm")
     filenames = transition_entries(
         private_notes,

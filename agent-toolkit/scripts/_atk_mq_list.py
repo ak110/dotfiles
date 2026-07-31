@@ -29,6 +29,8 @@ from _atk_mq_formatters import (
 from _atk_mq_repo import _resolve_repo_id
 from _atk_mq_schedule import format_schedule_label
 
+type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
+
 
 def _category_line_matches(line: str, category: str) -> bool:
     """カテゴリ記録行が指定カテゴリと一致するか判定する。"""
@@ -91,6 +93,29 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     )
 
 
+def _print_entries(selected: list[QueueEntryDisplay]) -> None:
+    """選択済みエントリを`atk mq list`の1件1行形式で出力する。"""
+    for header_type in ("feedback", "tbd"):
+        group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
+        if not group:
+            continue
+        print(f"# {header_type}")
+        for path, target_repo, text, state, entry_type in group:
+            schedule_label = format_schedule_label(text)
+            label = f"{state}/{schedule_label}"
+            if entry_type == MQ_TYPE_TBD:
+                answered = _is_tbd_answered(text)
+                label = f"{state}/answered/{schedule_label}" if answered else f"{state}/unanswered"
+            repo_budget = _target_repo_budget(path.name, label)
+            display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
+            prefix = f"{path.name}: {display_repo} [{label}] "
+            available_width = shutil.get_terminal_size().columns - _display_width(prefix)
+            summary = (
+                _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
+            )
+            print(f"{prefix}{summary}")
+
+
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """listサブコマンド: feedback/tbdを1件1行（filename・target_repo・状態・要約）で出力する。
 
@@ -115,7 +140,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if args.target_repo is not None:
         filter_repo = _resolve_repo_id(args.target_repo)
 
-    selected: list[tuple[pathlib.Path, str, str, str, str | None]] = []
+    selected: list[QueueEntryDisplay] = []
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
         _, _, text, _, entry_type = entry
         if not _answered_matches(entry_type, text, args.answered):
@@ -130,22 +155,4 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print(len(selected))
         return
 
-    for header_type in ("feedback", "tbd"):
-        group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
-        if not group:
-            continue
-        print(f"# {header_type}")
-        for path, target_repo, text, state, entry_type in group:
-            schedule_label = format_schedule_label(text)
-            label = f"{state}/{schedule_label}"
-            if entry_type == MQ_TYPE_TBD:
-                answered = _is_tbd_answered(text)
-                label = f"{state}/answered/{schedule_label}" if answered else f"{state}/unanswered"
-            repo_budget = _target_repo_budget(path.name, label)
-            display_repo = _truncate_target_repo(target_repo, max_width=repo_budget)
-            prefix = f"{path.name}: {display_repo} [{label}] "
-            available_width = shutil.get_terminal_size().columns - _display_width(prefix)
-            summary = (
-                _tbd_body_summary(text, available_width) if entry_type == MQ_TYPE_TBD else _body_summary(text, available_width)
-            )
-            print(f"{prefix}{summary}")
+    _print_entries(selected)
